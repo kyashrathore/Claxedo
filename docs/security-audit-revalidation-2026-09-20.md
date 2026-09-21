@@ -222,7 +222,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 26 | Next fixes / validation | [P-93 — Recovered and child-completion turns skip durable authority admission](#finding-p-93) | MED → Medium availability/integrity | Partial; embedded recovery verified, remote wakes fail closed and are documented | Design a scoped wake grant when remote child wakes ship; see packages/wakes README shortcomings. |
 | 27 | Next fixes / validation | [P-111 — Sessionless SSE frames can outlive membership](#finding-p-111) | MED → Medium | Fixed; verified with real SQLite and open SSE | Keep renewable workspace leases and fail closed on invalid renewal or revocation. |
 | 28 | Next fixes / validation | [P-91 — Workspace editors can invoke runtime-wide checkpoint control](#finding-p-91) | MED → Medium | Fixed; verified through checkpoint HTTP | Retain current workspace membership checks and scoped supervisor grants. |
-| 29 | Next fixes / validation | [P-98 — Refreshing a revoked OAuth credential can reactivate it](#finding-p-98) | MED → Medium | Partial; local and hosted writes preserve revocation, cross-worker fence open | Choose the authoritative hosted owner (D1 conditional update or a Durable Object) and fence lifecycle writes there. |
+| 29 | Next fixes / validation | [P-98 — Refreshing a revoked OAuth credential can reactivate it](#finding-p-98) | MED → Medium | Fixed; hosted credentials moved to D1 with the revoked guard inside each UPDATE | Retain the local and hosted revocation regressions and the two-store race test. |
 | 30 | Next fixes / validation | [P-17 — Expired wakes can fire before the sweep](#finding-p-17) | MED → Medium for approvals | Fixed; focused checks passed | Retain atomic deadline admission and expiry-boundary regression tests. |
 | 31 | Next fixes / validation | [P-10 — Missing MCP confirmation support silently means approval](#finding-p-10) | MED → Medium | Fixed; HTTP/SDK tests passed | Retain the shared confirmation gate and positive/negative destructive-tool coverage. |
 | 32 | Next fixes / validation | [P-21 — Channel reset runs before per-session authorization](#finding-p-21) | MED → Medium | Fixed; focused checks passed | Retain canonical session admission before commands and preserve binding on cancellation failure. |
@@ -296,7 +296,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 100 | Scheduled fixes | [P-115 — Unmanaged hook updates can name unowned terminal ids](#finding-p-115) | LOW → Low | Fixed; focused hook tests | Require an existing terminal and its bound hook capability for lifecycle writes. |
 | 101 | Scheduled fixes | [P-136 — Embedded cookie-plus-bearer precedence is not explicit rejection](#finding-p-136) | LOW → Low | Fixed; focused bridge tests | Reject dual presentation before authentication or change the declared contract if precedence is intentional. |
 | 102 | Scheduled fixes | [P-25 — Deep links can register a caller-named project](#finding-p-25) | MED-LOW → Low, user interaction required | Present | Confirm externally initiated project registration with the resolved directory visible; never auto-submit a deep-link prompt. |
-| 103 | Scheduled fixes | [P-31 — Guest content can influence prompt context](#finding-p-31) | LOW → Low | Partial; host-side gating fixed, acceptance step open | Decide whether a host-side acceptance step is added before guest comments enter prompt context. |
+| 103 | Scheduled fixes | [P-31 — Guest content can influence prompt context](#finding-p-31) | LOW → Low | Fixed; host-side gating plus trusted-input gates in the preload | Retain the host component tests and the preload gate tests. |
 | 104 | Scheduled fixes | [S-9 — Open-path grants broad OS file-opening power](#finding-s-9) | LOW → Low in isolation | Present | Use reveal-in-folder for location navigation and explicit user actions for executable opening. |
 | 105 | Scheduled fixes | [P-33 — ACP Windows arguments are interpreted by a shell](#finding-p-33) | LOW → Low, configuration-dependent | Present/latent | Use real executables or robust platform launch handling and preserve each argument literally. |
 | 106 | Scheduled fixes | [P-75 — Daytona list delimiters and image arguments are not locally validated](#finding-p-75) | LOW → Low, input-policy dependent | Fixed; focused validation tests | Validate hostname/CIDR lists before formatting and reject option-like image identifiers at the driver boundary. |
@@ -313,7 +313,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 117 | Hardening / latent | [P-123 — MCP loopback helper does not inspect the socket peer](#finding-p-123) | LOW-MED → Low hardening; exploit unconfirmed | Fixed; socket-peer gate | Use server-stamped peer provenance in network mounts, retain runtime credential verification, and test forged Host/Origin through the actual provider ingress. |
 | 118 | Hardening / latent | [P-140 — MCP optional audience and unused permission claim are separate](#finding-p-140) | INFO → Low hardening/Informational | Fixed; focused verifier tests | Require the resource audience at the canonical OAuth verifier if that is the contract; remove unused claims or mint/verify them end to end. |
 | 119 | Hardening / latent | [P-56 — Broker response and token observations overstate some effects](#finding-p-56) | INFO → Low hardening; no broker bypass established | Mixed | Retain per-request runtime validation, review forwarded response headers and query credential slots, and verify specific advisories against installed use. |
-| 120 | Hardening / latent | [P-120 — Node encrypted backend shares one deployment key partition](#finding-p-120) | LOW → Low hardening | Present design assumption | If multi-tenant cryptographic separation is required, carry authoritative org identity into the backend API and key derivation. |
+| 120 | Hardening / latent | [P-120 — Node encrypted backend shares one deployment key partition](#finding-p-120) | LOW → Closed by removal | The Node KV backend and its deployment partition no longer exist; Node is one key per machine by contract | None. |
 | 121 | Hardening / latent | [P-114 — Command-path scanner misses redirection syntax](#finding-p-114) | LOW → Low; not a shell sandbox | Fixed; focused scanner tests | Use actual process/filesystem isolation where confinement is promised; avoid claiming a regex is a sandbox. |
 | 122 | Hardening / latent | [P-118 — Reading a cloud connection can start compute](#finding-p-118) | LOW-MED → Low | Fixed; reads never provision | Keep `sandboxManager.ensure` behind the explicit POST connect; reads resolve the lease via `target` and report stopped/provisioning. |
 | 123 | Hardening / latent | [P-48 — Storybook CSS writer lacks a strong request boundary](#finding-p-48) | LOW → Low, development-only | Fixed; focused boundary tests | Require a dev capability/origin check and canonical path containment with a separator boundary. |
@@ -935,13 +935,15 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-31"></a>
 ### P-31 — Guest content can influence prompt context
 
-**Original severity:** LOW. **Current:** Partial; host-side gating fixed, acceptance step open. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; host-side gating plus trusted-input gates in the preload. **Reassessed severity:** Low.
 
 **What changed:** Guest pick and comment-submit messages are dropped unless the picker is armed; a submit must match a prior pick's selector and the host's navigation generation, which full and in-page main-frame navigations advance while clearing the pick; `pageUrl` is the host-observed URL and a guest `frameUrl` on another origin drops the message; every field is re-validated and size-bounded into a fresh object. Guest JavaScript cannot reach react-grab's API: the preload runs in the isolated world and injects nothing into the page.
 
 **Acceptance:** Component tests cover submit without inspect, without a pick, with a differing selector, after an in-page navigation, from another origin, oversized content, and the legitimate pick-then-submit flow. Committed as 2446cecd95.
 
-**Remaining:** While the picker is armed, page script can synthesize pointer events into react-grab's open shadow root and fill the popover, and that submit passes every host check. A host-side acceptance step before the comment enters prompt context is the only closure and is a product decision.
+**Preload gates:** `isTrusted` is set only by the browser on events from real input and is read-only; script-created events, `dispatchEvent` and `element.click()` all carry `false`. The preload's Send click and keyboard shortcut now refuse an untrusted activating event, and a react-grab selection is accepted only when a trusted input event was recorded within 1500 ms by capture-phase window listeners that run ahead of every page listener, since react-grab's hook carries no event. Tests cover the pure gate; the built preload bundle was inspected for both gates. Committed as 66da4af5b1.
+
+**Residual, accepted:** a page can still pre-fill the popover or move it under a genuine click, and the comment is visible in the composer before it is sent. No acceptance step will be added.
 
 **Current code:** [packages/claxedo-app/src/features/browser/components/browser-pane.tsx](../packages/claxedo-app/src/features/browser/components/browser-pane.tsx); [packages/claxedo-app/src/features/browser/components/browser-url.ts](../packages/claxedo-app/src/features/browser/components/browser-url.ts). [Concept walkthrough E](#flow-e).
 
@@ -1673,13 +1675,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-98"></a>
 ### P-98 — Refreshing a revoked OAuth credential can reactivate it
 
-**Original severity:** MED. **Current:** Partial; local and hosted writes preserve revocation, cross-worker fence open. **Reassessed severity:** Medium.
+**Original severity:** MED. **Current:** Fixed; hosted credentials moved to D1 with the revoked guard inside each UPDATE. **Reassessed severity:** Medium.
 
 **What changed:** The SQLite registry preserves revoked status inside its UPDATE when secret rotation or health verification completes. The hosted KV store now does the same in both writes: a health update keeps `revoked` until an explicit status change, and a new `updateCredentialSecret` stores a renewed OAuth token with the same rule, so a hosted check no longer drops the refreshed token or reactivates a revoked credential. Explicit status restoration stays a separate operation; the connections token path already refuses a revoked credential before any refresh runs, on both stores.
 
 **Acceptance:** Hosted tests ran red first for health after revocation, secret replacement after revocation, and a real `checkCredential` over the hosted store revoked never, before and during refresh; a `describe.each` over both stores proves the token path refuses a revoked credential without calling refresh. Committed as 5de6378c2d and 43f2067fdb.
 
-**Remaining:** The hosted store still rewrites the whole KV blob without a cross-worker fence. Closing the finding needs an authoritative atomic owner: D1 already holds hosted connection state with conditional updates, or a Durable Object; which one is a design decision. The Connections `Re-verify` action restores `available` on both stores by explicit user click, which the audit treats as sanctioned restoration.
+**Atomic owner:** Hosted credentials now live in the D1 table `hosted_provider_credentials` (migration 0039), one row per partition and provider, with the secret as the same `cenc1` envelope in a column. Health and secret updates are single statements carrying `case when status = 'revoked' then 'revoked' else … end`, so a revocation landing between another worker's read and write survives. The KV credential blob, its binding and deploy rendering, and the Node REST-KV backend are deleted. A two-store race test proves the guard, and removing the two SQL guards turns eight tests red. The Connections `Re-verify` action restores `available` by explicit user click, which the audit treats as sanctioned restoration. Committed as 1ed25c7c4f.
 
 **Current code:** [packages/claxedo-local-server/src/credentials/routes/credential.ts](../packages/claxedo-local-server/src/credentials/routes/credential.ts); [packages/claxedo-server-core/src/credentials/registry.ts](../packages/claxedo-server-core/src/credentials/registry.ts). [Concept walkthrough B](#flow-b).
 
@@ -1921,11 +1923,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-120"></a>
 ### P-120 — Node encrypted backend shares one deployment key partition
 
-**Original severity:** LOW. **Current:** Present design assumption. **Reassessed severity:** Low hardening.
+**Original severity:** LOW. **Current:** Closed by removal. **Reassessed severity:** Low.
 
-**What happens and why it matters:** backend-registry uses a configured org id or deployment for the secret backend. Metadata lookup still scopes credentials by org, so this is not a demonstrated cross-org read by itself.
+**What changed:** The finding described the Node process's Cloudflare KV backend, selected by `CLAXEDO_CF_KV_URL` and encrypting every org under the partition `CLAXEDO_CREDENTIALS_ORG_ID` or `deployment`. No deployment ever set that variable. That backend and both variables are deleted; a Node process always uses the encrypted file store. The hosted worker was never affected: its store is built per verified org and derives a per-org subkey from the KEK, unchanged by the move to D1. Committed as 1ed25c7c4f.
 
-**Fix and acceptance:** If multi-tenant cryptographic separation is required, carry authoritative org identity into the backend API and key derivation. Test identical ids in distinct org scopes.
+**Ruling (2026-09-21):** the file store is one key per machine by contract. A self-hosted node serves every org from one operator's disk, so per-org subkeys would not separate anything that operator does not already hold; the comment at the backend selection point in `backend-registry.ts` states this. Revisit only for a shared self-hosted box whose tenants do not trust the operator, which is not a product shape that exists.
 
 **Current code:** [packages/claxedo-server-core/src/credentials/backend-registry.ts](../packages/claxedo-server-core/src/credentials/backend-registry.ts). [Concept walkthrough B](#flow-b).
 
