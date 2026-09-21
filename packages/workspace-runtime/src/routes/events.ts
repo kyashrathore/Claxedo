@@ -6,6 +6,7 @@ import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
 import { sep } from "node:path"
+import { errorBody } from "./error-body"
 import { realDirectoryPath } from "../real-directory"
 import { registeredWorkspaceDirectories } from "../target"
 import type { RuntimeEventHub } from "../runtime-event-hub"
@@ -245,6 +246,18 @@ type OpenedWorkspaceEventStream = {
   subscribe(listener: (event: StreamFrame) => unknown, terminate?: () => unknown): () => void
 }
 
+// The replay ring ids every frame `String(seq)`, so a cursor is decimal
+// digits and nothing else. The bootstrap frame echoes the presented cursor
+// into its `id:` line: one carrying CR/LF would inject fields there, so a
+// malformed cursor is refused rather than sanitized into a different resume
+// position than the caller asked for.
+function malformedEventStreamCursor(c: Context) {
+  const cursor = c.req.header("last-event-id")
+  return cursor !== undefined && !/^\d+$/.test(cursor)
+    ? c.json(errorBody("event_stream_cursor_invalid", "Last-Event-ID is not a cursor this stream issues"), 400)
+    : undefined
+}
+
 /**
  * Writes an opened event stream as SSE. The one writer behind every
  * `wr/events` connection: a workspace runtime's own stream, and the host
@@ -269,6 +282,8 @@ type OpenedWorkspaceEventStream = {
  * redelivered on the next reconnect instead of skipped.
  */
 export function streamWorkspaceEventFrames(c: Context, opened: OpenedWorkspaceEventStream) {
+  const rejected = malformedEventStreamCursor(c)
+  if (rejected) return rejected
   return streamSSE(c, async (stream) => {
     const heartbeat = { type: "heartbeat" } as const
     const resumeFrom = c.req.header("last-event-id")
@@ -447,6 +462,11 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
 
   const handler = async (c: Context) => {
+    // Judged before admission: `open()`'s scope reservation is released only
+    // by `subscribe()`, and a held lease only by a connection's release — a
+    // request refused after either would leave both behind.
+    const rejected = malformedEventStreamCursor(c)
+    if (rejected) return rejected
     const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy)
     if (isSessionEventScopeResponse(scope)) return scope
     const admitted = await (options.principal?.(c) ?? eventDeliveryPrincipal(c))

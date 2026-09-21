@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { isRetainedWorkspaceEventFrame, workspaceEventsHandler, type WorkspaceEventStreamFrame } from "./events"
@@ -415,6 +415,41 @@ describe("wr/events — one stream per workspace runtime", () => {
     const text = await readUntil(await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": "1" }, signal: controller.signal }), "prt-new")
     controller.abort()
     expect(text).not.toContain("prt-old")
+  })
+
+  test.each(["abc", "1 data: injected", "-1", "1.5", "0x10"])(
+    "a Last-Event-ID outside the stream's cursor grammar is refused 400, not opened as a stream (%j)",
+    async (cursor) => {
+      const { app } = harness({})
+      const response = await app.request("http://localhost/api/wr/events", { headers: { "Last-Event-ID": cursor } })
+      expect(response.status).toBe(400)
+      expect(response.headers.get("content-type")).not.toContain("text/event-stream")
+      expect(await response.json()).toEqual({
+        error: { code: "event_stream_cursor_invalid", message: "Last-Event-ID is not a cursor this stream issues" },
+      })
+    },
+  )
+
+  test("a Last-Event-ID carrying CR/LF is refused before admission touches anything else", async () => {
+    // Fetch Headers cannot transmit CR/LF in a value; drive the handler with
+    // the cursor a less strict adapter would surface. The context offers only
+    // what a rejection needs, so any admission work attempted first throws.
+    const handler = workspaceEventsHandler({
+      directory: DIRECTORY,
+      workspaceId: WORKSPACE_ID,
+      eventHub: createRuntimeEventHub(),
+      bus: createBus<WorkspaceRuntimeEvent>(),
+    })
+    const cursor = "1\r\nevent: injected\ndata: {}\n\nid: 9"
+    const c = {
+      req: { header: (name: string) => (name === "last-event-id" ? cursor : undefined) },
+      json: (body: unknown, status?: number) => Response.json(body, { status: status ?? 200 }),
+    } as unknown as Context
+    const response = await handler(c)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: { code: "event_stream_cursor_invalid", message: "Last-Event-ID is not a cursor this stream issues" },
+    })
   })
 
   test("a session-scoped reader's first frame rides the lease it was admitted with, not the request's token", async () => {
