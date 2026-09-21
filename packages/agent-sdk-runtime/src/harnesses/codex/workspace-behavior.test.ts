@@ -217,6 +217,12 @@ async function waitForLog(log: string, match: (row: Record<string, unknown>) => 
   throw new Error(`Timed out waiting for fake Codex log ${log}`)
 }
 
+/**
+ * Deliberately shorter than a retirement's TERM-then-KILL escalation: by the
+ * time disposal resolves, the process it owned is already gone. A budget wide
+ * enough to cover the escalation would pass even if disposal went back to
+ * returning while its retirement ran on in the background.
+ */
 async function waitForProcessExit(pid: number) {
   for (let attempt = 0; attempt < 300; attempt++) {
     try {

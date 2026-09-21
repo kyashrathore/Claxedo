@@ -8,7 +8,7 @@ import {
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
 } from "../../process-observer"
-import { asRecord, isRecord } from "@claxedo/helpers/guards"
+import { asRecord } from "@claxedo/helpers/guards"
 import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
 import { isWindowsShimBinary } from "../shared/windows-process"
 import {
@@ -17,6 +17,7 @@ import {
   RecoveryCodedError,
   type LaunchOwnershipStore,
   type OwnedLaunch,
+  type CreationIdentity,
   type RequestDeadline,
   type RetirementResult,
 } from "../../launch"
@@ -158,6 +159,8 @@ export class CodexAppServerProcess {
     workspaceId: string
     sessionId?: string
     budgets?: Partial<RecoveryBudgets>
+    /** Called with what retiring a failed startup's process established, and whose launch it was. */
+    onRetired?: (result: RetirementResult, identity: CreationIdentity) => void
   }) {
     if (input.signal?.aborted) throw new Error("Codex app-server startup was cancelled")
     const budgets = { ...DEFAULT_RECOVERY_BUDGETS, ...input.budgets }
@@ -185,6 +188,8 @@ export class CodexAppServerProcess {
       input.processObserver,
       input.mcp,
     )
+    // Fire-and-forget: the abort path's retirement is awaited by the `catch`
+    // below, which the aborted `initialize` reaches on the same signal.
     const onAbort = () => void server.dispose()
     try {
       input.signal?.addEventListener("abort", onAbort, { once: true })
@@ -196,9 +201,10 @@ export class CodexAppServerProcess {
       server.observation.update({ lifecycle: "ready" })
       return server
     } catch (cause) {
-      // The caller is waiting on a failed startup; teardown runs on its own and
-      // `dispose()` never rejects.
-      void server.dispose()
+      // Awaited, not fired and forgotten: a startup that failed must not leave
+      // its process running behind the caller it just rejected. `dispose()`
+      // never rejects, and it answers with what the retirement established.
+      input.onRetired?.(await server.dispose(), server.launchIdentity)
       throw cause
     } finally {
       input.signal?.removeEventListener("abort", onAbort)

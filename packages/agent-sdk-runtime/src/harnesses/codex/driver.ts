@@ -7,9 +7,6 @@ import {
 } from "@claxedo/agent-event-runtime"
 import {
   codexAppServerAdapter,
-  codexCollabAgentCall,
-  codexSubagentActivity,
-  codexStartedSubagent,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
 import { projectCodexThreadNotification } from "./thread-projection"
 import type { AgentConfigOption } from "../../index"
@@ -59,7 +56,7 @@ import {
   startTurnWithThreadRecovery,
 } from "./protocol"
 import { createTurnStopRecord } from "../shared/cancellation-facts"
-import { retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
+import { retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore } from "../../launch"
 import { createLaunchRetention } from "./launch-retention"
 
 export {
@@ -560,6 +557,12 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       // Empty when the composition named no workspace: a launch nobody will
       // reconcile is worth saying so, and inventing an id would hide it.
       workspaceId: this.options.workspaceId ?? "",
+      // A startup that failed retires its own process; what that established
+      // is this driver's to hold, because an unresolved one must refuse the
+      // next launch exactly as a failed reap does.
+      onRetired: (result, identity) => {
+        if (!retirementSettled(result)) this.retained.hold(identity, result)
+      },
       onClose: (err) => {
         if (this.process === started) {
           this.processGoalUnsubscribe?.()
