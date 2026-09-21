@@ -165,9 +165,45 @@ function pluginMcpServers(input: Record<string, unknown>): Record<string, Mcp.Se
   return servers
 }
 
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
 function eventSessionID(event: ProjectedEvent): string | undefined {
   const data = asRecordOrEmpty(event.data)
   return typeof data.sessionID === "string" ? data.sessionID : undefined
+}
+
+/**
+ * Watches the engine's own event stream for this session's turn ending.
+ *
+ * `abandon` exists because a refused interrupt leaves nothing to wait for; the
+ * subscription must come off the pump either way.
+ */
+function engineTurnTerminal(
+  runtime: OpenCodeRuntime,
+  sessionID: string,
+  deadline: { signal: AbortSignal; deadlineAt: number },
+) {
+  let finish!: (ended: boolean) => void
+  const settled = new Promise<boolean>((resolve) => { finish = resolve })
+  const unsubscribe = runtime.events.subscribe((event) => {
+    if (eventSessionID(event) !== sessionID) return
+    if (terminal(event, sessionID)) end(true)
+  })
+  const timer = setTimeout(() => end(false), Math.max(0, deadline.deadlineAt - Date.now()))
+  const onAbort = () => end(false)
+  deadline.signal.addEventListener("abort", onAbort, { once: true })
+  let ended = false
+  function end(reached: boolean) {
+    if (ended) return
+    ended = true
+    clearTimeout(timer)
+    deadline.signal.removeEventListener("abort", onAbort)
+    unsubscribe()
+    finish(reached)
+  }
+  return { settled, abandon: () => end(false) }
 }
 
 function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamEvent | undefined {
@@ -495,12 +531,39 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  async cancelTurn(binding: AgentExecutionBinding): Promise<AdapterCancelOutcome> {
+  async cancelTurn(
+    binding: AgentExecutionBinding,
+    input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number },
+  ): Promise<AdapterCancelOutcome> {
     const runtime = await this.engine()
-    await runtime.sessions.interrupt(this.scope(binding.directory), binding.sessionId)
-    // The engine acknowledged the interrupt. Its own turn loop decides when the
-    // turn ends, and this call sees neither that nor what the tools left.
-    return { execution: "unknown", cleanup: "unknown" }
+    // The engine runs its tools in process and publishes no inventory of what
+    // a turn started, so nothing readable here establishes cleanup.
+    const cleanup = "unknown" as const
+    // Subscribed BEFORE the interrupt: the engine's terminal for this session
+    // can be published while the interrupt call is still returning, and a
+    // subscription opened afterwards would miss it and report `running`.
+    const terminal = engineTurnTerminal(runtime, binding.sessionId, input)
+    try {
+      await runtime.sessions.interrupt(this.scope(binding.directory), binding.sessionId)
+    } catch (error) {
+      terminal.abandon()
+      return {
+        execution: "unknown",
+        cleanup,
+        error: { code: "provider_unreachable", message: `OpenCode refused the interrupt for session ${binding.sessionId}: ${errorText(error)}` },
+      }
+    }
+    // Acknowledging the interrupt only means the engine's turn loop was asked.
+    // Its own terminal event is what says the turn ended.
+    if (await terminal.settled) return { execution: "terminal", cleanup }
+    return {
+      execution: "running",
+      cleanup,
+      error: {
+        code: "cancellation_timeout",
+        message: `OpenCode accepted the interrupt for session ${binding.sessionId} but published no terminal for the turn before the deadline.`,
+      },
+    }
   }
 
   async forkSession(binding: AgentExecutionBinding, messageId: string) {

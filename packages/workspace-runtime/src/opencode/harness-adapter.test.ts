@@ -420,4 +420,81 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     await adapter.listAgents(directory)
     expect(fake.launchWrites).toEqual([{ skills: [], mcp: {} }])
   })
+
+  test("an accepted interrupt is not terminal until the engine publishes the turn's terminal", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    const turn = binding(directory, "ses_1")
+    const events: unknown[] = []
+    void (async () => { for await (const event of adapter.executeTurn(turn, promptInput("work", "1"))) events.push(event) })()
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    // The engine accepts the interrupt and then says nothing more about the
+    // turn, which is exactly the case an acknowledgement would misreport.
+    const running = await adapter.cancelTurn(turn, {
+      turnId: "caller-user-1",
+      assistantMessageId: "caller-assistant-1",
+      signal: new AbortController().signal,
+      deadlineAt: Date.now() + 40,
+    })
+    expect(fake.sessions.interrupt).toHaveBeenCalledTimes(1)
+    expect(running).toEqual({
+      execution: "running",
+      cleanup: "unknown",
+      error: { code: "cancellation_timeout", message: expect.stringContaining("published no terminal") },
+    })
+
+    // The same interrupt, with the engine's terminal arriving inside the
+    // deadline, is the only thing that makes the turn terminal.
+    const stopping = adapter.cancelTurn(turn, {
+      turnId: "caller-user-1",
+      assistantMessageId: "caller-assistant-1",
+      signal: new AbortController().signal,
+      deadlineAt: Date.now() + 5_000,
+    })
+    await until(() => fake.sessions.interrupt.mock.calls.length === 2)
+    fake.finish("ses_1")
+    expect(await stopping).toEqual({ execution: "terminal", cleanup: "unknown" })
+  })
+
+  test("an interrupt the engine refuses reports the refusal, never a stopped turn", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    const turn = binding(directory, "ses_1")
+    fake.sessions.interrupt.mockImplementationOnce(async () => { throw new Error("engine is wedged") })
+
+    expect(await adapter.cancelTurn(turn, {
+      turnId: "caller-user-1",
+      assistantMessageId: "caller-assistant-1",
+      signal: new AbortController().signal,
+      deadlineAt: Date.now() + 5_000,
+    })).toEqual({
+      execution: "unknown",
+      cleanup: "unknown",
+      error: { code: "provider_unreachable", message: expect.stringContaining("engine is wedged") },
+    })
+  })
+
+  test("stopping one session's turn leaves another session's turn alone", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    const a = binding(directory, "ses_a")
+    const b = binding(directory, "ses_b")
+
+    const stopping = adapter.cancelTurn(a, {
+      turnId: "caller-user-1",
+      assistantMessageId: "caller-assistant-1",
+      signal: new AbortController().signal,
+      deadlineAt: Date.now() + 5_000,
+    })
+    await until(() => fake.sessions.interrupt.mock.calls.length === 1)
+    // B's terminal must not settle A's cancellation.
+    fake.finish("ses_b")
+    fake.finish("ses_a")
+    expect(await stopping).toEqual({ execution: "terminal", cleanup: "unknown" })
+    expect(fake.sessions.interrupt.mock.calls.at(-1)?.[1]).toBe("ses_a")
+  })
 })
