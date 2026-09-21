@@ -258,7 +258,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 60 | Next fixes / validation | [P-127 — Relay target parser accepts unrestricted URL strings](#finding-p-127) | LOW-MED → Medium, insecure target configuration | Fixed; target validation | Parse and validate allowed schemes/destinations when resolving a target and before forwarding; use secure transport outside explicitly trusted local topology. |
 | 61 | Next fixes / validation | [P-61 — Checked path and forwarded path are different](#finding-p-61) | HIGH → Medium, malicious-relay prerequisite | Fixed; HTTP/WebSocket target checks passed | Retain canonical path construction and real relay HTTP/file/PTY acceptance. |
 | 62 | Scheduled fixes | [P-110 — Auth adapter traffic can miss the product request limiter](#finding-p-110) | MED-LOW → Low; edge deployment conditional | Fixed; focused worker and workerd tests | Keep the public-auth budget ahead of auth dispatch, keyed on the edge-stamped client IP. |
-| 63 | Scheduled fixes | [P-35 — Broker work is not independently bounded](#finding-p-35) | LOW → Low-Medium | Present | Add timeouts and concurrency limits around authority resolution and upstream fetch; reject conflicting credential presentations. |
+| 63 | Scheduled fixes | [P-35 — Broker work is not independently bounded](#finding-p-35) | LOW → Low-Medium | Fixed; bounded authority/upstream tests | Authority calls race a timeout; a counted lane bounds concurrent upstream work; conflicting credential presentations are refused. |
 | 64 | Scheduled fixes | [P-76 — Device polling can hold a request indefinitely](#finding-p-76) | LOW → Low-Medium | Fixed; focused deadline tests | Bound total polling by the provider expiry and request cancellation, then remove pending state. |
 | 65 | Scheduled fixes | [P-128 — Anonymous first traffic influences relay room placement](#finding-p-128) | LOW-MED → Low-Medium availability | Fixed; authenticated placement | Resolve region from authoritative workspace placement before object creation, or authenticate the hint. |
 | 66 | Scheduled fixes | [P-71 — Provider command strings contain secrets](#finding-p-71) | MED-LOW → Low-Medium, provider logging dependent | Fixed; focused driver tests | Use provider secret/env APIs or private files/stdin, avoid secrets in command strings and redact diagnostics. |
@@ -291,7 +291,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 93 | Scheduled fixes | [R-1 — A header cannot prove relay provenance](#finding-r-1) | MED → Low, accepted | Accepted; the marker is provenance, the runtime enforces authorization itself | None; any relay-only policy must also live on the runtime. |
 | 94 | Scheduled fixes | [P-15 — Relay forwards upstream cookie and CORS headers too broadly](#finding-p-15) | MED-LOW → Low, conditional | Fixed; header constraint | Strip upstream Set-Cookie and all access-control headers at the shared relay boundary, then emit only relay-owned CORS. |
 | 95 | Scheduled fixes | [P-38 — Protocol validators accept more than transport policy should](#finding-p-38) | LOW → Low; authentication impact conditional | Fixed; focused protocol/adapter tests | Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. |
-| 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Mixed | Compensate failed writes or persist both atomically, require explicit route policy, and serialize device completion. |
+| 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Fixed; compensation, required gate, serialized polls | Failed upserts compensate the credential write; `gate` is a required option; device polls serialize per attempt; auth-failure reports fenced to `available`. |
 | 97 | Scheduled fixes | [P-42 — Adapter identifiers and transport metadata need validation](#finding-p-42) | LOW → Low; HTTP transport conditional | Fixed; grammar + destination + redaction tests | Opaque-id grammar bars dot segments; resolved URLs pinned to the configured origin/path; diagnostics redacted at every yield. |
 | 98 | Scheduled fixes | [P-43 — CLI-generated files trust operator strings](#finding-p-43) | LOW → Low; transport risk separate | Fixed; focused validation/serialization tests | Validate app/region identifiers, serialize TOML safely and escape systemd syntax. |
 | 99 | Scheduled fixes | [P-55 — Channel approval parsing and administration need tightening](#finding-p-55) | INFO → Low; authorization effect conditional | Mixed | Use exact structured action values, apply the same access/rate/dedup checks on approvals, and atomically establish pairing bindings. |
@@ -314,7 +314,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 116 | Hardening / latent | [P-13 — Cloudflare WebSockets lack the Bun origin check](#finding-p-13) | MED → Low hardening | Fixed; origin gate | Share the origin policy across both adapters and test missing, trusted and hostile origins with and without a valid token. |
 | 117 | Hardening / latent | [P-123 — MCP loopback helper does not inspect the socket peer](#finding-p-123) | LOW-MED → Low hardening; exploit unconfirmed | Fixed; socket-peer gate | Use server-stamped peer provenance in network mounts, retain runtime credential verification, and test forged Host/Origin through the actual provider ingress. |
 | 118 | Hardening / latent | [P-140 — MCP optional audience and unused permission claim are separate](#finding-p-140) | INFO → Low hardening/Informational | Fixed; focused verifier tests | Require the resource audience at the canonical OAuth verifier if that is the contract; remove unused claims or mint/verify them end to end. |
-| 119 | Hardening / latent | [P-56 — Broker response and token observations overstate some effects](#finding-p-56) | INFO → Low hardening; no broker bypass established | Mixed | Retain per-request runtime validation, review forwarded response headers and query credential slots, and verify specific advisories against installed use. |
+| 119 | Hardening / latent | [P-56 — Broker response and token observations overstate some effects](#finding-p-56) | INFO → Low hardening; no broker bypass established | Fixed; credential slots stripped | Forwarded responses strip every credential slot the binding owns; query credential slots are deleted; per-request runtime validation retained. |
 | 120 | Hardening / latent | [P-120 — Node encrypted backend shares one deployment key partition](#finding-p-120) | LOW → Closed by removal | The Node KV backend and its deployment partition no longer exist; Node is one key per machine by contract | None. |
 | 121 | Hardening / latent | [P-114 — Command-path scanner misses redirection syntax](#finding-p-114) | LOW → Low; not a shell sandbox | Fixed; focused scanner tests | Use actual process/filesystem isolation where confinement is promised; avoid claiming a regex is a sandbox. |
 | 122 | Hardening / latent | [P-118 — Reading a cloud connection can start compute](#finding-p-118) | LOW-MED → Low | Fixed; reads never provision | Keep `sandboxManager.ensure` behind the explicit POST connect; reads resolve the lease via `target` and report stopped/provisioning. |
@@ -985,11 +985,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-35"></a>
 ### P-35 — Broker work is not independently bounded
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low-Medium.
+**Original severity:** LOW. **Current:** Fixed; bounded authority/upstream tests. **Reassessed severity:** Low-Medium.
 
-**What happens and why it matters:** The broker verifies token/binding but upstream work inherits only request cancellation and has no own concurrency budget. The non-Bearer dual-header case does not forward the foreign credential, so it is not established credential confusion.
+**What changed:** Every authority round-trip races `authorityTimeoutMs` (default 10s) — a hung authority answers 503 instead of pinning the request. A counted concurrency lane (default 32) is held until the upstream body is spent, refused or abandoned; queued callers wait at most `upstreamTimeoutMs` then get 503. The upstream fetch is deadline-bounded to response headers while streamed bodies legitimately outlive it. Any non-`Bearer` `Authorization` — including a bare `Bearer` — is refused 401, closing the silent foreign-credential drop.
 
-**Fix and acceptance:** Add timeouts and concurrency limits around authority resolution and upstream fetch; reject conflicting credential presentations. Test a hanging authority and slow upstream with valid synthetic bindings.
+**Acceptance:** Tests cover non-Bearer/dual-header refusals, hanging authority → 503, upstream never reaching headers → 502, lane saturation → 503, lane held until stream spent. 45/45 broker tests.
 
 **Current code:** [packages/egress-broker/src/broker.ts](../packages/egress-broker/src/broker.ts). [Concept walkthrough H](#flow-h).
 
@@ -1051,11 +1051,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-41"></a>
 ### P-41 — Connection persistence and gates rely on composition
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed. **Reassessed severity:** Low.
 
-**What happens and why it matters:** Credential storage happens before connection upsert without transactional compensation, so failed upsert can leave a secret behind. Route defaults are permissive, but signed compositions supply gates; that default is not proof of a public unauthenticated route.
+**What changed:** A refused connection upsert now compensates the fresh credential write (`deleteByProvider`, best-effort) before rethrowing — the concurrent-connect race loser included; an existing row's own slot is deliberately preserved. `reportAuthFailure` is fenced to credentials currently `available`. `IntegrationsRouteOptions.gate` is required — no implicit allow-all; the hosted compositions pass explicit `gate: () => null` where upstream auth already ran. Device polls serialize per attempt through a promise queue; `peek` treats a `completing` entry as absent on both the in-memory and D1 stores. `timeoutFetch` pins `redirect: "manual"` for credential-bearing requests.
 
-**Fix and acceptance:** Compensate failed writes or persist both atomically, require explicit route policy, and serialize device completion. Test failed upsert, unauthorized auth-failure reports and concurrent completion.
+**Acceptance:** Tests cover refused-upsert compensation, existing-row preservation, the non-available report fence, concurrent polls producing one upstream call, gate-required refusal, cross-partition auth-failure 404 and redirect pinning. 242 connections tests.
 
 **Current code:** [packages/claxedo-connections/src/service.ts](../packages/claxedo-connections/src/service.ts); [packages/claxedo-connections/src/routes.ts](../packages/claxedo-connections/src/routes.ts); [packages/claxedo-connections/src/impls/fetch-timeout.ts](../packages/claxedo-connections/src/impls/fetch-timeout.ts). [Concept walkthrough D](#flow-d).
 
@@ -1218,11 +1218,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-56"></a>
 ### P-56 — Broker response and token observations overstate some effects
 
-**Original severity:** INFO. **Current:** Mixed. **Reassessed severity:** Low hardening; no broker bypass established.
+**Original severity:** INFO. **Current:** Fixed; credential slots stripped. **Reassessed severity:** Low hardening; no broker bypass established.
 
-**What happens and why it matters:** The broker strips the actual injected credential header and checks currentRuntime on each request. A token's one-hour maximum does not imply one hour of access after teardown. A jose version claim without identifying a reachable advisory is not a confirmed bug.
+**What changed:** Forwarded upstream responses now strip every credential slot the binding owns — injected header names plus `authorization`, all `API_KEY_HEADERS`, `set-cookie` and `content-encoding` — so e.g. `x-goog-api-key` cannot echo back. Query credential slots (`key`, `access_token`, `api_key`, `apikey`) are deleted from the forwarded query. Per-request `currentRuntime` validation retained; installed jose 6.2.4 has no reachable advisory (GHSA-hhhv-q57g-882q affects ≤4.15.4 JWE; we verify JWS only).
 
-**Fix and acceptance:** Retain per-request runtime validation, review forwarded response headers and query credential slots, and verify specific advisories against installed use. Test teardown with an otherwise unexpired token.
+**Acceptance:** Tests cover response-slot stripping, query-slot stripping and teardown with an otherwise unexpired token. 45/45 broker tests.
 
 **Current code:** [packages/egress-broker/src/broker.ts](../packages/egress-broker/src/broker.ts); [packages/egress-broker/src/token.ts](../packages/egress-broker/src/token.ts). [Concept walkthrough B](#flow-b).
 
