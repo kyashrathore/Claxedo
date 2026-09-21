@@ -371,6 +371,17 @@ describe("outcome wire form", () => {
     expect(serializeRecoveryOutcome(parseRecoveryOutcome(once))).toBe(once)
   })
 
+  test.each([
+    ["cancel_turn", machineTarget],
+    ["retire_harness", target],
+    ["drain_daemon", sessionTarget],
+    ["reconcile_session", harnessTarget],
+  ] as Array<[RecoveryAction, RecoveryTarget]>)("refuses a published %s operation against a %o target", (action, value) => {
+    const broken = { kind: "operation", operation: { ...operation, action, target: value } }
+    expect(codeOf(() => parseRecoveryOutcome(broken))).toBe("scope_mismatch")
+    expect(isRecoveryOutcome(broken)).toBe(false)
+  })
+
   test("a decoded value is accepted as well as the transport's text", () => {
     const outcome: RecoveryOutcome = { kind: "operation", operation }
     expect(parseRecoveryOutcome(JSON.parse(serializeRecoveryOutcome(outcome)))).toEqual(outcome)

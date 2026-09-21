@@ -492,10 +492,7 @@ export function parseRecoveryRequest(input: unknown): RecoveryRequest {
   if (typeof attempt !== "number" || !Number.isInteger(attempt) || attempt < 1) {
     throw new RecoveryContractError("invalid_attempt", "recovery attempt must be an integer of at least 1")
   }
-  const target = parseRecoveryTarget(row.target)
-  if (!RECOVERY_ACTION_SCOPES[row.action].includes(target.scope)) {
-    throw new RecoveryContractError("scope_mismatch", `recovery action ${row.action} cannot target a ${target.scope}`)
-  }
+  const target = scopedTarget(row.action, row.target)
   return {
     requestId,
     action: row.action,
@@ -566,7 +563,7 @@ export function parseRecoveryOperation(input: unknown): RecoveryOperation {
   return {
     operationId: requireRecoveryText(row.operationId, "invalid_operation", "operationId"),
     requestId: requireRecoveryText(row.requestId, "invalid_request_id", "requestId"),
-    target: parseRecoveryTarget(row.target),
+    target: scopedTarget(row.action, row.target),
     action: row.action,
     scopeRevision: requireRecoveryText(row.scopeRevision, "invalid_scope_revision", "scopeRevision"),
     attempt,
@@ -664,6 +661,15 @@ function parseScopePreview(input: unknown): RecoveryScopePreview {
     resources: row.resources.map((value) => requireRecoveryText(value, "invalid_refusal", "resource")),
     summary: requireRecoveryText(row.summary, "invalid_refusal", "summary"),
   }
+}
+
+/** The one place an action is checked against the owner its target names. */
+function scopedTarget(action: RecoveryAction, input: unknown): RecoveryTarget {
+  const target = parseRecoveryTarget(input)
+  if (!RECOVERY_ACTION_SCOPES[action].includes(target.scope)) {
+    throw new RecoveryContractError("scope_mismatch", `recovery action ${action} cannot target a ${target.scope}`)
+  }
+  return target
 }
 
 function parseNextAction(input: unknown): RecoveryNextAction {
