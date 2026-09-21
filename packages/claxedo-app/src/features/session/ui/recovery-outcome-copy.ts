@@ -1,4 +1,4 @@
-import type { RecoveryNextAction, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
+import type { RecoveryFacts, RecoveryNextAction, RecoveryOperationState, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import { turnStopped } from "@claxedo/agent-runtime-contract"
 
 /**
@@ -62,6 +62,25 @@ export function recoveryPanelReachable(input: {
     return true
   }
   return (input.retained?.operations ?? 0) > 0 || (input.retained?.failures ?? 0) > 0
+}
+
+/**
+ * The operations an owner is holding that a person could still act on.
+ *
+ * A completed operation stays inspectable for as long as its receipt is
+ * retained, so counting every operation would reopen the panel on every mount
+ * for minutes after a turn stopped cleanly. Only an operation whose own
+ * postcondition is unmet is unfinished business.
+ */
+export function unresolvedRecoveryOperations(
+  operations: readonly { state: RecoveryOperationState; facts: RecoveryFacts }[],
+): number {
+  return operations.filter((operation) =>
+    operation.state !== "succeeded"
+    && !(operation.facts.execution.value === "terminal"
+      && operation.facts.persistence.value === "committed"
+      && operation.facts.cleanup.value === "verified_clear")
+  ).length
 }
 
 export function describeRecoveryOutcome(outcome: RecoveryOutcome): RecoveryCopy {

@@ -1,7 +1,7 @@
 import { isRecoveryOutcome, type AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import { stopSessionInteraction } from "../../composer/ui/submit-abort"
 import { SessionRecoveryPanel, type SessionRecoveryClient } from "../session-recovery"
-import { recoveryPanelReachable } from "../recovery-outcome-copy"
+import { recoveryPanelReachable, unresolvedRecoveryOperations } from "../recovery-outcome-copy"
 import { sessionRecoveryCommand, subscribeSessionRecoveryCommand } from "../../store/session-status-dispatcher"
 import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -218,7 +218,7 @@ export function SessionComposerRegion(props: {
       .then((answer) => {
         if (abandoned || isRecoveryOutcome(answer.data)) return
         setRetainedRecovery({
-          operations: answer.data.operations.length,
+          operations: unresolvedRecoveryOperations(answer.data.operations),
           failures: answer.data.failures.length,
         })
       })

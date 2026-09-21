@@ -527,3 +527,66 @@ test("an owner that refuses inspection leaves a command the user can act on", as
   expect(sessionRecoveryCommand("inspect-refused")?.outcome).toEqual(refusal)
   expect(double.requests).toEqual([])
 })
+
+/** Yields until the predicate holds, so a submission in flight can be observed. */
+async function until(ready: () => boolean) {
+  for (let tick = 0; tick < 100; tick += 1) {
+    if (ready()) return
+    await new Promise((resolve) => setTimeout(resolve, 1))
+  }
+  throw new Error("condition never held")
+}
+
+describe("which cancellations join and which mint a new one", () => {
+  test("a plain Stop after a Retry opens its own request rather than joining the retry's", async () => {
+    clearSessionRecoveryCommand("join-intent")
+    const held: Array<(outcome: RecoveryOutcome) => void> = []
+    const double = clientDouble({
+      sessionID: "join-intent",
+      answer: () => new Promise<RecoveryOutcome>((resolve) => { held.push(resolve) }),
+    })
+
+    const retry = stopRunningTurn({
+      client: double.client,
+      sessionID: "join-intent",
+      retryOf: { operationId: "op_1", attempt: 1 },
+    })
+    await until(() => double.requests.length === 1)
+    const plain = stopRunningTurn({ client: double.client, sessionID: "join-intent" })
+    await until(() => double.requests.length === 2)
+
+    const [retried, stop] = double.requests
+    expect(retried.attempt).toBe(2)
+    expect(retried.linkedOperationId).toBe("op_1")
+    // A different intent under the retry's id would be refused as a conflict.
+    expect(stop.requestId).not.toBe(retried.requestId)
+    expect(stop.attempt).toBe(1)
+    expect(stop.linkedOperationId).toBeUndefined()
+
+    // The in-flight retry stays on screen: attempt 1 must not replace attempt 2.
+    expect(sessionRecoveryCommand("join-intent")?.attempt).toBe(2)
+    expect(sessionRecoveryCommand("join-intent")?.requestId).toBe(retried.requestId)
+
+    for (const resolve of held) resolve({ kind: "operation", operation: operation(retried, "needs_action", STOPPED_AND_PROVEN) })
+    await Promise.all([retry, plain])
+  })
+
+  test("two identical Stops in flight share one request id", async () => {
+    clearSessionRecoveryCommand("join-same")
+    const held: Array<(outcome: RecoveryOutcome) => void> = []
+    const double = clientDouble({
+      sessionID: "join-same",
+      answer: () => new Promise<RecoveryOutcome>((resolve) => { held.push(resolve) }),
+    })
+
+    const first = stopRunningTurn({ client: double.client, sessionID: "join-same" })
+    await until(() => double.requests.length === 1)
+    const second = stopRunningTurn({ client: double.client, sessionID: "join-same" })
+    await until(() => double.requests.length === 2)
+
+    expect(double.requests[1].requestId).toBe(double.requests[0].requestId)
+
+    for (const resolve of held) resolve({ kind: "operation", operation: operation(double.requests[0], "needs_action", STOPPED_AND_PROVEN) })
+    await Promise.all([first, second])
+  })
+})

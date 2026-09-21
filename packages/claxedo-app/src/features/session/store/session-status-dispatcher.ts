@@ -122,6 +122,7 @@ function createSessionNotificationDispatcher() {
     subscribeStatusMeta: (sessionID: string, listener: VoidFunction) => subscribe(byStatusMeta, sessionID, listener),
     subscribeRecoveryCommand: (sessionID: string, listener: VoidFunction) =>
       subscribe(byRecoveryCommand, sessionID, listener),
+    recoveryCommandListeners: (sessionID: string) => byRecoveryCommand.get(sessionID)?.size ?? 0,
   }
 }
 
@@ -372,6 +373,14 @@ export function subscribeSessionRecoveryCommand(sessionID: string, listener: Voi
   return sessionNotifications.subscribeRecoveryCommand(sessionID, listener)
 }
 
+/**
+ * Show a command the owner has accepted.
+ *
+ * A row still waiting for its answer is never replaced by an earlier attempt:
+ * a plain Stop landing while a retry is in flight would otherwise put attempt 1
+ * back on screen over attempt 2, and the retry's answer would then arrive
+ * against a row that no longer says it was asked for.
+ */
 export function startSessionRecoveryCommand(input: {
   sessionID: string
   requestId: string
@@ -379,12 +388,16 @@ export function startSessionRecoveryCommand(input: {
   attempt: number
   now?: number
 }) {
+  const current = sessionRecoveryCommand(input.sessionID)
+  const inFlight = current !== undefined && current.outcome === undefined && current.unreachable === undefined
+  if (inFlight && current.requestId !== input.requestId && current.attempt > input.attempt) return false
   writeRecoveryCommand(input.sessionID, {
     requestId: input.requestId,
     action: input.action,
     attempt: input.attempt,
     startedAt: input.now ?? Date.now(),
   })
+  return true
 }
 
 /**
@@ -426,6 +439,11 @@ function writeRecoveryCommand(sessionID: string, command?: SessionRecoveryComman
 
 function recoveryCommandKey(sessionID: string) {
   return shellDataKeys.sessionId(sessionID, RECOVERY_COMMAND_KEY_PART)
+}
+
+/** How many live readers this session's recovery command has, for leak checks. */
+export function sessionRecoveryCommandListenersForTest(sessionID: string) {
+  return sessionNotifications.recoveryCommandListeners(sessionID)
 }
 
 export function clearAllPromptSessionStatusTimeoutsForTest() {

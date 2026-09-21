@@ -9,7 +9,7 @@ import type {
   RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { SessionRecoveryPanel, type SessionRecoveryClient } from "./session-recovery"
-import { clearSessionRecoveryCommand, startSessionRecoveryCommand, settleSessionRecoveryCommand } from "../store/session-status-dispatcher"
+import { clearSessionRecoveryCommand, sessionRecoveryCommand, sessionRecoveryCommandListenersForTest, startSessionRecoveryCommand, settleSessionRecoveryCommand } from "../store/session-status-dispatcher"
 
 vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({
@@ -116,7 +116,7 @@ test("shows the three facts with the source and age the owner reported", async (
   expect(view.getByText("session.recovery.value.pending")).toBeTruthy()
   // source and the age in seconds, both from the evidence rather than now().
   expect(view.getAllByText("session.recovery.panel.source:codex,4").length).toBeGreaterThan(0)
-  expect(view.getByText("session.recovery.panel.health:degraded")).toBeTruthy()
+  expect(view.getByText("session.recovery.panel.health:session.recovery.health.degraded")).toBeTruthy()
 })
 
 test("a machine that cannot answer is shown as that, not as unknown facts", async () => {
@@ -244,4 +244,50 @@ test("the panel announces the result of an action politely", async () => {
 
   const live = view.container.querySelector('[aria-live="polite"]')
   await waitFor(() => expect(live?.textContent).toBe("session.recovery.panel.inspected"))
+})
+
+test("Dismiss puts away an answer the user has read", async () => {
+  clearSessionRecoveryCommand("ses_1")
+  startSessionRecoveryCommand({ sessionID: "ses_1", requestId: "req_1", action: "cancel_turn", attempt: 1 })
+  settleSessionRecoveryCommand({
+    sessionID: "ses_1",
+    requestId: "req_1",
+    outcome: { kind: "operation", operation: operation({ facts: facts("terminal", "unknown", "committed") }) },
+  })
+  const { view } = panel({})
+
+  const dismiss = await waitFor(() => view.getByRole("button", { name: "session.recovery.panel.dismiss" }))
+  dismiss.focus()
+  expect(document.activeElement).toBe(dismiss)
+  fireEvent.click(dismiss)
+
+  await waitFor(() => expect(sessionRecoveryCommand("ses_1")).toBeUndefined())
+  await waitFor(() => expect(view.queryByRole("status")).toBeNull())
+  expect(view.container.querySelector('[aria-live="polite"]')?.textContent).toBe("session.recovery.panel.dismissed")
+})
+
+// Dropping an in-flight row would leave the Stop outstanding with nothing on
+// screen saying so, and its answer would arrive against a row that is gone.
+test("a Stop still in flight offers no Dismiss", async () => {
+  clearSessionRecoveryCommand("ses_1")
+  startSessionRecoveryCommand({ sessionID: "ses_1", requestId: "req_1", action: "cancel_turn", attempt: 1 })
+  const { view } = panel({})
+
+  await waitFor(() => expect(view.getByText("session.recovery.panel.stopping")).toBeTruthy())
+  expect(view.queryByRole("button", { name: "session.recovery.panel.dismiss" })).toBeNull()
+  expect(sessionRecoveryCommand("ses_1")).toBeTruthy()
+})
+
+test("unmounting removes the command listener it registered", async () => {
+  clearSessionRecoveryCommand("ses_1")
+  const before = sessionRecoveryCommandListenersForTest("ses_1")
+  const { view } = panel({})
+  await waitFor(() => expect(view.getByRole("button", { name: "session.recovery.panel.inspect" })).toBeTruthy())
+  expect(sessionRecoveryCommandListenersForTest("ses_1")).toBe(before + 1)
+
+  view.unmount()
+
+  // A discarded release leaves the listener holding this panel's signal alive
+  // for the lifetime of the page, once per mount.
+  expect(sessionRecoveryCommandListenersForTest("ses_1")).toBe(before)
 })

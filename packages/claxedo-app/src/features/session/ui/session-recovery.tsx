@@ -1,4 +1,4 @@
-import { For, Show, createResource, createSignal } from "solid-js"
+import { For, Show, createEffect, createResource, createSignal, onCleanup } from "solid-js"
 import type {
   CleanupFact,
   ExecutionFact,
@@ -7,7 +7,10 @@ import type {
   RecoveryFactEvidence,
   RecoveryFacts,
   RecoveryOperation,
+  RecoveryAction,
+  RecoveryOperationState,
   RecoveryOutcome,
+  RecoveryPhase,
   RecoveryRequest,
   RecoveryTurnTarget,
 } from "@claxedo/agent-runtime-contract"
@@ -16,6 +19,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { useLanguage } from "@/platform/i18n/provider"
 import { RecoveryCommandFailure, stopRunningTurn } from "../composer/ui/submit-abort"
 import {
+  clearSessionRecoveryCommand,
   sessionRecoveryCommand,
   settleSessionRecoveryCommand,
   startSessionRecoveryCommand,
@@ -72,6 +76,40 @@ const CLEANUP_KEYS: Record<CleanupFact, DictionaryKey> = {
   unknown: "session.recovery.value.cleanupUnknown",
 }
 
+const HEALTH_KEYS: Record<SessionRecoveryInspection["health"]["status"], DictionaryKey> = {
+  ok: "session.recovery.health.ok",
+  degraded: "session.recovery.health.degraded",
+  unavailable: "session.recovery.health.unavailable",
+}
+
+const ACTION_KEYS: Record<RecoveryAction, DictionaryKey> = {
+  inspect: "session.recovery.action.inspect",
+  cancel_turn: "session.recovery.action.cancelTurn",
+  reconcile_session: "session.recovery.action.reconcileSession",
+  retire_harness: "session.recovery.action.retireHarness",
+  drain_daemon: "session.recovery.action.drainDaemon",
+  stop_daemon: "session.recovery.action.stopDaemon",
+  release_drain: "session.recovery.action.releaseDrain",
+}
+
+const STATE_KEYS: Record<RecoveryOperationState, DictionaryKey> = {
+  accepted: "session.recovery.state.accepted",
+  running: "session.recovery.state.running",
+  succeeded: "session.recovery.state.succeeded",
+  failed: "session.recovery.state.failed",
+  needs_action: "session.recovery.state.needsAction",
+}
+
+const PHASE_KEYS: Record<RecoveryPhase, DictionaryKey> = {
+  ack: "session.recovery.phase.ack",
+  provider_query: "session.recovery.phase.providerQuery",
+  graceful_cancel: "session.recovery.phase.gracefulCancel",
+  term_grace: "session.recovery.phase.termGrace",
+  kill_verify: "session.recovery.phase.killVerify",
+  reconcile: "session.recovery.phase.reconcile",
+  drain: "session.recovery.phase.drain",
+}
+
 const PERSISTENCE_KEYS: Record<PersistenceFact, DictionaryKey> = {
   committed: "session.recovery.value.committed",
   pending: "session.recovery.value.pending",
@@ -99,7 +137,11 @@ export function SessionRecoveryPanel(props: {
   const [busy, setBusy] = createSignal<"inspect" | "reconcile" | "retry">()
   const [announcement, setAnnouncement] = createSignal("")
   const [command, setCommand] = createSignal(sessionRecoveryCommand(props.sessionID))
-  subscribeSessionRecoveryCommand(props.sessionID, () => setCommand(sessionRecoveryCommand(props.sessionID)))
+  createEffect(() => {
+    const sessionID = props.sessionID
+    setCommand(sessionRecoveryCommand(sessionID))
+    onCleanup(subscribeSessionRecoveryCommand(sessionID, () => setCommand(sessionRecoveryCommand(sessionID))))
+  })
 
   const scope = () => (props.directory === undefined ? {} : { directory: props.directory })
 
@@ -159,6 +201,17 @@ export function SessionRecoveryPanel(props: {
   }
 
   const inspect = () => run("inspect", async () => language.t("session.recovery.panel.inspected"))
+
+  /**
+   * Put away an answer the user has read. Only a settled command can be put
+   * away: dismissing one still in flight would drop the only record that a
+   * Stop is outstanding, and its answer would then arrive with nowhere to land.
+   */
+  const dismiss = () => {
+    if (inFlight() || !commandCopy()) return
+    clearSessionRecoveryCommand(props.sessionID)
+    setAnnouncement(language.t("session.recovery.panel.dismissed"))
+  }
 
   /**
    * Reconciliation is narrowed to the admitted turn because that is the only
@@ -250,7 +303,7 @@ export function SessionRecoveryPanel(props: {
             </dl>
 
             <p class="text-12-regular">
-              {language.t("session.recovery.panel.health", { health: found.health.status })}
+              {language.t("session.recovery.panel.health", { health: language.t(HEALTH_KEYS[found.health.status]) })}
             </p>
             <Show when={found.queued > 0}>
               <p class="text-12-regular">{language.t("session.recovery.panel.queued", { count: found.queued })}</p>
@@ -272,9 +325,9 @@ export function SessionRecoveryPanel(props: {
                   {(operation) => (
                     <li>
                       {language.t("session.recovery.panel.operation", {
-                        action: operation.action,
-                        state: operation.state,
-                        phase: operation.phase,
+                        action: language.t(ACTION_KEYS[operation.action]),
+                        state: language.t(STATE_KEYS[operation.state]),
+                        phase: language.t(PHASE_KEYS[operation.phase]),
                         attempt: operation.attempt,
                       })}
                       <Show when={operation.receipt === "volatile"}>
@@ -291,6 +344,11 @@ export function SessionRecoveryPanel(props: {
               <Button type="button" disabled={busy() !== undefined} onClick={() => void inspect()}>
                 {language.t("session.recovery.panel.inspect")}
               </Button>
+              <Show when={commandCopy()}>
+                <Button type="button" disabled={busy() !== undefined} onClick={dismiss}>
+                  {language.t("session.recovery.panel.dismiss")}
+                </Button>
+              </Show>
               <Show
                 when={found.target}
                 keyed

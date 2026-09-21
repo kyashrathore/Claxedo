@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { CleanupFact, ExecutionFact, PersistenceFact, RecoveryOperation, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import { describeRecoveryOutcome, describeRecoveryUnreachable, recoveryPanelReachable, recoveryToastText } from "./recovery-outcome-copy"
+import { describeRecoveryOutcome, describeRecoveryUnreachable, recoveryPanelReachable, recoveryToastText, unresolvedRecoveryOperations } from "./recovery-outcome-copy"
 
 function outcome(
   execution: ExecutionFact,
@@ -179,5 +179,53 @@ describe("when a session offers recovery", () => {
       command: { outcome: outcome("terminal", "verified_clear", "committed") },
       retained: { operations: 0, failures: 2 },
     })).toBe(true)
+  })
+})
+
+describe("which retained operations still need a person", () => {
+  const op = (state: RecoveryOperation["state"], facts: RecoveryOperation["facts"]) => ({ state, facts })
+  const factsOf = (value: RecoveryOutcome) => (value.kind === "operation" ? value.operation.facts : undefined)!
+
+  // A receipt is retained for minutes after a clean stop. Counting it would
+  // reopen the panel on every mount over a turn nobody needs to act on.
+  test("an operation that reached its own postcondition is finished business", () => {
+    expect(unresolvedRecoveryOperations([
+      op("succeeded", factsOf(outcome("terminal", "verified_clear", "committed"))),
+    ])).toBe(0)
+    expect(unresolvedRecoveryOperations([
+      op("needs_action", factsOf(outcome("terminal", "verified_clear", "committed"))),
+    ])).toBe(0)
+  })
+
+  test("cleanup the harness could not prove is still unfinished business", () => {
+    expect(unresolvedRecoveryOperations([
+      op("needs_action", factsOf(outcome("terminal", "unknown", "committed"))),
+    ])).toBe(1)
+  })
+
+  test("an unsaved interruption and a running turn both count", () => {
+    expect(unresolvedRecoveryOperations([
+      op("needs_action", factsOf(outcome("terminal", "verified_clear", "pending"))),
+      op("needs_action", factsOf(outcome("running", "verified_clear", "committed"))),
+    ])).toBe(2)
+  })
+
+  // A timed-out attempt keeps its state while later evidence corrects its
+  // facts, so this shape is reachable. The facts are what a person would act
+  // on, and they say the turn is over and everything it held is gone.
+  test("an attempt that failed before the evidence came back clean leaves nothing to act on", () => {
+    expect(unresolvedRecoveryOperations([
+      op("failed", factsOf(outcome("terminal", "verified_clear", "committed"))),
+    ])).toBe(0)
+  })
+
+  test("an attempt that failed with its cleanup still unproven counts", () => {
+    expect(unresolvedRecoveryOperations([
+      op("failed", factsOf(outcome("terminal", "owned", "committed"))),
+    ])).toBe(1)
+  })
+
+  test("no operations is nothing to act on", () => {
+    expect(unresolvedRecoveryOperations([])).toBe(0)
   })
 })

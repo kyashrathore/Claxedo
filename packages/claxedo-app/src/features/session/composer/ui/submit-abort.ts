@@ -57,12 +57,23 @@ export class RecoveryCommandFailure extends Error {
 }
 
 /**
- * One request id per turn while its cancellation is in flight, so a user
- * clicking Stop twice joins the operation already running instead of opening a
- * second one against the same turn. A click after it settles mints a new id:
- * reusing the old one would read the finished attempt back rather than retry.
+ * The cancellation in flight for a turn, so a user clicking Stop twice joins it
+ * instead of opening a second operation against the same turn. A click after it
+ * settles mints a new id: reusing the old one would read the finished attempt
+ * back rather than retry.
+ *
+ * The intent is kept alongside the id because joining is only correct when the
+ * command is the same one. An owner compares the whole intent behind a repeated
+ * request id, so a plain Stop that reused a retry's id — a different attempt,
+ * linked to a different operation — would be refused as an intent conflict.
  */
-const cancellingTurns = new Map<string, string>()
+type CancellationInFlight = { requestId: string; attempt: number; linkedOperationId?: string }
+
+const cancellingTurns = new Map<string, CancellationInFlight>()
+
+function sameCancellationIntent(current: CancellationInFlight, next: Omit<CancellationInFlight, "requestId">) {
+  return current.attempt === next.attempt && current.linkedOperationId === next.linkedOperationId
+}
 
 export type StopRunningTurnResult =
   | { cancelled: false }
@@ -109,11 +120,16 @@ export async function stopRunningTurn(input: {
   if (input.expectedTurnId && target.turnId !== input.expectedTurnId) return { cancelled: false }
   const key = `${target.sessionId}:${target.turnId}:${target.ownerGeneration}`
   const retry = input.retryOf
-  const requestId = retry
-    ? `composer-stop:${crypto.randomUUID()}`
-    : cancellingTurns.get(key) ?? `composer-stop:${crypto.randomUUID()}`
-  const attempt = retry ? retry.attempt + 1 : 1
-  cancellingTurns.set(key, requestId)
+  const intent = {
+    attempt: retry ? retry.attempt + 1 : 1,
+    ...(retry ? { linkedOperationId: retry.operationId } : {}),
+  }
+  const joined = cancellingTurns.get(key)
+  const inFlight: CancellationInFlight = joined && sameCancellationIntent(joined, intent)
+    ? joined
+    : { requestId: `composer-stop:${crypto.randomUUID()}`, ...intent }
+  const { requestId, attempt } = inFlight
+  cancellingTurns.set(key, inFlight)
   startSessionRecoveryCommand({ sessionID: input.sessionID, requestId, action: "cancel_turn", attempt })
   try {
     const submitted = await input.client.session.recovery.submit({
@@ -125,7 +141,7 @@ export async function stopRunningTurn(input: {
         target,
         scopeRevision: target.ownerGeneration,
         attempt,
-        ...(retry ? { linkedOperationId: retry.operationId } : {}),
+        ...(inFlight.linkedOperationId ? { linkedOperationId: inFlight.linkedOperationId } : {}),
       },
     })
     settleSessionRecoveryCommand({ sessionID: input.sessionID, requestId, outcome: submitted.data })
@@ -137,7 +153,7 @@ export async function stopRunningTurn(input: {
     failSessionRecoveryCommand({ sessionID: input.sessionID, requestId, message: stopReachMessage(error) })
     throw error
   } finally {
-    cancellingTurns.delete(key)
+    if (cancellingTurns.get(key) === inFlight) cancellingTurns.delete(key)
   }
 }
 
