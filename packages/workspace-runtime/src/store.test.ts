@@ -3689,6 +3689,25 @@ void it("turnCoverage calls a finished turn complete against the id it was asked
   store.close()
 })
 
+void it("turnCoverage refuses a turn that belongs to another session rather than calling it unavailable", () => {
+  const store = new RuntimeStore(tmp())
+  turnFixture(store)
+  store.bindSession({ sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 1 })
+
+  // `unavailable` tells a caller the turn can never be covered, which would
+  // discharge the obligation s1 still owes for it.
+  assert.throws(
+    () => store.turnCoverage("s2", "u1"),
+    (error: unknown) => error instanceof AgentMessagePageError && error.status === 404,
+  )
+
+  // A turn no session journalled really is unanswerable.
+  const unknown = store.turnCoverage("s2", "u_never")
+  assert.equal(unknown.coverage, "unavailable")
+  assert.match(unknown.reason ?? "", /no turn u_never/)
+  store.close()
+})
+
 void it("turnCoverage reports a running turn partial and names no terminal for it", () => {
   const store = new RuntimeStore(tmp())
   turnFixture(store)

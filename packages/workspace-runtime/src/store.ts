@@ -4487,6 +4487,23 @@ export class RuntimeStore {
     })
 
     if (!evidence.started) {
+      // A turn this session never ran is not a turn that can never be covered:
+      // answering `unavailable` tells a caller to stop asking, and it would
+      // then discharge an obligation that another session still owes. Only a
+      // turn no session journalled is genuinely unanswerable.
+      const elsewhere = this.db
+        .prepare<{ session_id: string }>(
+          `
+          SELECT session_id FROM runtime_journal
+          WHERE kind = 'control' AND type = 'turn.start'
+            AND (assistant_message_id = ? OR user_message_id = ?)
+          LIMIT 1
+        `,
+        )
+        .get(turnId, turnId)
+      if (elsewhere) {
+        throw new AgentMessagePageError(404, `Turn ${turnId} does not belong to session ${sessionId}`)
+      }
       return answer("unavailable", { reason: `The journal records no turn ${turnId} for session ${sessionId}` })
     }
     if (replay.blocked) {
