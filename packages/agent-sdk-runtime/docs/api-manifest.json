@@ -108,25 +108,27 @@
   },
   "declarationHashes": {
     "@claxedo/agent-sdk-runtime": "72be477359aa9a8f2dc2a530de60cb4274d8e785e2d54657826230bcb9ccc6b0",
-    "@claxedo/agent-sdk-runtime/compat-events": "c0fab783d403f8b59215d8c74c02a4ad870bb4abba0d8a91c29f377cd56199c2",
-    "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
+    "@claxedo/agent-sdk-runtime/adapters": "f0ac0907681940a48c174d208d936d4a7f274efa341bd46a2a73136314dd9aaa",
     "@claxedo/agent-sdk-runtime/capabilities": "50b51b4bbe46ef5084927acd955ce5166d456ba2f4265dc87cd9e6441a0273f2",
-    "@claxedo/agent-sdk-runtime/runtime-event-hub": "bf32e973e3b31a443968a792c43639e35233abebdd7d3a14f14707b0fb1aa5c8",
-    "@claxedo/agent-sdk-runtime/sse": "4fa1dc17b98bee5189e96b860160be0ed0206a02ab1c40587f56356870585870",
-    "@claxedo/agent-sdk-runtime/provider-projection": "33dbad94d6acff40035217f18ba011dc95ef78a4af1d9d9bb27e6776e1207bba",
-    "@claxedo/agent-sdk-runtime/mcp-resolver": "9ee49e91a385d15d6b2b82b8b9fa9045676c2f51dba06f59b65ba5c1c06f7ecf",
-    "@claxedo/agent-sdk-runtime/subagent-admission": "bd0fe2d5edf46fd1d30fa352393d3218196254fb2306c5013ba9e174b06ff9c2",
+    "@claxedo/agent-sdk-runtime/compat-events": "c0fab783d403f8b59215d8c74c02a4ad870bb4abba0d8a91c29f377cd56199c2",
     "@claxedo/agent-sdk-runtime/harnesses": "43bf5ecc9ebd57bd8244ba28d3cd7373f065edfad7d2087902be44a52bc9d9cc",
     "@claxedo/agent-sdk-runtime/harnesses/acp": "803ef0081b3d2e62be948042c0643c8e2160ad71f32f9669664d63f78099772e",
     "@claxedo/agent-sdk-runtime/harnesses/claude": "64d595fd32b88807f4eaae7913852a31afb33c98b94a8d279b8dfd685be9a14d",
     "@claxedo/agent-sdk-runtime/harnesses/codex": "18beef8d7350edcbd29727c10bd8d58ba3f3d81bb16d951cd7f45bc680389099",
     "@claxedo/agent-sdk-runtime/harnesses/cursor": "ff3e4c37a0f1a9448c91580a98f0688ad49688ab370ae64e2f0c7085af5358df",
     "@claxedo/agent-sdk-runtime/harnesses/pi": "f37073f6cd2818b9c9d2d9a6e639265cbe7432bf16c8ded0d17fd427aa104f39",
-    "@claxedo/agent-sdk-runtime/adapters": "f0ac0907681940a48c174d208d936d4a7f274efa341bd46a2a73136314dd9aaa",
+    "@claxedo/agent-sdk-runtime/launch": "e3303181c984906b2487d3a926fa28e0ef57df7d58c8f07657aefb51c32a56e6",
+    "@claxedo/agent-sdk-runtime/launch-gate-child": "6d47b7b230af3c269a751e94ffaf083f98a42d0c6824142f73711ca9ee7eadc4",
+    "@claxedo/agent-sdk-runtime/mcp-resolver": "9ee49e91a385d15d6b2b82b8b9fa9045676c2f51dba06f59b65ba5c1c06f7ecf",
     "@claxedo/agent-sdk-runtime/message-page": "72be477359aa9a8f2dc2a530de60cb4274d8e785e2d54657826230bcb9ccc6b0",
+    "@claxedo/agent-sdk-runtime/provider-projection": "33dbad94d6acff40035217f18ba011dc95ef78a4af1d9d9bb27e6776e1207bba",
+    "@claxedo/agent-sdk-runtime/runtime-event-hub": "bf32e973e3b31a443968a792c43639e35233abebdd7d3a14f14707b0fb1aa5c8",
+    "@claxedo/agent-sdk-runtime/sse": "4fa1dc17b98bee5189e96b860160be0ed0206a02ab1c40587f56356870585870",
+    "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
     "@claxedo/agent-sdk-runtime/stores/memory": "dd058c9df07fd5e6e99ac97e52a1249e724f9e50372dd36abb7caa52984ec972",
+    "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311",
     "@claxedo/agent-sdk-runtime/stores/sqlite": "65648a54dffa86025648b342a0921690af76c990779bd2ce80520cf0248ca6a7",
-    "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
+    "@claxedo/agent-sdk-runtime/subagent-admission": "bd0fe2d5edf46fd1d30fa352393d3218196254fb2306c5013ba9e174b06ff9c2"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [
@@ -145,15 +147,19 @@
       "GOAL_ACTIONS",
       "GOAL_OPTIONAL_FIELDS",
       "GoalCapabilityError",
-      "PermissionCeilingError",
-      "ProviderCredentialUnavailableError",
-      "RUNTIME_GOAL_STATUSES",
       "HARNESS_EFFORT_LEVELS",
       "HARNESS_INSTRUCTION_CHANNELS",
       "IMMUTABLE_SESSION_CONFIG_FIELDS",
       "NO_HARNESS_EFFORT",
+      "PermissionCeilingError",
+      "ProviderCredentialUnavailableError",
+      "ProviderProjectionExpiredError",
+      "RUNTIME_GOAL_STATUSES",
       "SESSION_INSTRUCTIONS_MAX_BYTES",
+      "UnknownHostSubagentKeyError",
+      "acceptsSessionTitle",
       "admitSessionInstructions",
+      "boundSessionTitleSource",
       "chunk",
       "classifyFirstTurnError",
       "comparePermissionLevels",
@@ -183,8 +189,10 @@
       "isAutoLevel",
       "isHarnessEffortLevel",
       "isPermissionCeilingError",
+      "isProviderUnavailable",
       "isRuntimeGoalStatus",
       "live",
+      "liveProviderBinding",
       "modelConfigOption",
       "narrowerPermissionLevel",
       "normalizeAgentHarnessTransport",
@@ -194,7 +202,8 @@
       "parseStoredSessionModelGroup",
       "permissionCeilingAdmits",
       "permissionModeLevel",
-      "isProviderUnavailable",
+      "projectionRenewalDue",
+      "projectionRenewalDueAt",
       "providerBinding",
       "providerProjection",
       "providerProjectionKey",
@@ -204,17 +213,11 @@
       "requireGoalAction",
       "requireGoalResource",
       "resolveSessionModel",
-      "safeAgentProcessDescriptor",
-      "widestPermissionModeUnder",
-      "ProviderProjectionExpiredError",
-      "liveProviderBinding",
-      "projectionRenewalDueAt",
       "resolveTurnSystem",
+      "safeAgentProcessDescriptor",
       "sessionInstructionsByteLength",
       "sessionModelGroupJson",
-      "projectionRenewalDue",
-      "acceptsSessionTitle",
-      "boundSessionTitleSource"
+      "widestPermissionModeUnder"
     ],
     "@claxedo/agent-sdk-runtime/harnesses": [
       "ProcessLifecycleDisposedError",
@@ -242,6 +245,75 @@
     ]
   },
   "symbols": {
+    "AgentSession": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Normalized host-visible session shape."
+    },
+    "CompatEvent": {
+      "status": "compatibility",
+      "import": "@claxedo/agent-sdk-runtime/compat-events",
+      "kind": "type",
+      "purpose": "Claxedo client-presentation event bridge."
+    },
+    "HarnessCapabilities": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Per-harness user/session feature matrix."
+    },
+    "PromptInput": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Normalized message submission shape."
+    },
+    "ProviderCredentialUnavailableError": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "class",
+      "purpose": "Raised when the operator's selected account for a provider exists but cannot be bound."
+    },
+    "ProviderProjectionExpiredError": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "class",
+      "purpose": "Raised when a placeholder's lifetime ran out before the harness was spawned, so the vendor's 401 is never attributed to the stored account."
+    },
+    "SessionConfig": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Host-visible harness/model/agent selection state."
+    },
+    "SessionConfigUpdate": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "type",
+      "purpose": "Partial session config update; undefined leaves fields unchanged, null clears nullable fields, values replace fields."
+    },
+    "UnknownHostSubagentKeyError": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "class",
+      "purpose": "A subagent observation names a Claxedo row its parent session never created; thrown because every admit result is persisted."
+    },
+    "acp": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register an explicit operator-configured ACP connection."
+    },
+    "claude": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register the native Claude SDK harness."
+    },
+    "codex": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register the native Codex app-server harness."
+    },
     "createAgentRuntime": {
       "status": "stable",
       "import": "@claxedo/agent-sdk-runtime",
@@ -260,59 +332,21 @@
       "kind": "function",
       "purpose": "Create a local durable runtime store."
     },
-    "PromptInput": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "type",
-      "purpose": "Normalized message submission shape."
-    },
-    "SessionConfig": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "type",
-      "purpose": "Host-visible harness/model/agent selection state."
-    },
-    "SessionConfigUpdate": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "type",
-      "purpose": "Partial session config update; undefined leaves fields unchanged, null clears nullable fields, values replace fields."
-    },
-    "AgentSession": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "type",
-      "purpose": "Normalized host-visible session shape."
-    },
-    "HarnessCapabilities": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "type",
-      "purpose": "Per-harness user/session feature matrix."
-    },
-    "claude": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/harnesses",
-      "kind": "function",
-      "purpose": "Register the native Claude SDK harness."
-    },
-    "codex": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/harnesses",
-      "kind": "function",
-      "purpose": "Register the native Codex app-server harness."
-    },
     "cursor": {
       "status": "stable",
       "import": "@claxedo/agent-sdk-runtime/harnesses",
       "kind": "function",
       "purpose": "Register the native Cursor SDK harness."
     },
-    "acp": {
-      "status": "stable",
-      "import": "@claxedo/agent-sdk-runtime/harnesses",
+    "isProviderUnavailable": {
+      "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
-      "purpose": "Register an explicit operator-configured ACP connection."
+      "purpose": "Whether a projection says the selected account cannot be bound, where refusing the turn would be wrong."
+    },
+    "liveProviderBinding": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "The binding to launch on, refusing one whose lifetime has already run out."
     },
     "pi": {
       "status": "stable",
@@ -320,61 +354,35 @@
       "kind": "function",
       "purpose": "Register the built-in native Pi harness."
     },
-    "CompatEvent": {
-      "status": "compatibility",
-      "import": "@claxedo/agent-sdk-runtime/compat-events",
-      "kind": "type",
-      "purpose": "Claxedo client-presentation event bridge."
-    },
-    "providerProjection": {
+    "projectionRenewalDue": {
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
-      "purpose": "Validate one provider projection: the broker base URL, placeholder, auth mode and expiry a harness receives in place of a credential."
-    },
-    "providerProjectionRecord": {
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "function",
-      "purpose": "Validate a providerId-keyed map of provider projections, as the runtime config snapshot carries it."
-    },
-    "providerProjectionKey": {
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "function",
-      "purpose": "Change identity for a held projection, so a renewed placeholder counts as a change."
-    },
-    "isProviderUnavailable": {
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "function",
-      "purpose": "Whether a projection says the selected account cannot be bound, where refusing the turn would be wrong."
-    },
-    "providerBinding": {
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "function",
-      "purpose": "The binding a harness may launch on; refuses a selected account the provider will not accept instead of falling back to the machine's login."
-    },
-    "ProviderCredentialUnavailableError": {
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "class",
-      "purpose": "Raised when the operator's selected account for a provider exists but cannot be bound."
-    },
-    "ProviderProjectionExpiredError": {
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "class",
-      "purpose": "Raised when a placeholder's lifetime ran out before the harness was spawned, so the vendor's 401 is never attributed to the stored account."
-    },
-    "liveProviderBinding": {
-      "import": "@claxedo/agent-sdk-runtime",
-      "kind": "function",
-      "purpose": "The binding to launch on, refusing one whose lifetime has already run out."
+      "purpose": "Whether a held projection is due for replacement, or the caller says the process lost track of time."
     },
     "projectionRenewalDueAt": {
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
       "purpose": "When a projection map's earliest placeholder must be replaced, read from its own lifetime rather than a fixed interval."
     },
-    "projectionRenewalDue": {
+    "providerBinding": {
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
-      "purpose": "Whether a held projection is due for replacement, or the caller says the process lost track of time."
+      "purpose": "The binding a harness may launch on; refuses a selected account the provider will not accept instead of falling back to the machine's login."
+    },
+    "providerProjection": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Validate one provider projection: the broker base URL, placeholder, auth mode and expiry a harness receives in place of a credential."
+    },
+    "providerProjectionKey": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Change identity for a held projection, so a renewed placeholder counts as a change."
+    },
+    "providerProjectionRecord": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Validate a providerId-keyed map of provider projections, as the runtime config snapshot carries it."
     }
   }
 }
