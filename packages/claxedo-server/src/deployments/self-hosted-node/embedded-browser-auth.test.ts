@@ -10,6 +10,7 @@ import {
 } from "./embedded-browser-auth"
 import { createDefaultLocalControlPlaneServices, createSelfHostedApp } from "./app"
 import { resetEmbeddedAuthForTests } from "./embedded-auth"
+import { deviceGrant } from "../../test-support/device-grant"
 
 const ORIGIN = "https://localhost:4449"
 const env = { BETTER_AUTH_URL: ORIGIN } as NodeJS.ProcessEnv
@@ -164,6 +165,42 @@ describe("the composed self-hosted app behind an HTTPS public origin", () => {
     expect(await crossSite.json()).toMatchObject({ error: { code: "browser_auth_cross_site_forbidden" } })
 
     const exact = await rename({ origin: ORIGIN, "sec-fetch-site": "same-origin" })
+    expect(exact.status, await exact.clone().text()).toBe(200)
+  })
+
+  test("a device approval passes the guard and still needs the transaction the page was shown", async () => {
+    const signup = await composed.app.request(`${ORIGIN}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "device@selfhost.test", password: "correct-horse-battery", name: "Device Owner" }),
+    })
+    expect(signup.status, await signup.clone().text()).toBe(200)
+    const cookie = signup.headers.getSetCookie().find((value) => value.startsWith("__Secure-claxedo.session_token="))?.split(";", 1)[0]
+    if (!cookie) throw new Error(`no secure session cookie among: ${signup.headers.getSetCookie().join(" | ")}`)
+
+    const grant = deviceGrant(composed.app, ORIGIN)
+    const device = await grant.requestCode()
+    const viewed = await grant.viewed(device.user_code, { cookie })
+
+    const approve = (body: Record<string, unknown>, headers: Record<string, string>) =>
+      grant.decide("approve", { userCode: device.user_code, ...body }, { cookie, ...headers })
+
+    const otherPort = await approve(
+      { transaction: viewed.transaction },
+      { origin: "https://localhost:9999", "sec-fetch-site": "same-site" },
+    )
+    expect(otherPort.status).toBe(403)
+    expect(await otherPort.json()).toMatchObject({ error: { code: "browser_auth_origin_forbidden" } })
+
+    const crossSite = await approve({ transaction: viewed.transaction }, { origin: ORIGIN, "sec-fetch-site": "cross-site" })
+    expect(crossSite.status).toBe(403)
+    expect(await crossSite.json()).toMatchObject({ error: { code: "browser_auth_cross_site_forbidden" } })
+
+    const untransacted = await approve({}, { origin: ORIGIN, "sec-fetch-site": "same-origin" })
+    expect(untransacted.status, await untransacted.clone().text()).toBe(403)
+    expect(await untransacted.json()).toMatchObject({ error: "access_denied" })
+
+    const exact = await approve({ transaction: viewed.transaction }, { origin: ORIGIN, "sec-fetch-site": "same-origin" })
     expect(exact.status, await exact.clone().text()).toBe(200)
   })
 })

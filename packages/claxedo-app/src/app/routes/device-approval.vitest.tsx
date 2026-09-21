@@ -48,6 +48,7 @@ describe("device authorization boundary", () => {
       status: "pending",
       client_id: "claxedo-cli",
       scope: "openid offline_access workspace:read",
+      transaction: "f".repeat(64),
     }))
 
     await expect(readDeviceAuthorization("ABCD-EFGH", request as never, "https://api.example.test"))
@@ -56,6 +57,7 @@ describe("device authorization boundary", () => {
         status: "pending",
         clientId: "claxedo-cli",
         scopes: ["openid", "offline_access", "workspace:read"],
+        transaction: "f".repeat(64),
       })
     expect(request).toHaveBeenCalledWith(
       "https://api.example.test/api/auth/device?user_code=ABCD-EFGH",
@@ -70,11 +72,17 @@ describe("device authorization boundary", () => {
       .rejects.toThrow("User code expired")
   })
 
-  test("posts the decision to the approve and deny endpoints", async () => {
+  test("posts the decision, and the transaction the server handed this page, to the approve and deny endpoints", async () => {
     const request = vi.fn(async () => json({ success: true }))
+    const loaded = {
+      userCode: "ABCD-EFGH",
+      status: "pending",
+      scopes: [],
+      transaction: "f".repeat(64),
+    } as const
 
-    await submitDeviceDecision({ userCode: "ABCD-EFGH", approve: true }, request as never, "https://api.example.test")
-    await submitDeviceDecision({ userCode: "ABCD-EFGH", approve: false }, request as never, "https://api.example.test")
+    await submitDeviceDecision({ request: loaded, approve: true }, request as never, "https://api.example.test")
+    await submitDeviceDecision({ request: loaded, approve: false }, request as never, "https://api.example.test")
 
     expect(request.mock.calls.map(([url]) => url)).toEqual([
       "https://api.example.test/api/auth/device/approve",
@@ -83,7 +91,7 @@ describe("device authorization boundary", () => {
     expect(request.mock.calls[0]?.[1]).toMatchObject({
       method: "POST",
       credentials: "include",
-      body: JSON.stringify({ userCode: "ABCD-EFGH" }),
+      body: JSON.stringify({ userCode: "ABCD-EFGH", transaction: "f".repeat(64) }),
     })
   })
 })
@@ -96,7 +104,13 @@ describe("DeviceApprovalPage", () => {
       <DeviceApprovalPage
         request={vi.fn() as never}
         apiOrigin="https://api.example.test"
-        load={async () => ({ userCode: "ABCD-EFGH", status: "pending", clientId: "claxedo-cli", scopes: ["workspace:read"] })}
+        load={async () => ({
+          userCode: "ABCD-EFGH",
+          status: "pending",
+          clientId: "claxedo-cli",
+          scopes: ["workspace:read"],
+          transaction: "f".repeat(64),
+        })}
         submit={submit}
       />
     ))
@@ -107,7 +121,16 @@ describe("DeviceApprovalPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }))
 
-    await waitFor(() => expect(submit).toHaveBeenCalledWith({ userCode: "ABCD-EFGH", approve: true }))
+    await waitFor(() => expect(submit).toHaveBeenCalledWith({
+      request: {
+        userCode: "ABCD-EFGH",
+        status: "pending",
+        clientId: "claxedo-cli",
+        scopes: ["workspace:read"],
+        transaction: "f".repeat(64),
+      },
+      approve: true,
+    }))
     expect(await screen.findByText("Device connected")).toBeInTheDocument()
   })
 

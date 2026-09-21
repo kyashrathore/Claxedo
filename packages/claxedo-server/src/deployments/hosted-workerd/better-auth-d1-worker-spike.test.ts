@@ -589,17 +589,37 @@ describe("Better Auth + D1 inside Workerd", () => {
       { headers: { cookie: sessionCookie.value, origin: APP_ORIGIN } },
     )
     expect(verifyDevice.status, await verifyDevice.clone().text()).toBe(200)
-    expect((await verifyDevice.json()) as Record<string, unknown>).toMatchObject({
+    const viewedDevice = (await verifyDevice.json()) as Record<string, unknown>
+    expect(viewedDevice).toMatchObject({
       user_code: devicePayload.user_code,
       status: "pending",
       client_id: "claxedo-cli",
     })
 
-    const approve = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/device/approve`, {
+    const decide = (decision: Record<string, unknown>) =>
+      miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/device/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: sessionCookie.value, origin: APP_ORIGIN },
+        body: JSON.stringify({ userCode: devicePayload.user_code, ...decision }),
+      })
+
+    // Only the transaction the page was handed decides this request: the user
+    // code is short and displayed, so it cannot be the whole authorization.
+    const untransacted = await decide({})
+    expect(untransacted.status, await untransacted.clone().text()).toBe(403)
+    const foreign = await decide({ transaction: "0".repeat(64) })
+    expect(foreign.status, await foreign.clone().text()).toBe(403)
+    expect(viewedDevice.transaction).toMatch(/^[0-9a-f]{64}$/)
+
+    const otherOrigin = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/device/approve`, {
       method: "POST",
-      headers: { "content-type": "application/json", cookie: sessionCookie.value, origin: APP_ORIGIN },
-      body: JSON.stringify({ userCode: devicePayload.user_code }),
+      headers: { "content-type": "application/json", cookie: sessionCookie.value, origin: "https://elsewhere.claxedo.test" },
+      body: JSON.stringify({ userCode: devicePayload.user_code, transaction: viewedDevice.transaction }),
     })
+    expect(otherOrigin.status).toBe(403)
+    expect((await otherOrigin.json()) as Record<string, unknown>).toMatchObject({ code: "INVALID_ORIGIN" })
+
+    const approve = await decide({ transaction: viewedDevice.transaction })
     expect(approve.status, await approve.clone().text()).toBe(200)
 
     const forbiddenSessionToken = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/device/token`, {

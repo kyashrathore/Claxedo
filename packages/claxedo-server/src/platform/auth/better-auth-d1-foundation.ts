@@ -1,3 +1,4 @@
+import { deviceApprovalTransaction } from "./device-approval-transaction"
 import { oauthConsentRevocation } from "./oauth-consent-revocation"
 import type { BetterAuthOptions } from "better-auth"
 import { queueAfterTransactionHook } from "@better-auth/core/context"
@@ -273,6 +274,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
         expiresIn: "10m",
         interval: "5s",
       }),
+      deviceApprovalTransaction(),
     ],
   } satisfies BetterAuthOptions
 }

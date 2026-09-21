@@ -95,10 +95,19 @@ export const serverSelfHosted: Policy = {
    * -1 module (2026-09-17): the control bus (`platform/runtime/lib/bus.ts`)
    * carries control-plane notices only; a process frame reaches a client on
    * its workspace runtime's `wr/events` (`workspace-runtime/src/routes/
-   * events.ts`) and nothing mirrors it here. Measured 124 modules / 40
-   * packages, with no headroom.
+   * events.ts`) and nothing mirrors it here.
+   *
+   * `src/platform/auth/device-approval-transaction.ts` is the reviewed owner of
+   * the binding between a device approval and the request the approver was
+   * shown. It is one Better Auth plugin both issuers register, so it arrives
+   * through `better-auth-d1-foundation.ts` and `embedded-auth.ts` alike; a
+   * self-host box serving `claxedo login` decides those approvals itself, and a
+   * second copy of the rule for this plane is how the two would drift. No
+   * package edge: it reaches only `better-auth` and Web Crypto.
+   *
+   * Measured 125 modules / 40 packages, with no headroom.
    */
-  ceilings: { modules: 124, packages: 40 },
+  ceilings: { modules: 125, packages: 40 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

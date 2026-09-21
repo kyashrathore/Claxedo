@@ -8,6 +8,8 @@ export type DeviceAuthorizationRequest = {
   status: "pending" | "approved" | "denied"
   clientId?: string
   scopes: readonly string[]
+  /** Present only for the user this request is claimed for; a decision without it is refused. */
+  transaction?: string
 }
 
 export const DEVICE_CODE_MISSING = "This link is missing its device code. Re-run the command and open the URL it prints."
@@ -29,16 +31,18 @@ export async function readDeviceAuthorization(
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) throw betterAuthApiError(body, response.status, "Device authorization failed")
   const clientId = readString(body, "client_id")
+  const transaction = readString(body, "transaction")
   return {
     userCode,
     status: grantStatus(body),
     ...(clientId ? { clientId } : {}),
+    ...(transaction ? { transaction } : {}),
     scopes: (readString(body, "scope") ?? "").split(/\s+/).filter(Boolean),
   }
 }
 
 export async function submitDeviceDecision(
-  input: { userCode: string; approve: boolean },
+  input: { request: DeviceAuthorizationRequest; approve: boolean },
   request: typeof fetch,
   apiOrigin: string,
 ): Promise<void> {
@@ -48,7 +52,7 @@ export async function submitDeviceDecision(
       method: "POST",
       credentials: "include",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ userCode: input.userCode }),
+      body: JSON.stringify({ userCode: input.request.userCode, transaction: input.request.transaction }),
     },
   )
   if (!response.ok) {
@@ -67,7 +71,7 @@ export default function DeviceApprovalPage(props: {
   request: typeof fetch
   apiOrigin: string
   load?: (userCode: string) => Promise<DeviceAuthorizationRequest>
-  submit?: (input: { userCode: string; approve: boolean }) => Promise<void>
+  submit?: (input: { request: DeviceAuthorizationRequest; approve: boolean }) => Promise<void>
 }) {
   const auth = useAuthSession()
   const [decided, setDecided] = createSignal<"approved" | "denied">()
@@ -76,7 +80,7 @@ export default function DeviceApprovalPage(props: {
 
   const userCode = () => new URLSearchParams(window.location.search).get("user_code")?.trim()
   const load = props.load ?? ((code: string) => readDeviceAuthorization(code, props.request, props.apiOrigin))
-  const submit = props.submit ?? ((input: { userCode: string; approve: boolean }) =>
+  const submit = props.submit ?? ((input: { request: DeviceAuthorizationRequest; approve: boolean }) =>
     submitDeviceDecision(input, props.request, props.apiOrigin))
 
   const [grant] = createResource(
@@ -108,12 +112,12 @@ export default function DeviceApprovalPage(props: {
   }
 
   const decide = async (approve: boolean) => {
-    const code = userCode()
-    if (!code) return
+    const loaded = grant()
+    if (!loaded) return
     setSubmitting(approve ? "approve" : "deny")
     setDecisionFailure()
     try {
-      await submit({ userCode: code, approve })
+      await submit({ request: loaded, approve })
       setDecided(approve ? "approved" : "denied")
     } catch (err) {
       setDecisionFailure(err instanceof Error ? err.message : "Device authorization failed")
