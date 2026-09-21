@@ -351,6 +351,18 @@ jobs:
     command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package -Package @claxedo/helpers -AclAcceptance
     stop: auto
 
+  # The suites that prove Windows-only launch and read paths, run with bun
+  # directly: turbo gates each package's test task behind the app and server
+  # suites, which this lane does not need.
+  focus-native-acceptance-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-windows-native-acceptance.ps1 -AclAcceptance
+    stop: auto
+
   pr-e2e-desktop-macos:
     # A native Mac is required. Configure the `claxedo-macos` profile in the
     # trusted user config with either an AWS Mac host or a static SSH target.

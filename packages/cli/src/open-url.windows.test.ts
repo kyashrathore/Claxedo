@@ -94,25 +94,30 @@ describe.skipIf(process.platform !== "win32" || !demanded)("rundll32 hands a URL
     return JSON.parse(readFileSync(record, "utf8")) as HandlerRecord
   }
 
-  const expectedCommandLine = (url: string) => `"${process.execPath}" "${recorder}" "${record}" "${url}"`
+  // ShellExecute canonicalizes the URL before substituting %1: an authority
+  // with no path gains its `/`. Every other byte, including the ones cmd.exe
+  // would parse, is the proof; the slash is the one difference expected.
+  const delivered = (url: string) => url.replace(`${scheme}://device?`, `${scheme}://device/?`)
+  const expectedCommandLine = (url: string) => `"${process.execPath}" "${recorder}" "${record}" "${delivered(url)}"`
 
   test("cmd.exe metacharacters, a %VAR% sequence and encoded spaces arrive unparsed", async () => {
     const url = `${scheme}://device?user_code=AB&next=%26whoami|dir^c%PATH%%25&title=a%20b&q='single'`
     const received = await open(url)
-    expect(received.argv).toEqual([url])
+    expect(received.argv).toEqual([delivered(url)])
     expect(received.commandLine).toBe(expectedCommandLine(url))
   })
 
-  test("a double quote inside the URL still reaches the handler's command line", async () => {
+  test("a double quote inside the URL is escaped into the handler's argument, never closing it", async () => {
     const url = `${scheme}://device?code="AB"&next=x`
     const received = await open(url)
-    expect(received.commandLine).toBe(expectedCommandLine(url))
+    expect(received.argv).toEqual([delivered(url)])
+    expect(received.commandLine).toBe(expectedCommandLine(url).replace(`code="AB"`, `code=\\"AB\\"`))
   })
 
   test("a 4 KB query is delivered whole", async () => {
     const url = `${scheme}://device?pad=${"q".repeat(4096)}`
     const received = await open(url)
-    expect(received.argv).toEqual([url])
+    expect(received.argv).toEqual([delivered(url)])
     expect(received.commandLine).toBe(expectedCommandLine(url))
   })
 })
