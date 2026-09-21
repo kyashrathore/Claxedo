@@ -9,11 +9,14 @@ import type {
   AgentQuestionAnswer,
   AgentRuntimeStatus,
   AgentTodo,
+  RecoveryOutcome,
+  RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
+import { parseRecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import type {
   AgentConfigOptions,
   AgentGoalMutationResult,
-  AgentRuntimeAbortResult,
+  AgentRuntimeRecoveryInspection,
   AgentPermissionModeState,
   GoalCapabilities,
   HarnessCapabilities,
@@ -97,7 +100,17 @@ export type WorkspaceSessionClient = {
   messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
   todo(input: SessionInput, options?: Options): Reply<AgentTodo[]>
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
-  abort(input: SessionInput, options?: Options): Reply<AgentRuntimeAbortResult>
+  /**
+   * What the runtime owner knows about this session, and the operations a
+   * caller submits against it. `submit` and `read` answer a `RecoveryOutcome`
+   * for every status the contract defines, including its refusals, so only a
+   * body that is not one at all is thrown.
+   */
+  recovery: {
+    inspect(input: SessionInput, options?: Options): Reply<AgentRuntimeRecoveryInspection>
+    submit(input: SessionInput & { request: RecoveryRequest }, options?: Options): Reply<RecoveryOutcome>
+    read(input: SessionInput & { operationId: string }, options?: Options): Reply<RecoveryOutcome>
+  }
   summarize(input: SessionInput & { providerID: string; modelID: string; auto?: boolean }, options?: Options): Reply<Ok>
   prompt(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse | SessionDeliveryAcknowledgement>
   /** Immediate admission has no body; explicit delivery requests return their durable admission state. */
@@ -174,7 +187,25 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     messages: (input, options) => read("session.messages", input, "/message", options, without(input, ["sessionID"])),
     todo: (input, options) => read("session.todo", input, "/todo", options),
     fork: (input, options) => write("session.fork", "POST", input, "/fork", options, without(input, ["sessionID"])),
-    abort: (input, options) => write("session.abort", "POST", input, "/abort", options),
+    recovery: {
+      inspect: (input, options) => read<AgentRuntimeRecoveryInspection>("session.recovery.inspect", input, "/recovery", options),
+      submit: (input, options) => caller.decoded({
+        operation: "session.recovery.submit",
+        method: "POST",
+        path: sessionPath(input, "/recovery"),
+        scope: input,
+        body: input.request,
+        options,
+        decode: parseRecoveryOutcome,
+      }),
+      read: (input, options) => caller.decoded({
+        operation: "session.recovery.read",
+        path: sessionPath(input, `/recovery/operations/${encodeURIComponent(input.operationId)}`),
+        scope: input,
+        options,
+        decode: parseRecoveryOutcome,
+      }),
+    },
     summarize: (input, options) => write("session.summarize", "POST", input, "/summarize", options, without(input, ["sessionID"])),
     prompt: (input, options) => write("session.prompt", "POST", input, "/message", options, without(input, ["sessionID"])),
     promptAsync: (input, options) => {

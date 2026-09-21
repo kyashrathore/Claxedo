@@ -36,6 +36,14 @@ export type WorkspaceRuntimeCaller = {
   call<T>(input: WorkspaceRuntimeCall): Promise<WorkspaceRuntimeResponse<T>>
   /** For a route whose success is `204 No Content`; a body where none was promised is a payload error. */
   callNoContent(input: WorkspaceRuntimeCall): Promise<WorkspaceRuntimeResponse<void>>
+  /**
+   * For a route that states its refusals in the body it always returns, under
+   * the status that classifies them. The decoder is the only thing that
+   * decides: a body it accepts is the answer whatever the status was, and one
+   * it rejects is thrown as the status says. Without this a 409 the contract
+   * defines would reach the caller as a transport failure.
+   */
+  decoded<T>(input: WorkspaceRuntimeCall & { decode: (body: unknown) => T }): Promise<WorkspaceRuntimeResponse<T>>
   url(path: string, query?: Record<string, unknown>): URL
 }
 
@@ -70,7 +78,7 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
     return target
   }
 
-  const send = async (input: WorkspaceRuntimeCall) => {
+  const dispatch = async (input: WorkspaceRuntimeCall) => {
     input.options?.signal?.throwIfAborted()
     const target = url(input.path, {
       directory: input.scope?.directory ?? options.directory,
@@ -99,8 +107,13 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
       throw new WorkspaceRuntimeClientTransportError(input.operation, error)
     }
     input.options?.signal?.throwIfAborted()
-    if (!response.ok) throw await workspaceRuntimeClientError(input.operation, response)
     return { request, response }
+  }
+
+  const send = async (input: WorkspaceRuntimeCall) => {
+    const sent = await dispatch(input)
+    if (!sent.response.ok) throw await workspaceRuntimeClientError(input.operation, sent.response)
+    return sent
   }
 
   /**
@@ -141,22 +154,42 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
     return { data: undefined, ...sent }
   }
 
-  return { send, call, callNoContent, url }
+  const decoded = async <T>(input: WorkspaceRuntimeCall & { decode: (body: unknown) => T }): Promise<WorkspaceRuntimeResponse<T>> => {
+    const sent = await dispatch(input)
+    const text = await sent.response.text()
+    try {
+      return { data: input.decode(JSON.parse(text)), ...sent }
+    } catch (error) {
+      if (!sent.response.ok) throw workspaceRuntimeClientErrorFrom(input.operation, sent.response.status, text)
+      throw new WorkspaceRuntimeClientPayloadError(input.operation, error instanceof Error ? error.message : "Response was not valid JSON")
+    }
+  }
+
+  return { send, call, callNoContent, decoded, url }
 }
 
 /** The typed error for a non-2xx response whose body is a Claxedo `{ error: { code, message } }` envelope, or any other body. */
 export async function workspaceRuntimeClientError(operation: string, response: Response) {
-  const text = await response.clone().text().catch(() => "")
-  const body: unknown = await response.json().catch(() => undefined)
+  return workspaceRuntimeClientErrorFrom(operation, response.status, await response.clone().text().catch(() => ""))
+}
+
+/** The same error built from a body that has already been read off the stream. */
+export function workspaceRuntimeClientErrorFrom(operation: string, status: number, text: string) {
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    body = undefined
+  }
   const row = asRecordOrEmpty(body)
   const nested = asRecordOrEmpty(row.error)
-  const code = typeof nested.code === "string" ? nested.code : typeof row.code === "string" ? row.code : `http_${response.status}`
+  const code = typeof nested.code === "string" ? nested.code : typeof row.code === "string" ? row.code : `http_${status}`
   const message = typeof nested.message === "string"
     ? nested.message
     : typeof row.message === "string"
       ? row.message
-      : text || `Workspace runtime request failed with status ${response.status}`
-  return new WorkspaceRuntimeClientError(operation, response.status, code, body ?? text, message)
+      : text || `Workspace runtime request failed with status ${status}`
+  return new WorkspaceRuntimeClientError(operation, status, code, body ?? text, message)
 }
 
 function appendQuery(url: URL, key: string, value: unknown) {

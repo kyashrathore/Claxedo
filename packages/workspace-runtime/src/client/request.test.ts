@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { serializeRecoveryOutcome, type RecoveryOperation, type RecoveryOutcome, type RecoveryRequest } from "@claxedo/agent-runtime-contract"
 import { createWorkspaceRuntimeClient } from "./index"
 import { WorkspaceRuntimeClientError, WorkspaceRuntimeClientPayloadError, WorkspaceRuntimeClientTransportError } from "./request"
 
@@ -130,4 +131,127 @@ test("session startup reads and binary attachments retain canonical workspace sc
   expect([...new Uint8Array(await image.arrayBuffer())]).toEqual([137, 80, 78, 71])
   expect(new URL(calls[1].url).pathname).toBe("/session/reserved/message/message%2Fid/attachment/image%2Fid")
   expect(calls.every((request) => new URL(request.url).searchParams.get("workspace") === "workspace")).toBe(true)
+})
+
+describe("recovery over the wire", () => {
+  const target = {
+    scope: "turn" as const,
+    workspaceId: "ws-1",
+    sessionId: "ses_1",
+    turnId: "msg_1",
+    ownerGeneration: "lease_1",
+    writeAuthority: "7",
+  }
+  const request: RecoveryRequest = {
+    requestId: "req_1",
+    action: "cancel_turn",
+    target,
+    scopeRevision: "lease_1",
+    attempt: 1,
+  }
+  const operation: RecoveryOperation = {
+    operationId: "op_1",
+    requestId: "req_1",
+    target,
+    action: "cancel_turn",
+    scopeRevision: "lease_1",
+    attempt: 1,
+    state: "succeeded",
+    phase: "graceful_cancel",
+    phaseDeadlineAt: 2_000,
+    facts: {
+      execution: { value: "terminal", source: "codex", observedAt: 1_000, generation: "lease_1" },
+      cleanup: { value: "verified_clear", source: "codex", observedAt: 1_000, generation: "lease_1" },
+      persistence: { value: "committed", source: "store", observedAt: 1_000, generation: "lease_1" },
+    },
+    cleanupErrors: [],
+    nextActions: [],
+    receipt: "durable",
+    createdAt: 1_000,
+    updatedAt: 1_000,
+  }
+
+  function client(answer: (request: Request) => Response, calls: Request[] = []) {
+    return {
+      calls,
+      client: createWorkspaceRuntimeClient({
+        baseUrl: "https://runtime.example",
+        directory: "/repo",
+        workspace: "ws-1",
+        fetch: async (input, init) => {
+          const sent = new Request(input, init)
+          calls.push(sent)
+          return answer(sent)
+        },
+      }),
+    }
+  }
+
+  test("a submit sends the request as a JSON body under the session's scope", async () => {
+    const outcome: RecoveryOutcome = { kind: "operation", operation }
+    const sent = client(() => new Response(serializeRecoveryOutcome(outcome), { headers: { "content-type": "application/json" } }))
+
+    const answered = await sent.client.session.recovery.submit({ sessionID: "ses_1", request })
+
+    expect(answered.data).toEqual(outcome)
+    const call = sent.calls[0]!
+    expect(call.method).toBe("POST")
+    expect(call.url).toBe("https://runtime.example/session/ses_1/recovery?directory=%2Frepo&workspace=ws-1")
+    expect(call.headers.get("content-type")).toBe("application/json")
+    // The exact text, not a decoded shape: the owner fences on this identity
+    // and a field dropped by serialization is a stale request it cannot spot.
+    expect(await call.text()).toBe(JSON.stringify(request))
+  })
+
+  test("a refusal under a non-2xx status is the answer, not a thrown transport failure", async () => {
+    const outcome: RecoveryOutcome = {
+      kind: "refused",
+      refusal: { kind: "generation_conflict", message: "the turn was replaced", current: target },
+    }
+    const sent = client(() => new Response(serializeRecoveryOutcome(outcome), { status: 409, headers: { "content-type": "application/json" } }))
+
+    const answered = await sent.client.session.recovery.submit({ sessionID: "ses_1", request })
+
+    expect(answered.response.status).toBe(409)
+    expect(answered.data).toEqual(outcome)
+  })
+
+  test("a body that is not an outcome is thrown with the route's own error code", async () => {
+    const sent = client(() => Response.json({ error: { code: "recovery_request_invalid", message: "recovery attempt must be an integer of at least 1" } }, { status: 400 }))
+
+    await expect(sent.client.session.recovery.submit({ sessionID: "ses_1", request })).rejects.toMatchObject({
+      name: "WorkspaceRuntimeClientError",
+      status: 400,
+      code: "recovery_request_invalid",
+    })
+  })
+
+  test("reading an operation asks for it by id and decodes the same outcome", async () => {
+    const outcome: RecoveryOutcome = { kind: "operation", operation: { ...operation, state: "needs_action" } }
+    const sent = client(() => new Response(serializeRecoveryOutcome(outcome)))
+
+    const answered = await sent.client.session.recovery.read({ sessionID: "ses_1", operationId: "op/1" })
+
+    expect(sent.calls[0]!.method).toBe("GET")
+    expect(new URL(sent.calls[0]!.url).pathname).toBe("/session/ses_1/recovery/operations/op%2F1")
+    expect(answered.data).toEqual(outcome)
+  })
+
+  test("inspection is a plain read of the owner's view", async () => {
+    const inspection = {
+      sessionId: "ses_1",
+      target,
+      facts: operation.facts,
+      health: { status: "ok" as const },
+      failures: [],
+      operations: [],
+      queued: 0,
+    }
+    const sent = client(() => Response.json(inspection))
+
+    const answered = await sent.client.session.recovery.inspect({ sessionID: "ses_1" })
+
+    expect(new URL(sent.calls[0]!.url).pathname).toBe("/session/ses_1/recovery")
+    expect(answered.data).toEqual(inspection)
+  })
 })
