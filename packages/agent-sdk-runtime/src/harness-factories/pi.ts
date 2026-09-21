@@ -9,6 +9,7 @@ export function pi(options: PiFactoryOptions = {}): AgentHarnessFactory {
     store: context.store,
     ...(options.agentDir ? { agentDir: options.agentDir } : {}),
     eventHub: context.eventHub,
+    reportOwnerFailure: context.reportOwnerFailure,
     ...(options.binary ? { binary: options.binary } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   }))

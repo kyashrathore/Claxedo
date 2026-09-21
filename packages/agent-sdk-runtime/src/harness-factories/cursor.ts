@@ -8,6 +8,7 @@ export function cursor(options: CursorFactoryOptions = {}): AgentHarnessFactory 
   return harnessFactory("cursor", "native", (context) => new CursorHarnessAdapter({
     store: context.store,
     eventHub: context.eventHub,
+    reportOwnerFailure: context.reportOwnerFailure,
     ...(options.binary ? { binary: options.binary } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   }))

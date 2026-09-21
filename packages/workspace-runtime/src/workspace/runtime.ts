@@ -480,6 +480,12 @@ export type WorkspaceHarnessAdapterInput = {
    * its own launches from the ones it inherited.
    */
   ownerGeneration: string
+  /**
+   * Where an adapter reports a failure belonging to a session's owner rather
+   * than to whoever called it. The host routes it to the runtime currently
+   * serving that session, whose recovery inspection is where it stays visible.
+   */
+  reportOwnerFailure: (sessionId: string, error: unknown) => void
 }
 
 /**
@@ -514,7 +520,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
     {
       match: (runner) => nativeSdk(runner),
-      create: ({ runner, options, store, ownerGeneration }) => {
+      create: ({ runner, options, store, ownerGeneration, reportOwnerFailure }) => {
         // `match` narrowed this runner, but the registry hands `create` the
         // unnarrowed entry, so the guard is re-applied here rather than
         // asserting the key and letting an unknown id fail as "not a constructor".
@@ -530,6 +536,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
           // Every process this adapter launches is recorded against the store
           // of the workspace it serves, not whichever one opened first.
           ownership: store.launchOwnership?.(ownerGeneration) ?? volatileLaunchOwnership(),
+          reportOwnerFailure,
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           // Pi's profile holds `models.json`, and that file carries the broker
           // placeholder; without a store root to scope it, the workspace id is
@@ -610,6 +617,7 @@ function createAdapter(
   registry: WorkspaceHarnessRegistry,
   store: WorkspaceRuntimeStore,
   ownerGeneration: string,
+  reportOwnerFailure: (sessionId: string, error: unknown) => void,
 ): AgentHarnessAdapter {
   const entry = registry.find((item) => item.match(harness))
   if (!entry) {
@@ -618,7 +626,7 @@ function createAdapter(
     // runner must fail loudly here.
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
-  return entry.create({ runner: harness, options, store, ownerGeneration })
+  return entry.create({ runner: harness, options, store, ownerGeneration, reportOwnerFailure })
 }
 
 function scopedToolPrompt(
@@ -954,7 +962,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       await configureAdapter(existing, nextRunner)
       return existing
     }
-    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), ownerGeneration)
+    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), ownerGeneration, (sessionId, error) =>
+      recoveryOwner(sessionId)?.reportOwnerFailure(sessionId, error))
     sessionAdapters.set(key, next)
     sessionAdapterRunners.set(key, nextRunner)
     adapterRuntimeKeys.set(next, key)

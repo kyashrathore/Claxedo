@@ -19,6 +19,7 @@ import type { PermissionReplyPort } from "./acp/permission-reply"
 import type { WithInternals } from "../test-utils/class-internals"
 import { SdkRuntimeInteractions } from "./shared/sdk-runtime-interactions"
 import { createMemoryRuntimeStore } from "../stores/memory"
+import { createAgentRuntime } from "../runtime"
 import { questionAsked } from "../compat-events"
 
 /**
@@ -412,5 +413,52 @@ describe("per-harness recovery capability matrix", () => {
       [],
     )).toThrow("journal is unavailable")
     expect(failures).toHaveLength(1)
+  })
+
+  test("a failure an adapter reports about a session reaches that session's recovery inspection", async () => {
+    // The seam under test is the wiring, not a local array: an adapter's
+    // report has to arrive at the runtime the product actually builds.
+    let report!: (sessionId: string, error: unknown) => void
+    const adapter = {
+      instructionChannel: "none",
+      async getSession() { return null },
+      async createSession(_d: unknown, _t: unknown, id?: string) { return { id: id ?? "ses_test" } },
+      async updateSession() { return null },
+      async getSessionConfig() { return { harness: { id: "pi", access: "native" }, variant: null, agent: "build" } },
+      async updateSessionConfig() { return { harness: { id: "pi", access: "native" }, variant: null, agent: null } },
+      async deleteSession() {},
+      readHarnessCapabilities: () => ({}) as never,
+      executeTurn() { return (async function* () {})() },
+      async getMessages() { return [] },
+      dispose() {},
+    } as unknown as import("../adapter-contract").AgentHarnessAdapter
+
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [{
+        id: "pi",
+        access: "native",
+        create: (context: { reportOwnerFailure: (sessionId: string, error: unknown) => void }) => {
+          report = context.reportOwnerFailure
+          return adapter
+        },
+      } as never],
+    })
+    const created = await runtime.sessions.create({
+      id: "ses_1",
+      workspaceId: "ws",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    expect(runtime.recovery.inspect(created.id).failures).toEqual([])
+    report(created.id, new Error("the approval could not be persisted"))
+
+    const failures = runtime.recovery.inspect(created.id).failures
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.message).toContain("the approval could not be persisted")
+    expect(failures[0]!.target).toMatchObject({ scope: "session", sessionId: created.id })
+    // Another session's inspection is not this one's failure log.
+    expect(runtime.recovery.inspect("ses_other").failures).toEqual([])
   })
 })

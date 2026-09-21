@@ -8,6 +8,7 @@ export function claude(options: ClaudeFactoryOptions = {}): AgentHarnessFactory 
   return harnessFactory("claude", "native", (context) => new ClaudeHarnessAdapter({
     store: context.store,
     eventHub: context.eventHub,
+    reportOwnerFailure: context.reportOwnerFailure,
     ...(options.binary ? { binary: options.binary } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   }))

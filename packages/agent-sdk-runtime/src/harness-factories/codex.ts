@@ -8,6 +8,7 @@ export function codex(options: CodexFactoryOptions = {}): AgentHarnessFactory {
   return harnessFactory("codex", "native", (context) => new CodexHarnessAdapter({
     store: context.store,
     eventHub: context.eventHub,
+    reportOwnerFailure: context.reportOwnerFailure,
     ...(options.binary ? { binary: options.binary } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   }))

@@ -16,6 +16,7 @@ export function acp(id: string, options: AcpFactoryOptions): AgentHarnessFactory
     harness: id,
     store: context.store,
     eventHub: context.eventHub,
+    reportOwnerFailure: context.reportOwnerFailure,
     ...(options.createTransport ? { createTransport: options.createTransport } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   }))

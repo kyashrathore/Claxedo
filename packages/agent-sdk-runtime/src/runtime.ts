@@ -94,9 +94,10 @@ function isProjectableRuntimeEvent(payload: AgentRuntimeStreamEvent): payload is
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const eventHub = input.eventHub ?? createRuntimeEventHub()
   const store = input.store
+  const reportOwnerFailure = (sessionId: string, error: unknown) => recovery.reportSessionFailure(sessionId, error)
   const adapters = new Map(input.harnesses.map((factory) => [
     key(factory),
-    factory.create({ store, eventHub }),
+    factory.create({ store, eventHub, reportOwnerFailure }),
   ]))
   const resolvingAdapters = new Map<string, Promise<AgentHarnessAdapter>>()
   const subscribers = new Set<RuntimeSubscriber>()
@@ -709,7 +710,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
      * stay answerable while the runtime is closing, and a recovery request must
      * not be counted among the work disposal has to drain.
      */
-    recovery: { inspect: recovery.inspect, submit: recovery.submit, read: recovery.read, reportContainmentFailure: recovery.reportContainmentFailure } satisfies AgentRuntimeRecovery,
+    recovery: {
+      inspect: recovery.inspect,
+      submit: recovery.submit,
+      read: recovery.read,
+      reportContainmentFailure: recovery.reportContainmentFailure,
+      reportOwnerFailure,
+    } satisfies AgentRuntimeRecovery,
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
         if (lifecycle.closing) throw new Error("AgentRuntime is disposed")

@@ -95,6 +95,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     admissions,
     owner,
     ...(input.identity?.machineId !== undefined ? { machineId: input.identity.machineId } : {}),
+    ...(input.identity?.workspaceId !== undefined ? { workspaceId: input.identity.workspaceId } : {}),
     now,
   })
   const registry = createRecoveryOperations({
@@ -695,6 +696,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     retainFailure: record.retainFailure,
     reportTurnFailure: record.reportTurnFailure,
     reportOwnerFailure: record.reportOwnerFailure,
+    reportSessionFailure: record.reportSessionFailure,
   }
 }
 

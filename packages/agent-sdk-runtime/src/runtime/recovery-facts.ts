@@ -41,6 +41,7 @@ export type RecoveryFactsInput = {
   /** This runtime instance, carried by a fact about a session holding no lease. */
   owner: RecoveryGeneration
   machineId?: string
+  workspaceId?: string
   now: () => number
 }
 
@@ -173,6 +174,24 @@ export function createRecoveryFacts(input: RecoveryFactsInput) {
   }
 
 
+  /**
+   * A failure an adapter reports about one session's own work — an interaction
+   * it could not project or answer, a terminal its store refused. The caller
+   * that triggered it gets its error, but the request the provider is still
+   * waiting on outlives that caller, so the session's owner keeps it too.
+   */
+  const reportSessionFailure = (sessionId: string, error: unknown) => {
+    const held = containmentFailures.get(sessionId) ?? []
+    held.push(recoveryError(
+      "owner_unavailable",
+      { scope: "session", sessionId, workspaceId: input.workspaceId ?? "", ownerGeneration: owner },
+      "provider_query",
+      true,
+      `The harness owning session ${sessionId} reported a failure: ${messageOf(error)}`,
+    ))
+    containmentFailures.set(sessionId, held.slice(-RECOVERY_CONTAINMENT_LIMIT))
+  }
+
   const reportOwnerFailure = (error: unknown) => {
     ownerFailures.push(recoveryError(
       "owner_unavailable",
@@ -194,6 +213,7 @@ export function createRecoveryFacts(input: RecoveryFactsInput) {
     retainContainmentFailure,
     reportTurnFailure,
     reportOwnerFailure,
+    reportSessionFailure,
     /** The unresolved finalization this session is holding, if it is holding one. */
     retained: (sessionId: string) => failures.get(sessionId),
     clearRetained: (sessionId: string) => { failures.delete(sessionId) },

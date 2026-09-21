@@ -85,11 +85,25 @@ export type AgentRuntimeRecovery = {
    * against the session and `inspect` is where it is answered.
    */
   reportContainmentFailure(target: RecoveryTurnTarget, caller: RecoveryCaller, message: string): void
+  /**
+   * A failure an adapter observed while serving one session — an interaction it
+   * could not project or answer, a terminal its store refused. The caller that
+   * triggered it gets its own error; this is where it stays visible to the
+   * session's owner after that caller has gone.
+   */
+  reportOwnerFailure(sessionId: string, error: unknown): void
 }
 
 export type AgentHarnessFactoryContext = {
   store: AgentRuntimeStore
   eventHub: RuntimeEventHub
+  /**
+   * Where an adapter reports a failure belonging to a session's owner rather
+   * than to whoever called. The runtime retains it and serves it from
+   * `recovery.inspect(sessionId).failures`, which is the only place a request
+   * the provider is still waiting on stays visible after its caller has gone.
+   */
+  reportOwnerFailure(sessionId: string, error: unknown): void
 }
 
 /**

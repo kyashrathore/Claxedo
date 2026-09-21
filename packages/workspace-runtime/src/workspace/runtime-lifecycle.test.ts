@@ -295,7 +295,7 @@ describe("workspace runtime public lifecycle", () => {
     for (const id of ["claude", "codex", "cursor", "pi"] as const) {
       const runner = { id, access: "native" as const }
       const entry = defaultWorkspaceHarnessRegistry().find((entry) => entry.match(runner))!
-      const adapter = entry.create({ runner, options: { storeRoot: directory }, store, ownerGeneration: "generation-under-test" })
+      const adapter = entry.create({ runner, options: { storeRoot: directory }, store, ownerGeneration: "generation-under-test", reportOwnerFailure: () => {} })
       await adapter.dispose()
     }
     expect({ closed, recovered }).toEqual({ closed: 0, recovered: 0 })

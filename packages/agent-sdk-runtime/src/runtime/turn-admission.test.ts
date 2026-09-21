@@ -139,7 +139,7 @@ test("a steer suspended in adapter resolution cannot attach to a replacement tur
   const steered: PromptInput[] = []
   const controls: TurnControl[] = []
   const factory = harness({ turns, steered, steerable: true, open: () => open(controls) })
-  const adapter = factory.create({ store, eventHub })
+  const adapter = factory.create({ store, eventHub, reportOwnerFailure: () => {} })
   let resolved!: (adapter: AgentHarnessAdapter) => void
   let resolving!: () => void
   const entered = new Promise<void>((resolve) => { resolving = resolve })
