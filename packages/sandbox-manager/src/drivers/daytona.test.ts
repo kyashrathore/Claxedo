@@ -520,6 +520,28 @@ describe("DaytonaSandboxDriver", () => {
     )
   })
 
+  test("the runtime the driver starts is told the host id the driver returns on its target", async () => {
+    const created = sandbox({ id: "sb_provider_uuid" })
+    const daytona = client({ create: vi.fn(async () => created) })
+    const driver = createDaytonaSandboxDriver({
+      ...baseOptions,
+      client: daytona,
+      // The callback is handed the provider sandbox, so its id is the provider's
+      // resource id. A caller that put it under a host-identity key would
+      // override the boot env and unbind this host from the relay.
+      env: (_input, item) => ({ WORKSPACE_RUNTIME_LEASE_ID: `lease-${item.id}`, WORKSPACE_RUNTIME_EPOCH: "1" }),
+    })
+
+    const result = await driver.ensureHost(input)
+    if ("provisioning" in result) throw new Error("expected ready")
+
+    const [, , startedEnv] = (created.process.executeCommand as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(startedEnv.WORKSPACE_RUNTIME_HOST_ID).toBe(result.hostId)
+    expect(startedEnv.WORKSPACE_RUNTIME_HOST_ID).not.toBe(result.driverResourceId)
+    expect(result.driverResourceId).toBe("sb_provider_uuid")
+    expect(startedEnv.WORKSPACE_RUNTIME_LEASE_ID).toBe("lease-sb_provider_uuid")
+  })
+
   test("restricted network policy maps to Daytona's domain allowlist, CIDR allowlist and full block", async () => {
     const daytona = client()
     const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
@@ -540,6 +562,51 @@ describe("DaytonaSandboxDriver", () => {
     expect(create.mock.calls[1]?.[0]).not.toHaveProperty("networkAllowList")
     expect(create.mock.calls[2]?.[0]).toMatchObject({ networkBlockAll: true })
     expect(create.mock.calls[3]?.[0]).toMatchObject({ networkAllowList: "10.0.0.0/8" })
+  })
+
+  test("a malformed allowlist entry is rejected before it can splice provider entries", async () => {
+    // The lists are joined into one comma-delimited provider parameter each, so
+    // an entry carrying its own comma would become two provider allowances.
+    const daytona = client()
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await expect(
+      driver.ensureHost({ ...input, net: { mode: "restricted", hosts: ["api.example.test,evil.example.test"] } }),
+    ).rejects.toThrow(/domainAllowList entry/)
+    await expect(
+      driver.ensureHost({ ...input, net: { mode: "restricted", hosts: [" api.example.test"] } }),
+    ).rejects.toThrow(/domainAllowList entry/)
+    await expect(
+      driver.ensureHost({ ...input, net: { mode: "restricted", hosts: ["api.example.test "] } }),
+    ).rejects.toThrow(/domainAllowList entry/)
+    await expect(
+      driver.ensureHost({ ...input, net: { mode: "restricted", cidrs: ["10.0.0.0/8,172.16.0.0/12"] } }),
+    ).rejects.toThrow(/networkAllowList entry/)
+    await expect(
+      driver.ensureHost({ ...input, net: { mode: "restricted", cidrs: ["999.0.0.0/8"] } }),
+    ).rejects.toThrow(/networkAllowList entry/)
+    await expect(
+      driver.ensureHost({ ...input, net: { mode: "restricted", cidrs: ["10.0.0.0/33"] } }),
+    ).rejects.toThrow(/networkAllowList entry/)
+
+    expect(daytona.create).not.toHaveBeenCalled()
+  })
+
+  test("wildcards, plain hostnames, IPs and legal CIDRs still reach the allowlists", async () => {
+    const daytona = client()
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.ensureHost({
+      ...input,
+      net: { mode: "restricted", hosts: ["*.example.test", "api.example.test", "10.1.2.3"] },
+    })
+    await driver.ensureHost({ ...input, net: { mode: "restricted", cidrs: ["10.0.0.0/8", "192.168.0.0/16"] } })
+
+    const create = daytona.create as ReturnType<typeof vi.fn>
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      domainAllowList: "*.example.test,api.example.test,10.1.2.3",
+    })
+    expect(create.mock.calls[1]?.[0]).toMatchObject({ networkAllowList: "10.0.0.0/8,192.168.0.0/16" })
   })
 
   test("reusing an existing sandbox reapplies the requested egress policy", async () => {

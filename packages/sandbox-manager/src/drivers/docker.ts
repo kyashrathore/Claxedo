@@ -12,7 +12,7 @@ import type {
 import { workspaceRuntimeBootEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
-import { SANDBOX_IMAGE } from "../image"
+import { SANDBOX_IMAGE, assertSandboxImageReference } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { isTransientDriverError } from "./transient-error"
 
@@ -204,7 +204,9 @@ export function createDockerSandboxDriver(options: DockerSandboxDriverOptions): 
     if (input.bootSource?.kind === "driver-snapshot") {
       throw new Error("Docker SandboxDriver does not support driver snapshots; use image boot")
     }
-    return input.bootSource?.kind === "image" ? input.bootSource.image : input.snapshot ?? options.image
+    return assertSandboxImageReference(
+      input.bootSource?.kind === "image" ? input.bootSource.image : input.snapshot ?? options.image,
+    )
   }
 
   function bootEnv(input: SandboxDriverEnsureInput, hostId: string): Record<string, string> {

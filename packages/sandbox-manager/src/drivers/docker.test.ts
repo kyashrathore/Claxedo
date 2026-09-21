@@ -214,6 +214,33 @@ describe("DockerSandboxDriver", () => {
     ).rejects.toThrow(/driver snapshots/)
   })
 
+  test("option-like image identifiers are rejected before reaching docker argv", async () => {
+    const docker = runner()
+    const driver = createDockerSandboxDriver({
+      image: "claxedo-sandbox:test",
+      docker: docker.fn,
+      syncLocalAuth: false,
+      waitForHealth: false,
+    })
+
+    for (const bad of ["--privileged", "-v/host:/host", "img:test --network=host", " img:test"]) {
+      await expect(
+        driver.ensureHost({ ...input, bootSource: { kind: "image", image: bad } }),
+      ).rejects.toThrow(/image reference/)
+    }
+    // Same guard on the configured/env image and the persisted snapshot paths.
+    await expect(driver.ensureHost({ ...input, snapshot: "-e" })).rejects.toThrow(/image reference/)
+    const badOptions = createDockerSandboxDriver({
+      image: "--network=host",
+      docker: docker.fn,
+      syncLocalAuth: false,
+      waitForHealth: false,
+    })
+    await expect(badOptions.ensureHost(input)).rejects.toThrow(/image reference/)
+
+    expect(docker.calls).toHaveLength(0)
+  })
+
   test("restricted network policies are rejected", async () => {
     const driver = createDockerSandboxDriver({
       image: "claxedo-sandbox:test",

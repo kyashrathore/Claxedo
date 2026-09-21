@@ -8,7 +8,7 @@ import type {
 import { workspaceRuntimeBootEnv } from "../runtime-env"
 import { shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
-import { SANDBOX_IMAGE } from "../image"
+import { SANDBOX_IMAGE, assertSandboxImageReference } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { record, text } from "../json"
 import { isTransientDriverError } from "./transient-error"
@@ -177,8 +177,9 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
   }
 
   function resolveImage(input: SandboxDriverEnsureInput) {
-    if (input.bootSource?.kind === "image") return input.bootSource.image
-    return input.snapshot ?? image
+    return assertSandboxImageReference(
+      input.bootSource?.kind === "image" ? input.bootSource.image : input.snapshot ?? image,
+    )
   }
 
   function bootEnv(input: SandboxDriverEnsureInput, hostId: string): Record<string, string> {

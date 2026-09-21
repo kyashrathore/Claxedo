@@ -13,6 +13,19 @@ export function snapshotVersion(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 }
 
+/**
+ * A caller-supplied image string lands verbatim inside provider argv or
+ * commands (`docker create` argv, `docker run` inside a Box VM). A value that
+ * parses as an option — a leading `-` — or that splits into multiple words
+ * would be consumed as provider flags, not as an image reference.
+ */
+export function assertSandboxImageReference(image: string): string {
+  if (!image || image !== image.trim() || image.startsWith("-") || /\s/.test(image)) {
+    throw new Error(`sandbox image reference is not a legal image identifier: ${JSON.stringify(image)}`)
+  }
+  return image
+}
+
 export function sandboxImageRepository(env: SandboxImageEnv = process.env) {
   const repository = env.CLAXEDO_SANDBOX_IMAGE_REPOSITORY?.trim()
   return repository ? repository : DEFAULT_SANDBOX_IMAGE_REPOSITORY

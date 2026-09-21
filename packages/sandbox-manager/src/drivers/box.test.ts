@@ -123,6 +123,23 @@ describe("box sandbox driver", () => {
     expect(create?.body).toEqual({ ttlSeconds: null })
   })
 
+  test("option-like image identifiers are rejected before the box docker run", async () => {
+    for (const bad of ["--privileged", "-v/host:/host", "img:test --network=host"]) {
+      const box = fakeBox()
+      const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: box.fetchImpl, healthIntervalMs: 0 })
+      await expect(
+        driver.ensureHost(ensureInput({ bootSource: { kind: "image", image: bad } })),
+      ).rejects.toThrow(/image reference/)
+      // The guard fires while building the run script — no command ever reaches the box.
+      expect(box.calls.some((c) => c.path.endsWith("/commands"))).toBe(false)
+    }
+    // Same guard on the configured/env image path.
+    const box = fakeBox()
+    const badOptions = createBoxSandboxDriver({ apiKey: "k", image: "--network=host", fetchImpl: box.fetchImpl })
+    await expect(badOptions.ensureHost(ensureInput())).rejects.toThrow(/image reference/)
+    expect(box.calls.some((c) => c.path.endsWith("/commands"))).toBe(false)
+  })
+
   test("rejects restricted network policy", async () => {
     const box = fakeBox()
     const driver = createBoxSandboxDriver({ apiKey: "k", fetchImpl: box.fetchImpl })

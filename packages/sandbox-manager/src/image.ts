@@ -8,6 +8,7 @@ export { RUNTIME_DIR, WORKSPACE_RUNTIME_PORT, WORKSPACE_DIR } from "./defaults"
 export {
   SNAPSHOT_SCHEMA_VERSION,
   snapshotVersion,
+  assertSandboxImageReference,
   defaultSandboxImage,
   defaultSnapshotName,
 } from "./image-name"
