@@ -31,7 +31,7 @@ import { listPiCatalogModels } from "./catalog"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
 import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
 import type { SessionTitleRequest } from "../../title-generation"
-import { cleanupFromRetirement, createTurnStopRecord, observeStopAttempt } from "../shared/cancellation-facts"
+import { cleanupFromRetirement, createTurnStop, createTurnStopRecord } from "../shared/cancellation-facts"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import type { RequestDeadline } from "../../launch"
 import { RecoveryCodedError, retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
@@ -66,7 +66,7 @@ export function createPiRpcDriver(host: SdkRuntimeDriverHost, options: PiDriverO
   return new PiRpcDriver(host, options)
 }
 
-class PiRpcDriver implements SdkRuntimeDriver {
+export class PiRpcDriver implements SdkRuntimeDriver {
   readonly type = "pi" as const
   // `--append-system-prompt` is a spawn flag, and `ensure` respawns a reaped
   // session with `--session <file>` alone, so a block given at create is gone
@@ -346,6 +346,10 @@ class PiRpcDriver implements SdkRuntimeDriver {
     const result = await entry.process.dispose()
     if (retirementSettled(result)) {
       if (this.entries.get(id) === entry) this.entries.delete(id)
+      delete entry.retiring
+      // A retirement that settled may be the last thing holding the shared
+      // profile; releasing it is the whole point of having deferred it.
+      await this.releaseWhenUnblocked()
       return result
     }
     entry.retiring = result
@@ -355,8 +359,10 @@ class PiRpcDriver implements SdkRuntimeDriver {
 
   private recordUnresolved(result: RetirementResult) {
     if (retirementSettled(result)) return
+    // Kept apart from `processError`, which is this driver's record of a
+    // process dying under a turn. An unresolved retirement is a different
+    // state with a different remedy, and `readRuntimeHealth` reports it first.
     this.unresolved.push(result)
-    this.processError = unresolvedPiLaunch(result).message
   }
   private reap(sessionId: string, entry: Entry) {
     const generation = ++entry.idleGeneration
@@ -429,22 +435,25 @@ class PiRpcDriver implements SdkRuntimeDriver {
     // The stream may fail while awaiting command acknowledgement.
     void settled.catch(() => {})
     const stops = createTurnStopRecord()
-    const onTurnAbort = () => abort()
-    const abort = (deadline?: RequestDeadline) => {
-      if (cancelling) return
-      cancelling = observeStopAttempt(stops, "provider_unreachable", async () => {
+    const onTurnAbort = () => { void abort() }
+    // One attempt at a time, and a rejected one is evidence rather than a
+    // memoised answer: a stop that never reached Pi established nothing, so a
+    // later caller gets a new request instead of the old rejection.
+    const abort = createTurnStop(stops, "provider_unreachable", async (deadline) => {
+      cancelling = settled
+      try {
         for (const id of questionIds) this.host.pendingQuestions.get(id)?.reject()
         await process.request("clear_queue", {}, controlRequestDeadline(deadline))
         await process.request("abort", {}, controlRequestDeadline(deadline))
         finish()
-      }).catch(async (error: unknown) => {
+      } catch (error) {
         // Pi refused or never answered the cancel, so the only remaining
         // authority over this turn is the launch it runs in.
-        const result = await this.retire(agentSessionId, entry)
-        stops.cleanup = cleanupFromRetirement(result)
+        stops.cleanup = cleanupFromRetirement(await this.retire(agentSessionId, entry))
         fail(error instanceof Error ? error : new Error(String(error)))
-      })
-    }
+        throw error
+      }
+    })
     try {
       removeExit = process.onExit(fail)
       removeEvent = process.onEvent((event) => {
@@ -654,8 +663,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
   async dispose() {
     await this.goalController.dispose()
     await this.closeProcesses()
-    if (this.unresolved.length) return
-    await this.authProfile.release()
+    await this.releaseWhenUnblocked()
   }
   private async closeProcesses() {
     const retiring = [...this.entries].map(([sessionId, entry]) => this.retire(sessionId, entry))
@@ -669,6 +677,21 @@ class PiRpcDriver implements SdkRuntimeDriver {
   /** Retirements that never established an exit, and the auth release they hold. */
   retirementBlockers(): readonly RetirementResult[] {
     return this.unresolved
+  }
+
+  /**
+   * Re-reads the retirements that deferred the auth profile's release and
+   * drops the ones a later retirement settled. A profile held open forever
+   * because one process could not be established as stopped is a leak of the
+   * credentials it holds, not containment.
+   */
+  private async releaseWhenUnblocked() {
+    const blocking = this.unresolved.filter((result) => !retirementSettled(result))
+    this.unresolved.length = 0
+    this.unresolved.push(...blocking)
+    if (blocking.length) return false
+    await this.authProfile.release()
+    return true
   }
 }
 

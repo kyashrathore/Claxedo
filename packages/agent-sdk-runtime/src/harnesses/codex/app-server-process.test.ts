@@ -8,6 +8,10 @@ import os from "node:os"
 import path from "node:path"
 import { CodexAppServerProcess } from "./app-server-process"
 import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-server"
+import { CodexHarnessAdapter } from "./index"
+import { createMemoryRuntimeStore } from "../../stores/memory"
+import type { WithInternals } from "../../test-utils/class-internals"
+import type { CreationIdentity, RetirementResult } from "../../launch"
 
 const soon = () => ({ signal: new AbortController().signal, deadlineAt: Date.now() + 5_000 })
 
@@ -148,6 +152,48 @@ test("a request to an app-server that already exited is refused, not left to its
     // nobody can satisfy.
     expect(Date.now() - started).toBeLessThan(1_000)
   } finally {
+    await fs.rm(fake.directory, { recursive: true, force: true })
+  }
+})
+
+test("a retained unresolved launch stops refusing once its recorded pid is no longer that launch", async () => {
+  const fake = await installFakeCodexAppServer()
+  const driver = new CodexHarnessAdapter({
+    binary: fake.binary,
+    store: createMemoryRuntimeStore(),
+    codexHome: path.join(fake.directory, "codex-home"),
+  }) as unknown as WithInternals<CodexHarnessAdapter, { driver: {
+    unretired: { result: RetirementResult; identity: CreationIdentity } | null
+    stillUnretired(): Promise<boolean>
+    readRuntimeHealth(): { status: string; reason?: string }
+  } }>
+  const codex = driver.driver
+  try {
+    // A retirement that established nothing, recorded against a pid that has
+    // since gone: exactly what a driver holds after a failed reap.
+    codex.unretired = {
+      result: { leader: "alive", descendants: "owned", signals: [] },
+      identity: {
+        pid: 999_999,
+        processGroupId: 999_999,
+        startSecond: "1",
+        bootTime: "1",
+        parentPid: 1,
+        startedAtMs: 1000,
+        source: "darwin-ps",
+      },
+    }
+    // While it is held, the driver refuses to launch anything and says so.
+    expect(codex.readRuntimeHealth()).toMatchObject({ status: "unavailable", reason: "harness_retirement_unresolved" })
+
+    // Re-reading the recorded identity is what releases it. Without this a
+    // single failed retirement refuses every later session for the life of
+    // the driver.
+    expect(await codex.stillUnretired()).toBe(false)
+    expect(codex.unretired).toBeNull()
+    expect(codex.readRuntimeHealth()).toMatchObject({ status: "ok" })
+  } finally {
+    await (driver as unknown as { dispose(): Promise<void> }).dispose()
     await fs.rm(fake.directory, { recursive: true, force: true })
   }
 })

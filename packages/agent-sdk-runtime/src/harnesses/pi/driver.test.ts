@@ -6,6 +6,8 @@ import { PiHarnessAdapter } from "./index"
 import { resolvePiExecutable, unpinnedPiReason } from "./executable"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
+import { PiRpcDriver } from "./driver"
+import type { RetirementResult } from "../../launch"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { PromptInput } from "../../index"
@@ -369,3 +371,31 @@ async function steerWhenRunning(adapter: PiHarnessAdapter, binding: AgentExecuti
   }
   return last
 }
+
+test("a deferred auth release is retried once the retirement blocking it settles", async () => {
+  const released: number[] = []
+  const driver = Object.create(PiRpcDriver.prototype) as {
+    unresolved: RetirementResult[]
+    authProfile: { release(): Promise<void> }
+    releaseWhenUnblocked(): Promise<boolean>
+    readRuntimeHealth(): { status: string; reason?: string }
+    processError?: string
+  }
+  driver.unresolved = []
+  driver.authProfile = { release: async () => { released.push(Date.now()) } }
+
+  // A retirement that established nothing holds the shared profile: releasing
+  // it would pull credentials out from under a process nothing stopped.
+  const blocking: RetirementResult = { leader: "alive", descendants: "owned", signals: [] }
+  driver.unresolved.push(blocking)
+  expect(await driver.releaseWhenUnblocked()).toBe(false)
+  expect(released).toHaveLength(0)
+  expect(driver.readRuntimeHealth()).toMatchObject({ status: "unavailable", reason: "harness_retirement_unresolved" })
+
+  // A later retirement settles it, and the release it deferred runs.
+  driver.unresolved.length = 0
+  driver.unresolved.push({ leader: "exited", descendants: "verified_clear", signals: [] })
+  expect(await driver.releaseWhenUnblocked()).toBe(true)
+  expect(released).toHaveLength(1)
+  expect(driver.readRuntimeHealth()).toMatchObject({ status: "ok" })
+})

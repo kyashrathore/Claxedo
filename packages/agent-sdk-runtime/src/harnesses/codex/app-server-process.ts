@@ -209,6 +209,11 @@ export class CodexAppServerProcess {
     return this.proc.exitCode === null && !this.proc.killed
   }
 
+  /** The launch's recorded identity, so an owner holding it can re-verify it later. */
+  get launchIdentity() {
+    return this.launch.identity
+  }
+
   onMessage(listener: (message: JsonRecord) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)

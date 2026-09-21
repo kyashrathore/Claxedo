@@ -59,7 +59,15 @@ import {
   startTurnWithThreadRecovery,
 } from "./protocol"
 import { createTurnStopRecord } from "../shared/cancellation-facts"
-import { RecoveryCodedError, retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
+import {
+  RecoveryCodedError,
+  retirementSettled,
+  verifyCreationIdentity,
+  volatileLaunchOwnership,
+  type CreationIdentity,
+  type LaunchOwnershipStore,
+  type RetirementResult,
+} from "../../launch"
 
 export {
   codexGoalSnapshot,
@@ -117,7 +125,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private disposed = false
   private processError: string | null = null
   /** A launch whose retirement did not establish that it stopped. Blocks the next one. */
-  private unretired: { result: RetirementResult } | null = null
+  private unretired: { result: RetirementResult; identity: CreationIdentity } | null = null
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPluginLaunch: CodexPluginLaunch | undefined
@@ -453,7 +461,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     // Reclaiming memory must not silently leave a Codex process behind: an
     // unresolved retirement is retained and refuses the next launch.
     void retiring.dispose().then((result) => {
-      if (!retirementSettled(result)) this.unretired = { result }
+      if (!retirementSettled(result)) this.retain(retiring, result)
     })
   }
 
@@ -473,7 +481,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.process = null
     const results = await Promise.all([running?.dispose(), startup?.then((proc) => proc.dispose(), () => undefined)])
     const unresolved = results.find((result) => result && !retirementSettled(result))
-    if (unresolved) this.unretired = { result: unresolved }
+    if (unresolved && running) this.retain(running, unresolved)
   }
 
   async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
@@ -515,7 +523,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
    */
   private async ensureProcess(directory: string) {
     if (this.disposed) throw new Error("Codex app-server driver is disposed")
-    if (this.unretired) throw unresolvedLaunch(this.unretired)
+    if (await this.stillUnretired()) throw unresolvedLaunch(this.unretired!)
     if (!this.process?.alive && !this.processStartup) {
       const retiring = this.process
       this.process = null
@@ -545,8 +553,31 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private async retireProcess(proc: CodexAppServerProcess) {
     const result = await proc.dispose()
     if (retirementSettled(result)) return result
-    this.unretired = { result }
-    throw unresolvedLaunch(this.unretired)
+    this.retain(proc, result)
+    throw unresolvedLaunch(this.unretired!)
+  }
+
+  private retain(proc: CodexAppServerProcess, result: RetirementResult) {
+    this.unretired = { result, identity: proc.launchIdentity }
+  }
+
+  /**
+   * Whether the launch this driver refused to replace is still unresolved.
+   *
+   * A retained retirement is a claim about a specific process, and processes
+   * end. Re-reading the recorded identity is what keeps one failed retirement
+   * from refusing every later session for the life of the driver: a pid that
+   * has exited, or that now answers for a different process, is no longer the
+   * launch this driver was holding.
+   */
+  private async stillUnretired() {
+    const retained = this.unretired
+    if (!retained) return false
+    const verdict = await verifyCreationIdentity(retained.identity)
+    if (verdict.state !== "exited" && verdict.state !== "identity_mismatch") return true
+    this.unretired = null
+    this.processError = null
+    return false
   }
 
   private async startProcess(directory: string, lifecycleRevision: number, signal: AbortSignal) {
