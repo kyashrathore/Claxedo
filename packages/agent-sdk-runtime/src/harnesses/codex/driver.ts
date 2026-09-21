@@ -60,7 +60,7 @@ import {
   startTurnWithThreadRecovery,
 } from "./protocol"
 import { createTurnStopRecord } from "../shared/cancellation-facts"
-import { RecoveryCodedError, retirementSettled, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
+import { RecoveryCodedError, retirementSettled, volatileLaunchOwnership, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
 
 export {
   codexGoalSnapshot,
@@ -642,7 +642,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       processObserver: this.host.processObserver,
       mcp: this.currentMcp,
       signal,
-      ...(this.options.ownership ? { ownership: this.options.ownership } : {}),
+      // A composition that gave this driver no store still gets a launch
+      // record; it just cannot be reconciled after a restart, which is what
+      // volatile ownership says about itself.
+      ownership: this.options.ownership ?? volatileLaunchOwnership(),
       onClose: (err) => {
         if (this.process === started) {
           this.processGoalUnsubscribe?.()

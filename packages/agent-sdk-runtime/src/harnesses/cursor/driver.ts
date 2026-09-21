@@ -52,6 +52,7 @@ import { harnessProjection } from "../../harness-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import { generateCursorTitle } from "./title"
 import type { SessionTitleRequest } from "../../title-generation"
+import { createTurnStop, createTurnStopRecord } from "../shared/cancellation-facts"
 import {
   deliverPromptAttachments,
   promptImageAttachments,
@@ -319,12 +320,15 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         force: false,
       },
     })
-    const onAbort = () => run.cancel().catch(() => {})
+    const stops = createTurnStopRecord()
+    const cancel = createTurnStop(stops, "provider_unreachable", () => run.cancel())
+    const onAbort = () => { void cancel() }
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
     this.host.lifecycle().set(input.sessionId, {
       abort: input.abort,
       turnId: run.id,
-      close: () => run.cancel().catch(() => {}),
+      close: cancel,
+      stops,
     })
     try {
       for await (const message of run.stream()) {
@@ -376,12 +380,15 @@ class CursorSdkDriver implements SdkRuntimeDriver {
       createdAt: now,
       updatedAt: now,
     })
-    const onAbort = () => run.cancel().catch(() => {})
+    const stops = createTurnStopRecord()
+    const cancel = createTurnStop(stops, "provider_unreachable", () => run.cancel())
+    const onAbort = () => { void cancel() }
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
     this.host.lifecycle().set(input.sessionId, {
       abort: input.abort,
       turnId: run.id,
-      close: () => run.cancel().catch(() => {}),
+      close: cancel,
+      stops,
     })
     try {
       for await (const message of run.stream()) {

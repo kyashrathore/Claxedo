@@ -5,6 +5,7 @@ import path from "node:path"
 import { createAgentRuntime } from "../../runtime"
 import { harnessFactory } from "../../harness-factories/factory"
 import { PiRpcProcess } from "./rpc-process"
+import { volatileLaunchOwnership } from "../../launch"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { GOAL_PROMPT_TEXT } from "../shared/goal-protocol"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
@@ -178,6 +179,7 @@ test(
         directory,
         args: ["--mode", "rpc", "--session", nativeFile, "--provider", "groq", "--model", PROOF_MODEL],
         env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
+        ownership: volatileLaunchOwnership(),
       })
       try {
         const compacted = await rpc.request("compact", { customInstructions: "Keep the file edit and completion." })

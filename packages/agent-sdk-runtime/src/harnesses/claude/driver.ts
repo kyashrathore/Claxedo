@@ -64,6 +64,20 @@ import { requireClaudeExecutable } from "./executable"
 import { createClaudeTurnInput, type ClaudeTurnInput } from "./turn-input"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import {
+  cleanupFromRetirement,
+  createTurnStop,
+  createTurnStopRecord,
+  retirementBudgetsWithin,
+} from "../shared/cancellation-facts"
+import {
+  readCreationIdentity,
+  retire,
+  volatileLaunchOwnership,
+  type LaunchOwnershipStore,
+  type RetirementBudgets,
+  type RetirementResult,
+} from "../../launch"
+import {
   CLAUDE_DENY_FLOOR,
   CLAUDE_PERMISSION_MODES,
   PermissionModeSelection,
@@ -211,6 +225,8 @@ export type ClaudeSdkDriverOptions = {
   executable?: () => string
   /** Where the account-free config dir a brokered turn runs under is built. */
   brokeredConfigDir?: { root: string; source?: string }
+  /** Durable launch records, so a Claude CLI outliving this process stays a recoverable owner. */
+  ownership?: LaunchOwnershipStore
 }
 
 export function createClaudeSdkDriver(
@@ -425,6 +441,15 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     turnInput?: ClaudeTurnInput,
   ) {
     const tasks = createClaudeTaskLedger()
+    let launch: ClaudeDirectLaunch | undefined
+    const stops = createTurnStopRecord()
+    // Closing the query is the SDK's own graceful stop. It is not evidence
+    // about what the CLI started, so the launch this driver owns is retired
+    // and its result is the only cleanup fact on offer.
+    const stopTurn = createTurnStop(stops, "provider_unreachable", async (deadline) => {
+      q.close()
+      if (launch) stops.cleanup = cleanupFromRetirement(await launch.retire(retirementBudgetsWithin(deadline)))
+    })
     const applyGoal = (goal: RuntimeGoalSnapshot | null) => {
       this.goalStore.apply(input.sessionId, goal)
       onGoal?.(goal)
@@ -622,12 +647,15 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           role: "harness",
           sessionId: input.sessionId,
           mcp: this.currentMcp,
+          onLaunch: (owned) => { launch = owned },
+          ...(this.driverOptions.ownership ? { ownership: this.driverOptions.ownership } : {}),
         }),
       },
     })
     this.host.lifecycle().set(input.sessionId, {
       abort: input.abort,
-      close: () => q.close(),
+      close: stopTurn,
+      stops,
       ...(turnInput
         ? {
             steer: async () => ({
@@ -791,6 +819,9 @@ export function spawnObservedClaudeCodeProcess(input: {
   sessionId?: string
   mcp?: Record<string, ResolvedMcpServer>
   spawnProcess?: typeof spawn
+  /** Called with the launch this spawn owns, so the turn can retire it. */
+  onLaunch?: (launch: ClaudeDirectLaunch) => void
+  ownership?: LaunchOwnershipStore
 }): SpawnedProcess {
   const proc = (input.spawnProcess ?? spawn)(
     input.options.command,
@@ -800,8 +831,18 @@ export function spawnObservedClaudeCodeProcess(input: {
       env: input.options.env,
       signal: input.options.signal,
       stdio: ["pipe", "pipe", "inherit"],
+      // Its own POSIX group, so what the CLI starts stays inside a scope this
+      // owner can retire. The SDK closes stdin first and only then aborts, so
+      // detaching does not cost the child its graceful shutdown.
+      detached: process.platform !== "win32",
     },
   )
+  input.onLaunch?.(ownDirectClaudeLaunch({
+    proc,
+    ownership: input.ownership ?? volatileLaunchOwnership(),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.options.cwd ? { directory: input.options.cwd } : {}),
+  }))
   const ownerId = `claude-${input.role}:${randomUUID()}`
   const handles = [
     observeAgentProcess(input.observer, {
@@ -858,6 +899,66 @@ export function spawnObservedClaudeCodeProcess(input: {
   proc.once("error", () => exit({ reason: "error" }))
   handles.forEach((handle) => handle.update({ lifecycle: "ready" }))
   return proc
+}
+
+export type ClaudeDirectLaunch = {
+  retire(budgets: RetirementBudgets): Promise<RetirementResult>
+}
+
+/**
+ * The Claude Code SDK's spawn hook is synchronous, so this launch cannot use
+ * the gate: there is no moment at which the host could authorize execution
+ * before the payload runs. It is recorded as a `direct` launch, whose identity
+ * is read after the spawn — a prepared row alone can therefore never prove the
+ * process did not start, and `reconcileLaunch` says exactly that.
+ */
+function ownDirectClaudeLaunch(input: {
+  proc: SpawnedProcess
+  ownership: LaunchOwnershipStore
+  sessionId?: string
+  directory?: string
+}): ClaudeDirectLaunch {
+  const recorded = (async () => {
+    const prepared = await input.ownership.prepare({
+      role: "harness",
+      protocol: "direct",
+      scope: {
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.directory ? { directory: input.directory } : {}),
+      },
+    })
+    const identity = input.proc.pid ? await readCreationIdentity(input.proc.pid) : undefined
+    if (identity) await input.ownership.recordIdentity(prepared.launchId, identity)
+    return { launchId: prepared.launchId, identity }
+  })()
+  // Nothing awaits the record until a retirement asks for it, and an
+  // unobserved rejection here would take the process down.
+  void recorded.catch(() => {})
+  return {
+    async retire(budgets: RetirementBudgets) {
+      let launch: Awaited<typeof recorded>
+      try {
+        launch = await recorded
+      } catch (error) {
+        return unownedClaudeLaunch(`this Claude launch was never recorded: ${errorMessage(error)}`)
+      }
+      if (!launch.identity) {
+        return unownedClaudeLaunch(`no creation identity was established for pid ${String(input.proc.pid)}, so its group was not signalled`)
+      }
+      const result = await retire({ identity: launch.identity }, budgets)
+      await input.ownership.recordRetirement(launch.launchId, result)
+      return result
+    },
+  }
+}
+
+function unownedClaudeLaunch(message: string): RetirementResult {
+  return {
+    leader: "unknown",
+    descendants: "unknown",
+    signals: [],
+    error: { code: "ownership_unverified", message },
+  }
 }
 
 export function claudeSpawnEnv(input: Record<string, string | undefined>) {

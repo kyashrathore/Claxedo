@@ -9,7 +9,7 @@ import {
   type JsonRecord,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { observeStopAttempt, type TurnStopRecord } from "../shared/cancellation-facts"
+import { createTurnStop, type TurnStopRecord } from "../shared/cancellation-facts"
 import { deliverPromptAttachments, promptImageAttachments } from "../shared/prompt-attachments"
 import type { RequestDeadline } from "../../launch"
 import type { CodexAppServerProcess } from "./app-server-process"
@@ -61,7 +61,6 @@ export function createCodexTurnStop(input: {
   record: TurnStopRecord
 }): CodexTurnStop {
   const commandProcesses = new Map<string, Set<string>>()
-  let inflight: Promise<void> | undefined
 
   const attempt = async (deadline: RequestDeadline) => {
     const turnId = await input.turnId()
@@ -115,18 +114,7 @@ export function createCodexTurnStop(input: {
       processes.add(processId)
       commandProcesses.set(turnId, processes)
     },
-    stop(deadline?: RequestDeadline) {
-      if (inflight) return inflight
-      const last = input.record.attempts.at(-1)
-      if (last?.settledAt && !last.failure) return Promise.resolve()
-      const running = observeStopAttempt(input.record, "provider_unreachable", () => attempt(codexControlDeadline(deadline)))
-        .finally(() => { inflight = undefined })
-      // The abort path starts a stop nobody awaits; its failure is read off the
-      // record instead of crashing the process as an unobserved rejection.
-      void running.catch(() => {})
-      inflight = running
-      return running
-    },
+    stop: createTurnStop(input.record, "provider_unreachable", (deadline) => attempt(codexControlDeadline(deadline))),
   }
 }
 

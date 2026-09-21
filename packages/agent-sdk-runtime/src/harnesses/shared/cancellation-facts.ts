@@ -1,5 +1,11 @@
-import type { CleanupFact, RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
-import { RecoveryCodedError, retirementSettled, type RetirementResult } from "../../launch"
+import { DEFAULT_RECOVERY_BUDGETS, type CleanupFact, type RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
+import {
+  RecoveryCodedError,
+  retirementSettled,
+  type RequestDeadline,
+  type RetirementBudgets,
+  type RetirementResult,
+} from "../../launch"
 
 export type CancellationFailure = { code: RecoveryErrorCode; message: string }
 
@@ -70,4 +76,45 @@ export function observeStopAttempt<T>(
 /** The newest attempt's failure. A later successful retry clears it by being newer. */
 export function stopFailure(record: TurnStopRecord | undefined): CancellationFailure | undefined {
   return record?.attempts.at(-1)?.failure
+}
+
+/**
+ * One stop at a time, and a stop that already succeeded is not repeated. A
+ * rejected attempt is kept only as evidence: it never reached the provider, so
+ * it established nothing and the next caller gets a fresh attempt rather than
+ * the old rejection.
+ */
+export function createTurnStop(
+  record: TurnStopRecord,
+  fallback: RecoveryErrorCode,
+  run: (deadline?: RequestDeadline) => Promise<void>,
+) {
+  let inflight: Promise<void> | undefined
+  return (deadline?: RequestDeadline) => {
+    if (inflight) return inflight
+    const last = record.attempts.at(-1)
+    if (last?.settledAt && !last.failure) return Promise.resolve()
+    const running = observeStopAttempt(record, fallback, () => run(deadline)).finally(() => { inflight = undefined })
+    // An abort starts a stop nobody awaits; an unobserved rejection there would
+    // take the process down instead of being read off the record.
+    void running.catch(() => {})
+    inflight = running
+    return running
+  }
+}
+
+/**
+ * TERM and KILL budgets scaled to fit inside the caller's remaining deadline,
+ * so retiring a process cannot outlive the operation that asked for it.
+ */
+export function retirementBudgetsWithin(deadline?: RequestDeadline): RetirementBudgets {
+  const { termGraceMs, killVerifyMs } = DEFAULT_RECOVERY_BUDGETS
+  if (!deadline) return { termGraceMs, killVerifyMs }
+  const remaining = Math.max(0, deadline.deadlineAt - Date.now())
+  const full = termGraceMs + killVerifyMs
+  if (remaining >= full) return { termGraceMs, killVerifyMs }
+  return {
+    termGraceMs: Math.floor((remaining * termGraceMs) / full),
+    killVerifyMs: Math.floor((remaining * killVerifyMs) / full),
+  }
 }
