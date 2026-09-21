@@ -45,6 +45,25 @@ export type RecoveryCopy = {
   failed: boolean
 }
 
+/**
+ * Whether a session should offer the recovery panel.
+ *
+ * Two independent reasons. A command this client issued and never saw settle is
+ * one. The other is work the owner was still holding when this client mounted:
+ * a reload loses the command but not the operation behind it, and without this
+ * the session that most needs recovery is the one that cannot reach it.
+ */
+export function recoveryPanelReachable(input: {
+  command?: { outcome?: RecoveryOutcome; unreachable?: string }
+  retained?: { operations: number; failures: number }
+}): boolean {
+  const command = input.command
+  if (command && (command.unreachable !== undefined || !command.outcome || !turnStopped(command.outcome))) {
+    return true
+  }
+  return (input.retained?.operations ?? 0) > 0 || (input.retained?.failures ?? 0) > 0
+}
+
 export function describeRecoveryOutcome(outcome: RecoveryOutcome): RecoveryCopy {
   if (outcome.kind === "refused") {
     return readingCopy(REFUSAL_READINGS[outcome.refusal.kind], {

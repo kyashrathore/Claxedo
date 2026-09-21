@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { CleanupFact, ExecutionFact, PersistenceFact, RecoveryOperation, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
-import { describeRecoveryOutcome, describeRecoveryUnreachable, recoveryToastText } from "./recovery-outcome-copy"
+import { describeRecoveryOutcome, describeRecoveryUnreachable, recoveryPanelReachable, recoveryToastText } from "./recovery-outcome-copy"
 
 function outcome(
   execution: ExecutionFact,
@@ -141,5 +141,43 @@ describe("rendering a reading", () => {
   test("a reading with no owner message renders the detail alone", () => {
     const copy = describeRecoveryOutcome(outcome("terminal", "unknown", "committed"))
     expect(recoveryToastText((key) => key, copy).description).toBe("session.recovery.cleanup_unverified.detail")
+  })
+})
+
+describe("when a session offers recovery", () => {
+  test("a session with no command and nothing retained does not", () => {
+    expect(recoveryPanelReachable({})).toBe(false)
+    expect(recoveryPanelReachable({ retained: { operations: 0, failures: 0 } })).toBe(false)
+  })
+
+  test("a command still in flight does", () => {
+    expect(recoveryPanelReachable({ command: {} })).toBe(true)
+  })
+
+  test("a Stop that never reached an owner does", () => {
+    expect(recoveryPanelReachable({ command: { unreachable: "socket closed" } })).toBe(true)
+  })
+
+  test("a turn that stopped and was saved does not, whatever its cleanup", () => {
+    expect(recoveryPanelReachable({ command: { outcome: outcome("terminal", "unknown", "committed") } })).toBe(false)
+    expect(recoveryPanelReachable({ command: { outcome: outcome("terminal", "verified_clear", "committed") } })).toBe(false)
+  })
+
+  test("a turn still running, or one whose interruption was not saved, does", () => {
+    expect(recoveryPanelReachable({ command: { outcome: outcome("unknown", "owned", "pending") } })).toBe(true)
+    expect(recoveryPanelReachable({ command: { outcome: outcome("terminal", "unknown", "pending") } })).toBe(true)
+  })
+
+  // The reload case: the command is gone with the page, the operation is not.
+  test("work the owner still holds does, with no command at all", () => {
+    expect(recoveryPanelReachable({ retained: { operations: 1, failures: 0 } })).toBe(true)
+    expect(recoveryPanelReachable({ retained: { operations: 0, failures: 1 } })).toBe(true)
+  })
+
+  test("a settled command does not hide work the owner is still holding", () => {
+    expect(recoveryPanelReachable({
+      command: { outcome: outcome("terminal", "verified_clear", "committed") },
+      retained: { operations: 0, failures: 2 },
+    })).toBe(true)
   })
 })
