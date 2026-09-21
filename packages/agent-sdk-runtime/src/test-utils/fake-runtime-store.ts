@@ -116,7 +116,9 @@ export function fakeRuntimeStore(
     // Fences by default. A fake that accepted any lease would let every
     // caller's test pass against a store that never checked one.
     finishTurn: (input: AgentRuntimeTurnFinishInput) => {
-      if (leases.get(input.sessionId)?.leaseId !== input.leaseId) {
+      // The absent case is spelled out for the same reason the real stores do
+      // it: comparing two absent leases passes a writer holding nothing.
+      if (input.leaseId === undefined || leases.get(input.sessionId)?.leaseId !== input.leaseId) {
         throw new AgentRuntimeStaleTurnError(input.sessionId)
       }
       return overrides.finishTurn ? overrides.finishTurn(input) : { events: [] }

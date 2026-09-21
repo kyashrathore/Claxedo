@@ -3831,3 +3831,43 @@ void it("a session whose projection is behind cannot advance its checkpoint thro
   )
   store.close()
 })
+
+void it("a writer carrying no lease is refused, whether or not the session granted one", () => {
+  const store = new RuntimeStore(tmp())
+  // A lease-less writer against a session that holds one.
+  turnFixture(store)
+  assert.throws(
+    () => store.finishTurn({
+      sessionId: "s1",
+      assistantMessageId: "m1",
+      outcome: { status: "completed", completedAt: 5 },
+      leaseId: undefined as unknown as string,
+    }),
+    AgentRuntimeStaleTurnError,
+  )
+
+  // And against one that holds none: two absent leases must not compare equal.
+  store.bindSession({ sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
+  store.startTurn({
+    sessionId: "s2",
+    agentSessionId: "a2",
+    userMessageId: "u2",
+    assistantMessageId: "m2",
+    agent: "build",
+    model: { providerID: "anthropic", modelID: "opus" },
+    parts: [{ type: "text", text: "go" }],
+  })
+  assert.equal(store.readTurnAuthority("s2"), undefined)
+  assert.throws(
+    () => store.finishTurn({
+      sessionId: "s2",
+      assistantMessageId: "m2",
+      outcome: { status: "completed", completedAt: 5 },
+      leaseId: undefined as unknown as string,
+    }),
+    AgentRuntimeStaleTurnError,
+  )
+  assert.equal(journalTypes(store, "s2").includes("turn.finish"), false)
+  assert.equal(store.getSession("s2")?.status, "busy")
+  store.close()
+})

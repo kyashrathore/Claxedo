@@ -3654,7 +3654,10 @@ export class RuntimeStore {
     this.settleDeltas(input.sessionId)
     if (this.deleted(input.sessionId)) throw new Error(`Session ${input.sessionId} was deleted`)
     return this.transaction(() => {
-      if (this.readTurnAuthority(input.sessionId)?.leaseId !== input.leaseId) {
+      // The absent case is spelled out: comparing two absent leases would pass
+      // a writer holding nothing over a session that has granted nothing, which
+      // is exactly the unfenced terminal the required lease removes.
+      if (input.leaseId === undefined || this.readTurnAuthority(input.sessionId)?.leaseId !== input.leaseId) {
         throw new AgentRuntimeStaleTurnError(input.sessionId)
       }
       this.assertFencingToken(input.sessionId, input.fencingToken)

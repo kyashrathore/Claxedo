@@ -492,4 +492,36 @@ describe("SqliteRuntimeStore", () => {
     expect(tables.map((row) => row.name)).toEqual(["runtime_schema"])
     reopened.close()
   })
+
+  test("a writer carrying no lease is refused, whether or not the session granted one", () => {
+    const store = new SqliteRuntimeStore({ root: tempRoot() })
+    const start = (sessionId: string, assistantMessageId: string) => store.startTurn({
+      sessionId,
+      agentSessionId: `native_${sessionId}`,
+      userMessageId: `u_${sessionId}`,
+      assistantMessageId,
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "opus" },
+      parts: [{ type: "text", text: "go" }],
+    })
+    for (const sessionId of ["held", "ungranted"]) {
+      store.bindSession({ sessionId, directory: "/repo", agentSessionId: `native_${sessionId}` })
+    }
+    expect(store.acquireTurnLease("held")).toBeDefined()
+    start("held", "m_held")
+    start("ungranted", "m_ungranted")
+    expect(store.readTurnAuthority("ungranted")).toBeUndefined()
+
+    const finishWithoutLease = (sessionId: string, assistantMessageId: string) => store.finishTurn({
+      sessionId,
+      assistantMessageId,
+      outcome: { status: "completed", completedAt: 5 },
+      leaseId: undefined as unknown as string,
+    })
+    expect(() => finishWithoutLease("held", "m_held")).toThrow(AgentRuntimeStaleTurnError)
+    // Two absent leases must not compare equal.
+    expect(() => finishWithoutLease("ungranted", "m_ungranted")).toThrow(AgentRuntimeStaleTurnError)
+    expect(store.getSession("ungranted")?.status).toBe("busy")
+    store.close()
+  })
 })

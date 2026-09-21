@@ -516,6 +516,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   private hydrateMemory() {
     const snapshot: MemoryRuntimeStoreSnapshot = {
+      turnLeases: [...this.turnLeases].map(([sessionId, held]) => ({ sessionId, ...held })),
       sessions: this.jsonRows("runtime_sessions", "id", persistedSessionRow),
       configs: this.rows("SELECT session_id, data_json FROM runtime_configs").map((row) => ({
         sessionId: columnText(row, "session_id"),
@@ -545,10 +546,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       })),
     }
     this.memory = new MemoryRuntimeStore(this.sessionStarts)
-    this.memory.importSnapshot({
-      ...snapshot,
-      turnLeases: [...this.turnLeases].map(([sessionId, held]) => ({ sessionId, ...held })),
-    })
+    this.memory.importSnapshot(snapshot)
   }
 
   private write<T>(operation: () => T): T {
