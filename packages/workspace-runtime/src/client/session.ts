@@ -25,7 +25,7 @@ import type {
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
-import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
+import { claxedoErrorEnvelope, namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
 type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
@@ -164,6 +164,32 @@ export type WorkspaceQuestionClient = {
 const SESSION_LIST_QUERY = ["scope", "path", "roots", "start", "search", "limit"] as const
 const SESSION_SUMMARY_QUERY = ["roots", "archived", "limit"] as const
 
+/**
+ * The two statuses the recovery routes answer their own error envelope with:
+ * a request that failed to parse, and an operation id this owner never held.
+ * Both are answers about the request itself, so they stay exceptions — a
+ * caller must not read "your request was malformed" as a turn it may retry.
+ */
+const RECOVERY_ROUTE_ERROR_STATUSES = new Set([400, 404])
+
+/**
+ * A recovery answer, from whatever answered. The owner's own body is an
+ * outcome; a hop in front of it that gave up — a relay timeout, an
+ * unreachable upstream, a body nothing would forward — answers the runtime's
+ * error envelope under some other status, and that is `unavailable`: nothing
+ * reached the owner, so it made no decision about the turn. Reading it as an
+ * operation would invent one the owner never opened, and throwing it away
+ * would lose the only thing the caller was told.
+ */
+function decodeRecoveryOutcome(body: unknown, status: number): RecoveryOutcome {
+  if (isRecoveryOutcome(body)) return parseRecoveryOutcome(body)
+  const envelope = claxedoErrorEnvelope(body)
+  if (!envelope || RECOVERY_ROUTE_ERROR_STATUSES.has(status)) {
+    throw new Error("recovery answer is neither an outcome nor a forwarding failure")
+  }
+  return { kind: "refused", refusal: { kind: "unavailable", message: `${envelope.code}: ${envelope.message}` } }
+}
+
 const sessionPath = (input: SessionInput, suffix = "") => `/session/${encodeURIComponent(input.sessionID)}${suffix}`
 
 export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionClient {
@@ -204,7 +230,11 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         path: sessionPath(input, "/recovery"),
         scope: input,
         options,
-        decode: (body) => isRecoveryOutcome(body) ? parseRecoveryOutcome(body) : (body as AgentRuntimeRecoveryInspection),
+        // An inspection the owner answered carries no `kind` and is not an
+        // error envelope, so it is the only body that is not an outcome.
+        decode: (body, status) => isRecoveryOutcome(body) || claxedoErrorEnvelope(body)
+          ? decodeRecoveryOutcome(body, status)
+          : (body as AgentRuntimeRecoveryInspection),
       }),
       submit: (input, options) => caller.decoded({
         operation: "session.recovery.submit",
@@ -213,14 +243,14 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         scope: input,
         body: input.request,
         options,
-        decode: parseRecoveryOutcome,
+        decode: decodeRecoveryOutcome,
       }),
       read: (input, options) => caller.decoded({
         operation: "session.recovery.read",
         path: sessionPath(input, `/recovery/operations/${encodeURIComponent(input.operationId)}`),
         scope: input,
         options,
-        decode: parseRecoveryOutcome,
+        decode: decodeRecoveryOutcome,
       }),
     },
     summarize: (input, options) => write("session.summarize", "POST", input, "/summarize", options, without(input, ["sessionID"])),

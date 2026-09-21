@@ -43,7 +43,7 @@ export type WorkspaceRuntimeCaller = {
    * it rejects is thrown as the status says. Without this a 409 the contract
    * defines would reach the caller as a transport failure.
    */
-  decoded<T>(input: WorkspaceRuntimeCall & { decode: (body: unknown) => T }): Promise<WorkspaceRuntimeResponse<T>>
+  decoded<T>(input: WorkspaceRuntimeCall & { decode: (body: unknown, status: number) => T }): Promise<WorkspaceRuntimeResponse<T>>
   url(path: string, query?: Record<string, unknown>): URL
 }
 
@@ -154,11 +154,11 @@ export function createWorkspaceRuntimeCaller(options: WorkspaceRuntimeClientOpti
     return { data: undefined, ...sent }
   }
 
-  const decoded = async <T>(input: WorkspaceRuntimeCall & { decode: (body: unknown) => T }): Promise<WorkspaceRuntimeResponse<T>> => {
+  const decoded = async <T>(input: WorkspaceRuntimeCall & { decode: (body: unknown, status: number) => T }): Promise<WorkspaceRuntimeResponse<T>> => {
     const sent = await dispatch(input)
     const text = await sent.response.text()
     try {
-      return { data: input.decode(JSON.parse(text)), ...sent }
+      return { data: input.decode(JSON.parse(text), sent.response.status), ...sent }
     } catch (error) {
       if (!sent.response.ok) throw workspaceRuntimeClientErrorFrom(input.operation, sent.response.status, text)
       throw new WorkspaceRuntimeClientPayloadError(input.operation, error instanceof Error ? error.message : "Response was not valid JSON")
@@ -181,15 +181,28 @@ export function workspaceRuntimeClientErrorFrom(operation: string, status: numbe
   } catch {
     body = undefined
   }
+  const envelope = claxedoErrorEnvelope(body)
   const row = asRecordOrEmpty(body)
-  const nested = asRecordOrEmpty(row.error)
-  const code = typeof nested.code === "string" ? nested.code : typeof row.code === "string" ? row.code : `http_${status}`
-  const message = typeof nested.message === "string"
-    ? nested.message
-    : typeof row.message === "string"
-      ? row.message
-      : text || `Workspace runtime request failed with status ${status}`
+  const code = envelope?.code ?? (typeof row.code === "string" ? row.code : `http_${status}`)
+  const message = envelope?.message
+    ?? (typeof row.message === "string" ? row.message : text || `Workspace runtime request failed with status ${status}`)
   return new WorkspaceRuntimeClientError(operation, status, code, body ?? text, message)
+}
+
+/**
+ * The `{ error: { code, message } }` envelope every runtime route answers a
+ * failure with — and, more to the point, the one a relay or proxy synthesizes
+ * when the runtime never answered at all (`upstream_timeout`,
+ * `upstream_unavailable`, an oversized body). A route whose own refusals have
+ * a typed body still meets this shape from the hops in front of it, so
+ * recognising it is what tells "the owner refused" apart from "nothing reached
+ * the owner".
+ */
+export function claxedoErrorEnvelope(body: unknown): { code: string; message: string } | undefined {
+  const nested = asRecordOrEmpty(asRecordOrEmpty(body).error)
+  return typeof nested.code === "string" && typeof nested.message === "string"
+    ? { code: nested.code, message: nested.message }
+    : undefined
 }
 
 function appendQuery(url: URL, key: string, value: unknown) {

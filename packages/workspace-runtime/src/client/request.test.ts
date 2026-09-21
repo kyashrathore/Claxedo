@@ -245,6 +245,71 @@ describe("recovery over the wire", () => {
     expect(answered.data).toEqual(outcome)
   })
 
+  // The literal bodies `workspace-relay/src/server.test.ts` pins for a
+  // forwarded recovery call the runtime never answered.
+  const RELAY_SYNTHESIZED = [
+    [504, { error: { code: "upstream_timeout", message: "Workspace upstream timed out" } }, "upstream_timeout: Workspace upstream timed out"],
+    [503, { error: { code: "upstream_unavailable", message: "Workspace upstream is unavailable" } }, "upstream_unavailable: Workspace upstream is unavailable"],
+    [413, { error: { code: "request_body_too_large", message: "Request body is too large" } }, "request_body_too_large: Request body is too large"],
+  ] as const
+
+  test.each(RELAY_SYNTHESIZED)("a hop that answered %i instead of the owner is unavailable, not an operation", async (status, body, message) => {
+    const sent = client(() => Response.json(body, { status }))
+
+    const answered = await sent.client.session.recovery.submit({ sessionID: "ses_1", request })
+
+    expect(answered.response.status).toBe(status)
+    // `unavailable` is the truth: nothing reached the owner, so it made no
+    // decision. An operation here would be one the owner never opened.
+    expect(answered.data).toEqual({ kind: "refused", refusal: { kind: "unavailable", message } })
+  })
+
+  test("a hop's answer to an inspection is the same refusal, not a half-read inspection", async () => {
+    const sent = client(() => Response.json({ error: { code: "upstream_timeout", message: "Workspace upstream timed out" } }, { status: 504 }))
+
+    const answered = await sent.client.session.recovery.inspect({ sessionID: "ses_1" })
+
+    expect(answered.data).toEqual({
+      kind: "refused",
+      refusal: { kind: "unavailable", message: "upstream_timeout: Workspace upstream timed out" },
+    })
+  })
+
+  test("reading an operation through a hop that timed out never reports the operation as gone", async () => {
+    const sent = client(() => Response.json({ error: { code: "upstream_timeout", message: "Workspace upstream timed out" } }, { status: 504 }))
+
+    const answered = await sent.client.session.recovery.read({ sessionID: "ses_1", operationId: "op_1" })
+
+    // Not `receipt_expired`: the receipt is as valid as it was, nothing asked
+    // the owner about it.
+    expect(answered.data).toEqual({
+      kind: "refused",
+      refusal: { kind: "unavailable", message: "upstream_timeout: Workspace upstream timed out" },
+    })
+  })
+
+  test("the route's own envelope is the route answering, and stays an exception", async () => {
+    const routeAnswers = [
+      [400, "recovery_request_invalid", "recovery attempt must be an integer of at least 1"],
+      [404, "recovery_operation_unknown", "Recovery operation op_1 is not held by this owner"],
+    ] as const
+
+    for (const [status, code, message] of routeAnswers) {
+      const sent = client(() => Response.json({ error: { code, message } }, { status }))
+      // Not `unavailable`: this request did reach the owner, which answered
+      // about the request rather than about the turn.
+      await expect(sent.client.session.recovery.read({ sessionID: "ses_1", operationId: "op_1" }), code)
+        .rejects.toMatchObject({ name: "WorkspaceRuntimeClientError", status, code })
+    }
+  })
+
+  test("a body that is neither an outcome nor an envelope is still thrown", async () => {
+    for (const [status, body] of [[502, "<html>gateway</html>"], [200, JSON.stringify({ almost: "an outcome" })]] as const) {
+      const sent = client(() => new Response(body, { status }))
+      await expect(sent.client.session.recovery.submit({ sessionID: "ses_1", request }), String(status)).rejects.toThrow()
+    }
+  })
+
   test("a body that is not an outcome is thrown with the route's own error code", async () => {
     const sent = client(() => Response.json({ error: { code: "recovery_request_invalid", message: "recovery attempt must be an integer of at least 1" } }, { status: 400 }))
 
