@@ -127,6 +127,68 @@ describe("withSpan", () => {
   })
 })
 
+describe("redaction", () => {
+  test("withSpan scrubs credential-bearing URLs and bodies before the sink sees them", async () => {
+    const { spans, sink } = recorder()
+    const span = createTracer({ sink }).startSpan("fetch")
+    const failure = new Error(
+      `POST https://deploy:s3cret-pw@relay.example.com/v1 failed: 401 {"error":"bad_auth","token":"sk_live_123"}`,
+    )
+    await expect(withSpan(span, () => Promise.reject(failure))).rejects.toThrow("s3cret-pw")
+
+    const finished = spans[0]!
+    const serialized = JSON.stringify(finished, (_key, value: unknown) =>
+      typeof value === "bigint" ? String(value) : value,
+    )
+    expect(serialized).not.toContain("s3cret-pw")
+    expect(serialized).not.toContain("sk_live_123")
+    expect(finished.statusMessage).toContain("https://[redacted]@relay.example.com")
+    expect(finished.events[0]!.attributes).toMatchObject({
+      "exception.type": "Error",
+      "exception.message": expect.stringContaining(`"token":"[redacted]"`),
+    })
+  })
+
+  test("allowedAttributes drops undeclared keys on spans and events", () => {
+    const { spans, sink } = recorder()
+    const span = createTracer({ sink, allowedAttributes: ["http.status_code", "attempt"] }).startSpan("op", {
+      attributes: { "http.status_code": 200, "debug.payload": "token=x" },
+    })
+    span.setAttributes({ "db.statement": "select * from users" })
+    span.addEvent("retry", { attempt: 2, "debug.payload": "secret" })
+    span.end()
+
+    expect(spans[0]!.attributes).toEqual({ "http.status_code": 200 })
+    expect(spans[0]!.events[0]!.attributes).toEqual({ attempt: 2 })
+  })
+
+  test("an oversized error is capped instead of filling the span", async () => {
+    const { spans, sink } = recorder()
+    const span = createTracer({ sink }).startSpan("huge")
+    await expect(withSpan(span, () => Promise.reject(new Error("e".repeat(5000))))).rejects.toThrow()
+    expect(spans[0]!.statusMessage!.length).toBeLessThan(600)
+  })
+
+  test("the OTLP encoder scrubs a span it did not produce", () => {
+    const foreign: FinishedSpan = {
+      traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+      spanId: "00f067aa0ba902b7",
+      name: "remote.op",
+      kind: "server",
+      startTimeUnixNano: 1n,
+      endTimeUnixNano: 2n,
+      attributes: { "http.url": "https://user:pw@internal.example/x" },
+      status: "error",
+      statusMessage: "Authorization: Bearer tok_9",
+      events: [],
+    }
+    const payload = encodeOtlpSpans({ serviceName: "relay" }, [foreign])
+    const serialized = JSON.stringify(payload)
+    expect(serialized).not.toContain("user:pw")
+    expect(serialized).not.toContain("tok_9")
+  })
+})
+
 describe("OTLP encoding", () => {
   test("encodes 64-bit times as strings so nanoseconds survive JSON", () => {
     const { spans, sink } = recorder()

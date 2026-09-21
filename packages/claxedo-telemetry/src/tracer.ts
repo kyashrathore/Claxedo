@@ -15,6 +15,7 @@
  * on hot paths permanently.
  */
 
+import { sanitizeSpan } from "./redact"
 import {
   childContext,
   nowUnixNano,
@@ -87,11 +88,19 @@ export type TracerOptions = {
    * holes in the middle, which is worse than not having it at all.
    */
   sampleRoot?: () => boolean
+  /**
+   * The only attribute keys kept on finished spans and their events —
+   * including the `exception.*` keys `withSpan` writes. Any other key is
+   * dropped before the span reaches the sink. String values are
+   * credential-scrubbed either way: an allowed key can still carry a token.
+   */
+  allowedAttributes?: readonly string[]
 }
 
 export function createTracer(options: TracerOptions = {}): Tracer {
   const { sink } = options
   const sampleRoot = options.sampleRoot ?? (() => true)
+  const allowed = options.allowedAttributes ? new Set(options.allowedAttributes) : undefined
 
   return {
     startSpan(name, spanOptions = {}) {
@@ -133,19 +142,24 @@ export function createTracer(options: TracerOptions = {}): Tracer {
           // that as two operations that both happened.
           if (ended) return
           ended = true
-          sink({
-            traceId: context.traceId,
-            spanId: context.spanId,
-            ...(parent ? { parentSpanId: parent.spanId } : {}),
-            name,
-            kind: spanOptions.kind ?? "internal",
-            startTimeUnixNano,
-            endTimeUnixNano: nowUnixNano(),
-            attributes,
-            status,
-            ...(statusMessage ? { statusMessage } : {}),
-            events,
-          })
+          sink(
+            sanitizeSpan(
+              {
+                traceId: context.traceId,
+                spanId: context.spanId,
+                ...(parent ? { parentSpanId: parent.spanId } : {}),
+                name,
+                kind: spanOptions.kind ?? "internal",
+                startTimeUnixNano,
+                endTimeUnixNano: nowUnixNano(),
+                attributes,
+                status,
+                ...(statusMessage ? { statusMessage } : {}),
+                events,
+              },
+              allowed,
+            ),
+          )
         },
       }
     },

@@ -11,6 +11,7 @@
  * trace that spans the app and the agent engine stays whole.
  */
 
+import { sanitizeSpan } from "./redact"
 import type { TraceContext } from "./trace-context"
 
 export type AttributeValue = string | number | boolean
@@ -115,28 +116,34 @@ export function encodeOtlpSpans(resource: Resource, spans: readonly FinishedSpan
         scopeSpans: [
           {
             scope: { name: "@claxedo/telemetry" },
-            spans: spans.map((span) => ({
-              traceId: span.traceId,
-              spanId: span.spanId,
-              ...(span.parentSpanId ? { parentSpanId: span.parentSpanId } : {}),
-              name: span.name,
-              kind: SpanKind[span.kind],
-              // OTLP JSON carries 64-bit values as strings; a number would
-              // lose precision above 2^53 and nanosecond timestamps are well
-              // past that.
-              startTimeUnixNano: span.startTimeUnixNano.toString(),
-              endTimeUnixNano: span.endTimeUnixNano.toString(),
-              attributes: encodeAttributes(span.attributes),
-              status: {
-                code: SpanStatus[span.status],
-                ...(span.statusMessage ? { message: span.statusMessage } : {}),
-              },
-              events: span.events.map((event) => ({
-                name: event.name,
-                timeUnixNano: event.timeUnixNano.toString(),
-                attributes: encodeAttributes(event.attributes ?? {}),
-              })),
-            })),
+            // FinishedSpan is a public type that can arrive from another
+            // process, so the credential scrub runs here too — idempotent on
+            // spans this tracer already sanitized.
+            spans: spans.map((raw) => {
+              const span = sanitizeSpan(raw)
+              return {
+                traceId: span.traceId,
+                spanId: span.spanId,
+                ...(span.parentSpanId ? { parentSpanId: span.parentSpanId } : {}),
+                name: span.name,
+                kind: SpanKind[span.kind],
+                // OTLP JSON carries 64-bit values as strings; a number would
+                // lose precision above 2^53 and nanosecond timestamps are well
+                // past that.
+                startTimeUnixNano: span.startTimeUnixNano.toString(),
+                endTimeUnixNano: span.endTimeUnixNano.toString(),
+                attributes: encodeAttributes(span.attributes),
+                status: {
+                  code: SpanStatus[span.status],
+                  ...(span.statusMessage ? { message: span.statusMessage } : {}),
+                },
+                events: span.events.map((event) => ({
+                  name: event.name,
+                  timeUnixNano: event.timeUnixNano.toString(),
+                  attributes: encodeAttributes(event.attributes ?? {}),
+                })),
+              }
+            }),
           },
         ],
       },

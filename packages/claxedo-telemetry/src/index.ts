@@ -42,6 +42,8 @@ export {
   type SpanStatusName,
 } from "./span"
 
+export { redactText, sanitizeAttributes } from "./redact"
+
 export { createTracer, withSpan, type Span, type SpanSink, type Tracer, type TracerOptions } from "./tracer"
 
 export { createOtlpExporter, otlpConfigFromEnv, type ExporterOptions, type SpanExporter } from "./exporter"
