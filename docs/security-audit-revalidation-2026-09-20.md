@@ -355,7 +355,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 157 | Close / consolidate | [M-2 — MCP sessions change when credential scope changes](#finding-m-2) | LOW → Informational | Not a bug | Document reconnect on changed scopes and make the client retry initialization with its new credential. |
 | 158 | Close / consolidate | [P-30 — Provisioner availability comes from deployment credentials](#finding-p-30) | MED-LOW → Informational | Not a standalone bug | Keep provisioner configuration separate from caller authorization and align environment names. |
 | 159 | Close / consolidate | [P-52 — Type declarations do not enforce runtime values](#finding-p-52) | INFO → Informational | Not a standalone security bug | Freeze stable exported tables when useful and validate external revision/usage numbers as finite integers/ranges. |
-| 160 | Close / consolidate | [P-50 — Documents service RPC scaffold is not a working runtime](#finding-p-50) | INFO → Informational | Latent | Before enabling the runtime, validate request shape and grants at the RPC entrypoint and test disabled-service refusal and wrong installation identity. |
+| 160 | Close / consolidate | [P-50 — Documents service RPC scaffold is not a working runtime](#finding-p-50) | INFO → Informational | Fixed; entrypoint shape + identity gate | Job requests must name the deployment's environment/id/revision/protocol and a well-formed grant; disabled services still refuse first. |
 | 161 | Close / consolidate | [P-80 — Session-app has no audited implementation](#finding-p-80) | INFO → None | Not a finding | No security fix. |
 
 ### Detailed explanations and acceptance checks
