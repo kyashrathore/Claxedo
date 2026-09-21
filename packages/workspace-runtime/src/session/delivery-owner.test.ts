@@ -366,3 +366,29 @@ test("another owner cannot overtake an earlier normal dispatch in the same sessi
   await until(() => runtimeStore.listQueuedPrompts().length === 0)
   expect(calls).toEqual(["first", "second"])
 })
+
+test("an unavailable handoff leaves the queue for the next owner instead of dispatching", async () => {
+  const runtimeStore = store(root())
+  for (const messageId of ["first", "second"]) {
+    runtimeStore.queuePrompt({ sessionId: "session_1", messageId, parts: [], delivery: "queue" })
+  }
+  const calls: string[] = []
+  let granted = false
+  const host = owner(runtimeStore, {
+    // What `turns.whenIdle` resolves once the runtime that owned the admission
+    // has shut down: no session was granted, so there is nothing to abandon.
+    whenIdle: async () => granted ? { abandon() {} } : { abandon() {}, unavailable: true as const },
+    startTurn: async (input) => { calls.push(input.body.messageID!); input.onDelivery("start") },
+  })
+
+  await host.recover()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  expect(calls).toEqual([])
+  expect(runtimeStore.listQueuedPrompts().map((row) => row.messageId)).toEqual(["first", "second"])
+
+  granted = true
+  host.wake("session_1")
+  await until(() => runtimeStore.listQueuedPrompts().length === 0)
+  expect(calls).toEqual(["first", "second"])
+})

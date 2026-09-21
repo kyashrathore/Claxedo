@@ -34,7 +34,12 @@ export type SessionDeliveryOwner = {
 /** One runtime-owned executor. HTTP observes attempts; it never owns a waiter. */
 export function createSessionDeliveryOwner(input: {
   store: () => SessionDeliveryStore | undefined
-  whenIdle: (sessionId: string, directory: string) => Promise<{ abandon(): void }>
+  /**
+   * Resolves when this owner holds the session's next turn. `unavailable` means
+   * the runtime shut down while the prompt was parked: nothing was granted, and
+   * the queued rows stay where they are for the next owner to drain.
+   */
+  whenIdle: (sessionId: string, directory: string) => Promise<{ abandon(): void; unavailable?: true }>
   startTurn: (input: {
     sessionId: string
     directory: string
@@ -124,6 +129,7 @@ export function createSessionDeliveryOwner(input: {
         const directory = store().sessionDirectory(sessionId)
         if (!directory) { store().deleteQueuedPrompt(sessionId, candidate.seq); continue }
         const handoff = await input.whenIdle(sessionId, directory)
+        if (handoff.unavailable) return
         try {
           if (disposed) return
           // A control or another owner may have changed the queue while idle
