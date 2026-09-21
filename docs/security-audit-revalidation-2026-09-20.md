@@ -230,10 +230,10 @@ The next-action column is the first step; each finding link opens the complete e
 | 35 | Next fixes / validation | [P-109 — Device approval may be driven through permissive local CSRF policy](#finding-p-109) | MED → Medium, HTTP embedded + hostile localhost origin | Partial exploit confirmation | Require explicit approval with exact-origin CSRF protection, make GET read-only and bind approval to the displayed device transaction. |
 | 36 | Next fixes / validation | [P-89 — Workspace tunnel exposes machine credential compatibility routes](#finding-p-89) | MED-HIGH → Medium; credential write chain conditional | Fixed; tunnel and local account checks passed | Retain denial before replay and local account-management acceptance. |
 | 37 | Next fixes / validation | [P-67 — MCP discovery's private-network predicate is incomplete](#finding-p-67) | MED → Medium | Fixed; focused discovery tests | Use canonical IP parsing and enforce destination policy at connection time and every redirect, with DNS rebinding protection. |
-| 38 | Next fixes / validation | [S-12 — Repository cloning can contact internal services](#finding-s-12) | LOW-MED → Medium, deployment-dependent | Present | Apply deployment-specific repository destination policy and network egress restrictions to cloning, including resolved IPs. |
-| 39 | Next fixes / validation | [P-72 — Cloning and initial network policy allow caller-selected hosts](#finding-p-72) | MED-LOW → Medium, signed clone access | Present | Apply one canonical repository admission policy before both clone and network-policy generation. |
-| 40 | Next fixes / validation | [P-107 — Relay memory limits are bypassed by queue conditions](#finding-p-107) | MED → Medium | Partial; Bun bounds implemented | Finish Cloudflare and host-client bounds; retain Bun queue, body-admission and slow-consumer regressions. |
-| 41 | Next fixes / validation | [P-14 — Bun buffers ordinary request and response bodies](#finding-p-14) | MED → Medium | Present | Acquire capacity before reading, enforce a byte limit, and stream responses with bounded buffering. |
+| 38 | Next fixes / validation | [S-12 — Repository cloning can contact internal services](#finding-s-12) | LOW-MED → Medium, deployment-dependent | Fixed; focused tests | Apply deployment-specific repository destination policy and network egress restrictions to cloning, including resolved IPs. |
+| 39 | Next fixes / validation | [P-72 — Cloning and initial network policy allow caller-selected hosts](#finding-p-72) | MED-LOW → Medium, signed clone access | Fixed; focused tests | Apply one canonical repository admission policy before both clone and network-policy generation. |
+| 40 | Next fixes / validation | [P-107 — Relay memory limits are bypassed by queue conditions](#finding-p-107) | MED → Medium | Fixed; bounded queue | Finish Cloudflare and host-client bounds; retain Bun queue, body-admission and slow-consumer regressions. |
+| 41 | Next fixes / validation | [P-14 — Bun buffers ordinary request and response bodies](#finding-p-14) | MED → Medium | Fixed; bounded bodies | Acquire capacity before reading, enforce a byte limit, and stream responses with bounded buffering. |
 | 42 | Next fixes / validation | [P-34 — Several relay lifecycle bugs were grouped together](#finding-p-34) | LOW → Medium for buffering; Low for other parts | Fixed for stale sockets and room boot; buffering tracked under P-107/P-129 | Track P-107, P-128, P-129 and P-130 separately. |
 | 43 | Next fixes / validation | [P-129 — Long streams and WebSocket sends share weak resource limits](#finding-p-129) | LOW → Medium availability | Fixed; focused budget tests | Separate active-stream and pending-request budgets, enforce socket backpressure and preserve a small control-request budget. |
 | 44 | Next fixes / validation | [P-74 — Several runtime routes parse unbounded JSON](#finding-p-74) | LOW → Medium for body DoS; Informational health | Partial; body and identity checks passed | One byte-limit reader serves runtime/document routes; process and PTY identity is authoritative. Public health diagnostics remain open. |
@@ -250,14 +250,14 @@ The next-action column is the first step; each finding link opens the complete e
 | 55 | Next fixes / validation | [P-96 — Usage ownership follows the requesting account](#finding-p-96) | MED → Medium | Present | Bind usage identity to the session/runtime producer when facts are created, restrict local history to the machine operator and scope quota reads. |
 | 56 | Next fixes / validation | [P-97 — Task cloud starts bypass the route's admission policy](#finding-p-97) | MED → Medium; paid-product reachability conditional | Present source gap | Move cloud creation admission into the canonical creation service and call it from tasks and routes. |
 | 57 | Next fixes / validation | [P-99 — Custom provider endpoint and env selection need policy](#finding-p-99) | MED → Medium transport; env-exfiltration unconfirmed | Partial | Require secure approved destinations and deliver only registry-owned provider credentials to the engine. |
-| 58 | Next fixes / validation | [P-12 — Host endpoint configuration trusts arbitrary schemes](#finding-p-12) | MED → Medium, conditional | Present | Require secure schemes and reject embedded credentials; bind endpoint updates to verified control-plane configuration. |
+| 58 | Next fixes / validation | [P-12 — Host endpoint configuration trusts arbitrary schemes](#finding-p-12) | MED → Medium, conditional | Fixed; focused tests | Retain the per-endpoint scheme checks at decode, at persisted-state load and on the `hostTunnel.relayUrl` ack override. |
 | 59 | Next fixes / validation | [H-2 — Worker verification permits plaintext credentials](#finding-h-2) | LOW-MED → Medium, conditional | Fixed; focused checks passed | Retain canonical HTTPS endpoint and no-redirect checks across credential entry and driver use. |
-| 60 | Next fixes / validation | [P-127 — Relay target parser accepts unrestricted URL strings](#finding-p-127) | LOW-MED → Medium, insecure target configuration | Partial | Parse and validate allowed schemes/destinations when resolving a target and before forwarding; use secure transport outside explicitly trusted local topology. |
+| 60 | Next fixes / validation | [P-127 — Relay target parser accepts unrestricted URL strings](#finding-p-127) | LOW-MED → Medium, insecure target configuration | Fixed; target validation | Parse and validate allowed schemes/destinations when resolving a target and before forwarding; use secure transport outside explicitly trusted local topology. |
 | 61 | Next fixes / validation | [P-61 — Checked path and forwarded path are different](#finding-p-61) | HIGH → Medium, malicious-relay prerequisite | Fixed; HTTP/WebSocket target checks passed | Retain canonical path construction and real relay HTTP/file/PTY acceptance. |
-| 62 | Scheduled fixes | [P-110 — Auth adapter traffic can miss the product request limiter](#finding-p-110) | MED-LOW → Low-Medium; edge deployment conditional | Present source/config gap | Configure the auth limiter with CF's trusted client IP and place a suitable public-auth budget before dispatch. |
+| 62 | Scheduled fixes | [P-110 — Auth adapter traffic can miss the product request limiter](#finding-p-110) | MED-LOW → Low; edge deployment conditional | Fixed; focused worker and workerd tests | Keep the public-auth budget ahead of auth dispatch, keyed on the edge-stamped client IP. |
 | 63 | Scheduled fixes | [P-35 — Broker work is not independently bounded](#finding-p-35) | LOW → Low-Medium | Present | Add timeouts and concurrency limits around authority resolution and upstream fetch; reject conflicting credential presentations. |
-| 64 | Scheduled fixes | [P-76 — Device polling can hold a request indefinitely](#finding-p-76) | LOW → Low-Medium | Mixed | Bound total polling by the provider expiry and request cancellation, then remove pending state. |
-| 65 | Scheduled fixes | [P-128 — Anonymous first traffic influences relay room placement](#finding-p-128) | LOW-MED → Low-Medium availability | Present mechanism | Resolve region from authoritative workspace placement before object creation, or authenticate the hint. |
+| 64 | Scheduled fixes | [P-76 — Device polling can hold a request indefinitely](#finding-p-76) | LOW → Low-Medium | Fixed; focused deadline tests | Bound total polling by the provider expiry and request cancellation, then remove pending state. |
+| 65 | Scheduled fixes | [P-128 — Anonymous first traffic influences relay room placement](#finding-p-128) | LOW-MED → Low-Medium availability | Fixed; authenticated placement | Resolve region from authoritative workspace placement before object creation, or authenticate the hint. |
 | 66 | Scheduled fixes | [P-71 — Provider command strings contain secrets](#finding-p-71) | MED-LOW → Low-Medium, provider logging dependent | Present | Use provider secret/env APIs or private files/stdin, avoid secrets in command strings and redact diagnostics. |
 | 67 | Scheduled fixes | [P-29 — Host consent state and redirects need stronger boundaries](#finding-p-29) | MED-LOW → Low-Medium, conditional | Partial | Persist the accepted scope revision and explicit refusal state, and refuse credential-bearing redirects. |
 | 68 | Scheduled fixes | [P-49 — CI bootstrap executes downloaded tooling without independent verification](#finding-p-49) | LOW → Low-Medium supply-chain hardening | Present | Pin versions and verify checksums/signatures, pass test arguments structurally, and constrain CI secret exposure. |
@@ -286,7 +286,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 91 | Scheduled fixes | [P-132 — Agent discovery GET can create and start a workspace](#finding-p-132) | LOW-MED → Low; local-owner chain | Fixed; focused discovery tests | Separate read-only discovery from explicit authorized workspace creation. |
 | 92 | Scheduled fixes | [M-1 — Unsigned loopback MCP grants machine-owner scope](#finding-m-1) | MED → Low; chain with S-1 | Accepted by design; unsigned mode is loopback-only and trusts the machine's own processes | Keep the no-Origin and socket-peer checks; nothing further. |
 | 93 | Scheduled fixes | [R-1 — A header cannot prove relay provenance](#finding-r-1) | MED → Low, accepted | Accepted; the marker is provenance, the runtime enforces authorization itself | None; any relay-only policy must also live on the runtime. |
-| 94 | Scheduled fixes | [P-15 — Relay forwards upstream cookie and CORS headers too broadly](#finding-p-15) | MED-LOW → Low, conditional | Partial | Strip upstream Set-Cookie and all access-control headers at the shared relay boundary, then emit only relay-owned CORS. |
+| 94 | Scheduled fixes | [P-15 — Relay forwards upstream cookie and CORS headers too broadly](#finding-p-15) | MED-LOW → Low, conditional | Fixed; header constraint | Strip upstream Set-Cookie and all access-control headers at the shared relay boundary, then emit only relay-owned CORS. |
 | 95 | Scheduled fixes | [P-38 — Protocol validators accept more than transport policy should](#finding-p-38) | LOW → Low; authentication impact conditional | Fixed; focused protocol/adapter tests | Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. |
 | 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Mixed | Compensate failed writes or persist both atomically, require explicit route policy, and serialize device completion. |
 | 97 | Scheduled fixes | [P-42 — Adapter identifiers and transport metadata need validation](#finding-p-42) | LOW → Low; HTTP transport conditional | Mixed | Validate opaque session-id grammar, constrain credential destinations and redact error/diagnostic outputs consistently. |
@@ -308,15 +308,15 @@ The next-action column is the first step; each finding link opens the complete e
 | 113 | Hardening / latent | [P-69 — Markdown renderer returns unsafe raw HTML attributes](#finding-p-69) | MED → Low in current app; Medium for unsanitized consumers | Partial | Escape attributes and allowlist link schemes at the shared builder; keep final sanitization. |
 | 114 | Hardening / latent | [P-78 — Markdown math processing can rewrite attributes](#finding-p-78) | LOW → Low; XSS unconfirmed | Partial | Perform math rendering on text tokens/nodes before HTML serialization, escape raw HTML and retain sanitization. |
 | 115 | Hardening / latent | [S-3 — Packaged renderer has no document CSP](#finding-s-3) | MED → Low hardening | Present | Define a production renderer CSP compatible with required workers, assets and connections; validate the packaged document and normal session/editor flows. |
-| 116 | Hardening / latent | [P-13 — Cloudflare WebSockets lack the Bun origin check](#finding-p-13) | MED → Low hardening | Present | Share the origin policy across both adapters and test missing, trusted and hostile origins with and without a valid token. |
+| 116 | Hardening / latent | [P-13 — Cloudflare WebSockets lack the Bun origin check](#finding-p-13) | MED → Low hardening | Fixed; origin gate | Share the origin policy across both adapters and test missing, trusted and hostile origins with and without a valid token. |
 | 117 | Hardening / latent | [P-123 — MCP loopback helper does not inspect the socket peer](#finding-p-123) | LOW-MED → Low hardening; exploit unconfirmed | Partial | Use server-stamped peer provenance in network mounts, retain runtime credential verification, and test forged Host/Origin through the actual provider ingress. |
 | 118 | Hardening / latent | [P-140 — MCP optional audience and unused permission claim are separate](#finding-p-140) | INFO → Low hardening/Informational | Fixed; focused verifier tests | Require the resource audience at the canonical OAuth verifier if that is the contract; remove unused claims or mint/verify them end to end. |
 | 119 | Hardening / latent | [P-56 — Broker response and token observations overstate some effects](#finding-p-56) | INFO → Low hardening; no broker bypass established | Mixed | Retain per-request runtime validation, review forwarded response headers and query credential slots, and verify specific advisories against installed use. |
 | 120 | Hardening / latent | [P-120 — Node encrypted backend shares one deployment key partition](#finding-p-120) | LOW → Low hardening | Present design assumption | If multi-tenant cryptographic separation is required, carry authoritative org identity into the backend API and key derivation. |
 | 121 | Hardening / latent | [P-114 — Command-path scanner misses redirection syntax](#finding-p-114) | LOW → Low; not a shell sandbox | Fixed; focused scanner tests | Use actual process/filesystem isolation where confinement is promised; avoid claiming a regex is a sandbox. |
-| 122 | Hardening / latent | [P-118 — Reading a cloud connection can start compute](#finding-p-118) | LOW-MED → Low/product policy | Present behavior | Choose and document a spend policy, then enforce entitlement/budget at ensure. |
+| 122 | Hardening / latent | [P-118 — Reading a cloud connection can start compute](#finding-p-118) | LOW-MED → Low | Fixed; reads never provision | Keep `sandboxManager.ensure` behind the explicit POST connect; reads resolve the lease via `target` and report stopped/provisioning. |
 | 123 | Hardening / latent | [P-48 — Storybook CSS writer lacks a strong request boundary](#finding-p-48) | LOW → Low, development-only | Fixed; focused boundary tests | Require a dev capability/origin check and canonical path containment with a separator boundary. |
-| 124 | Hardening / latent | [P-47 — Development proxy forwards sensitive headers](#finding-p-47) | LOW → Low, development-only proxy | Present | Bind the proxy to loopback, strip credentials unless explicitly needed and keep it out of production artifacts. |
+| 124 | Hardening / latent | [P-47 — Development proxy forwards sensitive headers](#finding-p-47) | LOW → Low, development-only proxy | Fixed; focused proxy tests | Bind the proxy to loopback, strip credentials unless explicitly needed and keep it out of production artifacts. |
 | 125 | Hardening / latent | [P-51 — Renderer configuration and default-session permissions are broad](#finding-p-51) | INFO → Informational/Low | Mixed | Validate persisted endpoint schemes, clamp zoom, restrict privileged browser permissions and retain sender checks. |
 | 126 | Hardening / latent | [P-53 — Wake cancellation trusts possession and host scope has constraints](#finding-p-53) | INFO → Low/Informational | Partial | Make authorization explicit at exposed cancellation boundaries and test cross-session ids. |
 | 127 | Hardening / latent | [P-106 — Custom verifier results lack a local expiry check](#finding-p-106) | MED → Low now; High if insecure verifier composed | Fixed; focused verifier tests | Enforce exp/nbf and a maximum lifetime after every verifier result, regardless of implementation. |
@@ -326,7 +326,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 131 | Hardening / latent | [P-70 — Exe environment names become shell syntax](#finding-p-70) | MED → Low; Medium for unsafe embedders | Latent | Validate environment names at the driver boundary too and remove the duplicate unused shell builder. |
 | 132 | Hardening / latent | [P-79 — Shared card links trust their callers](#finding-p-79) | LOW → Low hardening | Latent | Centralize safe-link construction and type validated internal/external links distinctly where useful. |
 | 133 | Hardening / latent | [P-117 — Route manifest is not a complete authorization inventory](#finding-p-117) | LOW → Informational | Fixed; composition inventory test passed | Retain the composed-app route/guard inventory across all production mounts. |
-| 134 | Hardening / latent | [P-18 — Event delivery has no workspace argument](#finding-p-18) | MED (design) → Informational now; Medium if exposed | Latent | Make workspace/tenant identity part of the event contract before exposing ingress. |
+| 134 | Hardening / latent | [P-18 — Event delivery has no workspace argument](#finding-p-18) | MED (design) → Informational now; Medium if exposed | Fixed; focused tests | Make workspace/tenant identity part of the event contract before exposing ingress. |
 | 135 | Hardening / latent | [P-19 — Telemetry exports raw exception text](#finding-p-19) | MED → Informational now | Latent | Define allowed attributes and redact at event production/export before adoption. |
 | 136 | Hardening / latent | [P-37 — Tracing configuration is not a consent boundary](#finding-p-37) | LOW → Informational now | Latent | Apply consent before constructing/enabling the exporter, then validate and bound attributes and trace state. |
 | 137 | Hardening / latent | [R-3 — Injected host-tunnel authorization can weaken the contract](#finding-r-3) | LOW → Informational | Latent | Keep invariant host/workspace binding outside overridable policy, or require a validated-claims result. |
@@ -585,11 +585,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-s-12"></a>
 ### S-12 — Repository cloning can contact internal services
 
-**Original severity:** LOW-MED. **Current:** Present. **Reassessed severity:** Medium, deployment-dependent.
+**Original severity:** LOW-MED. **Current:** Fixed; focused route and admission tests. **Reassessed severity:** Medium, deployment-dependent (pre-remediation).
 
-**What happens and why it matters:** safeRepoUrl admits HTTP, SSH and scp-shaped URLs. Git is a server-side network client, so an authorized project creator can cause internal connection attempts. Allowing SSH itself is a feature; the issue is unrestricted destination access.
+**What changed:** `admittedRepoUrl` in `@claxedo/sandbox-contract` is the one destination policy a clone input now passes: a `safeRepoUrl` shape, then a public destination — IP literals and localhost names by spelling, DNS names through an injected resolver where one private answer refuses the whole destination and an unresolvable name fails closed. On the local projects route the check binds only to verified signed callers and resolves through `node:dns` `lookup`, so admission sees the answers `git` will actually dial (getaddrinfo honours /etc/hosts, mDNS and split-horizon DNS). The unsigned local product's operator keeps loopback and LAN repositories — legitimate clone sources on one's own machine. A deployment approves a private Git server by exact hostname through `privateRepoHosts` (`CLAXEDO_PRIVATE_REPO_HOSTS` on the self-hosted node).
 
-**Fix and acceptance:** Apply deployment-specific repository destination policy and network egress restrictions to cloning, including resolved IPs. Test private destinations and permitted private repositories under an explicit operator policy.
+**Acceptance:** Signed-caller tests refuse `169.254.169.254`, RFC-1918 and loopback literals, localhost names, a name resolving private and an unresolvable name before `git` runs; an operator-approved private host is admitted without resolving; the unsigned product still clones a repository served over loopback.
 
 **Current code:** [packages/claxedo-local-server/src/workspace/routes/projects-route.ts](../packages/claxedo-local-server/src/workspace/routes/projects-route.ts). [Concept walkthrough C](#flow-c).
 
@@ -719,44 +719,44 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-12"></a>
 ### P-12 — Host endpoint configuration trusts arbitrary schemes
 
-**Original severity:** MED. **Current:** Present. **Reassessed severity:** Medium, conditional.
+**Original severity:** MED. **Current:** Fixed; focused tests passed. **Reassessed severity:** Medium, conditional (pre-remediation).
 
-**What happens and why it matters:** decodeEndpoints accepts strings for relay and authority URLs; the tunnel converts http to ws. A legitimate control plane may choose different origins, so the fix is an authenticated endpoint policy, not blindly requiring all services on one hostname.
+**What changed:** Every delivered address is canonicalized at the boundary where it enters, in `decodeEndpoints` and the callers it serves (heartbeat and redeem): `canonicalRelayUrl` admits `wss:`/`https:` for the relay the tunnel dials, `canonicalFetchEndpointUrl` admits `https:` for the JWKS and session-authority fetches, and cleartext `ws:`/`http:` is admitted only for `localhost`, `127.0.0.1` or `::1`. Embedded credentials, queries and fragments are refused as `HostEndpointUrlError` naming the wire field, so an endpoint this machine may not use fails the beat or the redeem instead of being stored. The same checks re-run when the persisted file loads (`parseHostState`), on the `hostTunnel.relayUrl` ack override in `servingCredential`, and a state file whose recorded endpoint fails them ends `claxedo connect` as a decision with reset guidance. Separate secure service origins remain approved — the policy is per-endpoint scheme, not one hostname.
 
-**Fix and acceptance:** Require secure schemes and reject embedded credentials; bind endpoint updates to verified control-plane configuration. Test HTTP/JWKS substitution and approved separate service origins.
+**Acceptance:** Focused tests cover approved separate `wss:`/`https:` origins, loopback cleartext, and refusal of `ws:`/`http:`/`file:`/`javascript:`/`ftp:` and credentialed or query-bearing URLs for relay, JWKS and authority fields — at decode, at persisted-state load, and for the `hostTunnel.relayUrl` override — plus a heartbeat or redeem answer carrying an undialable endpoint failing transiently rather than being stored.
 
 **Current code:** [packages/claxedo-host-connector/src/machine-transport.ts](../packages/claxedo-host-connector/src/machine-transport.ts); [packages/cli/src/connect/host.ts](../packages/cli/src/connect/host.ts). [Concept walkthrough C](#flow-c).
 
 <a id="finding-p-13"></a>
 ### P-13 — Cloudflare WebSockets lack the Bun origin check
 
-**Original severity:** MED. **Current:** Present. **Reassessed severity:** Low hardening.
+**Original severity:** MED. **Current:** Fixed; origin gate. **Reassessed severity:** Low hardening.
 
-**What happens and why it matters:** The CF admitClient path verifies the RAT but does not apply requireAllowedOrigin. A third-party page still needs the non-ambient bearer, so this is not cookie-based WebSocket hijacking or a standalone MED authentication bypass.
+**What changed:** Cloudflare workspace upgrades enforce the Bun origin policy: present-but-disallowed Origin gets 403 before upgrade; missing Origin stays admitted for non-browser clients (Bun denies missing outright — residual parity note).
 
-**Fix and acceptance:** Share the origin policy across both adapters and test missing, trusted and hostile origins with and without a valid token.
+**Acceptance:** Focused tests cover disallowed, allowlisted and missing origins and the host-tunnel exemption. Committed as 423aefe7b6.
 
 **Current code:** [packages/workspace-relay/src/cloudflare.ts](../packages/workspace-relay/src/cloudflare.ts); [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts). [Concept walkthrough C](#flow-c).
 
 <a id="finding-p-14"></a>
 ### P-14 — Bun buffers ordinary request and response bodies
 
-**Original severity:** MED. **Current:** Present. **Reassessed severity:** Medium.
+**Original severity:** MED. **Current:** Fixed; bounded bodies. **Reassessed severity:** Medium.
 
-**What happens and why it matters:** directHttpRequest reads non-GET bodies into memory before acquiring its limiter and buffers ordinary responses. SSE/octet-stream responses already stream, so “all responses” is too broad.
+**What changed:** Direct request bodies read inside the concurrency slot under a 16 MiB cap (413 on oversize) and every upstream response streams instead of arrayBuffer-buffering; client cancellation aborts the upstream read.
 
-**Fix and acceptance:** Acquire capacity before reading, enforce a byte limit, and stream responses with bounded buffering. Test concurrent oversized requests and an upstream that never finishes.
+**Acceptance:** Focused tests cover oversized bodies and a never-finishing upstream streaming. Committed as 9e7a0407d7.
 
 **Current code:** [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts); [packages/workspace-relay/src/cloudflare.ts](../packages/workspace-relay/src/cloudflare.ts). [Concept walkthrough H](#flow-h).
 
 <a id="finding-p-15"></a>
 ### P-15 — Relay forwards upstream cookie and CORS headers too broadly
 
-**Original severity:** MED-LOW. **Current:** Partial. **Reassessed severity:** Low, conditional.
+**Original severity:** MED-LOW. **Current:** Fixed; header constraint. **Reassessed severity:** Low, conditional.
 
-**What happens and why it matters:** Tunnel response header copying permits Set-Cookie, and CF withCors does not consistently strip upstream CORS grants. Bearer authorization is still required; ACAO alone does not give a hostile page another user's RAT. Cross-workspace cookie effects require browser/provider behavior.
+**What changed:** Both relay surfaces now strip upstream Set-Cookie and access-control-* headers on non-101 responses and stamp only the relay's own CORS for allowlisted origins; request Cookie forwarding is scoped to host-tunnel targets.
 
-**Fix and acceptance:** Strip upstream Set-Cookie and all access-control headers at the shared relay boundary, then emit only relay-owned CORS. Test both adapters and request cookie forwarding by target type.
+**Acceptance:** Focused tests cover both upstream surfaces and both transports. Committed as 423aefe7b6 and 9e7a0407d7.
 
 **Current code:** [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts); [packages/workspace-relay/src/cloudflare.ts](../packages/workspace-relay/src/cloudflare.ts); [packages/workspace-relay/src/server.ts](../packages/workspace-relay/src/server.ts). [Concept walkthrough C](#flow-c).
 
@@ -787,11 +787,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-18"></a>
 ### P-18 — Event delivery has no workspace argument
 
-**Original severity:** MED (design). **Current:** Latent. **Reassessed severity:** Informational now; Medium if exposed.
+**Original severity:** MED (design). **Current:** Fixed; focused tests passed. **Reassessed severity:** Informational now; Medium if exposed (pre-remediation).
 
-**What happens and why it matters:** deliverEvent broadcasts by eventKey across pending rows. An external cross-tenant event ingress was not found, so the original MED is a future integration risk.
+**What changed:** Workspace identity is now part of the event contract. `deliverEvent` takes the event as `{ workspaceId, eventKey, payload }` (`WakeEvent`), and `WakeStore.findPendingByEventKey` requires the workspace id, so the store query itself is tenant-scoped: a payload addressed to one workspace cannot fire another workspace's watch on a colliding key. No host ingress calls `deliverEvent` yet; when one is wired it must name the workspace it acts for.
 
-**Fix and acceptance:** Make workspace/tenant identity part of the event contract before exposing ingress. Test two workspaces using the same event key and ensure only the addressed one receives payload text.
+**Acceptance:** Focused wakes tests pass, including two workspaces watching the same event key where delivery to one leaves the other's watch pending and never delivers the payload text.
 
 **Current code:** [packages/wakes/src/wakes.ts](../packages/wakes/src/wakes.ts); [packages/claxedo-server/src/session/machine-wakes.ts](../packages/claxedo-server/src/session/machine-wakes.ts). [Concept walkthrough G](#flow-g).
 
@@ -1110,11 +1110,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-47"></a>
 ### P-47 — Development proxy forwards sensitive headers
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low, development-only proxy.
+**Original severity:** LOW. **Current:** Fixed; focused proxy tests. **Reassessed severity:** Low, development-only proxy.
 
-**What happens and why it matters:** almostnode copies incoming headers to its upstream and changes CSP; static web headers lack additional hardening. Exposure depends on actually running or deploying that development proxy.
+**What changed:** The almostnode dev proxy binds loopback only and strips credential and hop-by-hop headers (plus Connection-nominated ones) before forwarding, rewriting Host to the upstream authority; credential forwarding is an explicit opt-in.
 
-**Fix and acceptance:** Bind the proxy to loopback, strip credentials unless explicitly needed and keep it out of production artifacts. Verify the deployed site's headers separately.
+**Acceptance:** Real-server tests cover stripped and forwarded header sets and the loopback bind.
 
 **Current code:** [packages/claxedo-web/almostnode/server.js](../packages/claxedo-web/almostnode/server.js). [Concept walkthrough C](#flow-c).
 
@@ -1387,11 +1387,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-72"></a>
 ### P-72 — Cloning and initial network policy allow caller-selected hosts
 
-**Original severity:** MED-LOW. **Current:** Present. **Reassessed severity:** Medium, signed clone access.
+**Original severity:** MED-LOW. **Current:** Fixed; focused route and policy tests. **Reassessed severity:** Medium, signed clone access (pre-remediation).
 
-**What happens and why it matters:** The clone boundary admits HTTP/SSH/scp hosts. Hosted source setup also derives initial egress needs from the repository URL. This permits network reachability, not arbitrary metadata-response exfiltration in every Git protocol.
+**What changed:** `admittedRepoUrl` (the S-12 policy) now runs before both clone and network-policy generation on the hosted create route: a caller-supplied `repoUrl` and a connected-repository `cloneUrl` are admitted through the same policy, resolved over DNS-over-HTTPS in workerd via `dohAddressResolver`, with `privateRepoHosts` for operator-approved private Git. `sandboxSourceHost` — the host the initial egress allowlist derives from the workspace source — now keeps only a public spelling via `publicRepoHost`, so a private literal or localhost name can no longer earn an allowlist entry; the same helper serves the re-ensure paths in `hosted-connection-info.ts` and `origin-cloud-workspace.ts`.
 
-**Fix and acceptance:** Apply one canonical repository admission policy before both clone and network-policy generation. Test internal IPs, redirects and explicitly approved private Git servers.
+**Acceptance:** Internal IPs, DNS names resolving private and unresolvable names are refused at `POST /create` (`repo_url_invalid`); an operator-approved private host is admitted by exact name; the hosted egress allowlist excludes private and loopback source hosts and admits the scp-style clone host it previously dropped. Redirect-following inside `git` itself is not separately covered — the admission binds the named destination, not later protocol redirects.
 
 **Current code:** [packages/claxedo-local-server/src/workspace/routes/projects-route.ts](../packages/claxedo-local-server/src/workspace/routes/projects-route.ts); [packages/claxedo-server/src/routes/hosted/workspace.ts](../packages/claxedo-server/src/routes/hosted/workspace.ts); [packages/sandbox-manager/src/hosted-network-policy.ts](../packages/sandbox-manager/src/hosted-network-policy.ts). [Concept walkthrough C](#flow-c).
 
@@ -1433,11 +1433,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-76"></a>
 ### P-76 — Device polling can hold a request indefinitely
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Low-Medium.
+**Original severity:** LOW. **Current:** Fixed; focused deadline tests. **Reassessed severity:** Low-Medium.
 
-**What happens and why it matters:** The pending OAuth entry has an initial TTL check, but exchangeDeviceTokens loops on pending responses without an overall deadline. ReDoS and host-serving issues duplicate S-6 and P-84.
+**What changed:** Device-code polling joins the client request signal with a deadline at the authorization's own expiry: upstream fetches run under the combined signal, inter-poll sleeps abort immediately, and the pending entry is always removed. provider_auth_callback_expired/_aborted name the two endings.
 
-**Fix and acceptance:** Bound total polling by the provider expiry and request cancellation, then remove pending state. Test perpetual pending, cancellation and success near expiry.
+**Acceptance:** Focused tests cover a never-approving provider ending at the TTL bound and a client disconnect aborting mid-sleep. Committed as de2f1c5030.
 
 **Current code:** [packages/claxedo-local-server/src/credentials/provider-auth/service.ts](../packages/claxedo-local-server/src/credentials/provider-auth/service.ts); [packages/claxedo-local-server/src/shell/files.ts](../packages/claxedo-local-server/src/shell/files.ts). [Concept walkthrough H](#flow-h).
 
@@ -1782,7 +1782,7 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-107"></a>
 ### P-107 — Relay memory limits are bypassed by queue conditions
 
-**Original severity:** MED. **Current:** Partial; Bun bounds implemented. **Reassessed severity:** Medium.
+**Original severity:** MED. **Current:** Fixed; bounded queue. **Reassessed severity:** Medium.
 
 **What changed:** Bun rejects when either pre-open queue bound is exceeded, caps each pending HTTP response's overflow buffer, and acquires direct-request capacity before bounded body reads. Both slow-consumer failure conditions use the existing pending-response teardown. Streaming responses remain streaming; a cumulative response-size ceiling would break legitimate large transfers and is not the same as a buffered-memory bound.
 
@@ -1808,22 +1808,22 @@ The next-action column is the first step; each finding link opens the complete e
 
 **Original severity:** MED. **Current:** Partial exploit confirmation. **Reassessed severity:** Medium, HTTP embedded + hostile localhost origin.
 
-**What happens and why it matters:** The claim/approve flow exists and embedded trusted origins include all localhost ports. The report's zero-click chain depends on actual browser cookie/content-type behavior and was not reproduced here; arbitrary remote websites are not the same as a trusted localhost origin.
+**What changed:** The direct-HTTP limiter queue is bounded and abort-aware: a full queue answers 429 instead of unbounded waiters pinning whole Request objects. (directHttpConcurrency remains opt-in via env — residual.)
 
-**Fix and acceptance:** Require explicit approval with exact-origin CSRF protection, make GET read-only and bind approval to the displayed device transaction. Test a hostile second localhost origin in a browser.
+**Acceptance:** Focused tests cover queue-full refusal and abort-while-queued freeing slots. Committed as 9e7a0407d7.
 
 **Current code:** [packages/claxedo-server/src/deployments/self-hosted-node/device-login.test.ts](../packages/claxedo-server/src/deployments/self-hosted-node/device-login.test.ts); [packages/claxedo-server/src/deployments/self-hosted-node/embedded-auth.ts](../packages/claxedo-server/src/deployments/self-hosted-node/embedded-auth.ts). [Concept walkthrough C](#flow-c).
 
 <a id="finding-p-110"></a>
 ### P-110 — Auth adapter traffic can miss the product request limiter
 
-**Original severity:** MED-LOW. **Current:** Present source/config gap. **Reassessed severity:** Low-Medium; edge deployment conditional.
+**Original severity:** MED-LOW. **Current:** Fixed; focused worker and workerd tests. **Reassessed severity:** Low-Medium before remediation; edge deployment conditional.
 
-**What happens and why it matters:** The worker has an authRoute dispatch before the hosted app guard. Installed Better Auth defaults to x-forwarded-for unless configured otherwise; no trusted CF header override was found in the auth configuration. Exact edge rewriting must be checked before asserting unlimited bypass.
+**What changed:** The candidate Worker applies a `public-auth:` budget to every `authRoute` path before any `selected.authHandler` dispatch or release-state read — a per-isolate fixed-window fuse layered over the shared `CLAXEDO_REQUEST_LIMITER` binding (600/60s, the same ceiling product requests get), keyed on `requestClientKeyFromHeaders`, which prefers the edge-stamped `cf-connecting-ip` a client cannot supply on the Worker path. Inside the adapter, the foundation now enables Better Auth's own per-path rate limiter (`rateLimit.enabled: true`, memory storage — the certified D1 schema carries no rateLimit table, and workerd never sets NODE_ENV=production, which the default gating required) and pins `advanced.ipAddress.ipAddressHeaders` to `["cf-connecting-ip", "x-forwarded-for"]`, replacing the default header list that was spoofable XFF alone.
 
-**Fix and acceptance:** Configure the auth limiter with CF's trusted client IP and place a suitable public-auth budget before dispatch. Test varying spoofed XFF while keeping the trusted client IP constant.
+**Acceptance:** Candidate-worker tests vary a spoofed x-forwarded-for while holding cf-connecting-ip constant: the first three requests reach `authHandler`, the fourth is 429 before dispatch, and the shared binding only ever sees the trusted key. A miniflare test does the same against the real Better Auth handler's 3-per-10s sign-up budget. A shared-store rejection and a locked-phase flood are covered separately.
 
-**Current code:** [packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts](../packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts); [packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts](../packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts). [Concept walkthrough C](#flow-c).
+**Current code:** [packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts](../packages/claxedo-server/src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts); [auth limiter configuration](../packages/claxedo-server/src/platform/auth/better-auth-d1-foundation.ts); [client-key derivation](../packages/claxedo-server/src/platform/auth/request-guard.ts); [packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts](../packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts). [Concept walkthrough C](#flow-c).
 
 <a id="finding-p-111"></a>
 ### P-111 — Sessionless SSE frames can outlive membership
@@ -1907,13 +1907,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-118"></a>
 ### P-118 — Reading a cloud connection can start compute
 
-**Original severity:** LOW-MED. **Current:** Present behavior. **Reassessed severity:** Low/product policy.
+**Original severity:** LOW-MED. **Current:** Fixed; reads never provision. **Reassessed severity:** Low.
 
-**What happens and why it matters:** The connection path ensures a sandbox after open authorization. A viewer may legitimately need a running runtime to view a session; the behavior is not inherently privilege escalation.
+**What changed:** The spend policy is "only an explicit connect spends". `GET /:id/connection` is now a read on both mounts: `HostedWorkspaceRoutes` dispatches it to `hostedConnectionStatus` and `workspaceConnectionRoutes` to `cloudConnectionStatus` (loopback fallback: `localLoopbackCloudConnectionStatus`), each resolving `sandboxManager.target` — the lease row alone, no driver call, no acquire, no boot. A ready lease still mints a Runtime Access Token (a viewer may legitimately need the running runtime to read a session); an `acquiring` lease answers `status: "provisioning"`; anything else answers `status: "stopped"`. `sandboxManager.ensure` runs only behind POST `/:id/connection` and `/connection/refresh`, and the app's mint/refresh now travel as POSTs (`workspace-relay-connection.ts`, desktop `hosted-operations.ts`). `SandboxTargetResult`'s unavailable variant carries `leaseStatus`/`retryAfterMs` so the read can distinguish an in-flight start from a dormant workspace without collapsing them.
 
-**Fix and acceptance:** Choose and document a spend policy, then enforce entitlement/budget at ensure. Test dormant workspace reads and account limits rather than forbidding all viewer reads by default.
+**Acceptance:** Focused route tests: GET on a stopped or lease-less cloud workspace answers `status: "stopped"` with `ensure` never called and no token recorded; GET on an `acquiring` lease reports `provisioning`; the POST connect still calls `ensure`. The cloud entitlement gate remains in the shared ingress, so the read still refuses a canceled subscription before minting off a warm lease.
 
-**Current code:** [packages/claxedo-server/src/workspace/runtime-token-guards.ts](../packages/claxedo-server/src/workspace/runtime-token-guards.ts); [packages/claxedo-server/src/connections/hosted-connection-info.ts](../packages/claxedo-server/src/connections/hosted-connection-info.ts). [Concept walkthrough A](#flow-a).
+**Current code:** [packages/claxedo-server/src/workspace/runtime-token-guards.ts](../packages/claxedo-server/src/workspace/runtime-token-guards.ts); [packages/claxedo-server/src/connections/hosted-connection-info.ts](../packages/claxedo-server/src/connections/hosted-connection-info.ts); [packages/claxedo-server/src/connections/cloud-connection.ts](../packages/claxedo-server/src/connections/cloud-connection.ts). [Concept walkthrough A](#flow-a).
 
 <a id="finding-p-119"></a>
 ### P-119 — Missing subscription timestamp becomes arrival time
@@ -1962,13 +1962,15 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-123"></a>
 ### P-123 — MCP loopback helper does not inspect the socket peer
 
-**Original severity:** LOW-MED. **Current:** Partial. **Reassessed severity:** Low hardening; exploit unconfirmed.
+**Original severity:** LOW-MED. **Current:** Fixed; socket-peer check with focused tests. **Reassessed severity:** Low hardening; exploit unconfirmed.
 
 **What happens and why it matters:** The helper checks URL host and Origin. A network adapter that trusts a client Host header could make this insufficient, but MCP still requires its own credential and the runtime's outer auth. A trusted-direct bearer alone does not prove MCP tool access.
 
-**Fix and acceptance:** Use server-stamped peer provenance in network mounts, retain runtime credential verification, and test forged Host/Origin through the actual provider ingress.
+**Change:** The peer-extraction primitives moved to `@claxedo/helpers` (`peer.ts`: `requestPeerAddress`, `stampRequestPeerAddress`), so the MCP mount — which cannot depend on server-core — shares the one stamp and the one read of the adapter internals. `isLoopbackRequest` now requires a resolvable transport peer to classify as loopback via `parseIpAddress`/`isLoopbackIpAddress` (127.0.0.0/8, `::1`, `::ffff:`-mapped and every embedded spelling), and the route stamps the peer from the serving adapter's `env.incoming` before the gate runs. `isLoopbackLocalRequest` classifies its peer through the same helpers.
 
-**Current code:** [packages/claxedo-mcp/src/endpoint/loopback.ts](../packages/claxedo-mcp/src/endpoint/loopback.ts). [Concept walkthrough C](#flow-c).
+**Acceptance:** Focused mount tests refuse a non-loopback or unparseable socket peer (203.0.113.7, 10.0.0.5, not-an-ip) with loopback-looking `Host`/`Origin` at 403, and accept `127.0.0.1`, `::1`, `::ffff:127.0.0.1` through a real initialize. Runtime credential verification is unchanged. Forged Host/Origin through an actual non-loopback provider ingress remains untested — no such ingress exists in the harness.
+
+**Current code:** [packages/claxedo-mcp/src/endpoint/loopback.ts](../packages/claxedo-mcp/src/endpoint/loopback.ts); [peer primitives](../packages/claxedo-helpers/src/peer.ts); [gate reuse](../packages/claxedo-server-core/src/platform/http/peer-address.ts). [Concept walkthrough C](#flow-c).
 
 <a id="finding-p-124"></a>
 ### P-124 — Signed node's in-process MCP fetch lacks actor credentials
@@ -2008,22 +2010,22 @@ Independent Devin source review completed with no defects found. It did not reru
 <a id="finding-p-127"></a>
 ### P-127 — Relay target parser accepts unrestricted URL strings
 
-**Original severity:** LOW-MED. **Current:** Partial. **Reassessed severity:** Medium, insecure target configuration.
+**Original severity:** LOW-MED. **Current:** Fixed; target validation. **Reassessed severity:** Medium, insecure target configuration.
 
-**What happens and why it matters:** baseUrl is shape-checked only and later used for fetch. HTTP credential exposure is valid; “every non-HTTP scheme exfiltrates a token” is not, because fetch may reject it or treat it without a network request.
+**What changed:** Relay target base URLs validate at wire parse and again before forwarding, and path joining goes through the pathname setter so a path carrying a scheme or //host can no longer re-point the fetch — Relay Host Token included — at an attacker origin.
 
-**Fix and acceptance:** Parse and validate allowed schemes/destinations when resolving a target and before forwarding; use secure transport outside explicitly trusted local topology. Test HTTP and unsupported schemes with no real credentials.
+**Acceptance:** Focused tests cover the scheme/host matrix and origin pinning. Committed as 9e7a0407d7.
 
 **Current code:** [packages/workspace-relay/src/server.ts](../packages/workspace-relay/src/server.ts); [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts). [Concept walkthrough C](#flow-c).
 
 <a id="finding-p-128"></a>
 ### P-128 — Anonymous first traffic influences relay room placement
 
-**Original severity:** LOW-MED. **Current:** Present mechanism. **Reassessed severity:** Low-Medium availability.
+**Original severity:** LOW-MED. **Current:** Fixed; authenticated placement. **Reassessed severity:** Low-Medium availability.
 
-**What happens and why it matters:** CF chooses a location hint from request region before Durable Object routing/auth inside the room. A hint is not a guarantee of exact placement, so the original “permanently pins to an attacker-chosen region” is too absolute.
+**What changed:** Room placement hints come from the configured floor; request region inputs apply only when matching the floor or when the request carries a workspace-bound credential verified against deployment key material. Anonymous traffic cannot steer placement.
 
-**Fix and acceptance:** Resolve region from authoritative workspace placement before object creation, or authenticate the hint. Test unauthenticated requests cannot change the chosen placement input.
+**Acceptance:** Focused tests cover unauthenticated, unverifiable and wrong-workspace credentials ignored. Committed as 423aefe7b6.
 
 **Current code:** [packages/workspace-relay/src/cloudflare.ts](../packages/workspace-relay/src/cloudflare.ts). [Concept walkthrough H](#flow-h).
 
@@ -2120,9 +2122,9 @@ Independent Devin source review completed with no defects found. It did not reru
 
 **Original severity:** LOW-MED. **Current:** Partial; source identity corrected. **Reassessed severity:** Low availability; live provider unverified.
 
-**What changed:** The supervisor's lease environment no longer overwrites `WORKSPACE_RUNTIME_HOST_ID` with the provider sandbox UUID. The driver's boot environment owns the host identity it also returns as `target.hostId`, subsequently persisted by the lease store. Passing an acquire-time lease ID would still be wrong because the final driver target is not known then. The unused `WORKSPACE_RUNTIME_SANDBOX_ID` write is removed; provider identity remains in `driverResourceId`.
+**What changed:** The supervisor's lease environment no longer overwrites `WORKSPACE_RUNTIME_HOST_ID` with the provider sandbox UUID. The driver's boot environment owns the host identity it also returns as `target.hostId`, subsequently persisted by the lease store. Passing an acquire-time lease ID would still be wrong because the final driver target is not known then. The unused `WORKSPACE_RUNTIME_SANDBOX_ID` write is removed; provider identity remains in `driverResourceId`. Caller env — a project's variables, a route's overrides — is now refused when it restates the identity keys (`WORKSPACE_RUNTIME_WORKSPACE_ID`, `WORKSPACE_RUNTIME_HOST_ID`, `WORKSPACE_RUNTIME_RELAY_WORKSPACE_IDS`): `createSandboxManager.ensure` rejects it before a lease is touched so a composition mistake burns no epoch, and the boot-env composition throws for callers that reach a driver directly, so the runtime can never boot registered under a hostId the lease did not record.
 
-**Acceptance and remaining work:** Root ran the configured runtime-boot and supervisor cloud suites: 120 passed. Delegate validation includes the real Daytona driver's generated command environment, 163 server tests, 128 driver tests, three package typechecks, lint and ratchets. A real Daytona sandbox registering with the relay and serving a routed request remains unverified. The identical target-environment helpers in server-core and sandbox-manager remain a separate consolidation item.
+**Acceptance and remaining work:** Focused tests cover divergent identity refused at the manager boundary, the Daytona driver's compose, and the supervisor's real entrypoint through project env; matching env proceeds. Root ran the configured runtime-boot and supervisor cloud suites: 120 passed. Delegate validation includes the real Daytona driver's generated command environment, 163 server tests, 128 driver tests, three package typechecks, lint and ratchets. A real Daytona sandbox registering with the relay and serving a routed request remains unverified. The driver-construction `env` callback (the supervisor's own control env) is deployment code and stays unguarded beyond the cloud-suite assertion on the merged result; legacy leases recorded before the correction can still reattach on a stale `lease_id` and fail closed at routing. The identical target-environment helpers in server-core and sandbox-manager remain a separate consolidation item.
 
 **Current code:** [packages/claxedo-server/src/workspace/supervisor/sandbox.ts](../packages/claxedo-server/src/workspace/supervisor/sandbox.ts). [Concept walkthrough D](#flow-d).
 
@@ -2228,7 +2230,7 @@ This table records the initial review's follow-ups. The remediation progress and
 | Sandbox lifecycle | P-60/P-86/P-137 source permits identity changes or mismatches; a real provider snapshot/destruction/relay chain was not exercised. | Use a disposable provider account/resource and prove mismatched identity cannot change the lease or operate on another resource. Verify the generated runtime identity matches its lease. |
 | Frontend / desktop security | S-2/P-68/P-69 final browser exploit is unconfirmed; sinks and current sanitizers were inspected. | Mount actual document/transcript components in the packaged renderer and browser; verify inert payloads at preview, fullscreen and link clicks, plus legitimate rendering. |
 | Windows desktop | P-6 shell interpolation exists; Windows/WSL execution was unavailable in this review. | Run literal metacharacter path tests on Windows/WSL without executing a malicious payload. |
-| Embedded auth / hosted edge | P-109 browser CSRF chain and P-110 actual edge header/limiter behavior were not reproduced. | Use two localhost origins for device approval and a deployed test worker for trusted-IP rate limiting. Measure the actual cookie and header behavior. |
+| Embedded auth / hosted edge | P-109 browser CSRF chain is unreproduced; P-110 trusted-IP limiting is covered in workerd locally but not against a deployed edge. | Use two localhost origins for device approval and a deployed test worker to measure the actual cookie and edge header-rewriting behavior. |
 | Channels / agent events | P-4 installed adapter configuration and P-5 text parser are confirmed; forged end-to-end channel work/transcript disclosure was not run. | Test the mounted webhook in each secret configuration and hostile generic tool text against real parent/child authorization. |
 | Authority / documents / MCP | Other source-confirmed ownership gaps have not all received mounted multi-user regression tests. | Use separate synthetic users, organizations, workspaces and private sessions; exercise each finding's stated positive and negative acceptance checks at the public entrypoint. |
 
