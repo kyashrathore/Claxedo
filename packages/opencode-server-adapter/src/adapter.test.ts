@@ -447,6 +447,25 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     await expect(adapter.updateSessionConfig(binding(), { agent: "build" })).rejects.toMatchObject({ code: "unsupported_operation" })
   })
 
+  test("refuses a stored message whose nested wire values the contract does not describe", async () => {
+    const identity = { id: "part_1", messageID: "msg_assistant", sessionID: "ses_upstream" }
+    const malformed = [
+      { id: "part_1", messageID: "msg_assistant", sessionID: "ses_upstream", type: "file", mime: "image/png", url: "javascript:alert(1)" },
+      { ...identity, type: "tool", callID: "call_1", tool: "read", state: { status: "completed", input: {}, output: "done", title: "read", metadata: {}, time: { start: 1, end: 2 }, attachments: [{}] } },
+    ]
+    for (const part of malformed) {
+      const baseUrl = serve((request) => {
+        const url = new URL(request.url)
+        if (url.pathname === "/session/ses_upstream/message") {
+          return Response.json([{ info: { id: "msg_assistant", sessionID: "ses_upstream", role: "assistant" }, parts: [part] }])
+        }
+        return new Response("missing", { status: 404 })
+      })
+      const adapter = await connect({ descriptor: descriptor(baseUrl) })
+      await expect(adapter.getMessages(binding())).rejects.toMatchObject({ code: "invalid_response" })
+    }
+  })
+
   test("truthfully advertises only bound operations", async () => {
     const adapter = await connect({ descriptor: descriptor("https://opencode.example.test") })
     expect(adapter.readHarnessCapabilities(SOURCE)).toEqual({

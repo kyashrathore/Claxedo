@@ -1,4 +1,4 @@
-export const AGENT_RUNTIME_CONTRACT_VERSION = 1
+export const AGENT_RUNTIME_CONTRACT_VERSION = 2
 
 export * from "./availability"
 export * from "./capabilities"

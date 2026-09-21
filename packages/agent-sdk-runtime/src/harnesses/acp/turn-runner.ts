@@ -1,7 +1,7 @@
 import type { StopReason } from "@agentclientprotocol/sdk"
 import { randomUUID } from "crypto"
 import {
-  assertAgentExecutionBinding,
+  requireAgentExecutionBinding,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
@@ -262,7 +262,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
 
   /** The title side turn: a throwaway ACP session on this session's process. */
   async generateTitle(binding: AgentExecutionBinding, request: SessionTitleRequest): Promise<string | null> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return await generateAcpTitle({
       getOrSpawnProcess: (sessionId, directory) => this.getOrSpawnProcess(sessionId, directory),
       boot: (proc, directory, title) => this.boot(proc, directory, title),
@@ -274,7 +274,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     input: PromptInput,
     writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     const directory = binding.directory
     const t0 = Date.now()

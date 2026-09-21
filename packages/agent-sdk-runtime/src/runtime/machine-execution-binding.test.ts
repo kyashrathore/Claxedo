@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { requireAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { MemoryRuntimeStore } from "../stores/memory"
 import { requireExecutionBinding, assertSessionCreateBindingScope } from "./execution-binding"
 
@@ -33,10 +33,10 @@ describe("machine execution binding", () => {
   test("rejects split execution and directoryless bindings at the contract boundary", () => {
     const binding = requireExecutionBinding(machineStore(), "product-1")
     expect(() =>
-      assertAgentExecutionBinding({ ...binding, scope: "central" } as unknown as AgentExecutionBinding),
+      requireAgentExecutionBinding({ ...binding, scope: "central" } as unknown as AgentExecutionBinding),
     ).toThrow("workspace execution scope is required")
-    expect(() => assertAgentExecutionBinding({ ...binding, directory: "" })).toThrow("directory is required")
-    expect(() => assertAgentExecutionBinding({ ...binding, workspaceId: "" })).toThrow("workspaceId is required")
+    expect(() => requireAgentExecutionBinding({ ...binding, directory: "" })).toThrow("directory is required")
+    expect(() => requireAgentExecutionBinding({ ...binding, workspaceId: "" })).toThrow("workspaceId is required")
   })
   test("rejects a different directory, harness or machine", () => {
     const store = machineStore()

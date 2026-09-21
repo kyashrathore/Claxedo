@@ -1,4 +1,4 @@
-import { assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { requireAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { SessionTitleRequest } from "../../title-generation"
 import type { AgentRuntimeStoreCore } from "./runtime-store"
 import type { SdkRuntimeDriver } from "./sdk-runtime-driver"
@@ -12,7 +12,7 @@ type TitleStore = Pick<AgentRuntimeStoreCore, "getAgentSessionId">
 
 /** The driver's side turn for a title, or null on a driver that titles through its stream. */
 export async function generateDriverTitle(driver: SdkRuntimeDriver, store: TitleStore, binding: AgentExecutionBinding, request: SessionTitleRequest) {
-  assertAgentExecutionBinding(binding)
+  requireAgentExecutionBinding(binding)
   if (!driver.generateTitle) return null
   const agentSessionId = store.getAgentSessionId(binding.sessionId)
   if (!agentSessionId) return null

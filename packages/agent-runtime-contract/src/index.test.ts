@@ -3,6 +3,7 @@ import {
   AGENT_PRESENTATION_EVENT_TYPES,
   AGENT_RUNTIME_ERROR_CODES,
   assertAgentExecutionBinding,
+  requireAgentExecutionBinding,
   type AgentContentPart,
   type AgentExecutionBinding,
   type AgentFileContent,
@@ -295,16 +296,16 @@ describe("agent runtime contract", () => {
         `execution binding ${field} mismatch`,
       )
     }
-    expect(() => assertAgentExecutionBinding({ ...binding, upstreamSessionId: "" })).toThrow(
+    expect(() => requireAgentExecutionBinding({ ...binding, upstreamSessionId: "" })).toThrow(
       "execution binding upstreamSessionId is required",
     )
-    expect(() => assertAgentExecutionBinding({ ...binding, directory: "" })).toThrow("execution binding directory is required")
+    expect(() => requireAgentExecutionBinding({ ...binding, directory: "" })).toThrow("execution binding directory is required")
   })
 
   test("rejects removed scopes and missing machine identity", () => {
     const binding = { scope: "workspace" as const, sessionId: "session-1", workspaceId: "ws-1", directory: "/repo", connectionId: "native:pi", upstreamSessionId: "pi-1" }
-    expect(assertAgentExecutionBinding(binding)).toBe(binding)
-    expect(() => assertAgentExecutionBinding({ ...binding, scope: "central" } as unknown as AgentExecutionBinding)).toThrow("workspace execution scope is required")
-    expect(() => assertAgentExecutionBinding({ ...binding, workspaceId: "" })).toThrow("workspaceId is required")
+    expect(requireAgentExecutionBinding(binding)).toBe(binding)
+    expect(() => requireAgentExecutionBinding({ ...binding, scope: "central" } as unknown as AgentExecutionBinding)).toThrow("workspace execution scope is required")
+    expect(() => requireAgentExecutionBinding({ ...binding, workspaceId: "" })).toThrow("workspaceId is required")
   })
 })

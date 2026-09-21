@@ -40,6 +40,34 @@ test("each variant is checked against the fields it declares", () => {
   expect(isAgentContentPart({ ...identity, type: "compaction", auto: "yes" })).toBe(false)
 })
 
+test("a file part's url is a renderable reference, not an arbitrary scheme", () => {
+  const file = { ...identity, type: "file" as const, mime: "image/png" }
+  for (const url of ["", "docs/shot.webp", "data:image/png;base64,iVBOR", "file:///tmp/huge.png", "https://files.example/shot.png"]) {
+    expect(isAgentContentPart({ ...file, url })).toBe(true)
+  }
+  for (const url of ["javascript:alert(1)", "  javascript:alert(1)", "java\tscript:alert(1)", "vbscript:msgbox(1)"]) {
+    expect(isAgentContentPart({ ...file, url })).toBe(false)
+  }
+  expect(isAgentContentPart({ ...file, url: 7 })).toBe(false)
+})
+
+test("a completed tool's attachments are themselves file parts", () => {
+  const state = {
+    status: "completed",
+    input: {},
+    output: "done",
+    title: "read",
+    metadata: {},
+    time: { start: 1, end: 2 },
+  }
+  const tool = { ...identity, type: "tool" as const, callID: "c", tool: "read" }
+  const attachment = { ...identity, type: "file", mime: "image/png", url: "data:image/png;base64,iVBOR" }
+  expect(isAgentContentPart({ ...tool, state: { ...state, attachments: [attachment] } })).toBe(true)
+  expect(isAgentContentPart({ ...tool, state: { ...state, attachments: [{}] } })).toBe(false)
+  expect(isAgentContentPart({ ...tool, state: { ...state, attachments: [{ ...attachment, url: "javascript:alert(1)" }] } })).toBe(false)
+  expect(isAgentContentPart({ ...tool, state: { ...state, attachments: "not-a-list" } })).toBe(false)
+})
+
 test("a message needs a header and parts the contract describes", () => {
   const info = { id: "msg_1", role: "assistant", sessionID: "ses_1" }
   const parts = [{ ...identity, type: "text" as const, text: "hi" }]

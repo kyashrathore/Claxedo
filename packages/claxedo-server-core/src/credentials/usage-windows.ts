@@ -35,7 +35,8 @@ export function usageResetMs(value: unknown): number | null {
  * anything failing.
  */
 export function usageWindowName(harness: string, slot: string) {
-  return USAGE_WINDOW_NAMES[harness]?.[slot] ?? slot
+  const slots = Object.hasOwn(USAGE_WINDOW_NAMES, harness) ? USAGE_WINDOW_NAMES[harness] : undefined
+  return (slots && Object.hasOwn(slots, slot) ? slots[slot] : undefined) ?? slot
 }
 
 /**
@@ -45,7 +46,7 @@ export function usageWindowName(harness: string, slot: string) {
  * `windowDurationMins`, so a caller converts to seconds before asking.
  */
 export function codexWindowName(slot: string, seconds: number | undefined) {
-  return (seconds === undefined ? undefined : CODEX_WINDOW_NAME_BY_SECONDS[seconds])
+  return (seconds !== undefined && Object.hasOwn(CODEX_WINDOW_NAME_BY_SECONDS, seconds) ? CODEX_WINDOW_NAME_BY_SECONDS[seconds] : undefined)
     ?? usageWindowName("codex", slot)
 }
 

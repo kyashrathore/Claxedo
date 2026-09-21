@@ -30,7 +30,7 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
 
 export function canonicalToolName(name: string) {
   const lowered = name.toLowerCase()
-  return TOOL_NAME_ALIASES[lowered] ?? lowered
+  return Object.hasOwn(TOOL_NAME_ALIASES, lowered) ? TOOL_NAME_ALIASES[lowered]! : lowered
 }
 
 /** The alias spellings themselves, for consumers that register one entry per name. */

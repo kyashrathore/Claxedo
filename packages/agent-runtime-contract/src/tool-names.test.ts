@@ -29,6 +29,12 @@ describe("canonicalToolName", () => {
     expect(canonicalToolName("toolsearch")).toBe("toolsearch")
   })
 
+  test("reads prototype keys as absent, never as inherited members", () => {
+    for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {
+      expect(canonicalToolName(key)).toBe(key.toLowerCase())
+    }
+  })
+
   test("is idempotent, so canonicalising twice cannot drift", () => {
     for (const [alias] of toolNameAliases()) {
       expect(canonicalToolName(canonicalToolName(alias))).toBe(canonicalToolName(alias))

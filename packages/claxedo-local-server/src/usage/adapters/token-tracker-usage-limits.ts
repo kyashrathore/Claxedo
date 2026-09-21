@@ -113,7 +113,7 @@ export function machineAgentUsage(probe: unknown, fallbackAt: number): MachineAg
     return [{
       agent,
       ...(isHarnessId(agent) ? { harness: agent } : {}),
-      label: AGENT_LABEL[agent] ?? agent,
+      label: (Object.hasOwn(AGENT_LABEL, agent) ? AGENT_LABEL[agent] : undefined) ?? agent,
       ...(plan === undefined ? {} : { plan }),
       windows: error === undefined ? windowsOf(agent, row) : [],
       at: [capturedAt, fetchedAt, fallbackAt].find((at) => Number.isFinite(at)) ?? fallbackAt,

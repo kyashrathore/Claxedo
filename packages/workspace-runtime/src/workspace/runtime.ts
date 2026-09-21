@@ -43,10 +43,10 @@ import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { assertTarget, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot, type ProviderProjection } from "../routes/config"
 import { num, rec, str } from "../json-value"
-import { AgentRuntimeContractError, assertAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { AgentRuntimeContractError, assertAgentExecutionBinding, requireAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { SessionRoutes } from "../routes/session"
-import type { QueuedPromptStore } from "../routes/session-queued-prompts"
+import type { SessionDeliveryStore } from "../session/delivery-owner"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
 import {
   mountWorkspaceAgentHooks,
@@ -1583,7 +1583,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             ?? sessionConfigFor({ sessionId: session.id, directory })?.harness
             ?? currentRunner()
           const upstreamSessionId = session.agentSessionId ?? store().getAgentSessionId(session.id) ?? session.id
-          const binding = assertAgentExecutionBinding({
+          const binding = requireAgentExecutionBinding({
             sessionId: session.id,
             workspaceId: workspaceId(),
             directory,

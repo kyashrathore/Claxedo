@@ -791,12 +791,13 @@ function rateLimitResetMs(value: unknown) {
 function claudeRateLimitEvent(info: Record<string, unknown>) {
   const utilization = asFiniteNumber(info.utilization)
   const limitId = text(info.rateLimitType)
+  const windows = USAGE_WINDOW_NAMES.claude
   return {
     type: "rate-limit",
     status: text(info.status) === "rejected" ? "limited" : "ok",
     ...(utilization === undefined ? {} : { usedPercent: Math.min(100, Math.max(0, Math.round(utilization))) }),
     resetsAt: rateLimitResetMs(info.resetsAt),
-    ...(limitId ? { limitId, limitName: USAGE_WINDOW_NAMES.claude?.[limitId] ?? limitId } : {}),
+    ...(limitId ? { limitId, limitName: (windows && Object.hasOwn(windows, limitId) ? windows[limitId] : undefined) ?? limitId } : {}),
   } satisfies AgentRuntimeEvent
 }
 

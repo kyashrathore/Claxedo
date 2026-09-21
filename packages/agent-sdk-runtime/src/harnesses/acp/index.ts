@@ -21,7 +21,7 @@
 
 import { randomUUID } from "crypto"
 import {
-  assertAgentExecutionBinding,
+  requireAgentExecutionBinding,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
@@ -278,7 +278,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async getSession(binding: AgentExecutionBinding): Promise<AgentSession | null> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.store.getSession(binding.sessionId) ?? null
   }
 
@@ -339,12 +339,12 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }): Promise<AgentSession | null> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.store.updateSession(binding.sessionId, updates)
   }
 
   async getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.store.getSessionConfig(binding.sessionId) ?? {
       harness: {
         id: this.harnessId(),
@@ -357,7 +357,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async updateSessionConfig(binding: AgentExecutionBinding, update: SessionConfigUpdate): Promise<SessionConfig> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     requireWorkspaceDirectory(binding.directory)
     const current = this.store.getSessionConfig(id)
@@ -380,7 +380,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async deleteSession(binding: AgentExecutionBinding): Promise<void> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     this.finishGoalProjection(id)
     const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
@@ -419,12 +419,12 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.store.getMessages(binding.sessionId)
   }
 
   async abort(binding: AgentExecutionBinding): Promise<AbortResult> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const { sessionId: id } = binding
     const directory = requireWorkspaceDirectory(binding.directory)
     log.info("abort: called", { id, directory })
@@ -465,7 +465,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async forkSession(binding: AgentExecutionBinding, _messageId: string, childSessionId?: string): Promise<{ id: string }> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     const directory = requireWorkspaceDirectory(binding.directory)
     log.info("forkSession: called", { id, directory })
@@ -548,7 +548,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const { sessionId } = binding
     requireWorkspaceDirectory(binding.directory)
     const agentSessionId = this.store.getAgentSessionId(sessionId)
@@ -566,7 +566,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const { sessionId } = binding
     requireWorkspaceDirectory(binding.directory)
     const agentSessionId = this.store.getAgentSessionId(sessionId)
@@ -581,7 +581,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async getTodos(binding: AgentExecutionBinding): Promise<Array<{ content: string; status: string; priority: string }>> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.store.getTodos(binding.sessionId)
   }
 
@@ -603,7 +603,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
   ): Promise<AgentInteractionResult | void> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const directory = requireWorkspaceDirectory(binding.directory)
     log.info("respondPermission: called", { permId, decision, directory })
     const row = (this.store.listPermissions(directory) as Array<{ id: string; sessionID: string }>).find(

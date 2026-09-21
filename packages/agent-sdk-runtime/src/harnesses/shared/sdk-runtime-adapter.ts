@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto"
 import {
-  assertAgentExecutionBinding,
+  requireAgentExecutionBinding,
   type AgentExecutionBinding,
   type HarnessInstructionChannel,
 } from "@claxedo/agent-runtime-contract"
@@ -292,7 +292,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async getSession(binding: AgentExecutionBinding): Promise<AgentSession | null> {
-    const { sessionId } = assertAgentExecutionBinding(binding)
+    const { sessionId } = requireAgentExecutionBinding(binding)
     return this.store.getSession(sessionId) ?? null
   }
 
@@ -358,7 +358,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }): Promise<AgentSession | null> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     if (updates.time?.archived !== undefined) this.lifecycle().abort(id)
     if (updates.title !== undefined) await pushDriverTitle(this.driver, this.store, binding, updates.title)
@@ -368,7 +368,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   generateTitle = (binding: AgentExecutionBinding, request: SessionTitleRequest) => generateDriverTitle(this.driver, this.store, binding, request)
 
   async getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.store.getSessionConfig(binding.sessionId) ?? {
       harness: {
         id: this.driver.type,
@@ -382,7 +382,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async updateSessionConfig(binding: AgentExecutionBinding, update: SessionConfigUpdate): Promise<SessionConfig> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     requireWorkspaceDirectory(binding.directory)
     const current = this.store.getSessionConfig(binding.sessionId)
     if (!current) throw new Error(`Session ${binding.sessionId} has no runtime config`)
@@ -390,7 +390,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async deleteSession(binding: AgentExecutionBinding): Promise<void> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     const directory = requireWorkspaceDirectory(binding.directory)
     this.lifecycle().abort(id)
@@ -426,7 +426,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     input: PromptInput,
     writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     const directory = requireWorkspaceDirectory(binding.directory)
     yield* this.streamMessage(id, input, directory, (turn) => this.driver.runTurn(turn), writeContext)
@@ -758,17 +758,17 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]> {
-    const { sessionId } = assertAgentExecutionBinding(binding)
+    const { sessionId } = requireAgentExecutionBinding(binding)
     return this.store.getMessages(sessionId)
   }
 
   async steerTurn(binding: AgentExecutionBinding, input: PromptInput): Promise<SteerResult> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return await steerActiveTurn(this.lifecycle(), binding.sessionId, input)
   }
 
   async abort(binding: AgentExecutionBinding): Promise<AbortResult> {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     const lifecycle = this.lifecycle()
     if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
@@ -783,7 +783,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   async listCommands(_directory: string): Promise<AgentCommand[]> { return listCommands() }
 
   async getTodos(binding: AgentExecutionBinding): Promise<Array<{ content: string; status: string; priority: string }>> {
-    const { sessionId } = assertAgentExecutionBinding(binding)
+    const { sessionId } = requireAgentExecutionBinding(binding)
     return this.store.getTodos(sessionId)
   }
 
@@ -793,14 +793,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState> {
-    const { sessionId, directory } = assertAgentExecutionBinding(binding)
+    const { sessionId, directory } = requireAgentExecutionBinding(binding)
     const selected = this.store.getSessionConfig(sessionId)?.permissionMode
     if (selected) return this.setPermissionMode(binding, selected)
     return this.driver.permissionModes?.(sessionId, directory) ?? { modes: [], appliesFrom: "next-turn" }
   }
 
   async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
-    const { sessionId, directory } = assertAgentExecutionBinding(binding)
+    const { sessionId, directory } = requireAgentExecutionBinding(binding)
     return this.applyPermissionMode(sessionId, directory, modeId)
   }
 
@@ -825,19 +825,19 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
   ) {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.interactions.respondPermission(binding, permId, decision)
   }
 
   async listQuestions(directory: string): Promise<AgentQuestion[]> { return this.interactions.listQuestions(directory) }
 
   async replyQuestion(binding: AgentExecutionBinding, qId: string, answers: AgentQuestionAnswer[]) {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.interactions.replyQuestion(binding, qId, answers)
   }
 
   async rejectQuestion(binding: AgentExecutionBinding, qId: string) {
-    assertAgentExecutionBinding(binding)
+    requireAgentExecutionBinding(binding)
     return this.interactions.rejectQuestion(binding, qId)
   }
 

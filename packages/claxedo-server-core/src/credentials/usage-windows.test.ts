@@ -25,6 +25,14 @@ describe("the vocabulary a vendor's usage answer is read into", () => {
     expect(usageWindowName("claude", "thirty_day")).toBe("thirty_day")
   })
 
+  test("a slot spelled like a prototype member reads as absent, never as an inherited value", () => {
+    for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(usageWindowName("claude", key)).toBe(key)
+      expect(usageWindowName(key, "five_hour")).toBe("five_hour")
+      expect(codexWindowName(key, undefined)).toBe(key)
+    }
+  })
+
   test("Codex's two readers name one window the same, though they count in different units", () => {
     // The HTTP read gives `limit_window_seconds`; the app-server gives
     // `windowDurationMins`. A plan with only a weekly limit delivers it in the

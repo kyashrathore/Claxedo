@@ -392,6 +392,26 @@ function isMessageError(value: unknown): value is AgentMessageError {
   return isRecord(value) && typeof value.name === "string" && isRecord(value.data)
 }
 
+/**
+ * The schemes a file part's `url` may carry — the ones the projections mint
+ * (`data:` inline bytes, `file:` locators, remote references) — plus anything
+ * without a scheme, which a browser resolves as a relative reference. URL
+ * parsing removes tab/CR/LF and trims leading C0/space before the scheme is
+ * read, so ` java\tscript:` would name a scheme the raw string does not show.
+ */
+const FILE_PART_URL_SCHEMES = new Set(["data", "file", "http", "https"])
+
+function isFilePartUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value.replace(/[\t\r\n]/g, "").trimStart())?.[1]
+  return scheme === undefined || FILE_PART_URL_SCHEMES.has(scheme.toLowerCase())
+}
+
+/** A completed tool's attachments are themselves file parts. */
+function isFilePartList(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item) => isAgentContentPart(item) && item.type === "file")
+}
+
 function isToolState(value: unknown): value is AgentToolState {
   if (!isRecord(value) || !isRecord(value.input)) return false
   switch (value.status) {
@@ -401,6 +421,7 @@ function isToolState(value: unknown): value is AgentToolState {
       return isSpan(value.time)
     case "completed":
       return isStringField(value, "output") && isStringField(value, "title") && isRecord(value.metadata) && isSpan(value.time)
+        && optionalIs(value, "attachments", isFilePartList)
     case "error":
       return isStringField(value, "error") && isSpan(value.time)
     default:
@@ -429,7 +450,7 @@ function hasVariantFields(part: Record<string, unknown>): boolean {
     case "reasoning":
       return isStringField(part, "text") && isSpan(part.time)
     case "file":
-      return isStringField(part, "mime") && isStringField(part, "url")
+      return isStringField(part, "mime") && isFilePartUrl(part.url)
     case "tool":
       return isStringField(part, "callID") && isStringField(part, "tool") && isToolState(part.state)
     case "subtask":

@@ -1529,6 +1529,13 @@ describe("claudeSdkAdapter rate limits", () => {
       .toMatchObject({ limitId: "seven_day_sonnet", limitName: "seven_day_sonnet" })
   })
 
+  test("a window spelled like a prototype member names itself, not an inherited value", () => {
+    for (const key of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      expect(emitted({ status: "allowed", rateLimitType: key, utilization: 1 })[0])
+        .toMatchObject({ limitId: key, limitName: key })
+    }
+  })
+
   test("only a rejection is a limit", () => {
     expect(emitted({ status: "rejected", rateLimitType: "five_hour", utilization: 100, resetsAt: 1_757_700_000 })).toEqual([{
       type: "rate-limit",

@@ -16,12 +16,12 @@ npm install @claxedo/agent-runtime-contract
 ## Usage
 
 ```ts
-import { assertAgentExecutionBinding, AGENT_RUNTIME_CONTRACT_VERSION } from "@claxedo/agent-runtime-contract"
+import { requireAgentExecutionBinding, AGENT_RUNTIME_CONTRACT_VERSION } from "@claxedo/agent-runtime-contract"
 
-const binding = assertAgentExecutionBinding({
-  scope: "central",
-  directory: "",
-  sessionId: "central-1",
+const binding = requireAgentExecutionBinding({
+  sessionId: "session-1",
+  workspaceId: "workspace-1",
+  directory: "/work/one",
   connectionId: "native:pi",
   upstreamSessionId: "pi-1",
 })

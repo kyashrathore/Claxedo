@@ -1,4 +1,4 @@
-import { assertAgentExecutionBinding, NO_HARNESS_EFFORT, parseAgentMessage } from "@claxedo/agent-runtime-contract"
+import { requireAgentExecutionBinding, NO_HARNESS_EFFORT, parseAgentMessage } from "@claxedo/agent-runtime-contract"
 import type { AgentExecutionBinding, AgentMessage, AgentSession, PromptInput } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
@@ -477,7 +477,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
   }
 
   private assertBinding(binding: AgentExecutionBinding) {
-    try { assertAgentExecutionBinding(binding) } catch { throw this.error("invalid_binding", "OpenCode operation requires a complete execution binding") }
+    try { requireAgentExecutionBinding(binding) } catch { throw this.error("invalid_binding", "OpenCode operation requires a complete execution binding") }
     if (binding.connectionId !== `connection:${this.config.connectionId}`) throw this.error("invalid_binding", "Execution binding belongs to a different connection")
     this.assertSourceDirectory(binding.directory)
   }
