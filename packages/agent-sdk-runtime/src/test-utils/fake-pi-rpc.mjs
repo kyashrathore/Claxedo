@@ -17,7 +17,13 @@ const args = process.argv.slice(2)
 if (args.includes("--version")) { console.log("0.85.1"); process.exit(0) }
 if (args.includes("-p")) {
   fs.writeFileSync(path.join(process.cwd(), "evaluating"), "yes")
+  fs.writeFileSync(path.join(process.cwd(), "evaluator-argv.json"), JSON.stringify(args))
   if (fs.existsSync(path.join(process.cwd(), "hold-evaluator"))) await new Promise(() => { setInterval(() => {}, 1000) })
+  let piped = ""
+  process.stdin.setEncoding("utf8")
+  process.stdin.on("data", (chunk) => { piped += chunk })
+  await new Promise((resolve) => process.stdin.once("end", resolve))
+  fs.writeFileSync(path.join(process.cwd(), "evaluator-stdin.txt"), piped)
   console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: JSON.stringify({ met: true, reason: "verified" }) }], usage: { input: 5, output: 2 } } })); process.exit(0)
 }
 const sessionDir = args[args.indexOf("--session-dir") + 1]

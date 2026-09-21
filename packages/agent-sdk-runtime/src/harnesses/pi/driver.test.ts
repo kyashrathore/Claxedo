@@ -326,6 +326,34 @@ test("a goal accounts for work and evaluator usage before its single terminal ev
   }
 })
 
+test("the goal evaluator receives its request on stdin, keeping prompt material out of argv", async () => {
+  const f = await fixture()
+  const objective = "Judge the work without exposing it"
+  try {
+    f.store.updateSessionConfig(
+      f.binding.sessionId,
+      await f.adapter.updateSessionConfig(f.binding, { model: { providerID: "pi", modelID: "test/model" } }),
+    )
+    await f.adapter.goals!.start(f.binding.sessionId, { objective }, f.directory)
+    const deadline = Date.now() + 5000
+    while ((await f.adapter.goals!.read(f.binding.sessionId, f.directory))?.status === "active") {
+      if (Date.now() > deadline) throw new Error("Goal failed to finish")
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    expect((await f.adapter.goals!.read(f.binding.sessionId, f.directory))?.status).toBe("complete")
+    const argv = JSON.parse(
+      await fs.readFile(path.join(f.directory, "evaluator-argv.json"), "utf8"),
+    ) as string[]
+    const piped = await fs.readFile(path.join(f.directory, "evaluator-stdin.txt"), "utf8")
+    expect(argv.join("\n")).not.toContain(objective)
+    expect(argv.join("\n")).not.toContain("work done")
+    expect(piped).toContain(`OBJECTIVE:\n${objective}`)
+    expect(piped).toContain("work done")
+  } finally {
+    await f.cleanup()
+  }
+})
+
 /**
  * Steering is refused until the turn has opened its RPC, and the adapter
  * publishes no frame for that moment, so the readiness wait is the refusal

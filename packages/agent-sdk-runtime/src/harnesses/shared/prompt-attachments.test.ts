@@ -8,6 +8,7 @@ import {
   deliverPromptAttachments,
   isPromptImageMime,
   materializeAttachments,
+  PROMPT_ATTACHMENT_MAX_BYTES,
   promptAttachments,
   promptImageAttachments,
 } from "./prompt-attachments"
@@ -81,6 +82,44 @@ describe("prompt attachments", () => {
     expect(path.dirname(written[0].path)).toBe(attachmentDirectory())
     expect(path.basename(written[0].path).endsWith("-escape.mp4")).toBe(true)
     expect(fs.existsSync(path.join(directory, "..", "escape.mp4"))).toBe(false)
+  })
+
+  test("refuses an attachment larger than the byte cap", async () => {
+    const oversized = Buffer.alloc(PROMPT_ATTACHMENT_MAX_BYTES + 1).toString("base64")
+    await expect(
+      materializeAttachments({
+        directory,
+        attachments: promptAttachments([{ type: "file", mime: "video/mp4", url: `data:video/mp4;base64,${oversized}` }]),
+      }),
+    ).rejects.toThrow("exceeds")
+    expect(fs.existsSync(attachmentDirectory())).toBe(false)
+  })
+
+  test.skipIf(process.platform === "win32")("refuses a `.claxedo` symlink pointing outside the workspace", async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "prompt-attachment-outside-"))
+    try {
+      fs.symlinkSync(outside, path.join(directory, ".claxedo"))
+      await expect(
+        materializeAttachments({ directory, attachments: promptAttachments([imagePart]) }),
+      ).rejects.toThrow("escapes")
+      expect(fs.readdirSync(outside)).toEqual([])
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true })
+    }
+  })
+
+  test.skipIf(process.platform === "win32")("refuses an `attachments` symlink pointing outside the workspace", async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "prompt-attachment-outside-"))
+    try {
+      fs.mkdirSync(path.join(directory, ".claxedo"))
+      fs.symlinkSync(outside, path.join(directory, ".claxedo", "attachments"))
+      await expect(
+        materializeAttachments({ directory, attachments: promptAttachments([imagePart]) }),
+      ).rejects.toThrow("escapes")
+      expect(fs.readdirSync(outside)).toEqual([])
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true })
+    }
   })
 
   test("materializes every attachment and names each path on its own line", async () => {

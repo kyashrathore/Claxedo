@@ -129,7 +129,6 @@ class PiRpcDriver implements SdkRuntimeDriver {
           model.modelID,
           "--system-prompt",
           GOAL_PROMPT_TEXT.evaluatorSystem.join("\n"),
-          goalEvaluatorRequest(request),
         ]
         const command = piCommand(binary, args)
         this.evaluators++
@@ -166,8 +165,14 @@ class PiRpcDriver implements SdkRuntimeDriver {
               }
             },
           )
-          // Print mode consumes redirected stdin before running the prompt.
-          child.stdin?.end()
+          // Print mode builds its prompt from piped stdin, so the request
+          // crosses on the pipe; argv would put the objective and the work
+          // result in the process list for every local user.
+          child.stdin?.on("error", () => {
+            // EPIPE only means the evaluator exited before reading; the
+            // execFile callback already reports that exit.
+          })
+          child.stdin?.end(goalEvaluatorRequest(request))
           const observation = observeAgentProcess(host.processObserver, {
             ownerId: `pi-goal:${request.sessionId}`,
             launchId: randomUUID(),

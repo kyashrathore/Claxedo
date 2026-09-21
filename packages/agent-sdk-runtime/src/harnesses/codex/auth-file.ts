@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 import { accountIdFromClaims } from "@claxedo/agent-runtime-contract"
 import type { FetchLike } from "../../adapter-contract"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
 import { text, type JsonRecord } from "../shared/sdk-runtime-adapter"
 
@@ -53,7 +54,16 @@ export function readCodexAuthFile(home: string): JsonRecord | undefined {
 export async function writeCodexAuthFile(home: string, input: JsonRecord | undefined) {
   if (!input) return
   await fs.promises.mkdir(home, { recursive: true, mode: 0o700 })
-  await fs.promises.writeFile(path.join(home, "auth.json"), JSON.stringify(input, null, 2) + "\n", { mode: 0o600 })
+  // `lstat` answers the entry's own type: a home swapped for a link fails here
+  // instead of placing the credential file wherever the link points.
+  const stat = await fs.promises.lstat(home)
+  if (!stat.isDirectory()) throw new Error(`Codex home at ${home} is not a directory`)
+  // `mkdir` applies its mode only to a directory it creates; a pre-existing or
+  // umask-widened home is narrowed on every write instead.
+  if (stat.mode & 0o077) await fs.promises.chmod(home, 0o700)
+  // Staging then renaming replaces whatever sits at `auth.json` — a permissive
+  // mode and a symlink included — rather than opening through the name.
+  await writePrivateFileAtomic(path.join(home, "auth.json"), JSON.stringify(input, null, 2) + "\n")
 }
 
 export function codexChatgptAuthTokens(input: JsonRecord | undefined): CodexChatGptTokens | undefined {

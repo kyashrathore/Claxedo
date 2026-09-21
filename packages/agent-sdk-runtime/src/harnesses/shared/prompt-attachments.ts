@@ -1,6 +1,8 @@
 import { createHash } from "crypto"
 import fs from "fs/promises"
 import path from "path"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
+import { inside } from "@claxedo/helpers/path"
 import { extractTextFromParts, record, text } from "./sdk-runtime-values"
 
 export const PROMPT_IMAGE_MIMES = ["image/gif", "image/jpeg", "image/png", "image/webp"] as const
@@ -29,6 +31,9 @@ export type PromptDelivery = {
 }
 
 const PROMPT_ATTACHMENT_SEGMENTS = [".claxedo", "attachments"] as const
+
+/** Decoded bytes one attachment may write to the workspace. */
+export const PROMPT_ATTACHMENT_MAX_BYTES = 32 * 1024 * 1024
 
 const MIME_EXTENSIONS = new Map([
   ["application/pdf", ".pdf"],
@@ -112,19 +117,44 @@ export async function materializeAttachments(input: {
   attachments: readonly PromptAttachment[]
 }): Promise<MaterializedAttachment[]> {
   if (!input.attachments.length) return []
+  const decoded = input.attachments.map((attachment) => ({
+    attachment,
+    bytes: Buffer.from(attachment.base64, "base64"),
+  }))
+  // Every bound is checked before the workspace is touched, so a refusal
+  // leaves no partial delivery behind.
+  for (const { bytes } of decoded) {
+    if (bytes.byteLength > PROMPT_ATTACHMENT_MAX_BYTES) {
+      throw new Error(`Prompt attachment exceeds the ${PROMPT_ATTACHMENT_MAX_BYTES}-byte limit`)
+    }
+  }
   const folder = path.join(path.resolve(input.directory), ...PROMPT_ATTACHMENT_SEGMENTS)
+  const root = await fs.realpath(path.resolve(input.directory))
+  // `.claxedo` resolves before anything is created through it, so a link out
+  // of the workspace is refused with nothing written — not even the directory
+  // `mkdir` would otherwise add at the link's target.
+  const parent = await fs.realpath(path.dirname(folder)).catch(() => undefined)
+  if (parent !== undefined && !inside(root, parent)) {
+    throw new Error("Prompt attachment directory escapes the workspace")
+  }
   await fs.mkdir(folder, { recursive: true, mode: 0o700 })
-  await ignoreAttachmentDirectory(folder)
+  // The write side of the containment is the resolved path: deciding on the
+  // name the prompt spells would follow a link the filesystem would not.
+  const resolved = await fs.realpath(folder)
+  if (!inside(root, resolved)) {
+    throw new Error("Prompt attachment directory escapes the workspace")
+  }
+  await ignoreAttachmentDirectory(resolved)
   const written: MaterializedAttachment[] = []
-  for (const attachment of input.attachments) {
-    const bytes = Buffer.from(attachment.base64, "base64")
+  for (const { attachment, bytes } of decoded) {
     const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 12)
-    const target = path.join(folder, attachmentDiskName(attachment, digest))
-    if (path.dirname(target) !== folder) {
+    const name = attachmentDiskName(attachment, digest)
+    const target = path.join(resolved, name)
+    if (path.dirname(target) !== resolved) {
       throw new Error("Prompt attachment path escapes the workspace attachment directory")
     }
-    await fs.writeFile(target, bytes, { mode: 0o600 })
-    written.push({ ...attachment, path: target })
+    await writePrivateFileAtomic(target, bytes)
+    written.push({ ...attachment, path: path.join(folder, name) })
   }
   return written
 }
