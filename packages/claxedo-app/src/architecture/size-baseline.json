@@ -6,5 +6,5 @@
   "app/providers/layout.tsx": 933,
   "features/session/ui/session-screen.tsx": 1548,
   "features/session/ui/message-timeline.tsx": 2018,
-  "features/session/store/session-controller.ts": 1120
+  "features/session/store/session-controller.ts": 1097
 }
