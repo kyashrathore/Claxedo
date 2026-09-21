@@ -224,6 +224,79 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(text).not.toContain("elsewhere")
   })
 
+  test("a session lifecycle frame naming a foreign workspace is not this stream's, even when it names no directory", async () => {
+    const { app, bus } = harness({})
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    bus.publish({ type: "session.lifecycle", phase: "created", workspaceId: "ws-foreign", sessionID: "ses-foreign", ts: 1 })
+    bus.publish({ type: "session.lifecycle", phase: "created", workspaceId: WORKSPACE_ID, sessionID: "ses-here", ts: 2 })
+    const text = await readUntil(response, "ses-here")
+    controller.abort()
+    expect(text).toContain("ses-here")
+    expect(text).not.toContain("ses-foreign")
+  })
+
+  test("an unattributed agent lifecycle frame is delivered as status alone — provider ids, transcript paths and prompt text never reach the wire", async () => {
+    const { app, bus } = harness({
+      policy: managedPolicy({ workspace: "allow", session: (id) => id === "shared" }),
+      relayAuth,
+    })
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+    expect(response.status).toBe(200)
+    // A frame the runtime can attribute to a session keeps everything: the
+    // grant on that session is what authorizes the metadata it carries.
+    bus.publish({
+      type: "agent.lifecycle", tabId: "tab-owned", workspaceId: WORKSPACE_ID, sessionId: "shared",
+      provider: "claude", providerSessionId: "provider-owned-id", transcriptPath: "/transcripts/owned.jsonl",
+      refName: "@owned-ref", prompt: "owned-prompt-text", eventType: "Busy",
+    })
+    // Session-less frames — one workspace-stamped, one naming nothing at all —
+    // keep their lifecycle signal and shed the session-gated fields.
+    bus.publish({
+      type: "agent.lifecycle", tabId: "tab-unowned", workspaceId: WORKSPACE_ID,
+      provider: "claude", providerSessionId: "provider-unowned-id", transcriptPath: "/transcripts/unowned.jsonl",
+      refName: "@unowned-ref", prompt: "unowned-prompt-text", lastAssistantMessage: "unowned-reply-text", eventType: "Idle",
+    })
+    bus.publish({
+      type: "agent.lifecycle", tabId: "tab-orphan",
+      provider: "codex", providerSessionId: "provider-orphan-id", transcriptPath: "/transcripts/orphan.jsonl",
+      prompt: "orphan-prompt-text", eventType: "Busy",
+    })
+    // A frame attributed to a session the reader holds no grant on is omitted whole.
+    bus.publish({
+      type: "agent.lifecycle", tabId: "tab-private", workspaceId: WORKSPACE_ID, sessionId: "private",
+      providerSessionId: "provider-private-id", transcriptPath: "/transcripts/private.jsonl",
+      prompt: "private-prompt-text", eventType: "Error",
+    })
+    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "lifecycle-sentinel", ptyId: "p" })
+    const text = await readUntil(response, "lifecycle-sentinel")
+    controller.abort()
+
+    const lifecycles = dataFrames(text).filter((f) => f.payload?.type === "agent.lifecycle")
+    expect(lifecycles.map((f) => f.payload.tabId)).toEqual(["tab-owned", "tab-unowned", "tab-orphan"])
+    expect(lifecycles[1].payload).toMatchObject({ eventType: "Idle", provider: "claude", workspaceId: WORKSPACE_ID })
+    expect(lifecycles[1].payload).not.toHaveProperty("providerSessionId")
+    expect(lifecycles[1].payload).not.toHaveProperty("transcriptPath")
+    expect(lifecycles[1].payload).not.toHaveProperty("refName")
+    expect(lifecycles[1].payload).not.toHaveProperty("prompt")
+    expect(lifecycles[1].payload).not.toHaveProperty("lastAssistantMessage")
+    expect(lifecycles[2].payload).not.toHaveProperty("providerSessionId")
+    expect(lifecycles[2].payload).not.toHaveProperty("transcriptPath")
+    expect(lifecycles[2].payload).not.toHaveProperty("prompt")
+    expect(text).toContain("provider-owned-id")
+    expect(text).toContain("/transcripts/owned.jsonl")
+    expect(text).toContain("owned-prompt-text")
+    for (const leaked of [
+      "provider-unowned-id", "provider-orphan-id", "provider-private-id",
+      "/transcripts/unowned.jsonl", "/transcripts/orphan.jsonl", "/transcripts/private.jsonl",
+      "unowned-prompt-text", "unowned-reply-text", "orphan-prompt-text", "private-prompt-text",
+      "@unowned-ref", "tab-private",
+    ]) {
+      expect(text).not.toContain(leaked)
+    }
+  })
+
   test("a tool's settling part and a subagent's settlement are retained; starts and deltas are not", () => {
     expect(isRetainedWorkspaceEventFrame(part("s", "p", { status: "completed" }))).toBe(true)
     expect(isRetainedWorkspaceEventFrame(part("s", "p", { status: "running" }))).toBe(false)

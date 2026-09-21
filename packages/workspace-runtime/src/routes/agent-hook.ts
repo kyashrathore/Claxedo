@@ -19,6 +19,7 @@ import {
   listWrapperAgents,
 } from "../agent-hooks"
 import { Pty } from "../pty/index"
+import { authoritativeWorkspaceId } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   sessionAccessContext,
@@ -537,10 +538,14 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
         rememberTerminalSession({ ...previous, pendingUserActions: settled.pending })
         return c.json({ success: true, held: true })
       }
-      const workspaceId = access.context.authority?.workspaceId ?? (clean(payload.workspaceId) || undefined)
+      const workspaceId = access.context.authority?.workspaceId ?? authoritativeWorkspaceId() ?? (clean(payload.workspaceId) || undefined)
       const toolScoped = !!(providerEvent?.userAction || providerEvent?.toolCompletion)
       const providerSessionId = clean(payload.sessionId) || undefined
-      const sessionId = access.context.authority ? Pty.get(resolvedTerminalId)?.sessionId : providerSessionId
+      // The terminal's bound session and the workspace the runtime was
+      // configured to serve are the frame's canonical owners; only a caller
+      // the runtime cannot attribute either to falls back to the provider's
+      // own session id, which delivery never scopes as a private session.
+      const sessionId = Pty.get(resolvedTerminalId)?.sessionId ?? (access.context.authority ? undefined : providerSessionId)
 
       // A managed session-less status event must not recover content from a
       // prior terminal mapping merely because it guessed the terminal id.

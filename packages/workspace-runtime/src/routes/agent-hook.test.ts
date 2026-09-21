@@ -1,11 +1,12 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { Hono } from "hono"
-import { workspaceRuntimeBus } from "../bus"
+import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import { AgentHookRoutes, lifecycleLogMetadata, TERMINAL_SESSION_MAX_ENTRIES } from "./agent-hook"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { Pty } from "../pty/index"
+import { withWorkspaceTarget } from "../target"
 import { workspaceRuntimeEventSessionId } from "./session-event-privacy"
 
 const runningTerminal = (id: string, sessionId?: string) => ({
@@ -695,6 +696,50 @@ describe("AgentHookRoutes", () => {
       expect(attacker.status).toBe(403)
       await expect(attacker.json()).resolves.toMatchObject({ error: { code: "agent_terminal_private" } })
       expect(events).toHaveLength(1)
+    } finally {
+      unsubscribe()
+      get.mockRestore()
+      owner.mockRestore()
+    }
+  })
+
+  test("an unattributed lifecycle write stamps the runtime's canonical workspace and the terminal's bound session, never the caller's claims", async () => {
+    const terminalId = "pty_unverified_canonical"
+    const get = spyOn(Pty, "get").mockImplementation((id) => id === terminalId
+      ? { id, sessionId: "session_bound", title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 1 }
+      : undefined)
+    const owner = spyOn(Pty, "accessOwner").mockReturnValue(undefined)
+    const events: Extract<WorkspaceRuntimeEvent, { type: "agent.lifecycle" }>[] = []
+    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+      if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
+    })
+    try {
+      const response = await withWorkspaceTarget({ workspaceId: "ws_canonical", directory: "/tmp" }, () =>
+        AgentHookRoutes().request("http://localhost/agent-lifecycle", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            tabId: "tab_unverified",
+            terminalId,
+            workspaceId: "forged_workspace",
+            provider: "claude",
+            sessionId: "forged_session",
+            transcriptPath: "/transcripts/forged.jsonl",
+            eventType: "Busy",
+          }),
+        }))
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toMatchObject({ sessionId: "session_bound" })
+      expect(events).toEqual([expect.objectContaining({
+        workspaceId: "ws_canonical",
+        sessionId: "session_bound",
+        providerSessionId: "forged_session",
+      })])
+      expect(workspaceRuntimeEventSessionId(events[0])).toBe("session_bound")
+      // The terminal's stored record carries the same canonical ownership.
+      const metadata = await AgentHookRoutes().request(`http://localhost/terminal-session?terminalId=${terminalId}`)
+      const body = await metadata.json() as { session?: { sessionId?: string; workspaceId?: string } }
+      expect(body.session).toMatchObject({ sessionId: "session_bound", workspaceId: "ws_canonical" })
     } finally {
       unsubscribe()
       get.mockRestore()
