@@ -73,7 +73,7 @@ function runtime(options: {
               type: "session.execution.succeeded",
               durable: { aggregateID: sessionID, seq: 2 },
               hintOnly: false,
-              data: { sessionID },
+              data: { sessionID, assistantMessageID: "msg_a" },
             })
           })
         }
@@ -112,14 +112,16 @@ function runtime(options: {
     providerUnavailableReason: (providerID: string) => options.unavailableProvider?.[providerID],
     close: async () => {},
   } as unknown as OpenCodeRuntime
-  return { value, sessions, launch, launchWrites, emit, finish: (sessionID: string) => {
+  return { value, sessions, launch, launchWrites, emit, finish: (sessionID: string, assistantMessageID = "msg_a") => {
     running.delete(sessionID)
     emit({
       id: "evt_done",
       type: "session.execution.succeeded",
       durable: { aggregateID: sessionID, seq: 9 },
       hintOnly: false,
-      data: { sessionID },
+      // The engine names the turn its execution belonged to; a terminal
+      // without one cannot be attributed to a turn at all.
+      data: { sessionID, ...(assistantMessageID ? { assistantMessageID } : {}) },
     })
   } }
 }
@@ -421,56 +423,93 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     expect(fake.launchWrites).toEqual([{ skills: [], mcp: {} }])
   })
 
-  test("an accepted interrupt is not terminal until the engine publishes the turn's terminal", async () => {
-    const fake = runtime({ execution: "manual" })
-    const directory = workspace()
-    const adapter = adapterFor(fake, directory)
-    const turn = binding(directory, "ses_1")
-    const events: unknown[] = []
-    void (async () => { for await (const event of adapter.executeTurn(turn, promptInput("work", "1"))) events.push(event) })()
-    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+  /** Names the assistant turn the engine is producing, the way a real delta does. */
+  function engineNamesTurn(fake: ReturnType<typeof runtime>, sessionID: string, assistantMessageID: string) {
+    fake.emit({
+      id: `evt_delta_${assistantMessageID}`,
+      type: "session.text.delta",
+      hintOnly: true,
+      data: { sessionID, assistantMessageID, ordinal: 0, delta: "working" },
+    })
+  }
 
-    // The engine accepts the interrupt and then says nothing more about the
-    // turn, which is exactly the case an acknowledgement would misreport.
-    const running = await adapter.cancelTurn(turn, {
+  /** A turn the engine has started and named, left running. */
+  async function runningTurn(fake: ReturnType<typeof runtime>, directory: string, sessionId: string, assistantMessageID: string) {
+    const adapter = adapterFor(fake, directory)
+    const turn = binding(directory, sessionId)
+    void (async () => { for await (const _ of adapter.executeTurn(turn, promptInput("work", "1"))) { /* drained */ } })()
+    await until(() => fake.sessions.prompt.mock.calls.length >= 1)
+    engineNamesTurn(fake, sessionId, assistantMessageID)
+    await until(() => true)
+    return { adapter, turn }
+  }
+
+  const STILL_WAITING = Symbol("still-waiting")
+
+  /**
+   * Whether a promise is still unsettled after the event loop has had a turn.
+   * An already-resolved sentinel would win a `Promise.race` even against a
+   * promise that settled in the same tick, which proves nothing.
+   */
+  function settledWithin(promise: Promise<unknown>, ms = 25) {
+    return Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(STILL_WAITING), ms))])
+  }
+
+  function stop(adapter: OpenCodeSdkHarnessAdapter, turn: AgentExecutionBinding, withinMs: number) {
+    return adapter.cancelTurn(turn, {
       turnId: "caller-user-1",
       assistantMessageId: "caller-assistant-1",
       signal: new AbortController().signal,
-      deadlineAt: Date.now() + 40,
+      deadlineAt: Date.now() + withinMs,
     })
-    expect(fake.sessions.interrupt).toHaveBeenCalledTimes(1)
-    expect(running).toEqual({
+  }
+
+  test("an accepted interrupt is not terminal until the engine publishes THIS turn's terminal", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const { adapter, turn } = await runningTurn(fake, directory, "ses_1", "msg_a")
+
+    // The engine accepts the interrupt and then says nothing more about the
+    // turn, which is exactly the case an acknowledgement would misreport.
+    expect(await stop(adapter, turn, 40)).toEqual({
       execution: "running",
       cleanup: "unknown",
       error: { code: "cancellation_timeout", message: expect.stringContaining("published no terminal") },
     })
 
-    // The same interrupt, with the engine's terminal arriving inside the
-    // deadline, is the only thing that makes the turn terminal.
-    const stopping = adapter.cancelTurn(turn, {
-      turnId: "caller-user-1",
-      assistantMessageId: "caller-assistant-1",
-      signal: new AbortController().signal,
-      deadlineAt: Date.now() + 5_000,
-    })
+    const stopping = stop(adapter, turn, 5_000)
     await until(() => fake.sessions.interrupt.mock.calls.length === 2)
-    fake.finish("ses_1")
+    // A terminal the engine attributes to a DIFFERENT turn on the same session
+    // does not settle this one: the session may be running its successor.
+    fake.finish("ses_1", "msg_successor")
+    expect(await settledWithin(stopping)).toBe(STILL_WAITING)
+
+    fake.finish("ses_1", "msg_a")
     expect(await stopping).toEqual({ execution: "terminal", cleanup: "unknown" })
+  })
+
+  test("a terminal the engine attributes to no turn cannot establish that this one stopped", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const { adapter, turn } = await runningTurn(fake, directory, "ses_1", "msg_a")
+
+    const stopping = stop(adapter, turn, 5_000)
+    await until(() => fake.sessions.interrupt.mock.calls.length === 1)
+    fake.finish("ses_1", "")
+    expect(await stopping).toEqual({
+      execution: "unknown",
+      cleanup: "unknown",
+      error: { code: "provider_unreachable", message: expect.stringContaining("without naming the turn") },
+    })
   })
 
   test("an interrupt the engine refuses reports the refusal, never a stopped turn", async () => {
     const fake = runtime({ execution: "manual" })
     const directory = workspace()
     const adapter = adapterFor(fake, directory)
-    const turn = binding(directory, "ses_1")
     fake.sessions.interrupt.mockImplementationOnce(async () => { throw new Error("engine is wedged") })
 
-    expect(await adapter.cancelTurn(turn, {
-      turnId: "caller-user-1",
-      assistantMessageId: "caller-assistant-1",
-      signal: new AbortController().signal,
-      deadlineAt: Date.now() + 5_000,
-    })).toEqual({
+    expect(await stop(adapter, binding(directory, "ses_1"), 5_000)).toEqual({
       execution: "unknown",
       cleanup: "unknown",
       error: { code: "provider_unreachable", message: expect.stringContaining("engine is wedged") },
@@ -480,21 +519,18 @@ describe("OpenCodeSdkHarnessAdapter", () => {
   test("stopping one session's turn leaves another session's turn alone", async () => {
     const fake = runtime({ execution: "manual" })
     const directory = workspace()
-    const adapter = adapterFor(fake, directory)
-    const a = binding(directory, "ses_a")
-    const b = binding(directory, "ses_b")
+    const { adapter, turn } = await runningTurn(fake, directory, "ses_a", "msg_a")
 
-    const stopping = adapter.cancelTurn(a, {
-      turnId: "caller-user-1",
-      assistantMessageId: "caller-assistant-1",
-      signal: new AbortController().signal,
-      deadlineAt: Date.now() + 5_000,
-    })
+    const stopping = stop(adapter, turn, 5_000)
     await until(() => fake.sessions.interrupt.mock.calls.length === 1)
-    // B's terminal must not settle A's cancellation.
-    fake.finish("ses_b")
-    fake.finish("ses_a")
+
+    // B finishing is not A stopping. The cancellation must still be waiting.
+    fake.finish("ses_b", "msg_b")
+    expect(await settledWithin(stopping)).toBe(STILL_WAITING)
+
+    fake.finish("ses_a", "msg_a")
     expect(await stopping).toEqual({ execution: "terminal", cleanup: "unknown" })
-    expect(fake.sessions.interrupt.mock.calls.at(-1)?.[1]).toBe("ses_a")
+    // Only A's session was ever interrupted.
+    expect(fake.sessions.interrupt.mock.calls.map((call: unknown[]) => call[1])).toEqual(["ses_a"])
   })
 })

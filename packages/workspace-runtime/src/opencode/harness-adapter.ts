@@ -180,22 +180,31 @@ function eventSessionID(event: ProjectedEvent): string | undefined {
  * `abandon` exists because a refused interrupt leaves nothing to wait for; the
  * subscription must come off the pump either way.
  */
+export type EngineTurnEnd = "terminal" | "uncorrelated" | "deadline"
+
 function engineTurnTerminal(
   runtime: OpenCodeRuntime,
-  sessionID: string,
+  turn: { sessionID: string; assistantMessageID: string | undefined },
   deadline: { signal: AbortSignal; deadlineAt: number },
 ) {
-  let finish!: (ended: boolean) => void
-  const settled = new Promise<boolean>((resolve) => { finish = resolve })
+  let finish!: (end: EngineTurnEnd) => void
+  const settled = new Promise<EngineTurnEnd>((resolve) => { finish = resolve })
   const unsubscribe = runtime.events.subscribe((event) => {
-    if (eventSessionID(event) !== sessionID) return
-    if (terminal(event, sessionID)) end(true)
+    if (eventSessionID(event) !== turn.sessionID) return
+    if (!terminal(event, turn.sessionID)) return
+    const ended = eventAssistantMessageID(event)
+    // The engine's execution lifecycle is session-scoped. A terminal it did
+    // not attribute to a turn cannot establish that THIS turn ended: by the
+    // time it arrives the session may be running the turn that replaced it.
+    if (!ended || !turn.assistantMessageID) return end("uncorrelated")
+    if (ended !== turn.assistantMessageID) return
+    end("terminal")
   })
-  const timer = setTimeout(() => end(false), Math.max(0, deadline.deadlineAt - Date.now()))
-  const onAbort = () => end(false)
+  const timer = setTimeout(() => end("deadline"), Math.max(0, deadline.deadlineAt - Date.now()))
+  const onAbort = () => end("deadline")
   deadline.signal.addEventListener("abort", onAbort, { once: true })
   let ended = false
-  function end(reached: boolean) {
+  function end(reached: EngineTurnEnd) {
     if (ended) return
     ended = true
     clearTimeout(timer)
@@ -203,7 +212,14 @@ function engineTurnTerminal(
     unsubscribe()
     finish(reached)
   }
-  return { settled, abandon: () => end(false) }
+  return { settled, abandon: () => end("deadline") }
+}
+
+/** The engine's own id for the assistant turn an event belongs to, when it names one. */
+function eventAssistantMessageID(event: ProjectedEvent): string | undefined {
+  const data = asRecordOrEmpty(event.data)
+  const id = data.assistantMessageID ?? data.messageID
+  return typeof id === "string" ? id : undefined
 }
 
 function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamEvent | undefined {
@@ -333,6 +349,8 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   private readonly configs = new Map<string, SessionConfig>()
   /** Sessions whose turn this adapter is streaming, by the scope that turn runs in. */
   private readonly streaming = new Map<string, WorkspaceScope>()
+  /** The engine's own id for the assistant turn each session is producing. */
+  private readonly executions = new Map<string, string>()
 
   /**
    * The launch document `applyConfig` last accepted, and the single-flight
@@ -481,6 +499,10 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       await runtime.sessions.prompt(scope, id, prompt(input))
       while (true) {
         const event = await queue.next()
+        // The engine names the assistant turn it is producing; a cancellation
+        // needs that name to tell this turn's terminal from its successor's.
+        const executing = eventAssistantMessageID(event)
+        if (executing) this.executions.set(id, executing)
         const projected = projectTurnEvent(event, id)
         if (projected) yield projected
         if (terminal(event, id)) return
@@ -489,6 +511,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       yield { type: "error", error: errorMessage(error), harness: "opencode" }
     } finally {
       this.streaming.delete(id)
+      this.executions.delete(id)
       unsubscribe()
     }
   }
@@ -539,10 +562,13 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     // The engine runs its tools in process and publishes no inventory of what
     // a turn started, so nothing readable here establishes cleanup.
     const cleanup = "unknown" as const
-    // Subscribed BEFORE the interrupt: the engine's terminal for this session
-    // can be published while the interrupt call is still returning, and a
-    // subscription opened afterwards would miss it and report `running`.
-    const terminal = engineTurnTerminal(runtime, binding.sessionId, input)
+    // Subscribed BEFORE the interrupt: the engine's terminal can be published
+    // while the interrupt call is still returning, and a subscription opened
+    // afterwards would miss it and report `running`.
+    const terminal = engineTurnTerminal(runtime, {
+      sessionID: binding.sessionId,
+      assistantMessageID: this.executions.get(binding.sessionId),
+    }, input)
     try {
       await runtime.sessions.interrupt(this.scope(binding.directory), binding.sessionId)
     } catch (error) {
@@ -554,8 +580,17 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       }
     }
     // Acknowledging the interrupt only means the engine's turn loop was asked.
-    // Its own terminal event is what says the turn ended.
-    if (await terminal.settled) return { execution: "terminal", cleanup }
+    // Its own terminal for THIS turn is what says the turn ended.
+    const ended = await terminal.settled
+    if (ended === "terminal") return { execution: "terminal", cleanup }
+    if (ended === "uncorrelated") return {
+      execution: "unknown",
+      cleanup,
+      error: {
+        code: "provider_unreachable",
+        message: `OpenCode ended an execution on session ${binding.sessionId} without naming the turn it belonged to, so turn ${input.turnId} is unaccounted for.`,
+      },
+    }
     return {
       execution: "running",
       cleanup,
