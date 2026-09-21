@@ -8,12 +8,6 @@ export function file(...parts: string[]) {
   return shell(path.posix.join(...parts))
 }
 
-export function env(input: Record<string, string>) {
-  return Object.entries(input)
-    .map(([k, v]) => `export ${k}=${shell(v)}`)
-    .join(" && ")
-}
-
 /**
  * Env rendered as a sourceable script (one `export KEY='value'` line per entry)
  * so drivers can deliver it through a provider file channel and have the

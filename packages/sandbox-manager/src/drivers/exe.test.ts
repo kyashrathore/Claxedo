@@ -272,6 +272,25 @@ describe("exe.dev sandbox driver", () => {
     expect(failure.message).toContain("runtime start")
     expect(failure.message).not.toContain("synthetic-secret-1")
   })
+
+  test("refuses env names that cannot be exported rather than emitting them as shell", async () => {
+    const api = fakeExe()
+    const driver = createExeSandboxDriver({
+      apiToken: "t",
+      healthIntervalMs: 0,
+      fetchImpl: api.fetchImpl,
+      env: () => ({ "EMBEDDER;name": "x" }),
+    })
+    const ensure = {
+      workspaceId: "workspace_1",
+      homeRegion: "us-east",
+      epoch: 1,
+      labels: { app: "claxedo", workspaceId: "workspace_1", epoch: "1" },
+      env: { "CALLER $(id)": "x" },
+    }
+    await expect(driver.ensureHost(ensure)).rejects.toThrow("cannot be exported")
+    expect(api.calls.some((call) => call.command.includes("CALLER") || call.command.includes("EMBEDDER"))).toBe(false)
+  })
 })
 
 describe("exe.dev list() across a restart (W1 follow-up)", () => {
