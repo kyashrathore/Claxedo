@@ -1276,12 +1276,21 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           continue
         }
         const lease = leases.get(workspaceId)
-        if (
-          lease?.status === "ready" &&
-          String(lease.epoch) === epoch &&
-          lease.hostId === target.hostId &&
-          lease.sandboxId === target.sandboxId
-        ) {
+        // Provider labels are create-time state: a driver that reuses a
+        // resource across an epoch bump (a restore that keeps the same
+        // Daytona sandbox, a resume after stop) cannot retag it atomically
+        // with the reuse, so `labels.epoch` can lag the lease even after the
+        // driver rewrote it — the sweep can simply land first. The lease
+        // store is authoritative for which provider resource a workspace
+        // owns: a listed sandbox the lease still names is in service whatever
+        // its labels claim. Only a "destroyed" lease disclaims the resource —
+        // a remnant of it is exactly what this sweep exists to finish.
+        const leaseOwnsResource =
+          lease !== undefined && lease.status !== "destroyed" && (
+            lease.sandboxId === target.sandboxId ||
+            (lease.driverResourceId !== undefined && lease.driverResourceId === target.driverResourceId)
+          )
+        if (leaseOwnsResource) {
           result.kept.push(target)
           continue
         }

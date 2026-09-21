@@ -1210,6 +1210,92 @@ describe("sandbox manager", () => {
     expect(driver.destroy).not.toHaveBeenCalledWith(provisioning)
   })
 
+  test("garbage collection keeps a live lease's runtime even when its provider labels claim a stale epoch", async () => {
+    // Provider labels are create-time state: a driver that reuses a resource
+    // across an epoch bump (a restore onto the same sandbox, a resume after
+    // stop) cannot retag it atomically, so the epoch label can lag the lease.
+    // The lease store is authoritative — a resource the lease still names is
+    // in service.
+    const reused = {
+      sandboxId: "sandbox_reused",
+      url: "https://runtime.test/reused",
+      hostId: "host_reused",
+      labels: { app: "claxedo", workspaceId: "ws_reused", epoch: "1" },
+    }
+    const driver = fakeDriver({
+      list: vi.fn(async () => [reused]),
+      destroy: vi.fn(async () => {}),
+    })
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore([
+        sandboxLease({
+          workspaceId: "ws_reused",
+          epoch: 2,
+          status: "ready",
+          sandboxId: "sandbox_reused",
+          url: "https://runtime.test/reused",
+          hostId: "host_reused",
+        }),
+      ]),
+      driver,
+    })
+
+    await expect(manager.garbageCollect()).resolves.toMatchObject({
+      kept: [reused],
+      destroyed: [],
+    })
+    expect(driver.destroy).not.toHaveBeenCalled()
+  })
+
+  test("garbage collection keeps a resource a non-ready lease still names, and finishes one a destroyed lease left", async () => {
+    // "stopped" covers the restore staging window — restoreSandboxCheckpoint
+    // parks the lease there while it re-ensures the same resource — and a
+    // suspended host. "destroyed" disclaims the resource: a listed remnant is
+    // the sweep's job to finish.
+    const suspended = {
+      sandboxId: "sandbox_suspended",
+      url: "https://runtime.test/suspended",
+      hostId: "host_suspended",
+      labels: { app: "claxedo", workspaceId: "ws_suspended", epoch: "1" },
+    }
+    const remnant = {
+      sandboxId: "sandbox_remnant",
+      url: "https://runtime.test/remnant",
+      hostId: "host_remnant",
+      labels: { app: "claxedo", workspaceId: "ws_remnant", epoch: "1" },
+    }
+    const driver = fakeDriver({
+      list: vi.fn(async () => [suspended, remnant]),
+      destroy: vi.fn(async () => {}),
+    })
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore([
+        sandboxLease({
+          workspaceId: "ws_suspended",
+          epoch: 2,
+          status: "stopped",
+          sandboxId: "sandbox_suspended",
+          url: "https://runtime.test/suspended",
+          hostId: "host_suspended",
+        }),
+        sandboxLease({
+          workspaceId: "ws_remnant",
+          epoch: 2,
+          status: "destroyed",
+          sandboxId: "sandbox_remnant",
+          url: "https://runtime.test/remnant",
+          hostId: "host_remnant",
+        }),
+      ]),
+      driver,
+    })
+
+    await expect(manager.garbageCollect()).resolves.toMatchObject({
+      kept: [suspended],
+      destroyed: [remnant],
+    })
+  })
+
   test.each([
     "WORKSPACE_RUNTIME_HOST_ID",
     "WORKSPACE_RUNTIME_WORKSPACE_ID",
