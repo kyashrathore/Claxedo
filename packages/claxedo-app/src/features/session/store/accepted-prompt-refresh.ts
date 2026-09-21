@@ -52,7 +52,7 @@ export const MAX_CONCURRENT_COVERAGE_READS = 4
 
 const [obligations, setObligations] = createSignal<readonly TurnCoverageObligation[]>([])
 
-function scopeKey(target: TurnCoverageScope) {
+function coverageScopeKey(target: TurnCoverageScope) {
   return `${target.directory}\0${target.sessionID}`
 }
 
@@ -67,8 +67,8 @@ export function requestAcceptedPromptRefresh(input: TurnCoverageScope & { messag
   setObligations((current) => {
     if (current.some((entry) => sameTurn(target, entry))) return current
     const next = [...current, { ...target, requestedAt: Date.now() }]
-    const scope = scopeKey(target)
-    const inScope = next.filter((entry) => scopeKey(entry) === scope)
+    const scope = coverageScopeKey(target)
+    const inScope = next.filter((entry) => coverageScopeKey(entry) === scope)
     if (inScope.length <= MAX_OUTSTANDING_PER_SCOPE) return next
     const evicted = new Set(inScope.slice(0, inScope.length - MAX_OUTSTANDING_PER_SCOPE))
     return next.filter((entry) => !evicted.has(entry))

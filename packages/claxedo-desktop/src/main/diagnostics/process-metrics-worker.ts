@@ -93,7 +93,7 @@ function isSampleReply(value: unknown): value is ProcessMetricSample[] {
   return Array.isArray(value) && value.every(isProcessMetricSample)
 }
 
-function isCreationIdentity(value: unknown): value is LocalDiagnostics.CreationIdentity {
+function isDiagnosticsCreationIdentity(value: unknown): value is LocalDiagnostics.CreationIdentity {
   return LocalDiagnostics.CreationIdentity.safeParse(value).success
 }
 
@@ -167,7 +167,7 @@ export function createIsolatedPosixProcessMetricsWorker(options: {
       return request("sample", { entries: uniqueEntries(entries).slice(0, MAX_DIAGNOSTICS_PIDS), at }, isSampleReply)
     },
     probeCreation(pid) {
-      return request("probeCreation", { pid }, isCreationIdentity)
+      return request("probeCreation", { pid }, isDiagnosticsCreationIdentity)
     },
     clear() {
       // Fire-and-forget by design; `request` rejects on a bad reply and the

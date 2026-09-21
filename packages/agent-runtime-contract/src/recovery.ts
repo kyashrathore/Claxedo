@@ -13,7 +13,7 @@
  * recovery operation's state describes the command, not the transcript.
  */
 
-import { asFiniteNumber } from "@claxedo/helpers/guards"
+import { asFiniteNumber, isNonEmptyString } from "@claxedo/helpers/guards"
 import { asRecord, asText } from "./values"
 
 /**
@@ -92,21 +92,17 @@ export function isDaemonOwnershipSnapshot(value: unknown): value is {
   const row = asRecord(value)
   return (
     !!row
-    && text(row.machineId) && text(row.generation) && text(row.revision)
+    && isNonEmptyString(row.machineId) && isNonEmptyString(row.generation) && isNonEmptyString(row.revision)
     && typeof row.pid === "number" && Number.isSafeInteger(row.pid) && row.pid > 0
     && typeof row.writtenAt === "number" && Number.isFinite(row.writtenAt)
     && typeof row.residencyPins === "number" && Number.isFinite(row.residencyPins)
     && Array.isArray(row.owners)
     && row.owners.every((owner) => {
       const entry = asRecord(owner)
-      return !!entry && text(entry.id) && text(entry.kind) && text(entry.generation)
-        && text(entry.state) && typeof entry.pins === "boolean"
+      return !!entry && isNonEmptyString(entry.id) && isNonEmptyString(entry.kind) && isNonEmptyString(entry.generation)
+        && isNonEmptyString(entry.state) && typeof entry.pins === "boolean"
     })
   )
-}
-
-function text(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0
 }
 
 export const RECOVERY_TARGET_SCOPES = ["turn", "session", "harness", "machine"] as const

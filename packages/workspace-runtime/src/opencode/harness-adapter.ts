@@ -167,10 +167,6 @@ function pluginMcpServers(input: Record<string, unknown>): Record<string, Mcp.Se
   return servers
 }
 
-function errorText(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
-}
-
 function eventSessionID(event: ProjectedEvent): string | undefined {
   const data = asRecordOrEmpty(event.data)
   return typeof data.sessionID === "string" ? data.sessionID : undefined
@@ -580,7 +576,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       return {
         execution: "unknown",
         cleanup,
-        error: { code: "provider_unreachable", message: `OpenCode refused the interrupt for session ${binding.sessionId}: ${errorText(error)}` },
+        error: { code: "provider_unreachable", message: `OpenCode refused the interrupt for session ${binding.sessionId}: ${errorMessage(error)}` },
       }
     }
     // Acknowledging the interrupt only means the engine's turn loop was asked.
