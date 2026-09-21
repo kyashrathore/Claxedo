@@ -1,9 +1,45 @@
-import { expect, test } from "bun:test"
+import { afterEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import { LaunchRefusedError, volatileLaunchOwnership } from "../../launch"
 
 /** This suite asserts protocol and retirement, not record durability. */
-const ownership = volatileLaunchOwnership()
+const volatile = volatileLaunchOwnership()
+
+/**
+ * Every gate this suite starts, tracked from the moment its identity is
+ * recorded. An activated gate leads the harness payload's group and
+ * deliberately outlives its parent, so a test that fails before disposing one
+ * would leave it inherited by init.
+ */
+const started: number[] = []
+const ownership = {
+  ...volatile,
+  recordIdentity: async (launchId: string, identity: { pid: number }, gateNonce?: string) => {
+    started.push(identity.pid)
+    return volatile.recordIdentity(launchId, identity as never, gateNonce)
+  },
+}
+
+function groupAlive(processGroupId: number) {
+  try {
+    process.kill(-processGroupId, 0)
+    return true
+  } catch (error) {
+    return (error as { code?: string }).code === "EPERM"
+  }
+}
+
+afterEach(async () => {
+  const swept = started.splice(0)
+  for (const processGroupId of swept) {
+    try { process.kill(-processGroupId, "SIGKILL") } catch {}
+  }
+  for (let attempt = 0; attempt < 40 && swept.some(groupAlive); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  expect(swept.filter(groupAlive)).toEqual([])
+})
+
 import os from "node:os"
 import path from "node:path"
 import { CodexAppServerProcess } from "./app-server-process"
@@ -147,7 +183,7 @@ test("a request to an app-server that already exited is refused, not left to its
     await expect(server.request("model/list", {}, {
       signal: new AbortController().signal,
       deadlineAt: Date.now() + 30_000,
-    })).rejects.toThrow("the app-server has exited")
+    })).rejects.toThrow("retired the app-server or it has exited")
     // The point is that it answered at once rather than sitting on a deadline
     // nobody can satisfy.
     expect(Date.now() - started).toBeLessThan(1_000)
@@ -189,6 +225,29 @@ test("a retained unresolved launch stops refusing once its recorded pid is no lo
     expect(codex.readRuntimeHealth()).toMatchObject({ status: "ok" })
   } finally {
     await (driver as unknown as { dispose(): Promise<void> }).dispose()
+    await fs.rm(fake.directory, { recursive: true, force: true })
+  }
+})
+
+test("a request during the TERM grace is still sent, because a signalled process can still answer", async () => {
+  const fake = await installFakeCodexAppServer()
+  const server = await CodexAppServerProcess.start({
+    binary: fake.binary,
+    directory: fake.directory,
+    env: process.env,
+    requestHandler: async () => ({}),
+    ownership: volatileLaunchOwnership(),
+    workspaceId: "",
+  })
+  try {
+    // Node sets `killed` on delivery, not on exit. A process inside its
+    // graceful window is answering normally, and refusing its requests would
+    // turn a clean shutdown into a provider outage.
+    server.child.kill("SIGCONT")
+    expect(server.child.killed).toBe(true)
+    await expect(server.request("model/list", {}, soon())).resolves.toBeDefined()
+  } finally {
+    await server.dispose()
     await fs.rm(fake.directory, { recursive: true, force: true })
   }
 })

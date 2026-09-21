@@ -1,12 +1,48 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { PiJsonLines, PiRpcProcess } from "./rpc-process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { volatileLaunchOwnership } from "../../launch"
 
-/** These suites assert protocol and retirement, not record durability. */
-const ownership = volatileLaunchOwnership()
+/** This suite asserts protocol and retirement, not record durability. */
+const volatile = volatileLaunchOwnership()
+
+/**
+ * Every gate this suite starts, tracked from the moment its identity is
+ * recorded. An activated gate leads the harness payload's group and
+ * deliberately outlives its parent, so a test that fails before disposing one
+ * would leave it inherited by init.
+ */
+const started: number[] = []
+const ownership = {
+  ...volatile,
+  recordIdentity: async (launchId: string, identity: { pid: number }, gateNonce?: string) => {
+    started.push(identity.pid)
+    return volatile.recordIdentity(launchId, identity as never, gateNonce)
+  },
+}
+
+function groupAlive(processGroupId: number) {
+  try {
+    process.kill(-processGroupId, 0)
+    return true
+  } catch (error) {
+    return (error as { code?: string }).code === "EPERM"
+  }
+}
+
+afterEach(async () => {
+  const swept = started.splice(0)
+  for (const processGroupId of swept) {
+    try { process.kill(-processGroupId, "SIGKILL") } catch {}
+  }
+  for (let attempt = 0; attempt < 40 && swept.some(groupAlive); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  expect(swept.filter(groupAlive)).toEqual([])
+})
+
 
 describe("Pi JSONL", () => {
   test("handles chunks, CRLF and literal Unicode separators without splitting JSON strings", () => {

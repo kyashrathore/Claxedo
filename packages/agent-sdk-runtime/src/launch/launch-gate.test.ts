@@ -14,9 +14,64 @@ const posix = process.platform !== "win32"
 const budgets = { termGraceMs: 500, killVerifyMs: 500 }
 
 const cleanup: Array<() => void | Promise<void>> = []
+
+/**
+ * Every launch this suite starts, by the pid of the gate that leads its group.
+ * An activated gate deliberately outlives its parent — it leads the user's
+ * payload — so a test that forgets to retire one leaves it inherited by init,
+ * ignoring SIGTERM, until someone finds it with `pgrep`.
+ */
+const started: number[] = []
+
+function groupAlive(processGroupId: number) {
+  try {
+    process.kill(-processGroupId, 0)
+    return true
+  } catch (error) {
+    return (error as { code?: string }).code === "EPERM"
+  }
+}
+
 afterEach(async () => {
   for (const item of cleanup.splice(0)) await item()
+  // Tests may legitimately end with a launch still running — several assert
+  // precisely that one was not signalled. What must never happen is that it
+  // outlives the test, so the sweep kills every tracked group and then proves
+  // it is gone.
+  const swept = started.splice(0)
+  for (const processGroupId of swept) {
+    try { process.kill(-processGroupId, "SIGKILL") } catch {}
+  }
+  for (let attempt = 0; attempt < 40 && swept.some(groupAlive); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  expect(swept.filter(groupAlive)).toEqual([])
 })
+
+/**
+ * Starts a launch and books its retirement at the moment the gate reports its
+ * identity, not when the launch resolves: a launch still in flight when an
+ * assertion fails has a gate, and waiting for the return value would miss it.
+ */
+async function launch(input: Parameters<typeof launchOwnedProcess>[0]) {
+  return await launchOwnedProcess({
+    ...input,
+    ownership: {
+      ...input.ownership,
+      recordIdentity: async (launchId, identity, gateNonce) => {
+        started.push(identity.pid)
+        return input.ownership.recordIdentity(launchId, identity, gateNonce)
+      },
+    },
+  })
+}
+
+/** Tracks a bare gate handle the same way, including ones never activated. */
+function gate(input: Parameters<typeof spawnLaunchGate>[0]) {
+  const handle = spawnLaunchGate(input)
+  void handle.reported.then((reported) => started.push(reported.identity.pid), () => {})
+  return handle
+}
 
 async function workspace() {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "launch-gate-"))
@@ -66,7 +121,7 @@ test.skipIf(!posix)("the gate child resolves to a file this process can execute"
 test.skipIf(!posix)("an acknowledged launch owns a group the payload is inside", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -74,15 +129,14 @@ test.skipIf(!posix)("an acknowledged launch owns a group the payload is inside",
     cwd: directory,
     env: process.env,
   })
-  disposable(launch)
 
-  expect(launch.identity.processGroupId).toBe(launch.identity.pid)
-  expect(launch.payloadPid).toBeGreaterThan(0)
-  const payload = await readCreationIdentity(launch.payloadPid!)
-  expect(payload?.processGroupId).toBe(launch.identity.pid)
+  expect(owned.identity.processGroupId).toBe(owned.identity.pid)
+  expect(owned.payloadPid).toBeGreaterThan(0)
+  const payload = await readCreationIdentity(owned.payloadPid!)
+  expect(payload?.processGroupId).toBe(owned.identity.pid)
 
-  const record = await ownership.read(launch.launchId)
-  expect(record?.identity?.pid).toBe(launch.identity.pid)
+  const record = await ownership.read(owned.launchId)
+  expect(record?.identity?.pid).toBe(owned.identity.pid)
   expect(record?.activationAcknowledgedAt).toBeGreaterThan(0)
   expect(reconcileLaunch(record!)).toEqual({ execution: "started", because: "the gate acknowledged activation" })
 })
@@ -99,7 +153,7 @@ test.skipIf(!posix)("ownership is durable before the payload can run", async () 
     acknowledgeActivation: async (id) => { order.push("acknowledge"); return inner.acknowledgeActivation(id) },
   }
   const marker = path.join(directory, "payload-ran")
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -107,7 +161,6 @@ test.skipIf(!posix)("ownership is durable before the payload can run", async () 
     cwd: directory,
     env: process.env,
   })
-  disposable(launch)
   await waitForFile(marker)
 
   expect(order).toEqual(["prepare", "identity", "authorize", "acknowledge"])
@@ -122,7 +175,7 @@ test.skipIf(!posix)("a store that refuses to prepare refuses the launch and spaw
     prepare: async () => { throw new Error("launch_ownership database is unavailable") },
   }
   const before = await childCount()
-  const failure = await launchOwnedProcess({
+  const failure = await launch({
     ownership,
     role: "managed-process",
     scope: { workspaceId: "ws", directory },
@@ -144,7 +197,7 @@ test.skipIf(!posix)("a store that fails after the gate reports leaves no payload
     ...inner,
     recordIdentity: async () => { throw new Error("launch_ownership write failed") },
   }
-  const failure = await launchOwnedProcess({
+  const failure = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -161,7 +214,7 @@ test.skipIf(!posix)("a store that fails after the gate reports leaves no payload
 
 test.skipIf(!posix)("the gate exits on its activation deadline without running a payload", async () => {
   const directory = await workspace()
-  const handle = spawnLaunchGate({ cwd: directory, env: process.env, activationDeadlineMs: 200 })
+  const handle = gate({ cwd: directory, env: process.env, activationDeadlineMs: 200 })
   const { identity } = await handle.reported
   expect(identity.processGroupId).toBe(identity.pid)
   const exit = await handle.exit
@@ -170,7 +223,7 @@ test.skipIf(!posix)("the gate exits on its activation deadline without running a
 
 test.skipIf(!posix)("the gate refuses a nonce it did not mint", async () => {
   const directory = await workspace()
-  const handle = spawnLaunchGate({ cwd: directory, env: process.env, activationDeadlineMs: 5000 })
+  const handle = gate({ cwd: directory, env: process.env, activationDeadlineMs: 5000 })
   await handle.reported
   handle.activate("00000000-0000-4000-8000-000000000000", sleeper(30))
   const exit = await handle.exit
@@ -179,7 +232,7 @@ test.skipIf(!posix)("the gate refuses a nonce it did not mint", async () => {
 
 test.skipIf(!posix)("the gate exits when the private channel closes before activation", async () => {
   const directory = await workspace()
-  const handle = spawnLaunchGate({ cwd: directory, env: process.env, activationDeadlineMs: 30_000 })
+  const handle = gate({ cwd: directory, env: process.env, activationDeadlineMs: 30_000 })
   await handle.reported
   handle.child.disconnect()
   const exit = await handle.exit
@@ -203,7 +256,7 @@ test.skipIf(!posix)("a prepared direct launch stays unknown, because its spawn p
 test.skipIf(!posix)("retirement escalates to KILL for a payload that ignores TERM", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -211,15 +264,15 @@ test.skipIf(!posix)("retirement escalates to KILL for a payload that ignores TER
     cwd: directory,
     env: process.env,
   })
-  const payloadPid = launch.payloadPid!
+  const payloadPid = owned.payloadPid!
   await waitForFile(path.join(directory, "ready"))
-  const result = await launch.retire(budgets)
+  const result = await owned.retire(budgets)
 
   expect(result.leader).toBe("exited")
   expect(result.signals.map((item) => item.signal)).toEqual(["SIGTERM", "SIGKILL"])
   expect(result.signals.every((item) => item.delivered)).toBe(true)
   expect(await gone(payloadPid)).toBe(true)
-  expect((await ownership.read(launch.launchId))?.cleanup?.leader).toBe("exited")
+  expect((await ownership.read(owned.launchId))?.cleanup?.leader).toBe("exited")
 })
 
 test.skipIf(!posix)("a descendant that leaves the group leaves cleanup unknown", async () => {
@@ -236,7 +289,7 @@ test.skipIf(!posix)("a descendant that leaves the group leaves cleanup unknown",
     `setTimeout(() => {}, 30000)`,
   ].join("\n"))
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -248,7 +301,7 @@ test.skipIf(!posix)("a descendant that leaves the group leaves cleanup unknown",
   const escaped = Number((await fs.readFile(marker, "utf8")).trim())
   cleanup.push(() => { try { process.kill(escaped, "SIGKILL") } catch {} })
 
-  const result = await launch.retire(budgets)
+  const result = await owned.retire(budgets)
   expect(result.leader).toBe("exited")
   expect(result.descendants).toBe("unknown")
   // Measured, not assumed: the escapee survives the group it left.
@@ -258,7 +311,7 @@ test.skipIf(!posix)("a descendant that leaves the group leaves cleanup unknown",
 test.skipIf(!posix)("retirement refuses to signal a recorded identity another process now holds", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -266,16 +319,15 @@ test.skipIf(!posix)("retirement refuses to signal a recorded identity another pr
     cwd: directory,
     env: process.env,
   })
-  disposable(launch)
 
-  const stale = { ...launch.identity, startSecond: "Thu Jan  1 00:00:00 1970" }
+  const stale = { ...owned.identity, startSecond: "Thu Jan  1 00:00:00 1970" }
   const result = await retire({ identity: stale }, budgets)
 
   expect(result.leader).toBe("unknown")
   expect(result.descendants).toBe("unknown")
   expect(result.error?.code).toBe("signal_denied")
   expect(result.signals[0]?.refusal).toBe("identity_mismatch")
-  expect((await verifyCreationIdentity(launch.identity)).state).toBe("live")
+  expect((await verifyCreationIdentity(owned.identity)).state).toBe("live")
 })
 
 test.skipIf(!posix)("retirement refuses a recorded process that does not lead its group", async () => {
@@ -293,7 +345,7 @@ test.skipIf(!posix)("retirement refuses a recorded process that does not lead it
 test.skipIf(!posix)("an identity probe that fails reports unknown rather than clear", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -301,14 +353,13 @@ test.skipIf(!posix)("an identity probe that fails reports unknown rather than cl
     cwd: directory,
     env: process.env,
   })
-  disposable(launch)
 
   const broken = await fs.mkdtemp(path.join(os.tmpdir(), "no-ps-"))
   cleanup.push(() => fs.rm(broken, { recursive: true, force: true }))
   const realPath = process.env.PATH
   process.env.PATH = broken
   try {
-    const result = await retire({ identity: launch.identity }, budgets)
+    const result = await retire({ identity: owned.identity }, budgets)
     expect(result.leader).toBe("unknown")
     expect(result.descendants).toBe("unknown")
     expect(result.error?.code).toBe("ownership_unverified")
@@ -316,13 +367,13 @@ test.skipIf(!posix)("an identity probe that fails reports unknown rather than cl
   } finally {
     process.env.PATH = realPath
   }
-  expect(await gone(launch.identity.pid, 100)).toBe(false)
+  expect(await gone(owned.identity.pid, 100)).toBe(false)
 })
 
 test.skipIf(!posix)("retiring an already exited leader reports its surviving group as owned", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -330,12 +381,12 @@ test.skipIf(!posix)("retiring an already exited leader reports its surviving gro
     cwd: directory,
     env: process.env,
   })
-  const payloadPid = launch.payloadPid!
+  const payloadPid = owned.payloadPid!
   cleanup.push(() => { try { process.kill(payloadPid, "SIGKILL") } catch {} })
-  process.kill(launch.identity.pid, "SIGKILL")
-  expect(await gone(launch.identity.pid)).toBe(true)
+  process.kill(owned.identity.pid, "SIGKILL")
+  expect(await gone(owned.identity.pid)).toBe(true)
 
-  const result = await retire({ identity: launch.identity }, budgets)
+  const result = await retire({ identity: owned.identity }, budgets)
   expect(result.leader).toBe("exited")
   expect(result.descendants).toBe("owned")
   expect(result.signals).toEqual([])
@@ -345,7 +396,7 @@ test.skipIf(!posix)("retiring an already exited leader reports its surviving gro
 test.skipIf(!posix)("a second retirement of a settled launch is idempotent", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -353,8 +404,8 @@ test.skipIf(!posix)("a second retirement of a settled launch is idempotent", asy
     cwd: directory,
     env: process.env,
   })
-  const first = await launch.retire(budgets)
-  const second = await launch.retire(budgets)
+  const first = await owned.retire(budgets)
+  const second = await owned.retire(budgets)
 
   expect(first.leader).toBe("exited")
   expect(second.leader).toBe("exited")
@@ -365,7 +416,7 @@ test.skipIf(!posix)("a second retirement of a settled launch is idempotent", asy
 test.skipIf(!posix)("closeNative runs between TERM and KILL", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "terminal",
     scope: { workspaceId: "ws", directory },
@@ -376,17 +427,13 @@ test.skipIf(!posix)("closeNative runs between TERM and KILL", async () => {
   await waitForFile(path.join(directory, "ready"))
   let closedAfterTerm: boolean | undefined
   const result = await retire({
-    identity: launch.identity,
+    identity: owned.identity,
     closeNative: () => { closedAfterTerm = true },
   }, budgets)
 
   expect(closedAfterTerm).toBe(true)
   expect(result.signals.map((item) => item.signal)).toEqual(["SIGTERM", "SIGKILL"])
 })
-
-function disposable(launch: { identity: { pid: number } }) {
-  cleanup.push(() => { try { process.kill(-launch.identity.pid, "SIGKILL") } catch {} })
-}
 
 async function exists(file: string) {
   return await fs.access(file).then(() => true, () => false)
@@ -406,7 +453,12 @@ async function childCount() {
  * throwaway parent that kills itself at one boundary, then reads the record the
  * way a fresh owner would.
  */
-const crashProxy = (mode: "before-identity" | "before-ack", store: string, marker: string) => [
+const crashProxy = (
+  mode: "before-identity" | "after-identity" | "before-ack",
+  store: string,
+  marker: string,
+  activationDeadlineMs = 4000,
+) => [
   `import { launchOwnedProcess } from ${JSON.stringify(new URL("./launch-gate.ts", import.meta.url).href)}`,
   `import { readFileSync, writeFileSync } from "node:fs"`,
   `import { randomUUID } from "node:crypto"`,
@@ -420,6 +472,9 @@ const crashProxy = (mode: "before-identity" | "before-ack", store: string, marke
   mode === "before-ack"
     ? `  acknowledgeActivation: async () => { process.kill(process.pid, "SIGKILL") },`
     : `  acknowledgeActivation: async (id) => patch(id, { activationAcknowledgedAt: Date.now() }),`,
+  mode === "after-identity"
+    ? `  authorizeActivation: async () => { process.kill(process.pid, "SIGKILL") },`
+    : `  authorizeActivation: async (id) => patch(id, { activationAuthorizedAt: Date.now() }),`,
   `  recordRetirement: async (id, cleanup) => patch(id, { cleanup }),`,
   `  read: async (id) => read()[id],`,
   `  listUnresolved: async () => Object.values(read()),`,
@@ -428,24 +483,30 @@ const crashProxy = (mode: "before-identity" | "before-ack", store: string, marke
   `await launchOwnedProcess({`,
   `  ownership, role: "harness", scope: { workspaceId: "ws" },`,
   `  payload: { command: "/bin/sh", args: ["-c", "touch ${marker}; sleep 30"] },`,
-  `  cwd: ${JSON.stringify(process.cwd())}, env: process.env, activationDeadlineMs: 4000,`,
+  `  cwd: ${JSON.stringify(process.cwd())}, env: process.env, activationDeadlineMs: ${activationDeadlineMs},`,
   `})`,
   `await new Promise((resolve) => setTimeout(resolve, 20000))`,
 ].join("\n")
 
-async function runCrashProxy(source: string, directory: string) {
+async function runCrashProxy(source: string, directory: string, store: string) {
   const file = path.join(directory, "crash-proxy.mjs")
   await fs.writeFile(file, source)
   const proxy = spawn(process.execPath, [file], { stdio: ["ignore", "ignore", "pipe"] })
   cleanup.push(() => void proxy.kill("SIGKILL"))
-  return await new Promise<void>((resolve) => proxy.on("exit", () => resolve()))
+  await new Promise<void>((resolve) => proxy.on("exit", () => resolve()))
+  // The proxy is gone and its gate may not be: booking it here means no
+  // assertion between now and the end of the test can strand it.
+  const records: Record<string, { identity?: { pid: number } }> = JSON.parse(await fs.readFile(store, "utf8").catch(() => "{}"))
+  for (const record of Object.values(records)) {
+    if (record.identity) started.push(record.identity.pid)
+  }
 }
 
 test.skipIf(!posix || !process.versions.bun)("an owner that dies before using the identity leaves no payload", async () => {
   const directory = await workspace()
   const store = path.join(directory, "ownership.json")
   const marker = path.join(directory, "payload-ran")
-  await runCrashProxy(crashProxy("before-identity", store, marker), directory)
+  await runCrashProxy(crashProxy("before-identity", store, marker), directory, store)
 
   await new Promise((resolve) => setTimeout(resolve, 5000))
   expect(await exists(marker)).toBe(false)
@@ -457,7 +518,7 @@ test.skipIf(!posix || !process.versions.bun)("an owner that dies before the ackn
   const directory = await workspace()
   const store = path.join(directory, "ownership.json")
   const marker = path.join(directory, "payload-ran")
-  await runCrashProxy(crashProxy("before-ack", store, marker), directory)
+  await runCrashProxy(crashProxy("before-ack", store, marker), directory, store)
 
   await waitForFile(marker, 10_000)
   const records: Record<string, LaunchOwnershipRecordShape> = JSON.parse(await fs.readFile(store, "utf8"))
@@ -465,7 +526,6 @@ test.skipIf(!posix || !process.versions.bun)("an owner that dies before the ackn
   expect(record.activationAcknowledgedAt).toBeUndefined()
   expect(reconcileLaunch(record as never).execution).toBe("unknown")
 
-  cleanup.push(() => { try { process.kill(-record.identity!.pid, "SIGKILL") } catch {} })
   expect((await verifyCreationIdentity(record.identity!)).state).toBe("live")
   const result = await retire({ identity: record.identity! }, budgets)
   expect(result.leader).toBe("exited")
@@ -494,7 +554,7 @@ test.skipIf(!posix)("the payload cannot run while authorization is still being r
     },
   }
 
-  const launching = launchOwnedProcess({
+  const launching = launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -510,8 +570,7 @@ test.skipIf(!posix)("the payload cannot run while authorization is still being r
   expect(await exists(marker)).toBe(false)
 
   releaseAuthorization()
-  const launch = await launching
-  disposable(launch)
+  const owned = await launching
   await waitForFile(marker)
   expect(authorized).toBe(true)
 })
@@ -520,7 +579,7 @@ test.skipIf(!posix)("an owner that dies after authorizing leaves a running paylo
   const directory = await workspace()
   const store = path.join(directory, "ownership.json")
   const marker = path.join(directory, "payload-ran")
-  await runCrashProxy(crashProxy("before-ack", store, marker), directory)
+  await runCrashProxy(crashProxy("before-ack", store, marker), directory, store)
 
   await waitForFile(marker, 10_000)
   const records: Record<string, { activationAuthorizedAt?: number; activationAcknowledgedAt?: number }> =
@@ -538,7 +597,7 @@ test.skipIf(!posix)("an owner that dies after authorizing leaves a running paylo
 test.skipIf(!posix)("a boot identity that differs is a mismatch, not a live process", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
-  const launch = await launchOwnedProcess({
+  const owned = await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -546,17 +605,63 @@ test.skipIf(!posix)("a boot identity that differs is a mismatch, not a live proc
     cwd: directory,
     env: process.env,
   })
-  disposable(launch)
 
   // Same pid, same start second, previous boot: pids restart low after a
   // reboot, so without this the record of a dead machine names a live process.
-  const rebooted = { ...launch.identity, bootTime: String(Number(launch.identity.bootTime) - 86_400) }
+  const rebooted = { ...owned.identity, bootTime: String(Number(owned.identity.bootTime) - 86_400) }
   const verdict = await verifyCreationIdentity(rebooted)
 
   expect(verdict.state).toBe("identity_mismatch")
-  expect((await verifyCreationIdentity(launch.identity)).state).toBe("live")
+  expect((await verifyCreationIdentity(owned.identity)).state).toBe("live")
   const refusal = await retire({ identity: rebooted }, budgets)
   expect(refusal.error?.code).toBe("signal_denied")
   expect(refusal.signals[0]?.refusal).toBe("identity_mismatch")
-  expect((await verifyCreationIdentity(launch.identity)).state).toBe("live")
+  expect((await verifyCreationIdentity(owned.identity)).state).toBe("live")
+})
+
+
+test.skipIf(!posix || !process.versions.bun)("a gate whose parent dies before activation does not survive it", async () => {
+  const directory = await workspace()
+  const store = path.join(directory, "ownership.json")
+  const marker = path.join(directory, "payload-ran")
+  // A real parent that dies, not a gate this test signals: the channel has to
+  // be torn down by the owner's death for this to mean anything. The gate has
+  // reported and is waiting on an activation that is never coming.
+  // The deadline is far longer than this test will wait, so only the channel
+  // closing can end the gate: if the disconnect handler goes, the gate sits
+  // out its 30 seconds and this fails.
+  await runCrashProxy(crashProxy("after-identity", store, marker, 30_000), directory, store)
+
+  const records: Record<string, { identity?: { pid: number } }> = JSON.parse(await fs.readFile(store, "utf8"))
+  const identity = Object.values(records)[0]?.identity
+  expect(identity?.pid).toBeGreaterThan(0)
+
+  expect(await gone(identity!.pid, 5_000)).toBe(true)
+  expect(await exists(marker)).toBe(false)
+})
+
+test.skipIf(!posix)("an activated gate outlives its parent, and its record is what finds it", async () => {
+  const directory = await workspace()
+  const ownership = volatileLaunchOwnership()
+  const owned = await launch({
+    ownership,
+    role: "harness",
+    scope: { workspaceId: "ws", directory },
+    payload: { command: "/bin/sh", args: ["-c", "while true; do sleep 0.05; done"] },
+    cwd: directory,
+    env: process.env,
+  })
+
+  // Deliberate: the gate leads the user's payload, so a host that dies must not
+  // take it with it. That is why the durable record exists — nothing else
+  // could name this process afterwards.
+  expect(await gone(owned.identity.pid, 200)).toBe(false)
+  const record = await ownership.read(owned.launchId)
+  expect(record?.identity).toEqual(owned.identity)
+  expect(reconcileLaunch(record!).execution).toBe("started")
+
+  // And it is reachable from that record alone.
+  const result = await retire({ identity: record!.identity! }, budgets)
+  expect(result.leader).toBe("exited")
+  expect(await gone(owned.identity.pid)).toBe(true)
 })
