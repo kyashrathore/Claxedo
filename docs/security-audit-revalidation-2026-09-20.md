@@ -246,7 +246,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 50 | Next fixes / validation | [P-8 — Opening a file can execute it](#finding-p-8) | MED → Medium, renderer prerequisite | Present | Separate opening directories in tools from opening documents. |
 | 51 | Next fixes / validation | [P-26 — Browser registry accepts non-guest webContents](#finding-p-26) | MED-LOW → Medium, renderer prerequisite | Present | Record guest ownership in main when the webview attaches and require that relation on registration. |
 | 52 | Next fixes / validation | [P-9 — Beta and stable share update metadata](#finding-p-9) | MED → Medium operational risk | Present | Publish separate channels and artifact names, disable automatic downgrades, and test each installed variant against its own signed release metadata. |
-| 53 | Next fixes / validation | [P-23 — Web openLink does not validate schemes](#finding-p-23) | MED-LOW → Medium, potential XSS | Partial | Use one platform URL opener that accepts intended schemes and sets noopener/noreferrer. |
+| 53 | Next fixes / validation | [P-23 — Web openLink does not validate schemes](#finding-p-23) | MED-LOW → Medium, potential XSS | Fixed; focused opener tests | Retain the single scheme-gated opener and noopener/noreferrer on every web `window.open` path. |
 | 54 | Next fixes / validation | [P-5 — Tool text can invent a subagent relationship](#finding-p-5) | MED→HIGH → Medium; cross-session disclosure unconfirmed | Fixed; adapter, admission and routing tests | Retain the hostile-tool-result and unknown-key regressions. |
 | 55 | Next fixes / validation | [P-96 — Usage ownership follows the requesting account](#finding-p-96) | MED → Medium before remediation | Fixed; focused ownership tests | Retain producer-stamped ownership, operator-only history/quota and the two-account claim races. |
 | 56 | Next fixes / validation | [P-97 — Task cloud starts bypass the route's admission policy](#finding-p-97) | MED → Medium; paid-product reachability conditional | Present source gap | Move cloud creation admission into the canonical creation service and call it from tasks and routes. |
@@ -263,7 +263,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 67 | Scheduled fixes | [P-29 — Host consent state and redirects need stronger boundaries](#finding-p-29) | MED-LOW → Low-Medium, conditional | Partial | Persist the accepted scope revision and explicit refusal state, and refuse credential-bearing redirects. |
 | 68 | Scheduled fixes | [P-49 — CI bootstrap executes downloaded tooling without independent verification](#finding-p-49) | LOW → Low-Medium supply-chain hardening | Present | Pin versions and verify checksums/signatures, pass test arguments structurally, and constrain CI secret exposure. |
 | 69 | Scheduled fixes | [H-3 — Revocation and installed credentials have different lifetimes](#finding-h-3) | LOW → Low | Partial | Make revocation trigger canonical delivery reconciliation, clear installed material, and revoke the key at its provider when needed. |
-| 70 | Scheduled fixes | [R-2 — Revocation has a bounded cache delay](#finding-r-2) | LOW → Low | Present | Specify the maximum revocation delay from configured TTLs and test removal during cached HTTP requests and an open socket, including authority outage and hard token expiry. |
+| 70 | Scheduled fixes | [R-2 — Revocation has a bounded cache delay](#finding-r-2) | LOW → Low | Fixed; bound specified and tested | Revocation delay is bounded by the revocation cache TTL for HTTP requests, plus one active-check interval for open sockets; token exp caps every path during an authority outage. |
 | 71 | Scheduled fixes | [P-125 — Unknown explicit workspace ids fall back to directory](#finding-p-125) | LOW → Low; boundary impact caller-dependent | Fixed; store and HTTP verification passed | Unknown explicit IDs cannot fall back to directory/project discovery or creation; preserve real store and metadata-route regressions. |
 | 72 | Scheduled fixes | [P-36 — Workspace fallback and session audit issues differ](#finding-p-36) | LOW → Low | Fixed; focused tests | Fail closed on unknown explicit ids; retain created-session audit evidence. |
 | 73 | Scheduled fixes | [P-133 — Hydration activation can use a stored capability](#finding-p-133) | LOW → Low before remediation | Fixed; mounted route checks | Session access policy authorizes the caller against the stored session before activation or resolution uses its stored capability. |
@@ -278,7 +278,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 82 | Scheduled fixes | [P-39 — Event projection accepts unbounded identifiers and raw data](#finding-p-39) | LOW → Low availability; disclosure conditional | Fixed; focused checks passed | Retain safe keyed maps, retained-state bounds and diagnostic-surface-only raw frames. |
 | 83 | Scheduled fixes | [P-40 — Runtime type guards and maps accept unexpected values](#finding-p-40) | LOW → Low | Fixed; focused checks passed | Retain own-property lookups, nested wire-value validation and explicit expected bindings at trust boundaries. |
 | 84 | Scheduled fixes | [P-44 — Task identifiers, attachments and provenance need bounds](#finding-p-44) | LOW → Low | Mixed | Bound ids, verify allowed image bytes, stamp provenance from authenticated context and keep authorization on historical links. |
-| 85 | Scheduled fixes | [P-45 — Wake APIs leave policy and concurrency to callers](#finding-p-45) | LOW → Low | Mixed | Require explicit policy, redact approval tokens from list views, atomically claim once receipts and reject nonfinite times. |
+| 85 | Scheduled fixes | [P-45 — Wake APIs leave policy and concurrency to callers](#finding-p-45) | LOW → Low | Fixed; focused tests | Retain explicit approval policy, list-view token redaction, atomic once-claims and nonfinite-time rejection. |
 | 86 | Scheduled fixes | [P-135 — Prompt dedup marker precedes lease acquisition](#finding-p-135) | LOW → Low, narrow concurrency window | Fixed; focused admission tests | Represent pending admission separately from completed admission and let duplicates await the canonical result. |
 | 87 | Scheduled fixes | [P-130 — Long token lifetimes can overflow timers](#finding-p-130) | LOW → Low correctness | Fixed; Bun socket tests passed | Retain bounded scheduling and signed-deadline rechecks. |
 | 88 | Scheduled fixes | [S-7 — Expired file-search entries remain allocated](#finding-s-7) | LOW → Low | Fixed; focused cache tests | Use a bounded cache with eviction and discard obsolete roots. |
@@ -291,7 +291,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 95 | Scheduled fixes | [P-38 — Protocol validators accept more than transport policy should](#finding-p-38) | LOW → Low; authentication impact conditional | Fixed; focused protocol/adapter tests | Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. |
 | 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Mixed | Compensate failed writes or persist both atomically, require explicit route policy, and serialize device completion. |
 | 97 | Scheduled fixes | [P-42 — Adapter identifiers and transport metadata need validation](#finding-p-42) | LOW → Low; HTTP transport conditional | Mixed | Validate opaque session-id grammar, constrain credential destinations and redact error/diagnostic outputs consistently. |
-| 98 | Scheduled fixes | [P-43 — CLI-generated files trust operator strings](#finding-p-43) | LOW → Low; transport risk separate | Present | Validate app/region identifiers, serialize TOML safely and escape systemd syntax. |
+| 98 | Scheduled fixes | [P-43 — CLI-generated files trust operator strings](#finding-p-43) | LOW → Low; transport risk separate | Fixed; focused validation/serialization tests | Validate app/region identifiers, serialize TOML safely and escape systemd syntax. |
 | 99 | Scheduled fixes | [P-55 — Channel approval parsing and administration need tightening](#finding-p-55) | INFO → Low; authorization effect conditional | Mixed | Use exact structured action values, apply the same access/rate/dedup checks on approvals, and atomically establish pairing bindings. |
 | 100 | Scheduled fixes | [P-115 — Unmanaged hook updates can name unowned terminal ids](#finding-p-115) | LOW → Low | Fixed; focused hook tests | Require an existing terminal and its bound hook capability for lifecycle writes. |
 | 101 | Scheduled fixes | [P-136 — Embedded cookie-plus-bearer precedence is not explicit rejection](#finding-p-136) | LOW → Low | Fixed; focused bridge tests | Reject dual presentation before authentication or change the declared contract if precedence is intentional. |
@@ -325,10 +325,10 @@ The next-action column is the first step; each finding link opens the complete e
 | 129 | Hardening / latent | [P-95 — Checkpoint helper trusts unsigned mode but outer guard blocks remote callers](#finding-p-95) | MED → Low latent helper risk | Not reachable as claimed | Keep the public-entrypoint denial test and add an explicit loopback check in the reusable helper if it can be mounted elsewhere. |
 | 130 | Hardening / latent | [P-28 — Unknown broker capability is accepted](#finding-p-28) | MED-LOW → Low hardening | Fixed; focused refusal tests | Require explicit native support at the boundary where provider secrets are delivered. |
 | 131 | Hardening / latent | [P-70 — Exe environment names become shell syntax](#finding-p-70) | MED → Low; Medium for unsafe embedders | Latent | Validate environment names at the driver boundary too and remove the duplicate unused shell builder. |
-| 132 | Hardening / latent | [P-79 — Shared card links trust their callers](#finding-p-79) | LOW → Low hardening | Latent | Centralize safe-link construction and type validated internal/external links distinctly where useful. |
+| 132 | Hardening / latent | [P-79 — Shared card links trust their callers](#finding-p-79) | LOW → Low hardening | Fixed; boundary tests passed | Card links validate hrefs through a centralized safe-link parser that types internal vs external targets; refused schemes render inert. |
 | 133 | Hardening / latent | [P-117 — Route manifest is not a complete authorization inventory](#finding-p-117) | LOW → Informational | Fixed; composition inventory test passed | Retain the composed-app route/guard inventory across all production mounts. |
 | 134 | Hardening / latent | [P-18 — Event delivery has no workspace argument](#finding-p-18) | MED (design) → Informational now; Medium if exposed | Fixed; focused tests | Make workspace/tenant identity part of the event contract before exposing ingress. |
-| 135 | Hardening / latent | [P-19 — Telemetry exports raw exception text](#finding-p-19) | MED → Informational now | Latent | Define allowed attributes and redact at event production/export before adoption. |
+| 135 | Hardening / latent | [P-19 — Telemetry exports raw exception text](#finding-p-19) | MED → Informational now | Fixed at production/export | String values scrubbed (URL credentials, auth tokens, `key=value` secrets, 512-char cap); `allowedAttributes` declares kept keys. |
 | 136 | Hardening / latent | [P-37 — Tracing configuration is not a consent boundary](#finding-p-37) | LOW → Informational now | Latent | Apply consent before constructing/enabling the exporter, then validate and bound attributes and trace state. |
 | 137 | Hardening / latent | [R-3 — Injected host-tunnel authorization can weaken the contract](#finding-r-3) | LOW → Informational | Latent | Keep invariant host/workspace binding outside overridable policy, or require a validated-claims result. |
 | 138 | Hardening / latent | [S-5 — Codex Windows shim uses a shell](#finding-s-5) | MED → Informational | Latent | Resolve the real executable where possible and keep arguments out of command strings. |
@@ -419,11 +419,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-r-2"></a>
 ### R-2 — Revocation has a bounded cache delay
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; bound specified and tested. **Reassessed severity:** Low.
 
-**What happens and why it matters:** The relay retains verification caching and socket activity timers. This is a deliberate consistency window, not proof that revoked access lasts indefinitely; HTTP and socket paths have different checks. Do not reuse the old report's exact timing as a universal guarantee.
+**What changed:** `runtimeAccessTokenRevocationDelayMs` in `server.ts` derives the maximum revocation delay from the configured TTLs. Every relayed HTTP request re-runs the active check, so a cached positive answer delays denial by at most the revocation cache TTL (`CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS`, default 10s). An established socket adds at most one re-check interval (`runtimeAccessTokenActiveCheckIntervalMs`, default 30s): the watcher can tick just before the stale entry expires. The token's `exp` is an independent hard cap on every path — the socket expiry timer enforces it locally even while the revocation authority is unreachable, and an unreachable authority fails HTTP requests closed rather than serving stale access.
 
-**Fix and acceptance:** Specify the maximum revocation delay from configured TTLs and test removal during cached HTTP requests and an open socket, including authority outage and hard token expiry.
+**Acceptance:** Focused tests cover a stale positive revocation answer expiring at its TTL, HTTP denial within the TTL while claims and host-token caches stay warm, socket close within interval-plus-TTL, an outage surviving socket still dying at token expiry, and fail-closed requests while the resolver is unreachable.
 
 **Current code:** [packages/workspace-relay/src/server.ts](../packages/workspace-relay/src/server.ts); [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts). [Concept walkthrough D](#flow-d).
 
@@ -799,11 +799,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-19"></a>
 ### P-19 — Telemetry exports raw exception text
 
-**Original severity:** MED. **Current:** Latent. **Reassessed severity:** Informational now.
+**Original severity:** MED. **Current:** Fixed; focused tests passed. **Reassessed severity:** Informational now; Medium if exposed without scrubbing (pre-remediation).
 
 **What happens and why it matters:** withSpan records exception messages and the exporter serializes them. Searches found no production importers of this telemetry package. The data-handling concern is real but the reported production MED exposure is not established.
 
-**Fix and acceptance:** Define allowed attributes and redact at event production/export before adoption. Test credential-bearing URLs and error bodies with synthetic values.
+**What changed:** Span text is scrubbed where a span is finished (`tracer.ts` → `redact.ts`) and again at OTLP encode (`span.ts`), so spans produced by another runtime are covered too. URL userinfo credentials, authorization-scheme tokens, and `key=value`/`"key": "value"` secrets are replaced with `[redacted]`, and every string is capped at 512 characters. `TracerOptions.allowedAttributes` declares the only attribute keys a deployment keeps; undeclared keys are dropped on span and event attributes alike. Scrubbing is idempotent, so the two boundaries do not double-mark.
+
+**Acceptance met:** Focused tests pass — credential-bearing URLs, authorization tokens, and JSON error bodies with synthetic secrets are redacted through `withSpan` and through `encodeOtlpSpans` on a span the tracer did not produce; the allowlist drops undeclared keys; oversized text is capped; the thrown error itself is re-thrown unmodified.
 
 **Current code:** [packages/claxedo-telemetry/src/tracer.ts](../packages/claxedo-telemetry/src/tracer.ts); [packages/claxedo-telemetry/src/span.ts](../packages/claxedo-telemetry/src/span.ts); [packages/claxedo-telemetry/src/exporter.ts](../packages/claxedo-telemetry/src/exporter.ts). [Concept walkthrough B](#flow-b).
 
@@ -843,13 +845,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-23"></a>
 ### P-23 — Web openLink does not validate schemes
 
-**Original severity:** MED-LOW. **Current:** Partial. **Reassessed severity:** Medium, potential XSS.
+**Original severity:** MED-LOW. **Current:** Fixed; focused opener tests. **Reassessed severity:** Medium, potential XSS (pre-remediation).
 
-**What happens and why it matters:** The web entry still passes URLs to window.open without a shared scheme gate; one integration dialog adds noopener but not scheme validation. The report's exact claim of execution in the current app document needs a browser-specific reproduction.
+**What changed:** `packages/claxedo-app/src/lib/open-link.ts` is the web document's one link opener. It resolves the candidate against the document URL, refuses every scheme outside `http:`/`https:`/`mailto:`/`claxedo:`/`vscode:` — the same set the desktop's open-link IPC gate allows — and opens survivors detached with `noopener,noreferrer`. Both web entries bind it as `platform.openLink`, the connect-integration dialog defaults `openUrl` to it and gates its verification anchor's href through the same predicate, and the terminal link-provider fallback routes through it, so no web-bundle `window.open` call site remains ungated.
 
-**Fix and acceptance:** Use one platform URL opener that accepts intended schemes and sets noopener/noreferrer. Test dangerous schemes and ordinary OAuth URLs through each actual caller.
+**Acceptance:** `open-link.test.ts` covers ordinary OAuth, mailto and editor-protocol opens and refuses `javascript:`, `data:`, `file:`, `vbscript:`, `blob:` and whitespace/tab-obfuscated javascript spellings without creating a browsing context. Focused bun/vitest suites around the touched callers pass; real-browser click-through was not newly exercised.
 
-**Current code:** [packages/claxedo-app/src/app/entry/main.tsx](../packages/claxedo-app/src/app/entry/main.tsx); [packages/claxedo-app/src/app/entry/local.tsx](../packages/claxedo-app/src/app/entry/local.tsx); [packages/claxedo-app/src/app/dialogs/connect-integration.tsx](../packages/claxedo-app/src/app/dialogs/connect-integration.tsx). [Concept walkthrough E](#flow-e).
+**Current code:** [packages/claxedo-app/src/lib/open-link.ts](../packages/claxedo-app/src/lib/open-link.ts); [packages/claxedo-app/src/app/entry/main.tsx](../packages/claxedo-app/src/app/entry/main.tsx); [packages/claxedo-app/src/app/entry/local.tsx](../packages/claxedo-app/src/app/entry/local.tsx); [packages/claxedo-app/src/app/dialogs/connect-integration.tsx](../packages/claxedo-app/src/app/dialogs/connect-integration.tsx); [packages/claxedo-app/src/features/terminal/core/backend/renderer.ts](../packages/claxedo-app/src/features/terminal/core/backend/renderer.ts). [Concept walkthrough E](#flow-e).
 
 <a id="finding-p-24"></a>
 ### P-24 — Bootstrap local information is intentionally local
@@ -1067,11 +1069,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-43"></a>
 ### P-43 — CLI-generated files trust operator strings
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low; transport risk separate.
+**Original severity:** LOW. **Current:** Fixed; focused validation/serialization tests. **Reassessed severity:** Low; transport risk separate.
 
-**What happens and why it matters:** The deploy command interpolates app/region into TOML and app into a filename; systemd quoting misses its own expansion rules. These are normally local operator inputs, so remote exploitation is not established. Control-plane HTTP is covered by P-3.
+**What changed:** The deploy command validates app/region as identifiers before either reaches the file name, the generated TOML or flyctl; the TOML writer serializes string values and strips control characters from the leading comment; systemd quoting escapes `%` specifiers and `$` expansion in addition to quotes and backslashes. These are normally local operator inputs, so remote exploitation was not established. Control-plane HTTP is covered by P-3.
 
-**Fix and acceptance:** Validate app/region identifiers, serialize TOML safely and escape systemd syntax. Test traversal-looking names, percent/dollar characters and ordinary service installation.
+**Acceptance:** Focused tests cover traversal-looking names, percent/dollar characters and ordinary service installation.
 
 **Current code:** [packages/cli/src/commands/deploy.ts](../packages/cli/src/commands/deploy.ts); [packages/cli/src/connect/service.ts](../packages/cli/src/connect/service.ts); [packages/cli/src/config.ts](../packages/cli/src/config.ts). [Concept walkthrough F](#flow-f).
 
@@ -1089,13 +1091,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-45"></a>
 ### P-45 — Wake APIs leave policy and concurrency to callers
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused tests cover the tightened paths. **Reassessed severity:** Low.
 
-**What happens and why it matters:** authorize defaults to true and listForSession returns full rows. This is safe only behind a confined host. once receipts and nonfinite schedule times need independent validation; the tool caller does derive depth rather than accepting it directly from model arguments.
+**What changed:** `authorize` is a required `createWakes` option — no implicit allow, and a host that never resolves approvals states `() => false`. `listForSession` returns `ListedWake` rows with the approval token redacted, so the resolve capability flows only through the `requestApproval` return value. `once` claims its receipt atomically before the effect runs: racing callers converge on one producer, losers wait and share the recorded result, a lapsed claim is re-claimable, and a completed receipt is immutable. Create paths reject nonfinite `fireAt`/`expiresAt` at the shared insert funnel and at the tool boundary.
 
-**Fix and acceptance:** Require explicit policy, redact approval tokens from list views, atomically claim once receipts and reject nonfinite times. Test concurrent resolution and cross-session listing.
+**Acceptance:** Focused tests cover concurrent `resolve` electing exactly one winner, concurrent `once` running the effect once and sharing its result, token redaction with cross-session listing scoping, and nonfinite-time rejection.
 
-**Current code:** [packages/wakes/src/wakes.ts](../packages/wakes/src/wakes.ts); [packages/wakes/src/tools.ts](../packages/wakes/src/tools.ts). [Concept walkthrough D](#flow-d).
+**Current code:** [packages/wakes/src/wakes.ts](../packages/wakes/src/wakes.ts); [packages/wakes/src/tools.ts](../packages/wakes/src/tools.ts); [packages/wakes/src/store.ts](../packages/wakes/src/store.ts); [packages/wakes/src/sqlite-store.ts](../packages/wakes/src/sqlite-store.ts). [Concept walkthrough D](#flow-d).
 
 <a id="finding-p-46"></a>
 ### P-46 — Small helper contracts fail on edge cases
@@ -1465,13 +1467,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-79"></a>
 ### P-79 — Shared card links trust their callers
 
-**Original severity:** LOW. **Current:** Latent. **Reassessed severity:** Low hardening.
+**Original severity:** LOW. **Current:** Fixed; focused boundary tests passed. **Reassessed severity:** Low hardening.
 
-**What happens and why it matters:** Shared components bind supplied href values directly. Trusted host callbacks normally build routes, so an unsafe prop API is not a proven attack path until an untrusted caller supplies it.
+**What changed:** `safe-link.ts` centralizes card-link construction. `parseSafeLink` types the result as `InternalLink` or `ExternalLink`: internal is a root route, fragment, query or dot-relative path; external is an absolute URL on a host-openable scheme (https, http, file, vscode, claxedo, mailto). `javascript:`, `data:`, `vbscript:`, protocol-relative `//host`, bare relative paths and prose never produce a link. `BasicTool`, `ToolErrorCard` and `ToolErrorCardV2` run their `triggerHref`/`href`/`subtitleHref` props through it, so a refused value renders the label inert rather than binding the payload.
 
-**Fix and acceptance:** Centralize safe-link construction and type validated internal/external links distinctly where useful. Test malformed schemes at the component boundary.
+**Acceptance met:** `safe-link.test.ts` covers the scheme table including tab/case/whitespace-mangled spellings and `//host` rebasing; `card-link-scheme.vitest.tsx` mounts each component boundary — hostile `onTaskHref`/`onClaxedoToolHref` callbacks through `Part` and direct `javascript:`/`data:` props render no `a[href]`, while real routes still link.
 
-**Current code:** [packages/session-ui/src/components/basic-tool.tsx](../packages/session-ui/src/components/basic-tool.tsx); [packages/session-ui/src/components/tool-error-card.tsx](../packages/session-ui/src/components/tool-error-card.tsx); [packages/session-ui/src/v2/components/tool-error-card-v2.tsx](../packages/session-ui/src/v2/components/tool-error-card-v2.tsx). [Concept walkthrough E](#flow-e).
+**Current code:** [packages/session-ui/src/components/safe-link.ts](../packages/session-ui/src/components/safe-link.ts); [packages/session-ui/src/components/basic-tool.tsx](../packages/session-ui/src/components/basic-tool.tsx); [packages/session-ui/src/components/tool-error-card.tsx](../packages/session-ui/src/components/tool-error-card.tsx); [packages/session-ui/src/v2/components/tool-error-card-v2.tsx](../packages/session-ui/src/v2/components/tool-error-card-v2.tsx). [Concept walkthrough E](#flow-e).
 
 <a id="finding-p-80"></a>
 ### P-80 — Session-app has no audited implementation
