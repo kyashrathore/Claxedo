@@ -1,8 +1,8 @@
 # Runtime recovery contract
 
-Status: proposed for review; implementation is not authorized by this document.
+Status: implemented with recorded gaps.
 
-Defined on 2026-09-20 against the current working tree at HEAD `e06522f6e6092f90c549815edb33b37264759b20`. Existing uncommitted lifecycle changes were inspected. This contract specifies intended behavior, not behavior already delivered.
+Defined on 2026-09-20 against HEAD `e06522f6e6092f90c549815edb33b37264759b20` and implemented on `refactor/runtime-recovery`. What holds and what does not is in `docs/verification/runtime-recovery-implementation-2026-09-21.md`, which names four acceptance rows the packaged desktop flow has not answered, the platforms other than macOS that were never measured, and the providers that were driven only through fakes. Read a rule here as delivered only where that record says so.
 
 ## 1. Objective
 
@@ -12,9 +12,12 @@ Legitimate background work may outlive the desktop. Silence or age is not proof 
 
 This contract covers turns, approvals/questions, provider requests, runtime writes and projections, process ownership, harness retirement, and daemon recovery. It applies to native and configured harnesses, including remote and in-process execution. It does not prescribe fixes to individual frozen sessions or add a renderer reconciliation loop.
 
-## 2. Current flow and the boundary that must change
+## 2. The flow this contract replaced
 
-When a user submits a prompt:
+This section records the shape the system had on 2026-09-20, which is what the
+rest of the document argues against. It is not a description of the code today.
+
+When a user submitted a prompt:
 
 1. `AgentRuntime.turns.start` acquires the session's admission through `createTurnAdmissions`, including a durable turn lease. The workspace host also owns an active-turn scope and any checkpoint write scope.
 2. The SDK adapter starts a producer. The harness owns provider requests and, where applicable, local child processes. The producer projects events into the runtime store and publishes them to clients.

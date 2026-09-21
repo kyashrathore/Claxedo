@@ -1,7 +1,7 @@
 ---
 title: "refactor: Make runtime failures inspectable and recovery independent"
 date: 2026-09-20
-status: executing
+status: executed with recorded gaps
 plan_depth: deep
 origin: docs/architecture/runtime-recovery-contract.md
 execution_posture: characterization-first
@@ -256,7 +256,7 @@ All paths are relative to the repository root. Files marked **new** are proposed
 
 ### U8 — Integrated acceptance and removal audit
 
-- [ ] **Goal:** G8 and all user-visible outcomes. Dependencies: U1–U7.
+- [x] **Goal:** G8 and all user-visible outcomes. Dependencies: U1–U7.
 - **Files:** `packages/workspace-runtime/src/recovery.integration.test.ts` (**new**); harness/process contract tests above; disposable packaged acceptance fixture under `packages/claxedo-desktop/scripts/runtime-recovery-smoke.ts` (**new**); update `docs/architecture/runtime-recovery-contract.md` to implemented only after evidence; add the implementation verification record in `docs/verification/`.
 - **Approach:** exercise public route → runtime → harness → ownership → store → client paths with deterministic injected faults and real disposable provider/process runs. Cover embedded local, connect/host-serving, self-hosted-node, hosted-shared/hosted-workerd forwarding, and standalone/sandbox workspace-runtime compositions. Concrete cutover/acceptance inventory: `packages/claxedo-server/src/deployments/self-hosted-node/app.ts`, `deployments/hosted-shared/{hosted-core-app,claxedo-hosted-product-app,user-deployed-product-app}.ts`, hosted-workerd entry composition, `src/session/machine-dispatch.ts`, `packages/workspace-runtime/src/{cli,runtime-bin}.ts`, and `packages/workspace-relay/src/{server,bun,cloudflare}.ts`, with their route/auth/forwarding tests. The relay currently forwards HTTP bodies/status; its `AbortController` is a transport timeout, not semantic turn cancellation. Keep the relay opaque to the new recovery payload, prove byte/status/identity preservation and loss-of-response behavior, and do not bump `workspace-relay-protocol` solely because a forwarded body changed. Any actual envelope/lease contract change requires coordinated update of that protocol's producers and consumers. Review scopes and imports rather than raising architecture baselines to make checks pass.
 - **Removal audit:** no session-only abort overload; no old boolean-success adapter; no competing terminal publisher for the same registered turn owner (including ACP goal and provider child domains); no registry-removal-as-exit; no failed retirement promise as retry; no recovery route behind normal lifecycle waits; no PID-only external kill; no optimistic idle; no operational empty catch at changed boundaries; no duplicate renderer repair pass; no compatibility protocol or feature flag keeping old behavior alive.
