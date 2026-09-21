@@ -59,6 +59,21 @@ const lifecycle = createLocalDaemonLifecycle({
     machineId: "local",
     generation: startup.daemonGeneration,
     operations: localDaemonOperationStore(),
+    // Survivors of the previous owner reach an operator here. This process
+    // does not signal them: retiring one belongs to the workspace store that
+    // owns it, and what admission needs is only that each has been accounted
+    // for before work is let in.
+    onLaunchReconciled: (launch) => {
+      if (launch.execution === "none") return
+      console.error(
+        `unsettled ${launch.role} launch ${launch.launchId} in workspace ${launch.workspaceId}: `
+          + `execution ${launch.execution} (${launch.because})`
+          + (launch.identity ? `, recorded process is ${launch.identity}` : ""),
+      )
+    },
+    onLaunchesUnreadable: (workspaceId, reason) => {
+      console.error(`workspace ${workspaceId} could not be read for unsettled launches: ${reason}`)
+    },
   },
   ...positiveDuration("CLAXEDO_DAEMON_LEASE_TTL_MS", "leaseTtlMs"),
   ...positiveDuration("CLAXEDO_DAEMON_IDLE_GRACE_MS", "idleGraceMs"),
