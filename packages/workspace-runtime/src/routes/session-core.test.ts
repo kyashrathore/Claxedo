@@ -1740,6 +1740,167 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(await response.text()).toBe("")
   })
 
+  test("a resubmission racing a failed admission of its id joins the failure, then a later retry admits", async () => {
+    let starts = 0
+    let started!: () => void
+    let release!: () => void
+    const attempted = new Promise<void>((resolve) => { started = resolve })
+    const blocked = new Promise<void>((resolve) => { release = resolve })
+    const runtime = {
+      turns: {
+        start: async () => {
+          starts += 1
+          if (starts === 1) {
+            started()
+            await blocked
+            throw new AgentRuntimeTurnConflictError("session_1")
+          }
+          return {
+            sessionId: "session_1",
+            userMessageId: "user_1",
+            assistantMessageId: "assistant_1",
+            directory: undefined,
+            prompt: {
+              parts: [],
+              userMessageId: "user_1",
+              assistantMessageId: "assistant_1",
+              agent: "build",
+              model: { providerID: "test", modelID: "fixture" },
+            },
+          }
+        },
+      },
+      events: {
+        subscribe: () => (async function* () {})(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      publishGlobal: () => {},
+    })
+    const submit = () => app.request("http://localhost/session/session_1/prompt_async", {
+      method: "POST",
+      body: JSON.stringify({ messageID: "raced", parts: [{ type: "text", text: "hello" }] }),
+    })
+
+    const first = submit()
+    await attempted
+    const second = submit()
+    // The retry's pre-dedup awaits are all settled promises: one macrotask
+    // parks it on the pending admission before the first's failure lands.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    release()
+
+    expect((await first).status).toBe(409)
+    const retried = await second
+    expect(retried.status).toBe(409)
+    expect(await retried.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
+
+    // The failed admission released the id, so a retry that arrives once the
+    // cause is gone admits for real instead of joining the stale failure.
+    expect((await submit()).status).toBe(204)
+    expect(starts).toBe(2)
+  })
+
+  test("a resubmission racing a successful admission of its id joins the accepted answer", async () => {
+    let starts = 0
+    let started!: () => void
+    let admit!: () => void
+    const attempted = new Promise<void>((resolve) => { started = resolve })
+    const blocked = new Promise<void>((resolve) => { admit = resolve })
+    const runtime = {
+      turns: {
+        start: async () => {
+          starts += 1
+          started()
+          await blocked
+          return {
+            sessionId: "session_1",
+            userMessageId: "user_1",
+            assistantMessageId: "assistant_1",
+            directory: undefined,
+            prompt: {
+              parts: [],
+              userMessageId: "user_1",
+              assistantMessageId: "assistant_1",
+              agent: "build",
+              model: { providerID: "test", modelID: "fixture" },
+            },
+          }
+        },
+      },
+      events: {
+        subscribe: () => (async function* () {})(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      publishGlobal: () => {},
+    })
+    const submit = () => app.request("http://localhost/session/session_1/prompt_async", {
+      method: "POST",
+      body: JSON.stringify({ messageID: "joined", parts: [{ type: "text", text: "hello" }] }),
+    })
+
+    const first = submit()
+    await attempted
+    const second = submit()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    admit()
+
+    expect((await first).status).toBe(204)
+    expect((await second).status).toBe(204)
+    expect(starts).toBe(1)
+  })
+
+  test("a resubmission after admission completed is still deduplicated", async () => {
+    let starts = 0
+    const runtime = {
+      turns: {
+        start: async () => {
+          starts += 1
+          return {
+            sessionId: "session_1",
+            userMessageId: "user_1",
+            assistantMessageId: "assistant_1",
+            directory: undefined,
+            prompt: {
+              parts: [],
+              userMessageId: "user_1",
+              assistantMessageId: "assistant_1",
+              agent: "build",
+              model: { providerID: "test", modelID: "fixture" },
+            },
+          }
+        },
+      },
+      events: {
+        subscribe: () => (async function* () {})(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      publishGlobal: () => {},
+    })
+    const submit = () => app.request("http://localhost/session/session_1/prompt_async", {
+      method: "POST",
+      body: JSON.stringify({ messageID: "settled", parts: [{ type: "text", text: "hello" }] }),
+    })
+
+    expect((await submit()).status).toBe(204)
+    expect((await submit()).status).toBe(204)
+    expect(starts).toBe(1)
+  })
+
   test("admits exactly one real runtime turn across two route clients", async () => {
     let markStarted: (() => void) | undefined
     let finish: (() => void) | undefined

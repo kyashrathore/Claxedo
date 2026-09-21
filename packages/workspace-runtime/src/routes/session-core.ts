@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
+import { isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type {
   AgentMessage,
   AgentPermission,
@@ -1225,11 +1226,27 @@ async function admitQuestionOperation(
 
 export function createSessionRoutes(opts: Opts) {
   const app = new Hono()
+  // The other routers in this package re-throw whatever is not an oversized
+  // body and let the app they are mounted into answer it. This router is also
+  // driven directly, where a re-throw rejects the request instead of becoming
+  // a response — so the two answers every handler here already relies on,
+  // `HTTPException` and a bare failure, are named rather than delegated.
+  const requestErrorResponse = (err: unknown, c: Ctx): Response => {
+    if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
+    if (err instanceof HTTPException) return err.getResponse()
+    return c.text("Internal Server Error", 500)
+  }
+  app.onError((err, c) => {
+    if (!isRequestBodyTooLarge(err) && !(err instanceof HTTPException)) console.error(err)
+    return requestErrorResponse(err, c)
+  })
   // Deduplicates prompt_async retries by message id and nothing more: the
   // per-session concurrency lease is AgentRuntime's. The checkpoint-freeze
   // middleware runs before these routes, so a 423 may preempt admission
-  // entirely.
-  const promptAdmissions = new Map<string, Set<string>>()
+  // entirely. A live entry is the owning request's pending answer: a retry
+  // that finds one joins it instead of deduplicating on sight or admitting
+  // the same prompt twice.
+  const promptAdmissions = new Map<string, Map<string, Promise<Response>>>()
   const releasePromptAdmission = (sessionId: string, messageId: string | undefined) => {
     if (!messageId) return
     const admitted = promptAdmissions.get(sessionId)
@@ -2148,18 +2165,22 @@ export function createSessionRoutes(opts: Opts) {
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
       const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, adapter, body.permissionMode)
       if (permissionRefusal) return permissionRefusal
+      let settleAdmissionAnswer: ((response: Response) => void) | undefined
       if (body.messageID) {
-        const admitted = promptAdmissions.get(id) ?? new Set<string>()
-        if (admitted.has(body.messageID)) return c.body(null, 204)
-        admitted.add(body.messageID)
-        promptAdmissions.set(id, admitted)
+        const pending = promptAdmissions.get(id)?.get(body.messageID)
+        if (pending) return (await pending).clone()
+        const admissions = promptAdmissions.get(id) ?? new Map<string, Promise<Response>>()
+        admissions.set(body.messageID, new Promise<Response>((resolve) => {
+          settleAdmissionAnswer = resolve
+        }))
+        promptAdmissions.set(id, admissions)
       }
-      // The marker answers every later submission of this message id with 204
-      // on sight, so it must not outlive a failure that happens before the
-      // harness is asked to run anything: the retry that arrives once the cause
-      // is gone would be answered 204 too and the turn would never run.
+      // A stored answer outlives its request, so it must not survive a
+      // failure that happens before the harness is asked to run anything:
+      // the retry that arrives once the cause is gone would join the stale
+      // failure and the turn would never run.
       let admittedForExecution = false
-      try {
+      const admit = async (): Promise<Response> => {
         if (body.messageID && c.req.header("x-claxedo-idempotency-retry") === "1") {
           const messages = await opts.getMessages?.(c, directory, id)
             ?? await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
@@ -2313,6 +2334,14 @@ export function createSessionRoutes(opts: Opts) {
         // every other prompt keeps the empty fire-and-forget acknowledgement.
         if (body.delivery && deliveredAs) return c.json({ delivery: deliveredAs })
         return c.body(null, 204)
+      }
+      try {
+        const answer = await admit()
+        settleAdmissionAnswer?.(answer.clone())
+        return answer
+      } catch (error) {
+        settleAdmissionAnswer?.(requestErrorResponse(error, c))
+        throw error
       } finally {
         if (!admittedForExecution) releasePromptAdmission(id, body.messageID)
       }
