@@ -8,7 +8,7 @@ import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
 import { contentBlockImages, imageUrlAttachment } from "../tool-attachments"
-import { optionLabels, pathFields, text } from "../../value"
+import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, optionLabels, own, pathFields, text } from "../../value"
 import type { ServerNotification, ServerRequest } from "./protocol"
 import { codexMcpApproval } from "./mcp-elicitation"
 
@@ -451,7 +451,7 @@ function ensureTool(input: {
   toolName?: string
   rawInput?: Record<string, unknown>
 }) {
-  const existing = input.state.toolsByItemId[input.toolCallId]
+  const existing = own(input.state.toolsByItemId, input.toolCallId)
   const itemType = existing?.itemType ?? input.itemType
   const rawInput = existing?.input ?? input.rawInput
   const toolName = existing?.toolName ?? input.toolName ?? toolNameForItem(itemType, rawInput ?? {})
@@ -469,14 +469,15 @@ function ensureTool(input: {
   return {
     state: {
       ...input.state,
-      toolsByItemId: {
+      toolsByItemId: boundKeyedRecord({
+        ...input.state.toolsByItemId,
         ...input.state.toolsByItemId,
         [input.toolCallId]: {
           toolName,
           ...(rawInput ? { input: rawInput } : {}),
           itemType,
         },
-      },
+      }, RETAINED_WIRE_KEYS_MAX),
     },
     events: [
       { type: "tool-start", toolCallId: input.toolCallId, toolName, kind: itemType, display, metadata: { codex: { itemType } } },
@@ -500,14 +501,15 @@ function appendToolText(input: {
 }) {
   if (!input.delta) return { state: input.state, events: [] satisfies AgentRuntimeEvent[] }
   const ensured = ensureTool(input)
-  const output = `${input.state.toolOutputByCallId[input.toolCallId] ?? ""}${input.delta}`
+  const output = `${own(input.state.toolOutputByCallId, input.toolCallId) ?? ""}${input.delta}`
   return {
     state: {
       ...ensured.state,
-      toolOutputByCallId: {
+      toolOutputByCallId: boundKeyedRecord({
+        ...ensured.state.toolOutputByCallId,
         ...ensured.state.toolOutputByCallId,
         [input.toolCallId]: output,
-      },
+      }, RETAINED_WIRE_KEYS_MAX),
     },
     events: [
       ...ensured.events,
@@ -537,14 +539,15 @@ function processExitEvents(input: {
   })
   const exitCode = asFiniteNumber(input.row.exitCode) ?? 0
   const bufferedOutput = [text(input.row.stdout), text(input.row.stderr)].filter((item): item is string => !!item).join("\n")
-  const output = bufferedOutput || input.state.toolOutputByCallId[input.toolCallId] || ""
+  const output = bufferedOutput || own(input.state.toolOutputByCallId, input.toolCallId) || ""
   return {
     state: {
       ...ensured.state,
-      toolOutputByCallId: {
+      toolOutputByCallId: boundKeyedRecord({
+        ...ensured.state.toolOutputByCallId,
         ...ensured.state.toolOutputByCallId,
         [input.toolCallId]: output,
-      },
+      }, RETAINED_WIRE_KEYS_MAX),
     },
     events: [
       ...ensured.events,
@@ -668,10 +671,11 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           return {
             state: {
               ...state,
-              assistantTextByItemId: {
+              assistantTextByItemId: boundKeyedRecord({
                 ...state.assistantTextByItemId,
-                [id]: `${state.assistantTextByItemId[id] ?? ""}${delta}`,
-              },
+                ...state.assistantTextByItemId,
+                [id]: `${own(state.assistantTextByItemId, id) ?? ""}${delta}`,
+              }, RETAINED_WIRE_KEYS_MAX),
             },
             events: [{ type: "text-delta", delta }],
           }
@@ -704,13 +708,13 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           }
           if (itemType === "assistant_message") {
             const fullText = text(completedItem.text)
-            const previous = state.assistantTextByItemId[id] ?? ""
+            const previous = own(state.assistantTextByItemId, id) ?? ""
             const delta = fullText?.startsWith(previous) ? fullText.slice(previous.length) : fullText
             if (!delta) return []
             return {
               state: {
                 ...state,
-                assistantTextByItemId: { ...state.assistantTextByItemId, [id]: fullText ?? previous },
+                assistantTextByItemId: boundKeyedRecord({ ...state.assistantTextByItemId, [id]: fullText ?? previous }, RETAINED_WIRE_KEYS_MAX),
               },
               events: [{ type: "text-delta", delta }],
             }
@@ -727,7 +731,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           if (itemType === "error") {
             return [{ type: "error", error: text(completedItem.message) ?? text(completedItem.text) ?? "Codex item failed" }]
           }
-          const existing = state.toolsByItemId[id]
+          const existing = own(state.toolsByItemId, id)
           // Codex completes commands with every output field null in two different cases:
           // the command genuinely printed nothing, OR stdout already arrived via
           // `outputDelta` (which we accumulate in `toolOutputByCallId`). So fall back to
@@ -738,7 +742,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
             completedItem.result ??
             completedItem.aggregatedOutput ??
             completedItem.text ??
-            state.toolOutputByCallId[id] ??
+            own(state.toolOutputByCallId, id) ??
             ""
           const exitCode = asFiniteNumber(completedItem.exitCode)
           const mcpFailed = itemType === "mcp_tool_call" && completedItem.status === "failed"
@@ -776,7 +780,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
             return {
               state: {
                 ...state,
-                toolsByItemId: { ...state.toolsByItemId, [id]: { toolName, input, itemType } },
+                toolsByItemId: boundKeyedRecord({ ...state.toolsByItemId, [id]: { toolName, input, itemType } }, RETAINED_WIRE_KEYS_MAX),
               },
               events: [
                 { type: "tool-start", toolCallId: id, toolName, kind: itemType, display, metadata: { codex: { itemType } } },
@@ -803,7 +807,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           return {
             state: {
               ...state,
-              toolsByItemId: { ...state.toolsByItemId, [id]: { toolName, input, itemType } },
+              toolsByItemId: boundKeyedRecord({ ...state.toolsByItemId, [id]: { toolName, input, itemType } }, RETAINED_WIRE_KEYS_MAX),
             },
             events: [
               { type: "tool-start", toolCallId: id, toolName, kind: itemType, display, metadata: { codex: { itemType } } },

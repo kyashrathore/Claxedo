@@ -19,7 +19,7 @@ import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapt
 import { toolDisplayFromInput } from "../tool-display"
 import { imageAttachment } from "../tool-attachments"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
-import { optionLabels, pathFields, text } from "../../value"
+import { optionLabels, own, pathFields, text } from "../../value"
 import { parseJsonRecord, readPartialJsonRecord } from "./partial-json"
 import { isClaudeQuestionDecline } from "./question-decline"
 import { applyClaudeTaskResult, type ClaudeTrackedTask } from "./task-tracking"
@@ -938,7 +938,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
                       ...state,
                       streamedAssistantTextByOwner: {
                         ...state.streamedAssistantTextByOwner,
-                        [owner]: `${state.streamedAssistantTextByOwner[owner] ?? ""}${deltaText}`,
+                        [owner]: `${own(state.streamedAssistantTextByOwner, owner) ?? ""}${deltaText}`,
                       },
                       blocksByIndex: block
                         ? { ...state.blocksByIndex, [String(stream.index)]: { ...block, emittedText: true } }
@@ -1012,7 +1012,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
                     ...state,
                     streamedAssistantTextByOwner: {
                       ...state.streamedAssistantTextByOwner,
-                      [owner]: `${state.streamedAssistantTextByOwner[owner] ?? ""}${block.fallbackText}`,
+                      [owner]: `${own(state.streamedAssistantTextByOwner, owner) ?? ""}${block.fallbackText}`,
                     },
                     blocksByIndex: { ...state.blocksByIndex, [index]: { ...block, emittedText: true } },
                   },
@@ -1100,7 +1100,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
           }
           const completeTools = assistantToolBlocks(rawMessage)
           const completeToolEvents = completeTools.flatMap(({ block, tool }): AgentRuntimeEvent[] => {
-            if (!state.toolsById[tool.toolCallId]) {
+            if (!own(state.toolsById, tool.toolCallId)) {
               return toolStartEvents(block)
             }
             return Object.keys(tool.input ?? {}).length ? toolInputEvents(tool, tool.input ?? {}) : []
@@ -1110,7 +1110,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
           const childOwned = !!claudeChildCorrelationKey(rawMessage)
           const messageId = text(message.message.id)
           const owner = claudeStreamOwner(rawMessage)
-          const shown = `${(messageId ? state.reconciledAssistantTextByMessageId[messageId] : undefined) ?? ""}${state.streamedAssistantTextByOwner[owner] ?? ""}`
+          const shown = `${(messageId ? own(state.reconciledAssistantTextByMessageId, messageId) : undefined) ?? ""}${own(state.streamedAssistantTextByOwner, owner) ?? ""}`
           const reconciliation = snapshot ? reconcileAssistantSnapshot(shown, snapshot) : undefined
           // Every assistant message carries its API request's usage. The turn's
           // `result` usage stays authoritative (it replaces this observation),

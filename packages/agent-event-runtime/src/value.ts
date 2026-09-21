@@ -28,6 +28,20 @@ export function boundKeyedMap<V>(map: Map<string, V>, max: number) {
   }
 }
 
+export const RETAINED_WIRE_KEYS_MAX = 256
+
+/** The record's own entry for a wire-supplied key: `__proto__` reads nothing, not `Object.prototype`. */
+export function own<V>(record: Record<string, V>, key: string): V | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined
+}
+
+/** The record with its oldest entries dropped until at most `max` remain. */
+export function boundKeyedRecord<V>(record: Record<string, V>, max: number): Record<string, V> {
+  const keys = Object.keys(record)
+  if (keys.length <= max) return record
+  return Object.fromEntries(keys.slice(keys.length - max).map((key) => [key, record[key]]))
+}
+
 /** Evicts the oldest entries until `list` holds at most `max`. */
 export function boundList<T>(list: T[], max: number): T[] {
   const excess = list.length - max

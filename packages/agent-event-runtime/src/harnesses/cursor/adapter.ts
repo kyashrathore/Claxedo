@@ -10,7 +10,7 @@ import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
-import { text } from "../../value"
+import { RETAINED_WIRE_KEYS_MAX, boundKeyedRecord, own, text } from "../../value"
 import { imageAttachment } from "../tool-attachments"
 
 export type CursorSdkAdapterState = {
@@ -181,7 +181,7 @@ function ensureTool(input: {
   toolName: string
   rawInput?: Record<string, unknown>
 }) {
-  const existing = input.state.toolsByCallId[input.toolCallId]
+  const existing = own(input.state.toolsByCallId, input.toolCallId)
   const toolName = existing?.toolName ?? input.toolName
   const rawInput = existing?.input || input.rawInput
     ? { ...existing?.input, ...input.rawInput }
@@ -194,14 +194,15 @@ function ensureTool(input: {
     return {
       state: {
         ...input.state,
-        toolsByCallId: {
+        toolsByCallId: boundKeyedRecord({
+          ...input.state.toolsByCallId,
           ...input.state.toolsByCallId,
           [input.toolCallId]: {
             toolName,
             kind,
             ...(rawInput ? { input: rawInput } : {}),
           },
-        },
+        }, RETAINED_WIRE_KEYS_MAX),
       },
       events: inputChanged
         ? [{ type: "tool-input", toolCallId: input.toolCallId, input: rawInput ?? {}, display, metadata: { cursor: { itemType: kind } } } satisfies AgentRuntimeEvent]
@@ -215,14 +216,15 @@ function ensureTool(input: {
   return {
     state: {
       ...input.state,
-      toolsByCallId: {
+      toolsByCallId: boundKeyedRecord({
+        ...input.state.toolsByCallId,
         ...input.state.toolsByCallId,
         [input.toolCallId]: {
           toolName,
           kind,
           ...(rawInput ? { input: rawInput } : {}),
         },
-      },
+      }, RETAINED_WIRE_KEYS_MAX),
     },
     events: [
       { type: "tool-start", toolCallId: input.toolCallId, toolName, kind, display, metadata: { cursor: { itemType: kind } } },
@@ -538,7 +540,7 @@ function translateSdkMessage(input: {
   switch (message.type) {
         case "assistant": {
           const snapshot = assistantText(message)
-          const previous = state.assistantTextByRunId[message.run_id] ?? ""
+          const previous = own(state.assistantTextByRunId, message.run_id) ?? ""
           const delta = snapshot.startsWith(previous)
             ? snapshot.slice(previous.length)
             : previous.endsWith(snapshot)
@@ -569,7 +571,7 @@ function translateSdkMessage(input: {
           return {
             state: {
               ...toolResults.state,
-              assistantTextByRunId: { ...toolResults.state.assistantTextByRunId, [message.run_id]: snapshot || previous },
+              assistantTextByRunId: boundKeyedRecord({ ...toolResults.state.assistantTextByRunId, [message.run_id]: snapshot || previous }, RETAINED_WIRE_KEYS_MAX),
             },
             events: [
               ...(delta ? [{ type: "text-delta", delta } satisfies AgentRuntimeEvent] : []),
@@ -579,7 +581,7 @@ function translateSdkMessage(input: {
         }
 
         case "thinking": {
-          const previous = state.thinkingTextByRunId[message.run_id] ?? ""
+          const previous = own(state.thinkingTextByRunId, message.run_id) ?? ""
           const delta = message.text.startsWith(previous)
             ? message.text.slice(previous.length)
             : previous.endsWith(message.text)
@@ -588,7 +590,7 @@ function translateSdkMessage(input: {
           return {
             state: {
               ...state,
-              thinkingTextByRunId: { ...state.thinkingTextByRunId, [message.run_id]: message.text || previous },
+              thinkingTextByRunId: boundKeyedRecord({ ...state.thinkingTextByRunId, [message.run_id]: message.text || previous }, RETAINED_WIRE_KEYS_MAX),
             },
             events: delta ? [{ type: "thinking-delta", delta } satisfies AgentRuntimeEvent] : [],
           }
