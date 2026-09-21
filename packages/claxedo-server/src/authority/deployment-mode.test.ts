@@ -108,9 +108,28 @@ describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () =>
       ["GET", "http://cp.example.test/internal/relay/target?workspaceId=ws_1"],
       ["POST", "http://cp.example.test/internal/sandbox-manager/gc"],
       ["POST", "http://cp.example.test/api/channels/telegram"],
+      ["POST", "http://cp.example.test/api/channels/github"],
+      ["GET", "http://cp.example.test/api/channels/whatsapp"],
+      ["POST", "http://cp.example.test/api/channels/slack/events"],
+      ["POST", "http://cp.example.test/api/channels/discord"],
     ] as const) {
       const res = await app.request(url, { method })
       expect(res.status, `${method} ${url}`).toBe(200)
+    }
+  })
+
+  test("self-host unsigned: the channels exemption covers only provider webhook paths, not admin or sibling paths", async () => {
+    const app = guardedApp({ mode: "local", authConfig: unsignedLocalConfig })
+    for (const [method, url] of [
+      ["GET", "http://cp.example.test/api/channels/pairing"],
+      ["POST", "http://cp.example.test/api/channels/pairing/approve"],
+      ["POST", "http://cp.example.test/api/channels/pairing/claim"],
+      ["DELETE", "http://cp.example.test/api/channels/identity"],
+      ["POST", "http://cp.example.test/api/channels/fake"],
+      ["POST", "http://cp.example.test/api/channels/telegramfoo"],
+    ] as const) {
+      const res = await app.request(url, { method })
+      expect(res.status, `${method} ${url}`).toBe(403)
     }
   })
 

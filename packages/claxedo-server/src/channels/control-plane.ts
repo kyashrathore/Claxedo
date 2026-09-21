@@ -34,6 +34,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import type { ChannelMachineIdentity, ProjectAction } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
+import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { signedOrError, txt } from "../workspace/route-support"
@@ -143,15 +144,15 @@ async function authorizeInbound(input: {
 
 /**
  * In-chat pairing administration requires an EXPLICIT env-seeded owner id —
- * NOT merely being on the allowlist (which may contain a wildcard, or paired
+ * NOT merely being on the allow ids (which may contain a wildcard, or paired
  * users). Wildcards never grant admin. This is stricter than access-gate
  * membership on purpose: approving a pairing binds a real account, so it must
  * be the box owner, not any allowed sender (OpenClaw's owner-bootstrap lesson —
  * approval must not be self-granting).
  */
-function seedAdmin(allowFrom: string[], channel: string, externalUserId: string): boolean {
+function seedAdmin(allowIds: string[], channel: string, externalUserId: string): boolean {
   const exact = `${channel}:${externalUserId}`
-  return allowFrom.some((entry) => entry.trim() === exact)
+  return allowIds.some((entry) => entry.trim() === exact)
 }
 
 export function createControlPlaneChannels(input: {
@@ -167,19 +168,6 @@ export function createControlPlaneChannels(input: {
   identityBindingStore?: ChannelIdentityBindingStore
 }) {
   const env = input.env ?? process.env
-  // Fail-closed posture check (OpenClaw's webhook-secret CVE series #13116 et al.):
-  // a PUBLIC box (0.0.0.0) serving a Telegram bot without a webhook secret would
-  // accept forged updates. The chat SDK enforces the secret per-request and 401s
-  // on mismatch; this is a loud boot-time nudge so the secret is never omitted.
-  const isPublic = (env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1") === "0.0.0.0"
-  const hasTelegram = !!(env.TELEGRAM_BOT_TOKEN?.trim() || env.TELEGRAM_CLAXEDO_BOT_TOKEN?.trim())
-  const hasWebhookSecret = !!env.TELEGRAM_WEBHOOK_SECRET_TOKEN?.trim()
-  if (isPublic && hasTelegram && !hasWebhookSecret) {
-    console.error(
-      "[channels] SECURITY: public instance serving Telegram without TELEGRAM_WEBHOOK_SECRET_TOKEN — " +
-        "webhook updates are unauthenticated and forgeable. Set the secret and re-register the webhook.",
-    )
-  }
   const caller = (identity: ChannelMachineIdentity) => signedChannelAuthRequired(input.services) ? { kind: "channel" as const, identity } : undefined
   const channelRuntime = {
     async createSession(request: {
@@ -362,8 +350,13 @@ export function createControlPlaneChannels(input: {
   // DM/group access gate + per-sender rate limit (OpenClaw-hardened; see
   // channel-access-store.ts and @claxedo/channels core/access.ts). Owner ids
   // are pre-seeded via env so the box is reachable before anyone pairs.
-  // CLAXEDO_CHANNEL_ALLOW_FROM: comma-separated "telegram:123,slack:U456".
-  const allowFrom = (env.CLAXEDO_CHANNEL_ALLOW_FROM ?? "")
+  // CLAXEDO_CHANNEL_ALLOW_IDS: comma-separated stable platform account ids,
+  // "telegram:123,slack:U456". A seed is a standing grant that no store
+  // records and no migration can bound, so it is re-stated under the key that
+  // says what an entry must be. The key it replaced is not read: its values
+  // were written when a handle still passed the gate, and a handle the
+  // platform has since reassigned would seed a stranger.
+  const allowIds = (env.CLAXEDO_CHANNEL_ALLOW_IDS ?? "")
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean)
@@ -384,7 +377,7 @@ export function createControlPlaneChannels(input: {
     groupEngagement: parseGroupEngagement(env.CLAXEDO_CHANNEL_GROUP_ENGAGEMENT),
     store: accessStore,
     bindings,
-    ...(allowFrom.length ? { allowFrom } : {}),
+    ...(allowIds.length ? { allowIds } : {}),
   })
   // Per-sender inbound rate limit for ALLOWED senders (default 20/min).
   const rateLimit = Number(env.CLAXEDO_CHANNEL_RATE_LIMIT_PER_MIN ?? "20")
@@ -408,7 +401,7 @@ export function createControlPlaneChannels(input: {
       // best-effort audit
     }
   }
-  const canAdminister = (envelope: InboundEnvelope) => seedAdmin(allowFrom, envelope.channel, envelope.externalUserId)
+  const canAdminister = (envelope: InboundEnvelope) => seedAdmin(allowIds, envelope.channel, envelope.externalUserId)
   // Pre-dispatch daily budget: a per-sender turn ceiling (OpenClaw #42475 —
   // a guardrail between "approved" and "spent all night"). Counts on stable
   // (channel, sender, day) principals. 0/unset disables. True per-account $
@@ -481,12 +474,25 @@ export function createControlPlaneChannels(input: {
         return { ok: false, message: "Unable to record approval response." }
       },
     }),
-    authorize: async (envelope, context) => await authorizeInbound({
-      services: input.services,
-      envelope,
-      session: context?.existingSession,
-      action: "write",
-    }),
+    authorize: async (envelope, context) => {
+      const authorized = await authorizeInbound({
+        services: input.services,
+        envelope,
+        session: context?.existingSession,
+        action: "write",
+      })
+      if (!authorized.ok) return authorized
+      // Commands must pass the dispatcher's existing private-session admission
+      // before exposing a binding or attempting to abort and reset it.
+      if (context?.existingSession && (context.action === "status" || envelope.intent?.kind === "new_session")) {
+        try {
+          await input.runtime.authorize(context.existingSession.sessionId, caller(envelope))
+        } catch {
+          return { ok: false, message: "Unable to access this channel session." }
+        }
+      }
+      return authorized
+    },
   })
   const registry = createChannelRegistry(env, { includeFake: input.includeFake === true })
   const dataMinimization = channelDataMinimization(env)
@@ -637,7 +643,7 @@ export function mountControlPlaneChannels(app: HonoType, input: {
   const adminGate = async (c: { req: { raw: Request } }): Promise<boolean> => {
     if (isLoopbackLocalRequest(c.req.raw)) return true
     if (!adminToken) return false
-    return c.req.raw.headers.get("authorization") === `Bearer ${adminToken}`
+    return timingSafeEqualStrings(c.req.raw.headers.get("authorization") ?? "", `Bearer ${adminToken}`)
   }
   app.get("/api/channels/pairing", async (c) => {
     if (!(await adminGate(c))) return c.json(errorBody("channels_pairing_unauthorized", "Pairing admin requires a bearer token"), 401)

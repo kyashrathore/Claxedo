@@ -130,7 +130,15 @@ export const UNSIGNED_NONLOOPBACK_ALLOWLIST: readonly AllowlistEntry[] = [
   },
   { prefix: "/internal/relay/", why: "relay resolver machine path; the resolver token is the gate" },
   { prefix: "/internal/sandbox-manager/", why: "sandbox admin machine path; CLAXEDO_RUNTIME_ADMIN_TOKEN is the gate" },
-  { prefix: "/api/channels/", why: "channel ingress webhooks arrive from providers; per-channel secret/signature verification is the gate" },
+  // Only the provider webhook ingress paths are public; pairing admin and
+  // identity routes carry their own gates and must not ride a blanket
+  // /api/channels/ exemption (their bearer check is a secret compare, not a
+  // reason to be reachable from the network).
+  { exact: "/api/channels/github", prefix: "/api/channels/github/", why: "GitHub webhook ingress; app signature verification is the gate" },
+  { exact: "/api/channels/telegram", prefix: "/api/channels/telegram/", why: "Telegram webhook ingress; the secret-token header is the gate" },
+  { exact: "/api/channels/slack", prefix: "/api/channels/slack/", why: "Slack webhook ingress; signing-secret verification is the gate" },
+  { exact: "/api/channels/discord", prefix: "/api/channels/discord/", why: "Discord webhook ingress; signature verification is the gate" },
+  { exact: "/api/channels/whatsapp", prefix: "/api/channels/whatsapp/", why: "WhatsApp webhook ingress; provider verification is the gate" },
 ]
 
 function allowlisted(method: string, pathname: string): boolean {

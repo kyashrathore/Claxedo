@@ -33,6 +33,10 @@ async function postedText(text: string | AsyncIterable<string>) {
 // exercised against the real dispatch implementation in machine-dispatch.test.ts.
 vi.mock("../session/machine-dispatch", () => ({
   createMachineSessionDispatch: (services: ControlPlaneServices) => ({
+    async authorize(sessionId: string) {
+      const meta = await services.projectionStore.session_meta(sessionId)
+      return { workspaceId: meta?.workspaceID }
+    },
     async create(input: { workspaceId: string; title?: string }) {
       const id = `ses_${crypto.randomUUID()}`
       await services.projectionStore.put_session_meta(id, { host: "workspace", workspaceID: input.workspaceId, directory: "/workspace", title: input.title, tags: ["harness:pi"] })
@@ -148,16 +152,48 @@ async function registeredRepoWorkspace(input: {
   owner: string
   name: string
 }) {
-  await ensureWorkspace({
+  const workspace = await ensureWorkspace({
     workspaceId: input.workspaceId,
     project_id: input.projectId,
     directory: "/workspace",
     kind: "cloud",
+    driver: "daytona",
     repo_url: `https://github.com/${input.owner}/${input.name}.git`,
   })
+  expect(workspace?.id).toBe(input.workspaceId)
 }
 
 describe("channels ingress", () => {
+  test("workspace-authorized senders still need the bound session's authority for status and reset", async () => {
+    const svc = services({ signed: true })
+    const machine = createMachineSessionDispatch(svc, {})
+    const authorizations = vi.spyOn(machine, "authorize").mockImplementation(async (_session, caller) => {
+      const allowed = !!caller && "identity" in caller && caller.identity.externalUserId === "owner"
+      if (!allowed) throw new Error("private session denied")
+      return { workspaceId: "ws_channel_fixture" }
+    })
+    const requests = vi.spyOn(machine, "request")
+    const channels = createControlPlaneChannels({ services: svc, runtime: machine, includeFake: true })
+    const send = async (externalUserId: string, kind: "message" | "status" | "new_session") => {
+      const chunks: unknown[] = []
+      await channels.core.handleInbound({
+        channel: "telegram", externalUserId, threadKey: "telegram:private:thread",
+        idempotencyKey: crypto.randomUUID(), text: "hello", intent: { kind },
+        repo: { owner: "channel-fixture", name: "repo" }, trustedSource: true, raw: {},
+      }, { reply: (chunk) => chunks.push(chunk) })
+      return chunks
+    }
+    await send("owner", "message")
+    expect(await send("other", "status")).toEqual([{ kind: "text", text: "Unable to access this channel session.", final: true }])
+    expect(await send("other", "new_session")).toEqual([{ kind: "text", text: "Unable to access this channel session.", final: true }])
+    const [statusSession] = authorizations.mock.calls[0]
+    expect(authorizations.mock.calls[0]).toEqual([statusSession, { kind: "channel", identity: expect.objectContaining({ externalUserId: "other" }) }])
+    expect(authorizations.mock.calls[1][0]).toBe(statusSession)
+    expect(requests).not.toHaveBeenCalled()
+    expect(await send("owner", "status")).toEqual([{ kind: "text", text: expect.stringContaining(statusSession), final: true }])
+    expect(await send("owner", "new_session")).toEqual([{ kind: "text", text: "Started a fresh session. Your next message begins a new conversation.", final: true }])
+  })
+
   test("claims and revokes a channel identity through signed canonical authority", async () => {
     const bindChannelIdentity = vi.fn(async (_auth: unknown, identity: { channel: string; externalUserId: string }) => ({
       bindingId: "binding_canonical",
@@ -240,9 +276,9 @@ describe("channels ingress", () => {
       body: JSON.stringify({ text: "hello", idempotencyKey: "blocked" }),
     })
 
-    expect(blocked.status).toBe(401)
+    expect(blocked.status).toBe(403)
     await expect(blocked.json()).resolves.toMatchObject({
-      error: { code: "channels_fake_loopback_required" },
+      error: { code: "unsigned_local_loopback_required" },
     })
   })
 
@@ -928,7 +964,7 @@ describe("channels ingress", () => {
       runtime: machineRuntime,
       env: {
         CLAXEDO_CHANNEL_SLACK_ENABLED: "true",
-        CLAXEDO_CHANNEL_ALLOW_FROM: "slack:U-OWNER-NOTIFY,slack:U-OTHER-ALLOWLISTED",
+        CLAXEDO_CHANNEL_ALLOW_IDS: "slack:U-OWNER-NOTIFY,slack:U-OTHER-ALLOWLISTED",
       },
       chatBot: {
         webhooks: {},
@@ -962,6 +998,52 @@ describe("channels ingress", () => {
       channel: "slack",
       externalUserId: "U-OWNER-NOTIFY",
     })
+  })
+
+  test("seeds admission and in-chat pairing admin from the stable-id key, and from nothing else", async () => {
+    const seeded = async (env: Record<string, string | undefined>) => {
+      const accessStore = createMemoryChannelAccessStore()
+      const svc = services({ signed: false })
+      const channels = createControlPlaneChannels({
+        services: svc,
+        runtime: createMachineSessionDispatch(svc, {}),
+        env: { CLAXEDO_CHANNEL_SLACK_ENABLED: "true", CLAXEDO_CHANNEL_DM_POLICY: "allowlist", ...env },
+        accessStore,
+        identityBindingStore: createMemoryChannelIdentityBindingStore(),
+        chatBot: { webhooks: {}, thread: () => ({ post: async () => {} }) },
+      })
+      return { channels, accessStore }
+    }
+    const sender = { channel: "slack" as const, externalUserId: "U-SEED", chatType: "dm" as const }
+    // Admin is decided on the seed alone, so the sender is admitted through the
+    // store instead: otherwise the gate refuses first and the admin answer
+    // never gets asked for.
+    const pairingList = async (channels: Awaited<ReturnType<typeof seeded>>) => {
+      await channels.accessStore.allow("slack", "U-SEED", "test")
+      const replies: string[] = []
+      await channels.channels.core.handleInbound({
+        ...sender,
+        threadKey: "slack:dm:U-SEED",
+        idempotencyKey: "m-1",
+        text: "/pairing list",
+        intent: { kind: "pairing_list" },
+        receivedAt: 1,
+        raw: {},
+      }, { reply: async (chunk) => { if (chunk.kind === "text") replies.push(await postedText(chunk.text)) } })
+      return replies
+    }
+
+    const current = await seeded({ CLAXEDO_CHANNEL_ALLOW_IDS: "slack:U-SEED" })
+    expect((await current.channels.access.gate(sender)).admission).toBe("allow")
+    expect(await pairingList(current)).toEqual(["No pending pairing requests."])
+
+    // The retired key is not read at all: an operator who left it in place is
+    // seeding strings written when a handle still reached the gate, and both
+    // the gate and the admin seed must refuse rather than carry them forward.
+    const retired = await seeded({ CLAXEDO_CHANNEL_ALLOW_FROM: "slack:U-SEED" })
+    expect(await retired.channels.access.gate(sender))
+      .toMatchObject({ admission: "drop", reason: "dm_not_allowlisted" })
+    expect(await pairingList(retired)).toEqual(["Pairing administration is not available from this chat."])
   })
 })
 
