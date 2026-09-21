@@ -24,6 +24,8 @@ export type SubagentChild = {
    * generation refusable rather than silently authoritative.
    */
   authority?: TurnAuthority
+  /** Set once this turn finalized the child; a repeated terminal is a replay. */
+  settled?: boolean
 }
 
 const UNSETTLED_SUBAGENT_STATUSES: ReadonlySet<string> = new Set(["pending", "running", "paused"])
@@ -77,19 +79,27 @@ export function createSubagentChildren(host: {
       ...(host.fenced.fencingToken === undefined ? {} : { fencingToken: host.fenced.fencingToken }),
     })
     if (!authority) throw new TurnAuthorityUnavailableError("provider_child", childSessionId)
-    const parentConfig = host.store.getSessionConfig(host.parentSessionId)
-    if (parentConfig) host.store.updateSessionConfig(childSessionId, parentConfig)
-    const started = host.store.startTurn({
-      ...host.fenced,
-      sessionId: childSessionId,
-      agentSessionId,
-      userMessageId: target.input.userMessageId,
-      assistantMessageId: target.assistantMessageId,
-      agent: target.input.agent,
-      model: target.input.model,
-      parts: observation.description ? [{ type: "text", text: observation.description }] : [],
-      ...(target.input.variant ? { variant: target.input.variant } : {}),
-    })
+    let started
+    try {
+      const parentConfig = host.store.getSessionConfig(host.parentSessionId)
+      if (parentConfig) host.store.updateSessionConfig(childSessionId, parentConfig)
+      started = host.store.startTurn({
+        ...host.fenced,
+        sessionId: childSessionId,
+        agentSessionId,
+        userMessageId: target.input.userMessageId,
+        assistantMessageId: target.assistantMessageId,
+        agent: target.input.agent,
+        model: target.input.model,
+        parts: observation.description ? [{ type: "text", text: observation.description }] : [],
+        ...(target.input.variant ? { variant: target.input.variant } : {}),
+      })
+    } catch (failure) {
+      // The child turn never started, so nothing will finalize it: the lease
+      // claimed above would otherwise be held for the process's life.
+      host.store.releaseTurnLease(childSessionId, authority.leaseId)
+      throw failure
+    }
     for (const event of started.events) host.publish(event)
     host.projectChild(target, { type: "session-status", status: "busy" }, source)
     return { sessionId: childSessionId, agentSessionId, target, authority }
@@ -141,6 +151,10 @@ export function createSubagentChildren(host: {
     settle(child: SubagentChild, observation: SubagentObservation, source: RuntimeAppendSource) {
       const outcome = subagentOutcome(observation)
       if (!outcome) return
+      // A child already settled by this turn is replayed, not re-finalized: the
+      // provider repeats a terminal observation and the second one has nothing
+      // left to end.
+      if (child.settled) return
       // A child this turn never seeded is one it never had authority over, so
       // its terminal belongs to whoever did.
       if (!child.authority) throw new TurnAuthorityUnavailableError("provider_child", child.sessionId)
@@ -149,6 +163,7 @@ export function createSubagentChildren(host: {
       }
       const finished = finalizeAuthoredTurn(host.store, child.authority, outcome)
       child.authority = undefined
+      child.settled = true
       for (const event of finished.events) host.publish(event)
     },
 

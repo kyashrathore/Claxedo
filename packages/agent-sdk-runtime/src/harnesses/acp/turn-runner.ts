@@ -41,7 +41,12 @@ import type { SessionTitleRequest } from "../../title-generation"
 import { acpTurnFailure, ACP_CONTEXT_REBUILT, AcpSessionUncertainError, missingAcpSession, renderAcpRecoveryContext, uncertainAcpSession } from "./recovery"
 import { cancelPendingPermissions, type PermissionReplyPort } from "./permission-reply"
 import { createTurnStopRecord, observeStopAttempt, type TurnStopRecord } from "../shared/cancellation-facts"
-import { finalizeAuthoredTurn, registerTurnAuthority, type TurnAuthority } from "../shared/turn-authority"
+import {
+  finalizeAuthoredTurn,
+  registerTurnAuthority,
+  TurnAuthorityUnavailableError,
+  type TurnAuthority,
+} from "../shared/turn-authority"
 
 const log = Log.create({ service: "acp-turn-runner" })
 const activePromptCounts = new Map<string, number>()
@@ -223,12 +228,21 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         frame: { sessionId },
       })
     }
-    const finished = finalizeAuthoredTurn(this.store, projection.authority, error
-      ? { status: "failed", completedAt: Date.now(), error }
-      : { status: "completed", completedAt: Date.now() })
-    for (const event of finished.events) this.options.eventHub?.publishGlobal({ directory: projection.directory, payload: event })
-    this.lifecycle().delete(sessionId, projection.turn)
-    projection.leaveBusy()
+    // The store refuses a terminal whose lease is no longer the session's, and
+    // this projection is over either way. Releasing the busy section in a
+    // `finally` is what keeps a refusal from leaving the session unadmittable
+    // forever; the refusal itself belongs to the session's owner.
+    try {
+      const finished = finalizeAuthoredTurn(this.store, projection.authority, error
+        ? { status: "failed", completedAt: Date.now(), error }
+        : { status: "completed", completedAt: Date.now() })
+      for (const event of finished.events) this.options.eventHub?.publishGlobal({ directory: projection.directory, payload: event })
+    } catch (failure) {
+      this.options.reportOwnerFailure?.(sessionId, failure)
+    } finally {
+      this.lifecycle().delete(sessionId, projection.turn)
+      projection.leaveBusy()
+    }
   }
 
   private startGoalProjection(
@@ -247,6 +261,9 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     const authority = registerTurnAuthority(this.store, "acp_goal", { sessionId, assistantMessageId })
     if (!authority) {
       leaveBusy()
+      // A Goal turn this owner cannot fence is one it must not project, and a
+      // silent refusal leaves nobody with a reason the Goal stopped advancing.
+      this.options.reportOwnerFailure?.(sessionId, new TurnAuthorityUnavailableError("acp_goal", sessionId))
       return null
     }
     const config = this.store.getSessionConfig(sessionId)
@@ -258,15 +275,25 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       ...(config?.model ? { model: config.model } : {}),
       ...(config?.variant ? { variant: config.variant } : {}),
     }
-    const started = this.store.startTurn({
-      sessionId,
-      agentSessionId,
-      assistantMessageId,
-      agent: input.agent,
-      model: input.model,
-      parts: [],
-      ...(input.variant ? { variant: input.variant } : {}),
-    })
+    let started
+    try {
+      started = this.store.startTurn({
+        sessionId,
+        agentSessionId,
+        assistantMessageId,
+        agent: input.agent,
+        model: input.model,
+        parts: [],
+        ...(input.variant ? { variant: input.variant } : {}),
+      })
+    } catch (failure) {
+      // Nothing was projected, so nothing will finalize: the lease this
+      // projection claimed would otherwise be held for the process's life.
+      this.store.releaseTurnLease(sessionId, authority.leaseId)
+      leaveBusy()
+      this.options.reportOwnerFailure?.(sessionId, failure)
+      throw failure
+    }
     for (const event of started.events) this.options.eventHub?.publishGlobal({ directory, payload: event })
     const projector = createTurnEventProjector({
       store: this.store,
