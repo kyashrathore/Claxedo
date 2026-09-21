@@ -71,34 +71,47 @@ describe("Claxedo daemon client lease", () => {
     await held.stop()
   })
 
-  test("requests atomic lease release and graceful daemon shutdown on a clean app quit", async () => {
+  test("a clean app quit releases the lease and drains the machine it was holding", async () => {
     const calls: Array<{ pathname: string; method: string; body: unknown }> = []
     const request = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      const { pathname } = new URL(requestUrl(input))
       calls.push({
-        pathname: new URL(requestUrl(input)).pathname,
+        pathname,
         method: init?.method ?? "GET",
         body: init?.body ? JSON.parse(requestBody(init.body)) : undefined,
       })
-      if (init?.method === "POST" && new URL(requestUrl(input)).pathname.endsWith("/leases")) {
+      if (init?.method === "POST" && pathname.endsWith("/leases")) {
         return Response.json({ id: "lease-1", expiresAt: Date.now() + 15_000 }, { status: 201 })
       }
-      return Response.json({ shutdownRequested: true, released: true })
+      if (init?.method === undefined && pathname === "/api/claxedo/daemon/recovery") {
+        return Response.json({
+          scopeRevision: "rev-1",
+          target: { scope: "machine", machineId: "local", ownerGeneration: "generation-1" },
+        })
+      }
+      return Response.json({ kind: "operation" })
     })
 
     const held = await holdClaxedoDaemonLease(discovery, { fetch: request, renewIntervalMs: 60_000 })
-    await held.shutdown()
+    await held.drain()
 
-    expect(calls).toEqual([
-      { pathname: "/api/claxedo/daemon/leases", method: "POST", body: undefined },
-      {
-        pathname: "/api/claxedo/daemon/shutdown",
-        method: "POST",
-        body: { leaseId: "lease-1" },
-      },
+    // The lease goes first: a drain submitted while this process still holds
+    // one would be waiting on itself.
+    expect(calls.map((call) => `${call.method} ${call.pathname}`)).toEqual([
+      "POST /api/claxedo/daemon/leases",
+      "DELETE /api/claxedo/daemon/leases/lease-1",
+      "GET /api/claxedo/daemon/recovery",
+      "POST /api/claxedo/daemon/recovery",
     ])
+    expect(calls.at(-1)?.body).toMatchObject({
+      action: "drain_daemon",
+      scopeRevision: "rev-1",
+      target: { scope: "machine", machineId: "local", ownerGeneration: "generation-1" },
+      attempt: 1,
+    })
   })
 
-  test("reports a rejected shutdown request while leaving lease expiry as the crash fallback", async () => {
+  test("reports a refused drain while leaving lease expiry as the crash fallback", async () => {
     const onError = mock(() => {})
     const request = mock(async (input: string | URL | Request, init?: RequestInit) => {
       if (init?.method === "POST" && new URL(requestUrl(input)).pathname.endsWith("/leases")) {
@@ -108,7 +121,7 @@ describe("Claxedo daemon client lease", () => {
     })
 
     const held = await holdClaxedoDaemonLease(discovery, { fetch: request, onError, renewIntervalMs: 60_000 })
-    await held.shutdown()
+    await held.drain()
 
     expect(onError).toHaveBeenCalledTimes(1)
     expect(String(onError.mock.calls[0]?.[0])).toContain("daemon lease release failed (503)")

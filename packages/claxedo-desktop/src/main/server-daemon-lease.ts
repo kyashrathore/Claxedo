@@ -1,6 +1,11 @@
+import { randomUUID } from "node:crypto"
 import { readNumber, readString } from "../shared/json-read"
 import { createDaemonFetch } from "./daemon-request"
-import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
+import {
+  CLAXEDO_DAEMON_PROTOCOL,
+  DAEMON_PROTOCOL_HEADER,
+  type ClaxedoDaemonDiscovery,
+} from "./server-daemon-discovery"
 
 export async function holdClaxedoDaemonLease(
   discovery: ClaxedoDaemonDiscovery,
@@ -21,6 +26,7 @@ export async function holdClaxedoDaemonLease(
   const headers = {
     authorization: `Bearer ${discovery.token}`,
     "x-claxedo-daemon-client": "electron-main",
+    [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL),
   }
   const renewIntervalMs = positive(options.renewIntervalMs, 5_000)
   const retryIntervalMs = positive(options.retryIntervalMs, 1_000)
@@ -104,13 +110,42 @@ export async function holdClaxedoDaemonLease(
         signal: AbortSignal.timeout(requestTimeoutMs),
       }))
     },
-    async shutdown() {
-      await halt(() => request("/api/claxedo/daemon/shutdown", {
-        method: "POST",
-        headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ leaseId: lease.id }),
-        signal: AbortSignal.timeout(requestTimeoutMs),
-      }))
+    /**
+     * Releases the lease and asks the daemon to drain.
+     *
+     * The old `/shutdown` acknowledged a request and called that termination.
+     * A drain is the honest version of the same intent: it closes the machine
+     * to new work, waits for what is still running, and answers with what it
+     * could not drain. The handoff grace does not apply while it holds the
+     * gate, which is the one property the old call was relied on for.
+     */
+    async drain() {
+      await halt(async () => {
+        const released = await request(`/api/claxedo/daemon/leases/${encodeURIComponent(lease.id)}`, {
+          method: "DELETE",
+          headers,
+          signal: AbortSignal.timeout(requestTimeoutMs),
+        })
+        if (!released.ok) return released
+        const inspected = await request("/api/claxedo/daemon/recovery", {
+          headers,
+          signal: AbortSignal.timeout(requestTimeoutMs),
+        })
+        if (!inspected.ok) return inspected
+        const machine = await inspected.json() as { scopeRevision: string; target: unknown }
+        return await request("/api/claxedo/daemon/recovery", {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({
+            requestId: `electron-main-drain-${randomUUID()}`,
+            action: "drain_daemon",
+            target: machine.target,
+            scopeRevision: machine.scopeRevision,
+            attempt: 1,
+          }),
+          signal: AbortSignal.timeout(requestTimeoutMs),
+        })
+      })
     },
   }
 }
