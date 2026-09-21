@@ -1212,11 +1212,30 @@ export namespace Pty {
     return session.cleanupResult
   }
 
-  /** Collects every terminal's outcome; an unresolved one is reported, not discarded. */
+  /**
+   * Retires every terminal and lets go of all of them.
+   *
+   * An unresolved one is reported, never discarded — but it is not kept here.
+   * This map is process-local and about to be garbage; the durable ownership
+   * row is what carries an unresolved launch to the next owner, and
+   * `reconcileLaunchOwnership` reads that, not this. Holding a dead entry
+   * after disposal only pins a runtime that is already gone.
+   */
   export async function dispose(): Promise<Array<{ id: string; retirement: RetirementResult | undefined }>> {
     const results: Array<{ id: string; retirement: RetirementResult | undefined }> = []
     for (const id of Array.from(sessions.keys())) {
       results.push({ id, retirement: await remove(id) })
+    }
+    for (const [id, session] of Array.from(sessions.entries())) {
+      log.error("PTY disposal let go of a terminal it could not retire", {
+        id,
+        cleanup: session.cleanup,
+        persistence: session.persistence,
+        result: session.cleanupResult,
+      })
+      session.removed = true
+      sessions.delete(id)
+      session.owner?.exit({ reason: "detached" })
     }
     return results
   }

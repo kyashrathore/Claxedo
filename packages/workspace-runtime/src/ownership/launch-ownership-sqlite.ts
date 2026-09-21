@@ -195,13 +195,13 @@ function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord 
       ...(row.directory ? { directory: row.directory } : {}),
     },
     preparedAt: row.prepared_at,
-    ...jsonColumn<CreationIdentity>(row.launch_id, "identity", row.identity_json, (identity) => ({ identity })),
+    ...identityOf(readJson(row.launch_id, "identity", row.identity_json)),
     ...(row.gate_nonce ? { gateNonce: row.gate_nonce } : {}),
     ...(row.identity_received_at ? { identityReceivedAt: row.identity_received_at } : {}),
     ...(row.activation_authorized_at ? { activationAuthorizedAt: row.activation_authorized_at } : {}),
     ...(row.activation_acknowledged_at ? { activationAcknowledgedAt: row.activation_acknowledged_at } : {}),
     ...(row.retired_at ? { retiredAt: row.retired_at } : {}),
-    ...jsonColumn<RetirementResult>(row.launch_id, "cleanup", row.cleanup_json, (cleanup) => ({ cleanup })),
+    ...cleanupOf(readJson(row.launch_id, "cleanup", row.cleanup_json)),
   }
 }
 
@@ -210,12 +210,21 @@ function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord 
  * nothing knows a launch happened at all, and a record missing its identity
  * reconciles as unknown, which is the honest answer.
  */
-function jsonColumn<T>(launchId: string, field: string, raw: string | null, onto: (value: T) => object) {
-  if (!raw) return {}
+function readJson(launchId: string, field: string, raw: string | null): unknown {
+  if (!raw) return undefined
   try {
-    return onto(JSON.parse(raw) as T)
+    return JSON.parse(raw)
   } catch (error) {
     log.error("a launch ownership column could not be read", { launchId, field, error: String(error) })
-    return {}
+    return undefined
   }
+}
+
+/** Each caller names the one shape its column holds, in the one place it is known. */
+function identityOf(value: unknown) {
+  return value === undefined ? {} : { identity: value as CreationIdentity }
+}
+
+function cleanupOf(value: unknown) {
+  return value === undefined ? {} : { cleanup: value as RetirementResult }
 }
