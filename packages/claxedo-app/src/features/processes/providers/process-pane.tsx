@@ -609,8 +609,8 @@ const processPaneContextInput = {
         }
         const stopped = await run(() => client.stop(configId))
         // The response, not its arrival, says whether the process is gone: an
-        // unresolved stop leaves it running and its port held, so the row stays
-        // as it was rather than being forced to stopped over a live process.
+        // unresolved stop leaves it running with its port and pty held, so the
+        // row says running again until the workspace reports otherwise.
         const current = store.processes[configId]
         if (current && current.status === "stopping") {
           setStore("processes", configId, {
