@@ -51,6 +51,7 @@ import { createStartupRequestLease } from "./startup-request"
 import { ACP_SUBAGENT_CLIENT_CAPABILITIES, acpRootSessionId, receiveACPSubagentNotification, supportsACPSubagents, type ACPSubagentNotification } from "./subagents"
 import { createIdleReaper, type IdleReaper } from "../shared/process-lifecycle"
 import type { RetirementResult } from "../../launch"
+import { createACPExitGate, type ACPExitGate } from "./process-retirement"
 import type { ACPTransport, ACPTransportEnv, ACPTransportFactory } from "./transport"
 import type { AgentProcessObserverHandle } from "../../process-observer"
 
@@ -142,13 +143,11 @@ export class ACPProcess {
   private uncertaintyListeners = new Map<string, (error: AcpSessionUncertainError) => void>()
   private uncertaintyReported = new Set<string>()
   private lastStderr = ""
-  private exitReason: Error | null = null
-  private exitWaiters: Array<(err: Error) => void> = []
   private constructed = false
   private pendingDeath = false
   private deadNotified = false
   private disposed = false
-  private retirement: Promise<RetirementResult | undefined> | undefined
+  private readonly exit: ACPExitGate
   private observation: AgentProcessObserverHandle | undefined
   private observationExited = false
   private observationExit: { reason: "exited" | "error" | "disposed"; exitCode?: number } | undefined
@@ -176,6 +175,10 @@ export class ACPProcess {
         this.dispose()
       },
     })
+    this.exit = createACPExitGate({
+      transport: { dispose: () => this.transport.dispose() },
+      stderr: () => this.lastStderr,
+    })
     this.transport = createTransport({
       directory,
       command,
@@ -190,13 +193,13 @@ export class ACPProcess {
       onExit: (code, signal) => {
         log.info("ACP transport exited", { code, signal, directory, kind: this.transport?.kind })
         this.exitObservation({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
-        this.failExitWaiters(new Error(this.exitMessage(code, signal)))
+        this.exit.fail(new Error(this.exit.exitMessage(code, signal)))
         this.notifyDead()
       },
       onError: (err) => {
         log.error("ACP transport error", { err, command, directory, kind: this.transport?.kind })
         this.exitObservation({ reason: "error" })
-        this.failExitWaiters(err)
+        this.exit.fail(err)
         this.notifyDead()
       },
     })
@@ -372,7 +375,7 @@ export class ACPProcess {
 
     this.agent = this.connection.agent
     void this.connection.closed.then(() => {
-      this.failExitWaiters(new Error(this.connectionClosedMessage()))
+      this.exit.fail(new Error(this.exit.connectionClosedMessage()))
       this.notifyDead()
     })
     this.constructed = true
@@ -389,25 +392,6 @@ export class ACPProcess {
     return this.idle.lease()
   }
 
-  private exitMessage(code: number | null, signal: NodeJS.Signals | null) {
-    const status = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`
-    return this.lastStderr
-      ? `ACP transport exited with ${status}: ${this.lastStderr}`
-      : `ACP transport exited with ${status}`
-  }
-
-  private connectionClosedMessage() {
-    return this.lastStderr
-      ? `ACP connection closed: ${this.lastStderr}`
-      : "ACP connection closed"
-  }
-
-  private failExitWaiters(err: Error) {
-    this.exitReason ??= err
-    for (const reject of this.exitWaiters) reject(this.exitReason)
-    this.exitWaiters = []
-  }
-
   private notifyDead() {
     if (this.deadNotified) return
     if (!this.constructed) { this.pendingDeath = true; return }
@@ -415,19 +399,11 @@ export class ACPProcess {
     this.connectionObservation?.({ state: "disconnected", reason: "transport_closed" })
     // A closed protocol stream may leave the wrapper and its writers alive.
     // Register retirement before allowing the manager to replace this owner.
-    this.retirement ??= Promise.resolve(this.transport.dispose() ?? undefined)
-    void this.retirement.catch(() => {})
+    void this.exit.retire()
     for (const disconnect of this.subagentDisconnects.values()) void disconnect().catch((error) => log.error("ACP child disconnect settlement failed", { error }))
     this.subagentDisconnects.clear()
     this.subagentListeners.clear()
     if (!this.disposed) this.onDead()
-  }
-
-  private waitForExit() {
-    if (this.exitReason) return Promise.reject(this.exitReason)
-    return new Promise<never>((_, reject) => {
-      this.exitWaiters.push(reject)
-    })
   }
 
   async initialize(owner?: AgentSessionStartBinding, signal?: AbortSignal): Promise<void> {
@@ -440,7 +416,7 @@ export class ACPProcess {
     let result: InitializeResponse
     try {
       result = await lease.wait(Promise.race([
-        this.agent.request(methods.agent.initialize, params, { cancellationSignal: lease.controller.signal }) as Promise<InitializeResponse>, this.waitForExit(),
+        this.agent.request(methods.agent.initialize, params, { cancellationSignal: lease.controller.signal }) as Promise<InitializeResponse>, this.exit.waitForExit(),
       ]))
     } finally { lease.release(); this.startingRequests.delete(params) }
     this.caps = result.agentCapabilities ?? null
@@ -964,11 +940,11 @@ export class ACPProcess {
    * turn died instead of a bare "connection closed".
    */
   dispose(reason?: string): Promise<RetirementResult | undefined> {
-    if (this.disposed) return this.retirement ?? Promise.resolve(undefined)
+    if (this.disposed) return this.exit.retirement ?? Promise.resolve(undefined)
     this.disposed = true
     this.connectionObservation?.({ state: "disconnected", reason: "disposed" })
     const replaced = reason ? new Error(`ACP process replaced: ${reason}`) : undefined
-    if (replaced) this.exitReason ??= replaced
+    if (replaced) this.exit.retain(replaced)
     this.sessionObservers.clear()
     this.commandListeners.clear()
     this.commandUpdates.clear()
@@ -978,8 +954,7 @@ export class ACPProcess {
     this.idle.cancel()
     log.info("ACP transport dispose", { directory: this.directory, kind: this.transport.kind, reason })
     this.connection.close(replaced)
-    this.retirement ??= Promise.resolve(this.transport.dispose() ?? undefined)
-    return this.retirement
+    return this.exit.retire()
   }
 
   private exitObservation(input: { reason: "exited" | "error" | "disposed"; exitCode?: number }) {
@@ -990,7 +965,7 @@ export class ACPProcess {
   }
 
   get alive(): boolean {
-    return this.transport.alive && !this.exitReason && !this.deadNotified
+    return this.transport.alive && !this.exit.reason && !this.deadNotified
   }
 
   /**

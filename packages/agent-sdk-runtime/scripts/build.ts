@@ -47,11 +47,17 @@ function run(cmd: string) {
   execSync(cmd, { stdio: "inherit", cwd: ROOT })
 }
 
+// Every precondition runs before the previous dist is removed. A failing check
+// used to leave the package with no dist at all, and every consumer in the
+// repo that resolves this package through node — not through the source-first
+// conditions — then failed to resolve it until someone noticed.
+run("bun scripts/validate-api-manifest.ts")
+run("bun run check:source-shape")
+run(`${path.join(ROOT, "node_modules/.bin/tsc")} -p tsconfig.build.json --noEmit --emitDeclarationOnly false`)
+
 if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })
 fs.mkdirSync(DIST, { recursive: true })
 
-run("bun scripts/validate-api-manifest.ts")
-run("bun run check:source-shape")
 run([
   path.join(ROOT, "node_modules/.bin/esbuild"),
   ...ENTRIES,

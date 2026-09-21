@@ -10,8 +10,9 @@ type ProcessInternals = {
   mcp: () => never[]
   states: Map<string, unknown>
   caps: null
-  /** Backs the `alive` getter the adapter checks before reading a process's cache. */
+  /** Both back the `alive` getter the adapter checks before reading a process's cache. */
   transport: { alive: boolean }
+  exit: { reason: Error | undefined }
 }
 
 /**
@@ -32,6 +33,7 @@ function acpProcess(answer: Record<string, unknown>) {
     loadedSessions: new Set(),
     caps: null,
     transport: { alive: true },
+    exit: { reason: undefined },
     cachedConfigOptions: null,
     cachedResolvedModel: null,
   })
