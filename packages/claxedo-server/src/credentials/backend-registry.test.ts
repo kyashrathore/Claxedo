@@ -1,9 +1,9 @@
 import { describe, expect, test, afterAll } from "vitest"
-import { realpathSync, mkdirSync } from "fs"
+import { chmodSync, realpathSync, mkdirSync, statSync, symlinkSync, writeFileSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { createHash, randomUUID } from "crypto"
+import { createHash, randomBytes, randomUUID } from "crypto"
 
 const root = path.join(realpathSync(os.tmpdir()), `cred-store-test-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -12,6 +12,8 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, getBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const { createLocalBackend } = await import("@claxedo/server-core/credentials/backends/local")
+
+const onPosix = process.platform !== "win32"
 
 describe("credential store", () => {
   afterAll(async () => {
@@ -105,6 +107,62 @@ describe("credential store", () => {
     test("probe succeeds", async () => {
       const backend = createLocalBackend()
       expect(await backend.probe()).toBe(true)
+    })
+
+    test.skipIf(!onPosix)("narrows a restored permissive seed and directory on open", async () => {
+      const dir = path.join(root, `restored-${randomUUID().slice(0, 8)}`)
+      const credentials = path.join(dir, "credentials")
+      mkdirSync(credentials, { recursive: true })
+      const seed = path.join(credentials, ".seed")
+      writeFileSync(seed, randomBytes(32), { mode: 0o644 })
+      chmodSync(credentials, 0o755)
+      process.env.CLAXEDO_DATA_DIR = dir
+      try {
+        const backend = createLocalBackend()
+        const ref = await backend.put("restored", "value")
+
+        expect(await backend.get(ref)).toBe("value")
+        expect(statSync(seed).mode & 0o777).toBe(0o600)
+        expect(statSync(credentials).mode & 0o777).toBe(0o700)
+      } finally {
+        process.env.CLAXEDO_DATA_DIR = root
+      }
+    })
+
+    test.each([16, 64])("rejects a %i-byte seed instead of deriving a key from it", async (size) => {
+      const dir = path.join(root, `corrupt-seed-${size}-${randomUUID().slice(0, 8)}`)
+      const credentials = path.join(dir, "credentials")
+      mkdirSync(credentials, { recursive: true })
+      const seed = path.join(credentials, ".seed")
+      writeFileSync(seed, randomBytes(size), { mode: 0o600 })
+      process.env.CLAXEDO_DATA_DIR = dir
+      try {
+        const backend = createLocalBackend()
+
+        await expect(backend.put("corrupt", "value")).rejects.toThrow(/seed/)
+        // The malformed file is left in place rather than repaired over.
+        expect(statSync(seed).size).toBe(size)
+      } finally {
+        process.env.CLAXEDO_DATA_DIR = root
+      }
+    })
+
+    test.skipIf(!onPosix)("refuses a symlinked seed without reading or chmodding its target", async () => {
+      const dir = path.join(root, `linked-${randomUUID().slice(0, 8)}`)
+      const credentials = path.join(dir, "credentials")
+      mkdirSync(credentials, { recursive: true })
+      const target = path.join(root, `linked-target-${randomUUID().slice(0, 8)}`)
+      writeFileSync(target, randomBytes(32), { mode: 0o644 })
+      symlinkSync(target, path.join(credentials, ".seed"))
+      process.env.CLAXEDO_DATA_DIR = dir
+      try {
+        const backend = createLocalBackend()
+
+        await expect(backend.put("linked", "value")).rejects.toThrow()
+        expect(statSync(target).mode & 0o777).toBe(0o644)
+      } finally {
+        process.env.CLAXEDO_DATA_DIR = root
+      }
     })
   })
 
