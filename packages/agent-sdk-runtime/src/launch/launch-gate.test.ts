@@ -153,7 +153,7 @@ test.skipIf(!posix)("ownership is durable before the payload can run", async () 
     acknowledgeActivation: async (id) => { order.push("acknowledge"); return inner.acknowledgeActivation(id) },
   }
   const marker = path.join(directory, "payload-ran")
-  const owned = await launch({
+  await launch({
     ownership,
     role: "harness",
     scope: { workspaceId: "ws", directory },
@@ -577,7 +577,7 @@ test.skipIf(!posix)("the payload cannot run while authorization is still being r
   expect(await exists(marker)).toBe(false)
 
   releaseAuthorization()
-  const owned = await launching
+  await launching
   await waitForFile(marker)
   expect(authorized).toBe(true)
 })
