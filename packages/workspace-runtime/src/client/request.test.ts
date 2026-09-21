@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { serializeRecoveryOutcome, type RecoveryOperation, type RecoveryOutcome, type RecoveryRequest } from "@claxedo/agent-runtime-contract"
+import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { createWorkspaceRuntimeClient } from "./index"
 import { WorkspaceRuntimeClientError, WorkspaceRuntimeClientPayloadError, WorkspaceRuntimeClientTransportError } from "./request"
 
@@ -85,6 +86,34 @@ describe("workspace runtime request path", () => {
       operation: "session.promptAsync",
       message: "Expected 204 No Content, got 200",
     } satisfies Partial<WorkspaceRuntimeClientPayloadError>)
+  })
+
+  test("a turn coverage read names its turn in the request and reads the envelope back whole", async () => {
+    const envelope: AgentTurnCoveragePage = {
+      turnId: "msg_user",
+      coverage: "partial",
+      reason: "The journal records no end for turn msg_user",
+      committedSequence: 41,
+      messages: [],
+    }
+    const calls: Request[] = []
+    const client = createWorkspaceRuntimeClient({
+      baseUrl: "https://server.example",
+      directory: "/repo/main",
+      fetch: async (input, init) => {
+        calls.push(new Request(input, init))
+        return Response.json(envelope)
+      },
+    })
+
+    const read = await client.session.messages({ sessionID: "ses_1", turn: "msg_user", coverage: "1" })
+    await client.session.messages({ sessionID: "ses_1", view: "latest-turn" })
+
+    expect(read.data).toEqual(envelope)
+    expect(calls.map((request) => [request.method, request.url])).toEqual([
+      ["GET", "https://server.example/session/ses_1/message?directory=%2Frepo%2Fmain&turn=msg_user&coverage=1"],
+      ["GET", "https://server.example/session/ses_1/message?directory=%2Frepo%2Fmain&view=latest-turn"],
+    ])
   })
 
   test("explicit delivery decodes durable acknowledgements instead of requiring an empty response", async () => {

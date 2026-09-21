@@ -36,6 +36,7 @@ import type {
   AgentMessagePage,
   AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentMessageReadInput, AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { AgentMessagePageError, hasAdapterCapability, isAgentHarnessEngineError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   admitSessionInstructions,
@@ -346,10 +347,22 @@ function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
 
 const MAX_MESSAGE_PAGE_LIMIT = 500
 
-function messagePageInput(c: Ctx): AgentMessagePageInput | undefined {
+function messageReadInput(c: Ctx): AgentMessageReadInput | undefined {
   const view = c.req.query("view")
   const limit = c.req.query("limit")
   const before = c.req.query("before")
+  const turn = c.req.query("turn")
+  const coverage = c.req.query("coverage")
+  if (turn !== undefined || coverage !== undefined) {
+    if (view !== undefined || limit !== undefined || before !== undefined) {
+      throw new HTTPException(400, { message: "turn coverage cannot be combined with view, limit or before" })
+    }
+    if (coverage !== "1") throw new HTTPException(400, { message: "turn requires coverage=1" })
+    if (turn === undefined || turn.length === 0) {
+      throw new HTTPException(400, { message: "coverage=1 requires a non-empty turn" })
+    }
+    return { turnId: turn }
+  }
   if (view === undefined && limit === undefined && before === undefined) return undefined
   if (view !== undefined) {
     if ((view !== "latest-turn" && view !== "latest-surface") || limit !== undefined || before !== undefined) {
@@ -515,6 +528,17 @@ type Opts = {
     page: AgentMessagePageInput,
     adapter: AgentHarnessAdapter,
   ) => Promise<AgentMessagePage | undefined> | AgentMessagePage | undefined
+  /**
+   * The turn journal this route answers coverage from. No adapter is offered
+   * one: an engine that does not hold the journal cannot establish coverage,
+   * and a producer that cannot establish it must not be asked to guess.
+   */
+  turnCoverage?: (
+    c: Ctx,
+    directory: RuntimeDirectory,
+    sessionId: string,
+    turnId: string,
+  ) => Promise<AgentTurnCoveragePage | undefined> | AgentTurnCoveragePage | undefined
   getMessageSnapshot?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<MessageSnapshot | undefined> | MessageSnapshot | undefined
   afterUpdateSession?: (
     c: Ctx,
@@ -2220,7 +2244,23 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const snapshotRequested = c.req.query("snapshot") === "1"
-      const pageInput = snapshotRequested ? undefined : messagePageInput(c)
+      const pageInput = snapshotRequested ? undefined : messageReadInput(c)
+      if (pageInput && "turnId" in pageInput) {
+        const { turnId } = pageInput
+        try {
+          const coverage = await opts.turnCoverage?.(c, directory, sessionId, turnId)
+          if (coverage) return noStoreJson(c, coverage)
+        } catch (error) {
+          throwMessagePageError(error, 500)
+        }
+        return noStoreJson(c, {
+          turnId,
+          coverage: "unavailable",
+          reason: "No turn journal in this runtime owns this session",
+          committedSequence: 0,
+          messages: [],
+        } satisfies AgentTurnCoveragePage)
+      }
       if (!pageInput) {
         const snapshot = await opts.getMessageSnapshot?.(c, directory, sessionId)
         if (snapshot) {

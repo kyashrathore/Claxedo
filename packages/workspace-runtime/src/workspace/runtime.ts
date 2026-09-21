@@ -30,6 +30,7 @@ import {
   type AgentMessagePageInput,
   type AgentRuntimeStoreWithRecovery,
 } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { OpenCodeSdkHarnessAdapter, WorkspaceScope, type OpenCodeRuntime } from "../opencode/index"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
@@ -105,6 +106,12 @@ export type WorkspaceRuntimeStore =
     getMessages(id: string): AgentMessage[]
     listSessions(directory: string): AgentSession[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
+    /**
+     * How much of one turn this store can account for. Optional: a store with
+     * no turn journal of its own has no coverage to report, and the route then
+     * answers that nothing here owns the turn.
+     */
+    turnCoverage?: (id: string, turnId: string) => AgentTurnCoveragePage
     /**
      * The durable owner a launch made for this workspace is recorded against.
      * Optional: a store that cannot keep launch records leaves each launch
@@ -1966,6 +1973,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             ...getMessagePage.call(runtimeStore, sessionId, page) ?? { messages: [] },
             maxEventOrdinal: runtimeStore.getSessionMaxSeq(sessionId),
           }
+        },
+        turnCoverage: async ({ sessionId, turnId }) => {
+          const runtimeStore = store()
+          if (!runtimeStore.getSession(sessionId)) throw new HTTPException(404, { message: "Session not found" })
+          return runtimeStore.turnCoverage?.(sessionId, turnId)
         },
         getMessageSnapshot: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) throw new HTTPException(404, { message: "Session not found" })

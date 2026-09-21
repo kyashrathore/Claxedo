@@ -715,6 +715,113 @@ describe("createSessionRoutes message paging", () => {
     expect(adapterResolutions).toBe(0)
   })
 
+  test("names which half of a turn coverage request is wrong and reads neither producer", async () => {
+    let coverageReads = 0
+    let pageReads = 0
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveDirectory: () => "/workspace",
+      turnCoverage: () => {
+        coverageReads += 1
+        return undefined
+      },
+      getMessagePage: () => {
+        pageReads += 1
+        return { messages: [] }
+      },
+      publishGlobal() {},
+    })
+
+    const refusals = await Promise.all(
+      [
+        "turn=turn-a",
+        "coverage=1",
+        "turn=turn-a&coverage=2",
+        "turn=&coverage=1",
+        "turn=turn-a&coverage=1&view=latest-turn",
+        "turn=turn-a&coverage=1&limit=2",
+        "turn=turn-a&coverage=1&before=cursor",
+      ].map(async (query) => {
+        const response = await app.request(`http://localhost/session/session-1/message?${query}`)
+        return [response.status, await response.text()] as const
+      }),
+    )
+
+    expect(refusals.map(([status]) => status)).toEqual([400, 400, 400, 400, 400, 400, 400])
+    expect(refusals[0]?.[1]).toContain("turn requires coverage=1")
+    expect(refusals[1]?.[1]).toContain("coverage=1 requires a non-empty turn")
+    expect(refusals[2]?.[1]).toContain("turn requires coverage=1")
+    expect(refusals[3]?.[1]).toContain("coverage=1 requires a non-empty turn")
+    for (const [, body] of refusals.slice(4)) {
+      expect(body).toContain("turn coverage cannot be combined with view, limit or before")
+    }
+    expect(coverageReads).toBe(0)
+    expect(pageReads).toBe(0)
+  })
+
+  test("answers a turn coverage read from the journal owner alone", async () => {
+    const calls: Array<{ sessionId: string; turnId: string; directory: RuntimeDirectory }> = []
+    let pageReads = 0
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter({
+        getMessagePage: async () => {
+          throw new Error("an adapter must not be asked for coverage")
+        },
+      }),
+      resolveDirectory: () => "/workspace",
+      getMessagePage: () => {
+        pageReads += 1
+        return { messages: [] }
+      },
+      turnCoverage: (_c, directory, sessionId, turnId) => {
+        calls.push({ sessionId, turnId, directory })
+        return {
+          turnId,
+          coverage: "complete",
+          terminal: { status: "completed", completedAt: 7, assistantMessageId: "message-2" },
+          committedSequence: 12,
+          messages: [first, second],
+        }
+      },
+      publishGlobal() {},
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?turn=message-1&coverage=1")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      turnId: "message-1",
+      coverage: "complete",
+      terminal: { status: "completed", completedAt: 7, assistantMessageId: "message-2" },
+      committedSequence: 12,
+      messages: [first, second],
+    })
+    expect(response.headers.get("x-next-cursor")).toBeNull()
+    expect(calls).toEqual([{ sessionId: "session-1", turnId: "message-1", directory: "/workspace" }])
+    expect(pageReads).toBe(0)
+  })
+
+  test("refuses coverage for a turn no journal in this runtime owns", async () => {
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter({
+        getMessagePage: async () => ({ messages: [first, second] }),
+      }),
+      resolveDirectory: () => "/workspace",
+      publishGlobal() {},
+    })
+
+    const response = await app.request("http://localhost/session/session-1/message?turn=message-1&coverage=1")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      turnId: "message-1",
+      coverage: "unavailable",
+      reason: "No turn journal in this runtime owns this session",
+      committedSequence: 0,
+      messages: [],
+    })
+  })
+
   test("maps typed route and adapter page errors to their explicit HTTP status", async () => {
     const routeErrorApp = createSessionRoutes({
       resolveAdapter: () => adapter(),

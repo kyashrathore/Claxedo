@@ -25,6 +25,7 @@ import {
   type AgentMessagePageInput,
   type AgentHarnessAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { workspaceRuntimeBus } from "../bus"
 import { errorMessage } from "../error-message"
 import { rec, str } from "../json-value"
@@ -149,6 +150,11 @@ export function SessionRoutes(
       sessionId: string
       page: AgentMessagePageInput
     }) => Promise<AgentMessagePage | undefined> | AgentMessagePage | undefined
+    turnCoverage?: (input: {
+      directory: string
+      sessionId: string
+      turnId: string
+    }) => Promise<AgentTurnCoveragePage | undefined> | AgentTurnCoveragePage | undefined
     getMessageSnapshot?: (input: {
       directory: string
       sessionId: string
@@ -530,6 +536,13 @@ export function SessionRoutes(
           directory: requiredDirectory(directory),
           sessionId,
           page,
+        })
+      : undefined,
+    turnCoverage: options?.turnCoverage
+      ? (_c, directory, sessionId, turnId) => options.turnCoverage!({
+          directory: requiredDirectory(directory),
+          sessionId,
+          turnId,
         })
       : undefined,
     getMessageSnapshot: options?.getMessageSnapshot

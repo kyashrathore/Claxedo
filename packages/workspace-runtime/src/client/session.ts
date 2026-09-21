@@ -24,6 +24,7 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
+import type { AgentTurnCoveragePage } from "@claxedo/agent-sdk-runtime/message-page"
 import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
@@ -60,10 +61,11 @@ export type SessionListInput = WorkspaceScope & {
   limit?: number
 }
 export type SessionSummaryListInput = WorkspaceScope & { roots?: boolean; archived?: boolean; limit?: number }
-export type SessionMessagePageInput = SessionInput & (
+export type SessionMessagePageInput = SessionInput & { turn?: never; coverage?: never } & (
   | { snapshot: "1" }
   | { view?: "latest-turn" | "latest-surface"; limit?: number; before?: string }
 )
+export type SessionTurnCoverageInput = SessionInput & { turn: string; coverage: "1" }
 export type SessionGoalStartInput = SessionInput & { objective: string }
 
 /** A prompt the runtime holds behind a running turn, as the queue route reports it. */
@@ -96,6 +98,8 @@ export type WorkspaceSessionClient = {
   harnessCapabilities(input?: WorkspaceScope, options?: Options): Reply<HarnessCapabilities>
   capabilities(input: SessionInput, options?: Options): Reply<HarnessCapabilities>
   subagents(input: SessionInput, options?: Options): Reply<unknown[]>
+  /** One turn's coverage envelope, answered against `input.turn` and no other turn. */
+  messages(input: SessionTurnCoverageInput, options?: Options): Reply<AgentTurnCoveragePage>
   /** The page's messages alone; its cursor rides the `X-Next-Cursor` response header. */
   messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
   todo(input: SessionInput, options?: Options): Reply<AgentTodo[]>
@@ -167,6 +171,11 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     caller.call<T>({ operation, path: sessionPath(input, suffix), scope: input, query, options })
   const write = <T>(operation: string, method: string, input: SessionInput, suffix: string, options?: Options, body?: unknown) =>
     caller.call<T>({ operation, method, path: sessionPath(input, suffix), scope: input, body, options })
+  function messages(input: SessionTurnCoverageInput, options?: Options): Reply<AgentTurnCoveragePage>
+  function messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
+  function messages(input: SessionInput & Record<string, unknown>, options?: Options) {
+    return read<AgentTurnCoveragePage | AgentMessage[]>("session.messages", input, "/message", options, without(input, ["sessionID"]))
+  }
   const goalRead = <T>(operation: string, suffix: string) => (input: SessionInput, options?: Options) =>
     read<T>(operation, input, suffix, options)
   const goalWrite = (operation: string, method: string, suffix: string) => (input: SessionInput, options?: Options) =>
@@ -186,7 +195,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     harnessCapabilities: (input = {}, options) => caller.call({ operation: "session.harnessCapabilities", path: "/session/capabilities", scope: input, options }),
     capabilities: (input, options) => read("session.capabilities", input, "/capabilities", options),
     subagents: (input, options) => read("session.subagents", input, "/subagents", options),
-    messages: (input, options) => read("session.messages", input, "/message", options, without(input, ["sessionID"])),
+    messages,
     todo: (input, options) => read("session.todo", input, "/todo", options),
     fork: (input, options) => write("session.fork", "POST", input, "/fork", options, without(input, ["sessionID"])),
     recovery: {
