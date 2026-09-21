@@ -235,10 +235,10 @@ The next-action column is the first step; each finding link opens the complete e
 | 40 | Next fixes / validation | [P-107 — Relay memory limits are bypassed by queue conditions](#finding-p-107) | MED → Medium | Partial; Bun bounds implemented | Finish Cloudflare and host-client bounds; retain Bun queue, body-admission and slow-consumer regressions. |
 | 41 | Next fixes / validation | [P-14 — Bun buffers ordinary request and response bodies](#finding-p-14) | MED → Medium | Present | Acquire capacity before reading, enforce a byte limit, and stream responses with bounded buffering. |
 | 42 | Next fixes / validation | [P-34 — Several relay lifecycle bugs were grouped together](#finding-p-34) | LOW → Medium for buffering; Low for other parts | Mixed | Track P-107, P-128, P-129 and P-130 separately. |
-| 43 | Next fixes / validation | [P-129 — Long streams and WebSocket sends share weak resource limits](#finding-p-129) | LOW → Medium availability | Present | Separate active-stream and pending-request budgets, enforce socket backpressure and preserve a small control-request budget. |
+| 43 | Next fixes / validation | [P-129 — Long streams and WebSocket sends share weak resource limits](#finding-p-129) | LOW → Medium availability | Fixed; focused budget tests | Separate active-stream and pending-request budgets, enforce socket backpressure and preserve a small control-request budget. |
 | 44 | Next fixes / validation | [P-74 — Several runtime routes parse unbounded JSON](#finding-p-74) | LOW → Medium for body DoS; Informational health | Partial; body and identity checks passed | One byte-limit reader serves runtime/document routes; process and PTY identity is authoritative. Public health diagnostics remain open. |
 | 45 | Next fixes / validation | [P-16 — Invalid arrays amplify validation errors](#finding-p-16) | MED → Medium before remediation | Fixed; task HTTP proof | Reject arrays before element decoding using contract limits; bound error collection. |
-| 46 | Next fixes / validation | [S-6 — Search executes a caller-provided regular expression](#finding-s-6) | LOW → Low locally; Medium on a shared node | Present | Use bounded linear-time search, such as the existing ripgrep boundary with a timeout, or literal search. |
+| 46 | Next fixes / validation | [S-6 — Search executes a caller-provided regular expression](#finding-s-6) | LOW → Low locally; Medium on a shared node | Fixed; focused worker tests | Use bounded linear-time search, such as the existing ripgrep boundary with a timeout, or literal search. |
 | 47 | Next fixes / validation | [P-6 — Tilde-prefixed paths become shell code](#finding-p-6) | MED → Medium, Windows/WSL only | Partial; source fixed, Windows acceptance open | Linux home is resolved separately and renderer paths travel as argv; verify the real Windows/WSL launch. |
 | 48 | Next fixes / validation | [P-22 — Device-login URL reaches the Windows command shell](#finding-p-22) | MED → Medium, conditional | Partial; source fixed, native Windows acceptance open | Device URLs are checked against descriptor origins and the shell launcher is removed; native Windows acceptance remains. |
 | 49 | Next fixes / validation | [P-7 — Renderer-selected store names escape the settings directory](#finding-p-7) | MED → Medium, renderer prerequisite | Present | Replace arbitrary names with a fixed store registry in main, validate keys and bound values. |
@@ -266,7 +266,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 71 | Scheduled fixes | [P-125 — Unknown explicit workspace ids fall back to directory](#finding-p-125) | LOW → Low; boundary impact caller-dependent | Fixed; store and HTTP verification passed | Unknown explicit IDs cannot fall back to directory/project discovery or creation; preserve real store and metadata-route regressions. |
 | 72 | Scheduled fixes | [P-36 — Workspace fallback and session audit issues differ](#finding-p-36) | LOW → Low | Fixed; focused tests | Fail closed on unknown explicit ids; retain created-session audit evidence. |
 | 73 | Scheduled fixes | [P-133 — Hydration activation can use a stored capability](#finding-p-133) | LOW → Low before remediation | Fixed; mounted route checks | Session access policy authorizes the caller against the stored session before activation or resolution uses its stored capability. |
-| 74 | Scheduled fixes | [P-134 — Unattributed lifecycle frames have broad visibility](#finding-p-134) | LOW → Low | Present source concern | Stamp canonical workspace/session ownership at the producer and omit sensitive unowned frames. |
+| 74 | Scheduled fixes | [P-134 — Unattributed lifecycle frames have broad visibility](#finding-p-134) | LOW → Low | Fixed; focused ownership tests | Stamp canonical workspace/session ownership at the producer and omit sensitive unowned frames. |
 | 75 | Scheduled fixes | [P-32 — Auth and attachment writes lack some filesystem protections](#finding-p-32) | LOW → Low; secret exposure conditional | Present | Use atomic writes in private verified directories, explicitly set existing modes, resolve attachment parents securely, cap bytes and pass prompts through stdin. |
 | 76 | Scheduled fixes | [P-121 — Existing credential seed permissions are not repaired](#finding-p-121) | LOW → Low; local filesystem prerequisite | Fixed; focused backend tests | Reject malformed seeds and enforce private ownership/modes on existing paths without following symlinks. |
 | 77 | Scheduled fixes | [P-122 — Connection turn credentials are created without a visible mint path](#finding-p-122) | INFO → Low availability | Present source gap | Issue the credential at canonical authorized turn admission and expire it with the turn. |
@@ -322,7 +322,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 127 | Hardening / latent | [P-106 — Custom verifier results lack a local expiry check](#finding-p-106) | MED → Low now; High if insecure verifier composed | Fixed; focused verifier tests | Enforce exp/nbf and a maximum lifetime after every verifier result, regardless of implementation. |
 | 128 | Hardening / latent | [P-126 — Resolver headers can overwrite relay-owned authorization](#finding-p-126) | LOW (latent) → Low hardening | Fixed; focused resolver tests | Allowlist provider-specific headers and stamp reserved authentication/identity headers last. |
 | 129 | Hardening / latent | [P-95 — Checkpoint helper trusts unsigned mode but outer guard blocks remote callers](#finding-p-95) | MED → Low latent helper risk | Not reachable as claimed | Keep the public-entrypoint denial test and add an explicit loopback check in the reusable helper if it can be mounted elsewhere. |
-| 130 | Hardening / latent | [P-28 — Unknown broker capability is accepted](#finding-p-28) | MED-LOW → Low hardening | Latent | Require explicit native support at the boundary where provider secrets are delivered. |
+| 130 | Hardening / latent | [P-28 — Unknown broker capability is accepted](#finding-p-28) | MED-LOW → Low hardening | Fixed; focused refusal tests | Require explicit native support at the boundary where provider secrets are delivered. |
 | 131 | Hardening / latent | [P-70 — Exe environment names become shell syntax](#finding-p-70) | MED → Low; Medium for unsafe embedders | Latent | Validate environment names at the driver boundary too and remove the duplicate unused shell builder. |
 | 132 | Hardening / latent | [P-79 — Shared card links trust their callers](#finding-p-79) | LOW → Low hardening | Latent | Centralize safe-link construction and type validated internal/external links distinctly where useful. |
 | 133 | Hardening / latent | [P-117 — Route manifest is not a complete authorization inventory](#finding-p-117) | LOW → Informational | Fixed; composition inventory test passed | Retain the composed-app route/guard inventory across all production mounts. |
@@ -515,11 +515,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-s-6"></a>
 ### S-6 — Search executes a caller-provided regular expression
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low locally; Medium on a shared node.
+**Original severity:** LOW. **Current:** Fixed; focused worker tests. **Reassessed severity:** Low locally; Medium on a shared node.
 
-**What happens and why it matters:** grepSearch constructs RegExp and runs it on file contents in the server process. File-count and byte caps do not prevent catastrophic work on a single matching input. Signed workspace readers still reach search after authorization.
+**What changed:** grepSearch no longer evaluates the caller-supplied RegExp on the request thread: the line scan runs inside a one-off worker with cleared exec flags, heap and stack limits, a 2-second terminate deadline and a concurrency cap, returning collected matches on timeout. A catastrophic (a+)+$ input completes in about two seconds.
 
-**Fix and acceptance:** Use bounded linear-time search, such as the existing ripgrep boundary with a timeout, or literal search. Test a pathological pattern without letting it hang the test runner.
+**Acceptance:** Focused tests cover a pathological pattern terminating on the deadline, regex semantics and the empty-on-invalid contract. Committed as bbdd0ef3d8.
 
 **Current code:** [packages/claxedo-local-server/src/shell/files.ts](../packages/claxedo-local-server/src/shell/files.ts). [Concept walkthrough H](#flow-h).
 
@@ -895,11 +895,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-28"></a>
 ### P-28 — Unknown broker capability is accepted
 
-**Original severity:** MED-LOW. **Current:** Latent. **Reassessed severity:** Low hardening.
+**Original severity:** MED-LOW. **Current:** Fixed; focused refusal tests. **Reassessed severity:** Low hardening.
 
-**What happens and why it matters:** Several delivery checks reject only the literal none. Current typed driver metadata supplies known values, but a malformed external implementation could fall through. This is not evidence that a shipped driver currently omits the field.
+**What changed:** Every provider-secret delivery gate now requires explicit "native" brokering rather than refusing only the literal "none": provision(), nativeProviderDeliveries, sandboxBrokeredSecrets and the MCP gateway credential mint. Missing and unknown capability values refuse.
 
-**Fix and acceptance:** Require explicit native support at the boundary where provider secrets are delivered. Test missing and unknown capability values as refusals.
+**Acceptance:** Focused tests cover missing and unknown capability values as refusals in each package. Committed as 277d073e6f.
 
 **Current code:** [packages/sandbox-manager/src/index.ts](../packages/sandbox-manager/src/index.ts); [packages/claxedo-server-core/src/credentials/native-delivery.ts](../packages/claxedo-server-core/src/credentials/native-delivery.ts); [packages/claxedo-server/src/credentials/sandbox-delivery.ts](../packages/claxedo-server/src/credentials/sandbox-delivery.ts). [Concept walkthrough B](#flow-b).
 
@@ -2018,11 +2018,11 @@ Independent Devin source review completed with no defects found. It did not reru
 <a id="finding-p-129"></a>
 ### P-129 — Long streams and WebSocket sends share weak resource limits
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Medium availability.
+**Original severity:** LOW. **Current:** Fixed; focused budget tests. **Reassessed severity:** Medium availability.
 
-**What happens and why it matters:** Bun counts open SSE streams against its pending HTTP cap and direct socket sends lack a consistent buffered-byte guard. Valid users can starve other operations on the same tunnel.
+**What changed:** Event streams count against a separate 64-stream budget instead of the pending-request cap, pre-start stream requests leave a four-slot control reserve, one deletion point prevents budget leaks, and a shared buffered-byte guard covers every socket send path with the existing 1011 close policy.
 
-**Fix and acceptance:** Separate active-stream and pending-request budgets, enforce socket backpressure and preserve a small control-request budget. Test many streams plus ordinary HTTP and a slow socket.
+**Acceptance:** Focused tests cover streams plus ordinary HTTP under saturation, stream-cap refusal with upstream abort, and both cloud send directions under backpressure. Committed as a1a93e5d28.
 
 **Current code:** [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts). [Concept walkthrough H](#flow-h).
 
@@ -2073,11 +2073,11 @@ Independent Devin source review completed with no defects found. It did not reru
 <a id="finding-p-134"></a>
 ### P-134 — Unattributed lifecycle frames have broad visibility
 
-**Original severity:** LOW. **Current:** Present source concern. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused ownership tests. **Reassessed severity:** Low.
 
-**What happens and why it matters:** ownsControlFrames admits lifecycle events without session identifiers and sessionless nonsensitive delivery is broad. A producer emitting transcript paths without canonical ownership can leak metadata. Actual sensitive payload emission needs targeted coverage.
+**What changed:** Unattributed agent-hook lifecycle writes stamp the runtime's configured workspace identity and resolve sessionId through the bound terminal; the delivery side sheds provider ids, transcript paths and ref names from unowned frames and drops foreign-workspace session.lifecycle frames.
 
-**Fix and acceptance:** Stamp canonical workspace/session ownership at the producer and omit sensitive unowned frames. Test lifecycle frames with provider ids and paths for unrelated sessions.
+**Acceptance:** Focused tests cover unattributed frames delivered as status-only and foreign-workspace frames dropped. Producer stamping committed as 83fe627a09; delivery-side redaction landed via e9e678acfa.
 
 **Current code:** [packages/workspace-runtime/src/routes/events.ts](../packages/workspace-runtime/src/routes/events.ts); [packages/workspace-runtime/src/event-delivery.ts](../packages/workspace-runtime/src/event-delivery.ts). [Concept walkthrough D](#flow-d).
 
