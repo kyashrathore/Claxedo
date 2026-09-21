@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { isRecord } from "@claxedo/helpers/guards"
-import { message, readCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "./identity"
+import { launchErrorText, readCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "./identity"
 import type { RetirementBudgets } from "./retirement"
 
 const execFileAsync = promisify(execFile)
@@ -81,7 +81,7 @@ export async function retireDescendants(
       await settle(remaining, signal === "SIGTERM" ? budgets.termGraceMs : budgets.killVerifyMs)
     }
   } catch (error) {
-    return { cleared: 0, survivors: live.length, refused, error: message(error) }
+    return { cleared: 0, survivors: live.length, refused, error: launchErrorText(error) }
   }
 
   let survivors = 0

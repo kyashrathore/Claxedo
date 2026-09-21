@@ -23,7 +23,7 @@ export function deadlineExceeded(what: string) {
  * whatever the provider does afterwards is reported against the operation
  * rather than rewritten into this caller's answer.
  */
-export function withRequestDeadline<T>(
+export function settleAtRequestDeadline<T>(
   what: string,
   deadline: RequestDeadline,
   request: Promise<T>,

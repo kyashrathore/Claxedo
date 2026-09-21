@@ -7,7 +7,7 @@
  * deterministic workspace ports, and graceful shutdown.
  */
 
-import { LaunchRefusedError, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import { LaunchRefusedError, retirementSettled, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
 import { workspaceRuntimeBus } from "../bus"
 import { Pty } from "../pty/index"
 import { Log } from "../log"
@@ -1225,9 +1225,7 @@ export async function stop(directory: string, configIdOrPtyId: string, signal?: 
     retirement = await Pty.remove(ptyId)
   }
 
-  const stopped = retirement
-    ? retirement.leader === "exited" && retirement.descendants !== "owned" && !retirement.error
-    : await gone(ptyId, 250)
+  const stopped = retirement ? retirementSettled(retirement) : await gone(ptyId, 250)
   if (!stopped) {
     // The port and the pty id stay attached: they are how a retry reaches the
     // same resources, and releasing them would let a replacement bind a port

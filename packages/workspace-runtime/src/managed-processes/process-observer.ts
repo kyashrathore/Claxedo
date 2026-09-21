@@ -1,4 +1,4 @@
-import type { RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import { retirementSettled, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
 export type ProcessOwnerKind =
   | "runtime"
   | "sidecar"
@@ -201,8 +201,7 @@ export function createProcessObserver(input: {
       if (!operation) return "operation-unavailable"
       const result = await operation()
       if (!result) return "unresolved"
-      if (result.leader !== "exited" || result.descendants === "owned" || result.error) return "unresolved"
-      return "completed"
+      return retirementSettled(result) ? "completed" : "unresolved"
     },
     detachWorkspace(workspaceId) {
       const matching = [...records.values()].filter(

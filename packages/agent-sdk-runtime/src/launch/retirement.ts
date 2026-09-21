@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import type { RecoveryBudgets, RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
-import { message, verifyCreationIdentity, type CreationIdentity } from "./identity"
+import { launchErrorText, verifyCreationIdentity, type CreationIdentity } from "./identity"
 
 export type SignalRefusal =
   | "exited"
@@ -44,6 +44,16 @@ export type RetirementTarget = {
   closeNative?: () => void | Promise<void>
 }
 
+/**
+ * Whether a retirement finished the job: the leader is gone, nothing it owned
+ * is still running, and no signal was refused. Everything else keeps the
+ * resource, because nothing established that it stopped.
+ */
+export function retirementSettled(result: RetirementResult) {
+  if (result.leader !== "exited" || result.descendants === "owned" || result.error) return false
+  return !result.signals.some((signal) => signal.refusal && signal.refusal !== "exited")
+}
+
 /** A launch whose payload provably never ran owns nothing to clean up. */
 export function neverExecuted(): RetirementResult {
   return { leader: "exited", descendants: "verified_clear", signals: [] }
@@ -57,7 +67,7 @@ export async function retire(target: RetirementTarget, budgets: RetirementBudget
       leader: "unknown",
       descendants: "unknown",
       signals: [],
-      error: { code: "internal_error", message: message(error) },
+      error: { code: "internal_error", message: launchErrorText(error) },
     }
   }
 }
@@ -155,7 +165,7 @@ async function deliver(identity: CreationIdentity, signal: NodeJS.Signals): Prom
   } catch (error) {
     if (isRecord(error) && error.code === "ESRCH") return { signal, scope: "group", delivered: false, refusal: "exited" }
     if (isRecord(error) && error.code === "EPERM") return { signal, scope: "group", delivered: false, refusal: "permission_denied" }
-    throw new Error(`Could not signal owned group ${identity.processGroupId} with ${signal}: ${message(error)}`, { cause: error })
+    throw new Error(`Could not signal owned group ${identity.processGroupId} with ${signal}: ${launchErrorText(error)}`, { cause: error })
   }
 }
 

@@ -6,7 +6,7 @@ import type {
   PrepareLaunchInput,
 } from "./ownership-store"
 import type { CreationIdentity } from "./identity"
-import type { RetirementResult } from "./retirement"
+import { retirementSettled, type RetirementResult } from "./retirement"
 
 /**
  * Launch ownership that lives and dies with this process. It is what a
@@ -50,18 +50,18 @@ export function volatileLaunchOwnership(): LaunchOwnershipStore {
     async recordRetirement(launchId: string, result: RetirementResult) {
       const record = require(launchId)
       record.cleanup = result
-      if (result.leader === "exited" && result.descendants !== "owned") record.retiredAt = Date.now()
+      if (retirementSettled(result)) record.retiredAt = Date.now()
     },
     async read(launchId: string) {
       return records.get(launchId)
     },
     async listUnresolved(scope?: LaunchScope) {
-      return Array.from(records.values()).filter((record) => !record.retiredAt && matches(record.scope, scope))
+      return Array.from(records.values()).filter((record) => !record.retiredAt && scopeMatches(record.scope, scope))
     },
   }
 }
 
-function matches(record: LaunchScope, query?: LaunchScope) {
+function scopeMatches(record: LaunchScope, query?: LaunchScope) {
   if (!query) return true
   return (["workspaceId", "sessionId", "directory"] as const).every((key) => query[key] === undefined || query[key] === record[key])
 }

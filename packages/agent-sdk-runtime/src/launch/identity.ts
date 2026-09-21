@@ -80,7 +80,7 @@ async function readDarwinCreationIdentity(pid: number, boot: string): Promise<Cr
     ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,ppid=,lstart=", "-p", String(pid)]))
   } catch (error) {
     if (isRecord(error) && error.code === 1) return undefined
-    throw new Error(`Could not read creation identity for pid ${pid}: ${message(error)}`, { cause: error })
+    throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
   }
   const row = /^\s*(\d+)\s+(\d+)\s+(\S.*)$/.exec(stdout.trim())
   if (!row) return undefined
@@ -103,7 +103,7 @@ async function readLinuxCreationIdentity(pid: number, boot: string): Promise<Cre
     stat = await fs.readFile(`/proc/${pid}/stat`, "utf8")
   } catch (error) {
     if (isRecord(error) && (error.code === "ENOENT" || error.code === "ESRCH")) return undefined
-    throw new Error(`Could not read /proc/${pid}/stat: ${message(error)}`, { cause: error })
+    throw new Error(`Could not read /proc/${pid}/stat: ${launchErrorText(error)}`, { cause: error })
   }
   // The comm field is parenthesised and may itself contain spaces and ')'.
   const tail = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/)
@@ -135,7 +135,7 @@ async function readWindowsCreationIdentity(pid: number, boot: string): Promise<C
       `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToString('o') + ' ' + $p.ParentProcessId }`,
     ]))
   } catch (error) {
-    throw new Error(`Could not read creation identity for pid ${pid}: ${message(error)}`, { cause: error })
+    throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
   }
   const value = stdout.trim()
   if (!value) return undefined
@@ -155,7 +155,7 @@ export async function verifyCreationIdentity(recorded: CreationIdentity): Promis
   try {
     observed = await readCreationIdentity(recorded.pid)
   } catch (error) {
-    return { state: "unknown", reason: message(error) }
+    return { state: "unknown", reason: launchErrorText(error) }
   }
   if (!observed) return { state: "exited" }
   if (
@@ -166,6 +166,6 @@ export async function verifyCreationIdentity(recorded: CreationIdentity): Promis
   return { state: "live", identity: observed }
 }
 
-export function message(error: unknown) {
+export function launchErrorText(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }

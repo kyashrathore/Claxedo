@@ -7,6 +7,7 @@ import type {
   PrepareLaunchInput,
   RetirementResult,
 } from "@claxedo/agent-sdk-runtime/launch"
+import { retirementSettled } from "@claxedo/agent-sdk-runtime/launch"
 
 /** The narrow slice of a SQLite handle this table needs. */
 export type SqliteDatabase = {
@@ -120,13 +121,13 @@ export function sqliteLaunchOwnership(db: SqliteDatabase): LaunchOwnershipStore 
     async recordRetirement(launchId: string, result: RetirementResult) {
       write(
         "UPDATE launch_ownership SET cleanup_json = ?, retired_at = ? WHERE launch_id = ?",
-        [JSON.stringify(result), settled(result) ? Date.now() : null, launchId],
+        [JSON.stringify(result), retirementSettled(result) ? Date.now() : null, launchId],
       )
     },
 
     async read(launchId: string) {
       const row = db.prepare<LaunchOwnershipRow>("SELECT * FROM launch_ownership WHERE launch_id = ?").get(launchId)
-      return row ? decode(row) : undefined
+      return row ? launchOwnershipFromRow(row) : undefined
     },
 
     async listUnresolved(scope?: LaunchScope) {
@@ -144,17 +145,12 @@ export function sqliteLaunchOwnership(db: SqliteDatabase): LaunchOwnershipStore 
       return db
         .prepare<LaunchOwnershipRow>(`SELECT * FROM launch_ownership WHERE ${filters.join(" AND ")} ORDER BY prepared_at`)
         .all(...params)
-        .map(decode)
+        .map(launchOwnershipFromRow)
     },
   }
 }
 
-/** Anything short of an exited leader with nothing owned behind it stays open. */
-function settled(result: RetirementResult) {
-  return result.leader === "exited" && result.descendants !== "owned" && !result.error
-}
-
-function decode(row: LaunchOwnershipRow): LaunchOwnershipRecord {
+function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord {
   return {
     launchId: row.launch_id,
     role: row.role as LaunchOwnershipRecord["role"],

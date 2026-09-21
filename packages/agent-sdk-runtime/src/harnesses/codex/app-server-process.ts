@@ -14,7 +14,7 @@ import { isWindowsShimBinary } from "../shared/windows-process"
 import {
   launchOwnedProcess,
   volatileLaunchOwnership,
-  withRequestDeadline,
+  settleAtRequestDeadline,
   type LaunchOwnershipStore,
   type OwnedLaunch,
   type RequestDeadline,
@@ -222,7 +222,7 @@ export class CodexAppServerProcess {
       this.pending.set(id, { resolve, reject })
       this.write({ id, method, params })
     })
-    return withRequestDeadline(`codex ${method}`, deadline, answer, () => this.pending.delete(id))
+    return settleAtRequestDeadline(`codex ${method}`, deadline, answer, () => this.pending.delete(id))
   }
 
   notify(method: string, params?: unknown) {

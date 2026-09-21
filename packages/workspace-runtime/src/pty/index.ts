@@ -18,6 +18,7 @@ import {
   readCreationIdentity,
   retire,
   retireDescendants,
+  retirementSettled,
   volatileLaunchOwnership,
   type CreationIdentity,
   type DescendantSweep,
@@ -272,12 +273,6 @@ export namespace Pty {
     )
     if (session.launchId) await ownership.recordRetirement(session.launchId, result).catch(() => {})
     return result
-  }
-
-  /** The leader is gone and no signal was refused; anything else keeps the terminal. */
-  function retirementSettled(result: RetirementResult) {
-    if (result.leader !== "exited") return false
-    return !result.signals.some((signal) => signal.refusal && signal.refusal !== "exited")
   }
 
   export const Info = z.object({

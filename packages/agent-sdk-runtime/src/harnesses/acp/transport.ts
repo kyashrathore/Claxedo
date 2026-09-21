@@ -2,7 +2,7 @@ import { asRecord } from "@claxedo/agent-runtime-contract"
 import { spawn, type ChildProcess } from "child_process"
 import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
 import { isWindowsShimBinary } from "../shared/windows-process"
-import { readCreationIdentity, retire as retireLaunch, type CreationIdentity, type RetirementResult } from "../../launch"
+import { readCreationIdentity, retire as retireLaunch, retirementSettled, type CreationIdentity, type RetirementResult } from "../../launch"
 import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk"
 import {
   createHttpStream,
@@ -81,11 +81,6 @@ const retiring = new Map<string, Set<ACPRetirement>>()
 
 function launchKey(directory: string, command: string, args: string[]) {
   return JSON.stringify([directory, command, args])
-}
-
-/** Nothing the previous owner started is still running or unaccounted for. */
-function settled(result: RetirementResult) {
-  return result.leader === "exited" && result.descendants !== "owned" && !result.error
 }
 
 /**
@@ -229,7 +224,7 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
     // still-owned writer was released.
     void created.promise.then((result) => {
       created.result = result
-      if (!settled(result)) return
+      if (!retirementSettled(result)) return
       pending.delete(created)
       if (!pending.size) retiring.delete(key)
     }, () => {})

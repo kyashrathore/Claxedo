@@ -4,7 +4,7 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { isRecord } from "@claxedo/helpers/guards"
-import { message, type CreationIdentity } from "./identity"
+import { launchErrorText, type CreationIdentity } from "./identity"
 import {
   LaunchRefusedError,
   type LaunchOwnershipStore,
@@ -229,7 +229,7 @@ export function resolveLaunchGateChild() {
     if (existsSync(resolved)) return (gateChild = { file: resolved, runner: runnerFor(resolved) })
     attempted.push(resolved)
   } catch (error) {
-    attempted.push(`@claxedo/agent-sdk-runtime/launch-gate-child (${message(error)})`)
+    attempted.push(`@claxedo/agent-sdk-runtime/launch-gate-child (${launchErrorText(error)})`)
   }
   for (const candidate of packageRelativeCandidates()) {
     if (existsSync(candidate)) return (gateChild = { file: candidate, runner: runnerFor(candidate) })

@@ -9,6 +9,7 @@ export {
 export {
   neverExecuted,
   retire,
+  retirementSettled,
   type RetirementBudgets,
   type RetirementResult,
   type RetirementTarget,
@@ -36,7 +37,7 @@ export { volatileLaunchOwnership } from "./volatile-ownership"
 export {
   RecoveryCodedError,
   deadlineExceeded,
-  withRequestDeadline,
+  settleAtRequestDeadline,
   type RequestDeadline,
 } from "./deadline"
 export {
