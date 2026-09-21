@@ -31,6 +31,21 @@ import { hostOnline, statusLines } from "./status"
  */
 
 /** The desktop daemon's identity route, as `claxedo-local-server` serves it: bearer-checked, answering who it is. */
+/** The creation identity both the published record and the listener report. */
+function fakeCreationIdentity(pid: number) {
+  return {
+    pid,
+    processGroupId: pid,
+    parentPid: 1,
+    // A creation time no process on this machine can have, so the identity
+    // check answers "not the recorded launch" for whatever holds the pid.
+    startSecond: "Thu Jan  1 00:00:00 1970",
+    startedAtMs: 0,
+    bootTime: "0",
+    source: "darwin-ps" as const,
+  }
+}
+
 function fakeDesktopDaemon(identity: { pid: number; generation: string; token: string }) {
   const requests: Array<{ path: string; authorization: string | null }> = []
   const server = Bun.serve({
@@ -43,7 +58,13 @@ function fakeDesktopDaemon(identity: { pid: number; generation: string; token: s
       if (request.headers.get("authorization") !== `Bearer ${identity.token}`) {
         return Response.json({ error: { code: "daemon_identity_unauthorized" } }, { status: 401 })
       }
-      return Response.json({ service: "claxedo-local-daemon", protocol: 2, generation: identity.generation, pid: identity.pid })
+      return Response.json({
+        service: "claxedo-local-daemon",
+        protocol: 2,
+        generation: identity.generation,
+        pid: identity.pid,
+        identity: fakeCreationIdentity(identity.pid),
+      })
     },
   })
   const port = server.port!
@@ -60,17 +81,7 @@ function fakeDesktopDaemon(identity: { pid: number; generation: string; token: s
         pid: identity.pid,
         port,
         startedAt: "now",
-        // A creation time no process on this machine can have, so the identity
-        // check answers "not the recorded launch" for whatever holds the pid.
-        identity: {
-          pid,
-          processGroupId: pid,
-          parentPid: 1,
-          startSecond: "Thu Jan  1 00:00:00 1970",
-          startedAtMs: 0,
-          bootTime: "0",
-          source: "darwin-ps",
-        },
+        identity: fakeCreationIdentity(pid),
         ...overrides,
       })
     },

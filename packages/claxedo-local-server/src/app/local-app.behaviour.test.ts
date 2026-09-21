@@ -22,6 +22,14 @@ import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { DAEMON_PROTOCOL_HEADER } from "./local-app"
 
+const emptyActivity = () => ({
+  pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
+  runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
+  owners: [],
+  residencyPins: 0,
+  replacementBlockers: 0,
+})
+
 /**
  * What the workspace runtime proxy answers in place of a runtime, for the one
  * test that needs it to answer at all. Creating a session in the embedded
@@ -330,6 +338,50 @@ describe("local composition — health and telemetry", () => {
       method: "POST",
       headers: { authorization: "Bearer installation-secret" },
     })).status).toBe(426)
+  })
+
+  test("the identity route answers the creation identity a launcher verifies against", async () => {
+    const creation = {
+      pid: 42,
+      processGroupId: 42,
+      parentPid: 1,
+      startSecond: "Thu Jan  1 00:00:00 1970",
+      startedAtMs: 0,
+      bootTime: "0",
+      source: "darwin-ps",
+    }
+    const identity = {
+      token: "installation-secret",
+      protocol: 1,
+      generation: "generation-1",
+      pid: 42,
+      // Read from the OS after the listener is up, so the route reads it per
+      // request. A value captured at composition would always be absent.
+      creation: () => creation,
+    }
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: emptyActivity,
+      onStop() {},
+      machine: { machineId: "local", generation: "generation-1" },
+    })
+    lifecycle.start()
+    const local = app({ daemon: { identity, lifecycle } })
+
+    const body = await (await local.request("http://localhost/api/claxedo/daemon", {
+      headers: { authorization: "Bearer installation-secret" },
+    })).json()
+
+    // Exactly the fields a discovery record is verified against. A function
+    // here would be dropped by JSON and the launcher would find nothing to
+    // check before signalling.
+    expect(body).toEqual({
+      service: "claxedo-local-daemon",
+      protocol: 1,
+      generation: "generation-1",
+      pid: 42,
+      identity: creation,
+    })
+    lifecycle.stop()
   })
 
   test("a session Stop submitted during a machine drain is served before the drain settles", async () => {

@@ -124,6 +124,7 @@ export function sameCreationIdentity(recorded: CreationIdentity, reported: unkno
   return observed.pid === recorded.pid
     && observed.processGroupId === recorded.processGroupId
     && observed.startSecond === recorded.startSecond
+    && observed.startedAtMs === recorded.startedAtMs
     && observed.bootTime === recorded.bootTime
 }
 

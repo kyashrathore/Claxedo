@@ -160,8 +160,12 @@ export type LocalAppOptions = {
       protocol: number
       generation: string
       pid: number
-      /** This process's OS creation identity, for a launcher that must signal it. */
-      creation?: unknown
+      /**
+       * This process's OS creation identity, for a launcher that must signal
+       * it. A reader rather than a value: it is read from the OS after the
+       * listener is up, and the route answers whatever it says at request time.
+       */
+      creation?: () => unknown
     }
     lifecycle: LocalDaemonLifecycle
   }
@@ -243,6 +247,15 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
 
   app.use(unsignedLocalRequestGuard({ mode: deploymentMode(env), authConfig: services.auth.config }))
 
+  // Ahead of every route family, the broker and telemetry included: a machine
+  // that has not established what it owns must not spend a stored key at a
+  // vendor, and the fence is a property of the composition rather than a review
+  // item on each mount.
+  if (options.daemon) {
+    const { lifecycle } = options.daemon
+    app.use(machineRecoveryFence(() => lifecycle.recovery.ingressClosed()))
+  }
+
   if (options.egressBroker) {
     const routes = loopbackBrokerRoutes({ broker: options.egressBroker, isLoopback: isLoopbackLocalRequest })
     app.all(BROKER_ROUTE_PATTERN, (c) => routes(c.req.raw))
@@ -263,7 +276,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     c.json({ healthy: true, version: env.npm_package_version || "1.0.0" }))
   if (options.daemon) {
     const { identity, lifecycle } = options.daemon
-    app.use(machineRecoveryFence(() => lifecycle.recovery.ingressClosed()))
     const authorized = (provided: string | undefined) => {
       const token = provided?.replace(/^Bearer\s+/i, "") ?? ""
       const expectedBytes = Buffer.from(identity.token)
@@ -301,12 +313,13 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     // refusing it on version would leave an old client unable to learn why.
     app.get("/api/claxedo/daemon", (c) => {
       if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      const creation = identity.creation?.()
       return c.json({
         service: "claxedo-local-daemon",
         protocol: identity.protocol,
         generation: identity.generation,
         pid: identity.pid,
-        ...(identity.creation ? { identity: identity.creation } : {}),
+        ...(creation === undefined ? {} : { identity: creation }),
       })
     })
     app.get("/api/claxedo/daemon/state", (c) => {

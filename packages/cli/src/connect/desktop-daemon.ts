@@ -121,7 +121,12 @@ export async function verifyDesktopDaemon(
       identity.service === DAEMON_SERVICE &&
       identity.protocol === record.protocol &&
       identity.generation === record.generation &&
-      identity.pid === record.pid
+      identity.pid === record.pid &&
+      // The listener must agree about its own process, not just its token and
+      // generation: the identity it reports is what a later signal would be
+      // checked against, and one that disagrees is not the daemon that wrote
+      // the file this CLI is reading.
+      sameReportedIdentity(record.identity, identity.identity)
     )
     return answered ? "live" : "unresponsive"
   } catch {
@@ -166,4 +171,20 @@ async function recordedOwnerIsGone(record: DesktopDaemonDiscovery): Promise<bool
   if (!record.identity) return false
   const verdict = await verifyCreationIdentity(record.identity)
   return verdict.state === "exited" || verdict.state === "identity_mismatch"
+}
+
+/**
+ * A record with no identity has nothing to compare, which is not a mismatch:
+ * the daemon could not read its own, and that is already what makes it
+ * unrecoverable rather than what makes it unhealthy.
+ */
+function sameReportedIdentity(recorded: CreationIdentity | undefined, reported: unknown): boolean {
+  if (!recorded) return true
+  const observed = creationIdentity(reported)
+  if (!observed) return false
+  return observed.pid === recorded.pid
+    && observed.processGroupId === recorded.processGroupId
+    && observed.startSecond === recorded.startSecond
+    && observed.startedAtMs === recorded.startedAtMs
+    && observed.bootTime === recorded.bootTime
 }
