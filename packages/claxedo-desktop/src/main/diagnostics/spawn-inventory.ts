@@ -384,7 +384,7 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "unsupported",
     kill: "unsupported",
     source: {
-      file: "packages/agent-sdk-runtime/src/harnesses/shared/windows-process.ts",
+      file: "packages/agent-sdk-runtime/src/launch/retirement.ts",
       callee: "spawn",
       calls: 1,
     },
