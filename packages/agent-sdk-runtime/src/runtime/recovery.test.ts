@@ -5,6 +5,7 @@ import type { AgentHarnessFactory } from "../runtime"
 import type { AdapterCancelOutcome, AgentHarnessAdapter } from "../adapter-contract"
 import { createRuntimeLifecycle } from "./lifecycle"
 import { createRuntimeRecovery } from "./recovery"
+import { createRuntimeGoalController } from "./goal-controller"
 import { createTurnAdmissions } from "./turn-admission"
 import { MemoryRuntimeStore } from "../stores/memory"
 import { sessionIdle } from "../compat-events"
@@ -52,7 +53,7 @@ type Cancellation = {
   settle: (outcome: AdapterCancelOutcome) => void
 }
 
-function fixture(options: { store?: MemoryRuntimeStore; cancels?: Cancellation[]; autoCancel?: AdapterCancelOutcome } = {}) {
+function fixture(options: { store?: MemoryRuntimeStore; cancels?: Cancellation[]; cancelThrows?: string } = {}) {
   const store = options.store ?? new MemoryRuntimeStore()
   const turns: TurnControl[] = []
   const cancels = options.cancels ?? []
@@ -72,7 +73,7 @@ function fixture(options: { store?: MemoryRuntimeStore; cancels?: Cancellation[]
     },
     async getMessages() { return [] },
     cancelTurn(binding: AgentExecutionBinding, input: { turnId: string; signal: AbortSignal }) {
-      if (options.autoCancel) return Promise.resolve(options.autoCancel)
+      if (options.cancelThrows) throw new Error(options.cancelThrows)
       return new Promise<AdapterCancelOutcome>((resolve) => {
         cancels.push({ binding, turnId: input.turnId, signal: input.signal, settle: resolve })
       })
@@ -97,6 +98,27 @@ async function until(condition: () => boolean, label: string) {
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+function owner(options: { store?: MemoryRuntimeStore; adapterForSession?: () => Promise<AgentHarnessAdapter> } = {}) {
+  const store = options.store ?? new MemoryRuntimeStore()
+  store.bindSession({ sessionId: "ses", directory: "/repo", workspaceId: "ws", agentSessionId: "ses" })
+  const admissions = createTurnAdmissions(store)
+  const published: string[] = []
+  const recovery = createRuntimeRecovery({
+    store,
+    admissions,
+    adapterForSession: options.adapterForSession ?? (() => Promise.reject(new Error("no harness in this test"))),
+    executionBinding: () => ({ sessionId: "ses", workspaceId: "ws", directory: "/repo", connectionId: "pi:native", upstreamSessionId: "ses" }),
+    publish: (event) => published.push(event.payload.type),
+    announceIdle: () => published.push("global-idle"),
+    budgets: BUDGETS,
+  })
+  const startTurn = (turnId: string, assistantMessageId: string) => store.startTurn({
+    sessionId: "ses", userMessageId: turnId, assistantMessageId,
+    agent: "build", model: { providerID: "pi", modelID: "default" }, parts: [],
+  })
+  return { store, admissions, recovery, published, startTurn }
+}
 
 describe("cancelling a turn across an asynchronous boundary", () => {
   test("a cancellation that settles after its turn was replaced cannot finalize or release the replacement", async () => {
@@ -489,5 +511,334 @@ describe("disposal", () => {
     releaseTask()
     expect(await disposal).toEqual({ ok: true })
     expect(order).toEqual(["stopped", "drained", "cleaned"])
+  })
+})
+
+describe("the authority a finalization must hold", () => {
+  test("a capture whose generation was replaced is refused as superseded, not as a lost lease", () => {
+    const { store, admissions, recovery, startTurn } = owner()
+    const first = admissions.claim("ses", { turnId: "msg_a", assistantMessageId: "asst_a" })!
+    const capture = recovery.captureTurn("ses", first)
+    startTurn("msg_a", "asst_a")
+    first.release()
+    admissions.claim("ses", { turnId: "msg_b", assistantMessageId: "asst_b" })
+    startTurn("msg_b", "asst_b")
+
+    // The in-process generation is what rejects this, ahead of the store's
+    // lease fence; a `authority_lost` here would mean the check never ran.
+    expect(recovery.finalizeTurn(capture, { status: "cancelled", completedAt: 1, reason: "abort" }))
+      .toEqual({ ok: false, reason: "superseded" })
+    expect(store.getSession("ses")?.status).toBe("busy")
+  })
+
+  test("a store turn this owner holds no lease for is refused rather than written unfenced", () => {
+    const { store, recovery, published, startTurn } = owner()
+    startTurn("msg_provider", "asst_provider")
+
+    recovery.cancelActiveTurn(recovery.captureStoreTurn("ses", "/repo"))
+
+    expect(store.getSession("ses")?.status).toBe("busy")
+    expect(store.getSession("ses")?.lastTurn).toBeUndefined()
+    expect(published).toEqual([])
+    expect(recovery.inspect("ses").failures[0]).toMatchObject({ code: "ownership_unverified" })
+  })
+
+  test("a store turn this owner does hold the lease for is finalized and the lease released", () => {
+    const { store, recovery, published, startTurn } = owner()
+    const leaseId = store.acquireTurnLease("ses")!
+    startTurn("msg_provider", "asst_provider")
+
+    recovery.cancelActiveTurn(recovery.captureStoreTurn("ses", "/repo"))
+
+    expect(store.getSession("ses")).toMatchObject({ status: null, lastTurn: { status: "cancelled", reason: "abort" } })
+    expect(store.readTurnAuthority("ses")).toBeUndefined()
+    expect(store.acquireTurnLease("ses")).not.toBe(leaseId)
+    expect(published).toContain("global-idle")
+    expect(recovery.inspect("ses").failures).toEqual([])
+  })
+
+  test("a finalization the store accepted but recorded nothing for does not claim a commit", () => {
+    const { store, admissions, recovery, published, startTurn } = owner()
+    const claimed = admissions.claim("ses", { turnId: "msg_a", assistantMessageId: "asst_a" })!
+    startTurn("msg_a", "asst_a")
+    const capture = recovery.captureTurn("ses", claimed)
+    // The provider opened a second turn of its own; the store's active turn is
+    // no longer the one this capture names, so the write finds nothing to do.
+    startTurn("msg_b", "asst_b")
+
+    const result = recovery.finalizeTurn(capture, { status: "cancelled", completedAt: 1, reason: "abort" }, { announceIdle: true })
+
+    expect(result).toEqual({ ok: true, wrote: false })
+    expect(store.getSession("ses")?.status).toBe("busy")
+    expect(published).toEqual([])
+  })
+})
+
+describe("a lease that moved to another owner", () => {
+  function fenced() {
+    let valid = true
+    const { runtime, store, turns } = fixture()
+    return {
+      runtime, store, turns,
+      admission: { valid: () => valid, fencingToken: () => 1 },
+      revoke: () => { valid = false },
+    }
+  }
+
+  test("is terminal for this owner: the admission is given up and no retry is advertised", async () => {
+    const f = fenced()
+    const sessionId = await openSession(f.runtime, "ses_revoked")
+    const started = await f.runtime.turns.start({ sessionId, messageId: "msg_a", text: "first", admission: f.admission })
+
+    f.revoke()
+    f.turns[0].finish()
+    await until(() => f.runtime.recovery.inspect(sessionId).failures.length > 0, "the lost authority to be reported")
+
+    const inspection = f.runtime.recovery.inspect(sessionId)
+    expect(inspection.failures[0]).toMatchObject({ code: "authority_lost", executionMayContinue: true })
+    // The lease belongs to whoever fenced this one out, so the admission slot
+    // it was still holding is released rather than kept for a retry.
+    expect(inspection.target).toBeUndefined()
+
+    const reconciled = submittedOperation(await f.runtime.recovery.submit({
+      requestId: "req_reconcile", action: "reconcile_session", target: started.target!, scopeRevision: "1", attempt: 1,
+    }, RECOVERY_TEST_CALLER))
+
+    expect(reconciled.state).toBe("failed")
+    expect(reconciled.initiatingError).toMatchObject({ code: "authority_lost" })
+    expect(reconciled.nextActions.map((next) => next.action)).toEqual(["inspect"])
+    await f.runtime.dispose()
+  })
+})
+
+describe("an operation that throws", () => {
+  test("answers its caller, closes, and does not capture the next request for that turn", async () => {
+    const { runtime, turns } = fixture({ cancelThrows: "the harness blew up on the way in" })
+    const sessionId = await openSession(runtime, "ses_throwing")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+
+    const first = submittedOperation(await runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER))
+
+    expect(first.state).toBe("failed")
+    expect(first.initiatingError).toMatchObject({ code: "internal_error", message: expect.stringContaining("blew up") })
+
+    // A second request must open its own operation; coalescing onto an attempt
+    // that never closes is how one throw silences every later cancellation.
+    const second = submittedOperation(await runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER))
+    expect(second.operationId).not.toBe(first.operationId)
+    expect(second.state).toBe("failed")
+
+    // And the gate it took is back, so the session still admits work.
+    turns[0].finish()
+    await until(() => runtime.recovery.inspect(sessionId).target === undefined, "the turn to end")
+    await runtime.dispose()
+  })
+})
+
+describe("receipts the store already holds", () => {
+  class AdoptingStore extends MemoryRuntimeStore {
+    existing?: RecoveryOperation
+    override recordRecoveryOperation(operation: RecoveryOperation, caller: { callerId: string }) {
+      if (this.existing) return { created: false as const, existing: this.existing }
+      return super.recordRecoveryOperation(operation, caller)
+    }
+  }
+
+  test("an operation another owner already accepted is adopted instead of run again", async () => {
+    const store = new AdoptingStore()
+    const { runtime, turns, cancels } = fixture({ store })
+    const sessionId = await openSession(runtime, "ses_adopt")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+    const request = cancelTurnRequest(started.target!, { requestId: "req_shared" })
+    store.existing = {
+      operationId: "rop_elsewhere", requestId: "req_shared", target: started.target!, action: "cancel_turn",
+      scopeRevision: "1", attempt: 1, state: "running", phase: "graceful_cancel", phaseDeadlineAt: 1,
+      facts: runtime.recovery.inspect(sessionId).facts, cleanupErrors: [], nextActions: [],
+      receipt: "durable", createdAt: 1, updatedAt: 1,
+    }
+
+    const outcome = submittedOperation(await runtime.recovery.submit(request, RECOVERY_TEST_CALLER))
+
+    expect(outcome.operationId).toBe("rop_elsewhere")
+    expect(cancels).toHaveLength(0)
+    expect(runtime.recovery.read("rop_elsewhere", RECOVERY_TEST_CALLER)).toMatchObject({ kind: "operation" })
+
+    turns[0].finish()
+    await runtime.dispose()
+  })
+
+  test("a stored receipt under the same request id but a different intent conflicts", async () => {
+    const store = new AdoptingStore()
+    const { runtime, turns } = fixture({ store })
+    const sessionId = await openSession(runtime, "ses_adopt_conflict")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+    store.existing = {
+      operationId: "rop_elsewhere", requestId: "req_shared", target: started.target!, action: "cancel_turn",
+      scopeRevision: "an-older-scope", attempt: 1, state: "running", phase: "graceful_cancel", phaseDeadlineAt: 1,
+      facts: runtime.recovery.inspect(sessionId).facts, cleanupErrors: [], nextActions: [],
+      receipt: "durable", createdAt: 1, updatedAt: 1,
+    }
+
+    const outcome = await runtime.recovery.submit(
+      cancelTurnRequest(started.target!, { requestId: "req_shared" }),
+      RECOVERY_TEST_CALLER,
+    )
+
+    expect(outcome).toMatchObject({ kind: "refused", refusal: { kind: "intent_conflict", requestId: "req_shared" } })
+    turns[0].finish()
+    await runtime.dispose()
+  })
+})
+
+describe("who may read and act", () => {
+  test("an operation is only readable by a caller it was accepted for", async () => {
+    const { runtime, turns } = fixture()
+    const sessionId = await openSession(runtime, "ses_reads")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+    const operation = submittedOperation(await runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER))
+
+    expect(runtime.recovery.read(operation.operationId, { callerId: "someone-else", authority: "session" }))
+      .toMatchObject({ kind: "refused", refusal: { kind: "unauthorized" } })
+    // An operation this owner never recorded cannot be authorized at all, so it
+    // is not answered rather than handed over.
+    expect(runtime.recovery.read("rop_never_seen", RECOVERY_TEST_CALLER)).toBeUndefined()
+
+    turns[0].finish()
+    await runtime.dispose()
+  })
+
+  test("a session-scoped caller cannot act on a machine", async () => {
+    const { runtime } = fixture()
+    await openSession(runtime, "ses_scope")
+
+    const outcome = await runtime.recovery.submit({
+      requestId: "req_drain", action: "drain_daemon", scopeRevision: "1", attempt: 1,
+      target: { scope: "machine", machineId: "this-one", ownerGeneration: "gen" },
+    }, RECOVERY_TEST_CALLER)
+
+    expect(outcome).toMatchObject({ kind: "refused", refusal: { kind: "unauthorized" } })
+    await runtime.dispose()
+  })
+})
+
+describe("what a session's inspection lists", () => {
+  class ListingStore extends MemoryRuntimeStore {
+    stored: RecoveryOperation[] = []
+    throws = false
+    override listRecoveryOperations(scope: { sessionId?: string }) {
+      if (this.throws) throw new Error("the operations table is unreadable")
+      return [...super.listRecoveryOperations(scope), ...this.stored]
+    }
+  }
+
+  test("operations this owner never recorded, and a store that cannot answer", async () => {
+    const store = new ListingStore()
+    const { runtime, turns } = fixture({ store })
+    const sessionId = await openSession(runtime, "ses_listing")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+    store.stored = [{
+      operationId: "rop_before_restart", requestId: "req_old", target: started.target!, action: "cancel_turn",
+      scopeRevision: "1", attempt: 1, state: "needs_action", phase: "graceful_cancel", phaseDeadlineAt: 1,
+      facts: runtime.recovery.inspect(sessionId).facts, cleanupErrors: [], nextActions: [],
+      receipt: "durable", createdAt: 1, updatedAt: 1,
+    }]
+
+    expect(runtime.recovery.inspect(sessionId).operations.map((row) => row.operationId)).toContain("rop_before_restart")
+
+    store.throws = true
+    const unreadable = runtime.recovery.inspect(sessionId)
+    expect(unreadable.operations).toEqual([])
+    expect(unreadable.failures).toContainEqual(expect.objectContaining({ code: "persistence_unavailable" }))
+
+    turns[0].finish()
+    await runtime.dispose()
+  })
+})
+
+describe("a Goal mutation that outlives the turn it stops", () => {
+  function goalController(stop: () => Promise<void>, resolveHarness: () => Promise<void> = () => Promise.resolve()) {
+    const held = owner()
+    const goals = {
+      readCapabilities: () => ({ implemented: true, available: true, actions: [], recovery: "blocked" as const, optionalFields: [] }),
+      read: async () => null,
+      start: async () => ({ ok: true as const, goal: null }),
+      pause: async () => ({ ok: true as const, goal: null }),
+      resume: async () => ({ ok: true as const, goal: null }),
+      delete: async () => ({ ok: true as const, goal: null }),
+      stop: async () => { await stop(); return { ok: true as const, goal: null } },
+    }
+    const controller = createRuntimeGoalController({
+      store: held.store,
+      adapterForSession: async () => {
+        await resolveHarness()
+        return { readHarnessCapabilities: () => ({ harness: "pi" }), goals } as unknown as AgentHarnessAdapter
+      },
+      publish: () => {},
+      subscribeRuntime: () => () => {},
+      captureTurn: held.recovery.captureSessionTurn,
+      cancelCapturedTurn: held.recovery.cancelActiveTurn,
+    })
+    return { ...held, controller }
+  }
+
+  // The mutation yields twice before its effect: once resolving the harness and
+  // once inside the provider's own stop. A capture taken after either of them
+  // can already be the replacement turn.
+  test.each(["harness", "provider"] as const)("finalizes the turn it was asked about across the %s await", async (stage) => {
+    let release!: () => void
+    const reached = new Promise<void>((resolve) => { release = () => resolve() })
+    let openGate!: () => void
+    const gate = new Promise<void>((resolve) => { openGate = resolve })
+    const held = stage === "provider"
+      ? goalController(() => { release(); return gate })
+      : goalController(() => Promise.resolve(), () => { release(); return gate })
+    const first = held.admissions.claim("ses", { turnId: "msg_a", assistantMessageId: "asst_a" })!
+    held.startTurn("msg_a", "asst_a")
+
+    const stopping = held.controller.resource.stop("ses", "/repo")
+    await reached
+
+    // The Goal turn ends and the session takes a new one while the provider is
+    // still working through the stop this caller asked for.
+    held.store.finishTurn({ sessionId: "ses", assistantMessageId: "asst_a", outcome: { status: "completed", completedAt: 1 }, leaseId: first.leaseId })
+    first.release()
+    const second = held.admissions.claim("ses", { turnId: "msg_b", assistantMessageId: "asst_b" })!
+    held.startTurn("msg_b", "asst_b")
+
+    openGate()
+    await stopping
+
+    expect(held.store.getSession("ses")?.status).toBe("busy")
+    expect(held.store.getSession("ses")?.lastTurn).toMatchObject({ assistantMessageId: "asst_a", status: "completed" })
+    expect(held.admissions.active("ses")?.generation).toBe(second.generation)
+    expect(held.store.readTurnAuthority("ses")?.leaseId).toBe(second.leaseId)
+    expect(held.published).toEqual([])
+  })
+})
+
+describe("two callers naming one turn", () => {
+  test("meet on the same operation even when their write authority differs", async () => {
+    const { runtime, turns, cancels } = fixture()
+    const sessionId = await openSession(runtime, "ses_authority")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+
+    const first = runtime.recovery.submit(
+      cancelTurnRequest({ ...started.target!, writeAuthority: "7" }),
+      RECOVERY_TEST_CALLER,
+    )
+    await until(() => cancels.length === 1, "the harness to be asked to cancel")
+    // A lease renewed between the two reads names the same turn, so the second
+    // caller must join the first operation rather than open its own.
+    const second = submittedOperation(await runtime.recovery.submit(
+      cancelTurnRequest({ ...started.target!, writeAuthority: "8" }),
+      { callerId: "second-caller", authority: "session" },
+    ))
+
+    expect(second.operationId).toBe(submittedOperation(await first).operationId)
+    expect(cancels).toHaveLength(1)
+
+    turns[0].finish()
+    cancels[0].settle({ execution: "unknown", cleanup: "unknown" })
+    await runtime.dispose()
   })
 })

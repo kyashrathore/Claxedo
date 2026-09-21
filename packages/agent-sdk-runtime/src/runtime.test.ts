@@ -403,9 +403,15 @@ describe("createAgentRuntime", () => {
     })
     await expect(runtime.goals.pause(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "paused" } })
     await expect(runtime.goals.resume(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "active" } })
+    // A provider Goal turn takes the session's durable lease rather than the
+    // runtime's admission, and that lease is the write authority the runtime
+    // ends it under.
+    const goalLease = rows.acquireTurnLease(session.id)!
     rows.startTurn({ sessionId: session.id, assistantMessageId: "goal-turn", agent: "build", model: { providerID: "test", modelID: "goal" }, parts: [] })
     await expect(runtime.goals.stop(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "paused" } })
     expect(rows.getSession(session.id)?.status).not.toBe("busy")
+    expect(rows.readTurnAuthority(session.id)).toBeUndefined()
+    expect(rows.acquireTurnLease(session.id)).not.toBe(goalLease)
     await expect(runtime.goals.delete(session.id, "/repo")).resolves.toEqual({ ok: true, goal: null })
     expect(calls).toEqual(["read", "start:Ship safely", "pause", "resume", "stop", "delete"])
     expect(messagesSent).toBe(0)
