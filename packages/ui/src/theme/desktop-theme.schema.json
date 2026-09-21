@@ -162,6 +162,9 @@
         "overrides": {
           "type": "object",
           "description": "Optional direct overrides for any CSS variable (without -- prefix)",
+          "propertyNames": {
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
           "additionalProperties": {
             "$ref": "#/definitions/ColorValue"
           }
@@ -169,8 +172,15 @@
         "v2Overrides": {
           "type": "object",
           "description": "Optional direct overrides for any v2 CSS variable (without -- prefix)",
+          "propertyNames": {
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
           "additionalProperties": {
-            "type": "string"
+            "type": "string",
+            "not": {
+              "pattern": "[;{}@'\"`<>\\\\]|[uU][rR][lL]\\s*\\(",
+              "description": "Values become declaration text in the generated stylesheet, so rule/block/quote characters and url() fetches are forbidden"
+            }
           }
         }
       }

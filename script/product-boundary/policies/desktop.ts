@@ -558,7 +558,10 @@ export const desktopRendererUnsigned: Policy = {
   // The terminal link fallback reaches it in the shared renderer bundle; the
   // desktop's own openLink still goes through the scheme-gated `open-link`
   // IPC in main. Exact measured 1143 modules / 58 packages.
-  ceilings: { modules: 1143, packages: 58 },
+  // +1 module (2026-09-21): `ui/mermaid.ts` — see the app-local ledger. The
+  // shared renderer bundle carries it for the session timeline and the
+  // documents editor. Exact measured 1144 modules / 58 packages.
+  ceilings: { modules: 1144, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

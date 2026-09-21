@@ -161,6 +161,41 @@ describe("sanitized markdown keeps the hrefs a host can route", () => {
   })
 })
 
+// P-68/P-69/P-78 through the real <Markdown> pipeline: the shared builder
+// refuses script schemes, escapes attribute values, and math processing never
+// reaches inside a tag — before the sanitizer is even asked.
+describe("hostile markdown never produces a live anchor", () => {
+  test("a javascript: link renders the label inert", async () => {
+    const container = mountMarkdown("[click](javascript:alert(1))")
+    await wait(400)
+    expect(container.querySelector("a[href]")).toBeNull()
+    expect(container.textContent).toContain("click")
+  })
+
+  test("a title carrying quotes stays inside the attribute", async () => {
+    const container = mountMarkdown(`[x](https://example.com 'tit"le onmouseover="alert(1)')`)
+    await wait(400)
+    const anchor = container.querySelector<HTMLAnchorElement>("a[href]")
+    expect(anchor?.getAttribute("href")).toBe("https://example.com")
+    expect(anchor?.getAttribute("title")).toBe('tit"le onmouseover="alert(1)')
+    expect(anchor?.getAttribute("onmouseover")).toBeNull()
+  })
+
+  test("dollar math inside a title is not rewritten", async () => {
+    const container = mountMarkdown('[x](https://example.com "$$y$$") and $$z$$')
+    await wait(400)
+    const anchor = container.querySelector<HTMLAnchorElement>("a[href]")
+    expect(anchor?.getAttribute("href")).toBe("https://example.com")
+    expect(anchor?.getAttribute("title")).toBe("$$y$$")
+  })
+
+  test("dollar math inside a code block is not rewritten", async () => {
+    const container = mountMarkdown("```\n$$x$$\n```\n\nafter $$y$$")
+    await wait(400)
+    expect(container.querySelector("pre")?.textContent).toContain("$$x$$")
+  })
+})
+
 describe("createTimelineLinkOpen", () => {
   const host = () => ({
     workspacePanel: { open: vi.fn() },

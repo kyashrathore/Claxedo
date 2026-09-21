@@ -498,7 +498,12 @@ export const appLocal: Policy = {
   // connect-integration dialog's default `openUrl`, and the terminal link
   // fallback all bind it. It imports nothing; no new package edge. Exact
   // measured 1100 modules / 58 packages.
-  ceilings: { modules: 1100, packages: 58 },
+  // +1 module (2026-09-21): `ui/mermaid.ts` is the renderer's one mermaid
+  // loader — the strict `initialize` config plus `sanitizeSvg`, shared by the
+  // session timeline and the documents editor, replacing a copy inlined in
+  // each. Its session-ui edge enters through session-kit-loaders; no new
+  // package edge. Exact measured 1101 modules / 58 packages.
+  ceilings: { modules: 1101, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

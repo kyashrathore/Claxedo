@@ -5,6 +5,7 @@ import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { useData } from "../context"
 import { BasicTool } from "./basic-tool"
 import { claxedoToolName, claxedoToolView, taskStatusLabel, type ClaxedoLink } from "./claxedo-tool-view"
+import { safeLinkHref } from "./safe-link"
 import type { ToolProps } from "./message-part"
 
 const STATUS_ICONS: Record<string, IconProps["name"]> = {
@@ -26,7 +27,7 @@ const STATUS_ICONS: Record<string, IconProps["name"]> = {
 function CardLink(props: { link: ClaxedoLink; slot: string; class?: string }) {
   const data = useData()
   const href = () =>
-    props.link.kind === "task" ? data.taskHref?.(props.link.id) : data.sessionHref?.(props.link.id)
+    safeLinkHref(props.link.kind === "task" ? data.taskHref?.(props.link.id) : data.sessionHref?.(props.link.id))
   const activate = (event: MouseEvent) => {
     event.stopPropagation()
   }
@@ -74,7 +75,7 @@ export function ClaxedoTool(props: ToolProps) {
   const view = createMemo(() =>
     claxedoToolView({ name: name(), input: props.input, output: props.output, i18n, sessionTitle }),
   )
-  const href = () => data.claxedoToolHref?.(name(), props.input, props.output)
+  const href = () => safeLinkHref(data.claxedoToolHref?.(name(), props.input, props.output))
   const running = () => props.status === "pending" || props.status === "running"
   const hasBody = () => view().facts.length > 0 || view().rows.length > 0 || !!view().text
 

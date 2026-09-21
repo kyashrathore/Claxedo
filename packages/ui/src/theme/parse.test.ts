@@ -98,4 +98,37 @@ describe("parseDesktopTheme", () => {
     })
     expect(parsed.light.v2Overrides).toEqual({ "v2-shadow-sm": shadow })
   })
+
+  // Overrides become `--${key}: ${value}` lines inside the generated sheet's
+  // textContent, so a name or value carrying declaration syntax would let a
+  // hostile theme file write arbitrary page CSS.
+  test("rejects override token names that are not plain identifiers", () => {
+    for (const key of ["x; } body { display:none", "x}", "x: red; --y"]) {
+      const broken = { ...minimal, light: { seeds: minimalSeeds, overrides: { [key]: "#fff" } } }
+      expect(() => parseDesktopTheme(broken), key).toThrow(/invalid token name/)
+    }
+  })
+
+  test("rejects an override var() reference with trailing payload", () => {
+    const broken = {
+      ...minimal,
+      light: { seeds: minimalSeeds, overrides: { "text-base": "var(--x); } body { display:none" } },
+    }
+    expect(() => parseDesktopTheme(broken)).toThrow(/theme\.light\.overrides\.text-base/)
+  })
+
+  test("rejects v2 override values that could break out of a declaration", () => {
+    for (const value of ["red; } * { display:none }", "url(https://evil.test/x.css)", "red } @import 'x'"]) {
+      const broken = {
+        ...minimal,
+        light: { seeds: minimalSeeds, v2Overrides: { "v2-shadow-sm": value } },
+      }
+      expect(() => parseDesktopTheme(broken), value).toThrow(/plain CSS declaration value/)
+    }
+  })
+
+  test("rejects a theme id that would inject a selector", () => {
+    const broken = { ...minimal, id: 'x"] {} body { display:none }' }
+    expect(() => parseDesktopTheme(broken)).toThrow(/theme\.id: expected a slug id/)
+  })
 })

@@ -6,6 +6,7 @@ import { useData, type SubagentView } from "../context"
 import { clampLabel } from "./message-part-text"
 import { asRecord } from "@claxedo/helpers/guards"
 import { claxedoToolArguments } from "./claxedo-tool-view"
+import { safeLinkHref } from "./safe-link"
 
 /**
  * The one line under a subagent's name. `description` is whatever the runtime last
@@ -227,7 +228,7 @@ export function SubagentChipRow(props: {
             // second route to the child, so it never becomes an anchor.
             const href = () =>
               !interaction() && openable() && chip.childSessionId
-                ? data.sessionHref?.(chip.childSessionId)
+                ? safeLinkHref(data.sessionHref?.(chip.childSessionId))
                 : undefined
             const activate = (event: MouseEvent) => {
               event.stopPropagation()
