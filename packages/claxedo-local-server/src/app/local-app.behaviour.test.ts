@@ -332,6 +332,105 @@ describe("local composition — health and telemetry", () => {
     })).status).toBe(426)
   })
 
+  test("a session Stop submitted during a machine drain is served before the drain settles", async () => {
+    const identity = { token: "installation-secret", protocol: 1, generation: "generation-1", pid: 42 }
+    // Pinned work, so the drain is still waiting for the whole test.
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: () => ({
+        pty: { running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0 },
+        runtime: { hosts: 1, activeTurns: 1, activeWrites: 0, checkpointing: 0, owners: [] },
+        owners: [{ id: "terminal:t1", kind: "terminal" as const, generation: "77", state: "running", pins: true }],
+        residencyPins: 2,
+        replacementBlockers: 2,
+      }),
+      onStop() {},
+      machine: { machineId: "local", generation: "generation-1", budgets: { drainMs: 10_000 } },
+      pollIntervalMs: 10_000,
+    })
+    lifecycle.start()
+    const local = app({ daemon: { identity, lifecycle } })
+    const headers = { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" }
+
+    const inspected = await (await local.request("http://localhost/api/claxedo/daemon/recovery", { headers })).json() as {
+      scopeRevision: string
+      target: unknown
+    }
+    const drained = await (await local.request("http://localhost/api/claxedo/daemon/recovery", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "drain-1",
+        action: "drain_daemon",
+        target: inspected.target,
+        scopeRevision: inspected.scopeRevision,
+        attempt: 1,
+      }),
+    })).json() as { kind: string; operation: { operationId: string; state: string } }
+    expect(drained.operation.state).toBe("running")
+
+    // The runtime owner that holds the session, standing in for the embedded
+    // one this fixture does not start. Reaching it at all is the claim: the
+    // machine fence must not queue a Stop behind the drain it is narrower than.
+    const reached: string[] = []
+    runtimeAnswer.current = (request) => {
+      const url = new URL(request.url)
+      if (request.method !== "POST" || url.pathname !== "/session/ses_1/recovery") return undefined
+      reached.push(url.pathname)
+      return Response.json({
+        kind: "operation",
+        operation: {
+          operationId: "op-cancel", requestId: "cancel-1", action: "cancel_turn",
+          target: { scope: "turn", workspaceId: "ws_1", sessionId: "ses_1", turnId: "turn_1", ownerGeneration: "lease-1" },
+          scopeRevision: "turn-rev", attempt: 1, state: "succeeded", phase: "graceful_cancel",
+          phaseDeadlineAt: 2_000,
+          facts: {
+            execution: { value: "terminal", source: "runtime", observedAt: 1, generation: "lease-1" },
+            cleanup: { value: "verified_clear", source: "runtime", observedAt: 1, generation: "lease-1" },
+            persistence: { value: "committed", source: "runtime", observedAt: 1, generation: "lease-1" },
+          },
+          cleanupErrors: [], nextActions: [], receipt: "durable", createdAt: 1, updatedAt: 1,
+          linkedOperationId: drained.operation.operationId,
+        },
+      })
+    }
+
+    const cancelled = await local.request("http://localhost/session/ses_1/recovery", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "cancel-1",
+        action: "cancel_turn",
+        target: { scope: "turn", workspaceId: "ws_1", sessionId: "ses_1", turnId: "turn_1", ownerGeneration: "lease-1" },
+        scopeRevision: "turn-rev",
+        attempt: 1,
+        linkedOperationId: drained.operation.operationId,
+      }),
+    })
+
+    expect(cancelled.status, "not 503 machine_recovery_pending").toBe(200)
+    expect(reached).toEqual(["/session/ses_1/recovery"])
+    const outcome = await cancelled.json() as { operation: { action: string; linkedOperationId?: string } }
+    expect(outcome.operation.action).toBe("cancel_turn")
+    expect(outcome.operation.linkedOperationId, "a linked child of the drain").toBe(drained.operation.operationId)
+
+    // The drain it ran underneath has not settled, and new session work is
+    // still refused by the same fence that let the Stop through.
+    const stillDraining = await (await local.request(
+      `http://localhost/api/claxedo/daemon/recovery/operations/${drained.operation.operationId}`,
+      { headers },
+    )).json() as { operation: { state: string } }
+    expect(stillDraining.operation.state).toBe("running")
+
+    const prompted = await local.request("http://localhost/session/ses_1/prompt", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: "{}",
+    })
+    expect(prompted.status).toBe(503)
+    expect(await prompted.json()).toMatchObject({ error: { code: "machine_recovery_pending" } })
+    lifecycle.stop()
+  })
+
   test("the daemon drains through a machine operation, and a lease can no longer hold it open", async () => {
     const identity = {
       token: "installation-secret",
