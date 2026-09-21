@@ -70,6 +70,16 @@ export type PermissionDecision = "allow_once" | "allow_always" | "deny" | "rejec
 export type AgentHarnessAdapterProcessOptions = {
   /** Optional local diagnostics sink. Observation never changes harness behavior. */
   processObserver?: AgentProcessObserver
+  /**
+   * Where an adapter reports a failure that belongs to the session's owner
+   * rather than to whoever happened to call.
+   *
+   * An interaction that could not be projected or answered leaves a request
+   * the provider is still waiting on, and a caller's HTTP error does not make
+   * that inspectable to anyone else. The runtime retains what arrives here and
+   * serves it from `recovery.inspect(sessionId).failures`.
+   */
+  reportOwnerFailure?: (sessionId: string, error: unknown) => void
 }
 
 export type AgentTurnWriteContext = {

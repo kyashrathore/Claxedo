@@ -151,7 +151,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   constructor(private readonly options: SdkRuntimeAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
     this.ownsStore = !options.store
-    this.interactions = new SdkRuntimeInteractions(this.store)
+    // The live lifecycle entry is the turn's generation: every driver replaces it per turn.
+    this.interactions = new SdkRuntimeInteractions(this.store, {
+      generationOf: (sessionId) => this.lifecycle().get(sessionId),
+      ...(options.reportOwnerFailure ? { reportOwnerFailure: options.reportOwnerFailure } : {}),
+    })
     this.driver = options.driver({
       lifecycle: () => this.lifecycle(),
       pendingPermissions: this.interactions.permissions,

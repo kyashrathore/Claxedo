@@ -17,6 +17,9 @@ import type { ActiveTurn, SdkRuntimeDriver, SdkRuntimeDriverHost } from "./share
 import type { ACPProcess } from "./acp/process"
 import type { PermissionReplyPort } from "./acp/permission-reply"
 import type { WithInternals } from "../test-utils/class-internals"
+import { SdkRuntimeInteractions } from "./shared/sdk-runtime-interactions"
+import { createMemoryRuntimeStore } from "../stores/memory"
+import { questionAsked } from "../compat-events"
 
 /**
  * What each harness can actually establish about a turn it was asked to stop.
@@ -337,5 +340,77 @@ describe("per-harness recovery capability matrix", () => {
     release()
     await first
     expect(attempts).toBe(1)
+  })
+
+  test("a late answer from an old turn is refused and reported to the session's owner", () => {
+    const store = createMemoryRuntimeStore()
+    const failures: Array<{ sessionId: string; error: unknown }> = []
+    let generation: object | undefined = {}
+    const interactions = new SdkRuntimeInteractions(store, {
+      generationOf: () => generation,
+      reportOwnerFailure: (sessionId, error) => failures.push({ sessionId, error }),
+    })
+    const session = "s1"
+    store.bindSession({ sessionId: session, directory: "/work", agentSessionId: "agent-1" })
+    let decided: string | undefined
+    interactions.permissions.set("perm-1", {
+      sessionId: session,
+      agentSessionId: "agent-1",
+      method: "requestPermission",
+      params: {},
+      resolve: (decision) => { decided = decision },
+    })
+
+    // The turn that raised it ends and the session is admitted to another.
+    generation = {}
+    expect(() => interactions.respondPermission(
+      { workspaceId: "ws", directory: "/work", sessionId: session, connectionId: "native:codex", upstreamSessionId: session },
+      "perm-1",
+      "allow_once",
+    )).toThrow("no longer running")
+    // The provider's continuation is untouched: answering it would resolve a
+    // callback belonging to a turn that is over.
+    expect(decided).toBeUndefined()
+    expect(failures).toHaveLength(1)
+    expect(failures[0]!.sessionId).toBe(session)
+  })
+
+  test("an interaction the store could not project reaches the session's owner, not only its caller", () => {
+    const store = createMemoryRuntimeStore()
+    const failures: unknown[] = []
+    const generation = {}
+    // A proxy, not a spread: the store is a class instance and its methods
+    // live on the prototype, so a spread would hand over an empty object.
+    const unwritable = new Proxy(store, {
+      get: (target, key, receiver) => key === "appendEvent"
+        ? () => { throw new Error("journal is unavailable") }
+        : Reflect.get(target, key, receiver),
+    })
+    const interactions = new SdkRuntimeInteractions(unwritable, {
+      generationOf: () => generation,
+      reportOwnerFailure: (_sessionId, error) => failures.push(error),
+    })
+    const session = "s2"
+    store.bindSession({ sessionId: session, directory: "/work", agentSessionId: "agent-1" })
+    interactions.questions.set("q-1", {
+      sessionId: session,
+      agentSessionId: "agent-1",
+      questions: [],
+      resolve() {},
+      reject() {},
+    })
+    store.appendEvent({
+      sessionId: session,
+      agentSessionId: "agent-1",
+      payload: questionAsked({ id: "q-1", sessionID: session, questions: [] }),
+      source: { dir: "in", method: "question.asked" },
+    })
+
+    expect(() => interactions.replyQuestion(
+      { workspaceId: "ws", directory: "/work", sessionId: session, connectionId: "native:codex", upstreamSessionId: session },
+      "q-1",
+      [],
+    )).toThrow("journal is unavailable")
+    expect(failures).toHaveLength(1)
   })
 })
