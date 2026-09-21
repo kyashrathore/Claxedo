@@ -25,7 +25,7 @@ export type LocaleEntry = {
   /**
    * Loads this locale's flat string dictionary: this package's base
    * `<file>.ts`, then its themed dictionaries (`provider-settings/`,
-   * `source-control/`, `machines/`), then `@/ui`'s `<code>.ts`. A later source
+   * `source-control/`, `machines/`, `session-recovery/`), then `@/ui`'s `<code>.ts`. A later source
    * wins on key collision, so `@/ui`'s strings override this package's.
    */
   loader: () => Promise<LocaleSource>
@@ -63,6 +63,7 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
         import("./en").then((m) => ({ dict: m.dict })),
         import("./source-control/en"),
         import("./machines/en"),
+        import("./session-recovery/en"), import("./session-recovery/en"),
         import("@opencode-ai/ui/i18n/en"),
       ),
     intlTag: "en",
@@ -71,7 +72,7 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
   },
   {
     code: "zh",
-    loader: () => loadMerged(import("./zh"), import("./provider-settings/zh"), import("./source-control/zh"), import("./machines/zh"), import("@opencode-ai/ui/i18n/zh")),
+    loader: () => loadMerged(import("./zh"), import("./provider-settings/zh"), import("./source-control/zh"), import("./machines/zh"), import("./session-recovery/zh"), import("@opencode-ai/ui/i18n/zh")),
     intlTag: "zh-Hans",
     labelKey: "language.zh",
     // Excludes the Traditional-script signals (hant script token, and the
@@ -82,84 +83,84 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
   },
   {
     code: "zht",
-    loader: () => loadMerged(import("./zht"), import("./provider-settings/zht"), import("./source-control/zht"), import("./machines/zht"), import("@opencode-ai/ui/i18n/zht")),
+    loader: () => loadMerged(import("./zht"), import("./provider-settings/zht"), import("./source-control/zht"), import("./machines/zht"), import("./session-recovery/zht"), import("@opencode-ai/ui/i18n/zht")),
     intlTag: "zh-Hant",
     labelKey: "language.zht",
     matches: (language) => language.startsWith("zh") && isTraditionalChinese(language),
   },
   {
     code: "ko",
-    loader: () => loadMerged(import("./ko"), import("./provider-settings/ko"), import("./source-control/ko"), import("./machines/ko"), import("@opencode-ai/ui/i18n/ko")),
+    loader: () => loadMerged(import("./ko"), import("./provider-settings/ko"), import("./source-control/ko"), import("./machines/ko"), import("./session-recovery/ko"), import("@opencode-ai/ui/i18n/ko")),
     intlTag: "ko",
     labelKey: "language.ko",
     matches: (language) => language.startsWith("ko"),
   },
   {
     code: "de",
-    loader: () => loadMerged(import("./de"), import("./provider-settings/de"), import("./source-control/de"), import("./machines/de"), import("@opencode-ai/ui/i18n/de")),
+    loader: () => loadMerged(import("./de"), import("./provider-settings/de"), import("./source-control/de"), import("./machines/de"), import("./session-recovery/de"), import("@opencode-ai/ui/i18n/de")),
     intlTag: "de",
     labelKey: "language.de",
     matches: (language) => language.startsWith("de"),
   },
   {
     code: "es",
-    loader: () => loadMerged(import("./es"), import("./provider-settings/es"), import("./source-control/es"), import("./machines/es"), import("@opencode-ai/ui/i18n/es")),
+    loader: () => loadMerged(import("./es"), import("./provider-settings/es"), import("./source-control/es"), import("./machines/es"), import("./session-recovery/es"), import("@opencode-ai/ui/i18n/es")),
     intlTag: "es",
     labelKey: "language.es",
     matches: (language) => language.startsWith("es"),
   },
   {
     code: "fr",
-    loader: () => loadMerged(import("./fr"), import("./provider-settings/fr"), import("./source-control/fr"), import("./machines/fr"), import("@opencode-ai/ui/i18n/fr")),
+    loader: () => loadMerged(import("./fr"), import("./provider-settings/fr"), import("./source-control/fr"), import("./machines/fr"), import("./session-recovery/fr"), import("@opencode-ai/ui/i18n/fr")),
     intlTag: "fr",
     labelKey: "language.fr",
     matches: (language) => language.startsWith("fr"),
   },
   {
     code: "da",
-    loader: () => loadMerged(import("./da"), import("./provider-settings/da"), import("./source-control/da"), import("./machines/da"), import("@opencode-ai/ui/i18n/da")),
+    loader: () => loadMerged(import("./da"), import("./provider-settings/da"), import("./source-control/da"), import("./machines/da"), import("./session-recovery/da"), import("@opencode-ai/ui/i18n/da")),
     intlTag: "da",
     labelKey: "language.da",
     matches: (language) => language.startsWith("da"),
   },
   {
     code: "ja",
-    loader: () => loadMerged(import("./ja"), import("./provider-settings/ja"), import("./source-control/ja"), import("./machines/ja"), import("@opencode-ai/ui/i18n/ja")),
+    loader: () => loadMerged(import("./ja"), import("./provider-settings/ja"), import("./source-control/ja"), import("./machines/ja"), import("./session-recovery/ja"), import("@opencode-ai/ui/i18n/ja")),
     intlTag: "ja",
     labelKey: "language.ja",
     matches: (language) => language.startsWith("ja"),
   },
   {
     code: "pl",
-    loader: () => loadMerged(import("./pl"), import("./provider-settings/pl"), import("./source-control/pl"), import("./machines/pl"), import("@opencode-ai/ui/i18n/pl")),
+    loader: () => loadMerged(import("./pl"), import("./provider-settings/pl"), import("./source-control/pl"), import("./machines/pl"), import("./session-recovery/pl"), import("@opencode-ai/ui/i18n/pl")),
     intlTag: "pl",
     labelKey: "language.pl",
     matches: (language) => language.startsWith("pl"),
   },
   {
     code: "ru",
-    loader: () => loadMerged(import("./ru"), import("./provider-settings/ru"), import("./source-control/ru"), import("./machines/ru"), import("@opencode-ai/ui/i18n/ru")),
+    loader: () => loadMerged(import("./ru"), import("./provider-settings/ru"), import("./source-control/ru"), import("./machines/ru"), import("./session-recovery/ru"), import("@opencode-ai/ui/i18n/ru")),
     intlTag: "ru",
     labelKey: "language.ru",
     matches: (language) => language.startsWith("ru"),
   },
   {
     code: "bs",
-    loader: () => loadMerged(import("./bs"), import("./provider-settings/bs"), import("./source-control/bs"), import("./machines/bs"), import("@opencode-ai/ui/i18n/bs")),
+    loader: () => loadMerged(import("./bs"), import("./provider-settings/bs"), import("./source-control/bs"), import("./machines/bs"), import("./session-recovery/bs"), import("@opencode-ai/ui/i18n/bs")),
     intlTag: "bs",
     labelKey: "language.bs",
     matches: (language) => language.startsWith("bs"),
   },
   {
     code: "ar",
-    loader: () => loadMerged(import("./ar"), import("./provider-settings/ar"), import("./source-control/ar"), import("./machines/ar"), import("@opencode-ai/ui/i18n/ar")),
+    loader: () => loadMerged(import("./ar"), import("./provider-settings/ar"), import("./source-control/ar"), import("./machines/ar"), import("./session-recovery/ar"), import("@opencode-ai/ui/i18n/ar")),
     intlTag: "ar",
     labelKey: "language.ar",
     matches: (language) => language.startsWith("ar"),
   },
   {
     code: "no",
-    loader: () => loadMerged(import("./no"), import("./provider-settings/no"), import("./source-control/no"), import("./machines/no"), import("@opencode-ai/ui/i18n/no")),
+    loader: () => loadMerged(import("./no"), import("./provider-settings/no"), import("./source-control/no"), import("./machines/no"), import("./session-recovery/no"), import("@opencode-ai/ui/i18n/no")),
     intlTag: "nb-NO",
     labelKey: "language.no",
     matches: (language) => language.startsWith("no") || language.startsWith("nb") || language.startsWith("nn"),
@@ -168,21 +169,21 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
     code: "br",
     // App-side file is pt-BR.ts (see file header); ui package's file is still
     // named by locale code, br.ts.
-    loader: () => loadMerged(import("./pt-BR"), import("./provider-settings/pt-BR"), import("./source-control/pt-BR"), import("./machines/pt-BR"), import("@opencode-ai/ui/i18n/br")),
+    loader: () => loadMerged(import("./pt-BR"), import("./provider-settings/pt-BR"), import("./source-control/pt-BR"), import("./machines/pt-BR"), import("./session-recovery/pt-BR"), import("@opencode-ai/ui/i18n/br")),
     intlTag: "pt-BR",
     labelKey: "language.br",
     matches: (language) => language.startsWith("pt"),
   },
   {
     code: "th",
-    loader: () => loadMerged(import("./th"), import("./provider-settings/th"), import("./source-control/th"), import("./machines/th"), import("@opencode-ai/ui/i18n/th")),
+    loader: () => loadMerged(import("./th"), import("./provider-settings/th"), import("./source-control/th"), import("./machines/th"), import("./session-recovery/th"), import("@opencode-ai/ui/i18n/th")),
     intlTag: "th",
     labelKey: "language.th",
     matches: (language) => language.startsWith("th"),
   },
   {
     code: "tr",
-    loader: () => loadMerged(import("./tr"), import("./provider-settings/tr"), import("./source-control/tr"), import("./machines/tr"), import("@opencode-ai/ui/i18n/tr")),
+    loader: () => loadMerged(import("./tr"), import("./provider-settings/tr"), import("./source-control/tr"), import("./machines/tr"), import("./session-recovery/tr"), import("@opencode-ai/ui/i18n/tr")),
     intlTag: "tr",
     labelKey: "language.tr",
     matches: (language) => language.startsWith("tr"),

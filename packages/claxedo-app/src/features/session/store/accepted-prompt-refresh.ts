@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js"
 import { idleSessionStatus } from "./session-store"
 import type { SessionStatusDispatchEvent } from "./session-status-dispatcher"
+import type { ConversationDirectory } from "../conversation/conversation-chat-client"
 
 type SessionStatus = NonNullable<Extract<SessionStatusDispatchEvent, { type: "session.status" }>["status"]>
 
@@ -14,7 +15,7 @@ type SessionStatus = NonNullable<Extract<SessionStatusDispatchEvent, { type: "se
  * next prompt, so the older turn's answer was never fetched at all.
  */
 export type TurnCoverageObligation = {
-  directory: string
+  directory: ConversationDirectory
   sessionID: string
   turnId: string
   requestedAt: number
@@ -58,7 +59,7 @@ function sameTurn(target: TurnCoverageTarget, entry: TurnCoverageObligation) {
     && target.turnId === entry.turnId
 }
 
-export function requestAcceptedPromptRefresh(input: { directory: string; sessionID: string; messageID: string }) {
+export function requestAcceptedPromptRefresh(input: TurnCoverageScope & { messageID: string }) {
   const target = { directory: input.directory, sessionID: input.sessionID, turnId: input.messageID }
   setObligations((current) => {
     if (current.some((entry) => sameTurn(target, entry))) return current

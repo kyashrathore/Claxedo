@@ -6,6 +6,7 @@ import { Persist, persisted } from "@/platform/persistence/persist"
 import { dict as en } from "@/platform/i18n/en"
 import { dict as sourceControlEn } from "@/platform/i18n/source-control/en"
 import { dict as machinesEn } from "@/platform/i18n/machines/en"
+import { dict as sessionRecoveryEn } from "@/platform/i18n/session-recovery/en"
 import { dict as uiEn } from "@opencode-ai/ui/i18n/en"
 import { LOCALE_ENTRIES, type LocaleCode } from "@/platform/i18n/locales"
 import { readString } from "@/lib/record"
@@ -13,7 +14,7 @@ import { totalRecord } from "@/lib/total-record"
 
 export type Locale = LocaleCode
 
-type RawDictionary = typeof en & typeof sourceControlEn & typeof machinesEn & typeof uiEn
+type RawDictionary = typeof en & typeof sourceControlEn & typeof machinesEn & typeof sessionRecoveryEn & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
 
 // Every one of LOCALES/INTL/LABEL_KEY/localeMatchers below is derived from
@@ -40,7 +41,7 @@ const localeMatchers: Array<{ locale: Locale; match: (language: string) => boole
   (entry) => ({ locale: entry.code, match: entry.matches }),
 )
 
-const base = i18n.flatten({ ...en, ...sourceControlEn, ...machinesEn, ...uiEn })
+const base = i18n.flatten({ ...en, ...sourceControlEn, ...machinesEn, ...sessionRecoveryEn, ...uiEn })
 const dicts = new Map<Locale, Dictionary>([["en", base]])
 
 function loadDict(locale: Locale) {

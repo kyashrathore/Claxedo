@@ -124,7 +124,6 @@ type MetaPayload = {
   questions?: QuestionRequest[]
 }
 const HYDRATE_FRESH_MS = 15_000
-const ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS = [0, 600, 1_200, 2_400, 4_000, 8_000, 12_000] as const
 export {
   ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
   ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
@@ -737,119 +736,12 @@ export function createSessionController(input: {
     },
   ))
 
-  const turnCoverageOwner = {}
-  const turnCoverageAttempts = new Map<string, VoidFunction>()
-  const turnCoverageKey = (target: TurnCoverageTarget) =>
-    `${target.directory}\0${target.sessionID}\0${target.turnId}`
-
-  /**
-   * Fetch one named turn and merge it. `mode` is deliberately absent: the
-   * default merge applies this turn's messages without touching the rest of
-   * the window, so completing an older turn cannot replace the live one a
-   * newer turn is still writing.
-   */
-  const applyTurnCoverage = async (target: TurnCoverageTarget, signal: AbortSignal) => {
-    const page = await sdk.client.session.messages(
-      { sessionID: target.sessionID, turn: target.turnId, coverage: "1" },
-      { signal },
-    )
-    const covered = page.data
-    const decision = readTurnCoverage(target, covered)
-    if (decision.merge) {
-      hydrateConversationPage({
-        directory: target.directory,
-        sessionID: target.sessionID,
-        rows: covered.messages,
-        messageCompleteness: "canonical",
-        partCompleteness: "canonical",
-      })
-    }
-    return decision.answer
-  }
-
-  const runTurnCoverageAttempt = async (obligation: TurnCoverageObligation, epoch: { active: () => boolean; signal: AbortSignal }) => {
-    for (const delay of ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS) {
-      if (delay > 0 && !await promptRefreshDelay(delay, epoch.signal)) return
-      if (!epoch.active()) return
-      const [covered, fetchedStatus] = await Promise.all([
-        applyTurnCoverage(obligation, epoch.signal).catch(() => "unresolved" as const),
-        readAcceptedPromptStatus({ sessionID: obligation.sessionID, client: sdk.client, signal: epoch.signal }),
-      ])
-      if (!epoch.active()) return
-      const settled = covered === "complete"
-        && conversationHasAssistantMessage(
-          obligation.directory,
-          obligation.sessionID,
-          assistantMessageIdForUserMessage(obligation.turnId),
-        )
-      if (fetchedStatus && (fetchedStatus.type !== "idle" || settled)) dispatchSessionStatusEvent({
-        event: { type: "session.status", source: "server", sessionID: obligation.sessionID, status: fetchedStatus },
-      })
-      // Only the owner's own "this turn can never be covered" retires an
-      // obligation early. Running out of attempts leaves it for the next mount.
-      if (settled || covered === "unavailable") {
-        retireTurnCoverage(obligation)
-        return
-      }
-    }
-  }
-
-  const startTurnCoverageAttempt = (obligation: TurnCoverageObligation) => {
-    const key = turnCoverageKey(obligation)
-    if (turnCoverageAttempts.has(key)) return
-    if (!claimTurnCoverage(obligation, turnCoverageOwner)) return
-    const epoch = createActivationSessionReadEpoch()
-    const finish = () => {
-      if (!turnCoverageAttempts.delete(key)) return
-      releaseTurnCoverage(obligation, turnCoverageOwner)
-    }
-    const cancelStart = scheduleActivationWork({
-      activationAt: Date.now(),
-      earliestMs: ACCEPTED_PROMPT_RECONCILIATION_EARLIEST_MS,
-      active: () => epoch.active() && paneActive()
-        && input.sessionID() === obligation.sessionID && input.directory() === obligation.directory,
-      run: () => {
-        void runTurnCoverageAttempt(obligation, epoch).catch(() => undefined).finally(finish)
-      },
-    })
-    turnCoverageAttempts.set(key, () => {
-      epoch.abort()
-      cancelStart()
-      finish()
-    })
-  }
-
-  /**
-   * Tracked on the set of outstanding turn ids, not on the obligations
-   * themselves: claiming one writes back to the same store, and an effect that
-   * saw its own claim would tear down the attempt it had just started.
-   */
-  const outstandingTurnIds = createMemo(() => {
-    const sessionID = input.sessionID()
-    if (!sessionID) return ""
-    return outstandingTurnCoverage({ directory: input.directory(), sessionID })
-      .map((obligation) => obligation.turnId)
-      .join(" ")
-  })
-
-  createEffect(
-    on(
-      () => [outstandingTurnIds(), input.sessionID(), input.directory(), paneActive()] as const,
-      ([, sessionID, directory, active]) => {
-        if (!active || !sessionID) return
-        const pending = outstandingTurnCoverage({ directory, sessionID })
-        for (const obligation of pending) {
-          if (turnCoverageAttempts.size >= MAX_CONCURRENT_COVERAGE_READS) break
-          startTurnCoverageAttempt(obligation)
-        }
-      },
-    ),
-  )
-
-  // Unmounting ends this owner's attempts and nothing more: the obligations
-  // stay, and the next mount of this session picks them up.
-  onCleanup(() => {
-    for (const abandon of [...turnCoverageAttempts.values()]) abandon()
+  createTurnCoverageOwner({
+    sessionID: input.sessionID,
+    directory: input.directory,
+    paneActive,
+    client: sdk.client,
+    createReadEpoch: createActivationSessionReadEpoch,
   })
 
   const syncSessionTodo = async (sessionID: string, opts?: { force?: boolean }) => {
