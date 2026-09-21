@@ -219,7 +219,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const who = await this.requireActor(actorId)
     const access = await this.workspaceAccess(who.userId, requireText(workspaceId, "workspaceId"))
     if (!access || access.role_rank < roleRank(minimumRole)) throw denied()
-    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: rankRole(access.role_rank) }
+    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: rankRole(access.role_rank), userId: who.userId }
   }
 
   async recordActorRuntimeAccessToken(args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) {

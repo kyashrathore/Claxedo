@@ -25,8 +25,9 @@ import {
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
-import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
+import type { WorkspaceAuthority, WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { ConnectionTurnCredentials } from "../connections/turn-credentials"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const bodyLimitBytes = 16 * 1024
@@ -51,6 +52,8 @@ type RuntimeSessionAuthorityPort = Pick<
     hostId: string
     minimumRole?: "viewer" | "editor" | "admin" | "owner"
   }) => Promise<unknown>
+  /** Absent on a port that cannot resolve an actor's user-scoped partition; minted turn credentials then bind no personal rows. */
+  resolveRuntimeMachineAccess?: WorkspaceAuthority["resolveRuntimeMachineAccess"]
   /** Absent on a plane that cannot reserve for a runtime actor; the owner grant's `reserve` then answers 503. */
   reserveRuntimeSession?: PrivateSessionAuthority["reserveRuntimeSession"]
   /** Absent on a plane that records no host enrollments; `adopt` then answers 503. */
@@ -219,6 +222,12 @@ export type RuntimeSessionAuthorityOptions = {
   authority: RuntimeSessionAuthorityPort
   /** Durable prompt admission is selected independently from session visibility. */
   turnAuthority?: SessionTurnAuthority
+  /**
+   * The connections turn credentials this admission mints into: a runtime that
+   * holds an admitted turn receives a credential bound to the session and the
+   * turn's subject, dead when the lease ends.
+   */
+  turnCredentials?: ConnectionTurnCredentials
   env?: Record<string, string | undefined>
   ownerGrants?: OwnerGrantProof
   verifyRelayProof?: (token: string) => Promise<RelayHostPrivateSessionClaims>
@@ -455,6 +464,38 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     return { claims, ownedTurn, relayRole, rechecked: false }
   }
 
+  /**
+   * The admitted turn's connection credential, bound to the authority lease.
+   * `subject` is the actor's user-scoped partition key — resolved through the
+   * authority, not read from the token — so a service principal or an actor
+   * with no user row mints a session-bound credential without one rather than
+   * being refused on the credential's account.
+   */
+  async function mintConnectionTurn(
+    principal: PrivateSessionRuntimePrincipal,
+    claims: SessionStreamLeaseClaims,
+    sessionId: string,
+    lease: { leaseId: string; expiresAt: number },
+  ) {
+    const turnCredentials = options.turnCredentials
+    if (!turnCredentials) return undefined
+    let subject: string | undefined
+    if (principal.principalKind === "user") {
+      try {
+        subject = (await options.authority.resolveRuntimeMachineAccess?.(principal.actorId, claims.workspaceId, "viewer"))?.userId
+      } catch {
+        subject = undefined
+      }
+    }
+    return turnCredentials.mint({
+      sessionId,
+      leaseId: lease.leaseId,
+      expiresAt: lease.expiresAt,
+      ...(subject ? { subject } : {}),
+      orgId: claims.orgId,
+    })
+  }
+
   async function applyTurnAction(
     context: Context,
     request: SessionAuthorityRequest,
@@ -508,7 +549,16 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         acquiredAt: acquired.acquiredAt,
         expiresAt: acquired.expiresAt,
       })
-      return context.json({ ...acquired, leaseId: proof.lease, expiresAt: proof.expiresAt })
+      const connectionCredential = await mintConnectionTurn(principal, claims, acquired.sessionId, {
+        leaseId: acquired.leaseId,
+        expiresAt: acquired.expiresAt,
+      })
+      return context.json({
+        ...acquired,
+        leaseId: proof.lease,
+        expiresAt: proof.expiresAt,
+        ...(connectionCredential ? { connectionCredential } : {}),
+      })
     }
     const owned = {
       ...turn,
@@ -524,9 +574,20 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         acquiredAt: renewed.acquiredAt,
         expiresAt: renewed.expiresAt,
       })
-      return context.json({ ...renewed, leaseId: proof.lease, expiresAt: proof.expiresAt })
+      const connectionCredential = options.turnCredentials?.extendLease(ownedTurn!.authorityLeaseId, {
+        leaseId: renewed.leaseId,
+        expiresAt: renewed.expiresAt,
+      })
+      return context.json({
+        ...renewed,
+        leaseId: proof.lease,
+        expiresAt: proof.expiresAt,
+        ...(connectionCredential ? { connectionCredential } : {}),
+      })
     }
-    return context.json(await options.turnAuthority.releaseSessionTurn(owned))
+    const released = await options.turnAuthority.releaseSessionTurn(owned)
+    options.turnCredentials?.revokeLease(ownedTurn!.authorityLeaseId)
+    return context.json(released)
   }
 
   return new Hono().post("/session-authorize", limitedBody, async (context) => {

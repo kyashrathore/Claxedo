@@ -3,6 +3,7 @@ import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { embeddedManagedPrivateSessionPolicy } from "./app"
+import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 
 /**
  * The embedded workspace runtime asks its policy for a stream lease before it
@@ -157,6 +158,78 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     await expect(policy.releaseTurn!({ ...turnInput, leaseId: "lease_1", fencingToken: 7 }))
       .resolves.toMatchObject({ released: true })
     expect(releaseSessionTurn).toHaveBeenCalledTimes(1)
+  })
+
+  test("mints a connection credential at admission, bound to the actor's user partition, and ends it with the turn", async () => {
+    const turns = createConnectionTurnCredentials()
+    const resolveRuntimeMachineAccess = vi.fn(async () => ({
+      actorId: "actor_alice",
+      actorKind: "human" as const,
+      orgId: "org_1",
+      role: "owner" as const,
+      userId: "alice",
+    }))
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ resolveRuntimeMachineAccess }), turns)
+    const turnInput = { ...input, operation: "prompt" as const, turnId: "msg_1" }
+
+    const acquired = await policy.acquireTurn!(turnInput)
+    expect(acquired).toMatchObject({ allowed: true, leaseId: "lease_1" })
+    if (!acquired.allowed) throw new Error("unreachable")
+    expect(acquired.connectionCredential).toBeDefined()
+    // The mint binds the session and the ACTOR'S user-scoped partition — the
+    // subject a connections row names as `owner` — resolved through the
+    // authority, never decoded from the request.
+    expect(resolveRuntimeMachineAccess).toHaveBeenCalledWith("actor_alice", "ws_1", "viewer")
+    expect(turns.resolve(acquired.connectionCredential)).toEqual({
+      sessionId: "ses_private",
+      subject: "alice",
+      orgId: "org_1",
+    })
+
+    // Renewal keeps the same credential and carries it to the renewed deadline.
+    const renewed = await policy.renewTurn!({ ...turnInput, leaseId: "lease_1", fencingToken: 7 })
+    expect(renewed).toMatchObject({ allowed: true, connectionCredential: acquired.connectionCredential })
+
+    // Release revokes: the credential outlives the turn by nothing.
+    await policy.releaseTurn!({ ...turnInput, leaseId: "lease_1", fencingToken: 7 })
+    expect(turns.resolve(acquired.connectionCredential)).toBeUndefined()
+    turns.dispose()
+  })
+
+  test("a turn credential dies at the lease deadline even without release", async () => {
+    const turns = createConnectionTurnCredentials()
+    const expired = { ...turnLease, leaseId: "lease_dead", expiresAt: Date.now() - 1 }
+    const policy = embeddedManagedPrivateSessionPolicy(
+      authorityStub({ acquireSessionTurn: async () => expired }),
+      turns,
+    )
+    const acquired = await policy.acquireTurn!({ ...input, operation: "prompt", turnId: "msg_1" })
+    expect(acquired).toMatchObject({ allowed: true })
+    if (!acquired.allowed) throw new Error("unreachable")
+    expect(acquired.connectionCredential).toBeDefined()
+    expect(turns.resolve(acquired.connectionCredential)).toBeUndefined()
+    turns.dispose()
+  })
+
+  test("a service principal's turn mints a session-bound credential with no personal partition", async () => {
+    const turns = createConnectionTurnCredentials()
+    const resolveRuntimeMachineAccess = vi.fn()
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ resolveRuntimeMachineAccess }), turns)
+    const agentInput = {
+      ...input,
+      actor: { actorId: "actor_agent", actorKind: "agent" as const },
+      operation: "prompt" as const,
+      turnId: "msg_1",
+    }
+    const acquired = await policy.acquireTurn!(agentInput)
+    expect(acquired).toMatchObject({ allowed: true })
+    if (!acquired.allowed) throw new Error("unreachable")
+    expect(resolveRuntimeMachineAccess).not.toHaveBeenCalled()
+    expect(turns.resolve(acquired.connectionCredential)).toEqual({
+      sessionId: "ses_private",
+      orgId: "org_1",
+    })
+    turns.dispose()
   })
 
   test("refuses turn admission without verified actor claims", async () => {

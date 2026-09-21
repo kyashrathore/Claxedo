@@ -265,7 +265,8 @@ function decodeTurnLease(
     turnId === undefined || leaseId === undefined || !positiveInteger(fencingToken)
     || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
   ) return denied(503, "session_authority_invalid_response")
-  return { allowed: true, turnId, leaseId, fencingToken, acquiredAt, expiresAt }
+  const connectionCredential = str(body?.connectionCredential)
+  return { allowed: true, turnId, leaseId, fencingToken, acquiredAt, expiresAt, ...(connectionCredential ? { connectionCredential } : {}) }
 }
 
 function decodeTurnRelease(body: Record<string, unknown> | undefined): { released: boolean } | AuthorityDenial {

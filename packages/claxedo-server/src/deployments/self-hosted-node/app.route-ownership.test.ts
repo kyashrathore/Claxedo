@@ -1,12 +1,16 @@
-import { mkdtempSync, rmSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { createSelfHostedApp } from "./app"
 import { DuplicateRouteOwner, withRouteOwnership } from "../route-ownership"
 import { createControlPlaneServices } from "../../authority/services"
-import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
@@ -41,6 +45,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   if (savedDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = savedDataDir
   rmSync(dataDir, { recursive: true, force: true })
@@ -223,6 +228,103 @@ describe("the first-party MCP on the self-hosted node", () => {
       credential: { kind: "runtime", runtimeId: "rt_1", workspaceId: "ws_1" },
       local: { workspace: { workspaceId: "ws_1" } },
     })
+  })
+
+  test("on a signed node, a runtime credential's in-process calls act as the workspace's verified owner", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    vi.stubEnv("CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", await exportPKCS8(key.privateKey))
+    vi.stubEnv("CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM", await exportSPKI(key.publicKey))
+    // The workspace store refuses a local directory that is not a repository.
+    for (const workspaceId of ["ws_mcp_owned", "ws_mcp_ownerless"]) {
+      const directory = path.join(dataDir, workspaceId)
+      mkdirSync(directory, { recursive: true })
+      execFileSync("git", ["init", "-q"], { cwd: directory })
+      await ensureWorkspace({ workspaceId, directory })
+    }
+    const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })
+    const inputs: McpClientInputs[] = []
+    const built = createSelfHostedApp(
+      createControlPlaneServices(
+        {
+          projectionStore: centralStore.projectionStore,
+          durableSessionLog: centralStore.durableSessionLog,
+        },
+        {
+          authority: testManagedSessionAuthority({
+            resolveWorkspaceOwner: async (workspaceId: string) =>
+              workspaceId === "ws_mcp_owned"
+                ? { userId: "alice", actorId: "idp|alice", orgId: "org_1", projectId: "project_1" }
+                : undefined,
+            resolveRuntimeMachineAccess: async (actorId: string) => ({
+              actorId,
+              actorKind: "human" as const,
+              orgId: "org_1",
+              role: "owner" as const,
+              userId: "alice",
+              actorPublicId: "alice",
+              actorName: "Alice",
+            }),
+          }),
+          localExecution: { enabled: true },
+          telemetry: { capture: () => {} },
+          auth: customVerifierAuthAdapter({
+            issuer: "https://idp.example.test",
+            // The minted Runtime Access Token is not a control-plane bearer;
+            // `resolveRelayActor` must reach the RAT verification path, not
+            // resolve it as a signed session.
+            verifier: async () => {
+              throw new ControlPlaneAuthError(401, "invalid_bearer_token", "not a control-plane token")
+            },
+          }),
+          relay: { runtimeAccessTokenSigner: runtimeAccessTokenSigner() },
+        },
+      ),
+      {
+        firstPartyMcp: {
+          verifyRuntimeCredential: (token) =>
+            token === "runtime-token-owned"
+              ? { runtimeId: "rt_1", workspaceId: "ws_mcp_owned", sessionId: "ses_1", expiresAt: Date.now() + 60_000 }
+              : token === "runtime-token-ownerless"
+                ? { runtimeId: "rt_2", workspaceId: "ws_mcp_ownerless", sessionId: "ses_2", expiresAt: Date.now() + 60_000 }
+                : undefined,
+          createClient: (input) => {
+            inputs.push(input)
+            return stubClient
+          },
+        },
+      },
+    )
+
+    const owned = await built.app.request(
+      "http://127.0.0.1/api/claxedo/mcp",
+      initialize({ authorization: "Bearer runtime-token-owned" }),
+    )
+    expect(owned.status, await owned.clone().text()).toBe(200)
+    const local = inputs[0]?.local
+    if (!local) throw new Error("the node mount composed no local runtime client")
+
+    // The dispatcher's only trust boundary is `resolveRelayActor`: the hop
+    // carries a Runtime Access Token minted for the workspace owner, so the
+    // request passes the relay-actor gate. A runtime failure below that gate
+    // (the box mounts no configured runtime here) is not the refusal this
+    // test asserts against — provenance rejections are the 403s.
+    const admitted = await local.fetch("/api/wr/health")
+    expect(admitted.status).not.toBe(403)
+    if (admitted.status === 403) {
+      expect((await admitted.json() as { error: { code: string } }).error.code).not.toBe("relay_actor_unverified")
+    }
+
+    // The ownerless workspace resolves no principal: nothing is minted, the
+    // hop carries no actor proof, and the dispatcher refuses it outright.
+    const foreign = await built.app.request(
+      "http://127.0.0.1/api/claxedo/mcp",
+      initialize({ authorization: "Bearer runtime-token-ownerless" }),
+    )
+    expect(foreign.status).toBe(200)
+    const denied = await inputs[1]?.local?.fetch("/api/wr/health")
+    if (!denied) throw new Error("the foreign credential composed no local runtime client")
+    expect(denied.status).toBe(403)
+    expect((await denied.json() as { error: { code: string } }).error.code).toBe("relay_actor_unverified")
   })
 })
 

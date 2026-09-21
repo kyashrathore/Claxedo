@@ -126,6 +126,13 @@ export type SessionTurnLeaseDecision =
       fencingToken: number
       acquiredAt: number
       expiresAt: number
+      /**
+       * The credential the admitted turn presents to this control plane's
+       * connections token routes (`x-claxedo-connection-turn`). Minted at
+       * admission, bound to the session and the turn's subject, dead when the
+       * lease ends — absent where the composition mints none.
+       */
+      connectionCredential?: string
     }
   | Exclude<SessionAccessDecision, { allowed: true }>
 export type SessionTurnReleaseDecision =

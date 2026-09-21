@@ -17,6 +17,7 @@ export type ActiveSessionTurnLease = {
   valid(): boolean
   lost(): boolean
   fencingToken(): number
+  connectionCredential(): string | undefined
   release(): Promise<SessionTurnReleaseDecision>
 }
 
@@ -142,6 +143,7 @@ export async function acquireSessionTurnLease(input: {
       valid: stillValid,
       lost: () => leaseLost,
       fencingToken: () => current.fencingToken,
+      connectionCredential: () => current.connectionCredential,
       async release() {
         if (closed) return { released: false }
         closed = true
