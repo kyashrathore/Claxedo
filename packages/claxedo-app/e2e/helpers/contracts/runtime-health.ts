@@ -14,5 +14,9 @@ export function readyRuntimeHealthResponse(agentType: string): WorkspaceRuntimeL
       access: "driver-authenticated",
     },
     exposure: { kind: "relay" },
+    workspaceId: "ws_e2e",
+    ptyCount: 0,
+    processCount: 0,
+    activeProcessCount: 0,
   })
 }

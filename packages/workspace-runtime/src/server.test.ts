@@ -376,6 +376,7 @@ describe("workspace runtime host route auth", () => {
     const relayed = createWorkspaceRuntimeApp({
       exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
       relayHostAuth,
+      configToken: "cfg-secret",
       serviceExposure: {
         source: "driver-service-url",
         access: "driver-authenticated",
@@ -391,7 +392,11 @@ describe("workspace runtime host route auth", () => {
           access: "private",
         },
       })
-      await expect(Promise.resolve(relayed.app.request("http://localhost/global/health")).then((res: Response) => res.json())).resolves.toMatchObject({
+      // The exposure report is diagnostics: it rides the authenticated probe,
+      // never the anonymous `/global/health` answer.
+      await expect(Promise.resolve(relayed.app.request("http://localhost/api/wr/health", {
+        headers: { authorization: "Bearer cfg-secret" },
+      })).then((res: Response) => res.json())).resolves.toMatchObject({
         routeAuthBoundary: "relay-host-auth",
         serviceExposure: {
           source: "driver-service-url",
@@ -418,15 +423,54 @@ describe("workspace runtime host route auth", () => {
     }
   })
 
-  test("global diagnostics report control-plane sync as disabled", async () => {
-    const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
+  test("the anonymous global probe answers liveness and identity, not diagnostics", async () => {
+    const dir = await pinTempWorkspaceDirectory()
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      target: { workspaceId: "health-workspace", directory: dir },
+    })
     try {
-      await expect(Promise.resolve(runtime.app.request("http://localhost/global/health")).then((res: Response) => res.json())).resolves.toMatchObject({
-        controlPlane: {
-          enabled: false,
-          state: "disabled",
-          consecutiveFailures: 0,
-        },
+      const response = await runtime.app.request("http://localhost/global/health")
+      expect(response.status).toBe(200)
+      const body = await response.json() as Record<string, unknown>
+      expect(body).toMatchObject({
+        healthy: true,
+        ok: true,
+        service: "workspace-runtime",
+        workspaceId: "health-workspace",
+      })
+      // Diagnostics — inventory, paths, harness and process state — stay
+      // behind the authenticated `/api/wr/health` probe.
+      for (const field of [
+        "directory", "capabilities", "profile", "harness", "harnessHealth",
+        "connectionState", "configApply", "controlPlane", "routeAuthBoundary",
+        "serviceExposure", "exposure", "ptyCount", "processCount", "activeProcessCount",
+      ]) {
+        expect(body).not.toHaveProperty(field)
+      }
+    } finally {
+      await runtime.host.dispose()
+    }
+  })
+
+  test("the authenticated health probe reports the process counters the supervisor's idle check reads", async () => {
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
+      relayHostAuth,
+      configToken: "cfg-secret",
+    })
+    try {
+      const denied = await runtime.app.request("http://localhost/api/wr/health")
+      expect(denied.status).toBe(401)
+
+      const response = await runtime.app.request("http://localhost/api/wr/health", {
+        headers: { authorization: "Bearer cfg-secret" },
+      })
+      expect(response.status).toBe(200)
+      await expect(response.json()).resolves.toMatchObject({
+        ptyCount: 0,
+        processCount: 0,
+        activeProcessCount: 0,
       })
     } finally {
       await runtime.host.dispose()

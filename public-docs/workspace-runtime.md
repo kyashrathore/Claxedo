@@ -191,7 +191,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 
 | Route family | Purpose |
 | --- | --- |
-| `GET /api/wr/health` | Runtime health, active harness, workspace id, process counts, capabilities. |
+| `GET /api/wr/health` | Runtime health, active harness, workspace id, process counts. |
 | `GET /api/wr/capabilities` | Runtime capability manifest. |
 | `/api/wr/checkpoint/*` | Freeze, flush, scrub, resume, and restore reconciliation for consistent provider capture. |
 | `POST /api/wr/config` | Apply a `RuntimeSnapshot`. Requires configured auth. |

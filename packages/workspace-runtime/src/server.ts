@@ -25,7 +25,7 @@ import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagem
 import { createOwnerGrantInProcessMiddleware, type OwnerGrantIdentity } from "./owner-grant"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import { WorktreeRoutes } from "./routes/worktree"
-import { workspaceRuntimeLivenessResponse } from "./routes/health"
+import { workspaceRuntimeLivenessResponse, workspaceRuntimeProbeResponse } from "./routes/health"
 import { CheckpointRoutes } from "./routes/checkpoint"
 import {
   assertWorkspaceRuntimeExposure,
@@ -363,46 +363,27 @@ export function createWorkspaceRuntimeShutdownHandler(options: {
   }
 }
 
-function runtimeDiagnostics(host: Host, options: WorkspaceRuntimeServerOptions) {
-  const target = options.target
-  const dir = target?.directory ?? workspaceDir()
-  const rows = ProcessManager.list(dir)
+/**
+ * The anonymous `GET /global/health` answer: liveness plus the workspace
+ * identity and lease epoch a control plane needs to trust that it reached the
+ * runtime it asked for. Anything beyond that — directory, capabilities,
+ * harness detail, process state — is diagnostics and stays on authenticated
+ * routes.
+ */
+function runtimeProbe(host: Host, options: WorkspaceRuntimeServerOptions) {
   const detail = host.detail()
   const epoch = workspaceRuntimeEpoch()
-  return {
+  return workspaceRuntimeProbeResponse({
     ok: detail.healthStatus === "ok",
     status: detail.state,
-    healthStatus: detail.healthStatus,
-    service: "workspace-runtime",
-    workspaceId: target?.workspaceId ?? workspaceId(),
-    // The lease generation a report about this runtime has to be fenced with.
-    // Absent on a runtime no control plane placed, which has no lease to fence.
+    workspaceId: options.target?.workspaceId ?? workspaceId(),
     ...(epoch === undefined ? {} : { epoch }),
-    directory: dir,
-    profile: host.capabilities().profile,
-    routeAuthBoundary: workspaceRuntimeRouteAuthBoundary(options),
-    serviceExposure: options.serviceExposure ?? workspaceRuntimeServiceExposureFromEnv(),
-    exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
-    controlPlane: {
-      enabled: false,
-      state: "disabled",
-      consecutiveFailures: 0,
-    },
-    capabilities: host.capabilities(),
-    agentType: detail.harness?.kind === "native" ? detail.harness.harnessId : detail.harness?.connectionId ?? null,
-    harness: detail.harness,
-    model: null,
-    error: detail.error || null,
-    harnessHealth: detail.harnessHealth,
-    ...(detail.connectionState ? { connectionState: detail.connectionState } : {}),
-    configApply: detail.configApply,
-    ptyCount: Pty.list().length,
-    processCount: rows.length,
-    activeProcessCount: rows.filter((item) => item.status !== "idle" && item.status !== "stopped").length,
-  }
+  })
 }
 
 async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOptions, sessionId?: string) {
+  const dir = options.target?.directory ?? workspaceDir()
+  const rows = ProcessManager.list(dir)
   const detail = host.detail()
   const harnessHealth = sessionId
     ? await host.readHarnessHealth({
@@ -419,6 +400,10 @@ async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOption
     routeAuthBoundary: workspaceRuntimeRouteAuthBoundary(options),
     serviceExposure: options.serviceExposure ?? workspaceRuntimeServiceExposureFromEnv(),
     exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
+    workspaceId: options.target?.workspaceId ?? workspaceId(),
+    ptyCount: Pty.list().length,
+    processCount: rows.length,
+    activeProcessCount: rows.filter((item) => item.status !== "idle" && item.status !== "stopped").length,
   })
 }
 
@@ -518,10 +503,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     )
   }
 
-  app.get("/global/health", (c) => {
-    const detail = runtimeDiagnostics(host, options)
-    return c.json({ ...detail, healthy: detail.ok })
-  })
+  app.get("/global/health", (c) => c.json(runtimeProbe(host, options)))
   if (relayHostAuthOptions) {
     const relayHostAuth = createRelayHostAuthMiddleware({
       ...relayHostAuthOptions,
