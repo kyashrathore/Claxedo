@@ -430,8 +430,8 @@ async function authorizeTerminal(
   },
 ): Promise<{ context: AgentHookContext } | { response: Response }> {
   const context = input.context ?? sessionAccessContext(c)
+  const info = Pty.get(input.terminalId)
   if (input.capability) {
-    const info = Pty.get(input.terminalId)
     if (
       input.operation !== "agent_lifecycle_write"
       || info?.status !== "running"
@@ -451,16 +451,24 @@ async function authorizeTerminal(
       authorityExpiresAt: renewed.expiresAt,
     })) return { response: terminalPrivate() }
   } else {
-    const denied = await authorizeHostCapability(c, options, input.operation, context, Pty.get(input.terminalId)?.sessionId)
+    const denied = await authorizeHostCapability(c, options, input.operation, context, info?.sessionId)
     if (denied) return { response: denied }
   }
   const storedOwner = terminalSessions.get(input.terminalId)?.ownerActorId
   const runtimeOwner = Pty.accessOwner(input.terminalId)
   const writing = input.operation === "agent_lifecycle_write"
   const owner = writing
-    ? Pty.get(input.terminalId)?.status === "running" ? runtimeOwner : undefined
+    ? info?.status === "running" ? runtimeOwner : undefined
     : storedOwner ?? runtimeOwner
-  if (!context.authority) return owner ? { response: terminalPrivate() } : { context }
+  if (!context.authority) {
+    // A token bound to this terminal never reaches this branch — resolving it
+    // produces authority context instead — so an unattributed write may only
+    // address a live terminal that has no bound hook capability.
+    if (writing && (info?.status !== "running" || Pty.agentHookToken(input.terminalId) !== undefined)) {
+      return { response: terminalPrivate() }
+    }
+    return owner ? { response: terminalPrivate() } : { context }
+  }
   if (!context.actor || !input.terminalId || !owner) return { response: terminalPrivate() }
   if (owner !== context.actor.actorId && (writing || !canAdminister(context))) {
     return { response: terminalPrivate() }

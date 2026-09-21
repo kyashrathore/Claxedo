@@ -8,9 +8,26 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { Pty } from "../pty/index"
 import { workspaceRuntimeEventSessionId } from "./session-event-privacy"
 
+const runningTerminal = (id: string, sessionId?: string) => ({
+  id,
+  ...(sessionId ? { sessionId } : {}),
+  title: id,
+  command: "/bin/sh",
+  args: [],
+  cwd: "/tmp",
+  status: "running" as const,
+  pid: 1,
+})
+
+const liveTerminals = (...ids: string[]) => {
+  const live = new Set(ids)
+  return spyOn(Pty, "get").mockImplementation((id) => (live.has(id) ? runningTerminal(id) : undefined))
+}
+
 test("raw provider hooks keep background waits busy and deduplicate only accepted completion", async () => {
   const app = AgentHookRoutes()
   const terminalId = "pty_raw_background"
+  const get = liveTerminals(terminalId)
   const events: unknown[] = []
   const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
@@ -41,12 +58,14 @@ test("raw provider hooks keep background waits busy and deduplicate only accepte
     expect((await post(["not", "an", "object"])).status).toBe(400)
   } finally {
     unsubscribe()
+    get.mockRestore()
   }
 })
 
 test("a pending ask survives unrelated tool completions and retires with its own", async () => {
   const app = AgentHookRoutes()
   const terminalId = "pty_raw_pending_ask"
+  const get = liveTerminals(terminalId)
   const events: unknown[] = []
   const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
@@ -83,12 +102,14 @@ test("a pending ask survives unrelated tool completions and retires with its own
     expect(events.every((event) => !("userAction" in (event as object)) && !("toolCompletion" in (event as object)))).toBe(true)
   } finally {
     unsubscribe()
+    get.mockRestore()
   }
 })
 
 test("a denial or failure retires only its own ask, and tool hooks never rebind the terminal's session", async () => {
   const app = AgentHookRoutes()
   const terminalId = "pty_raw_deny_and_bind"
+  const get = liveTerminals(terminalId)
   const events: unknown[] = []
   const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
@@ -126,6 +147,7 @@ test("a denial or failure retires only its own ask, and tool hooks never rebind 
     expect((await session()).eventType).toBe("Error")
   } finally {
     unsubscribe()
+    get.mockRestore()
   }
 })
 
@@ -399,6 +421,7 @@ describe("AgentHookRoutes", () => {
 
   test("publishes derived terminal ref names instead of weak first prompts", async () => {
     const app = AgentHookRoutes()
+    const get = liveTerminals("pty_title_test")
     const events: unknown[] = []
     const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
       if (event.type === "agent.lifecycle" && event.terminalId === "pty_title_test") events.push(event)
@@ -422,6 +445,7 @@ describe("AgentHookRoutes", () => {
     })
     expect((await postLifecycle(app, idle)).status).toBe(200)
     unsubscribe()
+    get.mockRestore()
 
     expect(events).toHaveLength(2)
     expect(events[1]).toMatchObject({
@@ -444,6 +468,7 @@ describe("AgentHookRoutes", () => {
 
   test("derives ref names from assistant text when captured prompt is terminal noise", async () => {
     const app = AgentHookRoutes()
+    const get = liveTerminals("pty_noise_title_test")
     const params = new URLSearchParams({
       tabId: "tab_noise_title_test",
       terminalId: "pty_noise_title_test",
@@ -462,6 +487,7 @@ describe("AgentHookRoutes", () => {
         refName: "@codex-coding-agent",
       },
     })
+    get.mockRestore()
   })
 
   test("rejects oversized lifecycle bodies", async () => {
@@ -500,6 +526,10 @@ describe("AgentHookRoutes", () => {
   test("bounds retained terminal lifecycle sessions", async () => {
     const app = AgentHookRoutes()
     const first = "pty_cache_oldest"
+    const get = liveTerminals(
+      first,
+      ...Array.from({ length: TERMINAL_SESSION_MAX_ENTRIES }, (_, index) => `pty_cache_${index}`),
+    )
     const write = spyOn(process.stderr, "write").mockImplementation(() => true)
     try {
       expect((await postLifecycle(app, new URLSearchParams({
@@ -519,11 +549,13 @@ describe("AgentHookRoutes", () => {
       await expect(evicted.json()).resolves.toMatchObject({ source: "none", session: null })
     } finally {
       write.mockRestore()
+      get.mockRestore()
     }
   })
 
   test("logs lifecycle shape without terminal-child content or paths", async () => {
     const stderr = spyOn(process.stderr, "write").mockImplementation(() => true)
+    const get = liveTerminals("pty_log_redaction")
     const prompt = "private prompt sentinel"
     const assistant = "private assistant sentinel"
     const transcriptPath = "/private/transcript/sentinel.jsonl"
@@ -555,6 +587,7 @@ describe("AgentHookRoutes", () => {
       expect(output).toContain("sessionId=provider_session_log_redaction")
     } finally {
       stderr.mockRestore()
+      get.mockRestore()
     }
   })
 
@@ -764,6 +797,71 @@ describe("AgentHookRoutes", () => {
     } finally {
       get.mockRestore()
       owner.mockRestore()
+    }
+  })
+
+  test("unmanaged lifecycle writes name a live terminal and present its bound capability", async () => {
+    const get = spyOn(Pty, "get").mockImplementation((id) => {
+      if (id === "pty_live" || id === "pty_bound" || id === "pty_bound_unowned" || id === "pty_other") {
+        return runningTerminal(id, `session_${id}`)
+      }
+      if (id === "pty_exited_unmanaged") return { ...runningTerminal(id), status: "exited" as const }
+      return undefined
+    })
+    const boundToken = spyOn(Pty, "agentHookToken").mockImplementation((id) =>
+      id === "pty_bound" || id === "pty_bound_unowned" ? `hook_${id}` : id === "pty_other" ? "hook_other" : undefined)
+    const owner = spyOn(Pty, "accessOwner").mockImplementation((id) => (id === "pty_bound" ? "actor_owner" : undefined))
+    const hookAccess = (terminalId: string, token: string) => ({
+      terminalId,
+      token,
+      context: {
+        actor: { actorId: "actor_owner", actorKind: "human" as const },
+        authority: { managed: true as const, workspaceId: "ws_1", orgId: "org_1", role: "editor" as const },
+      },
+      sessionId: `session_${terminalId}`,
+      authorityLease: `lease_${terminalId}`,
+      authorityExpiresAt: Date.now() + 15_000,
+    })
+    const access = spyOn(Pty, "agentHookAccessForToken").mockImplementation((token) =>
+      token === "hook_pty_bound" ? hookAccess("pty_bound", token) : token === "hook_other" ? hookAccess("pty_other", token) : undefined)
+    const renew = spyOn(Pty, "renewAgentHookAccess").mockReturnValue(true)
+    const events: unknown[] = []
+    const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+      if (event.type === "agent.lifecycle") events.push(event)
+    })
+    const post = (app: Hono<{ Variables: RelayHostAuthContext }>, terminalId: string, token?: string) =>
+      app.request("http://localhost/agent-lifecycle", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ tabId: `tab_${terminalId}`, terminalId, eventType: "Busy" }),
+      })
+    try {
+      const app = AgentHookRoutes()
+      const direct = directHookApp()
+      // A terminal the runtime has no session for cannot be named at all.
+      expect((await post(app, "pty_missing")).status).toBe(403)
+      // A stale terminal rejects writes the same way the managed path does.
+      expect((await post(app, "pty_exited_unmanaged")).status).toBe(403)
+      // A capability-bound terminal answers only to its own token, owner or not.
+      expect((await post(app, "pty_bound")).status).toBe(403)
+      expect((await post(app, "pty_bound_unowned")).status).toBe(403)
+      expect((await post(direct, "pty_bound", "hook_other")).status).toBe(403)
+      expect((await post(direct, "pty_bound_unowned", "hook_other")).status).toBe(403)
+      // A live terminal with no bound capability keeps the local producer path.
+      expect((await post(app, "pty_live")).status).toBe(200)
+      // The terminal's own bound token still authorizes the callback.
+      expect((await post(direct, "pty_bound", "hook_pty_bound")).status).toBe(200)
+      expect(events).toHaveLength(2)
+    } finally {
+      unsubscribe()
+      get.mockRestore()
+      boundToken.mockRestore()
+      owner.mockRestore()
+      access.mockRestore()
+      renew.mockRestore()
     }
   })
 

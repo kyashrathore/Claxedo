@@ -11,7 +11,7 @@
  * integration test's env overrides have no effect.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from "bun:test"
+import { afterAll, beforeAll, describe, expect, it, spyOn } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -20,6 +20,7 @@ import { createServer, Server } from "http"
 import { generateNotifyScript, generateGeminiHook } from "./agent-hooks/core/hooks"
 import { generateClaudeWrapper } from "./agent-hooks/core/wrappers"
 import { AgentHookRoutes } from "./routes/agent-hook"
+import { Pty } from "./pty/index"
 
 function runShell(command: string, args: string[], options: { input?: string; env: NodeJS.ProcessEnv; timeout?: number }) {
   return new Promise<{ status: string | number; stdout: Buffer; stderr: Buffer }>((resolve) => {
@@ -38,6 +39,9 @@ describe("agent-hooks real-world execution", () => {
   let mockServer: Server
   let lastEvent: any = null
   let serverPort: number
+  const ptyGet = spyOn(Pty, "get").mockImplementation((id) => id
+    ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 1 }
+    : undefined)
 
   beforeAll(async () => {
     // 1. Setup temp directory
@@ -85,6 +89,7 @@ describe("agent-hooks real-world execution", () => {
 
   afterAll(async () => {
     mockServer.close()
+    ptyGet.mockRestore()
     await fs.rm(rootDir, { recursive: true, force: true })
   })
 
@@ -102,6 +107,7 @@ describe("agent-hooks real-world execution", () => {
         ...process.env,
         HOME: rootDir,
         CLAXEDO_TAB_ID: "test-tab",
+        CLAXEDO_TERMINAL_ID: "test-terminal",
         CLAXEDO_PORT: String(serverPort),
       },
       timeout: 2000,
@@ -166,6 +172,7 @@ describe("agent-hooks real-world execution", () => {
         HOME: rootDir,
         PATH: `${path.dirname(fakeClaude)}:${process.env.PATH}`,
         CLAXEDO_TAB_ID: "claude-tab",
+        CLAXEDO_TERMINAL_ID: "claude-terminal",
         CLAXEDO_PORT: String(serverPort),
       },
     })
@@ -201,6 +208,7 @@ describe("agent-hooks real-world execution", () => {
         HOME: rootDir,
         PATH: `${path.dirname(fakeClaude)}:${process.env.PATH}`,
         CLAXEDO_TAB_ID: "claude-tab-clean",
+        CLAXEDO_TERMINAL_ID: "claude-terminal-clean",
         CLAXEDO_PORT: String(serverPort),
       },
     })

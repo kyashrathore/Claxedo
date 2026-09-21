@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, spyOn } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -14,10 +14,17 @@ import {
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { NOTIFY_MARKER } from "./core/constants"
 import { workspaceRuntimeBus } from "../bus"
+import { Pty } from "../pty/index"
+
+const liveTerminal = (terminalId: string) =>
+  spyOn(Pty, "get").mockImplementation((id) => id === terminalId
+    ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 1 }
+    : undefined)
 
 it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle bus", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "agy-native-hook-"))
   const terminalId = path.basename(root)
+  const get = liveTerminal(terminalId)
   const events: unknown[] = []
   const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
@@ -52,6 +59,7 @@ it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle 
     expect(events[1]).toMatchObject({ provider: "antigravity", eventType: "Idle", outcome: "done" })
   } finally {
     unsubscribe()
+    get.mockRestore()
     await server.stop(true)
     await rm(root, { recursive: true, force: true })
   }
@@ -60,6 +68,7 @@ it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle 
 it("Amp plugin delivers awaited native events through the real notification transport", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "amp-native-hook-"))
   const terminalId = path.basename(root)
+  const get = liveTerminal(terminalId)
   const events: unknown[] = []
   const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
@@ -96,6 +105,7 @@ it("Amp plugin delivers awaited native events through the real notification tran
     expect(events[5]).toMatchObject({ eventType: "Error", outcome: "error" })
   } finally {
     unsubscribe()
+    get.mockRestore()
     await server.stop(true)
     await rm(root, { recursive: true, force: true })
   }
@@ -146,6 +156,7 @@ describe("generateNotifyScript", () => {
 
   it("keeps the parent busy when a Claude subagent stops", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-child-hook-"))
+    const get = liveTerminal("parent")
     const app = AgentHookRoutes()
     const server = Bun.serve({
       hostname: "127.0.0.1", port: 0,
@@ -173,6 +184,7 @@ describe("generateNotifyScript", () => {
       await invoke("Stop")
       expect(await state()).toBe("Idle")
     } finally {
+      get.mockRestore()
       await server.stop(true)
       await rm(root, { recursive: true, force: true })
     }
@@ -282,6 +294,7 @@ describe("generateCursorHook", () => {
 
   it("forwards each Cursor event under the cursor harness and answers the permission hooks", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-cursor-hook-"))
+    const get = liveTerminal(path.basename(root))
     const app = AgentHookRoutes()
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
       const url = new URL(request.url)
@@ -313,6 +326,7 @@ describe("generateCursorHook", () => {
       expect(await run("Stop", { hook_event_name: "stop", status: "completed" })).toBe("{}")
       expect(await state()).toBe("Idle")
     } finally {
+      get.mockRestore()
       await server.stop(true)
       await rm(root, { recursive: true, force: true })
     }
