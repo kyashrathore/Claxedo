@@ -5,8 +5,12 @@ import { DaemonOperationStore } from "./daemon-operation-store"
 import { servedDuringMachineRecovery } from "./daemon-admission"
 import {
   createLocalDaemonLifecycle,
+  localDaemonOwners,
   localDaemonResidencyPins,
+  localDaemonScopePreview,
+  localDaemonScopeRevision,
   type LocalDaemonOwner,
+  type ReconciledLaunch,
   type LocalDaemonWorkActivity,
 } from "./local-daemon-lifecycle"
 
@@ -360,7 +364,8 @@ describe("machine recovery operations", () => {
     })
     after.start()
 
-    expect(after.recovery.ingressClosed()?.operationId).toBe(operationId)
+    const hold = after.recovery.ingressClosed()
+    expect(hold?.kind === "operation" && hold.operationId).toBe(operationId)
     expect(crashed.gates(operationId).map((gate) => gate.ownerId))
       .toEqual(["workspace:ws_a", "workspace:ws_b", "workspace:ws_c"])
     const resumed = after.recovery.read(operationId)
@@ -537,6 +542,7 @@ describe("releasing a drain", () => {
     if (released.kind !== "operation") throw new Error("the release was refused")
     expect(released.operation.action).toBe("release_drain")
     expect(released.operation.state).toBe("succeeded")
+    await lifecycle.recovery.launchesReconciled()
     expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
     expect(store.gates(drainId)).toEqual([])
     // A lease can hold the daemon open again, which is what reopening means.
@@ -604,11 +610,12 @@ describe("releasing a drain", () => {
     expect(released.kind).toBe("refused")
     if (released.kind !== "refused" || released.refusal.kind !== "scope_changed") throw new Error("expected scope_changed")
     expect(released.refusal.message).toContain(stopped.operation.operationId)
-    expect(lifecycle.recovery.ingressClosed()?.operationId).toBe(stopped.operation.operationId)
+    const fenced = lifecycle.recovery.ingressClosed()
+    expect(fenced?.kind === "operation" && fenced.operationId).toBe(stopped.operation.operationId)
     lifecycle.stop()
   })
 
-  test("a release naming another operation's gates reopens nothing", () => {
+  test("a release naming another operation's gates reopens nothing", async () => {
     const { lifecycle, drainId } = held()
 
     const other = releaseOf(lifecycle, "op-somebody-else")
@@ -619,6 +626,7 @@ describe("releasing a drain", () => {
     if (itself.kind !== "operation") throw new Error("the release of its own drain was refused")
     // Releasing the one it does hold still works, so the refusal above was
     // about the id and not about the release path being closed.
+    await lifecycle.recovery.launchesReconciled()
     expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
     lifecycle.stop()
   })
@@ -637,7 +645,7 @@ describe("releasing a drain", () => {
     lifecycle.stop()
   })
 
-  test("a released drain no longer re-fences the machine after a restart", () => {
+  test("a released drain no longer re-fences the machine after a restart", async () => {
     const store = new DaemonOperationStore(new Database(":memory:"))
     const { lifecycle, drainId } = held(store)
     releaseOf(lifecycle, drainId)
@@ -649,8 +657,172 @@ describe("releasing a drain", () => {
       machine: { ...machine, operations: () => store },
     })
     restarted.start()
+    await restarted.recovery.launchesReconciled()
 
     expect(restarted.recovery.ingressClosed()).toBeUndefined()
     restarted.stop()
+  })
+})
+
+describe("what the inventory names", () => {
+  const runtimeOwners = (
+    turns: Array<{ sessionId: string; turnId: string; ownerGeneration: string }>,
+  ): LocalDaemonWorkActivity["runtime"] => ({
+    hosts: 1,
+    activeTurns: turns.length,
+    activeWrites: 0,
+    checkpointing: 0,
+    owners: [{ workspaceId: "ws_a", generation: "mount-1", state: "serving", attempt: 0, turns }],
+  })
+
+  test("every admitted turn is an owner of its own, with the lease that fences it", () => {
+    const owners = localDaemonOwners([], runtimeOwners([
+      { sessionId: "ses_1", turnId: "turn_1", ownerGeneration: "lease-7" },
+      { sessionId: "ses_2", turnId: "turn_9", ownerGeneration: "lease-8" },
+    ]))
+
+    expect(owners).toEqual([
+      { id: "turn:ws_a:ses_1:turn_1", kind: "turn", generation: "lease-7", state: "running", pins: true },
+      { id: "turn:ws_a:ses_2:turn_9", kind: "turn", generation: "lease-8", state: "running", pins: true },
+      { id: "workspace:ws_a", kind: "workspace_runtime", generation: "mount-1", state: "serving", pins: false },
+    ])
+  })
+
+  test("the preview names the sessions a stop would interrupt, not a count of them", () => {
+    const work: LocalDaemonWorkActivity = {
+      ...empty(),
+      runtime: runtimeOwners([{ sessionId: "ses_1", turnId: "turn_1", ownerGeneration: "lease-7" }]),
+      owners: localDaemonOwners([], runtimeOwners([{ sessionId: "ses_1", turnId: "turn_1", ownerGeneration: "lease-7" }])),
+      residencyPins: 1,
+      replacementBlockers: 1,
+    }
+
+    const preview = localDaemonScopePreview(work)
+    expect(preview.sessions).toEqual(["ses_1"])
+    expect(preview.resources).toEqual(["turn:ws_a:ses_1:turn_1 (running)", "workspace:ws_a (serving)"])
+    expect(preview.summary).toBe("2 named owners")
+  })
+
+  test("a turn admitted after the preview changes the scope revision", () => {
+    const before = localDaemonOwners([], runtimeOwners([]))
+    const after = localDaemonOwners([], runtimeOwners([
+      { sessionId: "ses_1", turnId: "turn_1", ownerGeneration: "lease-7" },
+    ]))
+    const revisionOf = (owners: LocalDaemonOwner[]) =>
+      localDaemonScopeRevision({ ...empty(), owners, residencyPins: owners.length, replacementBlockers: owners.length })
+
+    expect(revisionOf(after)).not.toBe(revisionOf(before))
+  })
+
+  test("a remounted workspace is a different owner, so a gate for the old mount does not carry", () => {
+    const first = localDaemonOwners([], runtimeOwners([]))
+    const remounted = localDaemonOwners([], {
+      ...runtimeOwners([]),
+      owners: [{ workspaceId: "ws_a", generation: "mount-2", state: "serving", attempt: 0, turns: [] }],
+    })
+
+    expect(first[0]!.generation).toBe("mount-1")
+    expect(remounted[0]!.generation).toBe("mount-2")
+  })
+})
+
+describe("startup launch reconciliation", () => {
+  const record = (launchId: string, over: Record<string, unknown> = {}) => ({
+    launchId,
+    role: "harness" as const,
+    protocol: "gate" as const,
+    scope: { workspaceId: "ws_a" },
+    preparedAt: 1,
+    ...over,
+  })
+
+  test("admission is closed until every unsettled launch has been reported", async () => {
+    const reported: ReconciledLaunch[] = []
+    let release = () => {}
+    const reading = new Promise<void>((resolve) => { release = resolve })
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: empty,
+      onStop() {},
+      machine: {
+        ...machine,
+        ownership: async () => {
+          await reading
+          return [{
+            workspaceId: "ws_a",
+            generation: "mount-1",
+            state: "serving",
+            attempt: 0,
+            turns: [],
+            // Prepared and never activated: the gate protocol establishes that
+            // no payload ran, so this one reconciles as no execution.
+            launches: [record("launch-never")],
+          }]
+        },
+        onLaunchReconciled: (row) => reported.push(row),
+      },
+    })
+
+    lifecycle.start()
+    expect(lifecycle.recovery.ingressClosed()).toEqual({ kind: "launch_reconciliation" })
+    expect(reported, "nothing is reported before the records are read").toEqual([])
+
+    release()
+    await lifecycle.recovery.launchesReconciled()
+
+    expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
+    expect(reported).toEqual([{
+      workspaceId: "ws_a",
+      launchId: "launch-never",
+      role: "harness",
+      execution: "none",
+      because: reported[0]!.because,
+    }])
+    lifecycle.stop()
+  })
+
+  test("a store that could not be read is reported rather than treated as empty", async () => {
+    const unreadable: Array<[string, string]> = []
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: empty,
+      onStop() {},
+      machine: {
+        ...machine,
+        ownership: async () => [{
+          workspaceId: "ws_b",
+          generation: "mount-1",
+          state: "serving",
+          attempt: 0,
+          turns: [],
+          launchesUnreadable: "database is locked",
+        }],
+        onLaunchesUnreadable: (workspaceId, reason) => unreadable.push([workspaceId, reason]),
+      },
+    })
+
+    lifecycle.start()
+    await lifecycle.recovery.launchesReconciled()
+
+    expect(unreadable).toEqual([["ws_b", "database is locked"]])
+    lifecycle.stop()
+  })
+
+  test("an ownership read that throws still reopens admission, and says nothing it did not read", async () => {
+    const reported: ReconciledLaunch[] = []
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: empty,
+      onStop() {},
+      machine: {
+        ...machine,
+        ownership: async () => { throw new Error("no workspace store") },
+        onLaunchReconciled: (row) => reported.push(row),
+      },
+    })
+
+    lifecycle.start()
+    await lifecycle.recovery.launchesReconciled().catch(() => undefined)
+
+    expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
+    expect(reported).toEqual([])
+    lifecycle.stop()
   })
 })

@@ -16,8 +16,13 @@ import {
   type RecoveryScopePreview,
   type RecoveryTarget,
 } from "@claxedo/agent-runtime-contract"
+import { reconcileLaunch, verifyCreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 import { Pty } from "@claxedo/workspace-runtime"
-import { embeddedWorkspaceRuntimeActivity } from "../deployments/local/embedded-workspace-runtime"
+import {
+  embeddedWorkspaceRuntimeActivity,
+  embeddedWorkspaceRuntimeOwnership,
+  type EmbeddedWorkspaceRuntimeOwnership,
+} from "../deployments/local/embedded-workspace-runtime"
 import type { DaemonOperationStore } from "./daemon-operation-store"
 
 export type LocalDaemonWorkActivity = ReturnType<typeof localDaemonWorkActivity>
@@ -29,7 +34,7 @@ export type LocalDaemonWorkActivity = ReturnType<typeof localDaemonWorkActivity>
  */
 export type LocalDaemonOwner = {
   id: string
-  kind: "workspace_runtime" | "terminal" | "managed_process"
+  kind: "workspace_runtime" | "terminal" | "managed_process" | "turn"
   /**
    * What makes this owner answerable across a restart: a gate acknowledged for
    * one generation does not carry to a replacement wearing the same id.
@@ -54,16 +59,28 @@ export function localDaemonOwners(
   terminals: ReturnType<typeof Pty.listDetailed>,
   runtime: ReturnType<typeof embeddedWorkspaceRuntimeActivity>,
 ): LocalDaemonOwner[] {
-  const owners: LocalDaemonOwner[] = runtime.owners.map((owner) => ({
-    id: `workspace:${owner.workspaceId}`,
-    kind: "workspace_runtime" as const,
-    generation: `${owner.state}#${owner.attempt}`,
-    state: owner.state,
-    // A serving runtime releases with the process it runs in; one whose
-    // retirement never settled holds resources nothing accounted for.
-    pins: owner.state !== "serving",
-    ...(owner.error ? { detail: owner.error } : {}),
-  }))
+  const owners: LocalDaemonOwner[] = []
+  for (const owner of runtime.owners) {
+    owners.push({
+      id: `workspace:${owner.workspaceId}`,
+      kind: "workspace_runtime",
+      generation: owner.generation,
+      state: owner.state,
+      // A serving runtime releases with the process it runs in; one whose
+      // retirement never settled holds resources nothing accounted for.
+      pins: owner.state !== "serving",
+      ...(owner.error ? { detail: owner.error } : {}),
+    })
+    for (const turn of owner.turns) {
+      owners.push({
+        id: `turn:${owner.workspaceId}:${turn.sessionId}:${turn.turnId}`,
+        kind: "turn",
+        generation: turn.ownerGeneration,
+        state: "running",
+        pins: true,
+      })
+    }
+  }
   for (const terminal of terminals) {
     const unresolved = terminal.cleanup === "unresolved"
     if (!unresolved && (terminal.removed || terminal.exited || terminal.status !== "running")) continue
@@ -105,31 +122,22 @@ export function localDaemonWorkActivity() {
 export function localDaemonScopeRevision(work: LocalDaemonWorkActivity): string {
   const shape = [
     work.owners.map((owner) => [owner.id, owner.generation, owner.state]),
-    work.runtime.activeTurns,
     work.runtime.activeWrites,
     work.runtime.checkpointing,
   ]
   return createHash("sha256").update(JSON.stringify(shape)).digest("hex").slice(0, 16)
 }
 
-/**
- * What an escalation would interrupt. Agent turns appear as one resource with
- * their count: this daemon's inventory reaches each workspace runtime but not
- * the turns inside it, and listing a number among the names would let a caller
- * believe the list is complete.
- */
+/** What an escalation would interrupt, every owner by name. */
 export function localDaemonScopePreview(work: LocalDaemonWorkActivity): RecoveryScopePreview {
   const resources = work.owners.map((owner) => `${owner.id} (${owner.state})`)
-  if (work.runtime.activeTurns > 0) resources.push(`agent turns: ${work.runtime.activeTurns}`)
   if (work.runtime.activeWrites > 0) resources.push(`workspace writes: ${work.runtime.activeWrites}`)
   if (work.runtime.checkpointing > 0) resources.push(`checkpoint transitions: ${work.runtime.checkpointing}`)
-  return {
-    sessions: [],
-    resources,
-    summary: work.runtime.activeTurns > 0
-      ? `${work.owners.length} named owners and ${work.runtime.activeTurns} agent turns this daemon does not name individually`
-      : `${work.owners.length} named owners`,
-  }
+  // Sessions are the scope a caller recognizes; the turn owners above carry the
+  // turn ids that name which of each session's work would be interrupted.
+  const sessions = [...new Set(work.owners.flatMap((owner) =>
+    owner.kind === "turn" ? [owner.id.split(":")[2]!] : []))].sort()
+  return { sessions, resources, summary: `${work.owners.length} named owners` }
 }
 
 export type LocalDaemonLease = Readonly<{
@@ -144,6 +152,26 @@ export type LocalDaemonLifecycle = ReturnType<typeof createLocalDaemonLifecycle>
 export type MachineRecoveryCaller = { callerId: string; authority: "session" | "workspace" | "machine" }
 
 export type MachineRecoveryGate = { operationId: string; scopeRevision: string; owners: string[] }
+
+/**
+ * Why this machine is closed to new work. A replacement daemon holds the second
+ * kind from the instant it listens: admitting a turn over a launch the previous
+ * owner never settled is the second writer §4.6 forbids, and nothing here can
+ * tell the two apart until the records have been read.
+ */
+export type MachineIngressHold =
+  | ({ kind: "operation" } & MachineRecoveryGate)
+  | { kind: "launch_reconciliation" }
+
+/** What a survivor of the previous owner turned out to be. */
+export type ReconciledLaunch = {
+  workspaceId: string
+  launchId: string
+  role: string
+  execution: "none" | "unknown" | "started"
+  because: string
+  identity?: "live" | "exited" | "identity_mismatch" | "unknown"
+}
 
 export type MachineRecoveryInspection = {
   machineId: string
@@ -180,6 +208,11 @@ export function createLocalDaemonLifecycle(options: {
      */
     operations?: () => DaemonOperationStore
     budgets?: Partial<RecoveryBudgets>
+    /** Reads what each workspace store has no settled retirement for. */
+    ownership?: () => Promise<EmbeddedWorkspaceRuntimeOwnership[]>
+    /** Where each survivor is reported; a store that could not be read too. */
+    onLaunchReconciled?: (reconciled: ReconciledLaunch) => void
+    onLaunchesUnreadable?: (workspaceId: string, reason: string) => void
   }
   leaseTtlMs?: number
   idleGraceMs?: number
@@ -207,6 +240,8 @@ export function createLocalDaemonLifecycle(options: {
    */
   let storeUnavailable: Error | undefined
   let gate: MachineRecoveryGate | undefined
+  let reconcilingLaunches: Promise<ReconciledLaunch[]> | undefined
+  let launchesReconciled = false
 
   function operations() {
     if (!options.machine.operations || storeUnavailable) return undefined
@@ -366,6 +401,42 @@ export function createLocalDaemonLifecycle(options: {
       if (row.accepted) acknowledged.push(owner.id)
     }
     return acknowledged
+  }
+
+  /**
+   * Reads every launch the previous owner left unsettled and reports what each
+   * one is now. It verifies rather than signals: retiring a survivor belongs to
+   * the workspace store that owns it, and what this owner needs is only whether
+   * admission may reopen.
+   */
+  async function reconcileLaunches(): Promise<ReconciledLaunch[]> {
+    const read = options.machine.ownership ?? embeddedWorkspaceRuntimeOwnership
+    const reconciled: ReconciledLaunch[] = []
+    try {
+      for (const owner of await read()) {
+        if (owner.launchesUnreadable !== undefined) {
+          options.machine.onLaunchesUnreadable?.(owner.workspaceId, owner.launchesUnreadable)
+          continue
+        }
+        for (const record of owner.launches ?? []) {
+          const execution = reconcileLaunch(record)
+          const row: ReconciledLaunch = {
+            workspaceId: owner.workspaceId,
+            launchId: record.launchId,
+            role: record.role,
+            execution: execution.execution,
+            because: execution.because,
+            ...(record.identity ? { identity: (await verifyCreationIdentity(record.identity)).state } : {}),
+          }
+          reconciled.push(row)
+          options.machine.onLaunchReconciled?.(row)
+        }
+      }
+    } finally {
+      launchesReconciled = true
+      changed()
+    }
+    return reconciled
   }
 
   function inspect(): MachineRecoveryInspection {
@@ -774,6 +845,7 @@ export function createLocalDaemonLifecycle(options: {
       if (state !== "created") return
       state = "running"
       reconcileMachineOperations()
+      reconcilingLaunches = reconcileLaunches()
       changed()
     },
     stop() {
@@ -814,8 +886,13 @@ export function createLocalDaemonLifecycle(options: {
        * Recovery and inspection are answered regardless: whoever has to decide
        * what to do about the fence must be able to see through it.
        */
-      ingressClosed() {
-        return gate
+      ingressClosed(): MachineIngressHold | undefined {
+        if (gate) return { kind: "operation", ...gate }
+        return launchesReconciled ? undefined : { kind: "launch_reconciliation" }
+      },
+      /** Joins the startup reconciliation; the entry does not have to wait on it. */
+      launchesReconciled() {
+        return reconcilingLaunches ?? Promise.resolve([])
       },
       target: machineTarget,
       budgets,

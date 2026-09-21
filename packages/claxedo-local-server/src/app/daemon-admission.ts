@@ -87,14 +87,18 @@ export function servedDuringMachineRecovery(method: string, pathname: string): b
  * outstanding. Mounted ahead of every route family, because the fence is a
  * property of the machine rather than of whichever handler admits a turn.
  */
-export function machineRecoveryFence(pending: () => { operationId: string } | undefined): MiddlewareHandler {
+export function machineRecoveryFence(
+  pending: () => { kind: "operation"; operationId: string } | { kind: "launch_reconciliation" } | undefined,
+): MiddlewareHandler {
   return async (c, next) => {
-    const gate = pending()
-    if (!gate || servedDuringMachineRecovery(c.req.method, new URL(c.req.raw.url).pathname)) return next()
+    const hold = pending()
+    if (!hold || servedDuringMachineRecovery(c.req.method, new URL(c.req.raw.url).pathname)) return next()
     return c.json(
       errorBody(
         "machine_recovery_pending",
-        `This machine is held by recovery operation ${gate.operationId}; new work is refused until it is resolved or released`,
+        hold.kind === "operation"
+          ? `This machine is held by recovery operation ${hold.operationId}; new work is refused until it is resolved or released`
+          : "This machine is still reconciling the launches its previous owner left unsettled; new work is refused until that finishes",
       ),
       503,
     )
