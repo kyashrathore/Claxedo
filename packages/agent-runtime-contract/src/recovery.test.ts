@@ -11,6 +11,7 @@ import {
   parseRecoveryTarget,
   RECOVERY_ACTION_SCOPES,
   RECOVERY_ACTIONS,
+  releasedDrainOperationId,
   RECOVERY_TARGET_SCOPES,
   RecoveryContractError,
   recoveryIntentEquals,
@@ -195,6 +196,32 @@ describe("action and target scope", () => {
 
   test("every action names at least one scope it can target", () => {
     for (const action of RECOVERY_ACTIONS) expect(RECOVERY_ACTION_SCOPES[action].length).toBeGreaterThan(0)
+  })
+
+  test("releasing a drain is a machine action that names the drain it reopens", () => {
+    expect(RECOVERY_ACTION_SCOPES.release_drain).toEqual(["machine"])
+    for (const scope of ["turn", "session", "harness"] as const) {
+      expect(
+        () => parseRecoveryRequest({ ...request, action: "release_drain", target: { ...target, scope } }),
+        scope,
+      ).toThrow(RecoveryContractError)
+    }
+
+    const release = parseRecoveryRequest({
+      ...request,
+      action: "release_drain",
+      target: machineTarget,
+      linkedOperationId: "op-drain",
+    })
+    expect(releasedDrainOperationId(release)).toBe("op-drain")
+    // A release that names no drain names no gates either, so an owner can
+    // refuse it before deciding anything about the machine.
+    expect(releasedDrainOperationId({ ...release, linkedOperationId: undefined })).toBeUndefined()
+    expect(releasedDrainOperationId({ ...release, action: "drain_daemon" })).toBeUndefined()
+  })
+
+  test("reopening a gate promises nothing about the machine it reopens", () => {
+    expect(recoveryPostconditionHolds("release_drain", facts("running", "owned", "unavailable"))).toBe(true)
   })
 })
 

@@ -4,6 +4,7 @@ import {
   finalizeRecoveryOperation,
   recoveryIntentEquals,
   recoveryTargetsMatch,
+  releasedDrainOperationId,
   type RecoveryBudgets,
   type RecoveryError,
   type RecoveryFacts,
@@ -162,6 +163,8 @@ type MachineOperationRun = {
   operation: RecoveryOperation
   callers: Set<string>
   settled: Promise<void>
+  /** Set when a release withdrew this drain's authorization; its wait stops. */
+  released?: true
 }
 
 export function createLocalDaemonLifecycle(options: {
@@ -385,6 +388,7 @@ export function createLocalDaemonLifecycle(options: {
     const run = runs.get(operationId)
     if (!run) return
     for (;;) {
+      if (run.released) return
       const work = activity()
       const at = now()
       if (work.residencyPins + leases.size === 0) {
@@ -421,6 +425,11 @@ export function createLocalDaemonLifecycle(options: {
     }
   }
 
+  /**
+   * Reopens one drain's gates. It never reopens "the fence": two operations can
+   * hold gates over the same owners, so releasing whatever happens to be closed
+   * would un-gate a scope this caller never authorized reopening.
+   */
   async function runStop(operationId: string) {
     const run = runs.get(operationId)
     if (!run) return
@@ -435,6 +444,133 @@ export function createLocalDaemonLifecycle(options: {
     run.operation = commit(finalizeRecoveryOperation({ ...run.operation, updatedAt: at }, facts(work, at)))
   }
 
+  function release(
+    request: RecoveryRequest,
+    caller: MachineRecoveryCaller,
+    at: number,
+    work: LocalDaemonWorkActivity,
+    scopeRevision: string,
+  ): RecoveryOutcome {
+    const drainId = releasedDrainOperationId(request)
+    if (!drainId) {
+      return {
+        kind: "refused",
+        refusal: { kind: "unavailable", message: "a release must name the drain it reopens in linkedOperationId" },
+      }
+    }
+    const drainRun = runs.get(drainId)
+    if (!drainRun) {
+      return {
+        kind: "refused",
+        refusal: { kind: "unavailable", message: `no operation ${drainId} is held on this machine` },
+      }
+    }
+    if (drainRun.operation.action !== "drain_daemon") {
+      return {
+        kind: "refused",
+        refusal: {
+          kind: "unavailable",
+          message: `operation ${drainId} is a ${drainRun.operation.action}, and only a drain's gates may be reopened`,
+        },
+      }
+    }
+    // A stop already under way has begun removing the owners this gate covers.
+    // Reopening now would admit work into a scope that is being torn down.
+    const destructive = [...runs.values()].find((candidate) =>
+      candidate.operation.action === "stop_daemon"
+      && candidate.operation.state !== "succeeded" && candidate.operation.state !== "failed")
+    if (destructive) {
+      return {
+        kind: "refused",
+        refusal: {
+          kind: "scope_changed",
+          message: `operation ${destructive.operation.operationId} is stopping this machine; its owners cannot be readmitted`,
+          scopeRevision,
+          preview: localDaemonScopePreview(work),
+        },
+      }
+    }
+    if (gate && gate.operationId !== drainId) {
+      return {
+        kind: "refused",
+        refusal: {
+          kind: "scope_changed",
+          message: `this machine is fenced by operation ${gate.operationId}, not by ${drainId}`,
+          scopeRevision,
+          preview: localDaemonScopePreview(work),
+        },
+      }
+    }
+
+    let operation: RecoveryOperation = {
+      operationId: randomUUID(),
+      requestId: request.requestId,
+      target: request.target,
+      action: "release_drain",
+      scopeRevision,
+      attempt: request.attempt,
+      state: "succeeded",
+      phase: "ack",
+      phaseDeadlineAt: at + budgets.ackMs,
+      facts: facts(work, at),
+      cleanupErrors: [],
+      nextActions: [],
+      receipt: "durable",
+      ...(request.linkedOperationId !== undefined ? { linkedOperationId: request.linkedOperationId } : {}),
+      createdAt: at,
+      updatedAt: at,
+    }
+    // The intent is recorded before the gates move, so a redelivery of the same
+    // request reads back the release that already happened rather than
+    // reopening a fence a second operation may have taken since.
+    const recorded = persist(operation, request, caller)
+    if (recorded.existing) {
+      if (!recoveryIntentEquals(request, requestOf(recorded.existing))) {
+        return {
+          kind: "refused",
+          refusal: {
+            kind: "intent_conflict",
+            message: "this request id was already used for a different machine operation",
+            requestId: request.requestId,
+          },
+        }
+      }
+      return { kind: "operation", operation: runs.get(recorded.existing.operationId)?.operation ?? recorded.existing }
+    }
+    if (recorded.receipt === "volatile") {
+      operation = {
+        ...operation,
+        receipt: "volatile",
+        ...(recorded.failure ? { cleanupErrors: [recorded.failure] } : {}),
+      }
+    }
+
+    const reopened = operations()?.releaseGates(drainId) ?? gate?.owners ?? []
+    gate = undefined
+    drainRun.released = true
+    // The drain is over and did not drain: its caller withdrew the
+    // authorization that held the gate, and a withdrawn attempt is history
+    // rather than a success. The release carries its own receipt.
+    drainRun.operation = commit({
+      ...drainRun.operation,
+      state: "failed",
+      updatedAt: at,
+      initiatingError: {
+        code: "authority_lost",
+        origin: "local-daemon",
+        target: drainRun.operation.target,
+        stage: "drain",
+        executionMayContinue: true,
+        message: `the authorization holding this drain was released, reopening ${String(reopened.length)} gates`,
+        at,
+      },
+      nextActions: [{ action: "drain_daemon", scopePreviewRequired: true, reason: "drain this machine again" }],
+    })
+    runs.set(operation.operationId, { operation, callers: new Set([caller.callerId]), settled: Promise.resolve() })
+    changed()
+    return { kind: "operation", operation }
+  }
+
   function submit(request: RecoveryRequest, caller: MachineRecoveryCaller): RecoveryOutcome {
     if (caller.authority !== "machine") {
       return {
@@ -442,7 +578,7 @@ export function createLocalDaemonLifecycle(options: {
         refusal: { kind: "unauthorized", message: "a machine recovery operation requires this machine's daemon authority" },
       }
     }
-    if (request.action !== "drain_daemon" && request.action !== "stop_daemon") {
+    if (request.action !== "drain_daemon" && request.action !== "stop_daemon" && request.action !== "release_drain") {
       return { kind: "refused", refusal: { kind: "unauthorized", message: `the daemon owner does not serve ${request.action}` } }
     }
     if (!recoveryTargetsMatch(request.target, machineTarget)) {
@@ -459,6 +595,7 @@ export function createLocalDaemonLifecycle(options: {
     const at = now()
     const work = activity()
     const scopeRevision = localDaemonScopeRevision(work)
+    if (request.action === "release_drain") return release(request, caller, at, work, scopeRevision)
     // A stop removes owners, so it runs only against the exact scope its caller
     // was shown. A drain gates and waits, so it accepts the current scope and
     // reports what it could not drain through its own result.

@@ -192,6 +192,19 @@ export class DaemonOperationStore {
   }
 
   /**
+   * Drops the gates one operation took, and only those. A release names the
+   * drain it reopens, so a gate another operation wrote over the same owner
+   * stays: that owner is still fenced, by whoever else is holding it.
+   */
+  releaseGates(operationId: string): string[] {
+    return this.db.transaction(() => {
+      const released = this.gates(operationId).map((gate) => gate.ownerId)
+      this.db.prepare("DELETE FROM daemon_recovery_gate WHERE operation_id = ?").run(operationId)
+      return released
+    })()
+  }
+
+  /**
    * Drops settled operations older than the cutoff. A gate outlives its
    * operation only if that operation is still outstanding, so the two are
    * deleted together and an unresolved owner is never forgotten.

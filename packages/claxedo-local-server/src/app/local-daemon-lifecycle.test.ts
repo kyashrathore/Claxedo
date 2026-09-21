@@ -484,3 +484,173 @@ describe("what a closed machine still answers", () => {
     expect(servedDuringMachineRecovery("DELETE", "/api/claxedo/projects/p1")).toBe(false)
   })
 })
+
+describe("releasing a drain", () => {
+  const owner = (id: string, state = "retiring"): LocalDaemonOwner => ({
+    id,
+    kind: "workspace_runtime",
+    generation: `${state}#1`,
+    state,
+    pins: state !== "serving",
+  })
+
+  function held(store?: DaemonOperationStore) {
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: (): LocalDaemonWorkActivity => ({
+        ...empty(),
+        owners: [owner("workspace:ws_a"), owner("workspace:ws_b")],
+        residencyPins: 2,
+        replacementBlockers: 2,
+      }),
+      onStop() {},
+      machine: { ...machine, ...(store ? { operations: () => store } : {}), budgets: { drainMs: 10_000 } },
+      pollIntervalMs: 5,
+    })
+    lifecycle.start()
+    const submitted = lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (submitted.kind !== "operation") throw new Error("the drain was refused")
+    return { lifecycle, drainId: submitted.operation.operationId }
+  }
+
+  function releaseOf(lifecycle: ReturnType<typeof createLocalDaemonLifecycle>, operationId: string) {
+    return lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision, {
+        requestId: `release-${operationId}`,
+        action: "release_drain",
+        linkedOperationId: operationId,
+      }),
+      { callerId: "desktop", authority: "machine" },
+    )
+  }
+
+  test("reopens exactly the gates the named drain took, and the drain is history", async () => {
+    const store = new DaemonOperationStore(new Database(":memory:"))
+    const { lifecycle, drainId } = held(store)
+    expect(store.gates(drainId).map((gate) => gate.ownerId))
+      .toEqual(["workspace:ws_a", "workspace:ws_b"])
+
+    const released = releaseOf(lifecycle, drainId)
+
+    if (released.kind !== "operation") throw new Error("the release was refused")
+    expect(released.operation.action).toBe("release_drain")
+    expect(released.operation.state).toBe("succeeded")
+    expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
+    expect(store.gates(drainId)).toEqual([])
+    // A lease can hold the daemon open again, which is what reopening means.
+    expect(lifecycle.acquire()).toBeDefined()
+
+    const drained = lifecycle.recovery.read(drainId)
+    if (drained.kind !== "operation") throw new Error("the drain was not retained")
+    expect(drained.operation.state, "a withdrawn attempt is history, not a success").toBe("failed")
+    expect(drained.operation.initiatingError?.code).toBe("authority_lost")
+    await lifecycle.recovery.settled()
+    lifecycle.stop()
+  })
+
+  test("a release during a stop is refused, naming the operation that is tearing the machine down", () => {
+    const { lifecycle, drainId } = held()
+    const stopped = lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision, { requestId: "stop-1", action: "stop_daemon" }),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (stopped.kind !== "operation") throw new Error("the stop was refused")
+
+    const released = releaseOf(lifecycle, drainId)
+
+    expect(released.kind).toBe("refused")
+    if (released.kind !== "refused" || released.refusal.kind !== "scope_changed") throw new Error("expected scope_changed")
+    expect(released.refusal.message).toContain(stopped.operation.operationId)
+    expect(lifecycle.recovery.ingressClosed(), "the fence is still held").toBeDefined()
+    lifecycle.stop()
+  })
+
+  test("a release is refused once another operation has taken the fence, even a settled one", async () => {
+    let pins = 2
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: (): LocalDaemonWorkActivity => ({
+        ...empty(),
+        owners: pins > 0 ? [owner("workspace:ws_a")] : [],
+        residencyPins: pins,
+        replacementBlockers: pins,
+      }),
+      onStop() {},
+      machine: { ...machine, budgets: { drainMs: 10_000 } },
+      // Long enough that the drain's own poll never fires during this test.
+      pollIntervalMs: 10_000,
+    })
+    lifecycle.start()
+    const drained = lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (drained.kind !== "operation") throw new Error("the drain was refused")
+
+    pins = 0
+    const stopped = lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision, { requestId: "stop-settled", action: "stop_daemon" }),
+      { callerId: "desktop", authority: "machine" },
+    )
+    if (stopped.kind !== "operation") throw new Error("the stop was refused")
+    await lifecycle.recovery.settled()
+    const settled = lifecycle.recovery.read(stopped.operation.operationId)
+    if (settled.kind !== "operation") throw new Error("the stop was not retained")
+    expect(settled.operation.state, "the stop is over, so it is not a destructive phase in progress").toBe("succeeded")
+
+    const released = releaseOf(lifecycle, drained.operation.operationId)
+
+    expect(released.kind).toBe("refused")
+    if (released.kind !== "refused" || released.refusal.kind !== "scope_changed") throw new Error("expected scope_changed")
+    expect(released.refusal.message).toContain(stopped.operation.operationId)
+    expect(lifecycle.recovery.ingressClosed()?.operationId).toBe(stopped.operation.operationId)
+    lifecycle.stop()
+  })
+
+  test("a release naming another operation's gates reopens nothing", () => {
+    const { lifecycle, drainId } = held()
+
+    const other = releaseOf(lifecycle, "op-somebody-else")
+    expect(other.kind).toBe("refused")
+    if (other.kind === "refused") expect(other.refusal.kind).toBe("unavailable")
+
+    const itself = releaseOf(lifecycle, drainId)
+    if (itself.kind !== "operation") throw new Error("the release of its own drain was refused")
+    // Releasing the one it does hold still works, so the refusal above was
+    // about the id and not about the release path being closed.
+    expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
+    lifecycle.stop()
+  })
+
+  test("a release that names no drain is refused before anything is reopened", () => {
+    const { lifecycle } = held()
+
+    const released = lifecycle.recovery.submit(
+      drain(lifecycle.recovery.inspect().scopeRevision, { requestId: "release-none", action: "release_drain" }),
+      { callerId: "desktop", authority: "machine" },
+    )
+
+    expect(released.kind).toBe("refused")
+    if (released.kind === "refused") expect(released.refusal.kind).toBe("unavailable")
+    expect(lifecycle.recovery.ingressClosed()).toBeDefined()
+    lifecycle.stop()
+  })
+
+  test("a released drain no longer re-fences the machine after a restart", () => {
+    const store = new DaemonOperationStore(new Database(":memory:"))
+    const { lifecycle, drainId } = held(store)
+    releaseOf(lifecycle, drainId)
+    lifecycle.stop()
+
+    const restarted = createLocalDaemonLifecycle({
+      activity: empty,
+      onStop() {},
+      machine: { ...machine, operations: () => store },
+    })
+    restarted.start()
+
+    expect(restarted.recovery.ingressClosed()).toBeUndefined()
+    restarted.stop()
+  })
+})

@@ -102,6 +102,7 @@ export const RECOVERY_ACTIONS = [
   "retire_harness",
   "drain_daemon",
   "stop_daemon",
+  "release_drain",
 ] as const
 export type RecoveryAction = (typeof RECOVERY_ACTIONS)[number]
 
@@ -111,6 +112,7 @@ export const RECOVERY_MUTATING_ACTIONS = [
   "retire_harness",
   "drain_daemon",
   "stop_daemon",
+  "release_drain",
 ] as const
 export type RecoveryMutatingAction = (typeof RECOVERY_MUTATING_ACTIONS)[number]
 
@@ -137,6 +139,21 @@ export const RECOVERY_ACTION_SCOPES: Readonly<Record<RecoveryAction, readonly Re
   retire_harness: ["harness"],
   drain_daemon: ["machine"],
   stop_daemon: ["machine"],
+  release_drain: ["machine"],
+}
+
+/**
+ * The drain a `release_drain` reopens, by operation id.
+ *
+ * Releasing is always about one earlier operation's gates, never about "the
+ * fence" in general: two drains can hold overlapping owners, and reopening
+ * whatever happens to be closed would un-gate a scope its own caller never
+ * authorized reopening. The id rides in `linkedOperationId`, which is the field
+ * for exactly this — a request that names another operation — so a release
+ * without one is refused before it reaches an owner.
+ */
+export function releasedDrainOperationId(request: RecoveryRequest): string | undefined {
+  return request.action === "release_drain" ? request.linkedOperationId : undefined
 }
 
 export type RecoveryRequest = {
@@ -312,6 +329,12 @@ type RecoveryPostcondition = {
  * nothing about the target, so it can succeed over a running turn; an emergency
  * daemon stop cannot promise a commit, because exiting may lose observations
  * that were never written.
+ *
+ * `release_drain` asserts nothing either, and for the opposite reason to
+ * inspection: it reopens a gate, so its postcondition is about the gate rather
+ * than about the target. Requiring `terminal` would make a successful release
+ * impossible by construction — the machine it reopens is one that is still
+ * running work, which is the whole point of releasing instead of stopping.
  */
 const RECOVERY_POSTCONDITIONS: Readonly<Record<RecoveryAction, RecoveryPostcondition>> = {
   inspect: {},
@@ -320,6 +343,7 @@ const RECOVERY_POSTCONDITIONS: Readonly<Record<RecoveryAction, RecoveryPostcondi
   retire_harness: { execution: "terminal", cleanup: "verified_clear", persistence: "committed" },
   drain_daemon: { execution: "terminal", cleanup: "verified_clear", persistence: "committed" },
   stop_daemon: { execution: "terminal", cleanup: "verified_clear" },
+  release_drain: {},
 }
 
 export function recoveryPostconditionHolds(action: RecoveryAction, facts: RecoveryFacts): boolean {
