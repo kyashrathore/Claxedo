@@ -56,7 +56,7 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
   })
 
   test("a deployment that states nothing and has no account says nothing at all", async () => {
-    await expect(sandboxBrokeredSecrets({})).resolves.toEqual({})
+    await expect(sandboxBrokeredSecrets({ secretBrokering: "native" })).resolves.toEqual({})
   })
 
   test("a driver that cannot broker is told only what the caller stated", async () => {
@@ -71,15 +71,35 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
     expect(plan).toEqual({ secrets: [{ name: "REPO_TOKEN", value: "ghp_1", hosts: ["github.com"] }] })
   })
 
+  test("an unstated broker capability withholds provider secrets the same way", async () => {
+    const credential = await shared({ provider_id: "claude-sdk", secret: "sk-ant-api03-one" })
+    setActiveCredentials([credential.id])
+
+    const plan = await sandboxBrokeredSecrets({
+      stated: [{ name: "REPO_TOKEN", value: "ghp_1", hosts: ["github.com"] }],
+    })
+
+    expect(plan).toEqual({ secrets: [{ name: "REPO_TOKEN", value: "ghp_1", hosts: ["github.com"] }] })
+  })
+
+  test("an unrecognized broker capability withholds provider secrets rather than delivering them", async () => {
+    const credential = await shared({ provider_id: "claude-sdk", secret: "sk-ant-api03-one" })
+    setActiveCredentials([credential.id])
+
+    const plan = await sandboxBrokeredSecrets({ secretBrokering: "proxy" as never })
+
+    expect(plan).toEqual({})
+  })
+
   test("an unreadable account holds the installed set rather than withdrawing it", async () => {
     const claude = await shared({ provider_id: "claude-sdk", secret: "sk-ant-api03-one" })
     const openai = await shared({ provider_id: "openai", secret: "sk-openai-one" })
     setActiveCredentials([claude.id, openai.id])
-    const installed = (await sandboxBrokeredSecrets({ installed: undefined })).digest
+    const installed = (await sandboxBrokeredSecrets({ installed: undefined, secretBrokering: "native" })).digest
     expect(installed).toBeDefined()
 
     refused.add(readRef(claude.id))
-    const plan = await sandboxBrokeredSecrets({ installed })
+    const plan = await sandboxBrokeredSecrets({ installed, secretBrokering: "native" })
 
     expect(plan).toEqual({ digest: installed })
   })
@@ -90,12 +110,12 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
     const claude = await shared({ provider_id: "claude-sdk", secret: "sk-ant-api03-one" })
     const openai = await shared({ provider_id: "openai", secret: "sk-openai-one" })
     setActiveCredentials([claude.id, openai.id])
-    const installed = (await sandboxBrokeredSecrets({})).digest
+    const installed = (await sandboxBrokeredSecrets({ secretBrokering: "native" })).digest
     expect(installed).toBeDefined()
 
     await deleteCredential(openai.id)
     refused.add(readRef(claude.id))
-    const plan = await sandboxBrokeredSecrets({ installed })
+    const plan = await sandboxBrokeredSecrets({ installed, secretBrokering: "native" })
 
     expect(plan.secrets).toEqual([])
     expect(plan.digest).not.toBe(installed)
@@ -105,12 +125,12 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
     const claude = await shared({ provider_id: "claude-sdk", secret: "sk-ant-api03-one" })
     const openai = await shared({ provider_id: "openai", secret: "sk-openai-one" })
     setActiveCredentials([claude.id, openai.id])
-    const installed = (await sandboxBrokeredSecrets({})).digest
+    const installed = (await sandboxBrokeredSecrets({ secretBrokering: "native" })).digest
 
     const replacement = await shared({ provider_id: "openai", secret: "sk-openai-two" })
     setActiveCredentials([replacement.id])
     refused.add(readRef(claude.id))
-    const plan = await sandboxBrokeredSecrets({ installed })
+    const plan = await sandboxBrokeredSecrets({ installed, secretBrokering: "native" })
 
     expect(plan.secrets?.map((row) => row.value)).toEqual(["sk-openai-two"])
     expect(plan.digest).not.toBe(installed)
@@ -121,13 +141,13 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
     // the old account's entry as the unreadable one and keeps it installed.
     const first = await shared({ provider_id: "openai", secret: "sk-openai-one" })
     setActiveCredentials([first.id])
-    const installed = (await sandboxBrokeredSecrets({})).digest
+    const installed = (await sandboxBrokeredSecrets({ secretBrokering: "native" })).digest
     expect(installed).toBeDefined()
 
     const replacement = await shared({ provider_id: "openai", secret: "sk-openai-two" })
     setActiveCredentials([replacement.id])
     refused.add(readRef(replacement.id))
-    const plan = await sandboxBrokeredSecrets({ installed })
+    const plan = await sandboxBrokeredSecrets({ installed, secretBrokering: "native" })
 
     expect(plan.secrets).toEqual([])
     expect(plan.digest).not.toBe(installed)
@@ -140,7 +160,7 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
     const credential = await shared({ provider_id: "claude-sdk", secret: "sk-ant-api03-one" })
     setActiveCredentials([credential.id])
 
-    const plan = await sandboxBrokeredSecrets({})
+    const plan = await sandboxBrokeredSecrets({ secretBrokering: "native" })
 
     expect(plan.secrets).toEqual([expect.objectContaining({
       name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
@@ -157,6 +177,7 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
 
     await expect(sandboxBrokeredSecrets({
       stated: [{ name: "CLAXEDO_PROVIDER_CLAUDE_SDK", value: "other", hosts: ["api.anthropic.com"] }],
+      secretBrokering: "native",
     })).rejects.toThrow(/claimed by both/)
   })
 })

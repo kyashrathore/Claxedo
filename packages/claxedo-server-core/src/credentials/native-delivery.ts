@@ -169,7 +169,9 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
  * broker reports it: an absent projection is indistinguishable from "no account
  * chosen", and a harness reads that as permission to run on the login its image
  * carries. A driver that cannot broker refuses every turn the same way, rather
- * than refusing to provision the workspace at all.
+ * than refusing to provision the workspace at all — and "cannot broker" is
+ * anything short of an explicit `"native"` capability, including an unstated
+ * or unrecognized one.
  */
 export async function nativeProviderDeliveries(input: {
   org?: CredentialOrgScope
@@ -189,7 +191,11 @@ export async function nativeProviderDeliveries(input: {
       deliveries.push(undeliverable(row.credential, row.unavailable))
       continue
     }
-    if (input.secretBrokering === "none") {
+    // Explicit native support, stated per delivery: a caller that names no
+    // capability — or one the contract does not define — is a driver that
+    // cannot keep the value out of the sandbox, and refuses rather than falls
+    // through to delivery.
+    if (input.secretBrokering !== "native") {
       deliveries.push(undeliverable(row.credential, "secret_brokering_unsupported"))
       continue
     }

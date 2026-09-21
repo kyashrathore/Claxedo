@@ -41,11 +41,15 @@ export async function sandboxBrokeredSecrets(input: {
 }): Promise<SandboxSecretPlan> {
   // A driver that cannot broker is told nothing: the manager fails closed on a
   // native secret it is handed, which would leave the workspace unprovisionable
-  // instead of refusing the turn.
-  if (input.secretBrokering === "none") {
+  // instead of refusing the turn. Anything short of an explicit `"native"` —
+  // an unstated or unrecognized capability — cannot broker.
+  if (input.secretBrokering !== "native") {
     return input.stated ? { secrets: [...input.stated] } : {}
   }
-  const deliveries = await nativeProviderDeliveries(input.org ? { org: input.org } : {})
+  const deliveries = await nativeProviderDeliveries({
+    ...(input.org ? { org: input.org } : {}),
+    secretBrokering: input.secretBrokering,
+  })
   // Nothing installed and no marked account: say nothing at all, because an
   // empty set tells the driver to withdraw what the workspace holds and secrets
   // another caller installed are not ours to remove. Once something of ours IS

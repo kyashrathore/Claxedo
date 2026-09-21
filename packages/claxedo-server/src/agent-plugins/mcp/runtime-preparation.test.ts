@@ -253,6 +253,16 @@ describe("hosted MCP runtime preparation", () => {
     ]))
   })
 
+  test("fails the protected server closed on an unrecognized broker capability", async () => {
+    // A malformed driver declaration is not `"none"`; the minted credential
+    // still must not be handed out.
+    const value = await subject({ brokering: "proxy" as never })
+    expect(value.preparation.secrets).toEqual([])
+    expect(agentPluginMcpRuntimePlan(value.preparation).mcpServers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ state: "unavailable", reason: "secret_brokering_unsupported" }),
+    ]))
+  })
+
   test("leaves public MCP direct and requires no Connection or brokered secret", async () => {
     const value = await subject({ publicServer: true, connected: false })
     expect(value.preparation.secrets).toEqual([])

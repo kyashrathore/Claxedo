@@ -129,7 +129,8 @@ Column meanings:
 hosts, header? }`) is for credentials the sandbox must be able to *use* on
 outbound requests but must never be able to *read*. `provision()` in
 `src/index.ts` fails closed: if `secrets` is non-empty and the driver's
-`metadata.secretBrokering === "none"`, `ensure()` returns
+`metadata.secretBrokering !== "native"` — including an absent or unrecognized
+value — `ensure()` returns
 `{ status: "unavailable", error: "secret_brokering_unsupported" }` instead of
 ever handing the value to a driver that can't keep it out of the sandbox.
 

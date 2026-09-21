@@ -307,7 +307,11 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
             mcpServers.push(unavailable({ ...identity, reason: connection.ok ? "mcp_connection_resource_mismatch" : connection.code }))
             continue
           }
-          if (secretBrokering === "none") {
+          // Only an explicit `"native"` capability may carry the minted
+          // credential: anything else — `"none"`, unstated, unrecognized —
+          // refuses the server rather than hand the secret to a runtime that
+          // cannot keep it unreadable.
+          if (secretBrokering !== "native") {
             mcpServers.push(unavailable({ ...identity, reason: "secret_brokering_unsupported" }))
             continue
           }

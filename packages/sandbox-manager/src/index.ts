@@ -941,12 +941,13 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       })
       // Fail-closed: a brokered secret must never be downgraded to readable
       // plaintext env. Daytona, Vercel and Cloudflare all keep the value out of
-      // the sandbox through their own provider edge; a `"none"` driver has no
-      // way to, so it refuses here rather than expose the credential.
+      // the sandbox through their own provider edge, and ONLY an explicit
+      // `"native"` declaration means the driver can do the same — a missing or
+      // unrecognized capability refuses here rather than expose the credential.
       //
       // An EMPTY list is a withdrawal, not a delivery, and passes: a driver
       // that cannot broker has nothing to withdraw either.
-      if (ensure.secrets?.length && options.driver.metadata.secretBrokering === "none") {
+      if (ensure.secrets?.length && options.driver.metadata.secretBrokering !== "native") {
         return {
           status: "unavailable",
           error: "secret_brokering_unsupported",
