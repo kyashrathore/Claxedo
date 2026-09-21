@@ -196,11 +196,21 @@ export type ConnectorOptions = MachineDirectoryScope & {
    * closes that workspace's tunnel and runtime, validates, prepares the new
    * directory, then `ack`s the new revision; a preparation that fails leaves
    * the description pending for the next delivery. A workspace the caller
-   * serves that is absent from the list is retired.
+   * serves that is absent from the list is retired, and one the caller
+   * `unack`ed stays absent from the list while the control plane keeps
+   * offering the same revision — an `unack` is an answer, not a gap to
+   * re-ask into.
    */
   onAssignments?: (descriptions: AssignmentDescription[]) => void | Promise<void>
   /** A newer scope revision, delivered before the same beat's assignments are reconciled. */
   onScope?: (scope: HostScope) => void | Promise<void>
+  /**
+   * The scope revision the caller already holds, from its own store. Without
+   * it a restarted connector accepts the first scope a beat carries —
+   * including a replayed one older than what it last accepted, which would
+   * put roots the owner has since removed back in force.
+   */
+  scopeRevision?: number
   onEndpoints?: (endpoints: HostEndpoints) => void | Promise<void>
   /**
    * A provider-config revision the control plane holds and this machine does
@@ -297,10 +307,19 @@ export function createHostConnector(options: ConnectorOptions) {
   const descriptions = new Map<string, AssignmentDescription>()
   const acked = new Map<string, number>()
   const pending = new Map<string, { attempts: number; skip: number }>()
+  /**
+   * Revisions the caller explicitly refused through `unack`, by workspace. A
+   * redelivery at or below the refused revision is the same consent question
+   * already answered — it is not re-presented to `onAssignments`, where a
+   * caller that acks what it is shown would silently re-grant it. A newer
+   * revision, or the assignment leaving the control plane's list entirely, is
+   * a new question and the refusal ends.
+   */
+  const refused = new Map<string, number>()
   const PENDING_EVERY_BEAT_ATTEMPTS = 5
   const PENDING_RETRY_EVERY_BEATS = 10
   let generation: number | undefined
-  let scopeRevision: number | undefined
+  let scopeRevision = options.scopeRevision
   let deliveredEndpoints: string | undefined
   /**
    * The revision the CALLER has stored, which is the only thing the control
@@ -327,6 +346,7 @@ export function createHostConnector(options: ConnectorOptions) {
     descriptions.clear()
     acked.clear()
     pending.clear()
+    refused.clear()
     state = { status: "stopped", reason, detail }
   }
 
@@ -373,9 +393,12 @@ export function createHostConnector(options: ConnectorOptions) {
    * secret must not also stop serving the folders it already serves.
    */
   const reconcile = async (result: HeartbeatResponse) => {
+    // The revision moves only once the caller has stored the scope: a
+    // callback that fails must get the delivery again, because the fence that
+    // keeps a replayed older scope out lives in the caller's file, not here.
     if (result.scope && (scopeRevision === undefined || result.scope.revision > scopeRevision)) {
-      scopeRevision = result.scope.revision
       await options.onScope?.(result.scope)
+      scopeRevision = result.scope.revision
     }
     if (result.relay || result.authority) {
       const endpoints: HostEndpoints = {
@@ -408,6 +431,11 @@ export function createHostConnector(options: ConnectorOptions) {
     const present = new Set<string>()
     for (const description of result.assignments) {
       present.add(description.workspaceId)
+      const refusedAt = refused.get(description.workspaceId)
+      if (refusedAt !== undefined) {
+        if (description.revision <= refusedAt) continue
+        refused.delete(description.workspaceId)
+      }
       const current = descriptions.get(description.workspaceId)
       // A description at or below the applied revision is old news — either
       // unchanged, or a stale snapshot overlapping a newer one — and cannot
@@ -429,6 +457,12 @@ export function createHostConnector(options: ConnectorOptions) {
       acked.delete(workspaceId)
       pending.delete(workspaceId)
       changed = true
+    }
+    for (const workspaceId of refused.keys()) {
+      // The owner withdrew the assignment outright, so the question it asked
+      // no longer stands; if the workspace is ever assigned again it is a new
+      // statement, not a replay of the refused one.
+      if (!present.has(workspaceId)) refused.delete(workspaceId)
     }
     let due = changed
     for (const entry of pending.values()) {
@@ -577,10 +611,21 @@ export function createHostConnector(options: ConnectorOptions) {
 
     /**
      * Withdraw consent for one workspace and beat so the control plane stops
-     * routing it. Awaited, unlike `ack`: a withdrawal is issued by the caller
+     * routing it. The refusal is recorded at the description's current
+     * revision, so the control plane re-listing that same assignment — a
+     * stale response, or an unassign that has not propagated — does not put
+     * the question back in front of the caller.
+     *
+     * Awaited, unlike `ack`: a withdrawal is issued by the caller
      * on its own initiative, never from inside a reconciliation.
      */
     async unack(workspaceId: string): Promise<void> {
+      const description = descriptions.get(workspaceId)
+      if (description) {
+        refused.set(workspaceId, description.revision)
+        descriptions.delete(workspaceId)
+        pending.delete(workspaceId)
+      }
       if (!acked.delete(workspaceId)) return
       if (state.status !== "enrolled" || draining) return
       await requestBeat()

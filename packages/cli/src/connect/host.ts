@@ -353,14 +353,18 @@ export async function runHost(input: HostRunInput): Promise<number> {
     sessionAuthority: "managed-private",
     sealingPublicKey,
     ...(declaredProviderConfigRevision === undefined ? {} : { providerConfigRevision: declaredProviderConfigRevision }),
+    // The stored revision is the fence a restart keeps: without it the first
+    // beat would accept whatever scope the answer carried, including an older
+    // replayed one that puts removed roots back in force.
+    ...(state.scope === undefined ? {} : { scopeRevision: state.scope.revision }),
     roots: canonicalRoots,
     resolvePath: deps.resolvePath,
     setInterval: deps.setInterval,
     onScope: (scope: HostScope) => {
-      // A new scope revision is the owner re-declaring the roots, so the
-      // pins are re-recorded from what they resolve to now. The same
-      // revision delivered again — every boot's first beat — keeps them.
-      if (scope.revision === state.scope?.revision) return persist({ ...state, scope })
+      // The connector only hands over a revision newer than the one stored
+      // here, so a delivery is always the owner re-declaring the roots: the
+      // pins recorded under the old scope are dropped and re-recorded as each
+      // assignment resolves under the new one.
       const { roots_canonical: _stale, ...rest } = state
       return persist({ ...rest, scope })
     },
