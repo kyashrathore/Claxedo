@@ -159,6 +159,9 @@ one (SQLite). Three operations carry the correctness burden:
 Everything else is plain reads, of which one carries a scheduling contract:
 `nextObligationAt(serialKey)` must never report a time earlier than the lane
 can act on, because push drivers arm timers from it (see `nextAt` above).
+`findPendingByEventKey(workspaceId, eventKey)` carries a tenancy contract
+instead: `deliverEvent` addresses one workspace, so a watch another workspace
+registered under the same key can never receive the payload.
 
 Because claims are atomic *in the database*, any number of racing runners
 (ticks, alarms, machines, regions) are safe: duplicates lose the CAS/claim and

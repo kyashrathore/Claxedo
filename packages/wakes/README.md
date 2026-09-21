@@ -29,7 +29,7 @@ const { token } = await wakes.requestApproval({ workspaceId, sessionId, prompt, 
 
 // fire sources
 createScheduler(wakes).start()                 // the polling backstop (guarantee)
-await wakes.deliverEvent("ci:pass:x", payload) // 'on_event' — host webhook ingress
+await wakes.deliverEvent({ workspaceId, eventKey: "ci:pass:x", payload }) // 'on_event' — host webhook ingress
 await wakes.resolve(token, answer, actor)      // 'on_approval' — inbound handler
 
 // turn-side: make an irreversible external effect at-most-once across re-runs

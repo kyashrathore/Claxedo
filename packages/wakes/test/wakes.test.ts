@@ -136,7 +136,9 @@ describe("on_event trigger (external)", () => {
     const expiresAt = clock.t + 1000
     await wakes.watch({ sessionId: "s1", workspaceId: WS, eventKey: "event", intent: {}, expiresAt })
     clock.t = expiresAt + offset
-    expect(await wakes.deliverEvent("event", {})).toEqual({ fired: offset < 0 ? 1 : 0 })
+    expect(await wakes.deliverEvent({ workspaceId: WS, eventKey: "event", payload: {} })).toEqual({
+      fired: offset < 0 ? 1 : 0,
+    })
     expect(spawned).toHaveLength(offset < 0 ? 1 : 0)
   })
 
@@ -146,12 +148,12 @@ describe("on_event trigger (external)", () => {
       sessionId: "s1", workspaceId: WS, eventKey: "event", intent: {}, expiresAt: clock.t + 1000,
     })
     const find = store.findPendingByEventKey.bind(store)
-    store.findPendingByEventKey = async (key) => {
-      const pending = await find(key)
+    store.findPendingByEventKey = async (workspaceId, key) => {
+      const pending = await find(workspaceId, key)
       store.db.prepare("UPDATE wakes SET expires_at = ? WHERE id = ?").run(clock.t, wakeId)
       return pending
     }
-    expect(await wakes.deliverEvent("event", {})).toEqual({ fired: 0 })
+    expect(await wakes.deliverEvent({ workspaceId: WS, eventKey: "event", payload: {} })).toEqual({ fired: 0 })
     expect(spawned).toHaveLength(0)
     expect((await store.get(wakeId))?.state).toBe("pending")
   })
@@ -162,10 +164,33 @@ describe("on_event trigger (external)", () => {
     await wakes.watch({ sessionId: "s2", workspaceId: WS, eventKey: "ci:pass:x", intent: { pr: 2 }, expiresAt: 9e15 })
     await wakes.watch({ sessionId: "s3", workspaceId: WS, eventKey: "ci:pass:y", intent: {}, expiresAt: 9e15 })
 
-    const { fired } = await wakes.deliverEvent("ci:pass:x", { sha: "abc" })
+    const { fired } = await wakes.deliverEvent({ workspaceId: WS, eventKey: "ci:pass:x", payload: { sha: "abc" } })
     expect(fired).toBe(2)
     expect(spawned.map((s) => s.sessionId).sort(byText)).toEqual(["s1", "s2"])
     expect(spawned[0]!.result).toMatchObject({ trigger: "on_event", payload: { sha: "abc" } })
+  })
+
+  it("delivers only to the addressed workspace when another workspace watches the same key", async () => {
+    const { wakes, store, spawned } = harness()
+    await wakes.watch({
+      sessionId: "s1", workspaceId: "ws-a", eventKey: "ci:pass:x", intent: { pr: 1 }, expiresAt: 9e15,
+    })
+    const stray = await wakes.watch({
+      sessionId: "s2", workspaceId: "ws-b", eventKey: "ci:pass:x", intent: { pr: 2 }, expiresAt: 9e15,
+    })
+
+    const { fired } = await wakes.deliverEvent({
+      workspaceId: "ws-a",
+      eventKey: "ci:pass:x",
+      payload: { sha: "tenant-a-secret" },
+    })
+    expect(fired).toBe(1)
+    expect(spawned).toHaveLength(1)
+    expect(spawned[0]!.sessionId).toBe("s1")
+    expect(JSON.stringify(spawned[0]!.result)).toContain("tenant-a-secret")
+    // The colliding watch stays pending — the payload text never reached ws-b.
+    expect((await store.get(stray.wakeId))!.state).toBe("pending")
+    expect(await wakes.deliverEvent({ workspaceId: "ws-b", eventKey: "ci:pass:x", payload: {} })).toEqual({ fired: 1 })
   })
 })
 

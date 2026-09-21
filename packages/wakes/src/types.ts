@@ -33,6 +33,19 @@ export type WakeResult =
  */
 export type WakeKind = string
 
+/**
+ * An external event delivered to one workspace's `on_event` watches.
+ * `workspaceId` is part of the contract — not derivable from `eventKey` —
+ * because keys are not unique across tenants: delivery addressed to
+ * workspace A must never reach a watch workspace B registered under the
+ * same key.
+ */
+export interface WakeEvent {
+  workspaceId: WorkspaceId
+  eventKey: string
+  payload: Json
+}
+
 /** A durable wake row. `null` timestamps/params are absent-by-type. */
 export interface Wake {
   id: WakeId

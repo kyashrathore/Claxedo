@@ -21,6 +21,7 @@ export type {
   TriggerType,
   Wake,
   WakeDriver,
+  WakeEvent,
   WakeId,
   WakeKind,
   WakeResult,

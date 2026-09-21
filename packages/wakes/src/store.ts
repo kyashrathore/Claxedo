@@ -35,7 +35,12 @@ export interface WakeStore {
    */
   cas(id: WakeId, from: WakeState, to: WakeState, nowMs: number, patch?: Partial<Wake>): Promise<boolean>
 
-  findPendingByEventKey(eventKey: string): Promise<Wake[]>
+  /**
+   * Pending `on_event` watches for one workspace and key. The workspace scope
+   * is part of the delivery contract — `deliverEvent` addresses a tenant, and
+   * a colliding `eventKey` in another workspace must never match.
+   */
+  findPendingByEventKey(workspaceId: WorkspaceId, eventKey: string): Promise<Wake[]>
   /**
    * Pending wakes past their expiry (any trigger type). `serialKey` scopes like
    * `claimDue`, so a lane-scoped driver sweeps its own deadlines without

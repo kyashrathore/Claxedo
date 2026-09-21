@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS wakes (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS wakes_idem ON wakes(workspace_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS wakes_due ON wakes(trigger_type, state, fire_at);
-CREATE INDEX IF NOT EXISTS wakes_event ON wakes(event_key, state);
+CREATE INDEX IF NOT EXISTS wakes_event ON wakes(workspace_id, event_key, state);
 CREATE INDEX IF NOT EXISTS wakes_token ON wakes(token);
 CREATE INDEX IF NOT EXISTS wakes_ws_state ON wakes(workspace_id, state);
 CREATE INDEX IF NOT EXISTS wakes_session ON wakes(session_id);
@@ -285,9 +285,11 @@ export class SqliteWakeStore implements WakeStore {
     return res.changes > 0
   }
 
-  async findPendingByEventKey(eventKey: string): Promise<Wake[]> {
+  async findPendingByEventKey(workspaceId: WorkspaceId, eventKey: string): Promise<Wake[]> {
     return (
-      this.db.prepare("SELECT * FROM wakes WHERE event_key = ? AND state = 'pending'").all(eventKey)
+      this.db
+        .prepare("SELECT * FROM wakes WHERE workspace_id = ? AND event_key = ? AND state = 'pending'")
+        .all(workspaceId, eventKey)
     ).map(rowToWake)
   }
 

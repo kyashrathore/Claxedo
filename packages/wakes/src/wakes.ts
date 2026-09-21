@@ -12,6 +12,7 @@ import type {
   Token,
   Wake,
   WakeDriver,
+  WakeEvent,
   WakeId,
   WakeResult,
   WakeSink,
@@ -114,7 +115,13 @@ export interface Wakes {
   }>
   cancel(wakeIdOrToken: string): Promise<void>
   resolve(token: Token, answer: string, resolver: Actor): Promise<ResolveOutcome>
-  deliverEvent(eventKey: string, payload: Json): Promise<{ fired: number }>
+  /**
+   * Fire pending `on_event` watches for the addressed workspace. Tenant
+   * identity is part of the event contract: an ingress must name the
+   * workspace it acts for, and a colliding `eventKey` in another workspace
+   * can never receive this payload.
+   */
+  deliverEvent(event: WakeEvent): Promise<{ fired: number }>
   /**
    * Fire due wakes: expire, reclaim, then claim. With `serialKey` (string =
    * that lane, null = null-key wakes) every pass is scoped to that lane, so a
@@ -382,10 +389,10 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       }
     },
 
-    async deliverEvent(eventKey, payload) {
+    async deliverEvent(event) {
       let fired = 0
-      for (const wake of await store.findPendingByEventKey(eventKey)) {
-        const result: WakeResult = { trigger: "on_event", intent: JSON.parse(wake.intentJson), payload }
+      for (const wake of await store.findPendingByEventKey(event.workspaceId, event.eventKey)) {
+        const result: WakeResult = { trigger: "on_event", intent: JSON.parse(wake.intentJson), payload: event.payload }
         if (await fireFromPending(wake, JSON.stringify(result))) fired++
       }
       return { fired }
