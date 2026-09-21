@@ -23,7 +23,7 @@ function ensureInput(overrides?: Partial<SandboxDriverEnsureInput>): SandboxDriv
  * (docker run / host / health probe / host url). Records every call so tests
  * can assert on the boot sequence.
  */
-function fakeBox(options?: { states?: string[]; hostUrl?: string; failHealthOnce?: boolean }) {
+function fakeBox(options?: { states?: string[]; hostUrl?: string; failHealthOnce?: boolean; failCommandsEchoing?: boolean }) {
   const calls: Call[] = []
   const states = options?.states ?? ["ready"]
   let stateIdx = 0
@@ -47,8 +47,15 @@ function fakeBox(options?: { states?: string[]; hostUrl?: string; failHealthOnce
       stateIdx++
       return json({ box: { id: "bx_abc123", state } })
     }
+    if (path === "/boxes/bx_abc123/files" && method === "PUT") {
+      return json({ type: "file.written", path: body.path })
+    }
     if (path === "/boxes/bx_abc123/commands" && method === "POST") {
       const command: string = body.command
+      if (options?.failCommandsEchoing) {
+        // Worst-case diagnostics: stderr mirrors the command that failed.
+        return json({ stdout: "", stderr: command, exitCode: 1 })
+      }
       if (command.includes("/global/health")) {
         healthChecks++
         const healthy = options?.failHealthOnce ? healthChecks > 1 : true
@@ -102,9 +109,68 @@ describe("box sandbox driver", () => {
     const dockerRun = commands.find((c) => c.includes("docker run"))
     expect(dockerRun).toContain("ghcr.io/test/sandbox:1")
     expect(dockerRun).toContain("-p 2593:2593")
-    expect(dockerRun).toContain("WORKSPACE_RUNTIME_WORKSPACE_ID=ws1")
+    expect(dockerRun).toContain(".claxedo-runtime-env:/run/claxedo-runtime.env:ro")
+    expect(dockerRun).not.toContain("--env ")
+    const envWrite = box.calls.find((c) => c.path.endsWith("/files") && c.body?.path === ".claxedo-runtime-env")
+    expect(envWrite?.body?.content).toContain("export WORKSPACE_RUNTIME_WORKSPACE_ID='ws1'")
     expect(commands.some((c) => c === "host 2593")).toBe(true)
     expect(commands.some((c) => c === "host url 2593")).toBe(true)
+  })
+
+  test("keeps env values and registry credentials out of command strings", async () => {
+    const box = fakeBox()
+    const driver = createBoxSandboxDriver({
+      apiKey: "k",
+      fetchImpl: box.fetchImpl,
+      healthIntervalMs: 0,
+      registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" },
+      env: () => ({ RUNTIME_SECRET: "synthetic-runtime-secret", PEM: "-----BEGIN-----\nline2\n-----END-----" }),
+    })
+
+    const target = await driver.ensureHost(ensureInput({ env: { CALLER_SECRET: "synthetic-caller-secret" } }))
+    if ("provisioning" in target) throw new Error("unexpected provisioning")
+
+    const commands = box.calls.filter((c) => c.path.endsWith("/commands")).map((c) => c.body.command as string)
+    for (const command of commands) {
+      expect(command).not.toContain("synthetic-runtime-secret")
+      expect(command).not.toContain("synthetic-caller-secret")
+      expect(command).not.toContain("synthetic-registry-pw")
+      expect(command).not.toContain("-----BEGIN-----")
+    }
+
+    // The sanctioned channels carry the values: env through a private file the
+    // container sources, the registry password through a file consumed by
+    // `docker login --password-stdin` and then removed.
+    const writes = box.calls.filter((c) => c.path.endsWith("/files") && c.method === "PUT")
+    const envWrite = writes.find((c) => c.body.path === ".claxedo-runtime-env")
+    expect(envWrite?.body.content).toContain("export RUNTIME_SECRET='synthetic-runtime-secret'")
+    expect(envWrite?.body.content).toContain("export CALLER_SECRET='synthetic-caller-secret'")
+    expect(envWrite?.body.content).toContain("export PEM='-----BEGIN-----\nline2\n-----END-----'")
+    const passwordWrite = writes.find((c) => c.body.path === ".claxedo-registry-password")
+    expect(passwordWrite?.body.content).toBe("synthetic-registry-pw")
+
+    const run = commands.find((c) => c.includes("docker run"))
+    expect(run).toContain("--password-stdin < .claxedo-registry-password")
+    expect(run).toContain("rm -f .claxedo-registry-password")
+    expect(run).toContain("$(pwd)/.claxedo-runtime-env:/run/claxedo-runtime.env:ro")
+  })
+
+  test("a failed run cannot echo secrets back through diagnostics", async () => {
+    const box = fakeBox({ failCommandsEchoing: true })
+    const driver = createBoxSandboxDriver({
+      apiKey: "k",
+      fetchImpl: box.fetchImpl,
+      registryAuth: { server: "registry.example.com", username: "builder", password: "synthetic-registry-pw" },
+      env: () => ({ RUNTIME_SECRET: "synthetic-runtime-secret" }),
+    })
+
+    const failure = await driver.ensureHost(ensureInput()).then(
+      () => { throw new Error("expected ensure to fail") },
+      (err: unknown) => err as Error,
+    )
+    expect(failure.message).toContain("docker run")
+    expect(failure.message).not.toContain("synthetic-runtime-secret")
+    expect(failure.message).not.toContain("synthetic-registry-pw")
   })
 
   test("retries the health probe until the runtime answers 200", async () => {

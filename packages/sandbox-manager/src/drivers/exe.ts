@@ -1,3 +1,4 @@
+import { sha256Hex } from "@claxedo/helpers/crypto"
 import type {
   SandboxCommandResult,
   SandboxDriver,
@@ -5,7 +6,7 @@ import type {
   SandboxLease,
   SandboxTarget,
 } from ".."
-import { shell } from "../command"
+import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { sandboxDriverCatalog } from "../driver-catalog"
 import { SANDBOX_IMAGE } from "../image"
@@ -50,6 +51,11 @@ const DEFAULT_OPERATION_TIMEOUT_MS = 120_000
 const DEFAULT_EXE_APP_LABEL = "claxedo"
 const DEFAULT_HEALTH_TIMEOUT_MS = 60_000
 const DEFAULT_HEALTH_INTERVAL_MS = 1_000
+// Double-quoted in generated commands so the remote shell expands $HOME while
+// the path survives a space in it.
+const ENV_DIR = `"$HOME/.claxedo"`
+const ENV_PATH = `${ENV_DIR}/runtime.env`
+const ENV_DIGEST_PATH = `${ENV_DIR}/runtime.env.sha256`
 
 export function exeWorkspaceName(workspaceId: string, epoch: number) {
   const slug = workspaceId
@@ -213,11 +219,29 @@ export function createExeSandboxDriver(options: ExeSandboxDriverOptions): Sandbo
       ...(await options.env?.(input, vm)),
     }
     if (options.runner) env.WORKSPACE_RUNTIME_RUNNER = options.runner
-    const envArgs = Object.entries(env).map(([key, value]) => `${key}=${shell(value)}`).join(" ")
+    const blob = envFile(env)
+    const digest = await sha256Hex(blob)
+    // The /exec transport is command text with no stdin or file channel, so a
+    // value can only reach the VM inside one command. That delivery is gated
+    // on change: an unchanged env (the common resume path) needs no secret-
+    // bearing call at all, and the runtime sources a 0600 file so neither its
+    // argv nor any recurring ssh command exposes a value.
+    const current = await execute(
+      vm.vm_name,
+      `cat ${ENV_DIGEST_PATH} 2>/dev/null || true`,
+    )
+    if (current.stdout.trim() !== digest) {
+      await executeOrThrow(
+        vm.vm_name,
+        `umask 077 && mkdir -p ${ENV_DIR} && printf %s ${shell(blob)} > ${ENV_PATH} `
+        + `&& printf %s ${shell(digest)} > ${ENV_DIGEST_PATH}`,
+        "env write",
+      )
+    }
     await executeOrThrow(
       vm.vm_name,
       `mkdir -p ${shell(directory(input))} && (pkill -f ${shell(runtimeCommand)} || true) && `
-      + `cd ${shell(directory(input))} && nohup env ${envArgs} ${runtimeCommand} `
+      + `cd ${shell(directory(input))} && nohup sh -c ${shell(`. ${ENV_PATH} && exec ${runtimeCommand}`)} `
       + `> .claxedo-workspace-runtime.log 2>&1 < /dev/null &`,
       "runtime start",
     )

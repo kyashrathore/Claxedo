@@ -3,8 +3,11 @@ import { createExeSandboxDriver, exeWorkspaceName } from "./exe"
 import { createSandboxManager } from ".."
 import { createMemoryLeaseStore, sandboxLease } from "../stores/memory"
 
-function fakeExe() {
+function fakeExe(options?: { failNohup?: boolean }) {
   const vms = new Map<string, Record<string, unknown>>()
+  // Per-VM env digest the driver stores beside the env file, keyed so the
+  // fake can answer the `cat runtime.env.sha256` freshness probe.
+  const envDigests = new Map<string, string>()
   const calls: Array<{ command: string; authorization: string | null }> = []
   const fetchImpl = async (_url: string | URL | Request, init?: RequestInit) => {
     const command = typeof init?.body === "string" ? init.body : ""
@@ -31,6 +34,19 @@ function fakeExe() {
       return Response.json(vm)
     }
     if (command.startsWith("ssh ")) {
+      const vmName = command.match(/^ssh '([^']+)'/)?.[1] ?? ""
+      if (command.includes("printf") && command.includes("runtime.env.sha256")) {
+        const digest = command.match(/([0-9a-f]{64})/)?.[1]
+        if (vmName && digest) envDigests.set(vmName, digest)
+        return Response.json({ stdout: "", stderr: "", exit_code: 0 })
+      }
+      if (command.includes("cat ") && command.includes("runtime.env.sha256")) {
+        return Response.json({ stdout: envDigests.get(vmName) ?? "", stderr: "", exit_code: 0 })
+      }
+      if (options?.failNohup && command.includes("nohup")) {
+        // Worst-case diagnostics: stderr mirrors the command that failed.
+        return Response.json({ stdout: "", stderr: command, exit_code: 1 })
+      }
       return Response.json({
         stdout: command.includes("curl -sf") ? "200" : "ok",
         stderr: "",
@@ -100,8 +116,13 @@ describe("exe.dev sandbox driver", () => {
       "--image='ghcr.io/claxedo/runtime:0.6.0'",
     )
     expect(api.calls.every((call) => call.authorization === "Bearer exe-token")).toBe(true)
+    // Env reaches the VM through the private env-file write; the start command
+    // sources that file instead of serializing values into argv.
     expect(api.calls.some((call) =>
-      call.command.includes("WORKSPACE_RUNTIME_EPOCH") && call.command.includes("workspace-runtime")
+      call.command.includes("WORKSPACE_RUNTIME_EPOCH") && call.command.includes("runtime.env")
+    )).toBe(true)
+    expect(api.calls.some((call) =>
+      call.command.includes("nohup") && call.command.includes("workspace-runtime")
     )).toBe(true)
 
     await expect(driver.inspect?.(created)).resolves.toMatchObject({ sandboxId: created.sandboxId })
@@ -145,6 +166,111 @@ describe("exe.dev sandbox driver", () => {
         clone: true,
       },
     })
+  })
+
+  test("delivers env secrets through a private file, not recurring command text", async () => {
+    const api = fakeExe()
+    const driver = createExeSandboxDriver({ apiToken: "t", healthIntervalMs: 0, fetchImpl: api.fetchImpl })
+    const ensure = {
+      workspaceId: "workspace_1",
+      homeRegion: "us-east",
+      epoch: 1,
+      labels: { app: "claxedo", workspaceId: "workspace_1", epoch: "1" },
+      env: { WORKSPACE_RUNTIME_CONFIG_TOKEN: "synthetic-secret-1", PLAIN: "visible" },
+    }
+    const created = await driver.ensureHost(ensure)
+    if ("provisioning" in created) throw new Error("unexpected provisioning result")
+
+    const sshCommands = () => api.calls.filter((call) => call.command.startsWith("ssh ")).map((call) => call.command)
+    // exe's API is command text with no data channel, so exactly one call —
+    // the env-file write — carries the value. The runtime start and every
+    // other command stay secret-free and out of process listings.
+    const secretful = sshCommands().filter((command) => command.includes("synthetic-secret-1"))
+    expect(secretful).toHaveLength(1)
+    expect(secretful[0]).toContain("runtime.env")
+    const start = sshCommands().find((command) => command.includes("nohup"))
+    expect(start).toBeDefined()
+    expect(start).not.toContain("synthetic-secret-1")
+    expect(start).toContain(`sh -c`)
+
+    await driver.stop?.(created)
+    const mark = api.calls.length
+    const resumed = await driver.resumeHost?.({
+      lease: {
+        workspaceId: "workspace_1",
+        homeRegion: "us-east",
+        driver: "exe",
+        epoch: 1,
+        status: "stopped",
+        retryCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+        sandboxId: created.sandboxId,
+        hostId: created.hostId,
+      },
+      ensure,
+    })
+    expect(resumed && !("provisioning" in resumed) ? resumed.sandboxId : undefined).toBe(created.sandboxId)
+    // Unchanged env is digest-matched: the whole resume sends no secret.
+    expect(api.calls.slice(mark).filter((call) => call.command.includes("synthetic-secret-1"))).toHaveLength(0)
+  })
+
+  test("re-delivers env when it changes between boots", async () => {
+    const api = fakeExe()
+    let secret = "synthetic-secret-a"
+    const driver = createExeSandboxDriver({
+      apiToken: "t",
+      healthIntervalMs: 0,
+      fetchImpl: api.fetchImpl,
+      env: () => ({ RUNTIME_SECRET: secret }),
+    })
+    const ensure = {
+      workspaceId: "workspace_1",
+      homeRegion: "us-east",
+      epoch: 1,
+      labels: { app: "claxedo", workspaceId: "workspace_1", epoch: "1" },
+    }
+    const created = await driver.ensureHost(ensure)
+    if ("provisioning" in created) throw new Error("unexpected provisioning result")
+    await driver.stop?.(created)
+
+    secret = "synthetic-secret-b"
+    const mark = api.calls.length
+    await driver.resumeHost?.({
+      lease: {
+        workspaceId: "workspace_1",
+        homeRegion: "us-east",
+        driver: "exe",
+        epoch: 1,
+        status: "stopped",
+        retryCount: 0,
+        createdAt: 1,
+        updatedAt: 1,
+        sandboxId: created.sandboxId,
+        hostId: created.hostId,
+      },
+      ensure,
+    })
+    const calls = api.calls.slice(mark).map((call) => call.command)
+    expect(calls.filter((command) => command.includes("synthetic-secret-b"))).toHaveLength(1)
+    expect(calls.some((command) => command.includes("synthetic-secret-a"))).toBe(false)
+  })
+
+  test("a failed runtime start cannot echo secrets back through diagnostics", async () => {
+    const api = fakeExe({ failNohup: true })
+    const driver = createExeSandboxDriver({ apiToken: "t", healthIntervalMs: 0, fetchImpl: api.fetchImpl })
+    const failure = await driver.ensureHost({
+      workspaceId: "workspace_1",
+      homeRegion: "us-east",
+      epoch: 1,
+      labels: { app: "claxedo", workspaceId: "workspace_1", epoch: "1" },
+      env: { WORKSPACE_RUNTIME_CONFIG_TOKEN: "synthetic-secret-1" },
+    }).then(
+      () => { throw new Error("expected ensure to fail") },
+      (err: unknown) => err as Error,
+    )
+    expect(failure.message).toContain("runtime start")
+    expect(failure.message).not.toContain("synthetic-secret-1")
   })
 })
 

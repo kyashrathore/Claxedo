@@ -6,7 +6,7 @@ import type {
   SandboxTarget,
 } from ".."
 import { workspaceRuntimeBootEnv } from "../runtime-env"
-import { shell } from "../command"
+import { envFile, shell } from "../command"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { SANDBOX_IMAGE, assertSandboxImageReference } from "../image"
 import { sandboxDriverCatalog } from "../driver-catalog"
@@ -78,6 +78,13 @@ const DEFAULT_PROVISION_INTERVAL_MS = 2_000
 const DEFAULT_HEALTH_TIMEOUT_MS = 60_000
 const DEFAULT_HEALTH_INTERVAL_MS = 1_000
 const DEFAULT_OPERATION_TIMEOUT_MS = 120_000
+// Written via PUT /boxes/{id}/files — the provider's file channel — so env and
+// registry credentials never appear in a /commands body, which Box executes
+// and can log. Paths are relative to the box work directory; the container
+// reads the env through a read-only bind mount.
+const RUNTIME_ENV_PATH = ".claxedo-runtime-env"
+const REGISTRY_PASSWORD_PATH = ".claxedo-registry-password"
+const CONTAINER_ENV_PATH = "/run/claxedo-runtime.env"
 
 // Box lifecycle states that accept commands / interactive access.
 const READY_STATES = new Set(["ready", "idle", "running"])
@@ -195,6 +202,13 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     })
   }
 
+  async function putFile(boxId: string, path: string, content: string) {
+    await api(`/boxes/${boxId}/files`, {
+      method: "PUT",
+      body: { path, content, encoding: "utf8" },
+    })
+  }
+
   async function exec(boxId: string, command: string): Promise<BoxCommandResult> {
     const body = await api(`/boxes/${boxId}/commands`, {
       method: "POST",
@@ -229,21 +243,35 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
     }
   }
 
-  function dockerRunScript(input: SandboxDriverEnsureInput, env: Record<string, string>): string {
+  /**
+   * The run command carries only paths: env arrives through the staged file
+   * (mounted read-only, sourced by the entrypoint so multi-line values like
+   * PEMs survive — `docker run --env-file` cannot express them), and the
+   * registry password is piped to `docker login` from a file that is removed
+   * whatever the outcome. A failed login aborts the chain before `docker run`.
+   */
+  function dockerRunScript(input: SandboxDriverEnsureInput): string {
     const port = runtimePort(input)
     const directory = workspaceDirectory(input)
-    const bootScript = [`mkdir -p ${shell(directory)}`, `cd ${shell(directory)}`, `exec ${runtimeCommand}`].join(" && ")
-    const envArgs = Object.entries(env)
-      .map(([key, value]) => `--env ${shell(`${key}=${value}`)}`)
-      .join(" ")
-    const login = options.registryAuth
-      ? `echo ${shell(options.registryAuth.password)} | docker login ${shell(options.registryAuth.server)} --username ${shell(options.registryAuth.username)} --password-stdin && `
-      : ""
-    return (
-      `${login}docker rm -f ${containerName} >/dev/null 2>&1 || true; ` +
-      `docker run -d --name ${containerName} -p ${port}:${port} ${envArgs} ` +
-      `--entrypoint sh ${shell(resolveImage(input))} -lc ${shell(bootScript)}`
-    )
+    const bootScript = [
+      `. ${CONTAINER_ENV_PATH}`,
+      `mkdir -p ${shell(directory)}`,
+      `cd ${shell(directory)}`,
+      `exec ${runtimeCommand}`,
+    ].join(" && ")
+    const steps = [
+      `chmod 600 ${RUNTIME_ENV_PATH}`,
+      ...(options.registryAuth
+        ? [`{ chmod 600 ${REGISTRY_PASSWORD_PATH}; docker login ${shell(options.registryAuth.server)} `
+          + `--username ${shell(options.registryAuth.username)} --password-stdin < ${REGISTRY_PASSWORD_PATH}; `
+          + `rc=$?; rm -f ${REGISTRY_PASSWORD_PATH}; (exit $rc); }`]
+        : []),
+      `{ docker rm -f ${containerName} >/dev/null 2>&1 || true; }`,
+      `docker run -d --name ${containerName} -p ${port}:${port} `
+      + `-v "$(pwd)/${RUNTIME_ENV_PATH}:${CONTAINER_ENV_PATH}:ro" `
+      + `--entrypoint sh ${shell(resolveImage(input))} -lc ${shell(bootScript)}`,
+    ]
+    return steps.join(" && ")
   }
 
   async function waitForHealth(boxId: string, input: SandboxDriverEnsureInput) {
@@ -269,7 +297,18 @@ export function createBoxSandboxDriver(options: BoxSandboxDriverOptions): Sandbo
       ...(await options.env?.(input, { id: hostId })),
     }
     const port = runtimePort(input)
-    await execOrThrow(boxId, dockerRunScript(input, env), "docker run")
+    const script = dockerRunScript(input)
+    await putFile(boxId, RUNTIME_ENV_PATH, envFile(env))
+    if (options.registryAuth) {
+      await putFile(boxId, REGISTRY_PASSWORD_PATH, options.registryAuth.password)
+    }
+    try {
+      await execOrThrow(boxId, script, "docker run")
+    } finally {
+      // The login step removes the staged password when it runs; this covers
+      // failures before the command reaches it.
+      if (options.registryAuth) await exec(boxId, `rm -f ${REGISTRY_PASSWORD_PATH}`).catch(() => undefined)
+    }
     // Publish the box-host port to a stable public HTTPS route, then read it back.
     await execOrThrow(boxId, `host ${port}`, "host publish")
     await waitForHealth(boxId, input)
