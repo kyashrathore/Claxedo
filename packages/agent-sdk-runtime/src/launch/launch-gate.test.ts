@@ -506,9 +506,16 @@ test.skipIf(!posix || !process.versions.bun)("an owner that dies before using th
   const directory = await workspace()
   const store = path.join(directory, "ownership.json")
   const marker = path.join(directory, "payload-ran")
-  await runCrashProxy(crashProxy("before-identity", store, marker), directory, store)
+  // An explicit, short deadline: waiting out an implicit budget would pass
+  // just as well while a gate was still sitting on it.
+  await runCrashProxy(crashProxy("before-identity", store, marker, 500), directory, store)
 
-  await new Promise((resolve) => setTimeout(resolve, 5000))
+  // Deterministic rather than timed: once every gate this proxy started is
+  // gone, nothing is left that could still run the payload.
+  for (let attempt = 0; attempt < 80 && started.some(groupAlive); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  expect(started.filter(groupAlive)).toEqual([])
   expect(await exists(marker)).toBe(false)
   const records: Record<string, never> = JSON.parse(await fs.readFile(store, "utf8").catch(() => "{}"))
   for (const record of Object.values(records)) expect(reconcileLaunch(record).execution).toBe("none")
@@ -522,7 +529,7 @@ test.skipIf(!posix || !process.versions.bun)("an owner that dies before the ackn
 
   await waitForFile(marker, 10_000)
   const records: Record<string, LaunchOwnershipRecordShape> = JSON.parse(await fs.readFile(store, "utf8"))
-  const record = Object.values(records)[0]!
+  const record = Object.values(records)[0]
   expect(record.activationAcknowledgedAt).toBeUndefined()
   expect(reconcileLaunch(record as never).execution).toBe("unknown")
 
@@ -584,7 +591,7 @@ test.skipIf(!posix)("an owner that dies after authorizing leaves a running paylo
   await waitForFile(marker, 10_000)
   const records: Record<string, { activationAuthorizedAt?: number; activationAcknowledgedAt?: number }> =
     JSON.parse(await fs.readFile(store, "utf8"))
-  const record = Object.values(records)[0]!
+  const record = Object.values(records)[0]
 
   expect(record.activationAuthorizedAt).toBeGreaterThan(0)
   expect(record.activationAcknowledgedAt).toBeUndefined()

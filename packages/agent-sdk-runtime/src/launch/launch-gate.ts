@@ -2,7 +2,7 @@ import { spawn, type ChildProcess, type StdioOptions } from "node:child_process"
 import { createRequire } from "node:module"
 import { existsSync } from "node:fs"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { isRecord } from "@claxedo/helpers/guards"
 import { launchErrorText, type CreationIdentity } from "./identity"
 import {
@@ -66,6 +66,15 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
     stdio: withIpc(input.stdio ?? ["pipe", "pipe", "pipe"]),
   })
 
+  // Until the gate reports, its stderr is its own and is the only account of
+  // why it failed to start. After that the payload owns the stream, so this
+  // stops listening rather than mixing the user's output into a launch error.
+  let startupStderr = ""
+  let reporting = true
+  child.stderr?.on("data", (chunk: Buffer) => {
+    if (reporting && startupStderr.length < 4096) startupStderr += chunk.toString()
+  })
+
   let onReported = (_: { identity: CreationIdentity; gateNonce: string }) => {}
   let failReported = (_: unknown) => {}
   const reported = new Promise<{ identity: CreationIdentity; gateNonce: string }>((resolve, reject) => {
@@ -86,6 +95,7 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
   child.on("message", (frame) => {
     if (!isRecord(frame)) return
     if (frame.type === "identity") {
+      reporting = false
       const identity = gateIdentity(frame.identity, child)
       if (!identity) {
         failReported(new Error(`Launch gate reported an identity this launcher cannot own: ${JSON.stringify(frame.identity)}`))
@@ -100,14 +110,20 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
 
   const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
     child.on("exit", (code, signal) => {
-      const reason = new Error(`Launch gate exited (code ${String(code)}, signal ${String(signal)}) before reporting ${gatePhase(code)}`)
+      reporting = false
+      const detail = startupStderr.trim()
+      const reason = new Error(
+        `Launch gate exited (code ${String(code)}, signal ${String(signal)}) before reporting ${gatePhase(code)}${detail ? `: ${detail}` : ""}`,
+      )
       failReported(reason)
       failAcknowledged(reason)
       resolve({ code, signal })
     })
     child.on("error", (error) => {
-      failReported(error)
-      failAcknowledged(error)
+      reporting = false
+      const reason = new Error(`Launch gate could not be started (${entry.runner.length ? `${entry.runner.join(" ")} ` : ""}${entry.file}): ${error.message}`, { cause: error })
+      failReported(reason)
+      failAcknowledged(reason)
       resolve({ code: null, signal: null })
     })
   })
@@ -204,7 +220,14 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
     ...(input.stdio ? { stdio: input.stdio } : {}),
   })
 
-  const { identity, gateNonce } = await handle.reported
+  let identity: CreationIdentity
+  let gateNonce: string
+  try {
+    ;({ identity, gateNonce } = await handle.reported)
+  } catch (error) {
+    await input.ownership.recordRetirement(prepared.launchId, neverExecuted()).catch(() => {})
+    throw new LaunchRefusedError(input.role, error)
+  }
   try {
     await input.ownership.recordIdentity(prepared.launchId, identity, gateNonce)
     await input.ownership.authorizeActivation(prepared.launchId)
@@ -249,22 +272,33 @@ export function resolveLaunchGateChild() {
   if (override) {
     const spawnable = outsideArchive(override)
     if (!spawnable) throw new LaunchRefusedError("harness", new Error(`CLAXEDO_LAUNCH_GATE_CHILD points at ${override}, which does not exist`))
-    return { file: spawnable, runner: runnerFor(spawnable) }
+    const runner = runnerFor(spawnable)
+    if (!runner) throw new LaunchRefusedError("harness", new Error(`CLAXEDO_LAUNCH_GATE_CHILD points at ${override}, which no runner on this host can execute`))
+    return { file: spawnable, runner }
   }
   if (gateChild) return gateChild
   const attempted: string[] = []
   try {
     const resolved = createRequire(import.meta.url).resolve("@claxedo/agent-sdk-runtime/launch-gate-child")
     const spawnable = outsideArchive(resolved)
-    if (spawnable) return (gateChild = { file: spawnable, runner: runnerFor(spawnable) })
-    attempted.push(resolved)
+    const runner = spawnable ? runnerFor(spawnable) : undefined
+    if (spawnable && runner) return (gateChild = { file: spawnable, runner })
+    attempted.push(spawnable ? `${resolved} (no runner on this host can execute it)` : resolved)
   } catch (error) {
     attempted.push(`@claxedo/agent-sdk-runtime/launch-gate-child (${launchErrorText(error)})`)
   }
   for (const candidate of packageRelativeCandidates()) {
     const spawnable = outsideArchive(candidate)
-    if (spawnable) return (gateChild = { file: spawnable, runner: runnerFor(spawnable) })
-    attempted.push(candidate)
+    if (!spawnable) {
+      attempted.push(candidate)
+      continue
+    }
+    const runner = runnerFor(spawnable)
+    if (!runner) {
+      attempted.push(`${candidate} (no runner on this host can execute it)`)
+      continue
+    }
+    return (gateChild = { file: spawnable, runner })
   }
   // A refusal, not a crash: without this file nothing can be launched with
   // recoverable ownership, which is the same answer as a store that will not
@@ -303,7 +337,21 @@ function packageRelativeCandidates() {
   return candidates
 }
 
-function runnerFor(file: string) {
-  if (!file.endsWith(".ts") || process.versions.bun) return []
-  return ["--import", "tsx"]
+/**
+ * How this host runs that file, or nothing if it cannot.
+ *
+ * Bun executes TypeScript directly. Node needs a loader, and `tsx` must be
+ * resolved to an absolute path here rather than passed as a bare specifier:
+ * the gate is spawned with the payload's working directory, so Node would
+ * resolve `tsx` from the user's project and fail with ERR_MODULE_NOT_FOUND on
+ * every launch. A Node host with no loader and no built `.mjs` cannot run the
+ * gate at all, and says so instead of spawning a child that exits 1.
+ */
+function runnerFor(file: string): string[] | undefined {
+  if (process.versions.bun || !file.endsWith(".ts")) return []
+  try {
+    return ["--import", pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href]
+  } catch {
+    return undefined
+  }
 }
