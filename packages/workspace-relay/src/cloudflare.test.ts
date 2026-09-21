@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { generateKeyPair } from "jose"
+import { exportSPKI, generateKeyPair } from "jose"
 import { TUNNEL_PROTOCOL_VERSION } from "@claxedo/workspace-relay-protocol"
 import { mintHostTunnelToken, mintRuntimeAccessToken, verifyRelayHostToken, type RuntimeAccessTokenClaims } from "./auth"
 import { createWorkspaceRelayDirectory } from "./directory"
@@ -2240,7 +2240,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
       headers: {
         upgrade: "websocket",
-        origin: "https://claxedo-app-staging.pages.dev",
+        origin: "https://app.claxedo.com",
         "sec-websocket-protocol": `claxedo-rat.${token}`,
       },
     }))
@@ -2262,6 +2262,157 @@ describe("workspace relay Cloudflare Durable Object room", () => {
 
     expect(res.status).toBe(101)
     expect(res.headers.get("sec-websocket-protocol")).toBeNull()
+  })
+
+  test("rejects workspace WS upgrades whose Origin is outside the allowlist", async () => {
+    // The Bun adapter's requireAllowedOrigin verdict on the same path: a valid
+    // token does not rescue a hostile browser origin.
+    const harness = await roomHarness({
+      connectWebSocket: () => new FakeSocket(),
+    })
+    const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        origin: "https://evil.example.com",
+        "sec-websocket-protocol": `claxedo-rat.${await harness.runtimeAccessToken()}`,
+      },
+    }))
+
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "origin_not_allowed" } })
+    expect(harness.pairs).toHaveLength(0)
+  })
+
+  test("admits workspace WS upgrades from an allowlisted Origin and from non-browser clients", async () => {
+    const harness = await roomHarness({
+      connectWebSocket: () => new FakeSocket(),
+    })
+    const browser = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        origin: "https://app.claxedo.com",
+        "sec-websocket-protocol": `claxedo-rat.${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    expect(browser.status).toBe(101)
+
+    // Browsers always send Origin on WebSocket upgrades, so a missing header
+    // means a non-browser client — admitted, same as a host-tunnel registration.
+    const cli = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        "sec-websocket-protocol": `claxedo-rat.${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    expect(cli.status).toBe(101)
+  })
+
+  test("denies unauthorized upgrades before the origin check runs", async () => {
+    const harness = await roomHarness({
+      connectWebSocket: () => new FakeSocket(),
+    })
+    const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/claxedo/pty/pty_1/connect", {
+      headers: {
+        upgrade: "websocket",
+        origin: "https://evil.example.com",
+      },
+    }))
+
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "runtime_access_token_required" } })
+  })
+
+  test("does not apply the origin gate to host-tunnel registrations", async () => {
+    // Host connectors are non-browser clients protected by the Host Tunnel
+    // Token, not by the browser-origin allowlist — same exemption as Bun.
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
+    const res = await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken()}`,
+        origin: "https://evil.example.com",
+      },
+    }))
+
+    expect(res.status).toBe(101)
+  })
+
+  test("strips upstream Set-Cookie and CORS grants from cloud HTTP responses", async () => {
+    const harness = await roomHarness({
+      fetch: (() => Promise.resolve(new Response("cloud-ok", {
+        headers: {
+          "content-type": "text/plain",
+          "set-cookie": "session=abc; HttpOnly",
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true",
+        },
+      }))) as unknown as typeof fetch,
+    })
+    const res = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        origin: "https://app.claxedo.com",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+      },
+    }))
+
+    expect(res.status).toBe(200)
+    // Every workspace shares the relay's origin: an upstream Set-Cookie would
+    // be replayed to other workspaces' requests, and upstream access-control-*
+    // grants would answer for the relay's own allowlist.
+    expect(res.headers.get("set-cookie")).toBeNull()
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
+    expect(res.headers.get("access-control-allow-credentials")).toBeNull()
+    expect(res.headers.get("content-type")).toBe("text/plain")
+
+    const noOrigin = await harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    expect(noOrigin.headers.get("access-control-allow-origin")).toBeNull()
+    expect(noOrigin.headers.get("set-cookie")).toBeNull()
+  })
+
+  test("strips upstream Set-Cookie and CORS grants from tunnelled HTTP responses", async () => {
+    const harness = await roomHarness({ resolveTarget: "local-worktree" })
+    await harness.room.fetch(new Request("https://relay.test/host-tunnels/host_1?workspaceId=ws_1", {
+      headers: {
+        upgrade: "websocket",
+        authorization: `Bearer ${await harness.hostTunnelToken()}`,
+      },
+    }))
+    const pending = harness.room.fetch(new Request("https://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        origin: "https://app.claxedo.com",
+        authorization: `Bearer ${await harness.runtimeAccessToken()}`,
+      },
+    }))
+    const hostSocket = harness.socket(0)
+    await waitForSent(hostSocket, 1)
+    const requestMessage = JSON.parse(frameText(hostSocket.sent[0])) as { request_id: string }
+
+    hostSocket.message(JSON.stringify({
+      type: "http.response.start",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestMessage.request_id,
+      status: 200,
+      headers: {
+        "content-type": "text/plain",
+        "set-cookie": "session=abc; HttpOnly",
+        "access-control-allow-origin": "*",
+      },
+    }))
+    hostSocket.message(JSON.stringify({
+      type: "http.response.end",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: requestMessage.request_id,
+    }))
+
+    const res = await pending
+    expect(res.status).toBe(200)
+    expect(res.headers.get("set-cookie")).toBeNull()
+    expect(res.headers.get("access-control-allow-origin")).toBe("https://app.claxedo.com")
+    expect(res.headers.get("content-type")).toBe("text/plain")
   })
 
   test("rejects oversized streamed tunnelled request bodies without buffering them", async () => {
@@ -3502,25 +3653,65 @@ describe("workspace relay Cloudflare room host generation fence", () => {
  * One deployment-wide constant therefore means every non-APAC user crosses an
  * ocean twice per frame forever. These assert the hint at the `idFromName` call
  * site, which is the only place the decision has any effect.
+ *
+ * Request-declared inputs (region header/param, edge country) only move the
+ * hint off the configured floor when the request's own credential verifies —
+ * anonymous first-touch traffic cannot pin a workspace's room placement.
  */
 describe("workspace relay Durable Object location hint", () => {
   async function routeWith(input: {
     headers?: Record<string, string>
+    path?: string
     search?: string
     cf?: { country?: string }
     env?: Record<string, unknown>
+    authenticate?: "rat" | "rat-subprotocol" | "host-tunnel" | "wrong-workspace" | "invalid"
   }) {
     const { namespace, routed } = fakeNamespace()
     const gateway = createWorkspaceRelayDurableObjectGateway({ namespace })
-    const request = new Request(`https://relay.test/workspaces/ws_1/api/wr/health${input.search ?? ""}`, (input.headers ? { headers: input.headers } : {}))
+    const headers = { ...input.headers }
+    const env: Record<string, unknown> = { ...input.env }
+    if (input.authenticate) {
+      const runtime = await generateKeyPair("EdDSA", { extractable: true })
+      env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(runtime.publicKey)
+      if (input.authenticate === "host-tunnel") {
+        headers.authorization = `Bearer ${await mintHostTunnelToken({
+          subject: "host_1",
+          hostId: "host_1",
+          workspaceIds: ["ws_1"],
+        }, runtime.privateKey, "EdDSA")}`
+      } else if (input.authenticate === "invalid") {
+        headers.authorization = "Bearer not-a-real-token"
+      } else {
+        const token = await mintRuntimeAccessToken({
+          principalKind: "user",
+          actorId: "user_1",
+          actorKind: "human",
+          orgId: "org_1",
+          workspaceId: input.authenticate === "wrong-workspace" ? "ws_2" : "ws_1",
+          hostId: "host_1",
+          role: "editor",
+        }, runtime.privateKey, "EdDSA")
+        if (input.authenticate === "rat-subprotocol") {
+          headers["sec-websocket-protocol"] = `claxedo-rat.${token}`
+        } else {
+          headers.authorization = `Bearer ${token}`
+        }
+      }
+    }
+    const request = new Request(
+      `https://relay.test${input.path ?? "/workspaces/ws_1/api/wr/health"}${input.search ?? ""}`,
+      { headers },
+    )
     if (input.cf) Object.defineProperty(request, "cf", { value: input.cf })
-    const res = await gateway.fetch(request, input.env ?? {})
+    const res = await gateway.fetch(request, env)
     return { res, routed, hint: routed[0]?.options?.locationHint }
   }
 
   test("derives the hint from the workspace region header", async () => {
     const { res, hint } = await routeWith({
       headers: { "x-claxedo-workspace-region": "us-east" },
+      authenticate: "rat",
     })
 
     expect(hint).toBe("enam")
@@ -3531,20 +3722,20 @@ describe("workspace relay Durable Object location hint", () => {
   test("derives the hint from a region query parameter", async () => {
     // The control plane composes relay URLs; a query param is the cheaper seam
     // when a header cannot be added (WebSocket upgrades from a browser).
-    expect((await routeWith({ search: "?region=eu-west" })).hint).toBe("weur")
-    expect((await routeWith({ search: "?homeRegion=ap-south" })).hint).toBe("apac")
+    expect((await routeWith({ search: "?region=eu-west", authenticate: "rat" })).hint).toBe("weur")
+    expect((await routeWith({ search: "?homeRegion=ap-south", authenticate: "rat" })).hint).toBe("apac")
   })
 
   test("accepts a literal Cloudflare hint as a region", async () => {
-    expect((await routeWith({ search: "?region=weur" })).hint).toBe("weur")
-    expect((await routeWith({ search: "?region=WNAM" })).hint).toBe("wnam")
+    expect((await routeWith({ search: "?region=weur", authenticate: "rat" })).hint).toBe("weur")
+    expect((await routeWith({ search: "?region=WNAM", authenticate: "rat" })).hint).toBe("wnam")
   })
 
   test("falls back to the requesting user's Cloudflare country when no region is known", async () => {
-    expect((await routeWith({ cf: { country: "DE" } })).hint).toBe("weur")
-    expect((await routeWith({ cf: { country: "BR" } })).hint).toBe("sam")
-    expect((await routeWith({ cf: { country: "IN" } })).hint).toBe("apac")
-    expect((await routeWith({ cf: { country: "AU" } })).hint).toBe("oc")
+    expect((await routeWith({ cf: { country: "DE" }, authenticate: "rat" })).hint).toBe("weur")
+    expect((await routeWith({ cf: { country: "BR" }, authenticate: "rat" })).hint).toBe("sam")
+    expect((await routeWith({ cf: { country: "IN" }, authenticate: "rat" })).hint).toBe("apac")
+    expect((await routeWith({ cf: { country: "AU" }, authenticate: "rat" })).hint).toBe("oc")
   })
 
   test("prefers the workspace region over the requesting user's country", async () => {
@@ -3553,6 +3744,7 @@ describe("workspace relay Durable Object location hint", () => {
     const { hint } = await routeWith({
       headers: { "x-claxedo-workspace-region": "eu-west" },
       cf: { country: "US" },
+      authenticate: "rat",
     })
 
     expect(hint).toBe("weur")
@@ -3564,9 +3756,10 @@ describe("workspace relay Durable Object location hint", () => {
     expect((await routeWith({
       search: "?region=mars-central-1",
       env: { CLAXEDO_RELAY_LOCATION_HINT: "wnam" },
+      authenticate: "rat",
     })).hint).toBe("wnam")
 
-    expect((await routeWith({ search: "?region=mars-central-1" })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    expect((await routeWith({ search: "?region=mars-central-1", authenticate: "rat" })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
   })
 
   test("keeps today's behavior when nothing declares a region", async () => {
@@ -3574,6 +3767,42 @@ describe("workspace relay Durable Object location hint", () => {
     // the pre-change behavior, so this cannot regress existing workspaces.
     expect((await routeWith({})).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
     expect((await routeWith({ env: { CLAXEDO_RELAY_LOCATION_HINT: "enam" } })).hint).toBe("enam")
+  })
+
+  test("ignores placement inputs from an unauthenticated request", async () => {
+    // The DO's location is permanent: anonymous first-touch traffic must not
+    // pin a workspace's room where the caller chose. Region header, region
+    // param and edge country all fall back to the configured floor.
+    expect((await routeWith({ headers: { "x-claxedo-workspace-region": "us-east" } })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    expect((await routeWith({ search: "?region=eu-west" })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    expect((await routeWith({ cf: { country: "DE" } })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    expect((await routeWith({
+      search: "?region=eu-west",
+      env: { CLAXEDO_RELAY_LOCATION_HINT: "wnam" },
+    })).hint).toBe("wnam")
+  })
+
+  test("ignores placement inputs when the credential does not verify for this workspace", async () => {
+    expect((await routeWith({ search: "?region=eu-west", authenticate: "invalid" })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+    // A token for a DIFFERENT workspace is verified but not bound to this
+    // room's workspace, so it cannot move this room's placement either.
+    expect((await routeWith({ search: "?region=eu-west", authenticate: "wrong-workspace" })).hint).toBe(DEFAULT_RELAY_LOCATION_HINT)
+  })
+
+  test("authenticates placement inputs carried on the WebSocket subprotocol", async () => {
+    // Browser upgrades cannot set Authorization; the RAT rides
+    // sec-websocket-protocol instead and authenticates the hint the same way.
+    expect((await routeWith({ search: "?region=eu-west", authenticate: "rat-subprotocol" })).hint).toBe("weur")
+  })
+
+  test("honours the declared region for a verified host-tunnel credential", async () => {
+    const { hint } = await routeWith({
+      path: "/host-tunnels/host_1",
+      search: "?workspaceId=ws_1&region=eu-west",
+      authenticate: "host-tunnel",
+    })
+
+    expect(hint).toBe("weur")
   })
 
   test("only ever emits a hint Cloudflare recognises", async () => {
@@ -3585,7 +3814,7 @@ describe("workspace relay Durable Object location hint", () => {
       "me-central", "oceania", "totally-made-up", "", "../../etc/passwd",
     ]
     for (const region of regions) {
-      const { hint } = await routeWith({ search: `?region=${encodeURIComponent(region)}` })
+      const { hint } = await routeWith({ search: `?region=${encodeURIComponent(region)}`, authenticate: "rat" })
       expect(
         (RELAY_LOCATION_HINTS as readonly string[]).includes(hint ?? ""),
         `region "${region}" produced "${hint}", which Cloudflare would reject`,

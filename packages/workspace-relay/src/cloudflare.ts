@@ -2,8 +2,15 @@
 // own program from imports alone and never pick up this package's tsconfig
 // file list, so the ambient declaration has to travel with the file.
 /// <reference path="./workerd-globals.d.ts" />
+import { createRemoteJWKSet, importSPKI } from "jose"
 import { trimToUndefined } from "@claxedo/helpers/string"
-import { WorkspaceRelayAuthError, verifyHostTunnelToken, type HostTunnelTokenClaims } from "./auth"
+import {
+  WorkspaceRelayAuthError,
+  verifyHostTunnelToken,
+  verifyRuntimeAccessToken,
+  type HostTunnelTokenClaims,
+  type RelayKey,
+} from "./auth"
 import { bearerToken, errorBody } from "./http"
 import {
   makeTunnelPong,
@@ -194,6 +201,90 @@ export function relayRequestCountry(request: Request) {
 }
 
 export type WorkspaceRelayDurableObjectEnv = Record<string, unknown>
+
+/**
+ * Runtime access key material for placement-hint authentication, resolved
+ * lazily from the same env contract `worker.ts` reads
+ * (`CLAXEDO_CONTROL_PLANE_JWKS_URL`, then
+ * `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM`). The gateway is constructed
+ * before env exists, so resolution happens per fetch and is cached by the env
+ * value itself — both are fixed for a deployment's life, and a JWKS resolver
+ * additionally caches its fetched key set.
+ */
+const placementAuthKeys = new Map<string, Promise<RelayKey | undefined>>()
+
+function placementAuthKey(env: WorkspaceRelayDurableObjectEnv) {
+  const jwksUrl = typeof env.CLAXEDO_CONTROL_PLANE_JWKS_URL === "string"
+    ? trimToUndefined(env.CLAXEDO_CONTROL_PLANE_JWKS_URL)
+    : undefined
+  const pem = (typeof env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM === "string"
+    ? trimToUndefined(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
+    : undefined)?.replaceAll("\\n", "\n")
+  const id = jwksUrl ? `jwks:${jwksUrl}` : pem ? `pem:${pem}` : undefined
+  if (!id) return undefined
+  const cached = placementAuthKeys.get(id)
+  if (cached) return cached
+  if (placementAuthKeys.size >= 32) placementAuthKeys.clear()
+  const loaded = (async (): Promise<RelayKey | undefined> => {
+    try {
+      if (jwksUrl) return createRemoteJWKSet(new URL(jwksUrl))
+      if (!pem) return undefined
+      return await importSPKI(pem, "EdDSA")
+    } catch {
+      return undefined
+    }
+  })()
+  placementAuthKeys.set(id, loaded)
+  return loaded
+}
+
+function runtimeAccessTokenFrom(request: Request) {
+  return bearerToken(request.headers.get("authorization") ?? undefined)
+    ?? request.headers.get("sec-websocket-protocol")
+      ?.split(",")
+      .map((item) => item.trim())
+      .find((item) => item.startsWith("claxedo-rat."))
+      ?.slice("claxedo-rat.".length)
+}
+
+/**
+ * Whether the request's own credential verifies against the deployment's
+ * runtime access key — the only verdict that makes its declared placement
+ * inputs (region header/param, edge country) trustworthy.
+ *
+ * The Durable Object's location is fixed at first creation and never
+ * migrates, and this gateway runs BEFORE the room authenticates anything, so
+ * a hint taken straight from an anonymous request would let first-touch
+ * traffic pin a workspace's room wherever the caller chose for the room's
+ * whole life. This is a signature-level check only — the room still performs
+ * the full authorization after routing — and it fails closed: a deployment
+ * without verifiable key material, or a caller authenticated through a custom
+ * `tokenVerifier` the gateway cannot see, simply gets the configured hint.
+ */
+async function relayPlacementAuthenticated(
+  request: Request,
+  env: WorkspaceRelayDurableObjectEnv,
+  url: URL,
+  workspaceId: string,
+) {
+  const key = await placementAuthKey(env)
+  if (!key) return false
+  try {
+    if (url.pathname.startsWith("/host-tunnels/")) {
+      const hostId = trimToUndefined(hostIdFromTunnelPath(url.pathname))
+      const token = bearerToken(request.headers.get("authorization"))
+      if (!hostId || !token) return false
+      await verifyHostTunnelToken(token, key, { hostId, workspaceIds: workspaceIdsFromSearch(url) })
+      return true
+    }
+    const token = runtimeAccessTokenFrom(request)
+    if (!token) return false
+    await verifyRuntimeAccessToken(token, key, { workspaceId })
+    return true
+  } catch {
+    return false
+  }
+}
 
 export type WorkspaceRelayDurableObjectGatewayOptions = {
   bindingName?: string
@@ -888,6 +979,20 @@ function allowedCorsOrigin(origin: string | null): string | undefined {
   return baseOriginAllowed(origin) || configuredAppOriginAllowed(origin) ? origin : undefined
 }
 
+/**
+ * The browser-origin gate on workspace WebSocket upgrades — the counterpart
+ * of `requireAllowedOrigin` in bun.ts, applied to the same path (after token
+ * authorization, before the upgrade is granted). A request carrying NO
+ * `Origin` header is a non-browser client — browsers always send Origin on
+ * WebSocket upgrades — so there is no origin verdict to enforce and it is
+ * admitted.
+ */
+function workspaceUpgradeOriginDenied(request: Request) {
+  const origin = request.headers.get("origin")
+  if (origin === null || allowedCorsOrigin(origin)) return null
+  return json("origin_not_allowed", "Origin is not in the allowlist", 403)
+}
+
 function corsHeaders(request: Request): Record<string, string> | undefined {
   const origin = allowedCorsOrigin(request.headers.get("origin"))
   if (!origin) return undefined
@@ -905,9 +1010,25 @@ function corsPreflight(request: Request) {
   return new Response(null, { status: headers ? 204 : 403, ...(headers ? { headers } : {}) })
 }
 
+/**
+ * Response headers the RELAY — not the upstream — owns at this boundary.
+ * Every workspace shares the relay's origin, so an upstream Set-Cookie would
+ * be replayed to other workspaces' requests through the relay, and an
+ * upstream access-control-* grant would answer for the relay's own allowlist.
+ * Stripped unconditionally before `corsHeaders` stamps the relay's policy —
+ * same list the Bun adapter's `relayCorsHeaders` deletes.
+ */
+const UPSTREAM_OWNED_RESPONSE_HEADERS = [
+  "set-cookie",
+  "access-control-allow-origin",
+  "access-control-allow-credentials",
+  "access-control-allow-headers",
+  "access-control-allow-methods",
+  "access-control-expose-headers",
+  "access-control-max-age",
+]
+
 function withCors(request: Request, response: Response) {
-  const headers = corsHeaders(request)
-  if (!headers) return response
   // A WebSocket upgrade (101) CANNOT be reconstructed: in Workers
   // `new Response(..., { status: 101 })` throws and the attached `webSocket`
   // would be dropped anyway. Browsers always send `Origin` on WS upgrades, so
@@ -916,7 +1037,8 @@ function withCors(request: Request, response: Response) {
   // untouched (WebSockets are not subject to CORS).
   if (response.status === 101 || ("webSocket" in response && response.webSocket)) return response
   const next = new Headers(response.headers)
-  for (const [key, value] of Object.entries(headers)) next.set(key, value)
+  for (const name of UPSTREAM_OWNED_RESPONSE_HEADERS) next.delete(name)
+  for (const [key, value] of Object.entries(corsHeaders(request) ?? {})) next.set(key, value)
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -979,16 +1101,6 @@ export function createWorkspaceRelayDurableObjectGateway(
       if (url.pathname === "/health") {
         return Response.json({ ok: true, service: "workspace-relay", mode: "cloudflare-durable-object" })
       }
-      // Per-workspace where possible, deployment-wide only as a floor. The DO's
-      // location is fixed at FIRST CREATION and never migrates, so this value is
-      // permanent for the workspace — see `relayLocationHint`.
-      const requestRegion = relayRequestRegion(request)
-      const requestCountry = relayRequestCountry(request)
-      const locationHint = relayLocationHint({
-        ...(typeof env.CLAXEDO_RELAY_LOCATION_HINT === "string" ? { configured: env.CLAXEDO_RELAY_LOCATION_HINT } : {}),
-        ...(requestRegion ? { region: requestRegion } : {}),
-        ...(requestCountry ? { country: requestCountry } : {}),
-      })
       const namespace = namespaceFromEnv(env, options)
       if (!namespace) {
         return json(
@@ -1012,6 +1124,26 @@ export function createWorkspaceRelayDurableObjectGateway(
           url.pathname.startsWith("/workspaces/") || url.pathname.startsWith("/host-tunnels/") ? 400 : 404,
         )
       }
+      // Per-workspace where possible, deployment-wide only as a floor. The DO's
+      // location is fixed at FIRST CREATION and never migrates, so this value is
+      // permanent for the workspace — see `relayLocationHint`. Request-declared
+      // inputs (region header/param, edge country) may only move the hint off
+      // that floor when the request's own credential verifies — see
+      // `relayPlacementAuthenticated`; anonymous first-touch traffic cannot pin
+      // a workspace's room placement.
+      const configuredHint = typeof env.CLAXEDO_RELAY_LOCATION_HINT === "string" ? env.CLAXEDO_RELAY_LOCATION_HINT : undefined
+      const requestRegion = relayRequestRegion(request)
+      const requestCountry = relayRequestCountry(request)
+      const floorHint = relayLocationHint(configuredHint ? { configured: configuredHint } : {})
+      const declaredHint = relayLocationHint({
+        ...(configuredHint ? { configured: configuredHint } : {}),
+        ...(requestRegion ? { region: requestRegion } : {}),
+        ...(requestCountry ? { country: requestCountry } : {}),
+      })
+      const locationHint = declaredHint === floorHint
+        || await relayPlacementAuthenticated(request, env, url, workspaceId)
+        ? declaredHint
+        : floorHint
       const routeFinishedAt = performance.now()
       const response = await namespace.get(namespace.idFromName(workspaceRelayDurableObjectRoomName(workspaceId)), {
         locationHint,
@@ -2070,6 +2202,8 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     if (!websocketRequest(request)) return json("websocket_upgrade_required", "Workspace Relay requires a WebSocket upgrade", 426)
     const authorized = await authorizeWorkspaceRelayRequest(relayOptions, request, workspaceId)
     if (!authorized.ok) return authorized.response
+    const originDenied = workspaceUpgradeOriginDenied(request)
+    if (originDenied) return originDenied
     if (isHostTunnelTarget(authorized.request.target)) return admitHostTunnelClient(request, authorized.request)
     return await admitCloudClient(request, authorized.request)
   }
