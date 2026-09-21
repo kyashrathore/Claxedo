@@ -82,6 +82,13 @@ export interface Wake {
   attempts: number
 }
 
+/**
+ * A wake row as `listForSession` returns it. The approval `token` is the
+ * capability that resolves the wake, so the list view redacts it — possession
+ * flows only through the `requestApproval` return value.
+ */
+export type ListedWake = Omit<Wake, "token"> & { token: null }
+
 export type ResolveOutcome =
   | { ok: true }
   | { ok: false; reason: "too_late" | "already_resolved" | "unauthorized" | "not_found" }
@@ -109,7 +116,11 @@ export interface WakeDriver {
   nudge(hint: { serialKey: string | null; fireAt: number }): void
 }
 
-/** Host authz: may this actor resolve an approval for this workspace? */
+/**
+ * Host authz: may this actor resolve an approval for this workspace?
+ * Required at engine construction — there is no implicit allow. A host that
+ * never resolves approvals passes `() => false`.
+ */
 export type Authorize = (actor: Actor, workspaceId: WorkspaceId) => Promise<boolean> | boolean
 
 /** Per-workspace limits on agent-authored wakes. */

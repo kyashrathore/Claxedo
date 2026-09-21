@@ -13,7 +13,7 @@ const WS = "ws1"
 function setup(session = "s1", depth = 0) {
   const clock = { t: 1_000_000 }
   const store = new SqliteWakeStore()
-  const wakes: Wakes = createWakes({ store, now: () => clock.t, spawnTurn: async () => {} })
+  const wakes: Wakes = createWakes({ store, now: () => clock.t, authorize: () => false, spawnTurn: async () => {} })
   const ctx: WakeToolContext = {
     wakes,
     sessionId: session,
@@ -50,6 +50,16 @@ describe("schedule_followup", () => {
   it("rejects an unparseable time", async () => {
     const { ctx } = setup()
     await expect(handleWakeToolCall("schedule_followup", { when: "soon-ish" }, ctx)).rejects.toThrow()
+  })
+
+  it("rejects a nonfinite time", async () => {
+    const { ctx } = setup()
+    await expect(
+      handleWakeToolCall("schedule_followup", { when: Number.POSITIVE_INFINITY }, ctx),
+    ).rejects.toThrow(/invalid time/)
+    await expect(handleWakeToolCall("schedule_followup", { when: Number.NaN }, ctx)).rejects.toThrow(
+      /invalid time/,
+    )
   })
 })
 

@@ -62,7 +62,12 @@ function parseDuration(s: string): number {
 
 /** Absolute epoch ms, a relative duration ("+3d"/"2h"), or an ISO/parseable date string. */
 function parseWhen(when: string | number, now: number): number {
-  if (typeof when === "number") return when
+  if (typeof when === "number") {
+    if (!Number.isFinite(when)) {
+      throw new Error(`invalid time ${when} (use "+3d", an ISO date, or finite epoch ms)`)
+    }
+    return when
+  }
   if (DURATION_RE.test(when)) return now + parseDuration(when)
   const t = Date.parse(when)
   if (Number.isNaN(t)) throw new Error(`invalid time "${when}" (use "+3d", an ISO date, or epoch ms)`)

@@ -8,13 +8,13 @@ code wins and this doc has rotted — fix it.
 
 | file | lines | owns |
 | --- | --- | --- |
-| `src/types.ts` | ~114 | every public type: `Wake`, states, triggers, `WakeSink`, `WakeDriver`, `Budgets` |
-| `src/store.ts` | ~58 | the `WakeStore` port — the only surface adapters implement |
-| `src/wakes.ts` | ~398 | the engine: create paths, the guarded firing path, `runDue`, recovery, receipts |
-| `src/scheduler.ts` | ~49 | the polling backstop for long-lived processes |
-| `src/sqlite-store.ts` | ~278 | better-sqlite3 adapter (schema, claim SQL, additive upgrades) |
+| `src/types.ts` | ~139 | every public type: `Wake`, states, triggers, `WakeSink`, `WakeDriver`, `Budgets` |
+| `src/store.ts` | ~120 | the `WakeStore` port — the only surface adapters implement |
+| `src/wakes.ts` | ~502 | the engine: create paths, the guarded firing path, `runDue`, recovery, receipts |
+| `src/scheduler.ts` | ~65 | the polling backstop for long-lived processes |
+| `src/sqlite-store.ts` | ~414 | better-sqlite3 adapter (schema, claim SQL, additive upgrades) |
 | `src/sqlite.ts` | 5 | the node-only subpath entry (`@claxedo/wakes/sqlite`) |
-| `src/tools.ts` | ~166 | agent-facing tool definitions + dispatcher |
+| `src/tools.ts` | ~141 | agent-facing tool definitions + dispatcher |
 | `src/budgets.ts` | ~47 | per-workspace creation limits |
 | `src/token.ts` | 13 | 128-bit Web-Crypto approval tokens |
 | `src/index.ts` | ~33 | root entry — **must stay edge-runtime-safe** (no sqlite) |
@@ -70,22 +70,26 @@ One durable record: *when trigger T fires, run sink K with this payload.*
   reclaimable — never a half-fire), run it, CAS `firing→fired`.
 - `recover()` re-drives every `firing` row on boot; `runDue`'s reclaim pass
   re-drives lapsed leases at any time. Firing is therefore **at-least-once**;
-  `once()` + `effect receipts` (store `getReceipt`/`putReceipt`) give
+  `once()` + `effect receipts` (store `claimReceipt`/`completeReceipt`) give
   at-most-once for irreversible external effects.
 
 ## The engine (`wakes.ts` — `createWakes`, line ~119)
 
-Options: `store` (required), `spawnTurn` (sugar for the `session_turn` sink),
-`sinks` (kind → handler; at least one of spawnTurn/sinks required), `driver`
-(optional push), `authorize` (approval guard), `budgets`, `now` (injectable
-clock — all tests are wall-clock-free), `computeNextRun` (cron math, injected,
-see shortcoming), `leaseMs`, `batchLimit`.
+Options: `store` (required), `authorize` (required approval-resolution policy —
+no implicit allow; `() => false` disables approvals), `spawnTurn` (sugar for
+the `session_turn` sink), `sinks` (kind → handler; at least one of
+spawnTurn/sinks required), `driver` (optional push), `budgets`, `now`
+(injectable clock — all tests are wall-clock-free), `computeNextRun` (cron
+math, injected, see shortcoming), `leaseMs`, `batchLimit`.
 
 **Create paths** — `schedule` / `watch` / `requestApproval` all funnel into
 `insertWake`, which enforces budgets (unless the recurring re-insert), dedups
 by `idempotencyKey`, writes the row (`wake_${ulid()}`) via `insertRow`, then
 arms the lane: one nudge per time the row becomes actionable — its `fireAt`,
-its `expiresAt`, or both.
+its `expiresAt`, or both. `insertRow` rejects nonfinite `fireAt`/`expiresAt`
+(NaN, ±Infinity, invalid `Date`s) at that single funnel — before the budget
+read, whose comparisons would silently admit a NaN — so caller-supplied and
+`computeNextRun`-produced times alike are validated.
 
 **Relative times**: `schedule({in: "3d"})` and `expiresIn: "12h"` use the `ms`
 package; `DurationString = Parameters<typeof ms>[0]` gives compile-time
@@ -141,10 +145,19 @@ idempotency key `recur:${id}:${nextFireAt}` (re-drives can't double-book),
 preserving `kind` and `serialKey`. Downtime therefore *replays* missed
 occurrences one by one.
 
+**Receipts (`once`)** — the effect key is claimed atomically *before* `fn`
+runs, so racing callers converge on one producer: losers see `running`, poll
+with backoff, and return the winner's recorded result once it lands. The
+claim carries the same `leaseMs` lease as a firing row — a producer that
+crashes mid-effect frees the key when the lease lapses instead of wedging it.
+`completeReceipt` is bound to the exact claim timestamp, so a claimant whose
+lease lapsed and lost the key to a re-claim cannot overwrite the newer claim
+or an already-recorded result.
+
 ## The store port (`store.ts`)
 
 All methods async so a network adapter fits the same contract as an embedded
-one (SQLite). Three operations carry the correctness burden:
+one (SQLite). Four operations carry the correctness burden:
 
 - `insert` — idempotency-keyed dedup must be atomic.
 - `cas(id, from, to, nowMs, patch)` — the single serialization point per wake.
@@ -155,6 +168,10 @@ one (SQLite). Three operations carry the correctness burden:
   wake per key per batch (earliest first); null keys unrestricted; the
   optional `serialKey` scopes to one lane (string), the null lane (`null`),
   or all (`undefined`).
+- `claimReceipt(key, nowMs, leaseMs)` — the `once` claim: one statement that
+  inserts-or-reclaims a key and classifies the outcome (`claimed` /
+  `running` / `completed`). A completed receipt is immutable;
+  `completeReceipt` must not overwrite it.
 
 Everything else is plain reads, of which one carries a scheduling contract:
 `nextObligationAt(serialKey)` must never report a time earlier than the lane
@@ -238,7 +255,9 @@ absent until a host wires delivery paths for `deliverEvent`/`resolve` — a tool
 that promises a resumption no host can deliver is worse than no tool. Security
 properties enforced by construction: sessionId/workspaceId come from the
 host-supplied `WakeToolContext`, never from the agent (a tool can only touch
-its own session's wakes — `cancel_wake` checks `listForSession` ownership);
+its own session's wakes — `cancel_wake` checks `listForSession` ownership,
+and that view redacts approval `token`s so a list reader cannot resolve a
+wake it can see);
 `toolCallId` becomes the idempotency key so a retried tool call can't
 double-book; `depth+1` flows into the budget recursion bound. Its `parseWhen` accepts
 `"+3d"`-style strings and ISO dates (predates the `ms` sugar; intentionally

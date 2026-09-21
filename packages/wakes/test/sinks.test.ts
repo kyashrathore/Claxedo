@@ -14,6 +14,7 @@ function harness(opts?: {
   const wakes: Wakes = createWakes({
     store,
     now: () => clock.t,
+    authorize: () => false,
     computeNextRun: (_cron, after) => after + 60_000,
     ...(opts?.spawnTurn === false
       ? {}
@@ -73,6 +74,7 @@ describe("sink registry", () => {
     const wakes2 = createWakes({
       store: first.store,
       now: () => first.clock.t,
+      authorize: () => false,
       spawnTurn: async () => {},
       sinks: { later_sink: (_wake, result) => void settled.push(result) },
     })
@@ -108,8 +110,10 @@ describe("sink registry", () => {
 
   it("createWakes without spawnTurn works when sinks are provided, and rejects with neither", () => {
     expect(() =>
-      createWakes({ store: new SqliteWakeStore(), sinks: { custom: () => {} } }),
+      createWakes({ store: new SqliteWakeStore(), authorize: () => false, sinks: { custom: () => {} } }),
     ).not.toThrow()
-    expect(() => createWakes({ store: new SqliteWakeStore() })).toThrow(/spawnTurn or at least one sink/)
+    expect(() => createWakes({ store: new SqliteWakeStore(), authorize: () => false })).toThrow(
+      /spawnTurn or at least one sink/,
+    )
   })
 })

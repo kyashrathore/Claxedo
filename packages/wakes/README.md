@@ -18,7 +18,7 @@ const wakes = createWakes({
   sinks: {                                            // other firing behaviors
     my_job: async (wake, result) => host.runJob(JSON.parse(wake.intentJson)),
   },
-  authorize: async (actor, workspaceId) => host.canApprove(actor, workspaceId),
+  authorize: async (actor, workspaceId) => host.canApprove(actor, workspaceId), // required; () => false disables approvals
   computeNextRun: (cron, after) => parseCron(cron, after), // only if you use cron
 })
 
@@ -32,7 +32,8 @@ createScheduler(wakes).start()                 // the polling backstop (guarante
 await wakes.deliverEvent({ workspaceId, eventKey: "ci:pass:x", payload }) // 'on_event' — host webhook ingress
 await wakes.resolve(token, answer, actor)      // 'on_approval' — inbound handler
 
-// turn-side: make an irreversible external effect at-most-once across re-runs
+// turn-side: an irreversible external effect runs at most once — across
+// re-runs and racing callers, who wait and share the recorded result
 await wakes.once(sessionId, "open-pr:branch-x", () => host.openPr(branch))
 ```
 

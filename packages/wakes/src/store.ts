@@ -1,11 +1,20 @@
 import type { SessionId, Token, Wake, WakeId, WakeState, WorkspaceId } from "./types"
 
+export type ReceiptClaim =
+  /** This call won the claim; the caller runs the effect, then `completeReceipt`. */
+  | { status: "claimed"; claimedAtMs: number }
+  /** Another caller holds an unexpired claim; poll again for its result. */
+  | { status: "running" }
+  /** A result is already recorded; the caller must not run the effect. */
+  | { status: "completed"; resultJson: string }
+
 /**
  * The porting surface. An adapter (SQLite / Postgres / a network store)
  * implements this; the wakes engine talks only to it. Every method is async so
- * a network-backed adapter fits the same port as an embedded one (SQLite). The three
+ * a network-backed adapter fits the same port as an embedded one (SQLite). The
  * atomicity-critical operations are `insert` (idempotency-keyed dedup),
- * `claimDue`/`cas` (the guarded transitions), and the effect-receipt pair.
+ * `claimDue`/`cas` (the guarded transitions), `reclaimFiring` (re-stamp and
+ * return in one statement), and `claimReceipt` (the `once` claim).
  * Everything else is a plain read.
  */
 export interface WakeStore {
@@ -88,8 +97,24 @@ export interface WakeStore {
   countCreatedSince(workspaceId: WorkspaceId, sinceMs: number): Promise<number>
 
   // effect receipts (for `once`)
-  getReceipt(key: string): Promise<string | null>
-  putReceipt(key: string, resultJson: string): Promise<void>
+
+  /**
+   * Atomically claim the right to run the effect for `key`, or report its
+   * outcome. A claim holds a lease until `nowMs + leaseMs`: while it is live
+   * other callers see "running" and wait; once it lapses the key is
+   * re-claimable, so a producer that crashed before `completeReceipt` frees
+   * the key instead of wedging it. A completed receipt is never re-claimed.
+   * The claim decision must happen in one statement — a read-then-write pair
+   * lets two racing callers both run the effect.
+   */
+  claimReceipt(key: string, nowMs: number, leaseMs: number): Promise<ReceiptClaim>
+  /**
+   * Record the winning claimant's result, bound to the exact claim by
+   * `claimedAtMs`: a claimant whose lease lapsed and lost the key to a
+   * re-claim must not overwrite the newer claim or an already-recorded
+   * result.
+   */
+  completeReceipt(key: string, claimedAtMs: number, resultJson: string): Promise<void>
 
   /** Delete terminal wakes older than `beforeMs`. Returns rows removed. */
   gc(beforeMs: number): Promise<number>
