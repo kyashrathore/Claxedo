@@ -88,3 +88,20 @@ export function createProcessPaneSync(deps: ProcessPaneSyncDeps): () => void {
     if (crashed && !deps.isProcessOpen()) deps.setCrashedWhileClosed(true)
   }
 }
+
+/**
+ * The row a stop's answer justifies, or nothing when it justifies no change.
+ *
+ * Only `stopped` is an observation. An unresolved stop proved neither that the
+ * process is gone nor that it is running: the owner kept it, its port and its
+ * pty, and may still be stopping it. Painting `running` claims an observation
+ * nobody made, exactly as `stopped` would in the other direction, so the row
+ * waits for the workspace to report what became of it.
+ */
+export function processRowAfterStop(
+  current: Process.Status,
+  answer: { state: "stopped" | "unresolved" } | undefined,
+): Process.Status | undefined {
+  if (current !== "stopping") return undefined
+  return answer?.state === "stopped" ? "stopped" : undefined
+}

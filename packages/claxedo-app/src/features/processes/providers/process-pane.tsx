@@ -8,7 +8,7 @@ import { createProcessClient } from "@/features/processes/data"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import type { ProcessOwnershipAPI, TerminalTabOps } from "./process-ownership"
-import { createProcessPaneSync, isStaleProcessSnapshot } from "./process-pane-status"
+import { processRowAfterStop, createProcessPaneSync, isStaleProcessSnapshot } from "./process-pane-status"
 import { createProcessEventHandlers, type ProcessPaneStore } from "./process-pane-events"
 import { staleProcessTerminalIds } from "./process-pane-cleanup"
 import { afterVisibleWork, createWakeDetector } from "./process-pane-scheduling"
@@ -608,15 +608,15 @@ const processPaneContextInput = {
           sync()
         }
         const stopped = await run(() => client.stop(configId))
-        // The response, not its arrival, says whether the process is gone: an
-        // unresolved stop leaves it running with its port and pty held, so the
-        // row says running again until the workspace reports otherwise.
+        // The response, not its arrival, says whether the process is gone. An
+        // unresolved stop proved neither: the owner kept the process, its port
+        // and its pty, and may still be stopping it. The row stays `stopping`
+        // until the workspace reports what became of it — `running` would claim
+        // an observation nobody made, the same guess as `stopped`.
         const current = store.processes[configId]
-        if (current && current.status === "stopping") {
-          setStore("processes", configId, {
-            ...current,
-            status: stopped?.state === "stopped" ? ("stopped" as ProcessStatus) : ("running" as ProcessStatus),
-          })
+        const next = current ? processRowAfterStop(current.status, stopped) : undefined
+        if (current && next) {
+          setStore("processes", configId, { ...current, status: next })
           sync()
         }
       },
@@ -747,12 +747,8 @@ const processPaneContextInput = {
         batch(() => {
           for (const [configId, stopped] of results) {
             const current = store.processes[configId]
-            if (current && current.status === "stopping") {
-              setStore("processes", configId, {
-                ...current,
-                status: stopped?.state === "stopped" ? ("stopped" as ProcessStatus) : ("running" as ProcessStatus),
-              })
-            }
+            const next = current ? processRowAfterStop(current.status, stopped) : undefined
+            if (current && next) setStore("processes", configId, { ...current, status: next })
           }
         })
         sync()

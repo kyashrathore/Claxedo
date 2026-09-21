@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Process } from "@/features/processes/data"
-import { createProcessPaneSync, deriveProcessPaneStatus, isStaleProcessSnapshot } from "./process-pane-status"
+import { createProcessPaneSync, deriveProcessPaneStatus, isStaleProcessSnapshot, processRowAfterStop } from "./process-pane-status"
 
 type ManagedProcess = Process.ManagedProcess
 
@@ -141,5 +141,27 @@ describe("isStaleProcessSnapshot", () => {
       snap({ configId: "p1", status: "crashed", ptyId: "pty_1", exitCode: 1 }),
       snap({ configId: "p1", status: "idle", ptyId: undefined }),
     )).toBe(false)
+  })
+})
+
+describe("processRowAfterStop", () => {
+  test("a proven stop settles the row", () => {
+    expect(processRowAfterStop("stopping", { state: "stopped" })).toBe("stopped")
+  })
+
+  // The owner kept the process, its port and its pty. `running` would claim an
+  // observation nobody made, and a stopped row over a live process is what sent
+  // people hunting for a port nothing appeared to be holding.
+  test("an unresolved stop leaves the row where it is", () => {
+    expect(processRowAfterStop("stopping", { state: "unresolved" })).toBeUndefined()
+  })
+
+  test("an unreadable answer is not evidence either", () => {
+    expect(processRowAfterStop("stopping", undefined)).toBeUndefined()
+  })
+
+  test("a row that is not stopping is never rewritten by a stop's answer", () => {
+    expect(processRowAfterStop("running", { state: "stopped" })).toBeUndefined()
+    expect(processRowAfterStop("crashed", { state: "stopped" })).toBeUndefined()
   })
 })
