@@ -13,11 +13,11 @@ import type {
   ToolKind,
 } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus } from "../../contracts/agent-runtime-event"
-import { drainContent, drainSpots, reduceTool, viewToolWithDiagnostics, type SessionState } from "./state"
+import { drainContent, drainSpots, reduceTool, RETAINED_MESSAGE_TEXTS_MAX, viewToolWithDiagnostics, type SessionState } from "./state"
 import { classifyToolCall, isSessionSurface, projectToolStart } from "./classify-tool"
 import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 import { checkContentBlock, safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
-import { jsonText, object, text } from "../../value"
+import { boundKeyedMap, jsonText, object, text } from "../../value"
 
 export type { SessionUpdate }
 
@@ -85,7 +85,7 @@ function hasUsefulToolUpdate(input: {
     !!input.meta
 }
 
-function errorText(value: unknown, metadata?: Record<string, unknown>) {
+function errorText(value: unknown) {
   const direct = text(value)
   if (direct) return direct
 
@@ -98,17 +98,7 @@ function errorText(value: unknown, metadata?: Record<string, unknown>) {
     text(row?.content)
   if (fromRow) return fromRow
 
-  const acp = asRecord(metadata?.acp)
-  const raw = asRecord(acp?.rawOutput)
-  const rawText = [text(raw?.stderr), text(raw?.stdout)].filter((item): item is string => !!item).join("\n")
-  const fromMeta =
-    (rawText || undefined) ??
-    text(raw?.message) ??
-    text(raw?.text) ??
-    text(raw?.content)
-  if (fromMeta) return fromMeta
-
-  if (row || raw || (value !== undefined && value !== null)) return jsonText(value ?? raw)
+  if (row || (value !== undefined && value !== null)) return jsonText(value)
   return ""
 }
 
@@ -180,13 +170,14 @@ function textChunkDelta(input: {
   const seen = input.kind === "agent_thought_chunk"
     ? input.state.assistantThinkingByMessageId
     : input.state.assistantTextByMessageId
-  const previous = seen[key] ?? ""
+  const previous = seen.get(key) ?? ""
   const delta = input.content.text.startsWith(previous)
     ? input.content.text.slice(previous.length)
     : input.content.text
-  seen[key] = input.content.text.startsWith(previous)
+  seen.set(key, input.content.text.startsWith(previous)
     ? input.content.text
-    : `${previous}${input.content.text}`
+    : `${previous}${input.content.text}`)
+  boundKeyedMap(seen, RETAINED_MESSAGE_TEXTS_MAX)
   return delta
 }
 
@@ -344,6 +335,7 @@ export function translateSessionUpdate(
       const diagnosticContext = { diagnostics: ctx.diagnostics, toolCallId: update.toolCallId, title: update.title, kind: update.kind }
       const meta = safeMeta(update._meta, diagnosticContext)
       const rawInput = safeRawInput(update.rawInput, diagnosticContext)
+      const rawOutput = safeRawOutput(update.rawOutput, diagnosticContext)
       const content = safeContent(update.content, diagnosticContext)
       const locations = safeLocations(update.locations, diagnosticContext)
       const nextStatus = toolStatus(update.status) ?? "running"
@@ -352,6 +344,7 @@ export function translateSessionUpdate(
         kind: update.kind,
         status: nextStatus,
         rawInput,
+        rawOutput,
         content,
         locations,
         meta,
@@ -428,8 +421,7 @@ export function translateSessionUpdate(
       }
 
       if (status === "completed") {
-        const acp = asRecord(next.metadata.acp)
-        const output = safeOutput != null ? safeOutput : (acp?.rawOutput ?? safeItems ?? null)
+        const output = safeOutput != null ? safeOutput : (tool.rawOutput ?? safeItems ?? null)
         const chunks: AgentRuntimeEvent[] = [...statusChunks]
         if (emitInput("completed", next.input, safeInput, title, kind, safeItems)) {
           chunks.push({ type: "tool-input", toolCallId, input: next.input, display: next.display, metadata: next.metadata })
@@ -445,7 +437,7 @@ export function translateSessionUpdate(
         if (emitInput("completed", next.input, safeInput, title, kind, safeItems)) {
           chunks.push({ type: "tool-input", toolCallId, input: next.input, display: next.display, metadata: next.metadata })
         }
-        const error = errorText(safeOutput, next.metadata)
+        const error = errorText(tool.rawOutput)
         if (!error && safeOutput !== undefined && safeOutput !== null) {
           diagnoseTranslation(ctx.diagnostics, "acp.empty_error_extraction", {
             toolCallId,

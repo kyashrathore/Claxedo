@@ -1,6 +1,9 @@
 import { cloneSnapshotValue } from "../../core/state"
 import type { RuntimeToolAttachment, ToolDisplay } from "../../contracts/agent-runtime-event"
 
+export const RETAINED_TOOL_CALLS_MAX = 256
+export const RETAINED_PART_IDS_MAX = 1024
+
 export type ClientPresentationProjectionState = {
   assistantMsgId?: string
   /**
@@ -21,19 +24,29 @@ export type ClientPresentationProjectionState = {
   accumulatedText: string
   accumulatedThinkingText: string
   proposedPlanText: string
-  toolNamesByCallId: Record<string, string>
-  partIdMap: Record<string, string>
-  toolInputsByCallId: Record<string, Record<string, unknown>>
-  toolDisplaysByCallId: Record<string, ToolDisplay>
-  toolMetadataByCallId: Record<string, Record<string, unknown>>
-  toolStatusByCallId: Record<string, "pending" | "running" | "completed" | "error">
-  toolOutputsByCallId: Record<string, string>
-  toolAttachmentsByCallId: Record<string, RuntimeToolAttachment[]>
-  toolErrorsByCallId: Record<string, string>
+  /**
+   * Runtime `toolCallId`s are wire data, so every per-call store is a `Map`:
+   * a `Record` would let a `"__proto__"` id read inherited members or rewrite
+   * the container's prototype. Entries are bounded and the oldest evict.
+   */
+  toolNamesByCallId: Map<string, string>
+  partIdMap: Map<string, string>
+  toolInputsByCallId: Map<string, Record<string, unknown>>
+  toolDisplaysByCallId: Map<string, ToolDisplay>
+  toolMetadataByCallId: Map<string, Record<string, unknown>>
+  toolStatusByCallId: Map<string, "pending" | "running" | "completed" | "error">
+  toolOutputsByCallId: Map<string, string>
+  toolAttachmentsByCallId: Map<string, RuntimeToolAttachment[]>
+  toolErrorsByCallId: Map<string, string>
   textPartSeq: number
   reasoningPartSeq: number
   splitText: boolean
   splitReasoning: boolean
+}
+
+function keyedMap<V>(value: Map<string, V> | Record<string, V> | undefined): Map<string, V> {
+  const cloned = cloneSnapshotValue(value ?? {})
+  return cloned instanceof Map ? cloned : new Map(Object.entries(cloned))
 }
 
 export function createClientPresentationProjectionState(
@@ -47,15 +60,15 @@ export function createClientPresentationProjectionState(
     accumulatedText: initial?.accumulatedText ?? "",
     accumulatedThinkingText: initial?.accumulatedThinkingText ?? "",
     proposedPlanText: initial?.proposedPlanText ?? "",
-    toolNamesByCallId: cloneSnapshotValue(initial?.toolNamesByCallId ?? {}),
-    partIdMap: cloneSnapshotValue(initial?.partIdMap ?? {}),
-    toolInputsByCallId: cloneSnapshotValue(initial?.toolInputsByCallId ?? {}),
-    toolDisplaysByCallId: cloneSnapshotValue(initial?.toolDisplaysByCallId ?? {}),
-    toolMetadataByCallId: cloneSnapshotValue(initial?.toolMetadataByCallId ?? {}),
-    toolStatusByCallId: cloneSnapshotValue(initial?.toolStatusByCallId ?? {}),
-    toolOutputsByCallId: cloneSnapshotValue(initial?.toolOutputsByCallId ?? {}),
-    toolAttachmentsByCallId: cloneSnapshotValue(initial?.toolAttachmentsByCallId ?? {}),
-    toolErrorsByCallId: cloneSnapshotValue(initial?.toolErrorsByCallId ?? {}),
+    toolNamesByCallId: keyedMap(initial?.toolNamesByCallId),
+    partIdMap: keyedMap(initial?.partIdMap),
+    toolInputsByCallId: keyedMap(initial?.toolInputsByCallId),
+    toolDisplaysByCallId: keyedMap(initial?.toolDisplaysByCallId),
+    toolMetadataByCallId: keyedMap(initial?.toolMetadataByCallId),
+    toolStatusByCallId: keyedMap(initial?.toolStatusByCallId),
+    toolOutputsByCallId: keyedMap(initial?.toolOutputsByCallId),
+    toolAttachmentsByCallId: keyedMap(initial?.toolAttachmentsByCallId),
+    toolErrorsByCallId: keyedMap(initial?.toolErrorsByCallId),
     textPartSeq: initial?.textPartSeq ?? 0,
     reasoningPartSeq: initial?.reasoningPartSeq ?? 0,
     splitText: initial?.splitText ?? false,

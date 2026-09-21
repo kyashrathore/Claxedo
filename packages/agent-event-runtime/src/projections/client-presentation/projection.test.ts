@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createClientPresentationProjection } from "./projection"
+import { RETAINED_PART_IDS_MAX, RETAINED_TOOL_CALLS_MAX } from "./state"
 
 // The composition where this projection is the turn's whole OpenCode-shaped
 // producer, as the runtime's prompt projection is.
@@ -591,7 +592,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolStatusByCallId["tool-1"]).toBe("completed")
+    expect(projection.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("completed")
   })
 
   test("keeps out-of-order completed tools terminal when metadata arrives later", () => {
@@ -629,7 +630,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolStatusByCallId["tool-1"]).toBe("completed")
+    expect(projection.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("completed")
   })
 
   test("mints tool-output image attachments as file parts on the completed tool state", () => {
@@ -725,7 +726,7 @@ describe("createClientPresentationProjection", () => {
         eventType: "tool-output",
       },
     })
-    expect(projection.snapshot().state.toolOutputsByCallId["tool-1"]).toBe("done")
+    expect(projection.snapshot().state.toolOutputsByCallId.get("tool-1")).toBe("done")
   })
 
   test("terminalization sanitizes non-json-safe tool metadata", () => {
@@ -761,7 +762,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolStatusByCallId["tool-1"]).toBe("error")
+    expect(projection.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("error")
   })
 
   test("rolls back state when projection translation throws", () => {
@@ -802,7 +803,7 @@ describe("createClientPresentationProjection", () => {
     const snapshot = projection.snapshot()
     projection.ingest({ type: "tool-output", toolCallId: "tool-1", output: { stdout: "done" } })
 
-    expect(snapshot.state.toolStatusByCallId["tool-1"]).toBe("running")
+    expect(snapshot.state.toolStatusByCallId.get("tool-1")).toBe("running")
   })
 
   test("clones restored projection snapshots so projections are independent", () => {
@@ -826,8 +827,8 @@ describe("createClientPresentationProjection", () => {
 
     first.ingest({ type: "tool-output", toolCallId: "tool-1", output: { stdout: "done" } })
 
-    expect(snapshot.state.toolStatusByCallId["tool-1"]).toBe("running")
-    expect(second.snapshot().state.toolStatusByCallId["tool-1"]).toBe("running")
+    expect(snapshot.state.toolStatusByCallId.get("tool-1")).toBe("running")
+    expect(second.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("running")
   })
 
   test("hydrates tool input from ACP metadata and normalizes snake_case keys", () => {
@@ -900,7 +901,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolDisplaysByCallId["tool-1"]).toEqual({
+    expect(projection.snapshot().state.toolDisplaysByCallId.get("tool-1")).toEqual({
       intent: "read",
       filePath: "src/index.ts",
       locations: [{ path: "src/index.ts", line: 3 }],
@@ -1093,7 +1094,7 @@ describe("createClientPresentationProjection", () => {
         },
       },
     })
-    expect(projection.snapshot().state.toolStatusByCallId["tool-1"]).toBe("error")
+    expect(projection.snapshot().state.toolStatusByCallId.get("tool-1")).toBe("error")
   })
 
   test("keeps the provider error sentence instead of a placeholder session.error", () => {
@@ -1127,3 +1128,87 @@ describe("createClientPresentationProjection", () => {
    expect(makeProjection().ingest({ type: "session-compaction", phase: "completed", metadata: { error: "provider failed" } })).toEqual([])
    expect(makeProjection().ingest({ type: "session-compaction", phase: "completed" })[0]?.payload.type).toBe("session.compacted")
  })
+
+test("file references keep attachment IDs across replay and snapshot restore without duplicate terminal parts", () => {
+  const complete = {
+    type: "tool-output" as const, toolCallId: "view-1", output: "",
+    attachments: [{ kind: "tool-file" as const, path: "/tmp/shot.png", mime: "image/*", filename: "shot.png" }],
+  }
+  const project = () => {
+    const projection = makeProjection()
+    projection.ingest({ type: "tool-start", toolCallId: "view-1", toolName: "view_image" })
+    return { projection, events: projection.ingest(complete) }
+  }
+  const first = project()
+  expect(project().events).toEqual(first.events)
+  const part = first.events.find((event) => event.payload.type === "message.part.updated")?.payload
+  expect(part).toMatchObject({ properties: { part: { state: { attachments: [{ url: "", location: { kind: "tool-file", path: "/tmp/shot.png" } }] } } } })
+  const snapshot = first.projection.snapshot()
+  const restored = createClientPresentationProjection({ sessionId: "session-1", directory: "/repo", assistantMessageId: "msg_turn_1_r", initialSnapshot: snapshot, clock: () => 100 })
+  expect(restored.ingest(complete).every((event) => event.payload.type !== "message.part.updated")).toBe(true)
+  expect(restored.snapshot().state.toolAttachmentsByCallId).toEqual(snapshot.state.toolAttachmentsByCallId)
+})
+
+describe("client-presentation retained state hardening", () => {
+  test("keeps reserved wire toolCallIds as ordinary map keys", () => {
+    const projection = makeProjection()
+    for (const toolCallId of ["__proto__", "constructor", "toString"]) {
+      const [event] = projection.ingest({ type: "tool-start", toolCallId, toolName: "read" })
+        .filter((item) => item.payload.type === "message.part.updated")
+      expect(event?.payload).toMatchObject({
+        properties: { part: { callID: toolCallId, type: "tool" } },
+      })
+    }
+    const state = projection.snapshot().state
+    expect(state.toolNamesByCallId.get("__proto__")).toBe("read")
+    expect(state.toolNamesByCallId.get("constructor")).toBe("read")
+    expect(state.toolNamesByCallId.get("toString")).toBe("read")
+    expect(state.partIdMap.get("constructor")).toBeTypeOf("string")
+  })
+
+  test("bounds retained tool call state by evicting the oldest entries", () => {
+    const projection = makeProjection()
+    const count = RETAINED_TOOL_CALLS_MAX + 11
+    for (let i = 0; i < count; i++) {
+      projection.ingest({ type: "tool-start", toolCallId: `tool-${i}`, toolName: "read" })
+    }
+    const state = projection.snapshot().state
+    expect(state.toolNamesByCallId.size).toBe(RETAINED_TOOL_CALLS_MAX)
+    expect(state.toolInputsByCallId.size).toBeLessThanOrEqual(RETAINED_TOOL_CALLS_MAX)
+    expect(state.toolNamesByCallId.has("tool-0")).toBe(false)
+    expect(state.toolNamesByCallId.has(`tool-${count - 1}`)).toBe(true)
+    expect(state.partIdMap.size).toBeLessThanOrEqual(RETAINED_PART_IDS_MAX)
+  })
+})
+
+describe("client-presentation retained state hardening", () => {
+  test("keeps reserved wire toolCallIds as ordinary map keys", () => {
+    const projection = makeProjection()
+    for (const toolCallId of ["__proto__", "constructor", "toString"]) {
+      const [event] = projection.ingest({ type: "tool-start", toolCallId, toolName: "read" })
+        .filter((item) => item.payload.type === "message.part.updated")
+      expect(event?.payload).toMatchObject({
+        properties: { part: { callID: toolCallId, type: "tool" } },
+      })
+    }
+    const state = projection.snapshot().state
+    expect(state.toolNamesByCallId.get("__proto__")).toBe("read")
+    expect(state.toolNamesByCallId.get("constructor")).toBe("read")
+    expect(state.toolNamesByCallId.get("toString")).toBe("read")
+    expect(state.partIdMap.get("constructor")).toBeTypeOf("string")
+  })
+
+  test("bounds retained tool call state by evicting the oldest entries", () => {
+    const projection = makeProjection()
+    const count = RETAINED_TOOL_CALLS_MAX + 11
+    for (let i = 0; i < count; i++) {
+      projection.ingest({ type: "tool-start", toolCallId: `tool-${i}`, toolName: "read" })
+    }
+    const state = projection.snapshot().state
+    expect(state.toolNamesByCallId.size).toBe(RETAINED_TOOL_CALLS_MAX)
+    expect(state.toolInputsByCallId.size).toBeLessThanOrEqual(RETAINED_TOOL_CALLS_MAX)
+    expect(state.toolNamesByCallId.has("tool-0")).toBe(false)
+    expect(state.toolNamesByCallId.has(`tool-${count - 1}`)).toBe(true)
+    expect(state.partIdMap.size).toBeLessThanOrEqual(RETAINED_PART_IDS_MAX)
+  })
+})

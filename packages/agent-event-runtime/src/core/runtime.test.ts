@@ -241,7 +241,6 @@ describe("createAgentEventRuntime", () => {
       delta: "array",
       harness: "test-provider",
       threadId: "thread-1",
-      raw: { source: "test", payload: "array" },
     }])
 
     expect(translateRawHarnessEvent({
@@ -262,7 +261,6 @@ describe("createAgentEventRuntime", () => {
         delta: "result",
         harness: "test-provider",
         threadId: "thread-1",
-        raw: { source: "test", payload: "result" },
       }],
     })
   })
@@ -302,4 +300,38 @@ describe("createAgentEventRuntime", () => {
     })
     expect(restored.snapshot().adapterState).toEqual({ count: 2 })
   })
+})
+
+test("keeps the raw provider frame on diagnostic-surface events only", () => {
+  const result = translateRawHarnessEvent({
+    adapter: {
+      name: "mixed",
+      translate: () => ({
+        events: [
+          { type: "text-delta", delta: "plain" },
+          { type: "tool-start", toolCallId: "tool-1", toolName: "read" },
+          { type: "harness-notice", code: "note", message: "heads up" },
+          { type: "rate-limit", status: "limited", reason: "slow down" },
+        ],
+      }),
+    },
+    state: {},
+    event: { source: "test", method: "frame", payload: { secret: "wire-secret" } },
+    context: {
+      harness: "test-provider",
+      threadId: "thread-1",
+      now: () => 0,
+      createId: () => "id",
+    },
+  })
+
+  const text = result.events.find((event) => event.type === "text-delta")
+  const tool = result.events.find((event) => event.type === "tool-start")
+  const notice = result.events.find((event) => event.type === "harness-notice")
+  const rateLimit = result.events.find((event) => event.type === "rate-limit")
+  expect(text).not.toHaveProperty("raw")
+  expect(tool).not.toHaveProperty("raw")
+  expect(JSON.stringify([text, tool])).not.toContain("wire-secret")
+  expect(notice).toMatchObject({ raw: { source: "test", method: "frame" } })
+  expect(rateLimit).toMatchObject({ raw: { source: "test", method: "frame" } })
 })

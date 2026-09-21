@@ -1,13 +1,18 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { canonicalToolName, type AgentSessionTitleSource } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "../../contracts/agent-runtime-event"
-import { object, text } from "../../value"
+import { boundKeyedMap, object, text } from "../../value"
 import { userMessageIdForAssistantReply } from "../../contracts/turn-message-ids"
 import type { RuntimeProjection } from "../../core/projection"
 import type { ProjectionSnapshot } from "../../core/state"
 import { projectionSnapshot } from "../../core/state"
 import { normalizeCompatEventWithDiagnostics, type CompatEnvelope, withDir } from "./normalize"
-import { createClientPresentationProjectionState, type ClientPresentationProjectionState } from "./state"
+import {
+  createClientPresentationProjectionState,
+  RETAINED_PART_IDS_MAX,
+  RETAINED_TOOL_CALLS_MAX,
+  type ClientPresentationProjectionState,
+} from "./state"
 import type {
   EventMessageCompleted,
   EventMessageUpdated,
@@ -626,15 +631,15 @@ function toolContentText(content: Extract<AgentRuntimeEvent, { type: "tool-conte
 }
 
 function seqId(ctx: CompatContext, id: string): string {
-  if (!ctx.partIdMap[id]) {
-    const seq = Object.keys(ctx.partIdMap).length
-    ctx.partIdMap[id] = `${String(seq).padStart(6, "0")}_${id}`
+  if (!ctx.partIdMap.has(id)) {
+    const seq = ctx.partIdMap.size
+    ctx.partIdMap.set(id, `${String(seq).padStart(6, "0")}_${id}`)
   }
-  return ctx.partIdMap[id]
+  return ctx.partIdMap.get(id) ?? id
 }
 
 function seen(ctx: CompatContext, id: string): boolean {
-  return !!ctx.partIdMap[id]
+  return ctx.partIdMap.has(id)
 }
 
 function partEvent(directory: string, part: ClientPresentationPart, time: number): CompatEnvelope {
@@ -706,7 +711,7 @@ function attachmentPart(ctx: CompatContext, id: string, attachment: RuntimeToolA
 }
 
 function toolAttachments(ctx: CompatContext, toolCallId: string) {
-  return (ctx.toolAttachmentsByCallId[toolCallId] ?? []).map((attachment, index) =>
+  return (ctx.toolAttachmentsByCallId.get(toolCallId) ?? []).map((attachment, index) =>
     attachmentPart(ctx, seqId(ctx, `${toolCallId}-attachment-${index}`), attachment))
 }
 
@@ -1024,14 +1029,14 @@ function questionAnswers(chunk: Extract<AgentRuntimeEvent, { type: "question-ans
 function terminalizeOpenTools(ctx: CompatContext, error: string, now: () => number): CompatEnvelope[] {
   const endedAt = now()
   const events: CompatEnvelope[] = []
-  for (const [toolCallId, status] of Object.entries(ctx.toolStatusByCallId)) {
+  for (const [toolCallId, status] of ctx.toolStatusByCallId) {
     if (status !== "running" && status !== "pending") continue
-    const tool = ctx.toolNamesByCallId[toolCallId] ?? toolCallId
-    const metadata = ctx.toolMetadataByCallId[toolCallId] ?? {}
-    const input = hydrateToolInput(tool, ctx.toolInputsByCallId[toolCallId], metadata, ctx.toolDisplaysByCallId[toolCallId])
-    ctx.toolInputsByCallId[toolCallId] = input
-    ctx.toolStatusByCallId[toolCallId] = "error"
-    ctx.toolErrorsByCallId[toolCallId] = error
+    const tool = ctx.toolNamesByCallId.get(toolCallId) ?? toolCallId
+    const metadata = ctx.toolMetadataByCallId.get(toolCallId) ?? {}
+    const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(toolCallId), metadata, ctx.toolDisplaysByCallId.get(toolCallId))
+    ctx.toolInputsByCallId.set(toolCallId, input)
+    ctx.toolStatusByCallId.set(toolCallId, "error")
+    ctx.toolErrorsByCallId.set(toolCallId, error)
     events.push(toolEvent({
       ctx,
       toolCallId,
@@ -1167,14 +1172,14 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     case "tool-start": {
       split()
       const tool = chunk.toolName ? canonicalToolName(chunk.toolName) : chunk.toolCallId
-      ctx.toolNamesByCallId[chunk.toolCallId] = tool
-      const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], chunk.metadata)
-      const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)
-      const input = hydrateToolInput(tool, ctx.toolInputsByCallId[chunk.toolCallId], metadata, display)
-      ctx.toolInputsByCallId[chunk.toolCallId] = input
-      ctx.toolMetadataByCallId[chunk.toolCallId] = metadata
-      ctx.toolDisplaysByCallId[chunk.toolCallId] = display
-      const status = ctx.toolStatusByCallId[chunk.toolCallId]
+      ctx.toolNamesByCallId.set(chunk.toolCallId, tool)
+      const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata)
+      const display = mergeDisplay(ctx.toolDisplaysByCallId.get(chunk.toolCallId), chunk.display)
+      const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(chunk.toolCallId), metadata, display)
+      ctx.toolInputsByCallId.set(chunk.toolCallId, input)
+      ctx.toolMetadataByCallId.set(chunk.toolCallId, metadata)
+      ctx.toolDisplaysByCallId.set(chunk.toolCallId, display)
+      const status = ctx.toolStatusByCallId.get(chunk.toolCallId)
       if (status === "completed" || status === "error") {
         return [
           withDir(ctx.directory, projectionDiagnostic({
@@ -1193,13 +1198,13 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
             metadata,
             now: now(),
             ...(status === "completed"
-              ? { output: ctx.toolOutputsByCallId[chunk.toolCallId] ?? "" }
-              : { error: ctx.toolErrorsByCallId[chunk.toolCallId] ?? "tool failed" }),
+              ? { output: ctx.toolOutputsByCallId.get(chunk.toolCallId) ?? "" }
+              : { error: ctx.toolErrorsByCallId.get(chunk.toolCallId) ?? "tool failed" }),
           }),
         ]
       }
-      const nextStatus = ctx.toolStatusByCallId[chunk.toolCallId] ?? "running"
-      ctx.toolStatusByCallId[chunk.toolCallId] = nextStatus
+      const nextStatus = ctx.toolStatusByCallId.get(chunk.toolCallId) ?? "running"
+      ctx.toolStatusByCallId.set(chunk.toolCallId, nextStatus)
       return [toolEvent({
         ctx,
         toolCallId: chunk.toolCallId,
@@ -1213,17 +1218,17 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "tool-input": {
       split()
-      const tool = ctx.toolNamesByCallId[chunk.toolCallId] ?? chunk.toolCallId
+      const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
       const raw = asRecord(chunk.input) ?? { raw: chunk.input }
       const next = Object.keys(raw).length > 0 ? normalizeInputKeys(raw) : undefined
-      const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], chunk.metadata)
-      const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)
-      const input = hydrateToolInput(tool, mergeInput(ctx.toolInputsByCallId[chunk.toolCallId], next), metadata, display)
+      const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata)
+      const display = mergeDisplay(ctx.toolDisplaysByCallId.get(chunk.toolCallId), chunk.display)
+      const input = hydrateToolInput(tool, mergeInput(ctx.toolInputsByCallId.get(chunk.toolCallId), next), metadata, display)
       if (Object.keys(input).length === 0 && Object.keys(metadata).length === 0) return []
-      ctx.toolInputsByCallId[chunk.toolCallId] = input
-      ctx.toolMetadataByCallId[chunk.toolCallId] = metadata
-      ctx.toolDisplaysByCallId[chunk.toolCallId] = display
-      ctx.toolStatusByCallId[chunk.toolCallId] = "running"
+      ctx.toolInputsByCallId.set(chunk.toolCallId, input)
+      ctx.toolMetadataByCallId.set(chunk.toolCallId, metadata)
+      ctx.toolDisplaysByCallId.set(chunk.toolCallId, display)
+      ctx.toolStatusByCallId.set(chunk.toolCallId, "running")
       return [toolEvent({
         ctx,
         toolCallId: chunk.toolCallId,
@@ -1237,15 +1242,15 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "tool-status": {
       split()
-      const tool = ctx.toolNamesByCallId[chunk.toolCallId] ?? chunk.toolCallId
-      const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], chunk.metadata)
-      const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)
-      const input = hydrateToolInput(tool, ctx.toolInputsByCallId[chunk.toolCallId], metadata, display)
+      const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
+      const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata)
+      const display = mergeDisplay(ctx.toolDisplaysByCallId.get(chunk.toolCallId), chunk.display)
+      const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(chunk.toolCallId), metadata, display)
       const status = compatToolStatus(chunk.status)
-      ctx.toolInputsByCallId[chunk.toolCallId] = input
-      ctx.toolMetadataByCallId[chunk.toolCallId] = metadata
-      ctx.toolDisplaysByCallId[chunk.toolCallId] = display
-      ctx.toolStatusByCallId[chunk.toolCallId] = status
+      ctx.toolInputsByCallId.set(chunk.toolCallId, input)
+      ctx.toolMetadataByCallId.set(chunk.toolCallId, metadata)
+      ctx.toolDisplaysByCallId.set(chunk.toolCallId, display)
+      ctx.toolStatusByCallId.set(chunk.toolCallId, status)
       return [toolEvent({
         ctx,
         toolCallId: chunk.toolCallId,
@@ -1254,25 +1259,25 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         status,
         metadata,
         now: now(),
-        ...(status === "completed" ? { output: ctx.toolOutputsByCallId[chunk.toolCallId] ?? "" } : {}),
-        ...(status === "error" ? { error: ctx.toolErrorsByCallId[chunk.toolCallId] ?? "tool failed" } : {}),
+        ...(status === "completed" ? { output: ctx.toolOutputsByCallId.get(chunk.toolCallId) ?? "" } : {}),
+        ...(status === "error" ? { error: ctx.toolErrorsByCallId.get(chunk.toolCallId) ?? "tool failed" } : {}),
       })]
     }
 
     case "tool-content": {
       split()
-      const tool = ctx.toolNamesByCallId[chunk.toolCallId] ?? chunk.toolCallId
+      const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
       const metadata = mergeMetadata(
-        ctx.toolMetadataByCallId[chunk.toolCallId],
+        ctx.toolMetadataByCallId.get(chunk.toolCallId),
         mergeMetadata(chunk.metadata, { acp: { content: [chunk.content] } }),
       )
-      const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)
-      const input = hydrateToolInput(tool, ctx.toolInputsByCallId[chunk.toolCallId], metadata, display)
-      const status = ctx.toolStatusByCallId[chunk.toolCallId] ?? "running"
+      const display = mergeDisplay(ctx.toolDisplaysByCallId.get(chunk.toolCallId), chunk.display)
+      const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(chunk.toolCallId), metadata, display)
+      const status = ctx.toolStatusByCallId.get(chunk.toolCallId) ?? "running"
       const contentText = toolContentText(chunk.content)
-      ctx.toolInputsByCallId[chunk.toolCallId] = input
-      ctx.toolMetadataByCallId[chunk.toolCallId] = metadata
-      ctx.toolDisplaysByCallId[chunk.toolCallId] = display
+      ctx.toolInputsByCallId.set(chunk.toolCallId, input)
+      ctx.toolMetadataByCallId.set(chunk.toolCallId, metadata)
+      ctx.toolDisplaysByCallId.set(chunk.toolCallId, display)
       const event = toolEvent({
         ctx,
         toolCallId: chunk.toolCallId,
@@ -1292,12 +1297,12 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "tool-output": {
       split()
-      const tool = ctx.toolNamesByCallId[chunk.toolCallId] ?? chunk.toolCallId
-      const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], chunk.metadata)
-      const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)
-      const input = hydrateToolInput(tool, ctx.toolInputsByCallId[chunk.toolCallId], metadata, display)
+      const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
+      const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata)
+      const display = mergeDisplay(ctx.toolDisplaysByCallId.get(chunk.toolCallId), chunk.display)
+      const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(chunk.toolCallId), metadata, display)
       const formatted = output(chunk.output, input, metadata)
-      const previousStatus = ctx.toolStatusByCallId[chunk.toolCallId]
+      const previousStatus = ctx.toolStatusByCallId.get(chunk.toolCallId)
       if (previousStatus === "completed" || previousStatus === "error") {
         return [withDir(ctx.directory, projectionDiagnostic({
           sessionID: ctx.sessionId,
@@ -1307,12 +1312,12 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
           eventType: chunk.type,
         }))]
       }
-      ctx.toolInputsByCallId[chunk.toolCallId] = input
-      ctx.toolMetadataByCallId[chunk.toolCallId] = metadata
-      ctx.toolDisplaysByCallId[chunk.toolCallId] = display
-      ctx.toolStatusByCallId[chunk.toolCallId] = "completed"
-      ctx.toolOutputsByCallId[chunk.toolCallId] = formatted.value
-      if (chunk.attachments?.length) ctx.toolAttachmentsByCallId[chunk.toolCallId] = chunk.attachments
+      ctx.toolInputsByCallId.set(chunk.toolCallId, input)
+      ctx.toolMetadataByCallId.set(chunk.toolCallId, metadata)
+      ctx.toolDisplaysByCallId.set(chunk.toolCallId, display)
+      ctx.toolStatusByCallId.set(chunk.toolCallId, "completed")
+      ctx.toolOutputsByCallId.set(chunk.toolCallId, formatted.value)
+      if (chunk.attachments?.length) ctx.toolAttachmentsByCallId.set(chunk.toolCallId, chunk.attachments)
       const endedAt = now()
       return [
         ...(formatted.issues.length ? [withDir(ctx.directory, projectionDiagnostic({
@@ -1337,11 +1342,11 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "tool-error": {
       split()
-      const tool = ctx.toolNamesByCallId[chunk.toolCallId] ?? chunk.toolCallId
-      const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], chunk.metadata)
-      const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)
-      const input = hydrateToolInput(tool, ctx.toolInputsByCallId[chunk.toolCallId], metadata, display)
-      const previousStatus = ctx.toolStatusByCallId[chunk.toolCallId]
+      const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
+      const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), chunk.metadata)
+      const display = mergeDisplay(ctx.toolDisplaysByCallId.get(chunk.toolCallId), chunk.display)
+      const input = hydrateToolInput(tool, ctx.toolInputsByCallId.get(chunk.toolCallId), metadata, display)
+      const previousStatus = ctx.toolStatusByCallId.get(chunk.toolCallId)
       if (previousStatus === "completed" || previousStatus === "error") {
         return [withDir(ctx.directory, projectionDiagnostic({
           sessionID: ctx.sessionId,
@@ -1351,11 +1356,11 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
           eventType: chunk.type,
         }))]
       }
-      ctx.toolInputsByCallId[chunk.toolCallId] = input
-      ctx.toolMetadataByCallId[chunk.toolCallId] = metadata
-      ctx.toolDisplaysByCallId[chunk.toolCallId] = display
-      ctx.toolStatusByCallId[chunk.toolCallId] = "error"
-      ctx.toolErrorsByCallId[chunk.toolCallId] = chunk.error
+      ctx.toolInputsByCallId.set(chunk.toolCallId, input)
+      ctx.toolMetadataByCallId.set(chunk.toolCallId, metadata)
+      ctx.toolDisplaysByCallId.set(chunk.toolCallId, display)
+      ctx.toolStatusByCallId.set(chunk.toolCallId, "error")
+      ctx.toolErrorsByCallId.set(chunk.toolCallId, chunk.error)
       const endedAt = now()
       return [toolEvent({
         ctx,
@@ -1463,13 +1468,13 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "tool-location": {
       split()
-      const tool = ctx.toolNamesByCallId[chunk.toolCallId] ?? chunk.toolCallId
-      const input = normalizeLocationInput(tool, ctx.toolInputsByCallId[chunk.toolCallId] ?? {}, chunk.locations)
-      const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], {
+      const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
+      const input = normalizeLocationInput(tool, ctx.toolInputsByCallId.get(chunk.toolCallId) ?? {}, chunk.locations)
+      const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), {
         acp: { locations: chunk.locations },
       })
-      ctx.toolInputsByCallId[chunk.toolCallId] = input
-      ctx.toolMetadataByCallId[chunk.toolCallId] = metadata
+      ctx.toolInputsByCallId.set(chunk.toolCallId, input)
+      ctx.toolMetadataByCallId.set(chunk.toolCallId, metadata)
       return [toolEvent({
         ctx,
         toolCallId: chunk.toolCallId,
@@ -1483,13 +1488,13 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "tool-terminal": {
       split()
-      const tool = ctx.toolNamesByCallId[chunk.toolCallId] ?? chunk.toolCallId
-      const input = ctx.toolInputsByCallId[chunk.toolCallId] ?? {}
-      const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], {
+      const tool = ctx.toolNamesByCallId.get(chunk.toolCallId) ?? chunk.toolCallId
+      const input = ctx.toolInputsByCallId.get(chunk.toolCallId) ?? {}
+      const metadata = mergeMetadata(ctx.toolMetadataByCallId.get(chunk.toolCallId), {
         acp: { terminalId: chunk.terminalId },
       })
-      const status = ctx.toolStatusByCallId[chunk.toolCallId] ?? "running"
-      ctx.toolMetadataByCallId[chunk.toolCallId] = metadata
+      const status = ctx.toolStatusByCallId.get(chunk.toolCallId) ?? "running"
+      ctx.toolMetadataByCallId.set(chunk.toolCallId, metadata)
       if (status === "completed" || status === "error") {
         return [toolEvent({
           ctx,
@@ -1500,8 +1505,8 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
           metadata,
           now: now(),
           ...(status === "completed"
-            ? { output: ctx.toolOutputsByCallId[chunk.toolCallId] ?? "" }
-            : { error: ctx.toolErrorsByCallId[chunk.toolCallId] ?? "tool failed" }),
+            ? { output: ctx.toolOutputsByCallId.get(chunk.toolCallId) ?? "" }
+            : { error: ctx.toolErrorsByCallId.get(chunk.toolCallId) ?? "tool failed" }),
         })]
       }
       return [toolEvent({
@@ -1526,7 +1531,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
       }))]
 
     case "available-commands-update":
-      return [lossyCompatDiagnostic(ctx, chunk.type, "Claxedo client-presentation projection cannot represent ACP available command updates", chunk)]
+      return [projectSessionCommands(ctx.sessionId, ctx.directory, chunk)]
 
     case "session-info": {
       const time = timestamp(chunk.updatedAt, now())
@@ -1587,6 +1592,19 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
       return []
     }
   }
+}
+
+/** Per-call stores are keyed by wire `toolCallId`s; cap each before the turn grows them without bound. */
+function boundRetainedState(state: ClientPresentationProjectionState) {
+  boundKeyedMap(state.partIdMap, RETAINED_PART_IDS_MAX)
+  boundKeyedMap(state.toolNamesByCallId, RETAINED_TOOL_CALLS_MAX)
+  boundKeyedMap(state.toolInputsByCallId, RETAINED_TOOL_CALLS_MAX)
+  boundKeyedMap(state.toolDisplaysByCallId, RETAINED_TOOL_CALLS_MAX)
+  boundKeyedMap(state.toolMetadataByCallId, RETAINED_TOOL_CALLS_MAX)
+  boundKeyedMap(state.toolStatusByCallId, RETAINED_TOOL_CALLS_MAX)
+  boundKeyedMap(state.toolOutputsByCallId, RETAINED_TOOL_CALLS_MAX)
+  boundKeyedMap(state.toolAttachmentsByCallId, RETAINED_TOOL_CALLS_MAX)
+  boundKeyedMap(state.toolErrorsByCallId, RETAINED_TOOL_CALLS_MAX)
 }
 
 function syncState(ctx: CompatContext, state: ClientPresentationProjectionState) {
@@ -1679,6 +1697,7 @@ export function createClientPresentationProjection(options: ClientPresentationPr
         withAnnouncedAssistantMessage(ctx, project(ctx), now, options.announcesAssistantMessage === true, options.announceAssistantIdentity),
       )
       syncState(ctx, next)
+      boundRetainedState(next)
       state = next
       return events
     } catch (error) {

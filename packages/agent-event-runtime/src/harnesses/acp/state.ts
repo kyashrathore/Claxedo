@@ -1,4 +1,4 @@
-import { text as str } from "../../value"
+import { boundKeyedMap, boundList, text as str } from "../../value"
 import { asRecord } from "@claxedo/helpers/guards"
 import type { ToolCallContent, ToolKind } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "../../contracts/agent-runtime-event"
@@ -31,14 +31,32 @@ type ToolState = {
   seenSpots: string[]
 }
 
+export const RETAINED_TOOLS_MAX = 256
+export const RETAINED_MESSAGE_TEXTS_MAX = 256
+export const RETAINED_TOOL_ITEMS_MAX = 256
+
+/**
+ * Wire identifiers (`toolCallId`, `messageId`) key these maps, so they must be
+ * `Map`s: a `Record` would let a `"__proto__"` id read inherited members or
+ * rewrite the container's prototype. The bounds cap what a hostile or buggy
+ * peer can retain per session; eviction drops the oldest entries.
+ */
 export type SessionState = {
   client: AcpClient
   lastMessageId: string | null
-  assistantTextByMessageId: Record<string, string>
-  assistantThinkingByMessageId: Record<string, string>
+  assistantTextByMessageId: Map<string, string>
+  assistantThinkingByMessageId: Map<string, string>
   status: "idle" | "busy" | "error"
   turn: number
-  tools: Record<string, ToolState>
+  tools: Map<string, ToolState>
+}
+
+/**
+ * Snapshots restore these fields as whatever shape was persisted — a live
+ * `Map` passes through, a record from an older snapshot is adopted.
+ */
+export function toKeyedMap<V>(value: Map<string, V> | Record<string, V> | undefined): Map<string, V> {
+  return value instanceof Map ? value : new Map(Object.entries(value ?? {}))
 }
 
 /**
@@ -330,7 +348,6 @@ function pick(state: ToolState) {
   const kind = state.kind ?? state.firstKind
   const base = parseTitle(title, kind)
   const raw = state.rawInput
-  const body = textBody(state.rawOutput)
   const items = parsed(raw)
   const all = files(state)
   const file = all[0]
@@ -428,6 +445,9 @@ function pick(state: ToolState) {
     ...(cmd ? { description: cmd } : {}),
     ...(raw !== undefined ? { input: raw } : {}),
   } satisfies ToolDisplay
+  // `metadata.acp` rides on every tool event: it carries the derived view the
+  // client-presentation projection reads, never the provider's raw input,
+  // output, or private `_meta` bag — those stay in state for `pick()` itself.
   const metadata = {
     ...(diffValue ? { filediff: diffValue } : {}),
     ...(patchValue.length > 0 ? { files: patchValue } : {}),
@@ -440,12 +460,6 @@ function pick(state: ToolState) {
       ...(hasDiff ? { hasDiff } : {}),
       ...(diffValue ? { filediff: diffValue } : {}),
       ...(patchValue.length > 0 ? { patch: patchValue } : {}),
-      ...(state.content.length ? { content: state.content } : {}),
-      ...(state.meta ? { meta: state.meta } : {}),
-      ...(raw !== undefined ? { rawInput: raw } : {}),
-      ...(state.rawOutput !== undefined ? { rawOutput: state.rawOutput } : {}),
-      ...(body ? { body } : {}),
-      ...(stats ? { stats } : {}),
       ...(state.name ? { rawToolName: state.name } : {}),
       toolCallId: state.id,
     },
@@ -471,11 +485,11 @@ export function createAcpTranslatorState(client?: string): SessionState {
   return {
     client: client?.trim() || "acp",
     lastMessageId: null,
-    assistantTextByMessageId: {},
-    assistantThinkingByMessageId: {},
+    assistantTextByMessageId: new Map(),
+    assistantThinkingByMessageId: new Map(),
     status: "idle",
     turn: 0,
-    tools: {},
+    tools: new Map(),
   }
 }
 
@@ -494,7 +508,7 @@ export function reduceTool(
   },
   diagnostics: AcpDiagnostics,
 ) {
-  const prev = session.tools[id] ?? newTool(id, session.client)
+  const prev = session.tools.get(id) ?? newTool(id, session.client)
   if (
     prev.status === "completed" &&
     (update.status === "running" || update.status === "pending")
@@ -510,8 +524,8 @@ export function reduceTool(
   const title = update.title ?? prev.title ?? prev.firstTitle
   const kind = update.kind ?? prev.kind ?? prev.firstKind
   const rawInput = merge(prev.rawInput, update.rawInput)
-  const content = uniqContent(prev.content, update.content)
-  const locations = uniqSpots(prev.locations, update.locations)
+  const content = boundList(uniqContent(prev.content, update.content), RETAINED_TOOL_ITEMS_MAX)
+  const locations = boundList(uniqSpots(prev.locations, update.locations), RETAINED_TOOL_ITEMS_MAX)
   const terminal = content.find((item) => item.type === "terminal")
   const next: ToolState = {
     ...prev,
@@ -533,7 +547,8 @@ export function reduceTool(
     locations,
     terminalId: terminal?.type === "terminal" ? terminal.terminalId : prev.terminalId,
   }
-  session.tools[id] = next
+  session.tools.set(id, next)
+  boundKeyedMap(session.tools, RETAINED_TOOLS_MAX)
   return next
 }
 
@@ -549,6 +564,7 @@ export function drainContent(state: ToolState, content: ToolCallContent[] | null
       const key = diffKey(item)
       if (!key || state.seenDiffs.includes(key)) continue
       state.seenDiffs.push(key)
+      boundList(state.seenDiffs, RETAINED_TOOL_ITEMS_MAX)
       out.push({
         type: "tool-content",
         toolCallId: state.id,
@@ -569,6 +585,7 @@ export function drainContent(state: ToolState, content: ToolCallContent[] | null
     if (item.type === "terminal") {
       if (!key || state.seenTerms.includes(key)) continue
       state.seenTerms.push(key)
+      boundList(state.seenTerms, RETAINED_TOOL_ITEMS_MAX)
       out.push({
         type: "tool-content",
         toolCallId: state.id,
@@ -582,6 +599,7 @@ export function drainContent(state: ToolState, content: ToolCallContent[] | null
     const genericKey = contentKey(item)
     if (state.seenContent.includes(genericKey)) continue
     state.seenContent.push(genericKey)
+    boundList(state.seenContent, RETAINED_TOOL_ITEMS_MAX)
     out.push({
       type: "tool-content",
       toolCallId: state.id,
@@ -598,6 +616,7 @@ export function drainSpots(state: ToolState, locations: Spot[] | null | undefine
     const key = pathKey(item)
     if (state.seenSpots.includes(key)) return []
     state.seenSpots.push(key)
+    boundList(state.seenSpots, RETAINED_TOOL_ITEMS_MAX)
     return [{ path: item.path, ...(item.line != null ? { line: item.line } : {}) }]
   })
   if (!next.length) return []

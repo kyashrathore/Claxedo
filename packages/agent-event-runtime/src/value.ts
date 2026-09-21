@@ -19,6 +19,22 @@ export function optionLabels(value: unknown) {
   return value.flatMap((item) => text(item) ?? text(asRecord(item)?.label) ?? [])
 }
 
+/** Evicts the oldest entries until `map` holds at most `max`. */
+export function boundKeyedMap<V>(map: Map<string, V>, max: number) {
+  while (map.size > max) {
+    const oldest = map.keys().next()
+    if (oldest.done) return
+    map.delete(oldest.value)
+  }
+}
+
+/** Evicts the oldest entries until `list` holds at most `max`. */
+export function boundList<T>(list: T[], max: number): T[] {
+  const excess = list.length - max
+  if (excess > 0) list.splice(0, excess)
+  return list
+}
+
 export function pathFields(
   row: Record<string, unknown>,
   keys: string[],

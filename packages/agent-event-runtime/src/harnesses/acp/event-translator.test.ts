@@ -2,6 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test"
 import { createAgentEventRuntime } from "../../core/runtime"
 import type { RuntimeSnapshot } from "../../core/state"
 import { createAcpEventTranslator, type AcpEventTranslatorState } from "./event-translator"
+import { RETAINED_MESSAGE_TEXTS_MAX, RETAINED_TOOLS_MAX } from "./state"
 
 function runtime(
   client = "acp:example",
@@ -43,9 +44,15 @@ describe("createAcpEventTranslator", () => {
       intent: "shell", command: "printf hi", description: "printf hi", custom: true,
     } })
     const metadata = start?.metadata?.acp as Record<string, unknown>
-    expect(metadata).toMatchObject({ intent: "shell", command: "printf hi", rawInput: { command: "printf hi", custom: true } })
+    expect(metadata).toMatchObject({ intent: "shell", command: "printf hi" })
     expect(metadata).not.toHaveProperty("description")
     expect(metadata).not.toHaveProperty("input")
+    expect(metadata).not.toHaveProperty("rawInput")
+    expect(metadata).not.toHaveProperty("rawOutput")
+    expect(metadata).not.toHaveProperty("meta")
+    expect(metadata).not.toHaveProperty("content")
+    expect(metadata).not.toHaveProperty("stats")
+    expect(metadata).not.toHaveProperty("body")
   })
 
   test("keeps the move operation source separate from the displayed file path", () => {
@@ -301,13 +308,11 @@ describe("createAcpEventTranslator", () => {
       output: { stdout: "hi" },
       metadata: {
         acp: {
-          rawInput: {
-            command: "printf hi",
-          },
+          command: "printf hi",
         },
       },
     })
-    expect(restored.snapshot().adapterState.tools["tool-1"]?.status).toBe("completed")
+    expect(restored.snapshot().adapterState.tools.get("tool-1")?.status).toBe("completed")
   })
 
   test("does not infer todo semantics from a private tool name", () => {
@@ -784,5 +789,103 @@ describe("createAcpEventTranslator", () => {
         content: { type: "text", text: "hello" },
       },
     }).events.map((event) => event.type)).toEqual(["step-start", "text-delta"])
+  })
+})
+
+describe("ACP retained state hardening", () => {
+  function update(payload: Record<string, unknown>) {
+    return { source: "acp.jsonrpc", method: "session/update", payload }
+  }
+
+  test("keeps reserved wire identifiers as ordinary map keys", () => {
+    const agent = runtime()
+    for (const toolCallId of ["__proto__", "constructor", "toString"]) {
+      const events = agent.ingest(update({
+        sessionUpdate: "tool_call",
+        toolCallId,
+        title: `Tool ${toolCallId}`,
+        status: "in_progress",
+      })).events
+      expect(events.find((event) => event.type === "tool-start")).toMatchObject({ toolCallId })
+    }
+    const tools = agent.snapshot().adapterState.tools
+    expect(tools).toBeInstanceOf(Map)
+    expect(tools.size).toBe(3)
+    for (const id of ["__proto__", "constructor", "toString"]) {
+      expect(tools.get(id)).toMatchObject({ id, status: "running" })
+    }
+  })
+
+  test("keeps reserved message ids as ordinary text keys", () => {
+    const agent = runtime()
+    for (const messageId of ["__proto__", "constructor", "toString"]) {
+      const events = agent.ingest(update({
+        sessionUpdate: "agent_message_chunk",
+        messageId,
+        content: { type: "text", text: `text for ${messageId}` },
+      })).events
+      expect(events.find((event) => event.type === "text-delta")).toMatchObject({ delta: `text for ${messageId}` })
+    }
+    const texts = agent.snapshot().adapterState.assistantTextByMessageId
+    expect(texts).toBeInstanceOf(Map)
+    for (const id of ["__proto__", "constructor", "toString"]) {
+      expect(texts.get(id)).toBe(`text for ${id}`)
+    }
+  })
+
+  test("bounds retained tool and message state by evicting the oldest entries", () => {
+    const agent = runtime()
+    const toolCount = RETAINED_TOOLS_MAX + 17
+    for (let i = 0; i < toolCount; i++) {
+      agent.ingest(update({
+        sessionUpdate: "tool_call",
+        toolCallId: `tool-${i}`,
+        title: `Tool ${i}`,
+        status: "in_progress",
+      }))
+    }
+    let state = agent.snapshot().adapterState
+    expect(state.tools.size).toBe(RETAINED_TOOLS_MAX)
+    expect(state.tools.has("tool-0")).toBe(false)
+    expect(state.tools.has(`tool-${toolCount - 1}`)).toBe(true)
+
+    const messageCount = RETAINED_MESSAGE_TEXTS_MAX + 9
+    for (let i = 0; i < messageCount; i++) {
+      agent.ingest(update({
+        sessionUpdate: "agent_message_chunk",
+        messageId: `message-${i}`,
+        content: { type: "text", text: `text ${i}` },
+      }))
+    }
+    state = agent.snapshot().adapterState
+    expect(state.assistantTextByMessageId.size).toBe(RETAINED_MESSAGE_TEXTS_MAX)
+    expect(state.assistantTextByMessageId.has("message-0")).toBe(false)
+    expect(state.assistantTextByMessageId.has(`message-${messageCount - 1}`)).toBe(true)
+  })
+
+  test("keeps the raw provider frame and payload out of delivered records", () => {
+    const agent = runtime()
+    const events = agent.ingest(update({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "tool-1",
+      title: "Tool",
+      status: "in_progress",
+      rawInput: { command: "printf hi" },
+      rawOutput: { stdout: "wire-secret-output", marker: "wire-secret" },
+      _meta: { token: "wire-secret-meta" },
+    })).events
+
+    expect(events.length).toBeGreaterThan(0)
+    for (const event of events) {
+      expect(event).not.toHaveProperty("raw")
+      expect(JSON.stringify(event)).not.toContain("wire-secret")
+    }
+    const metadata = events.find((event) => event.type === "tool-status")?.metadata?.acp as Record<string, unknown>
+    expect(metadata).not.toHaveProperty("rawInput")
+    expect(metadata).not.toHaveProperty("rawOutput")
+    expect(metadata).not.toHaveProperty("meta")
+    expect(metadata).not.toHaveProperty("content")
+    expect(metadata).not.toHaveProperty("stats")
+    expect(metadata).not.toHaveProperty("body")
   })
 })

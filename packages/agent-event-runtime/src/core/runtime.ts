@@ -20,6 +20,16 @@ export type TranslateRawHarnessEventResult<State = unknown> = {
   events: AgentRuntimeEvent[]
 }
 
+// The raw provider frame is sensitive and identical on every event a payload
+// produces; only the diagnostic-surface records that forward it keep it.
+const DIAGNOSTIC_SURFACE_TYPES: ReadonlySet<AgentRuntimeEvent["type"]> = new Set([
+  "auth-status",
+  "diagnostic",
+  "harness-notice",
+  "mcp-server-status",
+  "rate-limit",
+])
+
 export type AgentEventRuntime<State = unknown> = {
   ingest: (event: RawHarnessEvent) => TranslateRawHarnessEventResult<State> & { snapshot: RuntimeSnapshot<State> }
   snapshot: () => RuntimeSnapshot<State>
@@ -49,7 +59,7 @@ export function translateRawHarnessEvent<State>(
       events: [...(result.events ?? []), ...diagnosticEvents].map((event) => ({
         harness: input.context.harness,
         threadId: input.context.threadId,
-        raw: input.event,
+        ...(DIAGNOSTIC_SURFACE_TYPES.has(event.type) ? { raw: input.event } : {}),
         ...event,
       })),
     }
