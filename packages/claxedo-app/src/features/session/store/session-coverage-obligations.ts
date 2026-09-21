@@ -6,6 +6,8 @@ import { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 import { dispatchSessionStatusEvent } from "./session-status-dispatcher"
 import {
   claimTurnCoverage,
+  requestAcceptedPromptRefresh,
+  turnsAwaitingCoverage,
   MAX_CONCURRENT_COVERAGE_READS,
   outstandingTurnCoverage,
   promptRefreshDelay,
@@ -50,6 +52,8 @@ export function createTurnCoverageOwner(input: {
   paneActive: () => boolean
   client: TurnCoverageClient
   createReadEpoch: () => ReadEpoch
+  /** The user messages of the history range this pane has loaded, oldest first. */
+  loadedTurnIds: () => readonly string[]
 }) {
   const owner = {}
   const attempts = new Map<string, VoidFunction>()
@@ -131,6 +135,29 @@ export function createTurnCoverageOwner(input: {
       finish()
     })
   }
+
+  /**
+   * Rebuild this range's obligations once per session. A reload loses the
+   * in-memory index but not the evidence: a user message whose reply never
+   * landed is a turn still owed coverage, and without this nothing would ever
+   * fetch it again.
+   */
+  let reconstructed: string | undefined
+  createEffect(() => {
+    const sessionID = input.sessionID()
+    const directory = input.directory()
+    if (!sessionID) return
+    const scope = `${directory}\0${sessionID}`
+    if (reconstructed === scope) return
+    const loaded = input.loadedTurnIds()
+    // An empty range is a history that has not arrived yet, not a session with
+    // no turns; reconstructing from it would conclude nothing is owed.
+    if (loaded.length === 0) return
+    reconstructed = scope
+    const awaiting = turnsAwaitingCoverage(loaded, (turnId) =>
+      conversationHasAssistantMessage(directory, sessionID, assistantMessageIdForUserMessage(turnId)))
+    for (const turnId of awaiting) requestAcceptedPromptRefresh({ directory, sessionID, messageID: turnId })
+  })
 
   /**
    * Tracked on the set of outstanding turn ids, not on the obligations

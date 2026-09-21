@@ -10,20 +10,9 @@ import { diffs as list } from "@/lib/diffs"
 import { idleSessionStatus, isSessionTurnActive } from "./session-store"
 import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
 import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
-import { createActiveConversationSnapshot, registeredConversationSnapshot } from "../conversation/conversation-registry"
+import { createActiveConversationSnapshot, registeredConversationSnapshot, registeredConversationUserMessages } from "../conversation/conversation-registry"
 import { observeSessionStatusPoll } from "./session-status-telemetry"
-import {
-  claimTurnCoverage,
-  MAX_CONCURRENT_COVERAGE_READS,
-  outstandingTurnCoverage,
-  promptRefreshDelay,
-  readTurnCoverage,
-  readAcceptedPromptStatus,
-  releaseTurnCoverage,
-  retireTurnCoverage,
-  type TurnCoverageObligation,
-  type TurnCoverageTarget,
-} from "./accepted-prompt-refresh"
+import { createTurnCoverageOwner } from "./session-coverage-obligations"
 import { sessionHistoryResyncMatches, sessionHistoryResyncRequest } from "./session-history-resync"
 import {
   DEFAULT_SESSION_TRANSPORT_CAPABILITIES,
@@ -742,6 +731,8 @@ export function createSessionController(input: {
     paneActive,
     client: sdk.client,
     createReadEpoch: createActivationSessionReadEpoch,
+    loadedTurnIds: () =>
+      registeredConversationUserMessages(input.directory(), input.sessionID()).map((message) => message.id),
   })
 
   const syncSessionTodo = async (sessionID: string, opts?: { force?: boolean }) => {

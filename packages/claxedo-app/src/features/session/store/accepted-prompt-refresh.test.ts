@@ -6,6 +6,7 @@ import {
   readAcceptedPromptStatus,
   releaseTurnCoverage,
   readTurnCoverage,
+  turnsAwaitingCoverage,
   requestAcceptedPromptRefresh,
   resetAcceptedPromptRefreshForTest,
   retireTurnCoverage,
@@ -179,5 +180,40 @@ describe("what a coverage page settles", () => {
 
   test("a read that produced no page settles nothing", () => {
     expect(readTurnCoverage(owed, undefined)).toEqual({ merge: false, answer: "unresolved" })
+  })
+})
+
+describe("rebuilding obligations from a loaded history range", () => {
+  const replied = (ids: string[]) => (turnId: string) => ids.includes(turnId)
+
+  test("a turn whose reply never landed is still owed", () => {
+    expect(turnsAwaitingCoverage(["msg_1", "msg_2", "msg_3"], replied(["msg_1", "msg_3"]))).toEqual(["msg_2"])
+  })
+
+  test("a range whose replies all landed owes nothing", () => {
+    expect(turnsAwaitingCoverage(["msg_1", "msg_2"], replied(["msg_1", "msg_2"]))).toEqual([])
+  })
+
+  test("an empty range owes nothing", () => {
+    expect(turnsAwaitingCoverage([], replied([]))).toEqual([])
+  })
+
+  // The newest turns are the ones a reader is looking at, so a range longer
+  // than the cap keeps those rather than the oldest.
+  test("a range longer than the cap keeps the newest turns, in order", () => {
+    const ids = Array.from({ length: 70 }, (_, index) => `msg_${index}`)
+    const awaiting = turnsAwaitingCoverage(ids, () => false, 64)
+    expect(awaiting).toHaveLength(64)
+    expect(awaiting[0]).toBe("msg_6")
+    expect(awaiting.at(-1)).toBe("msg_69")
+  })
+
+  test("a rebuilt range becomes obligations the owner can claim", () => {
+    for (const turnId of turnsAwaitingCoverage(["msg_1", "msg_2"], replied(["msg_1"]))) {
+      requestAcceptedPromptRefresh({ ...scope, messageID: turnId })
+    }
+
+    expect(outstandingTurnCoverage(scope).map((entry) => entry.turnId)).toEqual(["msg_2"])
+    expect(claimTurnCoverage(turn("msg_2"), {})).toBe(true)
   })
 })

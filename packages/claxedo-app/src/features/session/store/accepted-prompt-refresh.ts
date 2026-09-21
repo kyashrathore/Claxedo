@@ -13,6 +13,9 @@ type SessionStatus = NonNullable<Extract<SessionStatusDispatchEvent, { type: "se
  * request for the whole client: a newer turn starting is not evidence about an
  * older one, and the single global request this replaced was overwritten by the
  * next prompt, so the older turn's answer was never fetched at all.
+ *
+ * Obligations are an in-memory read-work index and do not survive a reload;
+ * `reconstructTurnCoverage` rebuilds them from the transcript on mount.
  */
 export type TurnCoverageObligation = {
   directory: ConversationDirectory
@@ -33,12 +36,12 @@ export type TurnCoverageScope = Pick<TurnCoverageObligation, "directory" | "sess
 
 /**
  * Per client scope, so one busy session cannot crowd out every other one. The
- * oldest is dropped rather than the newest: reopening a history range
- * reconstructs its obligations from the authoritative coverage index, so an
- * evicted entry is recoverable, while dropping the newest would drop the turn
- * the user is looking at.
+ * oldest is dropped rather than the newest: `reconstructTurnCoverage` rebuilds a
+ * range's obligations from the transcript when it is reopened, so an evicted
+ * entry is recoverable, while dropping the newest would drop the turn the user
+ * is looking at.
  */
-const MAX_OUTSTANDING_PER_SCOPE = 64
+export const MAX_OUTSTANDING_PER_SCOPE = 64
 
 /**
  * Concurrent coverage reads one mounted owner may have in flight. Four keeps a
@@ -138,6 +141,28 @@ export function readTurnCoverage(target: TurnCoverageTarget, page?: CoveragePage
   if (!page || page.turnId !== target.turnId) return { merge: false, answer: "unresolved" }
   if (page.coverage === "unavailable") return { merge: false, answer: "unavailable" }
   return { merge: true, answer: page.coverage === "complete" ? "complete" : "unresolved" }
+}
+
+/**
+ * The turns of a loaded history range that are still owed a reply, newest
+ * first and bounded by what one scope may hold.
+ *
+ * Obligations live only in this page's memory, so a reload leaves a turn whose
+ * answer never arrived with nobody fetching it. The transcript is the evidence:
+ * a user message whose assistant reply never landed is a turn this client still
+ * owes coverage for, whoever asked for it and whenever.
+ */
+export function turnsAwaitingCoverage(
+  userMessageIds: readonly string[],
+  hasReply: (turnId: string) => boolean,
+  limit = MAX_OUTSTANDING_PER_SCOPE,
+): string[] {
+  const awaiting: string[] = []
+  for (let index = userMessageIds.length - 1; index >= 0 && awaiting.length < limit; index -= 1) {
+    const turnId = userMessageIds[index]
+    if (!hasReply(turnId)) awaiting.push(turnId)
+  }
+  return awaiting.reverse()
 }
 
 export function resetAcceptedPromptRefreshForTest() {
