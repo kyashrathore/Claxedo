@@ -366,3 +366,34 @@ test("another owner cannot overtake an earlier normal dispatch in the same sessi
   await until(() => runtimeStore.listQueuedPrompts().length === 0)
   expect(calls).toEqual(["first", "second"])
 })
+
+test("a relayed row's deferred grant reaches the turn as its origin and never the queue listing", async () => {
+  const runtimeStore = store(root())
+  const grant = "eyJ.queued-grant-token.sig"
+  const requester = submission("granted")
+  const authority = { managed: true as const, workspaceId: "workspace", orgId: "org", role: "editor" as const }
+  const admitted = gate()
+  const starts: Array<Parameters<Parameters<typeof createSessionDeliveryOwner>[0]["startTurn"]>[0]> = []
+  const host = owner(runtimeStore, {
+    whenIdle: async () => { await admitted.promise; return { abandon() {} } },
+    startTurn: async (input) => { starts.push(input); input.onDelivery("start") },
+  })
+  const queued = host.queue({ ...requester, authority, provenance: "relay-replayed", grant })
+  expect(queued.grant).toBe(grant)
+  expect(JSON.stringify(host.list("session_1"))).not.toContain(grant)
+  expect(host.list("session_1")[0]).not.toHaveProperty("grant")
+  admitted.resolve()
+  await until(() => runtimeStore.listQueuedPrompts().length === 0)
+  expect(starts[0].origin).toEqual({ provenance: "relay-replayed", actor: requester.actor, authority, grant })
+})
+
+test("a relayed row queued without a grant carries an origin without one", async () => {
+  const runtimeStore = store(root())
+  const authority = { managed: true as const, workspaceId: "workspace", orgId: "org", role: "editor" as const }
+  const starts: Array<Parameters<Parameters<typeof createSessionDeliveryOwner>[0]["startTurn"]>[0]> = []
+  const host = owner(runtimeStore, { startTurn: async (input) => { starts.push(input); input.onDelivery("start") } })
+  host.queue({ ...submission("plain"), authority, provenance: "relay-replayed" })
+  await until(() => runtimeStore.listQueuedPrompts().length === 0)
+  expect(starts[0].origin).toEqual({ provenance: "relay-replayed", actor: submission().actor, authority })
+  expect(starts[0].origin).not.toHaveProperty("grant")
+})

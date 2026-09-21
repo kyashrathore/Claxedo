@@ -35,10 +35,17 @@ export type SessionWorkspaceAuthority = {
  *
  * Absent is its own answer, and not a third case to be lenient about: a row
  * written before this was recorded proves nothing about who asked for it.
+ *
+ * `grant` is the deferred turn grant the control plane minted while the
+ * admitting request could still prove `agent_turn` on the session: the proof
+ * the background turn presents in place of the credential it no longer has.
+ * A remote authority refuses a relayed origin that carries none.
  */
 export type SessionTurnOrigin =
-  | { provenance: "relay-replayed"; actor: SessionAccessActor; authority: SessionWorkspaceAuthority }
+  | { provenance: "relay-replayed"; actor: SessionAccessActor; authority: SessionWorkspaceAuthority; grant?: string }
   | { provenance: "loopback-direct" }
+
+export type SessionTurnGrantIntent = "child_completion" | "queued_prompt"
 
 export type SessionAccessOperation =
   | "session_create"
@@ -138,6 +145,9 @@ export type SessionTurnLeaseDecision =
 export type SessionTurnReleaseDecision =
   | { released: boolean }
   | Exclude<SessionAccessDecision, { allowed: true }>
+export type SessionTurnGrantDecision =
+  | { allowed: true; grant: string; expiresAt: number }
+  | Exclude<SessionAccessDecision, { allowed: true }>
 export type SessionReservationDecision =
   | { allowed: true; operationId: string }
   | Exclude<SessionAccessDecision, { allowed: true }>
@@ -191,9 +201,27 @@ export type SessionAccessPolicy = {
     input: SessionAccessPolicyInput & { sessionId: string },
     lease?: string,
   ): Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
+  /**
+   * `grant` stands in for `credential` on a turn the runtime starts for
+   * itself; a remote authority refuses a request that presents neither.
+   */
   acquireTurn?(
-    input: SessionAccessPolicyInput & { sessionId: string; turnId: string },
+    input: SessionAccessPolicyInput & { sessionId: string; turnId: string; grant?: string },
   ): Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+  /**
+   * Mints the deferred grant a later background turn on `sessionId` redeems.
+   * Needs the live credential: the plane proves `agent_turn` on the session
+   * now, and for `child_completion` also the registration row naming
+   * `subjectSessionId` as the actor's own child.
+   */
+  grantTurn?(
+    input: SessionAccessPolicyInput & {
+      sessionId: string
+      intent: SessionTurnGrantIntent
+      subjectSessionId?: string
+      turnId?: string
+    },
+  ): Promise<SessionTurnGrantDecision> | SessionTurnGrantDecision
   renewTurn?(
     input: SessionAccessPolicyInput & {
       sessionId: string
@@ -228,7 +256,7 @@ export type SessionAuthorityStreamPredicate = (
 ) => Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
 
 export type SessionAuthorityTurnAcquirePredicate = (
-  input: SessionAuthorityInput & { turnId: string },
+  input: SessionAuthorityInput & { turnId: string; grant?: string },
 ) => Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
 
 export type SessionAuthorityTurnRenewPredicate = (
@@ -497,7 +525,7 @@ export function managedWorkspaceSessionAccessPolicy(
               sessionId: input.sessionId,
             }, lease)
           },
-          async acquireTurn(input: SessionAccessPolicyInput & { sessionId: string; turnId: string }) {
+          async acquireTurn(input: SessionAccessPolicyInput & { sessionId: string; turnId: string; grant?: string }) {
             const workspace = authorizeManaged(input, options.requireActor === true)
             if (!workspace.allowed) return workspace
             if (!input.authority || !input.actor) return turnActorRequired

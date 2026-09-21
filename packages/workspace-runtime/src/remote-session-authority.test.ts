@@ -334,3 +334,88 @@ describe("a share level narrows the authority's answer, not the runtime's questi
     expect(actions).toEqual(["write", "write", "write", "turn_acquire"])
   })
 })
+
+describe("deferred turn grant", () => {
+  const lease = { turnId: "msg_wake_ses_child_1", leaseId: "signed-lease", fencingToken: 3, acquiredAt: 100, expiresAt: 200 }
+  function recordingPlane(answer: (body: Record<string, unknown>) => Response) {
+    const requests: Array<{ authorization: string | null; body: Record<string, unknown> }> = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/authorize",
+      fetch: async (_url, init) => {
+        const body = rec(fetchBodyJson(init?.body)) ?? {}
+        requests.push({ authorization: new Headers(init?.headers).get("authorization"), body })
+        return answer(body)
+      },
+    })
+    return { requests, policy }
+  }
+
+  test("acquire with a grant and no credential presents the grant in the body and no authorization header", async () => {
+    const { requests, policy } = recordingPlane(() => Response.json(lease))
+    const { credential: _credential, ...stored } = input
+    expect(await policy.acquireTurn!({ ...stored, operation: "prompt", turnId: lease.turnId, grant: "signed-grant" }))
+      .toEqual({ allowed: true, ...lease })
+    expect(requests).toEqual([{
+      authorization: null,
+      body: { sessionId: "ses_private", action: "turn_acquire", turnId: lease.turnId, grant: "signed-grant" },
+    }])
+  })
+
+  test("acquire with neither a credential nor a grant never reaches the plane", async () => {
+    const { requests, policy } = recordingPlane(() => Response.json(lease))
+    const { credential: _credential, ...stored } = input
+    expect(await policy.acquireTurn!({ ...stored, operation: "prompt", turnId: lease.turnId }))
+      .toMatchObject({ allowed: false, status: 503, code: "session_authority_unavailable" })
+    expect(requests).toEqual([])
+  })
+
+  test("grantTurn is the turn_grant action under the live credential and answers the minted grant", async () => {
+    const { requests, policy } = recordingPlane(() => Response.json({ allowed: true, grant: "signed-grant", expiresAt: 900 }))
+    expect(typeof policy.grantTurn).toBe("function")
+    expect(await policy.grantTurn!({
+      ...input,
+      operation: "session_create",
+      intent: "child_completion",
+      subjectSessionId: "ses_child",
+      registrationOperationId: "op_child",
+    })).toEqual({ allowed: true, grant: "signed-grant", expiresAt: 900 })
+    expect(await policy.grantTurn!({ ...input, operation: "prompt", intent: "queued_prompt", turnId: "msg_queued" }))
+      .toEqual({ allowed: true, grant: "signed-grant", expiresAt: 900 })
+    expect(requests).toEqual([
+      {
+        authorization: "Bearer signed-rht",
+        body: {
+          sessionId: "ses_private",
+          action: "turn_grant",
+          intent: "child_completion",
+          subjectSessionId: "ses_child",
+          registrationOperationId: "op_child",
+        },
+      },
+      {
+        authorization: "Bearer signed-rht",
+        body: { sessionId: "ses_private", action: "turn_grant", intent: "queued_prompt", turnId: "msg_queued" },
+      },
+    ])
+
+    for (const body of [{ allowed: true }, { grant: "signed-grant" }, { grant: 7, expiresAt: 900 }, { grant: "signed-grant", expiresAt: "900" }]) {
+      const invalid = remoteWorkspaceSessionAccessPolicy({ url: "https://control.test/authorize", fetch: async () => Response.json(body) })
+      expect(await invalid.grantTurn!({ ...input, operation: "prompt", intent: "queued_prompt", turnId: "msg_queued" }))
+        .toMatchObject({ allowed: false, status: 503, code: "session_authority_invalid_response" })
+    }
+    const refused = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/authorize",
+      fetch: async () => Response.json({ error: { code: "session_private", message: "not a send grantee" } }, { status: 403 }),
+    })
+    expect(await refused.grantTurn!({ ...input, operation: "prompt", intent: "queued_prompt", turnId: "msg_queued" }))
+      .toEqual({ allowed: false, status: 403, code: "session_private", message: "not a send grantee" })
+  })
+
+  test("grantTurn without a credential is refused before any request: a stored grant cannot mint another", async () => {
+    const { requests, policy } = recordingPlane(() => Response.json({ allowed: true, grant: "signed-grant", expiresAt: 900 }))
+    const { credential: _credential, ...unproven } = input
+    expect(await policy.grantTurn!({ ...unproven, operation: "prompt", intent: "queued_prompt", turnId: "msg_queued" }))
+      .toMatchObject({ allowed: false, status: 503, code: "session_authority_unavailable" })
+    expect(requests).toEqual([])
+  })
+})

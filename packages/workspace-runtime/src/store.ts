@@ -289,12 +289,15 @@ export type QueuedPromptRecord = {
    * written before it was recorded has none and is never re-issued.
    */
   provenance?: SessionRequestProvenance
+  /** The deferred turn grant a relayed requester queued this under; see `SessionTurnOrigin`. */
+  grant?: string
   queuedAt: number
 }
 
 type QueuedPromptRow = {
   authority_json: string | null
   origin_provenance: string | null
+  turn_grant: string | null
   held: number
   steering_json: string | null
   session_id: string
@@ -340,9 +343,10 @@ function storedTurnOrigin(row: {
   origin_actor_id?: string | null
   origin_actor_kind?: string | null
   origin_authority_json?: string | null
+  wake_grant?: string | null
 } | null | undefined): SessionTurnOrigin | undefined {
   if (row?.origin_provenance === "loopback-direct") {
-    const named = row.origin_actor_id ?? row.origin_actor_kind ?? row.origin_authority_json
+    const named = row.origin_actor_id ?? row.origin_actor_kind ?? row.origin_authority_json ?? row.wake_grant
     return named ? undefined : { provenance: "loopback-direct" }
   }
   if (row?.origin_provenance !== "relay-replayed") return undefined
@@ -352,6 +356,7 @@ function storedTurnOrigin(row: {
     provenance: "relay-replayed",
     actor: { actorId: row.origin_actor_id, actorKind: kind },
     authority: JSON.parse(row.origin_authority_json),
+    ...(row.wake_grant ? { grant: row.wake_grant } : {}),
   }
 }
 
@@ -368,6 +373,7 @@ function queuedPrompt(row: QueuedPromptRow): QueuedPromptRecord {
     ...(row.origin_provenance === "loopback-direct" || row.origin_provenance === "relay-replayed"
       ? { provenance: row.origin_provenance }
       : {}),
+    ...(row.turn_grant === null ? {} : { grant: row.turn_grant }),
     ...(row.held ? { held: true } : {}),
     ...(row.steering_json ? { steering: JSON.parse(row.steering_json) } : {}),
     ...(row.message_id === null ? {} : { messageId: row.message_id }),
@@ -961,11 +967,14 @@ export class RuntimeStore {
           held INTEGER NOT NULL DEFAULT 0,
           authority_json TEXT,
           origin_provenance TEXT,
+          turn_grant TEXT,
           PRIMARY KEY (session_id, seq)
         )
       `)
-      if (!hasColumn(this.db, "runtime_delivery", "origin_provenance")) {
-        this.db.exec("ALTER TABLE runtime_delivery ADD COLUMN origin_provenance TEXT")
+      for (const column of ["origin_provenance", "turn_grant"]) {
+        if (!hasColumn(this.db, "runtime_delivery", column)) {
+          this.db.exec(`ALTER TABLE runtime_delivery ADD COLUMN ${column} TEXT`)
+        }
       }
       // Preserve control identities after delivery rows are removed.
       this.db.exec(`
@@ -1031,6 +1040,7 @@ export class RuntimeStore {
       ["origin_actor_id", "TEXT"],
       ["origin_actor_kind", "TEXT"],
       ["origin_authority_json", "TEXT"],
+      ["wake_grant", "TEXT"],
     ] as const) {
       if (!hasColumn(this.db, "session_subagent", column)) {
         this.db.exec(`ALTER TABLE session_subagent ADD COLUMN ${column} ${type}`)
@@ -1524,12 +1534,13 @@ export class RuntimeStore {
       .prepare(
         `
       UPDATE session_subagent
-      SET origin_provenance = ?, origin_actor_id = ?, origin_actor_kind = ?, origin_authority_json = ?, updated_at = ?
+      SET origin_provenance = ?, origin_actor_id = ?, origin_actor_kind = ?, origin_authority_json = ?, wake_grant = ?, updated_at = ?
       WHERE parent_session_id = ? AND subagent_key = ?
         AND origin_provenance IS NULL
         AND origin_actor_id IS NULL
         AND origin_actor_kind IS NULL
         AND origin_authority_json IS NULL
+        AND wake_grant IS NULL
     `,
       )
       .run(
@@ -1537,6 +1548,7 @@ export class RuntimeStore {
         relayed?.actor.actorId ?? null,
         relayed?.actor.actorKind ?? null,
         relayed ? JSON.stringify(relayed.authority) : null,
+        relayed?.grant ?? null,
         Date.now(),
         parentSessionId,
         subagentKey,
@@ -1560,9 +1572,10 @@ export class RuntimeStore {
         origin_actor_id: string | null
         origin_actor_kind: string | null
         origin_authority_json: string | null
+        wake_grant: string | null
       }>(
         `
-      SELECT origin_provenance, origin_actor_id, origin_actor_kind, origin_authority_json
+      SELECT origin_provenance, origin_actor_id, origin_actor_kind, origin_authority_json, wake_grant
       FROM session_subagent
       WHERE parent_session_id = ? AND subagent_key = ?
     `,
@@ -1922,8 +1935,9 @@ export class RuntimeStore {
           author_kind,
           queued_at,
           authority_json,
-          origin_provenance
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          origin_provenance,
+          turn_grant
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         )
         .run(
@@ -1949,6 +1963,7 @@ export class RuntimeStore {
           record.queuedAt,
           record.authority ? JSON.stringify(record.authority) : null,
           record.provenance ?? null,
+          record.grant ?? null,
         )
       return record
     }, "immediate")
@@ -2028,6 +2043,7 @@ export class RuntimeStore {
         steering_json,
         authority_json,
         origin_provenance,
+        turn_grant,
         held
       FROM runtime_delivery
       ORDER BY queued_at, session_id, seq

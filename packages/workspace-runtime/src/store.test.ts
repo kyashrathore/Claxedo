@@ -245,6 +245,34 @@ void describe("RuntimeStore", () => {
     assert(!columns.some((name) => name.startsWith("runner_")))
   })
 
+  void it("a queued prompt keeps its deferred turn grant across a restart", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    const grant = "eyJ.queued-grant-token.sig"
+    const authority = { managed: true as const, workspaceId: "workspace_1", orgId: "org_1", role: "editor" as const }
+    const queued = first.queuePrompt({
+      sessionId: "ses_queue",
+      messageId: "msg_queued",
+      parts: [{ type: "text", text: "then run the tests" }],
+      delivery: "queue",
+      actor: { actorId: "actor_1", actorKind: "human" },
+      authority,
+      provenance: "relay-replayed",
+      grant,
+    })
+    assert.equal(queued.grant, grant)
+    assert.equal(first.queuePrompt({ sessionId: "ses_queue", messageId: "msg_queued", parts: [], delivery: "queue" }).grant, grant)
+    const ungranted = first.queuePrompt({ sessionId: "ses_queue", parts: [], delivery: "queue", provenance: "relay-replayed", actor: { actorId: "actor_1", actorKind: "human" }, authority })
+    assert.equal("grant" in ungranted, false)
+    first.close()
+
+    const restarted = new RuntimeStore(root)
+    const rows = restarted.listQueuedPrompts()
+    assert.deepEqual(rows.map((row) => row.grant), [grant, undefined])
+    assert.equal("grant" in (rows[1] ?? {}), false)
+    restarted.close()
+  })
+
   void it("persists explicit child Session ownership across updates and reopen", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
@@ -429,6 +457,55 @@ void describe("RuntimeStore", () => {
       /has no row to record a turn origin on/,
     )
     reopened.close()
+  })
+
+  void it("keeps a child's deferred turn grant across reopen and out of the subagent listing", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.admit({
+      parentSessionId: "parent",
+      observation: { observationId: "create", subagentKey: "subagent_host", status: "pending", childSessionId: "child" },
+      allocateKey: () => "unused",
+    })
+    store.markPublished("parent", "create")
+    const grant = "eyJ.deferred-grant-token.sig"
+    const origin = {
+      provenance: "relay-replayed" as const,
+      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const },
+      authority: { managed: true as const, workspaceId: "workspace_1", orgId: "org_1", role: "editor" as const },
+      grant,
+    }
+    store.recordSubagentOrigin("parent", "subagent_host", origin)
+    store.recordSubagentOrigin("parent", "subagent_host", { ...origin, grant: "eyJ.another-grant.sig" })
+    assert.deepEqual(store.subagentOrigin("parent", "subagent_host"), origin)
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(reopened.subagentOrigin("parent", "subagent_host"), origin)
+    assert.equal(JSON.stringify(reopened.listSubagents("parent")).includes(grant), false)
+    assert.equal(JSON.stringify(reopened.listPendingSubagentWakes()).includes(grant), false)
+    reopened.close()
+  })
+
+  void it("a relayed origin recorded without a grant reads back without one", () => {
+    const store = new RuntimeStore(tmp())
+    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.admit({
+      parentSessionId: "parent",
+      observation: { observationId: "create", subagentKey: "subagent_host", status: "pending", childSessionId: "child" },
+      allocateKey: () => "unused",
+    })
+    store.markPublished("parent", "create")
+    const origin = {
+      provenance: "relay-replayed" as const,
+      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const },
+      authority: { managed: true as const, workspaceId: "workspace_1", orgId: "org_1", role: "editor" as const },
+    }
+    store.recordSubagentOrigin("parent", "subagent_host", origin)
+    assert.deepEqual(store.subagentOrigin("parent", "subagent_host"), origin)
+    assert.equal("grant" in (store.subagentOrigin("parent", "subagent_host") ?? {}), false)
+    store.close()
   })
 
   void it("cannot upgrade or reassign an origin a pre-provenance build already recorded", () => {
