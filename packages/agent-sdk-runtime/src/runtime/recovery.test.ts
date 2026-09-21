@@ -915,3 +915,51 @@ describe("the lease a finalization must carry", () => {
       .toEqual({ ok: true, wrote: true })
   })
 })
+
+describe("a containment attempt that never became an operation", () => {
+  test("is retained against the session, and finishing that turn does not clear it", async () => {
+    const { runtime, turns, cancels } = fixture()
+    const sessionId = await openSession(runtime, "ses_containment")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+
+    runtime.recovery.reportContainmentFailure(started.target!, RECOVERY_TEST_CALLER, "the lease owner could not submit")
+
+    const reported = runtime.recovery.inspect(sessionId).failures
+    expect(reported).toContainEqual(expect.objectContaining({
+      code: "owner_unavailable",
+      stage: "graceful_cancel",
+      executionMayContinue: true,
+      message: expect.stringContaining("the lease owner could not submit"),
+    }))
+
+    // The turn is cancelled and finalized cleanly. That records what this owner
+    // knows about the turn; it establishes nothing about the execution whose
+    // lease was lost, so the obligation stays.
+    const cancelling = runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+    await until(() => cancels.length === 1, "the harness to be asked to cancel")
+    cancels[0].settle({ execution: "terminal", cleanup: "unknown" })
+    expect(submittedOperation(await cancelling).facts.persistence.value).toBe("committed")
+
+    expect(runtime.recovery.inspect(sessionId).failures).toEqual(reported)
+    turns[0].finish()
+    await runtime.dispose()
+  })
+
+  test("a caller that could not act on the target reports nothing", async () => {
+    const { runtime, turns } = fixture()
+    const sessionId = await openSession(runtime, "ses_containment_scope")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+
+    runtime.recovery.reportContainmentFailure(started.target!, RECOVERY_TEST_CALLER, "recorded")
+    runtime.recovery.reportContainmentFailure(
+      { ...started.target!, sessionId: "another-session" },
+      RECOVERY_TEST_CALLER,
+      "belongs to a session this inspection does not cover",
+    )
+
+    expect(runtime.recovery.inspect(sessionId).failures).toHaveLength(1)
+    expect(runtime.recovery.inspect("another-session").failures).toHaveLength(1)
+    turns[0].finish()
+    await runtime.dispose()
+  })
+})

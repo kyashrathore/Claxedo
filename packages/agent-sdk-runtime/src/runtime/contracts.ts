@@ -79,6 +79,12 @@ export type AgentRuntimeRecovery = {
   inspect(sessionId: string, directory?: RuntimeDirectory): AgentRuntimeRecoveryInspection
   submit(request: RecoveryRequest, caller: RecoveryCaller): Promise<RecoveryOutcome>
   read(operationId: string, caller: RecoveryCaller): RecoveryOutcome | undefined
+  /**
+   * A containment attempt that never became an operation, because submitting it
+   * failed. There is no receipt to read it back by, so the owner retains it
+   * against the session and `inspect` is where it is answered.
+   */
+  reportContainmentFailure(target: RecoveryTurnTarget, caller: RecoveryCaller, message: string): void
 }
 
 export type AgentHarnessFactoryContext = {

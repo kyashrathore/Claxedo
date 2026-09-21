@@ -709,7 +709,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
      * stay answerable while the runtime is closing, and a recovery request must
      * not be counted among the work disposal has to drain.
      */
-    recovery: { inspect: recovery.inspect, submit: recovery.submit, read: recovery.read } satisfies AgentRuntimeRecovery,
+    recovery: { inspect: recovery.inspect, submit: recovery.submit, read: recovery.read, reportContainmentFailure: recovery.reportContainmentFailure } satisfies AgentRuntimeRecovery,
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
         if (lifecycle.closing) throw new Error("AgentRuntime is disposed")

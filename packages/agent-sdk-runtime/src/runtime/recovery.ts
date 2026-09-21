@@ -121,6 +121,12 @@ type Observed<T> = { status: "value"; value: T } | { status: "error"; error: unk
  */
 const RECOVERY_TOMBSTONE_LIMIT = 1024
 
+/**
+ * A session collecting these is already degraded, and each one names the same
+ * unresolved obligation. The most recent are what an owner acts on.
+ */
+const RECOVERY_CONTAINMENT_LIMIT = 32
+
 export type RuntimeRecoveryInput = {
   store: AgentRuntimeStore
   admissions: TurnAdmissions
@@ -143,6 +149,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
    */
   const owner: RecoveryGeneration = `runtime_${randomUUID()}`
   const failures = new Map<string, RetainedFailure>()
+  const containmentFailures = new Map<string, RecoveryError[]>()
   const ownerFailures: RecoveryError[] = []
   const operations = new Map<string, TrackedOperation>()
   const byRequest = new Map<string, string>()
@@ -398,6 +405,24 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     const routed = directory !== undefined ? { ...capture, directory } : capture
     const outcome: AgentTurnOutcome = { status: "cancelled", completedAt: now(), reason: "abort" }
     retainFailure(routed, outcome, finalizeTurn(routed, outcome, { announceIdle: true }))
+  }
+
+  /**
+   * Retained apart from a turn's finalization failure, and never cleared by
+   * one: finishing the turn records what this owner knows about it, and says
+   * nothing about what the execution whose lease was lost may still be running.
+   */
+  const reportContainmentFailure = (target: RecoveryTurnTarget, caller: RecoveryCaller, message: string) => {
+    if (!mayAct(caller, target)) return
+    const held = containmentFailures.get(target.sessionId) ?? []
+    held.push(recoveryError(
+      "owner_unavailable",
+      target,
+      "graceful_cancel",
+      true,
+      `Containment of turn ${target.turnId} requested by ${caller.callerId} was not opened: ${message}`,
+    ))
+    containmentFailures.set(target.sessionId, held.slice(-RECOVERY_CONTAINMENT_LIMIT))
   }
 
   const reportOwnerFailure = (error: unknown) => {
@@ -1061,7 +1086,9 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       health: scoped
         ? sessionHealth(sessionId)
         : { status: "unavailable", reason: "scope_mismatch", message: `Session ${sessionId} does not belong to this directory` },
-      failures: scoped ? [...(retained ? [retained.error] : []), ...ownerFailures, ...problems] : [],
+      failures: scoped
+        ? [...(retained ? [retained.error] : []), ...(containmentFailures.get(sessionId) ?? []), ...ownerFailures, ...problems]
+        : [],
       operations: listed,
       queued: scoped ? admissions.queued(sessionId) : 0,
     }
@@ -1079,6 +1106,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     inspect,
     submit,
     read,
+    reportContainmentFailure,
     turnTarget,
     captureTurn,
     captureStoreTurn,
