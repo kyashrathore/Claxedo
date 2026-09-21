@@ -3175,7 +3175,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // page. Its envelope names the turn that was ASKED for, so a client can tell
     // an answer about its turn from an answer about the one that replaced it.
     const askedTurn = url.searchParams.get("turn")
-    if (askedTurn && url.searchParams.get("coverage") === "1") {
+    const coverage = url.searchParams.get("coverage")
+    // The real route refuses these three rather than guessing which read was
+    // meant; a mock that answered them would hide a client sending either half.
+    if ((askedTurn !== null || coverage !== null) && !(askedTurn && coverage === "1")) {
+      return json(r, { error: { code: "bad_request", message: "turn coverage requires turn= and coverage=1" } }, 400)
+    }
+    if (askedTurn && coverage === "1" && ["view", "limit", "before"].some((name) => url.searchParams.has(name))) {
+      return json(r, { error: { code: "bad_request", message: "turn coverage cannot be combined with view, limit or before" } }, 400)
+    }
+    if (askedTurn && coverage === "1") {
       requests.coverageReads.push(askedTurn)
       const assistantMessageId = assistantIdForUserMessage(askedTurn)
       const turnRows = snapshot.filter((row) => row.info.id === askedTurn || row.info.id === assistantMessageId)

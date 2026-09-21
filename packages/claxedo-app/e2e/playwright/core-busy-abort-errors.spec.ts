@@ -473,6 +473,12 @@ test.describe("core busy / abort / errors @core", () => {
     await expect.poll(() => mock.requests.recoveryInspectCount, { timeout: 15_000 }).toBeGreaterThan(1)
     // The operation reads as words, not as the contract's enum.
     await expect(panel).toContainText(/Stop the turn/i)
+
+    // The reopened range asks the owner about the turn it can no longer see an
+    // answer for, through the coverage read rather than a page read.
+    await expect
+      .poll(() => mock.requests.coverageReads.length, { timeout: 15_000 })
+      .toBeGreaterThan(0)
   })
 
   test("a machine that cannot answer is named as that, and the panel stays usable", async ({ page }) => {
