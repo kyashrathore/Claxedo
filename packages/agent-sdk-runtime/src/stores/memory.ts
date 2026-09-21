@@ -19,7 +19,7 @@ import type {
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import type { RecoveryOperation, RecoveryTarget } from "@claxedo/agent-runtime-contract"
+import type { RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import { acceptsSessionTitle, boundSessionTitleSource } from "../session-title"
 import { sameSessionStartBinding, SessionStartStore } from "./session-start"
 import { chunk } from "../status"
@@ -37,7 +37,7 @@ import type {
   AgentRuntimeStoreWithRecovery,
   AgentRuntimeTurnStartOutput,
 } from "../harnesses/shared/runtime-store"
-import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
+import { AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
 import {
   createMemorySubagentAdmissionStore,
   type AdmittedSubagentObservation,
@@ -438,7 +438,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   recordRecoveryOperation(operation: RecoveryOperation, caller: { callerId: string }): AgentRuntimeRecoveryOperationRecord {
-    const key = recoveryReceiptKey(operation.target, caller.callerId, operation.requestId)
+    const key = `${recoveryScopeKey(operation.target)}\u0000${caller.callerId}\u0000${operation.requestId}`
     const claimed = this.recoveryReceipts.get(key)
     const existing = claimed === undefined ? undefined : this.recoveryOperations.get(claimed)
     if (existing) return { created: false, existing }
@@ -460,9 +460,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   listRecoveryOperations(scope: { sessionId?: string }) {
     const rows = [...this.recoveryOperations.values()]
     if (scope.sessionId === undefined) return rows
-    return rows.filter((operation) =>
-      (operation.target.scope === "turn" || operation.target.scope === "session")
-      && operation.target.sessionId === scope.sessionId)
+    return rows.filter((operation) => recoveryTargetSessionId(operation.target) === scope.sessionId)
   }
 
   appendEvent(input: AgentRuntimeAppendEventInput): AgentRuntimeCommittedCompatOutput {
@@ -969,10 +967,3 @@ export function createMemoryRuntimeStore(): AgentRuntimeStore {
   return new MemoryRuntimeStore()
 }
 
-/** The columns a store's uniqueness constraint on a recovery receipt covers. */
-function recoveryReceiptKey(target: RecoveryTarget, callerId: string, requestId: string) {
-  const scope = target.scope === "machine" ? `machine:${target.machineId}`
-    : target.scope === "harness" ? `harness:${target.workspaceId}:${target.harnessKey}`
-    : `session:${target.sessionId}`
-  return `${scope}\u0000${callerId}\u0000${requestId}`
-}

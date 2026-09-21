@@ -6,6 +6,7 @@ import type {
   AgentQuestion,
   AgentTodo,
   RecoveryOperation,
+  RecoveryTarget,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentSession, AgentTurnOutcome, PromptInput, SessionConfig, SessionConfigUpdate } from "../../index"
@@ -128,6 +129,21 @@ export type AgentRuntimeRecoveryOperationRecord =
 export type AgentRuntimeReplayPosition = {
   position: number
   blocked?: { seq: number; reason: string }
+}
+
+/**
+ * The row a repeated recovery request is compared under. A turn operation and a
+ * session operation share their session's key, so a caller cannot escape its
+ * own uniqueness by naming a different turn of the same session.
+ */
+export function recoveryScopeKey(target: RecoveryTarget): string {
+  if (target.scope === "machine") return `machine:${target.machineId}`
+  if (target.scope === "harness") return `harness:${target.workspaceId}:${target.harnessKey}`
+  return `session:${target.workspaceId}:${target.sessionId}`
+}
+
+export function recoveryTargetSessionId(target: RecoveryTarget): string | null {
+  return target.scope === "turn" || target.scope === "session" ? target.sessionId : null
 }
 
 export type AgentRuntimeStoreCore = {

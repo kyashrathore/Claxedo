@@ -31,7 +31,7 @@ import {
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDirectory } from "../index"
 import type { AgentHarnessAdapter } from "../adapter-contract"
-import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
+import { AgentRuntimeStaleTurnError, recoveryScopeKey, recoveryTargetSessionId } from "../harnesses/shared/runtime-store"
 import { normalizeDirectory } from "./execution-binding"
 import type {
   AgentRuntimeEventEnvelope,
@@ -148,6 +148,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   const machine = input.identity?.machineId !== undefined ? { machineId: input.identity.machineId } : {}
 
   const messageOf = (error: unknown) => error instanceof Error ? error.message : String(error)
+  const sessionIdOf = (target: RecoveryTarget) => recoveryTargetSessionId(target) ?? undefined
 
   const workspaceIdFor = (sessionId: string) =>
     store.getExecutionBinding(sessionId)?.workspaceId ?? input.identity?.workspaceId ?? ""
@@ -355,17 +356,8 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     ))
   }
 
-  const scopeKey = (target: RecoveryTarget) => {
-    if (target.scope === "machine") return `machine:${target.machineId}`
-    if (target.scope === "harness") return `harness:${target.workspaceId}:${target.harnessKey}`
-    return `session:${target.sessionId}`
-  }
-
-  const sessionOf = (target: RecoveryTarget) =>
-    target.scope === "turn" || target.scope === "session" ? target.sessionId : undefined
-
   const requestKey = (target: RecoveryTarget, callerId: string, requestId: string) =>
-    `${scopeKey(target)}\u0000${callerId}\u0000${requestId}`
+    `${recoveryScopeKey(target)}\u0000${callerId}\u0000${requestId}`
 
   const coalesceKey = (target: RecoveryTarget, action: RecoveryAction) =>
     `${JSON.stringify(normalizeRecoveryTarget(target))}\u0000${action}`
@@ -455,7 +447,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   const create = (request: RecoveryRequest, callerId: string): TrackedOperation => {
     const startedAt = now()
     const deadlineAt = startedAt + operationBudget(request.action)
-    const sessionId = sessionOf(request.target)
+    const sessionId = sessionIdOf(request.target)
     const operation: RecoveryOperation = {
       operationId: `rop_${randomUUID()}`,
       requestId: request.requestId,
@@ -745,7 +737,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
 
   const run = async (tracked: TrackedOperation, request: RecoveryRequest, callerId: string): Promise<RecoveryOutcome> => {
     if (request.action === "inspect") {
-      const sessionId = sessionOf(request.target)
+      const sessionId = sessionIdOf(request.target)
       return answer(close(tracked, {
         state: "succeeded",
         facts: sessionId ? sessionFacts(sessionId) : unknownFacts(),
