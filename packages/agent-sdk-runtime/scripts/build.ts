@@ -28,6 +28,9 @@ const ENTRIES = [
   "src/provider-projection.ts",
   "src/mcp-resolver.ts",
   "src/subagent-admission.ts",
+  "src/launch/index.ts",
+  // Spawned by path from dist, so it is an entry rather than a bundled leaf.
+  "src/launch/launch-gate-child.ts",
   "src/stores/memory.ts",
   "src/stores/sqlite.ts",
   "src/session-start-store.ts",

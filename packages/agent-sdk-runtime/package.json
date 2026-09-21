@@ -153,6 +153,20 @@
       "import": "./dist/stores/sqlite.mjs",
       "default": "./dist/stores/sqlite.mjs"
     },
+    "./launch": {
+      "development": "./src/launch/index.ts",
+      "bun": "./src/launch/index.ts",
+      "types": "./dist/launch/index.d.ts",
+      "import": "./dist/launch/index.mjs",
+      "default": "./dist/launch/index.mjs"
+    },
+    "./launch-gate-child": {
+      "development": "./src/launch/launch-gate-child.ts",
+      "bun": "./src/launch/launch-gate-child.ts",
+      "types": "./dist/launch/launch-gate-child.d.ts",
+      "import": "./dist/launch/launch-gate-child.mjs",
+      "default": "./dist/launch/launch-gate-child.mjs"
+    },
     "./stores/session-start": {
       "development": "./src/session-start-store.ts",
       "bun": "./src/session-start-store.ts",
