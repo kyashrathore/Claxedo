@@ -1,5 +1,9 @@
 export const WorkspaceRuntimeApiPrefix = "/api/wr"
 
+// The published public-API family prefixes (verified against
+// docs/api-manifest.json), not the server's whole mount surface: compat,
+// document, broker and root status mounts live outside this table, and the
+// composed-app inventory test is the completeness check for those.
 export const WorkspaceRuntimeRoutes = {
   health: `${WorkspaceRuntimeApiPrefix}/health`,
   capabilities: `${WorkspaceRuntimeApiPrefix}/capabilities`,
