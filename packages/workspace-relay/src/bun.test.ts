@@ -1,6 +1,12 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { generateKeyPair } from "jose"
-import { mintHostTunnelToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
+import {
+  hostTunnelTokenAudience,
+  mintHostTunnelToken,
+  mintRuntimeAccessToken,
+  runtimeAccessTokenIssuer,
+  verifyRelayHostToken,
+} from "./auth"
 import { createWorkspaceRelayDirectory, type WorkspaceRelayDirectory } from "./directory"
 import {
   __directHttpInternalsForTest,
@@ -172,6 +178,26 @@ function hostTunnelSocket(url: string, token: string) {
     },
   })
 }
+
+/**
+ * `authorizeHostTunnel` grants by returning the claims its policy verified;
+ * the relay re-validates host/workspace binding on them. This stand-in binds
+ * whatever the request asks for — the test-seam equivalent of a Host Tunnel
+ * Token minted for exactly this host and workspace set.
+ */
+const allowHostTunnel: NonNullable<WorkspaceRelayBunOptions["authorizeHostTunnel"]> = (_request, input) => ({
+  authorized: true,
+  claims: {
+    iss: runtimeAccessTokenIssuer,
+    aud: hostTunnelTokenAudience,
+    sub: "host-client-test",
+    host_id: input.hostId,
+    workspace_ids: input.workspaceIds,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 300,
+    jti: crypto.randomUUID(),
+  },
+})
 
 /**
  * An accepted client socket whose upstream never finishes connecting, so every
@@ -1621,7 +1647,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       hostTunnelPingIntervalMs: 1,
     })
     const relay = Bun.serve({
@@ -1671,7 +1697,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       hostTunnelPingIntervalMs: 10,
       hostTunnelMaxMissedPongs: 1,
     })
@@ -1717,7 +1743,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -1807,7 +1833,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -1895,7 +1921,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       tunnelRequestBodyMaxBytes: 8,
     })
     const relay = Bun.serve({
@@ -1965,7 +1991,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2027,7 +2053,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2131,7 +2157,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2199,7 +2225,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       tunnelHttpResponseTimeoutMs: 50,
     })
     const relay = Bun.serve({
@@ -2289,7 +2315,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       // Wide enough that http.response.start reliably lands INSIDE the window
       // even on a starved 2-core CI runner — a start that misses the window
       // times out a never-started request and the fetch below hangs forever.
@@ -2457,7 +2483,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2554,7 +2580,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       runtimeAccessTokenActiveCheckIntervalMs: 5,
     })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
@@ -2618,7 +2644,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2704,7 +2730,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2778,7 +2804,7 @@ describe("workspace relay Bun adapter", () => {
       directory: createWorkspaceRelayDirectory(),
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => false,
+      authorizeHostTunnel: () => ({ authorized: false }),
     })
     const relay = Bun.serve({
       port: 0,
@@ -2847,7 +2873,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2971,7 +2997,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3065,7 +3091,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3903,7 +3929,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3958,7 +3984,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3999,7 +4025,7 @@ describe("workspace relay Bun adapter", () => {
         auditEvents.push(event)
       },
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -4062,7 +4088,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -4133,7 +4159,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -4190,7 +4216,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -4272,7 +4298,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -4349,7 +4375,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -4405,7 +4431,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const before = relayHandler.telemetry.getFragmentationStats()
     expect(before.fragmentsBuffered).toBe(0)
@@ -4463,7 +4489,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       // Keep defaults for HWM (8 MB) and slow-consumer timeout (30 s);
       // total payload is well under the HWM in this test.
     })
@@ -4551,7 +4577,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       // Lower the HWM so the test doesn't have to push 8 MB across the WS.
       slowConsumerHighWaterMarkBytes: 256 * 1024,
       // Keep the slow-consumer timeout long so the test only verifies pause/resume.
@@ -4801,7 +4827,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       slowConsumerHighWaterMarkBytes: 64 * 1024,
       slowConsumerTimeoutMs: 150,
     })
@@ -5436,7 +5462,7 @@ describe("workspace relay Bun adapter", () => {
           }
         },
       }, {
-        authorizeHostTunnel: () => true,
+        authorizeHostTunnel: allowHostTunnel,
         hostTunnelStateDebounceMs: debounceMs,
       })
       const relay = Bun.serve({
@@ -6366,7 +6392,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       webSocketBufferedAmountMaxBytes,
     })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
@@ -6529,7 +6555,7 @@ describe("host tunnel stream budgets", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       // 心跳的 ping 也过背压守卫；拉长间隔把它移出测试窗口，
       // 让 -1 阈值的用例只断言请求路径而不是心跳副作用。
       hostTunnelPingIntervalMs: 300_000,

@@ -24,6 +24,7 @@ import {
 } from "./server"
 import {
   WorkspaceRelayAuthError,
+  validateHostTunnelTokenClaims,
   verifyHostTunnelToken,
   type HostTunnelTokenClaims,
   type RuntimeAccessTokenClaims,
@@ -157,11 +158,23 @@ type PendingTunnelHttpResponse = {
   corsHeaders: (upstream: Headers) => Headers
 }
 
+/**
+ * What an `authorizeHostTunnel` policy returns. A grant must carry the Host
+ * Tunnel Token claims the policy verified — there is no claimless "yes":
+ * `validateHostTunnelTokenClaims` re-checks issuer, audience, host/workspace
+ * binding, and clock bounds before admission, so a permissive policy cannot
+ * register a host or workspace its own claims do not assert.
+ */
+export type HostTunnelAuthorizationResult =
+  | { authorized: false }
+  | { authorized: true; claims: Record<string, unknown> }
+
 export type WorkspaceRelayHostTunnelOptions = {
   /**
-   * Test seam replacing Host Tunnel Token verification. A boolean carries no
-   * claims, so a tunnel admitted through it has no generation and is never
-   * fenced.
+   * Composition seam replacing Host Tunnel Token verification. The result's
+   * claims are validated against the requested host and workspace set
+   * outside this policy; a tunnel admitted through it can carry a serving
+   * generation and is fenced like a token-admitted one.
    */
   authorizeHostTunnel?: (
     request: Request,
@@ -169,7 +182,7 @@ export type WorkspaceRelayHostTunnelOptions = {
       hostId: string
       workspaceIds: string[]
     },
-  ) => boolean | Promise<boolean>
+  ) => HostTunnelAuthorizationResult | Promise<HostTunnelAuthorizationResult>
   hostTunnelPingIntervalMs?: number
   hostTunnelMaxMissedPongs?: number
   /**
@@ -1463,7 +1476,7 @@ function hostTunnel(
 
 type HostTunnelAuthorization =
   | { authorized: false }
-  | { authorized: true; claims?: HostTunnelTokenClaims }
+  | { authorized: true; claims: HostTunnelTokenClaims }
 
 async function authorizeHostTunnel(
   options: WorkspaceRelayOptions,
@@ -1475,7 +1488,14 @@ async function authorizeHostTunnel(
   },
 ): Promise<HostTunnelAuthorization> {
   if (bunOptions.authorizeHostTunnel) {
-    return { authorized: await bunOptions.authorizeHostTunnel(request, input) }
+    const result = await bunOptions.authorizeHostTunnel(request, input)
+    if (!result.authorized) return { authorized: false }
+    try {
+      return { authorized: true, claims: validateHostTunnelTokenClaims(result.claims, input) }
+    } catch (err) {
+      if (err instanceof WorkspaceRelayAuthError) return { authorized: false }
+      throw err
+    }
   }
   const token = bearerToken(request.headers.get("authorization"))
   if (!token) return { authorized: false }
@@ -1746,7 +1766,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       return
     }
     const claims = authorization.claims
-    if (hostTunnelIncumbentOutranks(hostSocket.data.generation, claims?.generation)) {
+    if (hostTunnelIncumbentOutranks(hostSocket.data.generation, claims.generation)) {
       await refuseHostTunnelSocket(options, hostSocket, {
         code: "host_generation_superseded",
         close: 1008,
@@ -1755,8 +1775,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       return
     }
     const generation = await checkHostTunnelGeneration(options.resolveHostGeneration, {
-      enrollment_id: claims?.enrollment_id,
-      generation: claims?.generation,
+      enrollment_id: claims.enrollment_id,
+      generation: claims.generation,
     })
     if (!generation.ok) {
       await refuseHostTunnelSocket(options, hostSocket, {
@@ -1771,8 +1791,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
     const released = owned.filter((workspaceId) => !workspaceIds.includes(workspaceId))
     for (const workspaceId of released) hostTunnels.delete(tunnelKey(hostId, workspaceId))
     if (released.length) options.directory?.disconnectHost(hostId, released)
-    hostSocket.data.enrollmentId = claims?.enrollment_id
-    hostSocket.data.generation = claims?.generation
+    hostSocket.data.enrollmentId = claims.enrollment_id
+    hostSocket.data.generation = claims.generation
     const outranked = claimTunnelIdentities(hostSocket, workspaceIds)
     if (outranked) {
       await refuseHostTunnelSocket(options, hostSocket, {
@@ -1859,8 +1879,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         }
         const claims = authorization.claims
         const generation = await checkHostTunnelGeneration(options.resolveHostGeneration, {
-          enrollment_id: claims?.enrollment_id,
-          generation: claims?.generation,
+          enrollment_id: claims.enrollment_id,
+          generation: claims.generation,
         })
         if (!generation.ok) {
           return denyHostTunnel(options, {
@@ -1872,7 +1892,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         }
         for (const workspaceId of workspaceIds) {
           const incumbent = hostTunnels.get(tunnelKey(hostId, workspaceId))
-          if (incumbent && outranks(incumbent, claims?.generation)) {
+          if (incumbent && outranks(incumbent, claims.generation)) {
             return denyHostTunnel(options, {
               code: "host_generation_superseded",
               message: "Host tunnel generation was superseded",
@@ -1902,8 +1922,8 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             kind: "host-tunnel",
             hostId,
             workspaceIds,
-            ...(claims?.enrollment_id ? { enrollmentId: claims.enrollment_id } : {}),
-            ...(claims?.generation !== undefined ? { generation: claims.generation } : {}),
+            ...(claims.enrollment_id ? { enrollmentId: claims.enrollment_id } : {}),
+            ...(claims.generation !== undefined ? { generation: claims.generation } : {}),
             pending: new Map(),
             activeStreams: 0,
             channels: new Map(),

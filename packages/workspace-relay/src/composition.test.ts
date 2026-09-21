@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import path from "node:path"
+import { generateKeyPair } from "jose"
 import type {
   WorkspaceRelayAuthOptions,
   WorkspaceRelayDrainOptions,
@@ -7,10 +8,14 @@ import type {
   WorkspaceRelayRoutingOptions,
   WorkspaceRelayTelemetryOptions,
 } from "./server"
-import type {
-  WorkspaceRelayBackpressureOptions,
-  WorkspaceRelayHostTunnelOptions,
+import {
+  createWorkspaceRelayBun,
+  type HostTunnelAuthorizationResult,
+  type WorkspaceRelayBackpressureOptions,
+  type WorkspaceRelayHostTunnelOptions,
 } from "./bun"
+import { createWorkspaceRelayDirectory } from "./directory"
+import { hostTunnelTokenAudience, runtimeAccessTokenIssuer } from "./auth"
 
 type StableServerOptionGroups = [
   WorkspaceRelayAuthOptions,
@@ -77,5 +82,86 @@ describe("workspace relay composition boundary", () => {
 
     expect(serverOptionGroupCount).toBe(5)
     expect(bunOptionGroupCount).toBe(2)
+  })
+})
+
+describe("host-tunnel authorization seam", () => {
+  function hostTunnelClaims(input: { hostId: string; workspaceIds: string[] }): Record<string, unknown> {
+    return {
+      iss: runtimeAccessTokenIssuer,
+      aud: hostTunnelTokenAudience,
+      sub: "host-client-test",
+      host_id: input.hostId,
+      workspace_ids: input.workspaceIds,
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 300,
+      jti: crypto.randomUUID(),
+    }
+  }
+
+  async function startRelay(authorizeHostTunnel: NonNullable<WorkspaceRelayHostTunnelOptions["authorizeHostTunnel"]>) {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const directory = createWorkspaceRelayDirectory()
+    const handler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      directory,
+      resolveTarget: async () => undefined,
+    }, { authorizeHostTunnel })
+    const relay = Bun.serve({ port: 0, fetch: handler.fetch, websocket: handler.websocket })
+    return { relay, directory }
+  }
+
+  function requestUpgrade(relay: { url: URL }, path: string) {
+    return fetch(new URL(path, relay.url), { headers: { upgrade: "websocket" } })
+  }
+
+  test("a permissive policy cannot register a host its claims do not bind", async () => {
+    // The policy grants everything, but only ever produces claims for host_2.
+    const permissive = (): HostTunnelAuthorizationResult => ({
+      authorized: true,
+      claims: hostTunnelClaims({ hostId: "host_2", workspaceIds: ["ws_1", "ws_2"] }),
+    })
+    const { relay, directory } = await startRelay(permissive)
+
+    try {
+      const hostMismatch = await requestUpgrade(relay, "/host-tunnels/host_1?workspaceId=ws_1")
+      expect(hostMismatch.status).toBe(403)
+
+      const workspaceMismatch = await requestUpgrade(relay, "/host-tunnels/host_2?workspaceId=ws_3")
+      expect(workspaceMismatch.status).toBe(403)
+
+      expect(directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })).toBeUndefined()
+      expect(directory.activeHost({ hostId: "host_2", workspaceId: "ws_3" })).toBeUndefined()
+    } finally {
+      await relay.stop(true)
+    }
+  })
+
+  test("a permissive policy admitting its own claims still upgrades the tunnel", async () => {
+    const permissive: NonNullable<WorkspaceRelayHostTunnelOptions["authorizeHostTunnel"]> = (_request, input) => ({
+      authorized: true,
+      claims: hostTunnelClaims(input),
+    })
+    const { relay, directory } = await startRelay(permissive)
+    const ws = new WebSocket(
+      new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
+    )
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => resolve()
+        ws.onerror = () => reject(new Error("WebSocket failed to open"))
+      })
+      expect(directory.activeHost({ hostId: "host_1", workspaceId: "ws_1" })).toMatchObject({
+        hostId: "host_1",
+        workspaceIds: ["ws_1"],
+      })
+    } finally {
+      ws.close()
+      await relay.stop(true)
+    }
   })
 })

@@ -1,5 +1,5 @@
 import { SignJWT, errors, exportJWK, importJWK, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose"
-import { numberClaim } from "@claxedo/helpers/guards"
+import { isRecord, numberClaim } from "@claxedo/helpers/guards"
 
 const algorithms = ["EdDSA", "ES256", "RS256"] as const
 
@@ -346,30 +346,30 @@ export async function verifyRuntimeAccessToken(token: string, key: RelayKey, exp
 }
 
 /**
- * Clock bounds applied to claims a custom `tokenVerifier` returns. The
- * built-in JWT path gets the same floor from jose inside `verifyJwt`; a
- * verifier result crosses this boundary instead, so the floor is re-stated
- * here where no verifier implementation can skip it: expired past a small
- * skew, `nbf` beyond that skew, or an exp so far out the token is
- * effectively immortal are all refused.
+ * Clock bounds applied to claims a custom verifier (`tokenVerifier`,
+ * `authorizeHostTunnel`) returns. The built-in JWT path gets the same floor
+ * from jose inside `verifyJwt`; a verifier result crosses this boundary
+ * instead, so the floor is re-stated here where no verifier implementation
+ * can skip it: expired past a small skew, `nbf` beyond that skew, or an exp
+ * so far out the token is effectively immortal are all refused.
  */
-const RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS = 60
-const RUNTIME_ACCESS_TOKEN_MAX_LIFETIME_SECONDS = 24 * 60 * 60
+const TOKEN_CLAIMS_CLOCK_SKEW_SECONDS = 60
+const TOKEN_CLAIMS_MAX_LIFETIME_SECONDS = 24 * 60 * 60
 
-function checkRuntimeAccessTokenTimeClaims(payload: JWTPayload, claims: RuntimeAccessTokenClaims) {
+function checkTokenTimeClaims(payload: JWTPayload, exp: number, tokenName: string) {
   const now = seconds()
-  if (claims.exp <= now - RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token is expired")
+  if (exp <= now - TOKEN_CLAIMS_CLOCK_SKEW_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", `${tokenName} is expired`)
   }
   const nbf = numberClaim(payload, "nbf")
   if (payload.nbf !== undefined && nbf === undefined) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token nbf claim is not a finite number")
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", `${tokenName} nbf claim is not a finite number`)
   }
-  if (nbf !== undefined && nbf > now + RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token is not yet valid")
+  if (nbf !== undefined && nbf > now + TOKEN_CLAIMS_CLOCK_SKEW_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", `${tokenName} is not yet valid`)
   }
-  if (claims.exp > now + RUNTIME_ACCESS_TOKEN_MAX_LIFETIME_SECONDS) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token lifetime exceeds the relay maximum")
+  if (exp > now + TOKEN_CLAIMS_MAX_LIFETIME_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", `${tokenName} lifetime exceeds the relay maximum`)
   }
 }
 
@@ -383,7 +383,7 @@ export function validateRuntimeAccessTokenClaims(input: Record<string, unknown>,
   if (!claims) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token claims are incomplete")
   }
-  checkRuntimeAccessTokenTimeClaims(payload, claims)
+  checkTokenTimeClaims(payload, claims.exp, "Runtime Access Token")
   return claims
 }
 
@@ -418,6 +418,30 @@ export async function verifyHostTunnelToken(token: string, key: RelayKey, expect
   if (!claims) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are incomplete")
   }
+  return claims
+}
+
+/**
+ * Validates a claims result a custom `authorizeHostTunnel` policy returns.
+ * The policy decides WHO the tunnel is; the binding is the relay's: the
+ * claims' `host_id` must equal the requested host and its `workspace_ids`
+ * must cover every requested workspace, so a permissive policy cannot widen
+ * the identity its own claims assert.
+ */
+export function validateHostTunnelTokenClaims(input: Record<string, unknown>, expected: ExpectedHostTunnel) {
+  if (!isRecord(input)) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are not a claims object")
+  }
+  const payload = input as JWTPayload
+  if (stringClaim(payload, "iss") !== runtimeAccessTokenIssuer || stringClaim(payload, "aud") !== hostTunnelTokenAudience) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token issuer or audience is invalid")
+  }
+  checkHostTunnelTarget(payload, expected)
+  const claims = hostTunnelClaims(payload)
+  if (!claims) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are incomplete")
+  }
+  checkTokenTimeClaims(payload, claims.exp, "Host Tunnel Token")
   return claims
 }
 
