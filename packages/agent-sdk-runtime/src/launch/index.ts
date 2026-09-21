@@ -27,6 +27,11 @@ export {
   type PrepareLaunchInput,
   type PreparedLaunch,
 } from "./ownership-store"
+export {
+  captureDescendants,
+  retireDescendants,
+  type DescendantSweep,
+} from "./descendants"
 export { volatileLaunchOwnership } from "./volatile-ownership"
 export {
   RecoveryCodedError,

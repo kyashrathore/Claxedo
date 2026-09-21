@@ -19,6 +19,12 @@ export type CreationIdentity = {
   processGroupId: number
   startSecond: string
   bootTime: string
+  /**
+   * Who the process answered to when it was read. It is never compared during
+   * verification — an orphan is reparented to init — but it is how a launcher
+   * checks that a pid it is about to record is one it actually spawned.
+   */
+  parentPid: number
   source: CreationIdentitySource
 }
 
@@ -71,14 +77,21 @@ export async function readCreationIdentity(pid: number): Promise<CreationIdentit
 async function readDarwinCreationIdentity(pid: number, boot: string): Promise<CreationIdentity | undefined> {
   let stdout: string
   try {
-    ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,lstart=", "-p", String(pid)]))
+    ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,ppid=,lstart=", "-p", String(pid)]))
   } catch (error) {
     if (isRecord(error) && error.code === 1) return undefined
     throw new Error(`Could not read creation identity for pid ${pid}: ${message(error)}`, { cause: error })
   }
-  const row = /^\s*(\d+)\s+(\S.*)$/.exec(stdout.trim())
+  const row = /^\s*(\d+)\s+(\d+)\s+(\S.*)$/.exec(stdout.trim())
   if (!row) return undefined
-  return { pid, processGroupId: Number(row[1]), startSecond: row[2]!.trim(), bootTime: boot, source: "darwin-ps" }
+  return {
+    pid,
+    processGroupId: Number(row[1]),
+    parentPid: Number(row[2]),
+    startSecond: row[3]!.trim(),
+    bootTime: boot,
+    source: "darwin-ps",
+  }
 }
 
 /** Linux `starttime` is in USER_HZ, which is 100 on every architecture Node builds for. */
@@ -94,12 +107,14 @@ async function readLinuxCreationIdentity(pid: number, boot: string): Promise<Cre
   }
   // The comm field is parenthesised and may itself contain spaces and ')'.
   const tail = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/)
+  const parentPid = Number(tail[1])
   const processGroupId = Number(tail[2])
   const startTicks = Number(tail[19])
   if (!Number.isFinite(processGroupId) || !Number.isFinite(startTicks)) return undefined
   return {
     pid,
     processGroupId,
+    parentPid,
     startSecond: String(Math.floor(startTicks / LINUX_CLOCK_TICKS)),
     bootTime: boot,
     source: "linux-procfs",
@@ -117,14 +132,22 @@ async function readWindowsCreationIdentity(pid: number, boot: string): Promise<C
   try {
     ;({ stdout } = await execFileAsync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command",
-      `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToString('o') }`,
+      `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToString('o') + ' ' + $p.ParentProcessId }`,
     ]))
   } catch (error) {
     throw new Error(`Could not read creation identity for pid ${pid}: ${message(error)}`, { cause: error })
   }
   const value = stdout.trim()
   if (!value) return undefined
-  return { pid, processGroupId: pid, startSecond: value, bootTime: boot, source: "win32-cim" }
+  const split = value.lastIndexOf(" ")
+  return {
+    pid,
+    processGroupId: pid,
+    parentPid: Number(value.slice(split + 1)),
+    startSecond: value.slice(0, split),
+    bootTime: boot,
+    source: "win32-cim",
+  }
 }
 
 export async function verifyCreationIdentity(recorded: CreationIdentity): Promise<IdentityVerdict> {

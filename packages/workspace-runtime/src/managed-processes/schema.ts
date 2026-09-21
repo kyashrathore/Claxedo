@@ -29,6 +29,8 @@ export namespace Process {
     "stopped",
     "crashed",
     "restarting",
+    /** The owner lost track of the process; nothing establishes that it stopped. */
+    "unknown",
   ])
   export type Status = z.infer<typeof Status>
 

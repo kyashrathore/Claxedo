@@ -11,7 +11,19 @@ import { Log } from "../log"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
-import { execFile } from "node:child_process"
+import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
+import {
+  LaunchRefusedError,
+  captureDescendants,
+  readCreationIdentity,
+  retire,
+  retireDescendants,
+  volatileLaunchOwnership,
+  type CreationIdentity,
+  type DescendantSweep,
+  type LaunchOwnershipStore,
+  type RetirementResult,
+} from "@claxedo/agent-sdk-runtime/launch"
 import { BIN_DIR, getTerminalEnvVars, isSetupComplete, setupAgentHooks } from "../agent-hooks"
 import { cleanupOrphanedHistory, createDiskHistory, renameHistory } from "./history-disk"
 import { CLEAR_SCROLLBACK, extractContentAfterClear } from "./escape-filter"
@@ -221,48 +233,51 @@ export namespace Pty {
     )
   }
 
-  async function killProcessTree(pid: number, closeNative?: () => void) {
-    if (!Number.isFinite(pid) || pid <= 0) {
-      closeNative?.()
-      return
-    }
-    const owned = new Set([pid])
-    if (process.platform !== "win32") {
-      // Capture ancestry while the parent still exists. Provider tools can
-      // create separate process groups, so signaling only -pid misses them.
-      const table = await new Promise<string>((resolve, reject) => {
-        execFile("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8", timeout: 5_000 }, (error, stdout) => {
-          if (error) reject(error)
-          else resolve(stdout)
-        })
-      })
-      const rows = table.trim().split("\n").map((line) => line.trim().split(/\s+/).map(Number))
-      let changed = true
-      while (changed) {
-        changed = false
-        for (const [child, parent] of rows) {
-          if (!child || !parent || !owned.has(parent) || owned.has(child)) continue
-          owned.add(child)
-          changed = true
-        }
+  let ownership: LaunchOwnershipStore = volatileLaunchOwnership()
+
+  /**
+   * Host compositions inject the workspace's durable store. Until they do,
+   * ownership is volatile: the records exist for this process only, so nothing
+   * here can be reconciled after a restart.
+   */
+  export function useLaunchOwnership(store: LaunchOwnershipStore) {
+    ownership = store
+  }
+
+  /**
+   * A terminal's own session and process group come from the PTY itself
+   * (`forkpty` calls `setsid`), so the scope this retires is the one the OS
+   * already gave it. What it cannot see is a descendant that left that group.
+   */
+  async function retireSession(id: string, session: ActiveSession, closeNative: () => void): Promise<RetirementResult> {
+    if (!session.identity) {
+      closeNative()
+      return {
+        leader: "unknown",
+        descendants: "unknown",
+        signals: [],
+        error: {
+          code: "ownership_unverified",
+          message: `terminal ${id} has no recorded creation identity, so its process group cannot be signalled`,
+        },
       }
     }
-    for (const signal of ["SIGTERM", "SIGKILL"] as const) {
-      for (const target of [...owned].reverse()) {
-        if (process.platform !== "win32") {
-          try {
-            process.kill(-target, signal)
-          } catch {}
-        }
-        try {
-          process.kill(target, signal)
-        } catch {}
-      }
-      if (signal === "SIGTERM") {
-        closeNative?.()
-        await new Promise((r) => setTimeout(r, 500))
-      }
-    }
+    // Captured while the leader is alive: once it exits, a descendant that left
+    // the group is reparented and nothing connects it to this terminal any more.
+    const escapees = await captureDescendants(session.identity.pid).catch(() => [])
+    const result = await retire({ identity: session.identity, closeNative }, DEFAULT_RECOVERY_BUDGETS)
+    session.escapees = await retireDescendants(
+      escapees.filter((candidate) => candidate.processGroupId !== session.identity!.processGroupId),
+      DEFAULT_RECOVERY_BUDGETS,
+    )
+    if (session.launchId) await ownership.recordRetirement(session.launchId, result).catch(() => {})
+    return result
+  }
+
+  /** The leader is gone and no signal was refused; anything else keeps the terminal. */
+  function retirementSettled(result: RetirementResult) {
+    if (result.leader !== "exited") return false
+    return !result.signals.some((signal) => signal.refusal && signal.refusal !== "exited")
   }
 
   export const Info = z.object({
@@ -352,8 +367,23 @@ export namespace Pty {
     addrInUse: boolean
     orphanTimer: ReturnType<typeof setTimeout> | undefined
     interruptTimer: ReturnType<typeof setTimeout> | undefined
-    cleanupOperation?: Promise<void>
-    removeOperation?: Promise<void>
+    cleanupOperation?: Promise<RetirementResult | undefined>
+    removeOperation?: Promise<RetirementResult | undefined>
+    launchId?: string
+    identity?: CreationIdentity
+    /**
+     * Set when retirement did not establish that this terminal's processes are
+     * gone. The entry stays addressable and keeps pinning the runtime until a
+     * later `remove` settles it.
+     */
+    cleanup?: "unresolved"
+    cleanupResult?: RetirementResult
+    /**
+     * What the identity-checked sweep of processes that left this terminal's
+     * group found. Survivors here do not hold the entry: nothing can prove they
+     * are gone, and pinning on them would never release.
+     */
+    escapees?: DescendantSweep
     owner?: ProcessOwnerHandle
     /** Verified relay actor that created this public terminal. Never accepted
      * from request input and deliberately absent from the public PTY info. */
@@ -412,8 +442,8 @@ export namespace Pty {
     return session.cleanupOperation
   }
 
-  async function cleanupSessionOwned(id: string, session: ActiveSession, reason: "exit" | "remove") {
-    if (session.removed) return
+  async function cleanupSessionOwned(id: string, session: ActiveSession, reason: "exit" | "remove"): Promise<RetirementResult | undefined> {
+    if (session.removed) return session.cleanupResult
     // Claim explicit removal before the asynchronous process-tree sweep. This
     // makes cleanup single-owner when a provisional timer, dispose(), and the
     // native exit callback race each other.
@@ -447,7 +477,7 @@ export namespace Pty {
           session.removed = true
         }
       }, 1000 * 60).unref?.()
-      return
+      return session.cleanupResult
     }
 
     session.ready = false
@@ -462,14 +492,22 @@ export namespace Pty {
     // Always close it through its native handle; the PID-based tree sweep is
     // additional cleanup only when a real pid is available.
     const closeNative = () => { try { session.process.kill() } catch {} }
-    try {
-      await killProcessTree(session.info.pid, closeNative)
-    } catch (error) {
-      closeNative()
-      log.error("PTY process-tree cleanup failed", { pid: session.info.pid, error })
-    }
+    const result = await retireSession(id, session, closeNative)
+    session.cleanupResult = result
     await session.history.close()
+    if (!retirementSettled(result)) {
+      // The processes this terminal started may still be running, so the entry
+      // stays: it carries the only identity that can reach them, and dropping
+      // it would report a stopped terminal over a live one.
+      session.cleanup = "unresolved"
+      session.removed = false
+      session.cleanupOperation = undefined
+      log.error("PTY retirement unresolved", { id, pid: session.info.pid, result })
+      return result
+    }
+    session.cleanup = undefined
     sessions.delete(id)
+    return result
   }
 
   const sessions = new Map<string, ActiveSession>()
@@ -513,6 +551,8 @@ export namespace Pty {
       managed: s.managed,
       committed: s.committed,
       orphanTimerActive: !!s.orphanTimer,
+      ...(s.cleanup ? { cleanup: s.cleanup, cleanupResult: s.cleanupResult } : {}),
+      ...(s.escapees ? { escapees: s.escapees } : {}),
     }))
   }
 
@@ -523,7 +563,9 @@ export namespace Pty {
     let managed = 0
     let subscribers = 0
     for (const session of sessions.values()) {
-      if (session.removed || session.exited || session.info.status !== "running") continue
+      // An unresolved terminal still pins the runtime: its processes were never
+      // proven gone, and a daemon that exits here abandons them.
+      if (session.cleanup !== "unresolved" && (session.removed || session.exited || session.info.status !== "running")) continue
       running++
       subscribers += session.subscribers.size
       if (session.managed) managed++
@@ -697,6 +739,15 @@ export namespace Pty {
     const spawn = await getSpawn()
     const ptyImportMs = performance.now() - t2
 
+    // Prepared before the spawn: a terminal is only acknowledged once something
+    // durable can name it again. `forkpty` cannot carry the gate's private
+    // channel without taking the shell's session leadership away from it, so
+    // this launch records its identity immediately after the spawn instead and
+    // reconciles a crash in that window as unknown rather than as no execution.
+    const prepared = await ownership
+      .prepare({ role: "terminal", protocol: "direct", scope: { directory: cwd, ...(input.sessionId ? { sessionId: input.sessionId } : {}) } })
+      .catch((error: unknown) => { throw new LaunchRefusedError("terminal", error) })
+
     const t3 = performance.now()
     const ptyProcess = spawn(command, args, {
       name: "xterm-256color",
@@ -704,6 +755,14 @@ export namespace Pty {
       env,
     })
     const spawnMs = performance.now() - t3
+    const observed = Number.isInteger(ptyProcess.pid) && ptyProcess.pid > 0
+      ? await readCreationIdentity(ptyProcess.pid).catch(() => undefined)
+      : undefined
+    // Only a process this runtime is the parent of may be recorded. A pid the
+    // PTY library reported but that belongs to something else must never
+    // become a signal target.
+    const identity = observed?.parentPid === process.pid ? observed : undefined
+    if (identity) await ownership.recordIdentity(prepared.launchId, identity).catch(() => {})
 
     const info = {
       id,
@@ -732,9 +791,7 @@ export namespace Pty {
       },
       observation.operations ?? {
         stopGracefully: async () => remove(info.id),
-        ...(observedPid !== undefined
-          ? { killOwnedTree: async () => killProcessTree(observedPid) }
-          : {}),
+        ...(observedPid !== undefined ? { killOwnedTree: async () => remove(info.id) } : {}),
       },
     )
 
@@ -842,6 +899,8 @@ export namespace Pty {
       addrInUse: false,
       orphanTimer: undefined,
       interruptTimer: undefined,
+      launchId: prepared.launchId,
+      ...(identity ? { identity } : {}),
       ...(owner ? { owner } : {}),
       ...(agentHookAccess ? { agentHookAccess } : {}),
     }
@@ -987,13 +1046,19 @@ export namespace Pty {
     return session.info
   }
 
-  export async function remove(id: string) {
+  /**
+   * Answers with what retirement established. A call on a terminal whose
+   * previous removal was unresolved retries it, with the same recorded
+   * identity and whatever the last attempt already achieved.
+   */
+  export async function remove(id: string): Promise<RetirementResult | undefined> {
     const session = sessions.get(id)
-    if (!session) return
+    if (!session) return undefined
     session.removeOperation ??= (async () => {
       log.info("removing session", { id })
       const alreadyExited = session.exited
-      await cleanupSession(id, session, "remove")
+      const result = await cleanupSession(id, session, "remove")
+      if (session.cleanup === "unresolved") return result
       // Native exit cleanup may already own `cleanupOperation`. Explicit
       // remove still owns the stronger public contract: after it resolves the
       // session must no longer be addressable, rather than waiting for exit
@@ -1008,14 +1073,35 @@ export namespace Pty {
         id,
         ...(session.info.sessionId ? { sessionId: session.info.sessionId } : {}),
       })
+      return result
     })()
-    await session.removeOperation
+    const result = await session.removeOperation
+    if (session.cleanup === "unresolved") session.removeOperation = undefined
+    return result
   }
 
-  export async function dispose() {
+  /**
+   * Stops tracking a terminal whose retirement never resolved. The durable
+   * ownership row stays open: this is an operator accepting that its processes
+   * are unaccounted for, not evidence that they stopped.
+   */
+  export function abandon(id: string) {
+    const session = sessions.get(id)
+    if (!session || session.cleanup !== "unresolved") return undefined
+    session.removed = true
+    sessions.delete(id)
+    session.owner?.exit({ reason: "detached" })
+    log.error("PTY ownership abandoned with cleanup unresolved", { id, result: session.cleanupResult })
+    return session.cleanupResult
+  }
+
+  /** Collects every terminal's outcome; an unresolved one is reported, not discarded. */
+  export async function dispose(): Promise<Array<{ id: string; retirement: RetirementResult | undefined }>> {
+    const results: Array<{ id: string; retirement: RetirementResult | undefined }> = []
     for (const id of Array.from(sessions.keys())) {
-      await remove(id)
+      results.push({ id, retirement: await remove(id) })
     }
+    return results
   }
 
   export function resize(id: string, cols: number, rows: number) {

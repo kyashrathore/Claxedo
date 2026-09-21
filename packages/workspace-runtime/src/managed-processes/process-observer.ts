@@ -1,3 +1,4 @@
+import type { RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
 export type ProcessOwnerKind =
   | "runtime"
   | "sidecar"
@@ -33,9 +34,14 @@ export type ProcessOwnerDescriptor = {
   attributionConfidence?: "direct" | "inferred" | "not-process-backed"
 }
 
+/**
+ * An owner operation answers with what it established. `undefined` means the
+ * owner has no process-level evidence to offer at all, which is not the same as
+ * success.
+ */
 export type ProcessOwnerOperations = {
-  stopGracefully?: () => Promise<void>
-  killOwnedTree?: () => Promise<void>
+  stopGracefully?: () => Promise<RetirementResult | undefined>
+  killOwnedTree?: () => Promise<RetirementResult | undefined>
 }
 
 export type ProcessOwnerExit = {
@@ -93,7 +99,7 @@ export type ProcessObserver = {
     ownerId: string
     ownerGeneration: string
     operation: "stop" | "kill"
-  }): Promise<"completed" | "owner-unavailable" | "operation-unavailable">
+  }): Promise<"completed" | "unresolved" | "owner-unavailable" | "operation-unavailable">
   detachWorkspace(workspaceId: string): number
   dispose(): void
 }
@@ -193,7 +199,9 @@ export function createProcessObserver(input: {
       const operation =
         request.operation === "stop" ? record.operations.stopGracefully : record.operations.killOwnedTree
       if (!operation) return "operation-unavailable"
-      await operation()
+      const result = await operation()
+      if (!result) return "unresolved"
+      if (result.leader !== "exited" || result.descendants === "owned" || result.error) return "unresolved"
       return "completed"
     },
     detachWorkspace(workspaceId) {

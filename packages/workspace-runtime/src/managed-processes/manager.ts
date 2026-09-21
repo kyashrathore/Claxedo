@@ -7,6 +7,7 @@
  * deterministic workspace ports, and graceful shutdown.
  */
 
+import { LaunchRefusedError, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
 import { workspaceRuntimeBus } from "../bus"
 import { Pty } from "../pty/index"
 import { Log } from "../log"
@@ -827,12 +828,18 @@ function fail(error: string, process?: Process.ManagedProcess): Process.LaunchRe
   }
 }
 
+/**
+ * Whether the PTY owner reported this terminal exited. Registry absence is not
+ * an answer: a terminal whose retirement was unresolved is deliberately kept,
+ * and one that was never registered tells us nothing about a process.
+ */
 async function gone(ptyId: string, ms: number) {
-  if (!Pty.get(ptyId)) return true
+  const exited = () => Pty.get(ptyId)?.status === "exited"
+  if (exited()) return true
   return await new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {
       unsub()
-      resolve(!Pty.get(ptyId))
+      resolve(exited())
     }, ms)
     const unsub = workspaceRuntimeBus.subscribe((event) => {
       if (event.type !== "pty.exited") return
@@ -864,8 +871,10 @@ function scrub(directory: string, configId: string, nextStatus?: Process.Status)
   }
   s.processes.set(configId, next)
 
-  if (status === "stopped" && prev.status !== "stopped") {
-    workspaceRuntimeBus.publish({ type: "process.stopped", directory: real(directory), configId, exitCode: next.exitCode ?? 0 })
+  // An exit code nobody read is not zero. When the process never reported one,
+  // the status change is published and the exit event is not.
+  if (status === "stopped" && prev.status !== "stopped" && next.exitCode !== undefined) {
+    workspaceRuntimeBus.publish({ type: "process.stopped", directory: real(directory), configId, exitCode: next.exitCode })
   }
   if (prev.status !== status || prev.ptyId !== next.ptyId || prev.assignedPort !== next.assignedPort) {
     workspaceRuntimeBus.publish({ type: "process.status", directory: real(directory), configId, status })
@@ -882,7 +891,9 @@ export async function reconcileRuntime(directory: string, ids?: string[]): Promi
     if (!proc) continue
     const info = proc.ptyId ? Pty.get(proc.ptyId) : undefined
     if (!info && ["running", "starting", "restarting", "stopping"].includes(proc.status)) {
-      scrub(directory, configId, "stopped")
+      // The registry lost the terminal. That is the end of this owner's
+      // evidence, not proof the process stopped.
+      scrub(directory, configId, "unknown")
       continue
     }
     if (!info && proc.assignedPort !== undefined) {
@@ -1092,8 +1103,8 @@ async function startOnce(
             directory: real(directory),
             label: config.name,
             operations: {
-              stopGracefully: async () => stop(directory, configId),
-              killOwnedTree: async () => stop(directory, configId, "SIGKILL"),
+              stopGracefully: async () => (await stop(directory, configId)).retirement,
+              killOwnedTree: async () => (await stop(directory, configId, "SIGKILL")).retirement,
             },
           }
         : undefined,
@@ -1151,6 +1162,17 @@ async function startOnce(
         await Pty.remove(ptyId)
       } catch {}
     }
+    // Nothing was spawned, so this is a refusal rather than a crash: the
+    // process was never started because its ownership could not be recorded.
+    if (err instanceof LaunchRefusedError) {
+      proc.status = "idle"
+      proc.ptyId = undefined
+      proc.assignedPort = undefined
+      s.processes.set(configId, proc)
+      workspaceRuntimeBus.publish({ type: "process.status", directory: real(directory), configId, status: "idle" })
+      log.error("refused to start process", { configId, reason: err.code, err: err.message })
+      return fail(`${err.code}: ${err.message}`, proc)
+    }
     proc.status = "crashed"
     proc.ptyId = undefined
     proc.assignedPort = undefined
@@ -1165,22 +1187,23 @@ async function startOnce(
 /**
  * Stop a process by config ID or pty ID.
  */
-export async function stop(directory: string, configIdOrPtyId: string, signal?: string): Promise<void> {
+export type ProcessStopResult = {
+  state: "stopped" | "unresolved"
+  retirement: RetirementResult | undefined
+}
+
+export async function stop(directory: string, configIdOrPtyId: string, signal?: string): Promise<ProcessStopResult> {
   const s = getState(directory)
   const { configId, proc } = resolveProcess(directory, configIdOrPtyId)
   clearRestartTimer(s, configId)
   if (!proc) {
     log.info("no running process to stop", { id: configIdOrPtyId })
-    return
+    return { state: "stopped", retirement: undefined }
   }
   if (!proc.ptyId) {
     scrub(directory, configId, proc.status === "crashed" ? "crashed" : "stopped")
     await reconcileRuntime(directory, [configId])
-    return
-  }
-
-  if (proc.assignedPort !== undefined) {
-    unregisterPort(proc.assignedPort)
+    return { state: "stopped", retirement: undefined }
   }
 
   const updated: Process.ManagedProcess = { ...proc, status: "stopping" }
@@ -1195,43 +1218,32 @@ export async function stop(directory: string, configIdOrPtyId: string, signal?: 
     } catch {}
   }
 
-  let done = await gone(ptyId, signal ? 250 : 2000)
-  if (!done) {
-    const info = Pty.get(ptyId)
-    if (signal === "SIGKILL" && info) {
-      if (process.platform !== "win32") {
-        try {
-          process.kill(-info.pid, "SIGKILL")
-        } catch {}
-      }
-      try {
-        process.kill(info.pid, "SIGKILL")
-      } catch {}
-    } else {
-      try {
-        await Pty.remove(ptyId)
-      } catch {}
-    }
-    done = await gone(ptyId, 2000)
-  }
-  if (!done) {
-    const info = Pty.get(ptyId)
-    if (info) {
-      if (process.platform !== "win32") {
-        try {
-          process.kill(-info.pid, "SIGKILL")
-        } catch {}
-      }
-      try {
-        process.kill(info.pid, "SIGKILL")
-      } catch {}
-    }
-    await gone(ptyId, 1000)
+  let retirement: RetirementResult | undefined
+  if (!(await gone(ptyId, signal ? 250 : 2000))) {
+    // `Pty.remove` is the only owner of this process group's identity, and its
+    // result is the only evidence this manager has that anything stopped.
+    retirement = await Pty.remove(ptyId)
   }
 
+  const stopped = retirement
+    ? retirement.leader === "exited" && retirement.descendants !== "owned" && !retirement.error
+    : await gone(ptyId, 250)
+  if (!stopped) {
+    // The port and the pty id stay attached: they are how a retry reaches the
+    // same resources, and releasing them would let a replacement bind a port
+    // the old process still holds.
+    const held: Process.ManagedProcess = { ...s.processes.get(configId)!, status: "unknown" }
+    s.processes.set(configId, held)
+    workspaceRuntimeBus.publish({ type: "process.status", directory: real(directory), configId, status: "unknown" })
+    log.error("managed process stop unresolved", { configId, ptyId, retirement })
+    return { state: "unresolved", retirement }
+  }
+
+  if (proc.assignedPort !== undefined) unregisterPort(proc.assignedPort)
   scrub(directory, configId, "stopped")
   await reconcileRuntime(directory, [configId])
   log.info("process stopped", { configId, ptyId })
+  return { state: "stopped", retirement }
 }
 
 /**
@@ -1563,7 +1575,7 @@ function initExitHandler(directory: string): () => void {
 /**
  * Dispose all state for a directory — stops processes and clears state.
  */
-export async function dispose(directory: string): Promise<void> {
+export async function dispose(directory: string) {
   const s = getState(directory)
   s.disposed = true
   if (s.debounceTimer) clearTimeout(s.debounceTimer)
@@ -1574,11 +1586,15 @@ export async function dispose(directory: string): Promise<void> {
     s.watcher?.close()
   } catch {}
   const ids = Array.from(s.configs.keys())
+  const results: Array<{ configId: string; result: ProcessStopResult | { state: "unresolved"; error: string } }> = []
   for (const configId of ids.toReversed()) {
     const proc = s.processes.get(configId)
     if (!proc || !proc.ptyId) continue
     if (!["running", "starting", "restarting", "stopping"].includes(proc.status)) continue
-    await stop(directory, configId).catch(() => undefined)
+    results.push({
+      configId,
+      result: await stop(directory, configId).catch((error: unknown) => ({ state: "unresolved" as const, error: String(error) })),
+    })
   }
   await reconcileRuntime(directory, ids).catch(() => undefined)
   s.dispose?.()
@@ -1586,6 +1602,9 @@ export async function dispose(directory: string): Promise<void> {
   s.configs.clear()
   processObserverMap.delete(real(directory))
   stateMap.delete(real(directory))
+  // The manager's state is gone; the outcomes are not. A caller that tears down
+  // a workspace has to be told which of its processes were never proven stopped.
+  return results
 }
 
 /**

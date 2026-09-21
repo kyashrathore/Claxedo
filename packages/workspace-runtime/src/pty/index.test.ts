@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { spawn as spawnChild, type ChildProcess } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -13,13 +14,35 @@ const fakeProcesses = new Map<number, {
   dataHandlers: DataHandler[]
   exitHandlers: ExitHandler[]
 }>()
-let nextPid = 41000
 let nextSpawnPid: number | undefined
 const nativeKills: number[] = []
+const disposableChildren: ChildProcess[] = []
+
+/**
+ * The PTY library is faked, but the process it reports must be real: retirement
+ * refuses to signal anything whose creation identity it cannot read, so a made
+ * up pid would make every one of these removals unresolved for the wrong
+ * reason. `detached` reproduces the session leadership `forkpty` gives a shell.
+ */
+function disposablePid() {
+  const child = spawnChild("/bin/sh", ["-c", "sleep 30"], { detached: true, stdio: "ignore" })
+  disposableChildren.push(child)
+  return child.pid!
+}
+
+/** EPERM means the process is there and belongs to someone else, not that it is gone. */
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as { code?: string }).code === "EPERM"
+  }
+}
 
 await mock.module("@lydell/node-pty", () => ({
   spawn(command: string, args: string[], options: { cwd?: string; env?: Record<string, string> }) {
-    const pid = nextSpawnPid ?? nextPid++
+    const pid = nextSpawnPid ?? disposablePid()
     nextSpawnPid = undefined
     fakeProcesses.set(pid, { dataHandlers: [], exitHandlers: [] })
     return {
@@ -48,7 +71,6 @@ const previousOrphanTimeout = process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS
 const previousHistoryDir = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
 
 let tmpDir: string
-let kill: ReturnType<typeof spyOn<typeof process, "kill">>
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-pty-"))
@@ -57,13 +79,14 @@ beforeEach(async () => {
   fakeProcesses.clear()
   nextSpawnPid = undefined
   nativeKills.length = 0
-  kill = spyOn(process, "kill").mockImplementation(() => true)
 })
 
 afterEach(async () => {
   const { Pty } = await import("./index")
   await Pty.dispose()
-  kill.mockRestore()
+  for (const child of disposableChildren.splice(0)) {
+    try { process.kill(-child.pid!, "SIGKILL") } catch {}
+  }
   fakeProcesses.clear()
   if (previousOrphanTimeout === undefined) {
     delete process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS
@@ -119,12 +142,20 @@ describe("Pty lifecycle cleanup", () => {
     expect(events[0]).not.toHaveProperty("descriptor.pid")
 
     const registered = events[0] as Extract<ProcessObserverEvent, { type: "registered" }>
+    // Without a pid there is no creation identity, so nothing can be signalled
+    // and nothing may be claimed: the native handle is closed and the terminal
+    // is kept for a later attempt rather than reported stopped.
     await expect(observer.invoke({
       ownerId: registered.descriptor.ownerId,
       ownerGeneration: registered.descriptor.ownerGeneration,
       operation: "stop",
-    })).resolves.toBe("completed")
+    })).resolves.toBe("unresolved")
     expect(nativeKills).toContain(0)
+    expect(Pty.get(info.id)).toBeDefined()
+    expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
+    expect(Pty.activity().running).toBe(1)
+
+    expect(Pty.abandon(info.id)?.error?.code).toBe("ownership_unverified")
     expect(Pty.get(info.id)).toBeUndefined()
   })
 
@@ -141,12 +172,7 @@ describe("Pty lifecycle cleanup", () => {
     expect(ws.tracker.closeCount).toBeGreaterThan(0)
     expect(await fs.readFile(historyPath(info.cwd, info.id), "utf8")).toContain("hello")
     expect(Pty.get(info.id)).toBeUndefined()
-    if (process.platform !== "win32") {
-      expect(kill.mock.calls).toContainEqual([-info.pid, "SIGTERM"])
-      expect(kill.mock.calls).toContainEqual([-info.pid, "SIGKILL"])
-    }
-    expect(kill.mock.calls).toContainEqual([info.pid, "SIGTERM"])
-    expect(kill.mock.calls).toContainEqual([info.pid, "SIGKILL"])
+    expect(alive(info.pid)).toBe(false)
   })
 
   test("orphan timeout removes abandoned unmanaged sessions", async () => {
@@ -158,7 +184,7 @@ describe("Pty lifecycle cleanup", () => {
     await waitFor(() => Pty.get(info.id) === undefined)
 
     expect(Pty.get(info.id)).toBeUndefined()
-    expect(kill.mock.calls).toContainEqual([info.pid, "SIGTERM"])
+    expect(alive(info.pid)).toBe(false)
   })
 
   test("committed sessions survive subscriber disconnects", async () => {
@@ -176,7 +202,7 @@ describe("Pty lifecycle cleanup", () => {
 
     expect(Pty.get(info.id)).toEqual(info)
     expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0 })
-    expect(kill.mock.calls).toEqual([])
+    expect(alive(info.pid)).toBe(true)
   })
 
   test("reconnect cancels the orphan timer", async () => {
@@ -192,7 +218,7 @@ describe("Pty lifecycle cleanup", () => {
 
     expect(Pty.get(info.id)).toBeDefined()
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(false)
-    expect(kill.mock.calls).toEqual([])
+    expect(alive(info.pid)).toBe(true)
   })
 
   test("remove clears a pending orphan timer", async () => {
@@ -207,7 +233,7 @@ describe("Pty lifecycle cleanup", () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(Pty.get(info.id)).toBeUndefined()
-    expect(kill.mock.calls.filter((call) => call[0] === info.pid)).toHaveLength(2)
+    expect(alive(info.pid)).toBe(false)
   })
 
   test("explicit remove wins a race with native exit retention", async () => {
@@ -230,8 +256,8 @@ describe("Pty lifecycle cleanup", () => {
     await Pty.dispose()
 
     expect(Pty.list()).toEqual([])
-    expect(kill.mock.calls).toContainEqual([first.pid, "SIGTERM"])
-    expect(kill.mock.calls).toContainEqual([second.pid, "SIGTERM"])
+    expect(alive(first.pid)).toBe(false)
+    expect(alive(second.pid)).toBe(false)
   })
 })
 
@@ -303,3 +329,63 @@ async function waitFor(predicate: () => boolean) {
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
+
+describe("Pty unresolved retirement", () => {
+  test("a terminal that ignores TERM is escalated to KILL and only then reported stopped", async () => {
+    const { Pty } = await import("./index")
+    const stubborn = spawnChild("/bin/sh", ["-c", "trap '' TERM; while true; do sleep 0.05; done"], {
+      detached: true,
+      stdio: "ignore",
+    })
+    disposableChildren.push(stubborn)
+    nextSpawnPid = stubborn.pid!
+    // Let the trap take effect, or the first TERM kills it for the wrong reason.
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    const info = await Pty.create({ cwd: tmpDir, title: "stubborn" })
+    expect(info.pid).toBe(stubborn.pid!)
+
+    const result = await Pty.remove(info.id)
+
+    expect(result?.leader).toBe("exited")
+    expect(result?.signals.map((item) => item.signal)).toEqual(["SIGTERM", "SIGKILL"])
+    expect(alive(stubborn.pid!)).toBe(false)
+    expect(Pty.get(info.id)).toBeUndefined()
+  }, 20_000)
+
+  test("a pid the runtime did not spawn records no identity and never becomes a signal target", async () => {
+    const { Pty } = await import("./index")
+    // init: alive, readable, and emphatically not ours. Recording its identity
+    // would make the next removal signal the whole machine's process group 1.
+    nextSpawnPid = 1
+
+    const info = await Pty.create({ cwd: tmpDir, title: "foreign" })
+    const result = await Pty.remove(info.id)
+
+    expect(result?.error?.code).toBe("ownership_unverified")
+    expect(result?.signals).toEqual([])
+    expect(alive(1)).toBe(true)
+    expect(Pty.listDetailed().find((session) => session.id === info.id)?.cleanup).toBe("unresolved")
+    // A second remove retries rather than reporting a terminal already claimed stopped.
+    expect((await Pty.remove(info.id))?.error?.code).toBe("ownership_unverified")
+    Pty.abandon(info.id)
+  }, 20_000)
+
+  test("a store that cannot record ownership refuses the launch before anything is spawned", async () => {
+    const { Pty } = await import("./index")
+    const { volatileLaunchOwnership, LaunchRefusedError } = await import("@claxedo/agent-sdk-runtime/launch")
+    const before = Pty.list().length
+    Pty.useLaunchOwnership({
+      ...volatileLaunchOwnership(),
+      prepare: async () => { throw new Error("workspace store is unavailable") },
+    })
+    try {
+      const failure = await Pty.create({ cwd: tmpDir, title: "refused" }).catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(LaunchRefusedError)
+      expect((failure as { code: string }).code).toBe("launch_refused_ownership_unavailable")
+      expect(Pty.list().length).toBe(before)
+    } finally {
+      Pty.useLaunchOwnership(volatileLaunchOwnership())
+    }
+  })
+})

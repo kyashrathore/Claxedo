@@ -1000,3 +1000,110 @@ describe("resolvePort via start()", () => {
     }
   })
 })
+
+describe("stop without proof of exit", () => {
+  let tmpDir: string
+  let ptyCreate: { mockRestore(): void } | undefined
+  let ptyRemove: { mockRestore(): void } | undefined
+  let ptyGet: { mockRestore(): void } | undefined
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "stop-unresolved-"))
+    process.env.WORKSPACE_RUNTIME_STATE_DIR = tmpDir
+  })
+
+  afterEach(async () => {
+    ptyCreate?.mockRestore()
+    ptyRemove?.mockRestore()
+    ptyGet?.mockRestore()
+    ptyCreate = ptyRemove = ptyGet = undefined
+    delete process.env.WORKSPACE_RUNTIME_STATE_DIR
+    await fs.rm(tmpDir, { recursive: true, force: true })
+  })
+
+  async function startOne(directory: string) {
+    const Manager = await import("./manager")
+    const configDir = path.join(directory, ".workspace-runtime")
+    await fs.mkdir(configDir, { recursive: true })
+    await fs.writeFile(
+      path.join(configDir, "processes.jsonc"),
+      JSON.stringify({
+        $schema: "",
+        processes: [{ id: "proc_held", name: "dev", command: "sleep 30", port: { name: "http", preferred: await freePort(), inject: "PORT" } }],
+      }),
+    )
+    await Manager.loadConfig(directory)
+    return await Manager.start(directory, "proc_held")
+  }
+
+  test("an unresolved stop keeps the pty id, the port and a status that does not claim it stopped", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "stop-unresolved-dir-"))
+    ptyCreate = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      id: "pty_held", title: input.title ?? "dev", command: "/bin/sh", args: [], cwd: input.cwd ?? directory, status: "running", pid: 1,
+    }))
+    // The PTY owner could not establish that its process group is gone.
+    ptyRemove = spyOn(Pty, "remove").mockImplementation(async () => ({
+      leader: "alive" as const,
+      descendants: "owned" as const,
+      signals: [{ signal: "SIGKILL" as const, scope: "group" as const, delivered: false, refusal: "permission_denied" as const }],
+      error: { code: "signal_denied" as const, message: "denied" },
+    }))
+    ptyGet = spyOn(Pty, "get").mockImplementation(() => ({
+      id: "pty_held", title: "dev", command: "/bin/sh", args: [], cwd: directory, status: "running", pid: 1,
+    }))
+
+    try {
+      const Manager = await import("./manager")
+      const launch = await startOne(directory)
+      expect(launch.kind).toBe("started")
+      const port = Manager.list(directory).find((item) => item.configId === "proc_held")?.assignedPort
+      expect(port).toBeGreaterThan(0)
+
+      const stopped = await Manager.stop(directory, "proc_held")
+
+      expect(stopped.state).toBe("unresolved")
+      expect(stopped.retirement?.error?.code).toBe("signal_denied")
+      const held = Manager.list(directory).find((item) => item.configId === "proc_held")
+      expect(held?.status).toBe("unknown")
+      expect(held?.ptyId).toBe("pty_held")
+      expect(held?.assignedPort).toBe(port)
+    } finally {
+      await (await import("./manager")).dispose(directory).catch(() => undefined)
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  }, 20_000)
+
+  test("a retry after a partial stop reports the resolved outcome and releases the port", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "stop-retry-dir-"))
+    let attempt = 0
+    ptyCreate = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      id: "pty_retry", title: input.title ?? "dev", command: "/bin/sh", args: [], cwd: input.cwd ?? directory, status: "running", pid: 1,
+    }))
+    ptyRemove = spyOn(Pty, "remove").mockImplementation(async () =>
+      ++attempt === 1
+        ? { leader: "alive" as const, descendants: "owned" as const, signals: [], error: { code: "exit_unverified" as const, message: "still there" } }
+        : { leader: "exited" as const, descendants: "unknown" as const, signals: [] },
+    )
+    ptyGet = spyOn(Pty, "get").mockImplementation(() => ({
+      id: "pty_retry", title: "dev", command: "/bin/sh", args: [], cwd: directory, status: "running", pid: 1,
+    }))
+
+    try {
+      const Manager = await import("./manager")
+      await startOne(directory)
+      expect((await Manager.stop(directory, "proc_held")).state).toBe("unresolved")
+
+      const retried = await Manager.stop(directory, "proc_held")
+
+      expect(retried.state).toBe("stopped")
+      expect(attempt).toBe(2)
+      const settled = Manager.list(directory).find((item) => item.configId === "proc_held")
+      expect(settled?.status).toBe("stopped")
+      expect(settled?.assignedPort).toBeUndefined()
+      expect(settled?.ptyId).toBeUndefined()
+    } finally {
+      await (await import("./manager")).dispose(directory).catch(() => undefined)
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  }, 20_000)
+})

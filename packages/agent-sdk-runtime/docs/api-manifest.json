@@ -13,6 +13,18 @@
       "status": "stable",
       "purpose": "AgentRuntime facade and shared runtime types."
     },
+    "@claxedo/agent-sdk-runtime/adapters": {
+      "status": "advanced",
+      "purpose": "Public advanced adapter contracts and adapter helper types."
+    },
+    "@claxedo/agent-sdk-runtime/capabilities": {
+      "status": "stable",
+      "purpose": "Harness and adapter capability types and helpers."
+    },
+    "@claxedo/agent-sdk-runtime/compat-events": {
+      "status": "compatibility",
+      "purpose": "Claxedo client-presentation event bridge."
+    },
     "@claxedo/agent-sdk-runtime/harnesses": {
       "status": "stable",
       "purpose": "Public harness factory functions."
@@ -37,41 +49,13 @@
       "status": "stable",
       "purpose": "Pi harness factory."
     },
-    "@claxedo/agent-sdk-runtime/stores/memory": {
+    "@claxedo/agent-sdk-runtime/launch": {
       "status": "stable",
-      "purpose": "In-memory runtime store for tests, demos, and ephemeral hosts."
+      "purpose": "Launch ownership: creation identity, the launch gate, and bounded identity-checked retirement."
     },
-    "@claxedo/agent-sdk-runtime/stores/sqlite": {
-      "status": "stable",
-      "purpose": "Local durable runtime store."
-    },
-    "@claxedo/agent-sdk-runtime/capabilities": {
-      "status": "stable",
-      "purpose": "Harness and adapter capability types and helpers."
-    },
-    "@claxedo/agent-sdk-runtime/adapters": {
-      "status": "advanced",
-      "purpose": "Public advanced adapter contracts and adapter helper types."
-    },
-    "@claxedo/agent-sdk-runtime/compat-events": {
-      "status": "compatibility",
-      "purpose": "Claxedo client-presentation event bridge."
-    },
-    "@claxedo/agent-sdk-runtime/status": {
-      "status": "compatibility",
-      "purpose": "Session status normalization helpers."
-    },
-    "@claxedo/agent-sdk-runtime/runtime-event-hub": {
-      "status": "integration",
-      "purpose": "In-process runtime event fanout."
-    },
-    "@claxedo/agent-sdk-runtime/sse": {
-      "status": "integration",
-      "purpose": "Local SSE fanout and replay helpers."
-    },
-    "@claxedo/agent-sdk-runtime/provider-projection": {
-      "status": "integration",
-      "purpose": "Provider credential projection contracts and the record validator applied to pushed provider rows."
+    "@claxedo/agent-sdk-runtime/launch-gate-child": {
+      "status": "internal",
+      "purpose": "The launch gate program. Spawned by path; never imported."
     },
     "@claxedo/agent-sdk-runtime/mcp-resolver": {
       "status": "integration",
@@ -81,13 +65,37 @@
       "status": "integration",
       "purpose": "Bounded transcript-page contracts and projections."
     },
-    "@claxedo/agent-sdk-runtime/subagent-admission": {
+    "@claxedo/agent-sdk-runtime/provider-projection": {
       "status": "integration",
-      "purpose": "Parent-scoped subagent observation admission."
+      "purpose": "Provider credential projection contracts and the record validator applied to pushed provider rows."
+    },
+    "@claxedo/agent-sdk-runtime/runtime-event-hub": {
+      "status": "integration",
+      "purpose": "In-process runtime event fanout."
+    },
+    "@claxedo/agent-sdk-runtime/sse": {
+      "status": "integration",
+      "purpose": "Local SSE fanout and replay helpers."
+    },
+    "@claxedo/agent-sdk-runtime/status": {
+      "status": "compatibility",
+      "purpose": "Session status normalization helpers."
+    },
+    "@claxedo/agent-sdk-runtime/stores/memory": {
+      "status": "stable",
+      "purpose": "In-memory runtime store for tests, demos, and ephemeral hosts."
     },
     "@claxedo/agent-sdk-runtime/stores/session-start": {
       "status": "integration",
       "purpose": "Durable session creation ownership on a host-supplied SQLite database."
+    },
+    "@claxedo/agent-sdk-runtime/stores/sqlite": {
+      "status": "stable",
+      "purpose": "Local durable runtime store."
+    },
+    "@claxedo/agent-sdk-runtime/subagent-admission": {
+      "status": "integration",
+      "purpose": "Parent-scoped subagent observation admission."
     }
   },
   "docs": {

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 
 import { createProcessObserver, type ProcessObserverEvent } from "./process-observer"
+import type { RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+
+/** What an owner reports when the leader exited and nothing it owned is left. */
+const retired: RetirementResult = { leader: "exited", descendants: "unknown", signals: [] }
 
 describe("process observer", () => {
   test("publishes only safe ownership metadata and tracks observed lifetime", () => {
@@ -20,7 +24,7 @@ describe("process observer", () => {
         directory: "/tmp/workspace",
         sessionId: "session-1",
       },
-      { stopGracefully: async () => undefined },
+      { stopGracefully: async () => retired },
     )
 
     now = 175
@@ -140,7 +144,7 @@ describe("process observer", () => {
         role: "managed-process",
         label: "Managed process",
       },
-      { stopGracefully: async () => undefined },
+      { stopGracefully: async () => retired },
     )
 
     handle.update({ lifecycle: "detached" })
@@ -196,7 +200,7 @@ describe("process observer", () => {
           pid: workspaceId === "workspace-a" ? 10 : 11,
           workspaceId,
         },
-        { stopGracefully: async () => undefined },
+        { stopGracefully: async () => retired },
       )
     }
 
