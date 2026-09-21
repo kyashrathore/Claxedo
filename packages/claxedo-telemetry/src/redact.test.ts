@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 
-import { redactText, sanitizeAttributes, sanitizeSpan } from "./redact"
+import { MAX_ATTRIBUTES, MAX_EVENTS, redactText, sanitizeAttributes, sanitizeSpan } from "./redact"
 import type { FinishedSpan } from "./span"
 
 describe("redactText", () => {
@@ -60,6 +60,19 @@ describe("sanitizeAttributes", () => {
       n: 1,
     })
   })
+
+  test("keeps at most MAX_ATTRIBUTES keys and drops oversized ones", () => {
+    const many: Record<string, number> = {}
+    for (let index = 0; index < MAX_ATTRIBUTES * 2; index += 1) many[`k${index}`] = index
+    expect(Object.keys(sanitizeAttributes(many))).toHaveLength(MAX_ATTRIBUTES)
+    expect(sanitizeAttributes({ ["k".repeat(200)]: 1, a: 1 })).toEqual({ a: 1 })
+  })
+
+  test("a __proto__ key is data, not a prototype write", () => {
+    const out = sanitizeAttributes(JSON.parse('{"__proto__":"x","a":1}') as Record<string, string>)
+    expect(Object.hasOwn(out, "__proto__")).toBe(true)
+    expect(out["a"]).toBe(1)
+  })
 })
 
 describe("sanitizeSpan", () => {
@@ -93,5 +106,11 @@ describe("sanitizeSpan", () => {
     const out = sanitizeSpan(span(), new Set(["http.url", "exception.message"]))
     expect(out.attributes).toEqual({ "http.url": "https://[redacted]@h" })
     expect(Object.keys(out.events[0]!.attributes!)).toEqual(["exception.message"])
+  })
+
+  test("caps the events a span carries", () => {
+    const loaded = span()
+    loaded.events = Array.from({ length: MAX_EVENTS * 2 }, (_, i) => ({ name: `e${i}`, timeUnixNano: 1n }))
+    expect(sanitizeSpan(loaded).events).toHaveLength(MAX_EVENTS)
   })
 })

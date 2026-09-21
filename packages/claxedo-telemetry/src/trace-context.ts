@@ -29,6 +29,18 @@ const VERSION = "00"
 const INVALID_TRACE_ID = "0".repeat(32)
 const INVALID_SPAN_ID = "0".repeat(16)
 
+/**
+ * `tracestate` bounds from the spec: at most 32 members, the whole header at
+ * most 512 characters. A member is `key=value` — a lowercase vendor key
+ * (optionally `tenant@system`), and a printable-ASCII value with no `,` or
+ * `=`. Anything outside the grammar is a broken sender; its members are
+ * dropped rather than reflected into the headers this hop sends next, where
+ * control characters would be a header-injection vector.
+ */
+const MAX_TRACESTATE_MEMBERS = 32
+const MAX_TRACESTATE_LENGTH = 512
+const TRACESTATE_MEMBER = /^[a-z0-9][a-z0-9_\-*/]{0,240}(?:@[a-z0-9][a-z0-9_\-*/]{0,13})?=[\x20-\x2b\x2d-\x3c\x3e-\x7e]{0,256}$/
+
 export type TraceContext = {
   /** 32 lowercase hex characters, never all zero. */
   traceId: string
@@ -36,7 +48,7 @@ export type TraceContext = {
   spanId: string
   /** Whether this trace is being recorded. An unsampled context still propagates. */
   sampled: boolean
-  /** Vendor state, passed through untouched. */
+  /** Vendor state — validated members only; a malformed member never reaches an outbound header. */
   traceState?: string
 }
 
@@ -81,6 +93,34 @@ function isHex(value: string | undefined, length: number): value is string {
  * a new trace, rather than guess. Accepting a partially-valid header is how a
  * broken caller silently poisons every trace downstream of it.
  */
+/**
+ * Keep the spec-legal members of a `tracestate`, the first occurrence of each
+ * key winning, bounded to 32 members and 512 characters of output.
+ *
+ * Runs at both boundaries: parsing an inbound header (a broken sender's state
+ * is dropped before it can ride along) and serializing an outbound one (a
+ * hand-built context gets the same scrutiny — the value lands verbatim in a
+ * header, so an unvetted string is an injection vector).
+ */
+export function sanitizeTraceState(value: string | null | undefined): string | undefined {
+  if (!value) return undefined
+  const seen = new Set<string>()
+  const members: string[] = []
+  let length = 0
+  for (const raw of value.split(",")) {
+    const member = raw.trim()
+    if (!TRACESTATE_MEMBER.test(member)) continue
+    const key = member.slice(0, member.indexOf("="))
+    if (seen.has(key)) continue
+    const cost = member.length + (members.length ? 1 : 0)
+    if (members.length >= MAX_TRACESTATE_MEMBERS || length + cost > MAX_TRACESTATE_LENGTH) break
+    seen.add(key)
+    members.push(member)
+    length += cost
+  }
+  return members.length ? members.join(",") : undefined
+}
+
 export function parseTraceParent(value: string | null | undefined, traceState?: string | null): TraceContext | undefined {
   if (!value) return undefined
   const parts = value.trim().split("-")
@@ -94,11 +134,12 @@ export function parseTraceParent(value: string | null | undefined, traceState?: 
   if (!isHex(traceId, 32) || traceId === INVALID_TRACE_ID) return undefined
   if (!isHex(spanId, 16) || spanId === INVALID_SPAN_ID) return undefined
   if (!isHex(flags, 2)) return undefined
+  const state = sanitizeTraceState(traceState)
   return {
     traceId,
     spanId,
     sampled: (Number.parseInt(flags, 16) & FLAG_SAMPLED) === FLAG_SAMPLED,
-    ...(traceState ? { traceState } : {}),
+    ...(state ? { traceState: state } : {}),
   }
 }
 
@@ -126,9 +167,10 @@ export function traceContextFromHeaders(
 
 /** The headers a caller must send to continue this trace in the next hop. */
 export function traceContextHeaders(context: TraceContext): Record<string, string> {
+  const traceState = sanitizeTraceState(context.traceState)
   return {
     [TRACEPARENT_HEADER]: formatTraceParent(context),
-    ...(context.traceState ? { [TRACESTATE_HEADER]: context.traceState } : {}),
+    ...(traceState ? { [TRACESTATE_HEADER]: traceState } : {}),
   }
 }
 

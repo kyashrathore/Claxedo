@@ -11,7 +11,7 @@
  * trace that spans the app and the agent engine stays whole.
  */
 
-import { sanitizeSpan } from "./redact"
+import { sanitizeAttributes, sanitizeSpan } from "./redact"
 import type { TraceContext } from "./trace-context"
 
 export type AttributeValue = string | number | boolean
@@ -107,11 +107,16 @@ export function encodeOtlpSpans(resource: Resource, spans: readonly FinishedSpan
     resourceSpans: [
       {
         resource: {
-          attributes: encodeAttributes({
-            "service.name": resource.serviceName,
-            ...(resource.serviceInstanceId ? { "service.instance.id": resource.serviceInstanceId } : {}),
-            ...resource.attributes,
-          }),
+          attributes: encodeAttributes(
+            // Configured identity wins over free-form resource attributes —
+            // a `service.name` in `resource.attributes` would silently rename
+            // the service every span of this batch is filed under.
+            sanitizeAttributes({
+              ...resource.attributes,
+              "service.name": resource.serviceName,
+              ...(resource.serviceInstanceId ? { "service.instance.id": resource.serviceInstanceId } : {}),
+            }),
+          ),
         },
         scopeSpans: [
           {

@@ -11,8 +11,8 @@
  *
  * The contract is one string — a W3C `traceparent` — carried across every hop
  * including the non-HTTP one, and OTLP spans emitted to the collector the
- * engine already uses. Turning it on is an endpoint; leaving it off costs
- * nothing.
+ * engine already uses. Turning it on takes an endpoint AND a consent answer;
+ * leaving it off costs nothing.
  */
 
 export {
@@ -21,6 +21,7 @@ export {
   newSpanId,
   newTraceId,
   parseTraceParent,
+  sanitizeTraceState,
   TRACEPARENT_HEADER,
   TRACESTATE_HEADER,
   traceContextFromHeaders,

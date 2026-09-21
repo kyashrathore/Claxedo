@@ -10,12 +10,12 @@
  * silently wrong produces a trace that LOOKS complete — the failure this whole
  * exercise exists to stop.
  *
- * Costs nothing when unconfigured: with no exporter, `startSpan` returns a
- * span that records nothing and `end` does no work, so instrumentation can sit
- * on hot paths permanently.
+ * Costs nothing when unconfigured: with no exporter — or no consent —
+ * `startSpan` returns a span that records nothing and `end` does no work, so
+ * instrumentation can sit on hot paths permanently.
  */
 
-import { sanitizeSpan } from "./redact"
+import { MAX_ATTRIBUTES, MAX_EVENTS, sanitizeSpan } from "./redact"
 import {
   childContext,
   nowUnixNano,
@@ -24,7 +24,7 @@ import {
   type SpanKindName,
   type SpanStatusName,
 } from "./span"
-import { continueTrace, formatTraceParent, TRACEPARENT_HEADER, TRACESTATE_HEADER, type TraceContext } from "./trace-context"
+import { continueTrace, traceContextHeaders, type TraceContext } from "./trace-context"
 
 export type SpanSink = (span: FinishedSpan) => void
 
@@ -69,10 +69,7 @@ function inertSpan(context: TraceContext): Span {
     setStatus: () => {},
     // Propagation continues even unsampled: a downstream hop that IS sampled
     // must still join this trace rather than start its own.
-    headers: () => ({
-      [TRACEPARENT_HEADER]: formatTraceParent(context),
-      ...(context.traceState ? { [TRACESTATE_HEADER]: context.traceState } : {}),
-    }),
+    headers: () => traceContextHeaders(context),
     end: () => {},
   }
 }
@@ -81,11 +78,24 @@ export type TracerOptions = {
   /** Where finished spans go. Omit to disable recording entirely. */
   sink?: SpanSink | undefined
   /**
+   * Telemetry consent, evaluated per span — the recording boundary.
+   *
+   * An incoming `sampled` flag is a REQUEST to record, not permission to: a
+   * deployment that never agreed to telemetry declines it no matter what the
+   * upstream hop asked. Omitting this means no consent answer was given, so a
+   * configured sink still receives nothing — the exporter is constructed but
+   * never enabled. Denied consent is also stamped onto the propagated context
+   * (`sampled: 00`), so the refusal travels downstream instead of asking the
+   * next hop to record what this one would not.
+   */
+  consent?: () => boolean
+  /**
    * Whether to record a trace that arrives with no parent.
    *
-   * A trace already marked sampled is ALWAYS recorded, whatever this says —
+   * A trace already marked sampled is recorded too, whatever this says —
    * honouring an upstream sampling decision is what keeps a trace from having
-   * holes in the middle, which is worse than not having it at all.
+   * holes in the middle, which is worse than not having it at all. Consent
+   * outranks both: nothing records while `consent` denies it.
    */
   sampleRoot?: () => boolean
   /**
@@ -99,18 +109,46 @@ export type TracerOptions = {
 
 export function createTracer(options: TracerOptions = {}): Tracer {
   const { sink } = options
+  const consent = options.consent ?? (() => false)
   const sampleRoot = options.sampleRoot ?? (() => true)
   const allowed = options.allowedAttributes ? new Set(options.allowedAttributes) : undefined
+  // A throwing consent check must not take the traced program down — fail closed.
+  const consented = () => {
+    try {
+      return consent()
+    } catch {
+      return false
+    }
+  }
 
   return {
     startSpan(name, spanOptions = {}) {
       const parent = spanOptions.parent
-      const sampled = parent ? parent.sampled : sampleRoot()
-      const context = continueTrace(parent, sampled)
+      const sampled = consented() && (parent ? parent.sampled : sampleRoot())
+      const continued = continueTrace(parent, sampled)
+      // continueTrace preserves an incoming sampled flag over the argument,
+      // so a consent refusal has to be stamped on top — otherwise the next
+      // hop is asked to record what this one declined.
+      const context = continued.sampled === sampled ? continued : { ...continued, sampled }
 
       if (!sink || !sampled) return inertSpan(context)
 
-      const attributes: Record<string, AttributeValue | undefined> = { ...spanOptions.attributes }
+      // Null prototype: an attribute key like `__proto__` is data, not a
+      // prototype write.
+      const attributes: Record<string, AttributeValue | undefined> = Object.create(null)
+      let attributeCount = 0
+      const recordAttributes = (next: Record<string, AttributeValue | undefined> | undefined) => {
+        if (!next) return
+        for (const [key, value] of Object.entries(next)) {
+          if (!Object.hasOwn(attributes, key)) {
+            if (attributeCount >= MAX_ATTRIBUTES) continue
+            attributeCount += 1
+          }
+          attributes[key] = value
+        }
+      }
+      recordAttributes(spanOptions.attributes)
+
       const events: FinishedSpan["events"] = []
       const startTimeUnixNano = nowUnixNano()
       let status: SpanStatusName = "unset"
@@ -119,10 +157,9 @@ export function createTracer(options: TracerOptions = {}): Tracer {
 
       return {
         context,
-        setAttributes(next) {
-          Object.assign(attributes, next)
-        },
+        setAttributes: recordAttributes,
         addEvent(eventName, eventAttributes) {
+          if (events.length >= MAX_EVENTS) return
           events.push({
             name: eventName,
             timeUnixNano: nowUnixNano(),
@@ -133,10 +170,7 @@ export function createTracer(options: TracerOptions = {}): Tracer {
           status = next
           statusMessage = message
         },
-        headers: () => ({
-          [TRACEPARENT_HEADER]: formatTraceParent(context),
-          ...(context.traceState ? { [TRACESTATE_HEADER]: context.traceState } : {}),
-        }),
+        headers: () => traceContextHeaders(context),
         end() {
           // A span ended twice would be exported twice, and a collector shows
           // that as two operations that both happened.

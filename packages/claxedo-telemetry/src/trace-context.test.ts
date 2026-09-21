@@ -6,6 +6,7 @@ import {
   newSpanId,
   newTraceId,
   parseTraceParent,
+  TRACESTATE_HEADER,
   traceContextFromHeaders,
   traceContextHeaders,
 } from "./trace-context"
@@ -135,5 +136,45 @@ describe("continuing a trace", () => {
   test("passes vendor state through untouched", () => {
     const context = { ...parseTraceParent(VALID)!, traceState: "vendor=keep,other=2" }
     expect(traceContextHeaders(context).tracestate).toBe("vendor=keep,other=2")
+  })
+})
+
+describe("tracestate", () => {
+  test("legal members survive the round trip", () => {
+    expect(parseTraceParent(VALID, "vendor=1,other=two")?.traceState).toBe("vendor=1,other=two")
+    expect(parseTraceParent(VALID, "tenant@system=v")?.traceState).toBe("tenant@system=v")
+  })
+
+  test("malformed members are dropped and the legal ones kept", () => {
+    expect(parseTraceParent(VALID, "good=1, no-equals, UPPER=1, bad key=v, ok=2")?.traceState).toBe("good=1,ok=2")
+  })
+
+  /**
+   * The value lands verbatim in an outbound header. A member carrying CR/LF
+   * is not merely malformed — reflected unsanitized it is header injection.
+   */
+  test("a member that could split the header is refused at parse and at emit", () => {
+    const context = parseTraceParent(VALID, "a=b\r\nx-injected: 1")!
+    expect(context.traceState).toBeUndefined()
+    expect(traceContextHeaders(context)[TRACESTATE_HEADER]).toBeUndefined()
+    expect(
+      traceContextHeaders({ traceId: context.traceId, spanId: context.spanId, sampled: true, traceState: "ok=1,evil=x\r\ninjected: y" })[
+        TRACESTATE_HEADER
+      ],
+    ).toBe("ok=1")
+  })
+
+  test("the first occurrence of a key wins", () => {
+    expect(parseTraceParent(VALID, "k=1,k=2")?.traceState).toBe("k=1")
+  })
+
+  test("stops at 32 members and 512 characters", () => {
+    const many = Array.from({ length: 40 }, (_, i) => `v${i}=x`).join(",")
+    expect(parseTraceParent(VALID, many)!.traceState!.split(",")).toHaveLength(32)
+
+    const wide = Array.from({ length: 20 }, (_, i) => `k${i}=${"v".repeat(30)}`).join(",")
+    const bounded = parseTraceParent(VALID, wide)!.traceState!
+    expect(bounded.length).toBeLessThanOrEqual(512)
+    expect(bounded.split(",").every((member) => /^k\d+=v+$/.test(member))).toBe(true)
   })
 })

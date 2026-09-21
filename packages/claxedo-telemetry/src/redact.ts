@@ -15,6 +15,15 @@ import type { AttributeValue, FinishedSpan } from "./span"
 /** Longest text kept in a single value; longer strings are cut. */
 const MAX_TEXT_LENGTH = 512
 
+/** Most attributes kept on a span or on one of its events; extras never reach the sink. */
+export const MAX_ATTRIBUTES = 128
+
+/** Most events kept on a span. */
+export const MAX_EVENTS = 128
+
+/** Longest attribute key kept — a longer key is dropped, not truncated, because truncation could merge two keys into one. */
+const MAX_ATTRIBUTE_KEY_LENGTH = 128
+
 const CREDENTIAL_PATTERNS: readonly [RegExp, string][] = [
   // URL userinfo: `scheme://user:password@host`
   [/([a-z][a-z0-9+.-]*:\/\/)[^\s/"'@]+(?::[^\s/"'@]*)?@/gi, "$1[redacted]@"],
@@ -44,10 +53,15 @@ export function sanitizeAttributes(
   attributes: Record<string, AttributeValue | undefined>,
   allowed?: ReadonlySet<string>,
 ): Record<string, AttributeValue | undefined> {
-  const clean: Record<string, AttributeValue | undefined> = {}
+  // Null prototype: a `__proto__` attribute key is data, not a prototype write.
+  const clean: Record<string, AttributeValue | undefined> = Object.create(null)
+  let kept = 0
   for (const [key, value] of Object.entries(attributes)) {
+    if (kept >= MAX_ATTRIBUTES) break
+    if (key.length > MAX_ATTRIBUTE_KEY_LENGTH) continue
     if (allowed && !allowed.has(key)) continue
     clean[key] = typeof value === "string" ? redactText(value) : value
+    kept += 1
   }
   return clean
 }
@@ -62,7 +76,7 @@ export function sanitizeSpan(span: FinishedSpan, allowed?: ReadonlySet<string>):
     name: redactText(span.name),
     attributes: sanitizeAttributes(span.attributes, allowed),
     ...(span.statusMessage !== undefined ? { statusMessage: redactText(span.statusMessage) } : {}),
-    events: span.events.map((event) => ({
+    events: span.events.slice(0, MAX_EVENTS).map((event) => ({
       ...event,
       name: redactText(event.name),
       ...(event.attributes ? { attributes: sanitizeAttributes(event.attributes, allowed) } : {}),
