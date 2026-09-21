@@ -7,14 +7,12 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   GIT_LOG_DEFAULT_LIMIT,
   GitWorktreeError,
-  gitCommitAffectedPaths,
-  gitCommitStaged,
-  gitIndexTree,
   gitLog,
   gitPush,
   gitStage,
   gitUnstage,
   gitWorktreeStatus,
+  prepareStagedCommit,
 } from "../workspace-files/git-worktree"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { denyWorkspaceViewers } from "./workspace-role"
@@ -67,7 +65,12 @@ function pathList(body: unknown) {
   return paths
 }
 
-export function GitWorktreeRoutes(options: WorktreeTargetAccessOptions = {}) {
+export type GitWorktreeRoutesOptions = WorktreeTargetAccessOptions & {
+  /** Test-only: runs between the commit being authorized and the commit itself. */
+  faults?: Readonly<{ beforeCommit?: () => void | Promise<void> }>
+}
+
+export function GitWorktreeRoutes(options: GitWorktreeRoutesOptions = {}) {
   /** The repository this request runs Git in, or the refusal that stands in for it. */
   const scoped = async (
     c: WorktreeTargetContext,
@@ -78,8 +81,10 @@ export function GitWorktreeRoutes(options: WorktreeTargetAccessOptions = {}) {
   }
 
   /**
-   * Runs a route that changes the index while holding it, so a stage cannot
-   * land between a commit reading what is staged and committing it.
+   * Runs a route that changes the index while holding it, so this process's
+   * own stage and commit requests take turns: a stage that landed between a
+   * commit's snapshot and its write would be left out of the commit it was
+   * sent to join.
    *
    * Only when this workspace has per-session worktrees: with none registered
    * there is nothing private for a concurrent write to add, and the key costs
@@ -144,22 +149,19 @@ export function GitWorktreeRoutes(options: WorktreeTargetAccessOptions = {}) {
       const base = await scoped(c, { operation: "worktree_write" })
       if (typeof base !== "string") return base
       return await holdingIndex(base, async () => {
-        if (!hasRegisteredWorkspaceDirectories()) return c.json(await gitCommitStaged(base, { message, amend }))
-        // The request names a message; the index names the files. Whatever put
-        // them there, publishing them is this caller's act — so the index is
-        // read again after the authority answers, because the lock binds this
-        // process and the session's own agent runs its own git.
-        const authorized = await gitIndexTree(base)
-        const denied = await authorizeWorktreeTarget(c, options, {
-          operation: "worktree_write",
-          directory: base,
-          resolved: await gitCommitAffectedPaths(base, { amend }),
-        })
-        if (denied) return denied
-        if (await gitIndexTree(base) !== authorized) {
-          throw new GitWorktreeError("git_conflict", "the index changed while the commit was authorized")
+        const staged = await prepareStagedCommit(base, { message, amend })
+        // The request names a message; the index names the files. Whatever
+        // put them there, publishing them is this caller's act.
+        if (hasRegisteredWorkspaceDirectories()) {
+          const denied = await authorizeWorktreeTarget(c, options, {
+            operation: "worktree_write",
+            directory: base,
+            resolved: await staged.affectedPaths(),
+          })
+          if (denied) return denied
         }
-        return c.json(await gitCommitStaged(base, { message, amend }))
+        await options.faults?.beforeCommit?.()
+        return c.json(await staged.commit())
       })
     })
     .post("/push", denyWorkspaceViewers(WRITE_DENIED), async (c) => {

@@ -9,6 +9,8 @@ import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, withWorkspace
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { WorkspaceWorktreeManager } from "../worktree"
 import { createDiffRoutes } from "../routes/diff"
+import { GitWorktreeRoutes, type GitWorktreeRoutesOptions } from "../routes/git-worktree"
+import { WorkspaceRuntimeRoutes } from "../routes/manifest"
 import type { DiffRoutesDeps } from "../workspace-files/diff"
 import { mountWorkspaceFiles } from "./core"
 
@@ -98,6 +100,8 @@ function mounted(input: {
   directory: string
   policy?: SessionAccessPolicy
   identity?: NonNullable<RelayHostAuthContext["relayHostAuth"]>
+  /** Mounts the Git routes alone, with these faults, in place of the whole file family. */
+  gitFaults?: GitWorktreeRoutesOptions["faults"]
 }) {
   const app = new Hono()
   if (input.identity) {
@@ -109,7 +113,11 @@ function mounted(input: {
     }
     app.use("*", stamp)
   }
-  mountWorkspaceFiles(app, input.policy)
+  if (input.gitFaults) {
+    app.route(WorkspaceRuntimeRoutes.git, GitWorktreeRoutes({ sessionAccessPolicy: input.policy, faults: input.gitFaults }))
+  } else {
+    mountWorkspaceFiles(app, input.policy)
+  }
   return {
     request: (pathname: string, init?: RequestInit) => withWorkspaceTarget(
       { workspaceId: WORKSPACE_ID, directory: input.directory },
@@ -530,11 +538,12 @@ describe("a private worktree nested under the workspace root", () => {
   })
 
   /**
-   * The window the commit check has to survive: the authority is a network
-   * call, and the index it was asked about is shared mutable state. The
-   * authority callback is where that time passes, so the write lands there.
+   * The window the commit has to be bound across: the authority is a network
+   * call, the index it was asked about is shared mutable state, and the
+   * session's own agent stages with its own git, outside the in-process lock.
+   * The write lands after the authority has answered and before the commit.
    */
-  test("refuses a commit whose index changed while the authority was answering", async () => {
+  test("commits the tree the authority answered about, not a private path staged after it", async () => {
     const f = await containerFixture()
     const open = path.join(f.source, "container", "shared")
     await fs.mkdir(open, { recursive: true })
@@ -542,35 +551,30 @@ describe("a private worktree nested under the workspace root", () => {
     registerWorkspaceDirectory({ workspaceId: WORKSPACE_ID, sessionId: "ses_shared", directory: open })
 
     let landed = false
-    const racing = managedWorkspaceSessionAccessPolicy({
-      requireActor: true,
-      authority: {
-        authorizeSessionRead: ({ sessionId }) => sessionId === "ses_shared",
-        authorizeSessionWrite: async ({ sessionId }) => {
-          if (!landed) {
-            landed = true
-            await git(["add", "--", "container/private/secret.txt"], f.source)
-          }
-          return sessionId === "ses_shared"
+    const server = mounted({
+      directory: f.source,
+      policy: sharedSessionPolicy("ses_shared"),
+      identity: relayAuth(),
+      gitFaults: {
+        beforeCommit: async () => {
+          landed = true
+          await git(["add", "--", "container/private/secret.txt"], f.source)
         },
-        authorizeSessionStream: () => ({ allowed: false, status: 403, code: "session_private", message: "no" }),
-        registerSession: () => true,
-        acquireTurn: () => ({ allowed: false, status: 403, code: "session_private", message: "no" }),
-        renewTurn: () => ({ allowed: false, status: 403, code: "session_private", message: "no" }),
-        releaseTurn: () => ({ released: false }),
       },
     })
-    const server = mounted({ directory: f.source, policy: racing, identity: relayAuth() })
 
     await git(["add", "--", "container/shared/note.txt"], f.source)
     const response = await post(server, "/api/wr/git/commit-staged", { message: "mine" })
 
     expect(landed).toBe(true)
-    expect(response.status).toBe(409)
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "git_conflict" } })
-    expect(await f.head()).toBe("base")
+    expect(response.status).toBe(200)
+    expect(await f.head()).toBe("mine")
+    expect(await git(["ls-tree", "-r", "--name-only", "HEAD"], f.source))
+      .toBe("README.md\ncontainer/shared/note.txt")
     expect(await git(["log", "--all", "--name-only", "--pretty=format:"], f.source))
       .not.toContain("container/private/secret.txt")
+    // Still staged and uncommitted: the commit read its snapshot, never the index.
+    expect(await f.staged()).toBe("container/private/secret.txt")
   })
 
   test("refuses a diff pathspec that names a directory holding a private worktree", async () => {

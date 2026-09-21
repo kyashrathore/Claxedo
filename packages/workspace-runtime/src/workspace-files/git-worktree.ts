@@ -1,4 +1,5 @@
 import path from "node:path"
+import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import { isRecord, isString } from "@claxedo/helpers/guards"
 import { createBoundedGit, gitTopLevel, GitTimeoutError, LITERAL_PATHSPECS, runGit } from "../git"
@@ -176,9 +177,9 @@ async function workspaceRelativePaths(base: string, paths: string[]) {
 }
 
 
-async function hasHead(base: string) {
+async function hasHead(base: string, ref = "HEAD") {
   try {
-    await runGit(["rev-parse", "--verify", "--quiet", "HEAD"], base)
+    await runGit(["rev-parse", "--verify", "--quiet", ref], base)
     return true
   } catch (err) {
     if (err instanceof GitTimeoutError) throw err
@@ -201,31 +202,24 @@ export async function gitUnstage(base: string, paths: string[]) {
 }
 
 /**
- * Every working-tree path a commit made here would carry, absolute.
+ * A commit of what the index held at one instant, bound to that instant.
  *
- * The index is the authority on what a commit contains — not the request,
- * which names only a message. `--no-renames` makes a rename two entries so the
- * path it came FROM is in the answer too, and a deletion names the path it
- * removes. Amending reaches further: the commit being replaced contributes its
- * own files, because they are republished under the new one.
+ * `write-tree` records the index as a tree object, and every step after it
+ * reads that object rather than the index: the paths an authority is asked
+ * about are the paths that get committed, whatever any process stages in
+ * between. The in-process write lock does not cover the session's own agent,
+ * which runs its own git against the same index.
  */
-/**
- * The index's content as git names it — the tree a commit made now would
- * record. Read either side of a decision about that content, it says whether
- * the content decided about is still the content that would be committed.
- */
-export async function gitIndexTree(base: string) {
-  return (await runGit(["write-tree"], base)).trim()
-}
-
-export async function gitCommitAffectedPaths(base: string, input: { amend?: boolean } = {}) {
-  const top = await gitTopLevel(base)
-  const staged = await runGit(["diff", "--cached", "--name-only", "--no-renames", "-z"], base)
-  const amended = input.amend && await hasHead(base)
-    ? await runGit(["show", "--pretty=format:", "--name-only", "--no-renames", "-z", "HEAD"], base)
-    : ""
-  return [...new Set([...staged.split("\0"), ...amended.split("\0")].filter(Boolean))]
-    .map((file) => path.resolve(top, file))
+export type StagedCommit = {
+  /**
+   * Every working-tree path the commit carries, absolute. `--no-renames` makes
+   * a rename two entries so the path it came FROM is in the answer too, and a
+   * deletion names the path it removes. Amending reaches further: the commit
+   * being replaced contributes its own files, because they are republished
+   * under the new one.
+   */
+  affectedPaths(): Promise<string[]>
+  commit(): Promise<{ commit: string }>
 }
 
 async function mergeInProgress(base: string) {
@@ -233,15 +227,84 @@ async function mergeInProgress(base: string) {
   return await fs.access(path.resolve(base, mergeHead)).then(() => true, () => false)
 }
 
-export async function gitCommitStaged(base: string, input: { message: string; amend?: boolean }) {
+async function treeIsEmpty(base: string, tree: string) {
+  return !(await runGit(["ls-tree", "-r", "--name-only", "-z", tree], base))
+}
+
+/** Repository-relative paths whose content differs between two tree-ish objects; a rename is two entries. */
+async function changedPaths(base: string, from: string, to: string) {
+  const output = await runGit(["diff-tree", "-r", "--no-commit-id", "--name-only", "--no-renames", "-z", from, to], base)
+  return output.split("\0").filter(Boolean)
+}
+
+/** argv stays well under the platform limit whatever a first commit's file count. */
+const INDEX_SYNC_BATCH = 500
+
+/**
+ * Makes the repository's index agree with HEAD for the paths the commit just
+ * changed, and only those. A pre-commit hook that rewrites and re-stages a
+ * file did so in the scratch index, so without this the repository's index
+ * would still hold the pre-hook content and report it as a staged revert.
+ * Paths the commit did not touch are left as they are, whoever staged them.
+ */
+async function syncIndexToHead(base: string, paths: string[]) {
+  if (paths.length === 0) return
+  const top = await gitTopLevel(base)
+  for (let i = 0; i < paths.length; i += INDEX_SYNC_BATCH) {
+    await runGit([LITERAL_PATHSPECS, "reset", "-q", "HEAD", "--", ...paths.slice(i, i + INDEX_SYNC_BATCH)], top)
+  }
+}
+
+export async function prepareStagedCommit(base: string, input: { message: string; amend?: boolean }): Promise<StagedCommit> {
   if (!input.message.trim()) throw new GitWorktreeError("git_empty_message", "commit message is empty")
   if (await mergeInProgress(base)) throw new GitWorktreeError("git_conflict", "a merge is in progress")
+  const head = await hasHead(base)
+  const tree = (await runGit(["write-tree"], base)).trim()
   if (!input.amend) {
-    const staged = await runGit(["diff", "--cached", "--name-only", "-z"], base)
-    if (!staged) throw new GitWorktreeError("git_nothing_staged", "no changes are staged")
+    const unchanged = head
+      ? (await runGit(["rev-parse", "HEAD^{tree}"], base)).trim() === tree
+      : await treeIsEmpty(base, tree)
+    if (unchanged) throw new GitWorktreeError("git_nothing_staged", "no changes are staged")
   }
-  await runGit(["commit", "-m", input.message, ...(input.amend ? ["--amend"] : [])], base)
-  return { commit: (await runGit(["rev-parse", "HEAD"], base)).trim() }
+  return {
+    async affectedPaths() {
+      const top = await gitTopLevel(base)
+      const changed = head
+        ? await runGit(["diff-tree", "-r", "--no-commit-id", "--name-only", "--no-renames", "-z", "HEAD", tree], base)
+        : await runGit(["ls-tree", "-r", "--name-only", "-z", tree], base)
+      const amended = input.amend && head
+        ? await runGit(["show", "--pretty=format:", "--name-only", "--no-renames", "-z", "HEAD"], base)
+        : ""
+      return [...new Set([...changed.split("\0"), ...amended.split("\0")].filter(Boolean))]
+        .map((file) => path.resolve(top, file))
+    },
+    async commit() {
+      // `git commit` is kept for what surrounds the object write: hooks,
+      // signing, message cleanup and the reflog entry. It commits the index
+      // `GIT_INDEX_FILE` names, so a scratch index filled from the snapshot
+      // tree is what it publishes; the repository's own index is never read
+      // for the commit, so anything staged there since is not in it.
+      const gitDir = (await runGit(["rev-parse", "--absolute-git-dir"], base)).trim()
+      const index = path.join(gitDir, `claxedo-commit-index-${randomUUID()}`)
+      const env = { GIT_INDEX_FILE: index }
+      try {
+        await runGit(["read-tree", tree], base, { env })
+        await runGit(["commit", "-m", input.message, ...(input.amend ? ["--amend"] : [])], base, { env })
+      } finally {
+        await fs.rm(index, { force: true })
+      }
+      const commit = (await runGit(["rev-parse", "HEAD"], base)).trim()
+      // Against the parent, so a path staged out of process after the snapshot
+      // is replaced by what was committed; against the snapshot, so a hook's
+      // edit is synced even when it restored the parent's content.
+      const parent = await hasHead(base, "HEAD~1")
+      const committed = parent
+        ? await changedPaths(base, "HEAD~1", commit)
+        : (await runGit(["ls-tree", "-r", "--name-only", "-z", commit], base)).split("\0").filter(Boolean)
+      await syncIndexToHead(base, [...new Set([...committed, ...await changedPaths(base, tree, commit)])])
+      return { commit }
+    },
+  }
 }
 
 export async function gitPush(base: string, input: { setUpstream?: boolean } = {}) {

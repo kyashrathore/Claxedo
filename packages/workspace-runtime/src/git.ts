@@ -230,7 +230,8 @@ const gitWriteLocks = new Map<string, Promise<void>>()
  * can change in between. Holding the key across read-decide-write makes the
  * two requests take turns. It binds nothing outside this process — the
  * session's own agent runs its own git — so a caller that must not commit
- * what it did not authorize verifies the index again rather than trusting it.
+ * what it did not authorize commits the snapshot it decided about rather
+ * than the index.
  */
 export async function withGitWriteLock<T>(key: string, fn: () => Promise<T>) {
   const previous = gitWriteLocks.get(key) ?? Promise.resolve()

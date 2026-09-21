@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { execFile } from "node:child_process"
-import { mkdtemp, rm, unlink, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
@@ -9,7 +9,7 @@ import { createWorkspaceRuntimeClient, WorkspaceRuntimeClientError } from "../cl
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { GitCommitSummary, GitWorktreeStatus } from "../workspace-files/git-worktree"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, workspaceId } from "../target"
-import { GitWorktreeRoutes } from "./git-worktree"
+import { GitWorktreeRoutes, type GitWorktreeRoutesOptions } from "./git-worktree"
 
 const execFileAsync = promisify(execFile)
 
@@ -57,8 +57,13 @@ async function withBareRemote(directory: string, fn: (remote: string) => Promise
   }
 }
 
-function app() {
-  return new Hono().route("/api/wr/git", GitWorktreeRoutes())
+function app(options: GitWorktreeRoutesOptions = {}) {
+  return new Hono().route("/api/wr/git", GitWorktreeRoutes(options))
+}
+
+async function installHook(directory: string, name: string, script: string) {
+  await mkdir(path.join(directory, ".git", "hooks"), { recursive: true })
+  await writeFile(path.join(directory, ".git", "hooks", name), `#!/bin/sh\n${script}\n`, { mode: 0o755 })
 }
 
 function viewerApp() {
@@ -319,6 +324,91 @@ describe("GitWorktreeRoutes commit-staged", () => {
       expect(await git(directory, ["rev-parse", "HEAD"])).not.toBe(before)
       expect(await git(directory, ["rev-list", "--count", "HEAD"])).toBe("1")
       expect(await git(directory, ["log", "-1", "--pretty=%s"])).toBe("initial, amended")
+      expect(await git(directory, ["show", "--pretty=format:", "--name-only", "HEAD"])).toBe("del.md\ndoc.md\nmod.md\nold.md")
+      expect((await status()).staged).toEqual([])
+    })
+  })
+
+  test("makes the first commit of a repository with no HEAD", async () => {
+    await withWorkspace(async (directory) => {
+      const nothing = await post(app(), "commit-staged", { message: "nothing" })
+      expect(nothing.status).toBe(400)
+      await expect(nothing.json()).resolves.toMatchObject({ error: { code: "git_nothing_staged" } })
+
+      await writeFile(path.join(directory, "first.md"), "first\n")
+      await git(directory, ["add", "first.md"])
+      const response = await post(app(), "commit-staged", { message: "root" })
+      expect(response.status).toBe(200)
+      expect(await git(directory, ["rev-list", "--count", "HEAD"])).toBe("1")
+      expect(await git(directory, ["ls-tree", "-r", "--name-only", "HEAD"])).toBe("first.md")
+      expect(await git(directory, ["log", "-1", "--pretty=%s"])).toBe("root")
+    }, { commit: false })
+  })
+
+  test("leaves a path staged after the snapshot out of the commit and in the index", async () => {
+    await withWorkspace(async (directory) => {
+      await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
+      await git(directory, ["add", "mod.md"])
+      const server = app({
+        faults: {
+          beforeCommit: async () => {
+            await writeFile(path.join(directory, "late.md"), "late\n")
+            await git(directory, ["add", "late.md"])
+          },
+        },
+      })
+
+      const response = await post(server, "commit-staged", { message: "snapshot" })
+      expect(response.status).toBe(200)
+      expect(await git(directory, ["show", "--pretty=format:", "--name-only", "HEAD"])).toBe("mod.md")
+      expect(await git(directory, ["diff", "--cached", "--name-only"])).toBe("late.md")
+      expect(await git(directory, ["log", "-1", "--pretty=%gs", "-g"])).toBe("commit: snapshot")
+    })
+  })
+
+  test("a failing pre-commit hook fails the request and leaves HEAD and the index alone", async () => {
+    await withWorkspace(async (directory) => {
+      await installHook(directory, "pre-commit", "exit 1")
+      const before = await git(directory, ["rev-parse", "HEAD"])
+      await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
+      await git(directory, ["add", "mod.md"])
+
+      const response = await post(app(), "commit-staged", { message: "blocked" })
+      expect(response.status).toBe(400)
+      await expect(response.json()).resolves.toMatchObject({ error: { code: "git_command_failed" } })
+      expect(await git(directory, ["rev-parse", "HEAD"])).toBe(before)
+      expect(await git(directory, ["diff", "--cached", "--name-only"])).toBe("mod.md")
+    })
+  })
+
+  test("a pre-commit hook that rewrites and re-stages a file is committed and the index agrees", async () => {
+    await withWorkspace(async (directory) => {
+      await installHook(directory, "pre-commit", 'printf "fixed\\n" > mod.md && git add mod.md && git rm -q --cached del.md')
+      await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
+      await git(directory, ["add", "mod.md"])
+      await git(directory, ["rm", "-q", "old.md"])
+
+      const response = await post(app(), "commit-staged", { message: "hooked" })
+      expect(response.status).toBe(200)
+      expect(await git(directory, ["show", "HEAD:mod.md"])).toBe("fixed")
+      expect(await git(directory, ["ls-tree", "-r", "--name-only", "HEAD"])).toBe("doc.md\nmod.md")
+      expect(await git(directory, ["diff", "--cached", "--name-only"])).toBe("")
+      expect(await git(directory, ["ls-files", "--", "del.md", "old.md"])).toBe("")
+      expect(await git(directory, ["status", "--porcelain"])).toBe("?? del.md")
+    })
+  })
+
+  test("a pre-commit hook sees the snapshot as the index, and a commit-msg hook rewrites the message", async () => {
+    await withWorkspace(async (directory) => {
+      await installHook(directory, "pre-commit", 'git diff --cached --name-only > "$(git rev-parse --git-dir)/seen"')
+      await installHook(directory, "commit-msg", 'printf "rewritten: %s" "$(cat "$1")" > "$1"')
+      await writeFile(path.join(directory, "mod.md"), "one\nchanged\n")
+      await git(directory, ["add", "mod.md"])
+
+      const response = await post(app(), "commit-staged", { message: "original" })
+      expect(response.status).toBe(200)
+      expect(await git(directory, ["log", "-1", "--pretty=%s"])).toBe("rewritten: original")
+      expect((await Bun.file(path.join(directory, ".git", "seen")).text()).trim()).toBe("mod.md")
     })
   })
 })
