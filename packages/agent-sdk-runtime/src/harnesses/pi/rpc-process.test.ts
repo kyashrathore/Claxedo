@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { PiJsonLines, PiRpcProcess } from "./rpc-process"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -23,7 +23,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
   "real pinned Pi answers correlated requests and rejects unknown commands",
   async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "pi-rpc-"))
-    const rpc = new PiRpcProcess({
+    const rpc = await PiRpcProcess.start({
       binary: process.env.PI_EXECUTABLE!,
       directory,
       args: ["--mode", "rpc", "--no-session"],
@@ -35,11 +35,11 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       expect(catalog).toHaveProperty("models")
       await expect(rpc.request("unknown-command")).rejects.toThrow()
       const exited = new Promise<void>((resolve) => rpc.onExit(() => resolve()))
-      rpc.dispose()
+      await rpc.dispose()
       await exited
       await expect(rpc.request("get_state")).rejects.toThrow("disposed")
     } finally {
-      rpc.dispose()
+      await rpc.dispose()
       await rm(directory, { recursive: true, force: true })
     }
   },
@@ -58,7 +58,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       path.join(extensionDir, "untrusted.ts"),
       `import { writeFileSync } from "node:fs"; export default function () { writeFileSync(${JSON.stringify(marker)}, "loaded"); }`,
     )
-    const rpc = new PiRpcProcess({
+    const rpc = await PiRpcProcess.start({
       binary: process.env.PI_EXECUTABLE!,
       directory,
       args: ["--mode", "rpc", "--no-session"],
@@ -73,9 +73,86 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
         ),
       ).toBe(false)
     } finally {
-      rpc.dispose()
+      await rpc.dispose()
       await rm(directory, { recursive: true, force: true })
     }
   },
   15_000,
 )
+
+
+/**
+ * A fake Pi speaking the same JSONL protocol, so transport failure and OS exit
+ * can be driven apart without the pinned binary.
+ */
+async function fakePi(body: string) {
+  const directory = await mkdtemp(path.join(tmpdir(), "pi-fake-"))
+  const binary = path.join(directory, "pi.cjs")
+  await writeFile(binary, body)
+  return { directory, binary }
+}
+
+const respondingPi = `
+const readline = require('node:readline');
+const child = require('node:child_process').spawn(process.execPath, ['-e',
+  "process.on('SIGTERM', () => {}); console.error('descendant ' + process.pid); setInterval(() => {}, 1000)"
+], { stdio: ['ignore', 'ignore', 'pipe'] });
+child.stderr.on('data', (chunk) => process.stdout.write(JSON.stringify({ type: 'descendant', pid: Number(String(chunk).trim().split(' ')[1]) }) + '\\n'));
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const message = JSON.parse(line);
+  if (message.type === 'close-stdin') { process.stdin.destroy(); return; }
+  process.stdout.write(JSON.stringify({ type: 'response', id: message.id, success: true, data: { ok: true } }) + '\\n');
+});
+`
+
+const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+
+test.skipIf(process.platform === "win32")("dispose retires the owned group, including a descendant that ignores TERM", async () => {
+  const { directory, binary } = await fakePi(respondingPi)
+  const rpc = await PiRpcProcess.start({ binary: process.execPath, directory, args: [binary], env: process.env })
+  try {
+    const descendant = await new Promise<number>((resolve) => {
+      rpc.onEvent((event) => { if (event.type === "descendant") resolve(Number(event.pid)) })
+    })
+    expect(alive(descendant)).toBe(true)
+
+    const result = await rpc.dispose()
+    expect(result.leader).toBe("exited")
+    expect(result.signals.map((item) => item.signal)).toEqual(["SIGTERM", "SIGKILL"])
+    expect(alive(descendant)).toBe(false)
+  } finally {
+    await rpc.dispose()
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 20_000)
+
+test.skipIf(process.platform === "win32")("exit is published when the OS reports it, not when disposal starts", async () => {
+  const { directory, binary } = await fakePi(respondingPi)
+  const observed: string[] = []
+  const observer = {
+    register: () => ({ update: () => {}, exit: (event: { reason: string }) => observed.push(event.reason) }),
+  } as never
+  const rpc = await PiRpcProcess.start({ binary: process.execPath, directory, args: [binary], env: process.env, observer })
+  const exits: string[] = []
+  rpc.onExit((error) => exits.push(error.message))
+  try {
+    await rpc.request("ping")
+
+    const retiring = rpc.dispose()
+    expect(observed).toEqual([])
+    expect(exits).toEqual([])
+    expect(rpc.exited).toBe(false)
+    // The transport is already unusable, which is a separate fact from exit.
+    expect(rpc.alive).toBe(false)
+
+    const result = await retiring
+    expect(result.leader).toBe("exited")
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(rpc.exited).toBe(true)
+    expect(observed).toEqual(["exited"])
+    expect(exits.length).toBe(1)
+  } finally {
+    await rpc.dispose()
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 20_000)

@@ -29,6 +29,12 @@ export {
 } from "./ownership-store"
 export { volatileLaunchOwnership } from "./volatile-ownership"
 export {
+  RecoveryCodedError,
+  deadlineExceeded,
+  withRequestDeadline,
+  type RequestDeadline,
+} from "./deadline"
+export {
   GATE_EXIT,
   launchOwnedProcess,
   resolveLaunchGateChild,

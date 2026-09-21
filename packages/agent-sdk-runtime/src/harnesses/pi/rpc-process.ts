@@ -1,9 +1,16 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import type { ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
+import { DEFAULT_RECOVERY_BUDGETS, type RecoveryBudgets } from "@claxedo/agent-runtime-contract"
 import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserverHandle } from "../../process-observer"
 import { piCommand } from "./executable"
-import { killHarnessProcess } from "../shared/windows-process"
+import {
+  launchOwnedProcess,
+  volatileLaunchOwnership,
+  type LaunchOwnershipStore,
+  type OwnedLaunch,
+  type RetirementResult,
+} from "../../launch"
 
 export type PiRpcMessage = Record<string, unknown> & { type: string }
 
@@ -28,8 +35,19 @@ export class PiJsonLines {
   }
 }
 
+export type PiRpcProcessInput = {
+  binary: string
+  directory: string
+  args: string[]
+  env: NodeJS.ProcessEnv
+  observer?: AgentProcessObserver
+  ownership?: LaunchOwnershipStore
+  sessionId?: string
+  budgets?: Partial<RecoveryBudgets>
+}
+
 export class PiRpcProcess {
-  private readonly child: ChildProcessWithoutNullStreams
+  private readonly child: ChildProcess
   private readonly observation: AgentProcessObserverHandle
   private readonly parser = new PiJsonLines()
   private readonly pending = new Map<
@@ -39,22 +57,33 @@ export class PiRpcProcess {
   private readonly listeners = new Set<(event: PiRpcMessage) => void>()
   private readonly exits = new Set<(error: Error) => void>()
   private failure?: Error
-  private killTimer?: ReturnType<typeof setTimeout>
+  private leaderExited = false
+  private retirement?: Promise<RetirementResult>
 
-  constructor(input: {
-    binary: string
-    directory: string
-    args: string[]
-    env: NodeJS.ProcessEnv
-    observer?: AgentProcessObserver
-  }) {
+  /**
+   * Started, not constructed: the payload may not run until this owner's launch
+   * record is durable, and that exchange is asynchronous.
+   */
+  static async start(input: PiRpcProcessInput) {
     // JS entrypoints are useful for native npm shims and deterministic protocol fixtures.
     const command = piCommand(input.binary, input.args)
-    this.child = spawn(command.file, command.args, {
+    const launch = await launchOwnedProcess({
+      ownership: input.ownership ?? volatileLaunchOwnership(),
+      role: "harness",
+      scope: { directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
+      payload: { command: command.file, args: command.args },
       cwd: input.directory,
       env: input.env,
-      stdio: ["pipe", "pipe", "pipe"],
     })
+    return new PiRpcProcess(launch, { ...DEFAULT_RECOVERY_BUDGETS, ...input.budgets }, input)
+  }
+
+  private constructor(
+    private readonly launch: OwnedLaunch,
+    private readonly budgets: RecoveryBudgets,
+    input: PiRpcProcessInput,
+  ) {
+    this.child = launch.child
     this.observation = observeAgentProcess(input.observer, {
       ownerId: `pi:${randomUUID()}`,
       launchId: randomUUID(),
@@ -66,29 +95,34 @@ export class PiRpcProcess {
       confidence: "direct",
       capabilities: { resourceMetrics: "process", ownerActions: false },
       directory: input.directory,
-      pid: this.child.pid,
+      pid: launch.payloadPid,
       executableBasename: input.binary.split(/[\\/]/).at(-1),
     })
-    this.child.stdout.setEncoding("utf8")
-    this.child.stdout.on("data", (chunk: string) => {
+    this.child.stdout!.setEncoding("utf8")
+    this.child.stdout!.on("data", (chunk: string) => {
       try {
         for (const message of this.parser.read(chunk)) this.receive(message)
       } catch (error) {
         this.fail(error instanceof Error ? error : new Error(String(error)))
-        this.dispose()
+        void this.dispose()
       }
     })
     // Drain stderr; provider diagnostics may contain credentials and must not enter the transcript.
-    this.child.stderr.resume()
+    this.child.stderr!.resume()
     this.child.on("error", (error) => this.fail(error))
     this.child.on("exit", (code, signal) => {
-      if (this.killTimer) clearTimeout(this.killTimer)
-      this.fail(new Error(`Pi process exited (${signal ?? code})`))
+      this.leaderExited = true
+      const exit = new Error(`Pi process exited (${signal ?? code})`)
+      this.observation.exit({ reason: "exited", ...(code === null ? {} : { exitCode: code }) })
+      this.fail(exit)
+      for (const listener of this.exits) listener(exit)
+      this.exits.clear()
     })
   }
 
+  /** Usable: neither the transport nor the OS has taken this process away. */
   get alive() {
-    return !this.failure
+    return !this.failure && !this.leaderExited
   }
   onEvent(listener: (event: PiRpcMessage) => void) {
     this.listeners.add(listener)
@@ -96,8 +130,9 @@ export class PiRpcProcess {
       this.listeners.delete(listener)
     }
   }
+  /** Fires on a leader exit the OS reported, never on a transport failure. */
   onExit(listener: (error: Error) => void) {
-    if (this.failure) listener(this.failure)
+    if (this.leaderExited) listener(this.failure ?? new Error("Pi process exited"))
     else this.exits.add(listener)
     return () => {
       this.exits.delete(listener)
@@ -105,7 +140,7 @@ export class PiRpcProcess {
   }
   send(message: PiRpcMessage) {
     if (this.failure) throw this.failure
-    this.child.stdin.write(JSON.stringify(message) + "\n", (error) => {
+    this.child.stdin!.write(JSON.stringify(message) + "\n", (error) => {
       if (error) this.fail(error)
     })
   }
@@ -135,24 +170,34 @@ export class PiRpcProcess {
     }
     for (const listener of this.listeners) listener(message)
   }
+  /**
+   * The transport is unusable. That is all it means: a broken pipe, a protocol
+   * violation or a rejected write says nothing about whether the process or the
+   * tools it started are still running, so no exit is published from here.
+   */
   private fail(error: Error) {
     if (this.failure) return
     this.failure = error
-    this.observation.exit({ reason: "exited" })
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer)
       pending.reject(error)
     }
     this.pending.clear()
-    for (const listener of this.exits) listener(error)
-    this.exits.clear()
   }
-  dispose() {
-    if (this.child.exitCode !== null || this.child.signalCode !== null) return
+
+  /** Whether the OS reported this process gone, as opposed to the transport failing. */
+  get exited() {
+    return this.leaderExited
+  }
+
+  dispose(): Promise<RetirementResult> {
+    this.retirement ??= this.retireLaunch()
+    return this.retirement
+  }
+
+  private async retireLaunch(): Promise<RetirementResult> {
     this.fail(new Error("Pi process disposed"))
-    killHarnessProcess(this.child, "SIGTERM")
-    this.killTimer ??= setTimeout(() => killHarnessProcess(this.child, "SIGKILL"), 2_000)
-    this.killTimer.unref()
+    return await this.launch.retire(this.budgets)
   }
 }
 

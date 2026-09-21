@@ -4,6 +4,7 @@ import type { McpServer } from "@agentclientprotocol/sdk"
 import { Log } from "../../log"
 import { acpFirstPartyMcpServer, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { ACP_RECOVER } from "./recovery"
+import type { RetirementResult } from "../../launch"
 import { ACPProcess } from "./process"
 import { createACPConnectionObservations, type ACPConnectionObservationUpdate } from "./connection-state"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
@@ -254,36 +255,40 @@ export abstract class AcpProcessManager {
     }
   }
 
-  protected restartProcess(key: ACPProcessKey) {
+  /**
+   * The replacement cannot start until these settle: `getOrSpawnProcessForKey`
+   * waits on the same fence, and an unresolved retirement keeps it closed
+   * rather than letting a second writer open the agent's session storage.
+   */
+  protected restartProcess(key: ACPProcessKey): Promise<RetirementResult | undefined>[] {
     const entry = this.processMap().get(key)
     for (const id of entry?.sessionIds ?? []) {
       this.lifecycle().drain(id, "ACP session process restarted")
     }
     entry?.starting?.abort()
-    entry?.startingProc?.dispose()
-    entry?.proc?.dispose()
-    if (!entry) return
+    const retirements = [entry?.startingProc?.dispose(), entry?.proc?.dispose()].filter((item) => !!item)
+    if (!entry) return retirements
     entry.starting = undefined
     entry.startingProc = undefined
     entry.proc = null
     entry.init = null
     delete entry.fork
     delete entry.subagents
+    return retirements
   }
 
-  protected restartProbe() {
-    this.probe?.proc?.dispose()
-    if (!this.probe) return
+  protected restartProbe(): Promise<RetirementResult | undefined>[] {
+    const retirement = this.probe?.proc?.dispose()
+    if (!this.probe) return retirement ? [retirement] : []
     this.probe.proc = null
     this.probe.init = null
+    return retirement ? [retirement] : []
   }
 
-  protected restart() {
+  protected restart(): Promise<RetirementResult | undefined>[] {
     this.lifecycle().drainAll("ACP session process restarted")
-    for (const key of this.processMap().keys()) {
-      this.restartProcess(key)
-    }
-    this.restartProbe()
+    const retirements = [...this.processMap().keys()].flatMap((key) => this.restartProcess(key))
+    return [...retirements, ...this.restartProbe()]
   }
 
   protected closeStore() {

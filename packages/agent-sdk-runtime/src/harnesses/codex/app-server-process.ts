@@ -1,5 +1,6 @@
-import { spawn, type ChildProcess } from "child_process"
+import { type ChildProcess } from "child_process"
 import { randomUUID } from "crypto"
+import { DEFAULT_RECOVERY_BUDGETS, type RecoveryBudgets } from "@claxedo/agent-runtime-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { Log } from "../../log"
 import {
@@ -9,7 +10,16 @@ import {
 } from "../../process-observer"
 import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
-import { isWindowsShimBinary, killHarnessProcess, drainHarnessProcessGroup } from "../shared/windows-process"
+import { isWindowsShimBinary } from "../shared/windows-process"
+import {
+  launchOwnedProcess,
+  volatileLaunchOwnership,
+  withRequestDeadline,
+  type LaunchOwnershipStore,
+  type OwnedLaunch,
+  type RequestDeadline,
+  type RetirementResult,
+} from "../../launch"
 
 const log = Log.create({ service: "codex-app-server-process" })
 
@@ -90,46 +100,33 @@ export function observeCodexAppServerProcess(input: {
 }
 
 export class CodexAppServerProcess {
-  private proc: ChildProcess
+  private readonly proc: ChildProcess
   private buffer = ""
   private seq = 0
   private disposed = false
-  private killTimer: ReturnType<typeof setTimeout> | undefined
   private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
   private listeners = new Set<(message: JsonRecord) => void>()
   private stderrListeners = new Set<(message: string) => void>()
   private observation: AgentProcessObserverHandle
   private observationExited = false
-  /** Resolves after the child and its owned POSIX process group have exited. */
-  private readonly exited: Promise<void>
-  private resolveExited!: () => void
+  private retirement: Promise<RetirementResult> | undefined
 
   private constructor(
+    private readonly launch: OwnedLaunch,
+    private readonly budgets: RecoveryBudgets,
     binary: string,
     directory: string,
-    env: NodeJS.ProcessEnv,
     private readonly requestHandler: (message: JsonRecord) => Promise<unknown>,
     private readonly onClose: (error: Error) => void,
     processObserver?: AgentProcessObserver,
     mcp: Record<string, ResolvedMcpServer> = {},
   ) {
-    this.exited = new Promise<void>((resolve) => { this.resolveExited = resolve })
-    const command = codexAppServerCommand(binary)
-    const windowsShim = isWindowsShimBinary(command.command)
-    this.proc = spawn(windowsShim ? `"${command.command}"` : command.command, command.args, {
-      cwd: directory,
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-      // Give this owner an isolated POSIX process group, including native
-      // plugin clones and tool children that can outlive the app-server.
-      detached: process.platform !== "win32",
-      ...(windowsShim ? { shell: true } : {}),
-    })
+    this.proc = launch.child
     this.observation = observeCodexAppServerProcess({
       observer: processObserver,
       binary,
       directory,
-      ...(this.proc.pid ? { pid: this.proc.pid } : {}),
+      ...(launch.payloadPid ? { pid: launch.payloadPid } : {}),
       mcp,
     })
     this.proc.stdout?.setEncoding("utf8")
@@ -155,31 +152,50 @@ export class CodexAppServerProcess {
     processObserver?: AgentProcessObserver
     mcp?: Record<string, ResolvedMcpServer>
     signal?: AbortSignal
+    ownership?: LaunchOwnershipStore
+    sessionId?: string
+    budgets?: Partial<RecoveryBudgets>
   }) {
-    const process = new CodexAppServerProcess(
+    if (input.signal?.aborted) throw new Error("Codex app-server startup was cancelled")
+    const budgets = { ...DEFAULT_RECOVERY_BUDGETS, ...input.budgets }
+    const command = codexAppServerCommand(input.binary)
+    const windowsShim = isWindowsShimBinary(command.command)
+    const launch = await launchOwnedProcess({
+      ownership: input.ownership ?? volatileLaunchOwnership(),
+      role: "harness",
+      scope: { directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
+      payload: {
+        command: windowsShim ? `"${command.command}"` : command.command,
+        args: command.args,
+        ...(windowsShim ? { shell: true } : {}),
+      },
+      cwd: input.directory,
+      env: input.env,
+    })
+    const server = new CodexAppServerProcess(
+      launch,
+      budgets,
       input.binary,
       input.directory,
-      input.env,
       input.requestHandler,
       input.onClose ?? (() => {}),
       input.processObserver,
       input.mcp,
     )
-    const onAbort = () => void process.dispose()
+    const onAbort = () => void server.dispose()
     try {
-      if (input.signal?.aborted) throw new Error("Codex app-server startup was cancelled")
       input.signal?.addEventListener("abort", onAbort, { once: true })
-      await process.request("initialize", {
+      await server.request("initialize", {
         clientInfo: { name: "claxedo-workspace-runtime", version: "0.1.0" },
         capabilities: { experimentalApi: true, requestAttestation: false },
-      })
-      process.notify("initialized")
-      process.observation.update({ lifecycle: "ready" })
-      return process
+      }, startupDeadline(budgets, input.signal))
+      server.notify("initialized")
+      server.observation.update({ lifecycle: "ready" })
+      return server
     } catch (cause) {
-      // The caller is waiting on a failed startup; the child's teardown runs on
-      // its own and `dispose()` never rejects.
-      void process.dispose()
+      // The caller is waiting on a failed startup; teardown runs on its own and
+      // `dispose()` never rejects.
+      void server.dispose()
       throw cause
     } finally {
       input.signal?.removeEventListener("abort", onAbort)
@@ -200,12 +216,13 @@ export class CodexAppServerProcess {
     return () => this.stderrListeners.delete(listener)
   }
 
-  request(method: string, params: unknown): Promise<unknown> {
+  request(method: string, params: unknown, deadline: RequestDeadline): Promise<unknown> {
     const id = ++this.seq
-    return new Promise((resolve, reject) => {
+    const answer = new Promise<unknown>((resolve, reject) => {
       this.pending.set(id, { resolve, reject })
       this.write({ id, method, params })
     })
+    return withRequestDeadline(`codex ${method}`, deadline, answer, () => this.pending.delete(id))
   }
 
   notify(method: string, params?: unknown) {
@@ -217,38 +234,35 @@ export class CodexAppServerProcess {
   }
 
   /**
-   * Terminates the child and its owned process group — SIGTERM first, SIGKILL
-   * for processes that ignore it. An owner that awaits this may then delete
-   * the directory those processes were writing to.
+   * Retires the launch and answers with what was established: whether the
+   * leader exited, whether anything it owned is still running, and which
+   * signals were refused. It settles inside the TERM and KILL budgets, so an
+   * owner that awaits it before deleting a working directory is told what it
+   * is deleting under rather than waiting forever for a proof that will not
+   * come.
    */
-  dispose(): Promise<void> {
-    if (this.disposed) return this.exited
+  dispose(): Promise<RetirementResult> {
+    this.retirement ??= this.retireLaunch()
+    return this.retirement
+  }
+
+  private async retireLaunch(): Promise<RetirementResult> {
     this.disposed = true
-    this.exitObservation({ reason: "disposed" })
     const error = new Error("codex app-server process was disposed")
     for (const item of this.pending.values()) item.reject(error)
     this.pending.clear()
-    if (this.proc.exitCode !== null || this.proc.signalCode !== null) return this.exited
-    killHarnessProcess(this.proc, "SIGTERM", true)
-    this.killTimer = setTimeout(() => {
-      if (this.proc.exitCode === null && this.proc.signalCode === null) killHarnessProcess(this.proc, "SIGKILL", true)
-    }, 1_000)
-    this.killTimer.unref()
-    return this.exited
+    const result = await this.launch.retire(this.budgets)
+    if (result.leader === "exited") this.exitObservation({ reason: "disposed" })
+    return result
   }
 
   private handleExit(error: Error, reason: "error" | "exited", exitCode?: number) {
-    if (this.killTimer) clearTimeout(this.killTimer)
-    void this.drainProcessGroup().then(() => this.resolveExited())
+    // Node observed the leader exit, which is the only exit evidence this owner
+    // ever gets; what the group still holds is established by retirement.
     this.exitObservation({ reason, ...(exitCode !== undefined ? { exitCode } : {}) })
     for (const item of this.pending.values()) item.reject(error)
     this.pending.clear()
     if (!this.disposed) this.onClose(error)
-  }
-
-  /** The leader exiting does not prove its plugin/tool descendants are gone. */
-  private async drainProcessGroup() {
-    await drainHarnessProcessGroup(this.proc)
   }
 
   private exitObservation(input: { reason: "error" | "exited" | "disposed"; exitCode?: number }) {
@@ -310,4 +324,8 @@ export class CodexAppServerProcess {
     }
     pending.resolve(message.result)
   }
+}
+
+function startupDeadline(budgets: RecoveryBudgets, signal?: AbortSignal): RequestDeadline {
+  return { signal: signal ?? new AbortController().signal, deadlineAt: Date.now() + budgets.providerQueryMs }
 }

@@ -86,26 +86,50 @@ async function retireOwned(target: RetirementTarget, budgets: RetirementBudgets)
   }
 
   const signals: SignalOutcome[] = []
+  // The leader was verified live above, and POSIX keeps a group id reserved
+  // while the group has members, so the rest of this retirement may go on
+  // signalling that group even after its leader exits. A retirement that
+  // starts with an already-exited leader gets no such licence: it refused
+  // above, because nothing in this process ever verified that group.
   signals.push(await deliver(identity, "SIGTERM"))
-  let leader = await awaitLeaderExit(identity, budgets.termGraceMs)
-  if (leader === "exited") return { leader, descendants: await descendantsAfterExit(identity), signals }
+  if (!(await awaitGroupEmpty(identity, budgets.termGraceMs))) {
+    await closeNative(target)
+    signals.push(await deliver(identity, "SIGKILL"))
+    await awaitGroupEmpty(identity, budgets.killVerifyMs)
+  }
 
-  await closeNative(target)
-  signals.push(await deliver(identity, "SIGKILL"))
-  leader = await awaitLeaderExit(identity, budgets.killVerifyMs)
-  if (leader === "exited") return { leader, descendants: await descendantsAfterExit(identity), signals }
-
+  const leader = await leaderState(identity)
+  const descendants = await descendantsAfterExit(identity)
   const denied = signals.some((outcome) => outcome.refusal === "permission_denied")
+  if (leader === "exited" && descendants !== "owned") return { leader, descendants, signals }
   return {
     leader,
-    descendants: "owned",
+    descendants,
     signals,
     error: {
       code: denied ? "signal_denied" : "exit_unverified",
       message: denied
-        ? `signalling the launch led by pid ${identity.pid} was denied and it is still ${leader}`
-        : `the launch led by pid ${identity.pid} was still ${leader} ${budgets.killVerifyMs}ms after SIGKILL`,
+        ? `signalling the launch led by pid ${identity.pid} was denied; its leader is ${leader} and its group is ${descendants}`
+        : `the launch led by pid ${identity.pid} was still ${leader} with ${descendants} descendants ${budgets.killVerifyMs}ms after SIGKILL`,
     },
+  }
+}
+
+async function leaderState(identity: CreationIdentity): Promise<RetirementResult["leader"]> {
+  const verdict = await verifyCreationIdentity(identity)
+  // A pid that now answers for a different process is proof the recorded one is
+  // gone; it is read only after this owner has already signalled.
+  if (verdict.state === "exited" || verdict.state === "identity_mismatch") return "exited"
+  if (verdict.state === "unknown") return "unknown"
+  return "alive"
+}
+
+async function awaitGroupEmpty(identity: CreationIdentity, budgetMs: number) {
+  const deadline = Date.now() + budgetMs
+  for (;;) {
+    if ((await descendantsAfterExit(identity)) !== "owned") return true
+    if (Date.now() >= deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 25))
   }
 }
 
@@ -148,20 +172,6 @@ function deliverWindowsTree(identity: CreationIdentity, signal: NodeJS.Signals):
       ? { signal, scope: "tree", delivered: true }
       : { signal, scope: "tree", delivered: false, refusal: "permission_denied" }))
   })
-}
-
-async function awaitLeaderExit(identity: CreationIdentity, budgetMs: number): Promise<"exited" | "alive" | "unknown"> {
-  const deadline = Date.now() + budgetMs
-  for (;;) {
-    const verdict = await verifyCreationIdentity(identity)
-    // A pid that now answers for a different process is proof the recorded one
-    // is gone; it is the only case where a mismatch is exit evidence, and it is
-    // read only after this owner has already signalled.
-    if (verdict.state === "exited" || verdict.state === "identity_mismatch") return "exited"
-    if (verdict.state === "unknown") return "unknown"
-    if (Date.now() >= deadline) return "alive"
-    await new Promise((resolve) => setTimeout(resolve, 25))
-  }
 }
 
 async function descendantsAfterExit(identity: CreationIdentity): Promise<RetirementResult["descendants"]> {

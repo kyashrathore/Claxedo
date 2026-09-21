@@ -1,6 +1,8 @@
 import { asRecord } from "@claxedo/agent-runtime-contract"
 import { spawn, type ChildProcess } from "child_process"
-import { isWindowsShimBinary, killHarnessProcess, drainHarnessProcessGroup } from "../shared/windows-process"
+import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
+import { isWindowsShimBinary } from "../shared/windows-process"
+import { readCreationIdentity, retire as retireLaunch, type CreationIdentity, type RetirementResult } from "../../launch"
 import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk"
 import {
   createHttpStream,
@@ -23,7 +25,12 @@ export type ACPTransport = {
   metadata: Record<string, unknown>
   pid?: number | null
   alive: boolean
-  dispose(): void | Promise<void>
+  /**
+   * Resolves with what retirement established. A transport that owns no local
+   * process — a remote endpoint, or a stream the caller supplied — has nothing
+   * to retire and returns nothing.
+   */
+  dispose(): void | Promise<RetirementResult | undefined>
 }
 
 export type ACPTransportFactoryInput = {
@@ -69,14 +76,42 @@ export type ACPConnection = ACPProcessConnection | ACPStreamableHttpConnection |
 
 // Retirement outlives adapter instances. A replacement must not race an old
 // wrapper's descendants that still own the agent's backing session storage.
-const retiring = new Map<string, Set<Promise<void>>>()
-function launchIdentity(directory: string, command: string, args: string[]) {
+type ACPRetirement = { promise: Promise<RetirementResult>; result?: RetirementResult }
+const retiring = new Map<string, Set<ACPRetirement>>()
+
+function launchKey(directory: string, command: string, args: string[]) {
   return JSON.stringify([directory, command, args])
 }
+
+/** Nothing the previous owner started is still running or unaccounted for. */
+function settled(result: RetirementResult) {
+  return result.leader === "exited" && result.descendants !== "owned" && !result.error
+}
+
+/**
+ * Throws when an earlier launch of the same command is still owned. The message
+ * names what blocks it, because the caller's only alternative is to start a
+ * second writer over the first one's session storage.
+ */
 export async function waitForACPTransportRetirement(directory: string, connection: ACPConnection) {
   if (connection.kind !== "process") return
-  const key = launchIdentity(directory, connection.command, connection.args ?? [])
-  while (retiring.get(key)?.size) await Promise.all(retiring.get(key)!)
+  const key = launchKey(directory, connection.command, connection.args ?? [])
+  for (;;) {
+    const pending = retiring.get(key)
+    if (!pending?.size) return
+    const entries = [...pending]
+    await Promise.all(entries.map((entry) => entry.promise))
+    const blocked = entries.filter((entry) => pending.has(entry))
+    if (blocked.length) {
+      throw new Error(`ACP process retirement is unresolved for ${connection.command}: ${blocked.map(describeBlocker).join("; ")}`)
+    }
+  }
+}
+
+function describeBlocker(entry: ACPRetirement) {
+  const result = entry.result
+  if (!result) return "retirement did not report a result"
+  return `leader ${result.leader}, descendants ${result.descendants}${result.error ? `, ${result.error.code}: ${result.error.message}` : ""}`
 }
 
 export function validateACPConnection(input: unknown): ACPConnection {
@@ -160,39 +195,48 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
   proc.stderr?.on("data", (data: Buffer) => {
     input.onStderr(data.toString().trim())
   })
-  let resolveExit!: () => void
-  const exited = new Promise<void>((resolve) => { resolveExit = resolve })
-  let retirement: Promise<void> | undefined
+  // Read while the process is certainly alive: after it exits there is nothing
+  // left to identify, and a pid with no creation identity may never be signalled.
+  const identityProbe: Promise<CreationIdentity | undefined> = proc.pid
+    ? readCreationIdentity(proc.pid).catch(() => undefined)
+    : Promise.resolve(undefined)
+  void identityProbe.catch(() => {})
+
+  let entry: ACPRetirement | undefined
   const retire = () => {
-    if (retirement) return retirement
-    const key = launchIdentity(input.directory, input.command!, input.args)
-    retirement = (async () => {
-      const killer = process.platform === "win32" ? killHarnessProcess(proc, "SIGTERM", true) : undefined
-      const tree = killer ? new Promise<void>((resolve, reject) => {
-        killer.once("error", reject)
-        killer.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`ACP process-tree termination failed (${code})`)))
-      }) : drainHarnessProcessGroup(proc, 5_000)
-      let timer: ReturnType<typeof setTimeout> | undefined
-      try {
-        await Promise.race([
-          Promise.all([exited, tree]),
-          new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("ACP process-tree termination timed out")), 5_000) }),
-        ])
-      } finally { if (timer) clearTimeout(timer) }
-    })()
-    const pending = retiring.get(key) ?? new Set<Promise<void>>()
-    pending.add(retirement)
+    if (entry) return entry.promise
+    const key = launchKey(input.directory, input.command!, input.args)
+    const pending = retiring.get(key) ?? new Set<ACPRetirement>()
+    const created: ACPRetirement = {
+      promise: (async () => {
+        const identity = await identityProbe
+        if (!identity) return {
+          leader: "unknown" as const,
+          descendants: "unknown" as const,
+          signals: [],
+          error: {
+            code: "ownership_unverified" as const,
+            message: `the creation identity of ACP process ${String(proc.pid)} was never established, so its group cannot be signalled`,
+          },
+        }
+        return await retireLaunch({ identity }, DEFAULT_RECOVERY_BUDGETS)
+      })(),
+    }
+    entry = created
+    pending.add(created)
     retiring.set(key, pending)
-    // Failed retirement remains a fence: never pretend a still-owned writer
-    // was released. Attach the rejection handler even for synchronous dispose.
-    void retirement.then(() => {
-      pending.delete(retirement!)
+    // An unresolved retirement stays in the set as a fence: never pretend a
+    // still-owned writer was released.
+    void created.promise.then((result) => {
+      created.result = result
+      if (!settled(result)) return
+      pending.delete(created)
       if (!pending.size) retiring.delete(key)
     }, () => {})
-    return retirement
+    return created.promise
   }
-  proc.on("exit", (code, signal) => { resolveExit(); retire(); input.onExit(code, signal) })
-  proc.on("error", (error) => { resolveExit(); retire(); input.onError(error) })
+  proc.on("exit", (code, signal) => { void retire(); input.onExit(code, signal) })
+  proc.on("error", (error) => { void retire(); input.onError(error) })
 
   return {
     kind: "stdio",
@@ -333,9 +377,10 @@ function remoteTransport(
     get alive() {
       return alive
     },
-    dispose() {
+    async dispose() {
       alive = false
-      void stream.writable.close().catch(() => {})
+      await stream.writable.close().catch(() => {})
+      return undefined
     },
   }
 }
