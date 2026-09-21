@@ -3,7 +3,6 @@ import type { AgentPresentationMessage as Message, AgentContentPart as Part, Age
 import {
   ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
   ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
-  acceptedPromptRefreshMatches,
   activeSessionStatusPollingDecision,
   activeTurnTransition,
   conversationHasAssistantMessage,
@@ -807,14 +806,6 @@ describe("session controller helpers", () => {
     expect(shouldDeferSessionTransportHydrate({ loading: true, force: false })).toBe(true)
     expect(shouldDeferSessionTransportHydrate({ loading: true, force: true })).toBe(false)
     expect(shouldDeferSessionTransportHydrate({ loading: false, force: true })).toBe(false)
-  })
-
-  test("accepted-prompt refresh waits for the created session route identity", () => {
-    const request = { sessionID: "ses_created", directory: "/repo/main" }
-
-    expect(acceptedPromptRefreshMatches({ request, sessionID: "new", currentDirectory: "/repo/main" })).toBe(false)
-    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/other" })).toBe(false)
-    expect(acceptedPromptRefreshMatches({ request, sessionID: "ses_created", currentDirectory: "/repo/main" })).toBe(true)
   })
 
   test("active-turn settlement is scoped to the same session history key", () => {

@@ -4,59 +4,114 @@ import type { SessionStatusDispatchEvent } from "./session-status-dispatcher"
 
 type SessionStatus = NonNullable<Extract<SessionStatusDispatchEvent, { type: "session.status" }>["status"]>
 
-export type AcceptedPromptRefresh = {
-  sequence: number
+/**
+ * A turn whose transcript this client accepted responsibility for completing.
+ *
+ * `turnId` is the user message id, which is what admission hands the caller and
+ * what the coverage index is keyed on. One obligation per turn rather than one
+ * request for the whole client: a newer turn starting is not evidence about an
+ * older one, and the single global request this replaced was overwritten by the
+ * next prompt, so the older turn's answer was never fetched at all.
+ */
+export type TurnCoverageObligation = {
   directory: string
   sessionID: string
-  messageID: string
+  turnId: string
+  requestedAt: number
+  /**
+   * The mounted owner working this obligation now. A claim is an attempt, not
+   * the obligation: releasing it leaves the work to be picked up again.
+   */
+  claimedBy?: object
 }
 
-let sequence = 0
-const [acceptedPromptRefresh, setAcceptedPromptRefresh] = createSignal<AcceptedPromptRefresh>()
-let claim: { sequence: number; owner: object } | undefined
-let completedSequence = 0
+export type TurnCoverageTarget = Pick<TurnCoverageObligation, "directory" | "sessionID" | "turnId">
 
-export function requestAcceptedPromptRefresh(input: Omit<AcceptedPromptRefresh, "sequence">) {
-  sequence += 1
-  setAcceptedPromptRefresh({ ...input, sequence })
+/**
+ * Per client scope, so one busy session cannot crowd out every other one. The
+ * oldest is dropped rather than the newest: reopening a history range
+ * reconstructs its obligations from the authoritative coverage index, so an
+ * evicted entry is recoverable, while dropping the newest would drop the turn
+ * the user is looking at.
+ */
+const MAX_OUTSTANDING_PER_SCOPE = 64
+
+/**
+ * Concurrent coverage reads one mounted owner may have in flight. Four keeps a
+ * reopened history range from issuing a request per turn at once while still
+ * overlapping the round trips.
+ */
+export const MAX_CONCURRENT_COVERAGE_READS = 4
+
+const [obligations, setObligations] = createSignal<readonly TurnCoverageObligation[]>([])
+
+function scopeKey(target: { directory: string; sessionID: string }) {
+  return `${target.directory}\0${target.sessionID}`
 }
 
-export function acceptedPromptRefreshRequest() {
-  return acceptedPromptRefresh()
+function sameTurn(target: TurnCoverageTarget, entry: TurnCoverageObligation) {
+  return target.directory === entry.directory
+    && target.sessionID === entry.sessionID
+    && target.turnId === entry.turnId
 }
 
-/** One mounted controller owns a submitted prompt's reconciliation lifecycle. */
-export function claimAcceptedPromptRefresh(request: AcceptedPromptRefresh, owner: object) {
-  if (request.sequence <= completedSequence) return false
-  if (claim && (claim.sequence !== request.sequence || claim.owner !== owner)) return false
-  claim = { sequence: request.sequence, owner }
+export function requestAcceptedPromptRefresh(input: { directory: string; sessionID: string; messageID: string }) {
+  const target = { directory: input.directory, sessionID: input.sessionID, turnId: input.messageID }
+  setObligations((current) => {
+    if (current.some((entry) => sameTurn(target, entry))) return current
+    const next = [...current, { ...target, requestedAt: Date.now() }]
+    const scope = scopeKey(target)
+    const inScope = next.filter((entry) => scopeKey(entry) === scope)
+    if (inScope.length <= MAX_OUTSTANDING_PER_SCOPE) return next
+    const evicted = new Set(inScope.slice(0, inScope.length - MAX_OUTSTANDING_PER_SCOPE))
+    return next.filter((entry) => !evicted.has(entry))
+  })
+}
+
+/** Every turn this client still owes a complete transcript for. */
+export function outstandingTurnCoverage(scope?: { directory: string; sessionID: string }) {
+  const all = obligations()
+  if (!scope) return all
+  return all.filter((entry) => entry.directory === scope.directory && entry.sessionID === scope.sessionID)
+}
+
+export function hasOutstandingTurnCoverage(turnId: string) {
+  return obligations().some((entry) => entry.turnId === turnId)
+}
+
+/**
+ * Take over working one obligation. A second mounted owner is refused rather
+ * than queued: both would issue the same read and apply the same page.
+ */
+export function claimTurnCoverage(target: TurnCoverageTarget, owner: object) {
+  const found = obligations().find((entry) => sameTurn(target, entry))
+  if (!found || (found.claimedBy !== undefined && found.claimedBy !== owner)) return false
+  setObligations((current) =>
+    current.map((entry) => (sameTurn(target, entry) ? { ...entry, claimedBy: owner } : entry)),
+  )
   return true
 }
 
-export function releaseAcceptedPromptRefresh(request: AcceptedPromptRefresh, owner: object) {
-  if (claim?.sequence === request.sequence && claim.owner === owner) claim = undefined
+/** Give up the attempt and keep the obligation, so a later mount can resume it. */
+export function releaseTurnCoverage(target: TurnCoverageTarget, owner: object) {
+  setObligations((current) =>
+    current.map((entry) =>
+      sameTurn(target, entry) && entry.claimedBy === owner ? { ...entry, claimedBy: undefined } : entry,
+    ),
+  )
 }
 
-export function completeAcceptedPromptRefresh(request: AcceptedPromptRefresh, owner: object) {
-  if (claim?.sequence !== request.sequence || claim.owner !== owner) return false
-  claim = undefined
-  completedSequence = Math.max(completedSequence, request.sequence)
-  if (acceptedPromptRefresh()?.sequence === request.sequence) setAcceptedPromptRefresh(undefined)
-  return true
+/**
+ * Discharge the obligation. Two things may do it: coverage for this very turn
+ * applied, or the turn's owner answering that it can never be covered. A read
+ * that ran out of attempts or came back short is neither.
+ */
+export function retireTurnCoverage(target: TurnCoverageTarget) {
+  setObligations((current) => current.filter((entry) => !sameTurn(target, entry)))
 }
 
 export function resetAcceptedPromptRefreshForTest() {
-  claim = undefined
-  completedSequence = 0
-  setAcceptedPromptRefresh(undefined)
-}
-
-export function acceptedPromptRefreshMatches(input: {
-  request?: Pick<AcceptedPromptRefresh, "sessionID" | "directory">
-  sessionID?: string
-  currentDirectory: AcceptedPromptRefresh["directory"]
-}) {
-  return !!input.request && input.request.sessionID === input.sessionID && input.request.directory === input.currentDirectory
+  setObligations([])
 }
 
 export function promptRefreshDelay(delay: number, signal?: AbortSignal) {

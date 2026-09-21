@@ -13,13 +13,15 @@ import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } fr
 import { createActiveConversationSnapshot, registeredConversationSnapshot } from "../conversation/conversation-registry"
 import { observeSessionStatusPoll } from "./session-status-telemetry"
 import {
-  acceptedPromptRefreshRequest,
-  claimAcceptedPromptRefresh,
-  completeAcceptedPromptRefresh,
-  acceptedPromptRefreshMatches,
+  claimTurnCoverage,
+  MAX_CONCURRENT_COVERAGE_READS,
+  outstandingTurnCoverage,
   promptRefreshDelay,
   readAcceptedPromptStatus,
-  releaseAcceptedPromptRefresh,
+  releaseTurnCoverage,
+  retireTurnCoverage,
+  type TurnCoverageObligation,
+  type TurnCoverageTarget,
 } from "./accepted-prompt-refresh"
 import { sessionHistoryResyncMatches, sessionHistoryResyncRequest } from "./session-history-resync"
 import {
@@ -97,7 +99,6 @@ import {
 export { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS } from "@/platform/runtime/session-switch"
 export { resolveStoredMessages, resolveStoredParts }
 export { conversationHasAssistantMessage } from "./assistant-turn-evidence"
-export { acceptedPromptRefreshMatches } from "./accepted-prompt-refresh"
 export { firstFoldSessionPrefetch } from "./first-fold-prefetch"
 export { createSessionInfoHydrationGetter, fetchTransportSession } from "./session-transport"
 export function sessionHistoryKey(input: { sessionID: string; directory: string }) {
@@ -735,62 +736,121 @@ export function createSessionController(input: {
     },
   ))
 
-  const acceptedPromptRefreshOwner = {}
+  const turnCoverageOwner = {}
+  const turnCoverageAttempts = new Map<string, VoidFunction>()
+  const turnCoverageKey = (target: TurnCoverageTarget) =>
+    `${target.directory}\0${target.sessionID}\0${target.turnId}`
+
+  /**
+   * Fetch one named turn and merge it. `mode` is deliberately absent: the
+   * default merge applies this turn's messages without touching the rest of
+   * the window, so completing an older turn cannot replace the live one a
+   * newer turn is still writing.
+   */
+  const applyTurnCoverage = async (target: TurnCoverageTarget, signal: AbortSignal) => {
+    const page = await sdk.client.session.messages(
+      { sessionID: target.sessionID, turn: target.turnId, coverage: "1" },
+      { signal },
+    )
+    const covered = page.data
+    // The owner answers for the turn that was asked for. A page describing a
+    // different turn is evidence about that turn, never about this one.
+    if (!covered || covered.turnId !== target.turnId) return "unresolved" as const
+    if (covered.coverage === "unavailable") return "unavailable" as const
+    hydrateConversationPage({
+      directory: target.directory,
+      sessionID: target.sessionID,
+      rows: covered.messages,
+      messageCompleteness: "canonical",
+      partCompleteness: "canonical",
+    })
+    return covered.coverage === "complete" ? ("complete" as const) : ("unresolved" as const)
+  }
+
+  const runTurnCoverageAttempt = async (obligation: TurnCoverageObligation, epoch: { active: () => boolean; signal: AbortSignal }) => {
+    for (const delay of ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS) {
+      if (delay > 0 && !await promptRefreshDelay(delay, epoch.signal)) return
+      if (!epoch.active()) return
+      const [covered, fetchedStatus] = await Promise.all([
+        applyTurnCoverage(obligation, epoch.signal).catch(() => "unresolved" as const),
+        readAcceptedPromptStatus({ sessionID: obligation.sessionID, client: sdk.client, signal: epoch.signal }),
+      ])
+      if (!epoch.active()) return
+      const settled = covered === "complete"
+        && conversationHasAssistantMessage(
+          obligation.directory,
+          obligation.sessionID,
+          assistantMessageIdForUserMessage(obligation.turnId),
+        )
+      if (fetchedStatus && (fetchedStatus.type !== "idle" || settled)) dispatchSessionStatusEvent({
+        event: { type: "session.status", source: "server", sessionID: obligation.sessionID, status: fetchedStatus },
+      })
+      // Only the owner's own "this turn can never be covered" retires an
+      // obligation early. Running out of attempts leaves it for the next mount.
+      if (settled || covered === "unavailable") {
+        retireTurnCoverage(obligation)
+        return
+      }
+    }
+  }
+
+  const startTurnCoverageAttempt = (obligation: TurnCoverageObligation) => {
+    const key = turnCoverageKey(obligation)
+    if (turnCoverageAttempts.has(key)) return
+    if (!claimTurnCoverage(obligation, turnCoverageOwner)) return
+    const epoch = createActivationSessionReadEpoch()
+    const finish = () => {
+      if (!turnCoverageAttempts.delete(key)) return
+      releaseTurnCoverage(obligation, turnCoverageOwner)
+    }
+    const cancelStart = scheduleActivationWork({
+      activationAt: Date.now(),
+      earliestMs: ACCEPTED_PROMPT_RECONCILIATION_EARLIEST_MS,
+      active: () => epoch.active() && paneActive()
+        && input.sessionID() === obligation.sessionID && input.directory() === obligation.directory,
+      run: () => {
+        void runTurnCoverageAttempt(obligation, epoch).catch(() => undefined).finally(finish)
+      },
+    })
+    turnCoverageAttempts.set(key, () => {
+      epoch.abort()
+      cancelStart()
+      finish()
+    })
+  }
+
+  /**
+   * Tracked on the set of outstanding turn ids, not on the obligations
+   * themselves: claiming one writes back to the same store, and an effect that
+   * saw its own claim would tear down the attempt it had just started.
+   */
+  const outstandingTurnIds = createMemo(() => {
+    const sessionID = input.sessionID()
+    if (!sessionID) return ""
+    return outstandingTurnCoverage({ directory: input.directory(), sessionID })
+      .map((obligation) => obligation.turnId)
+      .join(" ")
+  })
+
   createEffect(
     on(
-      () => [acceptedPromptRefreshRequest(), input.sessionID(), input.directory(), paneActive()] as const,
-      ([request, sessionID, currentDirectory, active]) => {
-        if (!active || !request || !acceptedPromptRefreshMatches({ request, sessionID, currentDirectory })) return
-        if (!claimAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)) return
-        const reconciliationEpoch = createActivationSessionReadEpoch()
-        let finished = false
-        const cancelStart = scheduleActivationWork({
-          activationAt: Date.now(),
-          earliestMs: ACCEPTED_PROMPT_RECONCILIATION_EARLIEST_MS,
-          active: () => reconciliationEpoch.active() && paneActive() &&
-            input.sessionID() === request.sessionID && input.directory() === request.directory,
-          run: () => {
-            void (async () => {
-              for (const delay of ACCEPTED_PROMPT_REFRESH_ATTEMPT_DELAYS_MS) {
-                if (delay > 0 && !await promptRefreshDelay(delay, reconciliationEpoch.signal)) return
-                if (!reconciliationEpoch.active()) return
-                const [synced, fetchedStatus] = await Promise.all([
-                  syncSessionHistory(request.sessionID, {
-                    force: true,
-                    view: "latest-turn",
-                    mode: "replace-window",
-                    bypassQuiet: true,
-                    silent: true,
-                    signal: reconciliationEpoch.signal,
-                  }),
-                  readAcceptedPromptStatus({
-                    sessionID: request.sessionID,
-                    client: sdk.client,
-                    signal: reconciliationEpoch.signal,
-                  }),
-                ])
-                if (!reconciliationEpoch.active()) return
-                const settled = synced && fetchedStatus?.type === "idle" && conversationHasAssistantMessage(currentDirectory, request.sessionID, assistantMessageIdForUserMessage(request.messageID))
-                if (fetchedStatus && (fetchedStatus.type !== "idle" || settled)) dispatchSessionStatusEvent({
-                  event: { type: "session.status", source: "server", sessionID: request.sessionID, status: fetchedStatus },
-                })
-                if (settled) break
-              }
-              finished = true
-              completeAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)
-            })().catch(() => undefined).finally(() => {
-              if (!finished) releaseAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)
-            })
-          },
-        })
-        onCleanup(() => {
-          reconciliationEpoch.abort()
-          cancelStart()
-          if (!finished) releaseAcceptedPromptRefresh(request, acceptedPromptRefreshOwner)
-        })
+      () => [outstandingTurnIds(), input.sessionID(), input.directory(), paneActive()] as const,
+      ([, sessionID, directory, active]) => {
+        if (!active || !sessionID) return
+        const pending = outstandingTurnCoverage({ directory, sessionID })
+        for (const obligation of pending) {
+          if (turnCoverageAttempts.size >= MAX_CONCURRENT_COVERAGE_READS) break
+          startTurnCoverageAttempt(obligation)
+        }
       },
     ),
   )
+
+  // Unmounting ends this owner's attempts and nothing more: the obligations
+  // stay, and the next mount of this session picks them up.
+  onCleanup(() => {
+    for (const abandon of [...turnCoverageAttempts.values()]) abandon()
+  })
 
   const syncSessionTodo = async (sessionID: string, opts?: { force?: boolean }) => {
     if (suppressedByFastSessionSwitch(sessionID)) return false
