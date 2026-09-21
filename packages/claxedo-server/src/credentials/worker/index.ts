@@ -32,7 +32,7 @@
  */
 
 import type { ControlPlaneCredentials } from "../../authority/services"
-import type { CredentialMetadata, CredentialWrite, SecretBackend } from "@claxedo/server-core/credentials/types"
+import type { CredentialMetadata, CredentialStatus, CredentialWrite, SecretBackend } from "@claxedo/server-core/credentials/types"
 import {
   createEncryptedCloudflareBackend,
   createEncryptedCloudflareBindingBackend,
@@ -277,15 +277,40 @@ export function hostedOrgCredentials(
       const record = await read(id)
       if (!record) return
       record.meta.health = health
-      record.meta.status = health === "ok" ? "available" : health === "expired" ? "expired" : "error"
+      record.meta.status = statusAfterVerification(
+        record.meta.status,
+        health === "ok" ? "available" : health === "expired" ? "expired" : "error",
+      )
       record.meta.last_validated_at = validatedAt
       record.meta.last_error = health === "ok" ? null : health
       record.meta.updated_at = now()
       await write(record)
     },
+    updateCredentialSecret: async (id, secret, expiresAt) => {
+      const record = await read(id)
+      if (!record) return false
+      record.secret = secret
+      // `undefined` means the caller does not know the replacement's expiry;
+      // `null` means it has none. The stored expiry described the material
+      // being replaced, so only the first may carry it over.
+      record.meta.expires_at = expiresAt === undefined ? record.meta.expires_at ?? null : expiresAt
+      record.meta.health = null
+      record.meta.last_validated_at = null
+      record.meta.last_error = null
+      record.meta.status = statusAfterVerification(record.meta.status, "available")
+      record.meta.revision = record.meta.revision + 1
+      record.meta.updated_at = now()
+      await write(record)
+      return true
+    },
     // No local credential stores exist on a hosted worker.
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
   }
+}
+
+/** Provider health and token rotation cannot undo the operator's revocation. */
+function statusAfterVerification(stored: CredentialStatus, verdict: CredentialStatus): CredentialStatus {
+  return stored === "revoked" ? "revoked" : verdict
 }
 
 // Literal tuples rather than `Set<string>`: `enumValue` is a type predicate, so

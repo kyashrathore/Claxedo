@@ -7,6 +7,7 @@ import {
   workerCredentials,
 } from "./index"
 import { CREDENTIALS_KEK_ENV } from "@claxedo/server-core/credentials/envelope"
+import { checkCredential } from "@claxedo/server-core/credentials/operations/check"
 import { fetchBodyText } from "../../test-support/fetch-calls"
 
 const KV_ENV = {
@@ -336,4 +337,141 @@ describe("hostedOrgCredentials (org-partitioned CRUD)", () => {
     await orgB.deleteCredentialsByProvider("integration:shared-id")
     expect(await orgA.resolveCredentialSecret?.("integration:shared-id")).toBe("org-a-secret")
   })
+
+  /** The native binding, so a Check's provider `fetch` is never the KV transport. */
+  const nativeCredentials = (now: () => number = () => 1_000) => {
+    const { values, binding } = nativeKv()
+    return {
+      values,
+      credentials: hostedOrgCredentials("org-a", {
+        [HOSTED_CREDENTIALS_FLAG]: "1",
+        [CREDENTIALS_KEK_ENV]: FULL_ENV[CREDENTIALS_KEK_ENV],
+        CLAXEDO_CREDENTIALS: binding,
+      }, { now }),
+    }
+  }
+
+  test.each(["ok", "expired", "auth_failed"] as const)(
+    "verification health %s preserves revocation until an explicit status change",
+    async (health) => {
+      const { credentials } = nativeCredentials()
+      const meta = await credentials.putCredential({ ...write, provider_id: "openai", secret: "synthetic-secret" })
+      await credentials.updateCredentialStatus(meta.id, "revoked")
+
+      await credentials.updateCredentialHealth?.(meta.id, health, 1_500)
+
+      await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({
+        status: "revoked",
+        health,
+        last_validated_at: 1_500,
+      })
+      await expect(credentials.resolveCredentialSecret?.("openai")).resolves.toBeNull()
+      await credentials.updateCredentialStatus(meta.id, "available")
+      await expect(credentials.resolveCredentialSecret?.("openai")).resolves.toBe("synthetic-secret")
+    },
+  )
+
+  test("replacing the secret supersedes the verdict reached against the old one", async () => {
+    let now = 1_000
+    const { credentials } = nativeCredentials(() => now)
+    const meta = await credentials.putCredential({
+      ...write,
+      provider_id: "codex-app-server",
+      kind: "oauth_token",
+      secret: "stale-token",
+      expires_at: 1,
+    })
+    await credentials.updateCredentialHealth?.(meta.id, "auth_failed", 1_234)
+
+    now = 2_000
+    await expect(credentials.updateCredentialSecret?.(meta.id, "renewed-token", 9_000)).resolves.toBe(true)
+
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({
+      health: null,
+      status: "available",
+      last_validated_at: null,
+      last_error: null,
+      expires_at: 9_000,
+      revision: meta.revision + 1,
+      updated_at: 2_000,
+    })
+    await expect(credentials.resolveCredentialSecretById?.(meta.id)).resolves.toBe("renewed-token")
+    await expect(credentials.resolveCredentialSecret?.("codex-app-server")).resolves.toBe("renewed-token")
+
+    // Omitted keeps the stored expiry; `null` clears it.
+    await credentials.updateCredentialSecret?.(meta.id, "renewed-again")
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({ expires_at: 9_000 })
+    await credentials.updateCredentialSecret?.(meta.id, "renewed-again", null)
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({ expires_at: null })
+  })
+
+  test("token rotation cannot undo revocation", async () => {
+    const { credentials } = nativeCredentials()
+    const meta = await credentials.putCredential({
+      ...write,
+      provider_id: "codex-app-server",
+      kind: "oauth_token",
+      secret: "old-token",
+    })
+    await credentials.updateCredentialStatus(meta.id, "revoked")
+
+    await expect(credentials.updateCredentialSecret?.(meta.id, "new-token")).resolves.toBe(true)
+
+    await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({
+      status: "revoked",
+      revision: meta.revision + 1,
+    })
+    await expect(credentials.resolveCredentialSecret?.("codex-app-server")).resolves.toBeNull()
+    await expect(credentials.resolveCredentialSecretById?.(meta.id)).resolves.toBe("new-token")
+  })
+
+  test("replacing the secret of an unknown credential writes nothing", async () => {
+    const { credentials, values } = nativeCredentials()
+    await expect(credentials.updateCredentialSecret?.("missing", "secret")).resolves.toBe(false)
+    expect(values.size).toBe(0)
+  })
+
+  test.each(["never", "before", "during"] as const)(
+    "an OAuth Check keeps the renewed token and cannot reactivate a credential revoked %s refresh",
+    async (when) => {
+      const { credentials } = nativeCredentials()
+      const meta = await credentials.putCredential({
+        ...write,
+        provider_id: "codex-app-server",
+        kind: "oauth_token",
+        expires_at: 1,
+        secret: JSON.stringify({ type: "codex_auth", access: "access_old", refresh: "refresh_old", account_id: "synthetic-account" }),
+      })
+      if (when === "before") await credentials.updateCredentialStatus(meta.id, "revoked")
+      const seen: string[] = []
+      const request = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+        seen.push(url)
+        if (url === "https://auth.openai.com/oauth/token") {
+          if (when === "during") await credentials.updateCredentialStatus(meta.id, "revoked")
+          return Response.json({ access_token: "access_new", refresh_token: "refresh_new" })
+        }
+        expect(url).toBe("https://chatgpt.com/backend-api/wham/usage")
+        expect(new Headers(init?.headers).get("authorization")).toBe("Bearer access_new")
+        return Response.json({})
+      }, { preconnect() {} })
+
+      const result = await checkCredential(credentials, meta, { org: "org-a", fetch: request, now: () => 10_000 })
+
+      expect(result).toMatchObject({ status: "checked", health: "ok" })
+      expect(seen).toHaveLength(2)
+      const status = when === "never" ? "available" : "revoked"
+      await expect(credentials.getCredential?.(meta.id)).resolves.toMatchObject({
+        status,
+        health: "ok",
+        last_validated_at: 10_000,
+        revision: meta.revision + 1,
+      })
+      const stored = await credentials.resolveCredentialSecretById?.(meta.id)
+      expect(JSON.parse(stored!).access).toBe("access_new")
+      await expect(credentials.resolveCredentialSecret?.("codex-app-server")).resolves.toBe(
+        when === "never" ? stored : null,
+      )
+    },
+  )
 })
