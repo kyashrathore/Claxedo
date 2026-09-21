@@ -462,7 +462,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       recovery.retainFailure(capture, failure, finalized)
     } finally {
       router.dispose()
-      finishPublication(finalized?.ok === true)
+      finishPublication((finalized ?? recovery.abandonTurn(capture, publishTurn)).ok === true)
     }
   }
 
@@ -513,8 +513,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     adapterForSession,
     executionBinding,
     publish,
-    announceIdle: (sessionId, directory) =>
-      eventHub.publishGlobal({ directory: runtimeDirectory(directory), payload: sessionIdle(sessionId) }),
+    announceIdle: (sessionId, directory) => eventHub.publishGlobal({ directory: runtimeDirectory(directory), payload: sessionIdle(sessionId) }),
     ...(input.identity ? { identity: input.identity } : {}),
     ...(input.recovery?.budgets ? { budgets: input.recovery.budgets } : {}),
     ...(input.recovery?.now ? { now: input.recovery.now } : {}),
@@ -525,7 +524,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     adapterForSession,
     publish,
     subscribeRuntime: eventHub.subscribeRuntime,
-    cancelActiveTurn: recovery.cancelActiveTurn,
+    captureTurn: recovery.captureSessionTurn,
+    cancelCapturedTurn: recovery.cancelActiveTurn,
   })
 
   return {
@@ -690,9 +690,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
-          // The turn's own finalizer owns the release. A failure here reaches
-          // the owner through `recovery.inspect` instead of a log line, and the
-          // admission and lease stay held until it is reconciled.
+          // The finalizer inside owns the release. A turn that never reaches
+          // it keeps its admission and its lease, and `recovery.inspect`
+          // reports why.
           void track(() => runTurn(binding, prompt, adapter, capture, releaseAdmission, !!handoff, openingUserPublished, turn.admission))
             .catch((error: unknown) => recovery.reportTurnFailure(capture, error))
         } catch (error) {

@@ -70,9 +70,12 @@ export type AdmittedTurnCapture = RecoveryTurnCapture & {
 }
 
 export type TurnFinalization =
-  | { ok: true }
+  /** `wrote` is false when the store accepted the call and recorded nothing. */
+  | { ok: true; wrote: boolean }
   /** Another generation owns the session; this effect has nothing to finish. */
   | { ok: false; reason: "superseded" }
+  /** This owner holds neither the admission nor the lease for that turn. */
+  | { ok: false; reason: "no_authority" }
   | { ok: false; reason: "authority_lost"; error?: unknown }
   | { ok: false; reason: "persistence"; error: unknown }
 
@@ -90,6 +93,8 @@ type RetainedFailure = {
   capture: RecoveryTurnCapture
   outcome: AgentTurnOutcome
   error: RecoveryError
+  /** A lease that moved to another owner is not something a retry can recover. */
+  retryable: boolean
 }
 
 type TrackedOperation = {
@@ -187,14 +192,25 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
 
   /**
    * A turn only the store knows about, because the provider admitted it for
-   * itself. The absent generation is the fact: the runtime can only state that
-   * it has not admitted anything over the top of it.
+   * itself. The durable lease is then the only authority this owner can hold
+   * over it, so an absent lease is captured as an absent one: a finalization
+   * with neither is refused rather than written unfenced.
    */
-  const captureStoreTurn = (sessionId: string, directory?: RuntimeDirectory): RecoveryTurnCapture => ({
-    sessionId,
-    ...(directory !== undefined ? { directory } : {}),
-    target: sessionTarget(sessionId, store.readTurnAuthority(sessionId)?.leaseId ?? owner),
-  })
+  const captureStoreTurn = (sessionId: string, directory?: RuntimeDirectory): RecoveryTurnCapture => {
+    const leaseId = store.readTurnAuthority(sessionId)?.leaseId
+    return {
+      sessionId,
+      ...(directory !== undefined ? { directory } : {}),
+      ...(leaseId !== undefined ? { leaseId } : {}),
+      target: sessionTarget(sessionId, leaseId ?? owner),
+    }
+  }
+
+  /** The identity a caller must capture before the await its effect follows. */
+  const captureSessionTurn = (sessionId: string, directory?: RuntimeDirectory): RecoveryTurnCapture => {
+    const running = admissions.active(sessionId)
+    return running ? captureTurn(sessionId, running, directory) : captureStoreTurn(sessionId, directory)
+  }
 
   const fact = <V extends string>(value: V, source: string, generation = owner): RecoveryFactEvidence<V> =>
     ({ value, source, observedAt: now(), generation })
@@ -264,6 +280,10 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     if (capture.admission ? held?.generation !== capture.admission : held !== undefined) {
       return { ok: false, reason: "superseded" }
     }
+    // Neither the in-process admission nor the durable lease: this owner has no
+    // authority over that turn, and writing its terminal would be the unfenced
+    // write the lease exists to prevent.
+    if (!capture.admission && capture.leaseId === undefined) return { ok: false, reason: "no_authority" }
     if (capture.fence && !capture.fence.valid()) return { ok: false, reason: "authority_lost" }
     const emit = options.emit ?? input.publish
     let finished
@@ -279,39 +299,58 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       if (error instanceof AgentRuntimeStaleTurnError) return { ok: false, reason: "authority_lost", error }
       return { ok: false, reason: "persistence", error }
     }
-    if (options.announceIdle) input.announceIdle(capture.sessionId, capture.directory)
-    for (const payload of finished.events) {
-      emit({ sessionId: capture.sessionId, directory: capture.directory, payload })
+    // What the store now holds, read back from it rather than inferred from a
+    // call that returns the same empty event list whether it recorded the turn
+    // or found nothing to record.
+    const wrote = capture.turnId !== undefined
+      ? store.turnEvidence(capture.sessionId, capture.turnId).finished
+      : store.getSession(capture.sessionId)?.status !== "busy"
+    if (wrote) {
+      if (options.announceIdle) input.announceIdle(capture.sessionId, capture.directory)
+      for (const payload of finished.events) {
+        emit({ sessionId: capture.sessionId, directory: capture.directory, payload })
+      }
+      if (options.announceIdle) {
+        emit({
+          sessionId: capture.sessionId,
+          directory: capture.directory,
+          payload: { type: "finish", sessionId: capture.sessionId },
+        })
+      }
+      failures.delete(capture.sessionId)
     }
-    if (options.announceIdle) {
-      emit({
-        sessionId: capture.sessionId,
-        directory: capture.directory,
-        payload: { type: "finish", sessionId: capture.sessionId },
-      })
-    }
-    failures.delete(capture.sessionId)
     if (capture.admission) admissions.release(capture.sessionId, capture.admission)
-    return { ok: true }
+    else if (capture.leaseId !== undefined) store.releaseTurnLease(capture.sessionId, capture.leaseId)
+    return { ok: true, wrote }
+  }
+
+  const RETAINED_CODES: Readonly<Record<"no_authority" | "authority_lost" | "persistence", RecoveryErrorCode>> = {
+    no_authority: "ownership_unverified",
+    authority_lost: "authority_lost",
+    persistence: "persistence_unavailable",
   }
 
   /**
-   * Hold a failed finalization where an owner can see it and a reconciliation
-   * can retry it. The turn stays admitted and its lease stays held: releasing
-   * either admits conflicting work over a session the store still records as
-   * busy.
+   * Hold a failed finalization where an owner can see it. A storage failure is
+   * retryable, so the turn keeps its admission and its lease: releasing either
+   * admits conflicting work over a session the store still records as busy. A
+   * lease that moved to another owner is not — this owner can never write that
+   * turn again, so it gives up the admission slot it is still holding while
+   * keeping the obligation to report what it may have left running.
    */
   const retainFailure = (capture: RecoveryTurnCapture, outcome: AgentTurnOutcome, result: TurnFinalization) => {
     if (result.ok || result.reason === "superseded") return
-    const code: RecoveryErrorCode = result.reason === "authority_lost" ? "authority_lost" : "persistence_unavailable"
+    const retryable = result.reason === "persistence"
+    if (!retryable && capture.admission) admissions.release(capture.sessionId, capture.admission)
     const detail = "error" in result && result.error !== undefined
       ? messageOf(result.error)
-      : "the captured turn lease no longer holds"
+      : "this owner holds no write authority for it"
     failures.set(capture.sessionId, {
       capture,
       outcome,
+      retryable,
       error: recoveryError(
-        code,
+        RETAINED_CODES[result.reason],
         capture.target,
         "reconcile",
         true,
@@ -334,16 +373,31 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   }
 
   /**
-   * End the turn a Goal mutation just stopped. A Goal iteration the provider
-   * admitted for itself never took runtime admission, so there is no generation
-   * or lease to check it against; this owner can only refuse to write over a
-   * turn it has since admitted itself.
+   * A turn whose producer stopped without reaching the finalizer. Its own
+   * fences decide what that means: a superseded generation has nothing left to
+   * finish, and a revoked write authority is an obligation this owner keeps
+   * rather than a turn that quietly disappears with its admission still held.
    */
-  const cancelActiveTurn = (sessionId: string, directory?: RuntimeDirectory) => {
-    const running = admissions.active(sessionId)
-    const capture = running ? captureTurn(sessionId, running, directory) : captureStoreTurn(sessionId, directory)
+  const abandonTurn = (capture: RecoveryTurnCapture, emit: (event: AgentRuntimeEventEnvelope) => void): TurnFinalization => {
+    const outcome: AgentTurnOutcome = {
+      status: "failed",
+      completedAt: now(),
+      error: "The turn stopped producing without a recorded outcome",
+    }
+    const result = finalizeTurn(capture, outcome, { emit })
+    retainFailure(capture, outcome, result)
+    return result
+  }
+
+  /**
+   * End the turn a Goal mutation stopped, named by the capture its caller took
+   * before the mutation's own await. `directory` only routes the publication;
+   * the identity the effect is checked against is the capture's.
+   */
+  const cancelActiveTurn = (capture: RecoveryTurnCapture, directory?: RuntimeDirectory) => {
+    const routed = directory !== undefined ? { ...capture, directory } : capture
     const outcome: AgentTurnOutcome = { status: "cancelled", completedAt: now(), reason: "abort" }
-    retainFailure(capture, outcome, finalizeTurn(capture, outcome, { announceIdle: true }))
+    retainFailure(routed, outcome, finalizeTurn(routed, outcome, { announceIdle: true }))
   }
 
   const reportOwnerFailure = (error: unknown) => {
@@ -359,8 +413,36 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   const requestKey = (target: RecoveryTarget, callerId: string, requestId: string) =>
     `${recoveryScopeKey(target)}\u0000${callerId}\u0000${requestId}`
 
-  const coalesceKey = (target: RecoveryTarget, action: RecoveryAction) =>
-    `${JSON.stringify(normalizeRecoveryTarget(target))}\u0000${action}`
+  /**
+   * The identity `recoveryTargetsMatch` compares, so two callers naming one
+   * turn meet on it. `writeAuthority` is excluded there because a lease may be
+   * renewed for the very turn being named, and including it here would open a
+   * second controller over that turn.
+   */
+  const coalesceKey = (target: RecoveryTarget, action: RecoveryAction) => {
+    const identity = normalizeRecoveryTarget(target)
+    const keyed = identity.scope === "turn"
+      ? {
+        scope: identity.scope,
+        ...(identity.machineId !== undefined ? { machineId: identity.machineId } : {}),
+        workspaceId: identity.workspaceId,
+        sessionId: identity.sessionId,
+        turnId: identity.turnId,
+        ownerGeneration: identity.ownerGeneration,
+      }
+      : identity
+    return `${JSON.stringify(keyed)}\u0000${action}`
+  }
+
+  /** The request an already-recorded operation was created from. */
+  const intentOf = (operation: RecoveryOperation): RecoveryRequest => ({
+    requestId: operation.requestId,
+    action: operation.action,
+    target: operation.target,
+    scopeRevision: operation.scopeRevision,
+    attempt: operation.attempt,
+    ...(operation.linkedOperationId !== undefined ? { linkedOperationId: operation.linkedOperationId } : {}),
+  })
 
   const expire = (key: string, set: Set<string>) => {
     set.add(key)
@@ -383,25 +465,39 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     }
   }
 
-  const persist = (tracked: TrackedOperation, callerId: string, created: boolean) => {
+  const volatileReceipt = (tracked: TrackedOperation, error: unknown) => {
+    tracked.operation = { ...tracked.operation, receipt: "volatile" }
+    ownerFailures.push(recoveryError(
+      "persistence_unavailable",
+      tracked.operation.target,
+      tracked.operation.phase,
+      false,
+      `Recovery operation ${tracked.operation.operationId} has no durable receipt: ${messageOf(error)}`,
+    ))
+  }
+
+  /**
+   * Claim the durable receipt. The store holds the uniqueness constraint that
+   * spans instances, so a request id it has already accepted returns the
+   * operation that owns it rather than a second one issuing the same effect.
+   */
+  const claimReceipt = (tracked: TrackedOperation, callerId: string): RecoveryOperation | undefined => {
     try {
-      if (created) store.recordRecoveryOperation(tracked.operation, { callerId })
-      else store.updateRecoveryOperation(tracked.operation)
+      const recorded = store.recordRecoveryOperation(tracked.operation, { callerId })
+      return recorded.created ? undefined : recorded.existing
     } catch (error) {
-      tracked.operation = { ...tracked.operation, receipt: "volatile" }
-      ownerFailures.push(recoveryError(
-        "persistence_unavailable",
-        tracked.operation.target,
-        tracked.operation.phase,
-        false,
-        `Recovery operation ${tracked.operation.operationId} has no durable receipt: ${messageOf(error)}`,
-      ))
+      volatileReceipt(tracked, error)
+      return undefined
     }
   }
 
   const update = (tracked: TrackedOperation, next: Partial<RecoveryOperation>, callerId: string) => {
     tracked.operation = { ...tracked.operation, ...next, updatedAt: now() }
-    persist(tracked, callerId, false)
+    try {
+      store.updateRecoveryOperation(tracked.operation)
+    } catch (error) {
+      volatileReceipt(tracked, error)
+    }
     return tracked.operation
   }
 
@@ -420,10 +516,9 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
   const recordLateEvidence = (operationId: string, facts: RecoveryFacts) => {
     const tracked = operations.get(operationId)
     if (!tracked) return
-    tracked.operation = tracked.closed
-      ? { ...tracked.operation, facts, updatedAt: now() }
-      : finalizeRecoveryOperation(tracked.operation, facts)
-    persist(tracked, [...tracked.callers][0] ?? "", false)
+    update(tracked, tracked.closed
+      ? { facts }
+      : finalizeRecoveryOperation(tracked.operation, facts), [...tracked.callers][0] ?? "")
   }
 
   const refuse = (refusal: RecoveryRefusal): RecoveryOutcome => ({ kind: "refused", refusal })
@@ -477,7 +572,6 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     operations.set(operation.operationId, tracked)
     byRequest.set(requestKey(request.target, callerId, request.requestId), operation.operationId)
     inFlight.set(coalesceKey(request.target, request.action), operation.operationId)
-    persist(tracked, callerId, true)
     return tracked
   }
 
@@ -516,7 +610,9 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     execution: fact(outcome.execution, "harness.cancelTurn", capture.leaseId),
     cleanup: fact(outcome.cleanup, "harness.cancelTurn", capture.leaseId),
     persistence: fact<PersistenceFact>(
-      finalized === undefined ? "pending" : finalized.ok ? "committed" : "unavailable",
+      finalized === undefined || (finalized.ok && !finalized.wrote) ? "pending"
+        : finalized.ok ? "committed"
+        : "unavailable",
       "runtime.store",
       capture.leaseId,
     ),
@@ -683,7 +779,7 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
             ),
           }
           : {}),
-        nextActions: finalized?.ok
+        nextActions: finalized?.ok && finalized.wrote
           ? [nextAction("inspect", "the turn is finalized; cleanup this harness performed is not established")]
           : [nextAction("reconcile_session", "the turn is still owned; reconcile once its execution is known to have stopped")],
       }, facts)
@@ -717,25 +813,71 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
         current: expected,
       })
     }
+    if (!retained.retryable) {
+      return answer(close(tracked, {
+        state: "failed",
+        phase: "reconcile",
+        facts: sessionFacts(sessionId),
+        initiatingError: retained.error,
+        nextActions: [nextAction("inspect", "the turn's write authority is another owner's; read who holds it now")],
+      }, callerId))
+    }
     const result = finalizeTurn(retained.capture, retained.outcome, {
       announceIdle: retained.outcome.status === "cancelled",
     })
     retainFailure(retained.capture, retained.outcome, result)
     const facts = sessionFacts(sessionId)
-    if (result.ok) {
+    if (result.ok && result.wrote) {
       return answer(close(tracked, { state: "succeeded", phase: "reconcile", facts }, callerId))
     }
+    const settled = failures.get(sessionId)
     return answer(close(tracked, {
       state: "needs_action",
       phase: "reconcile",
       facts,
-      initiatingError: failures.get(sessionId)?.error
-        ?? recoveryError("generation_retired", expected, "reconcile", false, `Turn ${retained.capture.turnId ?? sessionId} is no longer this owner's to finish`),
-      nextActions: [nextAction("reconcile_session", "retry once the store accepts this turn's writes")],
+      initiatingError: settled?.error
+        ?? recoveryError("projection_failed", expected, "reconcile", true, `The store recorded no outcome for turn ${retained.capture.turnId ?? sessionId}`),
+      nextActions: settled && !settled.retryable
+        ? [nextAction("inspect", "the turn's write authority is another owner's; read who holds it now")]
+        : [nextAction("reconcile_session", "retry once the store accepts this turn's writes")],
     }, callerId))
   }
 
+  /**
+   * An operation that throws still has to answer its caller and let go of its
+   * target. A rejected promise leaves the attempt `running` for ever, which the
+   * expiry sweep skips and every later request on that target coalesces onto.
+   */
   const run = async (tracked: TrackedOperation, request: RecoveryRequest, callerId: string): Promise<RecoveryOutcome> => {
+    try {
+      return await attempt(tracked, request, callerId)
+    } catch (error) {
+      return answer(close(tracked, {
+        state: "failed",
+        initiatingError: recoveryError(
+          "internal_error",
+          tracked.operation.target,
+          tracked.operation.phase,
+          true,
+          `Recovery operation ${tracked.operation.operationId} failed: ${messageOf(error)}`,
+        ),
+        facts: observedFacts(tracked.sessionId),
+        nextActions: [nextAction("inspect", "read the target's current facts before retrying")],
+      }, callerId))
+    }
+  }
+
+  /** Facts a failing operation can still report, even about a broken store. */
+  const observedFacts = (sessionId: string | undefined): RecoveryFacts => {
+    if (sessionId === undefined) return unknownFacts()
+    try {
+      return sessionFacts(sessionId)
+    } catch {
+      return unknownFacts()
+    }
+  }
+
+  const attempt = async (tracked: TrackedOperation, request: RecoveryRequest, callerId: string): Promise<RecoveryOutcome> => {
     if (request.action === "inspect") {
       const sessionId = sessionIdOf(request.target)
       return answer(close(tracked, {
@@ -801,14 +943,41 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       byRequest.set(key, joinable.operation.operationId)
       return answer(joinable.operation)
     }
-    return await run(create(request, caller.callerId), request, caller.callerId)
+    const speculative = create(request, caller.callerId)
+    const claimed = claimReceipt(speculative, caller.callerId)
+    if (!claimed) return await run(speculative, request, caller.callerId)
+    // The store already holds this request id under this caller. Whatever owns
+    // that operation is the one running it; this instance must not start a
+    // second controller for the same effect.
+    operations.delete(speculative.operation.operationId)
+    inFlight.delete(coalesceKey(request.target, request.action))
+    if (!recoveryIntentEquals(intentOf(claimed), request)) {
+      byRequest.delete(key)
+      return refuse({
+        kind: "intent_conflict",
+        message: "That request id already names a different recovery intent",
+        requestId: request.requestId,
+      })
+    }
+    const sessionId = recoveryTargetSessionId(claimed.target)
+    operations.set(claimed.operationId, {
+      operation: claimed,
+      request,
+      callers: new Set([caller.callerId]),
+      ...(sessionId !== null ? { sessionId } : {}),
+      deadlineAt: claimed.phaseDeadlineAt,
+      closed: true,
+      closedAt: now(),
+    })
+    byRequest.set(key, claimed.operationId)
+    return answer(claimed)
   }
 
   const read = (operationId: string, caller: RecoveryCaller): RecoveryOutcome | undefined => {
     sweep()
     const tracked = operations.get(operationId)
     if (tracked) {
-      if (!tracked.callers.has(caller.callerId)) {
+      if (!tracked.callers.has(caller.callerId) || !mayAct(caller, tracked.operation.target)) {
         return refuse({ kind: "unauthorized", message: "That recovery operation belongs to another caller" })
       }
       return answer(tracked.operation)
@@ -820,8 +989,30 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
         requestId: operationId,
       })
     }
-    const durable = store.readRecoveryOperation(operationId)
-    return durable ? answer(durable) : undefined
+    // A stored operation carries no caller, so an owner that never recorded
+    // this one cannot establish that the asker is one of its callers. Handing
+    // over another caller's operation is worse than not answering.
+    return undefined
+  }
+
+  /**
+   * Operations this owner did not record: another instance's, or its own from
+   * before a restart. An unreadable store is reported to the caller rather than
+   * thrown, because inspection is what a caller falls back to.
+   */
+  const storedOperations = (sessionId: string, problems: RecoveryError[]) => {
+    try {
+      return store.listRecoveryOperations({ sessionId })
+    } catch (error) {
+      problems.push(recoveryError(
+        "persistence_unavailable",
+        sessionTarget(sessionId, owner),
+        "reconcile",
+        false,
+        `Stored recovery operations for session ${sessionId} are unreadable: ${messageOf(error)}`,
+      ))
+      return []
+    }
   }
 
   const inspect = (sessionId: string, directory?: RuntimeDirectory): AgentRuntimeRecoveryInspection => {
@@ -831,6 +1022,8 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       || normalizeDirectory(directory) === normalizeDirectory(session?.directory ?? undefined)
     const turn = scoped ? admissions.active(sessionId) : undefined
     const retained = failures.get(sessionId)
+    const problems: RecoveryError[] = []
+    const listed = scoped ? operationsFor(sessionId, problems) : []
     return {
       sessionId,
       ...(turn ? { target: turnTarget(sessionId, turn) } : {}),
@@ -838,12 +1031,18 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
       health: scoped
         ? sessionHealth(sessionId)
         : { status: "unavailable", reason: "scope_mismatch", message: `Session ${sessionId} does not belong to this directory` },
-      failures: scoped ? [...(retained ? [retained.error] : []), ...ownerFailures] : [],
-      operations: scoped
-        ? [...operations.values()].filter((tracked) => tracked.sessionId === sessionId).map((tracked) => tracked.operation)
-        : [],
+      failures: scoped ? [...(retained ? [retained.error] : []), ...ownerFailures, ...problems] : [],
+      operations: listed,
       queued: scoped ? admissions.queued(sessionId) : 0,
     }
+  }
+
+  const operationsFor = (sessionId: string, problems: RecoveryError[]) => {
+    const live = [...operations.values()]
+      .filter((tracked) => tracked.sessionId === sessionId)
+      .map((tracked) => tracked.operation)
+    const held = new Set(live.map((operation) => operation.operationId))
+    return [...live, ...storedOperations(sessionId, problems).filter((row) => !held.has(row.operationId))]
   }
 
   return {
@@ -853,6 +1052,8 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
     turnTarget,
     captureTurn,
     captureStoreTurn,
+    captureSessionTurn,
+    abandonTurn,
     cancelActiveTurn,
     finalizeTurn,
     retainFailure,
