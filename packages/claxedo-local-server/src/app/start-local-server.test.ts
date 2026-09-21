@@ -110,7 +110,7 @@ describe("startLocalServer", () => {
     const lifecycle = createLocalDaemonLifecycle({
       activity: () => ({
         pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
-        runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0 },
+        runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
         residencyPins: 0,
         replacementBlockers: 0,
       }),

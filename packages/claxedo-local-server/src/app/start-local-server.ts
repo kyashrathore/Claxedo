@@ -429,7 +429,19 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         stopConfigWatch()
         stopConfigRenewal()
         options.daemon?.lifecycle.stop()
-        await shutdownEmbeddedWorkspaceRuntimes()
+        // An owner this process could not retire is reported and the rest of
+        // shutdown still runs. Skipping the usage drain because one workspace
+        // refused teardown loses metering that had nothing to do with it.
+        const retirement = await shutdownEmbeddedWorkspaceRuntimes()
+        for (const result of retirement.results) {
+          if (result.state === "retired") continue
+          log.error("workspace runtime retirement failed during shutdown", {
+            workspace_id: result.workspaceId,
+            state: result.state,
+            attempt: result.attempt,
+            error: result.error,
+          })
+        }
         await drainUsageEvents(usageEventTail, turnMeter)
       } finally {
         await listenerClosed

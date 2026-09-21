@@ -7,7 +7,9 @@ import {
   attachEmbeddedWorkspacePty,
   configureEmbeddedWorkspaceRuntime,
   cursorTranscriptRoot,
+  embeddedWorkspaceRuntimeActivity,
   embeddedWorkspaceRuntimeSessionAuthority,
+  EmbeddedWorkspaceRuntimeRetirementUnresolvedError,
   ensureEmbeddedWorkspaceRuntime,
   onEmbeddedWorkspaceRuntime,
   releaseEmbeddedWorkspaceRuntime,
@@ -762,6 +764,70 @@ describe("embedded workspace runtime", () => {
       ))
       expect(cursorTranscriptRoot(project)).not.toContain(path.join(project, path.sep))
     } finally {
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("a failed retirement stays fenced and visible, and an explicit retry reruns only what is left", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-retire-failed-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+
+    try {
+      const ws = workspace("ws_retire_failed", project)
+      const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      const teardown = first.host.dispose.bind(first.host)
+      let refusals = 1
+      let teardowns = 0
+      ;(first.host as unknown as { dispose: () => Promise<void> }).dispose = () => {
+        teardowns += 1
+        return refusals-- > 0 ? Promise.reject(new Error("teardown refused")) : teardown()
+      }
+
+      const failed = await releaseEmbeddedWorkspaceRuntime(ws.id)
+      expect(failed).toMatchObject({ workspaceId: ws.id, state: "retire_failed", attempt: 1 })
+      expect(failed.error).toMatch(/teardown refused/)
+      expect(embeddedWorkspaceRuntimeActivity().owners).toContainEqual(
+        expect.objectContaining({ workspaceId: ws.id, state: "retire_failed", attempt: 1 }),
+      )
+
+      // Mounting must not reinterpret itself as permission to replace an owner
+      // whose cleanup nothing verified.
+      await expect(ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" }))
+        .rejects.toThrow(EmbeddedWorkspaceRuntimeRetirementUnresolvedError)
+      // Asking again without retry reports the same failure; it starts nothing.
+      expect(await releaseEmbeddedWorkspaceRuntime(ws.id)).toMatchObject({ state: "retire_failed", attempt: 1 })
+      expect(teardowns).toBe(1)
+
+      expect(await releaseEmbeddedWorkspaceRuntime(ws.id, { retry: true }))
+        .toMatchObject({ workspaceId: ws.id, state: "retired", attempt: 2 })
+      expect(teardowns, "the retry reran the step that had not completed").toBe(2)
+      expect(embeddedWorkspaceRuntimeActivity().owners).toEqual([])
+      expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).not.toBe(first)
+    } finally {
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("shutdown reports every owner's retirement instead of losing the rest to one failure", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-shutdown-failed-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+
+    try {
+      const stuck = await ensureEmbeddedWorkspaceRuntime(workspace("ws_stuck", project), { config: "skip" })
+      await ensureEmbeddedWorkspaceRuntime(workspace("ws_clean", project), { config: "skip" })
+      const teardown = stuck.host.dispose.bind(stuck.host)
+      ;(stuck.host as unknown as { dispose: () => Promise<void> }).dispose = () => Promise.reject(new Error("teardown refused"))
+
+      const result = await shutdownEmbeddedWorkspaceRuntimes()
+      expect(result.ok).toBe(false)
+      expect(result.results.map((entry) => [entry.workspaceId, entry.state]))
+        .toEqual([["ws_stuck", "retire_failed"], ["ws_clean", "retired"]])
+      expect(result.results.find((entry) => entry.workspaceId === "ws_stuck")?.error).toMatch(/teardown refused/)
+      ;(stuck.host as unknown as { dispose: () => Promise<void> }).dispose = teardown
+      expect(await releaseEmbeddedWorkspaceRuntime("ws_stuck", { retry: true })).toMatchObject({ state: "retired" })
+    } finally {
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })

@@ -78,8 +78,51 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
 
 export type EmbeddedWorkspaceRuntimeConfigMode = "skip" | "sync"
 
+/**
+ * A retirement in progress or stuck. It outlives the `hosts` entry on purpose:
+ * the runtime is no longer routed to, but its store root and whatever its
+ * teardown did not release are still this process's, and a replacement writer
+ * must not be admitted over them.
+ */
+type EmbeddedRetirement = {
+  workspaceId: string
+  runtime: EmbeddedRuntime
+  attempt: number
+  /** Host teardown finished; a retry does not run it again. */
+  disposed: boolean
+  state: "retiring" | "retire_failed"
+  error?: string
+  done: Promise<EmbeddedRetirementResult>
+}
+
+export type EmbeddedRetirementResult = {
+  workspaceId: string
+  state: "retired" | "retire_failed"
+  attempt: number
+  error?: string
+}
+
+export type EmbeddedWorkspaceRuntimeOwner = {
+  workspaceId: string
+  state: "serving" | "retiring" | "retire_failed"
+  attempt: number
+  error?: string
+}
+
+export class EmbeddedWorkspaceRuntimeRetirementUnresolvedError extends Error {
+  readonly code = "embedded_runtime_retirement_unresolved"
+
+  constructor(readonly workspaceId: string, readonly attempt: number, readonly reason: string) {
+    super(
+      `Workspace ${workspaceId} cannot be mounted again: retirement attempt ${attempt} failed (${reason}). `
+        + "Release it again with retry before a replacement runtime is created.",
+    )
+    this.name = "EmbeddedWorkspaceRuntimeRetirementUnresolvedError"
+  }
+}
+
 const hosts = new Map<string, EmbeddedRuntime>()
-const retiring = new Map<string, Promise<void>>()
+const retiring = new Map<string, EmbeddedRetirement>()
 let shutdownGeneration = 0
 
 type EmbeddedWorkspaceRuntimeListener = (
@@ -389,32 +432,57 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
   return runtime.reconcilingSessionMetadata
 }
 
-function disposeRuntime(runtime: EmbeddedRuntime): Promise<void> {
+async function runEmbeddedRetirement(record: EmbeddedRetirement): Promise<EmbeddedRetirementResult> {
+  const { workspaceId, runtime } = record
+  try {
+    if (!record.disposed) {
+      try {
+        await runtime.host.dispose()
+      } finally {
+        announce(runtime, "disposed")
+      }
+      record.disposed = true
+    }
+    // Config resolution and metadata projection begin outside the host's
+    // request scope. Their consumers must finish before shared DB cleanup.
+    await Promise.allSettled([runtime.applying, runtime.reconcilingSessionMetadata])
+    // Only now: while the retirement is unresolved this runtime is still a
+    // process owner, and the diagnostics registry should say so.
+    runtime.diagnosticsOwner?.exit({ reason: "disposed" })
+    retiring.delete(workspaceId)
+    return { workspaceId, state: "retired", attempt: record.attempt }
+  } catch (error) {
+    record.state = "retire_failed"
+    record.error = String(error)
+    log.warn("an embedded workspace runtime retirement failed", {
+      workspace_id: workspaceId,
+      attempt: record.attempt,
+      error: record.error,
+    })
+    return { workspaceId, state: "retire_failed", attempt: record.attempt, error: record.error }
+  }
+}
+
+function disposeRuntime(runtime: EmbeddedRuntime): Promise<EmbeddedRetirementResult> {
   const pending = retiring.get(runtime.workspace.id)
-  if (pending) return pending
+  if (pending) return pending.done
   if (hosts.get(runtime.workspace.id) === runtime) {
     hosts.delete(runtime.workspace.id)
     // From here on nothing new is routed to this runtime; what it still
     // publishes, it publishes while being torn down.
     announce(runtime, "retired")
   }
-  const disposed = runtime.host.dispose()
-  const settled = disposed.then(
-    () => announce(runtime, "disposed"),
-    () => announce(runtime, "disposed"),
-  )
-  const done = Promise.all([
-    disposed,
-    settled,
-    // Config resolution and metadata projection begin outside the host's
-    // request scope. Their consumers must finish before shared DB cleanup.
-    Promise.allSettled([runtime.applying, runtime.reconcilingSessionMetadata]),
-  ]).then(() => { runtime.diagnosticsOwner?.exit({ reason: "disposed" }) })
-  retiring.set(runtime.workspace.id, done)
-  void done.then(() => {
-    if (retiring.get(runtime.workspace.id) === done) retiring.delete(runtime.workspace.id)
-  }, () => { /* A failed retirement keeps its store root fenced. */ })
-  return done
+  const record: EmbeddedRetirement = {
+    workspaceId: runtime.workspace.id,
+    runtime,
+    attempt: 1,
+    disposed: false,
+    state: "retiring",
+    done: Promise.resolve({ workspaceId: runtime.workspace.id, state: "retired", attempt: 1 }),
+  }
+  record.done = runEmbeddedRetirement(record)
+  retiring.set(runtime.workspace.id, record)
+  return record.done
 }
 
 // A shared module needs a way to reach a LOCAL workspace's runtime, and this
@@ -444,8 +512,18 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
   const retirement = retiring.get(ws.id)
   if (retirement) {
-    await retirement
+    if (retirement.state === "retiring") await retirement.done
     assertCurrent()
+    const unresolved = retiring.get(ws.id)
+    // A mount request is not permission to abandon the old owner's cleanup;
+    // a retry is an explicit operation.
+    if (unresolved) {
+      throw new EmbeddedWorkspaceRuntimeRetirementUnresolvedError(
+        ws.id,
+        unresolved.attempt,
+        unresolved.error ?? "retirement did not complete",
+      )
+    }
   }
   const config = input.config ?? "sync"
   const hit = hosts.get(ws.id)
@@ -643,15 +721,21 @@ export function startEmbeddedWorkspaceRuntimeConfigRenewal(options: { now?: () =
   return () => clearInterval(timer)
 }
 
-export function shutdownEmbeddedWorkspaceRuntimes(): Promise<void> {
+export async function shutdownEmbeddedWorkspaceRuntimes(): Promise<{ ok: boolean; results: EmbeddedRetirementResult[] }> {
   shutdownGeneration++
-  // `disposeRuntime` registers each disposal in `retiring`, so the loop's
-  // promises were already awaited below — through the map rather than visibly.
-  // Collecting them keeps every promise owned by the caller of this function.
-  const disposals = Array.from(hosts.values(), (runtime) => disposeRuntime(runtime))
-  const done = Promise.all(disposals.concat(Array.from(retiring.values()))).then(() => {})
-  void done.catch(() => {})
-  return done
+  // Owners already retiring are collected before the live ones start, so
+  // neither is counted twice, and every owner's outcome survives the first
+  // failure instead of being discarded with it.
+  const pending = [
+    ...[...retiring.values()].map((record) => ({ workspaceId: record.workspaceId, done: record.done })),
+    ...[...hosts.values()].map((runtime) => ({ workspaceId: runtime.workspace.id, done: disposeRuntime(runtime) })),
+  ]
+  const settled = await Promise.allSettled(pending.map((owner) => owner.done))
+  const results = settled.map((outcome, index): EmbeddedRetirementResult =>
+    outcome.status === "fulfilled"
+      ? outcome.value
+      : { workspaceId: pending[index]!.workspaceId, state: "retire_failed", attempt: 0, error: String(outcome.reason) })
+  return { ok: results.every((result) => result.state === "retired"), results }
 }
 
 export function embeddedWorkspaceRuntimeActivity() {
@@ -664,7 +748,20 @@ export function embeddedWorkspaceRuntimeActivity() {
     activeWrites += activity.activeWrites
     if (activity.checkpointState !== "active") checkpointing++
   }
-  return { hosts: hosts.size, activeTurns, activeWrites, checkpointing }
+  return { hosts: hosts.size, activeTurns, activeWrites, checkpointing, owners: embeddedWorkspaceRuntimeOwners() }
+}
+
+/** Every workspace this process still owns, whether it is still serving one. */
+export function embeddedWorkspaceRuntimeOwners(): EmbeddedWorkspaceRuntimeOwner[] {
+  return [
+    ...[...hosts.keys()].map((workspaceId) => ({ workspaceId, state: "serving" as const, attempt: 0 })),
+    ...[...retiring.values()].map((record) => ({
+      workspaceId: record.workspaceId,
+      state: record.state,
+      attempt: record.attempt,
+      ...(record.error ? { error: record.error } : {}),
+    })),
+  ].sort((a, b) => a.workspaceId.localeCompare(b.workspaceId))
 }
 
 /**
@@ -679,7 +776,32 @@ export function verifyEmbeddedRuntimeCredential(token: string): RuntimeCredentia
   return hosts.get(workspaceId)?.host.runtimeCredentialIssuer()?.verify(token)
 }
 
-export function releaseEmbeddedWorkspaceRuntime(workspaceId: string): Promise<void> {
+/**
+ * Retire one workspace's runtime. Joins a retirement already under way;
+ * `retry` starts a fresh attempt for one that failed, rerunning only the steps
+ * that did not complete. Without `retry` a failed retirement is reported as it
+ * stands and nothing is started.
+ */
+export function releaseEmbeddedWorkspaceRuntime(
+  workspaceId: string,
+  options: { retry?: boolean } = {},
+): Promise<EmbeddedRetirementResult> {
   const runtime = hosts.get(workspaceId)
-  return runtime ? disposeRuntime(runtime) : retiring.get(workspaceId) ?? Promise.resolve()
+  if (runtime) return disposeRuntime(runtime)
+  const record = retiring.get(workspaceId)
+  if (!record) return Promise.resolve({ workspaceId, state: "retired", attempt: 0 })
+  if (record.state === "retiring") return record.done
+  if (!options.retry) {
+    return Promise.resolve({
+      workspaceId,
+      state: "retire_failed",
+      attempt: record.attempt,
+      ...(record.error ? { error: record.error } : {}),
+    })
+  }
+  record.attempt += 1
+  record.state = "retiring"
+  delete record.error
+  record.done = runEmbeddedRetirement(record)
+  return record.done
 }
