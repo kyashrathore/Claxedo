@@ -244,7 +244,12 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       if (input.leaseId !== undefined && this.turnLeases.get(input.sessionId)?.leaseId !== input.leaseId) {
         throw new AgentRuntimeStaleTurnError(input.sessionId)
       }
-      const result = this.memory.finishTurn(input)
+      // The lease checked above is this store's. `this.memory` is rebuilt from
+      // SQLite after any failed write, which would drop every lease it held,
+      // so it is the projection reducer here and never the fence; forwarding
+      // the lease id would have it reject against a map it never filled.
+      const { leaseId: _fenced, ...projected } = input
+      const result = this.memory.finishTurn(projected)
       this.persistSession(input.sessionId)
       if (input.outcome.status === "failed") this.persistMessage(input.sessionId, input.assistantMessageId)
       return result
@@ -414,7 +419,10 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   updateRecoveryOperation(operation: RecoveryOperation) {
     this.write(() => {
       if (!this.get("SELECT 1 FROM runtime_recovery_operations WHERE operation_id = ?", operation.operationId)) {
-        throw new Error(`Recovery operation ${operation.operationId} was never recorded in this store`)
+        throw new Error(
+          `Recovery operation ${operation.operationId} is not recorded in this store; it was never created here, `
+            + "or it settled with nothing outstanding and aged out",
+        )
       }
       this.run(`
         UPDATE runtime_recovery_operations

@@ -380,7 +380,7 @@ describe("SqliteRuntimeStore", () => {
     expect(store.readRecoveryOperation("op-2")).toBeUndefined()
     expect(store.recordRecoveryOperation(recoveryOperation({ operationId: "op-3" }), { callerId: "caller-b" })).toEqual({ created: true })
     expect(store.listRecoveryOperations({ sessionId: "s1" }).map((op) => op.operationId).sort()).toEqual(["op-1", "op-3"])
-    expect(() => store.updateRecoveryOperation(recoveryOperation({ operationId: "absent" }))).toThrow("never recorded")
+    expect(() => store.updateRecoveryOperation(recoveryOperation({ operationId: "absent" }))).toThrow("is not recorded in this store")
     store.close()
 
     const reopened = new SqliteRuntimeStore({ root })

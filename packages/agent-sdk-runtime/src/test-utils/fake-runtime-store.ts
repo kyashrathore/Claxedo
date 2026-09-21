@@ -69,7 +69,7 @@ export function fakeRuntimeStore(
     },
     updateRecoveryOperation: (operation) => {
       if (!operations.has(operation.operationId)) {
-        throw new Error(`Recovery operation ${operation.operationId} was never recorded in this store`)
+        throw new Error(`Recovery operation ${operation.operationId} is not recorded in this store`)
       }
       operations.set(operation.operationId, operation)
     },

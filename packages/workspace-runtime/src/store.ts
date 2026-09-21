@@ -4530,7 +4530,10 @@ export class RuntimeStore {
         operation.operationId,
       )
     if (result.changes === 0) {
-      throw new Error(`Recovery operation ${operation.operationId} was never recorded in this store`)
+      throw new Error(
+        `Recovery operation ${operation.operationId} is not recorded in this store; it was never created here, `
+          + "or it settled with nothing outstanding and aged out",
+      )
     }
   }
 

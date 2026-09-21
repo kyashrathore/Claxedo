@@ -3515,7 +3515,7 @@ void it("two store handles on one root cannot both create one caller's request",
 
   second.updateRecoveryOperation({ ...recoveryOperation(), state: "running", updatedAt: 40 })
   assert.equal(first.readRecoveryOperation("op-1")?.state, "running")
-  assert.throws(() => first.updateRecoveryOperation(recoveryOperation({ operationId: "never-recorded" })), /never recorded/)
+  assert.throws(() => first.updateRecoveryOperation(recoveryOperation({ operationId: "never-recorded" })), /is not recorded in this store/)
   first.close()
   second.close()
 })
