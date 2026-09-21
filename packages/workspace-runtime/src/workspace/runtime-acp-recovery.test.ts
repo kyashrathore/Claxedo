@@ -38,15 +38,46 @@ for (const recovery of ["resume", "missing", "auth", "unsupported", "approval", 
           if (!observed) await Bun.sleep(5)
         }
         expect(observed).toBe(true)
+        // The caller reads the turn it means to stop and sends that identity
+        // back unchanged; a target it invented would be refused.
+        const inspected = await (await active.request("/session/saved/recovery")).json()
+        expect(inspected.target).toMatchObject({ scope: "turn", sessionId: "saved" })
+
         const previousTimeout = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
+        let operation: Record<string, any>
         try {
+          // The peer holds its prompt, so the cancel notification is never
+          // acknowledged inside this window.
           process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "50"
-          const stopped = await active.request("/session/saved/abort", "POST")
-          expect(await stopped.json()).toMatchObject({ ok: false, status: "recovering" })
+          const stopped = await active.request("/session/saved/recovery", "POST", {
+            requestId: `req-${Date.now()}`,
+            action: "cancel_turn",
+            target: inspected.target,
+            scopeRevision: "1",
+            attempt: 1,
+          })
+          expect(stopped.status).toBe(200)
+          const outcome = await stopped.json()
+          expect(outcome.kind).toBe("operation")
+          operation = outcome.operation
         } finally {
           if (previousTimeout === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
           else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = previousTimeout
         }
+        // Nothing established that the peer stopped, so the operation does not
+        // succeed and execution stays unknown. A "cancelled" answer here would
+        // be the exact lie this contract exists to prevent.
+        expect(operation.state).not.toBe("succeeded")
+        expect(operation.facts.execution.value).toBe("unknown")
+        expect(operation.action).toBe("cancel_turn")
+
+        // The same operation is readable by its receipt, with the same facts.
+        const reread = await (await active.request(`/session/saved/recovery/operations/${operation.operationId}`)).json()
+        expect(reread.operation.facts.execution.value).toBe("unknown")
+
+        // An unresolved cancellation is retained where an owner can see it.
+        const afterStop = await (await active.request("/session/saved/recovery")).json()
+        expect(afterStop.operations.some((row: { operationId: string }) => row.operationId === operation.operationId)).toBe(true)
         expect((await active.request("/session/saved/message", "POST", { parts: [{ type: "text", text: "Must not run." }] })).status).toBe(409)
         expect((await active.request("/session", "POST", { id: "sibling", title: "Sibling acceptance" })).status).toBe(201)
         expect((await active.request("/session/sibling/message", "POST", { parts: [{ type: "text", text: "Independent sibling." }] })).status).toBe(200)

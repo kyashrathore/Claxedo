@@ -76,3 +76,39 @@ for (const terminateFails of [false, true]) {
   })
   }
 }
+
+test("a terminal Codex acknowledged terminating and still lists is owned, not clear", async () => {
+  const fake = await installFakeCodexAppServer({ command: true, terminalSurvives: true })
+  const store = createMemoryRuntimeStore()
+  const adapter = new CodexHarnessAdapter({
+    binary: fake.binary,
+    store,
+    eventHub: createRuntimeEventHub(),
+    codexHome: path.join(fake.directory, "codex-home"),
+  })
+  let commandStarted!: () => void
+  const started = new Promise<void>((resolve) => { commandStarted = resolve })
+  try {
+    const session = await adapter.createSession(fake.directory)
+    const turn = (async () => {
+      for await (const event of executeTestTurn(adapter, session.id, {
+        parts: [{ type: "text", text: "Run a command" }],
+        userMessageId: "user-1",
+        assistantMessageId: "assistant-1",
+        agent: "build",
+        model: { providerID: "codex", modelID: "default" },
+      }, fake.directory)) {
+        if (JSON.stringify(event).includes("cmd-current")) commandStarted()
+      }
+    })()
+    await started
+    // Every terminate was acknowledged, so nothing failed — and Codex's own
+    // inventory still lists this turn's process, which is what decides.
+    await expect(cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex")))
+      .resolves.toMatchObject({ execution: "terminal", cleanup: "owned" })
+    await turn
+  } finally {
+    await adapter.dispose()
+    await fs.rm(fake.directory, { recursive: true, force: true })
+  }
+})

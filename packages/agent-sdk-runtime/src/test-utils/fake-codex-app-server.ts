@@ -14,7 +14,7 @@ import path from "path"
  * - `hold-turn`: the Goal turn stays inProgress until interrupted, so callers
  *   can exercise pause/stop against an in-flight turn.
  */
-export async function installFakeCodexAppServer(options: { command?: boolean; terminateFails?: boolean } = {}) {
+export async function installFakeCodexAppServer(options: { command?: boolean; terminateFails?: boolean; terminalSurvives?: boolean } = {}) {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-goal-"))
   const log = path.join(directory, "requests.jsonl")
   const goalFile = path.join(directory, "goal.json")
@@ -24,6 +24,9 @@ const log = ${JSON.stringify(log)}
 const goalFile = ${JSON.stringify(goalFile)}
 const command = ${JSON.stringify(options.command ?? false)}
 const terminateFails = ${JSON.stringify(options.terminateFails ?? false)}
+// Acknowledges the termination and keeps listing the terminal: a provider that
+// accepted the request and did not carry it out.
+const terminalSurvives = ${JSON.stringify(options.terminalSurvives ?? false)}
 let buffer = ""
 let goal = fs.existsSync(goalFile) ? JSON.parse(fs.readFileSync(goalFile, "utf8")) : null
 let threadKnown = false
@@ -86,7 +89,7 @@ process.stdin.on("data", (chunk) => {
       setTimeout(() => {
         if (terminateFails) write({ id: message.id, error: { message: "terminal cleanup failed" } })
         else {
-          terminated.add(message.params.processId)
+          if (!terminalSurvives) terminated.add(message.params.processId)
           fs.writeFileSync(goalFile + ".terminated", message.params.processId)
           write({ id: message.id, result: {} })
         }
