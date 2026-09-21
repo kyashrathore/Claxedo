@@ -11,7 +11,7 @@ import {
   codexSubagentActivity,
   codexStartedSubagent,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
-import { codexHostSubagentObservation } from "./host-subagent"
+import { projectCodexThreadNotification } from "./thread-projection"
 import type { AgentConfigOption } from "../../index"
 import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
@@ -145,8 +145,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       lease: () => this.idle.lease(),
       threadConfig: (sessionId) => this.threadConfig(sessionId),
       activeThreads: this.activeThreads,
-      projectThreadNotification: (input, threadId, method, params, frame) =>
-        this.projectThreadNotification(input, threadId, method, params, frame),
+      projectThreadNotification: projectCodexThreadNotification,
     })
     this.goals = this.goalController.resource
   }
@@ -360,7 +359,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       cancellation.observe(params)
       if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
       messageQueue = messageQueue.then(async () => {
-        const { parentOwned } = await this.projectThreadNotification(input, threadId, method, params, message)
+        const { parentOwned } = await projectCodexThreadNotification(input, threadId, method, params, message)
         if (method === "turn/started" && parentOwned) {
           turnId = text(asRecord(params.turn)?.id) ?? turnId
           const active = this.host.lifecycle().get(input.sessionId)
@@ -419,86 +418,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         this.activeThreads.delete(threadId)
       }
     }
-  }
-
-  private async projectThreadNotification(
-    input: SdkRuntimeTurnInput,
-    threadId: string,
-    method: string,
-    params: JsonRecord,
-    frame: unknown,
-  ) {
-    const activity = codexSubagentActivity(params.item)
-    if (activity && params.threadId === threadId) {
-      await input.observeSubagent({
-        observation: {
-          observationId: `codex:activity:${activity.id}:${activity.kind}`,
-          harnessExecutionId: threadId,
-          stableCorrelationId: activity.agentThreadId,
-          providerId: activity.agentThreadId,
-          providerKind: "codex",
-          status: activity.kind === "started" ? "running" : "completed",
-          transcript: { kind: "live" },
-          ...(activity.kind === "started" ? { toolCallId: activity.id, toolCallRole: "spawn" as const } : {}),
-          ...(activity.agentPath ? { label: activity.agentPath } : {}),
-        },
-        correlationKeys: [activity.agentThreadId],
-        source: { dir: "in", method, frame },
-      })
-    }
-    const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
-    if (startedSubagent?.parentThreadId === threadId) {
-      await input.observeSubagent({
-        observation: {
-          observationId: `codex:thread-started:${startedSubagent.id}:${startedSubagent.status}`,
-          harnessExecutionId: threadId,
-          stableCorrelationId: startedSubagent.id,
-          providerId: startedSubagent.id,
-          providerKind: "codex",
-          status: startedSubagent.status,
-          transcript: { kind: "live" },
-          ...(startedSubagent.label ? { label: startedSubagent.label } : {}),
-          ...(startedSubagent.subagentType ? { subagentType: startedSubagent.subagentType } : {}),
-          ...(startedSubagent.description ? { description: startedSubagent.description } : {}),
-        },
-        correlationKeys: [startedSubagent.id],
-        source: { dir: "in", method, frame },
-      })
-    }
-    const call = codexCollabAgentCall(asRecord(params.item))
-    if (call?.senderThreadId === threadId) {
-      await Promise.all(call.receiverThreadIds.map((receiverThreadId) => input.observeSubagent({
-        observation: {
-          observationId: `codex:${method}:${call.id}:${receiverThreadId}:${call.statuses[receiverThreadId] ?? "edge"}`,
-          harnessExecutionId: threadId,
-          stableCorrelationId: receiverThreadId,
-          toolCallId: call.id,
-          toolCallRole: call.toolCallRole,
-          providerId: receiverThreadId,
-          providerKind: "codex",
-          transcript: { kind: "live" },
-          ...(call.statuses[receiverThreadId]
-            ? { status: call.statuses[receiverThreadId] }
-            : call.toolCallRole === "spawn" && method === "item/started"
-              ? { status: "pending" as const }
-              : {}),
-          ...(call.prompt ? { description: call.prompt } : {}),
-          subagentType: call.model ?? "codex",
-        },
-        correlationKeys: [receiverThreadId],
-        source: { dir: "in", method, frame },
-      })))
-    }
-    const hostSpawn = method === "item/completed" ? codexHostSubagentObservation(threadId, asRecord(params.item)) : undefined
-    if (hostSpawn) await input.observeSubagent({ observation: hostSpawn, correlationKeys: [], source: { dir: "in", method, frame } })
-    const eventThreadId = text(params.threadId) ?? text(asRecord(params.thread)?.id)
-    const parentOwned = !eventThreadId || eventThreadId === threadId
-    input.ingest({ source: CODEX_SOURCE, method, payload: params }, {
-      dir: "in",
-      method,
-      frame,
-    }, parentOwned ? { kind: "parent" } : { kind: "child", correlationKey: eventThreadId })
-    return { parentOwned, eventThreadId }
   }
 
   readRuntimeHealth(): AgentHarnessAdapterHealth {

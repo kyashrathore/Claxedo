@@ -65,6 +65,7 @@ import { AcpElicitationInteractions, hasLiveAcpElicitation } from "./elicitation
 import { questionReplied } from "../../compat-events"
 import { answerAcpPermission } from "./permission-grants"
 import { cancelPendingPermissions, commitPermissionReply, type PermissionReplyPort } from "./permission-reply"
+import { cancelAcpTurn } from "./cancellation"
 import { listCommands } from "../../command-discovery"
 import { Log } from "../../log"
 import { resolvedMcpServers, toAcpMcpServers } from "../../mcp-resolver"
@@ -542,70 +543,24 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return this.store.getMessages(binding.sessionId)
   }
 
-  async cancelTurn(
+  cancelTurn(
     binding: AgentExecutionBinding,
     input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number },
   ): Promise<AdapterCancelOutcome> {
     requireAgentExecutionBinding(binding)
-    const { sessionId: id } = binding
+    const id = binding.sessionId
     const directory = requireWorkspaceDirectory(binding.directory)
     log.info("cancelTurn: called", { id, directory, turnId: input.turnId })
-    const unresolved = (code: RecoveryErrorCode, message: string): AdapterCancelOutcome =>
-      ({ execution: "unknown", cleanup: "unknown", error: { code, message } })
-    const agentSessionId = this.store.getAgentSessionId(id)
-    if (!agentSessionId) {
-      log.info("cancelTurn: session not found in store", { id })
-      const message = "ACP session could not be cancelled because no agent session is attached."
-      this.store.markSessionInterrupted(id, message)
-      return unresolved("ownership_unverified", message)
-    }
-    const proc = this.entryForSession(id)?.proc
-    if (!proc?.alive) {
-      log.info("cancelTurn: no alive process for session", { id, directory })
-      const message = "ACP session could not be cancelled because its process is no longer alive."
-      this.store.markSessionInterrupted(id, message, agentSessionId)
-      return unresolved("provider_unreachable", message)
-    }
-    // ACP runs its tools inside the agent, which publishes no inventory of
-    // them, so nothing this adapter can read establishes a turn's cleanup.
-    const cleanup = "unknown" as const
-    try {
-      cancelPendingPermissions(this.permissionReplyPort(), proc, id, agentSessionId)
-      await proc.cancelAndWait(agentSessionId)
-    } catch (err) {
-      log.info("cancelTurn: cancellation outcome uncertain", { id, directory, err })
-      const message = "ACP session cancellation was not acknowledged; its outcome is uncertain."
-      // A live original turn owns its recovering status and eventual terminal
-      // event. Do not queue a restart error for its next successful prompt.
-      if (!this.lifecycle().activeTurns.has(id)) this.store.markSessionInterrupted(id, message, agentSessionId)
-      return unresolved("provider_unreachable", message)
-    }
-    // The agent acknowledged the cancel notification, which ACP defines as
-    // received, not as stopped. The prompt promise settling is what this owner
-    // can actually witness, so the answer waits for it inside the deadline.
-    const settled = await Promise.race([
-      this.lifecycle().whenIdle(id).then(() => true, () => true),
-      new Promise<false>((resolve) => {
-        const timer = setTimeout(() => resolve(false), Math.max(0, input.deadlineAt - Date.now()))
-        input.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(false) }, { once: true })
-      }),
-    ])
-    if (!settled) return {
-      execution: "running",
-      cleanup,
-      error: {
-        code: "cancellation_timeout",
-        message: `ACP session ${id} acknowledged the cancel but its prompt had not settled when the deadline passed.`,
-      },
-    }
-    // A remote agent's prompt settles when this end stops hearing from it,
-    // which is a fact about the wire rather than about the agent. Only `stdio`
-    // is a child of this process.
-    if (proc.transportKind !== "stdio") return unresolved(
-      "provider_unreachable",
-      `ACP session ${id} is served over ${proc.transportKind}; a settled prompt here does not establish that the remote agent stopped.`,
-    )
-    return { execution: "terminal", cleanup }
+    return cancelAcpTurn({
+      sessionId: id,
+      agentSessionId: this.store.getAgentSessionId(id),
+      proc: this.entryForSession(id)?.proc ?? undefined,
+      permissions: this.permissionReplyPort(),
+      whenIdle: (sessionId) => this.lifecycle().whenIdle(sessionId),
+      hasActiveTurn: (sessionId) => this.lifecycle().activeTurns.has(sessionId),
+      markInterrupted: (message, agentSessionId) => this.store.markSessionInterrupted(id, message, agentSessionId),
+      log: (event, details) => log.info(event, { directory, ...details }),
+    }, input)
   }
 
   async forkSession(binding: AgentExecutionBinding, _messageId: string, childSessionId?: string): Promise<{ id: string }> {

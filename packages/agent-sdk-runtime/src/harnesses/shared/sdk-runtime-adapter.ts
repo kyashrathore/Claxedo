@@ -85,7 +85,7 @@ import type {
 import { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
 import { createSubagentChildren } from "./subagent-lifecycle"
-import { cancellationFailure, stopFailure, type CancellationFailure } from "./cancellation-facts"
+import { cancelSdkRuntimeTurn, turnTerminalMessage } from "./sdk-runtime-cancellation"
 import {
   admissibleSubagentObservation,
   openSubagentTranscript,
@@ -719,21 +719,23 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       router.dispose()
     }
 
+    const terminalIdentity = () => ({
+      assistantMessageId: router.assistantMessageId(),
+      sessionId: id,
+      parentId: input.userMessageId ?? input.parentMessageId ?? id,
+      agent: input.agent,
+      ...(input.model ? { model: input.model } : {}),
+      directory,
+      created: router.created(),
+      ...(input.variant ? { variant: input.variant } : {}),
+    })
     if (abort.signal.reason === EXPLICIT_TURN_ABORT_REASON) {
       const source = { dir: "in" as const, method: "prompt.aborted" }
       yield* router.terminalizeParent("Aborted by user", source)
-      const updated = messageUpdated(buildAssistantMessage({
-        id: router.assistantMessageId(),
-        sessionID: id,
-        parentID: input.userMessageId ?? input.parentMessageId ?? id,
-        agent: input.agent,
-        model: input.model,
-        directory,
-        created: router.created(),
-        completed: Date.now(),
-        error: { name: "MessageAbortedError", data: { message: "Aborted by user" } },
-        variant: input.variant,
-      }))
+      const updated = messageUpdated(buildAssistantMessage(turnTerminalMessage(
+        terminalIdentity(),
+        { name: "MessageAbortedError", data: { message: "Aborted by user" } },
+      )))
       this.store.appendEvent({
         ...fenced,
         sessionId: id,
@@ -751,18 +753,10 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
     if (!promptError) return
     for (const event of router.terminalizeParent(promptError, { dir: "in", method: "prompt.error.open-tools", frame: { message: promptError } })) yield event
-    const updated = messageUpdated(buildAssistantMessage({
-      id: router.assistantMessageId(),
-      sessionID: id,
-      parentID: input.userMessageId ?? input.parentMessageId ?? id,
-      agent: input.agent,
-      model: input.model,
-      directory,
-      created: router.created(),
-      completed: Date.now(),
-      error: { name: "UnknownError", data: firstTurnErrorData(promptError) },
-      variant: input.variant,
-    }))
+    const updated = messageUpdated(buildAssistantMessage(turnTerminalMessage(
+      terminalIdentity(),
+      { name: "UnknownError", data: firstTurnErrorData(promptError) },
+    )))
     this.store.appendEvent({
       ...fenced,
       sessionId: id,
@@ -792,43 +786,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return await steerActiveTurn(this.lifecycle(), binding.sessionId, input)
   }
 
-  async cancelTurn(
+  cancelTurn(
     binding: AgentExecutionBinding,
     input: { turnId: string; assistantMessageId: string; signal: AbortSignal; deadlineAt: number },
   ): Promise<AdapterCancelOutcome> {
     requireAgentExecutionBinding(binding)
-    const id = binding.sessionId
-    const lifecycle = this.lifecycle()
-    const turn = lifecycle.get(id)
-    // No local entry is not evidence that nothing is running: this adapter's
-    // process may have restarted under a turn the store still holds open.
-    if (!lifecycle.abort(id, { signal: input.signal, deadlineAt: input.deadlineAt })) {
-      return { execution: "unknown", cleanup: "unknown" }
-    }
-    // Leaving the busy section is what makes a replacement turn safe to admit,
-    // so it is the only thing here that establishes local termination. A turn
-    // whose cleanup rejected still left it, and that rejection is a fact about
-    // the cancellation, reported below rather than thrown at the caller.
-    let closeFailure: CancellationFailure | undefined
-    const settled = lifecycle.whenIdle(id).then(() => true, (error: unknown) => {
-      closeFailure = cancellationFailure(error, "provider_unreachable")
-      return true
-    })
-    const left = await Promise.race([settled, stoppedWaiting(input)])
-    const cleanup = turn?.stops?.cleanup ?? "unknown"
-    const failure = stopFailure(turn?.stops) ?? closeFailure
-    if (!left) return {
-      execution: "running",
-      cleanup,
-      error: failure ?? {
-        code: "cancellation_timeout",
-        message: `${this.driver.type} turn ${input.turnId} had not left its producer when the deadline passed`,
-      },
-    }
-    // The producer left, but a cancellation the provider never accepted leaves
-    // whatever it was running upstream unaccounted for.
-    if (failure) return { execution: "unknown", cleanup, error: failure }
-    return { execution: "terminal", cleanup }
+    return cancelSdkRuntimeTurn(this.lifecycle(), this.driver.type, binding.sessionId, input)
   }
 
   async listCommands(_directory: string): Promise<AgentCommand[]> { return listCommands() }
@@ -931,11 +894,3 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
 }
 
-/** Resolves false at the caller's deadline, or as soon as the caller stops waiting. */
-function stoppedWaiting(input: { signal: AbortSignal; deadlineAt: number }): Promise<false> {
-  return new Promise((resolve) => {
-    if (input.signal.aborted) return resolve(false)
-    const timer = setTimeout(() => resolve(false), Math.max(0, input.deadlineAt - Date.now()))
-    input.signal.addEventListener("abort", () => { clearTimeout(timer); resolve(false) }, { once: true })
-  })
-}
