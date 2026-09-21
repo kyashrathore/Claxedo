@@ -12,6 +12,7 @@ import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { DAEMON_CAPABILITY_HEADER } from "./daemon-admission"
+import { DAEMON_PROTOCOL_HEADER } from "./local-app"
 import { openDaemonSocket, testDaemon } from "./test-support/daemon"
 
 /**
@@ -135,15 +136,32 @@ describe("startLocalServer", () => {
       // The capability and the lifecycle bearer are the same secret presented
       // under the two headers the daemon reads them from.
       [DAEMON_CAPABILITY_HEADER]: "shutdown-test",
+      [DAEMON_PROTOCOL_HEADER]: "1",
     }
     const acquired = await fetch(`${base}/leases`, { method: "POST", headers })
     expect(acquired.status).toBe(201)
     const lease = await acquired.json() as { id: string }
-    const response = await fetch(`${base}/shutdown`, {
-      method: "POST", headers, body: JSON.stringify({ leaseId: lease.id }),
+    expect((await fetch(`${base}/leases/${lease.id}`, { method: "DELETE", headers })).status).toBe(200)
+
+    const inspected = await (await fetch(`${base}/recovery`, { headers })).json() as {
+      scopeRevision: string
+      target: unknown
+    }
+    const response = await fetch(`${base}/recovery`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        requestId: "shutdown-1",
+        action: "drain_daemon",
+        target: inspected.target,
+        scopeRevision: inspected.scopeRevision,
+        attempt: 1,
+      }),
     })
+    // The acknowledgment is delivered over the same connection the drain runs
+    // on, which is the property this test exists for.
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ shutdownRequested: true, released: true })
+    expect((await response.json() as { kind: string }).kind).toBe("operation")
     await server.stop()
     await expect(fetch(`${base}/state`, { headers })).rejects.toThrow()
   }, 30_000)

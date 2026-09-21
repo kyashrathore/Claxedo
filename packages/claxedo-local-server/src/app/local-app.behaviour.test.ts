@@ -20,6 +20,7 @@ import { createLocalCredentialBroker } from "../credentials/broker"
 import { providerProjection } from "@claxedo/agent-sdk-runtime"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
+import { DAEMON_PROTOCOL_HEADER } from "./local-app"
 
 /**
  * What the workspace runtime proxy answers in place of a runtime, for the one
@@ -310,48 +311,97 @@ describe("local composition — health and telemetry", () => {
 
     const acquired = await local.request("http://localhost/api/claxedo/daemon/leases", {
       method: "POST",
-      headers: { authorization: "Bearer installation-secret" },
+      headers: { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" },
     })
     expect(acquired.status).toBe(201)
     const lease = await acquired.json() as { id: string }
     expect((await local.request(`http://localhost/api/claxedo/daemon/leases/${lease.id}`, {
       method: "PUT",
-      headers: { authorization: "Bearer installation-secret" },
+      headers: { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" },
     })).status).toBe(200)
     expect(await (await local.request(`http://localhost/api/claxedo/daemon/leases/${lease.id}`, {
       method: "DELETE",
-      headers: { authorization: "Bearer installation-secret" },
+      headers: { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" },
     })).json()).toEqual({ released: true })
 
-    const replacementLease = await (await local.request("http://localhost/api/claxedo/daemon/leases", {
+    // A caller that does not state the protocol is one built before this
+    // daemon's, and is told so rather than served.
+    expect((await local.request("http://localhost/api/claxedo/daemon/leases", {
       method: "POST",
       headers: { authorization: "Bearer installation-secret" },
-    })).json() as { id: string }
-    expect((await local.request("http://localhost/api/claxedo/daemon/shutdown", {
+    })).status).toBe(426)
+  })
+
+  test("the daemon drains through a machine operation, and a lease can no longer hold it open", async () => {
+    const identity = {
+      token: "installation-secret",
+      protocol: 1,
+      generation: "generation-1",
+      pid: 42,
+    }
+    const onStop = vi.fn()
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: () => ({
+        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
+        runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0, owners: [] },
+        owners: [],
+        residencyPins: 0,
+        replacementBlockers: 0,
+      }),
+      onStop,
+      machine: { machineId: "local", generation: "generation-1" },
+      pollIntervalMs: 5,
+    })
+    lifecycle.start()
+    const local = app({ daemon: { identity, lifecycle } })
+    const headers = { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" }
+
+    const inspected = await (await local.request("http://localhost/api/claxedo/daemon/recovery", { headers })).json() as {
+      scopeRevision: string
+      target: unknown
+      owners: unknown[]
+    }
+    expect(inspected.owners).toEqual([])
+
+    const submitted = await local.request("http://localhost/api/claxedo/daemon/recovery", {
       method: "POST",
-      headers: {
-        authorization: "Bearer wrong",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ leaseId: replacementLease.id }),
-    })).status).toBe(401)
-    expect((await local.request("http://localhost/api/claxedo/daemon/shutdown", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer installation-secret",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({}),
-    })).status).toBe(400)
-    expect(await (await local.request("http://localhost/api/claxedo/daemon/shutdown", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer installation-secret",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ leaseId: replacementLease.id }),
-    })).json()).toEqual({ shutdownRequested: true, released: true })
-    expect(onIdle).toHaveBeenCalledTimes(1)
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "req-1",
+        action: "drain_daemon",
+        target: inspected.target,
+        scopeRevision: inspected.scopeRevision,
+        attempt: 1,
+      }),
+    })
+    expect(submitted.status).toBe(200)
+    const outcome = await submitted.json() as { kind: string; operation: { operationId: string; state: string } }
+    expect(outcome.kind).toBe("operation")
+
+    // The gate is held, so a replacement launcher cannot take a lease that
+    // would keep this daemon resident past the drain it just authorized.
+    expect((await local.request("http://localhost/api/claxedo/daemon/leases", { method: "POST", headers })).status).toBe(409)
+
+    const read = await local.request(
+      `http://localhost/api/claxedo/daemon/recovery/operations/${outcome.operation.operationId}`,
+      { headers },
+    )
+    expect(read.status).toBe(200)
+    expect((await read.json() as { operation: { operationId: string } }).operation.operationId)
+      .toBe(outcome.operation.operationId)
+
+    // An id this daemon never held names no receipt that could have lapsed.
+    expect((await local.request("http://localhost/api/claxedo/daemon/recovery/operations/nope", { headers })).status)
+      .toBe(410)
+
+    await lifecycle.recovery.settled()
+    // The drain establishes that nothing is owned; the lifecycle then stops
+    // without the handoff grace, because a held gate is the launcher saying it
+    // is not coming back.
+    for (let waited = 0; waited < 200 && onStop.mock.calls.length === 0; waited += 10) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    expect(onStop).toHaveBeenCalledTimes(1)
   })
 
   test("telemetry rejects a body that does not match the schema", async () => {

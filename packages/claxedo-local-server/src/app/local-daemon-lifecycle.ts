@@ -197,11 +197,22 @@ export function createLocalDaemonLifecycle(options: {
   const leases = new Map<string, LocalDaemonLease>()
   const runs = new Map<string, MachineOperationRun>()
   let operationStore: DaemonOperationStore | undefined
+  /**
+   * Why this machine has no durable receipts. Recovery stays available without
+   * them — a daemon whose database will not open is exactly when an operator
+   * needs to inspect and contain it — and every receipt it issues says volatile.
+   */
+  let storeUnavailable: Error | undefined
   let gate: MachineRecoveryGate | undefined
 
   function operations() {
-    if (!options.machine.operations) return undefined
-    operationStore ??= options.machine.operations()
+    if (!options.machine.operations || storeUnavailable) return undefined
+    try {
+      operationStore ??= options.machine.operations()
+    } catch (error) {
+      storeUnavailable = error instanceof Error ? error : new Error(String(error))
+      return undefined
+    }
     return operationStore
   }
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -303,9 +314,14 @@ export function createLocalDaemonLifecycle(options: {
   }
 
   function persist(operation: RecoveryOperation, request: RecoveryRequest, caller: MachineRecoveryCaller) {
-    if (!options.machine.operations) return { receipt: "volatile" as const }
+    const store = operations()
+    if (!store) {
+      return storeUnavailable
+        ? { receipt: "volatile" as const, failure: storeFailure(storeUnavailable, request.target, "ack", now()) }
+        : { receipt: "volatile" as const }
+    }
     try {
-      const recorded = operations()!.record(operation, caller, request)
+      const recorded = store.record(operation, caller, request)
       if (recorded.created) return { receipt: "durable" as const }
       return { receipt: "durable" as const, existing: recorded.existing }
     } catch (error) {
@@ -314,9 +330,10 @@ export function createLocalDaemonLifecycle(options: {
   }
 
   function commit(operation: RecoveryOperation) {
-    if (!options.machine.operations || operation.receipt === "volatile") return operation
+    const store = operations()
+    if (!store || operation.receipt === "volatile") return operation
     try {
-      operations()!.update(operation)
+      store.update(operation)
       return operation
     } catch (error) {
       return {
@@ -360,7 +377,7 @@ export function createLocalDaemonLifecycle(options: {
       residencyPins: work.residencyPins + leases.size,
       ...(gate ? { gate } : {}),
       operations: [...runs.values()].map((run) => run.operation),
-      receipt: options.machine.operations ? "durable" : "volatile",
+      receipt: options.machine.operations && !storeUnavailable ? "durable" : "volatile",
     }
   }
 
@@ -384,8 +401,15 @@ export function createLocalDaemonLifecycle(options: {
           message: `the drain deadline passed with ${localDaemonScopePreview(work).resources.join("; ")} still owned`,
           at,
         }
+        // Not `failed`: the drain did what it promised — it gated the machine
+        // and waited to its deadline. What is owed is a decision, so the
+        // blockers are named and the two actions that can follow are offered.
         run.operation = commit({
-          ...finalizeRecoveryOperation({ ...run.operation, updatedAt: at, initiatingError: blocked }, facts(work, at)),
+          ...run.operation,
+          state: "needs_action",
+          updatedAt: at,
+          facts: facts(work, at),
+          initiatingError: blocked,
           nextActions: [
             { action: "drain_daemon", scopePreviewRequired: true, reason: "wait for the named owners again" },
             { action: "stop_daemon", scopePreviewRequired: true, reason: "stop this daemon and the owners it still holds" },
@@ -451,6 +475,22 @@ export function createLocalDaemonLifecycle(options: {
     }
 
     const existingRun = gate && gate.operationId !== request.linkedOperationId ? runs.get(gate.operationId) : undefined
+    // A repeated request id from the same caller is the same command or a
+    // conflict; it is never coalesced, because coalescing would serve one
+    // caller an operation it did not ask for under an id it reused.
+    if (existingRun && existingRun.operation.requestId === request.requestId && existingRun.callers.has(caller.callerId)) {
+      if (recoveryIntentEquals(request, requestOf(existingRun.operation))) {
+        return { kind: "operation", operation: existingRun.operation }
+      }
+      return {
+        kind: "refused",
+        refusal: {
+          kind: "intent_conflict",
+          message: "this request id was already used for a different machine operation",
+          requestId: request.requestId,
+        },
+      }
+    }
     if (existingRun) {
       if (request.action === "drain_daemon" && existingRun.operation.action === "drain_daemon") {
         existingRun.callers.add(caller.callerId)
