@@ -207,6 +207,14 @@ export type WorkspaceRelayBackpressureOptions = {
   directHttpTimeoutMs?: number
   directHttpConcurrency?: number
   /**
+   * Waiters allowed in the direct-HTTP concurrency queue before new requests
+   * are refused 429. Each waiter pins its Request while it waits, so the
+   * queue is what turns `directHttpConcurrency` into a memory bound rather
+   * than only a latency one. Default 64; unused when no concurrency limit is
+   * configured.
+   */
+  directHttpQueueMax?: number
+  /**
    * In-flight non-stream tunnel HTTP requests admitted per host tunnel.
    * Default 32. A response that starts as `text/event-stream` leaves this
    * budget for `tunnelActiveStreamMax`.
@@ -298,6 +306,7 @@ const TUNNEL_REQUEST_BODY_MAX_BYTES_DEFAULT = 16 * 1024 * 1024
 const DIRECT_HTTP_REQUEST_BODY_MAX_BYTES_DEFAULT = 16 * 1024 * 1024
 const TUNNEL_HTTP_RESPONSE_TIMEOUT_MS_DEFAULT = 30_000
 const DIRECT_HTTP_TIMEOUT_MS_DEFAULT = 30_000
+const DIRECT_HTTP_QUEUE_MAX_DEFAULT = 64
 const UPSTREAM_WS_OPEN_TIMEOUT_MS_DEFAULT = 10_000
 // The two bounds a client's pre-open frames are held against, each enforced on
 // its own: the queue costs both an array entry per frame and the payload bytes,
@@ -427,37 +436,69 @@ function resetSlowConsumerStats(stats: SlowConsumerStats) {
 }
 
 type DirectHttpLimiter = {
-  acquire(): Promise<() => void>
+  /**
+   * Resolves a release function once a concurrency slot is held, or
+   * `undefined` when the wait queue is already full or `signal` aborted while
+   * waiting. The queue is bounded because a waiter pins its whole Request —
+   * unbounded queueing would let memory grow past the very limit the slots
+   * exist to enforce.
+   */
+  acquire(signal?: AbortSignal): Promise<(() => void) | undefined>
 }
 
-function createDirectHttpLimiter(limit: number | undefined): DirectHttpLimiter | undefined {
+function createDirectHttpLimiter(limit: number | undefined, queueMax: number | undefined): DirectHttpLimiter | undefined {
   if (!Number.isInteger(limit) || !limit || limit <= 0) return undefined
   const max = limit
+  const queuedMax = Number.isInteger(queueMax) && queueMax! > 0 ? queueMax! : DIRECT_HTTP_QUEUE_MAX_DEFAULT
   let active = 0
-  const queue: Array<() => void> = []
+  const queue: Array<{
+    resolve: (release: (() => void) | undefined) => void
+    onAbort: () => void
+    signal?: AbortSignal
+  }> = []
+
+  function makeRelease() {
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      active = Math.max(0, active - 1)
+      drain()
+    }
+  }
 
   function drain() {
-    if (active >= max) return
-    const next = queue.shift()
-    if (!next) return
-    active++
-    next()
+    while (active < max) {
+      const next = queue.shift()
+      if (!next) return
+      active++
+      next.signal?.removeEventListener("abort", next.onAbort)
+      next.resolve(makeRelease())
+    }
   }
 
   return {
-    async acquire() {
-      if (active < max) {
+    acquire(signal) {
+      if (signal?.aborted) return Promise.resolve(undefined)
+      if (active < max && queue.length === 0) {
         active++
-      } else {
-        await new Promise<void>((resolve) => queue.push(resolve))
+        return Promise.resolve(makeRelease())
       }
-      let released = false
-      return () => {
-        if (released) return
-        released = true
-        active = Math.max(0, active - 1)
-        drain()
-      }
+      if (queue.length >= queuedMax) return Promise.resolve(undefined)
+      return new Promise((resolve) => {
+        const waiter = {
+          resolve,
+          signal,
+          onAbort: () => {
+            const index = queue.indexOf(waiter)
+            if (index === -1) return
+            queue.splice(index, 1)
+            resolve(undefined)
+          },
+        }
+        queue.push(waiter)
+        signal?.addEventListener("abort", waiter.onAbort, { once: true })
+      })
     },
   }
 }
@@ -666,6 +707,9 @@ function relayCorsHeaders(request: Request, originAllowed: RelayOriginMatcher, i
   result.delete("access-control-allow-methods")
   result.delete("access-control-expose-headers")
   result.delete("access-control-max-age")
+  // Every workspace shares this relay's origin: an upstream Set-Cookie would
+  // be replayed to other workspaces' requests through the relay.
+  result.delete("set-cookie")
   const origin = allowedCorsOrigin(request.headers.get("origin"), originAllowed)
   if (origin) {
     result.set("access-control-allow-origin", origin)
@@ -1078,6 +1122,13 @@ export const __slowConsumerInternalsForTest = {
   createSlowConsumerStats,
 }
 
+// Testing-only export: a queued waiter's abort is a socket-level event that
+// an end-to-end test cannot sequence against a queue fill, so the limiter's
+// bookkeeping is asserted directly.
+export const __directHttpInternalsForTest = {
+  createDirectHttpLimiter,
+}
+
 async function tunnelHttpRequest(input: {
   ws: RelayHostTunnelWebSocket
   request: Request
@@ -1200,9 +1251,25 @@ async function tunnelHttpRequest(input: {
       corsHeaders: (upstream) => relayCorsHeaders(input.request, input.originAllowed, upstream),
     })
   })
-  const body = input.request.method === "GET" || input.request.method === "HEAD"
-    ? undefined
-    : await readBoundedBody(input.request, input.requestBodyMaxBytes)
+  let body: Awaited<ReturnType<typeof readBoundedBody>>
+  try {
+    body = input.request.method === "GET" || input.request.method === "HEAD"
+      ? undefined
+      : await readBoundedBody(input.request, input.requestBodyMaxBytes)
+  } catch {
+    // A client that vanishes mid-upload fails the read; its pending slot has
+    // to go now rather than at the response timeout.
+    const entry = input.ws.data.pending.get(requestId)
+    if (entry) clearPendingTimers(entry)
+    deletePendingHttpResponse(input.ws, requestId)
+    return corsJsonError(
+      input.request,
+      input.originAllowed,
+      "request_body_unreadable",
+      "Tunnel request body could not be read",
+      400,
+    )
+  }
   if (body && "tooLarge" in body) {
     const entry = input.ws.data.pending.get(requestId)
     if (entry) clearPendingTimers(entry)
@@ -1314,11 +1381,22 @@ async function directHttpRequest(input: {
         // the VM may legitimately need session cookies.
         hostTunnel: false,
         upstreamHeaders: input.upstreamHeaders,
-        signal: controller.signal,
+        // Client disconnect cancels the upstream fetch the same way the
+        // timeout does — a gone caller must not keep a host request alive.
+        signal: AbortSignal.any([controller.signal, input.request.signal]),
       },
     )
     const limiter = input.limiter
-    const release = limiter ? await span("direct-http-queue", () => limiter.acquire()) : undefined
+    const release = limiter ? await span("direct-http-queue", () => limiter.acquire(input.request.signal)) : undefined
+    if (limiter && !release) {
+      return corsJsonError(
+        input.request,
+        input.originAllowed,
+        "too_many_in_flight",
+        "The relay has too many queued workspace requests",
+        429,
+      )
+    }
     try {
       // The body is buffered inside the concurrency slot, not before it.
       // Reading first let every queued request hold its whole body at once, so
@@ -1338,19 +1416,11 @@ async function directHttpRequest(input: {
       }
       const upstream = await span("upstream-fetch", async () => await fetch(input.targetUrl, init))
       const headers = relayCorsHeaders(input.request, input.originAllowed, upstream.headers)
-      const contentType = upstream.headers.get("content-type") ?? ""
-      const streamResponse =
-        contentType.includes("text/event-stream") ||
-        contentType.includes("application/octet-stream")
-      if (streamResponse) {
-        return new Response(upstream.body, {
-          status: upstream.status,
-          statusText: upstream.statusText,
-          headers,
-        })
-      }
-      const body = await upstream.arrayBuffer()
-      return new Response(body, {
+      // Every response streams through: buffering an ordinary body in full
+      // made one response cost its whole size in relay memory, while a size
+      // cap would break legitimate large transfers. Stream backpressure is
+      // the bound instead — an unconsumed body cannot accumulate here.
+      return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
         headers,
@@ -1510,7 +1580,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
   const hostTunnels = new Map<string, RelayHostTunnelWebSocket>()
   const relayClients = new Set<RelayClientWebSocket>()
   const hostTunnelRegistrations = new Map<string, HostTunnelRegistrationTracker>()
-  const directHttpLimiter = createDirectHttpLimiter(bunOptions.directHttpConcurrency)
+  const directHttpLimiter = createDirectHttpLimiter(bunOptions.directHttpConcurrency, bunOptions.directHttpQueueMax)
   // 全 socket 发送路径共用的 buffered-byte 上限：同一阈值、同一
   // relayOverBackpressureLimit 判定，policy（拒绝/关闭/跳过）由各调用点定。
   const socketMaxBufferedBytes = bunOptions.webSocketBufferedAmountMaxBytes ?? WS_BUFFERED_AMOUNT_MAX_BYTES_DEFAULT

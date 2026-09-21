@@ -9,6 +9,7 @@ import {
   parseWorkspaceRelayTarget,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
+  workspaceRelayTargetUrl,
   type WorkspaceRelayAuditEvent,
   type WorkspaceRelayOptions,
 } from "./server"
@@ -491,6 +492,34 @@ describe("workspace relay server", () => {
     await expect(res.text()).resolves.toBe("ok")
   })
 
+  test("strips an upstream Set-Cookie while emitting only relay-owned CORS", async () => {
+    const relay = await harness({
+      fetch: (() => Promise.resolve(new Response("ok", {
+        headers: {
+          // Every workspace shares this relay's origin: an upstream cookie
+          // would be replayed to other workspaces' requests through it.
+          "set-cookie": "session=upstream; Path=/",
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true",
+          "content-type": "text/plain",
+        },
+      }))) as unknown as typeof fetch,
+    })
+
+    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        authorization: `Bearer ${await relay.token()}`,
+        origin: "http://localhost:4482",
+      },
+    })
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get("set-cookie")).toBeNull()
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:4482")
+    expect(res.headers.get("access-control-allow-credentials")).toBeNull()
+    await expect(res.text()).resolves.toBe("ok")
+  })
+
   test("rejects missing or mismatched Runtime Access Tokens before forwarding", async () => {
     const relay = await harness()
     const missing = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health")
@@ -877,6 +906,83 @@ describe("workspace relay server", () => {
       method: "GET",
       path: "/workspaces/ws_1/api/wr/health",
     })
+  })
+
+  test("strips the request Cookie for a local-worktree target at the shared forwarder", async () => {
+    const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
+    directory.registerHostTunnel({ hostId: "host_1", workspaceIds: ["ws_1"] })
+    let forwardedCookie: string | null = "unset"
+    const relay = await harness({
+      backing: "local-worktree",
+      directory,
+      fetch: ((_url: string | URL | Request, init?: RequestInit) => {
+        forwardedCookie = new Request("http://relay.test/", init).headers.get("cookie")
+        return Promise.resolve(new Response("ok"))
+      }) as unknown as typeof fetch,
+    })
+
+    try {
+      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: {
+          authorization: `Bearer ${await relay.token()}`,
+          cookie: "session=relay",
+        },
+      })
+
+      expect(res.status).toBe(200)
+      // The tunnel contract is keyed on the target's backing, not on which
+      // adapter reached the forwarder: the host machine's cookie jar may be
+      // shared with the browser, so the relay never replays cookies to it.
+      expect(forwardedCookie).toBeNull()
+    } finally {
+      directory.dispose()
+    }
+  })
+
+  test("denies a resolved target outside the allowed destinations without fetching it", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    let fetched = false
+    // A programmatic resolveTarget never passed through the resolver wire
+    // parse, so the destination rule is re-applied at authorize time.
+    const app = createWorkspaceRelay({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://metadata.internal.test",
+        backing: "cloud-vm",
+      }),
+      fetch: (() => {
+        fetched = true
+        return Promise.resolve(new Response("ok"))
+      }) as unknown as typeof fetch,
+    })
+
+    const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        authorization: `Bearer ${await mintRuntimeAccessToken({
+          principalKind: "user",
+          actorId: "actor_1",
+          actorKind: "human",
+          orgId: "org_1",
+          workspaceId: "ws_1",
+          hostId: "host_1",
+          role: "editor",
+        }, runtime.privateKey, "EdDSA")}`,
+      },
+    })
+
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "relay_target_unavailable",
+        message: "Workspace relay target is unavailable",
+      },
+    })
+    expect(fetched).toBe(false)
   })
 
   describe("/.well-known/jwks.json", () => {
@@ -2159,5 +2265,68 @@ describe("parseWorkspaceRelayTarget", () => {
   test("refuses a backing that names no placement", () => {
     expect(parseWorkspaceRelayTarget({ ...row, backing: "user-hosted" })).toBeUndefined()
     expect(parseWorkspaceRelayTarget(row)).toBeUndefined()
+  })
+
+  test("refuses a cloud-vm baseUrl that is not HTTPS or loopback HTTP", () => {
+    // The relay fetches this URL with the Relay Host Token attached; any
+    // other scheme or a plaintext remote destination would carry it away.
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "ftp://host.example.test" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "file:///etc/passwd" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "ws://host.example.test" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "not a url" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "http://internal.example.test" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "http://169.254.169.254" })).toBeUndefined()
+  })
+
+  test("admits HTTPS and loopback HTTP cloud-vm baseUrls", () => {
+    for (const baseUrl of [
+      "https://host.example.test",
+      "http://127.0.0.1:8787",
+      "http://localhost:8787",
+      "http://[::1]:8787",
+      // WHATWG parsing canonicalises every 127.0.0.0/8 spelling before the check.
+      "http://0x7f.1:8787",
+    ]) {
+      expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl })).toMatchObject({ baseUrl })
+    }
+  })
+
+  test("admits the local-worktree wire value but refuses other schemes", () => {
+    // The tunnel adapters never fetch a local-worktree baseUrl — the control
+    // plane sends "" — but embedded forwarders do, so only the placeholder
+    // or a well-formed HTTP(S) URL may pass.
+    expect(parseWorkspaceRelayTarget({ ...row, baseUrl: "", backing: "local-worktree" })).toEqual({
+      ...row,
+      baseUrl: "",
+      backing: "local-worktree",
+    })
+    expect(parseWorkspaceRelayTarget({ ...row, baseUrl: "http://127.0.0.1:4000", backing: "local-worktree" })).toBeTruthy()
+    expect(parseWorkspaceRelayTarget({ ...row, baseUrl: "ftp://host.example.test", backing: "local-worktree" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, baseUrl: "javascript:alert(1)", backing: "local-worktree" })).toBeUndefined()
+  })
+})
+
+describe("workspaceRelayTargetUrl", () => {
+  const target = {
+    workspaceId: "ws_1",
+    hostId: "host_1",
+    baseUrl: "https://host.example.test/base",
+    backing: "cloud-vm" as const,
+  }
+
+  test("joins request paths under the target's base path", () => {
+    expect(workspaceRelayTargetUrl(target, "/api/wr/health", "?v=1").href)
+      .toBe("https://host.example.test/base/api/wr/health?v=1")
+  })
+
+  test("keeps a path carrying a scheme or authority on the target origin", () => {
+    // `new URL(path, base)` would resolve "http:evil.example/x" absolute and
+    // send the fetch — Relay Host Token included — to that origin.
+    for (const path of ["/http:evil.example/x", "//evil.example/x", "/https:evil.example/x"]) {
+      const url = workspaceRelayTargetUrl(target, path, "")
+      expect(url.origin).toBe("https://host.example.test")
+    }
+    expect(workspaceRelayTargetUrl(target, "/http:evil.example/x", "").pathname)
+      .toBe("/base/http:evil.example/x")
   })
 })
