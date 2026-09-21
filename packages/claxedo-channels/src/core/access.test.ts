@@ -182,6 +182,48 @@ describe("DM pairing gate", () => {
     })
   })
 
+  test("two concurrent approvals of one code establish exactly one binding", async () => {
+    const store = createMemoryChannelAccessStore()
+    const bindings = createMemoryChannelIdentityBindingStore()
+    const put = vi.spyOn(bindings, "put")
+    const allow = vi.spyOn(store, "allow")
+    const access = createChannelAccess({ dmPolicy: "pairing", store, bindings, now: fixedClock().now, random: seq([0.1]) })
+
+    await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })
+    const [pending] = await access.listPending("telegram")
+    const results = await Promise.all([
+      access.approve(pending.code, "owner:1"),
+      access.approve(pending.code, "owner:2"),
+    ])
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, message: "Pairing code was already approved." }])
+    expect(put).toHaveBeenCalledTimes(1)
+    expect(allow).toHaveBeenCalledTimes(1)
+    expect(await access.listPending("telegram")).toEqual([])
+  })
+
+  test("a code consumed between the read and the write is not approved again", async () => {
+    // The pending row is read, the canonical bind runs, and only then is the
+    // code consumed; another approval landing in that window must lose here.
+    const store = createMemoryChannelAccessStore()
+    const bindings = createMemoryChannelIdentityBindingStore()
+    const access = createChannelAccess({ dmPolicy: "pairing", store, bindings, now: fixedClock().now, random: seq([0.1]) })
+    await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })
+    const [pending] = await access.listPending("telegram")
+
+    const bind = vi.fn(async () => {
+      await store.deletePending(pending.code)
+      return { accountId: "user_canonical", boundBy: "actor:actor_canonical" }
+    })
+    await expect(access.approve(pending.code, "authenticated-claim", bind)).resolves.toEqual({
+      ok: false,
+      message: "Pairing code was already approved.",
+    })
+    expect(await bindings.get("telegram", "42")).toBeUndefined()
+    expect(await store.isAllowed("telegram", "42")).toBe(false)
+  })
+
   test("approve rejects unknown and expired codes", async () => {
     const store = createMemoryChannelAccessStore()
     const clock = fixedClock()

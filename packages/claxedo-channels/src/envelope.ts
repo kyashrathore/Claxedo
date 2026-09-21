@@ -1,5 +1,13 @@
 export type ChannelId = "github" | "slack" | "telegram" | "discord" | "whatsapp"
 
+const CHANNEL_IDS: readonly ChannelId[] = ["github", "slack", "telegram", "discord", "whatsapp"]
+
+/** A thread key is `<channel>:<thread>`; its head is the channel. */
+export function channelFromThreadKey(threadKey: string | undefined): ChannelId | undefined {
+  const head = threadKey?.split(":")[0]
+  return CHANNEL_IDS.find((id) => id === head)
+}
+
 /**
  * A callback whose return value is discarded, awaited if it happens to be a
  * promise.
@@ -90,6 +98,25 @@ export type ApprovalRequest = {
   requestee?: string
 }
 export type ApprovalDecision = {
+  /**
+   * The exact structured action id the press carried (`APPROVAL_ACTION_ID`
+   * in `transport/chat-sdk-actions`). Never a free-text guess.
+   */
+  actionId?: string
+  /**
+   * The platform's id for the card message the button was pressed on. This is
+   * the delivery identity dedup keys on: a redelivered or repeated press of the
+   * same card by the same actor is one action.
+   */
+  messageId?: string
+  /**
+   * The platform the press came from. `onApproval` refuses a decision that can
+   * name neither this nor a `threadKey` it can be recovered from — without it
+   * none of the sender-scoped gates can attribute the press.
+   */
+  channel?: ChannelId
+  /** DM vs group for the thread the press happened in, when known. */
+  chatType?: ChannelChatType
   callId?: string
   token?: string
   approved: boolean

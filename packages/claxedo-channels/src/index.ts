@@ -1,3 +1,4 @@
+export { channelFromThreadKey } from "./envelope"
 export type {
   ApprovalDecision,
   ApprovalRequest,
@@ -57,7 +58,7 @@ export {
 export { createChannelsIngress, type ChannelWebhookBot, type ChannelWebhookHandler } from "./ingress"
 export { createChannelRegistry, type ChannelAdapterConfig, type ChannelRegistration, type ChannelTransportKind } from "./registry"
 export { createChatSdkBot, createChatSdkChannelBot } from "./transport/chat-sdk-adapters"
-export { chatSdkApprovalDecision } from "./transport/chat-sdk-actions"
+export { APPROVAL_ACTION_ID, chatSdkApprovalPress } from "./transport/chat-sdk-actions"
 export { channelRetryDelayMs, type RetryAfterMs } from "./transport/backpressure"
 export { createChatSdkBridge, chatSdkEnvelope, type ChatSdkBot, type ChatSdkBridgeThread, type ChatSdkMessage } from "./transport/chat-sdk-bridge"
 export { createChatSdkRenderer, type ChatSdkMessageHandle, type ChatSdkThread } from "./transport/chat-sdk-render"

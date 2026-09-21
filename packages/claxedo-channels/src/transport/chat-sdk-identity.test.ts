@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises"
 import { createGitHubAdapter } from "@chat-adapter/github"
 import { Chat } from "chat"
 import { createChatSdkBridge, type ChatSdkBot } from "./chat-sdk-bridge"
-import { chatSdkApprovalDecision } from "./chat-sdk-actions"
+import { APPROVAL_ACTION_ID, chatSdkApprovalPress } from "./chat-sdk-actions"
 import { createMemoryStateAdapter } from "./chat-sdk-memory-state"
 import { githubWebhookEnvelope } from "./github"
 import {
@@ -206,7 +206,10 @@ describe("channel identity from the installed adapters", () => {
   test("an approval press is answered by account id, so the freed handle cannot answer", async () => {
     const paired = await envelopeFromRealAdapter(PAIRED)
     const channels = channelCore()
+    // Both pressers are admitted senders — this test exercises the requestee
+    // check behind the access gate, not the gate itself.
     await channels.store.allow("github", paired.externalUserId, "owner")
+    await channels.store.allow("github", String(IMPOSTER.id), "owner")
     await channels.approvals.request({
       callId: "ses_1:perm_1",
       tool: "bash",
@@ -219,11 +222,12 @@ describe("channel identity from the installed adapters", () => {
 
     // `ActionEvent.user` is a Chat SDK `Author`: the id the adapter parsed off
     // the account, beside the handle it can rename at will.
-    const press = (account: Account) => chatSdkApprovalDecision({
-      actionId: "approve_permission",
-      user: { userId: String(account.id), userName: account.login, fullName: account.login },
-      data: { token: "a7f3", approved: true },
+    const press = (account: Account) => chatSdkApprovalPress({
+      actionId: APPROVAL_ACTION_ID.approve,
+      value: "a7f3",
+      messageId: "card-1",
       threadId: paired.threadKey,
+      user: { userId: String(account.id), userName: account.login, fullName: account.login },
     }, { threadKey: paired.threadKey })
 
     expect(await channels.core.onApproval(press(IMPOSTER)!)).toEqual({

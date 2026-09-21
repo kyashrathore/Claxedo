@@ -62,6 +62,34 @@ describe("sqlite channel access store", () => {
     expect(await store.listPending("telegram")).toHaveLength(0)
   })
 
+  test("deleting a pending code reports whether this call consumed a live row", async () => {
+    let now = 1_000_000
+    const store = createSqliteChannelAccessStore(() => now)
+    await store.putPending({
+      code: "ABCD2345",
+      channel: "telegram",
+      externalUserId: "42",
+      createdAt: now,
+      expiresAt: now + 3_600_000,
+      lastSentAt: now,
+    })
+    expect(await store.deletePending("ABCD2345")).toBe(true)
+    expect(await store.deletePending("ABCD2345")).toBe(false)
+    expect(await store.findPending("ABCD2345")).toBeUndefined()
+
+    await store.putPending({
+      code: "EXPD2345",
+      channel: "telegram",
+      externalUserId: "43",
+      createdAt: now,
+      expiresAt: now + 10,
+      lastSentAt: now,
+    })
+    now += 11
+    expect(await store.deletePending("EXPD2345")).toBe(false)
+    expect(await store.findPending("EXPD2345")).toBeUndefined()
+  })
+
   test("allow persists and is queryable", async () => {
     const store = createSqliteChannelAccessStore()
     expect(await store.isAllowed("telegram", "42")).toBe(false)

@@ -1,3 +1,4 @@
+import { channelFromThreadKey } from "../envelope"
 import type { ApprovalDecision, ApprovalRequest, ChannelSink, InboundEnvelope, OutboundChunk } from "../envelope"
 import type { DedupStore } from "./dedup"
 import type { ApprovalBridge } from "./approval-bridge"
@@ -457,19 +458,81 @@ export function createChannelCore(input: {
     },
     async onApproval(decision) {
       if (!approvals) return { ok: false, message: "Approval bridge is not configured" }
-      // The decision's threadKey (set by the transport from the thread the
-      // button was clicked in) rides all the way through to `decide` and
-      // `resolveToken`, which is what makes their thread checks real. Drop it
-      // here and those guards compare against undefined, letting a press from
-      // any thread resolve any pending prompt.
-      if (decision.callId) return approvals.decide({ ...decision, callId: decision.callId })
-      if (!decision.token) return { ok: false, message: "Approval response is missing a prompt token." }
-      const resolved = await approvals.resolveToken({
-        token: decision.token,
-        ...(decision.threadKey ? { threadKey: decision.threadKey } : {}),
+      // A button press is a webhook delivery like any inbound message, so it
+      // runs the same sender-scoped gates in the same order: access, rate
+      // limit, authorization, dedup — then the token/callId resolution. A
+      // decision that can name no channel cannot be attributed to any of those
+      // gates, so it is refused rather than let through unchecked.
+      const channel = decision.channel ?? channelFromThreadKey(decision.threadKey)
+      if (!channel) {
+        return { ok: false, message: "Approval action could not be attributed to a channel." }
+      }
+      const envelope: InboundEnvelope = {
+        channel,
+        externalUserId: decision.actorExternalUserId,
+        threadKey: decision.threadKey ?? `${channel}:unknown`,
+        idempotencyKey: `approval:${decision.actorExternalUserId}:${decision.messageId ?? decision.callId ?? decision.token ?? "unknown"}`,
+        text: "",
+        chatType: decision.chatType ?? "dm",
+        // Pressing a button on the bot's own card IS addressing the bot —
+        // without the marker a "mention"-mode group would read the press as
+        // unaddressed chatter and drop it.
+        mentions: ["@bot"],
+        intent: {
+          kind: "approval_reply",
+          approved: decision.approved,
+          ...(decision.callId ? { callId: decision.callId } : {}),
+          ...(decision.token ? { token: decision.token } : {}),
+        },
+        raw: decision,
+      }
+      if (input.access) {
+        const verdict = await input.access.gate(envelope)
+        if (verdict.admission === "drop") {
+          await input.onDenial?.(envelope, verdict.reason)
+          return { ok: false, message: "This sender is not permitted to answer approvals." }
+        }
+      }
+      if (input.rateLimiter) {
+        const rl = input.rateLimiter.check(rateLimitKey(channel, decision.actorExternalUserId))
+        if (!rl.allowed) {
+          await input.onDenial?.(envelope, "rate_limited")
+          return { ok: false, message: "Rate limit exceeded." }
+        }
+      }
+      const existingRef = decision.threadKey ? await input.sessions.get(decision.threadKey) : undefined
+      const auth = await input.authorize?.(envelope, {
+        ...(existingRef ? { existingSession: existingRef } : {}),
+        action: "approval",
       })
-      if (!resolved.ok) return resolved
-      return approvals.decide({ ...decision, callId: resolved.callId })
+      if (auth?.ok === false) return { ok: false, message: auth.message }
+      const claim = await input.dedup.claim(envelope)
+      if (!claim.ok) return { ok: false, message: claim.message }
+      if (claim.duplicate) return { ok: false, message: "This approval action was already processed." }
+      try {
+        // The decision's threadKey (set by the transport from the thread the
+        // button was clicked in) rides all the way through to `decide` and
+        // `resolveToken`, which is what makes their thread checks real. Drop
+        // it here and those guards compare against undefined, letting a press
+        // from any thread resolve any pending prompt.
+        const result = await (async () => {
+          if (decision.callId) return approvals.decide({ ...decision, callId: decision.callId })
+          if (!decision.token) return { ok: false as const, message: "Approval response is missing a prompt token." }
+          const resolved = await approvals.resolveToken({
+            token: decision.token,
+            ...(decision.threadKey ? { threadKey: decision.threadKey } : {}),
+          })
+          if (!resolved.ok) return resolved
+          return approvals.decide({ ...decision, callId: resolved.callId })
+        })()
+        // A refused decision releases the claim so the same press can retry;
+        // a recorded one keeps it, which is what makes a redelivery inert.
+        if (!result.ok) await input.dedup.release(envelope).catch(() => {})
+        return result
+      } catch (error) {
+        await input.dedup.release(envelope).catch(() => {})
+        throw error
+      }
     },
   }
 }

@@ -1,5 +1,7 @@
 import type { ChannelId } from "@claxedo/channels"
 
+export { channelFromThreadKey } from "@claxedo/channels"
+
 /**
  * The ONE place a `ChannelId` is recovered from stored or request-supplied text.
  *
@@ -13,9 +15,4 @@ const CHANNEL_IDS: readonly ChannelId[] = ["github", "slack", "telegram", "disco
 
 export function channelId(input: unknown): ChannelId | undefined {
   return CHANNEL_IDS.find((id) => id === input)
-}
-
-/** A thread key is `<channel>:<thread>`; its head is the channel. */
-export function channelFromThreadKey(input: string | undefined): ChannelId | undefined {
-  return channelId(input?.split(":")[0])
 }

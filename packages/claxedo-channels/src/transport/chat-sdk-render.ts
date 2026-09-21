@@ -1,4 +1,5 @@
 import type { OutboundChunk } from "../envelope"
+import { APPROVAL_ACTION_ID } from "./chat-sdk-actions"
 import { sanitizeChannelText, type ChannelTextMinimizationOptions } from "../core/data-minimization"
 import { channelRetryDelayMs, type RetryAfterMs } from "./backpressure"
 import { record } from "../json"
@@ -12,12 +13,17 @@ export type ChatSdkApprovalCard = {
   title: string
   body: string
   actions: {
+    /**
+     * The exact action id the press echoes back as `ActionEvent.actionId` —
+     * one of `APPROVAL_ACTION_ID`. This, and only this, decides the verdict.
+     */
+    id: string
     label: string
+    /**
+     * The prompt token, carried back verbatim as `ActionEvent.value`. Never a
+     * decision word — the parser treats it as opaque.
+     */
     value: string
-    data: {
-      token: string
-      approved: boolean
-    }
   }[]
 }
 
@@ -197,13 +203,13 @@ async function postApproval(thread: ChatSdkThread, chunk: Extract<OutboundChunk,
     title: `Approval required: ${chunk.request.tool}`,
     body,
     actions: [{
+      id: APPROVAL_ACTION_ID.approve,
       label: "Approve",
-      value: "approve",
-      data: { token: chunk.request.token ?? chunk.request.callId, approved: true },
+      value: chunk.request.token ?? chunk.request.callId,
     }, {
+      id: APPROVAL_ACTION_ID.deny,
       label: "Deny",
-      value: "deny",
-      data: { token: chunk.request.token ?? chunk.request.callId, approved: false },
+      value: chunk.request.token ?? chunk.request.callId,
     }],
   }
   let last: unknown

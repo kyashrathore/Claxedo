@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { APPROVAL_ACTION_ID } from "./chat-sdk-actions"
 import { createChatSdkRenderer, type ChatSdkApprovalCard, type ChatSdkThread } from "./chat-sdk-render"
 
 /**
@@ -175,13 +176,13 @@ describe("createChatSdkRenderer", () => {
       title: "Approval required: bash",
       body: "Approval required for bash: Run command",
       actions: [{
+        id: APPROVAL_ACTION_ID.approve,
         label: "Approve",
-        value: "approve",
-        data: { token: "a7f3", approved: true },
+        value: "a7f3",
       }, {
+        id: APPROVAL_ACTION_ID.deny,
         label: "Deny",
-        value: "deny",
-        data: { token: "a7f3", approved: false },
+        value: "a7f3",
       }],
     }])
   })

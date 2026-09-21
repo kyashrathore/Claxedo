@@ -149,9 +149,15 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
       }).run())
     },
     async deletePending(code) {
-      ClaxedoDB.use((db) => db.delete(ClaxedoChannelPairingTable)
-        .where(eq(ClaxedoChannelPairingTable.code, code))
+      // Prune first so the conditional delete only ever sees live rows; the
+      // version predicate keeps legacy rows out of the consume count (they are
+      // history, not approvable codes). `changes` is what makes the consume
+      // atomic — two racing deletes cannot both report a removal.
+      pruneExpired(now())
+      const result = ClaxedoDB.use((db) => db.delete(ClaxedoChannelPairingTable)
+        .where(and(eq(ClaxedoChannelPairingTable.code, code), current))
         .run())
+      return result.changes > 0
     },
   }
 }
