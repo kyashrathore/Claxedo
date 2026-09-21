@@ -112,7 +112,7 @@ export type DeepLinkOpenRequest = { directory: string; prompt?: string }
 
 const windowsDrive = /^[A-Za-z]:[\\/]/
 
-function collapse(prefix: string, body: string, separator: "/" | "\\") {
+function collapsePathSegments(prefix: string, body: string, separator: "/" | "\\") {
   const segments: string[] = []
   for (const segment of body.split(/[\\/]+/)) {
     if (!segment || segment === ".") continue
@@ -142,12 +142,12 @@ function collapse(prefix: string, body: string, separator: "/" | "\\") {
  */
 export function deepLinkDirectory(raw: string) {
   const trimmed = raw.trim()
-  if (windowsDrive.test(trimmed)) return collapse(trimmed.slice(0, 2), trimmed.slice(2), "\\")
+  if (windowsDrive.test(trimmed)) return collapsePathSegments(trimmed.slice(0, 2), trimmed.slice(2), "\\")
   // A leading `//` is a UNC share on Windows and implementation-defined on
   // POSIX; collapsing it would silently rewrite the host segment into a
   // top-level directory name.
   if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return undefined
-  return collapse("", trimmed, "/")
+  return collapsePathSegments("", trimmed, "/")
 }
 
 /**
