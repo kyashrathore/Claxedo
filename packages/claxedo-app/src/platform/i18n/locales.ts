@@ -63,7 +63,7 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
         import("./en").then((m) => ({ dict: m.dict })),
         import("./source-control/en"),
         import("./machines/en"),
-        import("./session-recovery/en"), import("./session-recovery/en"),
+        import("./session-recovery/en"),
         import("@opencode-ai/ui/i18n/en"),
       ),
     intlTag: "en",
