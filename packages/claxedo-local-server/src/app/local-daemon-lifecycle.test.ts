@@ -780,6 +780,23 @@ describe("startup launch reconciliation", () => {
     lifecycle.stop()
   })
 
+  test("a daemon that has not started fences nothing, however reachable its listener is", () => {
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: empty,
+      onStop() {},
+      machine: { ...machine, ownership: async () => [] },
+    })
+
+    // The listener accepts connections before the entrypoint calls start(). A
+    // hold here would refuse work for an owner that has not taken the machine.
+    expect(lifecycle.snapshot().state).toBe("created")
+    expect(lifecycle.recovery.ingressClosed()).toBeUndefined()
+
+    lifecycle.start()
+    expect(lifecycle.recovery.ingressClosed()).toEqual({ kind: "launch_reconciliation" })
+    lifecycle.stop()
+  })
+
   test("a store that could not be read is reported rather than treated as empty", async () => {
     const unreadable: Array<[string, string]> = []
     const lifecycle = createLocalDaemonLifecycle({

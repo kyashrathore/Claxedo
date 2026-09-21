@@ -888,7 +888,11 @@ export function createLocalDaemonLifecycle(options: {
        */
       ingressClosed(): MachineIngressHold | undefined {
         if (gate) return { kind: "operation", ...gate }
-        return launchesReconciled ? undefined : { kind: "launch_reconciliation" }
+        // Only a daemon that has started claims this machine. Before that the
+        // listener can already be reachable, and fencing there would refuse
+        // work on behalf of an owner that has not taken the machine yet.
+        if (!reconcilingLaunches || launchesReconciled) return undefined
+        return { kind: "launch_reconciliation" }
       },
       /** Joins the startup reconciliation; the entry does not have to wait on it. */
       launchesReconciled() {
