@@ -16,6 +16,7 @@ import {
   type RequestId,
 } from "@modelcontextprotocol/sdk/types.js"
 import { bearerToken } from "@claxedo/helpers/string"
+import { stampRequestPeerAddress } from "@claxedo/helpers"
 import type { ClaxedoFetch, ClaxedoMcpClient, TasksGrant, WorkspaceTarget } from "./client/contract"
 import { MCP_SCOPES, type McpAuditEvent, type McpCredential, type McpToolContext } from "./context"
 import { createToolRegistry } from "./tools/registry"
@@ -342,5 +343,14 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     }
   }
 
-  return { routes: new Hono().all("/", (c) => handle(c.req.raw)), dispose: () => sessions.closeAll() }
+  return {
+    routes: new Hono().all("/", (c) => {
+      // The adapter-reported peer is the loopback gate's ground truth; stamp
+      // it here so the check does not depend on the host app having mounted
+      // a peer-stamp middleware ahead of this route.
+      stampRequestPeerAddress(c.req.raw, c.env)
+      return handle(c.req.raw)
+    }),
+    dispose: () => sessions.closeAll(),
+  }
 }

@@ -1,37 +1,28 @@
 import type { MiddlewareHandler } from "hono"
-import { jsonRecord } from "../runtime/lib/json"
+import {
+  isLoopbackIpAddress,
+  parseIpAddress,
+  requestPeerAddress,
+  stampRequestPeerAddress,
+} from "@claxedo/helpers"
+
+export { requestPeerAddress, stampRequestPeerAddress }
 
 /**
- * Request peer-address primitives.
+ * The unsigned-local request gate.
  *
- * Split out of `local-only-projection.ts`, which was two things: these, which
- * answer "where did this request come from", and the gate that uses them to
- * block signed/team access to a local-only feature. Six call sites across
- * different domains consume the gate, so both halves stay in platform/http —
- * but they are no longer one file.
- *
- * Worker-safe by construction: the Node socket is duck-typed rather than
- * imported, so this module pulls in no `node:*` dependency.
+ * Peer extraction — reading where the socket says a request came from —
+ * lives in @claxedo/helpers so a package that cannot depend on this one
+ * (@claxedo/mcp, whose loopback gate applies the same peer check) shares
+ * the one stamp and the one read of the adapter internals. What stays here
+ * is the policy only this composition has: the hono middleware that stamps
+ * ahead of every gate, which requests count as local, and the header list
+ * that disqualifies a request from that trust.
  */
 function loopbackHost(input: string) {
   return input === "localhost" || input === "127.0.0.1" || input === "::1" || input === "[::1]"
 }
 
-// The URL hostname comes from the client-controlled Host header, so it can
-// never be the only loopback gate: the server may bind 0.0.0.0
-// (CLAXEDO_SERVER_HOST), and a remote client sending `Host: 127.0.0.1` must
-// not be classified local. We therefore also require the transport peer
-// address to be loopback whenever connection info is resolvable. This module
-// is on the Worker-safe list, so the Node socket is duck-typed — no node:*
-// imports.
-/** The remote address a node-server `IncomingMessage` carries, if it has one. */
-function incomingRemoteAddress(incoming: unknown): string | undefined {
-  const socket = jsonRecord(jsonRecord(incoming)?.socket)
-  const address = socket?.remoteAddress
-  return typeof address === "string" && address ? address : undefined
-}
-
-const requestPeerAddresses = new WeakMap<Request, string>()
 /**
  * Headers that describe an ORIGINAL client behind a proxy. Their presence is
  * what disqualifies a request from unsigned-local trust below, so the replay
@@ -79,15 +70,10 @@ export function loopbackReplayHeaders(input: Record<string, string>): Record<str
   return Object.fromEntries(Object.entries(input).filter(([name]) => !stripped.has(name.toLowerCase())))
 }
 
-// @hono/node-ws rebuilds upgrade Requests without the node-server internals,
-// so the app stamps the peer address explicitly from `c.env.incoming` (set by
-// both @hono/node-server and @hono/node-ws). Absent env (Workers, in-process
+// Stamps the peer from `c.env.incoming` (set by both @hono/node-server and
+// @hono/node-ws), so gates behind it see the peer even on Requests node-ws
+// rebuilt without the adapter internals. Absent env (Workers, in-process
 // test fetch) this is a no-op.
-export function stampRequestPeerAddress(request: Request, env: unknown) {
-  const address = incomingRemoteAddress(jsonRecord(env)?.incoming)
-  if (address) requestPeerAddresses.set(request, address)
-}
-
 export function peerAddressStamp(): MiddlewareHandler {
   return async (c, next) => {
     stampRequestPeerAddress(c.req.raw, c.env)
@@ -95,38 +81,20 @@ export function peerAddressStamp(): MiddlewareHandler {
   }
 }
 
-// @hono/node-server keeps the Node IncomingMessage on the Request under
-// Symbol("incomingKey") — a fallback for requests that reach a gate without
-// passing the stamp middleware. local-only-projection.test.ts pins this
-// against the real library so a node-server upgrade that renames the symbol
-// fails loudly.
-function nodeServerPeerAddress(request: Request): string | undefined {
-  for (const sym of Object.getOwnPropertySymbols(request)) {
-    if (sym.description !== "incomingKey") continue
-    const address = incomingRemoteAddress(Reflect.get(request, sym))
-    if (address) return address
-  }
-  return undefined
-}
-
-function isLoopbackAddress(address: string) {
-  const bare = address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address
-  if (bare === "::1") return true
-  return /^127(\.\d{1,3}){3}$/.test(bare)
-}
-
-export function requestPeerAddress(request: Request): string | undefined {
-  return requestPeerAddresses.get(request) ?? nodeServerPeerAddress(request)
-}
-
 export function isLoopbackLocalRequest(request: Request) {
   // Forwarding destroys the direct socket-to-client relationship required by
   // unsigned-local mode. Header chains are client-spoofable unless a specific
   // trusted proxy policy parses them, so this generic gate always fails closed.
   if (FORWARDED_CLIENT_HEADERS.some((header) => request.headers.has(header))) return false
+  // The URL hostname comes from the client-controlled Host header, so it can
+  // never be the only loopback gate: the server may bind 0.0.0.0
+  // (CLAXEDO_SERVER_HOST), and a remote client sending `Host: 127.0.0.1` must
+  // not be classified local. The transport peer is checked whenever the
+  // adapter exposed one.
   const peer = requestPeerAddress(request)
   if (peer !== undefined) {
-    if (!isLoopbackAddress(peer)) return false
+    const ip = parseIpAddress(peer)
+    if (!ip || !isLoopbackIpAddress(ip)) return false
   }
   // When no connection info exists (in-process fetch: tests, embedded
   // callers, Workers) the Host/Origin checks below remain the gate,

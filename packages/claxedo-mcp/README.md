@@ -11,7 +11,7 @@ source by the three processes that mount it.
 | Path | Owns |
 | --- | --- |
 | `src/server.ts` | `createClaxedoMcpRoutes(options)`: the Hono route, credential resolution, loopback hardening, the bounded session store, the per-credential in-flight cap, and the mount option types every composition uses (`FirstPartyMcpOptions`, `McpClientInputs`). |
-| `src/endpoint/` | The pieces the route is built from: the loopback host/origin gate, the session store, the in-flight counter. |
+| `src/endpoint/` | The pieces the route is built from: the loopback socket/host/origin gate, the session store, the in-flight counter. |
 | `src/context.ts` | `McpCredential` (runtime or user), tool access declarations, the audit event, and the handler-side access check. |
 | `src/tools/registry.ts` | `createToolRegistry(server, ctx)`: one `McpServer` per connection, built for one credential; a tool the credential may not use is never registered, and the handler re-checks anyway. |
 | `src/tools/target.ts`, `src/tools/session-reach.ts` | Where a call may act: the workspace a runtime credential may write to, and the session it may drive — itself and the children it started, read from the runtime's stored rows rather than from the call. |
@@ -34,8 +34,9 @@ a contribution like the others, mounted under its own owner.
 - A session Claxedo launched, on the laptop or in a cloud VM, reaches the
   loopback URL of the runtime that launched it with the bearer that runtime
   minted and `?session=<id>` naming the parent session. The loopback mounts
-  accept nothing else, reject a non-loopback `Host` or `Origin` with 403,
-  reflect no CORS origin, and never read a credential from the URL.
+  accept nothing else, reject a non-loopback socket peer, `Host`, or
+  `Origin` with 403, reflect no CORS origin, and never read a credential
+  from the URL.
 - A person's own tools — Claude Code, Codex, Cursor, a phone — reach the
   hosted URL. The CLI JWT is the whole account: every scope, nothing
   read-only. A client with no credential is answered 401 with a

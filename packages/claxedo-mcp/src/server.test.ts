@@ -185,6 +185,45 @@ describe("the loopback mount", () => {
     expect(response.status).toBe(403)
   })
 
+  test("refuses a non-loopback socket peer even when Host and Origin name loopback", async () => {
+    const { app } = await loopback()
+    for (const remoteAddress of ["203.0.113.7", "10.0.0.5", "not-an-ip"]) {
+      const response = await app.request(`http://127.0.0.1${CLAXEDO_MCP_PATH}`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer rt-token",
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          origin: "http://127.0.0.1:4310",
+        },
+        body: "{}",
+      }, { incoming: { socket: { remoteAddress } } })
+      expect(response.status).toBe(403)
+      expect(await response.json()).toEqual({ error: { code: "mcp_loopback_only", message: expect.any(String) } })
+    }
+  })
+
+  test("admits every loopback spelling the adapter can report as the socket peer", async () => {
+    const { app } = await loopback()
+    for (const remoteAddress of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
+      const response = await app.request(`http://127.0.0.1${CLAXEDO_MCP_PATH}`, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer rt-token",
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "raw", version: "0" } },
+        }),
+      }, { incoming: { socket: { remoteAddress } } })
+      expect(response.status).toBe(200)
+    }
+  })
+
   test("lists only the runtime audience and carries the verified session into the audit line", async () => {
     const { url, audits } = await loopback()
     const { client } = await connect(`${url}?session=ses_parent`, { authorization: "Bearer rt-token" })

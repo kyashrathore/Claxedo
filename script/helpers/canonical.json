@@ -46,6 +46,14 @@
     },
     {
       "module": "@claxedo/helpers",
+      "owner": "packages/claxedo-helpers/src/peer.ts",
+      "names": [
+        "requestPeerAddress",
+        "stampRequestPeerAddress"
+      ]
+    },
+    {
+      "module": "@claxedo/helpers",
       "owner": "packages/claxedo-helpers/src/env.ts",
       "names": [
         "envText"

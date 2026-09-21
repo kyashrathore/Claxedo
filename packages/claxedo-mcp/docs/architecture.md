@@ -9,10 +9,13 @@ client the tools call.
 ## One request
 
 1. **Loopback gate** (`mount: "loopback"` only). `endpoint/loopback.ts`
-   requires the request URL's host and, when present, the `Origin` header to
-   name loopback (`127.0.0.1`, `localhost`, `::1`). Anything else is 403
-   before a credential is read. The route sets no CORS header of its own,
-   and the desktop-local composition excludes the path from its CORS policy.
+   requires the socket peer — stamped from the serving adapter, or read off
+   the node-server request internals — to be a loopback address whenever one
+   is resolvable, and requires the request URL's host and, when present, the
+   `Origin` header to name loopback (`127.0.0.1`, `localhost`, `::1`).
+   Anything else is 403 before a credential is read. The route sets no CORS
+   header of its own, and the desktop-local composition excludes the path
+   from its CORS policy.
 2. **Credential.** The bearer is read from `Authorization` only. A loopback
    mount hands it to `verifyRuntimeCredential`, the issuer of the runtime
    that mounted the route; the claims become a `runtime` credential carrying
