@@ -372,30 +372,42 @@ async function steerWhenRunning(adapter: PiHarnessAdapter, binding: AgentExecuti
   return last
 }
 
-test("a deferred auth release is retried once the retirement blocking it settles", async () => {
-  const released: number[] = []
+test("a deferred auth release is retried by the retirement that settles the launch blocking it", async () => {
+  const released: string[] = []
   const driver = Object.create(PiRpcDriver.prototype) as {
-    unresolved: RetirementResult[]
+    entries: Map<string, { process: { dispose(): Promise<RetirementResult> }; idle?: ReturnType<typeof setTimeout> }>
+    blockers: Map<string, RetirementResult>
     authProfile: { release(): Promise<void> }
-    releaseWhenUnblocked(): Promise<boolean>
+    retire(id: string, entry: unknown): Promise<RetirementResult>
     readRuntimeHealth(): { status: string; reason?: string }
     processError?: string
   }
-  driver.unresolved = []
-  driver.authProfile = { release: async () => { released.push(Date.now()) } }
+  driver.entries = new Map()
+  driver.blockers = new Map()
+  driver.authProfile = { release: async () => { released.push("released") } }
 
-  // A retirement that established nothing holds the shared profile: releasing
-  // it would pull credentials out from under a process nothing stopped.
-  const blocking: RetirementResult = { leader: "alive", descendants: "owned", signals: [] }
-  driver.unresolved.push(blocking)
-  expect(await driver.releaseWhenUnblocked()).toBe(false)
+  // The real transition: one launch whose first retirement establishes
+  // nothing, and whose second settles it.
+  let settles = false
+  const entry = {
+    process: {
+      dispose: async (): Promise<RetirementResult> => settles
+        ? { leader: "exited", descendants: "verified_clear", signals: [] }
+        : { leader: "alive", descendants: "owned", signals: [] },
+    },
+  }
+  driver.entries.set("agent-1", entry as never)
+
+  await driver.retire("agent-1", entry)
+  expect(driver.blockers.size).toBe(1)
   expect(released).toHaveLength(0)
   expect(driver.readRuntimeHealth()).toMatchObject({ status: "unavailable", reason: "harness_retirement_unresolved" })
 
-  // A later retirement settles it, and the release it deferred runs.
-  driver.unresolved.length = 0
-  driver.unresolved.push({ leader: "exited", descendants: "verified_clear", signals: [] })
-  expect(await driver.releaseWhenUnblocked()).toBe(true)
-  expect(released).toHaveLength(1)
+  // A retirement result is a snapshot: nothing about the value recorded above
+  // will ever change, so only retiring the launch again can clear it.
+  settles = true
+  await driver.retire("agent-1", entry)
+  expect(driver.blockers.size).toBe(0)
+  expect(released).toEqual(["released"])
   expect(driver.readRuntimeHealth()).toMatchObject({ status: "ok" })
 })

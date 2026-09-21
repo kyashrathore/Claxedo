@@ -84,7 +84,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   private selectedThinking = "off"
   private processError?: string
   /** Retirements that did not establish an exit; they defer the auth profile's release. */
-  private readonly unresolved: RetirementResult[] = []
+  private readonly blockers = new Map<string, RetirementResult>()
   private readonly agentDir: string
   private readonly authProfile: ReturnType<typeof retainPiAuth>
 
@@ -285,7 +285,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       await process.request("get_state", {}, controlRequestDeadline())
       return process
     } catch (error) {
-      this.recordUnresolved(await process.dispose())
+      this.recordUnresolved(`start:${randomUUID()}`, await process.dispose())
       throw error
     }
   }
@@ -347,22 +347,27 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     if (retirementSettled(result)) {
       if (this.entries.get(id) === entry) this.entries.delete(id)
       delete entry.retiring
-      // A retirement that settled may be the last thing holding the shared
-      // profile; releasing it is the whole point of having deferred it.
+      // A retirement result is a snapshot and never becomes settled on its
+      // own, so the blocker is dropped by the retirement that settled it —
+      // this one — and the release it deferred is retried here.
+      this.blockers.delete(id)
       await this.releaseWhenUnblocked()
       return result
     }
     entry.retiring = result
-    this.recordUnresolved(result)
+    this.recordUnresolved(id, result)
     return result
   }
 
-  private recordUnresolved(result: RetirementResult) {
+  /**
+   * Keyed by the launch it describes, so a later retirement of the same launch
+   * can drop it. Kept apart from `processError`, which is this driver's record
+   * of a process dying under a turn: an unresolved retirement is a different
+   * state with a different remedy, and `readRuntimeHealth` reports it first.
+   */
+  private recordUnresolved(id: string, result: RetirementResult) {
     if (retirementSettled(result)) return
-    // Kept apart from `processError`, which is this driver's record of a
-    // process dying under a turn. An unresolved retirement is a different
-    // state with a different remedy, and `readRuntimeHealth` reports it first.
-    this.unresolved.push(result)
+    this.blockers.set(id, result)
   }
   private reap(sessionId: string, entry: Entry) {
     const generation = ++entry.idleGeneration
@@ -408,7 +413,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       if (state?.sessionId !== id) throw new Error("Pi resumed a different session")
       return this.remember(id, process, directory)
     } catch (error) {
-      this.recordUnresolved(await process.dispose())
+      this.recordUnresolved(id, await process.dispose())
       throw error
     }
   }
@@ -642,10 +647,11 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     ]
   }
   readRuntimeHealth() {
-    if (this.unresolved.length) return {
+    const blocker = [...this.blockers.values()].at(-1)
+    if (blocker) return {
       status: "unavailable" as const,
       reason: "harness_retirement_unresolved" as const,
-      message: unresolvedPiLaunch(this.unresolved[this.unresolved.length - 1]!).message,
+      message: unresolvedPiLaunch(blocker).message,
     }
     return this.processError
       ? { status: "degraded" as const, reason: "harness_process_lost" as const, message: this.processError }
@@ -676,7 +682,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
 
   /** Retirements that never established an exit, and the auth release they hold. */
   retirementBlockers(): readonly RetirementResult[] {
-    return this.unresolved
+    return [...this.blockers.values()]
   }
 
   /**
@@ -686,10 +692,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
    * credentials it holds, not containment.
    */
   private async releaseWhenUnblocked() {
-    const blocking = this.unresolved.filter((result) => !retirementSettled(result))
-    this.unresolved.length = 0
-    this.unresolved.push(...blocking)
-    if (blocking.length) return false
+    if (this.blockers.size) return false
     await this.authProfile.release()
     return true
   }

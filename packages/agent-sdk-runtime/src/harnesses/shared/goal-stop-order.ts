@@ -18,9 +18,8 @@ export type GoalTurnInterrupt = {
  * reports itself active again. Nothing is awaited when no turn is registered,
  * because that session has no admitted provider work to release.
  */
-export async function interruptGoalTurn(sessionId: string, lifecycle: GoalTurnInterrupt, deadline?: RequestDeadline) {
+export async function interruptGoalTurn(sessionId: string, lifecycle: GoalTurnInterrupt, deadline: RequestDeadline) {
   if (!lifecycle.abort(sessionId, deadline)) return
-  if (!deadline) return await lifecycle.whenIdle(sessionId)
   // The wait is bounded by the same deadline the stop carries: a Goal stop
   // that waits past it reports nothing later than a caller that has gone.
   const idle = await Promise.race([
@@ -62,7 +61,7 @@ export async function settleGoalStop<Goal extends RuntimeGoalSnapshot | null>(in
   disableContinuation: () => Promise<AgentGoalMutationResult<Goal>>
   settle?: () => Promise<AgentGoalMutationResult<Goal>>
   /** Bounds the interrupt and the wait for the turn to leave its producer. */
-  deadline?: RequestDeadline
+  deadline: RequestDeadline
 }): Promise<AgentGoalMutationResult<Goal>> {
   const disabled = await input.disableContinuation()
   if (!disabled.ok) return disabled

@@ -64,6 +64,7 @@ import { requireClaudeExecutable } from "./executable"
 import { createClaudeTurnInput, type ClaudeTurnInput } from "./turn-input"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import { spawnObservedClaudeCodeProcess, type ClaudeDirectLaunch } from "./launch"
+import { goalStopDeadline } from "../shared/request-deadline"
 import {
   cleanupFromRetirement,
   createTurnStop,
@@ -393,7 +394,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     if (!resume || resume.startsWith(CLAUDE_PENDING_PREFIX)) throw new Error("Claude Goal has no native session to clear")
     // Claude persists its Stop hook in the session transcript. Kill and drain
     // its current query before reopening that same session to clear the hook.
-    await interruptGoalTurn(sessionId, this.host.lifecycle())
+    await interruptGoalTurn(sessionId, this.host.lifecycle(), goalStopDeadline())
     const goalBinding = this.launchBinding()
     const abortController = new AbortController()
     let cleared = false

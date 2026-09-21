@@ -37,6 +37,7 @@ describe("goal stop ordering", () => {
     const turns = lifecycle({ busy: true, order })
     const settled = settleGoalStop<null>({
       sessionId: "session-1",
+    deadline: { signal: new AbortController().signal, deadlineAt: Date.now() + 5_000 },
       lifecycle: turns,
       disableContinuation: async () => {
         order.push("disable")
@@ -60,6 +61,7 @@ describe("goal stop ordering", () => {
     const failure = { ok: false as const, status: "failed" as const, message: "provider refused" }
     expect(await settleGoalStop<RuntimeGoalSnapshot>({
       sessionId: "session-1",
+    deadline: { signal: new AbortController().signal, deadlineAt: Date.now() + 5_000 },
       lifecycle: lifecycle({ busy: true, order }),
       disableContinuation: async () => failure,
       settle: async () => ({ ok: true, goal: paused }),
@@ -71,6 +73,7 @@ describe("goal stop ordering", () => {
     const order: string[] = []
     expect(await settleGoalStop<RuntimeGoalSnapshot>({
       sessionId: "session-1",
+    deadline: { signal: new AbortController().signal, deadlineAt: Date.now() + 5_000 },
       lifecycle: lifecycle({ busy: false, order }),
       disableContinuation: async () => ({ ok: true, goal: paused }),
     })).toEqual({ ok: true, goal: paused })
@@ -79,7 +82,7 @@ describe("goal stop ordering", () => {
 
   test("a session with no registered turn has nothing to wait for", async () => {
     const order: string[] = []
-    await interruptGoalTurn("session-1", lifecycle({ busy: false, order }))
+    await interruptGoalTurn("session-1", lifecycle({ busy: false, order }), { signal: new AbortController().signal, deadlineAt: Date.now() + 5_000 })
     expect(order).toEqual(["abort:session-1"])
   })
 })

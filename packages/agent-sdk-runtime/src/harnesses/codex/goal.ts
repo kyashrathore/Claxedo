@@ -8,7 +8,7 @@ import { requireWorkspaceDirectory } from "../../target"
 import { settleGoalStop } from "../shared/goal-stop-order"
 import { createTurnStopRecord } from "../shared/cancellation-facts"
 import { asRecord } from "@claxedo/helpers/guards"
-import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
+import { controlRequestDeadline, goalStopDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import {
   errorMessage,
   text,
@@ -178,6 +178,7 @@ export class CodexGoalController {
   ): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>> {
     return settleGoalStop({
       sessionId,
+      deadline: goalStopDeadline(),
       lifecycle: this.host.driverHost.lifecycle(),
       disableContinuation: () => this.set(sessionId, directory, { status: "paused" }),
     })
@@ -189,6 +190,7 @@ export class CodexGoalController {
   ): Promise<AgentGoalMutationResult<null>> {
     return settleGoalStop<null>({
       sessionId,
+      deadline: goalStopDeadline(),
       lifecycle: this.host.driverHost.lifecycle(),
       disableContinuation: async () => {
         try {

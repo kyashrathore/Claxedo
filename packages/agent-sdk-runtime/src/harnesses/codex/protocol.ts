@@ -43,49 +43,69 @@ export function createCodexTurnStop(input: {
    * belongs to whoever started it.
    */
   const ownedThreads = new Set([input.threadId])
-  /**
-   * Commands a subagent thread started under this turn. They carry that
-   * thread's turn id rather than this one's, and this owner enumerates only
-   * its own thread's terminals — so they are accounted for but never verified.
-   */
-  const childCommands = new Set<string>()
 
-  const attempt = async (deadline: RequestDeadline) => {
+  const attempt = async (parent: RequestDeadline | undefined) => {
     const turnId = await input.turnId()
     if (!turnId) return
-    await input.process.request("turn/interrupt", { threadId: input.threadId, turnId }, deadline)
+    await input.process.request("turn/interrupt", { threadId: input.threadId, turnId }, controlRequestDeadline(parent))
     const ours = commandProcesses.get(turnId) ?? new Set<string>()
-    // The inventory is read even when this owner saw no command start: a turn
-    // can reach a terminal through a thread whose notifications it never
-    // watched, and an empty local map is not an observation of Codex.
-    let remaining = await survivors(ours, deadline)
-    if (remaining.size) {
+    const children = [...ownedThreads].filter((threadId) => threadId !== input.threadId)
+    if (!ours.size && !children.length) {
+      // This turn started no command and spawned no thread, so Codex holds
+      // nothing of its own to enumerate.
+      input.record.cleanup = "verified_clear"
+      return
+    }
+    let remaining = await survivors(ours, children, parent)
+    if (remaining.length) {
       input.record.cleanup = "owned"
-      for (const processId of remaining) {
-        await input.process.request("thread/backgroundTerminals/terminate", { threadId: input.threadId, processId }, deadline)
+      for (const { threadId, processId } of remaining) {
+        await input.process.request("thread/backgroundTerminals/terminate", { threadId, processId }, controlRequestDeadline(parent))
       }
       // An acknowledged terminate is a promise; the inventory read back
       // without them is the proof.
-      remaining = await survivors(ours, deadline)
+      remaining = await survivors(ours, children, parent)
     }
-    input.record.cleanup = remaining.size || childCommands.size ? "owned" : "verified_clear"
+    input.record.cleanup = remaining.length ? "owned" : "verified_clear"
   }
 
   /**
-   * This turn's command processes that Codex still lists, across every page.
-   * A list this owner could not read leaves cleanup unknown rather than clear:
-   * the absence of an answer is not an empty inventory.
+   * Every terminal this turn is answerable for, across the threads it owns.
+   *
+   * The parent thread carries other turns' terminals too, so only the command
+   * processes this turn was seen starting count there. A subagent thread
+   * exists solely for this turn, so everything on its inventory is this turn's
+   * — including a command this owner never watched start.
    */
-  const survivors = async (processes: Set<string>, deadline: RequestDeadline) => {
-    const remaining = new Set<string>()
+  const survivors = async (ours: Set<string>, children: string[], parent: RequestDeadline | undefined) => {
+    const found: Array<{ threadId: string; processId: string }> = []
+    for (const threadId of [input.threadId, ...children]) {
+      const mine = threadId === input.threadId ? ours : undefined
+      for (const processId of await listTerminals(threadId, parent)) {
+        if (!mine || mine.has(processId)) found.push({ threadId, processId })
+      }
+    }
+    return found
+  }
+
+  /**
+   * One thread's terminals, across every page. A list this owner could not
+   * read leaves cleanup unknown rather than clear: the absence of an answer is
+   * not an empty inventory.
+   */
+  const listTerminals = async (threadId: string, parent: RequestDeadline | undefined) => {
+    const ids: string[] = []
     let cursor: string | undefined
     try {
       do {
-        const response = asRecord(await input.process.request("thread/backgroundTerminals/list", { threadId: input.threadId, ...(cursor ? { cursor } : {}) }, deadline))
+        // A fresh budget per page. One instant shared across the interrupt,
+        // every page and every terminate would expire partway through a stop
+        // that is answering perfectly well.
+        const response = asRecord(await input.process.request("thread/backgroundTerminals/list", { threadId, ...(cursor ? { cursor } : {}) }, controlRequestDeadline(parent)))
         if (!Array.isArray(response?.data)) throw new Error("Codex returned an invalid background terminal list")
         for (const terminal of response.data) {
           const processId = text(asRecord(terminal)?.processId)
-          if (processId && processes.has(processId)) remaining.add(processId)
+          if (processId) ids.push(processId)
         }
         cursor = text(response?.nextCursor)
       } while (cursor)
@@ -93,7 +113,7 @@ export function createCodexTurnStop(input: {
       input.record.cleanup = "unknown"
       throw error
     }
-    return remaining
+    return ids
   }
 
   return {
@@ -108,18 +128,17 @@ export function createCodexTurnStop(input: {
       if (item?.type !== "commandExecution") return
       const processId = text(item.processId)
       const threadId = text(params.threadId)
-      if (!processId || !threadId || !ownedThreads.has(threadId)) return
-      if (threadId !== input.threadId) {
-        childCommands.add(processId)
-        return
-      }
+      // A subagent thread's terminals are read off that thread's own
+      // inventory at stop time, so nothing is recorded for them here: a set
+      // that only ever grows would pin this turn at `owned` for good.
+      if (!processId || threadId !== input.threadId) return
       const turnId = text(params.turnId)
       if (!turnId) return
       const processes = commandProcesses.get(turnId) ?? new Set<string>()
       processes.add(processId)
       commandProcesses.set(turnId, processes)
     },
-    stop: createTurnStop(input.record, "provider_unreachable", (deadline) => attempt(controlRequestDeadline(deadline))),
+    stop: createTurnStop(input.record, "provider_unreachable", (deadline) => attempt(deadline)),
   }
 }
 

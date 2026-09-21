@@ -3,7 +3,10 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { removeTestTempDir } from "../shared/test-temp-dir"
-import { codexUserInput, codexSteerTurn } from "./protocol"
+import { codexUserInput, codexSteerTurn, createCodexTurnStop } from "./protocol"
+import { createTurnStopRecord } from "../shared/cancellation-facts"
+import type { CodexAppServerProcess } from "./app-server-process"
+import type { RequestDeadline } from "../../launch"
 
 const imagePart = {
   type: "file",
@@ -78,4 +81,42 @@ test("Codex steering carries the stable user identity and target turn preconditi
     threadId: "thread-1", expectedTurnId: "turn-1", clientUserMessageId: "msg_stable",
     input: [{ type: "text", text: "S", text_elements: [] }],
   } }])
+})
+
+test("every inventory read carries its own budget, so a paged stop cannot expire partway through", async () => {
+  const seen: Array<{ method: string; deadlineAt: number }> = []
+  // Each call costs real time, the way a provider answering slowly does. One
+  // budget shared across the interrupt, three pages and a terminate would be
+  // spent long before the last of them.
+  const PER_CALL_MS = 40
+  const record = createTurnStopRecord()
+  const pages: Record<string, { data: Array<{ processId: string }>; nextCursor: string | null }> = {
+    "": { data: [{ processId: "p1" }], nextCursor: "b" },
+    b: { data: [{ processId: "p2" }], nextCursor: "c" },
+    c: { data: [{ processId: "p3" }], nextCursor: null },
+  }
+  let terminated = false
+  const process = {
+    async request(method: string, params: unknown, deadline: RequestDeadline) {
+      seen.push({ method, deadlineAt: deadline.deadlineAt })
+      await new Promise((resolve) => setTimeout(resolve, PER_CALL_MS))
+      if (method === "thread/backgroundTerminals/terminate") { terminated = true; return {} }
+      if (method !== "thread/backgroundTerminals/list") return {}
+      const cursor = String((params as { cursor?: string }).cursor ?? "")
+      const page = pages[cursor]!
+      return terminated ? { data: [], nextCursor: null } : page
+    },
+  } as unknown as Pick<CodexAppServerProcess, "request">
+
+  const stop = createCodexTurnStop({ process, threadId: "thread-1", turnId: () => "turn-1", record })
+  stop.observe("item/started", { threadId: "thread-1", turnId: "turn-1", item: { type: "commandExecution", processId: "p1" } })
+  await stop.stop()
+
+  expect(record.cleanup).toBe("verified_clear")
+  const reads = seen.filter((call) => call.method === "thread/backgroundTerminals/list")
+  expect(reads.length).toBeGreaterThanOrEqual(3)
+  // Each read is budgeted from when it starts, so later ones end later. A
+  // single instant captured up front would give every call the same deadline.
+  expect(new Set(reads.map((read) => read.deadlineAt)).size).toBeGreaterThan(1)
+  expect(reads.at(-1)!.deadlineAt).toBeGreaterThan(reads[0]!.deadlineAt)
 })

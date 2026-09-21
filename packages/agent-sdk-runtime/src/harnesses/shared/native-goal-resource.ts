@@ -4,6 +4,7 @@ import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-c
 import type { AgentRuntimeStreamEvent, PromptInput, SessionConfig } from "../../index"
 import { requireWorkspaceDirectory } from "../../target"
 import { settleGoalStop, type GoalTurnInterrupt } from "./goal-stop-order"
+import { goalStopDeadline } from "./request-deadline"
 import type { SdkRuntimeDriver, SdkRuntimeTurnInput } from "./sdk-runtime-driver"
 import { errorMessage } from "./sdk-runtime-values"
 
@@ -100,6 +101,7 @@ export function createNativeGoalResource(host: NativeGoalResourceHost): AgentGoa
       if (!clear) return unsupported("Delete")
       return settleGoalStop<null>({
         sessionId,
+        deadline: goalStopDeadline(),
         lifecycle: host.lifecycle(),
         disableContinuation: async () => {
           await native.stop(sessionId, required)
@@ -117,6 +119,7 @@ export function createNativeGoalResource(host: NativeGoalResourceHost): AgentGoa
       if (!await native.read(sessionId, required)) return clearProjectedGoal(sessionId, required)
       return settleGoalStop<RuntimeGoalSnapshot | null>({
         sessionId,
+        deadline: goalStopDeadline(),
         lifecycle: host.lifecycle(),
         disableContinuation: async () => {
           const stopped = await native.stop(sessionId, required)

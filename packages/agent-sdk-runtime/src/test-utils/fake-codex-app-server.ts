@@ -14,7 +14,7 @@ import path from "path"
  * - `hold-turn`: the Goal turn stays inProgress until interrupted, so callers
  *   can exercise pause/stop against an in-flight turn.
  */
-export async function installFakeCodexAppServer(options: { command?: boolean; terminateFails?: boolean; terminalSurvives?: boolean; childCommand?: boolean; listFails?: boolean } = {}) {
+export async function installFakeCodexAppServer(options: { command?: boolean; terminateFails?: boolean; terminalSurvives?: boolean; childCommand?: boolean; listFails?: boolean; listFailsOnSecondRead?: boolean; childCommandOnly?: boolean } = {}) {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-goal-"))
   const log = path.join(directory, "requests.jsonl")
   const goalFile = path.join(directory, "goal.json")
@@ -31,6 +31,12 @@ const terminalSurvives = ${JSON.stringify(options.terminalSurvives ?? false)}
 // terminal lives on that thread's inventory, not the parent's.
 const childCommand = ${JSON.stringify(options.childCommand ?? false)}
 const listFails = ${JSON.stringify(options.listFails ?? false)}
+// Fails only on the subagent thread's confirming read, so the parent's
+// terminals are found and terminated before the child stops answering.
+const listFailsOnSecondRead = ${JSON.stringify(options.listFailsOnSecondRead ?? false)}
+const listReads = new Map()
+// The turn itself runs no command; only the subagent thread it spawns does.
+const childCommandOnly = ${JSON.stringify(options.childCommandOnly ?? false)}
 let buffer = ""
 let goal = fs.existsSync(goalFile) ? JSON.parse(fs.readFileSync(goalFile, "utf8")) : null
 let threadKnown = false
@@ -75,17 +81,38 @@ process.stdin.on("data", (chunk) => {
       if (command) {
         write({ method: "item/started", params: { threadId: "thread-1", turnId: "previous-turn", item: { id: "cmd-previous", type: "commandExecution", processId: "process-previous", command: "sleep 100", status: "inProgress" } } })
         write({ method: "item/started", params: { threadId: "other-thread", turnId: "other-turn", item: { id: "cmd-other", type: "commandExecution", processId: "process-other", command: "sleep 100", status: "inProgress" } } })
-        write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "cmd-current", type: "commandExecution", processId: "process-current", command: "sleep 100", status: "inProgress" } } })
-        if (childCommand) {
+        if (!childCommandOnly) write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "cmd-current", type: "commandExecution", processId: "process-current", command: "sleep 100", status: "inProgress" } } })
+        if (childCommand || childCommandOnly) {
           write({ method: "thread/started", params: { thread: { id: "child-thread", parentThreadId: "thread-1", status: { type: "active" } } } })
           write({ method: "item/started", params: { threadId: "child-thread", turnId: "child-turn", item: { id: "cmd-child", type: "commandExecution", processId: "process-child", command: "sleep 100", status: "inProgress" } } })
+          // A parent-thread marker AFTER the child's command, so a test can
+          // wait for the whole arrangement rather than racing it.
+          write({ method: "item/completed", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "child-ready", type: "agentMessage", text: "child-command-running" } } })
         }
       }
     }
     else if (message.method === "thread/backgroundTerminals/list") {
-      // A terminated terminal leaves the inventory. Paging is preserved so the
-      // caller still has to read both pages to learn what survived.
-      if (listFails) { write({ id: message.id, error: { message: "terminal inventory is unavailable" } }); continue }
+      // Per thread, the way the app-server scopes it: a subagent thread's
+      // terminals are on that thread's inventory, not on its parent's.
+      if (!message.params.cursor) listReads.set(message.params.threadId, (listReads.get(message.params.threadId) ?? 0) + 1)
+      const reads = listReads.get(message.params.threadId) ?? 1
+      // The second-read failure targets the SUBAGENT thread's confirming read:
+      // the parent's terminals are found and terminated, and then the child's
+      // inventory stops answering.
+      if (listFails || (listFailsOnSecondRead && message.params.threadId !== "thread-1" && reads >= 2)) {
+        write({ id: message.id, error: { message: "terminal inventory is unavailable" } })
+        continue
+      }
+      if (message.params.threadId !== "thread-1") {
+        // A terminated terminal leaves the inventory.
+        const owned = (childCommand || childCommandOnly) && message.params.threadId === "child-thread" && !terminated.has("process-child")
+          ? [{ itemId: "cmd-child", processId: "process-child" }]
+          : []
+        write({ id: message.id, result: { data: owned, nextCursor: null } })
+        continue
+      }
+      // Paging is preserved so the caller still has to read both pages of the
+      // parent's inventory to learn what survived.
       const page = message.params.cursor === "second"
         ? [{ itemId: "cmd-current", processId: "process-current" }]
         : [{ itemId: "cmd-previous", processId: "process-previous" }]

@@ -25,3 +25,15 @@ export function controlRequestDeadline(parent?: RequestDeadline): RequestDeadlin
 export function modelRequestDeadline(): RequestDeadline {
   return { signal: new AbortController().signal, deadlineAt: Date.now() + 2_147_483_647 }
 }
+
+/**
+ * What a Goal stop is allowed to spend waiting for the turn it interrupted to
+ * leave its producer. The Goal API takes no deadline from its caller, so the
+ * graceful-cancel budget is the whole of it: a stop that waits longer reports
+ * nothing a caller is still there to read.
+ */
+export function goalStopDeadline(parent?: RequestDeadline): RequestDeadline {
+  const now = Date.now()
+  if (!parent) return { signal: new AbortController().signal, deadlineAt: now + DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs }
+  return { signal: parent.signal, deadlineAt: capChildBudget(parent.deadlineAt, DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs, now) }
+}

@@ -134,7 +134,11 @@ async function stopTurnOn(options: Parameters<typeof installFakeCodexAppServer>[
         agent: "build",
         model: { providerID: "codex", modelID: "default" },
       }, fake.directory)) {
-        if (JSON.stringify(event).includes("cmd-current")) commandStarted()
+        // Either the turn's own command or the one its subagent thread ran:
+        // both mean the provider is far enough along to be stopped.
+        // Either the turn's own command, or the marker the fake emits once a
+        // subagent thread's command is running.
+        if (JSON.stringify(event).includes("cmd-current") || JSON.stringify(event).includes("child-command-running")) commandStarted()
       }
     })()
     await started
@@ -147,10 +151,22 @@ async function stopTurnOn(options: Parameters<typeof installFakeCodexAppServer>[
   }
 }
 
-test("a command a subagent thread started is owned, because this thread's inventory cannot see it", async () => {
-  // The parent's own terminal is terminated and leaves the parent's inventory,
-  // but the child thread's terminal is on an inventory this owner never reads.
-  expect(await stopTurnOn({ childCommand: true })).toMatchObject({ cleanup: "owned" })
+test("a subagent thread's terminal is enumerated on its own inventory and verified with the rest", async () => {
+  // This turn never watched the child's command start, so the local record of
+  // observed commands is empty for it. The child thread's own inventory is
+  // where it is found, terminated, and read back gone.
+  expect(await stopTurnOn({ childCommand: true })).toMatchObject({ execution: "terminal", cleanup: "verified_clear" })
+})
+
+test("a turn that ran no command of its own still enumerates the thread it spawned", async () => {
+  // Nothing was recorded locally for this turn, which is exactly the state an
+  // empty-map shortcut reads as proof. The child thread it owns is holding a
+  // terminal, and only the inventory says so.
+  expect(await stopTurnOn({ childCommandOnly: true, terminalSurvives: true })).toMatchObject({ cleanup: "owned" })
+})
+
+test("a subagent thread's terminal that survives its termination holds the turn at owned", async () => {
+  expect(await stopTurnOn({ childCommand: true, terminalSurvives: true })).toMatchObject({ cleanup: "owned" })
 })
 
 test("a terminal inventory this owner could not read leaves cleanup unknown, never clear", async () => {
@@ -159,4 +175,10 @@ test("a terminal inventory this owner could not read leaves cleanup unknown, nev
     execution: "unknown",
     error: { code: "provider_unreachable", message: "terminal inventory is unavailable" },
   })
+})
+
+test("a turn that owns a subagent thread whose inventory cannot be read is unknown, never clear", async () => {
+  // The parent's own terminals were found and terminated; the child thread's
+  // inventory never answered, so nothing establishes what the turn still holds.
+  expect(await stopTurnOn({ childCommand: true, listFailsOnSecondRead: true })).toMatchObject({ cleanup: "unknown" })
 })

@@ -214,6 +214,11 @@ export class CodexAppServerProcess {
     return this.launch.identity
   }
 
+  /** The OS process, for an owner that needs to observe it directly. */
+  get child() {
+    return this.proc
+  }
+
   onMessage(listener: (message: JsonRecord) => void) {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
@@ -228,10 +233,14 @@ export class CodexAppServerProcess {
     // A request written to an exited process's stdin is never answered and
     // would sit here until its deadline, reporting a timeout where the real
     // answer is that there is nothing to ask.
-    if (!this.alive) {
+    //
+    // `alive` is not the test: it reads `killed`, which node sets the moment a
+    // signal is delivered — so during the TERM grace a process still answering
+    // normally would have its requests refused.
+    if (this.disposed || this.proc.exitCode !== null) {
       return Promise.reject(new RecoveryCodedError(
         "provider_unreachable",
-        `codex ${method} was not sent: the app-server has exited`,
+        `codex ${method} was not sent: this owner has retired the app-server or it has exited`,
       ))
     }
     const id = ++this.seq
