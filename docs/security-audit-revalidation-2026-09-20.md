@@ -229,7 +229,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 34 | Next fixes / validation | [P-108 — Localhost cookies are shared across ports](#finding-p-108) | MED → Medium | Present, deployment-dependent | Use exact trusted origins and a dedicated auth hostname/secure deployment boundary; avoid bearer-equivalent cookies on shared localhost hosts. |
 | 35 | Next fixes / validation | [P-109 — Device approval may be driven through permissive local CSRF policy](#finding-p-109) | MED → Medium, HTTP embedded + hostile localhost origin | Partial exploit confirmation | Require explicit approval with exact-origin CSRF protection, make GET read-only and bind approval to the displayed device transaction. |
 | 36 | Next fixes / validation | [P-89 — Workspace tunnel exposes machine credential compatibility routes](#finding-p-89) | MED-HIGH → Medium; credential write chain conditional | Fixed; tunnel and local account checks passed | Retain denial before replay and local account-management acceptance. |
-| 37 | Next fixes / validation | [P-67 — MCP discovery's private-network predicate is incomplete](#finding-p-67) | MED → Medium | Present | Use canonical IP parsing and enforce destination policy at connection time and every redirect, with DNS rebinding protection. |
+| 37 | Next fixes / validation | [P-67 — MCP discovery's private-network predicate is incomplete](#finding-p-67) | MED → Medium | Fixed; focused discovery tests | Use canonical IP parsing and enforce destination policy at connection time and every redirect, with DNS rebinding protection. |
 | 38 | Next fixes / validation | [S-12 — Repository cloning can contact internal services](#finding-s-12) | LOW-MED → Medium, deployment-dependent | Present | Apply deployment-specific repository destination policy and network egress restrictions to cloning, including resolved IPs. |
 | 39 | Next fixes / validation | [P-72 — Cloning and initial network policy allow caller-selected hosts](#finding-p-72) | MED-LOW → Medium, signed clone access | Present | Apply one canonical repository admission policy before both clone and network-policy generation. |
 | 40 | Next fixes / validation | [P-107 — Relay memory limits are bypassed by queue conditions](#finding-p-107) | MED → Medium | Partial; Bun bounds implemented | Finish Cloudflare and host-client bounds; retain Bun queue, body-admission and slow-consumer regressions. |
@@ -267,7 +267,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 72 | Scheduled fixes | [P-36 — Workspace fallback and session audit issues differ](#finding-p-36) | LOW → Low | Fixed; focused tests | Fail closed on unknown explicit ids; retain created-session audit evidence. |
 | 73 | Scheduled fixes | [P-133 — Hydration activation can use a stored capability](#finding-p-133) | LOW → Low before remediation | Fixed; mounted route checks | Session access policy authorizes the caller against the stored session before activation or resolution uses its stored capability. |
 | 74 | Scheduled fixes | [P-134 — Unattributed lifecycle frames have broad visibility](#finding-p-134) | LOW → Low | Fixed; focused ownership tests | Stamp canonical workspace/session ownership at the producer and omit sensitive unowned frames. |
-| 75 | Scheduled fixes | [P-32 — Auth and attachment writes lack some filesystem protections](#finding-p-32) | LOW → Low; secret exposure conditional | Present | Use atomic writes in private verified directories, explicitly set existing modes, resolve attachment parents securely, cap bytes and pass prompts through stdin. |
+| 75 | Scheduled fixes | [P-32 — Auth and attachment writes lack some filesystem protections](#finding-p-32) | LOW → Low; secret exposure conditional | Fixed; focused tests | Atomic private writes with repaired modes, realpath attachment containment and byte caps, evaluator prompt on stdin. |
 | 76 | Scheduled fixes | [P-121 — Existing credential seed permissions are not repaired](#finding-p-121) | LOW → Low; local filesystem prerequisite | Fixed; focused backend tests | Reject malformed seeds and enforce private ownership/modes on existing paths without following symlinks. |
 | 77 | Scheduled fixes | [P-122 — Connection turn credentials are created without a visible mint path](#finding-p-122) | INFO → Low availability | Present source gap | Issue the credential at canonical authorized turn admission and expire it with the turn. |
 | 78 | Scheduled fixes | [P-124 — Signed node's in-process MCP fetch lacks actor credentials](#finding-p-124) | LOW → Low availability | Present source gap | Pass a canonical verified runtime principal through the in-process boundary using the existing dispatch owner. |
@@ -315,7 +315,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 120 | Hardening / latent | [P-120 — Node encrypted backend shares one deployment key partition](#finding-p-120) | LOW → Low hardening | Present design assumption | If multi-tenant cryptographic separation is required, carry authoritative org identity into the backend API and key derivation. |
 | 121 | Hardening / latent | [P-114 — Command-path scanner misses redirection syntax](#finding-p-114) | LOW → Low; not a shell sandbox | Fixed; focused scanner tests | Use actual process/filesystem isolation where confinement is promised; avoid claiming a regex is a sandbox. |
 | 122 | Hardening / latent | [P-118 — Reading a cloud connection can start compute](#finding-p-118) | LOW-MED → Low/product policy | Present behavior | Choose and document a spend policy, then enforce entitlement/budget at ensure. |
-| 123 | Hardening / latent | [P-48 — Storybook CSS writer lacks a strong request boundary](#finding-p-48) | LOW → Low, development-only | Present | Require a dev capability/origin check and canonical path containment with a separator boundary. |
+| 123 | Hardening / latent | [P-48 — Storybook CSS writer lacks a strong request boundary](#finding-p-48) | LOW → Low, development-only | Fixed; focused boundary tests | Require a dev capability/origin check and canonical path containment with a separator boundary. |
 | 124 | Hardening / latent | [P-47 — Development proxy forwards sensitive headers](#finding-p-47) | LOW → Low, development-only proxy | Present | Bind the proxy to loopback, strip credentials unless explicitly needed and keep it out of production artifacts. |
 | 125 | Hardening / latent | [P-51 — Renderer configuration and default-session permissions are broad](#finding-p-51) | INFO → Informational/Low | Mixed | Validate persisted endpoint schemes, clamp zoom, restrict privileged browser permissions and retain sender checks. |
 | 126 | Hardening / latent | [P-53 — Wake cancellation trusts possession and host scope has constraints](#finding-p-53) | INFO → Low/Informational | Partial | Make authorization explicit at exposed cancellation boundaries and test cross-session ids. |
@@ -939,11 +939,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-32"></a>
 ### P-32 — Auth and attachment writes lack some filesystem protections
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low; secret exposure conditional.
+**Original severity:** LOW. **Current:** Fixed; focused tests. **Reassessed severity:** Low; secret exposure conditional.
 
-**What happens and why it matters:** Codex auth writes use mode on create but do not repair existing permissions or prevent symlink following. Attachment containment is lexical, and Pi evaluator arguments include prompt material. A pre-existing private parent directory may reduce exposure.
+**What changed:** `writeCodexAuthFile` now verifies the home with `lstat` (a linked home is refused), narrows a permissive pre-existing directory to 0700, and writes `auth.json` through `writePrivateFileAtomic` — the stage-and-rename write that replaces a permissive mode and a symlink at the target rather than opening through the name. `materializeAttachments` resolves `.claxedo` and the attachment directory with `fs.realpath` and refuses either pointing outside the realpath'd workspace before anything is created through them, caps each attachment at `PROMPT_ATTACHMENT_MAX_BYTES` (32 MiB) ahead of any write, and writes through `writePrivateFileAtomic`; the path delivered to harnesses stays spelled in the caller's workspace coordinates. The Pi goal evaluator drops the request from argv entirely — `pi -p` builds its prompt from piped stdin, so the objective and work result now cross on the pipe.
 
-**Fix and acceptance:** Use atomic writes in private verified directories, explicitly set existing modes, resolve attachment parents securely, cap bytes and pass prompts through stdin. Test pre-existing permissive files and symlinked parents.
+**Acceptance:** Focused tests cover a pre-existing 0644 `auth.json` repaired to 0600, a permissive home narrowed to 0700, a symlinked home refused, a symlink at `auth.json` replaced rather than followed, `.claxedo`/`attachments` symlinks refused with nothing written outside, an oversized attachment refused, and the evaluator request absent from spawned argv while arriving on stdin (asserted through the fake Pi spawn double); the real pinned Pi integration run exercises the stdin path end to end. Committed as b7d9578ecf.
 
 **Current code:** [packages/agent-sdk-runtime/src/harnesses/codex/auth-file.ts](../packages/agent-sdk-runtime/src/harnesses/codex/auth-file.ts); [packages/agent-sdk-runtime/src/harnesses/shared/prompt-attachments.ts](../packages/agent-sdk-runtime/src/harnesses/shared/prompt-attachments.ts); [packages/agent-sdk-runtime/src/harnesses/pi/driver.ts](../packages/agent-sdk-runtime/src/harnesses/pi/driver.ts). [Concept walkthrough B](#flow-b).
 
@@ -1115,11 +1115,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-48"></a>
 ### P-48 — Storybook CSS writer lacks a strong request boundary
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low, development-only.
+**Original severity:** LOW. **Current:** Fixed; focused boundary tests. **Reassessed severity:** Low, development-only.
 
-**What happens and why it matters:** The playground plugin exposes source-file writes and uses a string prefix for containment. This is a development tool, not a shipped app endpoint; the old fixture size is not evidence of leaked credentials.
+**What changed:** The dev-server CSS writer now requires a loopback socket plus loopback Host and Origin headers before reading a body, and containment resolves both sides through realpath with the shared inside() separator boundary — sibling-prefix, traversal and symlinked parents refuse.
 
-**Fix and acceptance:** Require a dev capability/origin check and canonical path containment with a separator boundary. Test a sibling-prefix path and a cross-origin write attempt against the dev server.
+**Acceptance:** Focused tests cover the origin/host gates and a real HTTP server exercising same-origin writes and refused sibling/traversal/cross-origin attempts. Committed as 7dd78db3a9.
 
 **Current code:** [packages/storybook/.storybook/playground-css-plugin.ts](../packages/storybook/.storybook/playground-css-plugin.ts); [packages/storybook/.storybook/main.ts](../packages/storybook/.storybook/main.ts). [Concept walkthrough F](#flow-f).
 
@@ -1324,11 +1324,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-67"></a>
 ### P-67 — MCP discovery's private-network predicate is incomplete
 
-**Original severity:** MED. **Current:** Present. **Reassessed severity:** Medium.
+**Original severity:** MED. **Current:** Fixed; focused discovery tests. **Reassessed severity:** Medium.
 
-**What happens and why it matters:** isPrivateAddress uses string/range checks and does not resolve DNS or normalize embedded IPv4 forms. HTTPS does not prevent SSRF to private services. The latest call sites do use discoverMcpOAuth; the old “skip entirely” claim should not be assumed.
+**What changed:** Private-network policy uses a canonical IP parser covering hex, octal, shortened and embedded-v4 IPv6 forms; discovery resolves the hostname at connection time and every redirect hop, requires all addresses to pass, and pins each hop in the Worker. The token exchange uses the same safe fetch.
 
-**Fix and acceptance:** Use canonical IP parsing and enforce destination policy at connection time and every redirect, with DNS rebinding protection. Test mapped IPv6, private DNS results and allowed public endpoints.
+**Acceptance:** Focused tests cover mapped/embedded IPv6, private DNS results, redirect refusal and allowed public endpoints. Committed as 32ee99.
 
 **Current code:** [packages/claxedo-server-core/src/agent-plugins/mcp/discovery.ts](../packages/claxedo-server-core/src/agent-plugins/mcp/discovery.ts); [packages/claxedo-server/src/agent-plugins/mcp/catalog-auth.ts](../packages/claxedo-server/src/agent-plugins/mcp/catalog-auth.ts); [packages/claxedo-server/src/agent-plugins/mcp/runtime-preparation.ts](../packages/claxedo-server/src/agent-plugins/mcp/runtime-preparation.ts). [Concept walkthrough C](#flow-c).
 
