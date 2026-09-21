@@ -19,6 +19,7 @@ import type {
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RecoveryOperation, RecoveryTarget } from "@claxedo/agent-runtime-contract"
 import { acceptsSessionTitle, boundSessionTitleSource } from "../session-title"
 import { sameSessionStartBinding, SessionStartStore } from "./session-start"
 import { chunk } from "../status"
@@ -28,6 +29,8 @@ import type { AgentRuntimeStore } from "../runtime"
 import type {
   AgentRuntimeAppendEventInput,
   AgentRuntimeCommittedCompatOutput,
+  AgentRuntimeRecoveryOperationRecord,
+  AgentRuntimeTurnEvidence,
   AgentRuntimeTurnFinishInput,
   AgentRuntimeTurnStartInput,
   AgentRuntimeSessionBinding,
@@ -130,8 +133,10 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   protected seq = new Map<string, number>()
   private subagentAdmission = createMemorySubagentAdmissionStore()
   protected subagents: MemoryRuntimeStoreSnapshot["subagents"] = []
-  private turnLeases = new Map<string, string>()
+  private turnLeases = new Map<string, { leaseId: string; acquiredAt: number }>()
   private nextTurnLease = 0
+  private recoveryOperations = new Map<string, RecoveryOperation>()
+  private recoveryReceipts = new Map<string, string>()
 
   listSessions(directory: string) {
     return [...this.sessions.values()]
@@ -276,13 +281,17 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   acquireTurnLease(sessionId: string): string | undefined {
     if (this.turnLeases.has(sessionId)) return undefined
     const leaseId = `${sessionId}:${++this.nextTurnLease}`
-    this.turnLeases.set(sessionId, leaseId)
+    this.turnLeases.set(sessionId, { leaseId, acquiredAt: Date.now() })
     return leaseId
   }
 
   releaseTurnLease(sessionId: string, leaseId: string) {
-    if (this.turnLeases.get(sessionId) !== leaseId) return
+    if (this.turnLeases.get(sessionId)?.leaseId !== leaseId) return
     this.turnLeases.delete(sessionId)
+  }
+
+  readTurnAuthority(sessionId: string) {
+    return this.turnLeases.get(sessionId)
   }
 
   startTurn(input: AgentRuntimeTurnStartInput): AgentRuntimeTurnStartOutput {
@@ -361,6 +370,12 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   finishTurn(input: AgentRuntimeTurnFinishInput) {
+    // Checked ahead of the active-turn read: a delayed finalization whose lease
+    // has since been reissued must be refused, not quietly answered with the
+    // empty result that an already-finished turn produces.
+    if (input.leaseId !== undefined && this.turnLeases.get(input.sessionId)?.leaseId !== input.leaseId) {
+      throw new AgentRuntimeStaleTurnError(input.sessionId)
+    }
     const prev = this.sessions.get(input.sessionId)
     if (!prev?.activeTurn) return { events: [] }
     if (input.fencingToken !== undefined && input.fencingToken !== prev.activeTurn.fencingToken) {
@@ -401,6 +416,53 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     })
     this.afterChange()
     return { events }
+  }
+
+  /**
+   * The assistant row's `parentID` is the turn's user message id, so a turn
+   * stays identifiable after its producer is gone. A started turn with neither
+   * a recorded outcome nor a completion time is unfinished, not finished: the
+   * process may simply have stopped in the middle of it.
+   */
+  turnEvidence(sessionId: string, turnId: string): AgentRuntimeTurnEvidence {
+    const messages = this.messages.get(sessionId) ?? []
+    const started = messages.some((row) => row.info.id === turnId && row.info.role === "user")
+    if (!started) return { started: false, finished: false }
+    const assistant = messages.find((row) => row.info.role === "assistant" && row.info.parentID === turnId)
+    const session = this.sessions.get(sessionId)
+    if (!assistant) return { started: true, finished: false }
+    if (session?.activeTurn?.assistantMessageId === assistant.info.id) return { started: true, finished: false }
+    const outcome = session?.lastTurn?.assistantMessageId === assistant.info.id ? session.lastTurn : undefined
+    const finished = outcome !== undefined || assistant.info.time?.completed !== undefined
+    return { started: true, finished, ...(outcome ? { outcome } : {}) }
+  }
+
+  recordRecoveryOperation(operation: RecoveryOperation, caller: { callerId: string }): AgentRuntimeRecoveryOperationRecord {
+    const key = recoveryReceiptKey(operation.target, caller.callerId, operation.requestId)
+    const claimed = this.recoveryReceipts.get(key)
+    const existing = claimed === undefined ? undefined : this.recoveryOperations.get(claimed)
+    if (existing) return { created: false, existing }
+    this.recoveryOperations.set(operation.operationId, operation)
+    this.recoveryReceipts.set(key, operation.operationId)
+    this.afterChange()
+    return { created: true }
+  }
+
+  updateRecoveryOperation(operation: RecoveryOperation) {
+    this.recoveryOperations.set(operation.operationId, operation)
+    this.afterChange()
+  }
+
+  readRecoveryOperation(operationId: string) {
+    return this.recoveryOperations.get(operationId)
+  }
+
+  listRecoveryOperations(scope: { sessionId?: string }) {
+    const rows = [...this.recoveryOperations.values()]
+    if (scope.sessionId === undefined) return rows
+    return rows.filter((operation) =>
+      (operation.target.scope === "turn" || operation.target.scope === "session")
+      && operation.target.sessionId === scope.sessionId)
   }
 
   appendEvent(input: AgentRuntimeAppendEventInput): AgentRuntimeCommittedCompatOutput {
@@ -905,4 +967,12 @@ function errorMessage(input: unknown) {
 
 export function createMemoryRuntimeStore(): AgentRuntimeStore {
   return new MemoryRuntimeStore()
+}
+
+/** The columns a store's uniqueness constraint on a recovery receipt covers. */
+function recoveryReceiptKey(target: RecoveryTarget, callerId: string, requestId: string) {
+  const scope = target.scope === "machine" ? `machine:${target.machineId}`
+    : target.scope === "harness" ? `harness:${target.workspaceId}:${target.harnessKey}`
+    : `session:${target.sessionId}`
+  return `${scope}\u0000${callerId}\u0000${requestId}`
 }
