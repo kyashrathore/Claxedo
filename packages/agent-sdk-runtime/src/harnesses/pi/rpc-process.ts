@@ -6,7 +6,6 @@ import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserv
 import { piCommand } from "./executable"
 import {
   launchOwnedProcess,
-  volatileLaunchOwnership,
   type LaunchOwnershipStore,
   type OwnedLaunch,
   type RetirementResult,
@@ -41,7 +40,8 @@ export type PiRpcProcessInput = {
   args: string[]
   env: NodeJS.ProcessEnv
   observer?: AgentProcessObserver
-  ownership?: LaunchOwnershipStore
+  /** Required: a composition with no durable store passes the volatile one itself. */
+  ownership: LaunchOwnershipStore
   sessionId?: string
   budgets?: Partial<RecoveryBudgets>
 }
@@ -68,7 +68,7 @@ export class PiRpcProcess {
     // JS entrypoints are useful for native npm shims and deterministic protocol fixtures.
     const command = piCommand(input.binary, input.args)
     const launch = await launchOwnedProcess({
-      ownership: input.ownership ?? volatileLaunchOwnership(),
+      ownership: input.ownership,
       role: "harness",
       scope: { directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
       payload: { command: command.file, args: command.args },

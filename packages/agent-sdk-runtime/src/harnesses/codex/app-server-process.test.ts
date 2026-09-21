@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import { LaunchRefusedError, volatileLaunchOwnership } from "../../launch"
+
+/** This suite asserts protocol and retirement, not record durability. */
+const ownership = volatileLaunchOwnership()
 import os from "node:os"
 import path from "node:path"
 import { CodexAppServerProcess } from "./app-server-process"
@@ -29,7 +32,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
 });
 `)
     server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env,
-      requestHandler: async () => { throw new Error("permission storage failed") },
+      requestHandler: async () => { throw new Error("permission storage failed") }, ownership,
     })
     expect(await server.request("test/approval", {}, soon())).toEqual({
       id: "approval-1", error: { code: -32603, message: "permission storage failed" },
@@ -65,7 +68,7 @@ readline.createInterface({ input: process.stdin }).on('line', async line => {
   }
 });
 `)
-    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}) })
+    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership })
     const response = await server.request("test/descendant", {}, soon()) as { descendant: number }
     descendant = response.descendant
     process.kill(descendant, 0)
@@ -97,7 +100,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (msg.id !== undefined) process.stdout.write(JSON.stringify({ id: msg.id, result: { ok: true } }) + '\\n');
 });
 `)
-    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}) })
+    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership })
     const deadline = { signal: new AbortController().signal, deadlineAt: Date.now() + 200 }
     await expect(server.request("test/silent", {}, deadline)).rejects.toThrow(/did not answer within its deadline/)
     expect(await server.request("test/after", {}, soon())).toEqual({ ok: true })

@@ -7,11 +7,13 @@ import type { RetirementBudgets } from "./retirement"
 const execFileAsync = promisify(execFile)
 
 export type DescendantSweep = {
-  /** Processes that were signalled and are gone. */
+  /** Signalled by this sweep, and gone afterwards. */
   cleared: number
-  /** Processes that were still there after SIGKILL. */
+  /** Already gone when the sweep looked, so this sweep did nothing to them. */
+  absent: number
+  /** Still there after SIGKILL. */
   survivors: number
-  /** Processes whose identity no longer matched, and which were therefore left alone. */
+  /** Identity no longer matched, so they were left alone. */
   refused: number
   error?: string
 }
@@ -53,15 +55,17 @@ export async function retireDescendants(
   captured: CreationIdentity[],
   budgets: RetirementBudgets,
 ): Promise<DescendantSweep> {
-  if (!captured.length) return { cleared: 0, survivors: 0, refused: 0 }
+  if (!captured.length) return { cleared: 0, absent: 0, survivors: 0, refused: 0 }
   const live: CreationIdentity[] = []
   let refused = 0
+  let absent = 0
   for (const identity of [...captured].reverse()) {
     const verdict = await verifyCreationIdentity(identity)
     if (verdict.state === "live") live.push(identity)
-    else if (verdict.state !== "exited") refused++
+    else if (verdict.state === "exited") absent++
+    else refused++
   }
-  if (!live.length) return { cleared: captured.length - refused, survivors: 0, refused }
+  if (!live.length) return { cleared: 0, absent, survivors: 0, refused }
 
   try {
     for (const signal of ["SIGTERM", "SIGKILL"] as const) {
@@ -81,14 +85,14 @@ export async function retireDescendants(
       await settle(remaining, signal === "SIGTERM" ? budgets.termGraceMs : budgets.killVerifyMs)
     }
   } catch (error) {
-    return { cleared: 0, survivors: live.length, refused, error: launchErrorText(error) }
+    return { cleared: 0, absent, survivors: live.length, refused, error: launchErrorText(error) }
   }
 
   let survivors = 0
   for (const identity of live) {
     if ((await verifyCreationIdentity(identity)).state === "live") survivors++
   }
-  return { cleared: live.length - survivors, survivors, refused }
+  return { cleared: live.length - survivors, absent, survivors, refused }
 }
 
 async function settle(candidates: CreationIdentity[], budgetMs: number) {

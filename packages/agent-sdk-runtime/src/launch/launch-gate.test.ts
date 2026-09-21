@@ -477,3 +477,86 @@ type LaunchOwnershipRecordShape = {
   activationAuthorizedAt?: number
   activationAcknowledgedAt?: number
 }
+
+test.skipIf(!posix)("the payload cannot run while authorization is still being recorded", async () => {
+  const directory = await workspace()
+  const marker = path.join(directory, "payload-ran")
+  const inner = volatileLaunchOwnership()
+  let releaseAuthorization = () => {}
+  const authorizing = new Promise<void>((resolve) => { releaseAuthorization = resolve })
+  let authorized = false
+  const ownership: LaunchOwnershipStore = {
+    ...inner,
+    authorizeActivation: async (id) => {
+      await authorizing
+      await inner.authorizeActivation(id)
+      authorized = true
+    },
+  }
+
+  const launching = launchOwnedProcess({
+    ownership,
+    role: "harness",
+    scope: { directory },
+    payload: { command: "/bin/sh", args: ["-c", `touch ${marker}; sleep 30`] },
+    cwd: directory,
+    env: process.env,
+    activationDeadlineMs: 30_000,
+  })
+
+  // Held open: the gate has reported and is waiting, and nothing may have run.
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  expect(authorized).toBe(false)
+  expect(await exists(marker)).toBe(false)
+
+  releaseAuthorization()
+  const launch = await launching
+  disposable(launch)
+  await waitForFile(marker)
+  expect(authorized).toBe(true)
+})
+
+test.skipIf(!posix)("an owner that dies after authorizing leaves a running payload and an unknown row", async () => {
+  const directory = await workspace()
+  const store = path.join(directory, "ownership.json")
+  const marker = path.join(directory, "payload-ran")
+  await runCrashProxy(crashProxy("before-ack", store, marker), directory)
+
+  await waitForFile(marker, 10_000)
+  const records: Record<string, { activationAuthorizedAt?: number; activationAcknowledgedAt?: number }> =
+    JSON.parse(await fs.readFile(store, "utf8"))
+  const record = Object.values(records)[0]!
+
+  expect(record.activationAuthorizedAt).toBeGreaterThan(0)
+  expect(record.activationAcknowledgedAt).toBeUndefined()
+  expect(reconcileLaunch(record as never)).toEqual({
+    execution: "unknown",
+    because: "activation was authorized and its delivery is unwitnessed",
+  })
+})
+
+test.skipIf(!posix)("a boot identity that differs is a mismatch, not a live process", async () => {
+  const directory = await workspace()
+  const ownership = volatileLaunchOwnership()
+  const launch = await launchOwnedProcess({
+    ownership,
+    role: "harness",
+    scope: { directory },
+    payload: sleeper(30),
+    cwd: directory,
+    env: process.env,
+  })
+  disposable(launch)
+
+  // Same pid, same start second, previous boot: pids restart low after a
+  // reboot, so without this the record of a dead machine names a live process.
+  const rebooted = { ...launch.identity, bootTime: String(Number(launch.identity.bootTime) - 86_400) }
+  const verdict = await verifyCreationIdentity(rebooted)
+
+  expect(verdict.state).toBe("identity_mismatch")
+  expect((await verifyCreationIdentity(launch.identity)).state).toBe("live")
+  const refusal = await retire({ identity: rebooted }, budgets)
+  expect(refusal.error?.code).toBe("signal_denied")
+  expect(refusal.signals[0]?.refusal).toBe("identity_mismatch")
+  expect((await verifyCreationIdentity(launch.identity)).state).toBe("live")
+})

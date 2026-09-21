@@ -85,8 +85,14 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
 
   child.on("message", (frame) => {
     if (!isRecord(frame)) return
-    if (frame.type === "identity" && isRecord(frame.identity)) {
-      onReported({ identity: frame.identity as unknown as CreationIdentity, gateNonce: String(frame.gateNonce) })
+    if (frame.type === "identity") {
+      const identity = gateIdentity(frame.identity, child)
+      if (!identity) {
+        failReported(new Error(`Launch gate reported an identity this launcher cannot own: ${JSON.stringify(frame.identity)}`))
+        child.kill("SIGKILL")
+        return
+      }
+      onReported({ identity, gateNonce: String(frame.gateNonce) })
     }
     if (frame.type === "activated") onAcknowledged(typeof frame.pid === "number" ? frame.pid : undefined)
     if (frame.type === "failed") failAcknowledged(new Error(`Launch gate could not start the payload: ${String(frame.message)}`))
@@ -113,6 +119,25 @@ export function spawnLaunchGate(input: SpawnLaunchGateInput): LaunchGateHandle {
     exit,
     activate: (gateNonce: string, payload: GatePayload) => { child.send({ type: "activate", gateNonce, payload }) },
   }
+}
+
+/**
+ * The gate is a child process, so its identity frame is a claim. It becomes an
+ * ownership record — and therefore a future signal target — only if it names
+ * the pid this launcher actually spawned, answers to this process, and carries
+ * every field a later `verifyCreationIdentity` compares.
+ */
+function gateIdentity(frame: unknown, child: ChildProcess): CreationIdentity | undefined {
+  if (!isRecord(frame)) return undefined
+  const { pid, processGroupId, parentPid, startedAtMs, startSecond, bootTime, source } = frame
+  if (typeof pid !== "number" || pid !== child.pid) return undefined
+  if (typeof parentPid !== "number" || parentPid !== process.pid) return undefined
+  if (typeof processGroupId !== "number" || !Number.isInteger(processGroupId) || processGroupId <= 0) return undefined
+  if (typeof startedAtMs !== "number" || !Number.isFinite(startedAtMs)) return undefined
+  if (typeof startSecond !== "string" || !startSecond) return undefined
+  if (typeof bootTime !== "string" || !bootTime) return undefined
+  if (source !== "darwin-ps" && source !== "linux-procfs" && source !== "win32-cim") return undefined
+  return { pid, processGroupId, parentPid, startedAtMs, startSecond, bootTime, source }
 }
 
 function gatePhase(code: number | null) {

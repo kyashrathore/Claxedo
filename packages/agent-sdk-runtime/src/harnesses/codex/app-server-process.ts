@@ -13,7 +13,6 @@ import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapt
 import { isWindowsShimBinary } from "../shared/windows-process"
 import {
   launchOwnedProcess,
-  volatileLaunchOwnership,
   settleAtRequestDeadline,
   type LaunchOwnershipStore,
   type OwnedLaunch,
@@ -152,7 +151,8 @@ export class CodexAppServerProcess {
     processObserver?: AgentProcessObserver
     mcp?: Record<string, ResolvedMcpServer>
     signal?: AbortSignal
-    ownership?: LaunchOwnershipStore
+    /** Required: a composition with no durable store passes the volatile one itself. */
+    ownership: LaunchOwnershipStore
     sessionId?: string
     budgets?: Partial<RecoveryBudgets>
   }) {
@@ -161,7 +161,7 @@ export class CodexAppServerProcess {
     const command = codexAppServerCommand(input.binary)
     const windowsShim = isWindowsShimBinary(command.command)
     const launch = await launchOwnedProcess({
-      ownership: input.ownership ?? volatileLaunchOwnership(),
+      ownership: input.ownership,
       role: "harness",
       scope: { directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
       payload: {

@@ -96,16 +96,22 @@ async function retireOwned(target: RetirementTarget, budgets: RetirementBudgets)
   }
 
   const signals: SignalOutcome[] = []
-  // The leader was verified live above, and POSIX keeps a group id reserved
-  // while the group has members, so the rest of this retirement may go on
+  // The leader was verified live just above, and POSIX keeps a group id
+  // reserved while the group still has members, so this retirement may go on
   // signalling that group even after its leader exits. A retirement that
   // starts with an already-exited leader gets no such licence: it refused
-  // above, because nothing in this process ever verified that group.
+  // above: nothing in this process ever verified that group, so it reports
+  // what it can still see of it and signals nothing.
   signals.push(await deliver(identity, "SIGTERM"))
   if (!(await awaitGroupEmpty(identity, budgets.termGraceMs))) {
     await closeNative(target)
-    signals.push(await deliver(identity, "SIGKILL"))
-    await awaitGroupEmpty(identity, budgets.killVerifyMs)
+    // Closing the native handle is a hangup the program may act on, so the
+    // group can empty during it. Signalling a group id nobody holds any more
+    // is how an unrelated process gets killed.
+    if ((await descendantsAfterExit(identity)) === "owned") {
+      signals.push(await deliver(identity, "SIGKILL"))
+      await awaitGroupEmpty(identity, budgets.killVerifyMs)
+    }
   }
 
   const leader = await leaderState(identity)

@@ -5,6 +5,13 @@ import { isRecord } from "@claxedo/helpers/guards"
 
 const execFileAsync = promisify(execFile)
 
+/**
+ * `ps`, `sysctl` and PowerShell are all reachable from a wedged machine, and a
+ * probe that never returns makes every signal wait on it. A timed-out probe is
+ * an unknown identity, which refuses to signal — never an assumed exit.
+ */
+const PROBE_TIMEOUT_MS = 2_000
+
 export type CreationIdentitySource = "darwin-ps" | "linux-procfs" | "win32-cim"
 
 /**
@@ -50,7 +57,7 @@ export function readBootTime(): Promise<string> {
 
 async function probeBootTime(): Promise<string> {
   if (process.platform === "darwin") {
-    const { stdout } = await execFileAsync("sysctl", ["-n", "kern.boottime"])
+    const { stdout } = await execFileAsync("sysctl", ["-n", "kern.boottime"], { timeout: PROBE_TIMEOUT_MS })
     const seconds = /sec\s*=\s*(\d+)/.exec(stdout)
     if (!seconds) throw new Error(`kern.boottime is not in the expected form: ${stdout.trim()}`)
     return seconds[1]!
@@ -67,7 +74,7 @@ async function probeBootTime(): Promise<string> {
   const { stdout } = await execFileAsync("powershell", [
     "-NoProfile", "-NonInteractive", "-Command",
     "(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString('o')",
-  ])
+  ], { timeout: PROBE_TIMEOUT_MS })
   const value = stdout.trim()
   if (!value) throw new Error("Win32_OperatingSystem reported no LastBootUpTime")
   return value
@@ -84,9 +91,11 @@ export async function readCreationIdentity(pid: number): Promise<CreationIdentit
 async function readDarwinCreationIdentity(pid: number, boot: string): Promise<CreationIdentity | undefined> {
   let stdout: string
   try {
-    ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,ppid=,lstart=", "-p", String(pid)]))
+    ;({ stdout } = await execFileAsync("ps", ["-o", "pgid=,ppid=,lstart=", "-p", String(pid)], { timeout: PROBE_TIMEOUT_MS }))
   } catch (error) {
-    if (isRecord(error) && error.code === 1) return undefined
+    // `ps` exits 1 for "no such process"; a probe this owner killed on its
+    // timeout carries a signal instead, and that is not evidence of an exit.
+    if (isRecord(error) && error.code === 1 && !error.killed) return undefined
     throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
   }
   const row = /^\s*(\d+)\s+(\d+)\s+(\S.*)$/.exec(stdout.trim())
@@ -144,7 +153,7 @@ async function readWindowsCreationIdentity(pid: number, boot: string): Promise<C
     ;({ stdout } = await execFileAsync("powershell", [
       "-NoProfile", "-NonInteractive", "-Command",
       `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToString('o') + ' ' + $p.ParentProcessId }`,
-    ]))
+    ], { timeout: PROBE_TIMEOUT_MS }))
   } catch (error) {
     throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
   }
