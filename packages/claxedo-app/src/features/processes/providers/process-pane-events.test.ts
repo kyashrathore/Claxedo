@@ -65,6 +65,17 @@ describe("process.stopped handler", () => {
     expect(store.processes.web).toMatchObject({ status: "stopped", exitCode: 0 })
     expect(store.processes.web?.ptyId).toBeUndefined()
   })
+
+  // The owner omits the field when it stopped the process without reading a
+  // code. Defaulting it to 0 here would report a clean exit nobody observed.
+  test("a stop whose exit code was never read keeps the code unknown", () => {
+    const h = makeHandlers()
+    h.started({ configId: "web", ptyId: "pty_1" })
+    h.stopped({ configId: "web" })
+    expect(store.processes.web).toMatchObject({ status: "stopped" })
+    expect(store.processes.web?.exitCode).toBeUndefined()
+    expect(store.processes.web?.ptyId).toBeUndefined()
+  })
 })
 
 describe("process.crashed handler", () => {

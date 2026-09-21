@@ -74,7 +74,7 @@ export function createProcessEventHandlers(deps: ProcessEventDeps) {
     sync()
   }
 
-  const stopped = (event: { configId: string; exitCode: number }) => {
+  const stopped = (event: { configId: string; exitCode?: number }) => {
     const { configId, exitCode } = event
     const existing = store.processes[configId]
     if (existing) {

@@ -269,7 +269,10 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                         <div class="flex flex-col items-center gap-1.5">
                           <span class="text-compact font-medium" style={{ color: "var(--surface-critical-strong)" }}>
                             {launchError() ? "Failed to start" : "Crashed"}
-                            <Show when={props.process?.exitCode !== undefined}>
+                            <Show
+                              when={props.process?.exitCode !== undefined}
+                              fallback={<span class="text-text-weaker font-normal"> · exit code unknown</span>}
+                            >
                               <span class="text-text-weaker font-normal"> · exit {props.process?.exitCode}</span>
                             </Show>
                           </span>

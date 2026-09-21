@@ -75,7 +75,11 @@ export type ClaxedoEvent =
       outcome?: "done" | "error" | "cancelled"
     }
   | { type: "process.started"; directory?: string; configId: string; ptyId: string }
-  | { type: "process.stopped"; directory?: string; configId: string; exitCode: number }
+  /**
+   * `exitCode` is absent when the owner stopped the process without reading one
+   * — a retirement it could not verify reports no code rather than inventing 0.
+   */
+  | { type: "process.stopped"; directory?: string; configId: string; exitCode?: number }
   | { type: "process.crashed"; directory?: string; configId: string; exitCode: number; restartCount: number; commandExit?: boolean; ptyId?: string }
   | { type: "process.status"; directory?: string; configId: string; status: string }
   | { type: "process.config.changed"; directory?: string; configs: unknown[] }
