@@ -137,8 +137,19 @@ export const desktopMainComposition: Policy = {
   // process that may hold the token — the renderer must not, which is why the
   // stamping is here rather than a value handed over IPC. Electron-free by the
   // same seam split the navigation and IPC guards use, so no package edge.
-  // 93/24, no headroom.
-  ceilings: { modules: 93, packages: 24 },
+  //
+  // `main/daemon-recovery.ts` adds the module and both packages. It is the
+  // external owner of a daemon that stopped answering HTTP, so it needs the two
+  // things only those packages hold: `@claxedo/agent-sdk-runtime/launch` for
+  // creation identity and identity-checked retirement, and
+  // `@claxedo/agent-runtime-contract` for the recovery result it reports.
+  // Reviewed owner: Electron main, which is the only process that launched the
+  // daemon and the only one that may signal it; reimplementing either here
+  // would be a second answer to "is this pid still that launch", and a guessed
+  // one is what R8 was. Both packages are dependency-free data and OS reads,
+  // with no server, runtime or store closure behind them.
+  // 94/26, no headroom.
+  ceilings: { modules: 94, packages: 26 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

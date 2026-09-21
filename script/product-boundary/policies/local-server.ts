@@ -160,8 +160,20 @@ export const localServer: Policy = {
   //    search): a caller-named regex can backtrack catastrophically on the
   //    server thread, and only `worker.terminate()` interrupts synchronous
   //    evaluation, so grepSearch evaluates the pattern in a bounded worker.
-  //    68/28, no headroom.
-  ceilings: { modules: 68, packages: 28 },
+  //  - `app/daemon-operation-store.ts` and `app/daemon-ownership-snapshot.ts`
+  //    (owner: the daemon lifecycle): machine-scope recovery receipts in this
+  //    machine's own database, and the redacted inventory it republishes for a
+  //    launcher that cannot reach its HTTP. Workspace ownership stays in each
+  //    workspace's RuntimeStore; what lives here spans every workspace at once,
+  //    so no single one of them can hold it. They reach `@claxedo/helpers`,
+  //    `@claxedo/agent-runtime-contract`, the ClaxedoDB engine and the
+  //    scope-key owner in `@claxedo/agent-sdk-runtime/adapters`, all already
+  //    here.
+  //  - `app/daemon-admission.ts` now actually reachable: the composition mounts
+  //    its machine-recovery fence, so the module this comment already claimed
+  //    was in the closure is in it.
+  //    69/28, no headroom.
+  ceilings: { modules: 69, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
