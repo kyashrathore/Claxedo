@@ -296,7 +296,7 @@ describe("terminal relay lifecycle", () => {
     await session.close("pty_2")
 
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
-      "GET http://server.test/api/workspace/ws_lifecycle/connection",
+      "POST http://server.test/api/workspace/ws_lifecycle/connection",
       "POST https://relay.example.test/workspaces/ws_lifecycle/api/wr/pty",
       "PUT https://relay.example.test/workspaces/ws_lifecycle/api/wr/pty/pty_1",
       "POST https://relay.example.test/workspaces/ws_lifecycle/api/wr/pty",
@@ -365,7 +365,7 @@ describe("terminal relay lifecycle", () => {
     const ptyId = await session.new({ initialCommand: "echo ok", title: "Terminal" })
     expect(ptyId).toBe("pty_selfhost")
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
-      "GET http://server.test/api/workspace/ws_selfhost/connection",
+      "POST http://server.test/api/workspace/ws_selfhost/connection",
       "POST https://relay.example.test/workspaces/ws_selfhost/api/wr/pty",
     ])
 

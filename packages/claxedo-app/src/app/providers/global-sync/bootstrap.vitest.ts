@@ -50,7 +50,7 @@ function providers(input: Partial<ProviderListResponse> = {}): ProviderListRespo
 function directorySdk(input: Partial<DirectorySdk> = {}): DirectorySdk {
   return {
     project: {
-      current: async () => ({ data: project() }),
+      ensure: async () => ({ data: project() }),
     },
     path: {
       get: async () => ({ data: defaultPath }),
@@ -367,7 +367,7 @@ describe("override bootstrapDirectory", () => {
     })
     const sdk = directorySdk({
       project: {
-        current: async () => {
+        ensure: async () => {
           await pending
           returned.project++
           return { data: project() }
@@ -666,7 +666,7 @@ describe("override bootstrapDirectory", () => {
     const urls: string[] = []
     const sdk = directorySdk({
       project: {
-        current: async () => {
+        ensure: async () => {
           throw new Error("expected signed cloud project metadata")
         },
       },
@@ -751,7 +751,7 @@ describe("override bootstrapDirectory", () => {
     const urls: string[] = []
     const sdk = directorySdk({
       project: {
-        current: async () => {
+        ensure: async () => {
           throw new Error("expected signed cloud project metadata")
         },
       },
@@ -818,8 +818,8 @@ describe("override bootstrapDirectory", () => {
     const urls: string[] = []
     const sdk = directorySdk({
       project: {
-        current: async () => {
-          throw new Error("expected signed cloud bootstrap to skip project.current")
+        ensure: async () => {
+          throw new Error("expected signed cloud bootstrap to skip project.ensure")
         },
       },
       path: {

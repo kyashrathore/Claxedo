@@ -49,12 +49,12 @@ export function createClaxedoClient(options: ClaxedoClientOptions) {
     listWorkspaces: async (host?: "provisioner" | "machine") => await request(
       host ? `/api/workspace?${query({ host })}` : "/api/workspace",
     ),
-    resolveWorkspace: async (input: { directory: string; create?: boolean }) => await request(
-      `/api/workspace/resolve?${query({
-        directory: input.directory,
-        create: input.create === false ? "false" : "true",
-      })}`,
-    ),
+    // Ensuring a workspace for a directory is a write, so it rides the POST
+    // form of the resolve route; `create: false` keeps the read-only GET.
+    resolveWorkspace: async (input: { directory: string; create?: boolean }) =>
+      input.create === false
+        ? await request(`/api/workspace/resolve?${query({ directory: input.directory })}`)
+        : await post(`/api/workspace/resolve?${query({ directory: input.directory })}`),
     readFile: async (input: { directory: string; path: string }) => await request(
       `/file/content?${query({ directory: input.directory, path: input.path })}`,
     ),

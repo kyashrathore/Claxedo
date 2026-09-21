@@ -146,11 +146,13 @@ export const HOSTED_OPERATIONS = {
   //     other; two rows can.
   "workspace.list.provisioner": { method: "GET", path: "/api/workspace?host=provisioner" },
   "workspace.list.machine": { method: "GET", path: "/api/workspace?host=machine" },
-  // Optional query: callers pass workspaceId and/or directory and/or create.
+  // Optional query: callers pass workspaceId and/or directory. No `create`
+  // key: the hosted resolve is a read — it answers null and materializes
+  // nothing — so the table declares no way to ask one to write.
   "workspace.resolve": {
     method: "GET",
     path: "/api/workspace/resolve",
-    optionalQuery: ["workspaceId", "directory", "create"],
+    optionalQuery: ["workspaceId", "directory"],
   },
   // `projectName`/`workspaceName`, not `displayName`. The create body is a
   // strict schema, so an undeclared field is a 400 for the whole request rather
@@ -195,7 +197,10 @@ export const HOSTED_OPERATIONS = {
     path: "/api/workspace/:id/checkpoints/:checkpointId/restore",
     body: ["approved"],
   },
-  "workspace.connection.mint": { method: "GET", path: "/api/workspace/:id/connection" },
+  // POST, not GET: minting can start billable compute server-side, so the
+  // explicit connect is never a read verb. `GET /connection` is the read-only
+  // status path — it mints only off an already-running sandbox (P-118).
+  "workspace.connection.mint": { method: "POST", path: "/api/workspace/:id/connection" },
   "workspace.connection.refresh": {
     method: "POST",
     path: "/api/workspace/:id/connection/refresh",

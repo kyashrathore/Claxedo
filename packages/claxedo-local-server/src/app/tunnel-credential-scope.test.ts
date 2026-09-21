@@ -229,7 +229,8 @@ async function registeredWorkspace(name: string) {
   mkdirSync(directory)
   execFileSync("git", ["init", directory])
   const resolved = await identity.call(
-    `${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+    `${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`,
+    { method: "POST" },
   )
   expect(resolved.status).toBe(200)
   return ((await resolved.json()) as { workspaceId: string }).workspaceId

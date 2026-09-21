@@ -1,4 +1,4 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { z } from "zod"
 import { listProjects, resolveWorkspace, updateProjectMetadata } from "@claxedo/server-core/workspace/store/index"
 import { ControlPlaneAuthError, controlPlaneAuthContext, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
@@ -33,16 +33,15 @@ export function projectRoutes(options: ProjectRouteOptions) {
       for (const project of projects) if (await access.allowed(project.id, "read")) visible.push(project)
       return c.json(visible)
     })
-    .get("/project/current", async (c) => {
-      const access = await shellProjectAccess(c.req.raw, options)
-      const input = workspaceInput(c)
-      const workspace = await resolveWorkspace({ workspaceId: input.workspaceId, directory: input.directory, create: access.local && !!input.directory })
-      const id = workspace?.project_id ?? workspace?.id
-      if (!id || !await access.allowed(id, "read")) return c.json({ error: { code: "project_not_found", message: "Project not found" } }, 404)
-      const project = (await listProjects()).find((item) => item.id === id)
-      if (!project) return c.json({ error: { code: "project_not_found", message: "Project not found" } }, 404)
-      return c.json(project)
-    })
+    .get("/project/current", (c) => currentProject(c, options, false))
+    /**
+     * The ensure form of `/project/current`, on the verb that may write.
+     * Creation stays local-only: a directory the caller names is theirs by
+     * definition only in the unsigned product, and a signed caller's project
+     * is created through `POST /api/claxedo/projects`, which registers it with
+     * their authority. A signed POST resolves exactly like the GET.
+     */
+    .post("/project/current", (c) => currentProject(c, options, true))
     .patch("/project/:projectId", async (c) => {
       const access = await shellProjectAccess(c.req.raw, options)
       const id = c.req.param("projectId")
@@ -53,4 +52,15 @@ export function projectRoutes(options: ProjectRouteOptions) {
       if (!project) return c.json({ error: { code: "project_not_found", message: "Project not found" } }, 404)
       return c.json(project)
     })
+}
+
+async function currentProject(c: Context, options: ProjectRouteOptions, create: boolean) {
+  const access = await shellProjectAccess(c.req.raw, options)
+  const input = workspaceInput(c)
+  const workspace = await resolveWorkspace({ workspaceId: input.workspaceId, directory: input.directory, create: create && access.local && !!input.directory })
+  const id = workspace?.project_id ?? workspace?.id
+  if (!id || !await access.allowed(id, "read")) return c.json({ error: { code: "project_not_found", message: "Project not found" } }, 404)
+  const project = (await listProjects()).find((item) => item.id === id)
+  if (!project) return c.json({ error: { code: "project_not_found", message: "Project not found" } }, 404)
+  return c.json(project)
 }

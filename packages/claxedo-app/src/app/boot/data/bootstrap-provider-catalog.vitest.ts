@@ -44,7 +44,7 @@ function providerCatalog() {
 
 function fakeSdk(): DirectoryBootstrapSdk {
   return {
-    project: { current: async () => ({ data: { id: "project", worktree: "/work/project", sandboxes: [], time: { created: 1, updated: 1 } } }) },
+    project: { ensure: async () => ({ data: { id: "project", worktree: "/work/project", sandboxes: [], time: { created: 1, updated: 1 } } }) },
     path: { get: async () => ({ data: { home: "", state: "", config: "", worktree: "", directory: "" } }) },
     command: { list: async () => ({ data: [] }) },
     vcs: { get: async () => ({ data: {} }) },

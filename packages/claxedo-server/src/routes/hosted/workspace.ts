@@ -305,6 +305,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       // + side-effect-free keeps the resolve loop quiet and lets the session create
       // proceed over the relay using the inventory-known workspace.
       .get("/resolve", (c) => c.json(null))
+      // The ensure verb answers the same `null`: the hosted control plane
+      // never materializes a workspace off a resolve, whatever the method.
+      .post("/resolve", (c) => c.json(null))
       // Cloud workspace creation on the HOSTED control plane. The local Node
       // server's `routes/workspace.ts` `/create` is fat (filesystem config,
       // credential registry, telemetry) and Node-only; the hosted path is thin:

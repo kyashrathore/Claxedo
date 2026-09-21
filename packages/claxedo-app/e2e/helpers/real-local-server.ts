@@ -126,7 +126,7 @@ export async function startRealLocalServer(label: string, options: { port?: numb
     await fs.writeFile(path.join(directory, "README.md"), `${name}\n`)
     await execFileAsync("git", ["add", "--", "README.md"], { cwd: directory, env: gitEnv })
     await execFileAsync("git", ["-c", "user.email=e2e@test.com", "-c", "user.name=e2e", "commit", "-m", "init", "--", "README.md"], { cwd: directory, env: gitEnv })
-    const response = await fetch(`${url}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
+    const response = await fetch(`${url}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
     if (!response.ok) throw new Error(`workspace registration failed (${response.status}): ${await response.text()}`)
     const body = await response.json() as { workspaceId: string }
     return { id: body.workspaceId, directory }

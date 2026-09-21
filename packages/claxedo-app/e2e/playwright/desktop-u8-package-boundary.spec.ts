@@ -28,8 +28,7 @@ async function openScratchWorkspace(app: PackagedApp) {
   const serverBase = new URL(await expectServerReachable(app, 45_000)).origin
   const resolveUrl = new URL("/api/claxedo/workspace/resolve", serverBase)
   resolveUrl.searchParams.set("directory", directory)
-  resolveUrl.searchParams.set("create", "true")
-  const resolved = await fetch(resolveUrl)
+  const resolved = await fetch(resolveUrl, { method: "POST" })
   if (!resolved.ok) {
     throw new Error(
       `GATING: failed to register signed-activation workspace (${resolved.status}): ${await resolved.text()}`,

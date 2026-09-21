@@ -556,8 +556,8 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
    * action. Returns the workspaceId the rail's project group is keyed by.
    */
   async function registerWorkspace(serverBase: string, dir: string): Promise<string> {
-    const url = `${serverBase}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`
-    const res = await fetch(url)
+    const url = `${serverBase}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(dir)}`
+    const res = await fetch(url, { method: "POST" })
     if (!res.ok) {
       throw new Error(
         `GATING: failed to register workspace ${dir} via ${url} (${res.status}) — ` +

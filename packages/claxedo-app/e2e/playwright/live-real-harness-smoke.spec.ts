@@ -133,8 +133,8 @@ async function makeWorkspace(name: string) {
  * faster than that registration completes.
  */
 async function registerWorkspace(dir: string) {
-  const url = `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`
-  const res = await fetch(url)
+  const url = `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}`
+  const res = await fetch(url, { method: "POST" })
   if (!res.ok) {
     throw new Error(
       `GATING: failed to pre-register workspace ${dir} via ${url} (${res.status}) — ` +

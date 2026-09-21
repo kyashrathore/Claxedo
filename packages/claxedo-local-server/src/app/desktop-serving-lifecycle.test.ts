@@ -103,7 +103,8 @@ async function mountedWorkspace() {
   mkdirSync(directory)
   execFileSync("git", ["init", directory])
   const resolved = await call(
-    `${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+    `${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`,
+    { method: "POST" },
   )
   const { workspaceId } = await resolved.json() as { workspaceId: string }
   // Any runtime-owned read mounts the workspace's runtime in process.

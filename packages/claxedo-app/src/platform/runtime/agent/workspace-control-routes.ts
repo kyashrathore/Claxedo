@@ -54,11 +54,15 @@ export function workspaceCreateUrl(input?: { baseUrl?: string }) {
   return new URL("/api/workspace/create", controlPlaneBaseUrl(input?.baseUrl)).toString()
 }
 
+/**
+ * The resolve URL for both verbs: GET reads the record, POST ensures the
+ * workspace for a directory exists. Creation is expressed by the method, not
+ * a `?create=` flag — a GET must never write.
+ */
 export function workspaceResolveUrl(input: {
   baseUrl?: string
   scope?: string
   workspaceId?: string
-  create?: boolean
 }) {
   const baseUrl = controlPlaneBaseUrl(input.baseUrl)
   const path = centralTransportForServer(baseUrl) === "loopback"
@@ -71,7 +75,6 @@ export function workspaceResolveUrl(input: {
     ?? localWorkspaceAssociationId(input.scope)
   if (input.scope && !workspaceId) url.searchParams.set("directory", input.scope)
   if (workspaceId) url.searchParams.set("workspaceId", workspaceId)
-  if (input.create) url.searchParams.set("create", "true")
   return url.toString()
 }
 

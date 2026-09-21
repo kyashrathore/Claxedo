@@ -524,7 +524,8 @@ describe("local composition — workspace registration", () => {
     // way the product's resolution does; the JS realpath does not.
     const canonicalDirectory = realpathSync.native(directory)
     const response = await app().request(
-      `http://localhost/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+      `http://localhost/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}`,
+      { method: "POST" },
     )
 
     expect(response.status).toBe(200)

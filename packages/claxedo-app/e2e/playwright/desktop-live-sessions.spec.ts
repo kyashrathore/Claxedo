@@ -53,7 +53,8 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     packaged = await launch()
     const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
     const resolve = await fetch(
-      `${serverBase}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+      `${serverBase}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}`,
+      { method: "POST" },
     )
     const resolved = await resolve.json() as { workspaceId?: string; error?: unknown }
     expect(resolve.status, JSON.stringify(resolved)).toBe(200)

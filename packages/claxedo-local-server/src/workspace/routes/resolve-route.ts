@@ -1,9 +1,11 @@
 import { Hono } from "hono"
+import type { Context } from "hono"
 import { listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { workspaceBacking } from "@claxedo/server-core/workspace/store/backing"
 import { controlPlaneListRow, workspaceResponse } from "@claxedo/server-core/workspace/store/response"
 import {
   controlPlaneRouteAuth,
+  signedRouteAuth,
   type ControlPlaneRouteAuthOptions,
 } from "../../platform/http/control-plane-route-auth"
 
@@ -41,31 +43,42 @@ export function LocalWorkspaceRoutes(options: ControlPlaneRouteAuthOptions = {})
       return c.json({ workspaces })
     })
     .use("/resolve", controlPlaneRouteAuth(options))
-    .get("/resolve", async (c) => {
-      const workspaceId = c.req.query("workspaceId") ?? c.req.query("workspace")
-      const directory = c.req.query("directory")
-      if (workspaceId === undefined && !directory) {
-        return c.json({
-          error: {
-            code: "workspace_resolve_input_required",
-            message: "workspace resolve requires directory or workspaceId",
-          },
-        }, 400)
-      }
+    .get("/resolve", (c) => localWorkspaceResolve(c, false))
+    /**
+     * The create half of resolve, on the verb that may write. Only the
+     * unsigned local product may materialize a row: a signed caller's
+     * workspaces belong to the authority, which never hears about one created
+     * here — `POST /api/claxedo/projects` is the signed creation route, and it
+     * registers the workspace under the caller's account. A signed POST still
+     * resolves; it just cannot create.
+     */
+    .post("/resolve", (c) => localWorkspaceResolve(c, !signedRouteAuth(c.req.raw)))
+}
 
-      const workspace = await resolveWorkspace({
-        workspaceId,
-        directory,
-        create: c.req.query("create") === "true",
-      })
-      if (!workspace) {
-        return c.json({
-          error: {
-            code: "workspace_not_found",
-            message: "Local workspace not found",
-          },
-        }, 404)
-      }
-      return c.json(workspaceResponse(workspace))
-    })
+async function localWorkspaceResolve(c: Context, create: boolean) {
+  const workspaceId = c.req.query("workspaceId") ?? c.req.query("workspace")
+  const directory = c.req.query("directory")
+  if (workspaceId === undefined && !directory) {
+    return c.json({
+      error: {
+        code: "workspace_resolve_input_required",
+        message: "workspace resolve requires directory or workspaceId",
+      },
+    }, 400)
+  }
+
+  const workspace = await resolveWorkspace({
+    workspaceId,
+    directory,
+    create,
+  })
+  if (!workspace) {
+    return c.json({
+      error: {
+        code: "workspace_not_found",
+        message: "Local workspace not found",
+      },
+    }, 404)
+  }
+  return c.json(workspaceResponse(workspace))
 }

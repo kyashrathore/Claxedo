@@ -106,10 +106,12 @@ describe("Claxedo server client", () => {
     await expect(client.project.update({ projectID: "proj_1", name: "renamed" }, {
       headers: { "X-Default": "overridden" },
     }).then((result) => result.data)).resolves.toEqual({ id: "proj_1", name: "renamed" })
+    await client.project.ensure()
 
     expect(calls.map((request) => [request.method, request.url])).toEqual([
       ["GET", "https://server.example/base/global/health"],
       ["PATCH", "https://server.example/base/project/proj_1"],
+      ["POST", "https://server.example/base/project/current"],
     ])
     expect(calls[0]?.headers.get("authorization")).toBe("Basic token")
     expect(calls[0]?.headers.get("x-default")).toBe("default")

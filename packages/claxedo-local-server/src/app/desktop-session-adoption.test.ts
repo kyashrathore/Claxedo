@@ -247,7 +247,7 @@ async function workspaceWithLocalSession(sessionId: string) {
   const directory = path.join(dataDir, "project")
   mkdirSync(directory)
   execFileSync("git", ["init", directory])
-  const resolved = await identity.call(`${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
+  const resolved = await identity.call(`${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
   expect(resolved.status).toBe(200)
   const { workspaceId } = await resolved.json() as { workspaceId: string }
   // Created the way the user at the keyboard creates one: loopback, no relay

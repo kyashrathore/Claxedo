@@ -27,7 +27,7 @@ test("recovered worktree runs a real shell in its checkout across desktop restar
   try {
     packaged = await launch()
     const server = new URL(await expectServerReachable(packaged)).origin
-    const registered = await fetch(`${server}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
+    const registered = await fetch(`${server}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
     expect(registered.ok).toBe(true)
     const creation = await fetch(`${server}/experimental/worktree?directory=${encodeURIComponent(directory)}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "missing" }),

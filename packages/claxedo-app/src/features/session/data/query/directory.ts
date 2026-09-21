@@ -8,7 +8,7 @@ import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-rou
 
 type ProjectClient = {
   project: {
-    current: () => Promise<{ data?: Project }>
+    ensure: () => Promise<{ data?: Project }>
   }
 }
 
@@ -62,6 +62,12 @@ function agentListFromUnknown(data: unknown): Agent[] {
   return Array.isArray(data) ? data.flatMap((item) => agentRow(item) ?? []) : []
 }
 
+/**
+ * The current project for a directory, registered first when it has none.
+ * Registration is a write, so the query asks the POST form of
+ * `/project/current` (`project.ensure`): the read verb on that route resolves
+ * only and would 404 an unregistered directory.
+ */
 export function projectCurrentQuery(input: {
   baseUrl?: string
   directory: string
@@ -70,7 +76,7 @@ export function projectCurrentQuery(input: {
   return {
     queryKey: queryKeys.directory.project(input.baseUrl, input.directory),
     staleTime: 60 * 1000,
-    queryFn: async () => (await input.client.project.current()).data!.id,
+    queryFn: async () => (await input.client.project.ensure()).data!.id,
   }
 }
 

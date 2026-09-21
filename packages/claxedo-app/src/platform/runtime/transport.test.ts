@@ -99,7 +99,7 @@ describe("createTransport", () => {
       headers: { Authorization: "Bearer signed-browser-token" },
     })).resolves.toEqual({ ok: true })
     expect(calls).toEqual([
-      "GET https://control.test/api/workspace/ws_relay/connection Bearer signed-browser-token",
+      "POST https://control.test/api/workspace/ws_relay/connection Bearer signed-browser-token",
       "GET https://relay.test/workspaces/ws_relay/vcs Bearer rat_relay",
     ])
   })

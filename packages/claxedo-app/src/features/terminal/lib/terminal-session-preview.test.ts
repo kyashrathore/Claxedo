@@ -193,7 +193,7 @@ describe("terminal session preview aliases", () => {
 
     expect(out?.sessionId).toBe("sess-cloud")
     expect(seen.map((item) => `${item.method} ${item.url}`)).toEqual([
-      "GET http://server.test/api/workspace/ws_1/connection",
+      "POST http://server.test/api/workspace/ws_1/connection",
       "GET https://relay.test/workspaces/ws_1/api/wr/hook/terminal-session?terminalId=pty-cloud",
     ])
     expect(seen[1]?.authorization).toBe("Bearer rat_1")

@@ -595,11 +595,13 @@ describe("workspace routes signed control plane authority", () => {
     })
     const app = WorkspaceRoutes(services(), { authConfig, verifier })
 
-    const res = await app.request("http://remote.attacker.example/resolve?workspaceId=ws_victim")
+    for (const method of ["GET", "POST"]) {
+      const res = await app.request("http://remote.attacker.example/resolve?workspaceId=ws_victim", { method })
 
-    expect(res.status).toBe(401)
-    // The row must not be materialized by an unauthenticated caller either
-    // (create=true side effect).
+      expect(res.status).toBe(401)
+    }
+    // The row must not be materialized by an unauthenticated caller on either
+    // verb — POST is the ensure form.
     expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
   })
 
@@ -1384,27 +1386,30 @@ describe("workspace routes signed control plane authority", () => {
   test("signed directory resolve cannot create a local alias when authority has no match", async () => {
     const svc = services()
     svc.authority!.listWorkspaces = vi.fn(async () => [])
-    mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
+    mocks.resolveWorkspace.mockResolvedValue(undefined)
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
-    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fmissing&create=true", {
-      headers: { Authorization: "Bearer user_1" },
-    })
+    for (const method of ["GET", "POST"]) {
+      const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fmissing&create=true", {
+        method,
+        headers: { Authorization: "Bearer user_1" },
+      })
 
-    expect(res.status).toBe(404)
-    await expect(res.json()).resolves.toEqual({
-      error: { code: "workspace_not_found", message: "Workspace not found" },
-    })
-    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
-      workspaceId: undefined,
-      directory: "/workspace/missing",
-      create: false,
-    })
+      expect(res.status).toBe(404)
+      await expect(res.json()).resolves.toEqual({
+        error: { code: "workspace_not_found", message: "Workspace not found" },
+      })
+      expect(mocks.resolveWorkspace).toHaveBeenLastCalledWith({
+        workspaceId: undefined,
+        directory: "/workspace/missing",
+        create: false,
+      })
+    }
     expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
   })
 
-  test("unsigned directory resolve preserves local create semantics", async () => {
-    mocks.resolveWorkspace.mockImplementationOnce(async (input: { directory?: string; create?: boolean }) =>
+  test("unsigned directory resolve creates only through the POST verb", async () => {
+    mocks.resolveWorkspace.mockImplementation(async (input: { directory?: string; create?: boolean }) =>
       input.create
         ? {
             id: "ws_local_created",
@@ -1420,7 +1425,21 @@ describe("workspace routes signed control plane authority", () => {
       authConfig: { enabled: false, mode: "local-only", reason: "local" },
     })
 
-    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fcreated&create=true")
+    // Repeated reads — with or without the retired `create=true` — leave the
+    // store untouched.
+    for (const suffix of ["", "&create=true"]) {
+      const read = await app.request(`http://localhost/resolve?directory=%2Fworkspace%2Fcreated${suffix}`)
+      expect(read.status).toBe(404)
+      expect(mocks.resolveWorkspace).toHaveBeenLastCalledWith({
+        workspaceId: undefined,
+        directory: "/workspace/created",
+        create: false,
+      })
+    }
+
+    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fcreated", {
+      method: "POST",
+    })
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
@@ -1428,7 +1447,7 @@ describe("workspace routes signed control plane authority", () => {
       directory: "/workspace/created",
       kind: "local",
     })
-    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
+    expect(mocks.resolveWorkspace).toHaveBeenLastCalledWith({
       workspaceId: undefined,
       directory: "/workspace/created",
       create: true,
