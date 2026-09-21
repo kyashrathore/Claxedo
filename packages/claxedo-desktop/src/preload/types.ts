@@ -123,6 +123,21 @@ export type BrowserBridge = {
 
 export type ProcessDiagnosticsBridge = LocalDiagnostics.Capability
 
+/**
+ * Machine-scope recovery, by operation only.
+ *
+ * Main holds this machine's daemon capability and the renderer never does: a
+ * caller here names an operation and reads its receipt, it does not describe a
+ * request to a machine. `submit` takes a `RecoveryRequest` and both answers
+ * carry a `RecoveryOutcome`, which the caller parses with the contract's own
+ * reader — the values cross the bridge as JSON.
+ */
+export type DaemonRecoveryBridge = {
+  inspect: () => Promise<unknown>
+  submit: (request: unknown) => Promise<unknown>
+  read: (operationId: string) => Promise<unknown>
+}
+
 export type ElectronAPI = {
   optionalFeatures: Readonly<{
     nativeMarkdown: boolean
@@ -183,6 +198,7 @@ export type ElectronAPI = {
   setNativeTheme: (theme: "light" | "dark" | "system") => void
   getDroppedFilePaths: (files: File[]) => string[]
   processDiagnostics: ProcessDiagnosticsBridge
+  daemonRecovery: DaemonRecoveryBridge
   browser: BrowserBridge
   /**
    * Machine remote access, by named operation only.

@@ -5,6 +5,7 @@ import type { DiagnosticsOwnerEvent } from "../../shared/diagnostics-transport"
 import {
   createDiagnosticsActions,
   type ActionClaim,
+  type ActionExecution,
   type OwnerOperation,
 } from "./actions"
 
@@ -701,7 +702,7 @@ export function createProfiler(options: {
         claim,
         resolveProcess: (processId) => processes.get(processId),
         revalidate: (identity) => options.source.revalidateIdentity?.(identity) ?? Promise.resolve(false),
-      }).catch(() => ({ ok: false as const, code: "operation-failed" as const }))
+      }).catch((): ActionExecution => ({ ok: false, code: "operation-failed" }))
       if (!result.ok) {
         recordLifecycle({
           event: "action-failed",
@@ -710,7 +711,9 @@ export function createProfiler(options: {
           action: claim.action,
           outcome: "failed",
         })
-        return { ok: false, action: claim.action, code: result.code }
+        return result.code === "unresolved"
+          ? { ok: false, action: claim.action, code: "unresolved", retirement: result.retirement }
+          : { ok: false, action: claim.action, code: result.code }
       }
       const markerId = recordLifecycle({
         event: "action-completed",

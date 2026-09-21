@@ -5,6 +5,9 @@ import { createDiagnosticsChildTransport, windowsIdentityProbeCommand } from "./
 
 const binding = { pid: 50, launchId: "server-launch", generation: "server-generation" }
 
+/** A retirement that finished the job; `retirementSettled` reads it as `completed`. */
+const SETTLED = { leader: "exited" as const, descendants: "verified_clear" as const, signals: [] }
+
 describe("diagnostics child owner transport", () => {
   test("builds a bounded Windows identity-only probe from a validated PID", () => {
     const command = windowsIdentityProbeCommand(75, String.raw`C:\Windows`)
@@ -44,6 +47,7 @@ describe("diagnostics child owner transport", () => {
       {
         stopGracefully: async () => {
           stops++
+          return SETTLED
         },
       },
     )
@@ -67,7 +71,11 @@ describe("diagnostics child owner transport", () => {
     expect(sent.at(-1)).toMatchObject({ type: "owner-operation-result", result: "identity-mismatch" })
     await transport.onMessage({ ...request, requestId: "request-3" })
     expect(stops).toBe(1)
-    expect(sent.at(-1)).toMatchObject({ type: "owner-operation-result", result: "completed" })
+    expect(sent.at(-1)).toMatchObject({
+      type: "owner-operation-result",
+      result: "completed",
+      retirement: { leader: "exited", descendants: "verified_clear" },
+    })
     await transport.onMessage({ ...request, requestId: "request-3" })
     expect(stops).toBe(1)
     expect(sent.at(-1)).toMatchObject({ type: "owner-operation-result", result: "duplicate-request" })
@@ -128,6 +136,7 @@ describe("diagnostics child owner transport", () => {
       {
         stopGracefully: async () => {
           stopped = true
+          return SETTLED
         },
       },
     )
@@ -146,7 +155,11 @@ describe("diagnostics child owner transport", () => {
     })
 
     expect(stopped).toBeTrue()
-    expect(sent.at(-1)).toMatchObject({ type: "owner-operation-result", result: "completed" })
+    expect(sent.at(-1)).toMatchObject({
+      type: "owner-operation-result",
+      result: "completed",
+      retirement: { leader: "exited", descendants: "verified_clear" },
+    })
     transport.dispose()
   })
 })

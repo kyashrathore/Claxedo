@@ -4,6 +4,7 @@
 // a workspace authority, or cloud provisioning, and its own closure test
 // asserts so.
 import { createLocalDaemonLifecycle, startLocalServer } from "@claxedo/local-server/self-hosted-execution"
+import { claxedoDaemonOwnershipPath, clearDaemonOwnershipSnapshot, createDaemonOwnershipPublisher, localDaemonOperationStore } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalAgentPluginsComposition } from "@claxedo/local-server/agent-plugins/local-composition"
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
 import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
@@ -19,6 +20,8 @@ import {
   writeClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
 } from "../src/main/server-daemon-discovery"
+import { readCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import path from "node:path"
 
 // The V8 compile cache is already enabled and already seeded by the time this
 // module is COMPILED, let alone evaluated: `claxedo-server-boot.ts` is the
@@ -51,11 +54,29 @@ parent?.listen((message) => void transport?.onMessage(message))
 
 let requestIdleStop = () => {}
 const lifecycle = createLocalDaemonLifecycle({
-  onIdle: () => requestIdleStop(),
+  onStop: () => requestIdleStop(),
+  machine: {
+    machineId: "local",
+    generation: startup.daemonGeneration,
+    operations: localDaemonOperationStore(),
+  },
   ...positiveDuration("CLAXEDO_DAEMON_LEASE_TTL_MS", "leaseTtlMs"),
   ...positiveDuration("CLAXEDO_DAEMON_IDLE_GRACE_MS", "idleGraceMs"),
   ...positiveDuration("CLAXEDO_DAEMON_POLL_INTERVAL_MS", "pollIntervalMs"),
 })
+const ownershipPath = claxedoDaemonOwnershipPath(path.dirname(startup.daemonDiscoveryPath))
+const ownership = createDaemonOwnershipPublisher({
+  file: ownershipPath,
+  pid: process.pid,
+  inspect: () => lifecycle.recovery.inspect(),
+  onError: (error) => console.error("publishing the daemon ownership snapshot failed", error),
+})
+/**
+ * This process's OS creation identity, read once the listener is up. A launcher
+ * that has to signal this daemon after the app restarted compares it before it
+ * sends anything, so it is published rather than left for a pid probe to guess.
+ */
+let creation: CreationIdentity | undefined
 const server = startLocalServer({
   port: startup.port,
   daemon: {
@@ -64,6 +85,7 @@ const server = startLocalServer({
       protocol: startup.daemonProtocol,
       generation: startup.daemonGeneration,
       pid: process.pid,
+      creation: () => creation,
     },
     lifecycle,
   },
@@ -81,30 +103,56 @@ const discovery: ClaxedoDaemonDiscovery = {
   port: startup.port,
   startedAt: new Date().toISOString(),
 }
-const clearDiscovery = () => clearClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, discovery)
+const clearDiscovery = () => {
+  clearClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, discovery)
+  clearDaemonOwnershipSnapshot(ownershipPath, { pid: process.pid, generation: startup.daemonGeneration })
+}
 process.once("exit", clearDiscovery)
 
 let stopping = false
 const stop = () => {
   if (stopping) return
   stopping = true
-  void server.stop().finally(() => {
-    clearDiscovery()
-    process.exit(0)
-  })
+  // The exit code is the outcome, not a formality: an owner this process could
+  // not retire is still holding resources, and exiting 0 over it tells the
+  // launcher a replacement is safe to start.
+  void server.stop().then(
+    (outcome) => {
+      ownership.stop()
+      for (const result of outcome.results) {
+        if (result.state === "retired") continue
+        console.error(`workspace ${result.workspaceId} was not retired (${result.state}): ${result.error ?? "no reason recorded"}`)
+      }
+      clearDiscovery()
+      process.exit(outcome.ok ? 0 : 75)
+    },
+    (error: unknown) => {
+      ownership.stop()
+      console.error("the local server refused to stop", error)
+      clearDiscovery()
+      process.exit(75)
+    },
+  )
 }
 requestIdleStop = stop
 process.once("SIGTERM", stop)
 process.once("SIGINT", stop)
 
-void server.ready.then(() => {
-  writeClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, discovery)
+void server.ready.then(async () => {
+  // Read before the record is published: a discovery file without it would be
+  // adopted by a launcher that then has nothing to verify before signalling.
+  creation = await readCreationIdentity(process.pid)
+  writeClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, {
+    ...discovery,
+    ...(creation ? { identity: creation } : {}),
+  })
   // The IPC send goes FIRST and unconditionally: the probe below is a
   // diagnostic, and a diagnostic that can delay the message main waits on to
   // publish the server URL would be measuring a cost it created.
   parent?.send(claxedoServerReadyMessage(startup.port))
   recordStartupClock("server-listening", { port: startup.port })
   lifecycle.start()
+  ownership.start()
 })
 
 // Bundle evaluation creates a large temporary object graph. The long-lived

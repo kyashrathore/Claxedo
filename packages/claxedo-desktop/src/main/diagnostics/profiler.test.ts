@@ -528,7 +528,7 @@ describe("bounded desktop profiler", () => {
       },
     }, async (request) => {
       invoked.push(request.action)
-      return "completed"
+      return { result: "completed" as const, retirement: { leader: "exited" as const, descendants: "unknown" as const } }
     })
     profiler.requestSample("manual")
     const process = profiler.getSnapshot().processes.find((current) => current.ownerId === ownerId)

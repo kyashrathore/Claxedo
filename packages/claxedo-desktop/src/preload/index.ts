@@ -12,6 +12,7 @@ import type {
   BrowserScreenshotClip,
   BrowserScreenshotResult,
   BrowserStorageKey,
+  DaemonRecoveryBridge,
   ElectronAPI,
   InitStep,
   ProcessDiagnosticsBridge,
@@ -142,6 +143,12 @@ const processDiagnosticsBridge: ProcessDiagnosticsBridge = {
     ),
 }
 
+const daemonRecoveryBridge: DaemonRecoveryBridge = {
+  inspect: () => invoke("daemon-recovery:inspect"),
+  submit: (request) => invoke("daemon-recovery:submit", request),
+  read: (operationId) => invoke("daemon-recovery:read", operationId),
+}
+
 const api: ElectronAPI = {
   optionalFeatures: {
     nativeMarkdown: Boolean(
@@ -216,6 +223,7 @@ const api: ElectronAPI = {
   setNativeTheme: (theme) => ipcRenderer.send("set-native-theme", theme),
   getDroppedFilePaths: (files) => files.map((f) => webUtils.getPathForFile(f)).filter(Boolean),
   processDiagnostics: processDiagnosticsBridge,
+  daemonRecovery: daemonRecoveryBridge,
   browser: browserBridge,
   /**
    * Machine remote access, entirely by name.

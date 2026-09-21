@@ -68,17 +68,39 @@ export type DiagnosticsOperationRequest = {
   }
 }
 
+export const DIAGNOSTICS_OPERATION_OUTCOMES = [
+  "completed",
+  "unresolved",
+  "owner-unavailable",
+  "operation-unavailable",
+  "identity-mismatch",
+  "operation-failed",
+  "duplicate-request",
+] as const
+
+export type DiagnosticsOperationOutcome = (typeof DIAGNOSTICS_OPERATION_OUTCOMES)[number]
+
+export const RETIREMENT_LEADER_STATES = ["exited", "alive", "unknown"] as const
+export const RETIREMENT_DESCENDANT_STATES = ["verified_clear", "owned", "unknown"] as const
+
+/**
+ * The two halves of a retirement a renderer can act on: whether the process
+ * itself is gone, and whether anything it started still is. The signals and
+ * error text behind them stay on the owner's side; a renderer decides what to
+ * offer, not what to print from a log line.
+ */
+export type DiagnosticsRetirement = {
+  leader: (typeof RETIREMENT_LEADER_STATES)[number]
+  descendants: (typeof RETIREMENT_DESCENDANT_STATES)[number]
+}
+
 export type DiagnosticsOperationResult = {
   type: "owner-operation-result"
   binding: DiagnosticsBinding
   requestId: string
-  result:
-    | "completed"
-    | "owner-unavailable"
-    | "operation-unavailable"
-    | "identity-mismatch"
-    | "operation-failed"
-    | "duplicate-request"
+  result: DiagnosticsOperationOutcome
+  /** Absent when nothing observed the process, which is never a stop that happened. */
+  retirement?: DiagnosticsRetirement
 }
 
 export type DiagnosticsTransportMessage =
@@ -156,17 +178,20 @@ function operationRequest(input: unknown): input is DiagnosticsOperationRequest 
 function operationResult(input: unknown): input is DiagnosticsOperationResult {
   return (
     isRecord(input) &&
-    exact(input, ["type", "binding", "requestId", "result"]) &&
+    exactOptional(input, ["type", "binding", "requestId", "result"], ["retirement"]) &&
     binding(input.binding) &&
     identifier(input.requestId) &&
-    oneOf(input.result, [
-      "completed",
-      "owner-unavailable",
-      "operation-unavailable",
-      "identity-mismatch",
-      "operation-failed",
-      "duplicate-request",
-    ])
+    oneOf(input.result, DIAGNOSTICS_OPERATION_OUTCOMES) &&
+    (input.retirement === undefined || retirement(input.retirement))
+  )
+}
+
+function retirement(input: unknown): input is DiagnosticsRetirement {
+  return (
+    isRecord(input) &&
+    exact(input, ["leader", "descendants"]) &&
+    oneOf(input.leader, RETIREMENT_LEADER_STATES) &&
+    oneOf(input.descendants, RETIREMENT_DESCENDANT_STATES)
   )
 }
 

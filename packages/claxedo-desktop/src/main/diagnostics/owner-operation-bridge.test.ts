@@ -57,7 +57,7 @@ describe("diagnostics owner operation bridge", () => {
       action: "stop",
       identity,
       owner,
-    })).toBe("completed")
+    })).toEqual({ result: "completed" })
     expect(await result).toBe("completed")
   }, 4_000)
 
@@ -95,9 +95,31 @@ describe("diagnostics owner operation bridge", () => {
       type: "owner-operation-result",
       binding,
       requestId: sent!.requestId,
-      result: "completed",
+      result: "unresolved",
+      retirement: { leader: "alive", descendants: "owned" },
     })).toBeTrue()
-    expect(await result).toBe("completed")
+    expect(await result).toEqual({ result: "unresolved", retirement: { leader: "alive", descendants: "owned" } })
+    bridge.dispose()
+  })
+
+  test("an unresolved answer without evidence stays unresolved rather than gaining any", async () => {
+    let sent: DiagnosticsOperationRequest | undefined
+    const bridge = createOwnerOperationBridge({
+      binding,
+      send(message) {
+        sent = message
+        return true
+      },
+    })
+    const result = bridge.operationFor(owner)({ action: "stop", owner, identity })
+
+    expect(bridge.onMessage({
+      type: "owner-operation-result",
+      binding,
+      requestId: sent!.requestId,
+      result: "unresolved",
+    })).toBeTrue()
+    expect(await result).toEqual({ result: "unresolved" })
     bridge.dispose()
   })
 
@@ -122,7 +144,7 @@ describe("diagnostics owner operation bridge", () => {
         creation: { state: "available", value: "55", source: "linux-proc" },
         launchId: owner.launchId,
       },
-    })).toBe("owner-unavailable")
+    })).toEqual({ result: "owner-unavailable" })
     bridge.dispose()
   })
 })

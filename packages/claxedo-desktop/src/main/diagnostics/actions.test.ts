@@ -60,7 +60,7 @@ describe("diagnostics owner actions", () => {
     })
     actions.register(descriptor, async (input) => {
       invoked.push(input.action)
-      return "completed"
+      return { result: "completed" as const, retirement: { leader: "exited" as const, descendants: "unknown" as const } }
     })
 
     const eligibility = actions.eligibility(processRecord, owner)
@@ -99,7 +99,7 @@ describe("diagnostics owner actions", () => {
         return () => `opaque-diagnostics-token-expired-${String(++sequence)}`
       })(),
     })
-    actions.register(descriptor, async () => "completed")
+    actions.register(descriptor, async () => ({ result: "completed" as const, retirement: { leader: "exited" as const, descendants: "unknown" as const } }))
     const eligibility = actions.eligibility(processRecord, owner)
     if (eligibility.state !== "eligible") throw new Error("expected eligible action")
     at = 1_011
@@ -121,7 +121,7 @@ describe("diagnostics owner actions", () => {
         return () => `opaque-diagnostics-token-identity-${String(++sequence)}`
       })(),
     })
-    actions.register(descriptor, async () => "completed")
+    actions.register(descriptor, async () => ({ result: "completed" as const, retirement: { leader: "exited" as const, descendants: "unknown" as const } }))
     const eligibility = actions.eligibility(processRecord, owner)
     if (eligibility.state !== "eligible") throw new Error("expected eligible action")
     const claimed = actions.claim({ action: "stop", token: eligibility.actions[0].token })
@@ -160,7 +160,7 @@ describe("diagnostics owner actions", () => {
       state: "ineligible",
       reason: "owner-operation-unavailable",
     })
-    actions.register(descriptor, async () => "completed")
+    actions.register(descriptor, async () => ({ result: "completed" as const, retirement: { leader: "exited" as const, descendants: "unknown" as const } }))
     expect(actions.eligibility({
       ...processRecord,
       identity: {

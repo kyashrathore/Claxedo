@@ -159,7 +159,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       // Hermetic HOME: no user config, credentials, or caches leak in.
       HOME: root,
       CLAXEDO_CHILD_PORT: String(port),
-      CLAXEDO_DAEMON_PROTOCOL: "1",
+      CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
       CLAXEDO_DAEMON_TOKEN: daemonToken,
       CLAXEDO_DAEMON_GENERATION: generation,
       CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscoveryPath,
@@ -189,7 +189,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
     expect(child.connected).toBe(true)
     expect(JSON.parse(fs.readFileSync(daemonDiscoveryPath, "utf8"))).toMatchObject({
       service: "claxedo-local-daemon",
-      protocol: 1,
+      protocol: CLAXEDO_DAEMON_PROTOCOL,
       generation,
       token: daemonToken,
       pid: child.pid,
@@ -206,7 +206,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
     expect(daemonIdentity.status).toBe(200)
     expect(await daemonIdentity.json()).toEqual({
       service: "claxedo-local-daemon",
-      protocol: 1,
+      protocol: CLAXEDO_DAEMON_PROTOCOL,
       generation,
       pid: child.pid,
     })
@@ -326,7 +326,7 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
       ),
       HOME: root,
       CLAXEDO_CHILD_PORT: String(port),
-      CLAXEDO_DAEMON_PROTOCOL: "1",
+      CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
       CLAXEDO_DAEMON_TOKEN: "idle-daemon-token",
       CLAXEDO_DAEMON_GENERATION: "idle-daemon-generation",
       CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,

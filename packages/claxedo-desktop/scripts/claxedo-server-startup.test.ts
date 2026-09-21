@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { claxedoServerStartup } from "./claxedo-server-startup"
+import { CLAXEDO_DAEMON_PROTOCOL } from "../src/main/server-daemon-discovery"
 
 const DAEMON_ENV = {
   CLAXEDO_CHILD_PORT: "3210",
-  CLAXEDO_DAEMON_PROTOCOL: "1",
+  CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
   CLAXEDO_DAEMON_TOKEN: "installation-secret",
   CLAXEDO_DAEMON_GENERATION: "generation-1",
   CLAXEDO_DAEMON_DISCOVERY_PATH: "/tmp/claxedo/local-daemon.json",
@@ -11,7 +12,7 @@ const DAEMON_ENV = {
 
 const expectedDaemon = {
   port: 3210,
-  daemonProtocol: 1,
+  daemonProtocol: CLAXEDO_DAEMON_PROTOCOL,
   daemonToken: "installation-secret",
   daemonGeneration: "generation-1",
   daemonDiscoveryPath: "/tmp/claxedo/local-daemon.json",

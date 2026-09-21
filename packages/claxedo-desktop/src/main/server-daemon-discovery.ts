@@ -1,11 +1,20 @@
 import fs from "node:fs"
 import path from "node:path"
 
+import type { CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+
 import { asRecord, isNonEmptyString, readUnknown } from "../shared/json-read"
 import { createDaemonFetch } from "./daemon-request"
 import { nodeErrorCode } from "../shared/node-error"
 
-export const CLAXEDO_DAEMON_PROTOCOL = 1
+/**
+ * The management protocol both halves must agree on. It is 2 because a daemon
+ * now publishes its OS creation identity and answers recovery operations: a
+ * launcher built against 1 would read neither, and would fall back to killing a
+ * pid it never identified.
+ */
+export const CLAXEDO_DAEMON_PROTOCOL = 2
+export const DAEMON_PROTOCOL_HEADER = "x-claxedo-daemon-protocol"
 export const CLAXEDO_DAEMON_SERVICE = "claxedo-local-daemon" as const
 
 export type ClaxedoDaemonDiscovery = Readonly<{
@@ -16,6 +25,12 @@ export type ClaxedoDaemonDiscovery = Readonly<{
   pid: number
   port: number
   startedAt: string
+  /**
+   * What the daemon read about its own process. Absent when it could not read
+   * one, which leaves a launcher with nothing to verify and therefore nothing
+   * it may signal.
+   */
+  identity?: CreationIdentity
 }>
 
 export function claxedoDaemonDiscoveryPath(dataRoot: string) {
@@ -81,7 +96,7 @@ export async function verifyClaxedoDaemonDiscovery(
   })
   try {
     const response = await daemon("/api/claxedo/daemon", {
-      headers: { authorization: `Bearer ${record.token}` },
+      headers: { authorization: `Bearer ${record.token}`, [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL) },
       signal: AbortSignal.timeout(1_500),
     })
     if (!response.ok) return undefined
@@ -92,41 +107,24 @@ export async function verifyClaxedoDaemonDiscovery(
       readUnknown(identity, "generation") !== record.generation ||
       readUnknown(identity, "pid") !== record.pid
     ) return undefined
+    // The record's identity is what a later signal would be checked against, so
+    // a listener that disagrees about its own process is not the daemon that
+    // wrote the file, however well its token and generation match.
+    if (record.identity && !sameCreationIdentity(record.identity, readUnknown(identity, "identity"))) return undefined
     return url
   } catch {
     return undefined
   }
 }
 
-export function publishedDaemonProcessIsAlive(pid: number) {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * A published daemon that failed health still holds the data-dir lock.
- * Starting a replacement without releasing that process exits the new child
- * before it can listen.
- */
-export async function stopUnhealthyPublishedDaemon(
-  discovery: ClaxedoDaemonDiscovery,
-  runtime: {
-    alive(pid: number): boolean
-    stop(pid: number, signal: "SIGTERM" | "SIGKILL"): Promise<void>
-    wait(ms: number): Promise<unknown>
-  },
-): Promise<"absent" | "stopped"> {
-  if (!runtime.alive(discovery.pid)) return "absent"
-  await runtime.stop(discovery.pid, "SIGTERM")
-  await runtime.wait(2_000)
-  if (!runtime.alive(discovery.pid)) return "stopped"
-  await runtime.stop(discovery.pid, "SIGKILL")
-  await runtime.wait(500)
-  return "stopped"
+/** Whether a listener's reported identity is the one the discovery file recorded. */
+export function sameCreationIdentity(recorded: CreationIdentity, reported: unknown): boolean {
+  const observed = asRecord(reported)
+  if (!observed) return false
+  return observed.pid === recorded.pid
+    && observed.processGroupId === recorded.processGroupId
+    && observed.startSecond === recorded.startSecond
+    && observed.bootTime === recorded.bootTime
 }
 
 /**
@@ -145,7 +143,20 @@ function isClaxedoDaemonDiscovery(value: unknown): value is ClaxedoDaemonDiscove
     typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0 &&
     typeof record.port === "number" && Number.isSafeInteger(record.port) &&
     record.port > 0 && record.port <= 65535 &&
-    isNonEmptyString(record.startedAt)
+    isNonEmptyString(record.startedAt) &&
+    (record.identity === undefined || isCreationIdentity(record.identity))
   )
 }
 
+function isCreationIdentity(value: unknown): value is CreationIdentity {
+  const record = asRecord(value)
+  return (
+    !!record &&
+    typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0 &&
+    typeof record.processGroupId === "number" && Number.isSafeInteger(record.processGroupId) &&
+    typeof record.parentPid === "number" && Number.isSafeInteger(record.parentPid) &&
+    isNonEmptyString(record.startSecond) &&
+    isNonEmptyString(record.bootTime) &&
+    isNonEmptyString(record.source)
+  )
+}

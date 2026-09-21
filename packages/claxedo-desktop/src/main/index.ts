@@ -72,12 +72,18 @@ import { setupAgentPluginsSignedSync, type AgentPluginsSignedSync } from "./agen
 import {
   CLAXEDO_DAEMON_PROTOCOL,
   claxedoDaemonDiscoveryPath,
-  publishedDaemonProcessIsAlive,
   readClaxedoDaemonDiscovery,
-  stopUnhealthyPublishedDaemon,
   verifyClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
 } from "./server-daemon-discovery"
+import {
+  DAEMON_RECOVERY_CHANNELS,
+  claxedoDaemonOwnershipPath,
+  daemonRecoveryBridge,
+  readDaemonOwnershipView,
+  recoverPublishedDaemon,
+  type DaemonRecoveryResult,
+} from "./daemon-recovery"
 import { holdClaxedoDaemonLease } from "./server-daemon-lease"
 import { createDaemonExitLifecycle } from "./daemon-exit-lifecycle"
 import { embeddedServerReadiness } from "./server-readiness"
@@ -559,17 +565,49 @@ async function setupServerConnection(): Promise<ServerConnection> {
   }
 
   if (discovery) {
-    logger.warn("stopping unhealthy claxedo daemon", { pid: discovery.pid, port: discovery.port })
-    await stopUnhealthyPublishedDaemon(discovery, {
-      alive: publishedDaemonProcessIsAlive,
-      stop: (pid, signal) => killProcessTree(pid, signal),
-      wait: delay,
+    // Launch never authorizes a kill. The published daemon may be busy, wedged
+    // or already replaced by an unrelated process wearing its pid, and none of
+    // those is a decision this process may take on the user's behalf.
+    const recovery = await recoverPublishedDaemon({
+      discovery,
+      snapshot: readDaemonOwnershipView(claxedoDaemonOwnershipPath(serverDataDir)),
+      authorize: () => false,
     })
+    if (!recovery.replacementAllowed) {
+      unresolvedDaemon = { discovery, result: recovery }
+      logger.warn("the published claxedo daemon is unresolved; no replacement was started", {
+        pid: discovery.pid,
+        port: discovery.port,
+      })
+      throw new DaemonUnresolvedError(discovery)
+    }
+    logger.log("the published claxedo daemon is gone; starting a replacement", { pid: discovery.pid })
   }
 
   logger.log("claxedo daemon not found, starting it")
+  unresolvedDaemon = undefined
   return { variant: "daemon", ...(await startClaxedoServer(serverDataDir)) }
 }
+
+/**
+ * The daemon this machine published is still there and nothing authorized
+ * stopping it. Startup fails with this rather than starting a second writer
+ * over the same data directory.
+ */
+class DaemonUnresolvedError extends Error {
+  readonly code = "daemon_unresolved"
+
+  constructor(discovery: ClaxedoDaemonDiscovery) {
+    super(
+      `The Claxedo daemon published as pid ${discovery.pid} on port ${discovery.port} is not answering and stopping it `
+        + "has not been authorized. Use the recovery view, or stop that process yourself.",
+    )
+    this.name = "DaemonUnresolvedError"
+  }
+}
+
+/** Held for the recovery IPC while no server connection could be established. */
+let unresolvedDaemon: { discovery: ClaxedoDaemonDiscovery; result: DaemonRecoveryResult } | undefined
 
 async function initialize() {
   const loadingTask = (async () => {
@@ -779,6 +817,42 @@ void daemonEndpoint.promise.then(
   // rejection on the way to saying so.
   () => {},
 )
+/**
+ * Recovery reaches a live daemon over the authenticated fetch main already
+ * holds, and falls back to the launch result when there is no daemon to ask.
+ * `daemonConnected` is the difference: an endpoint this process never resolved
+ * has no capability to forward with.
+ */
+let daemonConnected = false
+void daemonEndpoint.promise.then(
+  () => { daemonConnected = true },
+  () => {},
+)
+const recovery = daemonRecoveryBridge({
+  daemon: () => (daemonConnected ? daemon : undefined),
+  unresolved: () => unresolvedDaemon,
+  ownershipView: () => readDaemonOwnershipView(claxedoDaemonOwnershipPath(desktopServerDataDir())),
+  // A verified exit is the only thing that makes a replacement safe, and the
+  // replacement is this app starting over: the daemon is launched from startup,
+  // not from here.
+  onRecovered: (result) => {
+    if (!result.replacementAllowed) return
+    unresolvedDaemon = undefined
+    runRestart({
+      packaged: IS_PACKAGED,
+      relaunch: () => {
+        daemonExitLifecycle.handoff()
+        app.relaunch()
+      },
+      quit: () => app.quit(),
+      reload: () => mainWindow?.webContents.reloadIgnoringCache(),
+    })
+  },
+})
+ipcMain.handle(DAEMON_RECOVERY_CHANNELS.inspect, () => recovery.inspect())
+ipcMain.handle(DAEMON_RECOVERY_CHANNELS.submit, (_event, request: unknown) => recovery.submit(request))
+ipcMain.handle(DAEMON_RECOVERY_CHANNELS.read, (_event, operationId: unknown) => recovery.read(operationId))
+
 const providerConfigPush = setupHostProviderConfigPush({
   daemon,
   daemonReady: () => daemonEndpoint.promise,
@@ -1023,9 +1097,9 @@ function createPackagedDiagnosticsFixtures() {
       binding: { pid: process.pid, launchId: "desktop-main", generation: "desktop-main" },
       descriptor,
     }, async (request) => {
-      if (request.action !== fixture.action) return "operation-unavailable"
+      if (request.action !== fixture.action) return { result: "operation-unavailable" }
       await killProcessTree(child.pid!, request.action === "stop" ? "SIGTERM" : "SIGKILL")
-      return "completed"
+      return { result: "completed", retirement: { leader: "exited", descendants: "unknown" } }
     })
     let active = true
     child.once("exit", (code) => {

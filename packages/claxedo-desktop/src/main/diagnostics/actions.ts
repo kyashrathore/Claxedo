@@ -6,11 +6,14 @@ import type {
 } from "../../shared/diagnostics-transport"
 import { sameCreationIdentity } from "./process-identity"
 
+/** What an owner established, and the evidence behind it when it has any. */
+export type OwnerOperationAnswer = Pick<DiagnosticsOperationResult, "result" | "retirement">
+
 export type OwnerOperation = (input: {
   action: LocalDiagnostics.ActionKind
   identity: LocalDiagnostics.ProcessIdentity
   owner: DiagnosticsOwnerDescriptor
-}) => Promise<DiagnosticsOperationResult["result"]>
+}) => Promise<OwnerOperationAnswer>
 
 export type ActionClaim = {
   action: LocalDiagnostics.ActionKind
@@ -21,6 +24,17 @@ export type ActionClaim = {
   identity: LocalDiagnostics.ProcessIdentity
   profilerGeneration: string
 }
+
+/** Every refusal except `unresolved`, which is the only one carrying evidence. */
+type SimpleFailureCode = Exclude<Extract<LocalDiagnostics.ActionResult, { ok: false }>["code"], "unresolved">
+
+export type ActionExecution =
+  | { ok: true }
+  | { ok: false; code: SimpleFailureCode }
+  | { ok: false; code: "unresolved"; retirement: LocalDiagnostics.Retirement }
+
+/** An owner that answered nothing proved nothing, which is not the same as a clean exit. */
+const UNOBSERVED_RETIREMENT: LocalDiagnostics.Retirement = { leader: "unknown", descendants: "unknown" }
 
 type OwnerRecord = {
   descriptor: DiagnosticsOwnerDescriptor
@@ -139,10 +153,7 @@ export function createDiagnosticsActions(options: {
       claim: ActionClaim
       resolveProcess(processId: string): LocalDiagnostics.ProcessRecord | undefined
       revalidate(identity: LocalDiagnostics.ProcessIdentity): Promise<boolean>
-    }): Promise<
-      | { ok: true }
-      | { ok: false; code: Extract<LocalDiagnostics.ActionResult, { ok: false }>["code"] }
-    > {
+    }): Promise<ActionExecution> {
       const owner = owners.get(input.claim.ownerId)
       if (
         !owner ||
@@ -160,16 +171,27 @@ export function createDiagnosticsActions(options: {
         return { ok: false, code: "identity-mismatch" }
       }
       if (!owner.operation) return { ok: false, code: "owner-unavailable" }
-      const result = await owner.operation({
+      const answered = await owner.operation({
         action: input.claim.action,
         identity: input.claim.identity,
         owner: owner.descriptor,
       })
-      if (result === "completed") return { ok: true }
-      if (result === "identity-mismatch") return { ok: false, code: "identity-mismatch" }
-      if (result === "owner-unavailable") return { ok: false, code: "owner-unavailable" }
-      if (result === "operation-unavailable") return { ok: false, code: "not-eligible" }
-      return { ok: false, code: "operation-failed" }
+      switch (answered.result) {
+        case "completed":
+          return { ok: true }
+        case "identity-mismatch":
+          return { ok: false, code: "identity-mismatch" }
+        case "owner-unavailable":
+          return { ok: false, code: "owner-unavailable" }
+        case "operation-unavailable":
+          return { ok: false, code: "not-eligible" }
+        case "unresolved":
+          // The owner kept the process and its resources, so the grant it was
+          // claimed under stays spent but the process is still there to retry.
+          return { ok: false, code: "unresolved", retirement: answered.retirement ?? UNOBSERVED_RETIREMENT }
+        default:
+          return { ok: false, code: "operation-failed" }
+      }
     },
     revokeAll() {
       owners.clear()
@@ -245,9 +267,6 @@ function sameIdentity(current: LocalDiagnostics.ProcessIdentity, expected: Local
   )
 }
 
-function failure(
-  action: LocalDiagnostics.ActionKind,
-  code: Extract<LocalDiagnostics.ActionResult, { ok: false }>["code"],
-) {
+function failure(action: LocalDiagnostics.ActionKind, code: SimpleFailureCode) {
   return { ok: false as const, result: { ok: false as const, action, code } }
 }

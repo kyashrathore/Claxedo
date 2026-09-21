@@ -49,6 +49,8 @@
   },
   "main": "./out/main/index.js",
   "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
+    "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/app": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/host-connector": "workspace:*",

@@ -116,14 +116,12 @@ export function createDiagnosticsChildTransport(options: {
         return
       }
       try {
-        sendResult(
-          request.requestId,
-          await observer.invoke({
-            ownerId: owner.ownerId,
-            ownerGeneration: owner.ownerGeneration,
-            operation: request.operation,
-          }),
-        )
+        const invoked = await observer.invoke({
+          ownerId: owner.ownerId,
+          ownerGeneration: owner.ownerGeneration,
+          operation: request.operation,
+        })
+        sendResult(request.requestId, invoked.result, invoked.retirement)
       } catch {
         sendResult(request.requestId, "operation-failed")
       }
@@ -137,12 +135,17 @@ export function createDiagnosticsChildTransport(options: {
     },
   }
 
-  function sendResult(requestId: string, result: DiagnosticsOperationResult["result"]) {
+  function sendResult(
+    requestId: string,
+    result: DiagnosticsOperationResult["result"],
+    retirement?: DiagnosticsOperationResult["retirement"],
+  ) {
     options.send({
       type: "owner-operation-result",
       binding: options.binding,
       requestId,
       result,
+      ...(retirement ? { retirement } : {}),
     })
   }
 }

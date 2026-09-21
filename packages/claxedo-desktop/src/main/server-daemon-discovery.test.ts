@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -7,7 +7,6 @@ import {
   CLAXEDO_DAEMON_PROTOCOL,
   clearClaxedoDaemonDiscovery,
   readClaxedoDaemonDiscovery,
-  stopUnhealthyPublishedDaemon,
   verifyClaxedoDaemonDiscovery,
   writeClaxedoDaemonDiscovery,
   type ClaxedoDaemonDiscovery,
@@ -34,6 +33,17 @@ function fixture(overrides: Partial<ClaxedoDaemonDiscovery> = {}): ClaxedoDaemon
     port: 2593,
     startedAt: "2026-08-27T00:00:00.000Z",
     ...overrides,
+  }
+}
+
+function identity() {
+  return {
+    pid: 42,
+    processGroupId: 42,
+    parentPid: 1,
+    startSecond: "Thu Jan  1 00:00:00 1970",
+    bootTime: "0",
+    source: "darwin-ps" as const,
   }
 }
 
@@ -86,38 +96,28 @@ describe("Claxedo daemon discovery", () => {
     expect(verified).toBeUndefined()
   })
 
-  test("stops a live published pid that failed health, escalating if SIGTERM is ignored", async () => {
-    const signals: Array<{ pid: number; signal: "SIGTERM" | "SIGKILL" }> = []
-    let alive = true
+  test("a listener that disagrees about its own process identity is not the recorded daemon", async () => {
+    const record = fixture({ identity: identity() })
+    const verified = await verifyClaxedoDaemonDiscovery(record, async () =>
+      Response.json({ ...record, identity: { ...identity(), startSecond: "Fri Jan  2 00:00:00 1970" } }))
 
-    const result = await stopUnhealthyPublishedDaemon(fixture({ pid: 99454 }), {
-      alive: () => alive,
-      stop: async (pid, signal) => {
-        signals.push({ pid, signal })
-        if (signal === "SIGKILL") alive = false
-      },
-      wait: async () => undefined,
-    })
-
-    expect(result).toBe("stopped")
-    expect(signals).toEqual([
-      { pid: 99454, signal: "SIGTERM" },
-      { pid: 99454, signal: "SIGKILL" },
-    ])
+    expect(verified).toBeUndefined()
   })
 
-  test("does not stop a published pid that is already gone", async () => {
-    const stopped: number[] = []
-    const result = await stopUnhealthyPublishedDaemon(fixture(), {
-      alive: () => false,
-      stop: async (pid) => {
-        stopped.push(pid)
-      },
-      wait: async () => undefined,
-    })
+  test("a record carrying an identity the listener repeats is adopted", async () => {
+    const record = fixture({ identity: identity() })
+    const verified = await verifyClaxedoDaemonDiscovery(record, async () => Response.json(record))
 
-    expect(result).toBe("absent")
-    expect(stopped).toEqual([])
+    expect(verified).toBe(`http://127.0.0.1:${record.port}`)
+  })
+
+  test("an identity that is not one is dropped rather than read back as a record", () => {
+    const root = mkdtempSync(join(tmpdir(), "claxedo-daemon-discovery-"))
+    roots.push(root)
+    const path = join(root, "daemon.json")
+    writeFileSync(path, JSON.stringify({ ...fixture(), identity: { pid: 42 } }))
+
+    expect(readClaxedoDaemonDiscovery(path)).toBeUndefined()
   })
 
   test("only the owning generation can clear a replacement record", () => {
