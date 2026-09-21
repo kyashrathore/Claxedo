@@ -51,6 +51,7 @@ const DEV_DIRECTIVES = [
   "frame-src http: https:",
   "object-src 'none'",
   "base-uri 'none'",
+  "form-action 'none'",
 ]
 
 export const PACKAGED_RENDERER_CSP = PACKAGED_DIRECTIVES.join("; ")

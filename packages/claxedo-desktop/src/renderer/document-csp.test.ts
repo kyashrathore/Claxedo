@@ -33,6 +33,7 @@ describe("packaged renderer document CSP", () => {
     expect(DEV_RENDERER_CSP).toContain("unsafe-inline")
     expect(DEV_RENDERER_CSP).toContain("object-src 'none'")
     expect(DEV_RENDERER_CSP).toContain("base-uri 'none'")
+    expect(DEV_RENDERER_CSP).toContain("form-action 'none'")
   })
 })
 

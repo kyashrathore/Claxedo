@@ -144,7 +144,18 @@ export const desktopMainComposition: Policy = {
   // the key/value bounds the store-* IPC handlers enforce. Electron-free so
   // `bun test` can exercise it (store.ts constructs electron-store at import),
   // reached from `main/ipc.ts` and `main/store.ts`; no package edge. 94/24.
-  ceilings: { modules: 94, packages: 24 },
+  // +4 modules (2026-09-21): the four decisions `main/ipc.ts` and
+  // `main/windows.ts` used to make inline, each now an Electron-free owner so
+  // `bun test` can exercise it. `main/open-in.ts` chooses which of reveal,
+  // OS-handler open, confirmed-executable open or tool launch an `open-path`
+  // request is; `main/renderer-permissions.ts` is what the app document may
+  // ask the browser for; `main/server-url.ts` is what the renderer may persist
+  // as the server main dials at next launch; `shared/zoom-factor.ts` is the
+  // one zoom range, shared with the renderer that reports it. Reviewed owner:
+  // Electron main, the only process that holds these OS and session
+  // capabilities. Node builtins and type-only electron imports, so no package
+  // edge. 98/24, no headroom.
+  ceilings: { modules: 98, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -561,7 +572,12 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-21): `ui/mermaid.ts` — see the app-local ledger. The
   // shared renderer bundle carries it for the session timeline and the
   // documents editor. Exact measured 1144 modules / 58 packages.
-  ceilings: { modules: 1144, packages: 58 },
+  // +1 module (2026-09-21): `shared/zoom-factor.ts` — the one zoom range,
+  // reached from `renderer/webview-zoom.ts`. The renderer keeps its own record
+  // of the zoom it asked for, and main clamps the IPC argument with the same
+  // constants, so a second range here would let the two disagree. Constants
+  // and `Math`, no dependency edges. Exact measured 1145 modules / 58 packages.
+  ceilings: { modules: 1145, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
