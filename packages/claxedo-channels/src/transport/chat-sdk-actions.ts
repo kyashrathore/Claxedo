@@ -64,25 +64,18 @@ function token(input: Record<string, unknown>) {
   )
 }
 
+/**
+ * Who pressed the button: `ActionEvent.user.userId`, the stable account id the
+ * Chat SDK fills on every platform.
+ *
+ * This is the one place the presser is named, and it reads one field. The
+ * handle beside it (`userName`) is renameable and reassignable, so admitting it
+ * as a second source would let a new owner of an old handle answer a prompt
+ * addressed to the previous one — the approval bridge compares this value
+ * against the requestee recorded when the prompt was posted.
+ */
 function actor(input: Record<string, unknown>) {
-  const user = nested(input, "user") ?? nested(input, "actor") ?? nested(input, "sender")
-  const interactionUser = nested(nested(input, "interaction"), "user")
-  return firstText(
-    input.actorExternalUserId,
-    input.actor_external_user_id,
-    input.userId,
-    input.user_id,
-    user?.id,
-    user?.userName,
-    user?.username,
-    user?.login,
-    interactionUser?.id,
-    interactionUser?.username,
-    nested(input, "payload")?.actorExternalUserId,
-    nested(input, "payload")?.userId,
-    nested(input, "data")?.actorExternalUserId,
-    nested(input, "data")?.userId,
-  )
+  return trimToUndefined(nested(input, "user")?.userId)
 }
 
 export function chatSdkApprovalDecision(

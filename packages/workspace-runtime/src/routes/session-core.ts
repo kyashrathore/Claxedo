@@ -1,15 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
+import { toolImageResponse } from "./tool-image"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
-import { isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type {
   AgentMessage,
   AgentPermission,
   AgentQuestion,
   AgentRuntime,
   AgentSession,
-  PromptDelivery,
   RuntimeDirectory,
   SessionConfig,
   SessionConfigRequestUpdate,
@@ -17,9 +16,11 @@ import type {
   HarnessCapabilities,
   AgentGoalMutationResult,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import type { AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import { elicitationError } from "./elicitation-error"
 import type {
   AgentHarnessAdapter,
+  AgentInteractionResult,
   AgentMessagePage,
   AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
@@ -58,7 +59,6 @@ import {
   type ActiveTurnScope,
   type AdmittedSessionPromptTurn,
   parseSessionPromptBody,
-  type QueuedPromptAction,
   type SessionPromptBody,
   type SessionPromptTurnResult,
   type SessionTurnRefusalCode,
@@ -70,7 +70,7 @@ import {
   sessionCreateGroup,
 } from "../session-config"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT, type ChildSessionHost } from "./session-children"
-import type { QueuedPromptHost } from "./session-queued-prompts"
+import type { SessionDeliveryOwner, QueuedPromptAction } from "../session/delivery-owner"
 import {
   narrowerPermissionLevel,
   permissionCeilingAdmits,
@@ -83,10 +83,12 @@ import {
 import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import { errorBody } from "./error-body"
+import { boundedJsonBody, boundedJsonRecord, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import {
   sessionAccessContext,
   sessionAccessDenied,
   sessionRequestProvenance,
+  sessionTurnOrigin,
   type SessionAccessDecision,
   type SessionAccessOperation,
   type SessionAccessPolicy,
@@ -114,6 +116,7 @@ export function streamTurnErrorMessage(error: unknown): string {
 export type SessionLifecycleEvent = {
   type: "session.lifecycle"
   phase: "creating" | "created" | "failed"
+  start?: AgentSessionStartBinding
   directory?: string
   sessionID?: string
   workspaceId?: string
@@ -272,21 +275,30 @@ async function cascadeToChildren(
   parentSessionId: string,
   action: "archive" | "delete",
   updates: { archived?: number } = {},
+  withSessionChange?: <T>(sessionId: string, change: () => Promise<T>) => Promise<T>,
 ) {
   if (!opts.childSessions) return
   for (const child of await opts.childSessions.children(parentSessionId, directory)) {
     const childSessionId = child.childSessionId
+    if (action === "delete") {
+      if (!withSessionChange) throw new Error("Deleting a child requires its session lifecycle claim")
+      await withSessionChange(childSessionId, async () => {
+        if (!await readSession(opts, c, directory, childSessionId)) return
+        const childAdapter = await opts.resolveAdapter(c, { sessionId: childSessionId, directory })
+        const binding = await requireExecutionBinding(opts, c, directory, childSessionId, childAdapter)
+        const start = opts.sessionStarts?.get(childSessionId)?.binding
+        await opts.beforeDeleteSession?.(c, directory, childSessionId)
+        await disposeRuntimeSessionDocuments(childSessionId)
+        await childAdapter.deleteSession(binding)
+        await after(opts.afterDeleteSession?.(c, directory, childSessionId))
+        if (start) opts.sessionStarts!.retire(start)
+        opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
+      })
+      continue
+    }
     if (!await readSession(opts, c, directory, childSessionId)) continue
     const childAdapter = await opts.resolveAdapter(c, { sessionId: childSessionId, directory })
     const binding = await requireExecutionBinding(opts, c, directory, childSessionId, childAdapter)
-    if (action === "delete") {
-      await opts.beforeDeleteSession?.(c, directory, childSessionId)
-      await disposeRuntimeSessionDocuments(childSessionId)
-      await childAdapter.deleteSession(binding)
-      await after(opts.afterDeleteSession?.(c, directory, childSessionId))
-      opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "", parentSessionId)))
-      continue
-    }
     await childAdapter.abort?.(binding).catch(() => undefined)
     const body = { time: { archived: updates.archived ?? Date.now() } }
     const session = await childAdapter.updateSession(binding, body)
@@ -392,12 +404,16 @@ function publishInteractionEvents(
   events: CompatEvent[] | undefined,
   fallback: CompatEvent,
 ) {
-  for (const event of events?.length ? events : [fallback]) {
+  const published = events?.length ? events : [fallback]
+  for (const event of published) {
     publish(withDir(compatScope(directory, sessionId), event))
   }
+  return published
 }
 
 type Opts = {
+  sessionStarts?: AgentSessionStarts
+  resolveSessionStartBinding?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, operationId: string) => AgentSessionStartBinding
   resolveAdapter: (
     c: Ctx,
     input?: {
@@ -431,11 +447,11 @@ type Opts = {
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSession[]>
   listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
-  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
+  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { start?: AgentSessionStartBinding; parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
   /** Where a prompt admitted behind a running turn is persisted while it waits. */
-  queuedPrompts?: QueuedPromptHost
+  queuedPrompts?: SessionDeliveryOwner
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
   /** Workspace inventory, unfiltered by caller-supplied session IDs; routes validate ownership. */
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
@@ -536,19 +552,6 @@ export function parseDraftId(raw: string | null | undefined): string | undefined
     })
   }
   return raw
-}
-
-/**
- * The one JSON request-body read in these routes.
- *
- * Hono types `c.req.json()` as `any` and rejects on an absent or malformed
- * body. Reading it here hands back an inspectable record; handlers pick
- * fields through the `json-value` narrowers, so `{"command": 42}` never
- * reaches an adapter as a string.
- */
-async function requestBody(c: Ctx): Promise<Record<string, unknown>> {
-  const parsed: unknown = await c.req.json().catch(() => undefined)
-  return rec(parsed) ?? {}
 }
 
 /** The `string[][]` a question reply must carry, or `undefined` when it does not. */
@@ -993,6 +996,44 @@ function harnessSwitchUnsupported(
   })
 }
 
+async function sessionStartGuard(opts: Opts, c: Ctx, owner: AgentSessionStartBinding, operation: SessionAccessOperation, created = false) {
+  const directory = await opts.resolveDirectory(c)
+  if (owner.directory !== directory) return c.json(errorBody("session_start_not_found", "Session creation not found"), 404)
+  if (created) return sessionOperationGuard(opts, c, owner.sessionId, operation)
+  const context = sessionAccessContext(c)
+  const policy = opts.sessionAccessPolicy
+  const input = { ...context, operation, sessionId: owner.sessionId, registrationOperationId: owner.operationId, method: c.req.method, path: c.req.path }
+  const decision = managedSessionLifecycle(opts, c)
+    ? operation === "session_meta_read"
+      ? await policy!.authorizeSessionStartStatus(input)
+      : await policy!.authorizeSessionStart(input)
+    : await policy?.authorize({ ...context, operation: "session_create", method: c.req.method, path: c.req.path })
+  if (decision && !decision.allowed) return sessionAccessDenied(decision)
+}
+
+/**
+ * The reservation a create claims, answered by the authority that owns the
+ * session id before this runtime reads or writes anything under it.
+ *
+ * Permission to create a session in a workspace is not permission to touch one
+ * that already exists in it. Only the operation that reserved the id may
+ * create, retry or undo it, and the authority refuses an id held by someone
+ * else without naming the session behind it — so a caller who guesses another
+ * person's id learns nothing and changes nothing.
+ */
+async function creationReservationGuard(opts: Opts, c: Ctx, sessionId: string, operationId: string) {
+  if (!managedSessionLifecycle(opts, c)) return undefined
+  const decision = await opts.sessionAccessPolicy!.authorizeSessionStart({
+    ...sessionAccessContext(c),
+    operation: "session_create",
+    sessionId,
+    registrationOperationId: operationId,
+    method: c.req.method,
+    path: c.req.path,
+  })
+  return decision.allowed ? undefined : sessionAccessDenied(decision)
+}
+
 async function sessionOperationGuard(
   opts: Opts,
   c: Ctx,
@@ -1193,7 +1234,7 @@ async function admitQuestionOperation(
   method: "replyQuestion" | "rejectQuestion",
 ): Promise<
   | { rejected: Response; id?: undefined; directory?: undefined; adapter?: undefined; sessionId?: undefined }
-  | { rejected?: undefined; id: string; directory: RuntimeDirectory; adapter: AgentHarnessAdapter; sessionId: string }
+  | { rejected?: undefined; id: string; directory: RuntimeDirectory; adapter: AgentHarnessAdapter; sessionId: string; start?: AgentSessionStartBinding }
 > {
   const id = c.req.param("id")
   const requested = c.req.query("sessionId") ?? ""
@@ -1201,6 +1242,17 @@ async function admitQuestionOperation(
   const known = interactionSessionId(await opts.listQuestions?.(c, directory) ?? [], id)
   if (known) {
     if (requested && requested !== known) return { rejected: interactionSessionMismatch(c, "question", id) }
+    const pending = opts.sessionStarts?.get(known)
+    if (pending && pending.status !== "created") {
+      const denied = await sessionStartGuard(opts, c, pending.binding, "question_response")
+      if (denied) return { rejected: denied }
+      if (pending.status !== "starting") return { rejected: interactionNotFound(c, "question", id) }
+      const adapter = await opts.resolveAdapter(c, { sessionId: known, directory })
+      if (method === "replyQuestion" ? !adapter.replySessionStartQuestion : !adapter.rejectSessionStartQuestion) {
+        return { rejected: c.json(errorBody("session_start_questions_unsupported", "This agent cannot answer startup questions"), 501) }
+      }
+      return { id, directory, adapter, sessionId: known, start: pending.binding }
+    }
     const guarded = await sessionOperationGuard(opts, c, known, "question_response")
     if (guarded) return { rejected: guarded }
     const adapter = await opts.resolveAdapter(c, { sessionId: known, directory })
@@ -1240,6 +1292,18 @@ export function createSessionRoutes(opts: Opts) {
     if (!isRequestBodyTooLarge(err) && !(err instanceof HTTPException)) console.error(err)
     return requestErrorResponse(err, c)
   })
+  // Creation and deletion share the identity until every provider/projection
+  // effect has settled. A late deletion must never remove a recreated session.
+  const activeSessionChanges = new Set<string>()
+  async function withSessionChange<T>(sessionId: string, change: () => Promise<T>): Promise<T> {
+    if (activeSessionChanges.has(sessionId)) throw new HTTPException(409, { message: "Session creation or deletion is still in progress" })
+    activeSessionChanges.add(sessionId)
+    try {
+      return await change()
+    } finally {
+      activeSessionChanges.delete(sessionId)
+    }
+  }
   // Deduplicates prompt_async retries by message id and nothing more: the
   // per-session concurrency lease is AgentRuntime's. The checkpoint-freeze
   // middleware runs before these routes, so a 423 may preempt admission
@@ -1278,6 +1342,18 @@ export function createSessionRoutes(opts: Opts) {
     await next()
   })
   app
+    .get("/session-start/:id", async (c) => {
+      let start = opts.sessionStarts?.get(c.req.param("id"))
+      if (!start) return c.json(errorBody("session_start_not_found", "Session creation not found"), 404)
+      const denied = await sessionStartGuard(opts, c, start.binding, "session_meta_read", start.status === "created")
+      if (denied) return denied
+      if (start.status === "starting" && !activeSessionChanges.has(start.binding.sessionId)) {
+        const existing = await opts.getSession?.(c, start.binding.directory, start.binding.sessionId)
+        if (existing) return c.json(errorBody("session_registration_unresolved", "The agent session exists but its creation outcome requires registration reconciliation"), 409)
+        start = opts.sessionStarts!.finish(start.binding, { status: "failed", error: "Session creation was interrupted; its agent request cannot be resumed" })
+      }
+      return c.json(start)
+    })
     .get("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
       const roots = rootsOnly(c)
@@ -1326,7 +1402,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const wire = await requestBody(c)
+      const wire = await boundedJsonRecord(c)
       const body = normalizeSessionCreateBody(wire)
       const guarded = await sessionOperationGuard(opts, c, "", "session_create")
       if (guarded) return guarded
@@ -1340,6 +1416,12 @@ export function createSessionRoutes(opts: Opts) {
         return c.json(errorBody("child_sessions_unsupported", "This runtime cannot create child sessions"), 501)
       }
       const create = async () => {
+        if (body.parentID && children) {
+          // A child completion can prompt this parent. Following its transcript
+          // does not authorize starting that future input.
+          const refused = await sessionOperationGuard(opts, c, body.parentID, "prompt")
+          if (refused) return refused
+        }
         const parent = body.parentID && children ? await readSession(opts, c, directory, body.parentID) : undefined
         if (body.parentID && children) {
           if (!parent) return c.json(errorBody("parent_session_not_found", `Parent session ${body.parentID} not found`), 404)
@@ -1358,15 +1440,16 @@ export function createSessionRoutes(opts: Opts) {
           body.id = children.deriveSessionId({ callerIdentity, clientRequestId: body.clientRequestId })
         }
         let operationId = registrationOperationId(c)
+        const managed = managedSessionLifecycle(opts, c)
         // A child the workspace's own runtime creates in process has no caller
         // that reserved first, so it reserves itself as the verified actor —
         // the owner grant's identity — and the control plane decides. A root
         // create keeps needing the caller's own reservation.
-        const selfReservation = managedSessionLifecycle(opts, c) && !operationId && body.parentID && children
+        const selfReservation = managed && !operationId && body.parentID && children
           ? opts.sessionAccessPolicy?.reserveSession?.bind(opts.sessionAccessPolicy)
           : undefined
         if (selfReservation && !body.id) body.id = `ses_${randomUUID()}`
-        if (managedSessionLifecycle(opts, c) && (!body.id || (!operationId && !selfReservation))) {
+        if (managed && (!body.id || (!operationId && !selfReservation))) {
           return c.json(errorBody(
             "session_reservation_required",
             "Managed session creation requires a preassigned session id and reservation operation",
@@ -1376,16 +1459,24 @@ export function createSessionRoutes(opts: Opts) {
         const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
         const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
         const creator = sessionAccessContext(c).actor?.actorId
-        opts.publishSessionLifecycle?.({
-          type: "session.lifecycle",
-          phase: "creating",
-          directory,
-          ...(draftId ? { draftId } : {}),
-          ...(workspaceId ? { workspaceId } : {}),
-          ...(creator ? { actorId: creator } : {}),
-          ts: Date.now(),
-        })
+        let start: AgentSessionStartBinding | undefined
+        let claimed: string | undefined
         try {
+          // Checking the id and claiming it in two steps lets two creates for
+          // one id both pass and both drive the harness. The pair is one
+          // synchronous step, so the loser is refused before it touches
+          // anything and the winner holds the id until this request settles.
+          if (body.id) {
+            if (activeSessionChanges.has(body.id)) return c.json(errorBody("session_creation_in_progress", "Session creation or deletion is still in progress"), 409)
+            activeSessionChanges.add(body.id)
+            claimed = body.id
+          }
+          let reserved = false
+          if (body.id && operationId) {
+            const refused = await creationReservationGuard(opts, c, body.id, operationId)
+            if (refused) return refused
+            reserved = managed
+          }
           const adapter = await opts.resolveAdapter(c)
           const refusal = admitSessionInstructions({
             ...(opts.requestedSessionHarness?.(c) ? { harness: opts.requestedSessionHarness(c)?.id } : {}),
@@ -1397,10 +1488,17 @@ export function createSessionRoutes(opts: Opts) {
               ? c.json(errorBody("session_instructions_unsupported", refusal.message), 501)
               : c.json(errorBody("session_instructions_too_large", refusal.message), 400)
           }
-          if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
-            adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
-          }
           const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
+          // An id this request holds a live reservation for is its own creation
+          // resumed, and the plane has no stored session to ask about until it
+          // registers. Any other id that already exists is somebody's session:
+          // the session itself, not the workspace the request named, says
+          // whether this caller may read its harness, its parent and its
+          // ceiling, configure it, or have it rolled back.
+          if (existing && !reserved) {
+            const denied = await sessionOperationGuard(opts, c, existing.id, "session_create")
+            if (denied) return denied
+          }
           const requestedHarness = opts.requestedSessionHarness?.(c)
           if (existing && requestedHarness) {
             const currentConfig = opts.getSessionConfig
@@ -1448,9 +1546,35 @@ export function createSessionRoutes(opts: Opts) {
             if (!reservation.allowed) return sessionAccessDenied(reservation)
             operationId = reservation.operationId
           }
+          if (!existing && opts.sessionStarts && opts.resolveSessionStartBinding) {
+            if (!body.id) {
+              body.id = `ses_${randomUUID()}`
+              activeSessionChanges.add(body.id)
+              claimed = body.id
+            }
+            const owner = opts.resolveSessionStartBinding(c, directory, body.id, operationId ?? randomUUID())
+            if (opts.sessionStarts.get(body.id)) throw new HTTPException(409, { message: "Session creation already has an owner; inspect its status before retrying" })
+            opts.sessionStarts.begin(owner)
+            start = owner
+          }
+          opts.publishSessionLifecycle?.({
+            type: "session.lifecycle", phase: "creating", directory,
+            ...(start ? { start } : {}),
+            ...(draftId ? { draftId } : {}),
+            ...(workspaceId ? { workspaceId } : {}),
+            ...(creator ? { actorId: creator } : {}), ts: Date.now(),
+          })
+          if (existing && opts.sessionStarts) {
+            const prior = opts.sessionStarts.get(existing.id)
+            if (prior?.status === "starting" && prior.binding.operationId === operationId) start = prior.binding
+          }
           const createOptions = {
+            ...(start ? { start } : {}),
             ...(body.instructions ? { instructions: body.instructions } : {}),
             ...(body.group ? { group: body.group } : {}),
+          }
+          if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
+            adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
           }
           let session = existing ?? (opts.createSession
             ? await opts.createSession(c, directory, body.title, body.id, { ...(body.parentID ? { parentID: body.parentID } : {}), ...(ceiling ? { permissionCeiling: ceiling } : {}), ...createOptions })
@@ -1463,7 +1587,10 @@ export function createSessionRoutes(opts: Opts) {
                 await adapter.updateSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter), config)
               }
             } catch (error) {
-              await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+              // Undo only what this request made. A session that was already
+              // there belongs to the attempt that created it, and deleting it
+              // to tidy up a failed configuration destroys that work.
+              if (!existing) await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
               throw error
             }
           }
@@ -1476,6 +1603,7 @@ export function createSessionRoutes(opts: Opts) {
               const harness = requestedHarness ?? config.harness ?? (opts.getSessionConfig
                 ? (await opts.getSessionConfig(c, directory, session.id, adapter)).harness
                 : (await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter))).harness)
+              const origin = sessionTurnOrigin(c)
               subagentKey = (await children.admitCreated({
                 parentSessionId: body.parentID,
                 childSessionId: session.id,
@@ -1483,10 +1611,11 @@ export function createSessionRoutes(opts: Opts) {
                 harness: harness.id,
                 ...(body.role ? { role: body.role } : {}),
                 ...(body.title ? { title: body.title } : {}),
+                ...(origin ? { origin } : {}),
               })).subagentKey
             }
           } catch (error) {
-            await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+            if (!existing) await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
           }
           if (body.parentID && children) {
@@ -1504,6 +1633,7 @@ export function createSessionRoutes(opts: Opts) {
             return registration.response
           }
           if (registration.kind === "denied") {
+            if (start) opts.sessionStarts!.finish(start, { status: "failed", error: "Session creator registration was denied" })
             await compensateRegistration({
               opts,
               c,
@@ -1516,6 +1646,7 @@ export function createSessionRoutes(opts: Opts) {
             opts.publishSessionLifecycle?.({
               type: "session.lifecycle",
               phase: "failed",
+              ...(start ? { start } : {}),
               directory,
               ...(draftId ? { draftId } : {}),
               ...(workspaceId ? { workspaceId } : {}),
@@ -1528,7 +1659,7 @@ export function createSessionRoutes(opts: Opts) {
           try {
             await after(opts.afterCreateSession?.(c, directory, session))
           } catch (error) {
-            if (managedSessionLifecycle(opts, c)) {
+            if (managed) {
               await compensateRegistration({
                 opts,
                 c,
@@ -1538,13 +1669,18 @@ export function createSessionRoutes(opts: Opts) {
                 operationId: operationId!,
                 reason: `post_create_projection_failed: ${errorMessage(error)}`,
               })
-            } else {
+            } else if (!existing) {
               await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             }
             throw error
           }
           if (body.parentID && children) {
             opts.publishGlobal(withDir(compatScope(directory, session.id), sessionUpdated(session)))
+          }
+          if (start) {
+            if (session.id !== start.sessionId) throw new Error("Agent returned a different local session identity")
+            const binding = await requireExecutionBinding(opts, c, directory, session.id, adapter)
+            opts.sessionStarts!.finish(start, { status: "created", upstreamSessionId: binding.upstreamSessionId })
           }
           opts.publishSessionLifecycle?.({
             type: "session.lifecycle",
@@ -1558,9 +1694,13 @@ export function createSessionRoutes(opts: Opts) {
           })
           return c.json(createdSessionBody(normalizeSession(session, directory), created), 201)
         } catch (error) {
+          if (start && opts.sessionStarts?.get(start.sessionId)?.status === "starting") {
+            opts.sessionStarts.finish(start, { status: "failed", error: errorMessage(error) })
+          }
           opts.publishSessionLifecycle?.({
             type: "session.lifecycle",
             phase: "failed",
+            ...(start ? { start } : {}),
             directory,
             ...(draftId ? { draftId } : {}),
             ...(workspaceId ? { workspaceId } : {}),
@@ -1574,10 +1714,12 @@ export function createSessionRoutes(opts: Opts) {
           // runtime declined, and a 500 is the one class of failure clients retry.
           if (error instanceof HTTPException) throw error
           return c.json(errorBody("session_create_failed", errorMessage(error)), 500)
+        } finally {
+          if (claimed) activeSessionChanges.delete(claimed)
         }
       }
       return body.parentID && children
-        ? children.withCreation(body.parentID, directory, create)
+        ? children.withCreation(body.parentID, directory, () => withSessionChange(body.parentID!, create))
         : create()
     })
     // Register the harness capability routes, both global
@@ -1630,7 +1772,7 @@ export function createSessionRoutes(opts: Opts) {
     .get("/session/:id/goal", goalRoute(opts, "goal_read", async ({ c, sessionId, directory, runtime }) =>
       noStoreJson(c, await runtime.goals.read(sessionId, directory))))
     .post("/session/:id/goal", goalRoute(opts, "goal_start", async ({ c, sessionId, directory, runtime }) => {
-      const body = await requestBody(c)
+      const body = await boundedJsonRecord(c)
       return goalMutationResponse(
         c,
         await runtime.goals.start({ sessionId, objective: str(body.objective) ?? "" }, directory),
@@ -1662,6 +1804,16 @@ export function createSessionRoutes(opts: Opts) {
       await after(opts.afterGetSession?.(c, directory, session))
       return noStoreJson(c, normalizeSession(session, directory))
     })
+    .get("/session/:id/config-options", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_read")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      const binding = await requireExecutionBinding(opts, c, directory, sessionId, adapter)
+      if (!adapter.probeConfigOptions) return noStoreJson(c, { error: "Session harness does not expose config options" }, 404)
+      return noStoreJson(c, await adapter.probeConfigOptions(directory, binding))
+    })
     .get("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_read")
@@ -1679,7 +1831,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const wire = await requestBody(c)
+      const wire = await boundedJsonRecord(c)
       const title = str(wire.title)
       const archived = num(rec(wire.time)?.archived)
       const body = {
@@ -1699,7 +1851,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const wire = await requestBody(c)
+      const wire = await boundedJsonRecord(c)
       const immutable = IMMUTABLE_SESSION_CONFIG_FIELDS.find((field) => field in wire)
       if (immutable) {
         const refusal = IMMUTABLE_CONFIG_REFUSALS[immutable]
@@ -1733,18 +1885,25 @@ export function createSessionRoutes(opts: Opts) {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "delete")
       if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      // Read before deleting: once the row is gone nothing can say whether it
-      // was a subsession, and the rail's visible count depends on that.
-      const parentID = (await readSession(opts, c, directory, sessionId, adapter).catch(() => undefined) as { parentID?: string } | undefined)?.parentID
-      await cascadeToChildren(opts, c, directory, sessionId, "delete")
-      await opts.beforeDeleteSession?.(c, directory, sessionId)
-      await disposeRuntimeSessionDocuments(sessionId)
-      await adapter.deleteSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
-      await after(opts.afterDeleteSession?.(c, directory, sessionId))
-      opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionDeleted(sessionId, directory ?? "", parentID)))
-      return c.json({ ok: true })
+      return withSessionChange(sessionId, async () => {
+        const directory = await opts.resolveDirectory(c, { sessionId })
+        const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+        // Read before deleting: once the row is gone nothing can say whether it
+        // was a subsession, and the rail's visible count depends on that.
+        const parentID = (await readSession(opts, c, directory, sessionId, adapter).catch(() => undefined) as { parentID?: string } | undefined)?.parentID
+        const start = opts.sessionStarts?.get(sessionId)?.binding
+        await cascadeToChildren(opts, c, directory, sessionId, "delete", {}, withSessionChange)
+        await opts.beforeDeleteSession?.(c, directory, sessionId)
+        await disposeRuntimeSessionDocuments(sessionId)
+        await adapter.deleteSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
+        await after(opts.afterDeleteSession?.(c, directory, sessionId))
+        // A deletion that got this far removed the session the creation owns, so
+        // the id goes back. Anything that throws above keeps the owner, which is
+        // what lets a caller distinguish a freed id from a half-deleted one.
+        if (start) opts.sessionStarts!.retire(start)
+        opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionDeleted(sessionId, directory ?? "", parentID)))
+        return c.json({ ok: true })
+      })
     })
     .post("/session/:id/message", async (c) => {
       const id = c.req.param("id")
@@ -1754,10 +1913,22 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
       const access = sessionAccessContext(c)
-      const parsedBody = parseSessionPromptBody(await c.req.json().catch(() => undefined))
+      const parsedBody = parseSessionPromptBody(await boundedJsonBody(c))
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
       const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, adapter, body.permissionMode)
       if (permissionRefusal) return permissionRefusal
+      if (body.delivery) {
+        if (!runtime || !opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
+        body.messageID ??= `msg_${randomUUID()}`
+        const submission = { sessionId: id, body, actor: access.actor, author: access.author, authority: access.authority, provenance: sessionRequestProvenance(c) }
+        if (body.delivery === "queue") {
+          opts.queuedPrompts.queue(submission)
+          return c.json({ delivery: "queue", messageID: body.messageID }, 202)
+        }
+        const result = await opts.queuedPrompts.steer(submission)
+        if (result.ok) return c.json({ delivery: "steer", messageID: body.messageID })
+        return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
+      }
       const turnAdmission = await acquireManagedPromptLease({
         opts,
         c,
@@ -1831,6 +2002,15 @@ export function createSessionRoutes(opts: Opts) {
       } finally {
         await turnAdmission.lease?.release().catch(() => undefined)
       }
+    })
+    .get("/session/:id/message/:messageId/attachment/:attachmentId", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const messages = await opts.getMessages?.(c, directory, sessionId)
+      if (!messages) return noStoreJson(c, sessionNotFound(), 404)
+      return toolImageResponse({ messages, sessionId, messageId: c.req.param("messageId"), attachmentId: c.req.param("attachmentId") })
     })
     .get("/session/:id/message", async (c) => {
       const sessionId = c.req.param("id")
@@ -1963,7 +2143,7 @@ export function createSessionRoutes(opts: Opts) {
           message: `${caps.harness} cannot be told about permission modes`,
         })
       }
-      const modeId = str((await requestBody(c)).modeId) ?? ""
+      const modeId = str((await boundedJsonRecord(c)).modeId) ?? ""
       if (!modeId) return c.json({ error: "modeId is required" }, 400)
       const session = await readSession(opts, c, directory, sessionId, adapter)
       if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
@@ -2043,7 +2223,7 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "fork", "forkSession", "fork", sessionId)
       if (unsupported) return unsupported
-      const wire = await requestBody(c)
+      const wire = await boundedJsonRecord(c)
       const body = { id: str(wire.id), messageId: str(wire.messageId) }
       const operationId = registrationOperationId(c)
       if (managedSessionLifecycle(opts, c) && (!body.id || !operationId)) {
@@ -2051,6 +2231,10 @@ export function createSessionRoutes(opts: Opts) {
           "session_reservation_required",
           "Managed session forks require a preassigned child session id and reservation operation",
         ), 400)
+      }
+      if (body.id && operationId) {
+        const refused = await creationReservationGuard(opts, c, body.id, operationId)
+        if (refused) return refused
       }
       const child = await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
       const registration = await registerCreatedSession(opts, c, child.id, operationId)
@@ -2095,7 +2279,7 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "executeCommand", "command")
       if (unsupported) return unsupported
-      const body = await requestBody(c)
+      const body = await boundedJsonRecord(c)
       await adapter.executeCommand!(
         await requireExecutionBinding(opts, c, directory, sessionId, adapter),
         str(body.command) ?? "",
@@ -2110,7 +2294,7 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "shell", "shell")
       if (unsupported) return unsupported
-      const body = await requestBody(c)
+      const body = await boundedJsonRecord(c)
       const shellModel = rec(body.model)
       const providerID = str(shellModel?.providerID)
       const modelID = str(shellModel?.modelID)
@@ -2131,7 +2315,7 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "summarize", "summarize")
       if (unsupported) return unsupported
-      const body = await requestBody(c)
+      const body = await boundedJsonRecord(c)
       const auto = bool(body.auto)
       await adapter.summarize!(sessionId, {
         providerID: str(body.providerID) ?? "",
@@ -2144,16 +2328,18 @@ export function createSessionRoutes(opts: Opts) {
       const id = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, id, "queue_read")
       if (guarded) return guarded
-      return c.json((opts.queuedPrompts?.list(id) ?? []).map(({ seq, parts, messageId, queuedAt, held }) => ({ seq, parts, messageId, queuedAt, held })))
+      return c.json((opts.queuedPrompts?.list(id) ?? []).map(({ seq, parts, messageId, queuedAt, held, steering }) => ({ seq, parts, messageId, queuedAt, held, steering })))
     })
     .post("/session/:id/queue/:seq/:action", async (c) => {
       const id = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, id, "prompt")
       if (guarded) return guarded
-      const action = queuedPromptAction(c.req.param("action"), await c.req.json().catch(() => undefined))
+      const action = queuedPromptAction(c.req.param("action"), await boundedJsonBody(c))
       if (!action) return c.json({ error: "Unknown queue action" }, 400)
-      return opts.queuedPrompts?.control(id, Number(c.req.param("seq")), action)
-        ? c.json({ ok: true }) : c.json({ error: "Queued message already admitted or removed" }, 409)
+      const result = await opts.queuedPrompts?.control(id, Number(c.req.param("seq")), action)
+      if (!result) return c.json({ error: "Queue is unavailable" }, 409)
+      if (result.ok) return c.json(result)
+      return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : result.status === "provider_owned" ? 423 : 409)
     })
     .post("/session/:id/prompt_async", async (c) => {
       const id = c.req.param("id")
@@ -2161,7 +2347,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
-      const parsedBody = parseSessionPromptBody(await c.req.json().catch(() => undefined))
+      const parsedBody = parseSessionPromptBody(await boundedJsonBody(c))
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
       const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, adapter, body.permissionMode)
       if (permissionRefusal) return permissionRefusal
@@ -2198,7 +2384,26 @@ export function createSessionRoutes(opts: Opts) {
             return c.body(null, 204)
           }
         }
+        body.messageID ??= `msg_${randomUUID()}`
         const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
+        if (body.delivery && (!runtime || !opts.queuedPrompts)) {
+          return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
+        }
+        const access = sessionAccessContext(c)
+        if (body.delivery) {
+          if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
+          const submission = { sessionId: id, body, actor: access.actor, author: access.author, authority: access.authority, provenance: sessionRequestProvenance(c) }
+          if (body.delivery === "queue") {
+            try { opts.queuedPrompts.queue(submission) }
+            catch (error) { return c.json({ error: streamTurnErrorMessage(error) }, 503) }
+            admittedForExecution = true
+            return c.json({ delivery: "queue" })
+          }
+          const result = await opts.queuedPrompts.steer(submission)
+          admittedForExecution = true
+          if (result.ok) return c.json({ delivery: "steer" })
+          return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
+        }
         const turnAdmission = await acquireManagedPromptLease({
           opts,
           c,
@@ -2207,27 +2412,7 @@ export function createSessionRoutes(opts: Opts) {
           onLost: () => stopLostTurn(runtime, adapter, id, directory, () => requireExecutionBinding(opts, c, directory, id, adapter)),
         })
         if (turnAdmission.rejected) return turnAdmission.rejected
-        const access = sessionAccessContext(c)
         let settleAdmission: ((error?: unknown) => void) | undefined
-        let deliveredAs: PromptDelivery | undefined
-        // A queued prompt waits inside this request, so it would die with the
-        // process. The durable row outlives it and is dropped again the moment
-        // the prompt becomes a turn.
-        let queued: ReturnType<QueuedPromptHost["queue"]> | undefined
-        const observeDelivery = (delivery: PromptDelivery) => {
-          deliveredAs = delivery
-          if (delivery === "queue") {
-            queued ??= opts.queuedPrompts?.queue({
-              sessionId: id,
-              body,
-              ...(access.actor ? { actor: access.actor } : {}),
-              ...(access.author ? { author: access.author } : {}),
-            })
-            return
-          }
-          queued?.release()
-          queued = undefined
-        }
         const admission = runtime
           ? new Promise<unknown>((resolve) => {
               settleAdmission = resolve
@@ -2250,13 +2435,6 @@ export function createSessionRoutes(opts: Opts) {
             ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
             streamErrorMessage: streamTurnErrorMessage,
             onAdmissionSettled: settleAdmission,
-            onDelivery: observeDelivery,
-            onQueuedWaitEnd: () => queued?.clearAction(),
-            queuedAction: async () => {
-              const action = await (queued?.action() ?? new Promise<QueuedPromptAction>(() => {}))
-              if (action === "cancel") { queued?.release(); queued = undefined }
-              return action
-            },
             actor: access.actor,
             author: access.author,
           })
@@ -2330,9 +2508,6 @@ export function createSessionRoutes(opts: Opts) {
           releasePromptAdmission(id, body.messageID)
           return turnAdmissionConflict(c)
         }
-        // A prompt that asked how a busy session should take it gets that answer;
-        // every other prompt keeps the empty fire-and-forget acknowledgement.
-        if (body.delivery && deliveredAs) return c.json({ delivery: deliveredAs })
         return c.body(null, 204)
       }
       try {
@@ -2387,13 +2562,22 @@ export function createSessionRoutes(opts: Opts) {
         return engineRefusalResponse(c, error)
       }
       const sessionId = c.req.query("sessionId")
-      return c.json(await filterSessionRows(opts, c, "question_list", sessionId ? rows.filter((row) => row.sessionID === sessionId) : rows))
+      const selected = sessionId ? rows.filter((row) => row.sessionID === sessionId) : rows
+      const normal: AgentQuestion[] = []
+      const pending: AgentQuestion[] = []
+      for (const row of selected) {
+        const start = opts.sessionStarts?.get(row.sessionID)
+        if (!start || start.status === "created") normal.push(row)
+        else if (start.status === "starting" && !await sessionStartGuard(opts, c, start.binding, "question_list")) pending.push(row)
+      }
+      return c.json([...await filterSessionRows(opts, c, "question_list", normal), ...pending])
     })
     .post("/session/:sessionId/permissions/:permId", async (c) => {
       const suppliedSessionId = c.req.param("sessionId")
       const permId = c.req.param("permId")
       const directory = await opts.resolveDirectory(c, { sessionId: suppliedSessionId })
-      const listedSessionId = interactionSessionId(await opts.listPermissions?.(c, directory) ?? [], permId)
+      const listed = (await opts.listPermissions?.(c, directory) ?? []).find((item) => item.id === permId)
+      const listedSessionId = listed?.sessionID
       if (opts.listPermissions && !listedSessionId) return interactionNotFound(c, "permission", permId)
       if (listedSessionId && listedSessionId !== suppliedSessionId) {
         return interactionSessionMismatch(c, "permission", permId)
@@ -2404,42 +2588,60 @@ export function createSessionRoutes(opts: Opts) {
       })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "permissions", "respondPermission", "permission_response")
       if (unsupported) return unsupported
-      const sessionId = listedSessionId
-        || interactionSessionId(await adapter.listPermissions?.(directory) ?? [], permId)
+      const permission = listed ?? (await adapter.listPermissions?.(directory) ?? []).find((item) => item.id === permId)
+      const sessionId = permission?.sessionID
       if (!sessionId) return interactionNotFound(c, "permission", permId)
       if (sessionId !== suppliedSessionId) return interactionSessionMismatch(c, "permission", permId)
       const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_response")
       if (guarded) return guarded
-      const r = str((await requestBody(c)).response) ?? "deny"
+      const body = await boundedJsonRecord(c)
+      if (body.optionId !== undefined && (typeof body.optionId !== "string" || body.response !== undefined)) {
+        return c.json({ error: "Provide an optionId or a response, not both" }, 400)
+      }
+      const optionId = typeof body.optionId === "string" ? body.optionId : undefined
+      if (permission?.options !== undefined) {
+        if (optionId === undefined || !permission.options.some((option) => option.id === optionId)) {
+          return c.json({ error: "Choose one of the permission request's offered options" }, 400)
+        }
+      } else if (optionId !== undefined) {
+        return c.json({ error: "This permission request does not offer provider options" }, 400)
+      }
+      const r = optionId !== undefined ? "once" : str(body.response) ?? "deny"
       const decision = r === "once" ? "allow_once" : r === "always" ? "allow_always" : "deny"
       const result = await adapter.respondPermission!(
         await requireExecutionBinding(opts, c, directory, sessionId, adapter),
         permId,
         decision,
+        optionId,
       )
-      publishInteractionEvents(
+      const events = publishInteractionEvents(
         opts.publishGlobal,
         directory,
         sessionId,
         result?.events,
-        permissionReplied(sessionId, permId, r === "always" ? "always" : r === "once" ? "once" : "reject"),
+        permissionReplied(sessionId, permId, optionId !== undefined ? { optionId } : r === "always" ? "always" : r === "once" ? "once" : "reject"),
       )
-      return c.json({ ok: true })
+      return c.json({ ok: true, events })
     })
     .post("/question/:id/reply", async (c) => {
       const admitted = await admitQuestionOperation(opts, c, "replyQuestion")
       if (admitted.rejected) return admitted.rejected
       const { id, directory, adapter, sessionId } = admitted
-      const body = rec(await c.req.json().catch(() => undefined))
+      const body = rec(await boundedJsonBody(c))
       const answers = body && Object.keys(body).every((key) => key === "answers")
         ? questionAnswers(body.answers)
         : undefined
       if (!answers) return c.json({ error: "answers must be an array of string arrays" }, 400)
-      const result = await adapter.replyQuestion!(
-        await requireExecutionBinding(opts, c, directory, sessionId, adapter),
-        id,
-        answers,
-      )
+      let result: AgentInteractionResult | void
+      try {
+        result = admitted.start
+          ? await adapter.replySessionStartQuestion!(admitted.start, id, answers)
+          : await adapter.replyQuestion!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), id, answers)
+      } catch (error) {
+        const failure = elicitationError(error)
+        if (!failure) throw error
+        return c.json(failure.body, failure.status)
+      }
       publishInteractionEvents(
         opts.publishGlobal,
         directory,
@@ -2453,10 +2655,9 @@ export function createSessionRoutes(opts: Opts) {
       const admitted = await admitQuestionOperation(opts, c, "rejectQuestion")
       if (admitted.rejected) return admitted.rejected
       const { id, directory, adapter, sessionId } = admitted
-      const result = await adapter.rejectQuestion!(
-        await requireExecutionBinding(opts, c, directory, sessionId, adapter),
-        id,
-      )
+      const result = admitted.start
+        ? await adapter.rejectSessionStartQuestion!(admitted.start, id)
+        : await adapter.rejectQuestion!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), id)
       publishInteractionEvents(
         opts.publishGlobal,
         directory,

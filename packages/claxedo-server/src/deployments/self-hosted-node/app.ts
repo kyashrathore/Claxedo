@@ -3,8 +3,6 @@ import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import { Hono } from "hono"
 import type { MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
@@ -25,6 +23,7 @@ import {
   sessionAccessWriteClass,
   type ProcessObserver,
   type SessionAccessStreamDecision,
+  type SessionAccessPolicyInput,
   type SessionAuthorityInput,
 } from "@claxedo/workspace-runtime"
 import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/errors/posthog"
@@ -51,6 +50,7 @@ import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
+import { documentGit } from "@claxedo/local-server/self-hosted-execution"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -106,7 +106,8 @@ import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBro
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { createSqliteHostTunnelTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/host-tunnel-relay-target"
 import type { HostTunnelTargetResolver } from "@claxedo/server-core/adapters/relay-port"
-import { selfHostedTasksClientInput, type TasksSessionGrants } from "../../tasks/session-grants"
+import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
+import { selfHostedTasksClientInput } from "../../tasks/session-grants"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createControlPlaneApp } from "../../control-plane-app"
@@ -125,6 +126,8 @@ import {
   authorizeRuntimeSessionStream,
   RuntimeSessionAuthorityRoutes,
   sessionStreamLeaseVerifier,
+  sessionStreamLeaseMinter,
+  WORKSPACE_STREAM_LEASE_SESSION,
   type RuntimeSessionAuthorityOptions,
   type SessionStreamLeaseClaims,
 } from "../../routes/runtime-session-authority"
@@ -146,6 +149,7 @@ import {
 } from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
+import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard } from "./operator"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
@@ -182,8 +186,6 @@ import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 import { isComposedAuthorityPort } from "../../authority/composed-authority"
 
-const execFileAsync = promisify(execFile)
-
 const TrackBody = z.object({
   event: z.string().min(1),
   properties: z.record(z.string(), z.unknown()).optional(),
@@ -212,6 +214,8 @@ function authRouteOptions(services: ControlPlaneServices) {
 // the composition when one is absent. The previous `as unknown as` returned the
 // same object whether or not they were there.
 const RUNTIME_SESSION_AUTHORITY_MEMBERS = [
+  "authorizeRuntimeSessionStartStatus",
+  "authorizeRuntimeSessionStart",
   "registerRuntimeSession",
   "markSessionRegistrationAmbiguous",
   "beginSessionCompensation",
@@ -293,30 +297,41 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
       message: error instanceof Error ? error.message : "Session authority is unavailable",
     }
   }
+  const streamClaims = async (
+    input: SessionAccessPolicyInput,
+    sessionId: string,
+    action: "read" | "write",
+    lease?: string,
+  ): Promise<SessionStreamLeaseClaims> => {
+    if (!input.actor || !input.authority?.managed) {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Verified workspace actor is required")
+    }
+    if (lease) {
+      const held = await sessionStreamLeaseVerifier()(lease).catch(() => undefined)
+      if (!held || held.transport !== "embedded" || held.actorId !== input.actor.actorId || held.actorKind !== input.actor.actorKind
+        || held.orgId !== input.authority.orgId || held.workspaceId !== input.authority.workspaceId
+        || held.action !== action || (held.sessionId !== sessionId && !(action === "read" && held.sessionId === WORKSPACE_STREAM_LEASE_SESSION))) {
+        throw new ControlPlaneAuthError(401, "session_stream_lease_invalid", "Session stream lease is invalid or mismatched")
+      }
+    }
+    return {
+      ...(input.actor.actorKind === "human"
+        ? { principalKind: "user" as const, actorId: input.actor.actorId, actorKind: "human" as const }
+        : { principalKind: "service" as const, actorId: input.actor.actorId, actorKind: "agent" as const }),
+      transport: "embedded",
+      orgId: input.authority.orgId,
+      workspaceId: input.authority.workspaceId,
+      sessionId,
+      action,
+    }
+  }
   const decideStream = async (
     input: SessionAuthorityInput,
     lease?: string,
   ): Promise<SessionAccessStreamDecision> => {
     const action = sessionAccessRequiresWrite(input) ? "write" as const : "read" as const
     try {
-      const claims: SessionStreamLeaseClaims = lease
-        ? await sessionStreamLeaseVerifier()(lease)
-        : {
-            ...principalOf(input),
-            transport: "embedded",
-            orgId: input.authority.orgId,
-            workspaceId: input.authority.workspaceId,
-            sessionId: input.sessionId,
-            action,
-          }
-      if (lease && (claims.sessionId !== input.sessionId || claims.action !== action)) {
-        return {
-          allowed: false,
-          status: 401,
-          code: "session_stream_lease_invalid",
-          message: "Session stream lease is invalid or mismatched",
-        }
-      }
+      const claims = await streamClaims(input, input.sessionId, action, lease)
       return await authorizeRuntimeSessionStream({ authority: runtimeAuthority }, claims)
     } catch (error) {
       return denied(error)
@@ -376,6 +391,24 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
   })
   const policy = managedWorkspaceSessionAccessPolicy({
     authority: {
+      authorizeSessionStart: async (input) => {
+        try {
+          await runtimeAuthority.authorizeRuntimeSessionStart({
+            ...principalOf(input), workspaceId: input.authority.workspaceId,
+            sessionId: input.sessionId, registrationOperationId: input.registrationOperationId,
+          })
+          return { allowed: true as const }
+        } catch (error) { return denied(error) }
+      },
+      authorizeSessionStartStatus: async (input) => {
+        try {
+          await runtimeAuthority.authorizeRuntimeSessionStartStatus({
+            ...principalOf(input), workspaceId: input.authority.workspaceId,
+            sessionId: input.sessionId, registrationOperationId: input.registrationOperationId,
+          })
+          return { allowed: true as const }
+        } catch (error) { return denied(error) }
+      },
       authorizeSessionRead: (input) => decide(input, "read"),
       authorizeSessionWrite: (input) => decide(input, "write"),
       authorizeSessionStream: decideStream,
@@ -414,41 +447,31 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
       },
     },
   })
-  // The in-process boundary verified the actor and stamped the workspace role
-  // on the request; the workspace-level read the unscoped `wr/events` arm
-  // asks for is that role's to grant, with no relay authority to consult.
-  policy.authorizeHost = (input) => {
-    const role = input.authority?.role
-    if (role && roleRank(role) >= roleRank(input.minimumRole)) return { allowed: true }
-    return {
-      allowed: false,
-      status: 403,
-      code: "host_authority_denied",
-      message: `Workspace ${input.minimumRole} authority is required`,
+  policy.authorizeHost = async (input) => {
+    try {
+      const claims = await streamClaims(input, WORKSPACE_STREAM_LEASE_SESSION, "read", input.lease)
+      const current = await authority.resolveRuntimeMachineAccess(claims.actorId, claims.workspaceId, input.minimumRole)
+      if (current.actorKind !== claims.actorKind || current.orgId !== claims.orgId) {
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority no longer matches this actor")
+      }
+      return input.operation === "session_event_stream"
+        ? { allowed: true, ...await sessionStreamLeaseMinter()(claims) }
+        : { allowed: true }
+    } catch (error) {
+      return denied(error)
     }
   }
   return policy
 }
 
-function roleRank(role: "viewer" | "editor" | "admin" | "owner") {
-  return role === "viewer" ? 0 : role === "editor" ? 1 : role === "admin" ? 2 : 3
-}
-
-export function localDocumentsBackend() {
+export function localDocumentsBackend(sessionAuthority?: Pick<WorkspaceAuthority, "authorizeSessionWrite">) {
   return createLocalDocumentsBackend({
     resolveWorkspace,
     sessionMeta,
+    sessionAuthority,
     dataDir,
     reportError,
-    runGit: async (args, directory, options) =>
-      (
-        await execFileAsync("git", [...args], {
-          cwd: directory,
-          ...(options?.env ? { env: { ...process.env, ...options.env } } : {}),
-          ...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
-          ...(options?.maxBufferBytes ? { maxBuffer: options.maxBufferBytes } : {}),
-        })
-      ).stdout.trim(),
+    runGit: documentGit,
   })
 }
 
@@ -1020,6 +1043,13 @@ export function createSelfHostedApp(
       app.get("/api/claxedo/auth/descriptor", (c) => c.json(embeddedBrowserAuthDescriptor()))
     }
   }
+  // These contributions manage one machine-wide plugin generation. Every
+  // entrypoint uses this gate, including reads and signed-runtime handoff.
+  const authorizeOperator = selfHostedOperatorAuthorizer()
+  const operator = selfHostedOperatorGuard(services.auth, authorizeOperator)
+  app.use("/api/claxedo/plugins", operator)
+  app.use("/api/claxedo/plugins/*", operator)
+  app.use("/api/claxedo/remote-access/enable", operator)
   app.route("/", JwksRoutes(process.env))
   app.route(
     "/",
@@ -1042,6 +1072,7 @@ export function createSelfHostedApp(
   // to the same served set and heartbeat loop.
   const remoteAccessService = services.authority ? createRemoteAccessService({
     authority: services.authority,
+    authorizeOperator,
     relayUrl: remoteAccessRelayUrl ?? "",
     hostTunnelTokenSigner: remoteAccessSigner ?? (async () => {
       throw new ControlPlaneAuthError(503, "host_tunnel_token_signer_unavailable", "Host Tunnel Token signer is not configured")
@@ -1137,7 +1168,7 @@ export function createSelfHostedApp(
     // execution routes to the embedded workspace runtime.
   }
 
-  const documentsBackend = localDocumentsBackend()
+  const documentsBackend = localDocumentsBackend(services.authority)
   // Documents doorbell. The documents backend is
   // Worker-safe and cannot import the bus, so the local composition root injects
   // the publish here. Every document mutation — saves AND `fs.watch` external
@@ -1181,10 +1212,17 @@ export function createSelfHostedApp(
   // A private GitHub repository clones with the caller's connected GitHub
   // account — the same token `repositoryForAuth` hands the cloud clone — and
   // anonymously when they have none.
+  // Naming a folder that already exists here is a read of a caller-chosen path
+  // on this machine, so it takes the same deployment-operator authority the
+  // plugin and enrollment gates above use; the project store itself is
+  // machine-global, so `authority` is what keeps one account's rows out of
+  // another's list, reads and updates.
   const projectAuthority = services.authority
   app.route(
     "/api/claxedo/projects",
     LocalProjectRoutes(authRouteOptions(services), {
+      authorizeLocalDirectoryImport: authorizeOperator,
+      ...(projectAuthority ? { authority: projectAuthority } : {}),
       cloneCredential: async (auth, repoUrl) => {
         if (!repoUrl.startsWith("https://github.com/")) return undefined
         const connections = await connectionsHost.service.list({ owner: auth.user.subject })
@@ -1214,6 +1252,11 @@ export function createSelfHostedApp(
     services,
     {
       ...workspaceRouteOptions(services, connectionsHost, options.connectionRateLimiter),
+      // The same machine authority the plugin, enrollment and folder-import
+      // gates use: deleting a workspace placed on this machine is this
+      // process forgetting a directory it serves, which no workspace role
+      // grants.
+      authorizeOperator,
       ...(remoteAccessService ? { hostAssignments: remoteAccessService } : {}),
     },
   ))
@@ -1354,7 +1397,6 @@ export function createSelfHostedApp(
         tasks: selfHostedTasksClientInput({
           enabledToolGroups: builtinToolGroups,
           app,
-          signed: services.auth.config.enabled,
           ...(options.tasksGrants ? { grants: options.tasksGrants } : {}),
         }),
         // This box runs its own workspaces behind the runtime proxy, which

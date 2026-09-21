@@ -37,15 +37,14 @@ describe("image attachment", () => {
     })
   })
 
-  test("keeps a workspace path by location and everything else by value", () => {
-    expect(imageAttachment({ mime: "image/png", data: PNG, root: "/repo", sourcePath: "/repo/docs/a.png", filename: "a.png" })).toEqual({
-      kind: "workspace-file",
+  test("preserves supplied bytes even when the source is inside the workspace", () => {
+    expect(imageAttachment({ mime: "image/png", data: PNG, sourcePath: "/repo/docs/a.png", filename: "a.png" })).toEqual({
+      kind: "inline",
       mime: "image/png",
-      path: "docs/a.png",
-      sourcePath: "/repo/docs/a.png",
+      url: `data:image/png;base64,${PNG}`,
       filename: "a.png",
     })
-    expect(imageAttachment({ mime: "image/png", data: PNG, root: "/repo", sourcePath: "/tmp/a.png" })).toMatchObject({
+    expect(imageAttachment({ mime: "image/png", data: PNG, sourcePath: "/tmp/a.png" })).toMatchObject({
       kind: "inline",
       url: `data:image/png;base64,${PNG}`,
     })

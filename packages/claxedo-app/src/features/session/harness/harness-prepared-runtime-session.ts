@@ -72,7 +72,8 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
       // move a draft to a new scope before that scope has hydrated.
       state: {
         harness: params?.harness ?? stored.harness,
-        selectedModel: params?.sessionConfig?.model.modelID ?? stored.selectedModel,
+        selectedModel: params?.sessionConfig ? params.sessionConfig.model?.modelID : stored.selectedModel,
+        modelOptional: !!params?.sessionConfig && params.harness?.kind === "connection" && !params.sessionConfig.model,
       },
       ...(item ? { prepared: item } : {}),
     })

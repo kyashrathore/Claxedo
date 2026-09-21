@@ -1,20 +1,23 @@
 import { describe, expect, test } from "bun:test"
 import { setupAgentPluginsSignedSync } from "./agent-plugins-signed-sync"
+import { recordingDaemon } from "./test-support/daemon-fetch"
 
 function harness(input: { status?: number; body?: unknown; daemonStatus?: number } = {}) {
   const operations: string[] = []
   const pushes: Array<string | null> = []
   const timers: Array<{ run: () => void; delayMs: number }> = []
+  const { daemon, requests } = recordingDaemon({
+    respond: () => new Response(JSON.stringify({ active: true }), { status: input.daemonStatus ?? 200 }),
+  })
   const sync = setupAgentPluginsSignedSync({
     enabled: true,
     runAccountOperation: async (name) => {
       operations.push(name)
       return { status: input.status ?? 200, body: input.body ?? { revision: 3, expiresAt: Date.now() + 30 * 60_000 } }
     },
-    serverUrl: async () => "http://127.0.0.1:2593",
-    request: async (_url, init) => {
+    daemon: async (path, init) => {
       pushes.push(typeof init?.body === "string" ? init.body : null)
-      return new Response(JSON.stringify({ active: true }), { status: input.daemonStatus ?? 200 })
+      return await daemon(path, init)
     },
     log: { info: () => {}, warn: () => {} },
     setTimer: (run, delayMs) => {
@@ -22,7 +25,7 @@ function harness(input: { status?: number; body?: unknown; daemonStatus?: number
       return setTimeout(() => {}, 0)
     },
   })
-  return { sync, operations, pushes, timers }
+  return { sync, operations, pushes, timers, requests }
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))

@@ -59,7 +59,6 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(claxedoWorkspaceRuntimeLaunch({
       workspaceId: "ws_1",
       hostId: "host_1",
-      sandboxId: "sandbox_1",
       leaseId: "lease_1",
       epoch: 7,
       directory: "/workspace",
@@ -70,7 +69,9 @@ describe("claxedo workspace-runtime boot policy", () => {
       command: ["workspace-runtime"],
       env: expect.objectContaining({
         WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
-        WORKSPACE_RUNTIME_HOST_ID: "sandbox_1",
+        // The launch's stated host identity survives the lease env composed
+        // over it; the relay binds this host on exactly this value.
+        WORKSPACE_RUNTIME_HOST_ID: "host_1",
         WORKSPACE_RUNTIME_LEASE_ID: "lease_1",
         WORKSPACE_RUNTIME_EPOCH: "7",
         WORKSPACE_RUNTIME_DIRECTORY: "/workspace",
@@ -83,7 +84,6 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(() => claxedoWorkspaceRuntimeLaunch({
       workspaceId: "ws_1",
       hostId: "host_1",
-      sandboxId: "sandbox_1",
       leaseId: "lease_1",
       epoch: 7,
       directory: "/workspace",
@@ -104,7 +104,6 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(() => claxedoWorkspaceRuntimeLaunch({
       workspaceId: "ws_1",
       hostId: "host_1",
-      sandboxId: "sandbox_1",
       leaseId: "lease_1",
       epoch: 1,
       directory: "/workspace",

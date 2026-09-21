@@ -308,7 +308,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const model = codexTurnModel(input.input, input.model)
     const effort = resolveSupportedEffort(
       this.modelSource.peek(input.directory),
-      codexAppServerModel(input.input.model.modelID),
+      codexAppServerModel(input.input.model?.modelID),
       input.input.variant,
     )
     const project = (method: string, payload: JsonRecord, frame: unknown, route?: { kind: "parent" } | { kind: "child"; correlationKey: string }) => input.ingest({
@@ -628,5 +628,3 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
 }
 
 export { observeCodexAppServerProcess, codexAppServerCommand } from "./app-server-process"
-
-export { codexMcpElicitationQuestion, codexMcpElicitationResponse } from "./mcp-elicitation"

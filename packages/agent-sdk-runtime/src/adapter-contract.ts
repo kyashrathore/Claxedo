@@ -2,6 +2,8 @@ import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
 import type {
   AgentExecutionBinding,
+  ConnectionRuntimeStatus,
+  AgentSessionStartBinding,
   AgentQuestionAnswer,
   HarnessInstructionChannel,
   SessionModelGroup,
@@ -33,7 +35,7 @@ export type AbortResult =
 
 export type SteerResult =
   | { ok: true }
-  | { ok: false; status: "no_active_turn" | "declined" | "failed"; message: string }
+  | { ok: false; status: "no_active_turn" | "declined" | "unsupported" | "unknown"; message: string }
 
 export type AgentHarnessAdapterHealth = {
   status: "ok" | "degraded" | "unavailable"
@@ -91,6 +93,7 @@ export type AgentHandoffSessionOptions = {
 }
 
 export type AgentSessionCreateOptions = {
+  start?: AgentSessionStartBinding
   /**
    * Standing instructions for the new session. An adapter whose
    * `instructionChannel` is `none` is never given them: dropping the block
@@ -164,6 +167,8 @@ export interface AgentHarnessAdapterCore {
   getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]>
 
   listCommands?(directory: RuntimeDirectory): Promise<AgentCommand[]>
+  /** Observes existing process generations only; never starts a transport or session. */
+  readConnectionState?(directory: RuntimeDirectory, context?: AgentHarnessAdapterHealthContext): ConnectionRuntimeStatus
   readRuntimeHealth?(directory: RuntimeDirectory, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth
 
   dispose(): void | Promise<void>
@@ -290,7 +295,7 @@ export function requireGoalResource(adapter: AgentHarnessAdapter): AgentGoalReso
 
 export interface SupportsPermissions {
   listPermissions(directory: RuntimeDirectory): Promise<AgentPermission[]>
-  respondPermission(binding: AgentExecutionBinding, permId: string, decision: PermissionDecision): Promise<AgentInteractionResult | void>
+  respondPermission(binding: AgentExecutionBinding, permId: string, decision: PermissionDecision, optionId?: string): Promise<AgentInteractionResult | void>
 }
 
 /**
@@ -355,6 +360,8 @@ export interface SupportsPermissionModes {
 }
 
 export interface SupportsQuestions {
+  replySessionStartQuestion?(start: AgentSessionStartBinding, id: string, answers: AgentQuestionAnswer[]): Promise<AgentInteractionResult | void>
+  rejectSessionStartQuestion?(start: AgentSessionStartBinding, id: string): Promise<AgentInteractionResult | void>
   listQuestions(directory: RuntimeDirectory): Promise<AgentQuestion[]>
   replyQuestion(binding: AgentExecutionBinding, qId: string, answers: AgentQuestionAnswer[]): Promise<AgentInteractionResult | void>
   rejectQuestion(binding: AgentExecutionBinding, qId: string): Promise<AgentInteractionResult | void>
@@ -412,8 +419,8 @@ export function resolvedModelFromConfigOptions(
 }
 
 export interface SupportsConfigOptions {
-  probeConfigOptions(directory: RuntimeDirectory): Promise<AgentConfigOptions>
-  peekConfigOptions?(directory: RuntimeDirectory): Promise<AgentConfigOptions | null> | AgentConfigOptions | null
+  probeConfigOptions(directory: RuntimeDirectory, binding?: AgentExecutionBinding): Promise<AgentConfigOptions>
+  peekConfigOptions?(directory: RuntimeDirectory, binding?: AgentExecutionBinding): Promise<AgentConfigOptions | null> | AgentConfigOptions | null
 }
 
 export type AgentHarnessAdapter =

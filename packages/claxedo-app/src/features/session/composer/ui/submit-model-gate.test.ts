@@ -61,3 +61,21 @@ describe("submit model gate", () => {
     expect(resolvePromptSubmitConfig({ ...input, modelKey: () => undefined })).toBeUndefined()
   })
 })
+
+test("declared ACP omission stays absent while native prompts still require a model", () => {
+ const input = { harnessMode: true, modelOptional: true, selection: { kind: "connection" as const, connectionId: "remote" }, variant: () => undefined, modelKey: () => undefined, currentAgent: () => undefined, defaultAgent: () => ({ name: "build" }), agent: () => undefined }
+ expect(resolvePromptSubmitConfig(input)).toEqual({ agent: "build" })
+ expect(resolvePromptSubmitConfig({ ...input, selection: { kind: "native", harnessId: "codex" } })).toBeUndefined()
+ expect(cloudSubmitMissingModel({ isNewSession: true, hostKind: "provisioner", selection: input.selection, modelKey: undefined, modelOptional: true })).toBe(false)
+ expect(cloudSubmitMissingModel({ isNewSession: true, hostKind: "provisioner", selection: { kind: "native", harnessId: "codex" }, modelKey: undefined, modelOptional: true })).toBe(true)
+})
+
+test("existing connection omission comes from canonical config before picker hydration", () => {
+  const result = resolvePromptSubmitConfig({
+    existing: { harnessType: { kind: "connection", connectionId: "agent" }, agent: "build" },
+    modelOptional: false, harnessMode: true, selection: undefined,
+    modelKey: () => ({ providerID: "stale", modelID: "stale" }),
+    variant: () => undefined, currentAgent: () => undefined, defaultAgent: () => undefined, agent: () => undefined,
+  })
+  expect(result).toEqual({ agent: "build" })
+})

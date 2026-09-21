@@ -21,8 +21,10 @@
 
 import { randomUUID } from "crypto"
 import {
+  asRecord,
   requireAgentExecutionBinding,
   type AgentExecutionBinding,
+  type AgentSessionStartBinding,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type {
@@ -58,6 +60,8 @@ import {
   type AcpConfigOptions,
 } from "./session"
 import { permissionOptionPreference } from "./permission-options"
+import { AcpElicitationInteractions, hasLiveAcpElicitation } from "./elicitation"
+import { questionReplied } from "../../compat-events"
 import { answerAcpPermission } from "./permission-grants"
 import { cancelPendingPermissions, commitPermissionReply, type PermissionReplyPort } from "./permission-reply"
 import { listCommands } from "../../command-discovery"
@@ -119,6 +123,93 @@ export type {
 } from "./transport"
 
 export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdapter {
+  private discoveryOptions?: WeakMap<ACPProcess, Promise<AcpConfigOptions>>
+  private readonly elicitations = new Map<ACPProcess, AcpElicitationInteractions>()
+
+  protected override make(directory: string, role: "harness" | "probe", dead: () => void = () => {}, key?: string) {
+    const proc = super.make(directory, role, dead, key)
+    const interactions = new AcpElicitationInteractions(this.store, (directory, payload) => this.options.eventHub?.publishGlobal({ directory, payload }))
+    this.elicitations.set(proc, interactions)
+    proc.elicitationHandler = (params, ownerScope, signal) => {
+      if (typeof ownerScope !== "string") {
+        this.assertSessionStart(ownerScope)
+        if (!proc.alive || ![this.entryForSession(ownerScope.sessionId)?.proc, this.entryForSession(ownerScope.sessionId)?.startingProc].includes(proc)) throw new Error("Session start is not owned by this connection")
+        return interactions.create({ params, start: ownerScope, sessionId: ownerScope.sessionId, directory: ownerScope.directory, agentName: this.harnessId(), signal })
+      }
+      const agentSessionId = ownerScope
+      const row = this.store.listSessions(directory).find((session) => this.store.getAgentSessionId(session.id) === agentSessionId)
+      if (!row || !proc.alive) throw new Error("Elicitation session is not owned by this connection")
+      const owner = this.entryForSession(row.id)?.proc
+      // Child sessions share their parent's process; they are admitted by the
+      // native child event path before requests can address them.
+      const parentOwner = row.parentID ? this.entryForSession(row.parentID)?.proc : undefined
+      if (owner !== proc && parentOwner !== proc) throw new Error("Elicitation session is not owned by this connection")
+      return interactions.create({ params, sessionId: row.id, agentSessionId, directory, agentName: this.harnessId(), signal })
+    }
+    proc.elicitationComplete = (id) => interactions.complete(id)
+    proc.elicitationCancel = (agentSessionId) => interactions.cancelSession(agentSessionId)
+    proc.connection.signal.addEventListener("abort", () => {
+      interactions.dispose()
+      this.elicitations.delete(proc)
+    }, { once: true })
+    return proc
+  }
+
+  async listQuestions(directory: string) {
+    directory = requireWorkspaceDirectory(directory)
+    for (const [proc, interactions] of this.elicitations) {
+      if (proc.alive) continue
+      interactions.dispose()
+      this.elicitations.delete(proc)
+    }
+    // A restarted adapter has no resolver for the old process's requests.
+    // Retire their durable pending rows as cancellations, never re-create a
+    // resolver or claim that the user declined them.
+    for (const row of this.store.listQuestions(directory)) {
+      if (asRecord(row.harnessPayload)?.acpHarness !== this.harnessId()
+        || hasLiveAcpElicitation(this.store, row.id)) continue
+      const committed = this.store.appendEvent({ sessionId: row.sessionID,
+        payload: questionReplied(row.sessionID, row.id, []), source: { dir: "out", method: "elicitation.disconnected" } })
+      this.options.eventHub?.publishGlobal({ directory, payload: committed.payload })
+    }
+    return [...this.elicitations.values()].flatMap((interactions) => interactions.list(directory))
+  }
+
+  private assertSessionStart(start: AgentSessionStartBinding) {
+    const row = this.store.sessionStarts?.get(start.sessionId)
+    if (!row || row.status !== "starting" || !["sessionId", "operationId", "workspaceId", "directory", "connectionId"].every((field) => {
+      const key = field as keyof AgentSessionStartBinding
+      return typeof start[key] === "string" && start[key].length > 0 && row.binding[key] === start[key]
+    })) throw new Error("Session start is not owned by this reservation")
+  }
+
+  async replySessionStartQuestion(start: AgentSessionStartBinding, id: string, answers: string[][]) {
+    this.assertSessionStart(start)
+    const interactions = [...this.elicitations.values()].find((owner) => owner.owns(id))
+    if (!interactions) throw new Error("This question is no longer connected to its agent")
+    await interactions.replyStart(start, id, answers)
+  }
+
+  async rejectSessionStartQuestion(start: AgentSessionStartBinding, id: string) {
+    this.assertSessionStart(start)
+    const interactions = [...this.elicitations.values()].find((owner) => owner.owns(id))
+    if (!interactions) throw new Error("This question is no longer connected to its agent")
+    interactions.rejectStart(start, id)
+  }
+
+  async replyQuestion(binding: AgentExecutionBinding, id: string, answers: string[][]) {
+    requireAgentExecutionBinding(binding)
+    const interactions = [...this.elicitations.values()].find((owner) => owner.owns(id))
+    if (!interactions) throw new Error("This question is no longer connected to its agent")
+    await interactions.reply(binding, id, answers)
+  }
+
+  async rejectQuestion(binding: AgentExecutionBinding, id: string) {
+    requireAgentExecutionBinding(binding)
+    const interactions = [...this.elicitations.values()].find((owner) => owner.owns(id))
+    if (!interactions) throw new Error("This question is no longer connected to its agent")
+    interactions.reject(binding, id)
+  }
   readonly adapterCapabilities = ["runtime-config"] as const
   // `blocks` leads the prompt with the system text under
   // `annotations.audience: ["assistant"]`; ACP has no separate instruction slot.
@@ -138,11 +229,34 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
   private cfg(model?: SessionConfig["model"]) { return acpSessionConfig(this.harnessId(), this.currentModel, model) }
 
-  readHarnessCapabilities(_directory?: string, context?: HarnessCapabilityContext): HarnessCapabilities {
+  async readHarnessCapabilities(directory?: string, context?: HarnessCapabilityContext): Promise<HarnessCapabilities> {
+    // A cold runtime has no negotiated capabilities yet. Discover them once;
+    // idle disposal retains that answer without keeping the process alive.
+    if (context?.sessionId && directory && this.store.getAgentSessionId(context.sessionId)
+      && !this.entryForSession(context.sessionId)?.proc?.alive
+      && this.entryForSession(context.sessionId)?.fork === undefined) {
+      const required = requireWorkspaceDirectory(directory)
+      const entry = this.process(this.keyForSession(context.sessionId, required), required)
+      const probe = await this.getOrSpawnProbe(required)
+      entry.fork = probe.supportsForkSession()
+      entry.subagents = probe.supportsSubagents()
+    }
+    const sessionId = context?.sessionId
+    const session = sessionId ? this.store.getSession(sessionId) : undefined
+    const proc = sessionId ? this.entryForSession(sessionId)?.proc : this.probe?.proc
+    const aid = sessionId ? this.store.getAgentSessionId(sessionId) : undefined
+    const config = proc?.alive && aid && proc.hasSession(aid) ? proc.configOptions(aid)
+      : !sessionId && proc?.alive && proc.cachedConfigOptions != null
+        ? { options: proc.cachedConfigOptions, ...(proc.cachedResolvedModel ? { resolvedModel: proc.cachedResolvedModel } : {}) }
+        : undefined
     return acpHarnessCapabilities({
       harness: this.harnessId(),
       fork: this.supportsForkCapability(context?.sessionId),
       goals: this.supportsGoalCapability(context?.sessionId),
+      subagents: this.supportsSubagentCapability(sessionId),
+      child: !!session?.parentID,
+      config,
+      ...(config ? { modelSelection: { status: config.options.some(option => option.category === "model" || option.id === "model") ? "optional" : "unsupported" } as const } : {}),
     })
   }
 
@@ -289,12 +403,16 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     options: AgentSessionCreateOptions = {},
   ): Promise<{ id: string }> {
     directory = requireWorkspaceDirectory(directory)
+    if (options.start) {
+      this.assertSessionStart(options.start)
+      if (options.start.sessionId !== id || options.start.directory !== directory) throw new Error("Session start does not match creation")
+    }
     log.info("createSession: start", { directory, title, transport: this.connection().kind })
     if (this.store.getSession(id)) return { id }
     const processKey = this.processKey(directory)
     this.sessionProcessMap().set(id, processKey)
-    const { proc } = await this.getOrSpawnProcess(id, directory)
-    const agentSessionId = await this.boot(proc, directory, title, id)
+    const { proc } = await this.getOrSpawnProcess(id, directory, options.start)
+    const agentSessionId = await this.boot(proc, directory, title, id, undefined, options.start)
     log.info("createSession: ACP session created", { id, agentSessionId })
     this.store.bindSession({
       sessionId: id,
@@ -314,6 +432,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       ...(options.instructions ? { instructions: options.instructions } : {}),
       ...(options.group ? { group: options.group } : {}),
     })
+    this.bindCommandUpdates(id, agentSessionId, directory, proc)
     log.info("createSession: local session stored", { id, agentSessionId })
     return { id }
   }
@@ -325,6 +444,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const { proc } = await this.getOrSpawnProcess(id, directory)
     const agentSessionId = await this.boot(proc, directory, title, id)
     this.store.bindSession({ sessionId: id, directory, title, agentSessionId, ownerKey: processKey })
+    this.bindCommandUpdates(id, agentSessionId, directory, proc)
     let rolledBack = false
     return {
       id,
@@ -363,12 +483,9 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const current = this.store.getSessionConfig(id)
     if (!current) throw new Error(`Session ${id} has no runtime config`)
     const next = acceptedSessionConfig(current, update)
-    if (update.model !== undefined) {
-      this.setModel(next.model?.modelID === "default" ? "" : next.model?.modelID ?? "")
-    }
     const proc = this.entryForSession(id)?.proc
     const agentSessionId = this.store.getAgentSessionId(id)
-    if (!proc?.alive || !agentSessionId) return next
+    if (!proc?.alive || !agentSessionId || !proc.hasSession(agentSessionId)) return next
     await proc.syncSession(agentSessionId, {
       parts: [],
       assistantMessageId: "cfg",
@@ -405,6 +522,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const entry = key ? this.processMap().get(key) : undefined
     const agentSessionId = boundAgentSessionId ?? this.store.getAgentSessionId(id)
     if (agentSessionId) entry?.proc?.unlistenGoal(agentSessionId)
+    if (agentSessionId) entry?.proc?.unobserveCommands(agentSessionId)
     // Nothing published means nothing to retire; never build a publisher here.
     this.goalPublisher?.forget(id)
     entry?.sessionIds.delete(id)
@@ -449,17 +567,19 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       }
     }
     try {
-      await proc.cancel(agentSessionId)
       cancelPendingPermissions(this.permissionReplyPort(), proc, id, agentSessionId)
+      await proc.cancelAndWait(agentSessionId)
       return { ok: true, status: "cancelled" }
     } catch (err) {
-      log.info("abort: cancel failed; disposing session process", { id, directory, err })
-      const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id) ?? this.processKey(directory)
-      this.invalidateProcess(key, "ACP session cancellation failed; the agent process was stopped.", proc)
+      log.info("abort: cancellation outcome uncertain", { id, directory, err })
+      const message = "ACP session cancellation was not acknowledged; its outcome is uncertain."
+      // A live original turn owns its recovering status and eventual terminal
+      // event. Do not queue a restart error for its next successful prompt.
+      if (!this.lifecycle().activeTurns.has(id)) this.store.markSessionInterrupted(id, message, agentSessionId)
       return {
         ok: false,
         status: "recovering",
-        message: "ACP session cancellation failed; the agent process was stopped.",
+        message,
       }
     }
   }
@@ -475,7 +595,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
     const result = await this.getOrSpawnProcess(id, directory)
     const proc = result.proc
-    if (result.isNew) {
+    if (result.isNew || !proc.hasSession(agentSessionId)) {
       await proc.resumeSession(agentSessionId, directory, id)
     }
     if (!proc.supportsForkSession(agentSessionId)) {
@@ -499,6 +619,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       agentSessionId: newAgentSessionId,
       ...(processKey ? { ownerKey: processKey } : {}),
     })
+    this.bindCommandUpdates(newId, newAgentSessionId, directory, proc)
     log.info("forkSession: done", { newId, newAgentSessionId })
     return { id: newId }
   }
@@ -533,15 +654,8 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     throw new Error("ACP harness did not return live agent options")
   }
 
-  /**
-   * Permission modes for a Claxedo session.
-   *
-   * Two things must both be true before an agent can answer: it has to have been
-   * booted (so there is a process) and a `session/new` must have happened (so
-   * there is an agent session id whose state holds the advertised modes). Before
-   * that this reports NO modes and NO `unsupported` — the caller renders that as
-   * "not reported yet", which is the truth, rather than as "this agent has none".
-   */
+  /** Drafts have no upstream session to restore; only expose agent-reported modes.
+   * Existing-session mode reads and writes restore their owned session below. */
   async listDraftPermissionModes(directory: string): Promise<AgentPermissionModeState> {
     requireWorkspaceDirectory(directory)
     return draftPermissionModes(this.harnessId())
@@ -549,15 +663,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
   async listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState> {
     requireAgentExecutionBinding(binding)
-    const { sessionId } = binding
-    requireWorkspaceDirectory(binding.directory)
-    const agentSessionId = this.store.getAgentSessionId(sessionId)
-    const proc = this.entryForSession(sessionId)?.proc
-    // No agent session yet: show what this agent version is KNOWN to offer, by
-    // its own ids and names, so the draft choice survives the first message
-    // unchanged. An agent we have never probed reports nothing rather than a
-    // plausible-looking guess.
-    if (!agentSessionId || !proc?.alive) return draftPermissionModes(this.harnessId())
+    const { proc, agentSessionId } = await this.restoreSessionForConfiguration(binding)
     const state = proc.permissionModes(agentSessionId)
     // Teach later drafts what this user's agent actually offers, so the recorded
     // seed stops being consulted for a build it may not describe.
@@ -567,16 +673,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
   async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
     requireAgentExecutionBinding(binding)
-    const { sessionId } = binding
-    requireWorkspaceDirectory(binding.directory)
-    const agentSessionId = this.store.getAgentSessionId(sessionId)
-    const proc = this.entryForSession(sessionId)?.proc
-    // Deliberately a THROW rather than a silent no-op: a permission write that
-    // quietly does nothing is the exact failure this whole channel exists to
-    // prevent, and the caller surfaces it.
-    if (!agentSessionId || !proc?.alive) {
-      throw new Error("ACP session has no live agent session to set a permission mode on")
-    }
+    const { proc, agentSessionId } = await this.restoreSessionForConfiguration(binding)
     return proc.setPermissionMode(agentSessionId, modeId)
   }
 
@@ -657,7 +754,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return clear()
   }
 
-  private permissionReplyPort(): PermissionReplyPort {
+  protected override permissionReplyPort(): PermissionReplyPort {
     return { store: this.store, owners: this.permissionOwnerMap() }
   }
 
@@ -730,80 +827,71 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     })
   }
 
-  peekConfigOptions(directory: string): AgentConfigOptions | null {
+  peekConfigOptions(directory: string, binding?: AgentExecutionBinding): AgentConfigOptions | null {
+    if (binding) {
+      requireAgentExecutionBinding(binding)
+      const agentSessionId = this.store.getAgentSessionId(binding.sessionId)
+      const proc = this.entryForSession(binding.sessionId)?.proc
+      if (!agentSessionId || !proc?.alive || !proc.hasSession(agentSessionId)) return null
+      return acpConfigOptions(proc.configOptions(agentSessionId))
+    }
     const probed = this.peekAcpConfigOptions(directory)
     return probed ? acpConfigOptions(probed) : null
   }
-  /** The agent's own answers, for the ACP-shaped readers in `./session`. */
-  peekAcpConfigOptions(_directory: string): AcpConfigOptions | null {
-    for (const entry of this.processEntries()) {
-      const proc = entry.proc
-      if (proc?.alive && proc.cachedConfigOptions) return acpProcessOptions(proc)
+
+  /** New-session discovery is isolated from every existing conversation. */
+  peekAcpConfigOptions(directory: string): AcpConfigOptions | null {
+    const proc = this.probe?.directory === directory ? this.probe.proc : null
+    return proc?.alive && proc.cachedConfigOptions ? acpProcessOptions(proc) : null
+  }
+
+  async probeConfigOptions(directory: string, binding?: AgentExecutionBinding): Promise<AgentConfigOptions> {
+    if (!binding) return acpConfigOptions(await this.probeAcpConfigOptions(directory))
+    requireAgentExecutionBinding(binding)
+    directory = requireWorkspaceDirectory(directory)
+    if (directory !== binding.directory) throw new Error("ACP session config directory does not match its binding")
+    const { proc, agentSessionId } = await this.restoreSessionForConfiguration(binding)
+    return acpConfigOptions(proc.configOptions(agentSessionId))
+  }
+
+  private async restoreSessionForConfiguration(binding: AgentExecutionBinding) {
+    requireAgentExecutionBinding(binding)
+    const directory = requireWorkspaceDirectory(binding.directory)
+    const agentSessionId = this.store.getAgentSessionId(binding.sessionId)
+    if (!agentSessionId) throw new Error(`Session ${binding.sessionId} not found`)
+    const { proc } = await this.getOrSpawnProcess(binding.sessionId, directory)
+    if (!proc.hasSession(agentSessionId)) {
+      const pending = proc.resumeSession(agentSessionId, directory, binding.sessionId)
+      try { await this.boundConfigProbe("ACP session config resume", pending) }
+      catch (error) { proc.quarantineSession(agentSessionId, pending); throw error }
     }
-    const proc = this.probe?.proc
-    if (proc?.alive && proc.cachedConfigOptions) return acpProcessOptions(proc)
-    return null
+    return { proc, agentSessionId }
   }
 
-  async probeConfigOptions(directory: string): Promise<AgentConfigOptions> {
-    return acpConfigOptions(await this.probeAcpConfigOptions(directory))
+  private async boundConfigProbe<T>(label: string, pending: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([pending, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${probeTimeoutMs()}ms`)), probeTimeoutMs())
+      })])
+    } finally { if (timer) clearTimeout(timer) }
   }
 
-  /** The agent's own answers, probing a process if none is cached. */
+  /** The agent's own new-session defaults, from a dedicated directory-scoped probe. */
   async probeAcpConfigOptions(directory: string): Promise<AcpConfigOptions> {
     directory = requireWorkspaceDirectory(directory)
     const live = this.peekAcpConfigOptions(directory)
-    if (live) {
-      log.info("probeConfigOptions: returning cached options from existing process")
-      return live
+    if (live) return live
+    const proc = await this.boundConfigProbe("ACP mode probe", this.getOrSpawnProbe(directory))
+    if (proc.cachedConfigOptions) return acpProcessOptions(proc)
+    this.discoveryOptions ??= new WeakMap()
+    let pending = this.discoveryOptions.get(proc)
+    if (!pending) {
+      pending = this.boot(proc, directory, undefined, undefined, probeTimeoutMs())
+        .then((agentSessionId) => proc.configOptions(agentSessionId))
+      this.discoveryOptions.set(proc, pending)
     }
-    if (activeAcpPromptCount(this.harnessId()) > 0) {
-      throw new Error("ACP harness config options are temporarily unavailable while a prompt is active")
-    }
-    const wait = async <T>(label: string, run: Promise<T>) => {
-      const ms = probeTimeoutMs()
-      let id: ReturnType<typeof setTimeout> | undefined
-      try {
-        return await Promise.race([
-          run,
-          new Promise<T>((_, reject) => {
-            id = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-          }),
-        ])
-      } finally {
-        if (id) clearTimeout(id)
-      }
-    }
-    try {
-      const proc = await wait("ACP mode probe", this.getOrSpawnProbe(directory))
-      if (proc.cachedConfigOptions) return acpProcessOptions(proc)
-      await this.boot(proc, directory, undefined, undefined, probeTimeoutMs())
-      if (!proc.cachedConfigOptions) {
-        const ms = probeTimeoutMs()
-        await wait("ACP mode cache", new Promise<void>((resolve) => {
-          let check: ReturnType<typeof setInterval> | undefined
-          const done = () => {
-            clearTimeout(timeout)
-            if (check) clearInterval(check)
-            resolve()
-          }
-          const timeout = setTimeout(done, ms)
-          check = setInterval(() => {
-            if (proc.cachedConfigOptions) {
-              done()
-            }
-          }, 100)
-        }))
-      }
-      if (!proc.cachedConfigOptions) throw new Error("ACP harness did not return live config options")
-      return acpProcessOptions(proc)
-    } catch (err) {
-      log.warn("probeConfigOptions: failed", {
-        directory,
-        error: errorMessage(err),
-      })
-      throw err
-    }
+    return pending
   }
 
   readRuntimeHealth(directory: string, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth {
@@ -817,6 +905,8 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   dispose(): void {
+    for (const interactions of this.elicitations.values()) interactions.dispose()
+    this.elicitations.clear()
     log.info("AcpHarnessAdapter dispose: disposing ACP processes", {
       processes: this.processMap().size,
       harness: this.harnessId(),

@@ -30,6 +30,7 @@ const ENTRIES = [
   "src/subagent-admission.ts",
   "src/stores/memory.ts",
   "src/stores/sqlite.ts",
+  "src/session-start-store.ts",
 ]
 
 const EXTERNALS = Object.keys({

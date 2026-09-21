@@ -32,7 +32,7 @@ export async function generateAcpTitle(deps: ACPTitleDeps, sessionId: string, re
     parts: [{ type: "text", text: `${request.system}\n\n${request.user}` }],
     assistantMessageId: `title_${Date.now()}`,
     agent: "title",
-    model: request.model ?? { providerID: "", modelID: "" },
+    ...(request.model ? { model: request.model } : {}),
   }
   try {
     await titlePrompt(proc, titleSessionId, request.directory, input, (update) => {

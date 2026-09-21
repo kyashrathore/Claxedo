@@ -20,8 +20,8 @@ import { assertSelfHostedPosture } from "./posture"
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
 import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
 import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { createTasksSessionGrants, type TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 import { createSelfHostedTasksComposition } from "../../tasks/self-hosted-composition"
-import { createTasksSessionGrants, type TasksSessionGrants } from "../../tasks/session-grants"
 
 export type SelfHostedStartOptions = {
   port: number
@@ -105,15 +105,17 @@ export function selfHostedTasks(services: ControlPlaneServices): {
   routeContributions: readonly ControlPlaneRouteContribution[]
   grants?: TasksSessionGrants
 } {
-  if (!services.auth.config.enabled) return { routeContributions: createLocalTasksComposition().routeContributions }
+  const toolGroups = localBuiltinToolGroupsReader()
+  const tasksOn = () => toolGroups().includes(BUILTIN_TASKS_TOOL_GROUP)
+  if (!services.auth.config.enabled) {
+    const local = createLocalTasksComposition({ enabled: tasksOn })
+    return { routeContributions: local.routeContributions, grants: local.grants }
+  }
   const workspaceOwner = services.authority?.resolveWorkspaceOwner?.bind(services.authority)
   // Without an owner to resolve, a grant could only be believed on what it
   // says about itself, so this box issues none and its sessions get no Tasks
   // tools rather than tools that act as nobody in particular.
-  const toolGroups = localBuiltinToolGroupsReader()
-  const grants = workspaceOwner
-    ? createTasksSessionGrants({ workspaceOwner, enabled: () => toolGroups().includes(BUILTIN_TASKS_TOOL_GROUP) })
-    : undefined
+  const grants = workspaceOwner ? createTasksSessionGrants({ workspaceOwner, enabled: tasksOn }) : undefined
   return {
     routeContributions: createSelfHostedTasksComposition({
       services,

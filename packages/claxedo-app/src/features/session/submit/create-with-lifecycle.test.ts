@@ -223,7 +223,7 @@ describe("createSessionWithLifecycle", () => {
     expect(result).toEqual({ id: "ses_c6_happy" })
   })
 
-  test("rubric C7: rolled-back drafts are marked when the wrapper throws via hard failure", async () => {
+  test("a transport failure without an authoritative failed event leaves late creation admissible", async () => {
     const { listener } = makeListener()
     let caught: unknown
     try {
@@ -239,7 +239,7 @@ describe("createSessionWithLifecycle", () => {
       caught = err
     }
     expect((caught as Error).message).toBe("hard failure")
-    expect(wasRolledBackDraft("draft-c7-hard")).toBe(true)
+    expect(wasRolledBackDraft("draft-c7-hard")).toBe(false)
   })
 
   test("rubric C7: rolled-back drafts are marked when server emits `failed` after HTTP success", async () => {
@@ -399,4 +399,21 @@ describe("createSessionWithLifecycle", () => {
     }
     expect((caught as Error).message).toBe("http failed")
   })
+})
+
+
+test("starting owner reaches only its draft while creation HTTP remains pending", async () => {
+  const { listener, emit } = makeListener()
+  const owners: ClaxedoLifecycleListenerEvent[] = []
+  let resolve!: (value: { id: string }) => void
+  let settled = false
+  const pending = createSessionWithLifecycle({ draftId: "draft-a", events: listener, onLifecycle: (event) => owners.push(event), perform: () => new Promise((done) => { resolve = done }), recoveryGraceMs: 0 }).then((result) => { settled = true; return result })
+  const event: ClaxedoLifecycleListenerEvent = { type: "session.lifecycle", phase: "creating", directory: "/repo", draftId: "draft-a", ts: 1, start: { sessionId: "reserved", workspaceId: "workspace", directory: "/repo", connectionId: "agent", operationId: "op" } }
+  emit({ ...event, draftId: "draft-b" })
+  emit(event)
+  await Promise.resolve()
+  expect(owners).toEqual([event])
+  expect(settled).toBe(false)
+  resolve({ id: "reserved" })
+  expect(await pending).toEqual({ id: "reserved" })
 })

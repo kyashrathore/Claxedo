@@ -73,7 +73,7 @@ describe("serialization lanes (serialKey)", () => {
 
     // lease still live: the same-key pending wake must NOT be claimable
     clock.t += 1_000 // < 30s default lease
-    expect(await wakes.runDue("org:a")).toEqual({ fired: 0, blockedUntil: 1_030_010 })
+    expect(await wakes.runDue("org:a")).toEqual({ fired: 0, nextAt: 1_030_010 })
     expect(fired).toHaveLength(0)
 
     // lease lapses: reclaim re-drives the stuck wake, freeing the lane for the second
@@ -100,6 +100,48 @@ describe("serialization lanes (serialKey)", () => {
     // org:a's lane is held by the stuck row; org:b is unaffected
     expect((await wakes.runDue()).fired).toBe(1)
     expect(fired.map((w) => w.serialKey)).toEqual(["org:b"])
+
+    // Nor does the held lane postpone org:b's obligation: its own fire time stands.
+    await wakes.schedule({ workspaceId: WS, kind: "settle", serialKey: "org:b", at: clock.t + 5_000, intent: {} })
+    expect(await wakes.runDue("org:b")).toEqual({ fired: 0, nextAt: clock.t + 5_000 })
+  })
+
+  it("reports the earliest of fire time and deadline as the lane's next obligation", async () => {
+    const { clock, wakes } = harness()
+    await wakes.schedule({ workspaceId: WS, kind: "settle", serialKey: "org:a", at: clock.t + 60_000, intent: {} })
+    expect(await wakes.runDue("org:a")).toEqual({ fired: 0, nextAt: clock.t + 60_000 })
+
+    await wakes.watch({
+      workspaceId: WS, kind: "settle", serialKey: "org:a", eventKey: "never", expiresAt: clock.t + 10_000,
+    })
+    expect(await wakes.runDue("org:a")).toEqual({ fired: 0, nextAt: clock.t + 10_000 })
+  })
+
+  it("owes nothing once its lane is drained", async () => {
+    const { clock, wakes } = harness()
+    await wakes.schedule({ workspaceId: WS, kind: "settle", serialKey: "org:a", at: clock.t, intent: {} })
+    clock.t += 1
+    expect((await wakes.runDue("org:a")).fired).toBe(1)
+    expect(await wakes.runDue("org:a")).toEqual({ fired: 0 })
+  })
+
+  it("a firing null-key wake never postpones another null-key wake's obligation", async () => {
+    let boom = true
+    const { clock, wakes, store } = harness(() => {
+      if (boom) {
+        boom = false
+        throw new Error("crash mid-fire")
+      }
+    })
+    await wakes.schedule({ workspaceId: WS, kind: "settle", at: clock.t, intent: {} })
+    clock.t += 1
+    await expect(wakes.runDue()).rejects.toThrow("crash mid-fire")
+    expect(await store.listFiring()).toHaveLength(1)
+
+    await wakes.schedule({ workspaceId: WS, kind: "settle", at: clock.t + 5_000, intent: {} })
+    // Null keys share no lane, so the stuck row's lease (t + 30_000) holds
+    // nothing back: the nearer fire time is still the obligation.
+    expect(await wakes.runDue(null)).toEqual({ fired: 0, nextAt: clock.t + 5_000 })
   })
 
   it("recurring wakes carry their serialKey onto the next occurrence", async () => {

@@ -13,6 +13,16 @@ const codex = nativeHarness("codex")
 const pi = nativeHarness("pi")
 const openCode = connectionHarness("opencode")
 
+test("connection observations survive config hydration but cannot cross connection switches", () => {
+  const current = { ...initialHarnessStoreState({ scope: "session:one" }), harness: openCode, connectionState: { connectionId: "opencode", state: "disconnected" as const } }
+  expect(harnessStatusPatch({ data: { type: openCode }, current }).connectionState).toEqual(current.connectionState)
+  expect(harnessStatusPatch({ data: { type: connectionHarness("other") }, current }).connectionState).toBeUndefined()
+  expect(harnessStatusPatch({ data: { type: codex }, current }).connectionState).toBeUndefined()
+  expect(harnessSwitchStartPatch({ type: openCode }).connectionState).toBeUndefined()
+  const observed = { connectionId: "opencode", state: "configured" as const }
+  expect(harnessStatusPatch({ data: { type: openCode, connectionState: observed }, current }).connectionState).toEqual(observed)
+})
+
 describe("harness store state projectors", () => {
   // The seed carries no remembered choice for ANY scope kind: a draft's comes
   // from the per-(server, workspace, harness) defaults, a session's from its

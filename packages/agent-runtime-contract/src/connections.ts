@@ -1,6 +1,21 @@
 import type { AgentCapabilities, AgentModel, ModelSelection } from "./capabilities"
 
-export type ConnectionReadiness = "ready" | "unavailable" | "disabled"
+export type ConnectionReadiness = "configured" | "ready" | "unavailable" | "disabled"
+
+/** Ready proves the ACP handshake, not subscription authentication or session admission. */
+export type ConnectionRuntimeState = "configured" | "connecting" | "ready" | "auth-required" | "disconnected" | "failed"
+export type ConnectionRuntimeObservation = {
+  generation: string
+  role: "execution" | "discovery"
+  state: Exclude<ConnectionRuntimeState, "configured">
+  observedAt: number
+  reason?: string
+}
+export type ConnectionRuntimeStatus = {
+  state: ConnectionRuntimeState
+  processes: ConnectionRuntimeObservation[]
+}
+
 export type HarnessConnectionCapabilities = Omit<AgentCapabilities, "harness" | "modelSelection">
 
 /** Public discovery metadata. Provider configuration and credentials stay on the host. */
@@ -33,7 +48,7 @@ function decodeConnection(value: unknown): HarnessConnectionRef {
     typeof row.connectionId !== "string" || !row.connectionId.trim()
     || typeof row.label !== "string" || !row.label.trim()
     || typeof row.enabled !== "boolean"
-    || (row.readiness !== "ready" && row.readiness !== "unavailable" && row.readiness !== "disabled")
+    || (row.readiness !== "configured" && row.readiness !== "ready" && row.readiness !== "unavailable" && row.readiness !== "disabled")
   ) invalid("connection reference")
   return {
     connectionId: row.connectionId,

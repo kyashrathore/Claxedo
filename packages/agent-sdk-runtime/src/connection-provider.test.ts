@@ -66,6 +66,21 @@ function fixtureDescriptor(overrides: Partial<HarnessConnectionDescriptor<{ labe
 }
 
 describe("connection provider registry", () => {
+  test("rejects connection identities the session harness cannot persist, before provider effects", async () => {
+    let providerCalls = 0
+    const registry = createConnectionProviderRegistry([{
+      ...fixtureProvider,
+      validateConfig(input) { providerCalls++; return fixtureProvider.validateConfig(input) },
+    }])
+    for (const connectionId of ["adoption_fixture", "with/slash", " agent", "Agent", "0agent", "a".repeat(65)]) {
+      await expect(registry.resolve({ descriptor: fixtureDescriptor({ connectionId }), directory: "/workspace", context }))
+        .rejects.toMatchObject({ code: "invalid_descriptor" })
+    }
+    expect(providerCalls).toBe(0)
+    const valid = fixtureDescriptor({ connectionId: "a".repeat(64) })
+    expect(registry.validateDescriptor(valid)).toEqual(valid)
+  })
+
   test("keeps trusted provider config out of its browser-safe reference", () => {
     const registry = createConnectionProviderRegistry([createAcpConnectionProvider(), fixtureProvider])
     const ref = registry.publicRef({
@@ -88,13 +103,13 @@ describe("connection provider registry", () => {
       connectionId: "remote-acp",
       label: "Remote ACP",
       enabled: true,
-      readiness: "ready",
+      readiness: "configured",
       capabilities: {
         abort: true,
         reconnect: false,
         replay: true,
         permissions: true,
-        questions: false,
+        questions: true,
         todos: false,
         commands: false,
         fork: false,

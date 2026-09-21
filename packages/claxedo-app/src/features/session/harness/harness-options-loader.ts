@@ -17,6 +17,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
   fetch(type: HarnessType, params?: ScopeInput): Promise<Response>
   currentHarness(scope: string): HarnessType | undefined
   selectedModel(scope: string): string | undefined
+  modelOptional?(scope: string): boolean
   preserveSelectedModel?(scope: string): boolean
   seed(scope: string): void
   applyPatch(scope: string, patch: HarnessOptionsStatePatch): void
@@ -95,6 +96,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       const decision = applyHarnessOptionsResponse({
         type,
         selectedModel: input.selectedModel(scope),
+        modelOptional: input.modelOptional?.(scope),
         preserveSelectedModel: input.preserveSelectedModel?.(scope),
         payload,
         tries,
@@ -106,7 +108,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         input.setOptionsLoading(scope, false)
         return payload
       }
-      input.applyPatch(scope, resolvingDefault && !decision.managedDefault
+      input.applyPatch(scope, resolvingDefault
         ? withoutSelection(decision.patch, payload.stale)
         : decision.patch)
       if (resolvingDefault && !payload.stale) {
@@ -114,9 +116,6 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
           providerID: harnessSelectionId(type),
           modelID: model.id,
         }))
-        if (decision.managedDefault && decision.patch.selectedModel) {
-          eligibleModels.push({ providerID: harnessSelectionId(type), modelID: decision.patch.selectedModel })
-        }
         input.resolveDraftDefault!(draftDefault, {
           supportedHarnesses: [type],
           eligibleModels,

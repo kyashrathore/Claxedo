@@ -6,7 +6,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Event, MessageBoxOptions } from "electron"
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, session, utilityProcess } from "electron"
-import { trustMainRendererOrigin } from "./renderer-origin"
+import { grantMainRendererDaemonAccess } from "./renderer-daemon-access"
+import { createDaemonFetch, type DaemonEndpoint } from "./daemon-request"
 import pkg from "electron-updater"
 import treeKill from "tree-kill"
 import { installDesktopTelemetry } from "./telemetry"
@@ -125,7 +126,14 @@ import {
 import { parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecycle"
 
 type ServerConnection =
-  | { variant: "existing"; url: string }
+  /**
+   * A server this process did not start and was not given an identity for: a
+   * saved custom URL, or `CLAXEDO_SERVER_URL` in development. The capability is
+   * whatever the launcher declared in `CLAXEDO_DAEMON_TOKEN`, and nothing when
+   * it declared none — main then reaches that server's privileged routes not at
+   * all, rather than reaching them on the strength of being on loopback.
+   */
+  | { variant: "existing"; url: string; capability: string | undefined }
   | { variant: "daemon"; url: string; discovery: ClaxedoDaemonDiscovery }
 
 const initEmitter = new EventEmitter()
@@ -143,6 +151,16 @@ const browserRegistry: BrowserRegistry | undefined = browserTabSetup?.registry
 const pendingDeepLinks: string[] = []
 
 const serverReady = defer<ServerReadyData>()
+/**
+ * The daemon this process talks to, and the capability it presents.
+ *
+ * Deliberately NOT part of `ServerReadyData`: that value is returned to the
+ * renderer over IPC, and the capability is the one thing the renderer must
+ * never hold. Main stamps it onto the renderer's requests instead — see
+ * `renderer-daemon-access.ts`.
+ */
+const daemonEndpoint = defer<DaemonEndpoint>()
+const daemon = createDaemonFetch({ endpoint: () => daemonEndpoint.promise })
 const logger = initLogging()
 const richContentRendererPath = resolveRichContentRendererPath({
   packaged: IS_PACKAGED,
@@ -496,17 +514,36 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
   }
 }
 
+/**
+ * The capability for a server this process did not start.
+ *
+ * The launcher that started that server chose its daemon token, so the launcher
+ * is the only party that can tell this process what to present. Absent, main
+ * holds none and the daemon refuses its privileged calls — which is the
+ * reportable failure, not a reason to treat being on loopback as authority.
+ */
+function declaredDaemonCapability(): string | undefined {
+  const declared = process.env.CLAXEDO_DAEMON_TOKEN?.trim()
+  if (!declared) {
+    logger.warn(
+      "no CLAXEDO_DAEMON_TOKEN for this externally started server; main holds no daemon capability " +
+        "and its machine-control calls will be refused",
+    )
+  }
+  return declared || undefined
+}
+
 async function setupServerConnection(): Promise<ServerConnection> {
   const explicitDevelopmentUrl = !IS_PACKAGED ? process.env.CLAXEDO_SERVER_URL?.trim() : undefined
   if (explicitDevelopmentUrl && await checkHealth(explicitDevelopmentUrl)) {
     logger.log("dev: using explicitly configured claxedo-server", { url: explicitDevelopmentUrl })
-    return { variant: "existing", url: explicitDevelopmentUrl }
+    return { variant: "existing", url: explicitDevelopmentUrl, capability: declaredDaemonCapability() }
   }
 
   const customUrl = getSavedServerUrl()
 
   if (customUrl && (await checkHealthOrAskRetry(customUrl))) {
-    return { variant: "existing", url: customUrl }
+    return { variant: "existing", url: customUrl, capability: declaredDaemonCapability() }
   }
 
   const serverDataDir = desktopServerDataDir()
@@ -549,11 +586,31 @@ async function initialize() {
         })
       }
 
-      // Must run before the renderer opens any socket to this server: the
-      // file:// document sends `Origin: file://` on every WebSocket handshake,
-      // which the server's loopback gate rejects with 403. See renderer-origin.ts.
-      trustMainRendererOrigin({
-        serverUrl: serverConnection.url,
+      // A daemon this process started published its own token; one it adopted
+      // published the same field. Anything else holds only what the launcher
+      // declared.
+      const endpoint: DaemonEndpoint = {
+        origin: serverConnection.url,
+        capability: serverConnection.variant === "daemon"
+          ? serverConnection.discovery.token
+          : serverConnection.capability,
+      }
+      daemonEndpoint.resolve(endpoint)
+
+      // Must run before the renderer makes any request to this server: it needs
+      // the daemon capability to be admitted at all, and its file:// document
+      // sends `Origin: file://` on every WebSocket handshake, which the loopback
+      // gate rejects with 403. See renderer-daemon-access.ts.
+      grantMainRendererDaemonAccess({
+        policy: {
+          daemonOrigin: endpoint.origin,
+          capability: endpoint.capability,
+          // The same registry the IPC boundary trusts: a webContents this
+          // process registered as bridge-carrying, never a URL a page controls.
+          isBridgeCarryingWebContents: (webContentsId) =>
+            mainIpcCallerGuard().check({ senderId: webContentsId, isMainFrame: true }).allowed,
+          isTrustedDocumentUrl: isTrustedMainRendererUrl,
+        },
         onBeforeSendHeaders: (filter, listener) =>
           session.defaultSession.webRequest.onBeforeSendHeaders(filter, listener),
       })
@@ -569,6 +626,9 @@ async function initialize() {
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause))
       serverReady.reject(error)
+      // Rejected too, so a serving push or a provider-config delivery waiting on
+      // the daemon reports the startup failure instead of waiting forever.
+      daemonEndpoint.reject(error)
       throw error
     }
   })()
@@ -703,18 +763,25 @@ const account = setupLazyAccount({
  */
 let lastServing: HostConnectorServing | undefined
 const sendServing = setupHostServingPush({
-  serverUrl: async () => (await serverReady.promise).url,
+  daemon,
   log: { info: (message) => logger.info(message), warn: (message) => logger.warn(message) },
 })
 const pushServing = async (serving: HostConnectorServing) => {
   lastServing = serving
   await sendServing(serving)
 }
-void serverReady.promise.then(() => {
-  if (lastServing) void pushServing(lastServing)
-})
+void daemonEndpoint.promise.then(
+  () => {
+    if (lastServing) void pushServing(lastServing)
+  },
+  // A daemon that never became reachable is already reported by the startup
+  // path; this retry has nothing left to push and must not become an unhandled
+  // rejection on the way to saying so.
+  () => {},
+)
 const providerConfigPush = setupHostProviderConfigPush({
-  serverUrl: async () => (await serverReady.promise).url,
+  daemon,
+  daemonReady: () => daemonEndpoint.promise,
   log: { info: (message) => logger.info(message), warn: (message) => logger.warn(message) },
 })
 
@@ -725,7 +792,7 @@ const providerConfigPush = setupHostProviderConfigPush({
 agentPluginsSync = setupAgentPluginsSignedSync({
   enabled: true,
   runAccountOperation: (name, params) => account.run(name, params),
-  serverUrl: async () => (await serverReady.promise).url,
+  daemon,
   log: { info: (message) => logger.log(message), warn: (message) => logger.warn(message) },
 })
 void account.ready.then(() => agentPluginsSync?.follow(account.state()))
@@ -760,7 +827,7 @@ hostConnector = setupElectronHostConnector({
   // child needs the deployment by name. It is the account's own origin: a
   // credential is bound to one control plane, and the enrollment lives there.
   ...(accountConfig.configured ? { controlPlaneUrl: accountConfig.coreOrigin } : {}),
-  describeWorkspace: async (workspaceId) => describeLocalWorkspace((await serverReady.promise).url, workspaceId),
+  describeWorkspace: (workspaceId) => describeLocalWorkspace(daemon, workspaceId),
   safeStorage,
   userDataDir: app.getPath("userData"),
   // Bound, not passed bare: `fork` is a method on Electron's utilityProcess
@@ -799,8 +866,7 @@ hostConnector = setupElectronHostConnector({
   // registered with the control plane first (a client on the hosted plane
   // registers regardless of it).
   sessionAuthority: async () => {
-    const server = await serverReady.promise
-    const response = await fetch(new URL("/api/claxedo/host-serving", server.url))
+    const response = await daemon("/api/claxedo/host-serving")
     if (!response.ok) throw new Error(`HOSTED_HTTP ${String(response.status)} ${(await response.text()).slice(0, 200)}`)
     const sessionAuthority = readString(await response.json(), "sessionAuthority")
     return sessionAuthority === "local" || sessionAuthority === "managed-private" ? sessionAuthority : undefined

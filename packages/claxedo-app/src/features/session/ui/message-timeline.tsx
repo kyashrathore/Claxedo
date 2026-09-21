@@ -453,7 +453,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
     initial: [] as ReturnType<typeof resolveAmbientSubagents>,
   })
 
-  const workingStatus = createTimelineWorkingStatus({ active: props.active, working })
+  const animatedWorkingStatus = createTimelineWorkingStatus({ active: props.active, working })
+  const workingStatus = () => props.progressBlocked?.() ? "hidden" : animatedWorkingStatus()
 
   const activeMessageID = createMemo(() => {
     const messages = sessionMessages()
@@ -620,6 +621,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const wantThinking = rows.some((row) => row._tag === "Thinking")
     const hold = nextThinkingVisibilityHold({
       want: wantThinking,
+      blocked: props.progressBlocked?.(),
       heldUntilMs: thinkingHeldUntilMs,
       nowMs: performance.now(),
     })
@@ -641,7 +643,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       }
     }
 
-    return TimelineRow.reuse(previous, rows)
+    return TimelineRow.reuse(previous, props.progressBlocked?.() ? rows.filter((row) => row._tag !== "Thinking") : rows)
   })
 
   const prepend = createTimelinePrependAnchor({
@@ -1275,7 +1277,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
-            workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+            !props.progressBlocked?.() && workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
           }
           onSizeChange={onSizeChange}
         >
@@ -1343,7 +1345,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
-            workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
+            !props.progressBlocked?.() && workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
           }
           memberOpen={memberOpen()}
           onSizeChange={onSizeChange}

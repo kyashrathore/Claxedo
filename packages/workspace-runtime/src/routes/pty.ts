@@ -3,12 +3,20 @@ import type { WSContext } from "hono/ws"
 import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "../pty/index"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import { assertTarget, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { denyWorkspaceViewers } from "./workspace-role"
 import { readHistorySessionId } from "../pty/history-disk"
 import { installedWrapperAgents } from "../pty/agent-availability"
+import {
+  authorizePtyAttach,
+  createAuthorizedPtyConnection,
+  isPtyStreamSocket,
+  ptyAccessRefusalResponse,
+  PTY_ROLE_DENIED_MESSAGE,
+  type PtyStreamAdmission,
+} from "../pty/authorized-connection"
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
@@ -16,9 +24,6 @@ import {
   type SessionAccessOperation,
   type SessionAccessPolicy,
 } from "../session-access-policy"
-
-const PTY_AUTHORIZATION_REFRESH_MS = 1_000
-const PTY_AUTHORIZATION_LEASE_MS = 5_000
 
 function invalidInput(details: Record<string, unknown>) {
   return errorBody("pty_invalid_input", "Invalid PTY request body", details)
@@ -49,13 +54,16 @@ function requestPort(url: string): string | undefined {
   }
 }
 
+/** The admission the pre-upgrade handler took, read by the upgrade closure behind it. */
+type PtyRouteVariables = RelayHostAuthContext & { ptyStreamAdmission?: PtyStreamAdmission }
+
 export function PtyRoutes(
   upgradeWebSocket: UpgradeWebSocket,
   processObserver?: ProcessObserver,
   policy: SessionAccessPolicy = managedWorkspaceSessionAccessPolicy(),
 ) {
   const authorize = async (
-    c: Context<{ Variables: RelayHostAuthContext }>,
+    c: Context<{ Variables: PtyRouteVariables }>,
     info: Pty.Info,
     operation: Extract<SessionAccessOperation, "pty_read" | "pty_write">,
   ) => {
@@ -73,13 +81,19 @@ export function PtyRoutes(
     return undefined
   }
 
-  return new Hono<{ Variables: RelayHostAuthContext }>()
+  const attachAccess = (c: Context<{ Variables: PtyRouteVariables }>) => ({
+    ...sessionAccessContext(c),
+    method: c.req.method,
+    path: c.req.path,
+  })
+
+  return new Hono<{ Variables: PtyRouteVariables }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
       throw err
     })
     // Terminal access is sensitive even when the transport method is GET.
-    .use("*", denyWorkspaceViewers("Workspace role does not allow terminal access"))
+    .use("*", denyWorkspaceViewers(PTY_ROLE_DENIED_MESSAGE))
     .get("/", async (c) => {
       const rows = Pty.list()
       const access = sessionAccessContext(c)
@@ -114,7 +128,8 @@ export function PtyRoutes(
       }
       // Strip `managed` — only the process manager (internal caller) may set it
       const { managed: _, ...input } = parsed.data
-      const workspaceId = c.req.header("x-workspace-id")
+      const workspaceId = authoritativeWorkspaceId()
+      const { CLAXEDO_WORKSPACE_ID: _untrustedWorkspaceId, ...environment } = input.env ?? {}
       let cwd: string | undefined
       try {
         const directory = assertTarget(c.req.header("x-claxedo-directory"))
@@ -184,7 +199,7 @@ export function PtyRoutes(
           ...input,
           ...(cwd ? { cwd } : {}),
           env: {
-            ...input.env,
+            ...environment,
             ...(port ? { CLAXEDO_PORT: port } : {}),
             ...(workspaceId ? { CLAXEDO_WORKSPACE_ID: workspaceId } : {}),
             ...(agentHookAccess ? { CLAXEDO_AGENT_HOOK_TOKEN: agentHookAccess.token } : {}),
@@ -255,173 +270,47 @@ export function PtyRoutes(
       async (c, next) => {
         const info = Pty.get(c.req.param("ptyID"))
         if (!info) return c.json(notFound(), 404)
-        const guarded = await authorize(c, info, "pty_read")
-        if (guarded) return guarded
+        const admission = await authorizePtyAttach({ policy, access: attachAccess(c), info })
+        if (!admission.allowed) return ptyAccessRefusalResponse(admission)
+        // The upgrade below is a second closure over the same request; the
+        // admission it runs on travels on the context rather than being asked
+        // for again.
+        c.set("ptyStreamAdmission", admission)
         return next()
       },
       upgradeWebSocket((c) => {
-        const id = c.req.param("ptyID")
+        const admission = c.get("ptyStreamAdmission")
+        if (!admission) throw new Error("PTY upgrade requires its verified admission")
         const cursor = (() => {
           const value = c.req.query("cursor")
           if (!value) return undefined
           const parsed = Number(value)
           return Number.isSafeInteger(parsed) && parsed >= -1 ? parsed : undefined
         })()
-        let handler: ReturnType<typeof Pty.connect>
-        let messages = Promise.resolve()
-        let outputAuthorized = true
-        let refreshingAuthorization = false
-        let authorizationExpiresAt = 0
-        let authorizationTimer: ReturnType<typeof setInterval> | undefined
-        let activeSocket: Socket | undefined
-        let readLease: string | undefined
-        let writeLease: string | undefined
-        let writeAuthorizationExpiresAt = 0
-        const streamAccess = sessionAccessContext(c)
-
-        const authorizeStream = async (
-          info: Pty.Info,
-          operation: Extract<SessionAccessOperation, "pty_read" | "pty_write">,
-          lease?: string,
-        ) => {
-          if (!streamAccess.authority || !info.sessionId) {
-            return { allowed: !streamAccess.authority, expiresAt: Date.now() + PTY_AUTHORIZATION_LEASE_MS } as const
-          }
-          if (policy.authorizeStream) {
-            return await policy.authorizeStream({
-              ...streamAccess,
-              operation,
-              sessionId: info.sessionId,
-              method: c.req.method,
-              path: c.req.path,
-            }, lease)
-          }
-          const decision = await policy.authorize({
-            ...streamAccess,
-            operation,
-            sessionId: info.sessionId,
-            method: c.req.method,
-            path: c.req.path,
-          })
-          return decision.allowed
-            ? { allowed: true as const, expiresAt: Date.now() + PTY_AUTHORIZATION_LEASE_MS }
-            : decision
-        }
-
-        type Socket = {
-          readyState: number
-          bufferedAmount?: number
-          send: (data: string | Uint8Array | ArrayBuffer) => void
-          close: (code?: number, reason?: string) => void
-        }
-
-        const isSocket = (value: unknown): value is Socket => {
-          if (!value || typeof value !== "object") return false
-          if (!("readyState" in value)) return false
-          if (!("send" in value) || typeof (value as { send?: unknown }).send !== "function") return false
-          if (!("close" in value) || typeof (value as { close?: unknown }).close !== "function") return false
-          return typeof (value as { readyState?: unknown }).readyState === "number"
-        }
-
-        const closeDenied = (reason: string) => {
-          if (!outputAuthorized) return
-          outputAuthorized = false
-          if (authorizationTimer) clearInterval(authorizationTimer)
-          handler?.onClose()
-          activeSocket?.close(1008, reason)
-        }
-
-        const refreshAuthorization = async () => {
-          if (!outputAuthorized) return
-          if (Date.now() >= authorizationExpiresAt) {
-            closeDenied("Session access check timed out")
-            return
-          }
-          if (Date.now() + PTY_AUTHORIZATION_LEASE_MS < authorizationExpiresAt) return
-          if (refreshingAuthorization) return
-          refreshingAuthorization = true
-          try {
-            const info = Pty.get(id)
-            if (!info) {
-              closeDenied("Session not found")
-              return
-            }
-            const decision = await authorizeStream(info, "pty_read", readLease)
-            if (!decision.allowed) {
-              closeDenied("Session access denied")
-              return
-            }
-            readLease = "lease" in decision ? decision.lease : undefined
-            if (outputAuthorized) authorizationExpiresAt = decision.expiresAt
-          } catch {
-            closeDenied("Session access denied")
-          } finally {
-            refreshingAuthorization = false
-          }
-        }
-
+        const connection = createAuthorizedPtyConnection({
+          ptyId: c.req.param("ptyID"),
+          policy,
+          access: attachAccess(c),
+          admission,
+          ...(cursor === undefined ? {} : { cursor }),
+        })
         return {
           onOpen(_event: Event, ws: WSContext) {
             const socket = ws.raw
-            if (!isSocket(socket)) {
+            if (!isPtyStreamSocket(socket)) {
               ws.close()
               return
             }
-            activeSocket = socket
-            authorizationExpiresAt = Date.now() + PTY_AUTHORIZATION_LEASE_MS
-            handler = Pty.connect(id, {
-              get readyState() {
-                return outputAuthorized ? socket.readyState : 3
-              },
-              get bufferedAmount() {
-                return socket.bufferedAmount
-              },
-              send(data) {
-                if (outputAuthorized && socket.readyState === 1) socket.send(data)
-              },
-              close(code, reason) {
-                socket.close(code, reason)
-              },
-            }, cursor)
-            void refreshAuthorization()
-            authorizationTimer = setInterval(() => void refreshAuthorization(), PTY_AUTHORIZATION_REFRESH_MS)
-            ;(authorizationTimer as { unref?: () => void }).unref?.()
+            connection.onOpen(socket)
           },
           onMessage(event: { data: unknown }) {
-            messages = messages.then(async () => {
-              const info = Pty.get(id)
-              if (!info) {
-                handler?.onClose()
-                activeSocket?.close(1008, "Session not found")
-                return
-              }
-              if (Date.now() + 1_000 >= writeAuthorizationExpiresAt) {
-                const decision = await authorizeStream(info, "pty_write", writeLease)
-                if (!decision.allowed) {
-                  handler?.onClose()
-                  activeSocket?.close(1008, "Session access denied")
-                  return
-                }
-                writeLease = "lease" in decision ? decision.lease : undefined
-                writeAuthorizationExpiresAt = decision.expiresAt
-              }
-              if (!outputAuthorized) {
-                handler?.onClose()
-                activeSocket?.close(1008, "Session access denied")
-                return
-              }
-              handler?.onMessage(event.data)
-            })
+            connection.onMessage(event.data)
           },
           onClose() {
-            outputAuthorized = false
-            if (authorizationTimer) clearInterval(authorizationTimer)
-            handler?.onClose()
+            connection.onClose()
           },
           onError() {
-            outputAuthorized = false
-            if (authorizationTimer) clearInterval(authorizationTimer)
-            handler?.onClose()
+            connection.onClose()
           },
         }
       }),

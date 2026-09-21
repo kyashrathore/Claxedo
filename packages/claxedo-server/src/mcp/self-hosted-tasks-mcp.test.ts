@@ -9,6 +9,7 @@
  * and a fixture tool, which can say the mount was built but not whether the
  * routes admit what it presents.
  */
+import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -21,16 +22,19 @@ import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { betterAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platform/http/route-contribution"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
 import type { ControlPlaneServices } from "../authority/services"
 import { createSelfHostedTasksComposition } from "../tasks/self-hosted-composition"
-import { createTasksSessionGrants, selfHostedTasksClientInput } from "../tasks/session-grants"
+import { createTasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
+import { selfHostedTasksClientInput } from "../tasks/session-grants"
 import { firstPartyMcpContribution } from "./first-party-mcp"
 
 const CLAIMS = { runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_1", expiresAt: Number.MAX_SAFE_INTEGER }
 const OWNER = { userId: "alice", actorId: "act_alice", orgId: "org-1", projectId: "project-a" }
 
 let dataDir: string
+const workspaceDirs: string[] = []
 const saved: Record<string, string | undefined> = {}
 
 beforeEach(() => {
@@ -46,6 +50,7 @@ afterEach(() => {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
   }
+  for (const directory of workspaceDirs.splice(0)) rmSync(directory, { recursive: true, force: true })
   rmSync(dataDir, { recursive: true, force: true })
 })
 
@@ -79,24 +84,47 @@ function unsignedServices(): ControlPlaneServices {
 }
 
 /**
+ * A workspace of this box's own, as a row in the local store. The unsigned
+ * posture reads its grant's owner and project from that row, so a fixture that
+ * named a workspace nobody stored would be handed no grant at all.
+ */
+async function localWorkspaceRow() {
+  const directory = mkdtempSync(path.join(tmpdir(), "claxedo-self-hosted-tasks-ws-"))
+  workspaceDirs.push(directory)
+  const git = (args: readonly string[]) => execFileSync("git", [...args], { cwd: directory, stdio: "pipe" })
+  // The workspace store refuses a local directory that is not a git repository.
+  git(["init", "-b", "main"])
+  git(["config", "user.email", "fixture@example.com"])
+  git(["config", "user.name", "Fixture"])
+  const workspace = await ensureWorkspace({ directory })
+  if (!workspace) throw new Error("the workspace store stored no row for the fixture directory")
+  return workspace
+}
+
+/**
  * The node's own composition, minus the parts a Tasks call never reaches: the
  * Tasks routes this posture mounts, the MCP endpoint, and the supplier that
- * joins them.
+ * joins them. `project` is the one project this posture's session may work in.
  */
-function node(posture: "signed" | "unsigned", options: { supplyTasks?: boolean } = {}) {
+async function node(posture: "signed" | "unsigned", options: { supplyTasks?: boolean } = {}) {
   const app = new Hono()
   const services = posture === "signed" ? signedServices() : unsignedServices()
   const owner = services.authority?.resolveWorkspaceOwner?.bind(services.authority)
-  const grants = posture === "signed" && owner ? createTasksSessionGrants({ workspaceOwner: owner }) : undefined
-  const tasks = posture === "signed"
-    ? createSelfHostedTasksComposition({ services, ...(grants ? { grants } : {}) }).routeContributions
-    : createLocalTasksComposition().routeContributions
+  // Each posture's own registry, exactly as `selfHostedTasks` composes it: the
+  // signed box resolves owners from its authority, the unsigned one from the
+  // local composition that also mounts its routes.
+  const local = posture === "unsigned" ? createLocalTasksComposition() : undefined
+  const workspace = local ? await localWorkspaceRow() : undefined
+  const claims = { ...CLAIMS, ...(workspace ? { workspaceId: workspace.id } : {}) }
+  const grants = local?.grants ?? (owner ? createTasksSessionGrants({ workspaceOwner: owner }) : undefined)
+  const tasks = local?.routeContributions
+    ?? createSelfHostedTasksComposition({ services, ...(grants ? { grants } : {}) }).routeContributions
   const contribution = firstPartyMcpContribution({
     mount: "node",
     app,
     authority: undefined,
     options: {
-      verifyRuntimeCredential: (token) => (token === "rt-token" ? CLAIMS : undefined),
+      verifyRuntimeCredential: (token) => (token === "rt-token" ? claims : undefined),
       createClient: (input) => createClaxedoMcpClient(input),
       registerTools: CLAXEDO_MCP_TOOL_GROUPS,
     },
@@ -107,7 +135,6 @@ function node(posture: "signed" | "unsigned", options: { supplyTasks?: boolean }
           tasks: selfHostedTasksClientInput({
             enabledToolGroups: () => CLAXEDO_MCP_TOOL_GROUP_IDS,
             app,
-            signed: posture === "signed",
             ...(grants ? { grants } : {}),
           }),
         }),
@@ -122,7 +149,7 @@ function node(posture: "signed" | "unsigned", options: { supplyTasks?: boolean }
     contributions: [...tasks, contribution],
     mount: (mounted) => app.route(mounted.path, mounted.routes),
   })
-  return app
+  return { app, project: workspace ? workspace.project_id ?? workspace.id : OWNER.projectId }
 }
 
 async function session(app: Hono) {
@@ -143,30 +170,45 @@ function created(result: unknown) {
 
 describe.each(["unsigned", "signed"] as const)("the self-hosted node's Tasks tools (%s posture)", (posture) => {
   test("are listed for a session", async () => {
-    const client = await session(node(posture))
+    const client = await session((await node(posture)).app)
     const names = (await client.listTools()).tools.map((tool) => tool.name)
     expect(names).toContain("task_create")
     expect(names).toContain("task_list")
   })
 
   test("are hidden from a session the mount hands no grant", async () => {
-    const client = await session(node(posture, { supplyTasks: false }))
+    const client = await session((await node(posture, { supplyTasks: false })).app)
     const names = (await client.listTools()).tools.map((tool) => tool.name)
     expect(names).not.toContain("task_create")
     expect(names).not.toContain("task_list")
   })
 
   test("write a task the routes admit, and read it back", async () => {
-    const client = await session(node(posture))
+    const box = await node(posture)
+    const client = await session(box.app)
     const write = created(await client.callTool({
       name: "task_create",
-      arguments: { title: "Ship the node wiring", project: OWNER.projectId },
+      arguments: { title: "Ship the node wiring", project: box.project },
     }))
     expect(write.isError, write.text).toBe(false)
 
-    const read = created(await client.callTool({ name: "task_list", arguments: { project: OWNER.projectId } }))
+    const read = created(await client.callTool({ name: "task_list", arguments: { project: box.project } }))
     expect(read.isError, read.text).toBe(false)
     expect(read.text).toContain("Ship the node wiring")
+  })
+
+  test("refuse a project the session's own workspace does not sit in", async () => {
+    const box = await node(posture)
+    const client = await session(box.app)
+    const refused = created(await client.callTool({
+      name: "task_create",
+      arguments: { title: "Someone else's project", project: "project-elsewhere" },
+    }))
+    expect(refused.isError).toBe(true)
+    expect(refused.text).toBe(`This session may act only in project ${box.project}`)
+
+    const read = created(await client.callTool({ name: "task_list", arguments: { project: "project-elsewhere" } }))
+    expect(read.isError).toBe(true)
   })
 })
 

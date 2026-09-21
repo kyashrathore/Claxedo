@@ -198,6 +198,10 @@ describe("D1 private multiplayer session authority", () => {
     await expect(
       exercisePrivateSessionAuthorityConformance({
         authority: input.sessions,
+        setWorkspaceAvailable: async (available) => {
+          await input.database.prepare("UPDATE workspaces SET deleted_at = ? WHERE workspace_id = ?")
+            .bind(available ? null : input.now(), "ws_main").run()
+        },
         turnAuthority: input.sessions,
         workspaceId: "ws_main",
         creator: {
@@ -237,6 +241,11 @@ describe("D1 private multiplayer session authority", () => {
     await expect(
       exerciseRuntimeForkReservationConformance({
         authority: input.sessions,
+        setParentShare: async (sessionId, level) => {
+          const target = { sessionId, workspaceId: "ws_main", grantedToUserId: bob.principal!.userId }
+          if (level) await input.sessions.grantSessionShare(alice, { ...target, level })
+          else await input.sessions.revokeSessionShare(alice, target)
+        },
         workspaceId: "ws_main",
         creator: {
           auth: alice,
@@ -248,11 +257,52 @@ describe("D1 private multiplayer session authority", () => {
         },
       }),
     ).resolves.toEqual({
-      forkReservedUnderAReadableParent: true,
+      forkReservedUnderAWritableParent: true,
       registeredChildIsPrivateToItsCreator: true,
       refusedUnderAnUnreadableParent: true,
+      refusedUnderAFollowOnlyParent: true,
+      revokedParentRefusesStartupAndRegistration: true,
       refusedForAMismatchedIntent: true,
     })
+  })
+
+  test("parent permission is rechecked inside reservation and registration batches", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_race_parent", sessionId: "ses_race_parent" })
+    const principal = { principalKind: "user" as const, actorId: bob.principal!.actorId, actorKind: "human" as const }
+    for (const phase of ["reserve", "register"] as const) {
+      await input.sessions.grantSessionShare(alice, {
+        sessionId: "ses_race_parent", workspaceId: "ws_main", grantedToUserId: bob.principal!.userId, level: "send",
+      })
+      const intent = { operationId: `op_race_${phase}`, sessionId: `ses_race_${phase}`, workspaceId: "ws_main",
+        kind: "fork" as const, parentSessionId: "ses_race_parent" }
+      if (phase === "register") await input.sessions.reserveRuntimeSession(principal, intent)
+      let batches = 0
+      // Miniflare's RPC binding supplies methods dynamically, so intercept the
+      // database port passed to the authority rather than spying on the proxy.
+      const raced = new D1SessionAuthority(new Proxy(input.database, {
+        get(target, key) {
+          if (key === "batch") return async (statements: Parameters<typeof target.batch>[0]) => {
+            batches += 1
+            await target.prepare("UPDATE session_share_grants SET level = 'follow' WHERE session_id = 'ses_race_parent'").run()
+            return target.batch(statements)
+          }
+          const value = Reflect.get(target, key)
+          return typeof value === "function" ? value.bind(target) : value
+        },
+      }), { deploymentId: "deployment-a", now: input.now })
+      const operation = phase === "reserve"
+        ? raced.reserveRuntimeSession(principal, intent)
+        : raced.registerRuntimeSession({ ...principal, operationId: intent.operationId,
+            sessionId: intent.sessionId, workspaceId: intent.workspaceId })
+      const outcome = await operation.then(() => "accepted", () => "refused")
+      expect(batches).toBe(1)
+      expect(outcome).toBe("refused")
+      expect(await input.database.prepare("SELECT 1 FROM sessions WHERE session_id = ?").bind(intent.sessionId).first()).toBeNull()
+      expect(await input.database.prepare("SELECT state FROM session_registration_operations WHERE operation_id = ?")
+        .bind(intent.operationId).first()).toEqual(phase === "register" ? { state: "reserved" } : null)
+    }
   })
 
   test("satisfies the provider-neutral session-share-level conformance surface", async () => {

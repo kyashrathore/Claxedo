@@ -6,6 +6,7 @@ import { queryKeys } from "@/platform/query/keys"
 import { setHostAggregateDeclaration } from "@/platform/query/control-plane"
 import { streamSyncLifecycleSnapshot } from "@/platform/runtime/stream-sync-status"
 import {
+  holdSessionEventScope,
   resetSessionEventScope,
   sessionEventStreamsOpen,
   setSessionEventLiveWorkspace,
@@ -430,6 +431,17 @@ describe("the workspace stream's two arms", () => {
     expect(new Headers(second?.init?.headers).get("Last-Event-ID")).toBe("3")
   })
 
+  test("a reloaded draft opens its pending owner's workspace stream without registered session admission", async () => {
+    transport.request.mockImplementation(async () => quiet())
+    setSessionEventLiveWorkspace("reserved", "workspace:ws_owned")
+    holdSessionEventScope("reserved")
+    mountRoute(() => "/")
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(workspaceRequests()).toHaveLength(1)
+    expect(workspaceRequests()[0]?.url.searchParams.get("sessionID")).toBeNull()
+  })
+
   test("a navigation to the bare session route of the same workspace keeps the stream", async () => {
     transport.request.mockImplementation(async () => quiet())
     const [pathname, setPathname] = createSignal("/w/ws_owned/session/ses_a")
@@ -473,6 +485,43 @@ describe("what a stream's open and its gap ask the store to re-read", () => {
       </ClaxedoEventsProvider>
     ))
   }
+
+  test("startup status uses lifecycle invalidation and stream recovery with workspace isolation", async () => {
+    let stream: ReturnType<typeof openStream> | undefined
+    const own = queryKeys.runtime.sessionStart(SERVER_URL, "ws_owned", "pending", "creation")
+    const sibling = queryKeys.runtime.sessionStart(SERVER_URL, "ws_owned", "other", "other-creation")
+    const elsewhere = queryKeys.runtime.sessionStart(SERVER_URL, "ws_other", "pending", "creation")
+    const seed = () => [own, sibling, elsewhere].forEach((key) => queryClient.setQueryData(key, { status: "starting" }))
+    const invalid = (key: readonly unknown[]) => queryClient.getQueryState(key)?.isInvalidated
+    seed()
+    transport.request.mockImplementation((input, init) => {
+      if (!isWorkspaceStream(requestUrl(input))) return pending()
+      stream = openStream(init?.signal)
+      return Promise.resolve(stream.response)
+    })
+    mountRoute(() => "/w/ws_owned/session/pending")
+    await vi.advanceTimersByTimeAsync(0)
+    expect(invalid(own)).toBe(true)
+    expect(invalid(sibling)).toBe(true)
+    expect(invalid(elsewhere)).toBe(false)
+    seed()
+    stream!.send({ type: "session.lifecycle", phase: "created", directory: "/repo", sessionID: "pending", ts: 1 })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(invalid(own)).toBe(true)
+    expect(invalid(sibling)).toBe(false)
+    expect(invalid(elsewhere)).toBe(false)
+    seed()
+    stream!.send({ type: "stream.replay-gap" })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(invalid(own)).toBe(true)
+    expect(invalid(sibling)).toBe(true)
+    expect(invalid(elsewhere)).toBe(false)
+    seed()
+    stream!.close()
+    await vi.advanceTimersByTimeAsync(RECONNECT_DELAY_MS)
+    expect(invalid(own)).toBe(true)
+    expect(invalid(elsewhere)).toBe(false)
+  })
 
   test("a cursor-less workspace stream open asks that workspace's controllers to re-read; a resumed open does not", async () => {
     transport.request.mockImplementation((input) =>

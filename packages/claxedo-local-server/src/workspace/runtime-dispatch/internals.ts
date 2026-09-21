@@ -59,10 +59,18 @@ export function runtimeOwned(pathname: string) {
   return routeOwnership(pathname).handler === RouteHandler.SandboxRuntime
 }
 
-export function requestWorkspace(c: Context) {
-  const dir = c.req.query("directory") || c.req.header("x-claxedo-directory")
+/**
+ * Which workspace a request names, read off the raw request so the admission
+ * gate ahead of dispatch asks the same question this dispatch answers.
+ */
+export function requestWorkspace(request: Request) {
+  const query = new URL(request.url).searchParams
+  const dir = query.get("directory") || request.headers.get("x-claxedo-directory")
   return {
-    workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
+    // `??`, not `||`: a supplied-but-empty id still names a workspace, and an
+    // explicit id that resolves to nothing must fail closed at the store
+    // rather than fall through to directory resolution.
+    workspaceId: query.get("workspaceId") ?? query.get("workspace") ?? request.headers.get("x-workspace-id") ?? undefined,
     directory: dir ? decodeURIComponent(dir) : undefined,
   }
 }
@@ -95,8 +103,8 @@ export function requestWorkspace(c: Context) {
  */
 export function hostAggregateEvents(c: Context, pathname: string, options: RuntimeProxyOptions) {
   if (pathname !== WR_EVENTS || !options.hostEventStream) return undefined
-  const named = requestWorkspace(c)
-  if (named.workspaceId || named.directory) return undefined
+  const named = requestWorkspace(c.req.raw)
+  if (named.workspaceId !== undefined || named.directory) return undefined
   return decideHostAggregate(c, options, options.hostEventStream)
 }
 
@@ -125,7 +133,7 @@ async function decideHostAggregate(
 }
 
 export async function resolveWorkspaceRuntimeHit(c: Context, options: RuntimeProxyOptions = {}): Promise<Hit | undefined> {
-  const input = requestWorkspace(c)
+  const input = requestWorkspace(c.req.raw)
   const ws = await resolveWorkspace({
     workspaceId: input.workspaceId,
     directory: input.directory,
@@ -194,7 +202,7 @@ function sandboxUnavailableDetail(result: Exclude<SandboxEnsureResult, { status:
 }
 
 export function noWr(c: Context, err?: unknown) {
-  const input = requestWorkspace(c)
+  const input = requestWorkspace(c.req.raw)
   const msg = err instanceof Error ? err.message : undefined
   return c.json(
     {
@@ -390,7 +398,7 @@ export function embeddedConfigModeForPath(
   pathname: string,
   method = "GET",
 ): EmbeddedWorkspaceRuntimeConfigMode {
-  // Runtime configuration is a launch/mutation precondition, not a read
+  // Runtime configuration is a launch/mutation precondition, not a stored read
   // precondition. If an extension cannot be materialized safely (for example,
   // because an unmanaged skill already occupies its target), blocking reads
   // turns one actionable extension error into an unusable workspace shell.

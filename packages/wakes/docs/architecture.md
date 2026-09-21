@@ -21,6 +21,7 @@ code wins and this doc has rotted — fix it.
 
 Tests: `test/wakes.test.ts` (core lifecycle, durability, budgets, durations),
 `test/sinks.test.ts` (kind registry), `test/lanes.test.ts` (serialization),
+`test/lane-expiry.test.ts` (deadlines on a push-driver-only deployment),
 `test/reclaim-race.test.ts` (concurrent reclaim), `test/tools.test.ts`
 (agent surface).
 
@@ -81,9 +82,10 @@ clock — all tests are wall-clock-free), `computeNextRun` (cron math, injected,
 see shortcoming), `leaseMs`, `batchLimit`.
 
 **Create paths** — `schedule` / `watch` / `requestApproval` all funnel into
-`insertWake`, which: enforces budgets (unless the recurring re-insert), dedups
-by `idempotencyKey`, writes the row (`wake_${ulid()}`), and for `schedule`
-nudges the driver with `{serialKey, fireAt}`.
+`insertWake`, which enforces budgets (unless the recurring re-insert), dedups
+by `idempotencyKey`, writes the row (`wake_${ulid()}`) via `insertRow`, then
+arms the lane: one nudge per time the row becomes actionable — its `fireAt`,
+its `expiresAt`, or both.
 
 **Relative times**: `schedule({in: "3d"})` and `expiresIn: "12h"` use the `ms`
 package; `DurationString = Parameters<typeof ms>[0]` gives compile-time
@@ -92,15 +94,46 @@ Absolute `at`/`expiresAt` take precedence. Rows always store epoch-ms.
 
 **`runDue(serialKey?)`** — the one entry point both fire mechanisms call:
 
-1. *(unscoped runs only)* expiry pass: `findExpirable` → CAS
-   `pending→expired` → fire the sink with `{..., expired: true}`.
+1. expiry pass: `findExpirable(now, serialKey)` → CAS `pending→expired` → fire
+   the sink with `{..., expired: true}`.
 2. reclaim pass: `reclaimFiring(now, leaseMs, serialKey)` — an atomic
    re-stamp-and-return, so two runners never re-drive the same lapsed row.
 3. claim pass: `claimDue(now, leaseMs, batchLimit, serialKey)` → drive each.
 
-A scoped run (`serialKey` given — string for one lane, `null` for the
-null-key lane) skips expiry and touches only that lane; that is what a push
-driver calls.
+A scoped run (`serialKey` given — string for one lane, `null` for the null-key
+lane) is what a push driver calls: all three passes narrow to that lane, so a
+deployment whose only runner is a per-lane driver still reaches every terminal
+state, and no lane can fire another lane's rows. The `pending→expired` CAS
+elects a single notifier, so a lane driver racing the unscoped sweep over one
+row notifies exactly once. `fired` counts expiry notifications too — they are
+progress a draining driver must keep looping on. The claim pass still checks
+the deadline atomically: an overdue pending wake expires, it never fires its
+original intent.
+
+Because a deadline is a lane obligation like a fire time, `insertWake` nudges
+the driver at `expiresAt` as well as `fireAt` — otherwise a `watch` nobody
+schedules against would sit in a lane no alarm ever arms.
+
+**Re-arming (`nextAt`)** — a scoped pass that made no progress returns
+`store.nextObligationAt(serialKey)`: the earliest of the lane's pending
+deadlines, its `firing` lease boundaries, and the fire times it can actually
+claim. A lane already occupied by a `firing` row cannot claim, so its blocked
+(often already past) fire times are excluded — the occupying lease is the real
+boundary, and reporting the past one would spin the driver. Null-key wakes
+share no lane and are never blocked. Because hints are lossy and "earliest
+wins" drops one that lands behind an armed timer, a push driver must re-arm
+from `nextAt` after every drain rather than trust the hint it woke on; that is
+what keeps a later deadline from being lost behind a nearer fire time. An
+absent `nextAt` means the lane owes nothing and the driver arms no timer.
+
+**Admission vs. retry.** `expiresAt` gates `pending→firing` only. Approval and
+event delivery check it inside their CAS, so at the exact deadline an approval
+answers `too_late` even if no sweeper has run and even if the deadline passed
+during authorization. Once a row is `firing` it was admitted in time and its
+result is persisted, so `reclaimFiring` re-drives it however late the lease
+lapsed — deliberately blind to `expiresAt`. Filtering reclaim by the deadline
+would silently drop an approval whose answer was accepted in time and whose
+sink then crashed; at-least-once delivery owes that retry.
 
 **Recurring** (`driveFiring`): the next occurrence is computed from the
 wake's OWN `fireAt` (never wall-clock-at-fire → no drift) and inserted with
@@ -114,16 +147,22 @@ All methods async so a network adapter fits the same contract as an embedded
 one (SQLite). Three operations carry the correctness burden:
 
 - `insert` — idempotency-keyed dedup must be atomic.
-- `cas(id, from, to, patch)` — the single serialization point per wake.
+- `cas(id, from, to, nowMs, patch)` — the single serialization point per wake.
+  Pending-to-firing requires a future or absent deadline; pending-to-expired
+  requires a reached deadline, in the same statement that changes state.
 - `claimDue(now, leaseMs, limit, serialKey?)` — atomic claim **honoring
   lanes**: never claim a key that already has a `firing` row; at most one
   wake per key per batch (earliest first); null keys unrestricted; the
   optional `serialKey` scopes to one lane (string), the null lane (`null`),
   or all (`undefined`).
 
-Everything else is plain reads. Because claims are atomic *in the database*,
-any number of racing runners (ticks, alarms, machines, regions) are safe:
-duplicates lose the CAS/claim and do nothing.
+Everything else is plain reads, of which one carries a scheduling contract:
+`nextObligationAt(serialKey)` must never report a time earlier than the lane
+can act on, because push drivers arm timers from it (see `nextAt` above).
+
+Because claims are atomic *in the database*, any number of racing runners
+(ticks, alarms, machines, regions) are safe: duplicates lose the CAS/claim and
+do nothing.
 
 ### SQLite adapter (`sqlite-store.ts`)
 
@@ -167,19 +206,26 @@ there, so the only driver implementation is hosted.
 The Cloudflare driver lives in
 `packages/claxedo-server/src/deployments/hosted-workerd/wake-lane.cf.ts`: one `WakeLane` Durable
 Object per lane. Its `nudge` handler only arms the DO alarm (earliest wins);
-ALL work happens in `alarm()` — drain the lane, bounded self-retry with
-backoff on failure. DO alarms are platform-persisted (survive deploys and
-machine loss, retried on throw); the platform never runs two alarms for one
-object concurrently, so per-lane serialization is physically guaranteed.
-Wakes that a sink schedules mid-drain re-arm the object's own alarm via an
-in-DO driver, so lane-local retries never wait for the sweep.
+ALL work happens in `alarm()` — drain the lane, re-arm at the `nextAt` the
+final pass reported, bounded self-retry with backoff on failure. That re-arm
+is what makes "earliest wins" safe: a hint dropped behind a nearer alarm is
+recovered from the store on the next drain, so a deadline can never be lost
+behind a fire time. A lane still firing at the 50-round cap re-arms at *now*,
+yielding the alarm instead of draining unboundedly in one invocation. DO
+alarms are platform-persisted (survive deploys and machine loss, retried on
+throw); the platform never runs two alarms for one object concurrently, so
+per-lane serialization is physically guaranteed. Wakes that a sink schedules
+mid-drain re-arm the object's own alarm via an in-DO driver, so lane-local
+retries never wait for the sweep.
 
 ## The scheduler — the guarantee (`scheduler.ts`)
 
 `createScheduler(wakes)`: on `start()`, run `recover()` once, then a
 non-overlapping `runDue()` tick every `intervalMs` (default 1000). This is
 the Node backstop; the hosted equivalent is a Cloudflare Cron Trigger calling
-the same logic. Neither needs to be precise — only inevitable.
+the same logic, designed but not wired — hosted lanes currently rest on the
+`WakeLane` objects re-arming themselves from `nextAt`. Neither needs to be
+precise — only inevitable.
 
 ## Agent tools (`tools.ts`)
 

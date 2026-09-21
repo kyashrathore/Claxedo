@@ -10,6 +10,7 @@ import {
   readClaxedoCredentials,
   storeClaxedoCredentials,
 } from "./claxedo-credentials"
+import { expectedOwnerOnlyDescription, ownerOnlyDescription, widenWindowsPath } from "./private-file.test-support"
 
 const dirs: string[] = []
 
@@ -29,19 +30,24 @@ describe("the credential file both the CLI and the desktop write", () => {
 
     await storeClaxedoCredentials({ controlPlaneUrl: "https://api.test", accessToken: "token-1" }, pathname)
 
-    const file = await fs.stat(pathname)
-    expect(file.mode & 0o777).toBe(0o600)
-    expect((await fs.stat(path.dirname(pathname))).mode & 0o777).toBe(0o700)
+    expect(ownerOnlyDescription(pathname)).toBe(expectedOwnerOnlyDescription())
+    // The file carries the protection on both platforms. Only POSIX also gets
+    // it on the directory, because Windows directory permissions belong to
+    // whoever owns that part of the filesystem, not to this writer.
+    if (process.platform !== "win32") {
+      expect((await fs.stat(path.dirname(pathname))).mode & 0o777).toBe(0o700)
+    }
   })
 
-  test("narrows a world-readable file that already existed", async () => {
+  test("narrows a file that already existed and was readable by anyone", async () => {
     const pathname = await tempFile()
     await fs.mkdir(path.dirname(pathname), { recursive: true })
     await fs.writeFile(pathname, "{}", { mode: 0o644 })
+    if (process.platform === "win32") widenWindowsPath(pathname)
 
     await storeClaxedoCredentials({ accessToken: "token-1" }, pathname)
 
-    expect((await fs.stat(pathname)).mode & 0o777).toBe(0o600)
+    expect(ownerOnlyDescription(pathname)).toBe(expectedOwnerOnlyDescription())
   })
 
   test("round-trips what a writer stored, refresh token and all", async () => {

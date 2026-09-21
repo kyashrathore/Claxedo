@@ -14,6 +14,7 @@ source by the three processes that mount it.
 | `src/endpoint/` | The pieces the route is built from: the loopback host/origin gate, the session store, the in-flight counter. |
 | `src/context.ts` | `McpCredential` (runtime or user), tool access declarations, the audit event, and the handler-side access check. |
 | `src/tools/registry.ts` | `createToolRegistry(server, ctx)`: one `McpServer` per connection, built for one credential; a tool the credential may not use is never registered, and the handler re-checks anyway. |
+| `src/tools/target.ts`, `src/tools/session-reach.ts` | Where a call may act: the workspace a runtime credential may write to, and the session it may drive — itself and the children it started, read from the runtime's stored rows rather than from the call. |
 | `src/client/` | `ClaxedoMcpClient`, the one client every tool calls; no tool builds a URL. |
 
 ## The three mounts
@@ -55,6 +56,8 @@ to the credential that initialized it, and answers 404 for a session it no
 longer holds — the transport's signal to initialize again. On the hosted
 worker that state is per isolate. A destructive tool's confirmation rides the
 SSE stream of the tool call that asked whenever that is the only call open.
+Destructive tools require an accepted elicitation result. Clients without
+elicitation support receive a refusal; tool annotations do not grant approval.
 
 One credential may hold at most 8 requests open at once (`maxInFlightPerCredential`);
 the ninth is answered 429 with `Retry-After: 1`. Every write goes through the

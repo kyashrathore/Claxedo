@@ -91,13 +91,13 @@ function raceBeforeFirstWrite(target: D1Database, competitor: () => Promise<unkn
   const wrapBound = (bound: D1PreparedStatement): D1PreparedStatement =>
     new Proxy(bound, {
       get(source, property) {
-        if (property !== "run") return Reflect.get(source, property).bind(source)
+        if (property !== "run" && property !== "first") return Reflect.get(source, property).bind(source)
         return async () => {
           if (armed) {
             armed = false
             await competitor()
           }
-          return await source.run()
+          return property === "run" ? await source.run() : await source.first()
         }
       },
     })
@@ -165,15 +165,16 @@ describe("d1 sandbox lease store", () => {
   test("a re-acquire past the stale window bumps the epoch and drops the sandbox identity", async () => {
     const { leaseStore } = await store()
     await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
-    await leaseStore.update("ws_1", 1, {
+    await leaseStore.recordTarget("ws_1", 1, {
       sandboxId: "sandbox_a",
       url: "https://runtime.test/a",
       hostId: "host_a",
       driverResourceId: "res_a",
-      lastHeartbeatAt: NOW,
       labels: { tier: "gold" },
-      checkpoint,
     })
+    // A re-provision that answered "provisioning": identity from the last
+    // driver answer is still on the row, and the lease is acquiring again.
+    await leaseStore.update("ws_1", 1, { status: "acquiring", lastHeartbeatAt: NOW, checkpoint })
 
     const again = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW + STALE_AFTER_MS })
     expect(again.acquired).toBe(true)
@@ -195,14 +196,13 @@ describe("d1 sandbox lease store", () => {
   test("a stopped lease resumes its sandbox identity on the next acquire", async () => {
     const { leaseStore } = await store()
     await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
-    await leaseStore.update("ws_1", 1, {
-      status: "stopped",
+    await leaseStore.recordTarget("ws_1", 1, {
       sandboxId: "sandbox_a",
       url: "https://runtime.test/a",
       hostId: "host_a",
-      lastActivityAt: NOW,
       labels: { tier: "gold" },
     })
+    await leaseStore.update("ws_1", 1, { status: "stopped", lastActivityAt: NOW })
 
     const resumed = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW + 1 })
     expect(resumed).toMatchObject({
@@ -223,7 +223,12 @@ describe("d1 sandbox lease store", () => {
   test("a ready lease refuses with retryAfterMs 0 however long it has been ready", async () => {
     const { leaseStore } = await store()
     await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
-    await leaseStore.update("ws_1", 1, { status: "ready", sandboxId: "sandbox_a", url: "https://runtime.test/a" })
+    await leaseStore.recordTarget("ws_1", 1, {
+      sandboxId: "sandbox_a",
+      url: "https://runtime.test/a",
+      hostId: "host_a",
+      labels: {},
+    })
 
     const refused = await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW + STALE_AFTER_MS * 10 })
     expect(refused).toMatchObject({ acquired: false, retryAfterMs: 0, lease: { status: "ready", epoch: 1 } })
@@ -232,13 +237,19 @@ describe("d1 sandbox lease store", () => {
   test("update is an epoch compare-and-set: a stale epoch changes nothing", async () => {
     const { leaseStore } = await store()
     await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
-    await leaseStore.update("ws_1", 1, { status: "unavailable", sandboxId: "sandbox_a" })
+    await leaseStore.update("ws_1", 1, { status: "unavailable" })
     await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW + STALE_AFTER_MS * 10 })
 
     const before = await leaseStore.get("ws_1")
     expect(before?.epoch).toBe(2)
 
-    await expect(leaseStore.update("ws_1", 1, { status: "ready", sandboxId: "loser" })).resolves.toBeUndefined()
+    await expect(leaseStore.update("ws_1", 1, { status: "ready" })).resolves.toBeUndefined()
+    await expect(leaseStore.recordTarget("ws_1", 1, {
+      sandboxId: "loser",
+      url: "https://runtime.test/loser",
+      hostId: "host_loser",
+      labels: {},
+    })).resolves.toBeUndefined()
     await expect(leaseStore.get("ws_1")).resolves.toEqual(before)
     // An unknown workspace is a miss, not a write.
     await expect(leaseStore.update("ws_missing", 1, { status: "ready" })).resolves.toBeUndefined()
@@ -248,12 +259,18 @@ describe("d1 sandbox lease store", () => {
   test("update null-clears exactly the fields the patch nulls", async () => {
     const { leaseStore } = await store()
     await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
+    await leaseStore.recordTarget("ws_1", 1, {
+      sandboxId: "sandbox_a",
+      url: "https://runtime.test/a",
+      hostId: "host_a",
+      labels: {},
+      persistence,
+    })
     await leaseStore.update("ws_1", 1, {
       status: "unavailable",
       nextRetryAt: NOW + 1_000,
       lastError: "boom",
       checkpoint,
-      persistence,
     })
     await expect(leaseStore.get("ws_1")).resolves.toMatchObject({
       nextRetryAt: NOW + 1_000,
@@ -333,13 +350,14 @@ describe("d1 sandbox lease store", () => {
   test("labels, checkpoint, persistence and restore round-trip through their json columns", async () => {
     const { leaseStore } = await store()
     await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
-    await leaseStore.update("ws_1", 1, {
-      status: "ready",
+    await leaseStore.recordTarget("ws_1", 1, {
+      sandboxId: "sandbox_a",
+      url: "https://runtime.test/a",
+      hostId: "host_a",
       labels: { tier: "gold", region: "us-east" },
-      checkpoint,
       persistence,
-      restore,
     })
+    await leaseStore.update("ws_1", 1, { checkpoint, restore })
 
     const read = await leaseStore.get("ws_1")
     expect(read?.labels).toEqual({ tier: "gold", region: "us-east" })
@@ -381,7 +399,12 @@ describe("d1 sandbox lease store", () => {
       now: () => NOW,
     })
 
-    await expect(loser.update("ws_1", 1, { status: "ready", sandboxId: "loser" })).resolves.toBeUndefined()
+    await expect(loser.recordTarget("ws_1", 1, {
+      sandboxId: "loser",
+      url: "https://runtime.test/loser",
+      hostId: "host_loser",
+      labels: {},
+    })).resolves.toBeUndefined()
     const after = await winner.get("ws_1")
     expect(after).toMatchObject({ epoch: 2, status: "acquiring" })
     expect(after?.sandboxId).toBeUndefined()
@@ -397,6 +420,33 @@ describe("d1 sandbox lease store", () => {
     const final = await winner.get("ws_1")
     expect(final).toMatchObject({ epoch: 3, status: "acquiring", retryCount: 0 })
     expect(final?.lastError).toBeUndefined()
+  })
+
+  test("a delayed liveness patch cannot overwrite a provisioner's newer target in the same epoch", async () => {
+    const { target, leaseStore } = await store()
+    await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
+    await leaseStore.recordTarget("ws_1", 1, { sandboxId: "first", hostId: "host_first", url: "https://runtime.test/first", labels: {} })
+    const delayed = createD1SandboxLeaseStore({ database: raceBeforeFirstWrite(target, () => leaseStore.recordTarget("ws_1", 1, {
+      sandboxId: "replacement", hostId: "host_replacement", url: "https://runtime.test/replacement", labels: { generation: "replacement" },
+    })) })
+    const updated = await delayed.update("ws_1", 1, { lastHeartbeatAt: NOW + 1 }, "ready")
+    expect(updated).toMatchObject({ sandboxId: "replacement", hostId: "host_replacement", labels: { generation: "replacement" }, lastHeartbeatAt: NOW + 1 })
+    expect(await leaseStore.get("ws_1")).toEqual(updated)
+  })
+
+  test.each(["stopped", "destroyed"] as const)("a delayed heartbeat or provisioning answer cannot reverse %s", async (status) => {
+    for (const operation of ["heartbeat", "provision"] as const) {
+      const { target, leaseStore } = await store()
+      await leaseStore.acquire("ws_1", { ...ACQUIRE, now: NOW })
+      const resource = { sandboxId: "first", hostId: "host_first", url: "https://runtime.test/first", labels: {} }
+      await leaseStore.recordTarget("ws_1", 1, resource)
+      const delayed = createD1SandboxLeaseStore({ database: raceBeforeFirstWrite(target, () => leaseStore.update("ws_1", 1, { status })) })
+      const result = operation === "heartbeat"
+        ? await delayed.update("ws_1", 1, { status: "ready", lastHeartbeatAt: NOW + 1 }, "ready")
+        : await delayed.recordTarget("ws_1", 1, resource)
+      expect(result).toBeUndefined()
+      expect(await leaseStore.get("ws_1")).toMatchObject({ status, sandboxId: "first" })
+    }
   })
 
   test("a sandbox manager provisions and lists a workspace against this store", async () => {

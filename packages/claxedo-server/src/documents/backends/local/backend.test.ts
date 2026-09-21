@@ -4,8 +4,14 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { Hono } from "hono"
+import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { ClaxedoDB } from "../../../platform/db"
-import { createLocalDocumentsBackend } from "@claxedo/server-core/documents/backends/local/backend"
+import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { disposeHydratedSessionDocuments, hydratedSessionDocumentPaths, syncHydratedSessionDocuments } from "@claxedo/server-core/documents/session-hydration"
+import { createLocalDocumentsBackend, type LocalDocumentsBackendDependencies } from "@claxedo/server-core/documents/backends/local/backend"
 
 const roots: string[] = []
 const execFileAsync = promisify(execFile)
@@ -31,6 +37,81 @@ afterAll(async () => {
 })
 
 describe("local documents backend composition", () => {
+  test("private-session authority gates hydration and revocation stops writeback", async () => {
+    const file = path.join(databaseRoot, "private-session-authority.db")
+    const authority = createSqliteWorkspaceAuthority({ path: file })
+    const database = openAuthorityDb({ path: file })
+    const auth = (subject: string): SignedControlPlaneAuth => ({ mode: "signed", token: subject,
+      user: { subject, tokenIdentifier: `https://idp.example|${subject}`, issuer: "https://idp.example" } })
+    const alice = auth("alice"), bob = auth("bob")
+    await authority.createCloudWorkspace(alice, { workspaceId: "workspace_1", displayName: "Shared project" })
+    await authority.usersMe(bob)
+    const opened = await authority.openWorkspace(alice, { workspaceId: "workspace_1" })
+    const projectId = opened.workspace!.project_id!
+    const orgId = opened.workspace!.org_id!
+    bob.user.orgId = orgId
+    database().prepare("INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', ?, ?)")
+      .run(opened.workspace!.org_id, bob.user.tokenIdentifier, Date.now(), Date.now())
+    database().prepare("INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', ?, ?)")
+      .run(opened.workspace!.project_id, bob.user.tokenIdentifier, Date.now(), Date.now())
+    for (const [sessionId, caller] of [["ses_alice", alice], ["ses_bob", bob]] as const) {
+      await authority.reserveSession(caller, { operationId: `op_${sessionId}`, sessionId, workspaceId: "workspace_1", kind: "create" })
+      await authority.registerRuntimeSession({ principalKind: "user", actorKind: "human", actorId: caller.user.tokenIdentifier,
+        operationId: `op_${sessionId}`, sessionId, workspaceId: "workspace_1" })
+    }
+    const fixture = await moveFixture(undefined, {
+      sessionAuthority: authority,
+      sessionMeta: async (sessionID) => ({ sessionID, workspaceID: "workspace_1", projectID: projectId, host: "workspace",
+        createdAt: 1, updatedAt: 1, tags: [], attachments: [] }),
+    }, projectId, orgId)
+    const app = new Hono().route("/documents", DocumentsRoutes({
+      backend: fixture.backend, authority,
+      authConfig: { enabled: true, issuer: "https://idp.example", jwksUrl: "https://idp.example/jwks" },
+      verifier: async () => bob,
+    }))
+    const request = (sessionId: string) => app.request(`https://signed.example/documents/${fixture.indexed.id}/agent-open`, {
+      method: "POST", headers: { authorization: "Bearer bob", "content-type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    })
+    const context = { auth: bob, origin: "https://local.example" }
+    const target = { sessionId: "ses_alice", workspaceId: "workspace_1", participantActorId: bob.user.tokenIdentifier }
+    try {
+      await expect(fixture.backend.agentOpen(fixture.indexed, "ses_alice", context)).rejects.toMatchObject({ status: 403 })
+      expect((await request("ses_alice")).status).toBe(403)
+      expect(hydratedSessionDocumentPaths("ses_alice")).toEqual([])
+      await expect(fs.stat(path.join(fixture.repository, ".claxedo", "sessions", "ses_alice"))).rejects.toMatchObject({ code: "ENOENT" })
+      const ownSession = await request("ses_bob")
+      expect(ownSession.status).toBe(200)
+      expect(await ownSession.json()).toMatchObject({ path: expect.stringContaining("ses_bob") })
+      await authority.grantSessionParticipant(alice, target)
+      const hydrated = await fixture.backend.agentOpen(fixture.indexed, "ses_alice", context)
+      await fs.writeFile(hydrated.path, "authorized writeback")
+      await syncHydratedSessionDocuments("ses_alice")
+      const handle = await fixture.backend.workspace.resolve({ origin: "managed", placement: "local", projectId,
+        documentId: fixture.indexed.id, relativePath: fixture.indexed.managed_relative_path! })
+      expect((await fixture.backend.workspace.read(handle)).markdown).toBe("authorized writeback")
+      await authority.revokeSessionParticipant(alice, target)
+      await fs.writeFile(hydrated.path, "revoked writeback")
+      await expect(syncHydratedSessionDocuments("ses_alice")).rejects.toThrow()
+      expect((await fixture.backend.workspace.read(handle)).markdown).toBe("authorized writeback")
+    } finally {
+      await disposeHydratedSessionDocuments("ses_alice")
+      await disposeHydratedSessionDocuments("ses_bob")
+      authority.close(); database.close()
+    }
+  })
+
+  test("signed hydration fails closed without a private-session authority", async () => {
+    const fixture = await moveFixture(undefined, {
+      sessionMeta: async (sessionID) => ({ sessionID, workspaceID: "workspace_1", projectID: "project_1", host: "workspace",
+        createdAt: 1, updatedAt: 1, tags: [], attachments: [] }),
+    })
+    await expect(fixture.backend.agentOpen(fixture.indexed, "ses_missing_authority", {
+      auth: { mode: "signed", token: "token", user: { subject: "bob", tokenIdentifier: "actor_bob", issuer: "test" } }, origin: "https://local.example",
+    })).rejects.toMatchObject({ status: 503, code: "document_session_authority_unavailable" })
+    expect(hydratedSessionDocumentPaths("ses_missing_authority")).toEqual([])
+  })
+
   test("uses the injected data directory without importing server composition", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-"))
     roots.push(root)
@@ -299,7 +380,7 @@ describe("local documents backend composition", () => {
   })
 })
 
-async function moveFixture(options?: Parameters<typeof createLocalDocumentsBackend>[1]) {
+async function moveFixture(options?: Parameters<typeof createLocalDocumentsBackend>[1], dependencies: Partial<LocalDocumentsBackendDependencies> = {}, projectId = "project_1", orgId = "org_1") {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-move-fixture-"))
   const repository = await fs.mkdtemp(path.join(os.tmpdir(), "local-documents-backend-move-repository-"))
   roots.push(root, repository)
@@ -316,7 +397,7 @@ async function moveFixture(options?: Parameters<typeof createLocalDocumentsBacke
         if (input.workspaceId !== "workspace_1") return undefined
         return {
           id: "workspace_1",
-          project_id: "project_1",
+          project_id: projectId,
           directory: repository,
           kind: "local",
           created_at: 1,
@@ -328,11 +409,12 @@ async function moveFixture(options?: Parameters<typeof createLocalDocumentsBacke
       },
       reportError() {},
       runGit: (args, directory, runOptions) => git(directory, args, runOptions),
+      ...dependencies,
     },
     options,
   )
   const relativePath = backend.managedRelativePath({
-    projectId: "project_1",
+    projectId,
     documentId: "document_fixture",
     slug: "Plan",
   })
@@ -340,7 +422,7 @@ async function moveFixture(options?: Parameters<typeof createLocalDocumentsBacke
     {
       origin: "managed",
       placement: "local",
-      projectId: "project_1",
+      projectId,
       documentId: "document_fixture",
       relativePath,
     },
@@ -349,8 +431,8 @@ async function moveFixture(options?: Parameters<typeof createLocalDocumentsBacke
   const timestamp = new Date().toISOString()
   const indexed = backend.index.create({
     id: "document_fixture",
-    org_id: "org_1",
-    project_id: "project_1",
+    org_id: orgId,
+    project_id: projectId,
     display_name: "Plan",
     origin_kind: "managed",
     placement_kind: "local",

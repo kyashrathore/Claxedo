@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import { setupHostProviderConfigPush } from "./provider-config-push"
+import { recordingDaemon } from "../test-support/daemon-fetch"
 
 const PLAINTEXT = JSON.stringify({
   version: 1,
@@ -12,21 +13,17 @@ const PLAINTEXT = JSON.stringify({
 function harness(
   options: {
     respond?: (init?: RequestInit) => Response
-    serverUrl?: () => Promise<string>
+    daemonReady?: () => Promise<unknown>
   } = {},
 ) {
-  const requests: Array<{ url: string; method?: string; body: unknown }> = []
   const logged: string[] = []
+  const { daemon, requests } = recordingDaemon({
+    respond: (init) =>
+      options.respond?.(init) ?? new Response(JSON.stringify({ revision: 3, providerCount: 1 }), { status: 200 }),
+  })
   const pusher = setupHostProviderConfigPush({
-    serverUrl: options.serverUrl ?? (async () => "http://127.0.0.1:4000"),
-    request: async (url, init) => {
-      requests.push({
-        url,
-        ...(typeof init?.method === "string" ? { method: init.method } : {}),
-        body: typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : init?.body,
-      })
-      return options.respond?.(init) ?? new Response(JSON.stringify({ revision: 3, providerCount: 1 }), { status: 200 })
-    },
+    daemon,
+    daemonReady: options.daemonReady ?? (async () => undefined),
     log: { info: (message) => logged.push(`info ${message}`), warn: (message) => logged.push(`warn ${message}`) },
   })
   return { push: pusher.push, reconcile: pusher.reconcile, requests, logged }
@@ -41,36 +38,37 @@ describe("the provider-config push", () => {
     expect(host.requests).toHaveLength(1)
     expect(host.requests[0]?.url).toBe("http://127.0.0.1:4000/api/claxedo/host-provider-config")
     expect(host.requests[0]?.method).toBe("PUT")
+    expect(host.requests[0]?.capability).toBe("daemon-capability")
     expect(host.requests[0]?.body).toEqual({ revision: 3, providers: PLAINTEXT })
   })
 
   test("a push before the daemon listens is delivered once it does", async () => {
-    let ready!: (url: string) => void
-    const url = new Promise<string>((resolve) => {
+    let ready!: () => void
+    const listening = new Promise<void>((resolve) => {
       ready = resolve
     })
-    const host = harness({ serverUrl: () => url })
+    const host = harness({ daemonReady: () => listening })
 
     const pending = host.push({ revision: 1, providers: PLAINTEXT })
     await Bun.sleep(1)
     expect(host.requests).toEqual([])
 
-    ready("http://127.0.0.1:4000")
+    ready()
     await pending
     expect(host.requests).toHaveLength(1)
     expect(host.requests[0]?.body).toEqual({ revision: 1, providers: PLAINTEXT })
   })
 
   test("only the latest of the revisions that landed while the daemon was starting is delivered", async () => {
-    let ready!: (url: string) => void
-    const url = new Promise<string>((resolve) => {
+    let ready!: () => void
+    const listening = new Promise<void>((resolve) => {
       ready = resolve
     })
-    const host = harness({ serverUrl: () => url })
+    const host = harness({ daemonReady: () => listening })
 
     const first = host.push({ revision: 1, providers: PLAINTEXT })
     const second = host.push({ revision: 2, providers: '{"version":1,"providers":{}}' })
-    ready("http://127.0.0.1:4000")
+    ready()
     await Promise.all([first, second])
 
     expect(host.requests.map((request) => (request.body as { revision: number }).revision)).toEqual([2])
@@ -137,9 +135,7 @@ describe("the provider-config push", () => {
 
   test("a daemon that never answers is reported, not thrown at the heartbeat", async () => {
     const host = harness({
-      serverUrl: async () => {
-        throw new Error("claxedo-server failed to start")
-      },
+      daemonReady: () => Promise.reject(new Error("claxedo-server failed to start")),
     })
 
     await host.push({ revision: 3, providers: PLAINTEXT })

@@ -86,6 +86,15 @@ describe("workspace runtime request path", () => {
     } satisfies Partial<WorkspaceRuntimeClientPayloadError>)
   })
 
+  test("explicit delivery decodes durable acknowledgements instead of requiring an empty response", async () => {
+    const pending = { ok: false, status: "pending", operationId: "operation", message: "Awaiting provider acknowledgement" } as const
+    const responses = [Response.json({ delivery: "queue" }), Response.json(pending, { status: 202 }), Response.json({ delivery: "queue", messageID: "queued" }, { status: 202 })]
+    const client = createWorkspaceRuntimeClient({ baseUrl: "https://server.example", fetch: async () => responses.shift()! })
+    expect((await client.session.promptAsync({ sessionID: "s1", delivery: "queue", parts: [] })).data).toEqual({ delivery: "queue" })
+    expect((await client.session.promptAsync({ sessionID: "s1", delivery: "steer", parts: [] })).data).toEqual(pending)
+    expect((await client.session.prompt({ sessionID: "s1", delivery: "queue", messageID: "queued", parts: [] })).data).toEqual({ delivery: "queue", messageID: "queued" })
+  })
+
   test("forwards AbortSignal and preserves native AbortError cancellation", async () => {
     const controller = new AbortController()
     const aborted = new DOMException("cancelled", "AbortError")
@@ -101,4 +110,24 @@ describe("workspace runtime request path", () => {
     controller.abort(aborted)
     expect(await result).toBe(aborted)
   })
+})
+
+test("session startup reads and binary attachments retain canonical workspace scope", async () => {
+  const calls: Request[] = []
+  const binding = { sessionId: "reserved", workspaceId: "workspace", directory: "/repo", connectionId: "connection", operationId: "operation" }
+  const start = { binding, status: "starting" as const, createdAt: 1, updatedAt: 1 }
+  const client = createWorkspaceRuntimeClient({
+    baseUrl: "https://runtime.example", workspace: "workspace", directory: "/repo",
+    fetch: async (input, init) => {
+      const request = new Request(input, init)
+      calls.push(request)
+      return new URL(request.url).pathname.startsWith("/session-start/") ? Response.json(start) : new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } })
+    },
+  })
+  expect((await client.session.start({ sessionID: binding.sessionId })).data).toEqual(start)
+  const image = await client.session.attachment({ sessionID: "reserved", messageID: "message/id", attachmentID: "image/id" })
+  expect(image.headers.get("Content-Type")).toBe("image/png")
+  expect([...new Uint8Array(await image.arrayBuffer())]).toEqual([137, 80, 78, 71])
+  expect(new URL(calls[1].url).pathname).toBe("/session/reserved/message/message%2Fid/attachment/image%2Fid")
+  expect(calls.every((request) => new URL(request.url).searchParams.get("workspace") === "workspace")).toBe(true)
 })

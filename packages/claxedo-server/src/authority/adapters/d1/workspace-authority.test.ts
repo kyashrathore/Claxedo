@@ -659,3 +659,90 @@ describe("a workspace's row carries its placement", () => {
     expect(listed.get("ws_machine")).toMatchObject({ host_online: false })
   })
 })
+
+describe("workspace creation admission", () => {
+  test("admits a create against the organization creation resolves, whatever the caller named", async () => {
+    const { authority, database } = await setup({ kind: "claxedo-hosted" })
+    const alice = await signed(authority, identity("alice"))
+    const bob = await signed(authority, identity("bob"))
+
+    // One organization each: the caller names nothing and is still admitted
+    // against the organization their workspace would land in.
+    const alone = await authority.resolveOrgId(alice)
+    await expect(authority.authorizeWorkspaceCreate(alice, {})).resolves.toBeUndefined()
+    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: alone })).resolves.toBeUndefined()
+    await expect(authority.authorizeWorkspaceCreate(bob, { orgId: alone })).rejects.toMatchObject({
+      status: 403,
+      code: "workspace_authorization_denied",
+    })
+
+    const team = await authority.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
+    await authority.addOrganizationMember(alice, {
+      orgId: team.org_id,
+      userId: bob.principal!.userId,
+      role: "member",
+    })
+    const created = await authority.createWorkspace(alice, {
+      workspaceId: "ws_acme_main",
+      orgId: team.org_id,
+      displayName: "main",
+      repoUrl: "https://github.com/Acme/Widgets.git",
+      backing: "cloud-vm",
+    })
+
+    // Alice now belongs to two organizations, so an unnamed create is
+    // ambiguous — the refusal `createCloudWorkspace` gives, given before the
+    // caller's billable work rather than after it.
+    await expect(authority.authorizeWorkspaceCreate(alice, {})).rejects.toMatchObject({ status: 403 })
+    await expect(
+      authority.createCloudWorkspace(alice, { workspaceId: "ws_ambiguous", displayName: "Ambiguous" }),
+    ).rejects.toMatchObject({ status: 403 })
+    expect(await database.prepare("select workspace_id from workspaces where workspace_id = 'ws_ambiguous'").first())
+      .toBeNull()
+
+    // The project is the selector creation reads, and admission reads the same
+    // one: its organization, and whether this caller may administer it.
+    await expect(authority.authorizeWorkspaceCreate(alice, { projectId: created.project_id }))
+      .resolves.toBeUndefined()
+    // Both selectors, as the hosted create route sends them. Creation derives
+    // the organization from the project and ignores the named one, so a name
+    // that disagrees is refused here rather than served in a tenant the caller
+    // did not ask for.
+    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: team.org_id, projectId: created.project_id }))
+      .resolves.toBeUndefined()
+    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: "org_elsewhere", projectId: created.project_id }))
+      .rejects.toMatchObject({ status: 403 })
+    await expect(authority.authorizeWorkspaceCreate(bob, { projectId: created.project_id }))
+      .rejects.toMatchObject({ status: 403 })
+    await expect(
+      authority.createCloudWorkspace(bob, {
+        workspaceId: "ws_member_denied",
+        projectId: created.project_id,
+        displayName: "Denied",
+      }),
+    ).rejects.toMatchObject({ status: 403 })
+
+    await authority.addOrganizationMember(alice, {
+      orgId: team.org_id,
+      userId: bob.principal!.userId,
+      role: "admin",
+    })
+    await expect(authority.authorizeWorkspaceCreate(bob, { projectId: created.project_id }))
+      .resolves.toBeUndefined()
+  })
+
+  test("a user-deployed product admits creation only in its own organization", async () => {
+    const { authority } = await setup({
+      kind: "user-deployed",
+      organization: { id: "org_house", name: "House" },
+      ownerIdentity: identity("alice"),
+    })
+    const alice = await signed(authority, identity("alice"))
+
+    await expect(authority.authorizeWorkspaceCreate(alice, {})).resolves.toBeUndefined()
+    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: "org_house" })).resolves.toBeUndefined()
+    await expect(authority.authorizeWorkspaceCreate(alice, { orgId: "org_elsewhere" })).rejects.toMatchObject({
+      status: 403,
+    })
+  })
+})

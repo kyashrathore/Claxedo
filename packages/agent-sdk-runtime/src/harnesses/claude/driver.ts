@@ -563,7 +563,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
 
     const turnEffort = resolveTurnEffort(
       this.modelSource.peek(input.directory),
-      input.input.model.modelID,
+      input.input.model?.modelID,
       input.input.variant,
     )
     const systemPrompt = claudeSystemPrompt(input.input.system)
@@ -598,7 +598,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         } },
         canUseTool: requestPermission,
         ...(input.input.agent ? { agent: input.input.agent } : {}),
-        ...(turnModel(input.input.model.modelID, input.model) ? { model: turnModel(input.input.model.modelID, input.model) } : {}),
+        ...(turnModel(input.input.model?.modelID, input.model) ? { model: turnModel(input.input.model?.modelID, input.model) } : {}),
         // Reasoning effort rides the TURN, not a config push. A Claude turn is
         // exactly one `query()`, and the SDK takes `effort` as a per-query
         // option alongside `model` and `agent` above — so this is the same
@@ -630,10 +630,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       close: () => q.close(),
       ...(turnInput
         ? {
-            steer: async (steered) => await turnInput.steer(claudeTurnPrompt(await deliverPromptAttachments({
-              parts: steered.parts,
-              directory: input.directory,
-            }))),
+            steer: async () => ({
+              ok: false as const,
+              status: "unsupported" as const,
+              message: "Claude steering requires a correlated provider acknowledgement; local enqueue is not acceptance",
+            }),
           }
         : {}),
     })

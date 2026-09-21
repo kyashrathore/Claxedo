@@ -107,6 +107,21 @@ export type {
   SessionWorkspaceAuthority,
 } from "./session-access-policy"
 export { Pty } from "./pty/index"
+export {
+  authorizePtyAttach,
+  createAuthorizedPtyConnection,
+  isPtyStreamSocket,
+  ptyAccessRefusalResponse,
+  ptyStreamAccess,
+  PTY_NOT_FOUND_REFUSAL,
+} from "./pty/authorized-connection"
+export type {
+  AuthorizedPtyConnection,
+  PtyAccessRefusal,
+  PtyStreamAccess,
+  PtyStreamSocket,
+} from "./pty/authorized-connection"
+export type { EmbeddedRelayHostIdentity } from "./workspace-host-service-auth"
 export { defaultWorkspaceHarnessRegistry } from "./workspace/runtime"
 export type {
   WorkspaceHarnessAdapterInput,

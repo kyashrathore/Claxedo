@@ -33,12 +33,12 @@ import {
   exposureBoundaryName,
   type WorkspaceRuntimeExposure,
 } from "./exposure"
-import { runtimeEnvText, workspaceRuntimeStoreDir } from "./env"
+import { runtimeEnvText, workspaceRuntimeEpoch, workspaceRuntimeStoreDir } from "./env"
 import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
 import type { ProcessObserver } from "./managed-processes/process-observer"
 import type { WorkspaceEventParents } from "./routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "./session-access-policy"
+import { managedWorkspaceSessionAccessPolicy, sessionAccessContext, sessionAccessDenied, type SessionAccessPolicy } from "./session-access-policy"
 import { remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
 
 type Host = ReturnType<typeof createWorkspaceHost>
@@ -97,6 +97,7 @@ export type WorkspaceRuntimeServerOptions = {
   storeRoot?: string
   /** Host-owned directory for opt-in config apply receipts. See {@link WorkspaceHostOptions.configApplyReceiptDir}. */
   configApplyReceiptDir?: string
+  beforeAdapterAcquire?: WorkspaceHostOptions["beforeAdapterAcquire"]
   serviceExposure?: WorkspaceRuntimeServiceExposure
   exposure?: WorkspaceRuntimeExposure
   /**
@@ -367,12 +368,16 @@ function runtimeDiagnostics(host: Host, options: WorkspaceRuntimeServerOptions) 
   const dir = target?.directory ?? workspaceDir()
   const rows = ProcessManager.list(dir)
   const detail = host.detail()
+  const epoch = workspaceRuntimeEpoch()
   return {
     ok: detail.healthStatus === "ok",
     status: detail.state,
     healthStatus: detail.healthStatus,
     service: "workspace-runtime",
     workspaceId: target?.workspaceId ?? workspaceId(),
+    // The lease generation a report about this runtime has to be fenced with.
+    // Absent on a runtime no control plane placed, which has no lease to fence.
+    ...(epoch === undefined ? {} : { epoch }),
     directory: dir,
     profile: host.capabilities().profile,
     routeAuthBoundary: workspaceRuntimeRouteAuthBoundary(options),
@@ -389,6 +394,7 @@ function runtimeDiagnostics(host: Host, options: WorkspaceRuntimeServerOptions) 
     model: null,
     error: detail.error || null,
     harnessHealth: detail.harnessHealth,
+    ...(detail.connectionState ? { connectionState: detail.connectionState } : {}),
     configApply: detail.configApply,
     ptyCount: Pty.list().length,
     processCount: rows.length,
@@ -409,6 +415,7 @@ async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOption
     harness: detail.harness,
     error: detail.error,
     harnessHealth,
+    connectionState: sessionId ? host.readConnectionState({ sessionId, directory: options.target?.directory }) : detail.connectionState,
     routeAuthBoundary: workspaceRuntimeRouteAuthBoundary(options),
     serviceExposure: options.serviceExposure ?? workspaceRuntimeServiceExposureFromEnv(),
     exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
@@ -446,6 +453,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     sessionAccessPolicy,
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+    ...(options.beforeAdapterAcquire ? { beforeAdapterAcquire: options.beforeAdapterAcquire } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
@@ -537,8 +545,9 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     app.use("*", async (c, next) => {
       if (inProcessRequests.has(c.req.raw)) return inProcessOwner ? await inProcessOwner(c, next) : await next()
       if (
-        c.req.method === "POST"
-        && c.req.path === WorkspaceRuntimeRoutes.config
+        ((c.req.method === "POST" && c.req.path === WorkspaceRuntimeRoutes.config)
+          || c.req.path === WorkspaceRuntimeRoutes.checkpoint
+          || c.req.path.startsWith(`${WorkspaceRuntimeRoutes.checkpoint}/`))
         && c.req.header(WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER)?.trim()
       ) {
         return await next()
@@ -579,6 +588,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     checkpoint: host.checkpoint,
     worktrees,
     sessionAccessPolicy,
+    ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
+    ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
   // Binding management inherits the workspace exposure/auth boundary. Tool
   // execution itself is only reachable through each Session's nonce-bound
@@ -648,9 +659,14 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     },
   })
 
-  app.get(WorkspaceRuntimeRoutes.health, async (c) =>
-    c.json(await runtimeLiveness(host, options, c.req.query("sessionId"))),
-  )
+  app.get(WorkspaceRuntimeRoutes.health, async (c) => {
+    const sessionId = c.req.query("sessionId")
+    if (sessionId) {
+      const access = await sessionAccessPolicy.authorize({ ...sessionAccessContext(c), sessionId, operation: "session_meta_read", method: c.req.method, path: c.req.path })
+      if (!access.allowed) return sessionAccessDenied(access)
+    }
+    return c.json(await runtimeLiveness(host, options, sessionId))
+  })
 
   app.get(WorkspaceRuntimeRoutes.capabilities, (c) => c.json(host.capabilities()))
   host.mount(app, { core: { upgradeWebSocket: nodeWebSocket.upgradeWebSocket }, exposure: options.exposure! })

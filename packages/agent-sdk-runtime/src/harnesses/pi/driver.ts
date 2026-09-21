@@ -426,6 +426,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
             message: extractTextFromParts(steered.parts),
             ...(steeredImages.length ? { images: steeredImages } : {}),
           })
+          return { ok: true as const }
         },
       })
       input.abort.signal.addEventListener("abort", abort, { once: true })
@@ -434,6 +435,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
         await settled
         return
       }
+      if (!input.input.model) throw new Error("Pi turn requires a resolved model")
       const model = piModel(input.input.model)
       await process.request("set_model", { provider: model.providerID, modelId: model.modelID })
       if (input.input.variant) await process.request("set_thinking_level", { level: input.input.variant })

@@ -80,7 +80,23 @@ export function createOpenCodeRuntime(options: OpenCodeHostOptions): OpenCodeRun
       checkpoint: (aggregateID) => pump.checkpoint(aggregateID),
     },
     close() {
-      closing ??= pump.stop().finally(() => host.close())
+      closing ??= (async () => {
+        // `stop()` refuses synchronously and only then waits, so the pump is
+        // already refusing and its subscription already aborted while the host
+        // closes. The order matters both ways: the engine ends the read it
+        // handed out when its host closes, so draining the pump first waits on
+        // the engine's own schedule, and closing without the refusal in place
+        // first would let a late event reach a disposed consumer.
+        const drained = pump.stop()
+        try {
+          await host.close()
+        } finally {
+          // A close that failed still handed the pump a read, and a runtime
+          // that reported the failure while that read was outstanding would be
+          // reporting a shutdown it had not finished.
+          await drained
+        }
+      })()
       return closing
     },
   }

@@ -24,12 +24,13 @@ const discovery: ClaxedoDaemonDiscovery = {
 
 describe("Claxedo daemon client lease", () => {
   test("acquires, renews, and explicitly releases without exposing the token", async () => {
-    const calls: Array<{ url: string; method: string; authorization: string | null }> = []
+    const calls: Array<{ url: string; method: string; authorization: string | null; capability: string | null }> = []
     const request = mock(async (input: string | URL | Request, init?: RequestInit) => {
       calls.push({
         url: requestUrl(input),
         method: init?.method ?? "GET",
         authorization: new Headers(init?.headers).get("authorization"),
+        capability: new Headers(init?.headers).get("x-claxedo-daemon-capability"),
       })
       return Response.json(
         init?.method === "DELETE" ? { released: true } : { id: "lease-1", expiresAt: Date.now() + 15_000 },
@@ -37,7 +38,7 @@ describe("Claxedo daemon client lease", () => {
       )
     })
 
-    const held = await holdClaxedoDaemonLease(discovery, { request, renewIntervalMs: 60_000 })
+    const held = await holdClaxedoDaemonLease(discovery, { fetch: request, renewIntervalMs: 60_000 })
     await held.renewNow()
     await held.stop()
 
@@ -48,6 +49,9 @@ describe("Claxedo daemon client lease", () => {
       ["DELETE", "/api/claxedo/daemon/leases/lease-1"],
     ])
     expect(calls.every((call) => call.authorization === "Bearer secret-token")).toBe(true)
+    // Two presentations of one published secret: the lifecycle route reads the
+    // bearer, the admission gate ahead of it reads the capability.
+    expect(calls.every((call) => call.capability === "secret-token")).toBe(true)
   })
 
   test("reacquires instead of reviving an expired lease", async () => {
@@ -61,7 +65,7 @@ describe("Claxedo daemon client lease", () => {
       return Response.json({ released: true })
     })
 
-    const held = await holdClaxedoDaemonLease(discovery, { request, renewIntervalMs: 60_000 })
+    const held = await holdClaxedoDaemonLease(discovery, { fetch: request, renewIntervalMs: 60_000 })
     await held.renewNow()
     expect(held.id).toBe("lease-2")
     await held.stop()
@@ -81,7 +85,7 @@ describe("Claxedo daemon client lease", () => {
       return Response.json({ shutdownRequested: true, released: true })
     })
 
-    const held = await holdClaxedoDaemonLease(discovery, { request, renewIntervalMs: 60_000 })
+    const held = await holdClaxedoDaemonLease(discovery, { fetch: request, renewIntervalMs: 60_000 })
     await held.shutdown()
 
     expect(calls).toEqual([
@@ -103,7 +107,7 @@ describe("Claxedo daemon client lease", () => {
       return Response.json({}, { status: 503 })
     })
 
-    const held = await holdClaxedoDaemonLease(discovery, { request, onError, renewIntervalMs: 60_000 })
+    const held = await holdClaxedoDaemonLease(discovery, { fetch: request, onError, renewIntervalMs: 60_000 })
     await held.shutdown()
 
     expect(onError).toHaveBeenCalledTimes(1)

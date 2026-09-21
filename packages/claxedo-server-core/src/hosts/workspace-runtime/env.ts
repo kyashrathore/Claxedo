@@ -134,11 +134,19 @@ export function workspaceRuntimeServiceExposureEnv(input: {
   }
 }
 
-export function sandboxLeaseEnv(input: { leaseId: string; epoch: number; sandboxId: string }): Record<string, string> {
+/**
+ * The lease generation a sandbox process was booted for.
+ *
+ * Host identity is deliberately absent. `workspaceRuntimeTargetEnv` is its only
+ * writer, and what it writes is the hostId the driver also puts on
+ * `target.hostId` — the value the lease store persists as `lease_id` and the
+ * relay binds and routes on. This env is composed after the driver's, so
+ * anything restated here wins: a caller holding a provider resource id rather
+ * than the hostId would unbind the host from the relay without failing.
+ */
+export function sandboxLeaseEnv(input: { leaseId: string; epoch: number }): Record<string, string> {
   return {
     WORKSPACE_RUNTIME_LEASE_ID: input.leaseId,
     WORKSPACE_RUNTIME_EPOCH: String(input.epoch),
-    WORKSPACE_RUNTIME_HOST_ID: input.sandboxId,
-    WORKSPACE_RUNTIME_SANDBOX_ID: input.sandboxId,
   }
 }

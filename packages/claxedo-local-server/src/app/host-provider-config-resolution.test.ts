@@ -11,6 +11,7 @@ import { putCredential, setActiveCredentials } from "@claxedo/server-core/creden
 import { providerProjection } from "@claxedo/agent-sdk-runtime"
 import { clearHostProviderConfig } from "../workspace/host-provider-config"
 import { startLocalServer, type LocalServer } from "./start-local-server"
+import { testDaemon } from "./test-support/daemon"
 
 /**
  * The pushed rows reach a turn through the one seam every harness launch
@@ -22,6 +23,7 @@ import { startLocalServer, type LocalServer } from "./start-local-server"
 let dataDir: string
 let previousDataDir: string | undefined
 let server: LocalServer | undefined
+let call: ReturnType<typeof testDaemon>["call"]
 let origin: string
 
 async function freePort() {
@@ -49,7 +51,9 @@ beforeEach(async () => {
   setBackendOverride(createTestBackend())
   const port = await freePort()
   origin = `http://127.0.0.1:${port}`
-  server = startLocalServer({ port })
+  const identity = testDaemon()
+  call = identity.call
+  server = startLocalServer({ port, daemon: identity.daemon })
   await server.ready
 })
 
@@ -77,7 +81,7 @@ async function machineHolds(providerId: string) {
 }
 
 async function push(revision: number, providers: Record<string, unknown>) {
-  return fetch(`${origin}/api/claxedo/host-provider-config`, {
+  return call(`${origin}/api/claxedo/host-provider-config`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ revision, providers: JSON.stringify({ version: 1, providers }) }),
@@ -121,6 +125,6 @@ describe("a workspace on this machine resolves the owner's pushed provider", () 
 
     expect(refused.status).toBe(400)
     expect(await projectRuntimeAuth({ scope: "local", workspaceId: "ws_1" })).toEqual({ "claude-sdk": PUSHED })
-    expect(await (await fetch(`${origin}/api/claxedo/host-provider-config`)).json()).toEqual({ revision: 1, providerCount: 1 })
+    expect(await (await call(`${origin}/api/claxedo/host-provider-config`)).json()).toEqual({ revision: 1, providerCount: 1 })
   })
 })

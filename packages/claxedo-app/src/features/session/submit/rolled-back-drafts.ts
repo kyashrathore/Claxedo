@@ -1,9 +1,7 @@
-// Short-lived registry of draft IDs whose `createSessionWithLifecycle`
-// wrapper already rolled back. Rubric C7: a `created` lifecycle event arriving
-// at `T = grace + epsilon` is too late for the wrapper to recover, but it
-// still passes through the GlobalSync subscriber which would otherwise insert
-// the session row into the workspace store. The user then sees both the
-// "session creation failed" toast AND a session row in the sidebar.
+// Short-lived registry of draft IDs with an authoritative failed lifecycle.
+// The event subscribers use it to suppress an earlier created frame delivered
+// after the failure. A transport error alone never proves a rollback: late
+// canonical creation remains visible and its persisted owner can recover it.
 //
 // Contract:
 // - `markRolledBack(draftId)` records the draft id with an expiration.

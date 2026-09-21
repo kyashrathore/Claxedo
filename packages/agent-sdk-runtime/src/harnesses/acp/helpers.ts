@@ -134,11 +134,6 @@ export function runtimeUsage(usage: Usage, nativeSessionId?: string): Extract<Ag
   }
 }
 
-export function missing(err: unknown) {
-  const msg = errorMessage(err)
-  return msg.includes("Resource not found")
-}
-
 export function watch(op: string, extra: Record<string, unknown>) {
   const ts = Date.now()
   const id = setTimeout(() => {

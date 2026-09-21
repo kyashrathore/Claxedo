@@ -2,7 +2,19 @@ import { describe, expect, it } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { assertTarget, resolveWorkspaceCommandPaths, resolveWorkspacePath, workspaceDir, workspaceId } from "./target"
+import {
+  assertTarget,
+  authoritativeWorkspaceId,
+  registerWorkspaceDirectory,
+  registeredWorkspaceDirectoriesUnder,
+  registeredWorkspaceDirectoryOwners,
+  resolveWorkspaceCommandPaths,
+  resolveWorkspacePath,
+  unregisterWorkspaceDirectory,
+  withWorkspaceTarget,
+  workspaceDir,
+  workspaceId,
+} from "./target"
 
 describe("workspaceDir", () => {
   it("rejects multi-directory configuration", () => {
@@ -50,6 +62,26 @@ describe("resolveWorkspacePath", () => {
       await expect(resolveWorkspacePath(tmp, path.join(tmp, "src", "index.ts"))).rejects.toThrow("workspace path must be relative")
       await expect(resolveWorkspacePath(tmp, "../index.ts")).rejects.toThrow("workspace path escapes configured directory")
       await expect(resolveWorkspacePath(tmp, "bad\u0000path")).rejects.toThrow("workspace path cannot contain null bytes")
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it("trims by default and keeps the exact spelling on request", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-target-"))
+    try {
+      await fs.mkdir(path.join(tmp, " lead"))
+      await fs.mkdir(path.join(tmp, "lead"))
+      await fs.mkdir(path.join(tmp, "trail "))
+
+      expect(await resolveWorkspacePath(tmp, " lead")).toBe(path.join(tmp, "lead"))
+      expect(await resolveWorkspacePath(tmp, " lead", { exactInput: true })).toBe(path.join(tmp, " lead"))
+      expect(await resolveWorkspacePath(tmp, "trail ", { exactInput: true })).toBe(path.join(tmp, "trail "))
+      expect(await resolveWorkspacePath(tmp, " ", { exactInput: true })).toBe(path.join(tmp, " "))
+      expect(await resolveWorkspacePath(tmp, " ")).toBe(path.resolve(tmp))
+      await expect(resolveWorkspacePath(tmp, "../out ", { exactInput: true })).rejects.toThrow(
+        "workspace path escapes configured directory",
+      )
     } finally {
       await fs.rm(tmp, { recursive: true, force: true })
     }
@@ -250,5 +282,23 @@ describe("workspaceId", () => {
   it("prefers the configured id", () => {
     expect(workspaceId({ WORKSPACE_RUNTIME_WORKSPACE_ID: "wr_123" } as NodeJS.ProcessEnv)).toBe("wr_123")
     expect(workspaceId({ WORKSPACE_RUNTIME_WORKSPACE_ID: "wr_123" } as NodeJS.ProcessEnv)).toBe("wr_123")
+  })
+})
+
+describe("authoritativeWorkspaceId", () => {
+  it("reads the target this runtime was placed for", () => {
+    withWorkspaceTarget({ workspaceId: "ws_placed", directory: "/tmp/placed" }, () => {
+      expect(authoritativeWorkspaceId()).toBe("ws_placed")
+    })
+  })
+
+  it("reads the configured id", () => {
+    expect(authoritativeWorkspaceId({ WORKSPACE_RUNTIME_WORKSPACE_ID: "wr_123" } as NodeJS.ProcessEnv)).toBe("wr_123")
+  })
+
+  it("answers nothing rather than the id workspaceId mints", () => {
+    const env = {} as NodeJS.ProcessEnv
+    expect(authoritativeWorkspaceId(env)).toBeUndefined()
+    expect(workspaceId(env)).toBeTruthy()
   })
 })

@@ -2,6 +2,7 @@ import path from "path"
 import fs from "node:fs/promises"
 import { AsyncLocalStorage } from "async_hooks"
 import { runtimeEnvText } from "./env"
+import { realDirectoryPath, realPathAllowingMissing } from "./real-directory"
 
 let id: string | undefined
 
@@ -34,11 +35,24 @@ export function workspaceDir(env: NodeJS.ProcessEnv = process.env): string {
   return clean(raw)
 }
 
+/**
+ * The workspace identity this runtime was told to serve, or `undefined` when
+ * nobody told it one.
+ *
+ * `workspaceId` below cannot answer that question: with no target and no
+ * configured id it mints a UUID so callers that merely need a stable process
+ * label get one. That minted value names no workspace, so anything that
+ * persists an identity — a port-lease directory, a claim label — has to be
+ * able to tell it apart from an identity the placer assigned, and fall back to
+ * something it can derive itself rather than write a workspace name it made up.
+ */
+export function authoritativeWorkspaceId(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return targetStorage.getStore()?.workspaceId ?? runtimeEnvText(env, "WORKSPACE_RUNTIME_WORKSPACE_ID")
+}
+
 export function workspaceId(env: NodeJS.ProcessEnv = process.env): string {
-  const target = targetStorage.getStore()
-  if (target) return target.workspaceId
-  const configured = runtimeEnvText(env, "WORKSPACE_RUNTIME_WORKSPACE_ID")
-  if (configured) return configured
+  const authoritative = authoritativeWorkspaceId(env)
+  if (authoritative) return authoritative
   if (env !== process.env) return crypto.randomUUID()
   id ??= crypto.randomUUID()
   return id
@@ -82,6 +96,60 @@ export function registeredWorkspaceDirectories(workspaceId: string): string[] {
   return [...(registered.get(workspaceId)?.values() ?? [])]
 }
 
+export type RegisteredWorkspaceDirectory = { sessionId: string; directory: string }
+
+function registeredEntries(env: NodeJS.ProcessEnv): RegisteredWorkspaceDirectory[] {
+  return [...(registered.get(workspaceId(env)) ?? [])].map(([sessionId, directory]) => ({
+    sessionId,
+    directory: realDirectoryPath(directory),
+  }))
+}
+
+/**
+ * Every session whose registered worktree contains `candidate`, itself
+ * included.
+ *
+ * Compared as the filesystem names both sides, so a symlink into a worktree,
+ * a relative spelling, and `/tmp` against macOS's `/private/tmp` all answer
+ * with the same owners. All of them, not the innermost: a worktree registered
+ * under another worktree is private to both sessions, and a caller who holds
+ * neither grant must not reach it through the one it is nested in.
+ *
+ * A path is only compared, never required to exist or to be contained — that
+ * is the caller's own check, and this answers for the path it was handed.
+ */
+export function registeredWorkspaceDirectoryOwners(
+  candidate: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const real = realPathAllowingMissing(candidate)
+  return registeredEntries(env)
+    .filter((entry) => real === entry.directory || real.startsWith(entry.directory + path.sep))
+    .map((entry) => entry.sessionId)
+}
+
+/**
+ * The registered worktrees that live under `root`, as the filesystem names
+ * them.
+ *
+ * The other direction from {@link registeredWorkspaceDirectoryOwners}: what an
+ * operation descends INTO, rather than what a path sits inside. A recursive
+ * one — a directory pathspec handed to `git add`, a listing, a status walk —
+ * reaches all of these, so they are as much its targets as the root it names.
+ */
+export function registeredWorkspaceDirectoriesUnder(
+  root: string,
+  env: NodeJS.ProcessEnv = process.env,
+): RegisteredWorkspaceDirectory[] {
+  const real = realPathAllowingMissing(root)
+  return registeredEntries(env).filter((entry) => entry.directory.startsWith(real + path.sep))
+}
+
+/** Whether this workspace has any per-session worktree at all; the cheap guard before a filter does real work. */
+export function hasRegisteredWorkspaceDirectories(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (registered.get(workspaceId(env))?.size ?? 0) > 0
+}
+
 export function withWorkspaceTarget<T>(target: WorkspaceTarget, run: () => T): T {
   return targetStorage.run({
     workspaceId: target.workspaceId,
@@ -106,6 +174,25 @@ async function existingPath(input: string) {
   }
 }
 
+/**
+ * The filesystem path a request-supplied path names under `root`.
+ *
+ * Only the spelling: the trim, the root it is joined onto, the absolute form
+ * left alone. Whether the result is allowed is {@link resolveWorkspacePath}'s
+ * decision and this answers nothing about it — but both go through here, so an
+ * authorizer asking who owns a path and the read that follows it can never
+ * resolve one request two ways. A leading space decided that once.
+ */
+export function workspacePathCandidate(
+  root: string,
+  input: string,
+  options: { exactInput?: boolean } = {},
+): string {
+  const text = options.exactInput ? input : input.trim()
+  if (!text) return path.resolve(root)
+  return path.isAbsolute(text) ? path.resolve(text) : path.resolve(root, text)
+}
+
 export async function resolveWorkspacePath(
   root: string,
   input: string | undefined,
@@ -115,17 +202,21 @@ export async function resolveWorkspacePath(
   // e.g. the global ~/.local/share/opencode DB stays blocked — it's outside the
   // root). It only lets in-workspace absolute paths through, which the document
   // hydration feature legitimately produces.
-  options: { allowAbsoluteWithinRoot?: boolean } = {},
+  // exactInput: keep the input spelled as given. Typed and configured paths
+  // arrive with stray whitespace and are trimmed by default; a path git
+  // reported does not, and " lead/file.txt" trimmed resolves to a different
+  // entry than the one git named.
+  options: { allowAbsoluteWithinRoot?: boolean; exactInput?: boolean } = {},
 ): Promise<string> {
   const base = path.resolve(root)
-  const txt = input?.trim()
+  const txt = options.exactInput ? input : input?.trim()
   if (!txt) return base
   if (txt.includes("\0")) throw new WorkspaceTargetError("workspace path cannot contain null bytes")
   const absolute = path.isAbsolute(txt)
   if (absolute && !options.allowAbsoluteWithinRoot) throw new WorkspaceTargetError("workspace path must be relative")
 
   const realRoot = await fs.realpath(base)
-  const candidate = absolute ? path.resolve(txt) : path.resolve(base, txt)
+  const candidate = workspacePathCandidate(base, txt, { exactInput: true })
   // Lexical pre-check. An absolute input may already be realpath-resolved
   // (e.g. /private/var/... on macOS) while `base` is not (/var/...), so accept
   // containment under either the raw or the realpath'd root; the realpath check

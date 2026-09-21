@@ -23,6 +23,19 @@ import {
 /** The scope an unsigned local daemon serves: the one machine. Its owner is `localControlPlaneAuth`'s subject. */
 const TASKS_LOCAL_SCOPE = "local"
 
+/**
+ * The owner a grant acts as on an unsigned local machine: the one person this
+ * daemon serves, in the project the grant's workspace sits in.
+ *
+ * The same pair `unsignedLocalTasksAuthenticate` mints its person actor from, so a
+ * task an agent writes and a task the app writes share one scope and one
+ * preset catalog; only the project and the Start gates tell them apart.
+ */
+export function localTasksWorkspaceOwner(projectId: string): TasksCapabilityOwner {
+  const subject = localControlPlaneAuth().user.subject
+  return { userId: subject, actorId: subject, orgId: TASKS_LOCAL_SCOPE, projectId }
+}
+
 /** A verified capability and the workspace owner the authority resolved it to. */
 export type TasksCapabilityGrant = Readonly<{ scope: TasksCapabilityScope; owner: TasksCapabilityOwner }>
 
@@ -203,8 +216,10 @@ function capabilityRefusal(message: string): TasksAuthenticated {
  * must be one project.
  *
  * A bearer this plane did not mint is not an error here — the CLI's own token
- * is one — so it falls through to the signed identity, which refuses it with
- * its own words.
+ * is one — so it falls through to the identity behind it, which is the one
+ * that decides what an unverified credential is worth: the signed reader
+ * verifies it, and the unsigned local reader refuses it rather than reading it
+ * as the person at the machine.
  */
 export function capabilityTasksAuthenticate(input: {
   capability: TasksCapabilityPort
@@ -260,15 +275,42 @@ export function confineCapabilityBridge(
 }
 
 /**
- * The unsigned local principal. The global unsigned-local guard already
- * refuses a non-loopback request before any route runs; this is the same
- * refusal at the feature's own door, so mounting these routes somewhere that
- * guard does not cover cannot open them to the network.
+ * A request presenting a bearer credential, whether or not the value parses.
+ * The scheme is what makes it a presentation: `Bearer` with nothing usable
+ * after it is a grant that failed, not a caller with no credential.
+ *
+ * Only this scheme. An unsigned box behind desktop basic auth sends
+ * `Authorization: Basic …` on every call the person makes, which carries no
+ * grant and answers no question a grant would.
  */
-export function loopbackTasksAuthenticate(principals: TasksPrincipals): TasksAuthenticate {
+function presentsBearer(request: Request): boolean {
+  return /^Bearer\b/i.test(request.headers.get("authorization")?.trim() ?? "")
+}
+
+/**
+ * The unsigned local principal: the one person this machine serves, admitted
+ * by the daemon capability the application presents on its own header and
+ * carrying no bearer of its own.
+ *
+ * A bearer that reaches here is a session's Tasks grant that
+ * `capabilityTasksAuthenticate` could not verify — unknown, issued by an
+ * earlier process, or withdrawn because Tasks was turned off — and it is
+ * refused. Reading it as the person instead would turn every stale or
+ * withdrawn grant into the machine owner, which is the whole of what the grant
+ * confines (security review P105).
+ *
+ * The global unsigned-local guard already refuses a non-loopback request
+ * before any route runs; the same refusal is repeated at the feature's own
+ * door, so mounting these routes somewhere that guard does not cover cannot
+ * open them to the network.
+ */
+export function unsignedLocalTasksAuthenticate(principals: TasksPrincipals): TasksAuthenticate {
   return (request): TasksAuthenticated => {
     if (!isLoopbackLocalRequest(request)) {
       return { error: "Tasks is loopback-only on an unsigned local server", status: 403 }
+    }
+    if (presentsBearer(request)) {
+      return { error: "This Tasks grant is not one this machine issued, or is no longer valid", status: 403 }
     }
     return { actor: principals.actorOf(localControlPlaneAuth(), TASKS_LOCAL_SCOPE) }
   }
@@ -343,16 +385,29 @@ export function createTasksAuthorization(input: {
 /**
  * The unsigned local answer. There is no project authority on this product —
  * `@claxedo/local-server` cannot reach one, and its closure test asserts so —
- * and every request that gets this far came from the loopback interface of the
- * machine whose projects and sessions these are.
+ * and the person at this machine reaches these routes over its own loopback
+ * interface, so their own projects and sessions need no second opinion.
+ *
+ * A session's grant is the caller that does: it holds one workspace, and the
+ * project that workspace sits in is the whole of what it may work in, read
+ * from the workspace now rather than from the handle.
  */
-export function createLocalTasksAuthorization(): TasksAuthorizationPort {
+export function createLocalTasksAuthorization(
+  principals: Pick<TasksPrincipals, "capabilityOf">,
+  capability: CapabilityScopeReader,
+): TasksAuthorizationPort {
   return {
-    async authorizeProject() {
-      return true
+    async authorizeProject(actor, projectId) {
+      const grant = principals.capabilityOf(actor)
+      return grant ? projectId === grant.scope.projectId : true
     },
-    async authorizeSessionOpen() {
-      return true
+    async authorizeSessionOpen(actor, session: SessionReference) {
+      const grant = principals.capabilityOf(actor)
+      if (!grant) return true
+      // A link that names no workspace cannot be held to the grant's project,
+      // so it is not shown rather than shown unchecked.
+      if (session.workspaceId === null) return false
+      return !(await capabilityScopeRefusal(grant, capability, { workspaceId: session.workspaceId }))
     },
   }
 }

@@ -24,6 +24,15 @@ export type SessionTurnLeaseAcquisition =
   | { acquired: true; lease: ActiveSessionTurnLease }
   | { acquired: false; decision: Exclude<SessionTurnLeaseDecision, { allowed: true }> }
 
+function validLease(lease: Extract<SessionTurnLeaseDecision, { allowed: true }>, turnId: string, now: number) {
+  return lease.turnId === turnId
+    && turnId.trim().length > 0
+    && typeof lease.leaseId === "string" && lease.leaseId.trim().length > 0
+    && Number.isSafeInteger(lease.fencingToken) && lease.fencingToken > 0
+    && Number.isFinite(lease.acquiredAt) && lease.acquiredAt >= 0
+    && Number.isFinite(lease.expiresAt) && lease.expiresAt > lease.acquiredAt && lease.expiresAt > now
+}
+
 /**
  * Owns renewal and the local half of the durable fence. Expiry is scheduled
  * independently from the renewal request, so a stalled oracle cannot extend
@@ -46,7 +55,7 @@ export async function acquireSessionTurnLease(input: {
   }
   const acquired = await policy.acquireTurn({ ...input.access, turnId: input.turnId })
   if (!acquired.allowed) return { acquired: false, decision: acquired }
-  if (acquired.turnId !== input.turnId || acquired.expiresAt <= (input.now ?? Date.now)()) {
+  if (!validLease(acquired, input.turnId, (input.now ?? Date.now)())) {
     return {
       acquired: false,
       decision: denied("session_turn_authority_invalid_response", "Durable session turn authority returned an invalid lease"),
@@ -75,7 +84,11 @@ export async function acquireSessionTurnLease(input: {
     leaseLost = true
     clearTimers()
     controller.abort(new Error("Durable session turn lease was lost"))
-    void Promise.resolve(input.onLost()).catch(() => {})
+    try {
+      void Promise.resolve(input.onLost()).catch(() => {})
+    } catch {
+      // The fence is already closed even if producer cleanup fails synchronously.
+    }
   }
   const stillValid = () => {
     if (closed || leaseLost) return false
@@ -97,18 +110,18 @@ export async function acquireSessionTurnLease(input: {
     const renewAfter = Math.max(25, Math.floor(remaining / 2))
     renewTimer = setTimeout(() => {
       if (!stillValid()) return
-      void Promise.resolve(policy.renewTurn!({
+      void Promise.resolve().then(() => policy.renewTurn!({
         ...input.access,
         signal: controller.signal,
         turnId: current.turnId,
         leaseId: current.leaseId,
         fencingToken: current.fencingToken,
       })).then((renewed) => {
+        if (!stillValid()) return
         if (
           !renewed.allowed
-          || renewed.turnId !== current.turnId
+          || !validLease(renewed, current.turnId, now())
           || renewed.fencingToken !== current.fencingToken
-          || renewed.expiresAt <= now()
         ) {
           lose()
           return

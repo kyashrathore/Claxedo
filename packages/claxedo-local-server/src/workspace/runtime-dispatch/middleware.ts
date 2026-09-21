@@ -52,7 +52,7 @@ async function workspaceRuntimeProxyWithOptions(
   if (aggregate) return await aggregate
 
   try {
-    const input = requestWorkspace(c)
+    const input = requestWorkspace(c.req.raw)
     const ws = await resolveWorkspace({
       workspaceId: input.workspaceId,
       directory: input.directory,

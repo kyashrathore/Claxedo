@@ -23,6 +23,7 @@
 // runtime, which enforces it — the proxy route is intentionally not behind the
 // Worker's admin API_TOKEN gate (that gate still protects control actions).
 import { sandboxDriverCatalog } from "../driver-catalog"
+import { cloudflareWorkerBaseUrl } from "@claxedo/sandbox-contract"
 import {
   brokeredPlaceholderEnv,
   type SandboxDriver,
@@ -120,10 +121,6 @@ function captureDirectories(workspaceDirectory: string) {
   return [workspaceDirectory, RUNTIME_DATA_DIR]
 }
 
-function cleanUrl(input: string) {
-  return input.replace(/\/+$/, "")
-}
-
 /** Deterministic driver-scoped sandbox id + hostId for a workspace. */
 function sandboxIdFor(workspaceId: string) {
   return `claxedo-${workspaceId}`
@@ -150,14 +147,19 @@ export class CloudflareSandboxListingUnsupportedError extends Error implements S
 export function createCloudflareSandboxDriver(
   options: CloudflareSandboxDriverOptions,
 ): SandboxDriver {
-  const doFetch = options.fetch ?? fetch
+  const fetchWorker = options.fetch ?? fetch
+  const doFetch = async (url: string, init: RequestInit) => {
+    const response = await fetchWorker(url, { ...init, redirect: "error" })
+    if (response.redirected || (response.status >= 300 && response.status < 400)) throw new Error("Cloudflare Worker redirects are not allowed")
+    return response
+  }
   const runtimePort = options.runtimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT
   const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const ensureTimeoutMs = options.timeoutMs ?? DEFAULT_ENSURE_TIMEOUT_MS
 
-  const base = cleanUrl(options.workerUrl)
+  const base = cloudflareWorkerBaseUrl(options.workerUrl)
   const headers = {
     Authorization: `Bearer ${options.apiToken}`,
     "Content-Type": "application/json",

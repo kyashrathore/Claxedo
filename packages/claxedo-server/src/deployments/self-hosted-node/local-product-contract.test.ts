@@ -138,6 +138,8 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/network-policy/check",
       "/api/claxedo/network-policy/effective/:workspaceId",
       "/api/claxedo/network-policy/groups",
+      "/api/claxedo/plugins",
+      "/api/claxedo/plugins/*",
       "/api/claxedo/projects",
       "/api/claxedo/projects/:id",
       "/api/claxedo/projects/by-directory",

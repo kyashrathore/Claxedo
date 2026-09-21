@@ -240,7 +240,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       ...scopeIdentity,
     })
     // A model-less cloud submit must reject BEFORE directory resolution, which provisions a real workspace — see cloudSubmitMissingModel's contract.
-    const missingCloudModel = cloudSubmitMissingModel({ isNewSession, hostKind, selection: selectedHarnessType(sourceScope), modelKey: harnessController.modelKeyForSubmit(sourceScope) })
+    const missingCloudModel = cloudSubmitMissingModel({ modelOptional: harnessController.canCreateWithoutModel(sourceScope), isNewSession, hostKind, selection: selectedHarnessType(sourceScope), modelKey: harnessController.modelKeyForSubmit(sourceScope) })
     if (missingCloudModel) return rejectModelRequired()
 
     const resolvedDirectory = await resolvePreparedSubmitDirectory({
@@ -352,6 +352,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
     const submittedConfig = resolvePromptSubmitConfig({
+      modelOptional: harnessController.canOmitModel(scope),
       existing: existingSessionConfig,
       harnessMode: selectedHarnessMode(scope),
       selection: selectedHarnessType(scope),
@@ -402,6 +403,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         variant,
       },
       events,
+      onSessionStart: input.onSessionStart,
       boot,
       claimHarnessSession: (targetInput) =>
         harnessController.claimSession(targetInput.scope, {
@@ -443,7 +445,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       ),
       harness: persistedHarnessRef,
       agent,
-      model: { providerID: model.providerID, modelID: model.modelID },
+      ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
       variant,
       draftId,
       previousSessionId,
@@ -561,8 +563,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           ...identityProps(), surface: "composer",
           mode,
           agent,
-          model_id: model.modelID,
-          provider_id: model.providerID,
+          model_id: model?.modelID,
+          provider_id: model?.providerID,
           is_new_session: isNewSession,
           has_images: images.length > 0,
           image_count: images.length,

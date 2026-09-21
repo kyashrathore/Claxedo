@@ -7,7 +7,8 @@
 // frame stub that carries the editor's real `data-component`/`role`, so an
 // assertion that no prompt exists is an assertion about the region's branch
 // rather than about a missing mock.
-import { cleanup, fireEvent, render } from "@solidjs/testing-library"
+import { createSignal, type JSX } from "solid-js"
+import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { AgentPermission, AgentQuestion } from "@claxedo/agent-runtime-contract"
 import { SessionComposerRegion } from "./session-composer-region"
@@ -213,6 +214,7 @@ const idleState: SessionComposerState = {
   questionRequest: () => undefined,
   permissionRequest: () => undefined,
   permissionResponding: () => false,
+  requestReadError: () => undefined,
   decide: vi.fn(),
   todos: () => [],
 }
@@ -246,6 +248,7 @@ function mountRegion(input: {
   parentID?: string
   readOnly?: boolean
   onNavigateParent?: () => void
+  onRetryRequests?: () => Promise<unknown>
 }) {
   return render(() => (
     <SessionComposerRegion
@@ -261,6 +264,8 @@ function mountRegion(input: {
       onNewSessionWorktreeReset={() => {}}
       onSubmit={() => {}}
       onResponseSubmit={() => {}}
+      onRetryRequests={input.onRetryRequests}
+      beforeInput={<span>Normal running status</span>}
       onNavigateParent={input.onNavigateParent ?? (() => {})}
       setPromptDockRef={() => {}}
     />
@@ -338,4 +343,41 @@ describe("the composer region for a read-only docked subagent", () => {
 
     expect(editor()).toBeTruthy()
   })
+})
+
+
+test("request loading failures replace progress with a retryable alert and recover", async () => {
+  const [error, setError] = createSignal<string | undefined>("Permission storage unavailable")
+  let complete!: () => void
+  const retry = vi.fn(() => new Promise<void>((resolve) => { complete = () => { setError(undefined); resolve() } }))
+  const view = mountRegion({ state: { requestReadError: error }, onRetryRequests: retry })
+  expect(view.getByRole("alert").textContent).toContain("Permission storage unavailable")
+  expect(view.queryByText("Normal running status")).toBeNull()
+  const button = view.getByRole<HTMLButtonElement>("button", { name: "ui.message.queued.retry" })
+  fireEvent.click(button)
+  fireEvent.click(button)
+  expect(retry).toHaveBeenCalledTimes(1)
+  expect(button.disabled).toBe(true)
+  complete()
+  await waitFor(() => expect(view.queryByRole("alert")).toBeNull())
+  expect(view.getByText("Normal running status")).toBeTruthy()
+})
+
+test("a failed request retry keeps the blocker visible and permits another retry", async () => {
+  const retry = vi.fn().mockRejectedValue(new Error("Permission service still unavailable"))
+  const view = mountRegion({ state: { requestReadError: () => "Permission storage unavailable" }, onRetryRequests: retry })
+  const button = view.getByRole<HTMLButtonElement>("button", { name: "ui.message.queued.retry" })
+  fireEvent.click(button)
+  await waitFor(() => expect(view.getByRole("alert").textContent).toContain("Permission service still unavailable"))
+  expect(button.disabled).toBe(false)
+  expect(view.queryByText("Normal running status")).toBeNull()
+  fireEvent.click(button)
+  expect(retry).toHaveBeenCalledTimes(2)
+})
+
+test("native startup questions retain the same canonical composer dock", () => {
+  mountRegion({ state: { blocked: () => true, questionRequest: () => questionRequest } })
+  expect(questionDock()?.closest('[data-component="session-prompt-dock"]')).not.toBeNull()
+  expect(editor()).toBeNull()
+  expect(document.querySelector('[data-component="session-new-design"]')).toBeNull()
 })

@@ -229,13 +229,13 @@ export function SessionContextTab() {
   const providerLabel = createMemo(() => {
     const c = ctx()
     if (!c) return "—"
-    return c.providerLabel
+    return c.providerLabel ?? "—"
   })
 
   const modelLabel = createMemo(() => {
     const c = ctx()
     if (!c) return "—"
-    return c.modelLabel
+    return c.modelLabel ?? "—"
   })
 
   const breakdown = createMemo(

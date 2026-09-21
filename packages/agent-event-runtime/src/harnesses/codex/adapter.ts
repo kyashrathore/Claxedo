@@ -10,6 +10,7 @@ import { toolDisplayFromInput } from "../tool-display"
 import { contentBlockImages, imageUrlAttachment } from "../tool-attachments"
 import { optionLabels, pathFields, text } from "../../value"
 import type { ServerNotification, ServerRequest } from "./protocol"
+import { codexMcpApproval } from "./mcp-elicitation"
 
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
 
@@ -188,7 +189,9 @@ function toolNameForItem(itemType: string, row: Record<string, unknown>) {
         ? "file-change"
         : itemType === "web_search"
           ? "web-search"
-          : "tool"
+          : row.type === "imageView"
+            ? "view_image"
+            : "tool"
   )
 }
 
@@ -746,6 +749,9 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
               : undefined)
             : undefined
           const attachments = [
+            ...(itemType === "image_view" && text(completedItem.path)
+              ? [{ kind: "tool-file" as const, mime: "image/*", path: String(completedItem.path), filename: String(completedItem.path).split(/[\\/]/).pop() }]
+              : []),
             ...contentBlockImages(mcpResult?.content),
             ...(Array.isArray(completedItem.contentItems) ? completedItem.contentItems : []).flatMap((item) =>
               asRecord(item)?.type === "inputImage" ? imageUrlAttachment(asRecord(item)?.imageUrl) : []),
@@ -1164,9 +1170,18 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         case "serverRequest/resolved":
           return unmappedCodexAppServerEvent(event)
 
-        // Elicitation is interactive, but AgentRuntimeEvent needs a URL/form-aware question shape first.
-        case "mcpServer/elicitation/request":
+        case "mcpServer/elicitation/request": {
+          const approval = codexMcpApproval(row)
+          if (approval) return [{
+            type: "permission-request",
+            requestId: text(message.id) ?? text(row.requestId) ?? context.createId("request"),
+            tool: approval.tool,
+            paths: [],
+            details: { reason: approval.reason },
+            options: approval.options.map(({ id, label }) => ({ id, label })),
+          }]
           return unmappedCodexAppServerEvent(event)
+        }
 
         // Realtime surfaces: media/transcript channels are not part of the classic chat projection yet.
         case "thread/realtime/closed":

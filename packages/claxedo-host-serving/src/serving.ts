@@ -321,10 +321,10 @@ function openWorkspaceTunnel(input: {
       // when the same machine happens to serve that one too.
       if (requested !== workspaceId) return undefined
       // What a remote caller on THIS workspace's tunnel may reach on this
-      // machine, and where it lands: the local server's own families denied
-      // outright, its OpenCode-compat root family for provider auth/OAuth/
-      // project metadata, everything else the workspace runtime itself
-      // (`surface.ts` for the full design).
+      // machine, and where it lands: the machine's own root families — its
+      // configuration, its provider accounts, its project inventory, its
+      // control plane — denied outright, everything else the workspace
+      // runtime itself (`surface.ts` for the full design).
       const target = hostServingSurface({ localBaseUrl: serving.localBaseUrl, workspaceId, path })
       if (target.kind === "deny") return undefined
       return target.url

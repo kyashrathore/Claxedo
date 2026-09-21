@@ -7,6 +7,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
+import { CLAXEDO_DAEMON_CAPABILITY_HEADER, createDaemonFetch } from "../src/main/daemon-request"
 import { resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
@@ -194,7 +195,12 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       pid: child.pid,
       port,
     })
-    const daemonIdentity = await fetch(`${base}/api/claxedo/daemon`, {
+    // Every privileged call below goes through the canonical presenter Electron
+    // main uses, because the daemon admits its application and nothing else —
+    // a boot smoke that reached these routes bare would be proving a boundary
+    // the product does not have.
+    const daemon = createDaemonFetch({ endpoint: () => ({ origin: base, capability: daemonToken }) })
+    const daemonIdentity = await daemon("/api/claxedo/daemon", {
       headers: { authorization: `Bearer ${daemonToken}` },
     })
     expect(daemonIdentity.status).toBe(200)
@@ -205,20 +211,31 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       pid: child.pid,
     })
 
+    // The other half of the same claim, against the real bundled daemon: a page
+    // a browser on this machine happens to be showing is on loopback too, and
+    // reaches none of this. Health stays public so a supervisor can still tell
+    // the port is live.
+    const hostile = (path: string) =>
+      fetch(`${base}${path}`, { headers: { origin: "http://localhost:4173" } })
+    expect((await hostile("/project/current")).status).toBe(401)
+    expect((await hostile("/api/claxedo/credentials")).status).toBe(401)
+    expect((await hostile(`/api/claxedo/daemon`)).status).toBe(401)
+    expect((await hostile("/api/claxedo/health")).status).toBe(200)
+
     // Mirror the app's open-workspace flow: register the workspace first.
     const directory = encodeURIComponent(workspaceDirectory)
-    const project = await fetch(`${base}/project/current?directory=${directory}`)
+    const project = await daemon(`/project/current?directory=${directory}`)
     expect(project.status).toBe(200)
     expect(await project.json()).toMatchObject({ worktree: fs.realpathSync(workspaceDirectory) })
 
-    const sessions = await fetch(`${base}/session?directory=${directory}&roots=true`)
+    const sessions = await daemon(`/session?directory=${directory}&roots=true`)
     const sessionsBody = await sessions.text()
     if (sessions.status !== 200) {
       throw new Error(`Claxedo /session returned ${sessions.status}: ${sessionsBody}`)
     }
     expect(JSON.parse(sessionsBody)).toBeArray()
 
-    const createPty = await fetch(`${base}/api/wr/pty?directory=${directory}`, {
+    const createPty = await daemon(`/api/wr/pty?directory=${directory}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ title: "daemon-survival", initialCommand: "printf 'daemon-before-restart\\n'" }),
@@ -257,10 +274,11 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
     expect(child.connected).toBe(false)
     await Bun.sleep(250)
     expect((await fetch(`${base}/api/claxedo/health`)).status).toBe(200)
-    expect((await fetch(`${base}/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`)).status).toBe(200)
+    expect((await daemon(`/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`)).status).toBe(200)
 
     socket = openPtySocket(
       `ws://127.0.0.1:${port}/api/wr/pty/${encodeURIComponent(pty.id)}/connect?directory=${directory}`,
+      daemonToken,
     )
     await socket.opened
     expect(await socket.waitForText("daemon-before-restart")).toContain("daemon-before-restart")
@@ -272,7 +290,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       throw new Error(`claxedo-server exited after replacement client disconnected:\n${stderr.slice(-4000)}`)
     }
 
-    const removePty = await fetch(`${base}/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`, {
+    const removePty = await daemon(`/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`, {
       method: "DELETE",
     }).catch((error) => {
       throw new Error(`claxedo-server stopped answering after reconnect: ${String(error)}\n${stderr.slice(-4000)}`)
@@ -374,8 +392,16 @@ async function waitForMessage(messages: unknown[], match: (message: unknown) => 
   throw new Error("claxedo-server IPC message did not arrive in time")
 }
 
-function openPtySocket(url: string) {
-  const ws = new WebSocket(url)
+function openPtySocket(url: string, capability: string) {
+  // The capability rides the HTTP upgrade, which is the only place a socket can
+  // carry one — the same delivery Electron main performs for the renderer's
+  // terminal. The DOM lib's constructor signature knows only the subprotocol
+  // list, while the runtime's WebSocket takes undici's options bag.
+  const WithHeaders = WebSocket as unknown as new (
+    url: string,
+    options: { headers: Record<string, string> },
+  ) => WebSocket
+  const ws = new WithHeaders(url, { headers: { [CLAXEDO_DAEMON_CAPABILITY_HEADER]: capability } })
   ws.binaryType = "arraybuffer"
   let text = ""
   const opened = new Promise<void>((resolve, reject) => {

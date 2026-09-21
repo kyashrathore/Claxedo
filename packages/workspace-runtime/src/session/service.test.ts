@@ -206,12 +206,12 @@ describe("session service", () => {
       publishGlobal: () => {},
     })
 
-    expect(models).toEqual([{ providerID: "connection:openclaw", modelID: "default" }])
+    expect(models).toEqual([undefined])
   })
 
-  it("announces the reply row before the first part event on the workspace stream", async () => {
+  it("observes the reply without republishing the runtime-owned event stream", async () => {
     const events: CompatEnvelope[] = []
-    await runRuntimePromptTurn({
+    const turn = await runRuntimePromptTurn({
       runtime: {
         turns: {
           start: async () => ({
@@ -239,19 +239,9 @@ describe("session service", () => {
       publishGlobal: (event) => events.push(event),
     })
 
-    expect(events.map((event) => event.payload.type)).toEqual([
-      "message.updated",
-      "message.part.updated",
-      "message.part.delta",
-      "message.completed",
-      "session.idle",
-    ])
-    const announce = events[0]?.payload
-    expect(announce?.type === "message.updated" && announce.properties.info.id === "msg-user_r" && announce.properties.info.parentID === "msg-user").toBe(true)
-    if (announce?.type !== "message.updated") throw new Error("missing announce")
-    // The announce stands in for the row turn admission publishes — the same
-    // identity fields, so a merge cannot downgrade a populated row's chips.
-    expect(announce.properties.info).toMatchObject({ agent: "build", modelID: "test", providerID: "test" })
+    expect(events).toEqual([])
+    expect(turn.assistantId).toBe("msg-user_r")
+    expect(turn.assistantMessagePublished).toBe(true)
   })
 
   it("carries the requested permission mode through the durable runtime turn", async () => {

@@ -129,7 +129,7 @@ describe("agent runtime contract", () => {
     const role = (message: AgentPresentationMessage) => {
       switch (message.role) {
         case "user":
-          return message.model.modelID
+          return message.model?.modelID
         case "assistant":
           return message.modelID
         default:

@@ -57,7 +57,13 @@ describe("tasks routes", () => {
       clientRequestId: "seed-task",
       command: {
         type: "task.create",
-        input: { projectId: PROJECT, title: "Ship the thing", description: "Details", workspaceId: null, parentTaskId: null },
+        input: {
+          projectId: PROJECT,
+          title: "Ship the thing",
+          description: "Details",
+          workspaceId: null,
+          parentTaskId: null,
+        },
       },
     })
     if (preset.result.type !== "preset.create" || task.result.type !== "task.create") throw new Error("seed failed")
@@ -120,7 +126,9 @@ describe("tasks routes", () => {
     expect((await app.request("/presets?limit=1000")).status).toBe(400)
     expect((await app.request("/presets?includeArchived=maybe")).status).toBe(400)
     const detail = await json(await app.request("/tasks"))
-    expect(detail).toMatchObject({ error: { code: "invalid_input", fields: [{ path: "projectId", reason: "required" }] } })
+    expect(detail).toMatchObject({
+      error: { code: "invalid_input", fields: [{ path: "projectId", reason: "required" }] },
+    })
     expect((await app.request("/tasks")).status).toBe(400)
   })
 
@@ -152,7 +160,9 @@ describe("tasks routes", () => {
     expect(created.status).toBe(200)
     const result = (await json(created)).result as { task: Task }
     const detail = await json(await app.request(`/tasks/${result.task.id}`))
-    expect(detail).toMatchObject({ attachments: [{ id: "attachment-1", filename: "mock ü.png", mime: "image/png", size: 4 }] })
+    expect(detail).toMatchObject({
+      attachments: [{ id: "attachment-1", filename: "mock ü.png", mime: "image/png", size: 4 }],
+    })
 
     const served = await app.request(`/tasks/${result.task.id}/attachments/attachment-1`)
     expect(served.status).toBe(200)
@@ -201,24 +211,41 @@ describe("tasks routes", () => {
     const { task } = await seed()
     const edited = await post("/commands", {
       clientRequestId: "request-edit",
-      command: { type: "task.edit", input: { taskId: task.id, revision: 1, title: "Renamed", description: "", workspaceId: null } },
+      command: {
+        type: "task.edit",
+        input: { taskId: task.id, revision: 1, title: "Renamed", description: "", workspaceId: null },
+      },
     })
     expect(edited.status).toBe(200)
     expect(await json(edited)).toMatchObject({ replayed: false, result: { type: "task.edit", task: { revision: 2 } } })
 
     const stale = await post("/commands", {
       clientRequestId: "request-edit-again",
-      command: { type: "task.edit", input: { taskId: task.id, revision: 1, title: "Later", description: "", workspaceId: null } },
+      command: {
+        type: "task.edit",
+        input: { taskId: task.id, revision: 1, title: "Later", description: "", workspaceId: null },
+      },
     })
     expect(stale.status).toBe(409)
     expect(await json(stale)).toMatchObject({ error: { code: "stale_revision", currentTask: { revision: 2 } } })
   })
 
   test("an unknown command, a malformed input and a non-JSON body are all 400", async () => {
-    expect((await post("/commands", { clientRequestId: "r", command: { type: "task.delete", input: {} } })).status).toBe(400)
-    expect((await post("/commands", { clientRequestId: "r", command: { type: "task.create", input: { projectId: 7 } } })).status).toBe(400)
     expect(
-      (await app.request("/commands", { method: "POST", body: "not json", headers: { "Content-Type": "application/json" } })).status,
+      (await post("/commands", { clientRequestId: "r", command: { type: "task.delete", input: {} } })).status,
+    ).toBe(400)
+    expect(
+      (await post("/commands", { clientRequestId: "r", command: { type: "task.create", input: { projectId: 7 } } }))
+        .status,
+    ).toBe(400)
+    expect(
+      (
+        await app.request("/commands", {
+          method: "POST",
+          body: "not json",
+          headers: { "Content-Type": "application/json" },
+        })
+      ).status,
     ).toBe(400)
   })
 
@@ -227,7 +254,13 @@ describe("tasks routes", () => {
       clientRequestId: "request-big",
       command: {
         type: "task.create",
-        input: { projectId: PROJECT, title: "x".repeat(TASKS_BOUNDS.commandRequestMaxBytes), description: "", workspaceId: null, parentTaskId: null },
+        input: {
+          projectId: PROJECT,
+          title: "x".repeat(TASKS_BOUNDS.commandRequestMaxBytes),
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+        },
       },
     })
     const response = await app.request("/commands", {
@@ -248,6 +281,42 @@ describe("tasks routes", () => {
         })
       ).items,
     ).toHaveLength(0)
+  })
+
+  test("small bodies with excessive elements or invalid fields return bounded errors", async () => {
+    for (const [count, expectedFields] of [
+      [1_000, 1],
+      [TASKS_BOUNDS.pluginReferencesMax, 64],
+    ] as const) {
+      const body = {
+        clientRequestId: `invalid-plugins-${count}`,
+        command: {
+          type: "preset.create",
+          input: {
+            ...presetDraft(),
+            execution: {
+              placement: "cloud",
+              capabilities: { mode: "selected", plugins: Array.from({ length: count }, () => ({})), skills: [] },
+            },
+          },
+        },
+      }
+      expect(new TextEncoder().encode(JSON.stringify(body)).byteLength).toBeLessThan(
+        TASKS_BOUNDS.commandRequestMaxBytes,
+      )
+      const response = await post("/commands", body)
+      expect(response.status).toBe(400)
+      const result = await response.json()
+      expect(result.error.code).toBe("invalid_input")
+      expect(result.error.fields).toHaveLength(expectedFields)
+      if (count > TASKS_BOUNDS.pluginReferencesMax) {
+        expect(result.error.fields).toEqual([
+          { path: "command.input.execution.capabilities.plugins", reason: "too_many" },
+        ])
+      }
+    }
+    expect(await json(await app.request("/presets"))).toMatchObject({ items: [] })
+    expect(bridge.starts).toHaveLength(0)
   })
 
   test("a declared content-length over the cap is refused without reading the body", async () => {
@@ -306,7 +375,9 @@ describe("tasks routes", () => {
     })
     expect(started.status).toBe(200)
     expect(await json(started)).toMatchObject({ created: true, link: { attempt: 1, liveness: "live" } })
-    expect(await json(await app.request(`/tasks/${task.id}`))).toMatchObject({ links: [{ sessionRef: { sessionId: "session-1" } }] })
+    expect(await json(await app.request(`/tasks/${task.id}`))).toMatchObject({
+      links: [{ sessionRef: { sessionId: "session-1" } }],
+    })
   })
 
   test("a start naming an attempt the slot cannot accept is 409", async () => {

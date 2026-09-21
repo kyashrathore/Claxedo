@@ -7,11 +7,12 @@ export async function registerControlRuntime(
   services: ControlPlaneServices,
   input: z.infer<typeof runtimeSnapshotInput>,
 ) {
-  const ws = await workspaceStrict(input.workspaceId)
+  await workspaceStrict(input.workspaceId)
   await patchLease(services, input, "register")
-  await updateWorkspace(input.workspaceId, {
-    status: input.status || (input.ok ? "ready" : ws.status),
-  })
+  // Derived, not echoed: the reporter says whether it is serving, and what
+  // that means for the workspace is this deployment's to name. A runtime that
+  // is not serving leaves the status to whoever owns the transition it is in.
+  if (runtimeHealthy(input)) await updateWorkspace(input.workspaceId, { status: "ready" })
 }
 
 export async function heartbeatControlRuntime(
@@ -28,6 +29,10 @@ async function workspaceStrict(workspaceId: string) {
   throw new ControlPlaneProtocolError(404, "workspace_not_found", `workspace ${workspaceId} not found`)
 }
 
+function runtimeHealthy(input: z.infer<typeof runtimeSnapshotInput>) {
+  return input.ok && input.healthStatus !== "unavailable" && input.status !== "unhealthy"
+}
+
 async function patchLease(
   services: ControlPlaneServices,
   input: z.infer<typeof runtimeSnapshotInput>,
@@ -38,11 +43,8 @@ async function patchLease(
   const sandboxManager = services.sandbox.sandboxManager
   if (sandboxManager) {
     const result = await sandboxManager[operation](input.workspaceId, {
-      ok: input.ok,
-      status: input.status,
-      url: input.url ?? undefined,
-      sandboxId: input.sandboxId,
-      epoch: input.epoch ?? undefined,
+      ok: runtimeHealthy(input),
+      epoch: input.epoch,
       active,
       now,
     })

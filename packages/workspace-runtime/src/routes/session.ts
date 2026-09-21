@@ -1,7 +1,9 @@
 import { HTTPException } from "hono/http-exception"
+import { flushRuntimeSessionDocuments } from "./document-hydration"
+import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
 import { createSessionRoutes, type SessionRouteContext } from "./session-core"
-import { createChildSessionHost, type PendingChildWake } from "./session-children"
-import { createQueuedPromptHost, type QueuedPromptStore } from "./session-queued-prompts"
+import { createChildSessionHost, type ChildOriginStore, type PendingChildWake } from "./session-children"
+import { createSessionDeliveryOwner, type SessionDeliveryStore } from "../session/delivery-owner"
 import { isAgentRuntimeTurnConflictError, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
 import { admitSessionPromptTurn, runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
 import {
@@ -28,10 +30,10 @@ import { rec, str } from "../json-value"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { requestedSessionHarness } from "./config"
-import type { QueuedPromptAction, SessionPromptBody } from "../session/service"
+import type { SessionPromptBody } from "../session/service"
 import type { CompatEnvelope } from "../compat-events"
-import type { SessionAccessPolicy } from "../session-access-policy"
-import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import type { SessionAccessPolicy, SessionTurnOrigin } from "../session-access-policy"
+import type { AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
@@ -84,6 +86,8 @@ type MessageSnapshot = {
 export function SessionRoutes(
   getAdapter: (input?: { sessionId?: string; directory?: string; harness?: SessionHarness }) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>,
   options?: {
+    sessionStarts?: AgentSessionStarts
+    resolveSessionStartBinding?: (c: SessionRouteContext, directory: string, sessionId: string, operationId: string) => AgentSessionStartBinding
     eventHub?: RuntimeEventHub
     sessionAccessPolicy?: SessionAccessPolicy
     beforeSessionOperation?: (input: { sessionId: string; operation: string }) => Response | undefined
@@ -104,7 +108,7 @@ export function SessionRoutes(
      * the host's session store learns about a create directly rather than from
      * the list-time adapter fan-out.
      */
-    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
+    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: { start?: AgentSessionStartBinding; parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
     afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
     /**
      * Host-owned child sessions (`POST /session` with `parentID`). The host
@@ -115,13 +119,14 @@ export function SessionRoutes(
       admission: SubagentAdmissionStore
       secret: () => string
       pendingWakes: () => PendingChildWake[] | Promise<PendingChildWake[]>
+      origins?: ChildOriginStore
     }
     /**
      * Host-owned durable queue for prompts admitted while a turn was running.
-     * The rows outlive the request that is holding one, so a restart re-issues
-     * it instead of dropping it.
+     * The session delivery owner executes unclaimed rows independently of
+     * requests. In-flight attempts remain pending for reconciliation.
      */
-    queuedPrompts?: () => QueuedPromptStore | undefined
+    queuedPrompts?: () => SessionDeliveryStore | undefined
     listSubagents?: (input: {
       directory: string
       parentSessionId: string
@@ -219,38 +224,163 @@ export function SessionRoutes(
         getMessages: (sessionId, directory) => options.getMessages!({ directory, sessionId }),
         publishRuntime: eventHub.publishRuntime,
         subscribeGlobal: eventHub.subscribeGlobal,
+        ...(options.childSessions.origins ? { origins: options.childSessions.origins } : {}),
         startTurn: ({ parentSessionId, ...rest }) => startHostTurn({ sessionId: parentSessionId, ...rest }),
       })
     : undefined
 
+  const hostTurns = new Set<Promise<void>>()
+  /**
+   * A host turn between being asked for and being started. `hostTurns` only
+   * holds turns that are already running, so without this an admission still
+   * acquiring a lease or resolving an adapter is invisible to disposal — which
+   * is exactly the window in which it would reach a workspace that has already
+   * begun shutting down.
+   */
+  const hostAdmissions = new Set<Promise<unknown>>()
+  let disposing = false
   const queuedPrompts = options?.queuedPrompts
-    ? createQueuedPromptHost({ store: options.queuedPrompts, startTurn: (input) => startHostTurn(input) })
+    ? createSessionDeliveryOwner({
+        store: options.queuedPrompts,
+        startTurn: (input) => startHostTurn(input),
+        whenIdle: async (sessionId, directory) => {
+          const runtime = await options.resolveRuntime?.({ sessionId, directory })
+          if (!runtime) throw new Error("Queued delivery requires an agent runtime")
+          return runtime.turns.whenIdle(sessionId)
+        },
+      })
     : undefined
+
+  const stopDeliveryWake = eventHub.subscribeGlobal(({ payload }) => {
+    if (payload.type === "session.idle") queuedPrompts?.wake(payload.properties.sessionID)
+  })
 
   /**
    * A turn the runtime starts for itself — a completion wake on a parent, a
    * prompt recovered from the durable queue — driven by the same turn runners
-   * the prompt routes use. It carries no control-plane turn lease: the runtime
-   * that owns the session is the one starting the turn.
+   * the prompt routes use.
+   *
+   * It runs as whoever admitted it, which is what the stored origin says and
+   * not what this runtime was composed as. `managedSessionLifecycle` asks a
+   * live request the same two questions — is the composition managed, and did
+   * this reach us through the relay — and one desktop daemon answers them
+   * differently per request: the machine's own user drives a session over
+   * loopback with no actor and no lease, while a relayed member drives it only
+   * through the authority. A background turn has no request left to ask, so the
+   * origin recorded at admission stands in for it, and a relayed one is put
+   * back to the authority here: acquiring the lease re-asks whether that actor
+   * may still drive this session, and writes the producer row the durable
+   * transcript resolves the resulting user message against.
+   *
+   * An origin that is absent — a row admitted before any of this was
+   * recorded — is refused, because nothing about it can be re-decided.
+   *
+   * Nothing is resolved before that identity is checked: resolving an adapter
+   * or a runtime starts a harness and writes config for the session, and a
+   * refused turn must leave no trace of having been attempted.
    *
    * `runSessionPromptTurn` has no queue: an adapter-only host starts the turn
-   * it is handed, so that branch reports `start` itself.
+   * it is handed, so that branch reports `start` itself. It runs unfenced — it
+   * has no runtime to abort and no admission to hand the turn — so a lease can
+   * never reach it: a leased turn without a runtime is refused instead.
    */
   async function startHostTurn(input: {
     sessionId: string
     directory: string
     body: SessionPromptBody
     author?: AgentMessageAuthor
-    actor?: { actorId: string; actorKind: "human" | "agent" }
-    queuedAction?: () => Promise<QueuedPromptAction>
-    onQueuedWaitEnd?: () => void
+    origin?: SessionTurnOrigin
+    onSteeringResult?: import("../session/service").RuntimePromptTurnInput["onSteeringResult"]
     onDelivery?: (delivery: PromptDelivery) => void
     onSettled?: () => void
   }): Promise<"started" | "busy"> {
-    const adapter = await getAdapter({ sessionId: input.sessionId, directory: input.directory })
-    const runtime = await options?.resolveRuntime?.({ sessionId: input.sessionId, directory: input.directory })
+    const admission = admitHostTurn(input)
+    hostAdmissions.add(admission)
+    void admission.catch(() => {}).finally(() => hostAdmissions.delete(admission))
+    return await admission
+  }
+
+  async function admitHostTurn(input: {
+    sessionId: string
+    directory: string
+    body: SessionPromptBody
+    author?: AgentMessageAuthor
+    origin?: SessionTurnOrigin
+    onSteeringResult?: import("../session/service").RuntimePromptTurnInput["onSteeringResult"]
+    onDelivery?: (delivery: PromptDelivery) => void
+    onSettled?: () => void
+  }): Promise<"started" | "busy"> {
+    const decline = (message: string) => {
+      input.onSteeringResult?.({ ok: false, status: "declined", message })
+      input.onDelivery?.("queue")
+      return "busy" as const
+    }
+    if (disposing) return decline("This runtime is shutting down and is not starting background turns")
+    const managed = options?.sessionAccessPolicy?.sessionAuthority === "managed-private"
+    const origin = input.origin
+    if (managed && !origin) {
+      return decline("Host-started input has no recorded admission provenance to re-authorize it under")
+    }
+    const relayed = origin?.provenance === "relay-replayed" ? origin : undefined
+    if (managed && relayed && !input.body.messageID) {
+      return decline("Host-started managed input requires a stable message identity to admit a turn under")
+    }
+    // Assigned below, read by `onLost` only once the lease is live and the
+    // turn is running: the lease is taken before a harness exists, so a
+    // revoked actor costs the session no process and no config write.
+    let runtime: AgentRuntime | undefined
+    let lease: ActiveSessionTurnLease | undefined
+    const access = {
+      ...(relayed ? { actor: relayed.actor, authority: relayed.authority } : {}),
+      operation: "prompt" as const,
+      sessionId: input.sessionId,
+    }
+    if (relayed) {
+      if (!options?.sessionAccessPolicy || !input.body.messageID) throw new Error("Managed queued input requires turn authority and a message identity")
+      const acquired = await acquireSessionTurnLease({
+        policy: options.sessionAccessPolicy,
+        access,
+        turnId: input.body.messageID,
+        onLost: async () => { await runtime?.turns.abort(input.sessionId, input.directory, { turnId: input.body.messageID }) },
+      })
+      if (!acquired.acquired) return decline(acquired.decision.message)
+      lease = acquired.lease
+    } else if (origin && options?.sessionAccessPolicy) {
+      // A local origin takes no lease, exactly as the machine user's own
+      // prompts do not. It is still put to the policy now rather than trusted
+      // because it was true once: a composition that requires verified actors
+      // refuses it here instead of running a turn nobody can be asked about.
+      const decision = await options.sessionAccessPolicy.authorize(access)
+      if (!decision.allowed) return decline(decision.message)
+    }
+    // Authority replies can arrive after shutdown started. The admission is
+    // still ours to release; no provider has taken responsibility for it yet.
+    if (disposing) {
+      await lease?.release()
+      return decline("This runtime is shutting down and is not starting background turns")
+    }
+    let adapter: Awaited<ReturnType<typeof getAdapter>>
+    try {
+      adapter = await getAdapter({ sessionId: input.sessionId, directory: input.directory })
+      runtime = await options?.resolveRuntime?.({ sessionId: input.sessionId, directory: input.directory })
+      if (lease && !runtime) {
+        await lease.release()
+        return decline("Durable turn admission requires an agent runtime to fence")
+      }
+      if (input.body.delivery !== "steer") await childSessions?.onTurnStarted(input.sessionId, input.directory)
+    } catch (error) {
+      // No running turn owns cleanup until provider setup and bookkeeping
+      // finish. Otherwise a failed setup keeps renewing the session's lease.
+      await lease?.release()
+      throw error
+    }
     const publishGlobal = (event: CompatEnvelope) => eventHub.publishGlobal(event)
-    const scope = () => options?.createActiveTurnScope?.({ adapter, directory: input.directory, sessionId: input.sessionId })
+    const scope = () => {
+      const active = options?.createActiveTurnScope?.({ adapter, directory: input.directory, sessionId: input.sessionId })
+      if (!lease) return active
+      return { signal: active?.signal ? AbortSignal.any([active.signal, lease.signal]) : lease.signal, dispose: active?.dispose }
+    }
+    let actualDelivery: PromptDelivery | undefined
     return await new Promise<"started" | "busy">((resolve) => {
       const run = runtime
         ? runRuntimePromptTurn({
@@ -260,12 +390,15 @@ export function SessionRoutes(
             body: input.body,
             publishGlobal,
             createActiveTurnScope: scope,
+            ...(lease ? { turnAdmission: lease } : {}),
             ...(input.author ? { author: input.author } : {}),
-            ...(input.actor ? { actor: input.actor } : {}),
-            ...(input.onDelivery ? { onDelivery: input.onDelivery } : {}),
-            queuedAction: input.queuedAction,
-            onQueuedWaitEnd: input.onQueuedWaitEnd,
-            onAdmissionSettled: (error) => resolve(isAgentRuntimeTurnConflictError(error) ? "busy" : "started"),
+            ...(relayed ? { actor: relayed.actor } : {}),
+            onDelivery: (delivery) => { actualDelivery = delivery; input.onDelivery?.(delivery) },
+            onSteeringResult: input.onSteeringResult,
+            onAdmissionSettled: (error) => {
+              if (isAgentRuntimeTurnConflictError(error)) input.onDelivery?.("queue")
+              resolve(isAgentRuntimeTurnConflictError(error) ? "busy" : "started")
+            },
           })
         : (async () => {
             const binding = await options?.resolveExecutionBinding?.({ adapter, directory: input.directory, sessionId: input.sessionId })
@@ -290,7 +423,13 @@ export function SessionRoutes(
                 options?.createActiveTurnScope?.({ adapter, directory: requiredDirectory(directory), sessionId }),
             })
           })()
-      run
+      const pendingTurn = run
+        .then(async () => {
+          if (actualDelivery !== "start" || lease?.lost()) return
+          await flushRuntimeSessionDocuments(input.sessionId).catch((error) => console.error("queued turn document flush failed", error))
+          if (!input.onSettled) await childSessions?.onTurnSettled(input.sessionId, input.directory)
+        })
+        .finally(() => lease?.release())
         .then(() => input.onSettled?.(), (error: unknown) => {
           if (isAgentRuntimeTurnConflictError(error)) {
             resolve("busy")
@@ -300,6 +439,9 @@ export function SessionRoutes(
           resolve("started")
           input.onSettled?.()
         })
+        .finally(() => hostTurns.delete(pendingTurn))
+      hostTurns.add(pendingTurn)
+      void pendingTurn.catch((error) => console.error("runtime turn cleanup failed", error))
     })
   }
 
@@ -331,6 +473,10 @@ export function SessionRoutes(
     resolveDirectory: (c, input) => dir(c, input),
     beforeSessionOperation: (_c, input) => options?.beforeSessionOperation?.(input),
     sessionAccessPolicy: options?.sessionAccessPolicy,
+    sessionStarts: options?.sessionStarts,
+    resolveSessionStartBinding: options?.resolveSessionStartBinding
+      ? (c, directory, sessionId, operationId) => options.resolveSessionStartBinding!(c, requiredDirectory(directory), sessionId, operationId)
+      : undefined,
     listPermissions: options?.listPermissions
       ? (c, directory) => options.listPermissions!(c, requiredDirectory(directory))
       : undefined,
@@ -443,5 +589,17 @@ export function SessionRoutes(
      * waiting for these prompts any more, so no request will ask for them.
      */
     recoverQueuedPrompts: () => queuedPrompts?.recover() ?? Promise.resolve(),
+    dispose: async () => {
+      // Refuse first, then wait, and wait for the askers before the turns:
+      // an offer still choosing a turn is not in `hostTurns` yet, and the
+      // delivery owner's drain hands its idle wait back rather than blocking
+      // on a session that will never go idle now.
+      disposing = true
+      stopDeliveryWake()
+      await childSessions?.dispose()
+      await queuedPrompts?.dispose()
+      await Promise.allSettled(hostAdmissions)
+      await Promise.allSettled(hostTurns)
+    },
   }
 }

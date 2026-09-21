@@ -78,10 +78,11 @@ export function createQueuedMessagesController(props: {
     setPending(seq)
     setError(undefined)
     try {
-      await client().controlQueuedMessage({ directory: props.directory(), sessionID, seq, action })
+      const result = await client().controlQueuedMessage({ directory: props.directory(), sessionID, seq, action })
+      if (!result.ok && result.status !== "pending" && result.message) setError(result.message)
       if (action !== "hold" && prompt.queuedEdit.current()?.seq === seq) prompt.queuedEdit.set(undefined)
       await queue.refetch()
-      return true
+      return result.ok
     } catch (err) {
       setError(err instanceof Error ? err.message : language.t("ui.message.queued.updateFailed"))
       return false

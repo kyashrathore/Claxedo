@@ -33,6 +33,7 @@ export type SubmitBlock = {
 }
 
 export type SubmitBlockInput = {
+  readonly draftConnectionAllowsNoModel?: boolean
   readonly sessionStatusReady?: boolean
   /** Which authority refuses the send, from `submitAuthorityBlock`. Always hard-blocks the handler. */
   readonly authorityBlock: SubmitAuthorityBlock | undefined
@@ -99,7 +100,7 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   if (input.stoppable && input.blank) return null
   if (input.sessionStatusReady === false && !input.stoppable) return block("session-loading")
 
-  if (input.harnessMode) {
+  if (input.harnessMode && !input.draftConnectionAllowsNoModel) {
     if (input.harnessReadiness === "degraded") return block("harness-degraded")
     if (input.harnessReadiness === "error" || input.harnessConfigError) return block("harness-error")
     if (input.harnessReadiness === "polling") return block("harness-polling")

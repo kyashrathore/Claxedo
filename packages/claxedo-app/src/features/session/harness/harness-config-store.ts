@@ -104,6 +104,7 @@ export function createHarnessConfigStore() {
     fetch: harnessRuntime.configOptionsFetch,
     currentHarness: (scope) => harnessStore.state(scope)?.harness,
     selectedModel: (scope) => harnessStore.state(scope)?.selectedModel,
+    modelOptional: harnessStore.canOmitModel,
     preserveSelectedModel: harnessStore.protectDraftModel,
     seed: harnessStore.seed,
     applyPatch: harnessStore.applyPatch,
@@ -273,6 +274,11 @@ export function createHarnessConfigStore() {
     if (!res?.ok) return
     const data = decodeHarnessState(await res.json().catch(() => undefined))
     if (!data) return
+    const held = harnessStore.read(scope)
+    if (held.harness?.kind !== current.harness.kind || (held.harness.kind === "connection" && (current.harness.kind !== "connection" || held.harness.connectionId !== current.harness.connectionId))) return
+    if (held.harness.kind === "connection" && data.connectionState?.connectionId === held.harness.connectionId) {
+      harnessStore.applyPatch(scope, { connectionState: data.connectionState })
+    }
     const next = harnessHealthReadiness({
       harness: current.harness,
       current: harnessStore.read(scope).readiness,
@@ -295,6 +301,9 @@ export function createHarnessConfigStore() {
     resolveDraftDefault: resolveCurrentDraftDefault,
     setModel,
     setHarness,
+    canOmitModel: harnessStore.canOmitModel,
+    canCreateWithoutModel: harnessStore.canCreateWithoutModel,
+    setConnectionDeclaration: harnessStore.setConnectionDeclaration,
     harnessMode: harnessStore.harnessMode,
     selectedModel: harnessStore.selectedModel,
     selectedModelKey: harnessStore.selectedModelKey,
@@ -306,6 +315,7 @@ export function createHarnessConfigStore() {
     displayName: harnessStore.displayName,
     isHarnessMode: harnessStore.isHarnessMode,
     readiness: (scope: string) => harnessStore.read(scope).readiness,
+    connectionState: (scope: string) => harnessStore.read(scope).connectionState,
     optionsSource: harnessStore.optionsSource,
     optionsStale: harnessStore.optionsStale,
     optionsLoading: harnessStore.optionsLoading,

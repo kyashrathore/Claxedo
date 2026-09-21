@@ -7,6 +7,13 @@
  * control plane's own SQLite (durable across restarts, no lock contention).
  * Expired pending rows are pruned lazily on read (their approach) so a
  * long-lived process doesn't accumulate stale codes.
+ *
+ * Every read here is scoped to `CURRENT_CHANNEL_IDENTITY_VERSION`. A row below
+ * it was keyed by whatever string its transport called a sender id, which may
+ * be a handle the platform has since handed to somebody else, so it admits
+ * nobody and hands back no pending code. It is left in place as history: an
+ * explicit approval overwrites it through the upsert below, which is the only
+ * way a legacy sender comes back, and which runs after the canonical bind.
  */
 import { and, desc, eq, lte } from "drizzle-orm"
 import type {
@@ -21,6 +28,7 @@ import {
   ClaxedoChannelAllowTable,
   ClaxedoChannelIdentityTable,
   ClaxedoChannelPairingTable,
+  CURRENT_CHANNEL_IDENTITY_VERSION,
 } from "./access.sql"
 
 /** A row whose channel is no longer a supported one reads as absent, exactly as `identity` treats an unknown status. */
@@ -37,6 +45,8 @@ function pairing(row: typeof ClaxedoChannelPairingTable.$inferSelect): PairingRe
   }
 }
 
+const current = eq(ClaxedoChannelPairingTable.identity_version, CURRENT_CHANNEL_IDENTITY_VERSION)
+
 function pruneExpired(now: number) {
   ClaxedoDB.use((db) => db.delete(ClaxedoChannelPairingTable)
     .where(lte(ClaxedoChannelPairingTable.expires_at, now))
@@ -51,6 +61,7 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
           .where(and(
             eq(ClaxedoChannelAllowTable.channel, channel),
             eq(ClaxedoChannelAllowTable.external_user_id, externalUserId),
+            eq(ClaxedoChannelAllowTable.identity_version, CURRENT_CHANNEL_IDENTITY_VERSION),
           ))
           .get(),
       )
@@ -62,9 +73,14 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
         external_user_id: externalUserId,
         approved_by: approvedBy ?? null,
         approved_at: now(),
+        identity_version: CURRENT_CHANNEL_IDENTITY_VERSION,
       }).onConflictDoUpdate({
         target: [ClaxedoChannelAllowTable.channel, ClaxedoChannelAllowTable.external_user_id],
-        set: { approved_by: approvedBy ?? null, approved_at: now() },
+        set: {
+          approved_by: approvedBy ?? null,
+          approved_at: now(),
+          identity_version: CURRENT_CHANNEL_IDENTITY_VERSION,
+        },
       }).run())
     },
     async disallow(channel, externalUserId) {
@@ -79,7 +95,10 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
       pruneExpired(now())
       return ClaxedoDB.use((db) =>
         db.select().from(ClaxedoChannelPairingTable)
-          .where(channel ? eq(ClaxedoChannelPairingTable.channel, channel) : undefined)
+          .where(and(
+            current,
+            channel ? eq(ClaxedoChannelPairingTable.channel, channel) : undefined,
+          ))
           .orderBy(desc(ClaxedoChannelPairingTable.created_at))
           .all(),
       ).flatMap((row) => pairing(row) ?? [])
@@ -88,7 +107,7 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
       pruneExpired(now())
       const row = ClaxedoDB.use((db) =>
         db.select().from(ClaxedoChannelPairingTable)
-          .where(eq(ClaxedoChannelPairingTable.code, code))
+          .where(and(eq(ClaxedoChannelPairingTable.code, code), current))
           .get(),
       )
       return row ? pairing(row) : undefined
@@ -100,6 +119,7 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
           .where(and(
             eq(ClaxedoChannelPairingTable.channel, channel),
             eq(ClaxedoChannelPairingTable.external_user_id, externalUserId),
+            current,
           ))
           .orderBy(desc(ClaxedoChannelPairingTable.created_at))
           .limit(1)
@@ -115,6 +135,7 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
         created_at: request.createdAt,
         expires_at: request.expiresAt,
         last_sent_at: request.lastSentAt,
+        identity_version: CURRENT_CHANNEL_IDENTITY_VERSION,
       }).onConflictDoUpdate({
         target: ClaxedoChannelPairingTable.code,
         set: {
@@ -123,6 +144,7 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
           created_at: request.createdAt,
           expires_at: request.expiresAt,
           last_sent_at: request.lastSentAt,
+          identity_version: CURRENT_CHANNEL_IDENTITY_VERSION,
         },
       }).run())
     },
@@ -133,6 +155,8 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
     },
   }
 }
+
+const currentIdentity = eq(ClaxedoChannelIdentityTable.identity_version, CURRENT_CHANNEL_IDENTITY_VERSION)
 
 function identity(row: typeof ClaxedoChannelIdentityTable.$inferSelect): ChannelIdentityBinding | undefined {
   const status = row.status
@@ -156,6 +180,7 @@ export function createSqliteChannelIdentityBindingStore(): ChannelIdentityBindin
           .where(and(
             eq(ClaxedoChannelIdentityTable.channel, channel),
             eq(ClaxedoChannelIdentityTable.external_user_id, externalUserId),
+            currentIdentity,
           ))
           .get(),
       )
@@ -167,6 +192,7 @@ export function createSqliteChannelIdentityBindingStore(): ChannelIdentityBindin
           .where(and(
             eq(ClaxedoChannelIdentityTable.account_id, accountId),
             eq(ClaxedoChannelIdentityTable.status, "bound"),
+            currentIdentity,
           ))
           .orderBy(desc(ClaxedoChannelIdentityTable.bound_at))
           .all(),
@@ -180,6 +206,7 @@ export function createSqliteChannelIdentityBindingStore(): ChannelIdentityBindin
         status: binding.status,
         bound_at: binding.boundAt,
         bound_by: binding.boundBy ?? null,
+        identity_version: CURRENT_CHANNEL_IDENTITY_VERSION,
       }).onConflictDoUpdate({
         target: [ClaxedoChannelIdentityTable.channel, ClaxedoChannelIdentityTable.external_user_id],
         set: {
@@ -187,6 +214,7 @@ export function createSqliteChannelIdentityBindingStore(): ChannelIdentityBindin
           status: binding.status,
           bound_at: binding.boundAt,
           bound_by: binding.boundBy ?? null,
+          identity_version: CURRENT_CHANNEL_IDENTITY_VERSION,
         },
       }).run())
     },
@@ -208,6 +236,7 @@ export function boundAccountId(channel: string, externalUserId: string): string 
       .where(and(
         eq(ClaxedoChannelIdentityTable.channel, channel),
         eq(ClaxedoChannelIdentityTable.external_user_id, externalUserId),
+        currentIdentity,
       ))
       .get(),
   )

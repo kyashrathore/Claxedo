@@ -92,6 +92,7 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
   const services = {
     authority: {
       usersMe: vi.fn(async () => ({ subject: "user_1" })),
+      authorizeWorkspaceCreate: vi.fn(async () => {}),
       createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })),
       auditAllow: vi.fn(async () => ({})),
       auditDeny: vi.fn(async () => ({})),

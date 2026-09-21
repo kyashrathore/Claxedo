@@ -510,6 +510,7 @@ export const dict = {
 
   "common.dismiss": "Dismiss",
   "common.moreCountSuffix": " (+{{count}} more)",
+  "session.requests.loadFailed": "Could not load pending permissions or questions. Retry to continue.",
   "common.requestFailed": "Request failed",
   "common.moreOptions": "More options",
   "common.learnMore": "Learn more",

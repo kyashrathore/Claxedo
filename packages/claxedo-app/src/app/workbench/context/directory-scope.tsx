@@ -55,6 +55,10 @@ import {
 } from "@/features/session/data/query/deferred-directory-resource"
 import { fastSessionSwitchQuietDelay } from "@/platform/runtime/session-switch"
 import { readField } from "@/lib/record"
+import { claxedoToolHref } from "./claxedo-tool-href"
+import { useQuery } from "@tanstack/solid-query"
+import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
+import { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
 
 /** The two fields every host subagent row carries; the rest are optional. */
 function isHostSubagentRow(value: unknown): value is HostSubagentRow {
@@ -63,6 +67,7 @@ function isHostSubagentRow(value: unknown): value is HostSubagentRow {
 
 function DirectoryDataProvider(props: ParentProps<{
   data: DirectorySessionCacheValue
+  workspaceId?: Accessor<string | undefined>
   directory: string
   active: Accessor<boolean>
   sessionId?: Accessor<string | undefined>
@@ -75,6 +80,10 @@ function DirectoryDataProvider(props: ParentProps<{
 }>) {
   const sdk = useSDK()
   const globalSDK = useGlobalSDK()
+  const shellQueryOptions = useShellQueryOptions()
+  const projectsQuery = useQuery(() => shellQueryOptions.projects())
+  const workspaceForDirectory = (directory: string) =>
+    workspaceRouteIdentity(projectsQuery.data ?? [], directory)?.routeId
   const platform = usePlatform()
   const subagents = globalSDK.event.subagents.registry
   const [subagentRevision, setSubagentRevision] = createSignal(0)
@@ -211,8 +220,21 @@ function DirectoryDataProvider(props: ParentProps<{
       onNavigateToSession={navigateToSession}
       onSessionHref={sessionHref}
       onTaskHref={(taskId) => tasksRoute({ kind: "task", taskId })}
+      onClaxedoToolHref={(tool, input, output) => claxedoToolHref(tool, input, output, {
+        workspaceId: props.workspaceId?.() ?? workspaceForDirectory(props.directory),
+        sessionId: props.sessionId?.(),
+        workspaceForDirectory,
+      })}
       resolveSubagents={resolveSubagents}
       fileUrl={fileUrl}
+      readToolImage={async (attachment, signal) => {
+        const response = await sdk.request(
+          `/session/${encodeURIComponent(attachment.sessionID)}/message/${encodeURIComponent(attachment.messageID)}/attachment/${encodeURIComponent(attachment.id)}?directory=${encodeURIComponent(props.directory)}`,
+          { signal, cache: "no-store" },
+        )
+        if (!response.ok) throw new Error(`Image unavailable (${response.status})`)
+        return response.blob()
+      }}
     >
       <ModelsProvider
         workspaceKey={modelsWorkspaceKey}
@@ -381,6 +403,7 @@ export function DirectoryScope(props: ParentProps<{
         workspaceId={() => runtimeRef()?.workspaceId}
       >
         <DirectoryDataProvider
+          workspaceId={props.workspaceId}
           data={data()!}
           directory={props.directory}
           active={active}

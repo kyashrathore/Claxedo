@@ -1,13 +1,16 @@
+import type { AgentSessionStartBinding, ConnectionRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import { createHash, randomUUID } from "crypto"
 import type { McpServer } from "@agentclientprotocol/sdk"
 import { Log } from "../../log"
 import { acpFirstPartyMcpServer, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { ACP_RECOVER } from "./recovery"
 import { ACPProcess } from "./process"
+import { createACPConnectionObservations, type ACPConnectionObservationUpdate } from "./connection-state"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
 import {
   createACPTransportFactory,
   validateACPConnection,
+  waitForACPTransportRetirement,
   type ACPConnection,
   type ACPTransportEnv,
 } from "./transport"
@@ -32,7 +35,11 @@ type ProcEntry = {
   directory: string
   proc: ACPProcess | null
   init: Promise<{ proc: ACPProcess; isNew: boolean }> | null
+  starting?: AbortController
+  startingProc?: ACPProcess
   sessionIds: Set<string>
+  fork?: boolean
+  subagents?: boolean
 }
 type ProbeEntry = {
   directory: string
@@ -83,6 +90,8 @@ export abstract class AcpProcessManager {
   protected probe: ProbeEntry | null = null
   protected configRestartPending = false
   private connectionConfig?: ACPConnection
+  private observedConnections?: ReturnType<typeof createACPConnectionObservations>
+  private connectionUpdates?: WeakMap<object, (update: ACPConnectionObservationUpdate) => void>
 
   constructor(protected readonly options: AcpHarnessAdapterOptions) {
     this.connectionConfig = validateACPConnection(options.connection)
@@ -90,6 +99,11 @@ export abstract class AcpProcessManager {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
     this.ownsStore = !options.store
     this.currentEnv = connection.kind === "process" ? { ...connection.env } : {}
+  }
+
+  readConnectionState(directory: string, context?: { sessionId?: string }): ConnectionRuntimeStatus {
+    const key = context?.sessionId ? this.sessionOwnerKey(context.sessionId) ?? (this.ignoreStoredProcessKeys ? this.processKey(directory) : "unobserved-session") : undefined
+    return this.observedConnections?.read(directory, key) ?? { state: "configured", processes: [] }
   }
 
   protected connection(): ACPConnection {
@@ -133,13 +147,24 @@ export abstract class AcpProcessManager {
   protected supportsForkCapability(sessionId?: string) {
     if (sessionId) {
       const entry = this.entryForSession(sessionId)
-      if (!entry?.proc?.alive) return false
+      if (!entry?.proc?.alive) return entry?.fork ?? false
       return entry.proc.supportsForkSession(this.store.getAgentSessionId(sessionId) ?? undefined)
     }
     for (const entry of this.processEntries()) {
       if (entry.proc?.alive && entry.proc.supportsForkSession()) return true
     }
     return !!this.probe?.proc?.alive && this.probe.proc.supportsForkSession()
+  }
+
+  protected supportsSubagentCapability(sessionId?: string) {
+    if (sessionId) {
+      const entry = this.entryForSession(sessionId)
+      return entry?.proc?.alive ? entry.proc.supportsSubagents() : entry?.subagents ?? false
+    }
+    for (const entry of this.processEntries()) {
+      if (entry.proc?.alive && entry.proc.supportsSubagents()) return true
+    }
+    return !!this.probe?.proc?.alive && this.probe.proc.supportsSubagents()
   }
 
   protected supportsGoalCapability(sessionId?: string) {
@@ -162,12 +187,15 @@ export abstract class AcpProcessManager {
       transport: options.createTransport ? "custom" : this.connection().kind,
       env: this.currentEnv ?? {},
       mcp: this.currentMcp ?? [],
-      model: this.currentModel || null,
     })
   }
 
+  private sessionOwnerKey(id: string) {
+    return this.sessionProcessMap().get(id) ?? (this.ignoreStoredProcessKeys ? undefined : this.store.getSessionOwnerKey?.(id))
+  }
+
   protected keyForSession(id: string, directory: string): ACPProcessKey {
-    const key = this.sessionProcessMap().get(id) ?? (this.ignoreStoredProcessKeys ? null : this.store.getSessionOwnerKey?.(id)) ?? this.processKey(directory)
+    const key = this.sessionOwnerKey(id) ?? this.processKey(directory)
     this.sessionProcessMap().set(id, key)
     return key
   }
@@ -202,6 +230,8 @@ export abstract class AcpProcessManager {
   ) {
     const entry = this.processMap().get(key)
     const target = proc ?? entry?.proc ?? null
+    // A late close callback from a replaced process cannot invalidate its successor.
+    if (target && entry?.proc && entry.proc !== target) return
     if (entry) {
       if (!target || entry.proc === target) entry.proc = null
       entry.init = null
@@ -229,10 +259,16 @@ export abstract class AcpProcessManager {
     for (const id of entry?.sessionIds ?? []) {
       this.lifecycle().drain(id, "ACP session process restarted")
     }
+    entry?.starting?.abort()
+    entry?.startingProc?.dispose()
     entry?.proc?.dispose()
     if (!entry) return
+    entry.starting = undefined
+    entry.startingProc = undefined
     entry.proc = null
     entry.init = null
+    delete entry.fork
+    delete entry.subagents
   }
 
   protected restartProbe() {
@@ -257,18 +293,9 @@ export abstract class AcpProcessManager {
   }
 
   setModel(model: string): void {
-    if (this.currentModel === model) return
-    if (this.lifecycle().activeTurns.size > 0) {
-      throw new Error("ACP process config cannot change while a prompt is active")
-    }
+    // The runtime sets the default for newly created sessions here. Existing
+    // sessions apply their own model through session/set_config_option.
     this.currentModel = model
-    this.restart()
-    this.forgetSessionProcessBindings()
-    log.info("ACP model updated, ACP session processes disposed", {
-      model,
-      harness: this.harnessId(),
-      command: this.processCommand(),
-    })
   }
 
   setAuth(keys: ACPTransportEnv): void {
@@ -286,33 +313,44 @@ export abstract class AcpProcessManager {
     })
   }
 
-  protected make(directory: string, role: "harness" | "probe", dead: () => void = () => {}) {
+  protected make(directory: string, role: "harness" | "probe", dead: () => void = () => {}, key = role === "probe" ? "probe" : this.processKey(directory)) {
     const launch = { args: this.processArgs(), env: this.currentEnv }
     const ownerId = `acp-${role}:${randomUUID()}`
     const launchId = randomUUID()
-    return new ACPProcess(
-      root(),
-      this.processCommand(),
-      launch.args,
-      this.currentModel,
-      // Deliberately outside `processKey`'s fingerprint: the entry differs per
-      // session and its bearer is re-read at every launch, so folding it in
-      // would fork one process per session and restart them on a refresh.
-      (sessionId) => [
-        ...this.currentMcp,
-        ...(sessionId && this.firstPartyMcp ? [acpFirstPartyMcpServer(this.firstPartyMcp.server(sessionId))] : []),
-      ],
-      dead,
-      this.options.createTransport ?? createACPTransportFactory(this.connection()),
-      () => launch.env,
-      (transport) => this.observeProcess({
-        directory,
-        launchId,
-        ownerId,
-        role,
-        transport,
-      }),
-    )
+    this.observedConnections ??= createACPConnectionObservations()
+    const update = this.observedConnections.begin(key, directory, role === "harness" ? "execution" : "discovery")
+    try {
+      const proc = new ACPProcess(
+        root(),
+        this.processCommand(),
+        launch.args,
+        this.currentModel,
+        // Deliberately outside `processKey`'s fingerprint: the entry differs per
+        // session and its bearer is re-read at every launch, so folding it in
+        // would fork one process per session and restart them on a refresh.
+        (sessionId) => [
+          ...this.currentMcp,
+          ...(sessionId && this.firstPartyMcp ? [acpFirstPartyMcpServer(this.firstPartyMcp.server(sessionId))] : []),
+        ],
+        dead,
+        this.options.createTransport ?? createACPTransportFactory(this.connection()),
+        () => launch.env,
+        (transport) => this.observeProcess({
+          directory,
+          launchId,
+          ownerId,
+          role,
+          transport,
+        }),
+        update,
+      )
+      this.connectionUpdates ??= new WeakMap()
+      this.connectionUpdates.set(proc, update)
+      return proc
+    } catch (error) {
+      update({ state: "failed", reason: "transport_launch_failed" })
+      throw error
+    }
   }
 
   protected observeProcess(input: {
@@ -373,10 +411,12 @@ export abstract class AcpProcessManager {
     }
   }
 
-  protected async getOrSpawnProcessForKey(key: ACPProcessKey, directory: string): Promise<{ proc: ACPProcess; isNew: boolean }> {
+  protected async getOrSpawnProcessForKey(key: ACPProcessKey, directory: string, owner?: AgentSessionStartBinding, signal?: AbortSignal): Promise<{ proc: ACPProcess; isNew: boolean }> {
+    if (owner && owner.directory !== directory) throw new Error("Session start directory mismatch")
     const entry = this.process(key, directory)
     const live = entry.proc
     if (live?.alive) {
+      this.observedConnections?.associate(key, directory)
       log.info("ACP getOrSpawnProcess: reusing shared process", {
         key,
         directory,
@@ -385,9 +425,19 @@ export abstract class AcpProcessManager {
       })
       return { proc: live, isNew: false }
     }
-    if (entry.init) return entry.init
+    if (entry.init) {
+      if (owner) throw new Error("Connection initialization is already owned by another operation")
+      const result = await entry.init
+      this.observedConnections?.associate(key, directory)
+      return result
+    }
     const t0 = Date.now()
+    const starting = new AbortController()
+    entry.starting = starting
+    const operationSignal = signal ? AbortSignal.any([signal, starting.signal]) : starting.signal
     entry.init = (async () => {
+      await waitForACPTransportRetirement(root(), this.connection())
+      if (operationSignal.aborted) throw new Error("Connection initialization cancelled")
       const proc = this.make(directory, "harness", () => {
         log.info("ACP process onDead callback: clearing shared process", {
           key,
@@ -395,10 +445,14 @@ export abstract class AcpProcessManager {
           harness: this.harnessId(),
         })
         this.invalidateProcess(key, ACP_RECOVER, proc, { dispose: false })
-      })
+      }, key)
+      entry.startingProc = proc
       try {
-        await this.initialize(proc)
+        await this.initialize(proc, undefined, owner, operationSignal)
+        if (operationSignal.aborted || entry.starting !== starting) throw new Error("Connection initialization was replaced")
         entry.proc = proc
+        entry.fork = proc.supportsForkSession()
+        entry.subagents = proc.supportsSubagents()
         log.info("ACP getOrSpawnProcess: shared process ready", {
           key,
           directory,
@@ -407,25 +461,25 @@ export abstract class AcpProcessManager {
         })
         return { proc, isNew: true }
       } catch (err) {
-        entry.proc = null
+        if (entry.starting === starting) entry.proc = null
         proc.dispose()
         throw err
-      } finally {
-        if (entry.init) entry.init = null
       }
-    })()
+    })().finally(() => {
+      if (entry.starting === starting) { entry.init = null; entry.starting = undefined; entry.startingProc = undefined }
+    })
     return entry.init
   }
 
-  protected async getOrSpawnProcess(id: string, directory: string): Promise<{ proc: ACPProcess; isNew: boolean }> {
+  protected async getOrSpawnProcess(id: string, directory: string, owner?: AgentSessionStartBinding): Promise<{ proc: ACPProcess; isNew: boolean }> {
     const key = this.keyForSession(id, directory)
     const entry = this.process(key, directory)
     entry.sessionIds.add(id)
-    return this.getOrSpawnProcessForKey(key, directory)
+    return this.getOrSpawnProcessForKey(key, directory, owner)
   }
 
   protected entryForSession(id: string) {
-    const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
+    const key = this.sessionOwnerKey(id)
     return this.processMap().get(key ?? id)
   }
 
@@ -445,6 +499,7 @@ export abstract class AcpProcessManager {
     if (this.probe.init) return this.probe.init
     const t0 = Date.now()
     this.probe.init = (async () => {
+      await waitForACPTransportRetirement(root(), this.connection())
       const proc = this.make(directory, "probe", () => {
         log.info("ACP probe process onDead callback: clearing probe process", {
           directory,
@@ -476,16 +531,18 @@ export abstract class AcpProcessManager {
 
   protected async boot(
     proc: {
-      newSession: (directory: string, title?: string, sessionId?: string) => Promise<string>
+      newSession: (directory: string, title?: string, sessionId?: string, start?: AgentSessionStartBinding, timeoutMs?: number) => Promise<string>
       dispose: () => void
     },
     directory: string,
     title?: string,
     sessionId?: string,
     ms = newSessionTimeoutMs(),
+    start?: AgentSessionStartBinding,
   ) {
     let id: ReturnType<typeof setTimeout> | undefined
     try {
+      if (start) return await proc.newSession(directory, title, sessionId, start, ms)
       return await Promise.race([
         proc.newSession(directory, title, sessionId),
         new Promise<string>((_, reject) => {
@@ -497,7 +554,7 @@ export abstract class AcpProcessManager {
         directory,
         error: errorMessage(err),
       })
-      proc.dispose()
+      if (!start) proc.dispose()
       throw err
     } finally {
       if (id) clearTimeout(id)
@@ -506,21 +563,25 @@ export abstract class AcpProcessManager {
 
   protected async initialize(
     proc: {
-      initialize: () => Promise<void>
+      initialize: (owner?: AgentSessionStartBinding, signal?: AbortSignal) => Promise<void>
       dispose: () => void
       failureDetail?: () => string
     },
     ms = initializeTimeoutMs(),
+    owner?: AgentSessionStartBinding,
+    signal?: AbortSignal,
   ) {
     let id: ReturnType<typeof setTimeout> | undefined
+    let timedOut = false
     try {
-      return await Promise.race([
-        proc.initialize(),
+      return await (owner ? proc.initialize(owner, signal) : Promise.race([
+        proc.initialize(undefined, signal),
         new Promise<void>((_, reject) => {
-          id = setTimeout(() => reject(new Error(`ACP initialize timed out after ${ms}ms`)), ms)
+          id = setTimeout(() => { timedOut = true; reject(new Error(`ACP initialize timed out after ${ms}ms`)) }, ms)
         }),
-      ])
+      ]))
     } catch (err) {
+      this.connectionUpdates?.get(proc)?.({ state: "failed", reason: timedOut ? "initialize_timeout" : "initialization_failed" })
       proc.dispose()
       const message = errorMessage(err)
       const detail = proc.failureDetail?.()

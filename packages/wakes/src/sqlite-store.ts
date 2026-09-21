@@ -184,6 +184,16 @@ CREATE TABLE IF NOT EXISTS effect_receipts (
 );
 `
 
+/**
+ * The lane predicate every scoped query appends to an existing WHERE clause:
+ * undefined = all lanes, null = only null-key wakes, string = that lane.
+ */
+function laneScope(serialKey: string | null | undefined): { filter: string; params: string[] } {
+  if (serialKey === undefined) return { filter: "", params: [] }
+  if (serialKey === null) return { filter: "AND serial_key IS NULL", params: [] }
+  return { filter: "AND serial_key = ?", params: [serialKey] }
+}
+
 export type SqliteWakeStoreOptions = { path?: string; db?: Database.Database }
 
 /**
@@ -228,11 +238,8 @@ export class SqliteWakeStore implements WakeStore {
     // Lane rule: a serial-keyed wake is claimable only when no other wake of
     // its key is already `firing`, and one claim batch takes at most one wake
     // per key (earliest first). Null-key wakes have no lane (own partition
-    // via COALESCE to their unique id). `serialKey` scopes the claim:
-    // undefined = all lanes, null = only null-key wakes, string = that lane.
-    const laneFilter =
-      serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
-    const laneParams = typeof serialKey === "string" ? [serialKey] : []
+    // via COALESCE to their unique id).
+    const { filter: laneFilter, params: laneParams } = laneScope(serialKey)
     const rows = this.db
       .prepare(
         `UPDATE wakes SET state = 'firing', lease_until = ?, attempts = attempts + 1
@@ -242,6 +249,7 @@ export class SqliteWakeStore implements WakeStore {
                     ROW_NUMBER() OVER (PARTITION BY COALESCE(serial_key, id) ORDER BY fire_at ASC, id ASC) AS lane_rank
              FROM wakes
              WHERE trigger_type = 'at' AND state = 'pending' AND fire_at IS NOT NULL AND fire_at <= ?
+               AND (expires_at IS NULL OR expires_at > ?)
                ${laneFilter}
                AND (serial_key IS NULL OR serial_key NOT IN (
                  SELECT serial_key FROM wakes WHERE state = 'firing' AND serial_key IS NOT NULL
@@ -252,11 +260,11 @@ export class SqliteWakeStore implements WakeStore {
          )
          RETURNING *`,
       )
-      .all(nowMs + leaseMs, nowMs, ...laneParams, limit)
+      .all(nowMs + leaseMs, nowMs, nowMs, ...laneParams, limit)
     return rows.map(rowToWake)
   }
 
-  async cas(id: WakeId, from: WakeState, to: WakeState, patch?: Partial<Wake>): Promise<boolean> {
+  async cas(id: WakeId, from: WakeState, to: WakeState, nowMs: number, patch?: Partial<Wake>): Promise<boolean> {
     const setCols = ["state = ?"]
     const setVals: unknown[] = [to]
     if (patch) {
@@ -267,9 +275,13 @@ export class SqliteWakeStore implements WakeStore {
         setVals.push(v ?? null)
       }
     }
+    const expiry = from !== "pending" ? ""
+      : to === "firing" ? " AND (expires_at IS NULL OR expires_at > ?)"
+      : to === "expired" ? " AND expires_at IS NOT NULL AND expires_at <= ?"
+      : ""
     const res = this.db
-      .prepare(`UPDATE wakes SET ${setCols.join(", ")} WHERE id = ? AND state = ?`)
-      .run(...setVals, id, from)
+      .prepare(`UPDATE wakes SET ${setCols.join(", ")} WHERE id = ? AND state = ?${expiry}`)
+      .run(...setVals, id, from, ...(expiry ? [nowMs] : []))
     return res.changes > 0
   }
 
@@ -279,11 +291,15 @@ export class SqliteWakeStore implements WakeStore {
     ).map(rowToWake)
   }
 
-  async findExpirable(nowMs: number): Promise<Wake[]> {
+  async findExpirable(nowMs: number, serialKey?: string | null): Promise<Wake[]> {
+    const { filter: laneFilter, params: laneParams } = laneScope(serialKey)
     return (
       this.db
-        .prepare("SELECT * FROM wakes WHERE state = 'pending' AND expires_at IS NOT NULL AND expires_at <= ?")
-        .all(nowMs)
+        .prepare(
+          `SELECT * FROM wakes
+           WHERE state = 'pending' AND expires_at IS NOT NULL AND expires_at <= ? ${laneFilter}`,
+        )
+        .all(nowMs, ...laneParams)
     ).map(rowToWake)
   }
 
@@ -292,9 +308,11 @@ export class SqliteWakeStore implements WakeStore {
     // and returns only the rows this statement changed. A concurrent reclaimer
     // then finds the row's `lease_until` beyond its horizon and matches nothing,
     // so the returned rows are exclusively this caller's to drive.
-    const laneFilter =
-      serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
-    const laneParams = typeof serialKey === "string" ? [serialKey] : []
+    //
+    // Deliberately blind to `expires_at`: a `firing` row was already admitted
+    // by a deadline-checked CAS and carries its persisted result, so a lapsed
+    // deadline must not cancel the retry that at-least-once delivery owes it.
+    const { filter: laneFilter, params: laneParams } = laneScope(serialKey)
     const rows = this.db
       .prepare(
         `UPDATE wakes SET lease_until = ?
@@ -305,14 +323,35 @@ export class SqliteWakeStore implements WakeStore {
     return rows.map(rowToWake)
   }
 
-  async listFiring(serialKey?: string | null): Promise<Wake[]> {
-    const laneFilter =
-      serialKey === undefined ? "" : serialKey === null ? "AND serial_key IS NULL" : "AND serial_key = ?"
-    const laneParams = typeof serialKey === "string" ? [serialKey] : []
-    return this.db
-      .prepare(`SELECT * FROM wakes WHERE state = 'firing' ${laneFilter}`)
-      .all(...laneParams)
-      .map(rowToWake)
+  async nextObligationAt(serialKey: string | null): Promise<number | null> {
+    const { filter: laneFilter, params: laneParams } = laneScope(serialKey)
+    // A keyed lane occupied by a `firing` row cannot claim, so its due `at`
+    // rows are not yet obligations — the occupying lease is. Null-key wakes
+    // share no lane, so nothing holds them back.
+    const unblocked =
+      serialKey === null
+        ? ""
+        : "AND NOT EXISTS (SELECT 1 FROM wakes AS held WHERE held.state = 'firing' AND held.serial_key = ?)"
+    const r = this.db
+      .prepare(
+        `SELECT MIN(obligation_at) AS next_at FROM (
+           SELECT MIN(expires_at) AS obligation_at FROM wakes
+             WHERE state = 'pending' AND expires_at IS NOT NULL ${laneFilter}
+           UNION ALL
+           SELECT MIN(lease_until) FROM wakes
+             WHERE state = 'firing' AND lease_until IS NOT NULL ${laneFilter}
+           UNION ALL
+           SELECT MIN(fire_at) FROM wakes
+             WHERE trigger_type = 'at' AND state = 'pending' AND fire_at IS NOT NULL
+               ${laneFilter} ${unblocked}
+         )`,
+      )
+      .get(...laneParams, ...laneParams, ...laneParams, ...(serialKey === null ? [] : [serialKey]))
+    return integerOrNull(rowOf(r, "wakes next obligation"), "next_at")
+  }
+
+  async listFiring(): Promise<Wake[]> {
+    return this.db.prepare("SELECT * FROM wakes WHERE state = 'firing'").all().map(rowToWake)
   }
 
   async listForSession(sessionId: SessionId): Promise<Wake[]> {

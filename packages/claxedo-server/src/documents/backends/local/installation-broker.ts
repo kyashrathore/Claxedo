@@ -45,27 +45,28 @@ export function LocalInstallationDocumentBroker(options: {
     return context.json({ revoked: true })
   })
   app.get("/index", async (context) => {
-    if (!(await requireActiveJob(context, jobs, options.env)))
+    const job = await requireActiveJob(context, jobs, "resolve", options.env)
+    if (!job)
       return context.json({ error: "document_capability_denied" }, 403)
-    const orgId = required(context.req.query("org_id"))
-    const projectId = required(context.req.query("project_id"))
     return context.json(
-      (await options.backend.index.list({ orgId: "__local__", projectId })).map((entry) => ({
+      (await options.backend.index.list({ orgId: "__local__", projectId: job.projectId })).filter((entry) => entryInJob(entry, job)).map((entry) => ({
         ...entry,
-        org_id: orgId,
+        org_id: job.orgId,
       })),
     )
   })
   app.get("/:id", async (context) => {
-    if (!(await requireActiveJob(context, jobs, options.env)))
+    const job = await requireActiveJob(context, jobs, "read", options.env)
+    if (!job)
       return context.json({ error: "document_capability_denied" }, 403)
-    const entry = await entryFor(options.backend, context)
+    const entry = await entryFor(options.backend, job)
     if (!entry) return context.json({ error: "not_found" }, 404)
     const read = await options.backend.workspace.read(await options.backend.workspace.resolve(portEntry(entry)))
-    return context.json({ entry: { ...entry, org_id: required(context.req.query("org_id")) }, read })
+    return context.json({ entry: { ...entry, org_id: job.orgId }, read })
   })
   app.put("/:id", async (context) => {
-    if (!(await requireActiveJob(context, jobs, options.env)))
+    const job = await requireActiveJob(context, jobs, "write", options.env)
+    if (!job)
       return context.json({ error: "document_capability_denied" }, 403)
     const body = await readBrokerBody(context.req.raw).catch((error) =>
       error instanceof BrokerBodyTooLargeError
@@ -75,12 +76,14 @@ export function LocalInstallationDocumentBroker(options: {
     if (body instanceof Response) return body
     if (typeof body?.markdown !== "string" || typeof body.sessionId !== "string")
       return context.json({ error: "invalid" }, 400)
+    if (body.sessionId !== job.sessionId) return context.json({ error: "document_capability_denied" }, 403)
     const markdown = body.markdown
-    const sessionId = body.sessionId
+    const sessionId = job.sessionId
     const expected = context.req.header("if-match")
     if (!expected) return context.json({ error: "version_required" }, 428)
     return await withDocumentOperation(options.backend, context.req.param("id"), async () => {
-      const entry = await entryFor(options.backend, context)
+      if (!jobs.active(job.jti, job.jobExpiresAt)) return context.json({ error: "document_capability_revoked" }, 403)
+      const entry = await entryFor(options.backend, job)
       if (!entry) return context.json({ error: "not_found" }, 404)
       if (entry.archived_at) return context.json({ error: "archived" }, 409)
       const written = await options.backend.workspace
@@ -137,10 +140,11 @@ class BrokerBodyTooLargeError extends Error {}
 async function requireActiveJob(
   context: Context,
   jobs: ReturnType<typeof createLocalDocumentJobState>,
+  operation: "read" | "write" | "resolve",
   env?: NodeJS.ProcessEnv,
 ) {
-  const verified = await verifyJob(context, env)
-  return Boolean(verified && jobs.active(verified.jti, verified.jobExpiresAt))
+  const verified = await verifyJob(context, env, operation)
+  return verified && jobs.active(verified.jti, verified.jobExpiresAt) ? verified : undefined
 }
 
 export function createLocalDocumentJobState(options: { now?: () => number; maxRevoked?: number } = {}) {
@@ -180,13 +184,13 @@ export function createLocalDocumentJobState(options: { now?: () => number; maxRe
   }
 }
 
-async function verifyJob(context: Context, env?: NodeJS.ProcessEnv) {
+async function verifyJob(context: Context, env?: NodeJS.ProcessEnv, requiredOperation?: "read" | "write" | "resolve") {
   const token = context.req.header("x-claxedo-document-capability")
   const userId = context.req.header("x-claxedo-document-user")
   const localWorkspaceId = context.req.header("x-claxedo-local-workspace")
   const cloudWorkspaceId = context.req.header("x-claxedo-cloud-workspace")
   const sessionId = context.req.header("x-claxedo-document-session")
-  const operation = context.req.header("x-claxedo-document-operation")
+  const operation = requiredOperation ?? context.req.header("x-claxedo-document-operation")
   const orgId = context.req.query("org_id")
   const projectId = context.req.query("project_id")
   const routeDocumentId = context.req.param("id")
@@ -220,16 +224,17 @@ async function verifyJob(context: Context, env?: NodeJS.ProcessEnv) {
   ).catch(() => undefined)
 }
 
-async function entryFor(backend: DocumentBrokerBackend, context: Context) {
-  required(context.req.query("org_id"))
-  const projectId = required(context.req.query("project_id"))
-  const entry = await backend.index.find("__local__", context.req.param("id"))
-  return entry?.project_id === projectId ? entry : undefined
+type VerifiedDocumentJob = NonNullable<Awaited<ReturnType<typeof verifyJob>>>
+
+function entryInJob(entry: DocumentIndexEntry, job: VerifiedDocumentJob) {
+  return entry.project_id === job.projectId
+    && (job.documentId === "*" || entry.id === job.documentId)
+    && (entry.workspace_id === null || entry.workspace_id === job.localWorkspaceId)
 }
 
-function required(value?: string) {
-  if (!value?.trim()) throw new Error("Document broker scope is required")
-  return value.trim()
+async function entryFor(backend: DocumentBrokerBackend, job: VerifiedDocumentJob) {
+  const entry = await backend.index.find("__local__", job.documentId)
+  return entry && entryInJob(entry, job) ? entry : undefined
 }
 
 function portEntry(entry: DocumentIndexEntry) {

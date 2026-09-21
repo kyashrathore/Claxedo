@@ -1,18 +1,27 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
 import type { Context } from "hono"
 import { Hono } from "hono"
+import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { embeddedConfigModeForPath } from "./internals"
+import { embeddedConfigModeForPath, runtimeOwned } from "./internals"
 import { createWorkspaceRuntimeProxy } from "./middleware"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./embedded-relay-host-auth"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { ensureWorkspace, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 
 describe("embedded workspace runtime configuration boundary", () => {
+  test("read dispatch defers adapter configuration to the acquisition owner", () => {
+    for (const pathname of ["/api/wr/harness-config-options", "/permission/modes", "/agent", "/session/capabilities", "/session/s1/capabilities", "/session/s1/config-options", "/session/s1/config", "/session/s1/permission-mode"]) {
+      expect(embeddedConfigModeForPath(pathname, "GET")).toBe("skip")
+    }
+  })
+
   test("read-only workspace APIs remain available when configuration needs attention", () => {
     expect(embeddedConfigModeForPath("/session", "GET")).toBe("skip")
-    expect(embeddedConfigModeForPath("/permission/modes", "GET")).toBe("skip")
+    expect(runtimeOwned("/session-start/start_1")).toBe(true)
+    expect(embeddedConfigModeForPath("/session-start/start_1", "GET")).toBe("skip")
     expect(embeddedConfigModeForPath("/session/s1/message", "GET")).toBe("skip")
   })
 
@@ -143,6 +152,76 @@ describe("the host aggregate's place in runtime dispatch", () => {
     const response = await app.request("http://127.0.0.1/api/wr/events")
     expect(response.status).toBe(403)
     expect((await response.json() as { error: { code: string } }).error.code).toBe("host_event_stream_denied")
+    expect(served).toHaveLength(0)
+  })
+})
+
+describe("an explicitly supplied workspace id fails closed", () => {
+  const previousDataDir = process.env.CLAXEDO_DATA_DIR
+  let dataRoot: string
+  let repoDir: string
+  let workspaceId: string
+
+  beforeAll(async () => {
+    dataRoot = await fs.mkdtemp(path.join(os.tmpdir(), "runtime-dispatch-explicit-id-"))
+    process.env.CLAXEDO_DATA_DIR = dataRoot
+    // A real local row needs a real checkout — the store discovers its git
+    // identity rather than trusting the request.
+    repoDir = await fs.realpath(await fs.mkdtemp(path.join(dataRoot, "repo-")))
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repoDir, stdio: "ignore" })
+    const ws = await ensureWorkspace({ kind: "local", directory: repoDir })
+    workspaceId = ws!.id
+  })
+
+  afterAll(async () => {
+    ClaxedoDB.close()
+    if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previousDataDir
+    await fs.rm(dataRoot, { recursive: true, force: true })
+  })
+
+  function dispatcher() {
+    const served: Context[] = []
+    const app = new Hono()
+      .use(createWorkspaceRuntimeProxy({
+        hostEventStream: (c: Context) => {
+          served.push(c)
+          return new Response("aggregate")
+        },
+      }))
+      .all("*", (c) => c.text("fell through", 404))
+    return { app, served }
+  }
+
+  test("a stale workspace id beside another workspace's directory never selects that workspace", async () => {
+    const { app } = dispatcher()
+    // The directory alone still resolves — the explicit id is the boundary.
+    expect((await resolveWorkspace({ directory: repoDir }))?.id).toBe(workspaceId)
+
+    const response = await app.request(
+      `http://127.0.0.1/api/wr/health?workspaceId=ws_stale&directory=${encodeURIComponent(repoDir)}`,
+    )
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe("fell through")
+  })
+
+  test.each([
+    ["the workspaceId query", `http://127.0.0.1/api/wr/health?workspaceId=`, {}],
+    ["the workspace query", `http://127.0.0.1/api/wr/health?workspace=`, {}],
+    ["the workspace header", `http://127.0.0.1/api/wr/health`, { "x-workspace-id": "" }],
+  ])("a supplied-but-empty id via %s still refuses directory resolution", async (_name, base, headers) => {
+    const { app } = dispatcher()
+    const separator = base.includes("?") ? "&" : "?"
+    const response = await app.request(`${base}${separator}directory=${encodeURIComponent(repoDir)}`, { headers })
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe("fell through")
+  })
+
+  test("wr/events carrying an explicit empty workspace id is not the host aggregate", async () => {
+    const { app, served } = dispatcher()
+    const response = await app.request("http://127.0.0.1/api/wr/events?workspaceId=")
+    expect(response.status).toBe(404)
+    expect(await response.text()).toBe("fell through")
     expect(served).toHaveLength(0)
   })
 })

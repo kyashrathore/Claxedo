@@ -1,6 +1,6 @@
 import path from "node:path"
 import fs from "node:fs/promises"
-import { runGit } from "../git"
+import { gitTopLevel, LITERAL_PATHSPECS, runGit, withGitWriteLock } from "../git"
 import { resolveWorkspacePath, workspaceDir, WorkspaceTargetError } from "../target"
 
 export type GitSourceSnapshot = {
@@ -36,28 +36,6 @@ export class GitSourceConflictError extends Error {
   }
 }
 
-const commitLocks = new Map<string, Promise<void>>()
-
-async function withCommitLock<T>(key: string, fn: () => Promise<T>) {
-  const previous = commitLocks.get(key) ?? Promise.resolve()
-  let release = () => {}
-  const current = previous.then(() => new Promise<void>((resolve) => {
-    release = resolve
-  }))
-  commitLocks.set(key, current)
-  await previous
-  try {
-    return await fn()
-  } finally {
-    release()
-    if (commitLocks.get(key) === current) commitLocks.delete(key)
-  }
-}
-
-async function repoRoot(cwd: string) {
-  return await fs.realpath((await runGit(["rev-parse", "--show-toplevel"], cwd)).trim())
-}
-
 async function head(root: string) {
   return (await runGit(["rev-parse", "HEAD"], root)).trim()
 }
@@ -67,16 +45,16 @@ async function branch(root: string) {
 }
 
 async function blob(root: string, file: string) {
-  const line = (await runGit(["ls-tree", "HEAD", "--", file], root)).trim()
+  const line = (await runGit([LITERAL_PATHSPECS, "ls-tree", "HEAD", "--", file], root)).trim()
   return line.match(/\sblob\s+([0-9a-f]{40,64})\s/)?.[1] ?? ""
 }
 
 async function dirty(root: string, file: string) {
-  return !!(await runGit(["status", "--porcelain", "--", file], root)).trim()
+  return !!(await runGit([LITERAL_PATHSPECS, "status", "--porcelain", "--", file], root)).trim()
 }
 
 async function sourceFile(inputPath: string) {
-  const root = await repoRoot(workspaceDir())
+  const root = await gitTopLevel(workspaceDir())
   const resolved = await resolveWorkspacePath(workspaceDir(), inputPath)
   const rel = path.relative(root, await fs.realpath(resolved))
   if (rel.startsWith("..") || path.isAbsolute(rel)) throw new WorkspaceTargetError("path is outside git repository")
@@ -107,7 +85,7 @@ async function conflictEvidence(inputPath: string) {
 
 export async function commitGitSource(input: GitSourceCommitInput) {
   const source = await sourceFile(input.path)
-  return await withCommitLock(`${source.root}\0${source.rel}`, async () => {
+  return await withGitWriteLock(`${source.root}\0${source.rel}`, async () => {
     const before = await gitSourceSnapshot(input.path)
     const matchesBlob = before.blobSha && before.blobSha === input.expected?.baseBlobSha
     const matchesHead = before.head && before.head === input.expected?.baseCommit
@@ -117,10 +95,10 @@ export async function commitGitSource(input: GitSourceCommitInput) {
     const previous = await fs.readFile(source.resolved)
     try {
       await fs.writeFile(source.resolved, input.content)
-      await runGit(["add", "--", source.rel], source.root)
-      await runGit(["commit", "-m", input.message, "--", source.rel], source.root)
+      await runGit([LITERAL_PATHSPECS, "add", "--", source.rel], source.root)
+      await runGit([LITERAL_PATHSPECS, "commit", "-m", input.message, "--", source.rel], source.root)
     } catch (err) {
-      await runGit(["reset", "--", source.rel], source.root).catch(() => "")
+      await runGit([LITERAL_PATHSPECS, "reset", "--", source.rel], source.root).catch(() => "")
       await fs.writeFile(source.resolved, previous)
       throw err
     }

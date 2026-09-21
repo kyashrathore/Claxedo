@@ -2,10 +2,9 @@ import { Hono } from "hono"
 import { z } from "zod"
 import { listProjects, resolveWorkspace, updateProjectMetadata } from "@claxedo/server-core/workspace/store/index"
 import { ControlPlaneAuthError, controlPlaneAuthContext, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority, type ProjectAction } from "@claxedo/server-core/platform/auth/authority"
-import { asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import type { ControlPlaneRouteAuthOptions } from "../platform/http/control-plane-route-auth"
+import { projectAccess } from "../platform/auth/project-access"
 import { workspaceInput } from "./request-context"
 
 type ProjectRouteOptions = ControlPlaneRouteAuthOptions & { services?: ControlPlaneServicesContract }
@@ -15,14 +14,10 @@ const metadataUpdate = z.object({
   commands: z.object({ start: z.string().optional() }).strict().optional(),
 }).strict()
 
-async function projectAccess(request: Request, options: ProjectRouteOptions) {
+/** These routes carry no bearer gate of their own, so they authenticate the request here. */
+async function shellProjectAccess(request: Request, options: ProjectRouteOptions) {
   const auth = await controlPlaneAuthContext(request, { config: options.authConfig ?? controlPlaneAuthConfig(), verifier: options.verifier })
-  if (auth.mode !== "signed") return { local: true, allowed: async (_id: string, _action: ProjectAction) => true }
-  const authority = requireAuthority(options.services)
-  return {
-    local: false,
-    allowed: async (id: string, action: ProjectAction) => (await authority.authorizeProject(auth, { projectId: asProjectId(id), action })).ok,
-  }
+  return projectAccess(auth.mode === "signed" ? auth : undefined, options.services)
 }
 
 export function projectRoutes(options: ProjectRouteOptions) {
@@ -32,14 +27,14 @@ export function projectRoutes(options: ProjectRouteOptions) {
       throw error
     })
     .get("/project", async (c) => {
-      const access = await projectAccess(c.req.raw, options)
+      const access = await shellProjectAccess(c.req.raw, options)
       const projects = await listProjects()
       const visible = []
       for (const project of projects) if (await access.allowed(project.id, "read")) visible.push(project)
       return c.json(visible)
     })
     .get("/project/current", async (c) => {
-      const access = await projectAccess(c.req.raw, options)
+      const access = await shellProjectAccess(c.req.raw, options)
       const input = workspaceInput(c)
       const workspace = await resolveWorkspace({ workspaceId: input.workspaceId, directory: input.directory, create: access.local && !!input.directory })
       const id = workspace?.project_id ?? workspace?.id
@@ -49,7 +44,7 @@ export function projectRoutes(options: ProjectRouteOptions) {
       return c.json(project)
     })
     .patch("/project/:projectId", async (c) => {
-      const access = await projectAccess(c.req.raw, options)
+      const access = await shellProjectAccess(c.req.raw, options)
       const id = c.req.param("projectId")
       if (!await access.allowed(id, "write")) return c.json({ error: { code: "project_access_denied", message: "Project write access is required" } }, 403)
       const parsed = metadataUpdate.safeParse(await c.req.json().catch(() => undefined))

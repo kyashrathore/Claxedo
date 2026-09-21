@@ -30,6 +30,8 @@ const relayInput = {
 }
 
 const transitionStubs = {
+  authorizeRuntimeSessionStartStatus: async () => {},
+  authorizeRuntimeSessionStart: async () => {},
   markSessionRegistrationAmbiguous: async () => ({}) as never,
   beginSessionCompensation: async () => ({}) as never,
   completeSessionCompensation: async () => ({}) as never,
@@ -63,7 +65,7 @@ describe("runtime private-session authority oracle", () => {
         authorizeRuntimeSession: async () => {},
         runtimeAccessTokenActive,
       },
-      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
+      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey), CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey) },
     })
     const editor = await mintRelayHostToken(relayInput, key.privateKey, "EdDSA")
     const admin = await mintRelayHostToken({ ...relayInput, role: "admin", jti: "rht_admin" }, key.privateKey, "EdDSA")
@@ -81,6 +83,22 @@ describe("runtime private-session authority oracle", () => {
     expect(downgraded.status).toBe(401)
     await expect(downgraded.json()).resolves.toMatchObject({ error: { code: "runtime_access_token_revoked" } })
     expect(runtimeAccessTokenActive).toHaveBeenLastCalledWith(expect.objectContaining({ minimumRole: "admin" }))
+  })
+
+  test("refuses a workspace stream when its lease signer is unavailable", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const target = app({
+      authority: {
+        ...transitionStubs,
+        registerRuntimeSession: async () => ({}), authorizeRuntimeSession: async () => {},
+        runtimeAccessTokenActive: async () => ({ active: true }),
+      },
+      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
+    })
+    const token = await mintRelayHostToken(relayInput, key.privateKey, "EdDSA")
+    const response = await request(target, token, { action: "host_read" })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: { code: "session_stream_authority_unavailable" } })
   })
 
   test("requires the exact registration operation and derives actor/workspace only from a current RHT", async () => {
@@ -206,6 +224,8 @@ describe("runtime private-session authority oracle", () => {
     const completeSessionCompensation = vi.fn(async () => ({} as never))
     const target = app({
       authority: {
+        authorizeRuntimeSessionStartStatus: async () => {},
+        authorizeRuntimeSessionStart: async () => {},
         registerRuntimeSession: async () => ({}),
         authorizeRuntimeSession: async () => {},
         runtimeAccessTokenActive: async () => ({ active: true }),
@@ -435,6 +455,8 @@ describe("the owner grant as a session proof", () => {
     const resolveWorkspaceOwner = vi.fn(input.owner ?? (async (workspaceId: string) => (workspaceId === "ws_1" ? OWNER : undefined)))
     const authority = {
       ...transitionStubs,
+      authorizeRuntimeSessionStartStatus: vi.fn(async () => {}),
+      authorizeRuntimeSessionStart: vi.fn(async () => {}),
       registerRuntimeSession: vi.fn(async () => ({})),
       authorizeRuntimeSession: vi.fn(input.authorize ?? (async () => {})),
       runtimeAccessTokenActive: vi.fn(async (): Promise<{ active: boolean; code?: string; reason?: string }> => ({ active: true })),
@@ -468,6 +490,23 @@ describe("the owner grant as a session proof", () => {
     const relay = () => mintRelayHostToken(relayInput, relayKey.privateKey, "EdDSA")
     return { env, passes, target, authority, turnAuthority, resolveWorkspaceOwner, grant, relay }
   }
+
+  test("startup uses verified owner claims and requires a reservation operation", async () => {
+    const { target, authority, grant } = await fixture()
+    const token = (await grant()).token
+    expect((await request(target, token, { action: "start", operationId: "op_start", sessionId: "ses_start", actorId: "forged", workspaceId: "forged" })).status).toBe(200)
+    expect(authority.authorizeRuntimeSessionStart).toHaveBeenCalledWith({ principalKind: "user", actorId: OWNER.actorId, actorKind: "human", workspaceId: "ws_1", sessionId: "ses_start", registrationOperationId: "op_start" })
+    expect((await request(target, token, { action: "start_status", operationId: "op_start", sessionId: "ses_start" })).status).toBe(200)
+    expect(authority.authorizeRuntimeSessionStartStatus).toHaveBeenCalledWith({ principalKind: "user", actorId: OWNER.actorId, actorKind: "human", workspaceId: "ws_1", sessionId: "ses_start", registrationOperationId: "op_start" })
+    expect((await request(target, token, { action: "start_status", sessionId: "ses_start" })).status).toBe(400)
+    expect(authority.registerRuntimeSession).not.toHaveBeenCalled()
+    expect(authority.authorizeRuntimeSession).not.toHaveBeenCalled()
+    expect((await request(target, token, { action: "start", sessionId: "ses_start" })).status).toBe(400)
+    expect((await request(target, undefined, { action: "start", operationId: "op_start", sessionId: "ses_start" })).status).toBe(401)
+    expect(authority.authorizeRuntimeSessionStart).toHaveBeenCalledTimes(1)
+    authority.authorizeRuntimeSessionStart.mockRejectedValueOnce(new ControlPlaneAuthError(403, "workspace_authorization_denied", "Reservation is no longer live"))
+    expect((await request(target, token, { action: "start", operationId: "op_start", sessionId: "ses_start" })).status).toBe(403)
+  })
 
   test("registers, reads and writes as the workspace's owner, re-resolved from the authority on every call and never from the request", async () => {
     const { target, authority, resolveWorkspaceOwner, grant } = await fixture()

@@ -38,6 +38,7 @@ const { ClaxedoProviderCredentialTable } = await import("./provider-credential.s
 // Force DB initialization
 const { ClaxedoDB } = await import("../platform/db")
 const { piCredentialProviderIDs, piRegistryCredentialProvider, piRegistryProviderConnected } = await import("./pi-credentials")
+const { checkCredential } = await import("./operations/check")
 ClaxedoDB.Drizzle() // ensure initialized
 
 describe("credential registry", () => {
@@ -471,6 +472,63 @@ describe("credential registry", () => {
       revision: credential.revision + 1,
     })
     expect(await resolveSecretById(credential.id)).toBe("renewed-token")
+  })
+
+  test.each(["ok", "expired", "auth_failed"] as const)("verification health %s preserves revocation until an explicit status change", async (health) => {
+    const credential = await putCredential({ provider_id: "revoked-health", kind: "api_key", source: "managed", secret: "synthetic-secret" })
+    updateCredentialStatus(credential.id, "revoked")
+    updateCredentialHealth(credential.id, health, 1234)
+    expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({ status: "revoked", health })
+    expect(await resolveSecret(credential.provider_id)).toBeNull()
+    updateCredentialStatus(credential.id, "available")
+    expect(await resolveSecret(credential.provider_id)).toBe("synthetic-secret")
+  })
+
+  test("revocation during the secret backend write survives token rotation", async () => {
+    const credential = await putCredential({ provider_id: "revoked-rotation", kind: "oauth_token", source: "managed", secret: "old-token" })
+    let release!: () => void
+    let entered!: () => void
+    const waiting = new Promise<void>((resolve) => { release = resolve })
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    setBackendOverride({ ...backend, put: async (id, secret) => { entered(); await waiting; return backend.put(id, secret) } })
+    const rotation = updateCredentialSecret(credential.id, "new-token")
+    await started
+    updateCredentialStatus(credential.id, "revoked")
+    release()
+    expect(await rotation).toBe(true)
+    expect(credentialById(credential.id, { onOutage: "throw" })?.status).toBe("revoked")
+    expect(await resolveSecret(credential.provider_id)).toBeNull()
+    expect(await resolveSecretById(credential.id)).toBe("new-token")
+  })
+
+  test.each(["before", "during"] as const)("OAuth Check cannot reactivate a credential revoked %s refresh", async (when) => {
+    const credential = await putCredential({
+      provider_id: "codex-app-server", kind: "oauth_token", source: "managed", expires_at: 1,
+      secret: JSON.stringify({ type: "codex_auth", access: "access_old", refresh: "refresh_old", account_id: "synthetic-account" }),
+    })
+    if (when === "before") updateCredentialStatus(credential.id, "revoked")
+    const seen: string[] = []
+    const request = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+      seen.push(url)
+      if (url === "https://auth.openai.com/oauth/token") {
+        if (when === "during") updateCredentialStatus(credential.id, "revoked")
+        return Response.json({ access_token: "access_new", refresh_token: "refresh_new" })
+      }
+      expect(url).toBe("https://chatgpt.com/backend-api/wham/usage")
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer access_new")
+      return Response.json({})
+    }, { preconnect() {} })
+    const result = await checkCredential({
+      resolveCredentialSecretById: resolveSecretById,
+      updateCredentialSecret,
+      updateCredentialHealth: async (...args) => updateCredentialHealth(...args),
+    }, credentialById(credential.id, { onOutage: "throw" })!, { org: "__local__", fetch: request, now: () => 10_000 })
+    expect(result).toMatchObject({ status: "checked", health: "ok" })
+    expect(seen).toHaveLength(2)
+    expect(credentialById(credential.id, { onOutage: "throw" })).toMatchObject({ status: "revoked", health: "ok", revision: credential.revision + 1 })
+    expect(await resolveSecret(credential.provider_id)).toBeNull()
+    expect(JSON.parse((await resolveSecretById(credential.id))!).access).toBe("access_new")
   })
 
   test("renaming a credential touches nothing the auth material is judged by", async () => {

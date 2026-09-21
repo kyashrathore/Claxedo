@@ -2,21 +2,27 @@ import fs from "fs"
 import path from "path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import { buildSafeEnv, createBoundedGit, runGit } from "@claxedo/workspace-runtime/host"
 import { record } from "../platform/json"
 
 const execFileAsync = promisify(execFile)
 
-export async function git(root: string, args: string[]) {
-  const { stdout } = await execFileAsync(
-    "git",
-    ["-c", "core.fsmonitor=false", "-c", "core.quotepath=false", ...args],
-    {
-      cwd: root,
-      timeout: 1500,
-      killSignal: "SIGKILL",
-    },
-  )
-  return stdout
+/** The routes that list and diff files drop git's answer rather than hold a response longer. */
+const LISTING_TIMEOUT_MS = 1_500
+
+/**
+ * `fetch`, `submodule update` and `worktree add` copy a repository over the
+ * network or onto disk, so they get a deadline no working operation reaches and
+ * a pool of their own — on the shared runner they would park a listing behind a
+ * copy that runs for minutes.
+ */
+const WORKTREE_TIMEOUT_MS = 30 * 60_000
+const worktreeGit = createBoundedGit({ timeoutMs: WORKTREE_TIMEOUT_MS })
+
+export function git(root: string, args: string[]) {
+  return runGit(["-c", "core.fsmonitor=false", "-c", "core.quotepath=false", ...args], root, {
+    timeoutMs: LISTING_TIMEOUT_MS,
+  })
 }
 
 export function text(input: unknown) {
@@ -27,11 +33,10 @@ export function text(input: unknown) {
 
 export async function gitRun(dir: string, args: string[]) {
   try {
-    const out = await execFileAsync("git", ["-C", dir, ...args])
     return {
       ok: true as const,
-      out: text(out.stdout),
-      err: text(out.stderr),
+      out: text(await worktreeGit(args, dir)),
+      err: "",
     }
   } catch (err) {
     const cause = record(err) ?? {}
@@ -129,7 +134,10 @@ export async function defaultBranch(dir: string) {
 
 export async function shell(dir: string, cmd: string) {
   try {
-    const out = await execFileAsync(process.platform === "win32" ? "cmd" : "bash", process.platform === "win32" ? ["/c", cmd] : ["-lc", cmd], { cwd: dir })
+    const out = await execFileAsync(process.platform === "win32" ? "cmd" : "bash", process.platform === "win32" ? ["/c", cmd] : ["-lc", cmd], {
+      cwd: dir,
+      env: buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }),
+    })
     return {
       ok: true as const,
       out: text(out.stdout),

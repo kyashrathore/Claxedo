@@ -211,8 +211,8 @@ export function sessionStatus(value: unknown): SessionStatus | undefined {
       return { type: "retry", attempt, message, next, ...(action ? { action } : {}) }
     }
     case "recovering":
-      return value.kind === "process_restart" && typeof value.message === "string"
-        ? { type: "recovering", kind: "process_restart", message: value.message }
+      return (value.kind === "process_restart" || value.kind === "uncertain_execution") && typeof value.message === "string"
+        ? { type: "recovering", kind: value.kind, message: value.message }
         : undefined
     default:
       return undefined

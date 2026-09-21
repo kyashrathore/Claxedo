@@ -53,7 +53,11 @@ function QueuedMessageBubble(props: { item: QueuedMessageRecord; queued: QueuedM
   const editing = () => props.queued.editing() === props.item.seq
   // Held by another client's edit: shown as editing, releasable, not editable here.
   const heldElsewhere = () => props.item.held && !editing()
-  const busy = () => props.queued.pending() !== undefined
+  const busy = () => props.queued.pending() !== undefined || !!props.item.steering && props.item.steering.state !== "rejected"
+  const status = () => props.item.steering?.state === "accepted" ? language.t("ui.message.queued.accepted")
+    : props.item.steering?.state === "dispatching" ? language.t("ui.message.queued.dispatching")
+    : props.item.steering?.state === "unknown" ? language.t("ui.message.queued.unknown")
+    : language.t(editing() || heldElsewhere() ? "ui.message.queued.editing" : "ui.message.queued")
   const text = () => queuedMessageText(props.item)
   const attachments = () => props.item.parts.filter((part) => part.type === "file")
   const action = (input: { icon: "arrow-up" | "pencil" | "close-small"; label: string; onClick: () => void }) => (
@@ -91,7 +95,7 @@ function QueuedMessageBubble(props: { item: QueuedMessageRecord; queued: QueuedM
       >
         <span class="inline-flex items-center gap-1.5 text-12-regular text-text-weak">
           <ClaxedoIcon name={editing() || heldElsewhere() ? "pencil" : "circle-dashed"} size="small" />
-          {language.t(editing() || heldElsewhere() ? "ui.message.queued.editing" : "ui.message.queued")}
+          {status()}
         </span>
         <Show
           when={!editing() && !heldElsewhere()}

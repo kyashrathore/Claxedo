@@ -244,23 +244,15 @@ function toolResultImages(block: Record<string, unknown>): Array<{ mime: string;
   })
 }
 
-/**
- * The read path names the image, and — when it sits under the session cwd —
- * lets the attachment travel as a location instead of 85 KB of base64.
- *
- * Only a lone image can be the file the input named. Several of them share nothing but
- * the call, and the workspace-file branch drops the bytes it carries by value, so a path
- * handed to each would leave every image pointing at one file with its own pixels gone.
- */
+/** Use a single read path as a filename only; preserve each image's supplied bytes. */
 function resultAttachments(
   images: Array<{ mime: string; data: string }>,
   display: ToolDisplay,
-  root: string | undefined,
 ): RuntimeToolAttachment[] {
-  if (images.length !== 1) return images.map((image) => imageAttachment({ ...image, root }))
+  if (images.length !== 1) return images.map((image) => imageAttachment(image))
   const sourcePath = display.filePath ?? display.path
   const filename = sourcePath?.split(/[\\/]/).pop()
-  return images.map((image) => imageAttachment({ ...image, filename, sourcePath, root }))
+  return images.map((image) => imageAttachment({ ...image, filename, sourcePath }))
 }
 
 function toolResultBlocks(message: Record<string, unknown>) {
@@ -1086,7 +1078,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
               type: "tool-output",
               toolCallId: result.toolCallId,
               output: isTaskTool(tool.toolName) ? agentResultText(result.structured, result.text) : result.text,
-              ...(result.images.length ? { attachments: resultAttachments(result.images, display, state.cwd) } : {}),
+              ...(result.images.length ? { attachments: resultAttachments(result.images, display) } : {}),
               display,
               metadata: {
                 ...metadata,

@@ -29,6 +29,14 @@ export type WorkspaceRelayHostTunnelOptions = {
    * configured deployment-wide hint, which is what an older runtime produces.
    */
   region?: string
+  /**
+   * Where one relayed request lands on this machine, or nothing to refuse it.
+   *
+   * `path` is already resolved to path and query: no `.`/`..` segments in any
+   * spelling, no authority. A host therefore decides its route policy and
+   * builds its target from the same string, and neither can be walked out of
+   * the workspace prefix it adds.
+   */
   resolveLocalUrl?: (input: { workspaceId: string; path: string }) => URL | undefined
   headers?: Record<string, string>
   tokenProvider?: () => Promise<string>
@@ -152,7 +160,49 @@ function targetUrl(baseUrl: string, path: string) {
   return new URL(path.replace(/^\/+/, ""), `${normalized(baseUrl)}/`)
 }
 
-function localTarget(input: WorkspaceRelayHostTunnelOptions, workspaceId: string, path: string) {
+/**
+ * A relayed `path`, resolved to path and query alone.
+ *
+ * The frame carries it as a STRING, so `..` segments — raw, percent-encoded,
+ * or backslash-separated — arrive intact where an HTTP hop would have
+ * resolved them long before. Every target built from it is that string pasted
+ * behind something that BINDS it: `localBaseUrl` may already be scoped to one
+ * workspace (`<server>/workspaces/<id>`), and a host's own resolver prefixes
+ * `/workspaces/:id`. A surviving `..` climbs back out of that binding and
+ * lands on the host's own root, where the workspace is whatever a
+ * caller-controlled selector says rather than the one this frame was admitted
+ * for.
+ *
+ * Resolved HERE, at the one point every relayed path enters this client, so
+ * that a host deciding route policy on the path and then prefixing it cannot
+ * read two different strings.
+ *
+ * Nothing for a string that is not a path at all. A malformed authority
+ * (`//[`, `http://[`, `//[::1`) makes the parse throw, and the two callers
+ * are not equally able to survive that: `openChannel` runs straight out of
+ * the socket's message handler, where a throw is an unhandled exception in
+ * the host process and the relay is never told the channel failed. Refusing
+ * instead puts it on the deny path both callers already have — the relay is
+ * owed one terminal frame either way — and keeps a parser's error text from
+ * travelling back as this machine's answer.
+ */
+function resolvedPath(path: string): string | undefined {
+  let resolved: URL
+  try {
+    // Only the parse is guarded. An error from anything else is not a verdict
+    // about the path and has no business being read as one.
+    resolved = new URL(path, "http://relayed-request.invalid")
+  } catch {
+    return undefined
+  }
+  // The authority is dropped with it: `//elsewhere/x` parses as a host, and
+  // only what this machine serves is ever a target.
+  return `${resolved.pathname}${resolved.search}`
+}
+
+function localTarget(input: WorkspaceRelayHostTunnelOptions, workspaceId: string, rawPath: string) {
+  const path = resolvedPath(rawPath)
+  if (path === undefined) return undefined
   return input.resolveLocalUrl?.({ workspaceId, path }) ?? (input.resolveLocalUrl ? undefined : targetUrl(input.localBaseUrl, path))
 }
 

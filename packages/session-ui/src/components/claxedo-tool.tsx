@@ -74,6 +74,7 @@ export function ClaxedoTool(props: ToolProps) {
   const view = createMemo(() =>
     claxedoToolView({ name: name(), input: props.input, output: props.output, i18n, sessionTitle }),
   )
+  const href = () => data.claxedoToolHref?.(name(), props.input, props.output)
   const running = () => props.status === "pending" || props.status === "running"
   const hasBody = () => view().facts.length > 0 || view().rows.length > 0 || !!view().text
 
@@ -81,7 +82,9 @@ export function ClaxedoTool(props: ToolProps) {
     <div data-slot="basic-tool-tool-info-structured">
       <div data-slot="basic-tool-tool-info-main">
         <span data-slot="basic-tool-tool-title">
-          <TextShimmer text={view().title} active={running()} />
+          <Show when={href()} fallback={<TextShimmer text={view().title} active={running()} />}>
+            {(url) => <a href={url()} class="subagent-link" data-link-kind="claxedo-tool" onClick={(event) => event.stopPropagation()}><TextShimmer text={view().title} active={running()} /></a>}
+          </Show>
         </span>
         <Show when={view().link}>
           {(link) => <CardLink link={link()} slot="basic-tool-tool-subtitle" class="subagent-link" />}

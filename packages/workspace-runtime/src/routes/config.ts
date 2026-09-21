@@ -13,7 +13,7 @@ import {
 import { isRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import type { WorkspaceRuntimeManagementAuth, WorkspaceRuntimeManagementTarget } from "../management-auth"
+import { authorizeManagementAccess, type ManagementAccessOptions } from "./management-access"
 import { WorkspaceRuntimeRoutes } from "./manifest"
 import { isRecord as record, str } from "../json-value"
 
@@ -98,23 +98,7 @@ export class RuntimeConfigApplyError extends Error {
   }
 }
 
-export type ConfigRouteOptions = {
-  managementAuth?: WorkspaceRuntimeManagementAuth
-  managementTarget?: WorkspaceRuntimeManagementTarget
-}
-
-type AuthCtx = {
-  req: {
-    raw: Request
-    path: string
-    method: string
-    header(name: string): string | undefined
-  }
-  get(name: "relayHostAuth"): RelayHostAuthContext["relayHostAuth"] | undefined
-  get(name: "relayHostDirectAuth"): RelayHostAuthContext["relayHostDirectAuth"] | undefined
-}
-
-type AuthVerdict = { ok: true } | { ok: false; code: string; message: string; status: 401 | 403 }
+export type ConfigRouteOptions = ManagementAccessOptions
 
 function stringRecord(input: unknown): input is Record<string, string> {
   return isRecord(input) && Object.values(input).every((item) => typeof item === "string")
@@ -244,54 +228,6 @@ export function normalizeRuntimeSnapshot(
   }
 }
 
-async function authorize(c: AuthCtx, options: ConfigRouteOptions): Promise<AuthVerdict> {
-  if (!options.managementAuth || !options.managementTarget) {
-    return {
-      ok: false,
-      code: "runtime_config_auth_required",
-      message: "Runtime config management auth is required",
-      status: 401,
-    }
-  }
-  try {
-    const result = await options.managementAuth.authorize({
-      request: c.req.raw,
-      action: "runtime.config.apply",
-      target: options.managementTarget,
-      path: c.req.path,
-      method: c.req.method,
-      relayAuth: c.get("relayHostAuth") ?? c.get("relayHostDirectAuth"),
-    })
-    if (
-      
-      result.ok
-      && typeof result.subject === "string"
-      && Array.isArray(result.scopes)
-      && result.scopes.every((item) => typeof item === "string")
-    ) return { ok: true }
-    if (
-      !
-      result.ok
-      && (result.status === 401 || result.status === 403)
-      && typeof result.code === "string"
-      && typeof result.message === "string"
-    ) {
-      return {
-        ok: false,
-        code: result.code,
-        message: result.message,
-        status: result.status,
-      }
-    }
-  } catch {}
-  return {
-    ok: false,
-    code: "runtime_config_auth_failed",
-    message: "Runtime config management auth failed",
-    status: 401,
-  }
-}
-
 export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promise<void>, options: ConfigRouteOptions = {}) =>
   new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
@@ -299,7 +235,7 @@ export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promis
       throw err
     })
     .post(WorkspaceRuntimeRoutes.config, async (c) => {
-      const verdict = await authorize(c, options)
+      const verdict = await authorizeManagementAccess(c, options, "runtime.config.apply")
       if (!verdict.ok) {
         return c.json({
           error: {

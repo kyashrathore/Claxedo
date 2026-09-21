@@ -80,6 +80,16 @@ function putAuth(app: Hono, id: string, auth: Record<string, string>) {
 }
 
 describe("a key the provider rejects is refused at paste time", () => {
+  test.each(["http://worker.test", "https://user:password@worker.test", "https://worker.test/?query", "https://worker.test/#fragment"])("refuses insecure Worker endpoint %s before fetch or persistence", async (worker_url) => {
+    const { credentials, stored } = recordingCredentials()
+    const transport = respond({})
+    const response = await putAuth(appWith(credentials, transport.stub), "cloudflare", { api_token: "synthetic", worker_url })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "sandbox_driver_endpoint_invalid" } })
+    expect(transport.calls).toEqual([])
+    expect(stored).toEqual([])
+    expect(fs.existsSync(path.join(tempDataDir, "user-agent-config.json"))).toBe(false)
+  })
   test("the save is rejected rather than stored", async () => {
     const { credentials, stored } = recordingCredentials()
     const transport = respond({ ok: false, status: 401, body: "unauthorized" })

@@ -3,7 +3,7 @@ import { trimToUndefined } from "@claxedo/helpers/string"
 
 export const WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER = "x-workspace-runtime-management-token"
 
-export type WorkspaceRuntimeManagementAction = "runtime.config.apply"
+export type WorkspaceRuntimeManagementAction = "runtime.config.apply" | "runtime.checkpoint.control"
 
 export type WorkspaceRuntimeManagementTarget = {
   workspaceId: string
@@ -81,7 +81,14 @@ export async function loadWorkspaceRuntimeManagementVerificationKey(
   env: LoadWorkspaceRuntimeManagementKeyEnv,
 ): Promise<WorkspaceRuntimeManagementVerifierKey> {
   const jwksUrl = trimToUndefined(env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL)
-  if (jwksUrl) return createRemoteJWKSet(new URL(jwksUrl))
+  if (jwksUrl) {
+    const url = new URL(jwksUrl)
+    if (url.protocol !== "https:" || url.username || url.password || url.hash) {
+      throw new Error("Management JWKS requires HTTPS without URL credentials or a fragment; use WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM for a pinned local key")
+    }
+    // jose refuses redirects; the configured TLS endpoint remains the trust anchor.
+    return createRemoteJWKSet(url)
+  }
   const verifyPem = pem(env.WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM)
   if (!verifyPem) {
     throw new Error(
@@ -157,4 +164,3 @@ export function createWorkspaceRuntimeJwtManagementAuth(
     },
   }
 }
-

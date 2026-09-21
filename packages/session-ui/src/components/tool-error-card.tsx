@@ -2,13 +2,14 @@ import { type ComponentProps, createMemo, Show, splitProps } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Card, CardDescription } from "@opencode-ai/ui/card"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { ToolExitCode } from "./basic-tool"
 
 export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
+  icon?: IconProps["name"]
   tool: string
   error: string
   title?: string
@@ -30,6 +31,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
   const copied = () => state.copied
   const [split, rest] = splitProps(props, [
     "tool",
+    "icon",
     "error",
     "title",
     "defaultOpen",
@@ -107,7 +109,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
           <div data-component="tool-trigger">
             <div data-slot="basic-tool-tool-trigger-content">
               <span data-slot="basic-tool-tool-indicator" data-component="tool-error-card-icon">
-                <Icon name="circle-ban-sign" size="small" style={{ "stroke-width": 1.5 }} />
+                <Icon name={split.icon ?? "circle-ban-sign"} size="small" style={{ "stroke-width": 1.5 }} />
               </span>
               <div data-slot="basic-tool-tool-info">
                 <div data-slot="basic-tool-tool-info-structured">

@@ -158,8 +158,9 @@ const access = createChannelAccess({
   groupEngagement: parseGroupEngagement(process.env.CLAXEDO_CHANNEL_GROUP_ENGAGEMENT), // "mention" | "unprompted"
   store: createMemoryChannelAccessStore(), // swap for durable storage in multi-instance deployments
   bindings: createMemoryChannelIdentityBindingStore(),
-  // Config-seeded always-allowed senders: "telegram:12345", "telegram:*", or "*".
-  allowFrom: (process.env.CLAXEDO_CHANNEL_ALLOW_FROM ?? "").split(",").filter(Boolean),
+  // Config-seeded always-allowed senders, as stable platform account ids:
+  // "telegram:12345", "telegram:*", or "*".
+  allowIds: (process.env.CLAXEDO_CHANNEL_ALLOW_IDS ?? "").split(",").filter(Boolean),
 })
 
 const core = createChannelCore({
@@ -187,6 +188,69 @@ throttled reply and one bounded pending row. Group chats use `groupPolicy`
 instead (no pairing flow); `open` and `disabled` skip pairing on both surfaces.
 Access is fail-closed: an unrecognized policy value, an errored store, or an
 `identity_blocked` binding all deny.
+
+### Sender identity
+
+Everything the gate stores or compares is keyed by `channel:externalUserId`,
+and `externalUserId` is always the platform's immutable account id. A handle
+(`@username`, `sender.login`) is renameable, and every one of these platforms
+hands a freed handle to the next account that claims it — so an allowlist entry
+or an account binding written against one names a different human later. No
+transport falls back to a handle, and none invents a sender: a message the
+platform did not attribute produces no envelope at all, so it reaches neither
+the gate nor a thread subscription.
+
+| Transport | `externalUserId` |
+| --- | --- |
+| Chat SDK bridge (all adapters) | `Author.userId` — the id the adapter parsed off the account (`user.id.toString()` on GitHub, `String(user.id)` on Telegram). On Telegram it is additionally checked against the raw update, because that adapter synthesizes an author from the chat when an update attributes nobody |
+| GitHub direct (`githubWebhookEnvelope`) | `String(sender.id)`, the numeric account id — never `sender.login` |
+| Telegram direct (`telegramUpdateEnvelope`) | `String(from.id)`; a post made on behalf of a chat (anonymous admin, channel post) is `chat:<sender_chat.id>`, matching `@chat-adapter/telegram` |
+| WhatsApp (Baileys) | the sender JID |
+
+The Chat SDK bridge also refuses a thread whose `adapter.name` is not one of the
+five supported channels, rather than filing its senders under some other
+platform's allowlist.
+
+To admit a sender, either seed the id in configuration:
+
+```
+CLAXEDO_CHANNEL_ALLOW_IDS=github:583231,telegram:12345
+```
+
+or let them pair and approve the code from an authorized chat:
+
+```
+/pairing list
+/pairing approve 7K3MQP2X
+```
+
+`/whoami` answers with the exact string to seed, but only for a sender the
+gate has already admitted: it runs after the access check, not before it. A
+sender who is not admitted yet cannot be asked for it, so the id comes from
+somewhere the owner can reach without them — the platform's own account page
+(GitHub `https://api.github.com/users/<handle>`, Telegram's numeric id in any
+client that shows it), or `/pairing list` and the bearer-gated
+`GET /api/channels/pairing`, both of which print `channel:externalUserId` for
+every sender waiting on a code.
+
+### Stored bindings written before the id contract
+
+Entries written against handles (`github:octocat`, `telegram:someuser`) match
+nothing: an id is the only thing these stores accept, and there is no handle
+fallback. They are not merely inert, either. A handle can be spelled exactly
+like somebody else's account id — `telegram:12345` is the handle @12345 to one
+producer and account 12345 to the next — so a stored row from before the
+contract cannot be told apart from a current one by looking at its key, and
+re-encoding the key cannot separate them.
+
+Every store therefore records which generation of the contract wrote a row, and
+only the current generation authorizes. Rows below it are kept as history and
+are never promoted: no configuration setting re-admits them, and the migration
+assigns nothing. A sender behind one comes back by pairing again, or by
+claiming the code from the signed account that owns the id. The seed key was
+renamed in the same change for the same reason — a seed is a standing grant no
+store records, so it is re-stated under a key that says an entry must be a
+stable id, and the old key is not read.
 
 ### Group access vs group engagement
 

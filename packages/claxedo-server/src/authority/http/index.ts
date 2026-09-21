@@ -3,6 +3,7 @@ import type { ControlPlaneServices } from "../services"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import {
   assertRuntimeMutationAuth,
+  assertRuntimeWorkspaceAuth,
   authContext,
   errorResponse,
   json,
@@ -41,6 +42,7 @@ export function ControlPlaneHttpRoutes(
   app.post("/workspaces/:workspaceId/sessions/:sessionId/register", async (c) => {
     try {
       const auth = await authContext(c.req.raw, options)
+      assertRuntimeWorkspaceAuth(c.req.raw, auth, c.req.param("workspaceId"))
       const body = pullTriggerInput.parse(await json(c.req.raw))
       const workspaceId = c.req.param("workspaceId")
       const sessionId = c.req.param("sessionId")
@@ -66,6 +68,7 @@ export function ControlPlaneHttpRoutes(
   app.post("/workspaces/:workspaceId/sessions/:sessionId/checkpoint", async (c) => {
     try {
       const auth = await authContext(c.req.raw, options)
+      assertRuntimeWorkspaceAuth(c.req.raw, auth, c.req.param("workspaceId"))
       const body = pullTriggerInput.parse(await json(c.req.raw))
       const workspaceId = c.req.param("workspaceId")
       const sessionId = c.req.param("sessionId")
@@ -92,6 +95,7 @@ export function ControlPlaneHttpRoutes(
   app.post("/workspaces/:workspaceId/sessions/:sessionId/repair", async (c) => {
     try {
       const auth = await authContext(c.req.raw, options)
+      assertRuntimeWorkspaceAuth(c.req.raw, auth, c.req.param("workspaceId"))
       const body = pullTriggerInput.parse(await json(c.req.raw))
       const workspaceId = c.req.param("workspaceId")
       const sessionId = c.req.param("sessionId")

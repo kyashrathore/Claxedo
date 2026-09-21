@@ -65,12 +65,42 @@ function requestClaimsRelayIngress(request: Request) {
   return request.headers.get("x-forwarded-by") === RELAY_FORWARDED_BY
 }
 
+/**
+ * The actor already verified for one request and workspace.
+ *
+ * The daemon's admission gate asks this question before dispatch and the
+ * dispatcher asks it again to build the stamp it forwards. Both must reach the
+ * same verifier — a second implementation at the gate is how the two answers
+ * drift — so the ONE verification is kept here, against the request object, and
+ * dies with it.
+ */
+const verifiedActors = new WeakMap<Request, Map<string, Promise<IngressActor | undefined>>>()
+
+function verifiedActor(
+  request: Request,
+  workspaceId: string,
+  resolve: NonNullable<IngressProvenanceOptions["resolveRelayActor"]>,
+) {
+  const byWorkspace = verifiedActors.get(request) ?? new Map<string, Promise<IngressActor | undefined>>()
+  verifiedActors.set(request, byWorkspace)
+  const existing = byWorkspace.get(workspaceId)
+  if (existing) return existing
+  // A verifier that throws must not leave a rejected promise memoized: the next
+  // ask would report a transport failure the boundary never made.
+  const attempt = resolve(request, workspaceId)
+  attempt.catch(() => byWorkspace.delete(workspaceId))
+  byWorkspace.set(workspaceId, attempt)
+  return attempt
+}
+
 export async function resolveIngressProvenance(
   request: Request,
   workspaceId: string,
   options: IngressProvenanceOptions = {},
 ): Promise<IngressProvenance> {
-  const actor = await options.resolveRelayActor?.(request, workspaceId)
+  const actor = options.resolveRelayActor
+    ? await verifiedActor(request, workspaceId, options.resolveRelayActor)
+    : undefined
   if (actor) {
     return { kind: "relay-replayed", stamp: embeddedRelayHostAuthFromActor(actor, workspaceId) }
   }

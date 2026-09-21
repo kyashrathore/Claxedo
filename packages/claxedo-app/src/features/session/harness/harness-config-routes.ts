@@ -47,8 +47,9 @@ export function workspaceRuntimeAgentConfigPath(input: {
   resource: "api/wr/harness-config-options"
   directory: HarnessDirectory
   selection?: HarnessSelection
+  sessionId?: string
 }) {
-  const url = new URL(`/${input.resource}`, "http://claxedo.local")
+  const url = new URL(input.sessionId && input.sessionId !== "new" ? `/session/${encodeURIComponent(input.sessionId)}/config-options` : `/${input.resource}`, "http://claxedo.local")
   url.searchParams.set("directory", input.directory)
   appendSelection(url, input.selection)
   return `${url.pathname}${url.search}`

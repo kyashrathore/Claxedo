@@ -1,5 +1,5 @@
 import type { ChannelId } from "../envelope"
-import type { ChannelRegistration } from "../registry"
+import type { ChannelAdapterConfig, ChannelRegistration } from "../registry"
 import { createMemoryStateAdapter } from "./chat-sdk-memory-state"
 import { createChatSdkBridge, type ChatSdkBot } from "./chat-sdk-bridge"
 import type { ChannelWebhookHandler } from "../ingress"
@@ -55,7 +55,7 @@ const loadChatSdk = async () => await import("chat") as Record<string, unknown>
  * is taken at its word; both check what JavaScript can check (callability) and
  * name what the vendor documents the export to be.
  */
-function isAdapterFactory(value: unknown): value is () => unknown {
+function isAdapterFactory(value: unknown): value is (config?: ChannelAdapterConfig) => unknown {
   return typeof value === "function"
 }
 
@@ -63,10 +63,33 @@ function isChatConstructor(value: unknown): value is ChatConstructor {
   return typeof value === "function"
 }
 
-function factory(module: Record<string, unknown>, name: string): () => unknown {
+function factory(module: Record<string, unknown>, name: string) {
   const value = module[name]
   if (!isAdapterFactory(value)) throw new Error(`Chat SDK factory ${name} is not available`)
   return value
+}
+
+/**
+ * An enabled Telegram channel must arrive with both credentials resolved.
+ * Whatever the registration leaves out, `@chat-adapter/telegram` answers from
+ * `process.env` under its own fixed key — a second source that can disagree
+ * with the one that enabled the channel, and for the secret token means an
+ * adapter that logs a warning and then accepts every caller. Refusing the whole
+ * bot rather than skipping the one adapter keeps that misconfiguration from
+ * going unnoticed until a forged update has already been processed.
+ */
+function assertTelegramConfigured(registrations: ChannelRegistration[]) {
+  for (const registration of registrations) {
+    if (!registration.enabled || registration.channel !== "telegram" || registration.transport !== "chat-sdk") continue
+    const unresolved: string[] = []
+    if (!registration.adapterConfig?.botToken) unresolved.push("TELEGRAM_BOT_TOKEN")
+    if (!registration.adapterConfig?.secretToken) unresolved.push("TELEGRAM_WEBHOOK_SECRET_TOKEN")
+    if (unresolved.length > 0) {
+      throw new Error(
+        `Telegram ingress is enabled with ${unresolved.join(" and ")} unresolved. The channel registry must resolve both; the adapter's own process.env fallback is not a second source.`,
+      )
+    }
+  }
 }
 
 export async function createChatSdkBot(input: {
@@ -76,6 +99,7 @@ export async function createChatSdkBot(input: {
   importer?: ModuleImporter
   onAdapterError?: (input: { channel: ChannelId; error: unknown }) => void
 }) {
+  assertTelegramConfigured(input.registrations)
   const chatModule = await (input.importer ? input.importer("chat") : loadChatSdk())
   const Chat = chatModule.Chat
   if (!isChatConstructor(Chat)) throw new Error("Chat SDK Chat constructor is not available")
@@ -84,7 +108,7 @@ export async function createChatSdkBot(input: {
     try {
       const config = CHAT_SDK_ADAPTERS[registration.channel]
       const module = await (input.importer ? input.importer(config.specifier) : config.load())
-      return [[registration.channel, factory(module, config.factory)()]]
+      return [[registration.channel, factory(module, config.factory)(registration.adapterConfig)]]
     } catch (error) {
       input.onAdapterError?.({ channel: registration.channel, error })
       return []

@@ -45,7 +45,7 @@ function string(input: unknown) {
 export async function loadExistingSubmitConfig(read: () => Promise<unknown>, onError: (error: unknown) => void) {
   try {
     const config = parseExistingSessionConfig(await read())
-    if (!config?.model) throw new Error("The session configuration is not available yet. Try again after it loads.")
+    if (!config || (!config.model && config.harnessType.kind !== "connection")) throw new Error("The session configuration is not available yet. Try again after it loads.")
     return config
   } catch (error) {
     onError(error)

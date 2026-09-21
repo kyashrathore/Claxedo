@@ -643,7 +643,7 @@ describe("claudeSdkAdapter", () => {
 
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
-  test("carries a read inside the session cwd by path alongside its unchanged text output", () => {
+  test("preserves image bytes inside the session cwd alongside unchanged text output", () => {
     const { events, part } = readImageSession({ cwd: "/repo", filePath: "/repo/docs/screenshot.png", data: png })
 
     expect(events).toMatchObject([{
@@ -651,14 +651,13 @@ describe("claudeSdkAdapter", () => {
       toolCallId: "tool-read-image-1",
       output: "This image may contain text.\nRead 1 image.",
       attachments: [{
-        kind: "workspace-file",
+        kind: "inline",
         mime: "image/png",
-        path: "docs/screenshot.png",
-        sourcePath: "/repo/docs/screenshot.png",
+        url: `data:image/png;base64,${png}`,
         filename: "screenshot.png",
       }],
     }])
-    expect(events[0]).not.toHaveProperty("attachments.0.url")
+    expect(events[0]).not.toHaveProperty("attachments.0.path")
 
     expect(part).toMatchObject({
       type: "tool",
@@ -674,8 +673,7 @@ describe("claudeSdkAdapter", () => {
           messageID: "reply-1",
           mime: "image/png",
           filename: "screenshot.png",
-          url: "docs/screenshot.png",
-          location: { kind: "workspace-file", path: "docs/screenshot.png" },
+          url: `data:image/png;base64,${png}`,
         }],
       },
     })

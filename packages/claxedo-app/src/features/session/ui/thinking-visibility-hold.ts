@@ -16,10 +16,12 @@ export type ThinkingVisibilityHold = {
 
 export function nextThinkingVisibilityHold(input: {
   want: boolean
+  blocked?: boolean
   heldUntilMs: number | undefined
   nowMs: number
   hideHoldMs?: number
 }): ThinkingVisibilityHold {
+  if (input.blocked) return { visible: false, heldUntilMs: undefined }
   const holdMs = input.hideHoldMs ?? THINKING_HIDE_HOLD_MS
   if (input.want) return { visible: true, heldUntilMs: undefined }
 

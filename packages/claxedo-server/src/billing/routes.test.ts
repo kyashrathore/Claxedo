@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { BillingRoutes, POLAR_INTERACTIVE_TIMEOUT_MS, type PolarClientLike } from "./routes"
-import type { BillingStore } from "./store-contract"
+import type { ApplyPolarStateArgs, BillingStore } from "./store-contract"
 import { signStandardWebhook } from "./standard-webhooks"
 
 /**
@@ -78,11 +78,15 @@ function app(input: { store?: BillingStore; polar?: PolarClientLike; env?: Recor
   })
 }
 
-async function webhookRequest(payload: string, options: { secret?: string; headers?: Record<string, string> } = {}) {
+async function webhookRequest(
+  payload: string,
+  options: { secret?: string; id?: string; headers?: Record<string, string> } = {},
+) {
   const timestampSeconds = Math.floor(Date.now() / 1000)
+  const id = options.id ?? "msg_1"
   const signature = await signStandardWebhook({
     payload,
-    id: "msg_1",
+    id,
     timestampSeconds,
     secret: options.secret ?? SECRET,
   })
@@ -90,7 +94,7 @@ async function webhookRequest(payload: string, options: { secret?: string; heade
     method: "POST",
     body: payload,
     headers: {
-      "webhook-id": "msg_1",
+      "webhook-id": id,
       "webhook-timestamp": String(timestampSeconds),
       "webhook-signature": signature,
       ...options.headers,
@@ -175,6 +179,59 @@ describe("POST /polar/webhook", () => {
     expect(res.status).toBe(202)
     expect(await res.json()).toMatchObject({ received: true, applied: false })
     expect(store.applyPolarState).not.toHaveBeenCalled()
+  })
+
+  test("a subscription event with no provider timestamp cannot overwrite newer mirrored state", async () => {
+    // The authority's per-org monotonic `source_ts` guard, modeled here: the
+    // server side only holds the port, so the clobber this protects against is
+    // only observable at the route with the guard in front of it.
+    const mirrored = new Map<string, { plan: string; source_ts: number }>()
+    const store = fakeStore({
+      applyPolarState: vi.fn(async (args: ApplyPolarStateArgs) => ({
+        results: args.org_states.map(({ org_id, state }) => {
+          const current = mirrored.get(org_id!)
+          if (current && args.source_ts <= current.source_ts) {
+            return { org_id: org_id!, applied: false, reason: "stale_source_ts" }
+          }
+          mirrored.set(org_id!, { plan: state.plan, source_ts: args.source_ts })
+          return { org_id: org_id!, applied: true }
+        }),
+        unresolved: [],
+      })),
+    })
+    const subscription = (overrides: Record<string, unknown>) => ({
+      id: "sub_1",
+      product_id: "prod_monthly",
+      customer_id: "cus_1",
+      metadata: { org_id: "org_doc_1" },
+      ...overrides,
+    })
+
+    const upgraded = await app({ store }).request(
+      await webhookRequest(
+        JSON.stringify({
+          type: "subscription.updated",
+          data: subscription({ status: "active", seats: 3, modified_at: "2026-07-12T10:00:00.000Z" }),
+        }),
+        { id: "msg_upgrade" },
+      ),
+    )
+    expect(upgraded.status).toBe(200)
+    expect(mirrored.get("org_doc_1")).toMatchObject({ plan: "pro" })
+
+    // Delivered second, but the cancellation happened BEFORE the upgrade and
+    // carries neither modified_at nor created_at. Stamped with arrival time it
+    // would outrank the upgrade and downgrade a paying org.
+    const res = await app({ store }).request(
+      await webhookRequest(
+        JSON.stringify({ type: "subscription.updated", data: subscription({ status: "canceled" }) }),
+        { id: "msg_stale_cancel" },
+      ),
+    )
+    expect(res.status).toBe(202)
+    expect(await res.json()).toMatchObject({ received: true, applied: false })
+    expect(store.applyPolarState).toHaveBeenCalledTimes(1)
+    expect(mirrored.get("org_doc_1")).toMatchObject({ plan: "pro", source_ts: Date.parse("2026-07-12T10:00:00.000Z") })
   })
 
   test("mirror write failure → 500 so Polar retries the delivery", async () => {

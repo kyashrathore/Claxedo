@@ -56,26 +56,22 @@ export function isClaxedoToolName(name: string): name is ClaxedoToolName {
   return Object.prototype.hasOwnProperty.call(CLAXEDO_TOOL_TITLE_KEYS, name)
 }
 
-/**
- * The bare first-party tool a part calls, or nothing when the part is not one.
- *
- * Each harness spells the same MCP tool differently. Claude wraps it as
- * `mcp__claxedo__task_create`; Codex sends the bare `task_create` and names
- * the server on the input (`input.server`); the embedded OpenCode engine joins
- * server and tool with one underscore, `claxedo_task_create`, and puts nothing
- * on the input. The first two carry the server explicitly, so any name they
- * address to it is claimed; the engine spelling is claimed only for a name in
- * the roster, since `claxedo_` alone cannot tell this server's tool from
- * another server's tool that happens to start with the word.
- */
+/** Resolve the server identity carried by each harness without claiming another MCP server's tools. */
 export function claxedoToolName(tool: string, input?: Record<string, unknown>): string | undefined {
   const lowered = tool.toLowerCase()
-  const wrapped = `mcp__${CLAXEDO_MCP_SERVER}__`
-  if (lowered.startsWith(wrapped)) return lowered.slice(wrapped.length) || undefined
-  const server = input?.server
-  if (typeof server === "string" && server.toLowerCase() === CLAXEDO_MCP_SERVER) return lowered
-  const joined = `${CLAXEDO_MCP_SERVER}_`
-  if (lowered.startsWith(joined) && isClaxedoToolName(lowered.slice(joined.length))) return lowered.slice(joined.length)
+  // Both names are used by first-party MCP registrations and persisted calls.
+  for (const server of ["claxedo-mcp", CLAXEDO_MCP_SERVER]) {
+    const wrapped = `mcp__${server}__`
+    if (lowered.startsWith(wrapped)) return lowered.slice(wrapped.length) || undefined
+    const joined = `${server}_`
+    if (lowered.startsWith(joined)) {
+      const name = lowered.slice(joined.length)
+      if (isClaxedoToolName(name) || (server === "claxedo-mcp" && name)) return name
+    }
+    if (typeof input?.server === "string" && input.server.toLowerCase() === server) {
+      return nonEmptyString(input.tool)?.toLowerCase() ?? lowered
+    }
+  }
   return undefined
 }
 
@@ -330,6 +326,7 @@ export function claxedoToolView(view: ClaxedoToolViewInput): ClaxedoToolView {
         subject: nonEmptyString(args.process),
         ...(result ? { note: i18n.t(result.stopped === false ? "ui.claxedoTool.note.notRunning" : "ui.claxedoTool.note.stopped") } : {}),
       }
+    case "create_subagent":
     case "subagent_status":
     case "subagent_cancel": {
       const id = nonEmptyString(result?.sessionId) ?? nonEmptyString(args.sessionId)

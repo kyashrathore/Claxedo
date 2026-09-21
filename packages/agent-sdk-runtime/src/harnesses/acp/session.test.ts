@@ -10,6 +10,18 @@ import { ACPProcess } from "./process"
 import { init, merge, modeIds, sync, type ACPState } from "./session"
 
 describe("ACP session config sync", () => {
+  test("an agent-owned model is retained, and unsupported model changes fail explicitly", async () => {
+    const state = merge(init({}), { models: { currentModelId: "owned", availableModels: [{ modelId: "owned", name: "Owned" }] } })
+    const calls: unknown[] = []
+    const conn = { request: async (...args: unknown[]) => calls.push(args) }
+    expect(await sync(conn as never, state, "agent-session", { agent: "build", parts: [], assistantMessageId: "absent" })).toBe(state)
+    const input = { agent: "build", model: { providerID: "example", modelID: "owned" }, parts: [] }
+    await sync(conn as never, state, "agent-session", input as never)
+    await expect(sync(conn as never, state, "agent-session", { ...input, model: { ...input.model, modelID: "other" } } as never))
+      .rejects.toThrow("does not advertise a model selector")
+    expect(calls).toEqual([])
+  })
+
   test("preserves an explicitly selected permission mode when a turn starts", async () => {
     const calls: unknown[] = []
     const state = merge(init({ sessionCapabilities: { setMode: true } } as never), {
@@ -198,8 +210,7 @@ type PromptingProcess = {
   states: Map<string, ACPState>
   caps: { promptCapabilities: PromptCapabilities }
   transport: { kind: "stdio" | "websocket"; alive: boolean }
-  promptQueue: Promise<void>
-  promptQueueDepth: number
+  activePrompts: Set<string>
   sessionListeners: Map<string, unknown>
 }
 
@@ -207,7 +218,7 @@ type PromptingProcess = {
  * An `ACPProcess` whose agent only records the `session/prompt` it receives, so
  * the assertion is on the blocks that actually went over the wire.
  */
-function promptingProcess(input: { caps: PromptCapabilities; kind: "stdio" | "websocket" }) {
+function promptingProcess(input: { caps: PromptCapabilities; kind: "stdio" | "websocket"; sharedFilesystem?: boolean }) {
   const sent: Array<{ method: string; prompt: ContentBlock[] }> = []
   const proc = Object.create(ACPProcess.prototype) as WithInternals<ACPProcess, PromptingProcess>
   Object.assign(proc, {
@@ -220,9 +231,10 @@ function promptingProcess(input: { caps: PromptCapabilities; kind: "stdio" | "we
     idle: { touch() {}, lease: () => ({ release() {} }) },
     states: new Map(),
     caps: { promptCapabilities: input.caps },
-    transport: { kind: input.kind, alive: true },
-    promptQueue: Promise.resolve(),
-    promptQueueDepth: 0,
+    transport: { kind: input.kind, alive: true, sharedFilesystem: input.sharedFilesystem === true },
+    activePrompts: new Set(),
+    uncertainSessions: new Map(),
+    promptSettlements: new Map(),
     promptQuiet: new Map(),
     sessionListeners: new Map(),
   })
@@ -261,6 +273,7 @@ describe("ACP prompt attachments", () => {
     const { proc, sent } = promptingProcess({
       caps: { image: true, audio: true, embeddedContext: true },
       kind: "stdio",
+      sharedFilesystem: true,
     })
 
     await send(proc)
@@ -288,7 +301,7 @@ describe("ACP prompt attachments", () => {
   })
 
   test("links a baseline agent to the workspace file instead of inlining bytes it never negotiated", async () => {
-    const { proc, sent } = promptingProcess({ caps: {}, kind: "stdio" })
+    const { proc, sent } = promptingProcess({ caps: {}, kind: "stdio", sharedFilesystem: true })
 
     await send(proc)
 
@@ -325,4 +338,17 @@ describe("ACP prompt attachments", () => {
     await expect(send(proc)).rejects.toThrow("image/png")
     expect(sent).toEqual([])
   })
+  test("a stdio bridge without shared filesystem delivers inline without leaking local paths", async () => {
+    const { proc, sent } = promptingProcess({ caps: { image: true, audio: true, embeddedContext: true }, kind: "stdio" })
+    await send(proc)
+    expect(JSON.stringify(sent)).not.toContain("file:")
+    expect(fs.existsSync(attachmentDirectory())).toBe(false)
+  })
+
+  test("an explicitly shared websocket workspace supports baseline file links", async () => {
+    const { proc, sent } = promptingProcess({ caps: {}, kind: "websocket", sharedFilesystem: true })
+    await send(proc)
+    expect(sent[0].prompt[2]).toMatchObject({ type: "resource_link", uri: fileUri("-shot.png") })
+  })
+
 })

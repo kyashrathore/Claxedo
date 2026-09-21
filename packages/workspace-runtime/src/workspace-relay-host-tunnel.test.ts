@@ -300,6 +300,16 @@ describe("workspace relay host tunnel client", () => {
     tunnel.close()
   })
 
+  /**
+   * A relayed frame carries `path` as a STRING, so dot segments arrive intact
+   * where an HTTP hop would have resolved them long before. Every target
+   * below is that string pasted behind something that binds it — a base URL
+   * already scoped to one workspace, or a `/workspaces/:id` prefix a host
+   * builds — and a surviving `..` climbs straight back out of that binding
+   * onto the host's own root, where the workspace is whatever a
+   * caller-controlled selector says rather than the one this frame was
+   * admitted for.
+   */
   test("carries __proto__ and constructor header names onto the wire as ordinary data", async () => {
     const sockets: FakeWebSocket[] = []
     const tunnel = startWorkspaceRelayHostTunnel({
@@ -339,6 +349,249 @@ describe("workspace relay host tunnel client", () => {
     expect(Object.hasOwn(start.headers, "__proto__")).toBe(true)
     expect(start.headers["__proto__"]).toBe("spoofed")
     expect(start.headers["constructor"]).toBe("spoofed")
+    tunnel.close()
+  })
+
+  test("resolves dot segments before binding the scoped base, on HTTP and on WebSocket alike", async () => {
+    const sockets: FakeWebSocket[] = []
+    const requests: string[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      // What a control-plane host hands this client for one workspace: a base
+      // that is itself the workspace binding.
+      localBaseUrl: "http://runtime.invalid/workspaces/ws_1",
+      request: async (target) => {
+        requests.push(fetchUrl(target))
+        return new Response("ok")
+      },
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    const socket = sockets[0]
+    socket.open()
+    for (const [requestId, path] of [
+      ["dots", "/../../session?directory=ws_other"],
+      ["encoded", "/%2e%2e/%2e%2e/api/wr/health"],
+      ["backslash", "/a/..\\..\\session"],
+      // An authority smuggled into the path is not a target either: only the
+      // path and query survive, so the host still dials its own base.
+      ["authority", "//runtime.evil/api/wr/health"],
+    ]) {
+      socket.receive(JSON.stringify({
+        type: "http.request",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        request_id: requestId,
+        workspace_id: "ws_1",
+        method: "GET",
+        path,
+        headers: {},
+        end: true,
+      }))
+    }
+    await flush()
+
+    expect(requests).toEqual([
+      "http://runtime.invalid/workspaces/ws_1/session?directory=ws_other",
+      "http://runtime.invalid/workspaces/ws_1/api/wr/health",
+      "http://runtime.invalid/workspaces/ws_1/session",
+      "http://runtime.invalid/workspaces/ws_1/api/wr/health",
+    ])
+
+    socket.receive(JSON.stringify({
+      type: "ws.open",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      channel_id: "channel_1",
+      workspace_id: "ws_1",
+      path: "/../../api/wr/pty/pty_1/connect?cursor=0",
+      headers: {},
+    }))
+
+    expect(sockets[1].url).toBe("ws://runtime.invalid/workspaces/ws_1/api/wr/pty/pty_1/connect?cursor=0")
+    tunnel.close()
+  })
+
+  /**
+   * A host that resolves its own target decides policy on the path and then
+   * binds it, and those two must read the same string. Handing it the frame's
+   * raw one made a route check pass on the harmless resolved form while the
+   * URL it built escaped — so the path is resolved HERE, once, before any
+   * host sees it.
+   */
+  test("hands a host's own resolver a path it has already resolved", async () => {
+    const sockets: FakeWebSocket[] = []
+    const seen: string[] = []
+    const requests: string[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      localBaseUrl: "http://runtime.invalid",
+      resolveLocalUrl: ({ workspaceId, path }) => {
+        seen.push(path)
+        return path.startsWith("/api/wr/")
+          ? new URL(`/workspaces/${workspaceId}${path}`, "http://runtime.invalid")
+          : undefined
+      },
+      request: async (target) => {
+        requests.push(fetchUrl(target))
+        return new Response("ok")
+      },
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    const socket = sockets[0]
+    socket.open()
+    socket.receive(JSON.stringify({
+      type: "http.request",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: "climbing",
+      workspace_id: "ws_1",
+      method: "GET",
+      path: "/../../api/wr/health?probe=1",
+      headers: {},
+      end: true,
+    }))
+    await flush()
+
+    expect(seen).toEqual(["/api/wr/health?probe=1"])
+    expect(requests).toEqual(["http://runtime.invalid/workspaces/ws_1/api/wr/health?probe=1"])
+    tunnel.close()
+  })
+
+  /**
+   * Resolving a path is also the only thing that can REFUSE one: a malformed
+   * authority (`//[`, `http://[`, `//[::1`) is not a URL, and a frame
+   * carrying one names no route on this machine. It is refused exactly like a
+   * route the host declines — the relay is owed the same terminal frame
+   * either way — rather than becoming a thrown TypeError whose text would
+   * travel back to the caller as a failure of this machine.
+   */
+  const MALFORMED_PATHS = ["//[", "http://[", "//[::1", "//%5B"]
+
+  test("refuses a malformed path on HTTP and keeps serving the next request", async () => {
+    const sockets: FakeWebSocket[] = []
+    const requests: string[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      localBaseUrl: "http://runtime.invalid/workspaces/ws_1",
+      request: async (target) => {
+        requests.push(fetchUrl(target))
+        return new Response("ok")
+      },
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    const socket = sockets[0]
+    socket.open()
+    for (const [index, path] of MALFORMED_PATHS.entries()) {
+      socket.receive(JSON.stringify({
+        type: "http.request",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        request_id: `malformed_${index}`,
+        workspace_id: "ws_1",
+        method: "GET",
+        path,
+        headers: {},
+        end: true,
+      }))
+    }
+    // A legitimate frame after them: a refusal must cost the tunnel nothing.
+    socket.receive(JSON.stringify({
+      type: "http.request",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      request_id: "legitimate",
+      workspace_id: "ws_1",
+      method: "GET",
+      path: "/api/wr/file/content?path=a%20b&probe=1",
+      headers: {},
+      end: true,
+    }))
+    await flush()
+
+    const frames = socket.sent.map((item) => JSON.parse(item) as { type: string; request_id?: string; status?: number })
+    for (const [index] of MALFORMED_PATHS.entries()) {
+      const answered = frames.filter((frame) => frame.request_id === `malformed_${index}`)
+      expect(answered.map((frame) => frame.type), MALFORMED_PATHS[index])
+        .toEqual(["http.response.start", "http.response.end"])
+      expect(answered[0].status, MALFORMED_PATHS[index]).toBe(403)
+    }
+    // Nothing was dialled for them, and the legitimate one still was.
+    expect(requests).toEqual(["http://runtime.invalid/workspaces/ws_1/api/wr/file/content?path=a%20b&probe=1"])
+    tunnel.close()
+  })
+
+  test("refuses a malformed path on a WebSocket open without opening a channel", async () => {
+    const sockets: FakeWebSocket[] = []
+    const tunnel = startWorkspaceRelayHostTunnel({
+      relayUrl: "http://relay.invalid",
+      hostId: "host_1",
+      workspaceIds: ["ws_1"],
+      localBaseUrl: "http://runtime.invalid/workspaces/ws_1",
+      webSocket: class extends FakeWebSocket {
+        constructor(url: string, options: { headers?: Record<string, string> }) {
+          super(url, options)
+          sockets.push(this)
+        }
+      } as never,
+    })
+    const socket = sockets[0]
+    socket.open()
+    for (const [index, path] of MALFORMED_PATHS.entries()) {
+      // `onmessage` has no try of its own, so a throw here would leave the
+      // host process with an unhandled exception and the relay with a channel
+      // it is never told about.
+      socket.receive(JSON.stringify({
+        type: "ws.open",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        channel_id: `channel_malformed_${index}`,
+        workspace_id: "ws_1",
+        path,
+        headers: {},
+      }))
+    }
+
+    const refusals = socket.sent
+      .map((item) => JSON.parse(item) as { type: string; channel_id?: string; code?: number; reason?: string })
+      .filter((frame) => frame.type === "ws.close")
+    expect(refusals.map((frame) => frame.channel_id))
+      .toEqual(MALFORMED_PATHS.map((_, index) => `channel_malformed_${index}`))
+    // The refusal a declined route already gets, verbatim: `sendWsClose`
+    // clamps the 1008 the deny path passes down to the 1000 an application
+    // may send, and the reason is the one this client has for any path it
+    // will not carry.
+    expect(refusals.map((frame) => frame.code)).toEqual(MALFORMED_PATHS.map(() => 1000))
+    expect(refusals.map((frame) => frame.reason))
+      .toEqual(MALFORMED_PATHS.map(() => "Workspace route is not remotely accessible"))
+    // Only this tunnel's own socket exists: no upstream was dialled, and no
+    // channel is left half-registered for a frame that never opened one.
+    expect(sockets).toHaveLength(1)
+
+    socket.receive(JSON.stringify({
+      type: "ws.open",
+      protocol: TUNNEL_PROTOCOL_VERSION,
+      channel_id: "channel_ok",
+      workspace_id: "ws_1",
+      path: "/api/wr/pty/pty_1/connect?cursor=0",
+      headers: {},
+    }))
+
+    expect(sockets[1].url).toBe("ws://runtime.invalid/workspaces/ws_1/api/wr/pty/pty_1/connect?cursor=0")
     tunnel.close()
   })
 

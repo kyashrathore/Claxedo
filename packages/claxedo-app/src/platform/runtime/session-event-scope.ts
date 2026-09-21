@@ -65,7 +65,7 @@ type LaneState = {
 
 type SessionEventScopeState = {
   /** The session the composer published; overridden by any route session id. */
-  held?: string
+  held?: { sessionId: string; token: symbol }
   /** The shell route's own session identity, published by the route's reader. */
   route?: string
   /**
@@ -102,7 +102,7 @@ const [scopeState, setScopeState] = createStore<SessionEventScopeState>({ lanes:
  * time (a finished turn's `session.idle` replayed, playing the completion
  * sound twice). Settling by value means an unchanged answer wakes nobody.
  */
-const scopeId = createRoot(() => createMemo(() => scopeState.route ?? scopeState.held))
+const scopeId = createRoot(() => createMemo(() => scopeState.route ?? scopeState.held?.sessionId))
 
 /** A workspace-wide stream carries every session, so it satisfies any scope. */
 const WORKSPACE_WIDE = ""
@@ -112,8 +112,12 @@ const WORKSPACE_WIDE = ""
  * composer with the id of the session it created, before that session's first
  * prompt is dispatched and before the route navigates to it.
  */
-export function holdSessionEventScope(sessionId: string): void {
-  setScopeState("held", sessionId.trim() || undefined)
+export function holdSessionEventScope(sessionId: string, workspaceAddress?: string): () => void {
+  const held = sessionId.trim() || undefined
+  if (held && workspaceAddress) setSessionEventLiveWorkspace(held, workspaceAddress)
+  const token = Symbol("session-event-hold")
+  setScopeState("held", held ? { sessionId: held, token } : undefined)
+  return () => { if (scopeState.held?.token === token) setScopeState("held", undefined) }
 }
 
 /**

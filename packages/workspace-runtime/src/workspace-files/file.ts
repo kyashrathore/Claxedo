@@ -3,6 +3,7 @@ import path from "path"
 import fuzzysort from "fuzzysort"
 import { runGit } from "../git"
 import { resolveWorkspacePath } from "../target"
+import { readWorkingTreeText } from "./working-tree"
 
 export type WorkspaceFileKind = "file" | "directory" | "any"
 
@@ -134,16 +135,13 @@ export async function workspaceFileStatus(root: string) {
         .split("\n")
         .filter(Boolean)
         .map(async (item) => {
-          try {
-            const text = await fs.promises.readFile(path.join(root, item), "utf-8")
-            return {
-              path: item,
-              added: text.split("\n").length,
-              removed: 0,
-              status: "added" as const,
-            }
-          } catch {
-            return undefined
+          const text = await readWorkingTreeText({ directory: root, file: item })
+          if (text === undefined) return undefined
+          return {
+            path: item,
+            added: text.split("\n").length,
+            removed: 0,
+            status: "added" as const,
           }
         }),
     )

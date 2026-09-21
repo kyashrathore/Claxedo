@@ -32,6 +32,29 @@ afterEach(() => {
 })
 
 describe("SqliteRuntimeStore", () => {
+  test("persists and replaces agent session command lists without crossing sessions", () => {
+    const root = tempRoot()
+    const store = new SqliteRuntimeStore({ root })
+    for (const sessionId of ["one", "two"]) store.bindSession({ sessionId, directory: "/repo", agentSessionId: `agent-${sessionId}` })
+    const commands = [{ name: "review", description: "Review changes", input: { hint: "<path>" } }]
+    store.appendEvent({ sessionId: "one", payload: { type: "session.commands", properties: { sessionID: "one", commands } } })
+    expect(store.getSession("one")?.commands).toEqual(commands)
+    expect(store.getSession("two")?.commands).toBeUndefined()
+    store.close()
+    const reopened = new SqliteRuntimeStore({ root })
+    expect(reopened.getSession("one")?.commands).toEqual(commands)
+    reopened.bindSession({ sessionId: "one", directory: "/repo", agentSessionId: "agent-one-resumed" })
+    expect(reopened.getSession("one")?.commands).toEqual(commands)
+    reopened.appendEvent({ sessionId: "one", payload: { type: "session.commands", properties: { sessionID: "one", commands: [] } } })
+    reopened.close()
+    const cleared = new SqliteRuntimeStore({ root })
+    expect(cleared.getSession("one")?.commands).toEqual([])
+    cleared.updateSessionConfig("one", { harness: { id: "example", access: "connection" } })
+    cleared.appendEvent({ sessionId: "one", payload: { type: "session.commands", properties: { sessionID: "one", commands } } })
+    cleared.updateSessionConfig("one", { harness: { id: "codex", access: "native" } })
+    expect(cleared.getSession("one")?.commands).toBeUndefined()
+    cleared.close()
+  })
   test("ranks title writers: a user rename survives harness and prompt writes, and reopen", () => {
     const root = tempRoot()
     const store = new SqliteRuntimeStore({ root })

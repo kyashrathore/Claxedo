@@ -37,6 +37,17 @@ afterEach(() => {
 })
 
 describe("session-status dispatcher", () => {
+  test("retains uncertain execution until the server reports a terminal status", () => {
+    const status = { type: "recovering", kind: "uncertain_execution", message: "Original turn is still observed" }
+    applySessionStatusSseEvent({ event: { type: "session.status", properties: { sessionID: "ses_uncertain", status } } })
+    expect(statusFor("ses_uncertain")).toEqual(status)
+    // A late transcript update must not invent an idle transition.
+    applySessionStatusSseEvent({ event: { type: "message.part.updated", properties: { sessionID: "ses_uncertain" } } })
+    expect(statusFor("ses_uncertain")).toEqual(status)
+    applySessionStatusSseEvent({ event: { type: "session.idle", properties: { sessionID: "ses_uncertain" } } })
+    expect(statusFor("ses_uncertain")).toEqual({ type: "idle" })
+  })
+
   test("notifies only the session whose status or requests changed", () => {
     let alpha = 0
     let bravo = 0

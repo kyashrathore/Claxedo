@@ -1,38 +1,43 @@
 import type { SessionConfig } from "../../index"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
+import { acpEffortLevels, type AcpConfigOptions } from "./session"
 
 export function acpSessionConfig(
   harness: string,
   currentModel: string,
   model?: SessionConfig["model"],
-): NonNullable<SessionConfig["model"]> {
+): SessionConfig["model"] {
   if (model) return model
-  return { providerID: harness, modelID: currentModel || "default" }
+  return currentModel ? { providerID: harness, modelID: currentModel } : undefined
 }
 
 export function acpHarnessCapabilities(input: {
   harness: string
   fork: boolean
   goals: boolean
+  subagents?: boolean
+  child?: boolean
+  modelSelection?: HarnessCapabilities["modelSelection"]
+  config?: AcpConfigOptions
 }): HarnessCapabilities {
   return harnessCapabilities({
     harness: input.harness,
-    modelSelection: { status: "optional" },
-    abort: true,
+    modelSelection: input.child ? { status: "unsupported" } : input.modelSelection ?? { status: "optional" },
+    abort: !input.child,
     reconnect: false,
     replay: true,
     permissions: true,
-    questions: false,
+    questions: true,
     todos: false,
     commands: false,
-    fork: input.fork,
+    fork: !input.child && input.fork,
     revert: false,
     unrevert: false,
-    configOptions: true,
-    subagents: false,
-    goals: input.goals,
-    effortLevels: NO_HARNESS_EFFORT,
+    configOptions: !input.child,
+    subagents: input.subagents ?? false,
+    goals: !input.child && input.goals,
+    effortLevels: input.child ? NO_HARNESS_EFFORT : acpEffortLevels(input.config),
     instructionChannel: "prompt-prefix",
   })
 }

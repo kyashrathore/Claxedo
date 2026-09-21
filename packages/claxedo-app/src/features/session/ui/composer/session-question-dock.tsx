@@ -263,14 +263,14 @@ export const SessionQuestionDock: Component<{
     stopMutation.mutate()
   }
 
-  const reply = async (answers: QuestionAnswer[]) => {
+  const reply = (answers: QuestionAnswer[]) => {
     if (sending()) return
-    await replyMutation.mutateAsync(answers)
+    replyMutation.mutate(answers)
   }
 
-  const reject = async () => {
+  const reject = () => {
     if (sending()) return
-    await rejectMutation.mutateAsync()
+    rejectMutation.mutate()
   }
 
   const submit = () => void reply(questions().map((_, i) => store.answers[i] ?? []))

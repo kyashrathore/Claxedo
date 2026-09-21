@@ -25,7 +25,7 @@ export {
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimes,
-  connectEmbeddedWorkspacePty,
+  attachEmbeddedWorkspacePty,
   startEmbeddedWorkspaceRuntimeConfigRenewal,
   verifyEmbeddedRuntimeCredential,
 } from "./deployments/local/embedded-workspace-runtime"
@@ -94,6 +94,9 @@ export {
   type LocalDaemonWorkActivity,
 } from "./app/local-daemon-lifecycle"
 export { createLocalControlPlaneServices, localSessionProjectionStore } from "./app/local-services"
+
+/** The reviewed git launch a documents backend commits through, whichever host composed it. */
+export { documentGit } from "./app/local-documents"
 export { isLocalCredentialPath, localCorsOrigin } from "./app/local-app"
 
 // Verified caller stamping for an embedded machine request.

@@ -1,7 +1,8 @@
+import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
-import type { HarnessModelOption, HarnessType } from "./profile"
+import type { HarnessConnectionState, HarnessModelOption, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
 import type { DraftDefaultResult, DraftDefaultAuthority, ResolveDraftDefaultInput } from "./draft-default-policy"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
@@ -19,6 +20,9 @@ export type HarnessSessionClaimInput = HarnessScopeInput & {
 }
 
 export type HarnessSelectionControllerStore = {
+  canOmitModel?(scope: string): boolean
+  canCreateWithoutModel?(scope: string): boolean
+  setConnectionDeclaration?(scope: string, declaration: HarnessConnectionRef | undefined): void
   hydrate(scope: string, input?: HarnessScopeInput): void | Promise<void>
   /** Re-run a hydration probe for a scope still stuck in "polling". */
   reprobe(scope: string, input?: HarnessScopeInput): void | Promise<void>
@@ -39,6 +43,7 @@ export type HarnessSelectionControllerStore = {
   harness(scope: string): HarnessType | undefined
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
+  connectionState?(scope: string): HarnessConnectionState | undefined
   models(scope: string): HarnessModelChoice[]
   thoughtLevels(scope: string): HarnessModelOption[]
   setThoughtLevel(scope: string, value: string | undefined): void
@@ -62,9 +67,11 @@ export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
 }
 
 export type HarnessSelectionSnapshot = {
+  canCreateWithoutModel?: boolean
   harness?: HarnessType
   isHarnessMode: boolean
   readiness: HarnessReadiness
+  connectionState?: HarnessConnectionState
   models: HarnessModelChoice[]
   selectedModel: string
   selectedModelProvider?: string
@@ -87,8 +94,10 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
       const selectedModelKey = store.selectedModelKey(scope)
       return {
         harness: store.harness(scope),
+        canCreateWithoutModel: store.canCreateWithoutModel?.(scope),
         isHarnessMode: store.isHarnessMode(scope),
         readiness: store.readiness(scope),
+        connectionState: store.connectionState?.(scope),
         models: store.models(scope),
         selectedModel: store.selectedModel(scope),
         selectedModelProvider: selectedModelKey?.providerID,
@@ -104,6 +113,7 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
         draftDefaultAuthority: store.draftDefaultAuthority?.(scope),
       }
     },
+    setConnectionDeclaration: (scope: string, declaration: HarnessConnectionRef | undefined) => store.setConnectionDeclaration?.(scope, declaration),
     hydrate: (scope: string, input?: HarnessScopeInput) => store.hydrate(scope, input),
     reprobe: (scope: string, input?: HarnessScopeInput) => store.reprobe(scope, input),
     probeHealth: (scope: string, input?: HarnessScopeInput) => store.probeHealth(scope, input),
@@ -127,6 +137,8 @@ export function createHarnessSubmitController(store: HarnessSubmitControllerStor
     harness: (scope: string): HarnessType | undefined => store?.harness(scope),
     isHarnessMode: (scope: string) => store?.isHarnessMode(scope) ?? false,
     readiness: (scope: string): HarnessReadiness => store?.readiness(scope) ?? "unresolved",
+    canOmitModel: (scope: string) => store?.canOmitModel?.(scope) ?? false,
+    canCreateWithoutModel: (scope: string) => store?.canCreateWithoutModel?.(scope) ?? false,
     readyForSubmit: (scope: string) => store?.harnessReadyForSubmit(scope) ?? false,
     modelKeyForSubmit: (scope: string) => store?.harnessModelKeyForSubmit(scope),
     claimSession: (scope: string, input: HarnessSessionClaimInput) =>

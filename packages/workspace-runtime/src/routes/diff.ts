@@ -5,10 +5,16 @@
  */
 
 import { Hono } from "hono"
-import { lazy } from "../lazy"
 import { errorMessage } from "../error-message"
 import { errorBody } from "./http"
 import { assertTarget, hasWorkspaceTarget, WorkspaceTargetError } from "../target"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import {
+  authorizeWorktreeTarget,
+  deniedWorktreeFilter,
+  type WorktreeTargetAccessOptions,
+  type WorktreeTargetContext,
+} from "./worktree-target-access"
 import {
   GitTimeoutError,
   createDiffRuntime,
@@ -91,14 +97,29 @@ function routeFailure(err: unknown) {
   return { message: errorMessage(err), status: 500 as const }
 }
 
-export function createDiffRoutes(deps: DiffRoutesDeps = {}) {
+export function createDiffRoutes(deps: DiffRoutesDeps = {}, options: WorktreeTargetAccessOptions = {}) {
   const runtime = createDiffRuntime(deps)
-  return new Hono()
+  /**
+   * The repository this request diffs, or the refusal that stands in for it.
+   * A `file` is a pathspec git expands over a subtree, not only a leaf.
+   */
+  const readable = async (c: WorktreeTargetContext, file?: string): Promise<string | Response> => {
+    const result = diffDirectory(c)
+    if (result.error) return c.json(result.error, 400)
+    if (!result.directory) return c.json(directoryRequired(), 400)
+    return await authorizeWorktreeTarget(c, options, {
+      operation: "worktree_read",
+      directory: result.directory,
+      paths: [file],
+      exactInput: true,
+      subtree: true,
+    }) ?? result.directory
+  }
+
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .get("/targets", async (c) => {
-      const result = diffDirectory(c)
-      if (result.error) return c.json(result.error, 400)
-      const directory = result.directory
-      if (!directory) return c.json(directoryRequired(), 400)
+      const directory = await readable(c)
+      if (typeof directory !== "string") return directory
       try {
         return c.json(await diffBaseTargets(runtime, directory))
       } catch (err) {
@@ -108,10 +129,8 @@ export function createDiffRoutes(deps: DiffRoutesDeps = {}) {
       }
     })
     .get("/vcs", async (c) => {
-      const result = diffDirectory(c)
-      if (result.error) return c.json(result.error, 400)
-      const directory = result.directory
-      if (!directory) return c.json(directoryRequired(), 400)
+      const directory = await readable(c)
+      if (typeof directory !== "string") return directory
 
       const mode = c.req.query("mode") ?? "uncommitted"
       const fromRef = c.req.query("fromRef")
@@ -133,7 +152,17 @@ export function createDiffRoutes(deps: DiffRoutesDeps = {}) {
               : isRangeMode(mode)
                 ? await toFromDiff(runtime, directory, fromRef!, toRef!)
                 : await uncommittedDiff(runtime, directory)
-        return c.json(diffs)
+        // Mixed bases: the tracked arms name their paths from the repository,
+        // the untracked arm reads the working tree through `ls-files` and names
+        // them from this directory. Resolved through this route's own runner,
+        // so the Git it is bounded by is the Git that answers. A rename is
+        // dropped on either end — the path it came from is a path too.
+        const visible = await deniedWorktreeFilter(c, options, {
+          directory,
+          bases: ["directory", "repository"],
+          runGit: runtime.runGit,
+        })
+        return c.json(diffs.filter((diff) => visible(diff.file, diff.from)))
       } catch (err) {
         const failure = routeFailure(err)
         if ("body" in failure) return c.json(failure.body, failure.status)
@@ -141,14 +170,12 @@ export function createDiffRoutes(deps: DiffRoutesDeps = {}) {
       }
     })
     .get("/vcs/file", async (c) => {
-      const result = diffDirectory(c)
-      if (result.error) return c.json(result.error, 400)
-      const directory = result.directory
-      if (!directory) return c.json(directoryRequired(), 400)
-
       const file = c.req.query("file")
       if (!file) return c.json(fileRequired(), 400)
       if (!relativeDiffFile(file)) return c.json(invalidFilePath(), 400)
+
+      const directory = await readable(c, file)
+      if (typeof directory !== "string") return directory
 
       const mode = c.req.query("mode") ?? "uncommitted"
       const fromRef = c.req.query("fromRef")
@@ -168,10 +195,8 @@ export function createDiffRoutes(deps: DiffRoutesDeps = {}) {
       }
     })
     .get("/refs", async (c) => {
-      const result = diffDirectory(c)
-      if (result.error) return c.json(result.error, 400)
-      const directory = result.directory
-      if (!directory) return c.json(directoryRequired(), 400)
+      const directory = await readable(c)
+      if (typeof directory !== "string") return directory
 
       try {
         return c.json(await diffRefs(runtime, directory))
@@ -182,5 +207,3 @@ export function createDiffRoutes(deps: DiffRoutesDeps = {}) {
       }
     })
 }
-
-export const DiffRoutes = lazy(() => createDiffRoutes())

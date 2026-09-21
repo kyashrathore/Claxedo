@@ -156,6 +156,8 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
     !!sessionId && owners[sessionId] === actorId
   return {
     sessionAuthority: "managed-private",
+    authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+    authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
     authorize: async (input) => allowed(input.actor?.actorId, input.sessionId)
       ? { allowed: true }
       : { allowed: false, status: 403, code: "private_session", message: "Session is private" },

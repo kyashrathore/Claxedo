@@ -431,3 +431,28 @@ describe("SessionAccessPolicy", () => {
       .resolves.toMatchObject({ allowed: true, turnId: "turn_1", leaseId: "turn_lease_1" })
   })
 })
+
+
+test("startup is local workspace admission or exact managed reservation admission", async () => {
+  const input = { operation: "question_response" as const, sessionId: "ses_start", registrationOperationId: "op_start" }
+  expect(await managedWorkspaceSessionAccessPolicy().authorizeSessionStart(input)).toEqual({ allowed: true })
+  const scoped = { ...input, actor: { actorId: "actor", actorKind: "human" as const }, authority: { managed: true as const, workspaceId: "ws", orgId: "org", role: "editor" as const } }
+  expect((await managedWorkspaceSessionAccessPolicy({ authority: allowAll() }).authorizeSessionStart(scoped)).allowed).toBe(false)
+  const received: unknown[] = []
+  const policy = managedWorkspaceSessionAccessPolicy({ authority: { ...allowAll(), authorizeSessionStart: (value) => { received.push(value); return true } } })
+  expect(await policy.authorizeSessionStart(scoped)).toEqual({ allowed: true })
+  expect(received).toEqual([scoped])
+  expect((await policy.authorizeSessionStart({ ...scoped, authority: { ...scoped.authority, role: "viewer" } })).allowed).toBe(false)
+  expect((await policy.authorizeSessionStart({ ...scoped, actor: undefined })).allowed).toBe(false)
+  expect(received).toHaveLength(1)
+})
+
+test("startup status has a separate read-only predicate and never admits interactions", async () => {
+  const received: unknown[] = []
+  const policy = managedWorkspaceSessionAccessPolicy({ authority: { ...allowAll(), authorizeSessionStartStatus: (value) => { received.push(value); return true } } })
+  const input = { operation: "session_meta_read" as const, sessionId: "ses_start", registrationOperationId: "op_start", actor: { actorId: "actor", actorKind: "human" as const }, authority: { managed: true as const, workspaceId: "ws", orgId: "org", role: "viewer" as const } }
+  expect(await policy.authorizeSessionStartStatus(input)).toEqual({ allowed: true })
+  expect((await policy.authorizeSessionStart(input)).allowed).toBe(false)
+  expect(received).toEqual([input])
+  expect((await managedWorkspaceSessionAccessPolicy({ authority: allowAll() }).authorizeSessionStartStatus(input)).allowed).toBe(false)
+})

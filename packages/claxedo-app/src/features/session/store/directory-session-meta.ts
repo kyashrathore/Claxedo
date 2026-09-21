@@ -27,6 +27,7 @@ export function applyDirectorySessionMeta(input: {
   status?: Record<string, SessionStatus>
   permissions?: PermissionRequest[]
   questions?: QuestionRequest[]
+  readErrors?: SessionRequestsQueryData["readErrors"]
 }) {
   const cachedRequests = queryClient.getQueryData<SessionRequestsQueryData>(
     shellDataKeys.sessionId(input.sessionID, "requests"),
@@ -44,7 +45,7 @@ export function applyDirectorySessionMeta(input: {
   // If either leg failed, treating its missing value as [] can let an idle
   // status erase a locally-observed busy turn while its approval/question is
   // still outstanding.
-  const requestEvidenceKnown = cachedRequests !== undefined || (
+  const requestEvidenceKnown = (cachedRequests !== undefined && !cachedRequests.readErrors && !Object.keys(input.readErrors ?? {}).length) || (
     input.permissions !== undefined && input.questions !== undefined
   )
   const cachedStatus = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(input.sessionID, "status"))
@@ -63,7 +64,7 @@ export function applyDirectorySessionMeta(input: {
       event: { type: "session.status", source: "server", sessionID: input.sessionID, status: nextStatus },
     })
   }
-  if (input.permissions === undefined && input.questions === undefined) return
+  if (input.permissions === undefined && input.questions === undefined && input.readErrors === undefined) return
   dispatchSessionRequestsEvent({
     event: {
       type: "session.requests",
@@ -72,6 +73,9 @@ export function applyDirectorySessionMeta(input: {
       // A partial read — one leg failed or was skipped — is not a reconciliation:
       // it neither stamps a fresh window nor erases an earlier one.
       requests: (previous) => ({
+        ...previous,
+        ...(input.readErrors !== undefined && (Object.keys(input.readErrors).length > 0 || previous?.readErrors)
+          ? { readErrors: Object.keys(input.readErrors).length > 0 ? input.readErrors : undefined } : {}),
         permissions: sessionPermissions,
         questions: sessionQuestions,
         reconciledAt: input.permissions !== undefined && input.questions !== undefined

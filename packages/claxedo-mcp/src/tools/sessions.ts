@@ -14,6 +14,7 @@ import { McpAccessDenied, type McpToolContext } from "../context"
 import type { WorkspaceSummary, WorkspaceTarget } from "../client/contract"
 import type { ToolRegistrar } from "./registry"
 import { runtimeToolAccess } from "./inventory"
+import { assertSessionReach } from "./session-reach"
 import { assertWritableTarget, targetScope, toolJson, toolTarget, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
 
 /** The harnesses `?nativeHarness=` names; `satisfies` refuses one the runtime does not have. */
@@ -68,15 +69,20 @@ export function registerSessionTools(registry: ToolRegistrar) {
         placement: placementSchema.optional(),
       },
       access: runtimeToolAccess("session_create", { audiences: ["runtime", "user"], scope: "act" }),
+      sessionIdFromHandler: true,
     },
-    async (args, ctx) => {
+    async (args, ctx, addressed) => {
       const placed = await placeSession(ctx, args, args.placement)
       const created = await createSession(ctx, placed.target, {
         ...(args.harness ? { harness: args.harness } : {}),
         ...(args.title ? { title: args.title } : {}),
         ...(placed.target.directory ? { directory: placed.target.directory } : {}),
       })
-      if (args.prompt) await promptSession(ctx, placed.target, created.id, args.prompt)
+      addressed?.(created.id)
+      // The session this turn goes to is the one this call just created, which
+      // `session_send`'s kinship rule would refuse: it is neither the caller
+      // nor a child of it.
+      if (args.prompt) await promptSession(await ctx.client.server(placed.target), placed.target, created.id, args.prompt)
       return toolJson({ ...created, ...placed.detail, prompted: Boolean(args.prompt) })
     },
   )
@@ -142,7 +148,9 @@ export function registerSessionTools(registry: ToolRegistrar) {
   registry.tool(
     "session_send",
     {
-      description: "Send a turn to a session. Returns as soon as the runtime admits the turn; read the answer with session_transcript.",
+      description:
+        "Send a turn to a session. Returns as soon as the runtime admits the turn; read the answer with session_transcript. "
+        + "Inside a session, this reaches that session and the children it started, and no other.",
       inputSchema: { ...SESSION_ARG, ...WORKSPACE_TARGET_SCHEMA, text: z.string().trim().min(1).describe("The prompt to send.") },
       access: runtimeToolAccess("session_send", { audiences: ["runtime", "user"], scope: "act" }),
       sessionIdOf: (args) => args.session,
@@ -150,14 +158,17 @@ export function registerSessionTools(registry: ToolRegistrar) {
     async (args, ctx) => {
       const target = toolTarget(ctx, args)
       assertWritableTarget(ctx, "session_send", target)
-      return toolJson({ session: args.session, admitted: await promptSession(ctx, target, args.session, args.text) })
+      const server = await ctx.client.server(target)
+      await assertSessionReach({ ctx, tool: "session_send", server, target, session: args.session, reach: "itself-or-own-children" })
+      return toolJson({ session: args.session, admitted: await promptSession(server, target, args.session, args.text) })
     },
   )
 
   registry.tool(
     "session_abort",
     {
-      description: "Abort the turn a session is running.",
+      description:
+        "Abort the turn a session is running. Inside a session, this reaches that session and the children it started, and no other.",
       inputSchema: { ...SESSION_ARG, ...WORKSPACE_TARGET_SCHEMA },
       access: runtimeToolAccess("session_abort", { audiences: ["runtime", "user"], scope: "act" }),
       sessionIdOf: (args) => args.session,
@@ -166,6 +177,7 @@ export function registerSessionTools(registry: ToolRegistrar) {
       const target = toolTarget(ctx, args)
       assertWritableTarget(ctx, "session_abort", target)
       const server = await ctx.client.server(target)
+      await assertSessionReach({ ctx, tool: "session_abort", server, target, session: args.session, reach: "itself-or-own-children" })
       const aborted = await server.session.abort({ sessionID: args.session, ...targetScope(target) })
       return toolJson({ session: args.session, aborted: aborted.data })
     },
@@ -258,8 +270,7 @@ async function createSession(
 }
 
 /** The turn is admitted when the call returns; it runs on after the response. */
-async function promptSession(ctx: McpToolContext, target: WorkspaceTarget, sessionId: string, text: string) {
-  const server = await ctx.client.server(target)
+async function promptSession(server: WorkspaceRuntimeClient, target: WorkspaceTarget, sessionId: string, text: string) {
   await server.session.promptAsync({ sessionID: sessionId, ...targetScope(target), parts: [{ type: "text", text }] })
   return true
 }

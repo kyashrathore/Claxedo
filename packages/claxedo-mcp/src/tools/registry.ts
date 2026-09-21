@@ -45,8 +45,8 @@ export type ToolRegistry = ToolRegistrar & {
  * One server per connection, built for one credential: a tool the credential
  * may not use is not registered, so `tools/list` is already the audience's
  * list, and the handler re-checks anyway because a client can call what it
- * was not shown. Destructive tools ask the host through elicitation when the
- * client declared it; a client that auto-accepts its own elicitation is bound
+ * was not shown. Destructive tools require accepted host elicitation; a
+ * client that auto-accepts its own elicitation is bound
  * by scope, not by this prompt.
  */
 export function createToolRegistry(server: McpServer, ctx: McpToolContext): ToolRegistry {
@@ -68,8 +68,10 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
       const callback = (async (args: ShapeOutput<Shape>) => {
           try {
             assertToolAccess(ctx.credential, name, definition.access, ctx.client.tasks?.operations)
-            if (definition.access.destructive && ctx.elicit) {
-              const answer = await ctx.elicit({
+            if (definition.access.destructive) {
+              const elicit = ctx.elicit
+              if (!elicit) return toCallToolResult(mcpToolRefusal(`${name} requires confirmation, but this client does not support elicitation`))
+              const answer = await elicit({
                 mode: "form",
                 message: `Confirm ${name}?`,
                 requestedSchema: { type: "object", properties: {} },

@@ -107,6 +107,9 @@ export const queryKeys = {
     sessionCache: (directory: string) => ["directory", "local", "sessionCache", directory] as const,
   },
   runtime: {
+    sessionStarts: (baseUrl?: string) => ["runtime", runtimeServer(baseUrl), "sessionStart"] as const,
+    sessionStart: (baseUrl: string, workspaceId?: string, sessionId?: string, operationId?: string) =>
+      ["runtime", runtimeServer(baseUrl), "sessionStart", workspaceId, sessionId, operationId] as const,
     /**
      * A workspace's own session list, as the RUNTIME on the machine serving it
      * answers over the relay. Keyed by workspace rather than by list query: one

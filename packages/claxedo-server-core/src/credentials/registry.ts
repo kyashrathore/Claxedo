@@ -597,7 +597,7 @@ export async function updateCredentialSecret(
       health: null,
       last_validated_at: null,
       last_error: null,
-      status: "available",
+      status: statusAfterVerification("available"),
     })
     .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run())
@@ -678,6 +678,11 @@ export function updateCredentialStatus(
  */
 const YIELDS_ACTIVE_MARK: readonly CredentialHealth[] = ["auth_failed", "no_billing", "expired"]
 
+/** Provider health and token rotation cannot undo the operator's revocation. */
+function statusAfterVerification(status: CredentialStatus) {
+  return sql`case when ${ClaxedoProviderCredentialTable.status} = 'revoked' then 'revoked' else ${status} end`
+}
+
 /**
  * Persist the provider-backed health result consumed by every credential
  * surface, and hand the mark on when that result ends the account.
@@ -700,7 +705,7 @@ export function updateCredentialHealth(
       .update(ClaxedoProviderCredentialTable)
       .set({
         health,
-        status: health === "ok" ? "available" : health === "expired" ? "expired" : "error",
+        status: statusAfterVerification(health === "ok" ? "available" : health === "expired" ? "expired" : "error"),
         last_validated_at: validatedAt,
         last_error: health === "ok" ? null : health,
         updated_at: now(),
@@ -992,4 +997,3 @@ export function credentialUnavailableForScope(
   if (scope === "shared" && !credential.consent) return "consent_required"
   return undefined
 }
-

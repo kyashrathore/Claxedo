@@ -63,6 +63,7 @@ async function setup() {
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
     randomNonce: () => `nonce_${String(++sequence).padStart(4, "0")}`,
     localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
+    authorizeLocalWorkspaceRegistration: (auth, args) => workspace.authorizeLocalWorkspaceRegistration(auth, args),
     resolveOrgId: (auth) => workspace.resolveOrgId(auth),
   })
   const runtimeTokens = new D1ChannelRuntimeAuthority(database, { deploymentId: "deployment-a", now })
@@ -664,6 +665,19 @@ describe("D1 host access authority", () => {
     expect(await input.database.prepare(`
       select 1 from host_enrollment_requests where request_id = ?
     `).bind(request.request_id).first()).toBeNull()
+  })
+
+  test("runtime workspace admission rechecks requested role and active membership", async () => {
+    const input = await setup()
+    const { alice, bob, outsider } = await fixture(input)
+    const reader = bob.principal!.actorId
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(reader, "ws_local", "viewer")).resolves.toMatchObject({ role: "viewer" })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(reader, "ws_local")).rejects.toMatchObject({ status: 403 })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(reader, "ws_local", "admin")).rejects.toMatchObject({ status: 403 })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(alice.principal!.actorId, "ws_local", "admin")).resolves.toMatchObject({ role: "owner" })
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(outsider.principal!.actorId, "ws_local", "viewer")).rejects.toMatchObject({ status: 403 })
+    await input.database.prepare("UPDATE org_memberships SET revoked_at = ? WHERE user_id = ?").bind(input.now(), bob.principal!.userId).run()
+    await expect(input.runtimeTokens.resolveRuntimeMachineAccess(reader, "ws_local", "viewer")).rejects.toMatchObject({ status: 403 })
   })
 
   test("records runtime tokens for canonical actors only and revokes them without crossing tenants", async () => {
@@ -1891,5 +1905,61 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       provider_config_providers: [],
       provider_config_rekeyed: false,
     })
+  })
+})
+
+describe("machine share admission", () => {
+  test("answers who may serve a workspace from a machine, before any machine is enrolled", async () => {
+    const input = await setup()
+    const { alice, bob, admin, outsider } = await fixture(input)
+
+    // A live row: its administrators, and nobody else. No enrollment exists
+    // yet, which is the point — the answer must not depend on one.
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(alice, { workspaceId: "ws_local" }))
+      .resolves.toEqual({ registration: "existing" })
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_local" }))
+      .resolves.toEqual({ registration: "existing" })
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(bob, { workspaceId: "ws_local" }))
+      .rejects.toMatchObject({ status: 403 })
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(outsider, { workspaceId: "ws_local" }))
+      .rejects.toMatchObject({ status: 403 })
+
+    // A machine serves a directory, so a provisioned workspace is refused.
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(alice, { workspaceId: "ws_cloud" }))
+      .rejects.toMatchObject({ code: "resource_conflict" })
+
+    // Nothing filed under that id yet: the share would create the row, so the
+    // answer is the admission its creation takes.
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(alice, { workspaceId: "ws_unfiled", orgId: "org_acme" }))
+      .resolves.toEqual({ registration: "cold" })
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(bob, { workspaceId: "ws_unfiled", orgId: "org_acme" }))
+      .rejects.toMatchObject({ status: 403 })
+  })
+
+  test("a live row whose owner is no longer active still refuses a caller with no role", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    // The state `resolveWorkspaceOwner` answers `undefined` for. The row is
+    // still Acme's, so the machine-share answer comes from the caller's role
+    // on it, never from whether an owner can be named.
+    await input.database.prepare(`update users set state = 'suspended', suspended_at = ? where user_id = ?`)
+      .bind(1_800_000_000_000, alice.principal!.userId).run()
+
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(bob, { workspaceId: "ws_local" }))
+      .rejects.toMatchObject({ status: 403 })
+  })
+
+  test("a membership revoked between two shares stops the second", async () => {
+    const input = await setup()
+    const { admin } = await fixture(input)
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_local" }))
+      .resolves.toEqual({ registration: "existing" })
+
+    await input.database.prepare(`
+      update org_memberships set revoked_at = ? where org_id = ? and user_id = ? and revoked_at is null
+    `).bind(1_800_000_000_000, "org_acme", admin.principal!.userId).run()
+
+    await expect(input.hostAccess.authorizeWorkspaceHostAssignment(admin, { workspaceId: "ws_local" }))
+      .rejects.toMatchObject({ status: 403 })
   })
 })

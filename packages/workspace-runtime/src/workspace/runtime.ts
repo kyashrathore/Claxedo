@@ -63,6 +63,7 @@ import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import {
   managedWorkspaceSessionAccessPolicy,
   type SessionAccessPolicy,
+  type SessionTurnOrigin,
 } from "../session-access-policy"
 import { SessionRollbackError } from "../session-rollback-error"
 import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
@@ -96,13 +97,24 @@ export type WorkspaceRuntimeStore =
     runtimeSecret?: (name: string) => string
     listPendingSubagentWakes?: () => Array<{ parentSessionId: string; subagentKey: string; childSessionId: string; directory: string }>
     /**
+     * The identity a child's completion wake runs as. Optional together: a
+     * store that cannot keep it hands the child host no origin, and a managed
+     * runtime then refuses the wake rather than driving it as nobody.
+     */
+    recordSubagentOrigin?: (parentSessionId: string, subagentKey: string, origin: SessionTurnOrigin) => void
+    subagentOrigin?: (parentSessionId: string, subagentKey: string) => SessionTurnOrigin | undefined
+    /**
      * Durable prompts waiting for a running turn. All four are optional
      * together: a store that cannot persist them leaves the queue in the
      * request that holds it.
      */
-    queuePrompt?: (input: Omit<QueuedPromptRecord, "seq" | "queuedAt">) => QueuedPromptRecord
-    deleteQueuedPrompt?: (sessionId: string, seq: number) => void
+    queuePrompt?: (input: Omit<QueuedPromptRecord, "seq" | "queuedAt" | "held" | "steering">) => QueuedPromptRecord
+    deleteQueuedPrompt?: (sessionId: string, seq: number) => boolean
     replaceQueuedPromptParts?: (sessionId: string, seq: number, parts: QueuedPromptRecord["parts"]) => boolean
+    claimQueuedPromptDelivery?: SessionDeliveryStore["claimQueuedPromptDelivery"]
+    settleQueuedPromptDelivery?: SessionDeliveryStore["settleQueuedPromptDelivery"]
+    setQueuedPromptHeld?: SessionDeliveryStore["setQueuedPromptHeld"]
+    completeQueuedPrompt?: SessionDeliveryStore["completeQueuedPrompt"]
     listQueuedPrompts?: () => QueuedPromptRecord[]
     bindSession(input: {
       sessionId: string
@@ -182,6 +194,8 @@ export type WorkspaceHostOptions = {
    * never derived from the workspace checkout.
    */
   configApplyReceiptDir?: string
+  /** Embedded owner applies its canonical snapshot before adapter-dependent reads. */
+  beforeAdapterAcquire?: () => Promise<void>
   eventHub?: RuntimeEventHub
   /**
    * Host-supplied shared store factory. Defaults to the SQLite-backed
@@ -679,6 +693,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     options.connectionProviders ?? [createAcpConnectionProvider()],
   )
   let sessionConfigStore: WorkspaceRuntimeStore | undefined
+  let disposeDeliveries: (() => Promise<void>) | undefined
   let reissueQueuedPrompts: (() => void) | undefined
   let closing = false
   let disposal: Promise<void> | undefined
@@ -690,6 +705,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const sessionAdapterRunners = new Map<string, RuntimeRunner>()
   const adapterRuntimeKeys = new WeakMap<AgentHarnessAdapter, string>()
   const adapterDirectories = new WeakMap<AgentHarnessAdapter, string>()
+  const adapterDescriptors = new WeakMap<AgentHarnessAdapter, RuntimeConnectionDescriptor>()
   const adapterConfigStamps = new WeakMap<AgentHarnessAdapter, AdapterConfigStamp>()
   const activeTurns = new Map<AgentHarnessAdapter, Set<ActiveTurn>>()
   const activeSessionOwners = new Map<string, { adapter: AgentHarnessAdapter; runtime?: AgentRuntime; directory: string }>()
@@ -846,6 +862,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       sessionAdapterRunners.set(key, nextRunner)
       adapterRuntimeKeys.set(resolved.adapter, key)
       adapterDirectories.set(resolved.adapter, directory)
+      adapterDescriptors.set(resolved.adapter, descriptor)
       retireSupersededConnectionAdapters(nextRunner, key, directory)
       enabled = true
       await configureAdapter(resolved.adapter, nextRunner)
@@ -929,12 +946,22 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
   async function adapterForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+    await options.beforeAdapterAcquire?.()
     const active = input?.sessionId ? activeSessionOwners.get(input.sessionId) : undefined
     if (active && (!input?.directory || input.directory === active.directory)) return active.adapter
     const directory = input?.directory ?? (input?.sessionId ? store().getSession(input.sessionId)?.directory : undefined)
     if (!input?.sessionId) {
       if (input?.harness) return await ensureSessionAdapter(input.harness, directory)
       return await ensureSessionAdapter(currentRunner(), directory)
+    }
+    const pending = store().sessionStarts?.get(input.sessionId)
+    if (pending?.status === "starting") {
+      if (directory !== pending.binding.directory) throw new HTTPException(409, { message: "Session creation belongs to another directory" })
+      const connection = pending.binding.connectionId
+      const separator = connection.indexOf(":")
+      const access = connection.slice(0, separator)
+      if (access !== "connection" && access !== "native") throw new HTTPException(409, { message: "Session creation has an invalid connection owner" })
+      return await ensureSessionAdapter({ id: connection.slice(separator + 1), access }, directory)
     }
     const config = sessionConfigFor(input)
     if (!config) return await ensureSessionAdapter(input?.harness ?? currentRunner(), directory)
@@ -943,6 +970,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
   async function runtimeForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+    await options.beforeAdapterAcquire?.()
     const active = input?.sessionId ? activeSessionOwners.get(input.sessionId) : undefined
     if (active?.runtime && (!input?.directory || input.directory === active.directory)) return active.runtime
     const config = sessionConfigFor(input)
@@ -1076,20 +1104,28 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   /**
    * The host store, narrowed to the durable queued-prompt rows plus the
    * session row that owns a queued prompt's directory. A store without them
-   * leaves the queue where it already was: in the request holding the prompt.
+   * refuses deferred delivery explicitly instead of retaining a request waiter.
    */
-  function queuedPromptStore(): QueuedPromptStore | undefined {
+  function queuedPromptStore(): SessionDeliveryStore | undefined {
     const target = store()
     const queuePrompt = target.queuePrompt
     const deleteQueuedPrompt = target.deleteQueuedPrompt
     const replaceQueuedPromptParts = target.replaceQueuedPromptParts
     const listQueuedPrompts = target.listQueuedPrompts
-    if (!queuePrompt || !deleteQueuedPrompt || !replaceQueuedPromptParts || !listQueuedPrompts) return undefined
+    const claim = target.claimQueuedPromptDelivery
+    const settle = target.settleQueuedPromptDelivery
+    const held = target.setQueuedPromptHeld
+    const complete = target.completeQueuedPrompt
+    if (!queuePrompt || !deleteQueuedPrompt || !replaceQueuedPromptParts || !listQueuedPrompts || !claim || !settle || !held || !complete) return undefined
     return {
       queuePrompt: (input) => queuePrompt.call(store(), input),
       deleteQueuedPrompt: (sessionId, seq) => deleteQueuedPrompt.call(store(), sessionId, seq),
       replaceQueuedPromptParts: (sessionId, seq, parts) => replaceQueuedPromptParts.call(store(), sessionId, seq, parts),
       listQueuedPrompts: () => listQueuedPrompts.call(store()),
+      claimQueuedPromptDelivery: (sessionId, seq, operationId, mode) => claim.call(store(), sessionId, seq, operationId, mode),
+      setQueuedPromptHeld: (sessionId, seq, value) => held.call(store(), sessionId, seq, value),
+      completeQueuedPrompt: (sessionId, seq, operationId) => complete.call(store(), sessionId, seq, operationId),
+      settleQueuedPromptDelivery: (sessionId, seq, steering) => settle.call(store(), sessionId, seq, steering),
       sessionDirectory: (sessionId) => store().getSession(sessionId)?.directory,
     }
   }
@@ -1236,13 +1272,32 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return adapter?.readRuntimeHealth?.(options.target?.directory ?? workspaceDir()) ?? { status: "ok" }
   }
 
+  function observedSessionAdapter(input?: { sessionId?: string; directory?: string }) {
+    const session = input?.sessionId ? store().getSession(input.sessionId) : undefined
+    const directory = input?.directory ?? session?.directory ?? options.target?.directory ?? workspaceDir()
+    const active = input?.sessionId ? activeSessionOwners.get(input.sessionId) : undefined
+    const selection = input?.sessionId ? store().getSessionConfig(input.sessionId)?.harness : runner
+    if (active && active.directory === directory) return { directory, selection, target: active.adapter }
+    const descriptor = selection?.access === "connection" ? appliedConnections.get(selection.id) : undefined
+    const target = [...sessionAdapters.entries()].reverse().find(([key, candidate]) => {
+      const candidateRunner = sessionAdapterRunners.get(key)
+      if (!selection || !candidateRunner || retiringAdapters.has(candidate) || harnessKey(candidateRunner) !== harnessKey(selection)) return false
+      if (selection.access === "native") return true
+      const held = adapterDescriptors.get(candidate)
+      return adapterDirectories.get(candidate) === directory && !!descriptor && held?.providerKey === descriptor.providerKey && held.configRevision === descriptor.configRevision
+    })?.[1]
+    return { directory, selection, target }
+  }
+
+  function connectionState(input?: { sessionId?: string; directory?: string }) {
+    const observed = observedSessionAdapter(input)
+    if (observed.selection?.access !== "connection") return undefined
+    return { connectionId: observed.selection.id, ...(observed.target?.readConnectionState?.(observed.directory, input) ?? { state: "configured" as const, processes: [] }) }
+  }
+
   async function sessionHarnessHealth(input: { sessionId: string; directory?: string }): Promise<AgentHarnessAdapterHealth> {
-    const directory = input.directory ?? options.target?.directory ?? workspaceDir()
-    const target = await adapterForSession({
-      sessionId: input.sessionId,
-      directory,
-    })
-    return target.readRuntimeHealth?.(directory, { sessionId: input.sessionId }) ?? { status: "ok" }
+    const observed = observedSessionAdapter(input)
+    return observed.target?.readRuntimeHealth?.(observed.directory, input) ?? { status: "ok" }
   }
 
   function healthStatus(input: AgentHarnessAdapterHealth): "ok" | "degraded" | "unavailable" {
@@ -1453,6 +1508,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           exposure: options.exposure,
           sessionAccessPolicy,
           processObserver: hostOptions.processObserver,
+          sessionStarts: store().sessionStarts,
           sessionParents: hostOptions.sessionParents ?? sessionParents,
           transcripts: hostOptions.transcripts,
         })
@@ -1463,6 +1519,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           workspaceId: hostOptions.target?.workspaceId ?? workspaceId(),
           eventHub,
           sessionAccessPolicy,
+          sessionStarts: store().sessionStarts,
           sessionParents: hostOptions.sessionParents ?? sessionParents,
           ...(options.renewalIntervalMs !== undefined ? { renewalIntervalMs: options.renewalIntervalMs } : {}),
         })
@@ -1482,6 +1539,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         events.close()
       }
       app.get("/api/wr/harness-config-options", async (c) => {
+        await hostOptions.beforeAdapterAcquire?.()
         let targetRunner: RuntimeRunner
         try {
           targetRunner = requestedSessionHarness(c.req) ?? currentRunner()
@@ -1535,6 +1593,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       const sessions = SessionRoutes((input) => adapterForSession(input), {
         eventHub,
         sessionAccessPolicy,
+        sessionStarts: store().sessionStarts,
+        resolveSessionStartBinding: (c, directory, sessionId, operationId) => {
+          const harness = requestedSessionHarness(c.req) ?? currentRunner()
+          return {
+            sessionId, directory, workspaceId: workspaceId(), operationId,
+            connectionId: connectionIdForHarness(harness),
+          }
+        },
         resolveRuntime: (input) => runtimeForSession(input),
         resolveExecutionBinding: ({ sessionId, directory }) => canonicalExecutionBinding(sessionId, directory),
         createSession: async (c, directory, title, id, create) => {
@@ -1575,6 +1641,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             title,
             id,
             {
+              ...(create?.start ? { start: create.start } : {}),
               ...(create?.instructions ? { instructions: create.instructions } : {}),
               ...(create?.group ? { group: create.group } : {}),
             },
@@ -1659,6 +1726,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             return secret.call(store(), "child-session")
           },
           pendingWakes: () => store().listPendingSubagentWakes?.() ?? [],
+          origins: {
+            record: (parentSessionId, subagentKey, origin) => store().recordSubagentOrigin?.(parentSessionId, subagentKey, origin),
+            read: (parentSessionId, subagentKey) => store().subagentOrigin?.(parentSessionId, subagentKey),
+          },
         },
         queuedPrompts: () => queuedPromptStore(),
         listPermissions: (c, directory) => listPermissions(c.req.query("sessionId"), directory),
@@ -1744,6 +1815,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           hostOptions.transcripts?.resolver.invalidateParent?.(hostOptions.transcripts.workspaceId, sessionId)
         },
       })
+      disposeDeliveries = sessions.dispose
       app.route("/", sessions.routes)
       // No request carries this work, so the workspace target a session route
       // would have bound is bound here instead.
@@ -1791,11 +1863,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         harness: runner ? selectionForRunner(runner) : undefined,
         error: err,
         harnessHealth: health,
+        connectionState: connectionState(),
         workspaceHarnessEnabled: enabled,
         configApply,
       }
     },
     readHarnessHealth: sessionHarnessHealth,
+    readConnectionState: connectionState,
     capabilities() {
       return workspaceCapabilities(enabled)
     },
@@ -1876,6 +1950,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     dispose() {
       if (disposal) return disposal
       closing = true
+      const deliveriesDone = disposeDeliveries?.()
       checkpointState = "freezing"
       for (const turns of activeTurns.values()) for (const turn of turns) turn.controller.abort()
       disposal = (async () => {
@@ -1888,6 +1963,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         // Adapter teardown stops autonomous goals and interactions as well as
         // prompts. Native adapters await their own committing producer tails.
         await Promise.all([
+          deliveriesDone,
           ...adaptersDone,
           ...retiringAdapters.values(),
           ...new Set([...sessionRuntimes.values()].map((runtime) => runtime.dispose())),

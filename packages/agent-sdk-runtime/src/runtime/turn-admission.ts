@@ -1,11 +1,4 @@
 import type { SteerResult } from "../adapter-contract"
-import {
-  buildUserMessage,
-  buildUserPromptParts,
-  messagePartUpdated,
-  messageUpdated,
-  type CompatEvent,
-} from "../compat-events"
 import type { PromptDeliveryRequest, PromptInput } from "../index"
 import type {
   AgentRuntimeStore,
@@ -135,12 +128,9 @@ export function createTurnAdmissions(
 export type TurnAdmissions = ReturnType<typeof createTurnAdmissions>
 
 /**
- * A prompt for a session that is already running a turn. `steer` hands it to
- * that turn through the harness; anything else answers `queue`, which tells the
- * caller to hold the prompt and start it once `whenIdle` resolves. A harness
- * with no steer method is queued rather than refused, and so is a steer the
- * harness declined — the running turn was the only thing that could have taken
- * it as more input.
+ * Acceptance and transcript incorporation are different facts. A refusal keeps
+ * the input queued with its reason; an unknown outcome must be held for
+ * reconciliation, never automatically resent by the caller.
  */
 export async function deliverToBusySession(input: {
   running: ActiveTurn
@@ -151,10 +141,13 @@ export async function deliverToBusySession(input: {
   assistantMessageId: string
   directory: AgentRuntimeTurnStartResult["directory"]
   steer?: () => Promise<SteerResult>
-  commit: (payload: CompatEvent) => void
 }): Promise<AgentRuntimeTurnStartResult> {
-  const steered = input.requested === "steer" && input.steer && (await input.steer()).ok
-  if (steered) for (const payload of steeredUserMessage(input.prompt, input.turn.sessionId)) input.commit(payload)
+  const steering: SteerResult | undefined = input.requested !== "steer" ? undefined
+    : input.steer ? await input.steer().catch((error): SteerResult => ({
+      ok: false, status: "unknown", message: error instanceof Error ? error.message : "Steering outcome is unknown",
+    }))
+    : { ok: false, status: "unsupported", message: "This harness does not support steering" }
+  const steered = steering?.ok === true
   return {
     sessionId: input.turn.sessionId,
     userMessageId: input.userMessageId,
@@ -162,29 +155,6 @@ export async function deliverToBusySession(input: {
     directory: input.directory,
     prompt: input.prompt,
     delivery: steered ? "steer" : "queue",
+    ...(steering ? { steering } : {}),
   }
-}
-
-/**
- * The transcript rows for a prompt handed to the turn already running: the user
- * message and its parts, with no turn record of their own.
- *
- * These are committed unfenced on purpose. The store checks a fencing token
- * against the RUNNING turn's, and this prompt carries its own from its own
- * admission lease, so passing it would be rejected as a stale generation.
- */
-export function steeredUserMessage(input: PromptInput, sessionId: string): CompatEvent[] {
-  const id = input.userMessageId
-  if (!id) return []
-  return [
-    messageUpdated(buildUserMessage({
-      id,
-      sessionID: sessionId,
-      agent: input.agent,
-      model: input.model,
-      ...(input.variant ? { variant: input.variant } : {}),
-      ...(input.author ? { author: input.author } : {}),
-    })),
-    ...buildUserPromptParts(sessionId, id, input.parts).map(messagePartUpdated),
-  ]
 }

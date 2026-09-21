@@ -23,7 +23,7 @@ export type PromptDispatchPayload = {
   sessionID: string
   directory: SubmitDirectory
   agent: string
-  model: { providerID: string; modelID: string }
+  model?: { providerID: string; modelID: string }
   messageID: string
   parts: PromptRequestPart[]
   variant?: string
@@ -74,7 +74,7 @@ export type SubmitDirectoryResult = {
 export type SubmitAgent = { name: string; id?: string }
 
 export type SubmittedConfig = {
-  model: { providerID: string; modelID: string }
+  model?: { providerID: string; modelID: string }
   agent: string
   variant?: string
 }
@@ -129,6 +129,7 @@ export type ResolveSubmitDirectoryContext = {
 }
 
 export type ResolveSubmittedConfigContext = {
+  modelOptional?: boolean
   harnessModelKey?: ModelKey
   currentAgent?: SubmitAgent
   defaultAgent?: SubmitAgent

@@ -42,7 +42,7 @@ export async function pullControlSession(
   auth: ControlPlaneAuthContext | undefined,
   input: { workspaceId: string; sessionId: string },
 ) {
-  const scope = await workspaceForPull(services, auth, input.workspaceId)
+  const scope = await workspaceForPull(services, auth, input.workspaceId, input.sessionId)
   if (auth?.mode === "signed" && !workspaceRoleAllowsWrite(scope.authorityRole)) {
     throw new ControlPlaneProtocolError(403, "workspace_authorization_denied", "Workspace write authority is required")
   }
@@ -68,7 +68,7 @@ export async function pullControlSessionMessages(
   auth: ControlPlaneAuthContext | undefined,
   input: { workspaceId: string; sessionId: string; expectedEventOrdinal?: number },
 ) {
-  const scope = await workspaceForPull(services, auth, input.workspaceId)
+  const scope = await workspaceForPull(services, auth, input.workspaceId, input.sessionId)
   const { ws } = scope
   if (auth?.mode === "signed") {
     await requireAuthority(services).authorizeSessionWrite(auth, {
@@ -188,11 +188,20 @@ async function workspaceForPull(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
   workspaceId: string,
+  sessionId: string,
 ) {
   const opened = auth?.mode === "signed"
     ? await requireAuthority(services).openWorkspace(auth, { workspaceId })
     : undefined
   const hit = await resolveWorkspace({ workspaceId })
+  const session = await services.projectionStore.session_meta(sessionId)
+  if (session && (session.workspaceID ? session.workspaceID !== workspaceId : session.directory !== hit?.directory)) {
+    throw new ControlPlaneProtocolError(
+      409,
+      "workspace_runtime_session_mismatch",
+      "Stored session does not belong to the requested workspace",
+    )
+  }
   if (hit) {
     const authoritativeOrgId = txt(opened?.workspace?.org_id)
     const authoritativeProjectId = txt(opened?.workspace?.project_id)

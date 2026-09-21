@@ -1,4 +1,4 @@
-import { createRoot, createSignal } from "solid-js"
+import { createRoot, createSignal, createMemo } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
 import { markFastSessionSwitch } from "@/platform/runtime/session-switch"
@@ -45,7 +45,8 @@ function wiringHarness(input: { signed?: boolean } = {}) {
       requestFailedTitle: () => "failed",
     })
   })
-  return { wiring, setWobble, setSessionId, setHarness, dispose: () => dispose.forEach((d) => d()) }
+  const mode = createRoot((d) => { dispose.push(d); return createMemo(() => wiring.report()?.currentModeId) })
+  return { wiring, mode, setWobble, setSessionId, setHarness, dispose: () => dispose.forEach((d) => d()) }
 }
 
 afterEach(() => {
@@ -56,6 +57,32 @@ afterEach(() => {
 })
 
 describe("permission-mode wiring resource key", () => {
+  test("never carries one session's current mode into another session", async () => {
+    const report = { modes: [], appliesFrom: "next-turn" as const, currentModeId: "agent" }
+    fetchModes.mockResolvedValueOnce({ data: report })
+    fetchModes.mockImplementationOnce(() => new Promise(() => {}))
+    const { wiring, setSessionId, dispose } = wiringHarness()
+    await flush()
+    expect(wiring.report()?.currentModeId).toBe("agent")
+    setSessionId("ses_other")
+    expect(wiring.report()).toBeUndefined()
+    dispose()
+  })
+
+  test("keeps the accepted mode visible while confirmation is pending", async () => {
+    const old = { modes: [], appliesFrom: "next-turn" as const, currentModeId: "agent" }
+    const accepted = { ...old, currentModeId: "read-only" }
+    fetchModes.mockResolvedValueOnce({ data: old })
+    fetchModes.mockImplementationOnce(() => new Promise(() => {}))
+    setMode.mockResolvedValueOnce({ data: accepted })
+    const { wiring, mode, dispose } = wiringHarness()
+    await flush()
+    expect(mode()).toBe("agent")
+    await wiring.writer().setPermissionMode!({ sessionID: "ses_1", modeId: "read-only" })
+    expect(mode()).toBe("read-only")
+    dispose()
+  })
+
   test("cancels the quiet-window read when its owner is disposed", async () => {
     vi.useFakeTimers()
     fetchModes.mockClear()

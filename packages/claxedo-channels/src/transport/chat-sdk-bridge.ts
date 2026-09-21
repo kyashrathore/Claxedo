@@ -7,18 +7,29 @@ import type { ChannelWebhookHandler } from "../ingress"
 import { chatSdkApprovalDecision } from "./chat-sdk-actions"
 import { createChatSdkRenderer, type ChatSdkThread } from "./chat-sdk-render"
 import { repoTargetFromText } from "./repo-target"
+import { telegramSenderId } from "./telegram"
 import { record } from "../json"
+
+/**
+ * Chat SDK `Author`, narrowed to the fields this bridge reads.
+ *
+ * `userId` is the platform's stable account id and the ONLY identity here:
+ * every adapter fills it from the immutable id (`user.id.toString()` on
+ * GitHub, `String(user.id)` on Telegram). `userName` is the renameable handle
+ * and `fullName` a display string; both are shown, neither is ever a key.
+ */
+export type ChatSdkAuthor = {
+  userId: string
+  userName?: string
+  fullName?: string
+}
 
 export type ChatSdkMessage = {
   id?: string
   text?: string
   isMention?: boolean
   timestamp?: number | Date | string
-  author?: {
-    id?: string
-    userName?: string
-    fullName?: string
-  }
+  author?: ChatSdkAuthor
   raw?: unknown
 }
 
@@ -32,8 +43,14 @@ export type ChatSdkMessage = {
 export type ChatSdkThreadIdentity = {
   id?: string
   threadId?: string
-  channel?: string
-  platform?: string
+  /**
+   * `Postable.adapter`; its `name` is the platform ("slack", "github", …).
+   *
+   * The SDK states the platform HERE and nowhere else a thread carries:
+   * `Thread.channel` is a `Channel` object, so declaring a string `channel`
+   * beside this made every real `Thread` unassignable to this type.
+   */
+  adapter?: { name?: string }
   installationId?: string
   teamId?: string
   guildId?: string
@@ -58,9 +75,18 @@ export type ChatSdkBot = {
   webhooks?: Partial<Record<ChannelId, ChannelWebhookHandler>>
 }
 
-function channel(input: unknown): ChannelId {
-  if (input === "github" || input === "slack" || input === "telegram" || input === "discord" || input === "whatsapp") return input
-  return "telegram"
+/**
+ * Which platform a thread belongs to, per the adapter that delivered it.
+ *
+ * An unrecognized platform yields undefined and the message is dropped. The
+ * channel is half of the `channel:externalUserId` key the access gate admits
+ * on, so naming an unknown transport after a known one would file its senders
+ * under that platform's allowlist and bindings.
+ */
+function threadChannel(thread: ChatSdkThreadIdentity): ChannelId | undefined {
+  const name = trimToUndefined(thread.adapter?.name)
+  if (name === "github" || name === "slack" || name === "telegram" || name === "discord" || name === "whatsapp") return name
+  return undefined
 }
 
 function text(input: unknown) {
@@ -111,6 +137,24 @@ function chatType(thread: ChatSdkBridgeThread): ChannelChatType {
   return trimToUndefined(thread.conversationId) ? "dm" : "group"
 }
 
+/**
+ * The sender the SDK reports, held to what the payload actually attributed.
+ *
+ * `Author.userId` is the platform's account id on every installed adapter but
+ * one: `@chat-adapter/telegram` synthesizes an author from the CHAT when an
+ * update carries neither `from` nor `sender_chat` (dist/index.js
+ * parseTelegramMessage), so on Telegram the SDK's "user" can be a room that
+ * named nobody. `telegramSenderId` re-reads the raw update under the rule the
+ * direct webhook path uses, and an author the payload does not support is no
+ * author — a message the platform left unattributed must not become a
+ * principal that allowlists, bindings and approvals are then written against.
+ */
+function sender(channel: ChannelId, message: ChatSdkMessage) {
+  const claimed = trimToUndefined(message.author?.userId)
+  if (channel !== "telegram") return claimed
+  return claimed && telegramSenderId(message.raw) === claimed ? claimed : undefined
+}
+
 function receivedAt(input: unknown) {
   if (input instanceof Date) return Number.isFinite(input.getTime()) ? input.getTime() : undefined
   if (typeof input === "string") {
@@ -125,12 +169,21 @@ function idempotencyKey(input: { threadKey: string; message: ChatSdkMessage; tex
   return input.message.id ?? `${input.threadKey}:${input.receivedAt ?? 0}:${input.text}`
 }
 
+/**
+ * Normalize an SDK thread + message into an inbound envelope, or undefined when
+ * the message names no platform or no sender. Both are keys the access gate,
+ * the pairing store and the identity bindings are written in terms of, so a
+ * message missing either is not admissible under any policy.
+ */
 export function chatSdkEnvelope(
   thread: ChatSdkBridgeThread,
   message: ChatSdkMessage,
   options: { addressed?: boolean } = {},
-): InboundEnvelope {
-  const nextChannel = channel(thread.channel ?? thread.platform)
+): InboundEnvelope | undefined {
+  const nextChannel = threadChannel(thread)
+  if (!nextChannel) return undefined
+  const externalUserId = sender(nextChannel, message)
+  if (!externalUserId) return undefined
   const nextThreadKey = threadKey({ channel: nextChannel, thread })
   const text = message.text ?? ""
   const nextReceivedAt = receivedAt(message.timestamp)
@@ -144,7 +197,7 @@ export function chatSdkEnvelope(
   const mentions = addressed ? ["@bot"] : []
   return {
     channel: nextChannel,
-    externalUserId: message.author?.id ?? message.author?.userName ?? "unknown",
+    externalUserId,
     threadKey: nextThreadKey,
     idempotencyKey: idempotencyKey({ threadKey: nextThreadKey, message, text, receivedAt: nextReceivedAt }),
     text,
@@ -162,8 +215,7 @@ function threadIdentity(row: Record<string, unknown>): ChatSdkThreadIdentity {
   return {
     id: text(row.id),
     threadId: text(row.threadId),
-    channel: text(row.channel),
-    platform: text(row.platform),
+    adapter: { name: text(record(row.adapter)?.name) },
     installationId: text(row.installationId),
     teamId: text(row.teamId),
     guildId: text(row.guildId),
@@ -176,22 +228,26 @@ function threadIdentity(row: Record<string, unknown>): ChatSdkThreadIdentity {
 }
 
 /**
- * Rebuild the envelope threadKey from a button-action payload.
+ * The thread a button was pressed in, as the approval path needs it.
  *
  * The action carries the thread it was clicked in (`ActionEvent.thread`, or the
- * ids inline), so the key is composed with the SAME `threadKey()` — and the same
- * channel defaulting — used for inbound messages. The two must agree exactly or
- * the approval bridge's thread check would reject every legitimate press instead
- * of only the cross-thread ones.
+ * ids inline), so the key is composed with the SAME `threadKey()` used for
+ * inbound messages. The two must agree exactly or the approval bridge's thread
+ * check would reject every legitimate press instead of only the cross-thread
+ * ones.
  *
- * A payload carrying no thread identity returns undefined, so the decision
- * travels with no threadKey rather than one composed entirely from `threadKey()`
- * defaults ("default:conversation:root") — which would collide with any other
- * equally-empty thread.
+ * An identified thread on an unrecognized platform yields undefined and the
+ * press is dropped: no inbound message from that platform can have opened a
+ * prompt (`chatSdkEnvelope` refuses it), so any prompt the press would resolve
+ * belongs to some other thread — the exact case the key exists to catch.
+ *
+ * A payload carrying no thread identity at all yields no key rather than one
+ * composed entirely from `threadKey()` defaults ("default:conversation:root"),
+ * which would collide with any other equally-empty thread.
  */
-function actionThreadKey(action: unknown): string | undefined {
+function actionThread(action: unknown): { threadKey?: string } | undefined {
   const row = record(action)
-  if (!row) return undefined
+  if (!row) return {}
   const source = threadIdentity(record(row.thread) ?? row)
   const hasIdentity = firstText(
     source.threadId,
@@ -201,8 +257,10 @@ function actionThreadKey(action: unknown): string | undefined {
     source.conversationId,
     source.messageId,
   )
-  if (!hasIdentity) return undefined
-  return threadKey({ channel: channel(source.channel ?? source.platform), thread: source })
+  if (!hasIdentity) return {}
+  const nextChannel = threadChannel(source)
+  if (!nextChannel) return undefined
+  return { threadKey: threadKey({ channel: nextChannel, thread: source }) }
 }
 
 export function createChatSdkBridge(input: {
@@ -220,11 +278,16 @@ export function createChatSdkBridge(input: {
     message: ChatSdkMessage,
     options: { addressed?: boolean } = {},
   ) => {
+    const envelope = chatSdkEnvelope(thread, message, options)
+    // Subscribing makes the bot a participant in someone's thread, and every
+    // step after it is taken on behalf of a named principal. A message whose
+    // platform or sender the SDK didn't give us ends here, before either.
+    if (!envelope) return
     await thread.subscribe?.()
-    await input.core.handleInbound(chatSdkEnvelope(thread, message, options), {
+    await input.core.handleInbound(envelope, {
       reply: createChatSdkRenderer(thread, {
         editInPlace: input.editInPlace,
-        editCadenceMs: input.editCadenceMs ?? editCadenceMs(thread.channel ?? thread.platform),
+        editCadenceMs: input.editCadenceMs ?? editCadenceMs(envelope.channel),
         nativeStreaming: input.nativeStreaming,
         dataMinimization: input.dataMinimization,
       }),
@@ -241,9 +304,10 @@ export function createChatSdkBridge(input: {
     // to, so deriving the threadKey here is what lets the approval bridge check
     // that a decision came from the thread that was asked — without it the
     // bridge's threadKey guard has nothing to compare and never fires.
-    const threadKey = actionThreadKey(action)
+    const pressed = actionThread(action)
+    if (!pressed) return
     const decision = input.toApprovalDecision?.(action)
-      ?? chatSdkApprovalDecision(action, threadKey ? { threadKey } : {})
+      ?? chatSdkApprovalDecision(action, pressed.threadKey ? { threadKey: pressed.threadKey } : {})
     if (decision) await input.core.onApproval(decision)
   })
   return {
@@ -251,8 +315,6 @@ export function createChatSdkBridge(input: {
   }
 }
 
-function editCadenceMs(input: unknown) {
-  if (input === "slack") return 250
-  if (input === "telegram" || input === "discord" || input === "whatsapp" || input === "github") return 1000
-  return 500
+function editCadenceMs(channel: ChannelId) {
+  return channel === "slack" ? 250 : 1000
 }

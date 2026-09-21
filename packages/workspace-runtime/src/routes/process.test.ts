@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { ProcessRoutes, createProcessRoutes } from "./process"
+import * as ProcessManager from "../managed-processes/manager"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import { Hono } from "hono"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
@@ -80,6 +84,8 @@ describe("ProcessRoutes logs", () => {
     const calls: Array<{ sessionId?: string; operation: string }> = []
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
+      authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+      authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
       authorize: async (input) => {
         calls.push({ sessionId: input.sessionId, operation: input.operation })
         return {
@@ -313,5 +319,96 @@ describe("ProcessRoutes logs", () => {
 
     expect(res.status).toBe(413)
     await expect(res.json()).resolves.toEqual(errorBody("request_body_too_large", "Request body is too large"))
+  })
+})
+
+describe("ProcessRoutes lease identity", () => {
+  let tmpDir: string
+  let previousState: string | undefined
+  let previousWorkspace: string | undefined
+
+  beforeEach(async () => {
+    tmpDir = await realpath(await mkdtemp(path.join(tmpdir(), "workspace-runtime-lease-")))
+    previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
+    previousState = process.env.WORKSPACE_RUNTIME_STATE_DIR
+    previousWorkspace = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = tmpDir
+    process.env.WORKSPACE_RUNTIME_STATE_DIR = path.join(tmpDir, "state")
+  })
+
+  afterEach(async () => {
+    await ProcessManager.dispose(tmpDir)
+    for (const [key, value] of [
+      ["WORKSPACE_RUNTIME_DIRECTORY", previousDirectory],
+      ["WORKSPACE_RUNTIME_STATE_DIR", previousState],
+      ["WORKSPACE_RUNTIME_WORKSPACE_ID", previousWorkspace],
+    ] as const) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    await rm(tmpDir, { recursive: true, force: true })
+  })
+
+  const exists = (file: string) => stat(file).then(() => true, () => false)
+
+  function tag(value: string) {
+    return Buffer.from(value).toString("base64url")
+  }
+
+  async function seedLease(workspace: string) {
+    const file = path.join(
+      process.env.WORKSPACE_RUNTIME_STATE_DIR!,
+      "managed-processes/port-leases",
+      tag(tmpDir),
+      tag(workspace),
+      `${tag("proc_victim")}.json`,
+    )
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeFile(file, JSON.stringify({
+      project_id: tmpDir,
+      workspace,
+      process_id: "proc_victim",
+      port_name: "http",
+      preferred: 4000,
+      port: 4000,
+      updated_at: Date.now(),
+    }))
+    return file
+  }
+
+  test("a forged workspace header cannot prune another workspace's port leases", async () => {
+    process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_this_runtime"
+    const victim = await seedLease("ws_victim")
+
+    const response = await ProcessRoutes().request("http://localhost/", {
+      headers: { "x-workspace-id": "ws_victim", "x-workspace-name": "Victim" },
+    })
+
+    expect(response.status).toBe(200)
+    await expect(exists(victim)).resolves.toBe(true)
+  })
+
+  test("leases are keyed by the runtime's own workspace, not the caller's header", async () => {
+    process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_this_runtime"
+    const own = await seedLease("ws_this_runtime")
+
+    await ProcessRoutes().request("http://localhost/", {
+      headers: { "x-workspace-id": "ws_victim" },
+    })
+
+    await expect(exists(own)).resolves.toBe(false)
+  })
+
+  test("a runtime with no authoritative workspace identity falls back to its directory", async () => {
+    delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+    const byDirectory = await seedLease(tmpDir)
+    const byHeader = await seedLease("ws_claimed")
+
+    await ProcessRoutes().request("http://localhost/", {
+      headers: { "x-workspace-id": "ws_claimed" },
+    })
+
+    await expect(exists(byDirectory)).resolves.toBe(false)
+    await expect(exists(byHeader)).resolves.toBe(true)
   })
 })

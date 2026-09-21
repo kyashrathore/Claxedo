@@ -1,3 +1,4 @@
+import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import type { Accessor } from "solid-js"
 import type { FileSelection } from "@/platform/files/types"
 import type { ContextItem, ImageAttachmentPart, Prompt, PromptDraftScope } from "@/features/session/providers/prompt"
@@ -19,7 +20,7 @@ export type FollowupDraft = {
   prompt: Prompt
   context: (ContextItem & { key: string })[]
   agent: string
-  model: { providerID: string; modelID: string }
+  model?: { providerID: string; modelID: string }
   variant?: string
 }
 
@@ -66,6 +67,7 @@ type PromptSubmitProvisioningInput = {
   newSessionSourceBranch?: Accessor<string | undefined>
   newSessionHostKind?: Accessor<WorkspaceHostKind | undefined>
   onNewSessionWorktreeReset?: () => void
+  onSessionStart?: (draftId: string, binding: AgentSessionStartBinding | undefined, outcome?: "transport-failed") => void
   onCloudStartup?: (state?: CloudStartupState) => void
   navigateOnCreate?: Accessor<boolean>
   signedControlPlane?: Accessor<boolean>

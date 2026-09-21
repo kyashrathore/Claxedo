@@ -2,6 +2,7 @@ import { requestUrl } from "@/lib/url"
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { sessionSourceQueryOptions } from "../sync/session-source"
 import {
   appendSessionListPageQueryData,
   reconcileArchivedSessionListQueryData,
@@ -519,6 +520,70 @@ describe("session list query cache", () => {
     expect(result.items?.map((item) => item.sessionId)).toEqual(["ses_still_visible", "ses_tail"])
     expect(result.nextCursor).toBeUndefined()
     expect(result.totalKnown).toBe(2)
+  })
+
+  test("creation followed by a smaller list total refreshes the loaded depth instead of resetting to five", async () => {
+    const baseUrl = "http://test.local"
+    const query = { scope: "workspace" as const, workspaceId: "ws_1", directory: "/repo", limit: 5 }
+    const key = queryKeys.shell.sessionList(baseUrl, query)
+    const sessions = Array.from({ length: 25 }, (_, index) => row(`ses_${index}`, 25 - index))
+    queryClient.setQueryData(key, {
+      ...response(), items: sessions.slice(0, 5), totalKnown: 25, nextCursor: "5",
+    })
+    appendSessionListPageQueryData({
+      baseUrl, query,
+      page: { ...response(), items: sessions.slice(5, 15), totalKnown: 25, nextCursor: "15" },
+    })
+    upsertCreatedSessionListRow({ baseUrl, row: row("ses_new", 100) })
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.totalKnown).toBe(26)
+
+    const requested: number[] = []
+    const result = await queryClient.fetchQuery(sessionSourceQueryOptions({
+      baseUrl, query, source: { kind: "self" },
+      request: async (input) => {
+        const url = new URL(requestUrl(input))
+        const offset = Number(url.searchParams.get("cursor") ?? 0)
+        const limit = Number(url.searchParams.get("limit"))
+        requested.push(offset)
+        return Response.json({
+          ...response(), items: sessions.slice(offset, offset + limit), totalKnown: sessions.length,
+          nextCursor: offset + limit < sessions.length ? String(offset + limit) : undefined,
+        })
+      },
+    }))
+
+    expect(result.items?.map((item) => item.sessionId)).toEqual(sessions.slice(0, 16).map((item) => item.sessionId))
+    expect(result.nextCursor).toBe("16")
+    expect(result.totalKnown).toBe(25)
+    expect(requested).toEqual([0, 5])
+  })
+
+  test("a failed tail refresh preserves the cache and a retry removes revoked rows", async () => {
+    const query = { scope: "workspace" as const, workspaceId: "ws_1", limit: 2 }
+    const key = queryKeys.shell.sessionList(undefined, query)
+    const cached = {
+      ...response(), items: [row("ses_1", 5), row("ses_2", 4), row("ses_revoked", 3)],
+      totalKnown: 5, nextCursor: "old_cursor",
+    }
+    queryClient.setQueryData(key, cached)
+    let fail = true
+    const options = sessionSourceQueryOptions({
+      query, source: { kind: "self" },
+      request: async (input) => {
+        if (new URL(requestUrl(input)).searchParams.has("cursor")) {
+          if (fail) return new Response("Unavailable", { status: 503 })
+          return Response.json({ ...response(), items: [row("ses_3", 2)], totalKnown: 4, nextCursor: "3" })
+        }
+        return Response.json({ ...response(), totalKnown: 4, nextCursor: "2" })
+      },
+    })
+    await expect(queryClient.fetchQuery(options)).rejects.toThrow()
+    expect(queryClient.getQueryData(key)).toEqual(cached)
+    fail = false
+    const result = await queryClient.fetchQuery(options)
+    expect(result.items?.map((item) => item.sessionId)).toEqual(["ses_1", "ses_2", "ses_3"])
+    expect(result.nextCursor).toBe("3")
+    expect(result.totalKnown).toBe(4)
   })
 
   test("base refetch keeps a newer lifecycle row ahead of a stale authoritative page", async () => {

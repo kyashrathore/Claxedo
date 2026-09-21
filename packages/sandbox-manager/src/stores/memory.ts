@@ -1,10 +1,12 @@
-import { applySandboxLeasePatch } from ".."
+import { applySandboxLeasePatch, applySandboxProvisionedTarget } from ".."
 import type {
   SandboxLeaseAcquireInput,
   SandboxLeaseAcquireResult,
   SandboxLeasePatch,
+  SandboxLeaseStatus,
   SandboxLeaseStore,
   SandboxLease,
+  SandboxProvisionedTarget,
   SandboxRegion,
 } from ".."
 
@@ -49,9 +51,18 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
       leases.set(workspaceId, next)
       return { acquired: true, lease: next }
     },
-    async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch) {
+    async recordTarget(workspaceId: string, expectedEpoch: number, target: SandboxProvisionedTarget) {
       const current = leases.get(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
+      if (current.status === "stopped" || current.status === "destroyed") return undefined
+      const next = applySandboxProvisionedTarget(current, target, Date.now())
+      leases.set(workspaceId, next)
+      return next
+    },
+    async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch, expectedStatus?: SandboxLeaseStatus) {
+      const current = leases.get(workspaceId)
+      if (!current || current.epoch !== expectedEpoch) return undefined
+      if (expectedStatus !== undefined && current.status !== expectedStatus) return undefined
       const next = applySandboxLeasePatch(current, patch, Date.now())
       leases.set(workspaceId, next)
       return next
@@ -59,6 +70,7 @@ export function createMemoryLeaseStore(seed: SandboxLease[] = []): SandboxLeaseS
     async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
       const current = leases.get(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
+      if (current.status === "stopped" || current.status === "destroyed") return undefined
       const next = {
         ...current,
         status: "unavailable" as const,

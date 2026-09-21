@@ -1,4 +1,4 @@
-import { createStore } from "solid-js/store"
+import { createStore, reconcile, unwrap } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { batch, createMemo, createRoot, createSignal, createUniqueId, getOwner, onCleanup } from "solid-js"
 import type { Accessor } from "solid-js"
@@ -328,7 +328,7 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
   const [goalArmed, setGoalArmed] = createSignal(false)
   const [queuedEdit, setQueuedEdit] = createSignal<QueuedMessageEdit>()
 
-  const [store, setStore, _, ready] = persisted(
+  const [store, setStore, hydration, ready] = persisted(
     SERVER_SCOPED_PERSIST
       ? Persist.serverScoped(serverUrl, dir, id, "prompt", [legacy])
       : Persist.scoped(dir, id, "prompt", [legacy]),
@@ -371,6 +371,7 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
 
   return {
     ready,
+    hydrated: Promise.resolve(hydration),
     store: draftStore,
     current: createMemo(() => store.prompt),
     cursor: createMemo(() => store.cursor),
@@ -539,6 +540,23 @@ const promptContextInput = {
       // still be evicted; no caller does that today (`controller-engine.ts` binds
       // `capture()` with no argument).
       capture: (scope?: Scope): PromptDraftCapture => withScope(scope, (target) => target),
+      async moveDraft(from: Scope, to: Scope) {
+        const sourceKey = promptScopeKey(from)
+        const targetKey = promptScopeKey(to)
+        if (sourceKey === targetKey) return
+        const source = acquire(sourceKey, undefined)
+        const target = acquire(targetKey, undefined)
+        try {
+          await Promise.all([source.value.hydrated, target.value.hydrated])
+          if (target.value.dirty()) throw new Error("The created session already has an unsent draft")
+          const snapshot = structuredClone(unwrap(source.value.store[0]()))
+          target.value.store[1](reconcile(snapshot))
+          source.value.reset()
+        } finally {
+          source.release()
+          target.release()
+        }
+      },
       current: (scope?: Scope) => withScope(scope, (target) => target.current()),
       cursor: (scope?: Scope) => withScope(scope, (target) => target.cursor()),
       dirty: () => session().dirty(),

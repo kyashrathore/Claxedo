@@ -41,7 +41,7 @@ export type McpToolAccess = Readonly<{
   write: boolean
   /** The scope a user credential must hold. */
   scope: McpScope
-  /** Human-only, annotated `destructiveHint`, and confirmed through elicitation where the host supports it. */
+  /** Human-only, annotated `destructiveHint`, and requires accepted host elicitation. */
   destructive?: boolean
   /** The Tasks operation this tool performs; a tool that names one exists only while the caller's grant carries it. */
   operation?: TasksOperation

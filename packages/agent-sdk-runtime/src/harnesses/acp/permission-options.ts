@@ -1,4 +1,4 @@
-import type { PermissionOption, PermissionOptionKind, ToolKind } from "@agentclientprotocol/sdk"
+import type { PermissionOption, PermissionOptionKind, ToolKind, RequestPermissionRequest } from "@agentclientprotocol/sdk"
 
 /** The decisions Claxedo can hand to an ACP agent. */
 export type AcpPermissionDecision = "allow_once" | "allow_always" | "deny" | "reject_always"
@@ -67,17 +67,24 @@ export function acpPermissionRequest(input: {
   /** The protocol's `toolCall.kind`; absent when the agent sends none. */
   kind?: ToolKind
   paths: string[]
+  toolCall?: RequestPermissionRequest["toolCall"]
+  requestMeta?: RequestPermissionRequest["_meta"]
 }) {
-  const title = input.tool ?? "unknown"
+  const title = input.tool
+  const raw = input.toolCall?.rawInput
+  const command = raw && typeof raw === "object" && "command" in raw && typeof raw.command === "string" ? raw.command : undefined
   return {
     id: input.permId,
     sessionID: input.sessionId,
     // `"other"` routes unclassified requests through the ask tier.
     permission: input.kind ?? ("other" satisfies ToolKind),
     patterns: input.paths,
-    // The dock renders `command` for a shell call and `reason` for anything
-    // else; ACP's `title` is the only text the agent sends for either.
-    metadata: input.kind === "execute" ? { title, command: title } : { title, reason: title },
+    metadata: {
+      ...(title !== undefined ? { title, reason: title } : {}),
+      ...(command !== undefined ? { command } : {}),
+      ...(input.toolCall ? { acpToolCall: input.toolCall } : {}),
+      ...(input.requestMeta ? { acpRequestMeta: input.requestMeta } : {}),
+    },
     always: input.paths,
   }
 }

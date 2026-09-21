@@ -5,12 +5,14 @@ import {
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
+import { projectSessionCommands } from "@claxedo/agent-event-runtime/client-presentation"
 import { createAcpEventTranslator, translateStopReason } from "@claxedo/agent-event-runtime/harnesses/acp"
 import {
   buildAssistantMessage,
   buildUserMessage,
   isTerminalCompatEvent,
   messageUpdated,
+  messagePartUpdated,
   permissionAsked,
   permissionReplied,
   sessionError,
@@ -19,24 +21,25 @@ import {
 } from "../../compat-events"
 import type { AgentRuntimeStreamEvent, PromptInput } from "../../index"
 import { turnWriteFence, type AgentTurnWriteContext } from "../../adapter-contract"
-import { firstTurnErrorData } from "../../first-turn-error"
 import { Log } from "../../log"
 import { recovering } from "../../status"
 import { createTurnEventProjector } from "../shared/turn-projection"
 import { createChildEventRouter } from "../shared/child-event-routing"
+import { createACPSubagentRuntime } from "./subagent-runtime"
 import { acpPermissionRequest, selectPermissionOption } from "./permission-options"
 import { acpPermissionGrant, hasAcpGrant } from "./permission-grants"
 import { ACPProcess, type SessionUpdate } from "./process"
 import {
   errorMessage,
   messageUsage,
-  missing,
   newSessionTimeoutMs,
   runtimeUsage,
 } from "./helpers"
 import { AcpProcessManager } from "./process-manager"
 import { generateAcpTitle } from "./title"
 import type { SessionTitleRequest } from "../../title-generation"
+import { acpTurnFailure, ACP_CONTEXT_REBUILT, AcpSessionUncertainError, missingAcpSession, renderAcpRecoveryContext, uncertainAcpSession } from "./recovery"
+import { cancelPendingPermissions, type PermissionReplyPort } from "./permission-reply"
 
 const log = Log.create({ service: "acp-turn-runner" })
 const activePromptCounts = new Map<string, number>()
@@ -85,11 +88,41 @@ export function waitForNoActiveAcpPrompts(harness: string) {
   })
 }
 
-function unrestorable(error: unknown) {
-  return missing(error)
-}
-
 export abstract class AcpTurnRunner extends AcpProcessManager {
+  protected abstract permissionReplyPort(): PermissionReplyPort
+  private childRuntimes = new WeakMap<ACPProcess, Map<string, ReturnType<typeof createACPSubagentRuntime>>>()
+  protected bindSubagentUpdates(id: string, aid: string, directory: string, input: PromptInput, proc: ACPProcess, ownerKey: string) {
+    this.childRuntimes ??= new WeakMap()
+    let sessions = this.childRuntimes.get(proc)
+    if (!sessions) this.childRuntimes.set(proc, sessions = new Map())
+    const existing = sessions.get(aid)
+    if (existing) return existing
+    const runtime = createACPSubagentRuntime({ sessionId: id, agentSessionId: () => aid, harness: this.harnessId(), directory, input,
+      store: this.store, bindSession: (binding) => this.store.bindSession({ ...binding, ownerKey }),
+      publish: (payload) => this.options.eventHub?.publishGlobal({ directory, payload }), publishRuntime: this.options.eventHub?.publishRuntime })
+    sessions.set(aid, runtime)
+    proc.listenSubagents(aid, runtime.receive, runtime.disconnect)
+    return runtime
+  }
+  protected bindCommandUpdates(sessionId: string, agentSessionId: string, directory: string, proc: ACPProcess) {
+    const runtime = createAgentEventRuntime({
+      harness: this.harnessId(),
+      threadId: agentSessionId,
+      adapter: createAcpEventTranslator({ client: this.harnessId() }),
+    })
+    proc.observeCommands(agentSessionId, (update) => {
+      if (this.store.getAgentSessionId(sessionId) !== agentSessionId) return
+      const source = { dir: "in" as const, method: "session/update", frame: update }
+      for (const event of runtime.ingest({ source: "acp.jsonrpc", method: source.method, payload: update }).events) {
+        if (event.type !== "available-commands-update") continue
+        const projected = projectSessionCommands(sessionId, directory, event)
+        const committed = this.store.appendEvent({ sessionId, agentSessionId, payload: projected.payload, source })
+        this.options.eventHub?.publishGlobal({ directory, payload: committed.payload })
+        this.options.eventHub?.publishRuntime({ directory, sessionId, agentSessionId, payload: event })
+      }
+    })
+  }
+
   private goalProjections = new Map<string, GoalProjection>()
   private goalRuntimes = new Map<string, GoalRuntime>()
 
@@ -214,7 +247,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       parts: [],
       assistantMessageId,
       agent: config?.agent ?? "build",
-      model: config?.model ?? { providerID: this.harnessId(), modelID: this.currentModel || "default" },
+      ...(config?.model ? { model: config.model } : {}),
       ...(config?.variant ? { variant: config.variant } : {}),
     }
     const started = this.store.startTurn({
@@ -237,9 +270,9 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       onEvent: (event) => this.options.eventHub?.publishGlobal({ directory, payload: event }),
       onRuntimeEvent: this.options.eventHub?.publishRuntime,
     })
-    proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
+    proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths, toolCall, requestMeta }) => {
       this.permissionOwnerMap().set(permId, proc)
-      const event = permissionAsked(acpPermissionRequest({ permId, sessionId, tool, kind, paths }))
+      const event = permissionAsked(acpPermissionRequest({ permId, sessionId, tool, kind, paths, toolCall, requestMeta }))
       this.store.appendEvent({
         sessionId,
         agentSessionId,
@@ -250,6 +283,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     })
     const turn = {
       drain: (message: string) => {
+        cancelPendingPermissions(this.permissionReplyPort(), proc, sessionId, agentSessionId)
         void proc.cancel(agentSessionId).catch(() => {})
         this.finishGoalProjection(sessionId, message)
       },
@@ -314,10 +348,6 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     const session = this.store.getSession(id)
     let created = Date.now()
     log.info("sendMessage: found session in store", { id, agentSessionId })
-    if (input.model?.modelID) {
-      const nextModel = input.model.modelID === "default" ? "" : input.model.modelID
-      if ((this.currentModel || "") !== nextModel) this.setModel(nextModel)
-    }
 
     let proc: ACPProcess
     let fresh = false
@@ -331,6 +361,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       return
     }
     const processKey = this.sessionProcessMap().get(id) ?? this.keyForSession(id, directory)
+    this.bindCommandUpdates(id, agentSessionId, directory, proc)
     if (this.store.getSessionOwnerKey && this.store.getSessionOwnerKey(id) !== processKey) {
       this.store.bindSession({
         sessionId: id,
@@ -352,6 +383,8 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     const queue = this.startTurnEvents(id, agentSessionId, directory, created, input, recover, fenced)
     let promptDone = false
     let promptError: string | null = null
+    let failure: unknown
+    let promptSubmitted = false
     let promptPromise: Promise<void> = Promise.resolve()
     const resolvers: Array<() => void> = []
     let chunkCount = 0
@@ -365,20 +398,21 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     const drain = (message: string) => {
       if (drained) return
       drained = true
-      promptError = message
-      promptDone = true
-      proc.cancel(agentSessionId).catch(() => {})
-      this.invalidateProcess(processKey, message, proc)
-      for (const r of resolvers.splice(0)) r()
-      drainTurn(new Error(message))
+      cancelPendingPermissions(this.permissionReplyPort(), proc, id, agentSessionId)
+      void proc.cancelAndWait(agentSessionId).then(() => {
+        drainTurn(new Error(message))
+      }, (error: unknown) => {
+        drainTurn(error instanceof Error ? error : new Error(errorMessage(error)))
+      })
     }
     const turn = { drain }
     this.lifecycle().set(id, turn)
-    const eventRuntime = createAgentEventRuntime({
+    const runtimeForSession = () => createAgentEventRuntime({
       harness: this.harnessId(),
       threadId: agentSessionId,
       adapter: createAcpEventTranslator({ client: this.harnessId() }),
     })
+    let eventRuntime = runtimeForSession()
 
     const push = (event: CompatEvent) => {
       chunkCount++
@@ -425,6 +459,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       // instead of a runtime-channel-only side path nothing on the wire reads.
       onDiagnostic: (payload) => parentProjector.project(payload, { dir: "in", method: "child-event-routing" }),
     })
+    let childRuntime = this.bindSubagentUpdates(id, agentSessionId, directory, input, proc, processKey)
     const wait = () =>
       new Promise<void>((resolve) => {
         if (queue.length > 0 || promptDone) resolve()
@@ -439,19 +474,48 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         return await untilDrained(Promise.race([
           run,
           new Promise<T>((_, reject) => {
-            id = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+            id = setTimeout(() => {
+              proc.quarantineSession(agentSessionId, run)
+              reject(new AcpSessionUncertainError(agentSessionId, `${label} timed out after ${ms}ms; the operation is still unresolved. No prompt was retried.`))
+            }, ms)
           }),
         ]))
       } finally {
         if (id) clearTimeout(id)
       }
     }
+    let rebuiltContext: string | undefined
+    const ensureRecoveryMarker = () => {
+      const markerId = `acp-context-recovery-${agentSessionId}`
+      if (this.store.getMessages(id).some((row) => row.parts.some((part) => part.id === markerId))) return
+      const marker = messagePartUpdated({
+        id: markerId,
+        sessionID: id,
+        messageID: assistantMsgId,
+        type: "text",
+        text: `---\n${ACP_CONTEXT_REBUILT}\n---`,
+        metadata: { source: "acp-context-recovery", agentSessionId },
+      })
+      this.store.appendEvent({ ...fenced, sessionId: id, agentSessionId, payload: marker,
+        source: { dir: "out", method: "session.context-recovery" } })
+      push(marker)
+    }
     const replace = async () => {
       log.info("sendMessage: ACP session missing, creating replacement session", {
         id,
         oldAgentSessionId: agentSessionId,
       })
-      agentSessionId = await this.boot(proc, directory, session?.title ?? undefined, id)
+      const config = this.store.getSessionConfig(id)
+      if (!config) throw new Error(`Session ${id} has no configuration for context recovery`)
+      const transcript = renderAcpRecoveryContext(this.store.getMessages(id), input.userMessageId)
+      const replacement = await this.boot(proc, directory, session?.title ?? undefined, id)
+      // Persist before rebinding: a failed first prompt must not lose the context
+      // owed to this fresh agent session. Runtime turn preparation consumes this
+      // same pending handoff on the next attempt.
+      this.store.updateSessionConfig(id, { handoff: { from: config.harness, pending: true, transcript, reason: "missing-session" } })
+      agentSessionId = replacement
+      childRuntime = this.bindSubagentUpdates(id, agentSessionId, directory, input, proc, processKey)
+      eventRuntime = runtimeForSession()
       this.store.bindSession({
         sessionId: id,
         directory,
@@ -459,18 +523,26 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         agentSessionId,
         ownerKey: this.keyForSession(id, directory),
       })
+      this.bindCommandUpdates(id, agentSessionId, directory, proc)
+      rebuiltContext = transcript
+      ensureRecoveryMarker()
     }
 
     try {
-      if (fresh) {
+      if (fresh || !proc.hasSession(agentSessionId)) {
         log.info("sendMessage: process is freshly spawned, restoring ACP session", {
           id,
           agentSessionId,
         })
         try {
-          await bound("ACP resume", proc.resumeSession(agentSessionId, directory, id))
+          childRuntime.setReplaying(true)
+          try {
+            await bound("ACP resume", proc.resumeSession(agentSessionId, directory, id))
+          } finally {
+            childRuntime.setReplaying(false)
+          }
         } catch (err) {
-          if (!unrestorable(err)) throw err
+          if (!missingAcpSession(err, agentSessionId)) throw err
           await replace()
         }
       }
@@ -480,17 +552,18 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
           throw new Error(`ACP kept permission mode ${applied.currentModeId ?? "unknown"} instead of ${input.permissionMode}`)
         }
       }
-      try {
-        await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
-      } catch (err) {
-        if (!unrestorable(err)) throw err
-        await replace()
-        await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
+      await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
+      // Recovery may have committed its new binding just before a host crash.
+      // Restore the durable marker/context even if this turn did not replace it.
+      const pending = this.store.getSessionConfig(id)?.handoff
+      if (pending?.reason === "missing-session") {
+        rebuiltContext = pending.transcript
+        ensureRecoveryMarker()
       }
     } catch (err) {
+      failure = err
       promptError = errorMessage(err)
-      proc.cancel(agentSessionId).catch(() => {})
-      this.invalidateProcess(processKey, promptError, proc)
+      if (uncertainAcpSession(err)) this.store.markSessionInterrupted(id, promptError, agentSessionId)
       promptDone = true
       for (const r of resolvers.splice(0)) r()
     }
@@ -514,7 +587,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         }
       }
       const install = () => {
-        proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
+        proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths, toolCall, requestMeta }) => {
           const pending = proc.pendingPermissions.get(permId)
           const grant = acpPermissionGrant({ kind, tool })
           const granted = pending && grant
@@ -522,13 +595,14 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
             && selectPermissionOption("allow_always", pending.options)
           const record = (event: CompatEvent, method: string) => {
             this.store.appendEvent({
-              ...fenced,
+              ...(promptDone ? {} : fenced),
               sessionId: id,
               agentSessionId,
               payload: event,
               source: { dir: "in", method, frame: { tool, paths } },
             })
-            push(event)
+            if (promptDone) this.options.eventHub?.publishGlobal({ directory, payload: event })
+            else push(event)
           }
           if (granted) {
             // Answered before anything is recorded: a stale-fence throw from the
@@ -542,7 +616,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
           }
           log.info("sendMessage: forwarding permission-request to stream", { permId, tool, kind })
           this.permissionOwnerMap().set(permId, proc)
-          record(permissionAsked(acpPermissionRequest({ permId, sessionId: id, tool, kind, paths })), "requestPermission")
+          record(permissionAsked(acpPermissionRequest({ permId, sessionId: id, tool, kind, paths, toolCall, requestMeta })), "requestPermission")
         })
       }
       const stop = (stopReason: StopReason) => {
@@ -555,13 +629,25 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
           })
         }
       }
-      let retried = false
       const run = async (): Promise<void> => {
         install()
         try {
           // No wall clock on a turn: `ACPProcess.prompt` fails it only when the
           // agent goes quiet with nothing waiting on the human.
-          const result = await untilDrained(proc.prompt(agentSessionId, input, forward, directory))
+          const promptInput = rebuiltContext
+            ? { ...input, system: input.system?.includes(rebuiltContext) ? input.system : [input.system, rebuiltContext].filter(Boolean).join("\n\n") }
+            : input
+          promptSubmitted = true
+          const result = await untilDrained(proc.prompt(agentSessionId, promptInput, forward, directory, (error) => {
+            const status = sessionStatus(id, { type: "recovering", kind: "uncertain_execution", message: error.message })
+            this.store.appendEvent({ ...fenced, sessionId: id, agentSessionId, payload: status,
+              source: { dir: "in", method: "acp.cancellation.uncertain", frame: { message: error.message } } })
+            push(status)
+          }))
+          if (rebuiltContext && isCompletedStopReason(result.stopReason)
+            && this.store.getSessionConfig(id)?.handoff?.transcript === rebuiltContext) {
+            this.store.updateSessionConfig(id, { handoff: null })
+          }
           // Prompt-result usage is the ONLY meterable usage on this rail:
           // mid-turn `usage_update` notifications carry a context meter, not
           // token categories. The ACP agent is authoritative for the final
@@ -617,23 +703,18 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
           }
           stop(result.stopReason)
         } catch (err) {
-          proc.permissionPushers.delete(agentSessionId)
-          if (retried || !missing(err)) throw err
-          retried = true
-          await replace()
-          await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
-          return run()
+          throw err
         }
       }
       promptPromise = Promise.race([run(), drainPromise])
       .catch((err: unknown) => {
         log.error("sendMessage: prompt rejected", { err, ms: Date.now() - t0 })
+        failure = err
         promptError = errorMessage(err)
-        proc.cancel(agentSessionId).catch(() => {})
-        this.invalidateProcess(processKey, promptError, proc)
+        if (uncertainAcpSession(err)) this.store.markSessionInterrupted(id, promptError, agentSessionId)
       })
       .finally(() => {
-        proc.permissionPushers.delete(agentSessionId)
+        // Session-owned pusher also serves native child requests after this prompt.
         promptDone = true
         for (const r of resolvers.splice(0)) r()
       })
@@ -662,6 +743,9 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     }
 
     if (promptError) {
+      const failed = acpTurnFailure({ error: failure, message: promptError, submitted: promptSubmitted, alive: proc.alive })
+      promptError = failed.message
+      const failureData = failed.data
       log.error("sendMessage: ending with error", { promptError, ms: Date.now() - t0 })
       for (const event of router.terminalizeParent(promptError, {
         dir: "in",
@@ -679,7 +763,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         completed: Date.now(),
         error: {
           name: "UnknownError",
-          data: firstTurnErrorData(promptError),
+          data: failureData,
         },
         variant: input.variant,
       }))
@@ -696,6 +780,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       })
       yield updated
       const event = sessionError(promptError, id)
+      event.properties.error = { name: "UnknownError", data: failureData }
       this.store.appendEvent({
         ...fenced,
         sessionId: id,

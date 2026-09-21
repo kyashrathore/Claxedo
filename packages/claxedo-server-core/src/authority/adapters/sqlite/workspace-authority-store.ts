@@ -7,6 +7,7 @@ import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { columnInfo, hasColumn, hasTable } from "@claxedo/server-core/platform/db/schema-introspection"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 
 // Claxedo's LOCAL workspace-authority storage: the SQLite tables and the
 // user/org/project/role model behind `createSqliteWorkspaceAuthority`. The
@@ -38,6 +39,21 @@ CREATE TABLE runtime_access_tokens (
   created_at INTEGER NOT NULL
 );`
 
+/**
+ * `identity_version` is which generation of the sender-identity contract a
+ * binding was written under. 0 is every row that predates the local mirror of
+ * the control plane's boundary migration: its key is whatever string a
+ * transport called a sender id, so `telegram:12345` may be the handle @12345
+ * rather than account 12345, and only one of those is a person this row can
+ * speak for. Only `CURRENT_CHANNEL_IDENTITY_VERSION` authorizes; a 0 row is
+ * history and is never promoted.
+ *
+ * The active-binding uniqueness is scoped to current rows for the same reason
+ * the hosted index is: left across versions, a legacy row would veto the
+ * binding the account that owns the id needs in order to be readmitted.
+ */
+export const CURRENT_CHANNEL_IDENTITY_VERSION = 1
+
 const CANONICAL_CHANNEL_IDENTITIES_SCHEMA = `
 CREATE TABLE channel_identities (
   binding_id TEXT PRIMARY KEY,
@@ -45,11 +61,20 @@ CREATE TABLE channel_identities (
   external_user_id TEXT NOT NULL,
   token_identifier TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  revoked_at INTEGER
-);
+  revoked_at INTEGER,
+  identity_version INTEGER NOT NULL DEFAULT 0 CHECK (identity_version IN (0, 1))
+);`
+
+/**
+ * Not part of the table DDL above: the base schema runs `CREATE TABLE IF NOT
+ * EXISTS` over databases whose `channel_identities` is still an older shape,
+ * and an index predicate naming a column that table does not have yet fails
+ * the whole open before the migration that would add it has run.
+ */
+const CHANNEL_IDENTITIES_ACTIVE_INDEX = `
 CREATE UNIQUE INDEX IF NOT EXISTS channel_identities_active_external
   ON channel_identities (channel, external_user_id)
-  WHERE revoked_at IS NULL;`
+  WHERE revoked_at IS NULL AND identity_version = ${CURRENT_CHANNEL_IDENTITY_VERSION};`
 
 const CANONICAL_PRIVATE_SESSIONS_SCHEMA = `
 CREATE TABLE session_registration_operations (
@@ -537,15 +562,27 @@ function migrateRuntimeAccessTokenSchema(db: SqliteAuthorityDb) {
 }
 
 function migrateChannelIdentitySchema(db: SqliteAuthorityDb) {
-  if (hasColumn(db, "channel_identities", "binding_id")) return
-  const archive = "legacy_channel_identities_pre_canonical_actor"
-  if (hasTable(db, archive)) throw new Error(`channel_identity_archive_collision:${archive}`)
-  // Legacy token-identifier bindings have no stable binding identity. Archive
-  // them so reopening the authority cannot silently treat them as canonical.
-  db.exec(`
-    ALTER TABLE channel_identities RENAME TO ${archive};
-    ${CANONICAL_CHANNEL_IDENTITIES_SCHEMA}
-  `)
+  if (!hasColumn(db, "channel_identities", "binding_id")) {
+    const archive = "legacy_channel_identities_pre_canonical_actor"
+    if (hasTable(db, archive)) throw new Error(`channel_identity_archive_collision:${archive}`)
+    // Legacy token-identifier bindings have no stable binding identity. Archive
+    // them so reopening the authority cannot silently treat them as canonical.
+    db.exec(`
+      ALTER TABLE channel_identities RENAME TO ${archive};
+      ${CANONICAL_CHANNEL_IDENTITIES_SCHEMA}
+    `)
+  } else if (!hasColumn(db, "channel_identities", "identity_version")) {
+    // Rows already in the table keep the column default, 0. The index is
+    // rebuilt below because the one they were written under spans every
+    // unrevoked row, which would let a legacy row veto the binding the
+    // account that owns the id needs.
+    db.exec(`
+      ALTER TABLE channel_identities ADD COLUMN identity_version INTEGER NOT NULL DEFAULT 0
+        CHECK (identity_version IN (0, 1));
+      DROP INDEX IF EXISTS channel_identities_active_external;
+    `)
+  }
+  db.exec(CHANNEL_IDENTITIES_ACTIVE_INDEX)
 }
 
 /**
@@ -1300,6 +1337,17 @@ export function ensurePersonalOrg(db: SqliteAuthorityDb, user: AuthorityUser) {
   })()
 }
 
+/**
+ * A project id or repository that already belongs to a different tenant. A
+ * conflict, not a server fault: the caller asked for something coherent about
+ * a world that has moved, and a route answers 409 rather than 500.
+ */
+export class SqliteProjectConflictError extends ClaxedoError<"project_tenant_conflict" | "project_repo_conflict"> {
+  constructor(code: "project_tenant_conflict" | "project_repo_conflict", message: string) {
+    super({ code, message, status: 409 })
+  }
+}
+
 export function ensureProject(db: SqliteAuthorityDb, input: {
   projectId: string
   orgId: string
@@ -1313,9 +1361,13 @@ export function ensureProject(db: SqliteAuthorityDb, input: {
     const projectId = matching?.project_id ?? input.projectId
     const requested = db.prepare<unknown[], { org_id: string | null; repo_key: string }>(`SELECT org_id, repo_key FROM projects WHERE project_id = ?`)
       .get(projectId)
-    if (requested?.org_id !== undefined && requested.org_id !== input.orgId) throw new Error("project_tenant_conflict")
+    if (requested?.org_id !== undefined && requested.org_id !== input.orgId) {
+      throw new SqliteProjectConflictError("project_tenant_conflict", "Project belongs to a different organization")
+    }
     if (requested && requested.repo_key !== input.repoKey) {
-      if (!requested.repo_key.startsWith("workspace:") || matching) throw new Error("project_repo_conflict")
+      if (!requested.repo_key.startsWith("workspace:") || matching) {
+        throw new SqliteProjectConflictError("project_repo_conflict", "Project is already bound to a different repository")
+      }
       db.prepare(`UPDATE projects SET repo_key = ?, updated_at = ? WHERE project_id = ?`)
         .run(input.repoKey, now, projectId)
     }

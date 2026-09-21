@@ -1,3 +1,4 @@
+import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import type { useClaxedoState } from "@/features/session/app-ports"
@@ -47,11 +48,12 @@ export type SubmitSessionTargetAcquisitionInput = {
   readonly sessionDirectory: SubmitDirectory
   readonly sessionClient: () => SubmitSessionGetClient
   readonly scope: string
+  readonly onSessionStart?: (draftId: string, binding: AgentSessionStartBinding | undefined, outcome?: "transport-failed") => void
   readonly draftId: string | undefined
   readonly sessionHarnessType: HarnessSelection
   readonly sessionConfig: {
     readonly agent: string
-    readonly model: { readonly providerID: string; readonly modelID: string }
+    readonly model?: { readonly providerID: string; readonly modelID: string }
     readonly variant: string | undefined
   }
   readonly events: ClaxedoLifecycleListener | undefined
@@ -158,6 +160,15 @@ async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionI
   const session = await createSessionWithLifecycle({
     draftId: input.draftId,
     events: input.events,
+    onLifecycle: (event) => {
+      if (!input.draftId) return
+      if (event.phase === "creating" && event.start) {
+        input.onSessionStart?.(input.draftId, event.start)
+        openSessionEventStreams(event.start.sessionId)
+      } else if (event.phase === "created" || event.phase === "failed") {
+        input.onSessionStart?.(input.draftId, undefined)
+      }
+    },
     perform: async () => {
       const session = await input.claimHarnessSession({
         scope: input.scope,
@@ -170,10 +181,12 @@ async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionI
       return session
     },
   }).catch((err) => {
+    if (input.draftId) input.onSessionStart?.(input.draftId, undefined, "transport-failed")
     input.onCreateError(err)
     return undefined
   })
   if (session) {
+    if (input.draftId) input.onSessionStart?.(input.draftId, undefined)
     input.boot(session.id)
     openSessionEventStreams(session.id)
   }
@@ -217,7 +230,7 @@ export function finalizeSubmitSessionTarget(input: {
   readonly runtimeWorkspaceRef: RuntimeWorkspaceRef | undefined
   readonly harness: HarnessRef | undefined
   readonly agent: string
-  readonly model: { providerID: string; modelID: string }
+  readonly model?: { providerID: string; modelID: string }
   readonly variant: string | undefined
   readonly draftId: string | undefined
   readonly previousSessionId: string
@@ -233,7 +246,7 @@ export function finalizeSubmitSessionTarget(input: {
   readonly promoteSession: (
     directory: SubmitDirectory,
     sessionID: string,
-    config: { harness?: HarnessRef; agent: string; model: { providerID: string; modelID: string }; variant: string | null },
+    config: { harness?: HarnessRef; agent: string; model?: { providerID: string; modelID: string }; variant: string | null },
   ) => void
 }) {
   const sessionRef = sessionRefForSurface({

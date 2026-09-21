@@ -31,6 +31,7 @@ import { MemoryRouter } from "@solidjs/router"
 import { useTheme } from "@opencode-ai/ui/theme"
 
 import { desktopApi, hasDesktopApi } from "./api"
+import { handleExternalLinkClick } from "./external-link"
 import {
   initPostHog,
   capture as phCapture,
@@ -445,12 +446,7 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
     const platform = createPlatform()
 
     const handleClick = (event: MouseEvent) => {
-      const target = event.target
-      if (!(target instanceof Element)) return
-      const link = target.closest("a.external-link")
-      if (!(link instanceof HTMLAnchorElement) || !link.href) return
-      event.preventDefault()
-      platform.openLink(link.href)
+      handleExternalLinkClick(event, platform.openLink)
     }
 
     onMount(() => {

@@ -55,7 +55,7 @@ export {
   type ApprovalJudgeVerdict,
 } from "./core/approval-judge"
 export { createChannelsIngress, type ChannelWebhookBot, type ChannelWebhookHandler } from "./ingress"
-export { createChannelRegistry, type ChannelRegistration, type ChannelTransportKind } from "./registry"
+export { createChannelRegistry, type ChannelAdapterConfig, type ChannelRegistration, type ChannelTransportKind } from "./registry"
 export { createChatSdkBot, createChatSdkChannelBot } from "./transport/chat-sdk-adapters"
 export { chatSdkApprovalDecision } from "./transport/chat-sdk-actions"
 export { channelRetryDelayMs, type RetryAfterMs } from "./transport/backpressure"

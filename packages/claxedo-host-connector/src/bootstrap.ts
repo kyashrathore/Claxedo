@@ -12,10 +12,11 @@
  */
 
 import { hostInvitationRedeemPayload, parseInvitationToken, hostPublicKeyFingerprint, type HostKeyPair } from "./host-identity"
-import { isPlainRecord, type HostState, type HostStateStore } from "./host-state"
+import { canonicalControlPlaneUrl, ControlPlaneUrlError, isPlainRecord, type HostState, type HostStateStore } from "./host-state"
 import {
   HOST_ENROLLMENT_REDEEM_PATH,
   HostedHttpError,
+  HostedRedirectError,
   controlPlaneRequestUrl,
   decisionCode,
   decodeEndpoints,
@@ -52,6 +53,10 @@ const DECISION_STATUSES = new Set([400, 401, 403, 404, 409, 410])
 /** Wrap a control-plane refusal as a decision; anything else is the caller's to retry. */
 export function asDecision(error: unknown): HostConnectDecisionError | undefined {
   if (error instanceof HostConnectDecisionError) return error
+  // A redeem that is redirected is not retried: the secret would go back out
+  // on every attempt for an endpoint that will not answer it, and where it is
+  // sent next is the operator's to fix.
+  if (error instanceof HostedRedirectError) return new HostConnectDecisionError(error.message, { cause: error })
   if (!(error instanceof HostedHttpError) || !DECISION_STATUSES.has(error.status)) return undefined
   const code = decisionCode(error)
   return new HostConnectDecisionError(code ? `control plane refused: ${code}` : error.message, {
@@ -80,6 +85,16 @@ export async function redeemInvitation(input: {
       {},
     )
   }
+  // Before the token is even read: the pending marker below is the first thing
+  // that reaches disk, and a state file naming an endpoint this machine may
+  // not talk to is a redeem the next boot would resume against it.
+  let controlPlaneUrl: string
+  try {
+    controlPlaneUrl = canonicalControlPlaneUrl(input.state.control_plane_url)
+  } catch (error) {
+    if (!(error instanceof ControlPlaneUrlError)) throw error
+    throw new HostConnectDecisionError(`${error.message}; enroll against an https:// control plane instead`, { cause: error })
+  }
   const tokenText = await input.store.fs.readFile(input.tokenFile)
   if (tokenText === null) {
     throw new HostConnectDecisionError(`invitation token file not found: ${input.tokenFile}`, {})
@@ -97,6 +112,7 @@ export async function redeemInvitation(input: {
 
   const pending: HostState = {
     ...input.state,
+    control_plane_url: controlPlaneUrl,
     bootstrap: { invitation_id: token.invitationId, token_file: input.tokenFile },
   }
   await input.store.save(pending)

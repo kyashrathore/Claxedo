@@ -1,5 +1,7 @@
+import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 // Claxedo adds mobile settings navigation and Claxedo-owned terminal and sandbox tabs.
-import { Component, For, Show, createMemo, createSignal } from "solid-js"
+import { Component, For, Show, createMemo, onMount, createSignal } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -62,6 +64,9 @@ const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
   // Settings was open.
   const autoShare = createMemo(useLocalWorkspaceAutoShareStatus)
   const scope = useSettingsScope()
+  const agentConnections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
+  onMount(() => void agentConnections.refresh())
+  const showConnections = createMemo(() => { const catalog = agentConnections.data(); return productUi().settingsConnections || (catalog?.status === "supported" && catalog.connections.length > 0) })
   const contributed = createMemo(() => settingsSections({ workspaceId: scope.workspace()?.workspaceId }))
   const contributedIn = (group: SettingsSection) => contributed().filter((entry) => entry.section === group)
   const contributedTrigger = (section: SettingsContribution) => (
@@ -158,7 +163,7 @@ const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
 
                     <Show
                       when={
-                        productUi().settingsConnections ||
+                        showConnections() ||
                         productUi().settingsSandboxProviders ||
                         contributedIn("account").length > 0
                       }
@@ -166,7 +171,7 @@ const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
                       <div class="flex flex-col gap-1.5">
                         <Tabs.SectionTitle>{language.t("settings.section.account")}</Tabs.SectionTitle>
                         <div class="flex flex-col gap-1.5 w-full">
-                          <Show when={productUi().settingsConnections}>
+                          <Show when={showConnections()}>
                             <Tabs.Trigger value="connections">
                               <Icon name="link" />
                               Connections
@@ -246,9 +251,9 @@ const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
             <Tabs.Content value="models" class="no-scrollbar">
               <SettingsModels />
             </Tabs.Content>
-            <Show when={productUi().settingsConnections}>
+            <Show when={showConnections()}>
               <Tabs.Content value="connections" class="no-scrollbar">
-                <SettingsConnections />
+                <SettingsConnections agentConnections={agentConnections} integrations={productUi().settingsConnections} />
               </Tabs.Content>
             </Show>
             <Show when={productUi().settingsSandboxProviders}>

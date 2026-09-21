@@ -35,7 +35,7 @@ export type CredentialCheckOutcome =
 const ACCEPTED = new Set<CredentialHealth>(["ok", "rate_capped", "no_billing"])
 
 export async function checkCredential(
-  credentials: ControlPlaneCredentials,
+  credentials: Pick<ControlPlaneCredentials, "updateCredentialHealth" | "resolveCredentialSecretById" | "updateCredentialSecret" | "updateCredentialUsage" | "updateCredentialLabel">,
   credential: CredentialMetadata,
   options: {
     org: string
@@ -117,7 +117,7 @@ export function credentialFailureDetail(error: unknown, secret?: string) {
  * it.
  */
 async function nameAccount(
-  credentials: ControlPlaneCredentials,
+  credentials: Pick<ControlPlaneCredentials, "updateCredentialLabel">,
   credential: Pick<CredentialMetadata, "id" | "provider_id" | "label">,
   email: string | undefined,
   org: string,

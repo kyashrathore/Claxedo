@@ -1,3 +1,5 @@
+import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
+import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import { skipToken, useQuery } from "@tanstack/solid-query"
 import type { Accessor } from "solid-js"
 import { useWorkspaceQuery } from "@/features/session/app-ports"
@@ -36,6 +38,7 @@ export function sessionCapabilitiesKey(scope: SessionCapabilitiesScope) {
 export function createSessionPaneQueries(input: {
   active: Accessor<boolean>
   sessionID: Accessor<string | undefined>
+  pendingSessionStart?: Accessor<AgentSessionStartBinding | undefined>
   directory: Accessor<string>
   serverUrl?: Accessor<string | undefined>
   signedControlPlane?: Accessor<boolean | undefined>
@@ -56,12 +59,23 @@ export function createSessionPaneQueries(input: {
       queryFn: skipToken,
       enabled: false,
     })))
-  const requestQuery = useQuery<SessionRequestsQueryData>(() => session("session-requests", (sessionID) =>
-    ({
-      queryKey: shellDataKeys.sessionId(sessionID, "requests"),
-      queryFn: skipToken,
-      enabled: false,
-    })))
+  const requestQuery = useQuery<SessionRequestsQueryData>(() => {
+    const owner = input.pendingSessionStart?.()
+    if (input.active() && owner) return {
+      queryKey: shellDataKeys.sessionId(owner.sessionId, "requests"),
+      queryFn: async () => ({
+        permissions: [],
+        questions: (await createAgentRuntimeClient({
+          serverUrl: input.serverUrl?.(), signedControlPlane: input.signedControlPlane?.(),
+          workspaceId: owner.workspaceId, hostKind: input.hostKind?.(),
+        }).getStartingSessionQuestions({ directory: owner.directory, sessionID: owner.sessionId })).data.filter((question) => question.sessionID === owner.sessionId),
+        reconciledAt: Date.now(),
+      }),
+    }
+    return session("session-requests", (sessionID) => ({
+      queryKey: shellDataKeys.sessionId(sessionID, "requests"), queryFn: skipToken, enabled: false,
+    }))
+  })
   const todoQuery = useQuery<Todo[]>(() => session("session-todo", (sessionID) =>
     ({
       queryKey: shellDataKeys.sessionId(sessionID, "todo"),

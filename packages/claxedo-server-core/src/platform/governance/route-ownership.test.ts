@@ -17,6 +17,10 @@ describe("routeOwnership", () => {
 
   test("classifies workspace-runtime routes", () => {
     expect(routeOwnership("/session").handler).toBe(RouteHandler.SandboxRuntime)
+    expect(routeOwnership("/session-start/start_1").handler).toBe(RouteHandler.SandboxRuntime)
+    expect(routeOwnership("/session-startled/start_1").handler).toBe(RouteHandler.Unclaimed)
+    expect(routeOwnership("/connection/acp/interaction").handler).toBe(RouteHandler.SandboxRuntime)
+    expect(routeOwnership("/connections/acp/interaction").handler).toBe(RouteHandler.Unclaimed)
     // The typed workspace-runtime client requests the `/api/wr` mount of the
     // file and search routes; the root-surface proxy must dispatch that mount
     // exactly like the bare `/file` and `/find` compatibility paths.

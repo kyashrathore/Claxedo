@@ -7,7 +7,7 @@ import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
 import { catalogHarnessId, harnessDisplayLabel, harnessModelPickerProvider, harnessSelectionId, isCatalogHarness, isNativeHarness, type HarnessType } from "@/features/session/harness/profile"
-import { harnessUsesManagedDefaultModel } from "@/features/session/harness/selection"
+import { connectionAllowsNoModel } from "@/features/session/harness/selection"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
@@ -194,6 +194,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   }
 
   const selection = createMemo(() => props.harnessController.read(scope()))
+  const connectionDeclaration = createMemo(() => {
+    const harness = selection().harness
+    return harness?.kind === "connection" ? connectionRows().find((row) => row.connectionId === harness.connectionId) : undefined
+  })
+  createEffect(() => props.harnessController.setConnectionDeclaration?.(scope(), connectionDeclaration()))
   const harness = createMemo(() => {
     return selection().harness
   })
@@ -422,7 +427,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return rows().length > 0
   })
   const managedDefaultModel = createMemo(() =>
-    harnessUsesManagedDefaultModel({
+    connectionAllowsNoModel({
+      connectionDeclaration: connectionDeclaration(),
       harness: selection().harness,
       selectedModel: selection().selectedModel,
       dynamicModels: selection().models,
@@ -483,6 +489,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const resolved = resolveHarnessNotice({
       harnessLabel: harness() ? harnessOptionLabel(harness()!) : "Agent",
       runtimeUnavailable: isError(),
+      connectionState: selection().connectionState,
       optionsFailed: modelOptionsFailed(),
       noModels: !hasModelOptions() && !modelLoading(),
       configError: (harness() && isCatalogHarness(harness()) ? catalogProviders.error() : undefined) ?? selection().configError,
@@ -657,6 +664,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       {/* Readiness indicator. Connecting is progress, not a fault, so it stays
           inline; the settled failure it can escalate into is published to the
           composer notice row instead. */}
+      <Show when={!isPolling() && selection().connectionState && ["configured", "connecting", "ready"].includes(selection().connectionState!.state)}>
+        <span class="text-11-regular text-text-weak px-1.5 flex items-center" data-connection-state={selection().connectionState?.state}
+          title={selection().connectionState?.state === "ready" ? "ACP handshake completed. Authentication is checked by the agent when needed." : selection().connectionState?.state === "configured" ? "Configured; no active agent connection has completed a handshake." : "Waiting for the agent handshake."}>
+          {selection().connectionState?.state === "ready" ? "Connected" : selection().connectionState?.state === "configured" ? "Configured" : "Connecting"}
+        </span>
+      </Show>
       <Show when={isPolling()}>
         <span class="text-11-regular text-text-weak px-1.5 flex items-center" title="Connecting to agent runtime...">
           <span class="inline-block w-2 h-2 rounded-full bg-text-weak animate-pulse mr-1" />

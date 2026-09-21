@@ -84,12 +84,13 @@ export type SpawnTurn = (sessionId: SessionId | null, result: WakeResult) => Pro
 export type WakeSink = (wake: Wake, result: WakeResult) => Promise<void> | void
 
 /**
- * Push driver: the engine hints it whenever a wake may be runnable, so firing
- * needn't wait for a poll. The hint is lossy by design — a driver may drop
- * it (the periodic sweep is the backstop that guarantees delivery); it must
- * never throw into the caller. `fireAt` may be in the future (a driver that
- * can arm precise timers, e.g. a Durable Object alarm, uses it; the Node
- * driver only acts on due-now hints).
+ * Push driver: the engine hints it whenever a lane may have work, so neither
+ * firing nor expiry needs to wait for a poll. The hint is lossy by design — a
+ * driver may drop it (the periodic sweep is the backstop that guarantees
+ * delivery); it must never throw into the caller. `fireAt` is when the lane
+ * next becomes actionable — a wake's fire time or its expiry deadline — and
+ * may be in the future (a driver that can arm precise timers, e.g. a Durable
+ * Object alarm, uses it; the Node driver only acts on due-now hints).
  */
 export interface WakeDriver {
   nudge(hint: { serialKey: string | null; fireAt: number }): void

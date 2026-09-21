@@ -46,6 +46,15 @@ export const pullTriggerInput = z.object({
   expectedEventOrdinal: z.number().int().nonnegative().optional(),
 }).strict()
 
+/**
+ * What a workspace runtime reports about itself. `.strict()` with no identity
+ * keys, so a snapshot naming `url`, `sandboxId`, `hostId`, `driverResourceId`
+ * or `leaseId` is refused at the boundary instead of being dropped in silence:
+ * lease identity belongs to the provisioner that obtained it from a driver.
+ *
+ * `epoch` is required — it fences the report against the generation it was
+ * issued for, and an absent one used to mean "whatever the lease currently is".
+ */
 export const runtimeSnapshotInput = z.object({
   workspaceId: z.string().min(1),
   ok: z.boolean(),
@@ -58,10 +67,7 @@ export const runtimeSnapshotInput = z.object({
   ptyCount: z.number().int().nonnegative(),
   processCount: z.number().int().nonnegative(),
   activeProcessCount: z.number().int().nonnegative(),
-  url: z.string().nullable().optional(),
-  leaseId: z.string().nullable().optional(),
-  sandboxId: z.string().nullable().optional(),
-  epoch: z.number().int().nullable().optional(),
+  epoch: z.number().int().positive(),
   controlPlane: z.object({
     enabled: z.boolean(),
     state: z.enum(["disabled", "registering", "connected", "degraded"]),
@@ -87,19 +93,13 @@ export async function json(req: Request): Promise<unknown> {
 }
 
 export async function authContext(req: Request, options: ControlPlaneHttpOptions) {
-  try {
-    return await controlPlaneAuthContext(req, {
-      config: options.authConfig,
-      verifier: options.verifier,
-      cliTokenEnv: options.cliTokenEnv,
-    })
-  } catch (err) {
-    if (err instanceof ControlPlaneAuthError) {
-      const runtime = runtimeAuth(req)
-      if (runtime) return runtime
-    }
-    throw err
-  }
+  const runtime = runtimeAuth(req)
+  if (runtime) return runtime
+  return await controlPlaneAuthContext(req, {
+    config: options.authConfig,
+    verifier: options.verifier,
+    cliTokenEnv: options.cliTokenEnv,
+  })
 }
 
 export function assertRuntimeMutationAuth(
@@ -107,15 +107,20 @@ export function assertRuntimeMutationAuth(
   auth: ControlPlaneAuthContext,
   workspaceId: string,
 ) {
-  if (auth.mode === "signed") {
+  if (auth.mode !== "unsigned-local" || auth.reason !== "workspace-runtime-control-token") {
     throw new ControlPlaneProtocolError(
       403,
       "workspace_runtime_control_token_required",
       "Workspace runtime control token is required",
     )
   }
-  if (auth.reason !== "workspace-runtime-control-token") return undefined
-  if (req.headers.get("x-workspace-id")?.trim() === workspaceId) return undefined
+  assertRuntimeWorkspaceAuth(req, auth, workspaceId)
+}
+
+/** Bind runtime callbacks before reading a cache or consulting another workspace's runtime. */
+export function assertRuntimeWorkspaceAuth(req: Request, auth: ControlPlaneAuthContext, workspaceId: string) {
+  if (auth.mode !== "unsigned-local" || auth.reason !== "workspace-runtime-control-token") return
+  if (req.headers.get("x-workspace-id")?.trim() === workspaceId) return
   throw new ControlPlaneProtocolError(
     403,
     "workspace_runtime_control_token_mismatch",

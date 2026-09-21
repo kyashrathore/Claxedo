@@ -85,7 +85,7 @@ export function createPromptTimelineReconciliation(input: {
     role: "user",
     time: { created: Date.now() },
     agent: input.agent,
-    model: { ...input.model, ...(input.variant ? { variant: input.variant } : {}) },
+    ...(input.model ? { model: { ...input.model, ...(input.variant ? { variant: input.variant } : {}) } } : {}),
   }
 
   return {

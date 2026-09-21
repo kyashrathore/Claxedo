@@ -8,7 +8,7 @@ type Spawned = { sessionId: string | null; result: WakeResult }
 const byText = (a: string | null, b: string | null) => (a ?? "").localeCompare(b ?? "")
 
 function harness(overrides?: {
-  authorize?: (a: Actor, w: string) => boolean
+  authorize?: (a: Actor, w: string) => boolean | Promise<boolean>
   budgets?: Budgets
   spawnImpl?: (s: string | null, r: WakeResult) => void
 }) {
@@ -62,6 +62,34 @@ describe("at trigger (time)", () => {
 })
 
 describe("on_approval trigger (authorized human)", () => {
+  it.each([-1, 0, 1])("checks the deadline without a sweeper at expiry %+dms", async (offset) => {
+    const { clock, wakes, spawned } = harness()
+    const expiresAt = clock.t + 1000
+    const { token } = await wakes.requestApproval({ sessionId: "s1", workspaceId: WS, prompt: "Approve?", expiresAt })
+    clock.t = expiresAt + offset
+    expect(await wakes.resolve(token, "yes", { userId: "owner" })).toEqual(
+      offset < 0 ? { ok: true } : { ok: false, reason: "too_late" },
+    )
+    expect(spawned).toHaveLength(offset < 0 ? 1 : 0)
+  })
+
+  it("does not approve after the deadline passes during authorization", async () => {
+    const { clock, wakes, spawned } = harness({ authorize: async () => {
+      await Promise.resolve()
+      clock.t += 1000
+      return true
+    } })
+    const { token } = await wakes.requestApproval({
+      sessionId: "s1", workspaceId: WS, prompt: "Approve?", expiresAt: clock.t + 1000,
+    })
+    expect(await wakes.resolve(token, "yes", { userId: "owner" })).toEqual({ ok: false, reason: "too_late" })
+    expect(spawned).toHaveLength(0)
+    // The sweeper still owns the one expiry notification.
+    await wakes.runDue()
+    expect(spawned).toHaveLength(1)
+    expect(spawned[0]?.result).toMatchObject({ expired: true })
+  })
+
   it("resolve resumes the session with the answer", async () => {
     const { wakes, spawned } = harness()
     const { token } = await wakes.requestApproval({
@@ -103,6 +131,31 @@ describe("on_approval trigger (authorized human)", () => {
 })
 
 describe("on_event trigger (external)", () => {
+  it.each([-1, 0, 1])("checks the deadline without a sweeper at expiry %+dms", async (offset) => {
+    const { clock, wakes, spawned } = harness()
+    const expiresAt = clock.t + 1000
+    await wakes.watch({ sessionId: "s1", workspaceId: WS, eventKey: "event", intent: {}, expiresAt })
+    clock.t = expiresAt + offset
+    expect(await wakes.deliverEvent("event", {})).toEqual({ fired: offset < 0 ? 1 : 0 })
+    expect(spawned).toHaveLength(offset < 0 ? 1 : 0)
+  })
+
+  it("compares the stored deadline atomically even if the earlier read returned an unexpired wake", async () => {
+    const { clock, store, wakes, spawned } = harness()
+    const { wakeId } = await wakes.watch({
+      sessionId: "s1", workspaceId: WS, eventKey: "event", intent: {}, expiresAt: clock.t + 1000,
+    })
+    const find = store.findPendingByEventKey.bind(store)
+    store.findPendingByEventKey = async (key) => {
+      const pending = await find(key)
+      store.db.prepare("UPDATE wakes SET expires_at = ? WHERE id = ?").run(clock.t, wakeId)
+      return pending
+    }
+    expect(await wakes.deliverEvent("event", {})).toEqual({ fired: 0 })
+    expect(spawned).toHaveLength(0)
+    expect((await store.get(wakeId))?.state).toBe("pending")
+  })
+
   it("deliverEvent fires all sessions watching the key, with the payload", async () => {
     const { wakes, spawned } = harness()
     await wakes.watch({ sessionId: "s1", workspaceId: WS, eventKey: "ci:pass:x", intent: { pr: 1 }, expiresAt: 9e15 })
@@ -117,6 +170,18 @@ describe("on_event trigger (external)", () => {
 })
 
 describe("cancel + expiry", () => {
+  it("a lane-specific claim never fires expired work: its own run terminalizes the row instead", async () => {
+    const { clock, wakes, store, spawned } = harness()
+    const { wakeId } = await wakes.schedule({
+      sessionId: "s1", workspaceId: WS, serialKey: "lane", at: clock.t + 500, expiresAt: clock.t + 1000, intent: {},
+    })
+    clock.t += 1000
+    expect(await wakes.runDue("lane")).toEqual({ fired: 1 })
+    expect((await store.get(wakeId))!.state).toBe("expired")
+    expect(spawned).toHaveLength(1)
+    expect(spawned[0]?.result).toMatchObject({ expired: true })
+  })
+
   it("cancel prevents a wake from firing", async () => {
     const { clock, wakes, spawned } = harness()
     const { wakeId } = await wakes.schedule({ sessionId: "s1", workspaceId: WS, at: clock.t + 1000, intent: {} })

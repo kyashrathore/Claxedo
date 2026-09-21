@@ -38,7 +38,7 @@ function completed(input: Record<string, unknown>, output: unknown): AgentToolSt
   }
 }
 
-function mount(part: AgentToolPart) {
+function mount(part: AgentToolPart, href?: (tool: string, input: Record<string, unknown>, output?: string) => string | undefined) {
   return render(() => (
     <DialogProvider>
       <DataProvider
@@ -47,6 +47,7 @@ function mount(part: AgentToolPart) {
         onSessionHref={(id) => `/s/${id}`}
         onTaskHref={(id) => tasksRoute({ kind: "task", taskId: id })}
         onNavigateToSession={() => {}}
+        onClaxedoToolHref={href}
       >
         <Part part={part} message={message} />
       </DataProvider>
@@ -62,10 +63,39 @@ function open(view: ReturnType<typeof mount>) {
 }
 
 describe("a first-party Claxedo tool renders as its own card", () => {
+  test.each([
+    ["process", { server: "claxedo-mcp", tool: "process", arguments: { process: "web" } }],
+    ["mcp__claxedo-mcp__process", { process: "web" }],
+    ["claxedo-mcp_process", { process: "web" }],
+  ])("%s gets branding and a destination link", (tool, input) => {
+    const view = mount(toolPart(tool as string, completed(input as Record<string, unknown>, "running")), () => "/workspace/session?panel=processes")
+    expect(view.container.querySelector('[data-component="claxedo-tool"]')).not.toBeNull()
+    expect(view.container.querySelector('.ui-icon[data-icon="claxedo"], use[href="#opencode-icon-claxedo"]')).not.toBeNull()
+    const link = view.container.querySelector<HTMLAnchorElement>('a[data-link-kind="claxedo-tool"]')!
+    expect(link.getAttribute("href")).toBe("/workspace/session?panel=processes")
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })
+    link.dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(false)
+    expect(view.container.querySelector('[data-slot="collapsible-trigger"]')?.getAttribute("aria-expanded")).toBe("false")
+  })
+
+  test("failed first-party calls keep branding and navigation", () => {
+    const view = mount(toolPart("process", { status: "error", input: { server: "claxedo-mcp", tool: "process" }, error: "Unavailable", time: { start: 1, end: 2 } }), () => "/workspace/session?panel=processes")
+    expect(view.container.querySelector('.ui-icon[data-icon="claxedo"], use[href="#opencode-icon-claxedo"]')).not.toBeNull()
+    expect(view.container.querySelector('a')?.getAttribute("href")).toBe("/workspace/session?panel=processes")
+    open(view)
+    expect(view.container.textContent).toContain("Unavailable")
+  })
+
+  test("first-party identity wins over a native renderer with the same name", () => {
+    const view = mount(toolPart("read", completed({ server: "claxedo-mcp", tool: "read" }, "ok")))
+    expect(view.container.querySelector('[data-component="claxedo-tool"]')).not.toBeNull()
+  })
+
   test("task_create: the Claxedo mark, the verb, the task as a link, its status, and the replay note", () => {
     const view = mount(toolPart("mcp__claxedo__task_create", completed(
       { title: "MCP smoke: created from a session", status: "backlog", intent: "mcp" },
-      { task: { id: TASK_ID, number: 5, title: "MCP smoke: created from a session", status: "backlog", parent: null, project: "prj", createdFrom: null }, replayed: true },
+      { task: { id: TASK_ID, key: "5", title: "MCP smoke: created from a session", status: "backlog", parent: null, project: "prj", createdFrom: null }, replayed: true },
     )))
     const card = view.container.querySelector('[data-component="claxedo-tool"]')
     expect(card?.getAttribute("data-tool")).toBe("task_create")
@@ -84,7 +114,7 @@ describe("a first-party Claxedo tool renders as its own card", () => {
     const view = mount(toolPart("mcp__claxedo__task_start", completed(
       { task: TASK_ID, preset: "Alt voice", intent: "mcp" },
       {
-        task: { id: TASK_ID, number: 1, title: "MCP smoke: created from a session" },
+        task: { id: TASK_ID, key: "1", title: "MCP smoke: created from a session" },
         session: { sessionId: "ses_tasks_1", workspaceId: "w" },
         slot: "primary",
         attempt: 1,
@@ -118,7 +148,7 @@ describe("a first-party Claxedo tool renders as its own card", () => {
   test("a click on a task link leaves the anchor's own navigation alone and does not toggle the row", () => {
     const view = mount(toolPart("task_create", completed(
       { server: "claxedo", tool: "task_create", arguments: { title: "From codex" } },
-      { task: { id: TASK_ID, number: 6, title: "From codex", status: "todo", parent: "tsk_parent" }, replayed: false },
+      { task: { id: TASK_ID, key: "6", title: "From codex", status: "todo", parent: "tsk_parent" }, replayed: false },
     )))
     const link = view.container.querySelector<HTMLAnchorElement>('a[data-link-kind="task"]')!
     const trigger = view.container.querySelector('[data-slot="collapsible-trigger"]')!
@@ -156,7 +186,7 @@ describe("a first-party Claxedo tool renders as its own card", () => {
   })
 
   test("task_list: linked rows with status marks and a tail for the rest", () => {
-    const tasks = Array.from({ length: 10 }, (_, index) => ({ id: `tsk_${index}`, number: index + 1, title: `Task ${index + 1}`, status: index % 2 ? "done" : "doing" }))
+    const tasks = Array.from({ length: 10 }, (_, index) => ({ id: `tsk_${index}`, key: String(index + 1), title: `Task ${index + 1}`, status: index % 2 ? "done" : "doing" }))
     const view = mount(toolPart("mcp__claxedo__task_list", completed({ intent: "mcp" }, { project: "prj", tasks, nextCursor: null })))
     expect(view.container.querySelector('[data-slot="basic-tool-tool-subtitle"]')?.textContent).toBe("10 tasks")
     open(view)

@@ -120,6 +120,7 @@ type ClaxedoDirectoryEventType =
     | "session.updated"
     | "session.deleted"
     | "session.agent"
+    | "session.commands"
     | "todo.updated"
     | "permission.asked"
     | "permission.replied"

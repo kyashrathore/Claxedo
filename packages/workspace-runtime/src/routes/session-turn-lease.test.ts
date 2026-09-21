@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionAccessPolicy } from "../session-access-policy"
+import type { SessionAccessPolicy, SessionTurnLeaseDecision } from "../session-access-policy"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { acquireSessionTurnLease } from "./session-turn-lease"
 
@@ -18,6 +18,8 @@ const access = {
 function policy(overrides: Partial<SessionAccessPolicy>): SessionAccessPolicy {
   return {
     sessionAuthority: "managed-private",
+    authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+    authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
     authorize: async () => ({ allowed: true }),
     authorizePrefix: async () => ({ allowed: true }),
     filterSessions: async (input) => input.sessionIds,
@@ -27,6 +29,55 @@ function policy(overrides: Partial<SessionAccessPolicy>): SessionAccessPolicy {
 }
 
 describe("durable session turn lease controller", () => {
+  test("invalid authority leases never admit an execution", async () => {
+    const now = Date.now()
+    for (const invalid of [
+      { expiresAt: Number.NaN }, { expiresAt: Number.POSITIVE_INFINITY },
+      { acquiredAt: Number.NaN }, { acquiredAt: now + 2_000 },
+      { fencingToken: 0 }, { fencingToken: 1.5 }, { fencingToken: Number.POSITIVE_INFINITY },
+      { leaseId: " " }, { turnId: "another-turn" },
+    ]) {
+      const acquisition = await acquireSessionTurnLease({
+        policy: policy({
+          acquireTurn: () => ({ allowed: true, turnId: "msg_invalid", leaseId: "proof",
+            fencingToken: 1, acquiredAt: now, expiresAt: now + 1_000, ...invalid }),
+          renewTurn: async () => { throw new Error("Invalid admission must not renew") },
+          releaseTurn: async () => ({ released: true }),
+        }), access, turnId: "msg_invalid", onLost: () => {}, now: () => now,
+      })
+      expect(acquisition).toMatchObject({ acquired: false, decision: { code: "session_turn_authority_invalid_response" } })
+    }
+  })
+
+  test("an invalid renewal stops the admitted producer", async () => {
+    let lost!: () => void
+    const loss = new Promise<void>((resolve) => { lost = resolve })
+    const started = Date.now()
+    const acquisition = await acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId: "msg_renew", leaseId: "proof", fencingToken: 1,
+          acquiredAt: started, expiresAt: started + 200 }),
+        renewTurn: () => ({ allowed: true, turnId: "msg_renew", leaseId: "proof_invalid", fencingToken: 1,
+          acquiredAt: started, expiresAt: Number.POSITIVE_INFINITY }),
+        releaseTurn: async () => ({ released: true }),
+      }), access, turnId: "msg_renew", onLost: lost,
+    })
+    expect(acquisition.acquired).toBe(true)
+    if (!acquisition.acquired) return
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([loss, new Promise<void>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("Invalid renewal did not stop execution")), 400)
+      })])
+      expect(acquisition.lease.lost()).toBe(true)
+      expect(acquisition.lease.signal.aborted).toBe(true)
+      expect(acquisition.lease.valid()).toBe(false)
+    } finally {
+      clearTimeout(timeout)
+      await acquisition.lease.release()
+    }
+  })
+
   test("caps a control-plane clock-ahead lease at the local authority TTL", async () => {
     const started = Date.now()
     let localNow = started
@@ -56,6 +107,66 @@ describe("durable session turn lease controller", () => {
     expect(acquisition.lease.valid()).toBe(false)
     expect(acquisition.lease.signal.aborted).toBe(true)
     expect(losses).toBe(1)
+  })
+
+  test("a renewal response cannot revive a lease past its local deadline", async () => {
+    const started = Date.now()
+    let localNow = started
+    let finishRenewal!: (value: SessionTurnLeaseDecision) => void
+    let renewalStarted!: () => void
+    const renewing = new Promise<void>((resolve) => { renewalStarted = resolve })
+    let losses = 0
+    const acquisition = await acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId: "msg_delayed", leaseId: "proof_1",
+          fencingToken: 1, acquiredAt: started, expiresAt: started + 200 }),
+        renewTurn: () => {
+          renewalStarted()
+          return new Promise((resolve) => { finishRenewal = resolve })
+        },
+        releaseTurn: async () => ({ released: true }),
+      }), access, turnId: "msg_delayed", now: () => localNow, onLost: () => { losses += 1 },
+    })
+    expect(acquisition.acquired).toBe(true)
+    if (!acquisition.acquired) return
+    try {
+      await renewing
+      // The wall clock crosses the old deadline before the expiry timer runs.
+      localNow = started + 250
+      finishRenewal({ allowed: true, turnId: "msg_delayed", leaseId: "proof_2",
+        fencingToken: 1, acquiredAt: started, expiresAt: localNow + 1_000 })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(acquisition.lease.valid()).toBe(false)
+      expect(acquisition.lease.signal.aborted).toBe(true)
+      expect(losses).toBe(1)
+    } finally {
+      await acquisition.lease.release()
+    }
+  })
+
+  test("synchronous renewal and cleanup errors still stop the producer", async () => {
+    const started = Date.now()
+    let losses = 0
+    let renewals = 0
+    const acquisition = await acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId: "msg_throw", leaseId: "proof_1",
+          fencingToken: 1, acquiredAt: started, expiresAt: started + 200 }),
+        renewTurn: () => { renewals += 1; throw new Error("authority unavailable") },
+        releaseTurn: async () => ({ released: true }),
+      }), access, turnId: "msg_throw", onLost: () => { losses += 1; throw new Error("cleanup failed") },
+    })
+    expect(acquisition.acquired).toBe(true)
+    if (!acquisition.acquired) return
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      expect(acquisition.lease.lost()).toBe(true)
+      expect(acquisition.lease.signal.aborted).toBe(true)
+      expect(renewals).toBe(1)
+      expect(losses).toBe(1)
+    } finally {
+      await acquisition.lease.release()
+    }
   })
 
   test("hard-stops the producer at expiry even while renewal is stalled", async () => {

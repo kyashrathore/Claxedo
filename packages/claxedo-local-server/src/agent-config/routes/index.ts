@@ -44,7 +44,7 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
       })
       if (localOnly) return localOnly
       const directory = c.req.query("directory") || c.req.header("x-claxedo-directory")
-      const workspaceId = c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")
+      const workspaceId = c.req.query("workspaceId") ?? c.req.query("workspace") ?? c.req.header("x-workspace-id")
       const ws = await resolveWorkspace({
         workspaceId,
         directory,

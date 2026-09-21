@@ -2,6 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { THINKING_HIDE_HOLD_MS, nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 
 describe("thinking visibility hold", () => {
+  test("a request failure hides live or held thinking immediately and recovery resumes it", () => {
+    for (const want of [true, false]) {
+      const blocked = nextThinkingVisibilityHold({ want, blocked: true, heldUntilMs: 1_080, nowMs: 1_040 })
+      expect(blocked).toEqual({ visible: false, heldUntilMs: undefined })
+      expect(nextThinkingVisibilityHold({ want: true, blocked: false, heldUntilMs: blocked.heldUntilMs, nowMs: 1_041 }))
+        .toEqual({ visible: true, heldUntilMs: undefined })
+    }
+  })
   test("shows immediately when wanted", () => {
     expect(
       nextThinkingVisibilityHold({

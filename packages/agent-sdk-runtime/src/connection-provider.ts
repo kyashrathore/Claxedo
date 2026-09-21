@@ -1,4 +1,4 @@
-import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
+import { isAcpConnectionId, type HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 export type { ConnectionReadiness, HarnessConnectionCapabilities, HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import type { RuntimeEventHub } from "./runtime-event-hub"
@@ -104,6 +104,9 @@ export function createConnectionProviderRegistry(providers: readonly AnyConnecti
       throw new ConnectionProviderError("invalid_descriptor", "Connection descriptor must be an object")
     }
     requireOpaqueId(input.connectionId, "connectionId")
+    if (!isAcpConnectionId(input.connectionId)) {
+      throw new ConnectionProviderError("invalid_descriptor", "connectionId must be a lowercase session harness slug of at most 64 characters")
+    }
     requireOpaqueId(input.providerKey, "providerKey")
     if (!Number.isSafeInteger(input.configRevision) || input.configRevision < 1) {
       throw new ConnectionProviderError("invalid_descriptor", "configRevision must be a positive safe integer")
@@ -177,7 +180,8 @@ export function createConnectionProviderRegistry(providers: readonly AnyConnecti
       throw new ConnectionProviderError("disabled_connection", `Connection ${descriptor.connectionId} is disabled`)
     }
     const provider = providerFor(descriptor.providerKey)
-    if (provider.project(descriptor.config).readiness !== "ready") {
+    const availability = provider.project(descriptor.config).readiness
+    if (availability !== "ready" && availability !== "configured") {
       throw new ConnectionProviderError("connection_unavailable", `Connection ${descriptor.connectionId} is unavailable`)
     }
     const expectedSecretNames = Object.keys(descriptor.secretRefs ?? {}).sort()

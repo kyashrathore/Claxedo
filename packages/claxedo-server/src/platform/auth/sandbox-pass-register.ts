@@ -38,9 +38,9 @@ export type SandboxPassRegister = Readonly<{
 
 /**
  * The in-process register: the self-hosted signed node's shape and every
- * test's. The self-hosted node mints no pass — its grants are handles into
- * `tasks/session-grants.ts` — so this holds nothing there; it is the D1
- * register's contract made concrete.
+ * test's. The self-hosted node mints no pass — its Tasks grants are handles
+ * into the in-process registry every box that is its own runtime host uses —
+ * so this holds nothing there; it is the D1 register's contract made concrete.
  */
 export function memorySandboxPassRegister(options: { now?: () => number } = {}): SandboxPassRegister {
   const now = options.now ?? Date.now

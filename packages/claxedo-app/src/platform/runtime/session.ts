@@ -161,7 +161,7 @@ export type AgentRuntimePromptPayload = {
   sessionID: string
   directory: AgentRuntimeDirectory
   agent: string
-  model: { providerID: string; modelID: string }
+  model?: { providerID: string; modelID: string }
   messageID: string
   parts: PromptInput["parts"]
   variant?: string

@@ -10,7 +10,7 @@ import type { SessionNavigationRow } from "../../ui/navigation/session-navigatio
 import type { SessionOwner } from "../query/types"
 import { controlPlaneSessionOwners, requestControlPlaneSessions } from "./control-plane-sessions"
 import {
-  applyFetchedSessionListPage,
+  fetchSessionListQueryData,
   fetchSessionListPage,
   mergeSessionListItems,
   sessionListQueryKey,
@@ -134,10 +134,10 @@ export function sessionSourceQueryOptions(input: {
 }) {
   return queryOptions({
     queryKey: sessionListQueryKey(input.baseUrl, input.query),
-    queryFn: async () => applyFetchedSessionListPage({
+    queryFn: () => fetchSessionListQueryData({
       baseUrl: input.baseUrl,
       query: input.query,
-      page: await sessionSourcePage(input),
+      fetchPage: (query) => sessionSourcePage({ ...input, query }),
     }),
   })
 }

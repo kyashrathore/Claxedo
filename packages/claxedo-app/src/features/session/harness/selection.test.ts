@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
+  connectionAllowsNoModel,
+  draftConnectionAllowsNoModel,
   harnessDisplayName,
   harnessModelKeyForSubmit,
   harnessModelNameForSubmit,
@@ -76,7 +78,7 @@ describe("harness selection", () => {
     ).toBeUndefined()
   })
 
-  test("submits an operator ACP through its managed default without fabricating a model row", () => {
+  test("does not fabricate a submit model from an undeclared ACP default", () => {
     const state = {
       ...base,
       harness: { kind: "connection", connectionId: "openclaw" },
@@ -86,12 +88,8 @@ describe("harness selection", () => {
     } satisfies HarnessSelectionState
 
     expect(harnessModels(state)).toEqual([])
-    expect(harnessModelKeyForSubmit(state)).toEqual({
-      providerID: "openclaw",
-      modelID: "default",
-      variant: "adaptive",
-    })
-    expect(harnessReadyForSubmit(state)).toBe(true)
+    expect(harnessModelKeyForSubmit(state)).toBeUndefined()
+    expect(harnessReadyForSubmit(state)).toBe(false)
   })
 
   test("does not fabricate a default row after option discovery fails", () => {
@@ -238,4 +236,21 @@ test("an explicitly disconnected native model cannot become a submit key", () =>
   expect(harnessModelKeyForSubmit(state)).toBeUndefined()
   expect(harnessReadyForSubmit(state)).toBe(false)
   expect(harnessModelKeyForSubmit({ ...state, dynamicModels: [{ id: "openai/gpt", name: "GPT", connected: true }] })).toEqual({ providerID: "pi", modelID: "openai/gpt" })
+})
+
+test("only declared optional or unsupported ACP drafts bypass failed discovery without a synthetic model", () => {
+  const state: HarnessSelectionState = { ...base, harness: { kind: "connection", connectionId: "remote" }, selectedModel: "default", readiness: "error", configError: "Discovery initialization needs user input", connectionDeclaration: {
+    connectionId: "remote", label: "Remote", enabled: true, readiness: "configured", modelSelection: { status: "unsupported" },
+    capabilities: { abort: true, reconnect: false, replay: true, permissions: true, questions: true, todos: false, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false },
+  } }
+  expect(draftConnectionAllowsNoModel("draft:one", state)).toBe(true)
+  expect(draftConnectionAllowsNoModel("session:existing", state)).toBe(false)
+  expect(harnessModelKeyForSubmit(state)).toBeUndefined()
+  expect(harnessReadyForSubmit(state)).toBe(false)
+  expect(connectionAllowsNoModel({ ...state, connectionDeclaration: { ...state.connectionDeclaration!, enabled: false } })).toBe(false)
+  expect(connectionAllowsNoModel({ ...state, connectionDeclaration: { ...state.connectionDeclaration!, modelSelection: { status: "required" } } })).toBe(false)
+  const optional = { ...state, connectionDeclaration: { ...state.connectionDeclaration!, modelSelection: { status: "optional" as const } } }
+  expect(connectionAllowsNoModel(optional)).toBe(true)
+  expect(connectionAllowsNoModel({ ...optional, selectedModel: "explicit-unavailable" })).toBe(false)
+  expect(connectionAllowsNoModel({ ...state, harness: { kind: "native", harnessId: "codex" } })).toBe(false)
 })

@@ -14,7 +14,7 @@ import {
   privateNetworkDevUnsafeWorkspaceRuntimeExposure,
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
-import { runtimeEnvText } from "./env"
+import { runtimeEnvText, workspaceRuntimeEpoch } from "./env"
 import { RUNTIME_NATIVE_HARNESS_IDS } from "./routes/config"
 import { rec, str } from "./json-value"
 import { createWorkspaceOpenCodeRuntime } from "./opencode-runtime"
@@ -68,6 +68,6 @@ const server = startServer(port, {
 
 console.log(
   `[workspace-runtime] listening on http://${hostname}:${await waitForWorkspaceRuntimeServerPort(server, port)}`
-  + ` workspaceId=${workspaceId(process.env)} epoch=${runtimeEnvText(process.env, "WORKSPACE_RUNTIME_EPOCH") ?? "local"}`
+  + ` workspaceId=${workspaceId(process.env)} epoch=${workspaceRuntimeEpoch(process.env) ?? "local"}`
   + ` directory=${workspaceDir(process.env)}`,
 )

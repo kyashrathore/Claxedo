@@ -16,6 +16,13 @@ import {
 import { NATIVE_HARNESS_IDS } from "@/platform/identity/harness-selection"
 
 describe("harness profile", () => {
+  test("decodes only canonical connection observation states", () => {
+    for (const state of ["configured", "connecting", "ready", "auth-required", "disconnected", "failed"]) {
+      expect(decodeHarnessState({ connectionState: { connectionId: "acp", state, configStamp: "private", processes: [] } })?.connectionState).toEqual({ connectionId: "acp", state })
+    }
+    expect(decodeHarnessState({ connectionState: { connectionId: "acp", state: "authenticated" } })?.connectionState).toBeUndefined()
+    expect(decodeHarnessState({ connectionState: { state: "ready" } })?.connectionState).toBeUndefined()
+  })
   test("decodes explicit native and opaque connection identities", () => {
     for (const harnessId of ["claude", "codex", "cursor", "pi"] as const) {
       const selection = { kind: "native", harnessId } as const

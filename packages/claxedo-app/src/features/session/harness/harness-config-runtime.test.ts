@@ -111,6 +111,16 @@ describe("harness config runtime", () => {
     ])
   })
 
+  test("reads existing-session options through its authorized session route", async () => {
+    const urls: string[] = []
+    const harnessRuntime = runtime({ transportFetch: async (input) => {
+      urls.push(requestUrl(input))
+      return Response.json({ options: [] })
+    } })
+    await harnessRuntime.configOptionsFetch(connectionHarness("codex-agent"), { directory: "workspace:ws_cloud", sessionId: "session-a" })
+    expect(urls).toEqual(["/session/session-a/config-options?directory=workspace%3Aws_cloud&connectionId=codex-agent"])
+  })
+
   test("reads relay-backed session health from that workspace runtime", async () => {
     const urls: string[] = []
     const harnessRuntime = runtime({

@@ -30,6 +30,7 @@ export type ComposerEngineCommandOption = {
 export type ComposerEngineCustomCommand = {
   name: string
   description?: string
+  input?: { hint: string } | null
   source?: SlashCommand["source"]
 }
 

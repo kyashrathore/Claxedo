@@ -1,3 +1,4 @@
+import { assertNotRedirected } from "../http"
 import { object } from "../json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asFiniteNumber } from "@claxedo/helpers/guards"
@@ -42,7 +43,9 @@ export async function tokenRequest(input: { url: string; params: Record<string, 
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(input.params).toString(),
+    redirect: "manual",
   })
+  assertNotRedirected(res, "POST", input.url)
   const body = (res.headers.get("content-type") ?? "").includes("application/json") ? await res.json().catch(() => undefined) : undefined
   if (res.ok) return tokenSet(body)
   const row = object(body)

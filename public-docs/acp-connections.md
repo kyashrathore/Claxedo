@@ -109,13 +109,15 @@ serves one directory (the process key includes it).
 
 ### Turn timeouts
 
-A turn has no wall-clock limit. The only bound is the agent going quiet: a
-turn fails when the agent has sent no `session/update` for
+A turn has no wall-clock limit. The client requests cancellation when the agent
+has sent no `session/update` for
 `CLAXEDO_ACP_PROMPT_TIMEOUT_MS` (default 300000) while nothing is waiting on
 the human. A permission request the user has not answered holds that countdown
 open, and a long tool call keeps it alive by streaming. When the countdown
-fires, the agent's session is cancelled and the process is replaced; a turn
-queued on the same process fails with the same reason.
+fires, only that session is asked to cancel. If cancellation is not acknowledged,
+the session shows "execution uncertain" and keeps observing the original turn,
+including late output. No replacement prompt is sent. Other sessions remain usable;
+the original turn stays active until its real response or connection loss.
 
 | Variable | Default | Bounds |
 | --- | --- | --- |
@@ -129,43 +131,98 @@ queued on the same process fails with the same reason.
 `CLAXEDO_ACP_IDLE_TIMEOUT_MS` is read once when the server starts; the others
 are read per adapter.
 
-After a server restart the first turn on a session asks the agent for
+After a server restart each session independently asks the agent for
 `session/resume`, or `session/load` when only that is advertised. An agent that
-advertises neither fails that turn; only a "Resource not found" answer makes
-Claxedo create a fresh agent session and rebind. Claxedo's own transcript is
-never replayed into the agent on resume; the only transcript replay is the
-harness handoff.
+advertises neither fails that turn. A structured resource-not-found response
+identifying that exact agent session creates a fresh agent session and restores
+bounded conversation context from Claxedo's saved transcript. The transcript
+shows "Cache busted — agent context rebuilt from saved conversation". Pending
+context is persisted until a completed turn; this rebuild does not restore hidden
+agent state or pending operations. Authentication, transport, configuration and
+prompt errors do not trigger replacement or automatic prompt retries.
 
-### What an ACP connection cannot do
+### Transcript preservation
+
+Claxedo stores the conversation events it receives in the workspace runtime's
+SQLite journal and projects them into readable session history. Browser reload,
+agent process replacement, and workspace-runtime restart do not discard that
+history. Negotiated child sessions have their own saved transcripts. Removing
+a connection prevents execution through it; it does not remove those transcripts.
+
+This history is separate from the agent's own backing session. It cannot contain
+output the agent never delivered, hidden provider state, or conversations created
+outside Claxedo that were never imported. Rebuilding agent context from saved
+conversation does not restore interrupted tools. Explicit session deletion or
+loss of Claxedo's own data directory is outside the restart-preservation guarantee.
+
+### Supported behavior and remaining limits
 
 The adapter advertises the capabilities the protocol gives it and nothing
 more. Compared with the native harnesses, an ACP connection has:
 
-- no reconnect: a process that exits mid-turn fails the turn with the agent's
-  last stderr line, marks every session bound to that process as recovering,
-  and is replaced on the next turn;
-- no questions, slash commands, revert, or subagents as controls; the
-  transcript still renders a `plan` update as a todo list and shows an
-  `available_commands_update`;
-- fork only when the agent advertises `sessionCapabilities.fork` (the browser
-  projection reports `fork: false` regardless; the runtime reports the live
-  value);
-- one turn at a time per process: sessions that share a workspace share the
-  process and queue behind each other;
+- no automatic remote reconnect or prompt replay: connection loss reports an
+  uncertain execution outcome and affects sessions sharing that connection.
+  The next explicit turn restores its existing upstream session when supported;
+  it never silently repeats the previous prompt;
+- ACP form and URL requests become ordinary runtime questions and use the
+  existing composer question dock. Forms use the same custom JSON-answer path
+  as Codex MCP elicitation; the SDK retains the schema and validates the typed
+  object before replying to the agent. Invalid answers leave the question and
+  draft pending. URL questions show the external address for the user to open
+  and a continuation choice; only the actual ACP completion notification ends
+  the agent's external-flow tracking. No ACP-specific client form or worker is
+  involved. Pattern validation runs in a bounded runtime worker;
+- questions during `initialize` and `session/new` use the same reserved session
+  creation owner and ordinary question routes/events. The outgoing RPC is bound
+  to one creator; another concurrent creation cannot answer its questions.
+  Reload reads the existing question and preserves its ordinary answer draft.
+  Process loss cancels live resolvers and fails unfinished creation; it never
+  fabricates an upstream session or repeats the original prompt. Completed
+  creation can be recovered without sending that draft automatically;
+- standalone in-app connection authentication/logout is not exposed. Configure
+  credentials or authenticate using the agent's own supported setup flow before
+  use. An authentication-required failure is reported rather than starting an
+  independent workspace connection lifecycle. Capability probes cannot prompt
+  a user because they have no admitted session creator;
+- no revert. Negotiated native subagent notifications create canonical child
+  sessions with separate transcripts, nested lineage, permissions, and terminal
+  states. Child updates can continue after the parent prompt ends. Unadvertised
+  targeted child controls stay disabled; a tool name alone never creates a child.
+  The transcript renders a `plan` update as a todo list. Agent command updates are persisted per session and
+  appear in the slash menu, with argument hints. Invocation is an ordinary
+  `/command arguments` prompt;
+- fork only when the agent advertises `sessionCapabilities.fork`. Negotiated
+  support survives idle process disposal; a cold runtime probes capabilities.
+  Fork execution restores the source agent session when necessary. Connection
+  discovery remains conservative; session controls use negotiated capabilities;
+- one active turn per agent session. Different sessions can submit prompts
+  concurrently through the same process. A process failure still affects its
+  sessions;
 - instructions delivered as the first content block of the prompt, annotated
   for the assistant, not as a system channel;
-- the runtime treats model selection as optional; the browser projection
+- new-session discovery treats model selection as optional; an existing session
+  without a negotiated model selector reports selection as unsupported. The browser projection
   carries whatever `config.modelSelection` the operator wrote, and omits the
-  field when unset. The model list is the agent's `model` config option or its
-  `availableModels` channel, cached per process, and selecting a model restarts
-  the connection's processes;
-- attachments are written to `<workspace>/.claxedo/attachments/` and named in
-  the prompt; images go inline when the agent negotiated inline images,
-  other files inline when it negotiated embedded context, otherwise as a
-  resource link. An agent that negotiated neither and shares no filesystem
-  makes the turn fail rather than dropping the attachment;
-- Goal mode only when the agent negotiates the Goal extension on
-  `session/new` (`_meta.goal`, version 1, at least get/start/stop).
+  field when unset. The picker's model list is the agent's `model` config
+  option alone; its `availableModels` channel only labels the model the agent
+  named as current, and never fills the list. Model changes use the selected session's
+  `session/set_config_option`, without restarting processes or changing other
+  sessions. Existing-session options are read through the authorized session
+  endpoint; generic discovery uses a separate probe and never another session's
+  current values. Agents such as OpenClaw that expose no model selector keep control
+  of their model; a requested unsupported change fails explicitly;
+- attachment filesystem access is explicit: set `connection.sharedFilesystem: true`
+  only when the agent can read the workspace at the same absolute paths. It defaults
+  to false on every transport, including a local stdio bridge. With shared access,
+  files are written under `<workspace>/.claxedo/attachments/` and named in the
+  prompt. Without it, negotiated inline images, audio, or embedded resources carry
+  the bytes directly; no local paths are sent and no upload endpoint is invented.
+  An unsupported attachment fails the turn before the prompt is submitted.
+  For example, a local `claude-agent-acp` executable can opt into shared access;
+  an `openclaw acp` bridge forwarding to another machine should leave it false.
+  An HTTP/WebSocket endpoint running against the same filesystem can opt in too;
+- Goal mode only when the agent negotiates the Goal extension on `initialize`
+  (`_meta.goal`, version 1, at least get/start/stop).
 
 ### Permissions
 
@@ -332,6 +389,15 @@ One previous generation is kept as `server.old.log`.
   `packages/agent-sdk-runtime/src/harnesses/acp/process.ts`
 - Remembered "always" answers:
   `packages/agent-sdk-runtime/src/harnesses/acp/permission-grants.ts`
+- Advertised capability set, session model configuration, and environment restart rule:
+  `packages/agent-sdk-runtime/src/harnesses/acp/capabilities.ts` and
+  `packages/agent-sdk-runtime/src/harnesses/acp/process-manager.ts`
+- Prompt blocks, attachment delivery and the Goal handshake read:
+  `packages/agent-sdk-runtime/src/harnesses/acp/session.ts` and
+  `packages/agent-sdk-runtime/src/harnesses/shared/prompt-attachments.ts`
+- Session-update translation and what the transcript can represent:
+  `packages/agent-event-runtime/src/harnesses/acp/translate-session-update.ts`
+  and `packages/agent-event-runtime/src/projections/client-presentation/projection.ts`
 - Config file watch:
   `packages/claxedo-server-core/src/agent-config/index.ts`
 - Strict v3 persistence/map validation:

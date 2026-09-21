@@ -91,7 +91,7 @@ export function isPendingQuestion(part: { type: string; tool?: string; state?: {
 
 export function isContextGroupTool(part: AgentContentPart): part is AgentToolPart {
   if (part.type !== "tool" || !CONTEXT_GROUP_TOOLS.has(canonicalToolName(part.tool))) return false
-  return !producedImage(part)
+  return !isClaxedoToolPart(part) && !producedImage(part)
 }
 
 /**
@@ -216,7 +216,7 @@ export function groupParts(input: GroupablePart[]) {
   parts.forEach((item, index) => {
     const isContext = isContextGroupTool(item.part)
     const isWork = isWorkGroupTool(item.part)
-    const isTask = isSubagentHostPart(item.part) && !spawnFailed(item.part)
+    const isTask = !isClaxedoToolPart(item.part) && isSubagentHostPart(item.part) && !spawnFailed(item.part)
 
     if (isContext) {
       flushWork(index - 1)

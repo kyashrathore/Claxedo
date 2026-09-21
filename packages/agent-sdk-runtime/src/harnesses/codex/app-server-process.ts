@@ -9,7 +9,7 @@ import {
 } from "../../process-observer"
 import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
-import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
+import { isWindowsShimBinary, killHarnessProcess, drainHarnessProcessGroup } from "../shared/windows-process"
 
 const log = Log.create({ service: "codex-app-server-process" })
 
@@ -248,24 +248,7 @@ export class CodexAppServerProcess {
 
   /** The leader exiting does not prove its plugin/tool descendants are gone. */
   private async drainProcessGroup() {
-    const pid = this.proc.pid
-    if (process.platform === "win32" || !pid) return
-    killHarnessProcess(this.proc, "SIGTERM", true)
-    const deadline = Date.now() + 1_000
-    let escalated = false
-    for (;;) {
-      try {
-        process.kill(-pid, 0)
-      } catch (error) {
-        if (isRecord(error) && error.code === "ESRCH") return
-        throw error
-      }
-      if (!escalated && Date.now() >= deadline) {
-        killHarnessProcess(this.proc, "SIGKILL", true)
-        escalated = true
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    }
+    await drainHarnessProcessGroup(this.proc)
   }
 
   private exitObservation(input: { reason: "error" | "exited" | "disposed"; exitCode?: number }) {
@@ -310,7 +293,7 @@ export class CodexAppServerProcess {
     if (message.id !== undefined) {
       this.requestHandler(message)
         .then((result) => this.respond(message.id, result))
-        .catch((error) => this.write({ id: message.id, error: { message: errorMessage(error) } }))
+        .catch((error) => this.write({ id: message.id, error: { code: -32603, message: errorMessage(error) } }))
       return
     }
     for (const listener of this.listeners) listener(message)

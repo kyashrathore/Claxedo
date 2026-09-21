@@ -45,8 +45,19 @@ function threadPrefix(input: Record<string, unknown>) {
   return "issue"
 }
 
-function sender(input: Record<string, unknown>) {
-  return str(asRecord(input.sender)?.login)
+/**
+ * The sender's numeric GitHub account id, as a string.
+ *
+ * `sender.login` is a handle its owner can change and GitHub then hands to
+ * someone else, so it cannot key an allowlist or an account binding. The id
+ * never moves between accounts. `@chat-adapter/github` parses the same field
+ * into `Author.userId` (`user.id.toString()`), so an event arriving over the
+ * Chat SDK and the same event arriving here name the same principal.
+ */
+function senderAccountId(input: Record<string, unknown>) {
+  const id = asFiniteNumber(asRecord(input.sender)?.id)
+  if (id === undefined || !Number.isSafeInteger(id) || id <= 0) return undefined
+  return String(id)
 }
 
 function installation(input: Record<string, unknown>) {
@@ -70,7 +81,10 @@ export function githubWebhookEnvelope(input: GitHubWebhookInput): InboundEnvelop
   if (botMentions.length === 0) return undefined
   const repository = repo(payload)
   const number = issueNumber(payload)
-  const user = sender(payload)
+  const user = senderAccountId(payload)
+  // Every decision past this point — allowlist, pairing, binding, rate limit —
+  // is made about a principal, so an unattributed delivery stops here rather
+  // than reaching the access gate.
   if (!repository || !number || !user) return undefined
   return {
     channel: "github",

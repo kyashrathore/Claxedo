@@ -36,7 +36,7 @@ export async function authorizeHostCapability(
       message: "Workspace host capability authority is unavailable",
     })
   }
-  if (context.authority && (operation === "agent_setup_read" || operation === "agent_setup_write")) {
+  if (context.authority && (operation === "agent_setup_read" || operation === "agent_setup_write" || operation === "checkpoint_write")) {
     if (!options.sessionAccessPolicy.authorizeHost) {
       return sessionAccessDenied({
         allowed: false,
@@ -48,7 +48,7 @@ export async function authorizeHostCapability(
     const decision = await options.sessionAccessPolicy.authorizeHost({
       ...context,
       operation,
-      minimumRole: operation === "agent_setup_write" ? "admin" : "viewer",
+      minimumRole: operation === "agent_setup_read" ? "viewer" : "admin",
       method: c.req.method,
       path: c.req.path,
     })

@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test"
 import { TASKS_BOUNDS } from "../contracts"
 import { parsedReasons } from "../test-support/refusals"
 import { presetDraft, primaryConfiguration } from "../test-support/rows"
-import { parseCommandRequest, parsePresetListQuery, parseStartPreviewRequest, parseStartRequest, parseTaskListQuery } from "./parse"
+import {
+  parseCommandRequest,
+  parsePresetListQuery,
+  parseStartPreviewRequest,
+  parseStartRequest,
+  parseTaskListQuery,
+} from "./parse"
 
 const startBody = {
   clientRequestId: "request-1",
@@ -17,6 +23,88 @@ const startBody = {
 }
 
 describe("parseCommandRequest", () => {
+  test("capability counts are checked before reading any array element", () => {
+    for (const [key, limit] of [
+      ["plugins", TASKS_BOUNDS.pluginReferencesMax],
+      ["skills", TASKS_BOUNDS.skillReferencesMax],
+    ] as const) {
+      const entries = Array.from({ length: limit + 1 })
+      Object.defineProperty(entries, "0", {
+        get() {
+          throw new Error("oversized array was decoded")
+        },
+      })
+      const result = parseCommandRequest({
+        clientRequestId: "bounded",
+        command: {
+          type: "preset.create",
+          input: {
+            ...presetDraft(),
+            execution: {
+              placement: "cloud",
+              capabilities: { mode: "selected", plugins: [], skills: [], [key]: entries },
+            },
+          },
+        },
+      })
+      expect(parsedReasons(result)).toEqual({ [`command.input.execution.capabilities.${key}`]: "too_many" })
+    }
+  })
+
+  test("valid capability arrays at their contract limits are preserved", () => {
+    const execution = {
+      placement: "cloud",
+      capabilities: {
+        mode: "selected",
+        plugins: Array.from({ length: TASKS_BOUNDS.pluginReferencesMax }, (_, index) => ({
+          sourceId: "source",
+          pluginName: `plugin-${index}`,
+        })),
+        skills: Array.from({ length: TASKS_BOUNDS.skillReferencesMax }, (_, index) => ({
+          sourceId: "source",
+          skillName: `skill-${index}`,
+        })),
+      },
+    } as const
+    const result = parseCommandRequest({
+      clientRequestId: "boundary",
+      command: {
+        type: "preset.create",
+        input: { ...presetDraft(), execution },
+      },
+    })
+    expect(result.ok && result.value.command.type === "preset.create" && result.value.command.input.execution).toEqual(
+      execution,
+    )
+  })
+
+  test("attachment count is refused before decoding elements", () => {
+    const attachments = Array.from({ length: TASKS_BOUNDS.taskAttachmentsMax + 1 })
+    Object.defineProperty(attachments, "0", {
+      get() {
+        throw new Error("oversized attachments were decoded")
+      },
+    })
+    expect(
+      parsedReasons(
+        parseCommandRequest({
+          clientRequestId: "attachments",
+          command: {
+            type: "task.create",
+            input: {
+              projectId: "p",
+              title: "Task",
+              description: "",
+              workspaceId: null,
+              parentTaskId: null,
+              attachments,
+            },
+          },
+        }),
+      ),
+    ).toEqual({ "command.input.attachments": "too_many" })
+  })
+
   test("accepts a well-formed command", () => {
     const result = parseCommandRequest({
       clientRequestId: "request-1",
@@ -27,7 +115,9 @@ describe("parseCommandRequest", () => {
   })
 
   test("a command name outside the closed set is refused before its input is read", () => {
-    expect(parsedReasons(parseCommandRequest({ clientRequestId: "r", command: { type: "task.delete", input: {} } }))).toEqual({
+    expect(
+      parsedReasons(parseCommandRequest({ clientRequestId: "r", command: { type: "task.delete", input: {} } })),
+    ).toEqual({
       "command.type": "unknown_value",
     })
   })
@@ -54,7 +144,10 @@ describe("parseCommandRequest", () => {
       clientRequestId: "r",
       command: {
         type: "preset.create",
-        input: { ...presetDraft(), configurations: { primary: primaryConfiguration(), deployment: primaryConfiguration() } },
+        input: {
+          ...presetDraft(),
+          configurations: { primary: primaryConfiguration(), deployment: primaryConfiguration() },
+        },
       },
     })
     expect(parsedReasons(result)).toEqual({ "command.input.configurations.deployment": "unknown_value" })
@@ -79,14 +172,19 @@ describe("parseCommandRequest", () => {
 
   test("a preset draft says whether agents may start it, as a boolean and nothing else", () => {
     const { agentStartable: _agentStartable, ...unsaid } = presetDraft()
-    expect(parsedReasons(parseCommandRequest({ clientRequestId: "r", command: { type: "preset.create", input: unsaid } }))).toEqual({
+    expect(
+      parsedReasons(parseCommandRequest({ clientRequestId: "r", command: { type: "preset.create", input: unsaid } })),
+    ).toEqual({
       "command.input.agentStartable": "required",
     })
     expect(
       parsedReasons(
         parseCommandRequest({
           clientRequestId: "r",
-          command: { type: "preset.edit", input: { presetId: "preset-1", revision: 1, ...presetDraft(), agentStartable: "yes" } },
+          command: {
+            type: "preset.edit",
+            input: { presetId: "preset-1", revision: 1, ...presetDraft(), agentStartable: "yes" },
+          },
         }),
       ),
     ).toEqual({ "command.input.agentStartable": "type" })
@@ -95,7 +193,9 @@ describe("parseCommandRequest", () => {
       clientRequestId: "r",
       command: { type: "preset.create", input: presetDraft({ agentStartable: true }) },
     })
-    expect(marked.ok && marked.value.command.type === "preset.create" && marked.value.command.input.agentStartable).toBe(true)
+    expect(
+      marked.ok && marked.value.command.type === "preset.create" && marked.value.command.input.agentStartable,
+    ).toBe(true)
   })
 
   test("a number where a string belongs is a typed field, never a coerced one", () => {
@@ -114,10 +214,19 @@ describe("parseCommandRequest", () => {
       clientRequestId: "r",
       command: {
         type: "task.create",
-        input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null, status: "backlog" },
+        input: {
+          projectId: "p",
+          title: "Ship",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          status: "backlog",
+        },
       },
     })
-    expect(parked.ok && parked.value.command.type === "task.create" && parked.value.command.input.status).toBe("backlog")
+    expect(parked.ok && parked.value.command.type === "task.create" && parked.value.command.input.status).toBe(
+      "backlog",
+    )
 
     const unsaid = parseCommandRequest({
       clientRequestId: "r",
@@ -126,13 +235,22 @@ describe("parseCommandRequest", () => {
         input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null },
       },
     })
-    expect(unsaid.ok && unsaid.value.command.type === "task.create" && unsaid.value.command.input.status).toBeUndefined()
+    expect(
+      unsaid.ok && unsaid.value.command.type === "task.create" && unsaid.value.command.input.status,
+    ).toBeUndefined()
 
     const working = parseCommandRequest({
       clientRequestId: "r",
       command: {
         type: "task.create",
-        input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null, status: "doing" },
+        input: {
+          projectId: "p",
+          title: "Ship",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          status: "doing",
+        },
       },
     })
     expect(parsedReasons(working)).toEqual({ "command.input.status": "unknown_value" })
@@ -153,7 +271,9 @@ describe("parseCommandRequest", () => {
         },
       },
     })
-    expect(fromSession.ok && fromSession.value.command.type === "task.create" && fromSession.value.command.input.createdFrom).toEqual({
+    expect(
+      fromSession.ok && fromSession.value.command.type === "task.create" && fromSession.value.command.input.createdFrom,
+    ).toEqual({
       sessionId: "ses_1",
       workspaceId: null,
     })
@@ -196,12 +316,16 @@ describe("parseCommandRequest", () => {
         },
       })
     const withImages = create({ attachments: [{ filename: "a.png", mime: "image/png", data: "iVBORw==" }] })
-    expect(withImages.ok && withImages.value.command.type === "task.create" && withImages.value.command.input.attachments).toEqual([
-      { filename: "a.png", mime: "image/png", data: "iVBORw==" },
-    ])
+    expect(
+      withImages.ok && withImages.value.command.type === "task.create" && withImages.value.command.input.attachments,
+    ).toEqual([{ filename: "a.png", mime: "image/png", data: "iVBORw==" }])
     const without = create({})
-    expect(without.ok && without.value.command.type === "task.create" && "attachments" in without.value.command.input).toBe(false)
-    expect(parsedReasons(create({ attachments: { filename: "a.png" } }))).toEqual({ "command.input.attachments": "type" })
+    expect(
+      without.ok && without.value.command.type === "task.create" && "attachments" in without.value.command.input,
+    ).toBe(false)
+    expect(parsedReasons(create({ attachments: { filename: "a.png" } }))).toEqual({
+      "command.input.attachments": "type",
+    })
     expect(parsedReasons(create({ attachments: [{ filename: "a.png", mime: "image/png", data: 42 }] }))).toEqual({
       "command.input.attachments[0].data": "type",
     })
@@ -245,7 +369,11 @@ describe("parseStartRequest", () => {
 describe("query parsing", () => {
   test("defaults are explicit and out-of-range limits are refused", () => {
     const bare = parsePresetListQuery(new URLSearchParams())
-    expect(bare.ok && bare.value).toEqual({ cursor: null, limit: TASKS_BOUNDS.listLimitDefault, includeArchived: false })
+    expect(bare.ok && bare.value).toEqual({
+      cursor: null,
+      limit: TASKS_BOUNDS.listLimitDefault,
+      includeArchived: false,
+    })
     expect(parsedReasons(parsePresetListQuery(new URLSearchParams("limit=0")))).toEqual({ limit: "out_of_range" })
     expect(parsedReasons(parsePresetListQuery(new URLSearchParams("limit=101")))).toEqual({ limit: "out_of_range" })
   })
@@ -284,6 +412,8 @@ describe("start provenance", () => {
     expect(parsedReasons(parseStartRequest({ ...startBody, startedFrom: { workspaceId: "ws_root" } }))).toEqual({
       "startedFrom.sessionId": "required",
     })
-    expect(parsedReasons(parseStartPreviewRequest({ ...previewBody, startedFrom: "ses_caller" })).startedFrom).toBe("type")
+    expect(parsedReasons(parseStartPreviewRequest({ ...previewBody, startedFrom: "ses_caller" })).startedFrom).toBe(
+      "type",
+    )
   })
 })

@@ -9,8 +9,7 @@ import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { createIntegrationsRequest } from "@/platform/account/integrations-request"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
+import type { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
 import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import { DialogConnectIntegration } from "@/features/settings/app-ports"
 import {
@@ -28,7 +27,7 @@ const STATUS_LABEL: Record<ConnectionInfo["status"], string> = {
   broken: "Broken",
 }
 
-const AGENT_READINESS_LABEL = { ready: "Ready", unavailable: "Unavailable", disabled: "Disabled" } as const
+const AGENT_READINESS_LABEL = { configured: "Configured", ready: "Ready", unavailable: "Unavailable", disabled: "Disabled" } as const
 const MODEL_SELECTION_LABEL = { required: "Model required", optional: "Model optional", unsupported: "Agent-managed model" } as const
 
 function StatusChip(props: { status: ConnectionInfo["status"] }) {
@@ -56,10 +55,10 @@ function StatusChip(props: { status: ConnectionInfo["status"] }) {
   )
 }
 
-export const SettingsConnections: Component = () => {
+export const SettingsConnections: Component<{ agentConnections: ReturnType<typeof createHarnessConnectionsCatalog>; integrations?: boolean }> = (props) => {
   const dialog = useDialog()
   const store = createConnectionsStore({ request: integrationsRequest })
-  const agentConnections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
+  const agentConnections = props.agentConnections
   const agentRows = createMemo(() => {
     const catalog = agentConnections.data()
     return catalog?.status === "supported" ? catalog.connections : undefined
@@ -75,8 +74,8 @@ export const SettingsConnections: Component = () => {
   const [confirmingAgent, setConfirmingAgent] = createSignal<string | undefined>(undefined)
   const [busy, setBusy] = createSignal<string | undefined>(undefined)
 
-  onMount(() => void store.load())
-  onMount(() => void agentConnections.refresh())
+  onMount(() => { if (props.integrations !== false) void store.load() })
+
 
   const openConnect = (integration: IntegrationInfo, scope?: ConnectionInfo["scope"]) => {
     void dialog.show(() => (
@@ -209,7 +208,7 @@ export const SettingsConnections: Component = () => {
           </Show>
         </div>
 
-        <div class="flex flex-col gap-1" data-component="connections-section">
+        <Show when={props.integrations !== false}><div class="flex flex-col gap-1" data-component="connections-section">
           <Show when={store.state.error}>
             {(error) => <div class="py-2 text-13-regular text-icon-critical-base">{error()}</div>}
           </Show>
@@ -313,7 +312,7 @@ export const SettingsConnections: Component = () => {
               </For>
             </Show>
           </div>
-        </div>
+        </div></Show>
       </div>
     </div>
   )

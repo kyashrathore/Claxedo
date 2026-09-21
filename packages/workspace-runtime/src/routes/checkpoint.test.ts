@@ -33,7 +33,10 @@ describe("workspace checkpoint routes", () => {
     })
     app.route("/", CheckpointRoutes({
       checkpoint: host.checkpoint,
-      sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({ requireActor: true }),
+      sessionAccessPolicy: {
+        ...managedWorkspaceSessionAccessPolicy({ requireActor: true }),
+        authorizeHost: () => ({ allowed: false, status: 403, code: "host_access_denied", message: "Admin required" }),
+      },
     }))
 
     const response = await app.request("/freeze", { method: "POST", body: "{}" })

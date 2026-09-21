@@ -17,14 +17,16 @@ export function cloudSubmitMissingModel(input: {
   isNewSession: boolean
   hostKind: string
   selection: HarnessSelection | undefined
+  modelOptional?: boolean
   modelKey: ModelKey | undefined
 }) {
   if (!input.isNewSession || input.hostKind !== "provisioner") return false
-  return !input.selection || !input.modelKey
+  return !input.selection || (!(input.modelOptional && input.selection.kind === "connection") && !input.modelKey)
 }
 
 /** Resolve effort and model ownership for a draft or an already-bound session. */
 export function resolvePromptSubmitConfig(input: {
+  modelOptional?: boolean
   existing?: ExistingSessionConfig
   harnessMode: boolean
   selection?: HarnessSelection
@@ -37,15 +39,20 @@ export function resolvePromptSubmitConfig(input: {
   const providerOwnsEffort = !input.harnessMode || (input.selection !== undefined && isCatalogHarness(input.selection))
   const selectedVariant = providerOwnsEffort ? input.variant() : undefined
   const existing = input.existing
-  if (existing?.model) {
+  if (existing) {
     const variant = selectedVariant ?? existing.variant
-    return {
-      model: existing.model,
-      agent: input.agent() || existing.agent || input.currentAgent()?.id || input.currentAgent()?.name || "build",
+    const agent = input.agent() || existing.agent
+    const config = resolveSubmittedConfig({
+      harnessModelKey: existing.model,
+      modelOptional: existing.harnessType.kind === "connection",
+      currentAgent: agent ? undefined : input.currentAgent(),
+      agentOverride: agent,
       ...(variant ? { variant } : {}),
-    }
+    })
+    return config && { ...config, ...(variant ? { variant } : {}) }
   }
   return resolveSubmittedConfig({
+    modelOptional: input.modelOptional && input.selection?.kind === "connection",
     harnessModelKey: input.modelKey(),
     ...(selectedVariant ? { variant: selectedVariant } : {}),
     currentAgent: input.currentAgent(),

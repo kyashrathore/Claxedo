@@ -3,7 +3,7 @@ import { WorkspaceTargetError } from "../target"
 import { rec } from "../json-value"
 import type { WorkspaceWorktreeManager } from "../worktree"
 import type { WorkspaceWorktreeRecord } from "../store"
-import { errorBody } from "./http"
+import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   sessionAccessContext,
@@ -78,6 +78,10 @@ export function WorktreeRoutes(
   }
 
   return new Hono<{ Variables: RelayHostAuthContext }>()
+    .onError((err, c) => {
+      if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
+      throw err
+    })
     .get("/", async (c) => {
       const denied = await authorizeHostCapability(c, options, "worktree_read")
       if (denied) return denied
@@ -110,7 +114,7 @@ export function WorktreeRoutes(
       }
     })
     .post("/", async (c) => {
-      const parsed = parseWorktreeCreateBody(await c.req.json().catch(() => null))
+      const parsed = parseWorktreeCreateBody(await boundedJsonBody(c))
       if (!parsed.ok) return c.json(parsed.body, parsed.status)
       try {
         const denied = await authorizeSession(c, "worktree_write", parsed.value.sessionId)

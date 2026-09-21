@@ -17,6 +17,7 @@ import {
   SESSION_ADOPTION_OPERATION_PREFIX,
   sessionAccessQuestion,
   sessionAdoptionOperationId,
+  type AuthorizeRuntimeSessionStartInput,
   type PrivateSessionActor,
   type PrivateSessionAuthority,
   type PrivateSessionRegistrationState,
@@ -235,7 +236,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const intent = normalizeReservation(input)
     const workspace = await this.requireWorkspaceAccess(who, intent.workspaceId, "write")
     if (intent.kind === "fork") {
-      await this.requireSessionAccess(who, intent.parentSessionId!, intent.workspaceId, "read")
+      await this.requireSessionAccess(who, intent.parentSessionId!, intent.workspaceId, "agent_turn")
     }
 
     const existing = await this.registration(intent.operationId)
@@ -272,7 +273,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           and (? = 'create' or exists (
             select 1 from sessions parent
             where parent.session_id = ? and parent.workspace_id = w.workspace_id and parent.deleted_at is null
-              and ${actorSessionAccessSql("?", "parent", "read")}
+              and ${actorSessionAccessSql("?", "parent", "agent_turn")}
           ))
         on conflict do nothing
       `,
@@ -292,7 +293,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             ...repeat(who.actorId, WORKSPACE_ACCESS_BINDINGS),
             intent.kind,
             intent.parentSessionId ?? null,
-            ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.read),
+            ...repeat(who.actorId, SESSION_ACCESS_BINDINGS.agent_turn),
           ),
         this.registrationAssertion(assertionId, intent, workspace, who.actorId, "reserved"),
         this.deleteAssertion(assertionId),
@@ -500,6 +501,36 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       requireText(args.workspaceId, "workspaceId"),
       "agent_turn",
     )
+  }
+
+  async authorizeRuntimeSessionStart(input: AuthorizeRuntimeSessionStartInput): Promise<void> {
+    const actor = await this.requireRuntimeActor(input)
+    const workspaceId = requireText(input.workspaceId, "workspaceId")
+    const sessionId = requireText(input.sessionId, "sessionId")
+    const operationId = requireText(input.registrationOperationId, "registrationOperationId")
+    await this.requireWorkspaceAccess(actor, workspaceId, "write")
+    const row = await this.registration(operationId)
+    if (!row || row.workspace_id !== workspaceId || row.session_id !== sessionId
+      || row.creator_actor_id !== actor.actorId
+      || (row.state !== "reserved" && row.state !== "reconciliation_required")) {
+      throw denied("A matching live creator reservation is required")
+    }
+    if (row.operation_kind === "fork") {
+      await this.requireSessionAccess(actor, row.parent_session_id!, workspaceId, "agent_turn")
+    }
+  }
+
+  async authorizeRuntimeSessionStartStatus(input: AuthorizeRuntimeSessionStartInput): Promise<void> {
+    const actor = await this.requireRuntimeActor(input)
+    const workspaceId = requireText(input.workspaceId, "workspaceId")
+    const sessionId = requireText(input.sessionId, "sessionId")
+    const operationId = requireText(input.registrationOperationId, "registrationOperationId")
+    await this.requireWorkspaceAccess(actor, workspaceId, "read")
+    const row = await this.registration(operationId)
+    if (!row || row.workspace_id !== workspaceId || row.session_id !== sessionId
+      || row.creator_actor_id !== actor.actorId) {
+      throw denied("A matching creator reservation is required")
+    }
   }
 
   async authorizeRuntimeSession(
@@ -1569,6 +1600,9 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     if (registration.creator_actor_id !== actor.actorId) {
       throw new D1SessionAuthorityError("actor_authorization_denied", "Session creator does not match the reservation")
     }
+    if (registration.operation_kind === "fork") {
+      await this.requireSessionAccess(actor, registration.parent_session_id!, registration.workspace_id, "agent_turn")
+    }
     const now = this.now()
     const assertionId = this.randomId("assert")
     await this.guardedBatch(
@@ -1586,9 +1620,18 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               and w.project_id = session_registration_operations.project_id
               and w.deleted_at is null and ${actorWorkspaceAccessSql("?", "w", 2)}
           )
+          and (operation_kind = 'create' or exists (
+            select 1 from sessions parent
+            where parent.session_id = session_registration_operations.parent_session_id
+              and parent.workspace_id = session_registration_operations.workspace_id
+              and parent.deleted_at is null
+              and ${actorSessionAccessSql("?", "parent", "agent_turn")}
+          ))
       `,
           )
-          .bind(now, registration.operation_id, actor.actorId, ...repeat(actor.actorId, WORKSPACE_ACCESS_BINDINGS)),
+          .bind(now, registration.operation_id, actor.actorId,
+            ...repeat(actor.actorId, WORKSPACE_ACCESS_BINDINGS),
+            ...repeat(actor.actorId, SESSION_ACCESS_BINDINGS.agent_turn)),
         this.database
           .prepare(
             `

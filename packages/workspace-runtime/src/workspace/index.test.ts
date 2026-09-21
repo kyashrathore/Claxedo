@@ -25,6 +25,8 @@ const loopbackExposure = loopbackWorkspaceRuntimeExposure()
 
 const managedPolicy = (): SessionAccessPolicy => ({
   sessionAuthority: "managed-private",
+  authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+  authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
   authorize: (input) => input.sessionId === "session-a"
     ? { allowed: true }
     : { allowed: false, status: 403, code: "session_private", message: "private" },

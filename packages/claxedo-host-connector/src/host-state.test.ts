@@ -4,6 +4,8 @@ import path from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 
 import {
+  canonicalControlPlaneUrl,
+  ControlPlaneUrlError,
   createHostStateStore,
   effectiveRoots,
   newHostState,
@@ -110,7 +112,7 @@ describe("store", () => {
 
 /** Every required field present; each case below adds exactly the member under test. */
 const SEALING_BASE =
-  '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[]'
+  '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"https://cp.test","created_at":1,"storage_root":"/s","cli_roots":[]'
 
 describe("parseHostState", () => {
   test.each([
@@ -118,13 +120,13 @@ describe("parseHostState", () => {
     ['{"host_id":"h"}', /private_key_jwk/],
     ['{"host_id":"h","private_key_jwk":{"d":"d"}}', /private_key_jwk.kty/],
     ['{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"created_at":1}', /control_plane_url/],
-    ['{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":"x"}', /cli_roots/],
+    ['{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"https://cp.test","created_at":1,"storage_root":"/s","cli_roots":"x"}', /cli_roots/],
     [
-      '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[],"scope":{"allowed_roots":[]}}',
+      '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"https://cp.test","created_at":1,"storage_root":"/s","cli_roots":[],"scope":{"allowed_roots":[]}}',
       /scope.revision/,
     ],
     [
-      '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[],"bootstrap":{"invitation_id":"a"}}',
+      '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"https://cp.test","created_at":1,"storage_root":"/s","cli_roots":[],"bootstrap":{"invitation_id":"a"}}',
       /bootstrap/,
     ],
     [`${SEALING_BASE},"sealing_private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y"}}`, /sealing_private_key_jwk.d/],
@@ -147,6 +149,86 @@ describe("parseHostState", () => {
       revision: 9,
       sealed: null,
     })
+  })
+
+  test("a file edited to name a cleartext control plane does not load", () => {
+    // The state file is where an endpoint outlives the run that accepted it:
+    // if reading it back re-enabled http://, every check before the first
+    // write would be one reboot deep.
+    const text = SEALING_BASE.replace('"https://cp.test"', '"http://cp.test"') + "}"
+
+    expect(() => parseHostState(text)).toThrow(ControlPlaneUrlError)
+    expect(() => parseHostState(text)).toThrow(/must be https/)
+  })
+
+  test("a loopback http control plane loads, canonicalized", () => {
+    expect(parseHostState(SEALING_BASE.replace('"https://cp.test"', '"http://127.0.0.1:2593/"') + "}").control_plane_url).toBe(
+      "http://127.0.0.1:2593",
+    )
+  })
+})
+
+describe("canonicalControlPlaneUrl", () => {
+  test.each([
+    ["https://app.claxedo.com", "https://app.claxedo.com"],
+    ["https://app.claxedo.com/", "https://app.claxedo.com"],
+    ["https://app.claxedo.com///", "https://app.claxedo.com"],
+    ["  https://app.claxedo.com  ", "https://app.claxedo.com"],
+    ["https://app.claxedo.com:8443/edge/", "https://app.claxedo.com:8443/edge"],
+    ["https://APP.claxedo.com", "https://app.claxedo.com"],
+    ["http://localhost:3000", "http://localhost:3000"],
+    ["http://127.0.0.1:2593", "http://127.0.0.1:2593"],
+    ["http://[::1]:2593", "http://[::1]:2593"],
+    ["https://localhost:3000", "https://localhost:3000"],
+  ])("%s → %s", (input, expected) => {
+    expect(canonicalControlPlaneUrl(input)).toBe(expected)
+  })
+
+  test.each([
+    ["http://app.claxedo.com", /must be https/],
+    ["http://cp.internal:8080", /must be https/],
+    // Each of these resolves off-box, and an `http:` request to it is on a
+    // network; only the three exact loopback names are not.
+    ["http://localhost.attacker.test", /must be https/],
+    ["http://sub.localhost", /must be https/],
+    ["http://127.0.0.2", /must be https/],
+    ["http://0.0.0.0", /must be https/],
+    ["http://[::ffff:127.0.0.1]", /must be https/],
+    ["ws://app.claxedo.com", /must be https/],
+    ["file:///etc/passwd", /must be https/],
+    ["javascript:fetch(1)", /must be https/],
+    ["https://user:pass@app.claxedo.com", /no user or password/],
+    ["https://user@app.claxedo.com", /no user or password/],
+    ["https://app.claxedo.com/?next=https://attacker.test", /no query or fragment/],
+    ["https://app.claxedo.com?x=1", /no query or fragment/],
+    ["https://app.claxedo.com#f", /no query or fragment/],
+    ["https://app.claxedo.com/edge%2f..", /plain path prefix/],
+    ["https://app.claxedo.com//edge", /plain path prefix/],
+    ["app.claxedo.com", /is not a URL/],
+    ["/api/claxedo", /is not a URL/],
+    ["", /is not a URL/],
+  ])("refuses %s", (input, message) => {
+    expect(() => canonicalControlPlaneUrl(input)).toThrow(ControlPlaneUrlError)
+    expect(() => canonicalControlPlaneUrl(input)).toThrow(message)
+  })
+
+  test("composing a signed request's path onto a base leaves the path the signature covers", () => {
+    // The canonical base is what `controlPlaneRequestUrl` concatenates onto,
+    // so a base written with a trailing slash signs the same path as one
+    // without — and a base with a prefix keeps it.
+    expect(new URL(canonicalControlPlaneUrl("https://app.claxedo.com/") + "/api/claxedo/host/enrollments/heartbeat").pathname).toBe(
+      "/api/claxedo/host/enrollments/heartbeat",
+    )
+    expect(new URL(canonicalControlPlaneUrl("https://app.claxedo.com/edge") + "/api/claxedo/host/enrollments/heartbeat").pathname).toBe(
+      "/edge/api/claxedo/host/enrollments/heartbeat",
+    )
+  })
+
+  test("a state is never minted for an endpoint the machine may not talk to", () => {
+    expect(() => state({})).not.toThrow()
+    expect(() =>
+      newHostState({ hostId: "host_1", privateKeyJwk: KEY, controlPlaneUrl: "http://cp.test", cliRoots: [], storageRoot: "/s" }),
+    ).toThrow(ControlPlaneUrlError)
   })
 })
 

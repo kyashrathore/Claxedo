@@ -60,7 +60,7 @@ export type PendingPermission = {
   agentSessionId: string
   method: string
   params: JsonRecord
-  resolve: (decision: "allow_once" | "allow_always" | "deny" | "reject_always") => void
+  resolve: (decision: "allow_once" | "allow_always" | "deny" | "reject_always", optionId?: string) => void
 }
 
 export type PendingQuestion = {
@@ -76,7 +76,7 @@ export type ActiveTurn = {
   close?: () => void
   turnId?: string
   /** Present only while this turn's protocol can accept another user message. */
-  steer?: (input: PromptInput) => Promise<void>
+  steer?: (input: PromptInput) => Promise<import("../../adapter-contract").SteerResult>
 }
 
 /**

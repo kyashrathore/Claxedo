@@ -3,6 +3,7 @@ import { requestJson } from "../http"
 import { object } from "../json"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asFiniteNumber } from "@claxedo/helpers/guards"
+import { isLoopbackHostname } from "@claxedo/helpers"
 
 /**
  * The public native-client values a control plane advertises at
@@ -23,6 +24,13 @@ export type NativeClient = {
 export type CliAuthBinding = {
   /** Better Auth's base: `${origin}/api/auth`; every endpoint below hangs off it. */
   issuer: string
+  /**
+   * Every origin this deployment says it serves its own pages from: the control
+   * plane the user pointed the CLI at, the issuer, and the web app's trusted
+   * origins — a deployment's app and API origins differ in the hosted plane.
+   * The device grant's browser destination is checked against this set.
+   */
+  pageOrigins: readonly string[]
   deviceCodeUrl: string
   tokenUrl: string
   userInfoUrl: string
@@ -39,14 +47,33 @@ function descriptorText(value: unknown, name: string): string {
   return result
 }
 
-function descriptorOrigin(value: string, name: string): string {
+/**
+ * The transport every endpoint below is reached over. The document is unsigned
+ * and arrives over the wire, so a cleartext origin inside it puts the device
+ * grant, the token poll and the bearer-carrying userinfo call on the network in
+ * the clear — an HTTPS control plane can otherwise name an `http:` issuer and
+ * the CLI would obey. `http:` survives only for the three loopback names a
+ * request cannot leave the machine for, which is the same cleartext case
+ * `canonicalControlPlaneUrl` allows a machine enrollment. Userinfo is refused
+ * because `https://app.example@evil.test` reads as one host and resolves to
+ * another, and the parsed host is what the origin comparisons below compare.
+ */
+function descriptorUrl(value: string, name: string): URL {
   let parsed: URL
   try {
     parsed = new URL(value)
   } catch {
     throw new Error(`Auth descriptor: ${name} is not a URL`)
   }
-  return parsed.origin
+  if (parsed.username || parsed.password) throw new Error(`Auth descriptor: ${name} carries a user or password`)
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname))) {
+    throw new Error(`Auth descriptor: ${name} must be https:// (http:// only for localhost, 127.0.0.1 or ::1)`)
+  }
+  return parsed
+}
+
+function descriptorOrigin(value: string, name: string): string {
+  return descriptorUrl(value, name).origin
 }
 
 function descriptorClient(value: unknown, name: string, flow: string, controlPlaneOrigin: string, issuerOrigin: string): NativeClient {
@@ -68,6 +95,39 @@ function descriptorClient(value: unknown, name: string, flow: string, controlPla
 }
 
 /**
+ * Entries this CLI would not talk to are dropped rather than refused: the set
+ * only ever admits a destination, and a deployment that also lists a cleartext
+ * dev origin still has a working hosted login. Dropping is the safe direction —
+ * an entry that never lands here can never be opened.
+ */
+function browserPageOrigins(value: unknown): string[] {
+  const trusted = object(value).trustedOrigins
+  if (!Array.isArray(trusted)) return []
+  return trusted.flatMap((entry) => {
+    if (typeof entry !== "string") return []
+    try {
+      return [descriptorUrl(entry, "browser.trustedOrigins").origin]
+    } catch {
+      return []
+    }
+  })
+}
+
+/**
+ * The issuer is concatenated with `/device/code` and friends, so a query or a
+ * fragment on it would push those segments into the query of a request to the
+ * base path instead — the endpoint would not be the one the string reads as.
+ */
+function descriptorIssuer(value: unknown): string {
+  const raw = descriptorText(value, "issuer").replace(/\/+$/, "")
+  const parsed = descriptorUrl(raw, "issuer")
+  if (parsed.search || parsed.hash || `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, "") !== raw) {
+    throw new Error("Auth descriptor: issuer must be an origin with a plain path")
+  }
+  return raw
+}
+
+/**
  * Validates the descriptor against the ONE control plane this CLI was pointed
  * at: the document may only describe clients of that origin, so a response
  * cannot redirect the credential to another deployment.
@@ -78,17 +138,47 @@ export function parseCliAuthDescriptor(value: unknown, controlPlaneUrl: string, 
   const expiresAt = asFiniteNumber(root.expiresAt)
   if (expiresAt === undefined || expiresAt <= now) throw new Error("Auth descriptor: expired")
   const controlPlaneOrigin = descriptorOrigin(controlPlaneUrl, "control plane URL")
-  const issuer = descriptorText(root.issuer, "issuer").replace(/\/+$/, "")
+  const issuer = descriptorIssuer(root.issuer)
   const issuerOrigin = descriptorOrigin(issuer, "issuer")
   const native = object(root.native)
   return {
     issuer,
+    pageOrigins: [...new Set([controlPlaneOrigin, issuerOrigin, ...browserPageOrigins(root.browser)])],
     deviceCodeUrl: `${issuer}/device/code`,
     tokenUrl: `${issuer}/oauth2/token`,
     userInfoUrl: `${issuer}/oauth2/userinfo`,
     cli: descriptorClient(native.cli, "native.cli", "device-authorization", controlPlaneOrigin, issuerOrigin),
     desktop: descriptorClient(native.desktop, "native.desktop", "authorization-code-pkce", controlPlaneOrigin, issuerOrigin),
   }
+}
+
+/**
+ * The browser destination the device grant may send a user to. It arrives in
+ * the device-code response, so it is the authentication server's text, and it
+ * ends up both printed and handed to an OS launcher: a `javascript:`/`file:`
+ * scheme, userinfo that makes one host read as another, or another deployment's
+ * origin is a phishing or launch primitive, not a sign-in page. The descriptor
+ * is the authority for where this deployment's pages live, and the CLI's own
+ * control-plane URL anchors that document — so membership in `pageOrigins`
+ * carries the descriptor's transport floor here too.
+ */
+export function deploymentPageUrl(binding: CliAuthBinding, value: string, name: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    throw new Error(`Device-code response: ${name} is not a URL`)
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(`Device-code response: ${name} is a ${parsed.protocol} URL, not a web page`)
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error(`Device-code response: ${name} carries a user or password`)
+  }
+  if (!binding.pageOrigins.includes(parsed.origin)) {
+    throw new Error(`Device-code response: ${name} points at ${parsed.origin}, which this control plane does not serve`)
+  }
+  return parsed.toString()
 }
 
 export async function cliAuthBinding(controlPlaneUrl: string, deps: { fetch?: FetchLike; now: () => number }): Promise<CliAuthBinding> {

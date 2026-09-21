@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { useQueries, useQuery } from "@tanstack/solid-query"
 import type {
   AgentPermission as PermissionRequest,
+  AgentPermissionReply,
   AgentQuestion as QuestionRequest,
   AgentTodo as Todo,
 } from "@claxedo/agent-runtime-contract"
@@ -44,22 +45,22 @@ export const todoState = (input: {
   return "open"
 }
 
-export function createSessionComposerState(options?: { active?: () => boolean }) {
+export function createSessionComposerState(options?: { active?: () => boolean; pendingSessionId?: () => string | undefined; pendingStartError?: () => string | undefined }) {
   const sessionParams = useSessionParams()
   const sdk = useSDK()
   const language = useLanguage()
   const permission = usePermission()
   createEffect(() => onCleanup(permission.observeDirectory(sdk.directory)))
-  const activeSessionId = () => {
-    const id = sessionParams.sessionId()
+  const activeSessionId = createMemo(() => {
+    const id = options?.pendingSessionId?.() ?? sessionParams.sessionId()
     return !id || id === "new" ? "__claxedo_idle_session__" : id
-  }
+  })
   const sessionsQuery = useQuery(() => directorySessionCacheQueryOptions({ directory: sdk.directory }))
   const sessionList = createMemo(() => sessionsQuery.data?.session ?? [])
   const statusQuery = useQuery(() => sessionStatusCacheQueryOptions({ sessionId: activeSessionId() }))
   const todoQuery = useQuery(() => sessionTodoCacheQueryOptions({ sessionId: activeSessionId() }))
   const sessionTreeIds = createMemo(() => {
-    const id = sessionParams.sessionId()
+    const id = options?.pendingSessionId?.() ?? sessionParams.sessionId()
     if (!id) return []
     const children = sessionList().reduce((acc, item) => {
       if (!item.parentID) return acc
@@ -127,8 +128,12 @@ export function createSessionComposerState(options?: { active?: () => boolean })
     return { permissions, questions }
   })
 
+  // The primary session owns this directory read and its Retry action. Child
+  // panes reconcile their own cache entries through their session controller.
+  const requestReadError = createMemo(() => options?.pendingStartError?.() ?? (Object.values(requestQueries[0]?.data?.readErrors ?? {}).filter(Boolean).join("\n") || undefined))
+
   const questionRequest = createMemo((): QuestionRequest | undefined => {
-    return sessionQuestionRequest(sessionList(), requestRecords().questions, sessionParams.sessionId())
+    return sessionQuestionRequest(sessionList(), requestRecords().questions, options?.pendingSessionId?.() ?? sessionParams.sessionId())
   })
 
   const permissionRequest = createMemo((): PermissionRequest | undefined => {
@@ -166,14 +171,14 @@ export function createSessionComposerState(options?: { active?: () => boolean })
     return store.responding === perm.id
   })
 
-  const decide = (response: "once" | "always" | "reject") => {
+  const decide = (response: AgentPermissionReply) => {
     const perm = permissionRequest()
     if (!perm) return
     if (store.responding === perm.id) return
 
     // The dock's own Deny / Allow Always / Allow Once buttons — a human decided,
     // as opposed to the auto-accept path captured in `providers/permission.tsx`.
-    phCapture("permission_decided", {
+    if (typeof response === "string") phCapture("permission_decided", {
       ...identityProps(),
       surface: "session",
       ...permissionDecidedProperties({ response, toolKind: perm.permission, mode: "manual" }),
@@ -182,12 +187,12 @@ export function createSessionComposerState(options?: { active?: () => boolean })
     setStore("responding", perm.id)
     permission
       .respond({ sessionID: perm.sessionID, permissionID: perm.id, response, directory: sdk.directory })
+      // Keep the accepted request locked until canonical query removal reaches
+      // the observer; HTTP completion can precede the next reactive update.
       .catch((err: unknown) => {
         const description = err instanceof Error ? err.message : String(err)
-        showToast({ title: language.t("common.requestFailed"), description })
-      })
-      .finally(() => {
         setStore("responding", (id) => (id === perm.id ? undefined : id))
+        showToast({ title: language.t("common.requestFailed"), description })
       })
   }
 
@@ -202,6 +207,7 @@ export function createSessionComposerState(options?: { active?: () => boolean })
 
   return {
     blocked,
+    requestReadError,
     questionRequest,
     permissionRequest,
     permissionResponding,

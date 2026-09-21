@@ -40,7 +40,7 @@ export function createHarnessRuntimeSessionActions(input: {
     directory: PreparedSessionDirectory
     harness: HarnessType
   }) => {
-    if (!params.input?.sessionConfig) throw new Error("Session creation requires a resolved model and agent")
+    if (!params.input?.sessionConfig) throw new Error("Session creation requires resolved session configuration")
     const res = await createClient({
       serverUrl: input.base,
       ...input.runtime.agentRuntimeClientOptions(params.input),

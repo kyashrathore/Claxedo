@@ -20,7 +20,6 @@ export class RequestBodyTooLargeError extends Error {
 
 type JsonBodyContext = {
   req: {
-    header(name: string): string | undefined
     raw: Request
   }
 }
@@ -70,31 +69,46 @@ function jsonBodyLimit() {
 }
 
 export async function boundedTextBody(c: JsonBodyContext, limit = JSON_BODY_LIMIT_BYTES) {
-  const contentLength = readContentLength(c)
+  return readBoundedText(c.req.raw, limit)
+}
+
+/** Strict JSON input for routes that require a body and reject malformed UTF-8. */
+export async function boundedJson(request: Request, limit: number): Promise<unknown> {
+  const text = await readBoundedText(request, limit, true)
+  if (!request.body) throw new Error("Request body is required")
+  return JSON.parse(text) as unknown
+}
+
+async function readBoundedText(request: Request, limit: number, fatal = false) {
+  const contentLength = readContentLength(request)
   if (contentLength !== undefined && contentLength > limit) {
     throw new RequestBodyTooLargeError(limit)
   }
-  if (!c.req.raw.body) return ""
+  if (!request.body) return ""
 
-  const reader = c.req.raw.body.getReader()
-  const decoder = new TextDecoder()
+  const reader = request.body.getReader()
+  const decoder = new TextDecoder("utf-8", { fatal })
   let total = 0
   let text = ""
-  while (true) {
-    const chunk = await reader.read()
-    if (chunk.done) break
-    total += chunk.value.byteLength
-    if (total > limit) {
-      await reader.cancel().catch(() => undefined)
-      throw new RequestBodyTooLargeError(limit)
+  try {
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      total += chunk.value.byteLength
+      if (total > limit) throw new RequestBodyTooLargeError(limit)
+      text += decoder.decode(chunk.value, { stream: true })
     }
-    text += decoder.decode(chunk.value, { stream: true })
+    return text + decoder.decode()
+  } catch (error) {
+    await reader.cancel().catch(() => undefined)
+    throw error
+  } finally {
+    reader.releaseLock()
   }
-  return text + decoder.decode()
 }
 
-function readContentLength(c: JsonBodyContext): number | undefined {
-  const value = c.req.header("content-length")
+function readContentLength(request: Request): number | undefined {
+  const value = request.headers.get("content-length")
   if (!value) return undefined
   const parsed = Number(value)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined

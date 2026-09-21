@@ -37,6 +37,8 @@ export type MessageTimelineProps = {
   currentMessage?: UserMessage
   onMessageSelect?: (message: UserMessage) => void
   status: () => SessionStatus
+  /** A request read failed; keep execution state but suppress normal progress. */
+  progressBlocked?: Accessor<boolean>
   anchor: (id: string) => string
   setScrollToEnd?: (fn: () => void) => void
   setScrollToMessage?: (fn: ((id: string, behavior: ScrollBehavior) => boolean) | undefined) => void

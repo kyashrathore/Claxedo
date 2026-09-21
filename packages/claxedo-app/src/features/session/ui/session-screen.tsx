@@ -1,3 +1,4 @@
+import { createDraftSessionStart } from "@/features/session/store/draft-session-start"
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
 import { requestErrorMessage } from "../lib/request-error-message"
 import {
@@ -428,7 +429,15 @@ export default function SessionPage(props: {
     }
   }
 
-  const composerState = createSessionComposerState({ active: paneActive })
+  const draftSessionStart = createDraftSessionStart({
+    serverUrl: getClaxedoServerUrl(), draftId: () => sessionParams.surfaceId?.(),
+    sessionId: sessionID, signedControlPlane, hostKind: resolvedHostKind,
+    locationSearch: () => paneLocation().search,
+    replaceSearch: (search) => { if (paneActive()) navigate(`${paneLocation().pathname}${search}${paneLocation().hash}`, { replace: true }) },
+    prepareRecoveredSession: (owner, draftId) => prompt.moveDraft({ dir: dir(), draftId }, { dir: owner.directory, id: owner.sessionId }),
+    onRecoveredCreated: (owner) => groupNavigate(sessionRoute(owner.sessionId), owner.directory),
+  })
+  const composerState = createSessionComposerState({ active: paneActive, pendingSessionId: () => draftSessionStart.binding()?.sessionId, pendingStartError: draftSessionStart.error })
 
   const navigateSession = (id?: string) => {
     const directory = dir()
@@ -443,6 +452,7 @@ export default function SessionPage(props: {
 
   const sessionController = createSessionController({
     directory: dir,
+    pendingSessionStart: draftSessionStart.binding,
     sessionID: () => sessionID(),
     serverHealthy: () => server.healthy(),
     active: paneActive,
@@ -465,7 +475,7 @@ export default function SessionPage(props: {
     sessionViewKey({
       directory: dir(),
       sessionId: sessionID(),
-      draftId: sessionParams.surfaceId?.(),
+      draftId: draftSessionStart.draftId(),
     })
   )
   const infoState = createMemo((prev: ReturnType<typeof stableSessionInfo>) =>
@@ -669,10 +679,14 @@ export default function SessionPage(props: {
     return "main"
   })
   const composerModes = createSessionComposerModes({
-    directory: dir, draftId: () => sessionParams.surfaceId?.(), sessionId: sessionID, sessionRef: activeSessionRef,
+    directory: dir, draftId: draftSessionStart.draftId, sessionId: sessionID, sessionRef: activeSessionRef,
     signedControlPlane, workspaceId: signedWorkspaceId, hostKind: () => store.newSessionHostKind, worktree: newSessionWorktree,
   })
   const newSession = createMemo(() => !sessionID() || sessionID() === "new")
+  const startupInteraction = createMemo(() => newSession() && (
+    composerState.requestReadError() || composerState.questionRequest()
+  ))
+
   const newSessionBranchSource = createNewSessionBranchSource({ enabled: newSession, directory: () => activeProject()?.worktree ?? dir(), worktree: newSessionWorktree,
     touch: () => setStore("newSessionControlsTouched", true), setWorktree: (value) => setStore("newSessionWorktree", value) })
   const newSessionBranch = newSessionBranchSource.selected, newSessionBaseRef = () => newSessionBranch()?.gitRef,
@@ -1327,6 +1341,7 @@ export default function SessionPage(props: {
                             scrollToMessage(message)
                           }}
                           status={sessionController.status}
+                          progressBlocked={() => !!composerState.requestReadError()}
                           anchor={anchor}
                           setScrollToEnd={(fn) => {
                             scrollToEnd = fn
@@ -1346,7 +1361,7 @@ export default function SessionPage(props: {
                     </Show>
                   </Show>
                 </Match>
-                <Match when={newSessionComposerReady()}>
+                <Match when={newSessionComposerReady() && !startupInteraction()}>
                   <NewSessionDesignView
                     worktree={newSessionWorktree()}
                     hostKind={store.newSessionHostKind}
@@ -1365,6 +1380,8 @@ export default function SessionPage(props: {
                     }}
                   >
                     <PromptInput
+                      onSessionStart={draftSessionStart.update}
+                      sessionPromptAdmitted={() => draftSessionStart.pending() ? false : undefined}
                       mode={composerModes.draft()}
                       harnessSubmitController={promptHarnessControllers.submit}
                       harnessSelectionController={promptHarnessControllers.selection}
@@ -1411,7 +1428,7 @@ export default function SessionPage(props: {
             </div>
           </div>
 
-          <Show when={!gate.open && !newSession()}>
+          <Show when={!gate.open && (!newSession() || startupInteraction())}>
             <Suspense
               fallback={
                 <div
@@ -1425,10 +1442,11 @@ export default function SessionPage(props: {
               <SessionComposerRegion
               active={paneActive}
               state={composerState}
-              ready={!store.deferRender && messagesReady()}
+              onRetryRequests={() => sessionController.refreshMeta(sessionID(), { force: true, includeRequests: true })}
+              ready={!!startupInteraction() || (!store.deferRender && messagesReady())}
               centered={centered()}
               presentation={props.presentation()}
-              sessionID={sessionID()}
+              sessionID={draftSessionStart.binding()?.sessionId ?? sessionID()}
               parentID={info()?.parentID}
               readOnly={readOnly}
               onNavigateParent={navigateParent}
@@ -1438,7 +1456,7 @@ export default function SessionPage(props: {
               canAbort={() => supports("abort")}
               onAbort={(sessionID) => sdk.client.session.abort({ sessionID })}
               canPrompt={() => supports("permissions")}
-              sessionPromptAdmitted={() => sessionController.capabilities()?.prompt}
+              sessionPromptAdmitted={() => draftSessionStart.pending() ? false : sessionController.capabilities()?.prompt}
               status={sessionController.status} activeTurn={sessionController.activeTurn}
               statusReady={sessionController.statusReady}
               goalController={sessionController}
@@ -1464,6 +1482,7 @@ export default function SessionPage(props: {
               newSessionWorktree={newSessionWorktree()}
               onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
               onSubmit={onPromptSubmit}
+              onSessionStart={draftSessionStart.update}
               onResponseSubmit={() => {
                 resumeScroll()
               }}

@@ -309,7 +309,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
 
   async runTurn(input: SdkRuntimeTurnInput) {
     const agent = await this.ensureAgent(input.sessionId, input.getAgentSessionId(), input.directory)
-    const model = cursorSdkModel(text(input.input.model.modelID) ?? text(input.model))
+    const model = cursorSdkModel(text(input.input.model?.modelID) ?? text(input.model))
     const delivery = await deliverPromptAttachments({ parts: input.input.parts, directory: input.directory })
     const run = await agent.send(cursorTurnPrompt(delivery, input.input.system), {
       ...(model ? { model } : {}),
@@ -362,7 +362,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
       this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal })
     }
     const agent = await this.ensureAgent(input.sessionId, input.getAgentSessionId(), input.directory)
-    const model = cursorSdkModel(text(input.input.model.modelID) ?? text(input.model))
+    const model = cursorSdkModel(text(input.input.model?.modelID) ?? text(input.model))
     const run = await agent.send(nativeGoalCommand(objective), {
       ...(model ? { model } : {}),
       ...this.mcpServersFor(input.sessionId),

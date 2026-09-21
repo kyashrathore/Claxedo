@@ -88,6 +88,21 @@ $bunDirectory = "bun-windows-x64-baseline"
 $bunPath = Join-Path $toolsRoot $bunDirectory
 Expand-ToolArchive "https://github.com/oven-sh/bun/releases/download/bun-v$bunVersion/$bunDirectory.zip" (Join-Path $downloads "bun-$bunVersion.zip") $bunPath
 Add-ToolPath $bunPath
+# The release archive contains bun.exe only. Use Bun's installer command to
+# create its bunx alias; skip interactive shell profile/completion changes.
+$previousBunCompletions = $env:BUN_NO_INSTALL_COMPLETIONS
+try {
+  $env:BUN_NO_INSTALL_COMPLETIONS = "1"
+  & (Join-Path $bunPath "bun.exe") completions
+  if ($LASTEXITCODE -ne 0) {
+    throw "Bun alias installation exited $LASTEXITCODE"
+  }
+  if (-not (Test-Path (Join-Path $bunPath "bunx.exe"))) {
+    throw "Bun alias installation did not create bunx.exe"
+  }
+} finally {
+  $env:BUN_NO_INSTALL_COMPLETIONS = $previousBunCompletions
+}
 
 $rustupHome = Join-Path $toolsRoot "rustup"
 $cargoHome = Join-Path $toolsRoot "cargo"

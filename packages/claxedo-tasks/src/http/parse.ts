@@ -21,8 +21,9 @@ import { decodeContext, finishDecode, parsedInvalid, type DecodeContext, type Pa
 /**
  * Untrusted JSON in, contract types out. Shape only: a missing key, a wrong
  * type or a value outside a closed union is a named invalid field, never a
- * default and never a coercion. Sizes and semantic rules belong to the model
- * files, which own them for host callers too.
+ * default and never a coercion. Array counts are checked before decoding their
+ * elements. The model owns the same contract bounds and semantic rules for
+ * direct host callers too.
  */
 
 function presetDraft(ctx: DecodeContext, row: Record<string, unknown> | undefined, path: string): PresetDraft {
@@ -35,9 +36,9 @@ function presetDraft(ctx: DecodeContext, row: Record<string, unknown> | undefine
   }
 }
 
-/** Shape only; whether the mime is an image and the data decodes under the cap is the model's rule. */
+/** Bound the count before decoding; MIME and decoded byte limits belong to the model. */
 function attachmentDrafts(ctx: DecodeContext, value: unknown, path: string): readonly TaskAttachmentDraft[] {
-  const entries = ctx.read.array(value, path) ?? []
+  const entries = ctx.read.array(value, path, TASKS_BOUNDS.taskAttachmentsMax) ?? []
   return entries.map((entry, index) => {
     const row = ctx.read.record(entry, `${path}[${index}]`)
     return {
@@ -81,7 +82,9 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
           parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}parentTaskId`) ?? null,
           ...(isTaskCreateStatus(created) ? { status: created } : {}),
           ...(from === undefined ? {} : { createdFrom: decodeSessionReference(ctx, from, `${path}createdFrom`) }),
-          ...(attachments === undefined ? {} : { attachments: attachmentDrafts(ctx, attachments, `${path}attachments`) }),
+          ...(attachments === undefined
+            ? {}
+            : { attachments: attachmentDrafts(ctx, attachments, `${path}attachments`) }),
         },
       }
     }
@@ -168,7 +171,10 @@ export function parseStartRequest(body: unknown): Parsed<StartRequest> {
     slot: decodeSlot(ctx, row?.slot, "slot"),
     attempt: ctx.read.integer(row?.attempt, "attempt") ?? 0,
     previewDigest: ctx.read.nonEmptyString(row?.previewDigest, "previewDigest") ?? "",
-    handoffText: handoff === null ? null : (ctx.read.boundedText(handoff, "handoffText", TASKS_BOUNDS.handoffTextMaxBytes) ?? null),
+    handoffText:
+      handoff === null
+        ? null
+        : (ctx.read.boundedText(handoff, "handoffText", TASKS_BOUNDS.handoffTextMaxBytes) ?? null),
     continueFromPrevious: ctx.read.boolean(row?.continueFromPrevious, "continueFromPrevious") ?? false,
     ...startedFrom(ctx, row?.startedFrom),
   }))
@@ -241,4 +247,3 @@ export function parseChildListQuery(params: URLSearchParams): Parsed<ChildListQu
     includeArchived: queryBoolean(ctx, params, "includeArchived"),
   }))
 }
-

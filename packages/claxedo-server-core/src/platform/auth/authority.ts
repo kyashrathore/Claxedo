@@ -91,6 +91,14 @@ export type WorkspaceRecord = {
   [field: string]: unknown
 }
 
+/**
+ * What serving this workspace from a machine would do to the authority's
+ * records: describe a row it already holds, or file one. The caller uses it to
+ * report the share, never to decide it — an admission that returns has already
+ * decided.
+ */
+export type WorkspaceHostAssignmentAdmission = { registration: "existing" | "cold" }
+
 export type WorkspaceOpenResult = {
   allowed?: boolean
   role?: string
@@ -143,7 +151,7 @@ export type ChannelMachineIdentity = { channel: string; externalUserId: string; 
 
 export type WorkspaceAuthority = {
   /** Internal host delegation; the authority rechecks the actor and current workspace role. */
-  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
+  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string, minimumRole?: ProjectRole) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   recordActorRuntimeAccessToken: (args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => Promise<unknown>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   /**
@@ -195,7 +203,22 @@ export type WorkspaceAuthority = {
 
   // workspaces
   authorizeWorkspaceOpen: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<void>
-  authorizeWorkspaceCreate?: (auth: SignedControlPlaneAuth, args: { orgId?: string }) => Promise<void>
+  /**
+   * Admission for creating a workspace, asked before the billable work a
+   * creation causes. `orgId` and `projectId` are the caller's selectors when
+   * they named any; with neither, the adapter resolves the tenant its own
+   * creation path would resolve and admits against that. An omitted selector
+   * is a tenant the adapter derives, never an admission it skips, so a caller
+   * cannot drop `orgId` to reach an unchecked create.
+   *
+   * Optional because an adapter that cannot answer it must not appear to: a
+   * caller of a creation route refuses a signed create where this is absent
+   * rather than provisioning unadmitted.
+   */
+  authorizeWorkspaceCreate?: (
+    auth: SignedControlPlaneAuth,
+    args: { orgId?: string; projectId?: string },
+  ) => Promise<void>
   openWorkspace: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<WorkspaceOpenResult>
   listWorkspaces: (auth: SignedControlPlaneAuth) => Promise<unknown>
   registerLocalForSharing: (
@@ -246,6 +269,25 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args?: Record<string, never>,
   ) => Promise<HostEnrollmentState>
+  /**
+   * May this caller have a machine serve this workspace, and would doing so
+   * file a new row? The workspace half of `assignWorkspaceHost`, answered on
+   * its own so a caller that must act before assigning — enrolling a machine,
+   * claiming a serving generation — can be refused before it does.
+   *
+   * `assignWorkspaceHost` applies the same admission, so this is one policy
+   * asked twice, not a second one. What it deliberately does NOT answer is
+   * the machine half: enrollment liveness, serving scope and invitation
+   * tenancy stay with the assignment, because a machine that is not enrolled
+   * yet must still be able to share its first workspace.
+   *
+   * Optional on the port, never optional at a call site: a caller refuses the
+   * share where this is unanswered rather than assuming the workspace is new.
+   */
+  authorizeWorkspaceHostAssignment?: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string; orgId?: string; projectId?: string },
+  ) => Promise<WorkspaceHostAssignmentAdmission>
   /**
    * Assign one workspace to one enrolled host — the OWNER's declaration that
    * host H serves workspace X. Pure data: no challenge, no signature, no TTL

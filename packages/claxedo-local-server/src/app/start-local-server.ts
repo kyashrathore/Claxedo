@@ -102,6 +102,29 @@ export type LocalServer = {
   stop: () => Promise<void>
 }
 
+/**
+ * The one browser origin that is not this daemon's own and may still read its
+ * answers: a renderer served by a development server.
+ *
+ * `ELECTRON_RENDERER_URL` is the launcher's explicit declaration of where the
+ * renderer document lives — Electron main trusts the same variable to decide
+ * which document may navigate and hold the IPC bridge, so the two surfaces
+ * agree on one dev authority instead of each inventing a rule. A packaged
+ * desktop sets nothing here and the daemon answers its own origin only; a value
+ * that is not a URL is a launcher misconfiguration and grants nothing rather
+ * than widening silently.
+ */
+function developmentRendererOrigins(env: NodeJS.ProcessEnv): readonly string[] {
+  const declared = env.ELECTRON_RENDERER_URL?.trim()
+  if (!declared) return []
+  try {
+    return [new URL(declared).origin]
+  } catch {
+    log.warn("ignoring a malformed ELECTRON_RENDERER_URL; the daemon answers its own origin only")
+    return []
+  }
+}
+
 export function startLocalServer(options: StartLocalServerOptions): LocalServer {
   return withDataDirOwnership(dataDir(), (owner) => {
     const release = () => {
@@ -343,6 +366,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     usage,
     workspaceRelayProxy,
     refreshSessionProjection,
+    ...(options.browserOrigins ? {} : { browserOrigins: developmentRendererOrigins(options.env ?? process.env) }),
     firstPartyMcp: {
       verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
       createClient: (input) => createClaxedoMcpClient(input),

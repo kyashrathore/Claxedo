@@ -41,6 +41,8 @@ type RuntimeSessionAuthorityPort = Pick<
   | "markSessionRegistrationAmbiguous"
   | "beginSessionCompensation"
   | "completeSessionCompensation"
+  | "authorizeRuntimeSessionStartStatus"
+  | "authorizeRuntimeSessionStart"
   | "authorizeRuntimeSession"
 > & {
   runtimeAccessTokenActive: (input: {
@@ -156,6 +158,11 @@ export async function authorizeRuntimeSessionStream(
 /** Verifies a lease this control plane minted and returns its bound claims. */
 export function sessionStreamLeaseVerifier(env: Record<string, string | undefined> = process.env) {
   return streamLeaseVerifier(env)
+}
+
+/** Issues the same signed stream proof for in-process and isolated runtimes. */
+export function sessionStreamLeaseMinter(env: Record<string, string | undefined> = process.env) {
+  return streamLeaseMinter(env)
 }
 
 function sessionLeasePrincipal(claims: SessionStreamLeaseClaims): PrivateSessionRuntimePrincipal {
@@ -326,10 +333,6 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       )
     }
     if (action !== "host_read") return context.json({ allowed: true })
-    // A plane without a lease signing key mints no lease here and none for a
-    // session's stream either (`decideStream` answers 503), so its runtimes
-    // serve no managed stream past a session's first frame; the workspace
-    // read itself is still granted.
     const minter = options.mintStreamLease ?? streamLeaseMinter(env)
     const minted = await minter({
       ...sessionLeasePrincipal({ ...proof, transport: "relay-host", sessionId: WORKSPACE_STREAM_LEASE_SESSION, action: "read" }),
@@ -341,6 +344,10 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       sessionId: WORKSPACE_STREAM_LEASE_SESSION,
       action: "read",
     }).catch(() => undefined)
+    if (!minted) return context.json({ error: {
+      code: "session_stream_authority_unavailable",
+      message: "Workspace stream lease could not be issued",
+    } }, 503)
     return context.json({ allowed: true, ...minted })
   }
 
@@ -607,6 +614,18 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         })
         return context.json({ allowed: true, adopted: adopted.adopted })
       }
+      if (action === "start_status") {
+        await options.authority.authorizeRuntimeSessionStartStatus({
+          ...principal, workspaceId: claims.workspaceId, sessionId, registrationOperationId: operationId,
+        })
+        return context.json({ allowed: true })
+      }
+      if (action === "start") {
+        await options.authority.authorizeRuntimeSessionStart({
+          ...principal, workspaceId: claims.workspaceId, sessionId, registrationOperationId: operationId,
+        })
+        return context.json({ allowed: true })
+      }
       if (action === "register") {
         await options.authority.registerRuntimeSession({
           ...principal,
@@ -730,6 +749,8 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
     case "reserve":
       if (!parentSessionId) return undefined
       return { ...fields, action, parentSessionId }
+    case "start_status":
+    case "start":
     case "register":
       if (!operationId) return undefined
       return { ...fields, action, operationId }
@@ -756,6 +777,8 @@ type AuthorityAction =
   | "read"
   | "write"
   | "reserve"
+  | "start_status"
+  | "start"
   | "register"
   | "adopt"
   | "registration_ambiguous"
@@ -775,6 +798,8 @@ function isAuthorityAction(value: unknown): value is AuthorityAction {
   return value === "read"
     || value === "write"
     || value === "reserve"
+    || value === "start_status"
+    || value === "start"
     || value === "register"
     || value === "adopt"
     || value === "registration_ambiguous"
@@ -1054,5 +1079,4 @@ function finiteTimestamp(value: unknown) {
 function keyPem(value: string | undefined) {
   return trimToUndefined(value)?.replaceAll("\\n", "\n")
 }
-
 

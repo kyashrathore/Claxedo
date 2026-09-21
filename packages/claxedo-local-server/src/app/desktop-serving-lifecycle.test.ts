@@ -8,6 +8,7 @@ import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { stopHostServing } from "@claxedo/host-serving/serving"
 import { startLocalServer, type LocalServer } from "./start-local-server"
+import { testDaemon } from "./test-support/daemon"
 import {
   onEmbeddedWorkspaceRuntime,
   type EmbeddedWorkspaceRuntimePhase,
@@ -38,6 +39,9 @@ vi.mock("@claxedo/workspace-runtime/relay", async (importOriginal) => ({
 let dataDir: string
 let previousDataDir: string | undefined
 let server: LocalServer | undefined
+// Every request below is the desktop application's; a caller without this
+// capability is the hostile-localhost case `local-app.behaviour.test.ts` covers.
+let call: ReturnType<typeof testDaemon>["call"]
 let origin: string
 
 async function freePort() {
@@ -77,7 +81,9 @@ beforeEach(async () => {
   process.env.CLAXEDO_DATA_DIR = dataDir
   const port = await freePort()
   origin = `http://127.0.0.1:${port}`
-  server = startLocalServer({ port })
+  const identity = testDaemon()
+  call = identity.call
+  server = startLocalServer({ port, daemon: identity.daemon })
   await server.ready
 })
 
@@ -96,12 +102,12 @@ async function mountedWorkspace() {
   const directory = path.join(dataDir, "project")
   mkdirSync(directory)
   execFileSync("git", ["init", directory])
-  const resolved = await fetch(
+  const resolved = await call(
     `${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
   )
   const { workspaceId } = await resolved.json() as { workspaceId: string }
   // Any runtime-owned read mounts the workspace's runtime in process.
-  const health = await fetch(`${origin}/workspaces/${workspaceId}/api/wr/health`)
+  const health = await call(`${origin}/workspaces/${workspaceId}/api/wr/health`)
   expect(health.status).toBe(200)
   return workspaceId
 }
@@ -117,12 +123,12 @@ describe("turning remote access on and off", () => {
       expect(phases).toEqual(["mounted"])
       phases.length = 0
 
-      const enable = await fetch(`${origin}/api/claxedo/host-serving`, {
+      const enable = await call(`${origin}/api/claxedo/host-serving`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(servingCredential(workspaceId)),
       })
-      const disable = await fetch(`${origin}/api/claxedo/host-serving`, {
+      const disable = await call(`${origin}/api/claxedo/host-serving`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ credential: null }),
@@ -133,7 +139,7 @@ describe("turning remote access on and off", () => {
       expect(disable.status).toBe(200)
       expect(await disable.json()).toMatchObject({ serving: false })
       expect(phases).toEqual([])
-      const health = await fetch(`${origin}/workspaces/${workspaceId}/api/wr/health`)
+      const health = await call(`${origin}/workspaces/${workspaceId}/api/wr/health`)
       expect(health.status).toBe(200)
     } finally {
       stop()
@@ -150,18 +156,18 @@ describe("turning remote access on and off", () => {
   test("the bootstrap declares the serving machine's enrollment, and nothing before or after it serves", async () => {
     const workspaceId = await mountedWorkspace()
     const enrollment = async () =>
-      ((await (await fetch(`${origin}/api/claxedo/bootstrap`)).json()) as { host?: { enrollment?: string | null } }).host?.enrollment
+      ((await (await call(`${origin}/api/claxedo/bootstrap`)).json()) as { host?: { enrollment?: string | null } }).host?.enrollment
 
     expect(await enrollment()).toBeNull()
 
-    await fetch(`${origin}/api/claxedo/host-serving`, {
+    await call(`${origin}/api/claxedo/host-serving`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(servingCredential(workspaceId)),
     })
     expect(await enrollment()).toBe("enr_this_machine")
 
-    await fetch(`${origin}/api/claxedo/host-serving`, {
+    await call(`${origin}/api/claxedo/host-serving`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ credential: null }),
@@ -172,8 +178,8 @@ describe("turning remote access on and off", () => {
   test("declares managed-private to the control plane while the catalog keeps telling this window it reserves nothing", async () => {
     const workspaceId = await mountedWorkspace()
 
-    const declaration = await fetch(`${origin}/api/claxedo/host-serving`)
-    const bootstrap = await fetch(`${origin}/api/claxedo/bootstrap`)
+    const declaration = await call(`${origin}/api/claxedo/host-serving`)
+    const bootstrap = await call(`${origin}/api/claxedo/bootstrap`)
     const catalog = await bootstrap.json() as {
       project: Array<{ workspaces?: Record<string, { id?: string; session_authority?: string }> }>
     }

@@ -12,6 +12,7 @@
  */
 
 import { readRecord, readString } from "../../shared/json-read"
+import type { DaemonFetch } from "../daemon-request"
 
 export type LocalWorkspaceDescription = {
   displayName: string
@@ -22,13 +23,11 @@ export type LocalWorkspaceDescription = {
 }
 
 export async function describeLocalWorkspace(
-  daemonUrl: string,
+  daemon: DaemonFetch,
   workspaceId: string,
-  fetchImpl: typeof fetch = fetch,
 ): Promise<LocalWorkspaceDescription | undefined> {
-  const url = new URL("/api/claxedo/workspace/resolve", daemonUrl)
-  url.searchParams.set("workspaceId", workspaceId)
-  const response = await fetchImpl(url)
+  const path = `/api/claxedo/workspace/resolve?workspaceId=${encodeURIComponent(workspaceId)}`
+  const response = await daemon(path)
   // A workspace this machine does not hold is not an error to share against —
   // the caller decides what an undescribed workspace means.
   if (response.status === 404) return undefined

@@ -62,6 +62,23 @@ describe("local workspace resolve route", () => {
     })
   })
 
+  test("an explicit missing id cannot select or create through a supplied directory", async () => {
+    const directory = await fs.realpath(await fs.mkdtemp(path.join(root, "id-boundary-")))
+    execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
+    await ensureWorkspace({ workspaceId: "ws_boundary_actual", directory })
+    for (const workspaceId of ["ws_boundary_missing", "", "   "]) {
+      for (const create of [false, true]) {
+        const query = new URLSearchParams({ workspaceId, directory, create: String(create) })
+        const response = await LocalWorkspaceRoutes().request(`http://localhost/resolve?${query}`)
+        expect(response.status).toBe(404)
+        expect(await response.json()).toMatchObject({ error: { code: "workspace_not_found" } })
+      }
+    }
+    const response = await LocalWorkspaceRoutes().request("http://localhost/resolve?workspaceId=ws_boundary_actual")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ workspaceId: "ws_boundary_actual", directory })
+  })
+
   test("reports a provisioner-placed workspace without importing hosted authority", async () => {
     await ensureWorkspace({
       workspaceId: "ws_provisioned",

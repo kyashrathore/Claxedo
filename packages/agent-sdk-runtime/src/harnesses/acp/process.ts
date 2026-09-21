@@ -1,17 +1,23 @@
-import { asRecord } from "@claxedo/agent-runtime-contract"
+import { asRecord, type AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import { randomUUID } from "crypto"
+import type { ACPConnectionObservationUpdate } from "./connection-state"
 import {
   client,
   methods,
   PROTOCOL_VERSION,
+  RequestError,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
   type ClientConnection,
   type ClientCapabilities,
   type ClientContext,
   type InitializeResponse,
   type McpServer,
+  type NewSessionRequest,
   type PermissionOption,
   type ToolKind,
   type RequestPermissionResponse,
+  type RequestPermissionRequest,
   type SessionConfigOption,
   type SessionNotification,
   type StopReason,
@@ -37,8 +43,12 @@ import {
 } from "./session"
 import type { AgentPermissionModeState, ResolvedHarnessModel } from "../../adapter-contract"
 import type { GoalCapabilities } from "../../capabilities"
-import { isRuntimeGoalStatus, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import { IDLE_TIMEOUT_MS, promptTimeoutMs, watch } from "./helpers"
+import { type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { IDLE_TIMEOUT_MS, newSessionTimeoutMs, initializeTimeoutMs, promptTimeoutMs, watch } from "./helpers"
+import { AcpSessionUncertainError } from "./recovery"
+import { normalizeACPGoal } from "./goal-response"
+import { createStartupRequestLease } from "./startup-request"
+import { ACP_SUBAGENT_CLIENT_CAPABILITIES, acpRootSessionId, receiveACPSubagentNotification, supportsACPSubagents, type ACPSubagentNotification } from "./subagents"
 import { createIdleReaper, type IdleReaper } from "../shared/process-lifecycle"
 import type { ACPTransport, ACPTransportEnv, ACPTransportFactory } from "./transport"
 import type { AgentProcessObserverHandle } from "../../process-observer"
@@ -47,12 +57,14 @@ const log = Log.create({ service: "acp-adapter" })
 
 export type SessionUpdate = SessionNotification["update"]
 
-export function acpClientCapabilities(): ClientCapabilities {
+export function acpClientCapabilities(): ClientCapabilities & { subagents: Record<string, never> } {
   return {
+    ...ACP_SUBAGENT_CLIENT_CAPABILITIES,
     auth: { terminal: false },
     fs: { readTextFile: true, writeTextFile: true },
     plan: {},
     terminal: true,
+    elicitation: { form: {}, url: {} },
   }
 }
 /**
@@ -66,6 +78,8 @@ export type PermissionPushPayload = {
   tool?: string
   kind?: ToolKind
   paths: string[]
+  toolCall?: RequestPermissionRequest["toolCall"]
+  requestMeta?: RequestPermissionRequest["_meta"]
 }
 
 export type PermissionPusher = (payload: PermissionPushPayload) => void
@@ -76,6 +90,8 @@ export interface PendingPermission {
   /** Protocol classification; absent when the agent does not send one. */
   kind?: ToolKind
   paths: string[]
+  toolCall?: RequestPermissionRequest["toolCall"]
+  requestMeta?: RequestPermissionRequest["_meta"]
   options: PermissionOption[]
   resolve: (response: RequestPermissionResponse) => void
 }
@@ -83,12 +99,21 @@ export interface PendingPermission {
 // ── Shared ACP process ───────────────────────────────────────────────────────
 
 export class ACPProcess {
+  elicitationHandler?: (params: CreateElicitationRequest, owner: string | AgentSessionStartBinding, signal: AbortSignal) => Promise<CreateElicitationResponse>
+  elicitationComplete?: (elicitationId: string) => void
+  elicitationCancel?: (agentSessionId: string) => void
+  private readonly outboundSessionRequests = new Map<string | number, string | { start: AgentSessionStartBinding; quiet: IdleReaper; controller: AbortController }>()
+  private readonly startingRequests = new WeakMap<object, { start: AgentSessionStartBinding; quiet: IdleReaper; controller: AbortController }>()
   private transport!: ACPTransport
   readonly connection: ClientConnection
   readonly agent: ClientContext
   private readonly idle: IdleReaper
   private caps: InitializeResponse["agentCapabilities"] | null = null
   private goal: ACPGoalExtension | null = null
+  private nativeSubagents = false
+  private readonly childParents = new Map<string, string>()
+  private readonly subagentDisconnects = new Map<string, () => Promise<void>>()
+  private readonly subagentListeners = new Map<string, (notification: ACPSubagentNotification) => Promise<void>>()
   readonly pendingPermissions = new Map<string, PendingPermission>()
   // agentSessionId → the running prompt's quiet countdown
   private readonly promptQuiet = new Map<string, IdleReaper>()
@@ -99,18 +124,27 @@ export class ACPProcess {
   readonly goalListeners = new Map<string, (goal: RuntimeGoalSnapshot | null) => void>()
   readonly goalUpdateListeners = new Map<string, (update: SessionUpdate) => void>()
   private states = new Map<string, ACPState>()
+  private readonly loadedSessions = new Set<string>()
+  private restorations = new Map<string, Promise<void>>()
+  private readonly commandUpdates = new Map<string, SessionUpdate>()
+  private readonly commandListeners = new Map<string, (update: SessionUpdate) => void>()
   // agentSessionId → permission pusher
   readonly permissionPushers = new Map<string, PermissionPusher>()
   /** Cached config options from newSession() response or config_option_update notifications */
   cachedConfigOptions: SessionConfigOption[] | null = null
   /** The model this agent last reported as current, cached alongside the options. */
   cachedResolvedModel: ResolvedHarnessModel | null = null
-  // Serial queue: ACP processes one prompt at a time per process
-  private promptQueue: Promise<void> = Promise.resolve()
-  private promptQueueDepth = 0
+  // A prompt owns one agent session; unrelated sessions may run concurrently.
+  private readonly activePrompts = new Set<string>()
+  private readonly promptSettlements = new Map<string, Promise<void>>()
+  private readonly uncertainSessions = new Map<string, Promise<unknown>>()
+  private uncertaintyListeners = new Map<string, (error: AcpSessionUncertainError) => void>()
+  private uncertaintyReported = new Set<string>()
   private lastStderr = ""
   private exitReason: Error | null = null
   private exitWaiters: Array<(err: Error) => void> = []
+  private constructed = false
+  private pendingDeath = false
   private deadNotified = false
   private disposed = false
   private observation: AgentProcessObserverHandle | undefined
@@ -131,6 +165,7 @@ export class ACPProcess {
       pid?: number
       kind: ACPTransport["kind"]
     }) => AgentProcessObserverHandle,
+    private readonly connectionObservation?: (update: ACPConnectionObservationUpdate) => void,
   ) {
     this.idle = createIdleReaper({
       idleMs: IDLE_TIMEOUT_MS,
@@ -169,10 +204,33 @@ export class ACPProcess {
     })
     if (this.observationExit) this.observation?.exit(this.observationExit)
     log.info("ACP transport created", this.transport.metadata)
+    const writer = this.transport.stream.writable.getWriter()
 
     this.connection = client({ name: "claxedo-workspace-runtime" })
+      .onRequest(methods.client.elicitation.create, async ({ params, signal, requestId }) => {
+        const scope = asRecord(params)
+        const session = typeof scope?.sessionId === "string" ? scope.sessionId
+          : typeof scope?.requestId === "string" || typeof scope?.requestId === "number" ? this.outboundSessionRequests.get(scope.requestId) : undefined
+        if (!session) throw RequestError.invalidParams(undefined, "Elicitation has no active session owner")
+        if (!this.elicitationHandler) throw RequestError.invalidParams(undefined, "Elicitation has no active session owner")
+        const idle = this.leaseIdle()
+        const waiting = typeof session === "string" ? this.promptQuiet.get(this.rootAgentSessionId(session))?.lease() : session.quiet.lease()
+        try { return await this.elicitationHandler(params, typeof session === "string" ? session : session.start, typeof session === "string" ? signal : AbortSignal.any([signal, session.controller.signal])) }
+        catch (error) { throw RequestError.invalidParams(undefined, error instanceof Error ? error.message : String(error)) }
+        finally { waiting?.release(); idle.release() }
+      })
+      .onNotification(methods.client.elicitation.complete, ({ params }) => { this.elicitationComplete?.(params.elicitationId) })
       .onNotification(methods.client.session.update, async ({ params }) => {
         const kind = params.update?.sessionUpdate ?? "(unknown)"
+        if (kind === "available_commands_update") {
+          this.commandUpdates.set(params.sessionId, params.update)
+          const commands = this.commandListeners.get(params.sessionId)
+          if (commands) {
+            this.promptQuiet.get(params.sessionId)?.touch()
+            commands(params.update)
+            return
+          }
+        }
         log.info("ACP sessionUpdate received", {
           sessionId: params.sessionId,
           kind,
@@ -208,7 +266,7 @@ export class ACPProcess {
         }
         const updateMeta = asRecord(asRecord(params.update)?._meta)
         if (updateMeta && "goal" in updateMeta) {
-          this.goalListeners.get(params.sessionId)?.(this.normalizeGoal(updateMeta.goal, params.sessionId))
+          this.goalListeners.get(params.sessionId)?.(normalizeACPGoal(updateMeta.goal, params.sessionId, this.goal))
         }
         const listener = this.sessionListeners.get(params.sessionId)
         const observer = this.sessionObservers.get(params.sessionId)
@@ -239,7 +297,7 @@ export class ACPProcess {
         // ACP types this as `ToolKind | null | undefined`; collapse the null so
         // downstream only has to handle "absent".
         const kind = toolCall.kind ?? undefined
-        const paths: string[] = []
+        const paths = (toolCall.locations ?? []).map((location) => location.path)
         const hasListener = this.sessionListeners.has(params.sessionId)
 
         log.info("ACP requestPermission received", {
@@ -253,13 +311,15 @@ export class ACPProcess {
 
         // A permission waits on the human, not the agent, so the prompt's quiet
         // countdown holds until the answer arrives.
-        const waiting = this.promptQuiet.get(params.sessionId)?.lease()
+        const waiting = this.promptQuiet.get(this.rootAgentSessionId(params.sessionId))?.lease()
         return new Promise<RequestPermissionResponse>((resolve) => {
           this.pendingPermissions.set(permId, {
             aid: params.sessionId,
             tool,
             kind,
             paths,
+            toolCall,
+            requestMeta: params._meta,
             options: params.options,
             resolve: (response) => {
               waiting?.release()
@@ -268,13 +328,13 @@ export class ACPProcess {
           })
 
           // Push permission-request directly via the registered pusher (no synthetic injection)
-          const pusher = this.permissionPushers.get(params.sessionId)
+          const pusher = this.permissionPushers.get(params.sessionId) ?? this.permissionPushers.get(this.rootAgentSessionId(params.sessionId))
           if (pusher) {
             log.info("ACP requestPermission: pushing permission-request to stream", {
               permId,
               tool,
             })
-            pusher({ permId, tool, kind, paths: (params.toolCall.locations ?? []).map((l) => l.path) })
+            pusher({ permId, tool, kind, paths, toolCall, requestMeta: params._meta })
           } else {
             log.info(
               "ACP requestPermission: no active pusher — permission stored but not forwarded to frontend yet",
@@ -283,13 +343,38 @@ export class ACPProcess {
           }
         })
       })
-      .connect(this.transport.stream)
+      .connect({
+        writable: new WritableStream({
+          write: (message) => {
+            if ("method" in message && "id" in message) {
+              const params = asRecord(message.params)
+              if (message.id !== null && typeof params?.sessionId === "string") this.outboundSessionRequests.set(message.id, params.sessionId)
+              const start = params && this.startingRequests.get(params)
+              if (message.id !== null && start) this.outboundSessionRequests.set(message.id, start)
+            }
+            return writer.write(message)
+          },
+          close: () => writer.close(),
+          abort: (reason) => writer.abort(reason),
+        }),
+        // The released SDK rejects draft subagent updates before application
+        // handlers. This narrow negotiated boundary consumes those exact frames.
+        readable: this.transport.stream.readable.pipeThrough(new TransformStream({
+          transform: async (message, controller) => {
+            if ("error" in message && message.error?.code === -32000) this.connectionObservation?.({ state: "auth-required", reason: "authentication_required" })
+            if (!("method" in message) && "id" in message && message.id !== null) this.outboundSessionRequests.delete(message.id)
+            if (!await this.receiveSubagentNotification(message)) controller.enqueue(message)
+          },
+        })),
+      })
 
     this.agent = this.connection.agent
     void this.connection.closed.then(() => {
       this.failExitWaiters(new Error(this.connectionClosedMessage()))
       this.notifyDead()
     })
+    this.constructed = true
+    if (this.pendingDeath) queueMicrotask(() => this.notifyDead())
     this.resetIdleTimer()
   }
 
@@ -323,7 +408,15 @@ export class ACPProcess {
 
   private notifyDead() {
     if (this.deadNotified) return
+    if (!this.constructed) { this.pendingDeath = true; return }
     this.deadNotified = true
+    this.connectionObservation?.({ state: "disconnected", reason: "transport_closed" })
+    // A closed protocol stream may leave the wrapper and its writers alive.
+    // Register retirement before allowing the manager to replace this owner.
+    this.transport.dispose()
+    for (const disconnect of this.subagentDisconnects.values()) void disconnect().catch((error) => log.error("ACP child disconnect settlement failed", { error }))
+    this.subagentDisconnects.clear()
+    this.subagentListeners.clear()
     if (!this.disposed) this.onDead()
   }
 
@@ -334,24 +427,48 @@ export class ACPProcess {
     })
   }
 
-  async initialize(): Promise<void> {
+  async initialize(owner?: AgentSessionStartBinding, signal?: AbortSignal): Promise<void> {
     this.resetIdleTimer()
     const t0 = Date.now()
     log.info("ACP initialize: starting handshake", { directory: this.directory })
-    const result = await Promise.race([
-      this.agent.request(methods.agent.initialize, {
-        protocolVersion: PROTOCOL_VERSION,
-        clientInfo: { name: "claxedo-workspace-runtime", version: "0.1.0" },
-        // Filesystem and terminal capabilities let the ACP binary request permission
-        // instead of failing sensitive tool calls before the host can decide.
-        clientCapabilities: acpClientCapabilities(),
-      }),
-      this.waitForExit(),
-    ])
+    const params = { protocolVersion: PROTOCOL_VERSION, clientInfo: { name: "claxedo-workspace-runtime", version: "0.1.0" }, clientCapabilities: acpClientCapabilities() }
+    const lease = createStartupRequestLease(owner ? initializeTimeoutMs() : undefined, this.leaseIdle(), "initialize", signal)
+    if (owner) this.startingRequests.set(params, { start: owner, quiet: lease.quiet!, controller: lease.controller })
+    let result: InitializeResponse
+    try {
+      result = await lease.wait(Promise.race([
+        this.agent.request(methods.agent.initialize, params, { cancellationSignal: lease.controller.signal }) as Promise<InitializeResponse>, this.waitForExit(),
+      ]))
+    } finally { lease.release(); this.startingRequests.delete(params) }
     this.caps = result.agentCapabilities ?? null
     this.goal = goalExtension(result._meta)
+    this.nativeSubagents = supportsACPSubagents(result)
     this.observation?.update({ lifecycle: "ready" })
+    this.connectionObservation?.({ state: "ready" })
     log.info("ACP initialize: handshake complete", { directory: this.directory, ms: Date.now() - t0 })
+  }
+
+  supportsSubagents() { return this.nativeSubagents }
+
+  rootAgentSessionId(agentSessionId: string): string {
+    return acpRootSessionId(this.childParents, agentSessionId)
+  }
+
+  listenSubagents(agentSessionId: string, listener: (notification: ACPSubagentNotification) => Promise<void>, disconnect?: () => Promise<void>) {
+    if (disconnect) this.subagentDisconnects.set(agentSessionId, disconnect)
+    this.subagentListeners.set(agentSessionId, listener)
+    return () => {
+      if (this.subagentListeners.get(agentSessionId) === listener) {
+        this.subagentListeners.delete(agentSessionId)
+        this.subagentDisconnects.delete(agentSessionId)
+      }
+    }
+  }
+
+  private receiveSubagentNotification(message: unknown): Promise<boolean> {
+    return receiveACPSubagentNotification(message, { enabled: this.nativeSubagents, parents: this.childParents,
+      rootSessionId: (id) => this.rootAgentSessionId(id), touch: (id) => this.promptQuiet.get(id)?.touch(),
+      listeners: this.subagentListeners, diagnose: (message, detail) => log.info(message, detail) })
   }
 
   failureDetail() {
@@ -360,37 +477,6 @@ export class ACPProcess {
 
   goalCapabilities(): GoalCapabilities {
     return goalExtensionCapabilities(this.goal)
-  }
-
-  private normalizeGoal(input: unknown, sessionId: string): RuntimeGoalSnapshot | null {
-    if (input === null) return null
-    const outer = asRecord(input)
-    const value = outer && "goal" in outer ? outer.goal : input
-    if (value === null) return null
-    const row = asRecord(value)
-    if (!row) throw new Error("ACP Goal response is malformed")
-    if (
-      typeof row.objective !== "string"
-      || !isRuntimeGoalStatus(row.status)
-      || typeof row.createdAt !== "number"
-      || typeof row.updatedAt !== "number"
-    ) throw new Error("ACP Goal response is missing required fields")
-    const result: RuntimeGoalSnapshot = {
-      sessionId,
-      objective: row.objective,
-      status: row.status,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    }
-    for (const field of this.goal?.optionalFields ?? []) {
-      const item = row[field]
-      if (field === "lastReason") {
-        if (typeof item === "string") result.lastReason = item
-      } else if (typeof item === "number" && Number.isFinite(item)) {
-        result[field] = item
-      }
-    }
-    return result
   }
 
   private async goalRequest(
@@ -404,7 +490,7 @@ export class ACPProcess {
       sessionId: agentSessionId,
       ...input,
     })
-    return this.normalizeGoal(response, localSessionId)
+    return normalizeACPGoal(response, localSessionId, this.goal)
   }
 
   readGoal(agentSessionId: string, localSessionId: string) {
@@ -442,6 +528,22 @@ export class ACPProcess {
     return this.states.get(sessionId) ?? init(this.caps)
   }
 
+  hasSession(sessionId: string) {
+    return this.loadedSessions.has(sessionId)
+  }
+
+  assertSessionReady(sessionId: string) {
+    if (this.uncertainSessions.has(sessionId)) throw new AcpSessionUncertainError(sessionId)
+  }
+
+  quarantineSession(sessionId: string, pending: Promise<unknown>) {
+    this.uncertainSessions.set(sessionId, pending)
+    const clear = () => {
+      if (this.uncertainSessions.get(sessionId) === pending) this.uncertainSessions.delete(sessionId)
+    }
+    void pending.then(clear, clear)
+  }
+
   private remember(sessionId: string, meta: Parameters<typeof merge>[1]) {
     const next = merge(this.state(sessionId), meta)
     this.states.set(sessionId, next)
@@ -453,14 +555,18 @@ export class ACPProcess {
    * Promote one session's discovery answers to the process-wide cache the
    * config-option probe reads.
    *
-   * Empty answers are skipped in both fields: an agent that has a channel but
-   * has not populated it yet reports nothing, and letting that erase what an
-   * earlier session already learned would trade a real answer for silence.
+   * Only dedicated probe processes use this cache. Empty answers clear earlier
+   * discovery; session readers use configOptions(agentSessionId) instead.
    */
   private cacheDiscovery(state: ACPState) {
-    if (state.cfg && state.cfg.length > 0) this.cachedConfigOptions = state.cfg
+    this.cachedConfigOptions = state.cfg ?? []
+    this.cachedResolvedModel = resolvedModel(state) ?? null
+  }
+
+  configOptions(agentSessionId: string) {
+    const state = this.state(agentSessionId)
     const model = resolvedModel(state)
-    if (model) this.cachedResolvedModel = model
+    return { options: state.cfg ?? [], ...(model ? { resolvedModel: model } : {}) }
   }
 
   /**
@@ -502,20 +608,41 @@ export class ACPProcess {
     return []
   }
 
-  async newSession(workingDirectory: string, _title?: string, sessionId?: string): Promise<string> {
+  async newSession(workingDirectory: string, _title?: string, sessionId?: string, start?: AgentSessionStartBinding, timeoutMs = newSessionTimeoutMs()): Promise<string> {
     this.resetIdleTimer()
-    const t0 = Date.now()
+    const started = Date.now()
     log.info("ACP newSession: calling session/new", { workingDirectory })
-    const result = await this.agent.request(methods.agent.session.new, {
-      cwd: workingDirectory,
-      mcpServers: this.mcp(sessionId),
-    })
-    this.remember(result.sessionId, result)
-    log.info("ACP newSession: got sessionId", { agentSessionId: result.sessionId, ms: Date.now() - t0 })
-    return result.sessionId
+    const params: NewSessionRequest = { cwd: workingDirectory, mcpServers: this.mcp(sessionId) }
+    const lease = createStartupRequestLease(start ? timeoutMs : undefined, this.leaseIdle())
+    if (start) this.startingRequests.set(params, { start, quiet: lease.quiet!, controller: lease.controller })
+    try {
+      const request = this.agent.request(methods.agent.session.new, params, { cancellationSignal: lease.controller.signal })
+      const result = await lease.wait(request)
+      this.remember(result.sessionId, result)
+      this.loadedSessions.add(result.sessionId)
+      log.info("ACP newSession: got sessionId", { agentSessionId: result.sessionId, ms: Date.now() - started })
+      return result.sessionId
+    } finally {
+      lease.release()
+      if (start) this.startingRequests.delete(params)
+    }
   }
 
   async resumeSession(agentSessionId: string, workingDirectory: string, sessionId?: string) {
+    this.assertSessionReady(agentSessionId)
+    if (this.hasSession(agentSessionId)) return
+    this.restorations ??= new Map()
+    const existing = this.restorations.get(agentSessionId)
+    if (existing) return existing
+    const pending = this.restoreSession(agentSessionId, workingDirectory, sessionId)
+    this.restorations.set(agentSessionId, pending)
+    try { await pending }
+    finally {
+      if (this.restorations.get(agentSessionId) === pending) this.restorations.delete(agentSessionId)
+    }
+  }
+
+  private async restoreSession(agentSessionId: string, workingDirectory: string, sessionId?: string) {
     this.resetIdleTimer()
     const t0 = Date.now()
     const state = this.state(agentSessionId)
@@ -538,6 +665,7 @@ export class ACPProcess {
     try {
       const result = await resume(this.agent, state, agentSessionId, workingDirectory, this.mcp(sessionId))
       this.states.set(agentSessionId, result.state)
+      this.loadedSessions.add(agentSessionId)
       this.cacheDiscovery(result.state)
       log.info("ACP session restored", { agentSessionId, kind: result.kind, pid, ms: Date.now() - t0 })
     } catch (err) {
@@ -556,6 +684,7 @@ export class ACPProcess {
   }
 
   async syncSession(agentSessionId: string, input: PromptInput, options: { syncMode?: boolean } = {}) {
+    this.assertSessionReady(agentSessionId)
     this.resetIdleTimer()
     const t0 = Date.now()
     const state = this.state(agentSessionId)
@@ -564,7 +693,7 @@ export class ACPProcess {
       agentSessionId,
       agent: input.agent,
       permissionMode: input.permissionMode ?? null,
-      model: input.model.modelID,
+      model: input.model?.modelID,
       variant: input.variant ?? null,
       pid,
       modeCount: state.modes.length,
@@ -573,7 +702,7 @@ export class ACPProcess {
     const stop = watch("syncSession", {
       agentSessionId,
       agent: input.agent,
-      model: input.model.modelID,
+      model: input.model?.modelID,
       variant: input.variant ?? null,
       pid,
     })
@@ -584,7 +713,7 @@ export class ACPProcess {
       log.info("ACP session synced", {
         agentSessionId,
         agent: input.agent,
-        model: input.model.modelID,
+        model: input.model?.modelID,
         variant: input.variant ?? null,
         pid,
         ms: Date.now() - t0,
@@ -593,7 +722,7 @@ export class ACPProcess {
       log.error("ACP session sync failed", {
         agentSessionId,
         agent: input.agent,
-        model: input.model.modelID,
+        model: input.model?.modelID,
         variant: input.variant ?? null,
         pid,
         err,
@@ -609,25 +738,20 @@ export class ACPProcess {
     agentSessionId: string,
     input: PromptInput,
     onUpdate: (update: SessionUpdate) => void,
-    /** The session's workspace, which the agent shares only over stdio. */
+    /** Filesystem delivery is controlled by explicit connection reachability. */
     directory: string,
+    onUncertain?: (error: AcpSessionUncertainError) => void,
   ): Promise<{ stopReason: StopReason; usage?: Usage | null }> {
     this.resetIdleTimer()
+    this.assertSessionReady(agentSessionId)
 
-    // Serialize: only one prompt runs at a time per ACP process.
-    let slotRelease!: () => void
-    const prev = this.promptQueue
-    this.promptQueue = new Promise<void>((resolve) => { slotRelease = resolve })
-    this.promptQueueDepth++
-
-    if (this.promptQueueDepth > 1) {
-      log.info("ACP prompt: waiting in serial queue", {
-        agentSessionId,
-        queueDepth: this.promptQueueDepth,
-      })
+    if (this.activePrompts.has(agentSessionId)) {
+      throw new Error(`ACP session ${agentSessionId} already has an active prompt`)
     }
-    await prev
-    this.promptQueueDepth--
+    this.activePrompts.add(agentSessionId)
+    this.uncertaintyListeners ??= new Map()
+    this.uncertaintyReported ??= new Set()
+    if (onUncertain) this.uncertaintyListeners.set(agentSessionId, onUncertain)
 
     log.info("ACP prompt: starting", {
       agentSessionId,
@@ -643,7 +767,7 @@ export class ACPProcess {
         parts: input.parts,
         system: input.system,
         caps: this.state(agentSessionId).prompt,
-        ...(this.transport.kind === "stdio" ? { directory } : {}),
+        ...(this.transport.sharedFilesystem === true ? { directory } : {}),
       })
 
       // The only bound on a turn is the agent going quiet: a tool call that
@@ -666,9 +790,13 @@ export class ACPProcess {
         onUpdate(update)
       })
 
+      const request = this.agent.request(methods.agent.session.prompt, { sessionId: agentSessionId, prompt })
+      let settled = false
+      const settlement = request.then(() => { settled = true }, () => { settled = true })
+      this.promptSettlements.set(agentSessionId, settlement)
       try {
         const result = await Promise.race([
-          this.agent.request(methods.agent.session.prompt, { sessionId: agentSessionId, prompt }),
+          request,
           quietPromise,
         ])
         log.info("ACP prompt: completed", {
@@ -678,12 +806,29 @@ export class ACPProcess {
         })
         return { stopReason: result.stopReason, usage: result.usage }
       } catch (err) {
-        // On timeout (or any error), cancel the session so the ACP binary stops working
-        // rather than continuing to run orphaned with no listener.
-        log.info("ACP prompt: cancelling session after error/timeout", { agentSessionId })
-        this.agent.notify(methods.agent.session.cancel, { sessionId: agentSessionId }).catch(() => {})
+        // A rejected RPC has settled. Silence is different: cancellation must
+        // settle before another prompt may enter this agent session.
+        if (!settled && this.alive) {
+          try {
+            await this.cancelAndWait(agentSessionId)
+          } catch (cancellationError) {
+            if (this.alive) {
+              const uncertainty = cancellationError instanceof AcpSessionUncertainError ? cancellationError
+                : new AcpSessionUncertainError(agentSessionId, `ACP cancellation failed: ${String(cancellationError)}. The original turn is still being observed; it was not retried.`)
+              this.quarantineSession(agentSessionId, settlement)
+              this.reportUncertain(agentSessionId, uncertainty)
+            }
+          }
+          // Observation timeout is not execution completion. Keep the canonical
+          // listener and its caller's turn fence until the ORIGINAL RPC settles.
+          const result = await request
+          return { stopReason: result.stopReason, usage: result.usage }
+        }
         throw err
       } finally {
+        void settlement.then(() => {
+          if (this.promptSettlements.get(agentSessionId) === settlement) this.promptSettlements.delete(agentSessionId)
+        })
         quiet.cancel()
         if (this.promptQuiet.get(agentSessionId) === quiet) this.promptQuiet.delete(agentSessionId)
       }
@@ -692,14 +837,29 @@ export class ACPProcess {
       throw err
     } finally {
       this.sessionListeners.delete(agentSessionId)
-      // Release before the slot: the countdown should start from the end of the
-      // turn, not from whenever the next queued prompt happens to pick it up.
-      idleLease.release()
-      slotRelease()
+      this.uncertaintyListeners.delete(agentSessionId)
+      this.uncertaintyReported.delete(agentSessionId)
+      // A timed-out caller is not proof that the agent stopped executing.
+      // Keep the process leased until the original prompt actually settles.
+      const pending = this.promptSettlements.get(agentSessionId)
+      if (pending) void pending.then(() => idleLease.release())
+      else idleLease.release()
+      this.activePrompts.delete(agentSessionId)
     }
   }
 
   /** Observe lifecycle notifications which may arrive after a prompt response. */
+  observeCommands(agentSessionId: string, observer: (update: SessionUpdate) => void) {
+    this.commandListeners.set(agentSessionId, observer)
+    const update = this.commandUpdates.get(agentSessionId)
+    if (update) observer(update)
+  }
+
+  unobserveCommands(agentSessionId: string) {
+    this.commandListeners.delete(agentSessionId)
+    this.commandUpdates.delete(agentSessionId)
+  }
+
   observeSession(agentSessionId: string, observer: (update: SessionUpdate) => void) {
     this.sessionObservers.set(agentSessionId, observer)
     return () => {
@@ -707,9 +867,64 @@ export class ACPProcess {
     }
   }
 
+  sessionIsWithin(id: string, ancestor: string) {
+    const seen = new Set<string>()
+    for (let current: string | undefined = id; current && !seen.has(current); current = this.childParents.get(current)) {
+      if (current === ancestor) return true
+      seen.add(current)
+    }
+    return false
+  }
+
   async cancel(agentSessionId: string): Promise<void> {
+    this.elicitationCancel?.(agentSessionId)
+    for (const child of this.childParents.keys()) {
+      if (child !== agentSessionId && this.sessionIsWithin(child, agentSessionId)) this.elicitationCancel?.(child)
+    }
+    for (const [id, pending] of this.pendingPermissions) {
+      if (this.sessionIsWithin(pending.aid, agentSessionId)) this.respondPermission(id, { outcome: { outcome: "cancelled" } })
+    }
     log.info("ACP cancel", { agentSessionId })
     await this.agent.notify(methods.agent.session.cancel, { sessionId: agentSessionId })
+  }
+
+  private reportUncertain(agentSessionId: string, error: AcpSessionUncertainError) {
+    this.uncertaintyReported ??= new Set()
+    if (this.uncertaintyReported.has(agentSessionId)) return
+    this.uncertaintyReported.add(agentSessionId)
+    this.uncertaintyListeners?.get(agentSessionId)?.(error)
+  }
+
+  async cancelAndWait(agentSessionId: string, timeoutMs = newSessionTimeoutMs()): Promise<void> {
+    const pending = this.promptSettlements.get(agentSessionId)
+    try {
+      await this.cancel(agentSessionId)
+    } catch (error) {
+      if (pending) {
+        this.quarantineSession(agentSessionId, pending)
+        const uncertain = new AcpSessionUncertainError(agentSessionId, "ACP cancellation could not be sent. The original turn is still being observed; it was not retried.")
+        this.reportUncertain(agentSessionId, uncertain)
+        throw uncertain
+      }
+      throw error
+    }
+    if (!pending) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            this.quarantineSession(agentSessionId, pending)
+            const error = new AcpSessionUncertainError(agentSessionId, "ACP cancellation was not acknowledged. The original turn is still being observed; it was not retried.")
+            this.reportUncertain(agentSessionId, error)
+            reject(error)
+          }, timeoutMs)
+        }),
+      ])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
   }
 
   respondPermission(permId: string, response: RequestPermissionResponse): void {
@@ -736,20 +951,24 @@ export class ACPProcess {
       mcpServers: this.mcp(sessionId),
     })
     this.remember(fork.sessionId, fork)
+    this.loadedSessions.add(fork.sessionId)
     return fork.sessionId
   }
 
   /**
    * `reason` becomes the failure every request still in flight on this
-   * process sees, so a session queued behind a wedged sibling learns why its
+   * process sees, so a session sharing a wedged process learns why its
    * turn died instead of a bare "connection closed".
    */
   dispose(reason?: string) {
     if (this.disposed) return
     this.disposed = true
+    this.connectionObservation?.({ state: "disconnected", reason: "disposed" })
     const replaced = reason ? new Error(`ACP process replaced: ${reason}`) : undefined
     if (replaced) this.exitReason ??= replaced
     this.sessionObservers.clear()
+    this.commandListeners.clear()
+    this.commandUpdates.clear()
     this.goalListeners.clear()
     this.goalUpdateListeners.clear()
     this.exitObservation({ reason: "disposed" })
@@ -767,6 +986,6 @@ export class ACPProcess {
   }
 
   get alive(): boolean {
-    return this.transport.alive
+    return this.transport.alive && !this.exitReason && !this.deadNotified
   }
 }

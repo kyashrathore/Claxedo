@@ -696,15 +696,13 @@ export async function deleteWorkspaceByDirectory(dir: string) {
 
 export async function resolveWorkspace(input: { workspaceId?: string; directory?: string; create?: boolean }) {
   await boot()
-  const id = input.workspaceId?.trim()
-  if (id && byId.has(id)) return byId.get(id)
+  if (input.workspaceId !== undefined) return byId.get(input.workspaceId.trim())
   const dir = input.directory?.trim()
   if (!dir) return undefined
   const directory = directoryKey(dir)
   if (isRejectedDir(directory)) return undefined
   if (!input.create) return getWorkspaceByDirectory(dir)
   return ensureWorkspace({
-    workspaceId: id,
     directory: dir,
   })
 }

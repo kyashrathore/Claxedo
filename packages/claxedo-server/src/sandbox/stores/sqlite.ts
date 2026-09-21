@@ -1,6 +1,14 @@
 import { deleteLease, getLease, leaseTransaction, listLeases, upsertLease } from "./lease.sql"
-import { applySandboxLeasePatch } from "@claxedo/sandbox-manager"
-import type { SandboxLeaseAcquireInput, SandboxLeaseAcquireResult, SandboxLeasePatch, SandboxLeaseStore, SandboxLease } from "@claxedo/sandbox-manager"
+import { applySandboxLeasePatch, applySandboxProvisionedTarget } from "@claxedo/sandbox-manager"
+import type {
+  SandboxLeaseAcquireInput,
+  SandboxLeaseAcquireResult,
+  SandboxLeasePatch,
+  SandboxLeaseStatus,
+  SandboxLeaseStore,
+  SandboxLease,
+  SandboxProvisionedTarget,
+} from "@claxedo/sandbox-manager"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { sandboxLeaseRowStatus, sandboxLeaseStatus } from "./lease-status"
 import { leaseDriver } from "./lease-row"
@@ -103,10 +111,21 @@ export function createSqliteLeaseStore(): SandboxLeaseStore {
         return { acquired: true, lease: next }
       })
     },
-    async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch) {
+    async recordTarget(workspaceId: string, expectedEpoch: number, target: SandboxProvisionedTarget) {
       return leaseTransaction(() => {
         const current = getLease(workspaceId)
         if (!current || current.epoch !== expectedEpoch) return undefined
+        if (sandboxLeaseStatus(current.status) === "stopped" || sandboxLeaseStatus(current.status) === "destroyed") return undefined
+        const next = applySandboxProvisionedTarget(toSandboxLease(current), target, Date.now())
+        write(next, current)
+        return next
+      })
+    },
+    async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch, expectedStatus?: SandboxLeaseStatus) {
+      return leaseTransaction(() => {
+        const current = getLease(workspaceId)
+        if (!current || current.epoch !== expectedEpoch) return undefined
+        if (expectedStatus !== undefined && sandboxLeaseStatus(current.status) !== expectedStatus) return undefined
         const next = applySandboxLeasePatch(toSandboxLease(current), patch, Date.now())
         write(next, current)
         return next
@@ -116,6 +135,7 @@ export function createSqliteLeaseStore(): SandboxLeaseStore {
       return leaseTransaction(() => {
         const current = getLease(workspaceId)
         if (!current || current.epoch !== expectedEpoch) return undefined
+        if (sandboxLeaseStatus(current.status) === "stopped" || sandboxLeaseStatus(current.status) === "destroyed") return undefined
         const failedAt = Date.now()
         const next = {
           ...toSandboxLease(current),

@@ -965,6 +965,7 @@ describe("session controller helpers", () => {
     })).resolves.toBe(true)
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "status"))).toEqual(busy)
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_1", "requests"))).toEqual({
+      readErrors: { [failed]: "offline" },
       permissions: failed === "permissions" ? cached.permissions : [],
       questions: failed === "questions" ? cached.questions : [],
     })
@@ -1024,6 +1025,7 @@ describe("session controller helpers", () => {
     expect(second).toBe(true)
     expect(calls).toEqual({ status: 1, permission: 1, question: 1 })
     expect(queryClient.getQueryData(["shell", "directory", "/repo/shared", "session-meta", "requests"])).toEqual({
+      readErrors: {},
       status: { ses_1: idle, ses_2: idle },
       permissions: [permission("p1", "ses_1"), permission("p2", "ses_2")],
       questions: [question("q1", "ses_1"), question("q2", "ses_2")],
@@ -1096,6 +1098,7 @@ describe("session controller helpers", () => {
     resolveStatus({ data: { ses_1: idle, ses_2: idle } })
     await expect(second).resolves.toBe(true)
     expect(queryClient.getQueryData(["shell", "directory", "/repo/shared-abort", "session-meta", "requests"])).toEqual({
+      readErrors: {},
       status: { ses_1: idle, ses_2: idle },
       permissions: [],
       questions: [],
@@ -1481,4 +1484,24 @@ describe("session controller helpers", () => {
       { id: "msg_1", parts: [{ id: "part_1", type: "text" }] },
     ])
   })
+})
+
+
+test("pending request read failures remain visible through status polls and clear after successful retry", async () => {
+  const key = shellDataKeys.sessionId("ses_error", "requests")
+  const sdk = {
+    session: { status: async () => ({ data: { ses_error: busy } }) },
+    permission: { list: async (): Promise<{ data: ReturnType<typeof permission>[] }> => { throw new Error("Permission storage unavailable") } },
+    question: { list: async () => ({ data: [] }) },
+  }
+  const input = { sessionID: "ses_error", currentSessionID: () => "ses_error", sdk }
+  await syncSessionMeta(input)
+  sdk.session.status = async () => ({ data: { ses_error: idle } })
+  expect(queryClient.getQueryData(key)).toMatchObject({ readErrors: { permissions: "Permission storage unavailable" } })
+  await syncSessionMeta({ ...input, includeRequests: false })
+  expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_error", "status"))).toEqual(busy)
+  expect(queryClient.getQueryData(key)).toMatchObject({ readErrors: { permissions: "Permission storage unavailable" } })
+  sdk.permission.list = async () => ({ data: [permission("recovered", "ses_error")] })
+  await syncSessionMeta({ ...input, force: true })
+  expect(queryClient.getQueryData(key)).toMatchObject({ permissions: [permission("recovered", "ses_error")], readErrors: undefined })
 })

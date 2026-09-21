@@ -1,3 +1,4 @@
+import { invalidateSessionStarts } from "@/features/session/store/draft-session-start"
 /**
  * ClaxedoEventsProvider — the app's one reader of its two event streams:
  * `cp/events` (a control plane's notices; a signed desktop reads its daemon's
@@ -224,6 +225,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // read again, and the stream stays open.
       if (isStreamReplayGap(frame)) {
         if (target.kind === "wr") {
+          void invalidateSessionStarts({ serverUrl: props.serverUrl(), ...(target.scope === "host" ? {} : { workspaceId: target.workspaceId }) })
           // The aggregate's hole is every embedded runtime's: a resync naming
           // no directory is answered by every mounted controller.
           if (target.scope === "host") {
@@ -244,7 +246,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       }
       const event = normalizeClaxedoStreamEvent(frame, address)
       if (!event || event.type === "heartbeat") return
-      emitter.emit(stampWorkspace(event, target))
+      const stamped = stampWorkspace(event, target)
+      if (stamped.type === "session.lifecycle") {
+        void invalidateSessionStarts({ serverUrl: props.serverUrl(), workspaceId: stamped.workspaceId ?? stamped.start?.workspaceId ?? (target.kind === "wr" && target.scope !== "host" ? target.workspaceId : undefined), sessionId: stamped.sessionID ?? stamped.start?.sessionId })
+      }
+      emitter.emit(stamped)
     } catch {
       // ignore parse errors
     }
@@ -485,6 +491,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         // the stream, not on it. The workspace's controllers re-read once, now
         // that the stream is live, so a reply that landed in that window is
         // read rather than lost. A resumed open recovers by cursor instead.
+        if (target.kind === "wr") {
+          void invalidateSessionStarts({ serverUrl: props.serverUrl(), ...(target.scope === "host" ? {} : { workspaceId: target.workspaceId }) })
+        }
         if (target.kind === "wr" && !state.lastEventId) {
           const directory = target.scope !== "host" && target.directory
             ? eventStreamFrameAddress(target)(target.directory)
@@ -654,7 +663,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     // A bare `/s/<id>` route names no workspace; the pane that opened the
     // session says which, and until it has, the session's inventory row does.
     const directory = routedDirectory
-      ?? sessionEventScopeWorkspaceAddress(routedSession)
+      ?? sessionEventScopeWorkspaceAddress(sessionEventScopeId())
       ?? (routedSession ? sessionInventoryDirectory(props.serverUrl(), routedSession) : undefined)
     const targets = claxedoEventStreamTargets({
       serverUrl: props.serverUrl(),

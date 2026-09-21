@@ -10,14 +10,14 @@ describe("githubWebhookEnvelope", () => {
       receivedAt: 1_000,
       payload: {
         installation: { id: 42 },
-        sender: { login: "octo" },
+        sender: { login: "octo", id: 583231 },
         repository: { name: "repo", owner: { login: "acme" } },
         issue: { number: 7 },
         comment: { body: "@claxedo fix this" },
       },
     })).toMatchObject({
       channel: "github",
-      externalUserId: "octo",
+      externalUserId: "583231",
       threadKey: "github:42:acme/repo:issue-7",
       idempotencyKey: "delivery-1",
       text: "@claxedo fix this",
@@ -31,7 +31,7 @@ describe("githubWebhookEnvelope", () => {
       event: "issue_comment",
       delivery: "delivery-2",
       payload: {
-        sender: { login: "octo" },
+        sender: { login: "octo", id: 583231 },
         repository: { name: "repo", owner: { login: "acme" } },
         issue: { number: 7 },
         comment: { body: "not for the bot" },
@@ -45,14 +45,14 @@ describe("githubWebhookEnvelope", () => {
       delivery: "delivery-pr-review",
       payload: {
         installation: { id: 42 },
-        sender: { login: "reviewer" },
+        sender: { login: "reviewer", id: 90210 },
         repository: { name: "repo", owner: { login: "acme" } },
         pull_request: { number: 8 },
         review: { body: "@claxedo check this review feedback" },
       },
     })).toMatchObject({
       channel: "github",
-      externalUserId: "reviewer",
+      externalUserId: "90210",
       threadKey: "github:42:acme/repo:pr-8",
       idempotencyKey: "delivery-pr-review",
       text: "@claxedo check this review feedback",
@@ -66,7 +66,7 @@ describe("githubWebhookEnvelope", () => {
       delivery: "delivery-issue-opened",
       payload: {
         installation: { id: 42 },
-        sender: { login: "octo" },
+        sender: { login: "octo", id: 583231 },
         repository: { name: "repo", owner: { login: "acme" } },
         issue: {
           number: 9,
@@ -87,7 +87,7 @@ describe("githubWebhookEnvelope", () => {
       delivery: "delivery-pr-comment",
       payload: {
         installation: { id: 42 },
-        sender: { login: "octo" },
+        sender: { login: "octo", id: 583231 },
         repository: { name: "repo", owner: { login: "acme" } },
         issue: { number: 10, pull_request: {} },
         comment: { body: "@claxedo fix the PR" },
@@ -97,12 +97,47 @@ describe("githubWebhookEnvelope", () => {
     })
   })
 
+  test("keys the sender by account id, so a rename stays the same principal", () => {
+    // `sender.login` is renameable and GitHub hands a freed handle to the next
+    // account that claims it. The id does neither, so it is the only thing an
+    // allowlist entry or an account binding can be written against.
+    const comment = (sender: { login: string; id: number }) => githubWebhookEnvelope({
+      event: "issue_comment",
+      delivery: `delivery-${sender.login}-${sender.id}`,
+      payload: {
+        installation: { id: 42 },
+        sender,
+        repository: { name: "repo", owner: { login: "acme" } },
+        issue: { number: 7 },
+        comment: { body: "@claxedo fix this" },
+      },
+    })
+
+    expect(comment({ login: "octo", id: 583231 })?.externalUserId).toBe("583231")
+    expect(comment({ login: "octo-renamed", id: 583231 })?.externalUserId).toBe("583231")
+    expect(comment({ login: "octo", id: 999999 })?.externalUserId).toBe("999999")
+  })
+
+  test("refuses a payload whose sender carries no account id", () => {
+    expect(githubWebhookEnvelope({
+      event: "issue_comment",
+      delivery: "delivery-no-id",
+      payload: {
+        installation: { id: 42 },
+        sender: { login: "octo" },
+        repository: { name: "repo", owner: { login: "acme" } },
+        issue: { number: 7 },
+        comment: { body: "@claxedo fix this" },
+      },
+    })).toBeUndefined()
+  })
+
   test("ignores unsupported GitHub events", () => {
     expect(githubWebhookEnvelope({
       event: "push",
       delivery: "delivery-push",
       payload: {
-        sender: { login: "octo" },
+        sender: { login: "octo", id: 583231 },
         repository: { name: "repo", owner: { login: "acme" } },
         issue: { number: 7 },
         comment: { body: "@claxedo nope" },

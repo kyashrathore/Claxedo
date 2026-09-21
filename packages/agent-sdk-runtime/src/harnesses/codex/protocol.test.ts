@@ -3,7 +3,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { removeTestTempDir } from "../shared/test-temp-dir"
-import { codexUserInput } from "./protocol"
+import { codexUserInput, codexSteerTurn } from "./protocol"
 
 const imagePart = {
   type: "file",
@@ -64,4 +64,18 @@ describe("Codex turn input", () => {
       { type: "text", text: `watch\nAttached file (video/mp4): ${target}`, text_elements: [] },
     ])
   })
+})
+
+
+test("Codex steering carries the stable user identity and target turn precondition", async () => {
+  const requests: unknown[] = []
+  const process = { request: async (method: string, params: unknown) => { requests.push({ method, params }); return { turnId: "turn-1" } } }
+  await codexSteerTurn({
+    process, threadId: "thread-1", turnId: "turn-1", directory,
+    input: { parts: [{ type: "text", text: "S" }], userMessageId: "msg_stable", assistantMessageId: "reply", agent: "build", model: { providerID: "codex", modelID: "default" } },
+  })
+  expect(requests).toEqual([{ method: "turn/steer", params: {
+    threadId: "thread-1", expectedTurnId: "turn-1", clientUserMessageId: "msg_stable",
+    input: [{ type: "text", text: "S", text_elements: [] }],
+  } }])
 })

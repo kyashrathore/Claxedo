@@ -488,7 +488,12 @@ export const appLocal: Policy = {
   // `provider-settings/`. The i18n manifest owns them, it already imports both
   // sibling directories, and a dictionary reaches nothing; no new package
   // edge. Measured 1097 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1097, packages: 58 },
+  // Two retained shared owners: claxedo-tool-href routes tool resources through
+  // existing workspace navigation; draft-session-start persists creation-owner
+  // references and reads canonical session lifecycle status. ACP questions use
+  // the unchanged question dock; its separate UI, worker, query and action
+  // modules have been removed. Exact measured 1099 modules / 58 packages.
+  ceilings: { modules: 1099, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -6,12 +6,14 @@
 // and rendering each independently would stack "Unavailable ● Retry" in the
 // same row.
 import type { ComposerNoticeTone } from "./composer-notice"
+import type { HarnessConnectionState } from "../../harness/profile"
 
 export type HarnessNoticeInput = {
   /** Display name of the active harness, e.g. "Cursor". */
   harnessLabel: string
   /** Readiness settled on the terminal error state — the runtime never came up. */
   runtimeUnavailable: boolean
+  connectionState?: HarnessConnectionState
   /** Model discovery failed and the list we hold is now stale. */
   optionsFailed: boolean
   /** No model options resolved at all. */
@@ -41,6 +43,19 @@ export type HarnessNotice = {
  * which is a hint on the model control, not an error.
  */
 export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice | undefined {
+  const connection = input.connectionState?.state
+  if (connection === "auth-required" || connection === "disconnected" || connection === "failed") {
+    return {
+      kind: `connection-${connection}`,
+      tone: connection === "disconnected" ? "warning" : "critical",
+      message: connection === "auth-required" ? `${input.harnessLabel} requires authentication`
+        : connection === "disconnected" ? `${input.harnessLabel} disconnected` : `${input.harnessLabel} connection failed`,
+      detail: connection === "auth-required" ? "Sign in to the agent or update this connection's credentials before trying again."
+        : connection === "disconnected" ? "The agent connection closed. Your transcript is saved; the next turn can reconnect."
+          : "The agent connection could not be established. Check the connection settings before trying again.",
+      retry: false,
+    }
+  }
   // A dead runtime outranks everything downstream of it: every other failure
   // here is a symptom, and reporting the symptom sends the user to the wrong fix.
   if (input.runtimeUnavailable) {

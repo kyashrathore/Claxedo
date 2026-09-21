@@ -5,7 +5,7 @@ import path from "node:path"
 // Electron main cannot be imported in a unit process because importing it boots
 // the application. Pin the ordering at the real entry instead: renderer load
 // may overlap the server, but serverReady must still be resolved only after the
-// origin hook and verified health boundary are installed.
+// daemon-access hook and verified health boundary are installed.
 const entry = readFileSync(path.join(import.meta.dir, "index.ts"), "utf8")
 const initialize = entry.slice(entry.indexOf("async function initialize()"), entry.indexOf("function showMainWindow"))
 const serverStart = entry.slice(
@@ -34,14 +34,32 @@ describe("desktop cold startup wiring", () => {
     expect(initialize).not.toContain("createMainWindow(globals, { deferLoad: true })")
   })
 
-  test("publishes the server URL only after the renderer origin is trusted", () => {
-    const trustOrigin = initialize.indexOf("trustMainRendererOrigin({")
+  test("publishes the server URL only after the renderer is granted daemon access", () => {
+    const grant = initialize.indexOf("grantMainRendererDaemonAccess({")
     const publish = initialize.indexOf("serverReady.resolve({ url: serverConnection.url, password: null })")
     const stamp = initialize.indexOf('recordStartupClock("main-server-ready-published")')
 
-    expect(trustOrigin).toBeGreaterThan(-1)
-    expect(publish).toBeGreaterThan(trustOrigin)
+    expect(grant).toBeGreaterThan(-1)
+    expect(publish).toBeGreaterThan(grant)
     expect(stamp).toBeGreaterThan(publish)
+  })
+
+  // The renderer's first request needs the capability to be admitted at all, so
+  // the endpoint has to be resolved before the hook that reads it is installed.
+  test("resolves the daemon endpoint before granting the renderer access", () => {
+    const endpoint = initialize.indexOf("daemonEndpoint.resolve(endpoint)")
+    const grant = initialize.indexOf("grantMainRendererDaemonAccess({")
+
+    expect(endpoint).toBeGreaterThan(-1)
+    expect(grant).toBeGreaterThan(endpoint)
+  })
+
+  // The capability is the one thing the renderer must never hold: it is
+  // published to the page, and a page that can read it can drive the machine.
+  test("never publishes the daemon capability to the renderer", () => {
+    expect(initialize).toContain("serverReady.resolve({ url: serverConnection.url, password: null })")
+    expect(entry).not.toMatch(/serverReady\.resolve\(\{[^}]*capability/)
+    expect(entry).not.toMatch(/globals = \{[^}]*capability/)
   })
 
   test("waits for the exact listener message and verifies health without polling", () => {
@@ -83,11 +101,11 @@ describe("desktop cold startup wiring", () => {
     expect(serverStart.slice(verify)).toContain("} catch (error) {")
   })
 
-  test("publishes serverReady only after renderer-origin trust is installed", () => {
-    const trust = initialize.indexOf("trustMainRendererOrigin({")
+  test("publishes serverReady only after renderer daemon access is installed", () => {
+    const grant = initialize.indexOf("grantMainRendererDaemonAccess({")
     const publish = initialize.indexOf("serverReady.resolve(")
-    expect(trust).toBeGreaterThan(-1)
-    expect(publish).toBeGreaterThan(trust)
+    expect(grant).toBeGreaterThan(-1)
+    expect(publish).toBeGreaterThan(grant)
   })
 })
 

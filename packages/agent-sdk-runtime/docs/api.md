@@ -53,6 +53,10 @@ Kind: Functions
 
 - `createMemoryRuntimeStore` from `@claxedo/agent-sdk-runtime/stores/memory`
 - `createSqliteRuntimeStore` from `@claxedo/agent-sdk-runtime/stores/sqlite`
+- `sqliteSessionStarts` from `@claxedo/agent-sdk-runtime/stores/session-start`
+  adds durable creation ownership to a host-supplied SQLite database. It returns
+  the canonical `AgentSessionStarts` contract. Successful authorized deletion
+  retires the matching creation binding; rollback preserves its outcome.
 
 The root import does not load SQLite.
 

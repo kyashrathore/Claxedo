@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { asRecord, isNonEmptyString, readUnknown } from "../shared/json-read"
+import { createDaemonFetch } from "./daemon-request"
 import { nodeErrorCode } from "../shared/node-error"
 
 export const CLAXEDO_DAEMON_PROTOCOL = 1
@@ -63,13 +64,23 @@ export function clearClaxedoDaemonDiscovery(file: string, owner: ClaxedoDaemonDi
   }
 }
 
+/**
+ * The published token is both presentations at once: the capability the daemon
+ * admits the application by, and the bearer its identity route authenticates.
+ * They are separate headers so neither consumes the other, and this is the
+ * first call that has to satisfy both.
+ */
 export async function verifyClaxedoDaemonDiscovery(
   record: ClaxedoDaemonDiscovery,
   request: typeof fetch = fetch,
 ): Promise<string | undefined> {
   const url = `http://127.0.0.1:${String(record.port)}`
+  const daemon = createDaemonFetch({
+    endpoint: () => ({ origin: url, capability: record.token }),
+    fetch: request,
+  })
   try {
-    const response = await request(`${url}/api/claxedo/daemon`, {
+    const response = await daemon("/api/claxedo/daemon", {
       headers: { authorization: `Bearer ${record.token}` },
       signal: AbortSignal.timeout(1_500),
     })

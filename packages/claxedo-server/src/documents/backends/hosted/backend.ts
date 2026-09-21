@@ -50,7 +50,7 @@ export function createHostedDocumentsBackend(
       cloudWorkspaceId: string
       sessionId: string
       documentId: string
-      operation: "list" | "read" | "write" | "resolve"
+      operation: "list" | "read" | "write"
       markdown?: string
       expectedVersion?: string
       jobExpiresAt: number

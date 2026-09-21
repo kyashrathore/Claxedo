@@ -8,7 +8,7 @@ import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { DiffRoutes, createSessionRoutes } from "@claxedo/workspace-runtime/routes"
+import { createDiffRoutes, createSessionRoutes } from "@claxedo/workspace-runtime/routes"
 import { createClaxedoMcpClient } from "../client/index"
 import { CLAXEDO_MCP_PATH, createClaxedoMcpRoutes, fullUserCredential, inProcessFetch } from "../server"
 import { registerReviewTools } from "./review"
@@ -88,7 +88,7 @@ function runtimeApp() {
       abort: async () => ({ ok: true as const, status: "cancelled" as const }),
     }),
   })
-  return new Hono().route("/api/wr/diff", DiffRoutes()).route("/", routes)
+  return new Hono().route("/api/wr/diff", createDiffRoutes()).route("/", routes)
 }
 
 const servers: Array<ReturnType<typeof serve>> = []

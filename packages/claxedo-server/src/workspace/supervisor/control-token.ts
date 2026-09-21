@@ -3,17 +3,11 @@ import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "@claxedo/workspace-ru
 import { mintSupervisorBackplaneToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { runtimes, type WorkspaceRuntimeState } from "./store"
 
-export function externalConfigToken() {
-  return process.env.WORKSPACE_RUNTIME_CONFIG_TOKEN?.trim()
-}
-
 export function stateConfigToken(state: WorkspaceRuntimeState) {
-  return externalConfigToken() || state.config_token
+  return state.config_token
 }
 
 export function configToken(state: WorkspaceRuntimeState) {
-  const external = externalConfigToken()
-  if (external) return external
   state.config_token ??= randomUUID()
   return state.config_token
 }

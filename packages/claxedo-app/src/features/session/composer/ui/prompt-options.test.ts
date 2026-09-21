@@ -48,6 +48,16 @@ describe("prompt popover controller", () => {
     ])
   })
 
+  test("shows the agent's argument hint without changing the slash command text", () => {
+    const list = promptSlashCommands({
+      customCommands: [{ name: "review", description: "Review changes", input: { hint: "<path>" } }],
+      commandOptions: [],
+    })
+    expect(list.find((command) => command.id === "custom.review")).toMatchObject({
+      trigger: "review", description: "Review changes · <path>", type: "custom",
+    })
+  })
+
   test("builds slash commands as custom commands before enabled builtin commands", () => {
     expect(
       promptSlashCommands({

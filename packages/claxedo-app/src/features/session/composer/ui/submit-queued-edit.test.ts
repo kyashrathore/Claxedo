@@ -36,4 +36,11 @@ describe("replaceQueuedPrompt", () => {
     expect(await run()).toBe(true)
     expect(calls).toEqual({ clearEdit: 0, clearInput: 0, failed: [failure] })
   })
+
+  test("a provider-owned input cannot become a new send when replacement is refused", async () => {
+    const failure = new AgentRuntimeRequestError("Provider-held input cannot be edited locally", 423)
+    const { calls, run } = harness(async () => { throw failure })
+    expect(await run()).toBe(true)
+    expect(calls).toEqual({ clearEdit: 0, clearInput: 0, failed: [failure] })
+  })
 })

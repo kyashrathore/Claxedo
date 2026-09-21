@@ -6,10 +6,12 @@ import type { AgentQuestion } from "@claxedo/agent-runtime-contract"
 import { SessionQuestionDock } from "./session-question-dock"
 
 const h = vi.hoisted(() => ({
+  toast: vi.fn(),
   reply: vi.fn(async (_input: unknown) => undefined),
   reject: vi.fn(async (_input: unknown) => undefined),
 }))
 
+vi.mock("@opencode-ai/ui/toast", () => ({ showToast: h.toast }))
 vi.mock("@/platform/i18n/provider", () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
 vi.mock("@/features/session/app-ports", () => ({
   useSDK: () => ({
@@ -31,6 +33,7 @@ vi.stubGlobal(
 afterEach(() => {
   cleanup()
   localStorage.clear()
+  h.toast.mockClear()
   h.reply.mockClear()
   h.reject.mockClear()
 })
@@ -108,3 +111,20 @@ test("the progress rail appears only when there is more than one question", asyn
   await waitFor(() => expect(two.getByRole("radio", { name: /Option A1/ })).toBeTruthy())
   expect(two.container.querySelectorAll('[data-slot="question-progress-segment"]').length).toBe(2)
 })
+
+
+for (const action of ["reply", "reject"] as const) {
+  test(`a failed ${action} shows the shared error toast and leaves the answer available for retry`, async () => {
+    h[action].mockRejectedValueOnce(new Error("Invalid answer"))
+    const view = mount(() => <SessionQuestionDock request={request(1)} onSubmit={() => {}} />)
+    await waitFor(() => expect(view.getByRole("radio", { name: /Option A1/ })).toBeTruthy())
+    fireEvent.click(view.getByRole("radio", { name: /Option A1/ }))
+    const button = view.getByRole("button", { name: action === "reply" ? "ui.common.submit" : "ui.common.dismiss" })
+    fireEvent.click(button)
+    await waitFor(() => expect(h.toast).toHaveBeenCalledWith({ title: "common.requestFailed", description: "Invalid answer", variant: "error" }))
+    await waitFor(() => expect(button.hasAttribute("disabled")).toBe(false))
+    expect(view.getByRole("radio", { name: /Option A1/ }).getAttribute("aria-checked")).toBe("true")
+    fireEvent.click(button)
+    await waitFor(() => expect(h[action]).toHaveBeenCalledTimes(2))
+  })
+}

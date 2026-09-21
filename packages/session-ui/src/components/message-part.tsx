@@ -1594,8 +1594,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return taskId()
   })
 
-  /** The first-party tool this call is, when the registry has no renderer of its own for its spelling. */
-  const claxedo = createMemo(() => (ToolRegistry.render(part().tool) ? undefined : claxedoToolName(part().tool, input())))
+  /** An explicit first-party server identity takes precedence over bare native tool names. */
+  const claxedo = createMemo(() => claxedoToolName(part().tool, input()))
   /** What a refused first-party call was about, for the error card's subtitle and link. */
   const claxedoSubject = createMemo(() => {
     const name = claxedo()
@@ -1605,10 +1605,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
       const href = view.link.kind === "task" ? data.taskHref?.(view.link.id) : data.sessionHref?.(view.link.id)
       return { subtitle: view.link.label, href }
     }
-    return view.subject ? { subtitle: view.subject, href: undefined } : undefined
+    return { subtitle: view.subject ?? view.title, href: data.claxedoToolHref?.(name, input()) }
   })
 
-  const render = createMemo(() => ToolRegistry.render(part().tool) ?? (claxedo() ? ClaxedoTool : GenericTool))
+  const render = createMemo(() => claxedo() ? ClaxedoTool : ToolRegistry.render(part().tool) ?? GenericTool)
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
 
@@ -1616,7 +1616,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     <Show when={!hideQuestion()}>
       <div data-component="tool-part-wrapper" data-timeline-part-id={part().id}>
         <Switch>
-          <Match when={boundSubagents().length > 0}>
+          <Match when={!claxedo() && boundSubagents().length > 0}>
             <SubagentChipRow subagents={boundSubagents()} spawnInput={input()} />
           </Match>
           <Match when={toolError()}>
@@ -1632,6 +1632,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               }
               return (
                 <ToolErrorCard
+                  icon={claxedo() ? "claxedo" : undefined}
                   tool={part().tool}
                   error={error()}
                   title={
@@ -1722,7 +1723,8 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const model = createMemo(() => {
     if (props.message.role !== "assistant") return ""
     const message = props.message
-    const match = data.store.provider?.all?.get(message.providerID)
+    if (!message.modelID) return ""
+    const match = message.providerID ? data.store.provider?.all?.get(message.providerID) : undefined
     return match?.models?.[message.modelID]?.name ?? message.modelID
   })
 
@@ -1873,28 +1875,56 @@ function ToolImageStrip(props: { images: AgentFilePart[] }) {
     <For each={props.images}>
       {(image) => {
         const name = () => image.filename ?? getFilename(image.url) ?? image.url
-        /* A file left on disk is named rather than carried: only the host can turn its
-           path into a url this page may fetch, and dropped bytes have no url at all. */
+        const [loaded, setLoaded] = createSignal<string>()
+        const [loadFailed, setLoadFailed] = createSignal(false)
+        const [attempt, setAttempt] = createSignal(0)
+        const retry = () => setAttempt((value) => value + 1)
+        createEffect(() => {
+          attempt()
+          if (image.location?.kind !== "tool-file" || !data.readToolImage) return
+          const controller = new AbortController()
+          let objectUrl: string | undefined
+          setLoaded(undefined)
+          setLoadFailed(false)
+          void data.readToolImage(image, controller.signal).then((blob) => {
+            if (controller.signal.aborted) return
+            objectUrl = URL.createObjectURL(blob)
+            setLoaded(objectUrl)
+          }).catch(() => {
+            if (!controller.signal.aborted) setLoadFailed(true)
+          })
+          onCleanup(() => {
+            controller.abort()
+            if (objectUrl) URL.revokeObjectURL(objectUrl)
+          })
+        })
         const src = createMemo(() => {
           const location = image.location
           if (!location) return image.url
           if (location.kind === "unretained") return undefined
+          if (location.kind === "tool-file") return loaded()
           return data.fileUrl?.(location.path)
         })
         return (
           <div data-component="tool-image" class="ui-tool-image">
-            <Show when={src()} fallback={<ToolImageUnavailable name={name()} location={image.location} />}>
+            <Show when={src()} fallback={<ToolImageUnavailable name={name()} location={image.location} onRetry={loadFailed() ? retry : undefined} />}>
               {(url) => {
                 const [failed, setFailed] = createSignal(false)
                 return (
                   <Show when={!failed()} fallback={<ToolImageUnavailable name={name()} location={image.location} />}>
-                    <img
-                      data-slot="tool-image-thumbnail"
-                      src={url()}
-                      alt={name()}
-                      onError={() => setFailed(true)}
+                    <button
+                      type="button"
+                      data-slot="tool-image-open"
+                      aria-label={name()}
                       onClick={() => openImagePreview(url(), name())}
-                    />
+                    >
+                      <img
+                        data-slot="tool-image-thumbnail"
+                        src={url()}
+                        alt={name()}
+                        onError={() => setFailed(true)}
+                      />
+                    </button>
                   </Show>
                 )
               }}
@@ -1923,11 +1953,15 @@ export function ToolAttachments(props: { attachments?: AgentFilePart[] }) {
   )
 }
 
-function ToolImageUnavailable(props: { name: string; location?: AgentFileLocation }) {
+function ToolImageUnavailable(props: { name: string; location?: AgentFileLocation; onRetry?: () => void }) {
+  const i18n = useI18n()
   return (
     <div data-slot="tool-image-unavailable" class="ui-tool-image-unavailable">
       <Icon name="photo" size="small" />
       <span>{props.name}</span>
+      <Show when={props.onRetry}>
+        <button type="button" onClick={props.onRetry}>{i18n.t("ui.message.queued.retry")}</button>
+      </Show>
       <Show when={props.location?.kind === "unretained" ? props.location : undefined}>
         {(location) => <span data-slot="tool-image-size">{`${Math.round(location().bytes / 1024)} KB`}</span>}
       </Show>

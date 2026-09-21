@@ -127,6 +127,16 @@ describe("machine session dispatch", () => {
     )
     expect(mock.request).toHaveBeenCalledTimes(1)
   })
+  test("command admission checks private session authority without contacting the runtime", async () => {
+    const f = fixture()
+    await expect(f.runtime.authorize("session", caller)).resolves.toEqual({ workspaceId: "ws" })
+    expect(f.authority.authorizeRuntimeSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session", workspaceId: "ws", action: "write" }))
+    f.authority.authorizeRuntimeSession.mockRejectedValueOnce(new Error("private session denied"))
+    await expect(f.runtime.authorize("session", caller)).rejects.toThrow("private session denied")
+    f.authority.resolveChannelMachineAccess.mockRejectedValueOnce(new Error("binding revoked"))
+    await expect(f.runtime.authorize("session", caller)).rejects.toThrow("binding revoked")
+    expect(mock.request).not.toHaveBeenCalled()
+  })
   test("refuses mismatched registration and returned session identities", async () => {
     const f = fixture()
     f.authority.reserveRuntimeSession.mockImplementationOnce(async (_principal, input) => ({

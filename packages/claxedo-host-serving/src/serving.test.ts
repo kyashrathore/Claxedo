@@ -105,20 +105,15 @@ describe("relay connection grain", () => {
   })
 
   /**
-   * The workspace surface, the daemon's OpenCode-compat root, and an outright
-   * deny are three different verdicts (`surface.ts`), and a relayed request
-   * must land on the right one. `/provider?harness=opencode` is the runtime's
-   * own catalog, not a control-plane route. Provider auth and OAuth connect
-   * are a desktop capability with no other owner, so a remote client gets
-   * them too, through the daemon's root — never the daemon's own
-   * host-serving/remote-access administration.
+   * A relayed request lands on the workspace surface or nowhere
+   * (`surface.ts`). The machine's own root — its provider accounts, its
+   * project inventory, its host-serving and remote-access administration — is
+   * not a surface a workspace grant reaches, so those paths resolve to no
+   * local URL at all and the tunnel answers them itself.
    */
-  test("lets the relay reach the workspace catalog, provider auth/OAuth via the daemon root, and nothing of the daemon's own", async () => {
+  test("lets the relay reach the workspace surface, and nothing of the machine's own", async () => {
     await serve([WS_A])
     const first = live()[0]
-    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider?harness=opencode" })?.pathname).toBe(
-      `/workspaces/${WS_A}/provider`,
-    )
     // The runtime's identity probe, which the control plane verifies every
     // read with. The daemon's own liveness probe shares the path, so a
     // root-surface classifier calls it central; through the tunnel it is the
@@ -126,22 +121,20 @@ describe("relay connection grain", () => {
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/global/health" })?.pathname).toBe(
       `/workspaces/${WS_A}/global/health`,
     )
-    // Provider auth and `/provider/:id/oauth/:step` are the daemon's
-    // OpenCode-compat ROOT family, not the workspace runtime's — they land on
-    // `<localBaseUrl><path>` with the tunnel's own workspace forced into
-    // `?directory=`, never on `/workspaces/:id/*`.
-    const providerAuth = first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/auth" })
-    expect(providerAuth?.pathname).toBe("/provider/auth")
-    expect(providerAuth?.searchParams.get("directory")).toBe(WS_A)
 
-    const oauth = first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/anthropic/oauth/authorize" })
-    expect(oauth?.pathname).toBe("/provider/anthropic/oauth/authorize")
-    expect(oauth?.searchParams.get("directory")).toBe(WS_A)
-
-    // The daemon's own families never cross the tunnel, whichever verdict
-    // they would otherwise get close to.
-    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/health" })).toBeUndefined()
-    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/host-serving" })).toBeUndefined()
+    for (const path of [
+      "/provider?harness=opencode",
+      "/provider/auth",
+      "/provider/anthropic/oauth/authorize",
+      "/auth/anthropic",
+      "/config",
+      "/project",
+      "/project/current",
+      "/api/claxedo/health",
+      "/api/claxedo/host-serving",
+    ]) {
+      expect(first.resolveLocalUrl({ workspaceId: WS_A, path }), path).toBeUndefined()
+    }
   })
 
   /**

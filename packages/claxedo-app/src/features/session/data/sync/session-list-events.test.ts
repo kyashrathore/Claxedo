@@ -50,6 +50,20 @@ afterEach(() => {
 })
 
 describe("claxedo applyDirectorySessionCacheEvent", () => {
+  test("agent command lists replace only their session without changing recency", () => {
+    const current = cache({ session: [root("ses_a"), root("ses_b")], total: 2 })
+    const commands = [{ name: "review", description: "Review changes", input: { hint: "<path>" } }]
+    const update = (value: unknown, previous = current) => applyDirectorySessionCacheEvent({
+      event: { type: "session.commands", properties: { sessionID: "ses_a", commands: value } },
+      cache: previous, directory: "/repo", push() {},
+    })
+    const next = update(commands)!
+    expect(next.session[0].commands).toEqual(commands)
+    expect(next.session[0].time).toEqual(current.session[0].time)
+    expect(next.session[1]).toBe(current.session[1])
+    expect(update([], next)?.session[0].commands).toEqual([])
+    expect(update([{ name: "bad" }])).toBeUndefined()
+  })
   test("a mutation response only wins an equal timestamp when the cache still matches its baseline", () => {
     const baseline = { ...root("ses_a"), title: "Original title", time: { created: 1, updated: 30 } }
     const current = { ...root("ses_a"), title: "Newer event title", time: { created: 1, updated: 30 } }

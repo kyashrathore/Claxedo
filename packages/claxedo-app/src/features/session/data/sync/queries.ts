@@ -29,6 +29,7 @@ export {
 } from "./writers"
 
 export type SessionRequestsQueryData = {
+  readErrors?: { permissions?: string; questions?: string }
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   /**

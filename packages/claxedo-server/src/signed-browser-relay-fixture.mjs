@@ -29,7 +29,7 @@ import {
   injectRuntime,
   shutdownWorkspaceSupervisor,
 } from "./workspace/supervisor/index.ts"
-import { recordSupervisorSandboxLeaseReady } from "./sandbox/stores/sqlite-supervisor-state.ts"
+import { createSupervisorSandboxLeaseStore } from "./sandbox/stores/sqlite-supervisor-state.ts"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
   startWorkspaceHostTunnel,
@@ -563,12 +563,20 @@ if (hostMode === "connect") {
     status: "ready",
   })
   effectiveWorkspace = cloudWorkspace ?? workspace
-  recordSupervisorSandboxLeaseReady({
-    workspaceId,
+  // The lease the way provisioning makes one: acquire the generation, then
+  // record the target. Identity reaches a lease through `recordTarget` alone.
+  const fixtureLeaseStore = createSupervisorSandboxLeaseStore()
+  const fixtureLease = await fixtureLeaseStore.acquire(workspaceId, {
+    homeRegion: "us-east",
     driver: "cloudflare",
+    staleAfterMs: 60_000,
+  })
+  await fixtureLeaseStore.recordTarget(workspaceId, fixtureLease.lease.epoch, {
     sandboxId: hostId,
-    driverResourceId: hostId,
     url: cloudRuntime.url,
+    hostId,
+    driverResourceId: hostId,
+    labels: { app: "claxedo", workspaceId, epoch: String(fixtureLease.lease.epoch) },
   })
   injectRuntime(effectiveWorkspace, cloudRuntime.url)
   await authority.createCloudWorkspace(browserAuth, {

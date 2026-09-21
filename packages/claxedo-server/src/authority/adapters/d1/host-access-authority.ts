@@ -64,6 +64,7 @@ export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "revokeHostInvitation",
   "redeemHostInvitation",
   "markSecondDeviceOpen",
+  "authorizeWorkspaceHostAssignment",
   "assignWorkspaceHost",
   "unassignWorkspaceHost",
   "activeWorkspaceHost",
@@ -81,6 +82,12 @@ export type D1HostAccessAuthorityOptions = {
   randomNonce?: () => string
   /** The statements that cold-register a machine-placed workspace, run inside the assignment's own batch. */
   localWorkspaceRegistration?: D1WorkspaceAuthority["localWorkspaceRegistration"]
+  /**
+   * Whether this caller may file the workspace a cold share would create.
+   * Cold registration IS `localWorkspaceRegistration`, so it takes that
+   * registration's own admission rather than a second rule written here.
+   */
+  authorizeLocalWorkspaceRegistration?: D1WorkspaceAuthority["authorizeLocalWorkspaceRegistration"]
   /** The caller's current organization, recorded on an invitation when it is created. */
   resolveOrgId?: WorkspaceAuthority["resolveOrgId"]
 }
@@ -410,13 +417,18 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
     }
     const orgMemberVisible = scope?.visibility !== "owner"
-    let workspace: WorkspaceRow | undefined
-    if (await this.assignableWorkspaceExists(workspaceId)) {
-      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin", true)
-      requireLocalWorkspace(workspace)
-      if (invitationOrgId && workspace.org_id !== invitationOrgId) {
-        throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
-      }
+    // The workspace half is the admission `authorizeWorkspaceHostAssignment`
+    // already gave this caller; the invitation and scope rules below are the
+    // machine half, which only an assignment can know.
+    const { workspace } = await this.admitHostAssignment(auth, who, {
+      workspaceId,
+      // The organization a cold register files into: the caller's, else the
+      // one this machine was invited to serve.
+      ...(args.orgId ?? invitationOrgId ? { orgId: args.orgId ?? invitationOrgId } : {}),
+      ...(args.projectId ? { projectId: args.projectId } : {}),
+    })
+    if (workspace && invitationOrgId && workspace.org_id !== invitationOrgId) {
+      throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
     }
     const directory = requestedDirectory ?? workspace?.remote_directory ?? undefined
     const remoteDirectory = directory === undefined ? undefined : normalizeStoredDirectory(directory)
@@ -1361,6 +1373,44 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     `).bind(actor.actorId, workspaceId).first<WorkspaceRow>()
     if (!row) throw denied()
     return row
+  }
+
+  /**
+   * Whether this caller may have a machine serve this workspace, and whether
+   * that files a new row. The one place that answers it: the standalone
+   * admission and the assignment both come here, so a caller cannot be
+   * refused by one and admitted by the other.
+   */
+  private async admitHostAssignment(
+    auth: SignedControlPlaneAuth,
+    who: Principal,
+    args: { workspaceId: string; orgId?: string; projectId?: string },
+  ): Promise<{ registration: "existing" | "cold"; workspace?: WorkspaceRow }> {
+    if (await this.assignableWorkspaceExists(args.workspaceId)) {
+      const workspace = await this.requireWorkspaceAccess(who, args.workspaceId, "admin", true)
+      requireLocalWorkspace(workspace)
+      return { registration: "existing", workspace }
+    }
+    if (!this.options.authorizeLocalWorkspaceRegistration) {
+      throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")
+    }
+    await this.options.authorizeLocalWorkspaceRegistration(auth, {
+      ...(args.orgId ? { orgId: args.orgId } : {}),
+      ...(args.projectId ? { projectId: args.projectId } : {}),
+    })
+    return { registration: "cold" }
+  }
+
+  async authorizeWorkspaceHostAssignment(
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string; orgId?: string; projectId?: string },
+  ) {
+    const who = await this.requirePrincipal(auth)
+    const { registration } = await this.admitHostAssignment(auth, who, {
+      ...args,
+      workspaceId: requireText(args.workspaceId, "workspaceId"),
+    })
+    return { registration }
   }
 
   /** Whether an assignment would write to an existing record: a live row, or a retired machine-placed one it revives. */

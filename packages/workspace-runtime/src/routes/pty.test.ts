@@ -10,6 +10,8 @@ import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { createDiskHistory } from "../pty/history-disk"
+import { withWorkspaceTarget } from "../target"
+import { createProcessObserver } from "../managed-processes/process-observer"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
 const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
@@ -43,6 +45,8 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
     !!sessionId && owners[sessionId] === actorId
   const policy: SessionAccessPolicy = {
     sessionAuthority: "managed-private",
+    authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+    authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
     authorize: async (input) => allowed(input.actor?.actorId, input.sessionId)
       ? { allowed: true }
       : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
@@ -86,6 +90,53 @@ afterEach(() => {
 })
 
 describe("PtyRoutes", () => {
+  test("terminal identity comes from the runtime target rather than caller headers or environment", async () => {
+    const directory = await fs.realpath(os.tmpdir())
+    const info = {
+      id: "pty_workspace_identity",
+      title: "Terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: directory,
+      status: "running",
+      pid: 123,
+    } satisfies Pty.Info
+    const create = spyOn(Pty, "create").mockResolvedValue(info)
+    const commit = spyOn(Pty, "commit").mockReturnValue(info)
+    const observer = createProcessObserver()
+    const previousWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+    try {
+      const response = await withWorkspaceTarget({ workspaceId: "ws_actual", directory }, () =>
+        PtyRoutes(upgradeWebSocket, observer).request("http://localhost/", {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-workspace-id": "ws_header_forged" },
+          body: JSON.stringify({ env: { CLAXEDO_WORKSPACE_ID: "ws_env_forged", USER_VALUE: "kept" } }),
+        }),
+      )
+      expect(response.status).toBe(200)
+      expect(create.mock.calls[0]?.[0]?.env).toMatchObject({ CLAXEDO_WORKSPACE_ID: "ws_actual", USER_VALUE: "kept" })
+      expect(create.mock.calls[0]?.[1]).toMatchObject({ workspaceId: "ws_actual", directory })
+
+      delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+      process.env.WORKSPACE_RUNTIME_DIRECTORY = directory
+      const withoutIdentity = await PtyRoutes(upgradeWebSocket, observer).request("http://localhost/", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-workspace-id": "ws_header_forged" },
+        body: JSON.stringify({ env: { CLAXEDO_WORKSPACE_ID: "ws_env_forged", USER_VALUE: "kept" } }),
+      })
+      expect(withoutIdentity.status).toBe(200)
+      expect(create.mock.calls[1]?.[0]?.env?.CLAXEDO_WORKSPACE_ID).toBeUndefined()
+      expect(create.mock.calls[1]?.[0]?.env?.USER_VALUE).toBe("kept")
+      expect(create.mock.calls[1]?.[1]).toMatchObject({ workspaceId: directory, directory })
+    } finally {
+      if (previousWorkspaceId === undefined) delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+      else process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = previousWorkspaceId
+      observer.dispose()
+      create.mockRestore()
+      commit.mockRestore()
+    }
+  })
+
   test("accepts initialCommand on create requests", () => {
     expect(Pty.CreateInput.safeParse({ title: "Claude", initialCommand: "claude" }).success).toBe(true)
   })
@@ -283,7 +334,7 @@ describe("PtyRoutes", () => {
     }
   })
 
-  test("closes a passive PTY reader within the bounded authorization refresh after access is revoked", async () => {
+  test("attaches the route's socket through the authorized lifetime and closes it when access is revoked", async () => {
     let events: WSEvents | undefined
     let allowed = true
     let guardedSocket: Parameters<typeof Pty.connect>[1] | undefined
@@ -316,6 +367,8 @@ describe("PtyRoutes", () => {
     })
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
+      authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+      authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
       authorize: async () => allowed
         ? { allowed: true }
         : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
@@ -343,6 +396,10 @@ describe("PtyRoutes", () => {
         raw: rawSocket,
         close: rawSocket.close,
       } as unknown as WSContext)
+      // The terminal is attached only once the stream decision has answered,
+      // so nothing of it was readable during the upgrade itself.
+      expect(guardedSocket).toBeUndefined()
+      await new Promise((resolve) => setTimeout(resolve, 0))
       expect(guardedSocket).toBeDefined()
 
       allowed = false
@@ -353,6 +410,73 @@ describe("PtyRoutes", () => {
       expect(rawSocket.close).toHaveBeenCalledWith(1008, "Session access denied")
       expect(disconnected).toHaveBeenCalledTimes(1)
       expect(streamLeases).toEqual([undefined, "renewable-lease"])
+    } finally {
+      get.mockRestore()
+      connect.mockRestore()
+    }
+  })
+
+  test("keeps a read-only participant reading and drops what they type", async () => {
+    let events: WSEvents | undefined
+    const typed: unknown[] = []
+    const operations: string[] = []
+    const rawSocket = {
+      readyState: 1,
+      bufferedAmount: 0,
+      send: spyOn({ call() {} }, "call"),
+      close: spyOn({ call(_code?: number, _reason?: string) {} }, "call"),
+    }
+    let guardedSocket: Parameters<typeof Pty.connect>[1] | undefined
+    const upgrade = ((createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => async (c: Context) => {
+      events = await createEvents(c)
+      return new Response(null, { status: 200 })
+    }) as unknown as UpgradeWebSocket
+    const info: Pty.Info = {
+      id: "pty_shared",
+      sessionId: "session_shared",
+      title: "Shared terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/workspace",
+      status: "running",
+      pid: 1,
+    }
+    const get = spyOn(Pty, "get").mockReturnValue(info)
+    const connect = spyOn(Pty, "connect").mockImplementation((_id, socket) => {
+      guardedSocket = socket
+      return { onMessage: (message: unknown) => { typed.push(message) }, onClose() {} }
+    })
+    const policy: SessionAccessPolicy = {
+      ...privateSessionPolicy({ session_shared: "reader" }),
+      authorizeStream: async (input) => {
+        operations.push(input.operation)
+        return input.operation === "pty_write"
+          ? { allowed: false, status: 403, code: "session_write_forbidden", message: "Session is shared for reading" }
+          : { allowed: true, lease: "read-lease", expiresAt: Date.now() + 15_000 }
+      },
+    }
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", async (c, next) => {
+      c.set("relayHostAuth", relayAuth("editor", "reader"))
+      return await next()
+    })
+    app.route("/", PtyRoutes(upgrade, undefined, policy))
+
+    try {
+      expect((await app.request("http://localhost/pty_shared/connect", {
+        headers: { connection: "Upgrade", upgrade: "websocket" },
+      })).status).toBe(200)
+      events?.onOpen?.(new Event("open"), { raw: rawSocket, close: rawSocket.close } as unknown as WSContext)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      events?.onMessage?.({ data: "rm -rf /\r" } as MessageEvent, {} as WSContext)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(typed).toEqual([])
+      expect(rawSocket.close).not.toHaveBeenCalled()
+      guardedSocket!.send("output the reader may still see")
+      expect(rawSocket.send).toHaveBeenCalledWith("output the reader may still see")
+      expect(operations).toEqual(["pty_read", "pty_write"])
     } finally {
       get.mockRestore()
       connect.mockRestore()

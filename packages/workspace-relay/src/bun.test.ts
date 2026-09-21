@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { generateKeyPair } from "jose"
 import { mintHostTunnelToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
 import { createWorkspaceRelayDirectory, type WorkspaceRelayDirectory } from "./directory"
@@ -163,6 +163,77 @@ function hostTunnelSocket(url: string, token: string) {
       authorization: `Bearer ${token}`,
     },
   })
+}
+
+/**
+ * An accepted client socket whose upstream never finishes connecting, so every
+ * frame the test sends lands in the pre-open queue and each bound can be
+ * exercised on its own. The open watchdog is set far past the assertions so a
+ * socket that survives the bounds stays open long enough to prove it.
+ */
+async function preOpenQueueHarness(bounds: {
+  upstreamWebSocketPreOpenQueueMaxFrames: number
+  upstreamWebSocketPreOpenQueueMaxBytes: number
+}) {
+  const runtime = await generateKeyPair("EdDSA", { extractable: true })
+  const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+  class HangingUpstreamWebSocket {
+    readyState: number = WebSocket.CONNECTING
+    binaryType: WebSocket["binaryType"] = "arraybuffer"
+    bufferedAmount = 0
+    onopen: ((event: Event) => void) | null = null
+    onmessage: ((event: MessageEvent) => void) | null = null
+    onclose: ((event: CloseEvent) => void) | null = null
+    onerror: ((event: Event) => void) | null = null
+    send() {}
+    close(code = 1000, reason = "") {
+      this.readyState = WebSocket.CLOSED
+      this.onclose?.({ code, reason } as CloseEvent)
+    }
+  }
+  const relayHandler = createWorkspaceRelayBun({
+    runtimeAccessKey: runtime.publicKey,
+    relayHostSigningKey: relayHost.privateKey,
+    relayHostAlgorithm: "EdDSA",
+    resolveTarget: (claims) => ({
+      workspaceId: claims.workspace_id,
+      hostId: claims.host_id,
+      baseUrl: "http://cloud.example.test",
+      backing: "cloud-vm",
+    }),
+  }, {
+    upstreamWebSocket: HangingUpstreamWebSocket as unknown as WorkspaceRelayBunOptions["upstreamWebSocket"],
+    upstreamWebSocketOpenTimeoutMs: 30_000,
+    ...bounds,
+  })
+  const relay = Bun.serve({
+    port: 0,
+    fetch: relayHandler.fetch,
+    websocket: relayHandler.websocket,
+  })
+  const token = await mintRuntimeAccessToken({
+    principalKind: "user",
+    actorId: "user_1",
+    actorKind: "human",
+    orgId: "org_1",
+    workspaceId: "ws_1",
+    hostId: "host_1",
+    role: "editor",
+  }, runtime.privateKey, "EdDSA")
+  const ws = new (WebSocket as unknown as {
+    new(url: string, options: { headers?: Record<string, string>; protocols?: string[] }): WebSocket
+  })(
+    new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"),
+    { headers: { origin: "http://localhost:3000" }, protocols: [`claxedo-rat.${token}`] },
+  )
+  await waitForOpen(ws)
+  return {
+    ws,
+    async stop() {
+      ws.close()
+      await stopServer(relay)
+    },
+  }
 }
 
 describe("workspace relay Bun adapter", () => {
@@ -369,74 +440,69 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
-  test("bounds the cloud WebSocket pre-open queue", async () => {
-    const runtime = await generateKeyPair("EdDSA", { extractable: true })
-    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-    class HangingUpstreamWebSocket {
-      readyState: number = WebSocket.CONNECTING
-      binaryType: WebSocket["binaryType"] = "arraybuffer"
-      bufferedAmount = 0
-      onopen: ((event: Event) => void) | null = null
-      onmessage: ((event: MessageEvent) => void) | null = null
-      onclose: ((event: CloseEvent) => void) | null = null
-      onerror: ((event: Event) => void) | null = null
-      send() {}
-      close(code = 1000, reason = "") {
-        this.readyState = WebSocket.CLOSED
-        this.onclose?.({ code, reason } as CloseEvent)
-      }
-    }
-    const relayHandler = createWorkspaceRelayBun({
-      runtimeAccessKey: runtime.publicKey,
-      relayHostSigningKey: relayHost.privateKey,
-      relayHostAlgorithm: "EdDSA",
-      resolveTarget: (claims) => ({
-        workspaceId: claims.workspace_id,
-        hostId: claims.host_id,
-        baseUrl: "http://cloud.example.test",
-        backing: "cloud-vm",
-      }),
-    }, {
-      upstreamWebSocket: HangingUpstreamWebSocket as unknown as WorkspaceRelayBunOptions["upstreamWebSocket"],
-      upstreamWebSocketOpenTimeoutMs: 5_000,
-      upstreamWebSocketPreOpenQueueMaxFrames: 1,
-      // Both bounds must be exceeded to close, so the byte bound has to be tiny
-      // here too — otherwise these small frames are admitted (which is the
-      // point of the byte bound) and the socket survives to the open timeout.
-      upstreamWebSocketPreOpenQueueMaxBytes: 1,
+  test("closes a cloud WebSocket whose pre-open queue exceeds the byte bound alone", async () => {
+    const harness = await preOpenQueueHarness({
+      upstreamWebSocketPreOpenQueueMaxFrames: 64,
+      upstreamWebSocketPreOpenQueueMaxBytes: 4 * 1024,
     })
-    const relay = Bun.serve({
-      port: 0,
-      fetch: relayHandler.fetch,
-      websocket: relayHandler.websocket,
-    })
-    const token = await mintRuntimeAccessToken({
-      principalKind: "user",
-      actorId: "user_1",
-      actorKind: "human",
-      orgId: "org_1",
-      workspaceId: "ws_1",
-      hostId: "host_1",
-      role: "editor",
-    }, runtime.privateKey, "EdDSA")
-    const ws = new (WebSocket as unknown as {
-      new(url: string, options: { headers?: Record<string, string>; protocols?: string[] }): WebSocket
-    })(
-      new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"),
-      { headers: { origin: "http://localhost:3000" }, protocols: [`claxedo-rat.${token}`] },
-    )
-
     try {
-      await waitForOpen(ws)
-      const closed = waitForClose(ws)
-      ws.send("first")
-      ws.send("second")
+      const closed = waitForClose(harness.ws)
+      harness.ws.send("x".repeat(8 * 1024))
       await expect(closed).resolves.toMatchObject({
         reason: "Upstream WebSocket queue limit exceeded",
       })
     } finally {
-      ws.close()
-      await stopServer(relay)
+      await harness.stop()
+    }
+  })
+
+  test("closes a cloud WebSocket when individually valid frames cumulatively exceed the byte bound", async () => {
+    const harness = await preOpenQueueHarness({
+      upstreamWebSocketPreOpenQueueMaxFrames: 64,
+      upstreamWebSocketPreOpenQueueMaxBytes: 4 * 1024,
+    })
+    try {
+      const closed = waitForClose(harness.ws)
+      harness.ws.send("x".repeat(3 * 1024))
+      harness.ws.send("x".repeat(3 * 1024))
+      await expect(closed).resolves.toMatchObject({
+        reason: "Upstream WebSocket queue limit exceeded",
+      })
+    } finally {
+      await harness.stop()
+    }
+  })
+
+  test("closes a cloud WebSocket whose pre-open queue exceeds the frame bound alone", async () => {
+    const harness = await preOpenQueueHarness({
+      upstreamWebSocketPreOpenQueueMaxFrames: 4,
+      upstreamWebSocketPreOpenQueueMaxBytes: 8 * 1024 * 1024,
+    })
+    try {
+      const closed = waitForClose(harness.ws)
+      for (let i = 0; i < 8; i++) harness.ws.send("x")
+      await expect(closed).resolves.toMatchObject({
+        reason: "Upstream WebSocket queue limit exceeded",
+      })
+    } finally {
+      await harness.stop()
+    }
+  })
+
+  test("admits a pre-open burst that stays under both bounds", async () => {
+    const harness = await preOpenQueueHarness({
+      upstreamWebSocketPreOpenQueueMaxFrames: 64,
+      upstreamWebSocketPreOpenQueueMaxBytes: 8 * 1024 * 1024,
+    })
+    try {
+      const closed = waitForClose(harness.ws)
+      for (let i = 0; i < 32; i++) harness.ws.send("x".repeat(1024))
+      await expect(Promise.race([
+        closed,
+        new Promise<"open">((resolve) => setTimeout(() => resolve("open"), 250)),
+      ])).resolves.toBe("open")
+    } finally {
+      await harness.stop()
     }
   })
 
@@ -946,6 +1012,157 @@ describe("workspace relay Bun adapter", () => {
       expect(maxActive).toBe(1)
       expect(first.headers.get("server-timing") ?? "").toContain("direct-http-queue;dur=")
       expect(second.headers.get("server-timing") ?? "").toContain("direct-http-queue;dur=")
+    } finally {
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
+  /**
+   * The relay's own copy of the body is what the concurrency slot has to
+   * budget, and it is not directly observable: Bun's HTTP server drains the
+   * wire into `request.body` before the handler runs, whatever the handler then
+   * does with it. The oversized body makes the copy observable instead — the
+   * 413 can only be decided by reading, so the moment it is answered is the
+   * moment the relay buffered. Under a busy slot that answer must not arrive.
+   */
+  test("buffers a queued direct-cloud request body only once its concurrency slot frees", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    let releaseFirst: () => void
+    let firstArrived: () => void
+    const firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const firstReachedUpstream = new Promise<void>((resolve) => { firstArrived = resolve })
+    let upstreamRequests = 0
+    const host = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        upstreamRequests++
+        await request.arrayBuffer()
+        if (upstreamRequests === 1) {
+          firstArrived()
+          await firstHeld
+        }
+        return new Response("cloud-ok")
+      },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    }, {
+      directHttpConcurrency: 1,
+      directHttpRequestBodyMaxBytes: 8,
+    })
+    const relay = Bun.serve({
+      port: 0,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+    const post = (name: string, body: string) =>
+      fetch(new URL(`/workspaces/ws_1/api/wr/upload?i=${name}`, relay.url), {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body,
+      })
+
+    try {
+      const first = post("first", "ok")
+      await firstReachedUpstream
+      const second = post("second", "x".repeat(64))
+      const settledWhileBusy = await Promise.race([
+        second.then((res) => `settled:${res.status}`),
+        new Promise<"queued">((resolve) => setTimeout(() => resolve("queued"), 250)),
+      ])
+
+      expect(settledWhileBusy).toBe("queued")
+
+      releaseFirst!()
+      expect((await first).status).toBe(200)
+      expect((await second).status).toBe(413)
+      // The oversized request never reached the workspace, and releasing its
+      // slot is what let it be answered at all.
+      expect(upstreamRequests).toBe(1)
+    } finally {
+      releaseFirst!()
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
+  test("rejects direct-cloud request bodies over the configured cap", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    let upstreamRequests = 0
+    const host = Bun.serve({
+      port: 0,
+      fetch() {
+        upstreamRequests++
+        return new Response("cloud-ok")
+      },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    }, {
+      directHttpRequestBodyMaxBytes: 8,
+    })
+    const relay = Bun.serve({
+      port: 0,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      const res = await fetch(new URL("/workspaces/ws_1/api/wr/upload", relay.url), {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          origin: "http://localhost:4482",
+        },
+        body: "this body is too large",
+      })
+
+      expect(res.status).toBe(413)
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:4482")
+      await expect(res.json()).resolves.toEqual({
+        error: {
+          code: "request_body_too_large",
+          message: "Workspace request body exceeds the relay limit",
+        },
+      })
+      expect(upstreamRequests).toBe(0)
     } finally {
       await stopServer(relay)
       await stopServer(host)
@@ -2782,6 +2999,83 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  test("long token expiry re-arms within the timer range and closes only at the signed deadline", async () => {
+    const runtime = await generateKeyPair("EdDSA")
+    const relayHost = await generateKeyPair("EdDSA")
+    const startedAt = Math.floor(Date.now() / 1000) * 1000
+    const ttlSeconds = 30 * 24 * 60 * 60
+    const deadline = startedAt + ttlSeconds * 1000
+    let clock = startedAt
+    const scheduled: Array<{ delay: number; fire: () => void; timer: ReturnType<typeof setTimeout> }> = []
+    let captureNext = false
+    const realTimeout = globalThis.setTimeout
+    const timeout = spyOn(globalThis, "setTimeout").mockImplementation(new Proxy(realTimeout, {
+      apply(target, receiver, input) {
+        const [callback, delay, ...args] = input
+        if (typeof delay === "number" && (delay >= 2_147_483_647 || captureNext)) {
+          captureNext = false
+          // Hold only this long-lived authorization timer; network timers keep
+          // running normally while the test advances the injected expiry clock.
+          const timer = realTimeout(() => {}, 2_147_483_647)
+          scheduled.push({ delay, timer, fire: () => {
+            clearTimeout(timer)
+            if (typeof callback === "function") callback(...args)
+          } })
+          return timer
+        }
+        return Reflect.apply(target, receiver, input)
+      },
+    }))
+    const host = Bun.serve<{ ok: true }>({
+      port: 0,
+      fetch(request, server) {
+        if (server.upgrade(request, { data: { ok: true } })) return undefined
+        return new Response("upgrade failed", { status: 400 })
+      },
+      websocket: { message(ws, message) { ws.send(message) } },
+    })
+    const handler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id, hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""), backing: "cloud-vm",
+      }),
+    }, { now: () => clock })
+    const relay = Bun.serve({ port: 0, fetch: handler.fetch, websocket: handler.websocket })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user", actorId: "user_1", actorKind: "human", orgId: "org_1",
+      workspaceId: "ws_1", hostId: "host_1", role: "editor", now: startedAt, ttlSeconds,
+    }, runtime.privateKey, "EdDSA")
+    const client = new (WebSocket as unknown as {
+      new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+    })(new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"), {
+      headers: { origin: "http://localhost:3000" }, protocols: [`claxedo-rat.${token}`],
+    })
+    try {
+      await waitForOpen(client)
+      expect(scheduled.map((entry) => entry.delay)).toEqual([2_147_483_647])
+      clock = deadline - 1000
+      captureNext = true
+      scheduled[0].fire()
+      expect(scheduled.map((entry) => entry.delay)).toEqual([2_147_483_647, 1000])
+      const echoed = waitForMessage(client)
+      client.send("still authorized")
+      await expect(echoed).resolves.toBe("still authorized")
+      const closed = waitForClose(client)
+      clock = deadline
+      scheduled[1].fire()
+      await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token expired" })
+    } finally {
+      timeout.mockRestore()
+      for (const entry of scheduled) clearTimeout(entry.timer)
+      client.close()
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
   test("rejects user→relay WS upgrades with a missing Origin header", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
@@ -3724,6 +4018,10 @@ describe("workspace relay Bun adapter", () => {
         pendingChunks: [] as Uint8Array[],
         bytesQueued: 0,
         responseStarted: false,
+        corsHeaders: (headers: Headers) => {
+          headers.set("access-control-allow-origin", "https://app.example")
+          return headers
+        },
       })
     })
     void responsePromise
@@ -3742,6 +4040,7 @@ describe("workspace relay Bun adapter", () => {
         entry,
         chunk: new Uint8Array(96 * 1024),
         slowConsumerTimeoutMs: 150,
+        maxBufferedBytes: 8 * 1024 * 1024,
         slowConsumerStats,
       })
       __slowConsumerInternalsForTest.enqueueChunkWithBackpressure({
@@ -3750,6 +4049,7 @@ describe("workspace relay Bun adapter", () => {
         entry,
         chunk: new Uint8Array(32 * 1024),
         slowConsumerTimeoutMs: 150,
+        maxBufferedBytes: 8 * 1024 * 1024,
         slowConsumerStats,
       })
       // Wait past the 150 ms slow-consumer timeout.
@@ -3761,6 +4061,85 @@ describe("workspace relay Bun adapter", () => {
       expect(resolved503).toBe(true)
     } finally {
       clearTimeout((entry as { timeout: ReturnType<typeof setTimeout> }).timeout)
+    }
+  })
+
+  // Same unit-level setup as the watchdog case above, for the same reason: a
+  // localhost consumer drains between messages, so the overflow buffer only
+  // grows against a consumer that has genuinely stopped reading.
+  test("slow consumer past the overflow byte cap fails with 503 without waiting for the watchdog", async () => {
+    const slowConsumerStats = __slowConsumerInternalsForTest.createSlowConsumerStats()
+    let controller: ReadableStreamDefaultController<Uint8Array>
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) { controller = c },
+    }, new ByteLengthQueuingStrategy({ highWaterMark: 64 * 1024 }))
+    const pendingMap = new Map<string, unknown>()
+    const requestId = "req_overflow"
+    let resolved: Response | undefined
+    const responsePromise = new Promise<Response>((resolve) => {
+      pendingMap.set(requestId, {
+        controller: controller!,
+        stream,
+        resolve: (res: Response) => {
+          resolved = res
+          resolve(res)
+        },
+        reject: () => {},
+        timeout: setTimeout(() => {}, 60_000),
+        pendingChunks: [] as Uint8Array[],
+        bytesQueued: 0,
+        responseStarted: false,
+        corsHeaders: (headers: Headers) => {
+          headers.set("access-control-allow-origin", "https://app.example")
+          return headers
+        },
+      })
+    })
+    void responsePromise
+    const fakeWs = { data: { pending: pendingMap } } as unknown as Parameters<
+      typeof __slowConsumerInternalsForTest.enqueueChunkWithBackpressure
+    >[0]["ws"]
+    const entry = pendingMap.get(requestId) as Parameters<
+      typeof __slowConsumerInternalsForTest.enqueueChunkWithBackpressure
+    >[0]["entry"]
+    const push = (byteLength: number) =>
+      __slowConsumerInternalsForTest.enqueueChunkWithBackpressure({
+        ws: fakeWs,
+        requestId,
+        entry,
+        chunk: new Uint8Array(byteLength),
+        // Far beyond the test's lifetime: only the byte cap may end this request.
+        slowConsumerTimeoutMs: 60_000,
+        maxBufferedBytes: 128 * 1024,
+        slowConsumerStats,
+      })
+    try {
+      // Fills the controller past its HWM, so everything after this overflows.
+      push(96 * 1024)
+      push(100 * 1024)
+      expect(entry.bytesQueued).toBe(100 * 1024)
+      expect(pendingMap.has(requestId)).toBe(true)
+
+      // 100 KiB already buffered + 100 KiB more is past the 128 KiB cap.
+      push(100 * 1024)
+
+      expect(resolved?.status).toBe(503)
+      expect(resolved?.headers.get("access-control-allow-origin")).toBe("https://app.example")
+      await expect(resolved!.json()).resolves.toEqual({
+        error: {
+          code: "slow_consumer_overflow",
+          message: "Downstream consumer fell too far behind the tunnelled response",
+        },
+      })
+      expect(pendingMap.has(requestId)).toBe(false)
+      expect(entry.bytesQueued).toBe(0)
+      expect(entry.pendingChunks.length).toBe(0)
+      expect(slowConsumerStats.droppedRequests).toBe(1)
+      expect(slowConsumerStats.timerFired).toBe(0)
+      expect(entry.slowConsumerTimeout).toBeUndefined()
+    } finally {
+      clearTimeout((entry as { timeout: ReturnType<typeof setTimeout> }).timeout)
+      if (entry.slowConsumerTimeout) clearTimeout(entry.slowConsumerTimeout)
     }
   })
 
@@ -3941,6 +4320,7 @@ describe("workspace relay Bun adapter", () => {
         entry,
         chunk: new Uint8Array(96 * 1024),
         slowConsumerTimeoutMs: 100,
+        maxBufferedBytes: 8 * 1024 * 1024,
         slowConsumerStats,
       })
       // Second chunk: desiredSize is now <= 0 → overflow → arms watchdog →
@@ -3951,6 +4331,7 @@ describe("workspace relay Bun adapter", () => {
         entry,
         chunk: new Uint8Array(32 * 1024),
         slowConsumerTimeoutMs: 100,
+        maxBufferedBytes: 8 * 1024 * 1024,
         slowConsumerStats,
       })
       expect(slowConsumerStats.overflowEvents).toBe(1)

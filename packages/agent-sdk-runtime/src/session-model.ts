@@ -17,12 +17,13 @@ const NATIVE_COMPATIBILITY_MODEL: PromptModel = {
 /**
  * Resolve the model attached to a turn when the caller did not select one.
  *
- * SDK and ACP model selection belongs to the selected harness. `default` is a protocol
- * hand-off marker: the adapter leaves the agent's advertised/current model in
- * control. OpenCode compatibility sessions retain their existing default.
+ * Connection sessions retain an absent model until selected or reported. Native
+ * SDK harnesses retain their default marker, and OpenCode compatibility sessions
+ * retain their existing model.
  */
-export function defaultSessionModel(harness: SessionHarness): PromptModel {
-  if (harness.access === "connection" || harness.id !== "opencode") {
+export function defaultSessionModel(harness: SessionHarness): PromptModel | undefined {
+  if (harness.access === "connection") return undefined
+  if (harness.id !== "opencode") {
     const providerID = harnessKey(harness)
     if (!providerID) throw new Error(`Invalid harness identity: ${harness.id}`)
     return { providerID, modelID: DEFAULT_MODEL_ID }
@@ -30,7 +31,7 @@ export function defaultSessionModel(harness: SessionHarness): PromptModel {
   return NATIVE_COMPATIBILITY_MODEL
 }
 
-export function resolveSessionModel(config: SessionConfig): PromptModel {
+export function resolveSessionModel(config: SessionConfig): PromptModel | undefined {
   return config.model ?? defaultSessionModel(config.harness)
 }
 

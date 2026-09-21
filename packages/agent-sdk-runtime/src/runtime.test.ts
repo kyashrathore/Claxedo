@@ -30,6 +30,37 @@ test("disposing a runtime leaves its injected store open for its owner", async (
   expect(closed).toBe(0)
 })
 
+test.each([true, false])("turn finalization preserves recovery metadata only for the same failure (%s)", async (sameFailure) => {
+  const store = createMemoryRuntimeStore()
+  const detail = { message: "ACP connection closed", acpOutcome: "uncertain", recovery: "No prompt was retried" }
+  const runtime = createAgentRuntime({ store, harnesses: [testHarness({
+    sendMessage: async function* (id, input) {
+      yield messageUpdated(buildAssistantMessage({
+        id: input.assistantMessageId, sessionID: id, parentID: input.userMessageId ?? id,
+        agent: input.agent, model: input.model, directory: "/repo",
+        error: { name: "UnknownError", data: detail },
+      }))
+      yield sessionError(sameFailure ? detail.message : "Different failure", id)
+    },
+  })] })
+  try {
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
+    const finished = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
+    await runtime.turns.start({ sessionId: session.id, messageId: "recover-metadata", text: "hello" })
+    const events = await finished
+    await tick()
+    const error = store.getMessages(session.id).find((row) => row.info.role === "assistant")?.info.error
+    const terminal = events.find((row) => row.payload.type === "session.error")?.payload
+    if (sameFailure) {
+      expect(error?.data).toEqual(detail)
+      expect(terminal).toMatchObject({ properties: { error: { data: detail } } })
+    } else {
+      expect(error?.data.acpOutcome).toBeUndefined()
+      expect(error?.data.message).toBe("Different failure")
+    }
+  } finally { await runtime.dispose() }
+})
+
 async function collectUntilFinish<T extends { payload: { type: string } }>(events: AsyncIterable<T>) {
   const out: T[] = []
   for await (const event of events) {
@@ -1395,7 +1426,7 @@ describe("createAgentRuntime", () => {
   })
 
   test("leaves an operator ACP model at its own default when no model is selected", async () => {
-    const models: Array<{ providerID: string; modelID: string }> = []
+    const models: Array<{ providerID: string; modelID: string } | undefined> = []
     const base = testHarness({
       sendMessage: async function* (_id, input) {
         models.push(input.model)
@@ -1414,8 +1445,8 @@ describe("createAgentRuntime", () => {
     const turn = await runtime.turns.start({ sessionId: session.id, text: "hello" })
     await tick()
 
-    expect(turn.prompt.model).toEqual({ providerID: "connection:openclaw", modelID: "default" })
-    expect(models).toEqual([{ providerID: "connection:openclaw", modelID: "default" }])
+    expect(turn.prompt.model).toBeUndefined()
+    expect(models).toEqual([undefined])
     await runtime.dispose()
   })
 
@@ -1917,7 +1948,10 @@ describe("createAgentRuntime", () => {
       title: "Fix terminal pane rendering",
       titleSource: "harness",
     })
-    expect(published).toEqual([{ title: "Fix terminal pane rendering", titleSource: "harness" }].map((row) => expect.objectContaining(row)))
+    expect(published).toEqual([
+      expect.objectContaining({ title: "fix the terminal pane", titleSource: "prompt" }),
+      expect.objectContaining({ title: "Fix terminal pane rendering", titleSource: "harness" }),
+    ])
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_2", text: "now the sidebar" })
     await tick()

@@ -62,6 +62,39 @@ describe("StaticTokenVerifier", () => {
 })
 
 describe("HttpTokenVerifier", () => {
+  test.each(["http://verify.example/v", "http://localhost/v", "file:///tmp/keys", "https://user:pass@verify.example/v", "https://verify.example/v#other"])("refuses an insecure endpoint without transmitting a token: %s", (endpoint) => {
+    let requests = 0
+    expect(() => createHttpTokenVerifier({ endpoint, fetch: asFetch(async () => { requests++; return Response.json({}) }) })).toThrow("Verifier endpoint requires HTTPS")
+    expect(requests).toBe(0)
+  })
+
+  test.each(["http://localhost.evil.test/v", "http://127.0.0.2/v", "http://0.0.0.0/v"])("the development exception cannot authorize %s", (endpoint) => {
+    expect(() => createHttpTokenVerifier({ endpoint, allowInsecureLoopback: true })).toThrow("Verifier endpoint requires HTTPS")
+  })
+
+  test.each([
+    { exp: now - 1 }, { exp: now }, { exp: now + 60, iat: now + 61 }, { iat: now + 1_000 }, { nbf: now + 1_000 }, { nbf: "tomorrow" },
+  ])("locally refuses invalid temporal claims %j", async (changed) => {
+    const verifier = createHttpTokenVerifier({ endpoint: "https://verify.example/v", fetch: asFetch(async () => Response.json({ subject: "user_1", claims: { ...baseClaims, ...changed } })) })
+    await expect(verifier.verify("synthetic-token")).rejects.toMatchObject({ code: "verifier_claims_invalid" })
+  })
+
+  test("a real redirect never transmits the bearer to its target", async () => {
+    let received = 0
+    const destination = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => { received++; return Response.json({ subject: "user_1", claims: baseClaims }) } })
+    const source = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response(null, { status: 307, headers: { location: destination.url.href } }) })
+    try {
+      const verifier = createHttpTokenVerifier({ endpoint: source.url.href, allowInsecureLoopback: true })
+      await expect(verifier.verify("synthetic-token")).rejects.toMatchObject({ code: "verifier_unreachable" })
+      expect(received).toBe(0)
+      await expect(createHttpTokenVerifier({ endpoint: destination.url.href, allowInsecureLoopback: true }).verify("synthetic-token")).resolves.toMatchObject({ subject: "user_1" })
+      expect(received).toBe(1)
+    } finally {
+      await source.stop(true)
+      await destination.stop(true)
+    }
+  })
+
   test("returns claims when the verifier endpoint accepts the token", async () => {
     const fetchMock = asFetch(async (url, init) => {
       const raw = init?.body

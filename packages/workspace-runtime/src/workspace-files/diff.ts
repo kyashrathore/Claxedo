@@ -1,17 +1,28 @@
-import path from "node:path"
-import { readFile } from "node:fs/promises"
-import { createBoundedGit, GitTimeoutError, type GitExec } from "../git"
+import { createBoundedGit, GitTimeoutError, LITERAL_PATHSPECS, type GitExec } from "../git"
+import { readWorkingTreeText } from "./working-tree"
+
+export { workspaceRelativeFile as relativeDiffFile } from "./working-tree"
 
 const DIFF_CONTENT_CONCURRENCY = 8
 
 export type FileDiff = {
   file: string
+  /**
+   * Where a renamed or copied entry came from. Named as `GitStatusEntry.from`
+   * is, and carried for the same two reasons: a reader wants the pair, and the
+   * source is a path of its own that a caller may have no business seeing.
+   */
+  from?: string
   before?: string
   after?: string
   patch?: string
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
+}
+
+function renameSource(item: NameStatusFile) {
+  return item.targetFile === item.file ? {} : { from: item.file }
 }
 
 type NameStatusFile = {
@@ -25,12 +36,10 @@ export type DiffRoutesDeps = {
   gitTimeoutMs?: number
   gitMaxBuffer?: number
   gitConcurrency?: number
-  readFile?: typeof readFile
 }
 
 export type DiffRuntime = {
   runGit: (args: string[], cwd: string) => Promise<string>
-  readFile: typeof readFile
 }
 
 export function createDiffRuntime(deps: DiffRoutesDeps = {}): DiffRuntime {
@@ -41,7 +50,6 @@ export function createDiffRuntime(deps: DiffRoutesDeps = {}): DiffRuntime {
       ...(deps.gitMaxBuffer !== undefined ? { maxBuffer: deps.gitMaxBuffer } : {}),
       ...(deps.gitConcurrency !== undefined ? { concurrency: deps.gitConcurrency } : {}),
     }),
-    readFile: deps.readFile ?? readFile,
   }
 }
 
@@ -265,6 +273,7 @@ async function trackedDiffSummary(
     )
     return {
       file: item.targetFile,
+      ...renameSource(item),
       additions: changes.additions,
       deletions: changes.deletions,
       status: diffStatus(item.statusChar),
@@ -321,12 +330,7 @@ function parseNameStatus(output: string) {
 async function untrackedDiffs(runtime: DiffRuntime, directory: string) {
   const untrackedList = await optionalGit(runtime, ["ls-files", "--others", "--exclude-standard", "-z"], directory)
   return mapLimit(untrackedList.split("\0").filter(Boolean), DIFF_CONTENT_CONCURRENCY, async (file) => {
-    let after = ""
-    try {
-      after = await runtime.readFile(path.join(directory, file), "utf-8")
-    } catch {
-      after = ""
-    }
+    const after = await readWorkingTreeText({ directory, file }) ?? ""
     return {
       file,
       before: "",
@@ -364,6 +368,7 @@ export async function stagedDiff(runtime: DiffRuntime, directory: string): Promi
     const changes = await fileStats(runtime, stats, directory, undefined, undefined, item.targetFile, true)
     return {
       file: item.targetFile,
+      ...renameSource(item),
       before,
       after,
       additions: changes.additions,
@@ -388,17 +393,13 @@ export async function uncommittedDiff(runtime: DiffRuntime, directory: string): 
 
   diffs.push(...await mapLimit(trackedFiles, DIFF_CONTENT_CONCURRENCY, async (item) => {
     const before = item.statusChar === "A" ? "" : await getFileContent(runtime, directory, "HEAD", item.file)
-    let after = ""
-    if (item.statusChar !== "D") {
-      try {
-        after = await runtime.readFile(path.join(directory, item.targetFile), "utf-8")
-      } catch {
-        after = ""
-      }
-    }
+    const after = item.statusChar === "D"
+      ? ""
+      : await readWorkingTreeText({ directory, file: item.targetFile }) ?? ""
     const changes = await fileStats(runtime, stats, directory, "HEAD", undefined, item.targetFile)
     return {
       file: item.targetFile,
+      ...renameSource(item),
       before,
       after,
       additions: changes.additions,
@@ -430,17 +431,13 @@ export async function unstagedDiff(runtime: DiffRuntime, directory: string): Pro
       if (err instanceof GitTimeoutError) throw err
       before = ""
     }
-    let after = ""
-    if (item.statusChar !== "D") {
-      try {
-        after = await runtime.readFile(path.join(directory, item.targetFile), "utf-8")
-      } catch {
-        after = ""
-      }
-    }
+    const after = item.statusChar === "D"
+      ? ""
+      : await readWorkingTreeText({ directory, file: item.targetFile }) ?? ""
     const changes = await fileStats(runtime, stats, directory, undefined, undefined, item.targetFile)
     return {
       file: item.targetFile,
+      ...renameSource(item),
       before,
       after,
       additions: changes.additions,
@@ -470,6 +467,7 @@ export async function toFromDiff(runtime: DiffRuntime, directory: string, from: 
     const changes = await fileStats(runtime, stats, directory, from, to, item.targetFile)
     return {
       file: item.targetFile,
+      ...renameSource(item),
       before,
       after,
       additions: changes.additions,
@@ -479,6 +477,10 @@ export async function toFromDiff(runtime: DiffRuntime, directory: string, from: 
   })
 }
 
+/**
+ * The one place a caller's own path reaches git here, so it is the one place
+ * that has to be read as a filename rather than a pathspec.
+ */
 function vcsPatchArgs(input: {
   mode: string
   fromRef?: string
@@ -486,19 +488,23 @@ function vcsPatchArgs(input: {
   file: string
 }) {
   if (input.mode === "staged") {
-    return ["diff", "--cached", "--patch", "--no-ext-diff", "--unified=3", "--", input.file]
+    return [LITERAL_PATHSPECS, "diff", "--cached", "--patch", "--no-ext-diff", "--unified=3", "--", input.file]
   }
   if (input.mode === "unstaged") {
-    return ["diff", "--patch", "--no-ext-diff", "--unified=3", "--", input.file]
+    return [LITERAL_PATHSPECS, "diff", "--patch", "--no-ext-diff", "--unified=3", "--", input.file]
   }
   if (isRangeMode(input.mode) && input.fromRef && input.toRef) {
-    return ["diff", "--patch", "--no-ext-diff", "--unified=3", input.fromRef, input.toRef, "--", input.file]
+    return [LITERAL_PATHSPECS, "diff", "--patch", "--no-ext-diff", "--unified=3", input.fromRef, input.toRef, "--", input.file]
   }
-  return ["diff", "--patch", "--no-ext-diff", "--unified=3", "HEAD", "--", input.file]
+  return [LITERAL_PATHSPECS, "diff", "--patch", "--no-ext-diff", "--unified=3", "HEAD", "--", input.file]
 }
 
 async function isUntracked(runtime: DiffRuntime, directory: string, file: string) {
-  const output = await optionalGit(runtime, ["ls-files", "--others", "--exclude-standard", "-z", "--", file], directory)
+  const output = await optionalGit(
+    runtime,
+    [LITERAL_PATHSPECS, "ls-files", "--others", "--exclude-standard", "-z", "--", file],
+    directory,
+  )
   return output.split("\0").filter(Boolean).includes(file)
 }
 
@@ -514,12 +520,7 @@ export async function filePatchDiff(input: {
   if (patch) return { file: input.file, patch }
 
   if (input.mode === "unstaged" && await isUntracked(input.runtime, input.directory, input.file)) {
-    let after = ""
-    try {
-      after = await input.runtime.readFile(path.join(input.directory, input.file), "utf-8")
-    } catch {
-      after = ""
-    }
+    const after = await readWorkingTreeText({ directory: input.directory, file: input.file }) ?? ""
     return { file: input.file, before: "", after }
   }
 
@@ -546,14 +547,6 @@ export async function refsExist(runtime: DiffRuntime, directory: string, fromRef
     existsRef(runtime, toRef, directory),
   ])
   return fromExists && toExists
-}
-
-export function relativeDiffFile(input: string): string | undefined {
-  if (input.includes("\0")) return undefined
-  if (path.isAbsolute(input)) return undefined
-  const normalized = path.normalize(input)
-  if (normalized === ".." || normalized.startsWith(`..${path.sep}`)) return undefined
-  return input
 }
 
 export async function diffRefs(runtime: DiffRuntime, directory: string) {

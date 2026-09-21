@@ -13,7 +13,8 @@ export type HarnessType = HarnessSelection
 export type OptionsSource = "harness" | "catalog" | "empty"
 export type HarnessHealthStatus = "ok" | "degraded" | "unavailable"
 export type HarnessHealth = { status?: HarnessHealthStatus; reason?: string }
-export type HarnessState = { type?: HarnessType; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth }
+export type HarnessConnectionState = { connectionId: string; state: "configured" | "connecting" | "ready" | "auth-required" | "disconnected" | "failed" }
+export type HarnessState = { type?: HarnessType; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth; connectionState?: HarnessConnectionState }
 /** A model choice offered by a harness. `description` carries the version and
  * context window (e.g. "Opus 4.8 with 1M context"), which `name` omits. */
 export type HarnessModelOption = { id: string; name: string; description?: string; connected?: boolean }
@@ -203,7 +204,16 @@ export function decodeHarnessState(value: unknown): HarnessState | undefined {
     ...(typeof raw.ready === "boolean" ? { ready: raw.ready } : {}),
     ...(typeof raw.workspaceId === "string" ? { workspaceId: raw.workspaceId } : {}),
     ...(decodeHarnessHealth(raw.harnessHealth) ? { harnessHealth: decodeHarnessHealth(raw.harnessHealth)! } : {}),
+    ...(decodeConnectionState(raw.connectionState) ? { connectionState: decodeConnectionState(raw.connectionState)! } : {}),
   }
+}
+
+function decodeConnectionState(value: unknown): HarnessConnectionState | undefined {
+  const raw = record(value)
+  if (!raw || typeof raw.connectionId !== "string" || !raw.connectionId) return undefined
+  const state = raw.state
+  if (state !== "configured" && state !== "connecting" && state !== "ready" && state !== "auth-required" && state !== "disconnected" && state !== "failed") return undefined
+  return { connectionId: raw.connectionId, state }
 }
 
 function decodeHarnessHealth(value: unknown): HarnessHealth | undefined {

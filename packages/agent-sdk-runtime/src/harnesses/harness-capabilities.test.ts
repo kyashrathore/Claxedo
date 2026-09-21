@@ -93,17 +93,17 @@ function assertCompleteShape(caps: HarnessCapabilities) {
 }
 
 describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
-  test("adapter barrel re-exports the canonical capability helper", () => {
+  test("adapter barrel re-exports the canonical capability helper", async () => {
     expect(barrelHarnessCapabilities).toBe(canonicalHarnessCapabilities)
   })
 
-  test("an operator ACP adapter reports a complete capability manifest", () => {
-    const caps = acpAdapterWithHarness("openclaw").readHarnessCapabilities()
+  test("an operator ACP adapter reports a complete capability manifest", async () => {
+    const caps = (await acpAdapterWithHarness("openclaw").readHarnessCapabilities())
     expect(caps.harness).toBe("openclaw")
     assertCompleteShape(caps)
   })
 
-  test("native SDK harness adapters report a complete capability manifest", () => {
+  test("native SDK harness adapters report a complete capability manifest", async () => {
     for (const type of ["claude", "codex", "cursor"] as const) {
       const caps = sdkAdapterWithDriver(type).readHarnessCapabilities()
       expect(caps.harness).toBe(type)
@@ -114,7 +114,7 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     }
   })
 
-  test("SDK harnesses advertise only the interactions their driver raises", () => {
+  test("SDK harnesses advertise only the interactions their driver raises", async () => {
     // Cursor's SDK has no approval or question callback, so its driver never
     // fills the host's pending maps; Claude routes approvals and AskUserQuestion
     // through canUseTool; Codex raises both through app-server requests.
@@ -123,15 +123,15 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     expect(sdkAdapterWithDriver("codex").readHarnessCapabilities()).toMatchObject({ permissions: true, questions: true })
   })
 
-  test("native coding harnesses advertise subagents without assuming ACP extensions", () => {
+  test("native coding harnesses advertise subagents without assuming ACP extensions", async () => {
     const adapters = (["claude", "codex", "cursor"] as const)
       .map((type) => sdkAdapterWithDriver(type).readHarnessCapabilities())
     expect(adapters.every((caps) => caps.subagents)).toBe(true)
-    expect(acpAdapterWithHarness("openclaw").readHarnessCapabilities().subagents).toBe(false)
+    expect((await acpAdapterWithHarness("openclaw").readHarnessCapabilities()).subagents).toBe(false)
   })
 
   test("advertises Goal only when an adapter exposes the canonical resource", async () => {
-    expect(acpAdapterWithHarness("openclaw").readHarnessCapabilities().goals).toBe(false)
+    expect((await acpAdapterWithHarness("openclaw").readHarnessCapabilities()).goals).toBe(false)
     for (const type of ["claude", "codex", "cursor"] as const) {
       const driver = sdkDriver(type)
       expect(sdkAdapterWithDriver(type).readHarnessCapabilities().goals, type).toBe(!!driver.goals || !!driver.nativeGoal)
@@ -139,17 +139,17 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     expect((await new PiHarnessAdapter({ store: createMemoryRuntimeStore() }).readHarnessCapabilities()).goals).toBe(true)
   })
 
-  test("native Pi reports questions and goals but no permission or subagent emulation", () => {
+  test("native Pi reports questions and goals but no permission or subagent emulation", async () => {
     const adapter = new PiHarnessAdapter({ store: createMemoryRuntimeStore() })
     const caps = adapter.readHarnessCapabilities()
     assertCompleteShape(caps)
     expect(caps).toMatchObject({ harness: "pi", goals: true, subagents: false, permissions: false, questions: true, replay: true, configOptions: true })
   })
 
-  test("only the harnesses with an effort control leave the unsupported catalog behind", () => {
+  test("only the harnesses with an effort control leave the unsupported catalog behind", async () => {
     // Claude and Codex read per-model levels off a live catalog, so a cold
-    // driver is unresolved, not unsupported; Cursor, Pi and ACP have no effort
-    // control at all and say so.
+    // driver is unresolved, not unsupported; ACP must discover its session
+    // options before reporting effort support. Cursor and Pi have no catalog.
     for (const type of ["claude", "codex"] as const) {
       expect(sdkAdapterWithDriver(type).readHarnessCapabilities().effortLevels, type)
         .toEqual({ status: "unresolved", models: [] })
@@ -158,11 +158,11 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
       .toEqual({ status: "unsupported", models: [] })
     expect(new PiHarnessAdapter({ store: createMemoryRuntimeStore() }).readHarnessCapabilities().effortLevels)
       .toEqual({ status: "unsupported", models: [] })
-    expect(acpAdapterWithHarness("openclaw").readHarnessCapabilities().effortLevels)
-      .toEqual({ status: "unsupported", models: [] })
+    expect((await acpAdapterWithHarness("openclaw").readHarnessCapabilities()).effortLevels)
+      .toEqual({ status: "unresolved", models: [] })
   })
 
-  test("a resolved driver catalog reaches the capability response per model", () => {
+  test("a resolved driver catalog reaches the capability response per model", async () => {
     const driver = {
       ...sdkDriver("claude"),
       effortLevels: (directory?: string) => harnessEffortLevels(
@@ -178,37 +178,40 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     expect(sdkHarnessCapabilities(driver, "/elsewhere").effortLevels).toEqual({ status: "unresolved", models: [] })
   })
 
-  test("configOptions declares ACP model probing", () => {
-    expect(acpAdapterWithHarness("openclaw").readHarnessCapabilities().configOptions).toBe(true)
+  test("configOptions declares ACP model probing", async () => {
+    expect((await acpAdapterWithHarness("openclaw").readHarnessCapabilities()).configOptions).toBe(true)
   })
 
-  test("ACP declares unsupported revert and command capabilities", () => {
-    const caps = acpAdapterWithHarness("openclaw").readHarnessCapabilities()
+  test("ACP declares unsupported revert and command capabilities", async () => {
+    const caps = (await acpAdapterWithHarness("openclaw").readHarnessCapabilities())
     expect(caps.revert).toBe(false)
     expect(caps.unrevert).toBe(false)
     expect(caps.commands).toBe(false)
   })
 
-  test("ACP supports baseline replay but does not advertise live reconnect", () => {
-    const acp = acpAdapterWithHarness("openclaw").readHarnessCapabilities()
+  test("ACP supports baseline replay but does not advertise live reconnect", async () => {
+    const acp = (await acpAdapterWithHarness("openclaw").readHarnessCapabilities())
     for (const key of ["abort", "replay", "permissions"] as const) expect(acp[key]).toBe(true)
     expect(acp.reconnect).toBe(false)
     expect(acp.todos).toBe(false)
   })
 
-  test("ACP fork is reported only for a live process that advertises session fork", () => {
+  test("ACP fork is reported only for a live process that advertises session fork", async () => {
     const adapter = acpAdapterWithHarness<{
       processes: Map<string, unknown>
       sessionProcesses: Map<string, string>
-      store: { getAgentSessionId: (sessionId: string) => string | null }
+      store: { getAgentSessionId: (sessionId: string) => string | null; getSession: (sessionId: string) => undefined }
     }>("openclaw")
-    adapter.store = { getAgentSessionId: () => "agent_1" }
+    adapter.store = { getAgentSessionId: (id) => id === "s1" ? "agent_1" : null, getSession: () => undefined }
     adapter.sessionProcesses = new Map([["s1", "process-1"]])
     adapter.processes = new Map([["process-1", {
       key: "process-1",
       directory: "/work",
       proc: {
         alive: true,
+        hasSession: () => true,
+        configOptions: () => ({ options: [] }),
+        supportsSubagents: () => false,
         supportsForkSession: (agentSessionId?: string) => !agentSessionId || agentSessionId === "agent_1",
         goalCapabilities: () => ({ implemented: false, available: false, actions: [], optionalFields: [] }),
       },
@@ -216,8 +219,33 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
       sessionIds: new Set(["s1"]),
     }]])
 
-    expect(adapter.readHarnessCapabilities("/work").fork).toBe(true)
-    expect(adapter.readHarnessCapabilities("/work", { sessionId: "s1" }).fork).toBe(true)
-    expect(adapter.readHarnessCapabilities("/work", { sessionId: "missing" }).fork).toBe(false)
+    expect((await adapter.readHarnessCapabilities("/work")).fork).toBe(true)
+    expect((await adapter.readHarnessCapabilities("/work", { sessionId: "s1" })).fork).toBe(true)
+    expect((await adapter.readHarnessCapabilities("/work", { sessionId: "missing" })).fork).toBe(false)
+  })
+
+  test("ACP advertises negotiated child visibility without inventing targeted child controls", async () => {
+    const store = createMemoryRuntimeStore()
+    store.bindSession({ sessionId: "parent", agentSessionId: "agent-parent", directory: "/work", ownerKey: "process" })
+    store.bindSession({ sessionId: "child", agentSessionId: "agent-child", parentSessionId: "parent", directory: "/work", ownerKey: "process" })
+    const adapter = acpAdapterWithHarness<{ store: typeof store }>("test-acp")
+    adapter.store = store
+    adapter.sessionProcesses = new Map([["parent", "process"], ["child", "process"]])
+    const entry = { key: "process", directory: "/work", fork: true, subagents: true, init: null,
+      sessionIds: new Set(["parent", "child"]), proc: {
+        alive: true, hasSession: () => true, supportsForkSession: () => true, supportsSubagents: () => true,
+        configOptions: () => ({ options: [] }),
+        goalCapabilities: () => ({ implemented: false, available: false, actions: [], optionalFields: [] }),
+      },
+    }
+    adapter.processes = new Map([["process", entry]])
+    expect(await adapter.readHarnessCapabilities("/work", { sessionId: "parent" })).toMatchObject({
+      subagents: true, abort: true, fork: true, modelSelection: { status: "unsupported" },
+    })
+    expect(await adapter.readHarnessCapabilities("/work", { sessionId: "child" })).toMatchObject({
+      subagents: true, abort: false, fork: false, configOptions: false, goals: false,
+    })
+    entry.proc.alive = false
+    expect((await adapter.readHarnessCapabilities("/work", { sessionId: "parent" })).subagents).toBe(true)
   })
 })

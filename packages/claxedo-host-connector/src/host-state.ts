@@ -130,6 +130,58 @@ function stateNumberOrUndefined(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
+/** A control-plane URL this machine refuses to talk to; the operator has to change it. */
+export class ControlPlaneUrlError extends Error {
+  readonly url: string
+  constructor(url: string, what: string) {
+    super(`control plane ${url} ${what}`)
+    this.name = "ControlPlaneUrlError"
+    this.url = url
+  }
+}
+
+/**
+ * These three names and nothing else — not `*.localhost`, not the rest of
+ * 127.0.0.0/8, not `0.0.0.0`. They are the hosts an `http:` request cannot
+ * leave the machine for, which is the whole reason cleartext is allowed at
+ * all; anything wider is a plaintext enrollment secret on a network.
+ */
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"])
+
+/**
+ * The origin (with an optional path prefix) that every machine request is
+ * composed onto, or a refusal.
+ *
+ * Cleartext to a network host is refused because the invitation secret is in
+ * the redeem body and the heartbeat answer — scope, assignments, relay
+ * endpoints — is trusted by the host beyond the channel that carried it.
+ *
+ * A base carrying a query or a fragment is refused rather than trimmed:
+ * `https://cp/?x=1` concatenated with `/api/...` is a request to `/` whose
+ * query holds the route, and the machine signature covers the path — the two
+ * would disagree about what was signed. Percent-encoding and empty segments
+ * are refused for the same reason: the path has to mean one thing.
+ */
+export function canonicalControlPlaneUrl(value: string): string {
+  const trimmed = value.trim()
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    throw new ControlPlaneUrlError(value, "is not a URL")
+  }
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && LOOPBACK_HOSTNAMES.has(url.hostname))) {
+    throw new ControlPlaneUrlError(value, "must be https:// (http:// only for localhost, 127.0.0.1 or ::1)")
+  }
+  if (url.username || url.password) throw new ControlPlaneUrlError(value, "must carry no user or password")
+  if (trimmed.includes("?") || trimmed.includes("#")) throw new ControlPlaneUrlError(value, "must carry no query or fragment")
+  const pathname = url.pathname.replace(/\/+$/, "")
+  if (pathname !== "" && !/^(?:\/[^/%]+)+$/.test(pathname)) {
+    throw new ControlPlaneUrlError(value, "must be an origin, optionally with a plain path prefix")
+  }
+  return url.origin + pathname
+}
+
 function privateKeyJwk(value: unknown, field = "private_key_jwk"): JsonWebKey {
   const jwk = stateRecord(value, field)
   return {
@@ -197,7 +249,10 @@ export function parseHostState(text: string): HostState {
     host_id: stateString(value.host_id, "host_id"),
     private_key_jwk: privateKeyJwk(value.private_key_jwk),
     created_at: stateNumber(value.created_at, "created_at"),
-    control_plane_url: stateString(value.control_plane_url, "control_plane_url"),
+    // Canonicalized on the way back in, not just on the way out: a file edited
+    // to name an http:// control plane must not put this machine back on a
+    // cleartext channel, whoever edited it.
+    control_plane_url: canonicalControlPlaneUrl(stateString(value.control_plane_url, "control_plane_url")),
     cli_roots: stateStrings(value.cli_roots, "cli_roots"),
     storage_root: stateString(value.storage_root, "storage_root"),
   }
@@ -318,7 +373,7 @@ export function newHostState(input: {
     // exporting runtime would otherwise round-trip through the file for nothing.
     private_key_jwk: privateKeyJwk(input.privateKeyJwk),
     created_at: (input.now ?? Date.now)(),
-    control_plane_url: input.controlPlaneUrl,
+    control_plane_url: canonicalControlPlaneUrl(input.controlPlaneUrl),
     cli_roots: [...input.cliRoots],
     storage_root: input.storageRoot,
   }

@@ -10,7 +10,7 @@ import type {
   SessionMode,
 } from "@agentclientprotocol/sdk"
 import { methods } from "@agentclientprotocol/sdk"
-import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
+import { asRecord, isRecord, type HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
 import path from "path"
 import { pathToFileURL } from "url"
 import type { PromptInput } from "../../index"
@@ -173,6 +173,18 @@ function match(opt: SessionConfigOption | null, ids: string[]) {
 function currentValue(opt: SessionConfigOption | null): string | undefined {
   if (!opt || opt.type !== "select") return undefined
   return typeof opt.currentValue === "string" ? opt.currentValue : undefined
+}
+
+/** ACP only reports effort for the selected model; other models remain unknown. */
+export function acpEffortLevels(config?: AcpConfigOptions): HarnessEffortLevels {
+  if (!config) return { status: "unresolved", models: [] }
+  const effort = pick(config.options, "thought_level")
+  if (!effort || effort.type !== "select") return { status: "unsupported", models: [] }
+  const modelID = currentValue(pick(config.options, "model")) ?? config.resolvedModel?.id
+  const levels = flat(effort.options ?? []).map((option) => option.value)
+  // Current value is a user selection, not an advertised default. A partial
+  // per-model catalog must never claim that unselected models lack effort.
+  return { status: "unresolved", models: modelID ? [{ modelID, levels }] : [] }
 }
 
 export type ACPState = {
@@ -450,11 +462,11 @@ export function extractAgents(state: ACPState): Array<{ name: string; descriptio
   return []
 }
 
-export function model(input: PromptInput["model"], variant?: string) {
+export function model(input: NonNullable<PromptInput["model"]>, variant?: string) {
   return variant ? `${input.providerID}/${input.modelID}/${variant}` : `${input.providerID}/${input.modelID}`
 }
 
-function ids(input: PromptInput["model"], variant?: string) {
+function ids(input: NonNullable<PromptInput["model"]>, variant?: string) {
   const out = [
     model(input, variant),
     `${input.providerID}/${input.modelID}`,
@@ -528,6 +540,7 @@ export async function sync(
     )
   }
 
+  if (!input.model) return next
   const cfg = pick(next.cfg, "model")
   const aid = match(cfg, ids(input.model, input.variant))
   if (aid) {
@@ -543,6 +556,11 @@ export async function sync(
       }),
     )
     return next
+  }
+  if (input.model.modelID !== "default" && input.model.modelID !== resolvedModel(next)?.id) {
+    throw new Error(cfg
+      ? `ACP agent does not offer model ${input.model.modelID}`
+      : "ACP agent owns model selection and does not advertise a model selector")
   }
   return next
 }

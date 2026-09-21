@@ -4,7 +4,8 @@ import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { isRetainedWorkspaceEventFrame, workspaceEventsHandler, type WorkspaceEventStreamFrame } from "./events"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory } from "../target"
-import { messagePartUpdated, sessionDeleted, withDir, type CompatEnvelope } from "../compat-events"
+import type { AgentSessionStart, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import { questionAsked, messagePartUpdated, sessionDeleted, withDir, type CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import { sessionEventDeliveryPolicy } from "../event-delivery"
 
@@ -28,6 +29,7 @@ function part(sessionID: string, id: string, state: { status: "running" } | { st
 
 function harness(input: {
   policy?: SessionAccessPolicy
+  starts?: Pick<AgentSessionStarts, "get">
   parents?: Record<string, string>
   relayAuth?: Record<string, unknown>
   renewalIntervalMs?: number
@@ -48,6 +50,7 @@ function harness(input: {
     directory: DIRECTORY,
     workspaceId: WORKSPACE_ID,
     eventHub: hub,
+    sessionStarts: input.starts,
     bus,
     sequenceOrigin: () => 0,
     ptyDirectory: (id) => ptys.get(id),
@@ -67,13 +70,15 @@ const managedPolicy = (input: {
   const deny = { allowed: false, status: 403, code: "denied", message: "denied" } as const
   return {
     sessionAuthority: "managed-private",
+    authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+    authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
     authorize: () => allow,
     authorizeStream: async ({ sessionId }) =>
       input.session?.(sessionId) === false ? deny : { allowed: true, lease: "lease_test", expiresAt: Date.now() + 60_000 },
     authorizePrefix: () => allow,
     filterSessions: (i) => i.sessionIds,
     registerSession: () => allow,
-    ...(input.workspace === "unavailable" ? {} : { authorizeHost: () => (input.workspace === "deny" ? deny : allow) }),
+    ...(input.workspace === "unavailable" ? {} : { authorizeHost: () => (input.workspace === "deny" ? deny : { allowed: true as const, lease: "workspace_lease", expiresAt: Date.now() + 15_000 }) }),
   }
 }
 
@@ -113,6 +118,21 @@ function dataFrames(text: string) {
 }
 
 describe("wr/events — one stream per workspace runtime", () => {
+  test.each([
+    { allowed: true as const },
+    { allowed: true as const, lease: " ", expiresAt: Date.now() + 60_000 },
+    { allowed: true as const, lease: "lease", expiresAt: Number.NaN },
+    { allowed: true as const, lease: "lease", expiresAt: Infinity },
+    { allowed: true as const, lease: "lease", expiresAt: 0 },
+  ])("refuses an unscoped managed stream without a finite future lease (%j)", async (decision) => {
+    const policy = managedPolicy({ workspace: "allow" })
+    policy.authorizeHost = () => decision
+    const { app } = harness({ policy, relayAuth })
+    const response = await app.request("http://localhost/api/wr/events")
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({ error: { code: "session_stream_authority_invalid_response" } })
+  })
+
   test("carries projected turn frames, control frames and subagent revisions as {directory, payload}", async () => {
     const { app, hub, bus, ptys } = harness({})
     ptys.set("pty-1", DIRECTORY)
@@ -615,4 +635,62 @@ describe("wr/events — one stream per workspace runtime", () => {
     expect(gap).toContain("runtime.sse_replay_gap")
     expect(live).toContain("prt-after")
   })
+})
+
+
+test("pending startup frames use creator reservation authority without a session grant", async () => {
+  const binding = { sessionId: "ses_pending", workspaceId: WORKSPACE_ID, directory: DIRECTORY, connectionId: "acp", operationId: "op_pending" }
+  let start: AgentSessionStart = { binding, status: "starting", createdAt: 1, updatedAt: 1 }
+  let revoked = false
+  const calls: string[] = []
+  const authority = (input: Parameters<SessionAccessPolicy["authorizeSessionStart"]>[0]) => {
+    calls.push(input.registrationOperationId)
+    return input.actor?.actorId === "creator" && !revoked && input.registrationOperationId === binding.operationId
+      ? { allowed: true as const }
+      : { allowed: false as const, status: 403 as const, code: "denied", message: "reservation denied" }
+  }
+  const policy = { ...managedPolicy({ session: () => false }), authorizeSessionStart: authority, authorizeSessionStartStatus: authority }
+  for (const actorId of ["creator", "other", "foreign-workspace"]) {
+    const { app, hub, bus } = harness({ policy, starts: { get: () => start }, relayAuth: { ...relayAuth, actor_id: actorId, workspace_id: actorId === "foreign-workspace" ? "other-workspace" : WORKSPACE_ID } })
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal, headers: { authorization: "Bearer proof" } })
+    bus.publish({ type: "session.lifecycle", phase: "creating", start: binding, directory: DIRECTORY, workspaceId: WORKSPACE_ID, actorId: "creator", ts: 1 })
+    hub.publishGlobal(withDir(DIRECTORY, questionAsked({ id: "pending-question", sessionID: binding.sessionId, questions: [] })))
+    hub.publishGlobal(part(binding.sessionId, "private-message", { status: "running" }))
+    bus.publish({ type: "session.lifecycle", phase: "creating", start: { ...binding, operationId: "forged-operation" }, directory: DIRECTORY, workspaceId: WORKSPACE_ID, actorId: "creator", message: "forged-start", ts: 1 })
+    bus.publish({ type: "process.started", directory: DIRECTORY, configId: "sentinel", ptyId: "p" })
+    const text = await readUntil(response, "sentinel")
+    expect(text.includes("pending-question")).toBe(actorId === "creator")
+    expect(text.includes('"phase":"creating"')).toBe(actorId === "creator")
+    expect(text).not.toContain("private-message")
+    expect(text).not.toContain("forged-start")
+    if (actorId === "creator") {
+      revoked = true
+      hub.publishGlobal(withDir(DIRECTORY, questionAsked({ id: "revoked-question", sessionID: binding.sessionId, questions: [] })))
+      bus.publish({ type: "process.started", directory: DIRECTORY, configId: "revoked-sentinel", ptyId: "p" })
+      expect(await readUntil(response, "revoked-sentinel")).not.toContain("revoked-question")
+      revoked = false
+      start = { ...start, status: "failed", error: "Agent refused startup" }
+      bus.publish({ type: "session.lifecycle", phase: "failed", start: binding, directory: DIRECTORY, workspaceId: WORKSPACE_ID, actorId: "creator", message: "startup-failed", ts: 2 })
+      expect(await readUntil(response, "startup-failed")).toContain("startup-failed")
+      start = { binding, status: "starting", createdAt: 1, updatedAt: 1 }
+    }
+    controller.abort()
+  }
+  expect(calls.length).toBeGreaterThan(4)
+})
+
+test("startup stream ends when its authority proof expires instead of dropping a question", async () => {
+  const binding = { sessionId: "ses_pending", workspaceId: WORKSPACE_ID, directory: DIRECTORY, connectionId: "acp", operationId: "op_pending" }
+  const start: AgentSessionStart = { binding, status: "starting", createdAt: 1, updatedAt: 1 }
+  const policy: SessionAccessPolicy = {
+    ...managedPolicy({}),
+    authorizeSessionStart: () => ({ allowed: false, status: 401, code: "proof_expired", message: "Expired" }),
+  }
+  const { app, hub } = harness({ policy, starts: { get: () => start }, relayAuth: { ...relayAuth, workspace_id: WORKSPACE_ID } })
+  const controller = new AbortController()
+  const response = await app.request("http://localhost/api/wr/events", { signal: controller.signal })
+  hub.publishGlobal(withDir(DIRECTORY, questionAsked({ id: "expired-question", sessionID: binding.sessionId, questions: [] })))
+  expect(await readUntil(response, "expired-question")).not.toContain("expired-question")
+  controller.abort()
 })

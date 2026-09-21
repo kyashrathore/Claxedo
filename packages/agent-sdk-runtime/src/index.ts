@@ -265,7 +265,7 @@ export type SessionConfig = {
    * instruction prose the group was also rendered into.
    */
   group?: SessionModelGroup | null
-  handoff?: { from: SessionHarness; pending: true; transcript: string } | null
+  handoff?: { from: SessionHarness; pending: true; transcript: string; reason?: "missing-session" } | null
 }
 
 /**
@@ -287,7 +287,7 @@ export type SessionConfigUpdate = {
   agent?: string | null
   instructions?: string | null
   group?: SessionModelGroup | null
-  handoff?: { from: SessionHarness; pending: true; transcript: string } | null
+  handoff?: { from: SessionHarness; pending: true; transcript: string; reason?: "missing-session" } | null
 }
 
 /**
@@ -308,3 +308,5 @@ export type SessionConfigRequestUpdate = Omit<
 
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined
+
+export { acceptsSessionTitle, boundSessionTitleSource } from "./session-title"

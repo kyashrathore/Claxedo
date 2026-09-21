@@ -824,9 +824,10 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     binding: AgentExecutionBinding,
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
+    optionId?: string,
   ) {
     requireAgentExecutionBinding(binding)
-    return this.interactions.respondPermission(binding, permId, decision)
+    return this.interactions.respondPermission(binding, permId, decision, optionId)
   }
 
   async listQuestions(directory: string): Promise<AgentQuestion[]> { return this.interactions.listQuestions(directory) }

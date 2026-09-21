@@ -1,7 +1,8 @@
 param(
   [ValidateSet("unit", "package", "package-test")]
   [string]$Lane = "unit",
-  [string]$Package
+  [string]$Package,
+  [switch]$AclAcceptance
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +21,9 @@ function Assert-LastExitCode([string]$Command) {
 
 $env:CI = "true"
 $env:OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER = "true"
+if ($AclAcceptance) {
+  $env:CLAXEDO_WINDOWS_ACL_ACCEPTANCE = "1"
+}
 & git config --global user.email "github-actions[bot]@users.noreply.github.com"
 Assert-LastExitCode "git config user.email"
 & git config --global user.name "github-actions[bot]"

@@ -12,12 +12,15 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { projectLatestSurfaceMessages } from "@claxedo/agent-sdk-runtime/message-page"
 import {
+  acceptsSessionTitle,
+  boundSessionTitleSource,
   createMemorySubagentAdmissionStore,
   firstTurnErrorData,
   normalizeHarnessIdentity,
   parseStoredSessionModelGroup,
   sessionModelGroupJson,
 } from "@claxedo/agent-sdk-runtime"
+import { sqliteSessionStarts } from "@claxedo/agent-sdk-runtime/stores/session-start"
 import type {
   AdmittedSubagentObservation,
   AgentMessage,
@@ -33,7 +36,7 @@ import type {
   SessionModelGroup,
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -50,6 +53,7 @@ import {
   sessionStatus,
 } from "./compat-events"
 import { workspaceRuntimeStoreDir } from "./env"
+import type { SessionRequestProvenance, SessionTurnOrigin, SessionWorkspaceAuthority } from "./session-access-policy"
 import { isRecord, num, rec, str } from "./json-value"
 
 type Model = {
@@ -250,12 +254,21 @@ export type RuntimeStoreTurnStartOutput = {
  * A prompt admitted for a session that was already running a turn, waiting for
  * that turn to end.
  *
- * The waiting itself happens in the request that submitted the prompt, so this
- * row is the only thing that carries it across a restart. `seq` orders the
- * prompts one session is holding, and the requester travels with the payload
- * because the recovered turn has to run as whoever sent it.
+ * The session delivery owner reads these rows across request completion and
+ * restart. `seq` is a durable control identity; actor and authority travel with
+ * the payload so recovery reacquires the original requester's turn authority.
  */
+export type QueuedPromptAttempt = {
+  mode: "start" | "steer"
+  operationId: string
+  state: "dispatching" | "accepted" | "unknown" | "rejected"
+  message?: string
+}
+
 export type QueuedPromptRecord = {
+  authority?: SessionWorkspaceAuthority
+  held?: boolean
+  steering?: QueuedPromptAttempt
   sessionId: string
   seq: number
   messageId?: string
@@ -270,10 +283,20 @@ export type QueuedPromptRecord = {
   delivery: "steer" | "queue"
   actor?: { actorId: string; actorKind: "human" | "agent" }
   author?: AgentMessageAuthor
+  /**
+   * How the request that queued this reached the runtime. Read back with
+   * `actor`/`authority` as the origin the delayed turn runs under; a row
+   * written before it was recorded has none and is never re-issued.
+   */
+  provenance?: SessionRequestProvenance
   queuedAt: number
 }
 
 type QueuedPromptRow = {
+  authority_json: string | null
+  origin_provenance: string | null
+  held: number
+  steering_json: string | null
   session_id: string
   seq: number
   message_id: string | null
@@ -300,6 +323,38 @@ function actorKind(input: string | null): "human" | "agent" | undefined {
   return input === "human" || input === "agent" ? input : undefined
 }
 
+/**
+ * A stored origin, or nothing — which is what refuses the turn.
+ *
+ * Nothing covers three rows that all mean "nobody can be re-asked about this":
+ * one written before provenance was recorded, a relayed one missing either
+ * half of its identity, and a local one that nonetheless carries actor fields.
+ * The last is the one worth naming. A local admission is written with those
+ * columns null, so the combination is not something this store produces; the
+ * only way to reach it is a migration that stamped `loopback-direct` onto a
+ * row that already had an actor. Reading it as local would answer a question
+ * about a verified actor with a turn that takes no lease, so it is refused.
+ */
+function storedTurnOrigin(row: {
+  origin_provenance?: string | null
+  origin_actor_id?: string | null
+  origin_actor_kind?: string | null
+  origin_authority_json?: string | null
+} | null | undefined): SessionTurnOrigin | undefined {
+  if (row?.origin_provenance === "loopback-direct") {
+    const named = row.origin_actor_id ?? row.origin_actor_kind ?? row.origin_authority_json
+    return named ? undefined : { provenance: "loopback-direct" }
+  }
+  if (row?.origin_provenance !== "relay-replayed") return undefined
+  const kind = actorKind(row.origin_actor_kind ?? null)
+  if (!row.origin_actor_id || !kind || !row.origin_authority_json) return undefined
+  return {
+    provenance: "relay-replayed",
+    actor: { actorId: row.origin_actor_id, actorKind: kind },
+    authority: JSON.parse(row.origin_authority_json),
+  }
+}
+
 function queuedPrompt(row: QueuedPromptRow): QueuedPromptRecord {
   const parts: QueuedPromptRecord["parts"] = JSON.parse(row.parts_json)
   const tools: Record<string, boolean> | undefined = row.tools_json === null ? undefined : JSON.parse(row.tools_json)
@@ -309,6 +364,12 @@ function queuedPrompt(row: QueuedPromptRow): QueuedPromptRecord {
   return {
     sessionId: row.session_id,
     seq: row.seq,
+    ...(row.authority_json ? { authority: JSON.parse(row.authority_json) } : {}),
+    ...(row.origin_provenance === "loopback-direct" || row.origin_provenance === "relay-replayed"
+      ? { provenance: row.origin_provenance }
+      : {}),
+    ...(row.held ? { held: true } : {}),
+    ...(row.steering_json ? { steering: JSON.parse(row.steering_json) } : {}),
     ...(row.message_id === null ? {} : { messageId: row.message_id }),
     parts,
     ...(row.agent === null ? {} : { agent: row.agent }),
@@ -546,6 +607,7 @@ function envelopeRecord(value: object): Record<string, unknown> {
 }
 
 const readColumn = {
+  sessionCommands: (json: string): AgentSessionCommand[] => JSON.parse(json),
   messageInfo: (json: string): AgentMessage["info"] => JSON.parse(json),
   messageRecord: (json: string): Record<string, unknown> => JSON.parse(json),
   messagePart: (json: string): AgentMessage["parts"][number] => readRecordedPart(JSON.parse(json)),
@@ -558,6 +620,8 @@ const readColumn = {
   eventPayload: (json: string): { properties?: Record<string, unknown> } => JSON.parse(json),
   /** `pending_permission.patterns_json`. */
   permissionPatterns: (json: string): string[] => JSON.parse(json),
+  /** `pending_permission.options_json`: absent is distinct from no offered options. */
+  permissionOptions: (json: string): NonNullable<AgentPermission["options"]> => JSON.parse(json),
   /** `pending_permission.metadata_json`. */
   permissionMetadata: (json: string): Record<string, unknown> => JSON.parse(json),
   /**
@@ -673,10 +737,14 @@ function provisionalPromptWidth(messageId: string, provisionalIds: readonly stri
 }
 
 export class RuntimeStore {
+  readonly sessionStarts: AgentSessionStarts
   private root: string
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
   private closed = false
+  // A journaled write may outlive a failed projection. Retry that session's
+  // journal before accepting later writes so its checkpoint cannot skip it.
+  private failedProjections = new Set<string>()
   /**
    * Streamed text waiting to be folded into its `part` row. A harness emits a
    * `message.part.delta` per token chunk; rewriting the growing part JSON and
@@ -697,6 +765,7 @@ export class RuntimeStore {
     this.db.exec("PRAGMA busy_timeout = 5000")
     this.db.exec("PRAGMA foreign_keys = ON")
     this.migrate()
+    this.sessionStarts = sqliteSessionStarts(this.db)
     this.hydrateSubagentAdmission()
     this.replay()
     this.reconcileOrphanedSubagents()
@@ -846,6 +915,7 @@ export class RuntimeStore {
         group_json TEXT,
         handoff_json TEXT,
         goal_json TEXT,
+        commands_json TEXT,
         permission_mode TEXT,
         permission_ceiling TEXT,
         permission_state_json TEXT,
@@ -864,31 +934,47 @@ export class RuntimeStore {
         acquired_at INTEGER NOT NULL
       )
     `)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS queued_prompt (
-        session_id TEXT NOT NULL,
-        seq INTEGER NOT NULL,
-        message_id TEXT,
-        parts_json TEXT NOT NULL,
-        agent TEXT,
-        model_provider_id TEXT,
-        model_id TEXT,
-        tools_json TEXT,
-        format_json TEXT,
-        system TEXT,
-        variant TEXT,
-        permission_mode TEXT,
-        delivery TEXT NOT NULL,
-        actor_id TEXT,
-        actor_kind TEXT,
-        author_id TEXT,
-        author_name TEXT,
-        author_avatar_url TEXT,
-        author_kind TEXT,
-        queued_at INTEGER NOT NULL,
-        PRIMARY KEY (session_id, seq)
-      )
-    `)
+    this.transaction(() => {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS runtime_delivery (
+          session_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          message_id TEXT,
+          parts_json TEXT NOT NULL,
+          agent TEXT,
+          model_provider_id TEXT,
+          model_id TEXT,
+          tools_json TEXT,
+          format_json TEXT,
+          system TEXT,
+          variant TEXT,
+          permission_mode TEXT,
+          delivery TEXT NOT NULL,
+          actor_id TEXT,
+          actor_kind TEXT,
+          author_id TEXT,
+          author_name TEXT,
+          author_avatar_url TEXT,
+          author_kind TEXT,
+          queued_at INTEGER NOT NULL,
+          steering_json TEXT,
+          held INTEGER NOT NULL DEFAULT 0,
+          authority_json TEXT,
+          origin_provenance TEXT,
+          PRIMARY KEY (session_id, seq)
+        )
+      `)
+      if (!hasColumn(this.db, "runtime_delivery", "origin_provenance")) {
+        this.db.exec("ALTER TABLE runtime_delivery ADD COLUMN origin_provenance TEXT")
+      }
+      // Preserve control identities after delivery rows are removed.
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS runtime_delivery_sequence (
+          session_id TEXT PRIMARY KEY,
+          seq INTEGER NOT NULL
+        );
+      `)
+    }, "immediate")
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS runtime_secret (
         name TEXT PRIMARY KEY,
@@ -941,6 +1027,10 @@ export class RuntimeStore {
       ["attention_revision", "INTEGER NOT NULL DEFAULT 0"],
       ["wake", "TEXT"],
       ["wake_revision", "INTEGER NOT NULL DEFAULT 0"],
+      ["origin_provenance", "TEXT"],
+      ["origin_actor_id", "TEXT"],
+      ["origin_actor_kind", "TEXT"],
+      ["origin_authority_json", "TEXT"],
     ] as const) {
       if (!hasColumn(this.db, "session_subagent", column)) {
         this.db.exec(`ALTER TABLE session_subagent ADD COLUMN ${column} ${type}`)
@@ -1061,11 +1151,15 @@ export class RuntimeStore {
         patterns_json TEXT NOT NULL,
         metadata_json TEXT NOT NULL,
         always_json TEXT NOT NULL,
+        options_json TEXT,
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `)
+    if (!hasColumn(this.db, "pending_permission", "options_json")) {
+      this.db.exec("ALTER TABLE pending_permission ADD COLUMN options_json TEXT")
+    }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS pending_question (
         id TEXT PRIMARY KEY,
@@ -1112,6 +1206,13 @@ export class RuntimeStore {
     } catch {
       // column already exists
     }
+    const hasTitleSource = this.db.prepare<{ name: string }>("PRAGMA table_info(session)").all().some(column => column.name === "title_source")
+    if (!hasTitleSource) {
+      this.transaction(() => {
+        this.db.exec("ALTER TABLE session ADD COLUMN title_source TEXT")
+        this.backfillTitleSources()
+      })
+    }
     for (const sql of [
       "ALTER TABLE session ADD COLUMN harness_id TEXT",
       "ALTER TABLE session ADD COLUMN harness_access TEXT",
@@ -1128,6 +1229,7 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN group_json TEXT",
       "ALTER TABLE session ADD COLUMN handoff_json TEXT",
       "ALTER TABLE session ADD COLUMN goal_json TEXT",
+      "ALTER TABLE session ADD COLUMN commands_json TEXT",
       "ALTER TABLE session ADD COLUMN permission_mode TEXT",
       "ALTER TABLE session ADD COLUMN permission_ceiling TEXT",
       "ALTER TABLE session ADD COLUMN permission_state_json TEXT",
@@ -1141,6 +1243,25 @@ export class RuntimeStore {
         // column already exists
       }
     }
+  }
+
+  private backfillTitleSources() {
+    const titles = new Map<string, { title?: string | null; titleSource?: AgentSessionTitleSource }>()
+    const rows = this.db.prepare<RuntimeJournalRow>("SELECT * FROM runtime_journal WHERE type IN ('session.bind', 'session.update', 'session.updated', 'session.delete') ORDER BY session_id, seq").all()
+    for (const raw of rows) {
+      const row = this.parseJournalRow(raw)
+      if (!row) continue
+      const previous = titles.get(row.sessionId)
+      if (row.kind === "control") {
+        if (row.control.type === "session.delete") titles.delete(row.sessionId)
+        if (row.control.type === "session.bind") titles.set(row.sessionId, { title: row.control.title ?? previous?.title, titleSource: boundSessionTitleSource(row.control.title, previous) })
+        if (row.control.type === "session.update" && row.control.updates.title !== undefined) titles.set(row.sessionId, { title: row.control.updates.title, titleSource: "user" })
+      } else if (row.payload.type === "session.updated") {
+        const info = row.payload.properties.info
+        if (info.title !== undefined && acceptsSessionTitle(info.titleSource, previous?.titleSource)) titles.set(row.sessionId, { title: info.title, titleSource: info.titleSource ?? "prompt" })
+      }
+    }
+    for (const [id, value] of titles) this.db.prepare("UPDATE session SET title = ?, title_source = ? WHERE id = ?").run(value.title ?? null, value.titleSource ?? null, id)
   }
 
   private hydrateSubagentAdmission() {
@@ -1381,6 +1502,75 @@ export class RuntimeStore {
       }))
   }
 
+  /**
+   * Remember who asked for this child, once.
+   *
+   * The completion turn this child eventually drives on its parent runs long
+   * after the request that authorized it is gone, and the authority decides
+   * that turn about an actor. A later observation about the same row — a
+   * status, an attention count, a wake — arrives from the runtime itself and
+   * names nobody, so it must never be able to move the row to a different one.
+   *
+   * "Once" means every origin column empty, not just the newest of them. A row
+   * written before provenance existed already carries an actor, and treating
+   * the missing column as an empty origin would let this overwrite that actor
+   * with whoever asks next — including with a local admission, which needs no
+   * actor at all. Such a row keeps what it has and stays unreadable instead:
+   * it proves someone was admitted and no longer proves how.
+   */
+  recordSubagentOrigin(parentSessionId: string, subagentKey: string, origin: SessionTurnOrigin) {
+    const relayed = origin.provenance === "relay-replayed" ? origin : undefined
+    const written = this.db
+      .prepare(
+        `
+      UPDATE session_subagent
+      SET origin_provenance = ?, origin_actor_id = ?, origin_actor_kind = ?, origin_authority_json = ?, updated_at = ?
+      WHERE parent_session_id = ? AND subagent_key = ?
+        AND origin_provenance IS NULL
+        AND origin_actor_id IS NULL
+        AND origin_actor_kind IS NULL
+        AND origin_authority_json IS NULL
+    `,
+      )
+      .run(
+        origin.provenance,
+        relayed?.actor.actorId ?? null,
+        relayed?.actor.actorKind ?? null,
+        relayed ? JSON.stringify(relayed.authority) : null,
+        Date.now(),
+        parentSessionId,
+        subagentKey,
+      ).changes
+    if (written) return
+    // Nothing changed either because the row already carries an admission — a
+    // retry of the same creation, or one recorded by an older build — or
+    // because there is no such row, which would leave a child that can never
+    // wake its parent and no sign of why. The caller is still inside the
+    // create it can roll back, so it hears about that one there.
+    const row = this.db
+      .prepare<{ found: number }>(`SELECT 1 AS found FROM session_subagent WHERE parent_session_id = ? AND subagent_key = ?`)
+      .get(parentSessionId, subagentKey)
+    if (!row) throw new Error(`subagent ${subagentKey} of ${parentSessionId} has no row to record a turn origin on`)
+  }
+
+  subagentOrigin(parentSessionId: string, subagentKey: string): SessionTurnOrigin | undefined {
+    const row = this.db
+      .prepare<{
+        origin_provenance: string | null
+        origin_actor_id: string | null
+        origin_actor_kind: string | null
+        origin_authority_json: string | null
+      }>(
+        `
+      SELECT origin_provenance, origin_actor_id, origin_actor_kind, origin_authority_json
+      FROM session_subagent
+      WHERE parent_session_id = ? AND subagent_key = ?
+    `,
+      )
+      .get(parentSessionId, subagentKey)
+    return storedTurnOrigin(row)
+  }
+
   private reconcileOrphanedSubagents() {
     const parents = this.db
       .prepare<{ parent_session_id: string }>(
@@ -1559,7 +1749,7 @@ export class RuntimeStore {
     })
   }
 
-  private replay() {
+  private replay(sessionId?: string) {
     const sessions = this.db
       .prepare<{ session_id: string; last_seq: number; max_seq: number }>(
         `
@@ -1567,6 +1757,7 @@ export class RuntimeStore {
         FROM (
           SELECT session_id, MAX(seq) AS max_seq
           FROM runtime_journal
+          WHERE (? IS NULL OR session_id = ?)
           GROUP BY session_id
         ) AS journal
         LEFT JOIN journal_checkpoint AS checkpoint ON checkpoint.session_id = journal.session_id
@@ -1574,7 +1765,7 @@ export class RuntimeStore {
         ORDER BY journal.session_id ASC
       `,
       )
-      .all()
+      .all(sessionId ?? null, sessionId ?? null)
     for (const session of sessions) {
       let cursor = session.last_seq
       while (cursor < session.max_seq) {
@@ -1609,6 +1800,7 @@ export class RuntimeStore {
           this.project(parsed)
         }
       }
+      this.failedProjections.delete(session.session_id)
     }
   }
 
@@ -1691,74 +1883,122 @@ export class RuntimeStore {
    * rows: a turn from the previous runtime cannot be resumed, but a prompt that
    * never reached one still has to run.
    */
-  queuePrompt(input: Omit<QueuedPromptRecord, "seq" | "queuedAt">): QueuedPromptRecord {
-    const seq = requireRow(
+  queuePrompt(input: Omit<QueuedPromptRecord, "seq" | "queuedAt" | "held" | "steering">): QueuedPromptRecord {
+    return this.transaction(() => {
+      if (input.messageId) {
+        const existing = this.db.prepare<QueuedPromptRow>(
+          "SELECT * FROM runtime_delivery WHERE session_id = ? AND message_id = ? ORDER BY seq LIMIT 1",
+        ).get(input.sessionId, input.messageId)
+        if (existing) return queuedPrompt(existing)
+      }
+      const seq = requireRow(this.db.prepare<{ seq: number }>(`
+        INSERT INTO runtime_delivery_sequence (session_id, seq) VALUES (?, 1)
+        ON CONFLICT(session_id) DO UPDATE SET seq = seq + 1
+        RETURNING seq
+      `).get(input.sessionId), "queued prompt seq").seq
+      const record: QueuedPromptRecord = { ...input, seq, queuedAt: Date.now() }
       this.db
-        .prepare<{ seq: number }>("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM queued_prompt WHERE session_id = ?")
-        .get(input.sessionId),
-      "queued prompt seq",
-    ).seq
-    const record: QueuedPromptRecord = { ...input, seq, queuedAt: Date.now() }
-    this.db
-      .prepare(
-        `
-      INSERT INTO queued_prompt (
-        session_id,
-        seq,
-        message_id,
-        parts_json,
-        agent,
-        model_provider_id,
-        model_id,
-        tools_json,
-        format_json,
-        system,
-        variant,
-        permission_mode,
-        delivery,
-        actor_id,
-        actor_kind,
-        author_id,
-        author_name,
-        author_avatar_url,
-        author_kind,
-        queued_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-      )
-      .run(
-        record.sessionId,
-        record.seq,
-        record.messageId ?? null,
-        JSON.stringify(record.parts),
-        record.agent ?? null,
-        record.model?.providerID ?? null,
-        record.model?.modelID ?? null,
-        record.tools === undefined ? null : JSON.stringify(record.tools),
-        record.format === undefined ? null : JSON.stringify(record.format),
-        record.system ?? null,
-        record.variant ?? null,
-        record.permissionMode ?? null,
-        record.delivery,
-        record.actor?.actorId ?? null,
-        record.actor?.actorKind ?? null,
-        record.author?.id ?? null,
-        record.author?.name ?? null,
-        record.author?.avatarUrl ?? null,
-        record.author?.kind ?? null,
-        record.queuedAt,
-      )
-    return record
+        .prepare(
+          `
+        INSERT INTO runtime_delivery (
+          session_id,
+          seq,
+          message_id,
+          parts_json,
+          agent,
+          model_provider_id,
+          model_id,
+          tools_json,
+          format_json,
+          system,
+          variant,
+          permission_mode,
+          delivery,
+          actor_id,
+          actor_kind,
+          author_id,
+          author_name,
+          author_avatar_url,
+          author_kind,
+          queued_at,
+          authority_json,
+          origin_provenance
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        )
+        .run(
+          record.sessionId,
+          record.seq,
+          record.messageId ?? null,
+          JSON.stringify(record.parts),
+          record.agent ?? null,
+          record.model?.providerID ?? null,
+          record.model?.modelID ?? null,
+          record.tools === undefined ? null : JSON.stringify(record.tools),
+          record.format === undefined ? null : JSON.stringify(record.format),
+          record.system ?? null,
+          record.variant ?? null,
+          record.permissionMode ?? null,
+          record.delivery,
+          record.actor?.actorId ?? null,
+          record.actor?.actorKind ?? null,
+          record.author?.id ?? null,
+          record.author?.name ?? null,
+          record.author?.avatarUrl ?? null,
+          record.author?.kind ?? null,
+          record.queuedAt,
+          record.authority ? JSON.stringify(record.authority) : null,
+          record.provenance ?? null,
+        )
+      return record
+    }, "immediate")
+  }
+
+  claimQueuedPromptDelivery(sessionId: string, seq: number, operationId: string, mode: "start" | "steer"): boolean {
+    return this.db.prepare(`UPDATE runtime_delivery SET steering_json = ?, message_id = COALESCE(message_id, ?)
+      WHERE session_id = ? AND seq = ?
+      AND (? != 'start' OR (held = 0 AND NOT EXISTS (
+        SELECT 1 FROM runtime_delivery earlier
+        WHERE earlier.session_id = runtime_delivery.session_id AND earlier.seq < runtime_delivery.seq
+        AND ((earlier.held = 0 AND (earlier.steering_json IS NULL OR json_extract(earlier.steering_json, '$.state') = 'rejected'))
+          OR (json_extract(earlier.steering_json, '$.mode') = 'start'
+            AND json_extract(earlier.steering_json, '$.state') IN ('dispatching', 'unknown')))
+      )))
+      AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`)
+      .run(JSON.stringify({ operationId, state: "dispatching", mode }), `msg_${crypto.randomUUID()}`, sessionId, seq, mode).changes === 1
+  }
+
+  settleQueuedPromptDelivery(sessionId: string, seq: number, steering: QueuedPromptAttempt): boolean {
+    return this.db.prepare(`UPDATE runtime_delivery SET steering_json = ?
+      WHERE session_id = ? AND seq = ? AND
+      json_extract(steering_json, '$.operationId') = ? AND json_extract(steering_json, '$.state') = 'dispatching'`)
+      .run(JSON.stringify(steering), sessionId, seq, steering.operationId).changes === 1
   }
 
   deleteQueuedPrompt(sessionId: string, seq: number) {
-    this.db.prepare("DELETE FROM queued_prompt WHERE session_id = ? AND seq = ?").run(sessionId, seq)
+    return this.db.prepare(`DELETE FROM runtime_delivery WHERE session_id = ? AND seq = ?
+      AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`).run(sessionId, seq).changes === 1
   }
 
   replaceQueuedPromptParts(sessionId: string, seq: number, parts: QueuedPromptRecord["parts"]): boolean {
     return this.db
-      .prepare("UPDATE queued_prompt SET parts_json = ? WHERE session_id = ? AND seq = ?")
+      .prepare(`UPDATE runtime_delivery SET parts_json = ?, held = 0 WHERE session_id = ? AND seq = ?
+        AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`)
       .run(JSON.stringify(parts), sessionId, seq).changes === 1
+  }
+
+  setQueuedPromptHeld(sessionId: string, seq: number, held: boolean): boolean {
+    return this.db.prepare(`UPDATE runtime_delivery SET held = ? WHERE session_id = ? AND seq = ?
+      AND (steering_json IS NULL OR json_extract(steering_json, '$.state') = 'rejected')`)
+      .run(held ? 1 : 0, sessionId, seq).changes === 1
+  }
+
+  completeQueuedPrompt(sessionId: string, seq: number, operationId: string): boolean {
+    return this.db.prepare(`DELETE FROM runtime_delivery WHERE session_id = ? AND seq = ?
+      AND json_extract(steering_json, '$.operationId') = ?
+      AND json_extract(steering_json, '$.mode') = 'start'
+      AND json_extract(steering_json, '$.state') = 'dispatching'`)
+      .run(sessionId, seq, operationId).changes === 1
   }
 
   listQueuedPrompts(): QueuedPromptRecord[] {
@@ -1784,8 +2024,12 @@ export class RuntimeStore {
         author_name,
         author_avatar_url,
         author_kind,
-        queued_at
-      FROM queued_prompt
+        queued_at,
+        steering_json,
+        authority_json,
+        origin_provenance,
+        held
+      FROM runtime_delivery
       ORDER BY queued_at, session_id, seq
     `)
       .all()
@@ -1953,8 +2197,8 @@ export class RuntimeStore {
     return !!this.db.prepare("SELECT 1 FROM deleted_session WHERE session_id = ?").get(sessionId)
   }
 
-  private transaction<T>(run: () => T): T {
-    this.db.exec("BEGIN")
+  private transaction<T>(run: () => T, mode?: "immediate"): T {
+    this.db.exec(mode === "immediate" ? "BEGIN IMMEDIATE" : "BEGIN")
     try {
       const result = run()
       this.db.exec("COMMIT")
@@ -2077,6 +2321,7 @@ export class RuntimeStore {
   }
 
   private commit(row: Row, fence: { fencingToken?: number; advance?: boolean } = {}) {
+    if (this.failedProjections.has(row.sessionId)) this.replay(row.sessionId)
     if (
       this.deleted(row.sessionId) &&
       !(row.kind === "control" && (row.control.type === "session.bind" || row.control.type === "session.delete"))
@@ -2094,10 +2339,7 @@ export class RuntimeStore {
         this.deferDelta(journaled)
         return journaled
       }
-      this.transaction(() => {
-        this.apply(journaled)
-        this.checkpoint(journaled)
-      })
+      this.project(journaled)
       return journaled
     }
     let journaled!: Row
@@ -2267,6 +2509,7 @@ export class RuntimeStore {
       created_at: number
       parent_id: string | null
       title: string | null
+      title_source?: AgentSessionTitleSource | null
       recovery_error: string | null
       last_human_turn_at: number | null
       agent_session_id: string | null
@@ -2290,6 +2533,7 @@ export class RuntimeStore {
           created_at,
           parent_id,
           title,
+          title_source,
           recovery_error,
           last_human_turn_at,
           agent_session_id,
@@ -2348,6 +2592,7 @@ export class RuntimeStore {
         process_key = excluded.process_key,
         permission_mode = CASE WHEN session.harness_id = excluded.harness_id AND session.harness_access = excluded.harness_access THEN session.permission_mode ELSE NULL END,
         permission_state_json = CASE WHEN session.harness_id = excluded.harness_id AND session.harness_access = excluded.harness_access THEN session.permission_state_json ELSE NULL END,
+        commands_json = CASE WHEN session.harness_id IS excluded.harness_id AND session.harness_access IS excluded.harness_access THEN session.commands_json ELSE NULL END,
         harness_id = excluded.harness_id,
         harness_access = excluded.harness_access,
         harness_binary = excluded.harness_binary,
@@ -2404,7 +2649,7 @@ export class RuntimeStore {
     this.db.prepare("DELETE FROM session_subagent_correlation WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent_tool_call WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent WHERE parent_session_id = ?").run(id)
-    this.db.prepare("DELETE FROM queued_prompt WHERE session_id = ?").run(id)
+    this.db.prepare("DELETE FROM runtime_delivery WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM journal_checkpoint WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM pending_question WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM pending_permission WHERE session_id = ?").run(id)
@@ -2418,7 +2663,7 @@ export class RuntimeStore {
 
   private applySessionUpdate(sessionId: string, updates: SessionUpdate["updates"], ts: number) {
     if (updates.title !== undefined) {
-      this.db.prepare("UPDATE session SET title = ?, updated_at = ? WHERE id = ?").run(updates.title, ts, sessionId)
+      this.db.prepare("UPDATE session SET title = ?, title_source = 'user', updated_at = ? WHERE id = ?").run(updates.title, ts, sessionId)
     }
     if (updates.time?.archived !== undefined) {
       this.db
@@ -2452,6 +2697,8 @@ export class RuntimeStore {
     if (control.type === "session.bind") {
       this.db.prepare("DELETE FROM deleted_session WHERE session_id = ?").run(row.sessionId)
       const existing = this.sessionTimes(row.sessionId)
+      const previous = this.getSession(row.sessionId)
+      const titleSource = boundSessionTitleSource(control.title, previous ?? undefined)
       this.upsertSession({
         id: row.sessionId,
         directory: control.directory,
@@ -2462,6 +2709,7 @@ export class RuntimeStore {
         createdAt: control.createdAt ?? existing.created ?? row.ts,
         updatedAt: control.updatedAt ?? existing.updated ?? row.ts,
       })
+      this.db.prepare("UPDATE session SET title_source = ? WHERE id = ?").run(titleSource ?? null, row.sessionId)
       if (control.workspaceId && control.connectionId && control.upstreamSessionId) {
         this.db
           .prepare(
@@ -2666,8 +2914,8 @@ export class RuntimeStore {
         this.db
           .prepare(
             `INSERT OR REPLACE INTO pending_permission
-           (id, session_id, tool, patterns_json, metadata_json, always_json, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+           (id, session_id, tool, patterns_json, metadata_json, always_json, options_json, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
           )
           .run(
             event.properties.id,
@@ -2676,6 +2924,7 @@ export class RuntimeStore {
             JSON.stringify(event.properties.patterns),
             JSON.stringify(event.properties.metadata),
             JSON.stringify(event.properties.always),
+            event.properties.options === undefined ? null : JSON.stringify(event.properties.options),
             row.ts,
             row.ts,
           )
@@ -2717,15 +2966,24 @@ export class RuntimeStore {
         return
       }
 
+      case "session.commands": {
+        this.db.prepare("UPDATE session SET commands_json = ? WHERE id = ?")
+          .run(JSON.stringify(event.properties.commands), event.properties.sessionID)
+        return
+      }
+
       case "session.updated": {
         const info = event.properties.info
+        const previous = this.getSession(info.id)
+        const accepted = info.title !== undefined && acceptsSessionTitle(info.titleSource, previous?.titleSource)
         this.db.prepare(`
           UPDATE session
-          SET title = COALESCE(?, title),
+          SET title = CASE WHEN ? THEN ? ELSE title END,
+              title_source = CASE WHEN ? THEN ? ELSE title_source END,
               updated_at = COALESCE(?, updated_at),
               archived_at = COALESCE(?, archived_at)
           WHERE id = ?
-        `).run(info.title ?? null, info.time?.updated ?? null, info.time?.archived ?? null, info.id)
+        `).run(accepted ? 1 : 0, info.title ?? null, accepted ? 1 : 0, info.titleSource ?? "prompt", info.time?.updated ?? null, info.time?.archived ?? null, info.id)
         return
       }
 
@@ -2786,10 +3044,15 @@ export class RuntimeStore {
   }
 
   private project(row: Row) {
-    this.transaction(() => {
-      this.apply(row)
-      this.checkpoint(row)
-    })
+    try {
+      this.transaction(() => {
+        this.apply(row)
+        this.checkpoint(row)
+      })
+    } catch (error) {
+      this.failedProjections.add(row.sessionId)
+      throw error
+    }
   }
 
   bindSession(input: {
@@ -3202,6 +3465,8 @@ export class RuntimeStore {
     parent_id?: string | null
     directory: string
     title: string | null
+      title_source?: AgentSessionTitleSource | null
+    commands_json?: string | null
     harness_id?: string | null
     harness_access?: string | null
     harness_binary?: string | null
@@ -3227,6 +3492,8 @@ export class RuntimeStore {
       id: row.id,
       ...(row.workspace_id ? { workspaceId: row.workspace_id } : {}),
       title: row.title,
+      ...(row.title_source ? { titleSource: row.title_source } : {}),
+      ...(row.commands_json ? { commands: readColumn.sessionCommands(row.commands_json) } : {}),
       directory: row.directory,
       time: {
         created: row.created_at,
@@ -3323,6 +3590,8 @@ export class RuntimeStore {
         parent_id: string | null
         directory: string
         title: string | null
+      title_source?: AgentSessionTitleSource | null
+      commands_json: string | null
         agent_session_id: string | null
         process_key: string | null
         harness_id: string | null
@@ -3348,6 +3617,8 @@ export class RuntimeStore {
           parent_id,
 	          session.directory,
 	          title,
+          title_source,
+          commands_json,
 	          agent_session_id,
 	          process_key,
 	          harness_id,
@@ -3458,6 +3729,8 @@ export class RuntimeStore {
       parent_id: string | null
       directory: string
       title: string | null
+      title_source?: AgentSessionTitleSource | null
+      commands_json: string | null
       harness_id: string | null
       harness_access: string | null
       harness_binary: string | null
@@ -3483,6 +3756,8 @@ export class RuntimeStore {
           parent_id,
 	          session.directory,
 	          title,
+          title_source,
+          commands_json,
 	          process_key,
 	          harness_id,
 	          harness_access,
@@ -3584,9 +3859,10 @@ export class RuntimeStore {
       patterns_json: string
       always_json: string
       metadata_json: string
+      options_json: string | null
     }>(
         `
-        SELECT p.id, p.session_id, p.tool, p.patterns_json, p.always_json, p.metadata_json
+        SELECT p.id, p.session_id, p.tool, p.patterns_json, p.always_json, p.metadata_json, p.options_json
         FROM pending_permission p
         JOIN session s ON s.id = p.session_id
         WHERE s.directory = ? AND p.status = 'pending'
@@ -3603,6 +3879,7 @@ export class RuntimeStore {
         patterns: readColumn.permissionPatterns(row.patterns_json),
         always: readColumn.permissionPatterns(row.always_json),
         metadata: readColumn.permissionMetadata(row.metadata_json),
+        ...(row.options_json === null ? {} : { options: readColumn.permissionOptions(row.options_json) }),
       }))
   }
 
@@ -3612,8 +3889,9 @@ export class RuntimeStore {
         `
         SELECT q.id, q.session_id, q.questions_json
         FROM pending_question q
-        JOIN session s ON s.id = q.session_id
-        WHERE s.directory = ? AND q.status = 'pending'
+        LEFT JOIN session s ON s.id = q.session_id
+        LEFT JOIN session_start p ON p.session_id = q.session_id
+        WHERE COALESCE(s.directory, p.directory) = ? AND q.status = 'pending'
         ORDER BY q.created_at ASC
       `,
       )
@@ -4106,6 +4384,9 @@ export class RuntimeStore {
       return
     }
     const nextHarness = patch.harness ?? prevHarness
+    if (prevHarness && (nextHarness?.id !== prevHarness.id || nextHarness?.access !== prevHarness.access)) {
+      this.db.prepare("UPDATE session SET commands_json = NULL WHERE id = ?").run(id)
+    }
     const nextModelId = patch.model === undefined ? (prev?.model_id ?? null) : (patch.model?.modelID ?? null)
     // Config hydrate / visit must not bump the session list's updated_at.
     this.db

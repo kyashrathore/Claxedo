@@ -84,11 +84,12 @@ type RuntimeEventMeta = {
 }
 
 /**
- * A tool result's image, carried by location when the workspace can serve it
- * and by value only when it cannot. `path` is workspace-relative because the
- * workspace file routes reject absolute paths outright.
+ * Preserve supplied image bytes inline. Native image-view results that report
+ * only a path use tool-file: an absolute reference read by the owning runtime.
+ * Existing workspace-file records remain workspace-relative.
  */
 export type RuntimeToolAttachment = { mime: string; filename?: string } & (
+  | { kind: "tool-file"; path: string }
   | { kind: "workspace-file"; path: string; sourcePath: string }
   | { kind: "inline"; url: string }
   | { kind: "unretained"; sourcePath?: string; bytes: number }
@@ -129,7 +130,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "tool-error"; toolCallId: string; error: string; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "file-diff"; toolCallId?: string; path: string; oldText?: string; newText: string }
   | { type: "step-start"; newMessageId: string }
-  | { type: "permission-request"; requestId: string; tool: string; paths: string[]; details?: { command?: string; reason?: string } }
+  | { type: "permission-request"; requestId: string; tool: string; paths: string[]; details?: { command?: string; reason?: string }; options?: { id: string; label: string; description?: string }[] }
   | { type: "question"; requestId: string; questions: RuntimeQuestion[] }
   | { type: "question-answered"; requestId: string; answers: Record<string, string | string[]> }
   | { type: "proposed-plan-delta"; delta: string }

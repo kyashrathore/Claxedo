@@ -3,7 +3,7 @@ import os from "node:os"
 import { machineDisplayName } from "@claxedo/helpers/machine-name"
 import { DECISION_EXIT_CODE, HostConnectDecisionError, redeemInvitation } from "@claxedo/host-connector/bootstrap"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
-import { newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
+import { ControlPlaneUrlError, newHostState, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
 import { REDEEM_REQUEST_TIMEOUT_MS } from "@claxedo/host-connector/machine-transport"
 import { config } from "../config"
 import { errorMessage } from "../json"
@@ -82,7 +82,15 @@ function mintHint(controlPlaneUrl: string) {
 }
 
 async function loadState(deps: ConnectDeps): Promise<HostState | undefined> {
-  const loaded = await deps.store.load()
+  const loaded = await deps.store.load().catch((error: unknown) => {
+    if (!(error instanceof ControlPlaneUrlError)) throw error
+    // A host enrolled against this endpoint before it was refused. Its key is
+    // bound to that enrollment, so the way out is a new host id, not an edit.
+    throw new HostConnectDecisionError(
+      `${errorMessage(error)}; this machine is enrolled against it in ${deps.paths.stateFile}, so run \`claxedo connect --reset\` and redeem a new invitation`,
+      { cause: error },
+    )
+  })
   return loaded ? deps.store.finishPendingCleanup(loaded) : undefined
 }
 
@@ -137,13 +145,20 @@ async function enroll(deps: ConnectDeps, args: ConnectArgs, existing: HostState 
   } else {
     const created = await createHostKeyPair()
     keys = created
-    state = newHostState({
-      hostId: newHostId(),
-      privateKeyJwk: created.privateKeyJwk,
-      controlPlaneUrl: deps.controlPlaneUrl,
-      cliRoots: args.roots,
-      storageRoot: deps.paths.storageRoot,
-    })
+    try {
+      state = newHostState({
+        hostId: newHostId(),
+        privateKeyJwk: created.privateKeyJwk,
+        controlPlaneUrl: deps.controlPlaneUrl,
+        cliRoots: args.roots,
+        storageRoot: deps.paths.storageRoot,
+      })
+    } catch (error) {
+      if (!(error instanceof ControlPlaneUrlError)) throw error
+      // Exit 78, not 1: a service manager restarting into this would redeem
+      // nothing until CLAXEDO_CONTROL_PLANE_URL is changed.
+      throw new HostConnectDecisionError(`${errorMessage(error)}; set CLAXEDO_CONTROL_PLANE_URL to an https:// origin`, { cause: error })
+    }
   }
   const pending = state
   const outcome = await withBootstrapRetry(deps.host, "redeem", ({ timeoutMs }) =>

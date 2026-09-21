@@ -224,6 +224,19 @@ describe("@claxedo/local-server closure", () => {
     //    installs them through; only the process whose runtimes resolve a
     //    turn's credentials can hold them. The parser and the `projectAuth`
     //    composition are server-core's `credentials/host-provider-config.ts`.
+    //  - `platform/auth/project-access.ts` — the one authorization operation
+    //    for the projects this server stores, shared by the shell `/project`
+    //    routes and the `/api/claxedo/projects` router. Two route families in
+    //    this package ask the same question, and a second implementation of it
+    //    is a second answer; it reaches only server-core's authority port and
+    //    branded-id leaves.
+    //  - `app/daemon-admission.ts` and
+    //    `workspace/runtime-dispatch/relay-admission.ts` — who may drive this
+    //    daemon, and the bound within which that answer defers to the relay.
+    //    A loopback page is not the application, so this composition needs an
+    //    authority of its own; shared server-core has no daemon to
+    //    authenticate and no dispatcher to bound. `node:crypto`, server-core's
+    //    error body, and the two dispatch modules already here.
     //
     // And the packages: `@claxedo/opencode-server-adapter` is the isolated
     // HTTP/SSE provider, with no embedded engine or generated client;
@@ -241,7 +254,7 @@ describe("@claxedo/local-server closure", () => {
     // `claxedo connect` host alike, and reaches only server-core's log and
     // peer-address leaves and the runtime's relay subpath.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(93)
+    expect(modules.size).toBeLessThanOrEqual(96)
     expect(packages.size).toBeLessThanOrEqual(27)
   })
 })

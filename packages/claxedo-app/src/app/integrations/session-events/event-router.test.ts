@@ -52,6 +52,17 @@ afterEach(() => {
 })
 
 describe("directory event router", () => {
+  test("routes agent command updates into the current session cache", () => {
+    const sinks = routerSinks({ cache: { at: 1, limit: 10, total: 2, session: [root("a"), root("b")] } })
+    const commands = [{ name: "review", description: "Review changes" }]
+    routeDirectoryEvent({ event: event("session.commands", { sessionID: "a", commands }), directory: "/tmp/ws", sinks })
+    expect(sinks.cacheValue().session[0].commands).toEqual(commands)
+    expect(sinks.cacheValue().session[1].commands).toBeUndefined()
+    routeDirectoryEvent({ event: event("session.commands", { sessionID: "a", commands: [] }), directory: "/tmp/ws", sinks })
+    expect(sinks.cacheValue().session[0].commands).toEqual([])
+    expect(queryClient.getQueryData<DirectorySessionCacheValue>(queryKeys.directory.sessionCache("/tmp/ws"))?.session[0].commands).toEqual([])
+  })
+
   test("classifies conversation, targeted, and coarse events", () => {
     expect(classifyStreamEvent(event("message.part.delta", {
       sessionID: "ses_1",

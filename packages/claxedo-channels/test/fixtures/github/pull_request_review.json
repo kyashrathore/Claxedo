@@ -4,19 +4,35 @@
     "id": 4242
   },
   "sender": {
-    "login": "reviewer"
+    "login": "reviewer",
+    "id": 90210,
+    "node_id": "MDQ6VXNlcjkwMjEw",
+    "type": "User"
   },
   "repository": {
+    "id": 1296269,
     "name": "infra",
+    "full_name": "acme/infra",
     "owner": {
-      "login": "acme"
+      "login": "acme",
+      "id": 9919,
+      "type": "Organization"
     }
   },
   "pull_request": {
     "number": 18,
-    "title": "Tighten deploy checks"
+    "title": "Tighten deploy checks",
+    "html_url": "https://github.com/acme/infra/pull/18"
   },
   "review": {
-    "body": "@claxedo verify this review feedback"
+    "id": 2002,
+    "body": "@claxedo verify this review feedback",
+    "user": {
+      "login": "reviewer",
+      "id": 90210,
+      "type": "User"
+    },
+    "submitted_at": "2026-09-19T11:00:00Z",
+    "html_url": "https://github.com/acme/infra/pull/18#pullrequestreview-2002"
   }
 }

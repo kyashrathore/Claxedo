@@ -32,6 +32,7 @@ export type PromptCommandOption = {
 export type PromptCustomCommand = {
   name: string
   description?: string
+  input?: { hint: string } | null
   source?: SlashCommand["source"]
 }
 
@@ -104,7 +105,7 @@ export function promptSlashCommands(input: {
     id: `custom.${cmd.name}`,
     trigger: cmd.name,
     title: cmd.name,
-    description: cmd.description,
+    description: cmd.input?.hint ? [cmd.description, cmd.input.hint].filter(Boolean).join(" · ") : cmd.description,
     type: "custom" as const,
     source: cmd.source,
   }))

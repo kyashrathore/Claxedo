@@ -142,6 +142,7 @@ describe("route ownership", () => {
     const paths = [
       "/session",
       "/session/abc123",
+      "/session-start/start_1",
       "/session/abc123/message",
       "/session/abc123/prompt_async",
       "/permission",

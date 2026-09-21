@@ -3,6 +3,44 @@ import { handleCodexServerRequest } from "./server-request"
 import type { CodexActiveThread } from "./active-thread"
 import type { PendingQuestion, SdkRuntimeDriverHost } from "../shared/sdk-runtime-driver"
 
+const interactions = [
+  { name: "command approval", method: "item/commandExecution/requestApproval", permission: true, params: {} },
+  { name: "question", method: "item/tool/requestUserInput", permission: false, params: { questions: [{ id: "q" }] } },
+  { name: "MCP form", method: "mcpServer/elicitation/request", permission: false, params: { mode: "form", message: "Input", requestedSchema: { type: "object" } } },
+  { name: "MCP approval", method: "mcpServer/elicitation/request", permission: true, params: {
+    mode: "form", serverName: "test", requestedSchema: { type: "object", properties: {} }, _meta: { codex_approval_kind: "mcp_tool_call" },
+  } },
+]
+
+for (const interaction of interactions) {
+  for (const fail of [false, true]) {
+    test(`${interaction.name} ${fail ? "cleans up a failed publication" : "can be answered during publication"}`, async () => {
+      const pendingPermissions: SdkRuntimeDriverHost["pendingPermissions"] = new Map()
+      const pendingQuestions: SdkRuntimeDriverHost["pendingQuestions"] = new Map()
+      const active = {
+        sessionId: "session", agentSessionId: "thread", directory: "/repo",
+        project: (_method: string, payload: { requestId: string }) => {
+          expect((interaction.permission ? pendingPermissions : pendingQuestions).has(payload.requestId)).toBe(true)
+          if (fail) throw new Error("permission storage failed")
+          if (interaction.permission) pendingPermissions.get(payload.requestId)!.resolve("deny", "cancel")
+          else pendingQuestions.get(payload.requestId)!.reject()
+        },
+      } as unknown as CodexActiveThread
+      const result = handleCodexServerRequest({
+        message: { id: "native-request", method: interaction.method, params: { ...interaction.params, threadId: "thread" } },
+        activeThreads: new Map([["thread", active]]),
+        host: { pendingPermissions, pendingQuestions } as unknown as SdkRuntimeDriverHost,
+        permissionModeId: () => "workspace-write",
+        refreshTokens: async () => { throw new Error("unexpected refresh") },
+      })
+      if (fail) await expect(result).rejects.toThrow("permission storage failed")
+      else expect(await result).toBeDefined()
+      expect(pendingPermissions.size).toBe(0)
+      expect(pendingQuestions.size).toBe(0)
+    })
+  }
+}
+
 for (const dismiss of [false, true]) {
   test(`Codex question ${dismiss ? "dismissal" : "answer"} settles with the native answer contract`, async () => {
     const pendingQuestions = new Map<string, PendingQuestion>()

@@ -118,24 +118,29 @@ you had marked "always" on the old agent are forgotten by the switch.
   server, are handed to the agent when the session is created, forked or
   resumed, unless the connection opts out.
 - **Attachments** are written into `<workspace>/.claxedo/attachments/` (git
-  ignored, readable only by you) and named in the prompt text. Images go
-  inline when the agent accepts inline images; other files go inline when the
-  agent accepts embedded content, otherwise as a link to that path. An agent
-  that accepts neither and does not share your filesystem cannot take an
+  ignored, readable only by you) and named in the prompt text, but only for an
+  agent Claxedo starts as a process. An agent reached over HTTP or WebSocket
+  shares no filesystem, so nothing is written and the bytes have to travel in
+  the prompt itself. Either way, images go inline when the agent accepts
+  inline images, sound when it accepts audio, other files when it accepts
+  embedded content, and otherwise a link to the written path. An agent that
+  accepts none of those and does not share your filesystem cannot take an
   attachment at all; the turn fails rather than dropping the file.
 - **The working directory** the agent works in is the workspace or worktree
   you opened, passed on every session request. The agent process itself is
   started in the server's own directory, so an agent that only trusts its
   process directory will be looking at the wrong folder; well-behaved ACP
   agents use the session's `cwd`.
-- **Models.** If the agent exposes a model option or a model list, the
-  composer's model picker shows it and selecting one restarts the agent
-  process with that model. Many agents manage their model themselves; then
-  the picker shows nothing to choose and the turn runs on whatever the agent
-  decides.
+- **Models.** If the agent exposes a model as one of its config options, the
+  composer's model picker shows that option's choices and selecting one
+  restarts the agent process with that model. An agent that only reports which
+  model it is currently using fills nothing in the picker. Many agents manage
+  their model themselves; then there is nothing to choose and the turn runs on
+  whatever the agent decides. A model change is refused outright while any
+  session on that connection is mid-turn, because it restarts the process.
 - **Goal mode** (autonomous continuation) works only with agents that
-  negotiate Claxedo's Goal extension at session creation. Otherwise the Goal
-  controls say the agent did not negotiate it.
+  negotiate Claxedo's Goal extension in the `initialize` handshake. Otherwise
+  the Goal controls say the agent did not negotiate it.
 
 ## Permissions
 
@@ -165,12 +170,13 @@ anything else, and the paths the agent named. You answer **Allow once**,
 
 | Area | What happens |
 |---|---|
-| Parallel turns | One turn at a time per agent process. Sessions in the same workspace on the same connection share one process and queue behind each other. |
-| Process loss | If the agent exits mid-turn, the turn fails with the agent's last error line, every session on that process is marked recovering, and the next turn starts a fresh process. Nothing is retried for you. |
+| Parallel turns | Sessions have independent turn admission. One session cannot run overlapping turns, but it does not hold another session behind a process-wide prompt queue. |
+| Process loss | If the agent exits mid-turn, the turn fails with `ACP connection closed`, every session on that process is marked recovering, and the next turn starts a fresh process. The agent's own stderr is not part of that message, so read the server log to find out why it died. Nothing is retried for you. |
 | Restart and resume | After the server restarts, the next turn asks the agent to resume its own session. An agent that cannot resume or load sessions fails that turn; only "not found" starts a fresh agent session automatically. Claxedo's transcript is always kept. |
-| Questions, todos, slash commands, revert, subagents | Not offered as controls. Plans the agent publishes are still rendered as a todo list, and command lists it publishes are shown, but you cannot answer a structured question, revert a step or spawn a subagent through Claxedo. |
-| Fork | Only if the agent itself supports session fork. |
-| Effort levels | None; the agent decides. |
+| Questions and other controls | ACP forms use the existing question dock and a JSON answer validated by the SDK. Published commands appear in the slash menu; plans render as todos. Negotiated child sessions use existing subagent transcripts. Revert remains unsupported. |
+| Fork | Requires negotiated agent support. Support survives idle process disposal; the runtime restores the source before forking. |
+| Changing models | Uses the agent's supported session configuration methods without replacing the shared process. Unsupported model selection is not invented. |
+| Effort levels | Shown only when the agent advertises them in its configuration options. |
 | Instructions | A prompt prefix, not a system channel (above). |
 | Environment | The agent inherits your environment minus every `CLAXEDO_*` and `WORKSPACE_RUNTIME_*` variable that is not on Claxedo's allowlist, and minus anything ending in `_TOKEN`, `_SECRET`, `_KEY`, `_PASSWORD`, `_CREDENTIALS` or `_PEM`. |
 | Where it runs | A connection lives on the machine that runs the agent. A workspace on another machine you own uses that machine's own connection file and credential store. A connection that names secrets runs only on a desktop or local server; runtimes that receive their configuration by broadcast refuse it. |
@@ -200,14 +206,16 @@ environment it is launched with).
 The agent's own stderr is written to the server log: on the desktop app,
 `server.log` next to `main.log` in the app's log directory
 (`~/Library/Logs/<app name>/` on macOS). The last stderr line is also attached
-to the error you see.
+to the error you see when the agent fails to start. A failure part-way through
+a turn does not carry it, so the log is the only place to look.
 
 | What you see | What it means | What to do |
 |---|---|---|
 | Row missing from Settings → Connections | The file did not parse, or you edited the other channel's directory | Check the server log for `connections:` problems; check the data directory |
 | `Connection "<id>" is not configured on this runtime` | The workspace runtime has no applied descriptor for that id: it is disabled, was removed, or names a secret this runtime cannot resolve | Enable it, or run the workspace on the machine that holds the secret |
 | `ACP initialize timed out` / `ACP newSession timed out after 10000ms` | The binary started but did not answer the handshake or session creation in time; usually the agent is not logged in, is waiting on a first-run prompt, or the wrong binary was named | Run the agent's own CLI once in a terminal; raise `CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS` for a slow cold start |
-| `ACP transport exited with code N: <last stderr>` | The agent process died during a turn | Read the stderr line; the next turn starts a new process |
+| `ACP transport exited with code N: <last stderr>` | The agent process died while starting up, before it answered the handshake | Read the stderr line; fix what it names and try again |
+| `ACP connection closed` | The agent process died part-way through a turn | Read the server log for the agent's stderr; the next turn starts a new process |
 | `ACP prompt timed out after 300000ms of inactivity` | The agent went silent for five minutes with nothing waiting on you | Retry; raise `CLAXEDO_ACP_PROMPT_TIMEOUT_MS` for agents that think for long stretches without streaming |
 | `<Agent> runtime is unavailable` in the composer | The app's probes of the runtime kept failing after several retries | Use Retry; if it persists, read the server log for the cause |
 | `ACP agent does not advertise session resume or load support` | After a restart the agent cannot pick up its old session | Start a new session; the old transcript stays readable |

@@ -152,6 +152,13 @@
       "types": "./dist/stores/sqlite.d.ts",
       "import": "./dist/stores/sqlite.mjs",
       "default": "./dist/stores/sqlite.mjs"
+    },
+    "./stores/session-start": {
+      "development": "./src/session-start-store.ts",
+      "bun": "./src/session-start-store.ts",
+      "types": "./dist/session-start-store.d.ts",
+      "import": "./dist/session-start-store.mjs",
+      "default": "./dist/session-start-store.mjs"
     }
   },
   "files": [

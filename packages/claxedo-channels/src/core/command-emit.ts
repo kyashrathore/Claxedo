@@ -84,7 +84,7 @@ export function createChannelCore(input: {
     input: InboundEnvelope,
     context?: {
       existingSession?: Awaited<ReturnType<SessionResolver["get"]>>
-      action: "message" | "approval" | "cancel"
+      action: "message" | "approval" | "cancel" | "status"
     },
   ) => Promise<{ ok: true } | { ok: false; message: string }>
   /**
@@ -223,7 +223,16 @@ export function createChannelCore(input: {
       // Preempt, don't enqueue: a recovery command that queues behind a
       // wedged turn never runs. Abort any active turn, then drop the binding
       // so the NEXT message opens a fresh session.
-      if (existingRef) await input.runtime.abortSession({ sessionId: existingRef.sessionId, channel: envelope.channel, externalUserId: envelope.externalUserId, threadKey: envelope.threadKey }).catch(() => undefined)
+      if (existingRef) {
+        const stopped = await input.runtime.abortSession({
+          sessionId: existingRef.sessionId, channel: envelope.channel,
+          externalUserId: envelope.externalUserId, threadKey: envelope.threadKey,
+        }).catch(() => ({ ok: false, message: "Unable to cancel the existing session. Its binding was preserved." }))
+        if (!stopped.ok) {
+          await handlers.reply({ kind: "text", text: stopped.message ?? "Unable to cancel the existing session. Its binding was preserved.", final: true })
+          return true
+        }
+      }
       await input.resetSession?.(envelope.threadKey)
       await handlers.reply({
         kind: "text",
@@ -387,8 +396,6 @@ export function createChannelCore(input: {
 
       const existingRef = await input.sessions.get(envelope.threadKey)
 
-      if (await handleSessionCommand(envelope, handlers, existingRef)) return
-
       // A plain message arriving while a prompt is pending in this thread is a
       // candidate approval reply — the judge decides below whether it actually
       // is one. Resolved HERE so it can classify the turn as an approval for
@@ -401,14 +408,18 @@ export function createChannelCore(input: {
       const action =
         envelope.intent?.kind === "approval_reply" || pendingApproval
           ? "approval"
-          : envelope.intent?.kind === "cancel"
+          : envelope.intent?.kind === "cancel" || envelope.intent?.kind === "new_session"
             ? "cancel"
+            : envelope.intent?.kind === "status"
+              ? "status"
             : "message"
       const auth = await input.authorize?.(envelope, { existingSession: existingRef, action })
       if (auth?.ok === false) {
         await handlers.reply({ kind: "text", text: auth.message, final: true })
         return
       }
+
+      if (await handleSessionCommand(envelope, handlers, existingRef)) return
 
       // Budget veto — only for message turns (approvals/cancels are cheap and
       // must always land). Refusal replies once with the cap notice.

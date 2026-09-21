@@ -1,11 +1,15 @@
 import { For, Show, createSignal } from "solid-js"
-import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
+import type { AgentPermission as PermissionRequest, AgentPermissionReply } from "@claxedo/agent-runtime-contract"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@/ui/session-kit"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useLanguage } from "@/platform/i18n/provider"
 
 type DictionaryKey = Parameters<ReturnType<typeof useLanguage>["t"]>[0]
+
+function permissionRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
 
 /**
  * Listed per permission rather than assembled from the id, so every key is a
@@ -32,7 +36,7 @@ const TOOL_DESCRIPTION_KEYS: Partial<Record<string, DictionaryKey>> = {
 export function SessionPermissionDock(props: {
   request: PermissionRequest
   responding: boolean
-  onDecide: (response: "once" | "always" | "reject") => void
+  onDecide: (response: AgentPermissionReply) => void
   onStop?: () => Promise<unknown>
 }) {
   const language = useLanguage()
@@ -53,7 +57,27 @@ export function SessionPermissionDock(props: {
   const patterns = () => Array.isArray(props.request.patterns) ? props.request.patterns : []
 
   const command = () => typeof props.request.metadata.command === "string" ? props.request.metadata.command : undefined
-  const reason = () => typeof props.request.metadata.reason === "string" ? props.request.metadata.reason : undefined
+  const agentTool = () => permissionRecord(props.request.metadata.acpToolCall)
+  const reason = () => {
+    const request = permissionRecord(props.request.metadata.acpRequestMeta)
+    const permission = permissionRecord(request?.permission)
+    if (permission?.version === 1 && typeof permission.description === "string") return permission.description
+    return typeof props.request.metadata.reason === "string" ? props.request.metadata.reason : undefined
+  }
+  const directory = () => {
+    const input = permissionRecord(agentTool()?.rawInput)
+    return typeof input?.cwd === "string" ? input.cwd : undefined
+  }
+  const agentText = () => {
+    const content = agentTool()?.content
+    return Array.isArray(content) ? content.flatMap((item) => {
+      const block = permissionRecord(item)
+      const value = permissionRecord(block?.content)
+      return block?.type === "content" && value?.type === "text" && typeof value.text === "string" ? [value.text] : []
+    }) : []
+  }
+  const details = () => props.request.metadata.acpToolCall || props.request.metadata.acpRequestMeta
+    ? JSON.stringify({ toolCall: props.request.metadata.acpToolCall, request: props.request.metadata.acpRequestMeta }, null, 2) : undefined
 
   const toolDescription = () => {
     const key = TOOL_DESCRIPTION_KEYS[props.request.permission]
@@ -81,20 +105,34 @@ export function SessionPermissionDock(props: {
             </Show>
           </div>
           <div data-slot="permission-footer-actions">
-            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding || stopping()}>
-              {language.t("ui.permission.deny")}
-            </Button>
-            <Button
-              variant="secondary"
-              size="normal"
-              onClick={() => props.onDecide("always")}
-              disabled={props.responding || stopping()}
-            >
-              {language.t("ui.permission.allowAlways")}
-            </Button>
-            <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding || stopping()}>
-              {language.t("ui.permission.allowOnce")}
-            </Button>
+            <Show when={props.request.options !== undefined} fallback={
+              <>
+                <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding || stopping()}>
+                  {language.t("ui.permission.deny")}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="normal"
+                  onClick={() => props.onDecide("always")}
+                  disabled={props.responding || stopping()}
+                >
+                  {language.t("ui.permission.allowAlways")}
+                </Button>
+                <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding || stopping()}>
+                  {language.t("ui.permission.allowOnce")}
+                </Button>
+              </>
+            }>
+              <For each={props.request.options}>
+                {(option) => <Button
+                  variant="secondary"
+                  size="normal"
+                  title={option.description}
+                  onClick={() => props.onDecide({ optionId: option.id })}
+                  disabled={props.responding || stopping()}
+                >{option.label}</Button>}
+              </For>
+            </Show>
           </div>
         </>
       }
@@ -112,6 +150,15 @@ export function SessionPermissionDock(props: {
       </Show>
       <Show when={reason()}>
         {(value) => <div data-slot="permission-reason" class="text-12-regular text-text-base">{value()}</div>}
+      </Show>
+      <Show when={directory()}>
+        {(value) => <div data-slot="permission-directory" class="text-12-regular text-text-base">Working directory: <code class="break-all">{value()}</code></div>}
+      </Show>
+      <For each={agentText()}>
+        {(value) => <pre data-slot="permission-agent-text" class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value}</pre>}
+      </For>
+      <Show when={details()}>
+        {(value) => <details data-slot="permission-details"><summary>Details</summary><pre class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value()}</pre></details>}
       </Show>
 
       <Show when={patterns().length > 0}>

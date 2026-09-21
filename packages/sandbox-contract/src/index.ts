@@ -137,7 +137,8 @@ export function sandboxDriverAuthValues<T extends SandboxDriverID>(
   }
   if (id === "cloudflare") {
     const api_token = trimToUndefined(cfg?.auth?.cloudflare?.api_token) ?? trimToUndefined(env.CLOUDFLARE_API_TOKEN)
-    const worker_url = trimToUndefined(cfg?.auth?.cloudflare?.worker_url) ?? trimToUndefined(env.CLOUDFLARE_SANDBOX_WORKER_URL)
+    const configuredUrl = trimToUndefined(cfg?.auth?.cloudflare?.worker_url) ?? trimToUndefined(env.CLOUDFLARE_SANDBOX_WORKER_URL)
+    const worker_url = configuredUrl ? cloudflareWorkerBaseUrl(configuredUrl) : undefined
     return (api_token && worker_url ? { api_token, worker_url } : undefined) as SandboxDriverAuth[T] | undefined
   }
   if (id === "box") {
@@ -149,6 +150,32 @@ export function sandboxDriverAuthValues<T extends SandboxDriverID>(
     ?? trimToUndefined(env.CLAXEDO_DOCKER_SANDBOX_IMAGE)
     ?? trimToUndefined(env.CLAXEDO_SANDBOX_IMAGE)
   return (image ? { image } : {}) as SandboxDriverAuth[T]
+}
+
+/** The Worker receives provisioning credentials and must be an authenticated TLS endpoint. */
+export function cloudflareWorkerBaseUrl(input: string): string {
+  let url: URL
+  try { url = new URL(input.trim()) } catch { throw new Error("Cloudflare Worker URL must be a valid HTTPS endpoint") }
+  if (url.protocol !== "https:" || url.username || url.password || input.includes("?") || input.includes("#")) {
+    throw new Error("Cloudflare Worker URL requires HTTPS without credentials, query or fragment")
+  }
+  return url.origin + url.pathname.replace(/\/+$/, "")
+}
+
+/**
+ * The repository URL a composition may hand to `git clone`: an http(s) or ssh
+ * URL, or the scp-style `user@host:path` form every client accepts. `file://`
+ * reads the provisioning host's own filesystem and an unrecognized string can
+ * be a `git` option lookalike, so anything outside these forms is refused
+ * before it becomes a `SandboxSource`.
+ */
+export function safeRepoUrl(input: string): string | undefined {
+  try {
+    const url = new URL(input)
+    return url.protocol === "https:" || url.protocol === "http:" || url.protocol === "ssh:" ? input : undefined
+  } catch {
+    return /^[\w.-]+@[\w.-]+:[\w./-]+$/.test(input) ? input : undefined
+  }
 }
 
 export function sandboxDriverId(

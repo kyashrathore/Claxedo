@@ -189,7 +189,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       enabled: hydrateDirectoryCommands(),
     }
   })
-  const customCommands = () => customCommandsQuery.data
+  const customCommands = () => info()?.commands ?? customCommandsQuery.data
   const openComment = createPromptCommentRouter({
     comments,
     diffFiles: () => props.diffFiles?.(),
@@ -280,7 +280,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const working = createMemo(() => {
     const activeTurn = props.activeTurn?.()
     if (activeTurn !== undefined) return activeTurn
-    return status()?.type === "busy" || status()?.type === "retry"
+    const current = status()
+    return current.type === "busy" || current.type === "retry" || (current.type === "recovering" && current.kind === "uncertain_execution")
   })
   // status-meta has no query observer, so subscribe explicitly; otherwise the
   // escalation stages never re-render after their timers fire.
@@ -590,6 +591,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     newSessionSourceBranch: () => props.newSessionSourceBranch,
     newSessionHostKind: () => props.newSessionHostKind,
     onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
+    onSessionStart: props.onSessionStart,
     onCloudStartup: props.onCloudStartup,
     draftId: resolvedDraftId,
     harnessScope: scope,

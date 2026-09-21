@@ -18,6 +18,7 @@ import { classifyToolCall, isSessionSurface, projectToolStart } from "./classify
 import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 import { checkContentBlock, safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
 import { boundKeyedMap, jsonText, object, text } from "../../value"
+import { contentBlockImages } from "../tool-attachments"
 
 export type { SessionUpdate }
 
@@ -351,7 +352,7 @@ export function translateSessionUpdate(
       }, ctx.diagnostics)
       const next = viewToolWithDiagnostics(tool, ctx.diagnostics)
       const classification = classifyToolCall(next, ctx.diagnostics)
-      if (update.status !== undefined) {
+      if (update.status !== undefined && (isSessionSurface(classification) || (nextStatus !== "completed" && nextStatus !== "failed"))) {
         chunks.push({ type: "tool-status", toolCallId: update.toolCallId, status: nextStatus, display: next.display, metadata: next.metadata })
       }
 
@@ -374,6 +375,13 @@ export function translateSessionUpdate(
       }
       chunks.push(...drainContent(tool, content, ctx.diagnostics))
       chunks.push(...drainSpots(tool, locations))
+      if (nextStatus === "completed") {
+        const attachments = contentBlockImages(tool.content.flatMap((item) => item.type === "content" ? [item.content] : []))
+        chunks.push({ type: "tool-output", toolCallId: update.toolCallId, output: tool.rawOutput ?? content ?? null,
+          ...(attachments.length ? { attachments } : {}), display: next.display, metadata: next.metadata })
+      } else if (nextStatus === "failed") {
+        chunks.push({ type: "tool-error", toolCallId: update.toolCallId, error: errorText(tool.rawOutput), display: next.display, metadata: next.metadata })
+      }
       return chunks
     }
 
@@ -400,7 +408,7 @@ export function translateSessionUpdate(
       }, ctx.diagnostics)
       const next = viewToolWithDiagnostics(tool, ctx.diagnostics)
       const classification = classifyToolCall(next, ctx.diagnostics)
-      const statusChunks: AgentRuntimeEvent[] = hasOwn(update, "status") || hasUsefulToolUpdate({
+      const statusChunks: AgentRuntimeEvent[] = (isSessionSurface(classification) || (status !== "completed" && status !== "failed")) && (hasOwn(update, "status") || hasUsefulToolUpdate({
         rawInput,
         rawOutput,
         content: safeItems,
@@ -408,7 +416,7 @@ export function translateSessionUpdate(
         title,
         kind,
         meta,
-      })
+      }))
         ? [{ type: "tool-status", toolCallId, status: nextStatus, display: next.display, metadata: next.metadata }]
         : []
 
@@ -426,9 +434,10 @@ export function translateSessionUpdate(
         if (emitInput("completed", next.input, safeInput, title, kind, safeItems)) {
           chunks.push({ type: "tool-input", toolCallId, input: next.input, display: next.display, metadata: next.metadata })
         }
-        chunks.push({ type: "tool-output", toolCallId, output, display: next.display, metadata: next.metadata })
         chunks.push(...drainContent(tool, safeItems, ctx.diagnostics))
         chunks.push(...drainSpots(tool, safeSpots))
+        const attachments = contentBlockImages(tool.content.flatMap((item) => item.type === "content" ? [item.content] : []))
+        chunks.push({ type: "tool-output", toolCallId, output, ...(attachments.length ? { attachments } : {}), display: next.display, metadata: next.metadata })
         return chunks
       }
 

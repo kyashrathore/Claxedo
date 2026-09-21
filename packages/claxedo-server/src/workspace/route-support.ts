@@ -63,6 +63,14 @@ export type LocalHostAssignments = {
 
 export type WorkspaceRouteOptions = {
   hostAssignments?: LocalHostAssignments
+  /**
+   * Machine-wide operator authorization, throwing `ControlPlaneAuthError` for
+   * a signed caller who does not hold it. The deployment's own authorizer,
+   * shared with the plugin, enrollment and folder-import gates — a workspace
+   * row placed on this machine is a directory here, and no workspace role
+   * decides what this process serves or forgets.
+   */
+  authorizeOperator?: (auth: SignedControlPlaneAuth) => void
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
@@ -297,6 +305,18 @@ export function configuredRuntimeAccessTokenSigner(options: WorkspaceRouteOption
     "runtime_access_token_signer_unavailable",
     "Runtime Access Token signer is not configured",
   )
+}
+
+/**
+ * Refuses a signed caller who is not this deployment's operator, and refuses
+ * every signed caller where the composition supplied no authorizer: an
+ * unconfigurable machine gate is an open one.
+ */
+export function requireDeploymentOperator(options: WorkspaceRouteOptions, auth: SignedControlPlaneAuth) {
+  if (!options.authorizeOperator) {
+    throw new ControlPlaneAuthError(503, "authority_unavailable", "Deployment operator authorization is not configured")
+  }
+  options.authorizeOperator(auth)
 }
 
 /** The 401 body a signed-only route answers when `signedOrError` admitted no bearer. */

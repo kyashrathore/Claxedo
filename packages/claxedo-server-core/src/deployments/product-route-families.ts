@@ -60,6 +60,12 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     paths: ["/api/claxedo/agent-config", "/api/claxedo/agent-config/"],
   },
   {
+    id: "machine-agent-plugins",
+    owner: "local-server",
+    serves: "Machine plugin sources, activation, discovery and runtime handoff; self-hosted signed access requires a deployment operator.",
+    paths: ["/api/claxedo/plugins", "/api/claxedo/plugins/"],
+  },
+  {
     id: "credentials",
     owner: "local-server",
     serves: "Local provider credential storage, discovery, verification, and provider OAuth.",

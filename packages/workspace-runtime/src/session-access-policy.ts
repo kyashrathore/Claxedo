@@ -20,6 +20,26 @@ export type SessionWorkspaceAuthority = {
   role: "viewer" | "editor" | "admin" | "owner"
 }
 
+/**
+ * Who admitted a turn the runtime later starts for itself, recorded when the
+ * admitting request was still there to be read.
+ *
+ * The discriminant is the request's provenance, not the composition's, because
+ * one desktop daemon serves both arms: `managedSessionLifecycle` decides a
+ * prompt by asking both, and a background turn has no request left to ask, so
+ * the answer is written down at admission instead. A relay-replayed origin
+ * names the actor the authority will re-decide and needs both halves — it is
+ * refused named by one without the other. A loopback-direct origin names the
+ * machine's own user, who is not an actor the control plane knows and whose
+ * prompts take no lease on this same runtime today.
+ *
+ * Absent is its own answer, and not a third case to be lenient about: a row
+ * written before this was recorded proves nothing about who asked for it.
+ */
+export type SessionTurnOrigin =
+  | { provenance: "relay-replayed"; actor: SessionAccessActor; authority: SessionWorkspaceAuthority }
+  | { provenance: "loopback-direct" }
+
 export type SessionAccessOperation =
   | "session_create"
   | "session_list"
@@ -137,6 +157,8 @@ export type SessionAccessPolicy = {
   authorizeHost?(
     input: SessionAccessPolicyInput & { minimumRole: "viewer" | "editor" | "admin" | "owner"; lease?: string },
   ): Promise<SessionHostAccessDecision> | SessionHostAccessDecision
+  authorizeSessionStartStatus(input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string }): Promise<SessionAccessDecision> | SessionAccessDecision
+  authorizeSessionStart(input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string }): Promise<SessionAccessDecision> | SessionAccessDecision
   registerSession?(
     input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string },
   ): Promise<SessionAccessDecision> | SessionAccessDecision
@@ -223,6 +245,8 @@ export type SessionAuthorityTurnReleasePredicate = (
  * rather than an optional add-on a composer can forget to wire up.
  */
 export type ManagedSessionAuthority = {
+  authorizeSessionStartStatus?: (input: SessionAuthorityInput & { registrationOperationId: string }) => Promise<SessionAccessDecision | boolean | void> | SessionAccessDecision | boolean | void
+  authorizeSessionStart?: (input: SessionAuthorityInput & { registrationOperationId: string }) => Promise<SessionAccessDecision | boolean | void> | SessionAccessDecision | boolean | void
   authorizeSessionRead: SessionAuthorityPredicate
   authorizeSessionWrite: SessionAuthorityPredicate
   authorizeSessionStream: SessionAuthorityStreamPredicate
@@ -243,6 +267,7 @@ type SessionRouteDecision =
   | { kind: "filter"; operation: SessionAccessOperation }
   | { kind: "stream"; operation: SessionAccessOperation }
   | { kind: "workspace" }
+  | { kind: "startup"; operation: SessionAccessOperation }
 
 /**
  * Route-level contract for every client-presentation session-core surface.
@@ -259,9 +284,11 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "GET /permission/modes": { kind: "workspace" },
   "GET /question": { kind: "filter", operation: "question_list" },
   "GET /session": { kind: "filter", operation: "session_list" },
+  "GET /session-start/:id": { kind: "startup", operation: "session_meta_read" },
   "GET /session/:id": { kind: "authorize", operation: "session_meta_read" },
   "GET /session/:id/capabilities": { kind: "authorize", operation: "session_capabilities_read" },
   "GET /session/:id/subagents": { kind: "authorize", operation: "list_subagents" },
+  "GET /session/:id/config-options": { kind: "authorize", operation: "session_config_read" },
   "GET /session/:id/config": { kind: "authorize", operation: "session_config_read" },
   "GET /session/:id/goal": { kind: "authorize", operation: "goal_read" },
   "GET /session/:id/goal/capabilities": { kind: "authorize", operation: "goal_capabilities" },
@@ -272,6 +299,7 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "POST /session/:id/goal/stop": { kind: "authorize", operation: "goal_stop" },
   "DELETE /session/:id/goal": { kind: "authorize", operation: "goal_delete" },
   "GET /session/:id/message": { kind: "authorize", operation: "message_read" },
+  "GET /session/:id/message/:messageId/attachment/:attachmentId": { kind: "authorize", operation: "message_read" },
   "GET /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_read" },
   "GET /session/:id/queue": { kind: "authorize", operation: "queue_read" },
   "POST /session/:id/queue/:seq/:action": { kind: "authorize", operation: "prompt" },
@@ -513,6 +541,26 @@ export function managedWorkspaceSessionAccessPolicy(
     async authorizePrefix(input) {
       return authorize(input)
     },
+    async authorizeSessionStart(input) {
+      const workspace = authorizeManaged({ ...input, sessionId: undefined, operation: "session_create" }, options.requireActor === true)
+      if (!workspace.allowed) return workspace
+      if (!input.authority && !authority) return { allowed: true }
+      if (!input.actor || !input.authority) return turnActorRequired
+      if (!authority?.authorizeSessionStart || !input.registrationOperationId.trim()) {
+        return { allowed: false, status: 403, code: "session_start_authority_required", message: "Session startup requires a verified live reservation" }
+      }
+      return normalizeAuthorityDecision(await authority.authorizeSessionStart({ ...input, actor: input.actor, authority: input.authority }))
+    },
+    async authorizeSessionStartStatus(input) {
+      const workspace = authorizeManaged({ ...input, sessionId: undefined, operation: "session_meta_read" }, options.requireActor === true)
+      if (!workspace.allowed) return workspace
+      if (!input.authority && !authority) return { allowed: true }
+      if (!input.actor || !input.authority) return turnActorRequired
+      if (!authority?.authorizeSessionStartStatus || !input.registrationOperationId.trim()) {
+        return { allowed: false, status: 403, code: "session_start_authority_required", message: "Session startup status requires its verified creator reservation" }
+      }
+      return normalizeAuthorityDecision(await authority.authorizeSessionStartStatus({ ...input, actor: input.actor, authority: input.authority }))
+    },
     async registerSession(input) {
       const workspace = authorizeManaged(input, options.requireActor === true)
       if (!workspace.allowed) return workspace
@@ -625,6 +673,17 @@ export function sessionAccessContext(input: SessionAccessContextReader):
       role: auth.role,
     },
   }
+}
+
+/**
+ * What a request admitting future background work must write down about
+ * itself, or nothing when it is a relayed caller the boundary left unnamed —
+ * which is work that could never be re-decided and so is never admitted.
+ */
+export function sessionTurnOrigin(input: SessionRequestProvenanceReader): SessionTurnOrigin | undefined {
+  if (sessionRequestProvenance(input) === "loopback-direct") return { provenance: "loopback-direct" }
+  const { actor, authority } = sessionAccessContext(input)
+  return actor && authority ? { provenance: "relay-replayed", actor, authority } : undefined
 }
 
 export function sessionAccessDenied(decision: Exclude<SessionAccessDecision, { allowed: true }>) {

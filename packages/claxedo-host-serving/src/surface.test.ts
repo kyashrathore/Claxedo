@@ -42,80 +42,27 @@ describe("deny — the daemon's own families never cross the tunnel", () => {
   })
 })
 
-describe("root — the OpenCode-compat family the daemon root serves for a workspace", () => {
-  test("maps /provider/auth to root with the workspace forced into ?directory=", () => {
-    const target = surface("/provider/auth")
-    expect(target.kind).toBe("root")
-    if (target.kind !== "root") throw new Error("unreachable")
-    expect(target.url.origin + target.url.pathname).toBe(`${LOCAL_BASE_URL}/provider/auth`)
-    expect(target.url.searchParams.get("directory")).toBe(WORKSPACE_ID)
-  })
-
-  test("maps /config, /project, and /project/current to root", () => {
-    for (const path of ["/config", "/project", "/project/current"]) {
-      const target = surface(path)
-      expect(target.kind, path).toBe("root")
-      if (target.kind !== "root") throw new Error("unreachable")
-      expect(target.url.pathname, path).toBe(path)
-      expect(target.url.searchParams.get("directory"), path).toBe(WORKSPACE_ID)
-    }
-  })
-
-  test("maps /auth/:providerID to root, but not a bare /auth", () => {
-    const target = surface("/auth/anthropic")
-    expect(target.kind).toBe("root")
-    if (target.kind !== "root") throw new Error("unreachable")
-    expect(target.url.pathname).toBe("/auth/anthropic")
-
-    expect(surface("/auth").kind).toBe("workspace")
-    expect(surface("/auth/").kind).toBe("workspace")
-  })
-
-  test("maps /provider/:providerID/oauth/:step to root, but not /provider or /provider/:id alone", () => {
-    const target = surface("/provider/anthropic/oauth/authorize")
-    expect(target.kind).toBe("root")
-    if (target.kind !== "root") throw new Error("unreachable")
-    expect(target.url.pathname).toBe("/provider/anthropic/oauth/authorize")
-
-    // The runtime serves the catalog itself (host-injected for non-opencode
-    // harnesses) — these stay on the workspace surface.
-    expect(surface("/provider").kind).toBe("workspace")
-    expect(surface("/provider?harness=opencode").kind).toBe("workspace")
-    expect(surface("/provider/anthropic").kind).toBe("workspace")
-  })
-
-  test("preserves the request's own query alongside the forced directory", () => {
-    const target = surface("/config?harness=opencode")
-    expect(target.kind).toBe("root")
-    if (target.kind !== "root") throw new Error("unreachable")
-    expect(target.url.searchParams.get("harness")).toBe("opencode")
-    expect(target.url.searchParams.get("directory")).toBe(WORKSPACE_ID)
-  })
-
-  /**
-   * A relayed caller holds a connection scoped to exactly one workspace. If
-   * this forwarded a caller-supplied `directory` unchanged, that caller could
-   * name a DIFFERENT workspace in its own query string and read that
-   * workspace's `/project/current`, or connect ITS provider credentials,
-   * through THIS connection's root surface — the path-confusion privilege
-   * escalation the tunnel's per-workspace scoping exists to prevent.
-   */
-  test("overrides a caller-supplied directory rather than trusting it", () => {
-    const target = surface(`/project/current?directory=${OTHER_WORKSPACE_ID}`)
-    expect(target.kind).toBe("root")
-    if (target.kind !== "root") throw new Error("unreachable")
-    expect(target.url.searchParams.get("directory")).toBe(WORKSPACE_ID)
-    expect(target.url.searchParams.getAll("directory")).toHaveLength(1)
-  })
-
-  test("sends the bare workspace id, not a workspace:<id>-prefixed form", () => {
-    // `resolveWorkspace({directory})` (server-core/workspace/store) does not
-    // parse a `workspace:` prefix — that convention belongs to a different
-    // router (session/routes/meta-routes.ts) — so a prefixed value would
-    // resolve nothing on the compat root's `/project/current`.
-    const target = surface("/project/current")
-    if (target.kind !== "root") throw new Error("unreachable")
-    expect(target.url.searchParams.get("directory")).not.toContain("workspace:")
+describe("deny — the machine's credential and inventory families", () => {
+  test.each([
+    // Connecting a provider account, and the OAuth exchange that replaces
+    // whatever this machine already held for that provider.
+    "/provider/auth",
+    "/provider/anthropic/oauth/authorize",
+    "/provider/anthropic/oauth/callback",
+    "/provider",
+    "/provider?harness=opencode",
+    "/provider/anthropic",
+    "/auth",
+    "/auth/anthropic",
+    "/config",
+    "/config?harness=opencode",
+    // Every project this machine holds, and the metadata write on one of them.
+    "/project",
+    "/project/current",
+    `/project/current?directory=${OTHER_WORKSPACE_ID}`,
+    "/project/prj_1",
+  ])("%s", (path) => {
+    expect(surface(path)).toEqual({ kind: "deny" })
   })
 })
 
@@ -129,7 +76,7 @@ describe("workspace — everything else maps to the workspace surface", () => {
     "/api/wr/file",
     "/api/wr/find/text",
     "/session",
-    "/provider?harness=opencode",
+    "/session-start/start_1?directory=%2Frepo",
     // The runtime's own identity probe, admitted directly rather than
     // through the root-surface table, which classifies this path central for
     // the daemon's OWN liveness probe.
@@ -149,5 +96,23 @@ describe("workspace — everything else maps to the workspace surface", () => {
     if (target.kind !== "workspace") throw new Error("unreachable")
     expect(target.url.pathname).toBe(`/workspaces/${WORKSPACE_ID}/api/wr/health`)
     expect(target.url.searchParams.get("probe")).toBe("1")
+  })
+
+  test("runs against this connection's workspace, whatever the caller selected", () => {
+    const target = surface(`/session?directory=${OTHER_WORKSPACE_ID}`)
+    if (target.kind !== "workspace") throw new Error("unreachable")
+    expect(target.url.pathname).toBe(`/workspaces/${WORKSPACE_ID}/session`)
+  })
+
+  test.each([
+    "/../../session?directory=other",
+    "/%2e%2e/%2e%2e/session?directory=other",
+    "/a/../../../session?directory=other",
+    "/..\\..\\session?directory=other",
+  ])("normalizes %s before binding the authorized workspace", (path) => {
+    const target = surface(path)
+    if (target.kind !== "workspace") throw new Error("unreachable")
+    expect(target.url.pathname).toBe(`/workspaces/${WORKSPACE_ID}/session`)
+    expect(target.url.searchParams.get("directory")).toBe("other")
   })
 })

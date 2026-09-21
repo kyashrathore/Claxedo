@@ -185,7 +185,11 @@ export type WorkspaceRelayBackpressureOptions = {
   // How long the per-pending overflow buffer can stay non-empty before
   // the request is failed with 503 slow_consumer_timeout. Default 30 s.
   slowConsumerTimeoutMs?: number
+  // How many bytes the per-pending overflow buffer may hold before the request
+  // is failed with 503 slow_consumer_overflow. Default 16 MiB.
+  slowConsumerMaxBufferedBytes?: number
   tunnelRequestBodyMaxBytes?: number
+  directHttpRequestBodyMaxBytes?: number
   tunnelHttpResponseTimeoutMs?: number
   directHttpTimeoutMs?: number
   directHttpConcurrency?: number
@@ -250,27 +254,28 @@ const HOST_TUNNEL_REGISTRATION_RECONNECT_CAP = 5
 const HOST_TUNNEL_REGISTRATION_RECONNECT_WINDOW_MS = 60_000
 const WS_MAX_PAYLOAD_LENGTH_BYTES = 16 * 1024 * 1024
 const TUNNEL_REQUEST_BODY_MAX_BYTES_DEFAULT = 16 * 1024 * 1024
+const DIRECT_HTTP_REQUEST_BODY_MAX_BYTES_DEFAULT = 16 * 1024 * 1024
 const TUNNEL_HTTP_RESPONSE_TIMEOUT_MS_DEFAULT = 30_000
 const DIRECT_HTTP_TIMEOUT_MS_DEFAULT = 30_000
 const UPSTREAM_WS_OPEN_TIMEOUT_MS_DEFAULT = 10_000
-// Frames a client may send while the upstream WebSocket is still connecting.
+// The two bounds a client's pre-open frames are held against, each enforced on
+// its own: the queue costs both an array entry per frame and the payload bytes,
+// and neither bounds the other. 8 MiB of one-byte frames is eight million
+// entries; one frame at `WS_MAX_PAYLOAD_LENGTH_BYTES` is 16 MiB under any frame
+// count. Requiring both to be exceeded left roughly a gigabyte reachable per
+// socket.
 //
 // Overflow CLOSES the socket rather than dropping frames, and that is
 // deliberate: this queue carries an ordered byte stream (terminal input, PTY
 // data), so shedding entries from it would hand the far end a corrupted stream
 // with no error anywhere — strictly worse than a clean, diagnosable close.
 //
-// The count is low because it is sized for the interactive case: a human types,
-// waits for output, types again, and never has 64 unacknowledged frames in
-// flight during the few milliseconds before upstream connects. A client that
-// pipelines without waiting (bulk paste, file transfer, a load generator) can
-// exceed it — see `UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT`, which is the
-// bound that should govern such traffic.
+// The window this queue covers is one upstream connect, bounded above by
+// `UPSTREAM_WS_OPEN_TIMEOUT_MS_DEFAULT` and normally milliseconds. A client that
+// pipelines more than 64 frames into it without waiting for any output is not
+// the interactive case these defaults serve and is closed; a deployment that
+// carries such traffic raises the bound explicitly.
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT = 64
-// Bytes are the resource this queue actually consumes, and 64 tiny frames is
-// not a memory problem. Admitting on either bound lets a legitimate burst of
-// small frames through while still capping real memory, so the close above is
-// reserved for traffic that is genuinely too large to hold.
 const UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
 const WS_BUFFERED_AMOUNT_MAX_BYTES_DEFAULT = 8 * 1024 * 1024
 
@@ -318,6 +323,17 @@ const TUNNEL_MESSAGE_BUFFER_CAP_BYTES = 4 * 1024 * 1024
 // overridable via WorkspaceRelayBunOptions.
 const SLOW_CONSUMER_HIGH_WATER_MARK_BYTES_DEFAULT = 8 * 1024 * 1024
 const SLOW_CONSUMER_TIMEOUT_MS_DEFAULT = 30_000
+// The high-water mark decides only when a chunk is diverted into the overflow
+// buffer; this bounds what that buffer may then hold, so one in-flight tunnel
+// response costs at most the two combined. Without it the buffer grew for the
+// whole slow-consumer window at whatever rate the host could push, and it grew
+// with no consumer at all when a host sent `http.response.chunk` before
+// `http.response.start` — nothing reads the stream until that start resolves it.
+//
+// Sized to the largest frame the socket can deliver so an empty buffer always
+// admits one whole chunk: a lower cap would refuse a single oversized chunk the
+// consumer was about to read, turning a momentary lag into a failed response.
+const SLOW_CONSUMER_MAX_BUFFERED_BYTES_DEFAULT = WS_MAX_PAYLOAD_LENGTH_BYTES
 // Default debounce window for host-tunnel connected/disconnected audit emissions.
 const HOST_TUNNEL_STATE_DEBOUNCE_MS_DEFAULT = 250
 
@@ -900,21 +916,60 @@ function drainPendingChunks(entry: PendingTunnelHttpResponse) {
   }
 }
 
+// Free a pending tunnel response the consumer never drained. Both slow-consumer
+// bounds — the watchdog and the overflow-buffer byte cap — end here, so the
+// pending slot, the timers and the buffered bytes are released the same way
+// whichever one fired.
+function dropSlowConsumer(input: {
+  ws: RelayHostTunnelWebSocket
+  requestId: string
+  entry: PendingTunnelHttpResponse
+  slowConsumerStats: SlowConsumerStats
+  code: "slow_consumer_timeout" | "slow_consumer_overflow"
+  message: string
+}) {
+  const response = jsonError(input.code, input.message, 503)
+  failPendingHttpResponse({
+    entry: input.entry,
+    response: new Response(response.body, {
+      status: response.status,
+      headers: input.entry.corsHeaders(response.headers),
+    }),
+    error: new Error(`${input.code}: ${input.message}`),
+  })
+  input.ws.data.pending.delete(input.requestId)
+  // Count after cleanup so droppedRequests reflects requests actually freed.
+  input.slowConsumerStats.droppedRequests += 1
+}
+
 // Route a freshly-received chunk either into the controller (consumer
 // keeping up) or into the overflow buffer (consumer slow). Starts the
-// slow-consumer watchdog the first time a chunk overflows.
+// slow-consumer watchdog the first time a chunk overflows, and drops the
+// request outright once the buffer would pass its byte cap.
 function enqueueChunkWithBackpressure(input: {
   ws: RelayHostTunnelWebSocket
   requestId: string
   entry: PendingTunnelHttpResponse
   chunk: Uint8Array
   slowConsumerTimeoutMs: number
+  maxBufferedBytes: number
   slowConsumerStats: SlowConsumerStats
 }) {
   const { entry, chunk } = input
   const desired = entry.controller.desiredSize
   const overflowing = desired !== null && desired <= 0
   if (overflowing || entry.pendingChunks.length > 0) {
+    if (entry.bytesQueued + chunk.byteLength > input.maxBufferedBytes) {
+      dropSlowConsumer({
+        ws: input.ws,
+        requestId: input.requestId,
+        entry,
+        slowConsumerStats: input.slowConsumerStats,
+        code: "slow_consumer_overflow",
+        message: "Downstream consumer fell too far behind the tunnelled response",
+      })
+      return
+    }
     entry.pendingChunks.push(chunk)
     entry.bytesQueued += chunk.byteLength
     if (!entry.slowConsumerTimeout) {
@@ -924,21 +979,14 @@ function enqueueChunkWithBackpressure(input: {
       entry.slowConsumerTimeout = setTimeout(() => {
         // Count actual timer fires (not timers cleared by drain).
         input.slowConsumerStats.timerFired += 1
-        const error = new Error("slow_consumer_timeout: downstream consumer did not drain in time")
-        try {
-          entry.controller.error(error)
-        } catch {
-          // ignore — already closed/errored
-        }
-        clearTimeout(entry.timeout)
-        entry.pendingChunks.length = 0
-        entry.bytesQueued = 0
-        if (!entry.responseStarted) {
-          entry.resolve(jsonError("slow_consumer_timeout", "Downstream consumer did not drain in time", 503))
-        }
-        input.ws.data.pending.delete(input.requestId)
-        // Count after cleanup so droppedRequests reflects requests actually freed.
-        input.slowConsumerStats.droppedRequests += 1
+        dropSlowConsumer({
+          ws: input.ws,
+          requestId: input.requestId,
+          entry,
+          slowConsumerStats: input.slowConsumerStats,
+          code: "slow_consumer_timeout",
+          message: "Downstream consumer did not drain in time",
+        })
       }, input.slowConsumerTimeoutMs)
     }
     return
@@ -1056,12 +1104,18 @@ async function tunnelHttpRequest(input: {
   })
   const body = input.request.method === "GET" || input.request.method === "HEAD"
     ? undefined
-    : await readBoundedBody(input.request, input.originAllowed, input.requestBodyMaxBytes)
-  if (body && "response" in body) {
+    : await readBoundedBody(input.request, input.requestBodyMaxBytes)
+  if (body && "tooLarge" in body) {
     const entry = input.ws.data.pending.get(requestId)
     if (entry) clearPendingTimers(entry)
     input.ws.data.pending.delete(requestId)
-    return body.response
+    return corsJsonError(
+      input.request,
+      input.originAllowed,
+      "request_body_too_large",
+      "Tunnel request body exceeds the relay limit",
+      413,
+    )
   }
   input.ws.send(JSON.stringify({
     type: "http.request",
@@ -1078,17 +1132,27 @@ async function tunnelHttpRequest(input: {
       // host process on the user's laptop.
       { hostTunnel: true },
     )),
-    ...(body?.bodyBase64 ? { body_base64: body.bodyBase64 } : {}),
+    ...(body && "body" in body && body.body.byteLength > 0
+      ? { body_base64: encoded(body.body.buffer) }
+      : {}),
     end: true,
   }))
   return await pending
 }
 
+/**
+ * The request body in full, or `tooLarge` as soon as it passes `maxBytes` —
+ * counted while reading and cancelled at the boundary, so an oversized body is
+ * refused without ever being held whole. `undefined` means the request carried
+ * no body at all, which is not the same as an empty one.
+ *
+ * The 413 belongs to the caller: the tunnel path and the direct path bound
+ * different budgets and name them differently to whoever reads the error.
+ */
 async function readBoundedBody(
   request: Request,
-  originAllowed: RelayOriginMatcher,
   maxBytes: number,
-): Promise<{ bodyBase64: string } | { response: Response } | undefined> {
+): Promise<{ body: Uint8Array<ArrayBuffer> } | { tooLarge: true } | undefined> {
   if (!request.body) return undefined
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
@@ -1103,9 +1167,7 @@ async function readBoundedBody(
       } catch {
         // ignore cancel failures
       }
-      return {
-        response: corsJsonError(request, originAllowed, "request_body_too_large", "Tunnel request body exceeds the relay limit", 413),
-      }
+      return { tooLarge: true }
     }
     chunks.push(next.value)
   }
@@ -1114,7 +1176,7 @@ async function readBoundedBody(
     body.set(chunk, offset)
     return offset + chunk.byteLength
   }, 0)
-  return { bodyBase64: encoded(body.buffer) }
+  return { body }
 }
 
 async function directHttpRequest(input: {
@@ -1125,6 +1187,7 @@ async function directHttpRequest(input: {
   workspaceId: string
   upstreamHeaders?: Record<string, string>
   timeoutMs: number
+  requestBodyMaxBytes: number
   limiter?: DirectHttpLimiter
   trace?: WorkspaceRelayAuthorizeTrace
 }) {
@@ -1144,12 +1207,25 @@ async function directHttpRequest(input: {
         signal: controller.signal,
       },
     )
-    if (input.request.method !== "GET" && input.request.method !== "HEAD" && input.request.body) {
-      init.body = await input.request.arrayBuffer()
-    }
     const limiter = input.limiter
     const release = limiter ? await span("direct-http-queue", () => limiter.acquire()) : undefined
     try {
+      // The body is buffered inside the concurrency slot, not before it.
+      // Reading first let every queued request hold its whole body at once, so
+      // the slot budgeted latency and nothing else.
+      if (input.request.method !== "GET" && input.request.method !== "HEAD" && input.request.body) {
+        const body = await readBoundedBody(input.request, input.requestBodyMaxBytes)
+        if (body && "tooLarge" in body) {
+          return corsJsonError(
+            input.request,
+            input.originAllowed,
+            "request_body_too_large",
+            "Workspace request body exceeds the relay limit",
+            413,
+          )
+        }
+        if (body) init.body = body.body
+      }
       const upstream = await span("upstream-fetch", async () => await fetch(input.targetUrl, init))
       const headers = relayCorsHeaders(input.request, input.originAllowed, upstream.headers)
       const contentType = upstream.headers.get("content-type") ?? ""
@@ -1265,6 +1341,7 @@ function watchHostGeneration(
 }
 
 const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
+const MAX_TIMER_DELAY_MS = 2_147_483_647
 
 type RelayAccessWatchedWebSocketData = RelayClientWebSocketData | RelayHostTunnelClientWebSocketData
 
@@ -1292,11 +1369,19 @@ function watchClientAccess(
     clearClientAccessWatchers(ws.data)
     closeWebSocket(ws, 1008, reason, 1008)
   }
-  ws.data.expiryTimer = setTimeout(
-    () => close("Runtime Access Token expired"),
-    Math.max(0, ws.data.claims.exp * 1000 - now()),
-  )
-  if (typeof ws.data.expiryTimer.unref === "function") ws.data.expiryTimer.unref()
+  const scheduleExpiry = () => {
+    const remaining = ws.data.claims.exp * 1000 - now()
+    // Timer delays above the signed 32-bit range can fire immediately. A
+    // bounded wake re-reads the clock instead of expiring a still-valid token.
+    const delay = Number.isFinite(remaining) ? Math.max(0, Math.min(MAX_TIMER_DELAY_MS, remaining)) : 0
+    ws.data.expiryTimer = setTimeout(() => {
+      const remaining = ws.data.claims.exp * 1000 - now()
+      if (!Number.isFinite(remaining) || remaining <= 0) close("Runtime Access Token expired")
+      else scheduleExpiry()
+    }, delay)
+    if (typeof ws.data.expiryTimer.unref === "function") ws.data.expiryTimer.unref()
+  }
+  scheduleExpiry()
   const intervalMs = bunOptions.runtimeAccessTokenActiveCheckIntervalMs
     ?? RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT
   if (!options.isRuntimeAccessTokenActive || intervalMs <= 0) return
@@ -1678,6 +1763,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             workspaceId: relay.request.target.workspaceId,
             upstreamHeaders: relay.request.target.upstreamHeaders,
             timeoutMs: bunOptions.directHttpTimeoutMs ?? DIRECT_HTTP_TIMEOUT_MS_DEFAULT,
+            requestBodyMaxBytes: bunOptions.directHttpRequestBodyMaxBytes ?? DIRECT_HTTP_REQUEST_BODY_MAX_BYTES_DEFAULT,
             limiter: directHttpLimiter,
             trace,
           })
@@ -1815,6 +1901,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
                 entry,
                 chunk: decoded((parsed).body_base64),
                 slowConsumerTimeoutMs: bunOptions.slowConsumerTimeoutMs ?? SLOW_CONSUMER_TIMEOUT_MS_DEFAULT,
+                maxBufferedBytes: bunOptions.slowConsumerMaxBufferedBytes ?? SLOW_CONSUMER_MAX_BUFFERED_BYTES_DEFAULT,
                 slowConsumerStats,
               })
             }
@@ -1899,15 +1986,11 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           ws.data.upstream.send(message)
           return
         }
-        // Admit on either bound: a burst of small frames during the few
-        // milliseconds before upstream connects is normal client behaviour and
-        // costs almost nothing to hold, so the frame count alone must not end
-        // the session. Only genuinely large buffered traffic closes.
         const queuedBytes = ws.data.queuedBytes ?? 0
         const frameBytes = preOpenFrameBytes(message)
         if (
           ws.data.queue.length >= (bunOptions.upstreamWebSocketPreOpenQueueMaxFrames ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_FRAMES_DEFAULT)
-          && queuedBytes + frameBytes > (bunOptions.upstreamWebSocketPreOpenQueueMaxBytes ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT)
+          || queuedBytes + frameBytes > (bunOptions.upstreamWebSocketPreOpenQueueMaxBytes ?? UPSTREAM_WS_PRE_OPEN_QUEUE_MAX_BYTES_DEFAULT)
         ) {
           closeWebSocket(ws, 1011, "Upstream WebSocket queue limit exceeded")
           return

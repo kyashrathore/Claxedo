@@ -6,6 +6,19 @@ export function runtimeEnvText(env: NodeJS.ProcessEnv, key: string) {
   return envText(env, key)
 }
 
+/**
+ * The lease generation this process was booted for, as the provisioner wrote
+ * it into the sandbox (`sandboxLeaseEnv`). A runtime that reports on itself
+ * must fence the report with it, so absent means "no lease" — a local or
+ * embedded runtime no control plane placed — not "the current one".
+ */
+export function workspaceRuntimeEpoch(env: NodeJS.ProcessEnv = process.env) {
+  const raw = runtimeEnvText(env, "WORKSPACE_RUNTIME_EPOCH")
+  if (!raw) return undefined
+  const epoch = Number(raw)
+  return Number.isSafeInteger(epoch) && epoch > 0 ? epoch : undefined
+}
+
 export function workspaceRuntimeDataDir(env: NodeJS.ProcessEnv = process.env) {
   return runtimeEnvText(env, "WORKSPACE_RUNTIME_DATA_DIR")
     ?? path.join(os.homedir(), ".workspace-runtime")

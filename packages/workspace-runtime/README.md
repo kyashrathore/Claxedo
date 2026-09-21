@@ -532,7 +532,7 @@ contract.
 | `WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS` | Retention window for terminal lifecycle session summaries. |
 | `WORKSPACE_RUNTIME_DISABLE_PORTLESS` | Disables optional Portless named-url discovery for managed processes. |
 | `WORKSPACE_RUNTIME_DATA_DIR`, `WORKSPACE_RUNTIME_STATE_DIR`, `WORKSPACE_RUNTIME_STORE_DIR`, `WORKSPACE_RUNTIME_PTY_HISTORY_DIR` | Neutral runtime-owned storage locations. Defaults are under `~/.workspace-runtime`. |
-| `WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL`, `WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM`, `WORKSPACE_RUNTIME_MANAGEMENT_ISSUER`, `WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE` | Management-token verification inputs for `/api/wr/config`. |
+| `WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL`, `WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM`, `WORKSPACE_RUNTIME_MANAGEMENT_ISSUER`, `WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE` | Management-token verification inputs for `/api/wr/config`. Remote JWKS requires HTTPS and refuses redirects. Local development uses a pinned PEM public key. |
 | `WORKSPACE_RUNTIME_DRAIN_TIMEOUT_MS` | Drain wall-clock cap (default `10000`). |
 | `WORKSPACE_RUNTIME_RELAY_JWKS_URL`, `WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM` | RHT verification inputs for relay-attached runtimes. |
 | `WORKSPACE_RUNTIME_RELAY_*` | Host tunnel settings for relay-attached runtimes. See the relay-attached section above and `workspace-relay/README.md`. |

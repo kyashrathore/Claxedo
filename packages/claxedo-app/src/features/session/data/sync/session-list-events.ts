@@ -9,7 +9,7 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import { cleanupDroppedSessionCaches, cleanupSessionCaches } from "./session-cache-cleanup"
 import type { DirectorySessionCacheValue } from "./queries"
 import { isConcreteSessionTitle } from "../../lib/session-title-sync"
-import { sessionEventRow, sessionEventSummary, sessionRow } from "./session-event-info"
+import { sessionEventCommands, sessionEventRow, sessionEventSummary, sessionRow } from "./session-event-info"
 
 export type ClaxedoSessionLifecycleEvent = SessionLifecycleEvent
 
@@ -64,6 +64,15 @@ export function applySessionListEvent(input: {
   directory: string
 }): DirectorySessionCacheValue | undefined {
   switch (input.event.type) {
+    case "session.commands": {
+      const update = sessionEventCommands(input.event.properties)
+      if (!update) return undefined
+      const idx = Binary.search(input.cache.session, update.sessionID, (item) => item.id)
+      if (!idx.found) return undefined
+      const session = input.cache.session.slice()
+      session[idx.index] = { ...session[idx.index], commands: update.commands }
+      return { ...input.cache, session }
+    }
     case "session.created": {
       const info = sessionEventRow(input.event.properties)
       if (!info) return undefined

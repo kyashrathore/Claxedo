@@ -173,6 +173,7 @@ export function createHarnessConfigRuntime(input: {
     return await workspaceHarnessTransport(params).fetch(workspaceRuntimeAgentConfigPath({
       resource: "api/wr/harness-config-options",
       directory: params.directory,
+      sessionId: params.sessionId,
       selection: type,
     }))
   }

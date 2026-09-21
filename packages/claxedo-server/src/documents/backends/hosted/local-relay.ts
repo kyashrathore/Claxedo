@@ -23,7 +23,7 @@ export function createHostedLocalDocumentRelay(
       cloudWorkspaceId: string
       sessionId: string
       documentId: string
-      operation: "list" | "read" | "write" | "resolve"
+      operation: "list" | "read" | "write"
       markdown?: string
       expectedVersion?: string
       jobExpiresAt: number
@@ -37,7 +37,7 @@ export function createHostedLocalDocumentRelay(
         opened.workspace.backing !== "local-worktree") {
         throw new Error("Local document workspace scope is invalid")
       }
-      const write = input.operation === "write" || input.operation === "resolve"
+      const write = input.operation === "write"
       if (write && !["editor", "admin", "owner"].includes(opened.role ?? "")) {
         throw new Error("Local document workspace write access is denied")
       }

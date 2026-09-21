@@ -11,8 +11,10 @@ import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../../deployments/local/embedded-workspace-runtime"
 import { createLocalAgentPluginsComposition } from "../../agent-plugins/local-composition"
+import { createLocalTasksComposition } from "../../tasks/local-composition"
 import { createLocalControlPlaneServices } from "../local-services"
 import { startLocalServer, type LocalServer } from "../start-local-server"
+import { testDaemon } from "./daemon"
 
 /**
  * The composition the loopback MCP actually ships in, stood up for a test: the
@@ -55,14 +57,20 @@ export async function startLiveFirstPartyMcp() {
   git(["config", "user.name", "Fixture"])
 
   const port = await freePort()
+  const identity = testDaemon()
+  const tasks = createLocalTasksComposition()
   const server: LocalServer = startLocalServer({
     port,
+    daemon: identity.daemon,
     services: createLocalControlPlaneServices(),
     corsOrigin: (origin: string) => origin,
     // The Marketplace the desktop entry mounts. Without it a session's tool
     // surface would be whatever the defaults say and nothing could change it,
     // which is the half of this composition worth proving.
-    routeContributions: createLocalAgentPluginsComposition().routeContributions,
+    routeContributions: [...createLocalAgentPluginsComposition().routeContributions, ...tasks.routeContributions],
+    // Both halves the desktop entry composes together: the Tasks routes, and
+    // the grants the MCP mount issues its sessions to reach them as themselves.
+    tasksGrants: tasks.grants,
   })
   await server.ready
 
@@ -96,7 +104,7 @@ export async function startLiveFirstPartyMcp() {
     const url = new URL("/api/claxedo/session", `http://127.0.0.1:${port}`)
     url.searchParams.set("roots", "true")
     url.searchParams.set("directory", workspace.directory)
-    const response = await fetch(url, { headers: { Accept: "application/json" } })
+    const response = await identity.call(url, { headers: { Accept: "application/json" } })
     if (!response.ok) throw new Error(`the local inventory answered ${response.status}`)
     return ((await response.json()) as { sessions?: Array<{ sessionID: string }> }).sessions ?? []
   }
@@ -107,7 +115,7 @@ export async function startLiveFirstPartyMcp() {
     url.searchParams.set("scope", "workspace")
     url.searchParams.set("directory", workspace.directory)
     url.searchParams.set("limit", "50")
-    const response = await fetch(url, { headers: { Accept: "application/json" } })
+    const response = await identity.call(url, { headers: { Accept: "application/json" } })
     if (!response.ok) throw new Error(`the navigation list answered ${response.status}`)
     return ((await response.json()) as { items?: Array<{ sessionId: string }> }).items ?? []
   }
@@ -131,6 +139,8 @@ export async function startLiveFirstPartyMcp() {
     workspace,
     server,
     runtime,
+    /** A request as the desktop application, which is what owns this daemon. */
+    call: identity.call,
     runtimeRequest,
     rootInventory,
     navigationRows,

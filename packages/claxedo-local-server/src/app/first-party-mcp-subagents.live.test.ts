@@ -201,6 +201,29 @@ describe("a subagent started over the injected first-party MCP", () => {
     expect(refusedParent.isError).toBe(true)
   })
 
+  test("drives its own child but no sibling session of the same workspace", async () => {
+    const mine = await parent("driving parent")
+    const theirs = await parent("neighbouring parent")
+    const own = await spawn(mine.client)
+    const other = await spawn(theirs.client)
+
+    const admitted = await callTool(mine.client, "session_send", { session: own.sessionId, text: "keep going, child" })
+    expect(admitted.isError, toolText(admitted)).toBeFalsy()
+    expect((await readMessages(own.sessionId)).flatMap((row) => row.parts.map((part) => part.text ?? "")).join(""))
+      .toContain("keep going, child")
+
+    for (const session of [theirs.sessionId, other.sessionId]) {
+      const sent = await callTool(mine.client, "session_send", { session, text: "work for me instead" })
+      expect(sent.isError, `session_send reached ${session}`).toBe(true)
+      expect(toolText(sent)).toContain(session)
+      const aborted = await callTool(mine.client, "session_abort", { session })
+      expect(aborted.isError, `session_abort reached ${session}`).toBe(true)
+
+      const prompts = (await readMessages(session)).flatMap((row) => row.parts.map((part) => part.text ?? "")).join("")
+      expect(prompts).not.toContain("work for me instead")
+    }
+  })
+
   test("reports the ceiling, wait bound and harness list to the session that may spawn", async () => {
     const { sessionId, client } = await parent("capabilities parent")
 

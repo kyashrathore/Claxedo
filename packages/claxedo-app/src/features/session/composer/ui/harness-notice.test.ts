@@ -1,6 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import { resolveHarnessNotice, type HarnessNoticeInput } from "./harness-notice"
 
+test("connection failures retain their cause without offering model discovery as reconnection", () => {
+  for (const state of ["auth-required", "disconnected", "failed"] as const) {
+    const notice = resolveHarnessNotice({ harnessLabel: "ACP", runtimeUnavailable: true, optionsFailed: true, noModels: true, connectionState: { connectionId: "acp", state } })
+    expect(notice?.kind).toBe(`connection-${state}`)
+    expect(notice?.retry).toBe(false)
+  }
+  for (const state of ["configured", "connecting", "ready"] as const) {
+    expect(resolveHarnessNotice({ harnessLabel: "ACP", runtimeUnavailable: false, optionsFailed: false, noModels: false, connectionState: { connectionId: "acp", state } })).toBeUndefined()
+  }
+})
+
 const healthy: HarnessNoticeInput = {
   harnessLabel: "Cursor",
   runtimeUnavailable: false,

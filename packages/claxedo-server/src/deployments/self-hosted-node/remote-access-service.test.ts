@@ -1,4 +1,7 @@
 import { machineDisplayName } from "@claxedo/helpers/machine-name"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { generateKeyPairSync } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -6,6 +9,7 @@ import {
   createSqliteWorkspaceAuthority,
   SqliteHostConnectError,
 } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import {
   invitationRedeemPayload,
   invitationTokenParts,
@@ -13,6 +17,7 @@ import {
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { hostEnrollmentPayload, signHostPayload, type LocalHostIdentity } from "../../workspace/local-host"
 import { createRemoteAccessService } from "./remote-access-service"
+import { selfHostedOperatorAuthorizer } from "./operator"
 
 /**
  * Machine-wide remote access against the real SQLite authority.
@@ -71,9 +76,9 @@ function observedBeats(authority: Authority) {
   }
 }
 
-async function enrollKeyUnderHostId(authority: Authority, identity: LocalHostIdentity) {
-  const request = await authority.createHostEnrollmentRequest(auth, { hostId: identity.hostId })
-  await authority.enrollHost(auth, {
+async function enrollKeyUnderHostId(authority: Authority, identity: LocalHostIdentity, as: SignedControlPlaneAuth = auth) {
+  const request = await authority.createHostEnrollmentRequest(as, { hostId: identity.hostId })
+  await authority.enrollHost(as, {
     hostId: identity.hostId,
     publicKey: identity.publicKey,
     requestId: request.request_id,
@@ -100,20 +105,31 @@ function setup(input: {
     { id: "ws_2", kind: "local", directory: "/repo/two", displayName: "two" },
   ]
   let workspaceChanged: (() => Promise<void>) | undefined
+  /** Ordered because what matters after a concurrent revoke is the last word on the tunnel. */
+  const tunnel: ("start" | "stop")[] = []
   const startMachineTunnel = vi.fn(async ({ workspaceIds }: {
     workspaceIds: string[]
     hostTunnelTokenProvider: () => Promise<string>
-  }) => ({
-    connectionCount: 1,
-    workspaceIds,
-  }))
-  const stopMachineTunnel = vi.fn(() => true)
+  }) => {
+    tunnel.push("start")
+    return { connectionCount: 1, workspaceIds }
+  })
+  const stopMachineTunnel = vi.fn(() => {
+    tunnel.push("stop")
+    return true
+  })
   const machineTunnelActive = vi.fn(() => true)
   const signSpy = vi.fn(signHostPayload)
+  const hostTunnelTokenSigner = vi.fn(async (_input: { subject: string; hostId: string; workspaceIds: string[] }) => ({
+    hostTunnelToken: "htt_1",
+    tokenExpiresAt: 456_000,
+    jti: "jti_1",
+  }))
   const service = createRemoteAccessService({
     authority: authority as never,
+    authorizeOperator: selfHostedOperatorAuthorizer({ CLAXEDO_OPERATOR_SUBJECTS: auth.user.subject }),
     relayUrl: "https://relay.test",
-    hostTunnelTokenSigner: vi.fn(async () => ({ hostTunnelToken: "htt_1", tokenExpiresAt: 456_000, jti: "jti_1" })),
+    hostTunnelTokenSigner,
     listLocalWorkspaces: async () => localWorkspaces,
     subscribeLocalWorkspaces: (listener) => {
       workspaceChanged = listener
@@ -141,12 +157,47 @@ function setup(input: {
     startMachineTunnel,
     stopMachineTunnel,
     machineTunnelActive,
+    hostTunnelTokenSigner,
+    tunnel,
     signSpy,
     workspaceChanged: () => workspaceChanged?.(),
   }
 }
 
 describe("remote access service", () => {
+  test("an unrelated signed account cannot enroll, share through, or take over this machine", async () => {
+    const { authority, service, signSpy, startMachineTunnel } = setup()
+    const outsider: SignedControlPlaneAuth = {
+      mode: "signed",
+      user: { subject: "outsider", tokenIdentifier: "issuer|outsider", issuer: auth.user.issuer },
+    }
+    const denied = async () => {
+      await expect(service.enable(outsider, { startAtLogin: true })).rejects.toMatchObject({
+        status: 403, code: "operator_required",
+      })
+      await expect(service.assignWorkspace(outsider, { workspaceId: "ws_1" })).rejects.toMatchObject({
+        status: 403, code: "operator_required",
+      })
+    }
+    await denied()
+    expect(signSpy).not.toHaveBeenCalled()
+    expect(startMachineTunnel).not.toHaveBeenCalled()
+
+    await service.enable(auth, { startAtLogin: false })
+    const enrolled = await authority.activeHostEnrollment(auth)
+    const signatures = signSpy.mock.calls.length
+    await denied()
+    expect(await authority.activeHostEnrollment(auth)).toEqual(enrolled)
+    expect(signSpy).toHaveBeenCalledTimes(signatures)
+
+    await service.revoke(auth, "host_machine")
+    await denied()
+    expect(await authority.activeHostEnrollment(auth)).toEqual({ active: false, reason: "revoked" })
+    await service.enable(auth, { startAtLogin: false })
+    expect(await authority.activeHostEnrollment(auth)).toMatchObject({ active: true, host_id: "host_machine" })
+    await service.revoke(auth, "host_machine")
+  })
+
   test("enable enrolls the machine, assigns every local project, and one signed beat makes them routable", async () => {
     const { authority, service, startMachineTunnel, signSpy } = setup()
 
@@ -288,6 +339,55 @@ describe("remote access service", () => {
 
     await expect(service.unassignWorkspace(auth, "ws_2")).resolves.toEqual({ unassigned: true })
     expect(stopMachineTunnel).toHaveBeenCalledWith("host_machine")
+  })
+
+  test("an unassign by another account's workspace admin does not become the identity this machine serves under", async () => {
+    // Unassigning is the workspace's admin to do, and this route has no
+    // operator gate in front of it — so a second account reaches it for a
+    // workspace of its own. What that must not do is re-point the enrolled
+    // machine at the caller: this process would then assign as them and mint
+    // its tunnel for their subject, neither of which they ever proved.
+    const { authority, service, startMachineTunnel, hostTunnelTokenSigner, localWorkspaces, workspaceChanged } = setup()
+    await service.enable(auth, { startAtLogin: false })
+
+    const admin: SignedControlPlaneAuth = {
+      mode: "signed",
+      token: "tok_user_2",
+      user: {
+        subject: "user_2",
+        tokenIdentifier: "https://idp.example.test|user_2",
+        issuer: auth.user.issuer,
+      },
+    } as SignedControlPlaneAuth
+    const theirMachine = machineIdentity("host_theirs")
+    await enrollKeyUnderHostId(authority, theirMachine, admin)
+    await authority.assignWorkspaceHost(admin, {
+      workspaceId: "ws_theirs",
+      hostId: theirMachine.hostId,
+      remoteDirectory: "/their/repo",
+    })
+
+    await expect(service.unassignWorkspace(admin, "ws_theirs")).resolves.toEqual({ unassigned: true })
+
+    // The tunnel this machine holds is still minted for the operator.
+    await startMachineTunnel.mock.calls.at(-1)![0].hostTunnelTokenProvider()
+    expect(hostTunnelTokenSigner).toHaveBeenLastCalledWith(expect.objectContaining({
+      subject: auth.user.subject,
+      hostId: "host_machine",
+    }))
+
+    // And a project opened afterwards is still shared as the operator, whose
+    // enrollment is the only one this host id has.
+    localWorkspaces.push({ id: "ws_3", kind: "local", directory: "/repo/three", displayName: "three" })
+    await workspaceChanged()
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_3" })).resolves.toMatchObject({
+      active: true,
+      host_id: "host_machine",
+    })
+    await expect(authority.listHostEnrollments!(auth)).resolves.toMatchObject([{
+      host_id: "host_machine",
+      assignments: expect.arrayContaining([expect.objectContaining({ workspace_id: "ws_3" })]),
+    }])
   })
 
   test("status reports enrollment, tunnel liveness, and second-device proof from the authority", async () => {
@@ -525,6 +625,99 @@ describe("remote access service", () => {
       .resolves.toMatchObject({ active: true, host_id: "host_machine" })
   })
 
+  test("revoking while a beat is in flight leaves no tunnel open for the revoked machine", async () => {
+    // A beat holds its own answer between the heartbeat and the tunnel call,
+    // and that is the window the revoke lands in: the beat resumes and opens
+    // the relay socket for workspaces whose readiness the revoke just deleted.
+    // Nothing beats again afterwards to notice, so the socket stays up for the
+    // life of the process.
+    const base = createSqliteWorkspaceAuthority({ path: ":memory:" })
+    let holdNextBeat = false
+    let beatAnswered: () => void = () => {}
+    const answered = new Promise<void>((resolve) => { beatAnswered = resolve })
+    let releaseBeat: () => void = () => {}
+    const held = new Promise<void>((resolve) => { releaseBeat = resolve })
+    const observed = {
+      ...base,
+      heartbeatHostEnrollmentByMachine: async (
+        ...args: Parameters<NonNullable<Authority["heartbeatHostEnrollmentByMachine"]>>
+      ) => {
+        const result = await base.heartbeatHostEnrollmentByMachine!(...args)
+        if (holdNextBeat) {
+          holdNextBeat = false
+          beatAnswered()
+          await held
+        }
+        return result
+      },
+    } as Authority
+    const { service, tunnel, stopMachineTunnel, workspaceChanged } = setup({ authority: observed })
+    await service.enable(auth, { startAtLogin: false })
+
+    holdNextBeat = true
+    const inFlight = workspaceChanged()
+    await answered
+
+    const revoking = service.revoke(auth, "host_machine")
+    // This adapter never awaits real I/O, so one macrotask is all a revoke
+    // that does not queue behind the beat needs to finish while it is held.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    releaseBeat()
+    await inFlight
+    await expect(revoking).resolves.toEqual({ revoked: true })
+
+    expect(stopMachineTunnel).toHaveBeenCalledWith("host_machine")
+    expect(tunnel.at(-1)).toBe("stop")
+    await expect(base.activeHostEnrollment(auth)).resolves.toEqual({ active: false, reason: "revoked" })
+    expect(service.servingEnrollmentId()).toBeUndefined()
+  })
+
+  test("two enables at once leave the machine serving under the generation the enrollment holds", async () => {
+    // Each enable claims a serving generation, and the claim is a
+    // compare-and-set on the one its principal read. Two of them in flight and
+    // the instance that installs its state last is beating under a generation
+    // the other already superseded: every later beat is refused decisively,
+    // which drops the tunnel the owner just asked for.
+    const base = createSqliteWorkspaceAuthority({ path: ":memory:" })
+    const { observed: counted, beats } = observedBeats(base)
+    let claims = 0
+    let secondClaim: () => void = () => {}
+    const claimed = new Promise<void>((resolve) => { secondClaim = resolve })
+    const observed = {
+      ...counted,
+      acquireHostServingGeneration: async (
+        ...args: Parameters<NonNullable<Authority["acquireHostServingGeneration"]>>
+      ) => {
+        const result = await base.acquireHostServingGeneration!(...args)
+        claims += 1
+        if (claims === 1) {
+          // The first claimant returns last, which is what makes it install a
+          // generation another claim has already moved past. Serialized
+          // enables never overlap, so the timeout is the path a service that
+          // queues them takes.
+          await Promise.race([claimed, new Promise((resolve) => setTimeout(resolve, 50))])
+        } else secondClaim()
+        return result
+      },
+    } as Authority
+    const { service, stopMachineTunnel } = setup({ authority: observed, heartbeatIntervalMs: 5 })
+
+    const enables = await Promise.allSettled([
+      service.enable(auth, { startAtLogin: false }),
+      service.enable(auth, { startAtLogin: false }),
+    ])
+    expect(enables.map((settled) => settled.status === "rejected" ? settled.reason : "fulfilled"))
+      .toEqual(["fulfilled", "fulfilled"])
+
+    const before = beats.mock.calls.length
+    await vi.waitFor(() => {
+      expect(beats.mock.calls.length).toBeGreaterThan(before + 2)
+    })
+    expect(stopMachineTunnel).not.toHaveBeenCalled()
+    await expect(base.activeWorkspaceHost(auth, { workspaceId: "ws_1" }))
+      .resolves.toMatchObject({ active: true, host_id: "host_machine" })
+  })
+
   test("enabling twice leaves one beat loop, not two", async () => {
     // A second enable that left the first interval alive would beat twice per
     // interval for the life of the process, each loop undoing the other's
@@ -541,6 +734,137 @@ describe("remote access service", () => {
       expect(startMachineTunnel.mock.calls.length - enabled).toBe(3)
     } finally {
       vi.useRealTimers()
+    }
+  })
+})
+
+/**
+ * The machine effects a refused share must never leave behind. Enrolling this
+ * process and claiming a serving generation are writes to the authority and
+ * to this service's state, and a workspace refusal that arrives after them
+ * cannot take them back — so the service asks the authority's machine-share
+ * admission before it does either.
+ */
+describe("a share the authority refuses reaches no machine effect", () => {
+  const stranger: SignedControlPlaneAuth = {
+    mode: "signed",
+    token: "tok_stranger",
+    user: {
+      subject: "stranger",
+      tokenIdentifier: "https://idp.example.test|stranger",
+      issuer: "https://idp.example.test",
+    },
+  } as SignedControlPlaneAuth
+
+  /** The operator's machine, a workspace of theirs, and the store both live in. */
+  function machineWithForeignWorkspace() {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-remote-access-")), "authority.db")
+    const authority = createSqliteWorkspaceAuthority({ path: file })
+    const database = openAuthorityDb({ path: file })
+    const harness = setup({
+      authority,
+      localWorkspaces: [{ id: "ws_theirs", kind: "local", directory: "/repo/theirs", displayName: "theirs" }],
+    })
+    return { ...harness, database, close: () => { authority.close(); database.close() } }
+  }
+
+  const registerUnder = async (
+    authority: ReturnType<typeof createSqliteWorkspaceAuthority>,
+    owner: SignedControlPlaneAuth,
+  ) => {
+    await authority.registerLocalForSharing(owner, {
+      workspaceId: "ws_theirs",
+      projectId: "project_theirs",
+      displayName: "theirs",
+      remoteDirectory: "/repo/theirs",
+    })
+  }
+
+  /** Nothing enrolled, nothing signed, nothing served, nothing assigned. */
+  async function expectNoMachineEffect(harness: ReturnType<typeof machineWithForeignWorkspace>) {
+    expect(harness.signSpy).not.toHaveBeenCalled()
+    expect(harness.startMachineTunnel).not.toHaveBeenCalled()
+    expect(harness.service.servingEnrollmentId()).toBeUndefined()
+    await expect(harness.authority.activeHostEnrollment(auth)).resolves.toMatchObject({ active: false })
+    expect(harness.database().prepare(`SELECT count(*) AS count FROM host_enrollments`).get())
+      .toEqual({ count: 0 })
+    expect(harness.database().prepare(`SELECT count(*) AS count FROM host_workspace_assignments`).get())
+      .toEqual({ count: 0 })
+  }
+
+  test("a membership revoked after it was admitted stops the next share before enrollment", async () => {
+    const harness = machineWithForeignWorkspace()
+    try {
+      await registerUnder(harness.authority, stranger)
+      const now = Date.now()
+      harness.database().prepare(`
+        INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+        VALUES (?, ?, 'admin', ?, ?)
+      `).run("project_theirs", auth.user.tokenIdentifier, now, now)
+      // Admitted while the membership stands: the refusal below is the
+      // revocation, not a workspace the operator could never share.
+      await expect(harness.authority.authorizeWorkspaceHostAssignment!(auth, { workspaceId: "ws_theirs" }))
+        .resolves.toEqual({ registration: "existing" })
+
+      harness.database().prepare(`DELETE FROM project_memberships WHERE project_id = ? AND token_identifier = ?`)
+        .run("project_theirs", auth.user.tokenIdentifier)
+
+      await expect(harness.service.assignWorkspace(auth, { workspaceId: "ws_theirs" })).rejects.toMatchObject({
+        code: "workspace_not_found",
+        status: 404,
+      })
+      await expectNoMachineEffect(harness)
+    } finally {
+      harness.close()
+    }
+  })
+
+  test("a live row whose owner cannot be named is still refused before enrollment", async () => {
+    const harness = machineWithForeignWorkspace()
+    try {
+      await registerUnder(harness.authority, stranger)
+      // The state the retired owner-lookup heuristic read as "unfiled": the
+      // row lives, its owner does not resolve.
+      harness.database().prepare(`UPDATE workspaces SET owner_token_identifier = 'user_gone' WHERE workspace_id = ?`)
+        .run("ws_theirs")
+      expect(await harness.authority.resolveWorkspaceOwner?.("ws_theirs")).toBeUndefined()
+
+      await expect(harness.service.assignWorkspace(auth, { workspaceId: "ws_theirs" })).rejects.toMatchObject({
+        code: "workspace_not_found",
+      })
+      await expectNoMachineEffect(harness)
+    } finally {
+      harness.close()
+    }
+  })
+
+  test("an account that may not operate this machine is refused before the workspace is read", async () => {
+    const harness = machineWithForeignWorkspace()
+    try {
+      await registerUnder(harness.authority, stranger)
+      await expect(harness.service.assignWorkspace(stranger, { workspaceId: "ws_theirs" })).rejects.toMatchObject({
+        code: "operator_required",
+        status: 403,
+      })
+      await expectNoMachineEffect(harness)
+    } finally {
+      harness.close()
+    }
+  })
+
+  test("the operator's own first share still cold-registers and becomes routable", async () => {
+    const harness = machineWithForeignWorkspace()
+    try {
+      const result = await harness.service.assignWorkspace(auth, { workspaceId: "ws_theirs", displayName: "theirs" })
+
+      expect(result.assignment).toMatchObject({ assigned: true, workspace_id: "ws_theirs" })
+      expect(harness.signSpy).toHaveBeenCalled()
+      expect(harness.database().prepare(`SELECT count(*) AS count FROM host_workspace_assignments`).get())
+        .toEqual({ count: 1 })
+      expect(await harness.authority.openWorkspace(auth, { workspaceId: "ws_theirs" }))
+        .toMatchObject({ role: "owner" })
+    } finally {
+      harness.close()
     }
   })
 })

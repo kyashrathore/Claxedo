@@ -427,6 +427,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     // Before the prompt, because the engine would otherwise run the turn on
     // whatever login this machine holds — under an identity the operator did
     // not choose — and bill it to that account.
+    if (!input.model) throw new Error("OpenCode turn requires a resolved model")
     const unavailable = runtime.providerUnavailableReason(input.model.providerID)
     if (unavailable) throw new ProviderCredentialUnavailableError("opencode", unavailable)
     const scope = this.scope(directory)
@@ -456,16 +457,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  /**
-   * Hand a prompt to the turn this adapter is streaming.
-   *
-   * The engine's inbox is what decides: a `steer` item is promoted at the
-   * running execution's next step boundary — so the events stay on the
-   * subscription `turn` already holds — while a `queue` item waits for the
-   * idle boundary, which that subscription has ended by. Only the delivery
-   * the engine recorded is reported as steered; a prompt it queued is declined
-   * so the runtime holds it and starts it as a turn whose events are streamed.
-   */
+  /** The engine owns both steering and queued inbox inputs after admission. */
   async steerTurn(binding: AgentExecutionBinding, input: PromptInput) {
     const scope = this.streaming.get(binding.sessionId)
     if (!scope) {
@@ -474,10 +466,12 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     try {
       const runtime = await this.engine()
       const admitted = await runtime.sessions.prompt(scope, binding.sessionId, prompt(input))
-      if (admitted.delivery === "steer") return { ok: true as const }
-      return { ok: false as const, status: "declined" as const, message: "OpenCode queued this prompt behind the running turn" }
+      // Both delivery modes transfer ownership to the engine inbox. Reporting
+      // an engine-held queue item as declined lets the outer queue send it twice.
+      if (admitted.delivery === "steer" || admitted.delivery === "queue") return { ok: true as const }
+      return { ok: false as const, status: "unknown" as const, message: "OpenCode did not confirm inbox ownership" }
     } catch (error) {
-      return { ok: false as const, status: "failed" as const, message: errorMessage(error) }
+      return { ok: false as const, status: "unknown" as const, message: errorMessage(error) }
     }
   }
 

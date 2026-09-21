@@ -28,6 +28,21 @@ const settled = async (promise: Promise<void>) => {
 }
 
 describe("sessionEventScopeId", () => {
+  test("releasing a draft hold cannot clear a newer draft's scope", () => {
+    const release = holdSessionEventScope("first")
+    const releaseSecond = holdSessionEventScope("second")
+    release()
+    expect(sessionEventScopeId()).toBe("second")
+    releaseSecond()
+    expect(sessionEventScopeId()).toBeUndefined()
+  })
+  test("releasing a pending-start hold preserves a later first-turn hold for the same session", () => {
+    const release = holdSessionEventScope("same")
+    holdSessionEventScope("same")
+    release()
+    expect(sessionEventScopeId()).toBe("same")
+  })
+
   test("bridges the draft route with the session the composer published", () => {
     expect(sessionEventScopeId()).toBeUndefined()
     holdSessionEventScope("ses_created")

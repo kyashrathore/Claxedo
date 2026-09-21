@@ -5,13 +5,14 @@ import { SessionHealthPeek } from "./session-health-peek"
 
 const harness = vi.hoisted(() => ({
   probeHealth: vi.fn(),
+  read: vi.fn(),
 }))
 
 vi.mock("@/features/session/composer/ui/harness-controller", () => ({
   usePromptHarnessControllersOptional: () => ({
     submit: {},
     selection: {
-      read: () => ({ readiness: "ready" }),
+      read: harness.read,
       probeHealth: harness.probeHealth,
     },
   }),
@@ -26,6 +27,7 @@ function probesFor(directory: string) {
 beforeEach(() => {
   vi.useFakeTimers()
   harness.probeHealth.mockReset()
+  harness.read.mockReset().mockReturnValue({ readiness: "ready" })
   visibility = "visible"
   Object.defineProperty(document, "visibilityState", {
     configurable: true,
@@ -40,6 +42,18 @@ afterEach(() => {
 })
 
 describe("SessionHealthPeek observer ownership", () => {
+  test("completed harness hydration catches up the existing observer without adding idle polling", async () => {
+    const [connection, setConnection] = createSignal<string>()
+    harness.read.mockImplementation(() => ({ readiness: "ready", harness: connection() ? { kind: "connection", connectionId: connection() } : undefined }))
+    render(() => <SessionHealthPeek active={() => true} turnActive={() => false} directory={() => "/work"} sessionId={() => undefined} intervalMs={1_000} />)
+    await Promise.resolve()
+    expect(harness.probeHealth).toHaveBeenCalledTimes(1)
+    setConnection("acp")
+    await Promise.resolve()
+    expect(harness.probeHealth).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(harness.probeHealth).toHaveBeenCalledTimes(2)
+  })
   test("only the active retained session owns the standing poll", async () => {
     render(() => (
       <>

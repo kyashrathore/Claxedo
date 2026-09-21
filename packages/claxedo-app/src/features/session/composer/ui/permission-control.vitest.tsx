@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 import { afterEach, describe, expect, test } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { permissionRowText, PromptPermissionControl } from "./permission-control"
@@ -57,6 +58,21 @@ describe("permissionRowText", () => {
 })
 
 describe("PromptPermissionControl", () => {
+  test("accessible trigger name follows the actual current mode", () => {
+    const approved = row({ id: "agent", name: "Approve for me" })
+    const ask = row({ id: "read-only", name: "Ask for approval" })
+    const [current, setCurrent] = createSignal(approved.option)
+    render(() => <PromptPermissionControl
+      enabled={() => true} disabled={() => false} style={() => ({})}
+      groups={() => ({ harness: { label: "Agent", rows: [approved, ask] } })}
+      current={current} label="Approve for me" onSelect={() => {}}
+    />)
+    expect(screen.getByRole("button", { name: "Approve for me" })).toBeTruthy()
+    setCurrent(ask.option)
+    expect(screen.getByRole("button", { name: "Ask for approval" })).toHaveTextContent("Ask for approval")
+    expect(screen.queryByRole("button", { name: "Approve for me" })).toBeNull()
+  })
+
   test("renders the caveat in the opened menu and selects its actual option", async () => {
     const caveat = "Claxedo answers these prompts on your behalf; the harness enforces nothing"
     const item = row({ caveat })

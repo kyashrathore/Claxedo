@@ -80,6 +80,10 @@ describe("SQLite private-session authority", () => {
 
     await expect(exercisePrivateSessionAuthorityConformance({
       authority: store,
+      setWorkspaceAvailable: async (available) => {
+        seed().prepare("UPDATE workspaces SET deleted_at = ? WHERE workspace_id = ?")
+          .run(available ? null : Date.now(), "workspace_main")
+      },
       turnAuthority: store,
       workspaceId: "workspace_main",
       creator: {
@@ -113,7 +117,16 @@ describe("SQLite private-session authority", () => {
     await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
     orgMember(seed, "workspace_main", participant.user.tokenIdentifier, "member")
 
+    seed().prepare(`INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at)
+      SELECT project_id, ?, 'editor', 1, 1 FROM workspaces WHERE workspace_id = 'workspace_main'`)
+      .run(participant.user.tokenIdentifier)
+
     await expect(exerciseRuntimeForkReservationConformance({
+      setParentShare: async (sessionId, level) => {
+        const target = { sessionId, workspaceId: "workspace_main", grantedToTokenIdentifier: participant.user.tokenIdentifier }
+        if (level) await store.grantSessionShare!(creator, { ...target, level })
+        else await store.revokeSessionShare!(creator, target)
+      },
       authority: store,
       workspaceId: "workspace_main",
       creator: {
@@ -125,9 +138,11 @@ describe("SQLite private-session authority", () => {
         runtime: { principalKind: "user", actorId: participant.user.tokenIdentifier, actorKind: "human" },
       },
     })).resolves.toEqual({
-      forkReservedUnderAReadableParent: true,
+      forkReservedUnderAWritableParent: true,
       registeredChildIsPrivateToItsCreator: true,
       refusedUnderAnUnreadableParent: true,
+      refusedUnderAFollowOnlyParent: true,
+      revokedParentRefusesStartupAndRegistration: true,
       refusedForAMismatchedIntent: true,
     })
   })

@@ -27,6 +27,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 30_000,
     fileParallelism: false,
+    setupFiles: ["./src/test-support/data-isolation.ts"],
     // The Worker's suite runs under its own package script, so its security
     // tests do not depend on this glob reaching a scripts directory.
     exclude: [

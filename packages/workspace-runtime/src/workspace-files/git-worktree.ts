@@ -1,9 +1,10 @@
 import path from "node:path"
 import fs from "node:fs/promises"
 import { isRecord, isString } from "@claxedo/helpers/guards"
-import { createBoundedGit, GitTimeoutError, runGit } from "../git"
+import { createBoundedGit, gitTopLevel, GitTimeoutError, LITERAL_PATHSPECS, runGit } from "../git"
 import { resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import { parseNumstat } from "./diff"
+import { readWorkingTreeText } from "./working-tree"
 
 export type GitStatusEntry = {
   path: string
@@ -90,12 +91,8 @@ function parseAheadBehind(value: string) {
 }
 
 async function untrackedLineCount(base: string, file: string) {
-  try {
-    const text = await fs.readFile(path.join(base, file), "utf8")
-    return text.split("\n").length
-  } catch {
-    return 0
-  }
+  const text = await readWorkingTreeText({ directory: base, file })
+  return text === undefined ? 0 : text.split("\n").length
 }
 
 export function parsePorcelainStatus(output: string, staged: LineCounts, unstaged: LineCounts) {
@@ -178,6 +175,7 @@ async function workspaceRelativePaths(base: string, paths: string[]) {
   }))
 }
 
+
 async function hasHead(base: string) {
   try {
     await runGit(["rev-parse", "--verify", "--quiet", "HEAD"], base)
@@ -190,16 +188,44 @@ async function hasHead(base: string) {
 
 export async function gitStage(base: string, paths: string[]) {
   const files = await workspaceRelativePaths(base, paths)
-  await runGit(["add", "-A", "--", ...files], base)
+  await runGit([LITERAL_PATHSPECS, "add", "-A", "--", ...files], base)
 }
 
 export async function gitUnstage(base: string, paths: string[]) {
   const files = await workspaceRelativePaths(base, paths)
   if (await hasHead(base)) {
-    await runGit(["reset", "-q", "--", ...files], base)
+    await runGit([LITERAL_PATHSPECS, "reset", "-q", "--", ...files], base)
     return
   }
-  await runGit(["rm", "--cached", "-r", "-q", "--", ...files], base)
+  await runGit([LITERAL_PATHSPECS, "rm", "--cached", "-r", "-q", "--", ...files], base)
+}
+
+/**
+ * Every working-tree path a commit made here would carry, absolute.
+ *
+ * The index is the authority on what a commit contains — not the request,
+ * which names only a message. `--no-renames` makes a rename two entries so the
+ * path it came FROM is in the answer too, and a deletion names the path it
+ * removes. Amending reaches further: the commit being replaced contributes its
+ * own files, because they are republished under the new one.
+ */
+/**
+ * The index's content as git names it — the tree a commit made now would
+ * record. Read either side of a decision about that content, it says whether
+ * the content decided about is still the content that would be committed.
+ */
+export async function gitIndexTree(base: string) {
+  return (await runGit(["write-tree"], base)).trim()
+}
+
+export async function gitCommitAffectedPaths(base: string, input: { amend?: boolean } = {}) {
+  const top = await gitTopLevel(base)
+  const staged = await runGit(["diff", "--cached", "--name-only", "--no-renames", "-z"], base)
+  const amended = input.amend && await hasHead(base)
+    ? await runGit(["show", "--pretty=format:", "--name-only", "--no-renames", "-z", "HEAD"], base)
+    : ""
+  return [...new Set([...staged.split("\0"), ...amended.split("\0")].filter(Boolean))]
+    .map((file) => path.resolve(top, file))
 }
 
 async function mergeInProgress(base: string) {

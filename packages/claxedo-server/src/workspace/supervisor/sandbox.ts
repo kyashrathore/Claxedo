@@ -1,13 +1,16 @@
 import { randomUUID } from "crypto"
 import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import {
+  applySandboxRuntimeSnapshot,
   createSandboxManager,
   type SandboxBootSource,
   type SandboxBrokeredSecret,
   type SandboxCheckpointRuntime,
   type SandboxEnsureResult,
   type SandboxManager,
+  type SandboxMutationResult,
   type SandboxNetworkPolicy,
+  type SandboxRuntimeSnapshotInput,
 } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { defaultSnapshotName } from "@claxedo/sandbox-manager/image-name"
@@ -15,6 +18,7 @@ import type { SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 import {
   decideSandboxHealthFailure,
   decideSandboxStart,
+  nextSandboxRetryAt,
   sandboxDriverPlacement,
   type SandboxDecision,
   type SandboxDriverPlacement,
@@ -43,7 +47,6 @@ import {
   getSupervisorSandboxLease,
   markSupervisorSandboxLeaseFailed,
   pendingSandboxLease,
-  recordSupervisorSandboxLeaseReady,
   recordSupervisorSandboxStartFailure,
   updateSupervisorSandboxLease,
   sandboxLeaseUrl,
@@ -141,23 +144,29 @@ export async function startSandbox(
   const bindings = authority.bindings
   const driverId = await supervisorSandboxDriverId(state)
   const placement = sandboxDriverPlacement(driverId)
-  const storedLease = getSupervisorSandboxLease(state.ws.id)
-  const prev = storedLease ?? pendingSandboxLease(state.ws.id, driverId, now())
-  const recordedHostUrl = storedLease?.status === "ready" ? sandboxLeaseUrl(storedLease) : undefined
+  const recorded = getSupervisorSandboxLease(state.ws.id)
+  const recordedHostUrl = recorded?.status === "ready" ? sandboxLeaseUrl(recorded) : undefined
 
   // Reattaching a recorded url makes no driver call at all, so it can only be
   // taken when there is nothing to reconcile. A wake that withdrew a credential
   // or narrowed egress has to go through the manager, which re-ensures a ready
   // lease on the same epoch.
-  if (recordedHostUrl && sandboxAuthoritySatisfied(state, authority)) {
-    const attached = await attachRecordedSandbox(state, callbacks, {
+  if (recorded && recordedHostUrl && sandboxAuthoritySatisfied(state, authority)) {
+    const attach = await attachRecordedSandbox(state, callbacks, {
       driverId,
-      storedLease,
+      lease: recorded,
       hostUrl: recordedHostUrl,
     })
-    if (attached) return attached
+    if (attach.outcome === "attached") return attach.state
+    // The lease this attach probed is gone: stopped, destroyed, or replaced by
+    // a newer epoch. Provisioning from here would re-acquire on behalf of a
+    // request whose premise the lifecycle owner has already answered.
+    if (attach.outcome === "lease_moved") throw new Error(attach.reason)
   }
 
+  // Read again rather than reuse `recorded`: an unhealthy probe spends up to
+  // 20s above, and the start decision has to be made on the lease as it is now.
+  const prev = getSupervisorSandboxLease(state.ws.id) ?? pendingSandboxLease(state.ws.id, driverId, now())
   const action = sandboxStartAction(state, prev, placement)
 
   if (action.action === "wait") {
@@ -340,15 +349,33 @@ export async function touchSandbox(state: WorkspaceRuntimeState) {
   await (await createSupervisorSandboxManager(state, driverId)).touch(state.ws.id)
 }
 
+type RecordedSandboxAttach =
+  | { outcome: "attached"; state: WorkspaceRuntimeState }
+  | { outcome: "unhealthy" }
+  | { outcome: "lease_moved"; reason: string }
+
+/**
+ * Serve a workspace from the host url its last provisioning recorded, making
+ * no driver call at all.
+ *
+ * Both proofs this path rests on are awaited — a health probe of up to 20s and
+ * a config push — and a stop, a destroy or a replacement epoch can land inside
+ * either window. So both run against a copy of this entry, and the lease
+ * settles on the epoch the attach observed only once both have returned.
+ * Nothing that another caller reads as this workspace's location — the entry
+ * in `runtimes`, the workspace row — is written until that fenced settlement
+ * succeeds, so an attach that outlived its lease advertises no target at all
+ * and reports `lease_moved` instead.
+ */
 async function attachRecordedSandbox(
   state: WorkspaceRuntimeState,
   callbacks: SandboxCallbacks,
   input: {
     driverId: SandboxDriverID
-    storedLease: SandboxLeaseRow | undefined
+    lease: SandboxLeaseRow
     hostUrl: string
   },
-) {
+): Promise<RecordedSandboxAttach> {
   try {
     configToken(state)
     // A recorded sandbox may be asleep or gone; the only way to know is this
@@ -357,32 +384,47 @@ async function attachRecordedSandbox(
     // step moving backward.
     emitProvision(state.ws, "waiting_health")
     await waitForRuntimeHealth(input.hostUrl)
-    state.url = input.hostUrl
+    const sandboxId = input.lease.sandbox_id ?? input.lease.driver_resource_id ?? undefined
+    const probed: WorkspaceRuntimeState = {
+      ...state,
+      url: input.hostUrl,
+      remote: true,
+      ...(sandboxId
+        ? {
+          sandbox_id: sandboxId,
+          sandbox_target: sandboxTarget(
+            input.driverId,
+            sandboxId,
+            input.hostUrl,
+            input.lease.lease_id || sandboxId,
+            input.lease.driver_resource_id ?? sandboxId,
+          ),
+        }
+        : {}),
+    }
+    await pushRuntimeConfig(probed)
+    const settled = await recordSupervisorRuntimeSnapshot(state.ws.id, { epoch: input.lease.epoch, ok: true })
+    if (!settled.ok) {
+      log.warn("Recorded sandbox lease moved while it was probed and configured", {
+        workspaceId: state.ws.id,
+        driver: input.driverId,
+        url: input.hostUrl,
+        epoch: input.lease.epoch,
+        reason: settled.reason,
+      })
+      emitProvision(state.ws, "error", { message: settled.reason })
+      return { outcome: "lease_moved", reason: settled.reason }
+    }
+    state.url = probed.url
     state.remote = true
     state.status = "ready"
     state.started_at = now()
     state.crashes = 0
     state.retry_at = 0
-    const sandboxId = input.storedLease?.sandbox_id ?? input.storedLease?.driver_resource_id ?? undefined
     if (sandboxId) {
-      state.sandbox_id = sandboxId
-      state.sandbox_target = sandboxTarget(
-        input.driverId,
-        sandboxId,
-        input.hostUrl,
-        input.storedLease?.lease_id || sandboxId,
-        input.storedLease?.driver_resource_id ?? sandboxId,
-      )
+      state.sandbox_id = probed.sandbox_id
+      state.sandbox_target = probed.sandbox_target
     }
-    await pushRuntimeConfig(state)
-    recordSupervisorSandboxLeaseReady({
-    workspaceId: state.ws.id,
-    driver: input.driverId,
-    sandboxId,
-    url: input.hostUrl,
-    hostId: input.storedLease?.lease_id,
-    driverResourceId: input.storedLease?.driver_resource_id ?? sandboxId,
-  })
     const ws = await updateWorkspace(state.ws.id, {
       status: "ready",
     })
@@ -398,7 +440,7 @@ async function attachRecordedSandbox(
       driver: input.driverId,
       url: state.url,
     })
-    return state
+    return { outcome: "attached", state }
   } catch (err) {
     log.warn("Recorded sandbox url is not healthy; provisioning host", {
       workspaceId: state.ws.id,
@@ -406,8 +448,34 @@ async function attachRecordedSandbox(
       url: input.hostUrl,
       error: err instanceof Error ? err.message : String(err),
     })
-    return undefined
+    return { outcome: "unhealthy" }
   }
+}
+
+/**
+ * This supervisor's binding of the canonical liveness writer, used by the
+ * runtime's own register/heartbeat callback and by the re-attach above that
+ * probed the same question for itself.
+ *
+ * `retry-budget` rather than the default `demote`: this lease has a second
+ * observer of the same sandbox — `startSandboxHealthMonitor` — and it records
+ * a failed probe as backoff against `nextSandboxRetryAt`. A report that
+ * demoted without touching the budget would leave the two observers writing
+ * different shapes for one unhealthy sandbox.
+ */
+export function recordSupervisorRuntimeSnapshot(
+  workspaceId: string,
+  input: SandboxRuntimeSnapshotInput,
+): Promise<SandboxMutationResult> {
+  return applySandboxRuntimeSnapshot({
+    leaseStore: createSupervisorSandboxLeaseStore(),
+    workspaceId,
+    snapshot: input,
+    liveness: {
+      kind: "retry-budget",
+      nextRetryAt: ({ retryCount, now }) => nextSandboxRetryAt(retryCount, now) ?? undefined,
+    },
+  })
 }
 
 function sandboxStartAction(
@@ -521,7 +589,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: (_input, sandbox) => runtimeEnvForHost(state, driverId, sandbox.id),
+        env: () => runtimeEnvForHost(state, driverId),
       })
     }
     throw missingSandboxDriverAuth(driverId, "api_key")
@@ -538,7 +606,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: (_input, sandbox) => runtimeEnvForHost(state, driverId, sandbox.id),
+        env: () => runtimeEnvForHost(state, driverId),
       })
     }
     throw missingSandboxDriverAuth(driverId, "api_token and worker_url")
@@ -557,7 +625,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
+        env: () => runtimeEnvForHost(state, driverId),
       })
     }
     throw missingSandboxDriverAuth(driverId, "token_id and token_secret")
@@ -578,7 +646,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
+        env: () => runtimeEnvForHost(state, driverId),
       })
     }
     throw missingSandboxDriverAuth(driverId, "access_token, team_id, and project_id")
@@ -596,7 +664,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
+        env: () => runtimeEnvForHost(state, driverId),
       })
     }
     throw missingSandboxDriverAuth(driverId, "api_key")
@@ -612,7 +680,7 @@ async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId
           ? { runtimeCommand: trimToUndefined(process.env.CLAXEDO_RUNTIME_COMMAND) }
           : {}),
         ...(trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) ? { runner: trimToUndefined(process.env.CLAXEDO_RUNTIME_RUNNER) } : {}),
-        env: (_input, host) => runtimeEnvForHost(state, driverId, host.id),
+        env: () => runtimeEnvForHost(state, driverId),
       })
     }
     throw missingSandboxDriverAuth(driverId, "image")
@@ -633,12 +701,23 @@ function sandboxDriverId(state: WorkspaceRuntimeState): SandboxDriverID | undefi
   return isSandboxDriverID(leaseDriver) ? leaseDriver : undefined
 }
 
-function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriverID, sandboxId: string) {
+/**
+ * What this deployment adds to the env the driver already composed for the
+ * sandbox: where the control plane is, how to verify it and the relay, and the
+ * token the runtime answers direct calls with.
+ *
+ * Host identity is not among them and must not be. The driver writes it, from
+ * the same hostId it returns on the target, and this env is spread over the
+ * driver's — so a key of that name here would override the identity the relay
+ * binds. Daytona hands its env callback the provider sandbox, whose id is the
+ * provider's resource id rather than the hostId.
+ */
+function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriverID) {
   const options = needWorkspaceSupervisorOptions()
   const controlPlaneUrl = sandboxControlPlaneUrl(driverId, options.server_url)
   const lease = getSupervisorSandboxLease(state.ws.id)
   return {
-    ...controlPlaneVerificationEnv(driverId, controlPlaneUrl, { options }),
+    ...controlPlaneVerificationEnv(controlPlaneUrl, { options }),
     ...relayHostVerificationEnv(driverId, { options }),
     ...runtimeDirectAuthEnv(configToken(state)),
     WORKSPACE_RUNTIME_DISABLE_CORS: "1",
@@ -646,7 +725,6 @@ function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriver
       ? sandboxLeaseEnv({
           leaseId: lease.lease_id,
           epoch: lease.epoch,
-          sandboxId,
         })
       : {}),
   }

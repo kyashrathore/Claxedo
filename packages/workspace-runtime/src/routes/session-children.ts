@@ -6,6 +6,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type { CompatEnvelope } from "../compat-events"
 import type { RuntimeEventEnvelopeInput } from "../runtime-event-hub"
 import type { SessionPromptBody } from "../session/service"
+import type { SessionTurnOrigin } from "../session-access-policy"
 import { num, str } from "../json-value"
 
 /** `providerKind` of a subagent row whose child is a session this runtime created itself. */
@@ -30,10 +31,25 @@ export type ChildWakeAuthor = { id: string; name: string; kind: "agent" }
 
 export type PendingChildWake = { parentSessionId: string; childSessionId: string; directory: string }
 
+/**
+ * Where the identity behind a child outlives the request that created it.
+ *
+ * A completion wake is a turn on the parent, and the authority decides a turn
+ * about an actor. The request that created the child is long gone by then, and
+ * after a restart so is every in-process trace of it, so the actor it verified
+ * is read back from here instead. A host without this port drives wakes with
+ * no identity, which a managed runtime refuses.
+ */
+export type ChildOriginStore = {
+  record(parentSessionId: string, subagentKey: string, origin: SessionTurnOrigin): void | Promise<void>
+  read(parentSessionId: string, subagentKey: string): SessionTurnOrigin | undefined | Promise<SessionTurnOrigin | undefined>
+}
+
 export type ChildSessionHostInput = {
   admission: SubagentAdmissionStore
   /** Keyed material for idempotent child ids; must survive restarts (S12). */
   secret: () => string
+  origins?: ChildOriginStore
   listSubagents: (parentSessionId: string, directory: string) => Promise<unknown[]> | unknown[]
   pendingWakes: () => Promise<PendingChildWake[]> | PendingChildWake[]
   getSession: (sessionId: string, directory: string) => Promise<AgentSession | null | undefined> | AgentSession | null | undefined
@@ -49,7 +65,10 @@ export type ChildSessionHostInput = {
     parentSessionId: string
     directory: string
     body: SessionPromptBody
+    /** Who the parent sees wrote the wake: the child, always. */
     author: ChildWakeAuthor
+    /** How the turn is re-authorized: what the creating request proved about itself. */
+    origin?: SessionTurnOrigin
     onSettled: () => void
   }) => Promise<"started" | "busy">
 }
@@ -67,12 +86,15 @@ export type ChildSessionHost = {
     harness: string
     role?: string
     title?: string
+    /** The creating request's verified identity, which the completion wake later runs as. */
+    origin?: SessionTurnOrigin
   }): Promise<{ subagentKey: string }>
   onTurnStarted(sessionId: string, directory: RuntimeDirectory): Promise<void>
   onTurnSettled(sessionId: string, directory: RuntimeDirectory): Promise<void>
   /** Re-offers every wake still pending, once, after a restart. */
   recover(): Promise<void>
-  dispose(): void
+  /** Refuses new background work and waits for what is already running. */
+  dispose(): void | Promise<void>
 }
 
 export function createChildSessionHost(input: ChildSessionHostInput): ChildSessionHost {
@@ -86,6 +108,20 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
   const creations = new Map<string, Promise<void>>()
   const pendingAttention = new Map<string, Set<string>>()
   let recovered: Promise<void> | undefined
+  /**
+   * Nothing this host does for itself is carried by a request, so nothing else
+   * knows to wait for it. Disposal stops new work and waits for what it finds,
+   * because the alternative is an offer reading a session out of a store the
+   * host is closing, or asking for an adapter the workspace has already
+   * refused to build.
+   */
+  let stopped = false
+  const running = new Set<Promise<unknown>>()
+  const track = <T>(work: Promise<T>) => {
+    running.add(work)
+    void work.catch(() => {}).finally(() => running.delete(work))
+    return work
+  }
 
   async function children(parentSessionId: string, directory: RuntimeDirectory) {
     const rows = await input.listSubagents(parentSessionId, requireDirectory(directory))
@@ -98,8 +134,8 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
     return (await children(session.parentID, directory)).find((row) => row.childSessionId === childSessionId)
   }
 
-  async function offerWakes(parentSessionId: string, directory: string) {
-    if (offering.has(parentSessionId)) return
+  async function offerWakes(parentSessionId: string, directory: string): Promise<void> {
+    if (stopped || offering.has(parentSessionId)) return
     offering.add(parentSessionId)
     try {
       const parent = await input.getSession(parentSessionId, directory)
@@ -107,6 +143,10 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       const next = (await children(parentSessionId, directory)).find((row) => row.wake === "pending")
       if (!next) return
       const summary = childSummary(await input.getMessages(next.childSessionId, directory) ?? [])
+      const origin = await input.origins?.read(parentSessionId, next.subagentKey)
+      // Disposal may have begun while this offer was reading. Starting a turn
+      // now would ask a closing workspace for an adapter it refuses to build.
+      if (stopped) return
       const started = await input.startTurn({
         parentSessionId,
         directory,
@@ -115,8 +155,9 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
           parts: [{ type: "text", text: wakeText(next, summary) }],
         },
         author: { id: next.childSessionId, name: next.label ?? "Subagent", kind: "agent" },
+        ...(origin ? { origin } : {}),
         onSettled: () => {
-          void offerWakes(parentSessionId, directory).catch((error) => {
+          void track(offerWakes(parentSessionId, directory)).catch((error) => {
             console.error(`child session wake for ${parentSessionId} failed after turn`, error)
           })
         },
@@ -146,12 +187,12 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
 
   const unsubscribe = input.subscribeGlobal?.((event) => {
     const change = attentionChange(event.payload)
-    if (!change) return
+    if (!change || stopped) return
     const pending = pendingAttention.get(change.sessionId) ?? new Set<string>()
     if (change.kind === "add") pending.add(change.requestId)
     else pending.delete(change.requestId)
     pendingAttention.set(change.sessionId, pending)
-    void updateAttention(change.sessionId, event.directory).catch((error) => {
+    void track(updateAttention(change.sessionId, event.directory)).catch((error) => {
       console.error(`child session attention for ${change.sessionId} failed`, error)
     })
   })
@@ -182,7 +223,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       return (await children(parentSessionId, directory)).filter((row) => ACTIVE_CHILD_STATUSES.has(row.status ?? "pending"))
     },
     childOf,
-    async admitCreated({ parentSessionId, childSessionId, directory, harness, role, title }) {
+    async admitCreated({ parentSessionId, childSessionId, directory, harness, role, title, origin }) {
       const event = await admit(parentSessionId, requireDirectory(directory), {
         observationId: `host:create:${childSessionId}`,
         subagentKey: `subagent_${randomUUID()}`,
@@ -196,11 +237,13 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
         childSessionId,
         transcript: { kind: "live" },
       })
+      if (origin) await input.origins?.record(parentSessionId, event.subagentKey, origin)
       return { subagentKey: event.subagentKey }
     },
     async onTurnStarted(sessionId, directory) {
+      if (stopped) return
       const row = await childOf(sessionId, directory)
-      if (!row || row.status !== "pending") return
+      if (stopped || !row || row.status !== "pending") return
       await admit(row.parentSessionId, requireDirectory(directory), {
         observationId: `host:running:${sessionId}:${randomUUID()}`,
         subagentKey: row.subagentKey,
@@ -208,15 +251,19 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       })
     },
     async onTurnSettled(sessionId, requested) {
+      if (stopped) return
       const directory = requireDirectory(requested)
       const row = await childOf(sessionId, directory)
+      if (stopped) return
       if (!row) {
         await offerWakes(sessionId, directory)
         return
       }
       if (TERMINAL_CHILD_STATUSES.has(row.status ?? "")) return
       const summary = childSummary(await input.getMessages(sessionId, directory) ?? [])
+      if (stopped) return
       const parent = await input.getSession(row.parentSessionId, directory)
+      if (stopped) return
       const parentGone = !parent || parent.time?.archived !== undefined
       await admit(row.parentSessionId, directory, {
         observationId: `host:finished:${sessionId}:${summary.assistantMessageId ?? randomUUID()}`,
@@ -227,17 +274,26 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       if (!parentGone) await offerWakes(row.parentSessionId, directory)
     },
     recover() {
-      recovered ??= (async () => {
+      if (stopped) return Promise.resolve()
+      recovered ??= track((async () => {
         for (const wake of await input.pendingWakes()) {
           await offerWakes(wake.parentSessionId, wake.directory)
         }
       })().catch((error) => {
         console.error("child session wake recovery failed", error)
-      })
+      }))
       return recovered
     },
-    dispose() {
+    async dispose() {
+      stopped = true
       unsubscribe?.()
+      // One pass is not enough on its own: an offer settling here schedules the
+      // next one, and that one refuses on `stopped` and finishes, so this
+      // drains rather than chases.
+      while (running.size) {
+        const pending = [...running]
+        await Promise.allSettled(pending)
+      }
     },
   }
 }

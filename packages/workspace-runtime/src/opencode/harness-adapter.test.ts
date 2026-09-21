@@ -263,7 +263,7 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     expect(fake.sessions.prompt).not.toHaveBeenCalled()
   })
 
-  test("a prompt the engine records as queued is reported as declined, not as steered", async () => {
+  test("an engine-held queued prompt transfers ownership and cannot be replayed by the outer queue", async () => {
     const fake = runtime({ execution: "manual" })
     const directory = workspace()
     const adapter = adapterFor(fake, directory)
@@ -282,9 +282,7 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     }))
 
     expect(await adapter.steerTurn(binding(directory, "ses_1"), promptInput("then run the tests", "2"))).toEqual({
-      ok: false,
-      status: "declined",
-      message: "OpenCode queued this prompt behind the running turn",
+      ok: true,
     })
 
     fake.finish("ses_1")

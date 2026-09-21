@@ -94,11 +94,15 @@ same-key ordering is a property of the data layer, not of any process. A
 lapsed lease frees its lane; other lanes are never blocked.
 
 **Driver** (`WakeDriver`): `nudge({serialKey, fireAt})` — a lossy hint, never
-load-bearing. The engine nudges on every time-triggered create (including
-sink-scheduled retries). Cloudflare driver: the `WakeLane` DO arms a *durable
+load-bearing. The engine nudges at every time a created wake becomes
+actionable: its fire time, its expiry deadline, or both (sink-scheduled
+retries included). Cloudflare driver: the `WakeLane` DO arms a *durable
 platform alarm* at `fireAt` — it survives deploys, evictions, and machine
-loss, and the platform retries it. Node runs no driver: the 1s scheduler poll
-is both push and backstop there.
+loss, and the platform retries it — then drains with `runDue(serialKey)`,
+which expires, reclaims, and claims within that lane only and hands back the
+lane's next obligation (`nextAt`) to re-arm from. Re-arming from the store,
+not from the hint, is why a dropped hint costs nothing. Node runs no driver:
+the 1s scheduler poll is both push and backstop there.
 
 **Scheduler**: the guarantee. `createScheduler` = recover-on-boot + a
 non-overlapping `runDue()` interval on Node; a Cloudflare Cron Trigger plays
@@ -160,7 +164,7 @@ the same role hosted. Slow, dumb, cannot miss.
 | --- | --- | --- |
 | Store | `@claxedo/wakes/sqlite` | a shared store adapter (none shipped) |
 | Push | — (the 1s tick is prompt enough) | `WakeLane` Durable Object |
-| Backstop | `createScheduler` (1s tick) | Cron Trigger (15 min) |
+| Backstop | `createScheduler` (1s tick) | Cron Trigger (designed, not wired — the lane DOs re-arm themselves) |
 | Sinks | `session_turn` (agent tools) | whatever the host registers |
 | Down = | fires on next boot (recover + catch-up) | platform alarms/cron; no process of ours needs to be alive |
 

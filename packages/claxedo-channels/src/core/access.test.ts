@@ -209,11 +209,24 @@ describe("DM policy variants", () => {
     const access = createChannelAccess({
       dmPolicy: "allowlist",
       store: createMemoryChannelAccessStore(),
-      allowFrom: ["telegram:owner"],
+      allowIds: ["telegram:owner"],
     })
     expect((await access.gate({ channel: "telegram", externalUserId: "owner", chatType: "dm" })).admission).toBe("allow")
     const denied = await access.gate({ channel: "telegram", externalUserId: "stranger", chatType: "dm" })
     expect(denied).toMatchObject({ admission: "drop", reason: "dm_not_allowlisted" })
+  })
+
+  test("the retired seed option seeds nobody", async () => {
+    const access = createChannelAccess({
+      dmPolicy: "allowlist",
+      store: createMemoryChannelAccessStore(),
+      // The shape an operator carrying the old configuration over would pass.
+      // It is not read, so the entries in it admit nobody rather than seeding
+      // strings written when a handle still reached the gate.
+      ...({ allowFrom: ["telegram:owner"] } as object),
+    })
+    expect(await access.gate({ channel: "telegram", externalUserId: "owner", chatType: "dm" }))
+      .toMatchObject({ admission: "drop", reason: "dm_not_allowlisted" })
   })
 })
 
@@ -224,7 +237,7 @@ describe("group policy + chatType", () => {
       groupPolicy: "allowlist",
       groupEngagement: "unprompted",
       store: createMemoryChannelAccessStore(),
-      allowFrom: ["telegram:teammember"],
+      allowIds: ["telegram:teammember"],
     })
     // In a group, the allowlisted member is admitted...
     expect((await access.gate({ channel: "telegram", externalUserId: "teammember", chatType: "group" })).admission).toBe("allow")
@@ -257,7 +270,7 @@ describe("group policy + chatType", () => {
       dmPolicy: "open",
       groupPolicy: "open",
       store: createMemoryChannelAccessStore(),
-      allowFrom: ["telegram:teammember"],
+      allowIds: ["telegram:teammember"],
     })
     expect(access.groupEngagement).toBe("mention")
     // Addressed → engaged, even though the room is busy.
@@ -288,7 +301,7 @@ describe("group policy + chatType", () => {
       groupPolicy: "allowlist",
       groupEngagement: "unprompted",
       store: createMemoryChannelAccessStore(),
-      allowFrom: ["telegram:teammember"],
+      allowIds: ["telegram:teammember"],
     })
     expect((await access.gate({
       channel: "telegram",
@@ -316,7 +329,7 @@ describe("group policy + chatType", () => {
       dmPolicy: "open",
       groupPolicy: "disabled",
       store: createMemoryChannelAccessStore(),
-      allowFrom: ["*"],
+      allowIds: ["*"],
     })
     expect(await access.gate({
       channel: "telegram",

@@ -4,11 +4,13 @@ import { transientHeartbeatFailure } from "./connector"
 import { createFakeControlPlane, decodeFakeTunnelToken, enrollFakeHost } from "./fake-control-plane.test-support"
 import { createHostKeyPair } from "./host-identity"
 import { createMachineSealingKeyPair } from "./machine-seal"
+import { ControlPlaneUrlError } from "./host-state"
 import {
   createMachineSignedTransport,
   decisionCode,
   decodeProviderConfig,
   HostedHttpError,
+  HostedRedirectError,
   HostedRequestTimeoutError,
 } from "./machine-transport"
 
@@ -47,6 +49,88 @@ describe("acquire", () => {
       "x-claxedo-host-signature": expect.stringMatching(/^[A-Za-z0-9_-]+$/),
     })
     expect(request?.body).toEqual({ enrollmentId: enrolled.enrollmentId, hostId: enrolled.state.host_id, keyVersion: 1 })
+  })
+})
+
+describe("the endpoint a machine request may reach", () => {
+  test("a cleartext control plane never gets a transport, let alone a signed request", async () => {
+    const cp = createFakeControlPlane()
+    const enrolled = await enrollFakeHost(cp)
+    const sent: URL[] = []
+
+    expect(() =>
+      createMachineSignedTransport({
+        controlPlaneUrl: "http://control-plane.test",
+        keys: enrolled.keys,
+        enrollmentId: enrolled.enrollmentId,
+        hostId: enrolled.state.host_id,
+        fetch: async (url, init) => {
+          sent.push(url)
+          return await cp.fetch(url, init)
+        },
+      }),
+    ).toThrow(ControlPlaneUrlError)
+    expect(sent, "the refusal is at construction, before anything is signed").toEqual([])
+  })
+
+  test("a loopback control plane over http is the one cleartext case, and it works", async () => {
+    const cp = createFakeControlPlane({ url: "http://127.0.0.1:2593" })
+    const { transport } = await host(cp)
+
+    expect(await transport.acquire()).toEqual({ generation: 1 })
+    expect(cp.log.at(-1)?.path).toBe("/api/claxedo/host/enrollments/acquire")
+  })
+
+  test("a base written with a trailing slash signs and sends the same path", async () => {
+    const cp = createFakeControlPlane()
+    const { transport } = await host(cp, { controlPlaneUrl: `${cp.url}/` })
+
+    // The fake verifies the signature over the pathname it received, so a
+    // canonicalization that moved the path would fail here as a denial.
+    expect(await transport.acquire()).toEqual({ generation: 1 })
+    expect(cp.log.at(-1)?.path).toBe("/api/claxedo/host/enrollments/acquire")
+  })
+})
+
+describe("a redirected machine request", () => {
+  const redirect = (status: number) =>
+    new Response(null, { status, headers: { location: "https://attacker.test/api/claxedo/host/enrollments/acquire" } })
+
+  test("asks fetch not to follow, and refuses the 3xx rather than re-sending the signed body", async () => {
+    const seen: Array<{ url: URL; redirect: RequestInit["redirect"] }> = []
+    const { transport } = await host(undefined, {
+      fetch: async (url, init) => {
+        seen.push({ url, redirect: init.redirect })
+        return redirect(307)
+      },
+    })
+
+    const error = await transport.acquire().catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostedRedirectError)
+    expect(String(error)).toContain("with a redirect (307)")
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.redirect, "the transport hands fetch the option that stops the follow").toBe("manual")
+    expect(seen[0]?.url.host).toBe("control-plane.test")
+  })
+
+  test.each([301, 302, 303, 307, 308])("%s is refused the same way", async (status) => {
+    const { transport } = await host(undefined, { fetch: async () => redirect(status) })
+
+    await expect(transport.heartbeat({ generation: 1, acks: [] })).rejects.toBeInstanceOf(HostedRedirectError)
+  })
+
+  test("a fetch that ignored the option and followed anyway is denied on the answer", async () => {
+    // The attacker's 200, indistinguishable from the control plane's but for
+    // having been redirected to. A transport that trusted it would apply the
+    // scope, assignments and relay endpoints in this body.
+    const followed = Response.json({ expires_at: 1, scope: { revision: 99, allowed_roots: ["/"], visibility: "owner" } })
+    Object.defineProperty(followed, "redirected", { value: true })
+    const { transport } = await host(undefined, { fetch: async () => followed })
+
+    const error = await transport.heartbeat({ generation: 1, acks: [] }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostedRedirectError)
   })
 })
 

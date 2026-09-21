@@ -106,7 +106,8 @@ export function createSqlitePrivateSessionAuthority(input: {
 
   const runtimeActor = (db: SqliteAuthorityDb, principal: PrivateSessionRuntimePrincipal) => {
     if (
-      (principal.principalKind === "user" && principal.actorKind !== "human")
+      (principal.principalKind !== "user" && principal.principalKind !== "service")
+      || (principal.principalKind === "user" && principal.actorKind !== "human")
       || (principal.principalKind === "service" && principal.actorKind !== "agent")
     ) throw new SqlitePrivateSessionAuthorityError("actor_authorization_denied", "Runtime principal kind is inconsistent")
     const actor = db.prepare<unknown[], (AuthorityUser & { kind: string })>(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
@@ -260,7 +261,7 @@ export function createSqlitePrivateSessionAuthority(input: {
     const intent = reserveIntent(value)
     workspaceAccess(db, actor, intent.workspaceId, "write")
     if (intent.kind === "fork") {
-      requireSessionAccess(db, actor, intent.parentSessionId!, intent.workspaceId, "read")
+      requireSessionAccess(db, actor, intent.parentSessionId!, intent.workspaceId, "agent_turn")
     }
     return db.transaction(() => {
       const existing = registration(db, intent.operationId)
@@ -301,6 +302,36 @@ export function createSqlitePrivateSessionAuthority(input: {
   return {
     reserveSession: (auth, value) => reserveForActor(actorForAuth(auth), value),
     reserveRuntimeSession: (principal, value) => reserveForActor(runtimeActor(input.database(), principal), value),
+    async authorizeRuntimeSessionStart(value) {
+      const db = input.database()
+      const actor = runtimeActor(db, value)
+      const workspaceId = required(value.workspaceId, "workspaceId")
+      const sessionId = required(value.sessionId, "sessionId")
+      const operationId = required(value.registrationOperationId, "registrationOperationId")
+      workspaceAccess(db, actor, workspaceId, "write")
+      const row = registration(db, operationId)
+      if (!row || row.workspace_id !== workspaceId || row.session_id !== sessionId
+        || row.creator_actor_id !== actor.token_identifier
+        || (row.state !== "reserved" && row.state !== "reconciliation_required")) {
+        denied()
+      }
+      if (row.operation_kind === "fork") {
+        requireSessionAccess(db, actor, row.parent_session_id!, workspaceId, "agent_turn")
+      }
+    },
+    async authorizeRuntimeSessionStartStatus(value) {
+      const db = input.database()
+      const actor = runtimeActor(db, value)
+      const workspaceId = required(value.workspaceId, "workspaceId")
+      const sessionId = required(value.sessionId, "sessionId")
+      const operationId = required(value.registrationOperationId, "registrationOperationId")
+      workspaceAccess(db, actor, workspaceId, "read")
+      const row = registration(db, operationId)
+      if (!row || row.workspace_id !== workspaceId || row.session_id !== sessionId
+        || row.creator_actor_id !== actor.token_identifier) {
+        denied()
+      }
+    },
     async acquireSessionTurn(value) {
       const db = input.database()
       const actor = runtimeActor(db, value)
@@ -397,6 +428,9 @@ export function createSqlitePrivateSessionAuthority(input: {
           throw new SqlitePrivateSessionAuthorityError("registration_transition_denied", `Cannot register a ${row.state} reservation`)
         }
         workspaceAccess(db, actor, workspaceId, "write")
+        if (row.operation_kind === "fork") {
+          requireSessionAccess(db, actor, row.parent_session_id!, workspaceId, "agent_turn")
+        }
         const at = now()
         projectRegisteredSession(db, actor, { operationId, sessionId, workspaceId, title }, at)
         db.prepare(`

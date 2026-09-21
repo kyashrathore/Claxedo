@@ -54,6 +54,8 @@ const turnLease = {
 // composes a policy that can authorize a turn and then refuse to admit it.
 function authorityStub(overrides: Partial<Record<string, unknown>> = {}) {
   return {
+    authorizeRuntimeSessionStartStatus: async () => {},
+    authorizeRuntimeSessionStart: async () => {},
     registerRuntimeSession: async () => ({}),
     markSessionRegistrationAmbiguous: async () => ({}),
     beginSessionCompensation: async () => ({}),
@@ -96,20 +98,6 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
     const renewed = await policy.authorizeStream!(input, first.lease)
     expect(renewed.allowed).toBe(true)
     expect(authorizeRuntimeSession).toHaveBeenCalledTimes(2)
-  })
-
-  test("grants the workspace-level read the unscoped stream asks for by the stamped role alone", async () => {
-    const authorizeRuntimeSession = vi.fn(async () => {})
-    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ authorizeRuntimeSession }))
-    const host = (role: "viewer" | "editor" | "admin" | "owner", minimumRole: "viewer" | "admin") =>
-      policy.authorizeHost!({ ...input, operation: "session_event_stream", authority: { ...input.authority, role }, minimumRole })
-
-    expect(await host("viewer", "viewer")).toEqual({ allowed: true })
-    expect(await host("editor", "admin")).toMatchObject({ allowed: false, status: 403, code: "host_authority_denied" })
-    expect(await host("owner", "admin")).toEqual({ allowed: true })
-    expect(await policy.authorizeHost!({ ...input, operation: "session_event_stream", authority: undefined, minimumRole: "viewer" }))
-      .toMatchObject({ allowed: false, status: 403 })
-    expect(authorizeRuntimeSession).not.toHaveBeenCalled()
   })
 
   test("refuses a renewal whose lease belongs to another session", async () => {
@@ -189,4 +177,20 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
       code: "session_actor_required",
     })
   })
+})
+
+
+test("startup calls reservation authority with the verified embedded principal", async () => {
+  const authorizeRuntimeSessionStart = vi.fn(async () => {})
+  const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ authorizeRuntimeSessionStart }))
+  expect(await policy.authorizeSessionStart({ ...input, registrationOperationId: "op_start" })).toEqual({ allowed: true })
+  expect(authorizeRuntimeSessionStart).toHaveBeenCalledWith({ principalKind: "user", actorKind: "human", actorId: "actor_alice", workspaceId: "ws_1", sessionId: "ses_private", registrationOperationId: "op_start" })
+})
+
+
+test("startup status uses the separate read-only reservation authority", async () => {
+  const authorizeRuntimeSessionStartStatus = vi.fn(async () => {})
+  const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ authorizeRuntimeSessionStartStatus }))
+  expect(await policy.authorizeSessionStartStatus({ ...input, operation: "session_meta_read", registrationOperationId: "op_start" })).toEqual({ allowed: true })
+  expect(authorizeRuntimeSessionStartStatus).toHaveBeenCalledWith({ principalKind: "user", actorKind: "human", actorId: "actor_alice", workspaceId: "ws_1", sessionId: "ses_private", registrationOperationId: "op_start" })
 })

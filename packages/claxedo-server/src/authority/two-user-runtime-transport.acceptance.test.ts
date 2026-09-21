@@ -514,6 +514,36 @@ describe("two-user signed runtime transport acceptance", () => {
     })
     expect(participant.status).toBe(200)
 
+    // Bob participates in Alice's session and holds a reservation of his own.
+    // Neither lets a create name her id: the reservation says which session it
+    // may bring into being, and the runtime asks before it configures, renames
+    // or rolls anything back.
+    const bobReserved = await signedRequest(bob.token, "/api/control/session-registrations/reserve", {
+      method: "POST",
+      body: JSON.stringify({
+        operationId: "op_runtime_bob",
+        sessionId: "ses_runtime_bob",
+        workspaceId: "ws_runtime_private",
+        kind: "create",
+      }),
+    })
+    expect(bobReserved.status, await bobReserved.clone().text()).toBe(201)
+    const hijack = await runtimeRequest(runtimeApp, bobRht, "/session", {
+      method: "POST",
+      headers: { "x-claxedo-session-registration-operation": "op_runtime_bob" },
+      body: JSON.stringify({ id: "ses_runtime_private", title: "Renamed by Bob" }),
+    })
+    expect(hijack.status).toBe(403)
+    expect(await hijack.text()).not.toContain("Private signed runtime")
+    const unreserved = await runtimeRequest(runtimeApp, bobRht, "/session", {
+      method: "POST",
+      body: JSON.stringify({ id: "ses_runtime_private", title: "Renamed by Bob" }),
+    })
+    expect(unreserved.status).toBe(400)
+    await expect(
+      (await runtimeRequest(runtimeApp, aliceRht, "/session/ses_runtime_private")).json(),
+    ).resolves.toMatchObject({ id: "ses_runtime_private", title: "Private signed runtime" })
+
     const [aliceList, bobList, caseyList] = await Promise.all([
       runtimeRequest(runtimeApp, aliceRht, "/session"),
       runtimeRequest(runtimeApp, bobRht, "/session"),

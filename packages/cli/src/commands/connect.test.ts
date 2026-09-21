@@ -320,6 +320,54 @@ describe("claxedo connect", () => {
     await fs.rm(other.root, { recursive: true, force: true })
   })
 
+  test("a cleartext CLAXEDO_CONTROL_PLANE_URL exits 78 with what to change, before any state or request", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const requests = h.cp.log.length
+
+    expect(await connect(["--token-file", file], { ...h.deps, controlPlaneUrl: "http://cp.example.test" })).toBe(78)
+
+    expect(h.lines.at(-1)).toBe(
+      "control plane http://cp.example.test must be https:// (http:// only for localhost, 127.0.0.1 or ::1); set CLAXEDO_CONTROL_PLANE_URL to an https:// origin",
+    )
+    expect(await h.deps.store.load(), "no host id, no key, no pending enrollment").toBeUndefined()
+    expect(h.cp.log).toHaveLength(requests)
+    expect(await fs.readFile(file, "utf8")).toContain("chx_inv_1.")
+  })
+
+  test("a state file that names a cleartext control plane does not run, and says how to leave it", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const running = connect(["--token-file", file, "--root", h.root], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    h.stop()
+    await running
+    const stateFile = h.deps.paths.stateFile
+    const state = JSON.parse(await fs.readFile(stateFile, "utf8")) as { control_plane_url: string }
+    await fs.writeFile(stateFile, JSON.stringify({ ...state, control_plane_url: "http://cp.example.test" }))
+    const beats = h.cp.beats().length
+
+    expect(await connect([], h.deps)).toBe(78)
+
+    expect(h.lines.at(-1)).toContain("must be https://")
+    expect(h.lines.at(-1)).toContain("claxedo connect --reset")
+    expect(h.cp.beats(), "the enrollment it holds is not beaten for over cleartext").toHaveLength(beats)
+  })
+
+  test("a loopback control plane over http still enrolls: the local development flow is the one cleartext case", async () => {
+    const local = await harness({ cp: createFakeConnectControlPlane({ url: "http://127.0.0.1:2593", relayUrl: h.relay.url }) })
+    const invitation = await local.cp.createInvitation({ displayName: "build-box", scope: { allowed_roots: [local.root], visibility: "owner" } })
+    const file = path.join(local.home, "invite.txt")
+    await fs.writeFile(file, invitation.token)
+
+    const running = connect(["--token-file", file, "--root", local.root], local.deps)
+    await until(() => local.cp.beats().length >= 1, "first beat")
+    local.stop()
+
+    expect(await running).toBe(0)
+    expect((await local.deps.store.load())?.control_plane_url).toBe("http://127.0.0.1:2593")
+    await fs.rm(local.home, { recursive: true, force: true })
+    await fs.rm(local.root, { recursive: true, force: true })
+  })
+
   test("without state or a token file it explains how to mint an invitation and exits 78", async () => {
     expect(await connect([], h.deps)).toBe(78)
     expect(h.lines.join("\n")).toContain("claxedo host invite --name <machine> --root <dir>")

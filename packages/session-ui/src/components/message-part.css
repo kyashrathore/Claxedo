@@ -300,6 +300,21 @@
 
 .ui-tool-image {
   margin-top: 6px;
+
+  [data-slot="tool-image-open"] {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: var(--radius-md);
+
+    &:focus-visible {
+      outline: 2px solid var(--text-interactive-base);
+      outline-offset: 2px;
+    }
+  }
 }
 
 .ui-tool-image-unavailable {
@@ -394,6 +409,7 @@
 }
 
 [data-component="tool-output"] {
+  color: var(--v2-text-text-base);
   white-space: pre;
   padding: var(--transcript-card-padding-y, 8px) var(--transcript-card-padding-x, 10px);
   margin-bottom: var(--transcript-card-gap, 24px);

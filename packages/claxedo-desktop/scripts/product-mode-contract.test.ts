@@ -113,6 +113,25 @@ describe("desktop server launch wiring", () => {
     expect(renderer).not.toContain("configureHttpMachineRemoteAccess")
   })
 
+  test("presents the daemon capability under the header the daemon reads it from", () => {
+    // The desktop's main composition is forbidden from importing
+    // `@claxedo/local-server` (see the product-boundary policy), so the two
+    // halves of this protocol are two literals in two packages. They are the
+    // whole authority boundary: a mismatch leaves the daemon refusing its own
+    // application, which is a startup that looks like a hung renderer.
+    const presenter = read("src/main/daemon-request.ts")
+    const verifier = fs.readFileSync(
+      path.join(localServerPackageDir(packageRoot), "src/app/daemon-admission.ts"),
+      "utf8",
+    )
+    const header = (source: string, name: string) =>
+      new RegExp(`export const ${name} = "([^"]+)"`).exec(source)?.[1]
+
+    expect(header(presenter, "CLAXEDO_DAEMON_CAPABILITY_HEADER")).toBe("x-claxedo-daemon-capability")
+    expect(header(verifier, "DAEMON_CAPABILITY_HEADER"))
+      .toBe(header(presenter, "CLAXEDO_DAEMON_CAPABILITY_HEADER"))
+  })
+
   test("declares its server dependency, rather than reaching into a source tree", () => {
     // A source-relative reach into a sibling package has no manifest edge, so
     // no dependency check can see it; both edges must be declared.

@@ -237,6 +237,40 @@ describe("decisions", () => {
     expect(h.stored()?.bootstrap, "the pending marker stays for the retry").toBeDefined()
   })
 
+  test("a cleartext control plane is refused before the marker is written and before the secret leaves", async () => {
+    const h = await freshHost()
+    // Not through `newHostState`, which refuses it: the state a redeem is
+    // handed could also have come from an older file or another caller.
+    const cleartext = { ...h.state, control_plane_url: "http://control-plane.test" }
+
+    const error = await h.redeem({ state: cleartext }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostConnectDecisionError)
+    expect(error).toMatchObject({ exitCode: 78 })
+    expect(String(error)).toMatch(/must be https.*enroll against an https/s)
+    expect(h.cp.log, "the invitation secret never reached the wire").toEqual([])
+    expect(h.memory.files.has(STATE_FILE), "not even a pending enrollment is persisted for it").toBe(false)
+    expect(h.memory.files.has(TOKEN_FILE), "and the single-use token is still there to redeem properly").toBe(true)
+  })
+
+  test("a redeem that is redirected is a decision, and the secret is not re-sent to where it points", async () => {
+    const h = await freshHost()
+    const seen: Array<{ url: URL; redirect: RequestInit["redirect"] }> = []
+    const redirecting: FetchLike = async (url, init) => {
+      seen.push({ url, redirect: init.redirect })
+      return new Response(null, { status: 308, headers: { location: "https://attacker.test/api/claxedo/host/enrollments/redeem" } })
+    }
+
+    const error = await h.redeem({ fetch: redirecting }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostConnectDecisionError)
+    expect(error).toMatchObject({ exitCode: 78 })
+    expect(String(error)).toContain("with a redirect (308)")
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.redirect).toBe("manual")
+    expect(seen[0]?.url.host).toBe("control-plane.test")
+  })
+
   test("a control plane that never answers is a timeout, not a decision, and leaves the marker for the retry", async () => {
     const h = await freshHost()
     const never: FetchLike = () => new Promise(() => undefined)

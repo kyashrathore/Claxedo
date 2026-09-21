@@ -1,6 +1,8 @@
 import fs from "node:fs"
 import path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/types"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { DocumentAgentOpenError, type DocumentsBackend } from "@claxedo/server-core/documents/backend"
@@ -44,6 +46,7 @@ type Handle = LocalManagedDocumentHandle | RepositoryDocumentHandle
 export type LocalDocumentsBackendDependencies = Readonly<{
   resolveWorkspace(input: Readonly<{ workspaceId?: string; directory?: string }>): Promise<Workspace | undefined>
   sessionMeta(sessionId: string): Promise<SessionMeta | undefined>
+  sessionAuthority?: Pick<WorkspaceAuthority, "authorizeSessionWrite">
   dataDir(): string
   reportError(error: unknown, context?: { tags?: Record<string, string>; extra?: Record<string, unknown> }): void
   runGit(
@@ -425,7 +428,7 @@ export function createLocalDocumentsBackend(
       if (!updated) throw new DocumentNotFoundError(moved.documentId)
       return updated
     },
-    async agentOpen(entry: DocumentIndexEntry, sessionId: string) {
+    async agentOpen(entry: DocumentIndexEntry, sessionId: string, context: { auth?: SignedControlPlaneAuth; origin: string }) {
       if (entry.placement_kind !== "local") {
         throw new DocumentAgentOpenError(
           409,
@@ -435,6 +438,19 @@ export function createLocalDocumentsBackend(
       }
       const session = await dependencies.sessionMeta(sessionId)
       if (!session) throw new DocumentAgentOpenError(404, "document_session_not_found", "Session not found")
+      const authorizeSession = async () => {
+        if (!context.auth) return
+        if (!dependencies.sessionAuthority || !session.workspaceID) {
+          throw new DocumentAgentOpenError(503, "document_session_authority_unavailable", "Private session authority is unavailable")
+        }
+        try {
+          await dependencies.sessionAuthority.authorizeSessionWrite(context.auth, { sessionId, workspaceId: session.workspaceID })
+        } catch (error) {
+          if (error instanceof ControlPlaneAuthError) throw new DocumentAgentOpenError(error.status, error.code, error.message)
+          throw new DocumentAgentOpenError(503, "document_session_authority_unavailable", "Private session authority is unavailable")
+        }
+      }
+      await authorizeSession()
       if (
         !sessionMatchesDocumentProject({
           documentProjectId: entry.project_id,
@@ -508,6 +524,7 @@ export function createLocalDocumentsBackend(
           markdown: read.markdown,
           baseVersion: read.version,
           sync: async (markdown, expectedVersion) => {
+            await authorizeSession()
             const written = await workspace.write(handle, {
               markdown,
               expectedVersion: toDocumentVersion(expectedVersion),

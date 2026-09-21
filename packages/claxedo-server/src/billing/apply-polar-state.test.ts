@@ -174,6 +174,18 @@ describe("subscription.* event translation", () => {
   test("a subscription without metadata.org_id is unattributable and yields nothing (fail-closed)", () => {
     expect(subscriptionEventToApplyArgs(wireSubscription({ metadata: {} }), PRODUCTS)).toBeUndefined()
   })
+
+  test("a subscription with neither modified_at nor created_at yields nothing, never a now() stamp", () => {
+    expect(subscriptionEventToApplyArgs(wireSubscription({ modified_at: undefined }), PRODUCTS)).toBeUndefined()
+  })
+
+  test("created_at alone anchors the event in the order", () => {
+    const args = subscriptionEventToApplyArgs(
+      wireSubscription({ modified_at: undefined, created_at: "2026-07-12T09:00:00.000Z" }),
+      PRODUCTS,
+    )
+    expect(args!.source_ts).toBe(Date.parse("2026-07-12T09:00:00.000Z"))
+  })
 })
 
 describe("empty product allowlist", () => {

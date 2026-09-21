@@ -29,6 +29,8 @@ describe("provider-neutral private-session authority contract", () => {
       "authorizeSessionRead",
       "authorizeSessionWrite",
       "authorizeRuntimeSession",
+      "authorizeRuntimeSessionStart",
+      "authorizeRuntimeSessionStartStatus",
       "grantSessionParticipant",
       "revokeSessionParticipant",
       "listSessions",

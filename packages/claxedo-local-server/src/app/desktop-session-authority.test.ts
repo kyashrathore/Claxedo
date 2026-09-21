@@ -7,6 +7,7 @@ import path from "node:path"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { startLocalServer, type LocalServer } from "./start-local-server"
+import { testDaemon } from "./test-support/daemon"
 import { setLocalHostEndpoints } from "../deployments/local/host-session-authority"
 
 /**
@@ -35,6 +36,7 @@ type AuthorityCall = { action: string; writeClass?: string; sessionId?: string; 
 let dataDir: string
 let previousDataDir: string | undefined
 let server: LocalServer | undefined
+let identity: ReturnType<typeof testDaemon>
 let authority: Server | undefined
 let authorityUrl: string
 let workspaceId: string
@@ -153,8 +155,10 @@ beforeEach(async () => {
 
   const port = await freePort()
   origin = `http://127.0.0.1:${port}`
+  identity = testDaemon()
   server = startLocalServer({
     port,
+    daemon: identity.daemon,
     runtimeProxyOptions: {
       // Stands in for the signature check `localHostRelayActor` does against
       // the relay's published key set: the token names the actor, and a token
@@ -197,7 +201,7 @@ async function resolveWorkspace() {
   const directory = path.join(dataDir, "project")
   mkdirSync(directory)
   execFileSync("git", ["init", directory])
-  const response = await fetch(
+  const response = await identity.call(
     `${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
   )
   expect(response.status).toBe(200)
@@ -225,7 +229,7 @@ describe("a serving desktop answers a relayed caller privately and its own user 
     const url = `${origin}/workspaces/${workspace}/session/ses_does_not_exist`
 
     const relayedRead = await status(url, relayed("member-token"))
-    const directRead = await status(url)
+    const directRead = await status(url, identity.capability)
 
     expect(relayedRead.code).toBe(403)
     expect(relayedRead.error).toBe("workspace_authorization_denied")
@@ -275,7 +279,7 @@ describe("a serving desktop answers a relayed caller privately and its own user 
     expect(await relayedCreate.json()).toMatchObject({ error: { code: "session_reservation_required" } })
     // The direct create is refused by the missing harness, never by a
     // reservation it was not asked for.
-    const directCreate = await create({})
+    const directCreate = await create(identity.capability)
     expect(directCreate.status).not.toBe(400)
   })
 
@@ -298,7 +302,7 @@ describe("a serving desktop answers a relayed caller privately and its own user 
     expect(authorityCalls.map((call) => `${call.action}:${call.actorId}`)).toEqual([`write:${OWNER.actorId}`])
 
     authorityCalls.length = 0
-    await prompt({})
+    await prompt(identity.capability)
     expect(authorityCalls).toEqual([])
   })
 })
@@ -329,8 +333,8 @@ describe("the workspace event stream", () => {
   test("the machine's own user reads both the workspace stream and the host aggregate without an authority", async () => {
     const workspace = await resolveWorkspace()
 
-    const workspaceStream = await status(`${origin}/workspaces/${workspace}/api/wr/events`)
-    const aggregate = await status(`${origin}/api/wr/events`)
+    const workspaceStream = await status(`${origin}/workspaces/${workspace}/api/wr/events`, identity.capability)
+    const aggregate = await status(`${origin}/api/wr/events`, identity.capability)
 
     expect(workspaceStream.code).toBe(200)
     expect(aggregate.code).toBe(200)
@@ -443,11 +447,11 @@ describe("the composition's own relay actor", () => {
     origin = `http://127.0.0.1:${port}`
     // No `runtimeProxyOptions`: `localHostRelayActor` is the only thing here
     // that can decide whether a relayed bearer names an actor.
-    server = startLocalServer({ port })
+    server = startLocalServer({ port, daemon: identity.daemon })
     await server.ready
     const workspace = await resolveWorkspace()
 
-    const serving = await fetch(`${origin}/api/claxedo/host-serving`, {
+    const serving = await identity.call(`${origin}/api/claxedo/host-serving`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -477,7 +481,7 @@ describe("the composition's own relay actor", () => {
     expect(keySetRequests).toContain("/.well-known/jwks.json")
     expect(authorityCalls).toEqual([])
 
-    await fetch(`${origin}/api/claxedo/host-serving`, {
+    await identity.call(`${origin}/api/claxedo/host-serving`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ credential: null }),

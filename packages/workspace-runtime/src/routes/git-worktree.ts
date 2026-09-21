@@ -1,13 +1,15 @@
 import { Hono } from "hono"
 import { isBoolean, isNonEmptyString, isRecord, isString } from "@claxedo/helpers/guards"
 import { parsePositiveInteger } from "@claxedo/helpers"
-import { GitTimeoutError } from "../git"
-import { assertTarget, WorkspaceTargetError } from "../target"
+import { gitTopLevel, GitTimeoutError, withGitWriteLock } from "../git"
+import { assertTarget, hasRegisteredWorkspaceDirectories, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
   GIT_LOG_DEFAULT_LIMIT,
   GitWorktreeError,
+  gitCommitAffectedPaths,
   gitCommitStaged,
+  gitIndexTree,
   gitLog,
   gitPush,
   gitStage,
@@ -16,6 +18,13 @@ import {
 } from "../workspace-files/git-worktree"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { denyWorkspaceViewers } from "./workspace-role"
+import {
+  authorizeWorktreeTarget,
+  deniedWorktreeFilter,
+  type WorktreeTargetAccessOptions,
+  type WorktreeTargetContext,
+  type WorktreeTargetRequest,
+} from "./worktree-target-access"
 
 type GitRouteContext = {
   req: {
@@ -58,7 +67,30 @@ function pathList(body: unknown) {
   return paths
 }
 
-export function GitWorktreeRoutes() {
+export function GitWorktreeRoutes(options: WorktreeTargetAccessOptions = {}) {
+  /** The repository this request runs Git in, or the refusal that stands in for it. */
+  const scoped = async (
+    c: WorktreeTargetContext,
+    request: Omit<WorktreeTargetRequest, "directory">,
+  ): Promise<string | Response> => {
+    const base = directory(c)
+    return await authorizeWorktreeTarget(c, options, { ...request, directory: base }) ?? base
+  }
+
+  /**
+   * Runs a route that changes the index while holding it, so a stage cannot
+   * land between a commit reading what is staged and committing it.
+   *
+   * Only when this workspace has per-session worktrees: with none registered
+   * there is nothing private for a concurrent write to add, and the key costs
+   * a process to resolve. The key is the repository git reports, which is what
+   * owns the index — a linked worktree reports itself and has its own.
+   */
+  const holdingIndex = async <T>(base: string, run: () => Promise<T>): Promise<T> =>
+    hasRegisteredWorkspaceDirectories()
+      ? await withGitWriteLock(await gitTopLevel(base), run)
+      : await run()
+
   return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
@@ -66,22 +98,41 @@ export function GitWorktreeRoutes() {
       return c.json(body, status)
     })
     .get("/status", async (c) => {
-      return c.json(await gitWorktreeStatus(directory(c)))
+      const base = await scoped(c, { operation: "worktree_read" })
+      if (typeof base !== "string") return base
+      const status = await gitWorktreeStatus(base)
+      // Porcelain names every path from the repository and reports all of it,
+      // so a worktree that is an ancestor or a sibling of the served directory
+      // is in this answer too. `--untracked-files=all` walks the working tree
+      // as well. A rename is dropped on either end: the path it came from is a
+      // path of that worktree too.
+      const visible = await deniedWorktreeFilter(c, options, { directory: base, bases: ["repository"] })
+      return c.json({
+        ...status,
+        staged: status.staged.filter((entry) => visible(entry.path, entry.from)),
+        unstaged: status.unstaged.filter((entry) => visible(entry.path, entry.from)),
+      })
     })
     .get("/log", async (c) => {
+      const base = await scoped(c, { operation: "worktree_read" })
+      if (typeof base !== "string") return base
       const limit = parsePositiveInteger(c.req.query("limit")) ?? GIT_LOG_DEFAULT_LIMIT
-      return c.json({ commits: await gitLog(directory(c), limit) })
+      return c.json({ commits: await gitLog(base, limit) })
     })
     .post("/stage", denyWorkspaceViewers(WRITE_DENIED), async (c) => {
       const paths = pathList(await boundedJsonBody(c))
       if (!paths) return c.json(errorBody("git_paths_required", "paths must be a non-empty string array"), 400)
-      await gitStage(directory(c), paths)
+      const base = await scoped(c, { operation: "worktree_write", paths, subtree: true })
+      if (typeof base !== "string") return base
+      await holdingIndex(base, () => gitStage(base, paths))
       return c.body(null, 204)
     })
     .post("/unstage", denyWorkspaceViewers(WRITE_DENIED), async (c) => {
       const paths = pathList(await boundedJsonBody(c))
       if (!paths) return c.json(errorBody("git_paths_required", "paths must be a non-empty string array"), 400)
-      await gitUnstage(directory(c), paths)
+      const base = await scoped(c, { operation: "worktree_write", paths, subtree: true })
+      if (typeof base !== "string") return base
+      await holdingIndex(base, () => gitUnstage(base, paths))
       return c.body(null, 204)
     })
     .post("/commit-staged", denyWorkspaceViewers(WRITE_DENIED), async (c) => {
@@ -90,7 +141,26 @@ export function GitWorktreeRoutes() {
       const amend = isRecord(body) ? body.amend : undefined
       if (message === undefined) return c.json(errorBody("git_empty_message", "message must be a string"), 400)
       if (amend !== undefined && !isBoolean(amend)) return c.json(errorBody("git_invalid_body", "amend must be a boolean"), 400)
-      return c.json(await gitCommitStaged(directory(c), { message, amend }))
+      const base = await scoped(c, { operation: "worktree_write" })
+      if (typeof base !== "string") return base
+      return await holdingIndex(base, async () => {
+        if (!hasRegisteredWorkspaceDirectories()) return c.json(await gitCommitStaged(base, { message, amend }))
+        // The request names a message; the index names the files. Whatever put
+        // them there, publishing them is this caller's act — so the index is
+        // read again after the authority answers, because the lock binds this
+        // process and the session's own agent runs its own git.
+        const authorized = await gitIndexTree(base)
+        const denied = await authorizeWorktreeTarget(c, options, {
+          operation: "worktree_write",
+          directory: base,
+          resolved: await gitCommitAffectedPaths(base, { amend }),
+        })
+        if (denied) return denied
+        if (await gitIndexTree(base) !== authorized) {
+          throw new GitWorktreeError("git_conflict", "the index changed while the commit was authorized")
+        }
+        return c.json(await gitCommitStaged(base, { message, amend }))
+      })
     })
     .post("/push", denyWorkspaceViewers(WRITE_DENIED), async (c) => {
       const body = await boundedJsonBody(c)
@@ -98,6 +168,18 @@ export function GitWorktreeRoutes() {
       if (setUpstream !== undefined && !isBoolean(setUpstream)) {
         return c.json(errorBody("git_invalid_body", "setUpstream must be a boolean"), 400)
       }
-      return c.json(await gitPush(directory(c), { setUpstream }))
+      const base = directory(c)
+      // A push sends the branch, not a file list, so there is no path to
+      // narrow it by: the target is the whole repository, and the question is
+      // whether this caller may act for every session whose work it carries.
+      const tree = hasRegisteredWorkspaceDirectories() ? await gitTopLevel(base) : base
+      const denied = await authorizeWorktreeTarget(c, options, {
+        operation: "worktree_write",
+        directory: base,
+        paths: [tree],
+        subtree: true,
+      })
+      if (denied) return denied
+      return c.json(await gitPush(base, { setUpstream }))
     })
 }

@@ -1,5 +1,6 @@
 import type { AgentHarnessAdapterHealth } from "@claxedo/agent-sdk-runtime/adapters"
 import type { WorkspaceRuntimeRouteAuthBoundary, WorkspaceRuntimeServiceExposure } from "../server"
+import type { WorkspaceConnectionState } from "../workspace/host"
 
 export type WorkspaceRuntimeLivenessInput = {
   state: string
@@ -8,6 +9,7 @@ export type WorkspaceRuntimeLivenessInput = {
     | { kind: "connection"; connectionId: string }
   error?: string | null
   harnessHealth: AgentHarnessAdapterHealth
+  connectionState?: WorkspaceConnectionState
   routeAuthBoundary: WorkspaceRuntimeRouteAuthBoundary
   serviceExposure: WorkspaceRuntimeServiceExposure
   exposure?: { kind: string }
@@ -27,6 +29,7 @@ export function workspaceRuntimeLivenessResponse(input: WorkspaceRuntimeLiveness
     ...(input.harness ? { harness: input.harness, activeHarness: input.harness } : {}),
     error: input.error || null,
     harnessHealth: input.harnessHealth,
+    ...(input.connectionState ? { connectionState: input.connectionState } : {}),
   }
 }
 

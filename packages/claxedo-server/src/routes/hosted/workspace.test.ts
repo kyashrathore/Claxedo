@@ -4,6 +4,7 @@ import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
+import { D1WorkspaceAuthorityError } from "../../authority/adapters/d1/workspace-authority"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 
@@ -46,6 +47,7 @@ function machineRow(hostId: string, enrolledVia: "account" | "invitation") {
 function fakeAuthority(overrides: Record<string, unknown> = {}) {
   return {
     usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
+    authorizeWorkspaceCreate: vi.fn(async () => {}),
     openWorkspace: vi.fn(async () => ({
       allowed: true,
       role: "owner",
@@ -279,6 +281,21 @@ describe("host assignment (POST /:id/host-assignment)", () => {
     const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
     expect(res.status).toBe(503)
     expect(await res.json()).toMatchObject({ error: { code: "workspace_authority_unavailable" } })
+  })
+
+  test("a repository another project already holds answers the caller a conflict, not a server fault", async () => {
+    const createCloudWorkspace = vi.fn(async () => {
+      throw new D1WorkspaceAuthorityError("resource_conflict", "Repository is already assigned to a different project")
+    })
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager })
+
+    const res = await app.fetch(post("/create", { workspaceName: "Conflicting", repoUrl: "https://github.com/a/b" }))
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "resource_conflict" } })
+    expect(ensure).not.toHaveBeenCalled()
   })
 
   test("requires a signed bearer token", async () => {
@@ -945,6 +962,112 @@ describe("hosted cloud workspace create (POST /create)", () => {
     await expect(res.json()).resolves.toMatchObject({
       error: { code: "cloud_workspace_source_required" },
     })
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
+  test("rejects a repoUrl this server will not clone", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({
+      authority: authority,
+      sandboxManager: { ensure } as unknown as SandboxManager,
+    })
+
+    for (const repoUrl of ["file:///etc/passwd", "ftp://example.com/repo.git", "not a url"]) {
+      const res = await app.fetch(post("/create", { workspaceName: "Bad", repoUrl }))
+      expect(res.status).toBe(400)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "repo_url_invalid" } })
+    }
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
+  test("asks the authority to admit a create that names no organization", async () => {
+    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager })
+
+    const res = await app.fetch(post("/create", { workspaceName: "Implicit", repoUrl: "https://github.com/a/b" }))
+
+    expect(res.status).toBe(200)
+    expect(authority.authorizeWorkspaceCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ user: expect.objectContaining({ subject: "user_1" }) }),
+      {},
+    )
+  })
+
+  test("hands the admission the same selectors the creation will resolve its organization from", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager })
+
+    const res = await app.fetch(post("/create", {
+      orgId: " org_acme ",
+      projectId: " proj_1 ",
+      workspaceName: "Selected",
+      repoUrl: "https://github.com/a/b",
+    }))
+
+    expect(res.status).toBe(200)
+    expect(authority.authorizeWorkspaceCreate).toHaveBeenCalledWith(expect.anything(), {
+      orgId: "org_acme",
+      projectId: "proj_1",
+    })
+    // The project the authority admitted is the project it is then asked to
+    // create in; a divergence here would authorize one tenant and write another.
+    expect((createCloudWorkspace.mock.calls[0] as unknown[])[1]).toMatchObject({
+      orgId: "org_acme",
+      projectId: "proj_1",
+    })
+  })
+
+  test("a refused admission creates nothing and provisions nothing", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const repositoryForAuth = vi.fn()
+    const authority = fakeAuthority({
+      createCloudWorkspace,
+      authorizeWorkspaceCreate: vi.fn(async () => {
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority denied workspace access")
+      }),
+    })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const requireCloudWorkspaceEntitlement = vi.fn(async () => undefined)
+    const { app } = buildApp({
+      authority,
+      sandboxManager: { ensure } as unknown as SandboxManager,
+      options: { requireCloudWorkspaceEntitlement, connections: { repositoryForAuth } },
+    })
+
+    const res = await app.fetch(post("/create", {
+      orgId: "org_acme",
+      connectionId: "conn_1",
+      repo: { fullName: "acme/widgets" },
+    }))
+
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+    // Refused before the clone token is minted and before the paid-capability
+    // gate spends a billing read on a caller who may not create at all.
+    expect(repositoryForAuth).not.toHaveBeenCalled()
+    expect(requireCloudWorkspaceEntitlement).not.toHaveBeenCalled()
+  })
+
+  test("an authority that cannot admit a create refuses it", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    delete (authority as { authorizeWorkspaceCreate?: unknown }).authorizeWorkspaceCreate
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager })
+
+    const res = await app.fetch(post("/create", { workspaceName: "Unadmitted", repoUrl: "https://github.com/a/b" }))
+
+    expect(res.status).toBe(503)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "workspace_authority_unavailable" } })
     expect(createCloudWorkspace).not.toHaveBeenCalled()
     expect(ensure).not.toHaveBeenCalled()
   })

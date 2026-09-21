@@ -4,6 +4,7 @@ import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import type { RuntimeEventEnvelopeInput } from "../runtime-event-hub"
 import type { CompatEnvelope } from "../compat-events"
 import { permissionAsked, permissionReplied, questionAsked, questionRejected } from "../compat-events"
+import type { SessionTurnOrigin } from "../session-access-policy"
 import { childSummary, createChildSessionHost, wakeMessageId, type ChildSessionHostInput } from "./session-children"
 
 const DIRECTORY = "/workspace"
@@ -20,23 +21,44 @@ function harness(input: {
   messages?: Record<string, AgentMessage[]>
   startTurn?: ChildSessionHostInput["startTurn"]
   subscribe?: (fn: (event: CompatEnvelope) => void) => () => void
+  /** Durable state a "restart" keeps: pass both to rebuild a host over them. */
+  store?: MemoryRuntimeStore
+  origins?: Map<string, SessionTurnOrigin>
+  /** Runs inside the origin write, where a racing caller would land. */
+  onRecord?: () => Promise<void>
+  getSession?: ChildSessionHostInput["getSession"]
 } = {}) {
-  const store = new MemoryRuntimeStore()
+  const store = input.store ?? new MemoryRuntimeStore()
+  const origins = input.origins ?? new Map<string, SessionTurnOrigin>()
   const sessions = new Map<string, AgentSession>()
   for (const [id, session] of Object.entries(input.sessions ?? {})) {
     sessions.set(id, { id, directory: DIRECTORY, time: { created: 1, updated: 1 }, ...session })
   }
   const published: RuntimeEventEnvelopeInput[] = []
-  const turns: Array<{ parentSessionId: string; messageID?: string; text: string; author: string }> = []
+  const turns: Array<{
+    parentSessionId: string
+    messageID?: string
+    text: string
+    author: string
+    origin?: SessionTurnOrigin
+  }> = []
   const settle: Array<() => void> = []
+  const originKey = (parentSessionId: string, subagentKey: string) => `${parentSessionId}\0${subagentKey}`
   const host = createChildSessionHost({
     admission: { admit: (row) => store.admit(row), markPublished: (parent, id) => store.markPublished(parent, id) },
     secret: () => "test-secret",
+    origins: {
+      record: async (parentSessionId, subagentKey, origin) => {
+        await input.onRecord?.()
+        if (!origins.has(originKey(parentSessionId, subagentKey))) origins.set(originKey(parentSessionId, subagentKey), origin)
+      },
+      read: (parentSessionId, subagentKey) => origins.get(originKey(parentSessionId, subagentKey)),
+    },
     listSubagents: (parentSessionId) => store.listSubagents(parentSessionId),
     pendingWakes: () => store.listSubagents("parent")
       .filter((row) => row.wake === "pending" && row.childSessionId)
       .map((row) => ({ parentSessionId: "parent", childSessionId: row.childSessionId!, directory: DIRECTORY })),
-    getSession: (sessionId) => sessions.get(sessionId) ?? null,
+    getSession: input.getSession ?? ((sessionId) => sessions.get(sessionId) ?? null),
     getMessages: (sessionId) => input.messages?.[sessionId] ?? [],
     publishRuntime: (event) => {
       published.push(event)
@@ -48,15 +70,31 @@ function harness(input: {
         messageID: turn.body.messageID,
         text: turn.body.parts?.map((part) => (part.type === "text" ? part.text : "")).join("") ?? "",
         author: turn.author.id,
+        ...(turn.origin ? { origin: turn.origin } : {}),
       })
       settle.push(turn.onSettled)
       return "started"
     }),
   })
-  return { host, store, sessions, published, turns, settle }
+  return { host, store, origins, sessions, published, turns, settle }
+}
+
+const ORIGIN: SessionTurnOrigin = {
+  provenance: "relay-replayed",
+  actor: { actorId: "https://idp.example|bob", actorKind: "human" },
+  authority: { managed: true, workspaceId: "workspace_1", orgId: "org_1", role: "editor" },
 }
 
 describe("host-owned child sessions", () => {
+  test("late turn callbacks do not read a disposed runtime", async () => {
+    const item = harness({ getSession: () => { throw new Error("Workspace runtime is disposed") } })
+    await item.host.dispose()
+    await item.host.onTurnStarted("child", DIRECTORY)
+    await item.host.onTurnSettled("child", DIRECTORY)
+    expect(item.turns).toEqual([])
+    expect(item.published).toEqual([])
+  })
+
   test("derives idempotent child ids from the secret, caller identity and request id", () => {
     const { host } = harness()
     const first = host.deriveSessionId({ callerIdentity: "parent", clientRequestId: "req-1" })
@@ -116,6 +154,79 @@ describe("host-owned child sessions", () => {
 
     await item.host.onTurnSettled("child", DIRECTORY)
     expect(item.turns).toHaveLength(1)
+  })
+
+  test("a wake runs as the actor that created the child, and shows the child as its author", async () => {
+    const item = harness({
+      sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
+      messages: { child: [assistant("m1", "done")] },
+    })
+    await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude", origin: ORIGIN })
+    await item.host.onTurnSettled("child", DIRECTORY)
+
+    expect(item.turns).toMatchObject([{
+      parentSessionId: "parent",
+      author: "child",
+      origin: ORIGIN,
+    }])
+  })
+
+  test("nothing can wake a child whose origin write has not landed: the row becomes wakeable only at settlement", async () => {
+    // The window a racing recovery would have to exploit is between admitting
+    // the child and writing its origin. A row is only offered once its wake is
+    // pending, and only settlement sets that, so the window has nothing in it.
+    let item: ReturnType<typeof harness>
+    const duringWrite: Array<{ wake?: string; turns: number }> = []
+    item = harness({
+      sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
+      messages: { child: [assistant("m1", "done")] },
+      onRecord: async () => {
+        await item.host.recover()
+        duringWrite.push({ wake: item.store.listSubagents("parent")[0]?.wake, turns: item.turns.length })
+      },
+    })
+    await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude", origin: ORIGIN })
+
+    expect(duringWrite).toEqual([{ wake: undefined, turns: 0 }])
+
+    await item.host.onTurnSettled("child", DIRECTORY)
+    expect(item.turns).toMatchObject([{ messageID: "msg_wake_child_m1", origin: ORIGIN }])
+  })
+
+  test("a restart re-offers the wake under the stored actor, once, and a second recovery adds nothing", async () => {
+    const first = harness({
+      sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
+      messages: { child: [assistant("m1", "done")] },
+      startTurn: async () => "busy",
+    })
+    await first.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude", origin: ORIGIN })
+    await first.host.onTurnSettled("child", DIRECTORY)
+    expect(first.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
+
+    const restarted = harness({
+      store: first.store,
+      origins: first.origins,
+      sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
+      messages: { child: [assistant("m1", "done")] },
+    })
+    await restarted.host.recover()
+
+    expect(restarted.turns).toMatchObject([{ messageID: "msg_wake_child_m1", origin: ORIGIN }])
+    expect(restarted.store.listSubagents("parent")).toMatchObject([{ wake: "delivered" }])
+    await restarted.host.recover()
+    expect(restarted.turns).toHaveLength(1)
+  })
+
+  test("a child admitted with no origin offers a wake naming no actor, which a managed host refuses", async () => {
+    const item = harness({
+      sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
+      messages: { child: [assistant("m1", "done")] },
+    })
+    await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude" })
+    await item.host.onTurnSettled("child", DIRECTORY)
+
+    expect(item.turns).toMatchObject([{ messageID: "msg_wake_child_m1" }])
+    expect(item.turns[0].origin).toBeUndefined()
   })
 
   test("the wake turn's message id is msg_-shaped and derived from the child and its reply", () => {

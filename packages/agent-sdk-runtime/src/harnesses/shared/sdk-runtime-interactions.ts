@@ -10,11 +10,37 @@ import type { AgentInteractionResult } from "../../adapter-contract"
 import { requireWorkspaceDirectory } from "../../target"
 import type { PendingPermission, PendingQuestion, SdkRuntimeStore } from "./sdk-runtime-driver"
 
+/** One live continuation settles only after its canonical question event is durable. */
+export class SessionQuestionInteractions<T extends { sessionId: string }> {
+  readonly pending = new Map<string, T>()
+  constructor(private readonly commit: (pending: T, event: CompatEvent) => CompatEvent) {}
+
+  settle(id: string, answers: AgentQuestionAnswer[] | undefined, resolve: (pending: T) => void): AgentInteractionResult | undefined {
+    const pending = this.pending.get(id)
+    if (!pending) return
+    const event = this.commit(pending, answers !== undefined
+      ? questionReplied(pending.sessionId, id, answers)
+      : questionRejected(pending.sessionId, id))
+    this.pending.delete(id)
+    resolve(pending)
+    return { events: [event] }
+  }
+}
+
 export class SdkRuntimeInteractions {
   readonly permissions = new Map<string, PendingPermission>()
-  readonly questions = new Map<string, PendingQuestion>()
+  private readonly questionOwner: SessionQuestionInteractions<PendingQuestion>
+  readonly questions: Map<string, PendingQuestion>
 
-  constructor(private readonly store: SdkRuntimeStore) {}
+  constructor(private readonly store: SdkRuntimeStore) {
+    this.questionOwner = new SessionQuestionInteractions((pending, payload) => this.store.appendEvent({
+      sessionId: pending.sessionId, agentSessionId: pending.agentSessionId, payload,
+      source: payload.type === "question.replied"
+        ? { dir: "out", method: "question.reply", frame: { answers: payload.properties.answers } }
+        : { dir: "out", method: "question.reject", frame: {} },
+    }).payload)
+    this.questions = this.questionOwner.pending
+  }
 
   listPermissions(directory: string): AgentPermission[] {
     directory = requireWorkspaceDirectory(directory)
@@ -26,6 +52,7 @@ export class SdkRuntimeInteractions {
     binding: AgentExecutionBinding,
     permissionId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
+    optionId?: string,
   ): AgentInteractionResult | void {
     const directory = requireWorkspaceDirectory(binding.directory)
     const row = this.store.listPermissions(directory).find(
@@ -38,6 +65,13 @@ export class SdkRuntimeInteractions {
     if (pending && !row) {
       throw new Error(`Permission ${permissionId} is not pending in workspace ${directory}`)
     }
+    if (row?.options !== undefined) {
+      if (optionId === undefined || !row.options.some((option) => option.id === optionId)) {
+        throw new Error(`Permission ${permissionId} requires one of its offered options`)
+      }
+    } else if (optionId !== undefined) {
+      throw new Error(`Permission ${permissionId} does not offer provider options`)
+    }
     const events: CompatEvent[] = []
     if (row) {
       const committed = this.store.appendEvent({
@@ -46,15 +80,15 @@ export class SdkRuntimeInteractions {
         payload: permissionReplied(
           row.sessionID,
           permissionId,
-          decision === "allow_always" ? "always" : decision === "allow_once" ? "once" : "reject",
+          optionId !== undefined ? { optionId } : decision === "allow_always" ? "always" : decision === "allow_once" ? "once" : "reject",
         ),
-        source: { dir: "out", method: "permission.reply", frame: { decision } },
+        source: { dir: "out", method: "permission.reply", frame: optionId !== undefined ? { optionId } : { decision } },
       })
       events.push(committed.payload)
     }
     if (!pending) return
     this.permissions.delete(permissionId)
-    pending.resolve(decision)
+    pending.resolve(decision, optionId)
     return events.length > 0 ? { events } : undefined
   }
 
@@ -67,15 +101,7 @@ export class SdkRuntimeInteractions {
   replyQuestion(binding: AgentExecutionBinding, questionId: string, answers: AgentQuestionAnswer[]): AgentInteractionResult | void {
     const pending = this.ownedQuestion(binding, questionId)
     if (!pending) return
-    const committed = this.store.appendEvent({
-      sessionId: pending.sessionId,
-      agentSessionId: pending.agentSessionId,
-      payload: questionReplied(pending.sessionId, questionId, answers),
-      source: { dir: "out", method: "question.reply", frame: { answers } },
-    })
-    this.questions.delete(questionId)
-    pending.resolve(answers)
-    return { events: [committed.payload] }
+    return this.questionOwner.settle(questionId, answers, (question) => question.resolve(answers))
   }
 
   rejectQuestion(binding: AgentExecutionBinding, questionId: string): AgentInteractionResult | void {
@@ -104,17 +130,7 @@ export class SdkRuntimeInteractions {
   }
 
   private rejectPendingQuestion(questionId: string): AgentInteractionResult | void {
-    const pending = this.questions.get(questionId)
-    if (!pending) return
-    const committed = this.store.appendEvent({
-      sessionId: pending.sessionId,
-      agentSessionId: pending.agentSessionId,
-      payload: questionRejected(pending.sessionId, questionId),
-      source: { dir: "out", method: "question.reject", frame: {} },
-    })
-    this.questions.delete(questionId)
-    pending.reject()
-    return { events: [committed.payload] }
+    return this.questionOwner.settle(questionId, undefined, (question) => question.reject())
   }
 
   resolvePermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny") {
@@ -134,7 +150,6 @@ export class SdkRuntimeInteractions {
   }
 
   rejectAllQuestions() {
-    for (const item of this.questions.values()) item.reject()
-    this.questions.clear()
+    for (const id of [...this.questions.keys()]) this.rejectPendingQuestion(id)
   }
 }

@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import {
+  cloudflareWorkerBaseUrl,
   isSandboxDriverID,
   listSandboxDrivers,
   sandboxDriverCredentialFields,
@@ -68,6 +69,11 @@ export function SandboxDriverSettingsRoutes(options: SandboxDriverSettingsRouteO
       const id = isSandboxDriverID(driverId) ? driverId : undefined
       if (!id) return c.json({ error: apiError("sandbox_driver_unsupported", "Unsupported sandbox driver") }, 400)
       const body = parseAuthBody(await c.req.json().catch(() => ({})))
+      if (id === "cloudflare") {
+        try { body.auth.worker_url = cloudflareWorkerBaseUrl(body.auth.worker_url ?? "") } catch {
+          return c.json({ error: apiError("sandbox_driver_endpoint_invalid", "Cloudflare Worker URL requires HTTPS without credentials, query or fragment") }, 400)
+        }
+      }
       const cfg = await loadUserConfig()
 
       const verification = await verifySandboxDriverKey(id, body.auth, options)

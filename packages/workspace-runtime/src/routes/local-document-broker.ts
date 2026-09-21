@@ -1,7 +1,7 @@
 import { Hono, type Context } from "hono"
 import { z } from "zod"
 import { verifyDocumentJobCapability } from "../document-job-capability"
-import { boundedJson, RequestBodyTooLargeError } from "./bounded-json"
+import { boundedJson, RequestBodyTooLargeError } from "./http"
 import { rec } from "../json-value"
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -17,7 +17,7 @@ const Input = z
     cloudWorkspaceId: z.string().min(1),
     sessionId: z.string().min(1),
     documentId: z.string().min(1),
-    operation: z.enum(["list", "read", "write", "resolve"]),
+    operation: z.enum(["list", "read", "write"]),
     markdown: z.string().optional(),
     expectedVersion: z.string().optional(),
   })

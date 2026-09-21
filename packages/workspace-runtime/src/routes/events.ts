@@ -3,7 +3,7 @@ import { attachSseFanout, type SseReplayBuffer } from "@claxedo/agent-sdk-runtim
 import { isRetainedCompatEvent, type CompatEnvelope, type EventSessionDeleted } from "@claxedo/agent-sdk-runtime/compat-events"
 import { presentationEventsFromRuntimeEnvelope } from "@claxedo/agent-event-runtime/projections/client-presentation"
 import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
-import type { AgentEventEnvelope } from "@claxedo/agent-runtime-contract"
+import type { AgentEventEnvelope, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import type { Context } from "hono"
 import { sep } from "node:path"
 import { errorBody } from "./error-body"
@@ -105,7 +105,7 @@ function isGapFrame(frame: StreamFrame): frame is WorkspaceEventGapFrame {
 
 function isControlFrame(frame: WorkspaceEventFrame): frame is { directory: string; payload: WorkspaceRuntimeEvent } {
   const type = frame.payload.type
-  return type.startsWith("pty.") || type.startsWith("process.") || type === "agent.lifecycle" || type === "session.lifecycle"
+  return type.startsWith("pty.") || type.startsWith("process.") || type.startsWith("connection.") || type === "agent.lifecycle" || type === "session.lifecycle"
 }
 
 /**
@@ -177,6 +177,7 @@ export type WorkspaceEventsOptions = EventDeliveryOptions<StreamFrame> & {
   /** The cwd a live pty was created under; a pty's later frames name only its id. */
   ptyDirectory?: (id: string) => string | undefined
   sessionParents?: WorkspaceEventParents
+  sessionStarts?: Pick<AgentSessionStarts, "get">
   sessionAccessPolicy?: SessionAccessPolicy
 }
 
@@ -370,19 +371,53 @@ export function streamWorkspaceEventFrames(c: Context, opened: OpenedWorkspaceEv
  * and a refusal there ends the stream. A session-scoped connection reads in
  * a scope of its own, whose ring numbers only that session's frames.
  *
- * Two bounds on that: a lease's renewal is refused once the runtime access
- * token behind it expires, so a connection lives at most one token lifetime
- * (ten minutes through the daemon's proxy, which mints one per request) and
- * then reconnects by cursor into the same actor-keyed scope; and a
- * self-hosted node's embedded policy admits the unscoped arm by the stamped
- * role with no lease, so a member removed from the workspace keeps that
- * arm's session-less frames until the connection closes — only its session
- * grants are re-asked. The relay path ends the stream at the next renewal.
+ * Relay-backed leases stop renewing when their parent runtime token expires.
+ * Embedded leases recheck current workspace membership directly. Both arms
+ * require finite leases, including for sessionless frames, and reconnect by
+ * cursor only after fresh admission.
  *
  * `close()` releases the bus subscription when the runtime is disposed, and
  * `frames` hands the same subscriptions' frames to a host serving several
  * runtimes on one stream.
  */
+function sessionStartEventDecision(
+  options: WorkspaceEventsOptions,
+  input: Parameters<EventDeliveryPolicy<StreamFrame>>[0],
+): Promise<"deliver" | "omit" | "terminate"> | undefined {
+  if (input.principal.mode === "unmanaged-local" || isGapFrame(input.event)) return undefined
+  const frame = input.event
+  const lifecycle = isControlFrame(frame) && frame.payload.type === "session.lifecycle" ? frame.payload : undefined
+  const sessionId = lifecycle?.start?.sessionId ?? workspaceEventFrameSessionId(frame)
+  if (!sessionId) return undefined
+  const start = options.sessionStarts?.get(sessionId)
+  if (!start) return lifecycle?.start ? Promise.resolve("omit") : undefined
+  if (start.status === "created") return undefined
+  const interaction = frame.payload.type.startsWith("question.") || frame.payload.type.startsWith("permission.")
+  if (!lifecycle && !interaction) return Promise.resolve("omit")
+  if (interaction && start.status !== "starting") return Promise.resolve("omit")
+  const binding = start.binding
+  const principal = input.principal
+  if (binding.workspaceId !== principal.workspaceId
+    || (options.workspaceId && binding.workspaceId !== options.workspaceId)
+    || realDirectoryPath(frame.directory) !== realDirectoryPath(binding.directory)
+    || (lifecycle?.start && (lifecycle.start.operationId !== binding.operationId
+      || lifecycle.start.workspaceId !== binding.workspaceId || lifecycle.start.connectionId !== binding.connectionId))) return Promise.resolve("omit")
+  const policy = options.sessionAccessPolicy
+  if (!policy) return Promise.resolve("omit")
+  const access = {
+    actor: { actorId: principal.actorId, actorKind: principal.actorKind },
+    authority: { managed: true as const, workspaceId: principal.workspaceId, orgId: principal.orgId, role: principal.role },
+    credential: principal.credential,
+    sessionId: binding.sessionId,
+    registrationOperationId: binding.operationId,
+    operation: lifecycle ? "session_meta_read" as const : "question_response" as const,
+  }
+  return Promise.resolve().then(() => lifecycle
+    ? policy.authorizeSessionStartStatus(access)
+    : policy.authorizeSessionStart(access)).then((decision) => decision.allowed ? "deliver" : decision.status === 403 ? "omit" : "terminate")
+    .catch(() => "terminate")
+}
+
 export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
   const bus = options.bus ?? workspaceRuntimeBus
   // A subagent child's frames are authorized and scoped as its parent's. The
@@ -391,6 +426,10 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
   const scopeSessionId = (frame: StreamFrame) => {
     const sessionId = workspaceEventFrameSessionId(frame)
     if (!sessionId) return undefined
+    // Startup interactions carry a local id before any session grant exists.
+    // Their reservation decision must not populate the source's session grants.
+    if (!isGapFrame(frame) && options.sessionStarts?.get(sessionId)?.status === "starting"
+      && (frame.payload.type.startsWith("question.") || frame.payload.type.startsWith("permission."))) return undefined
     return options.sessionParents?.parentSessionIdFor(sessionId) ?? deletedSessionParent(frame) ?? sessionId
   }
   const delivery: EventDeliveryPolicy<StreamFrame> = options.policy ?? defaultEventDeliveryPolicy
@@ -404,6 +443,8 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
     (input: Parameters<EventDeliveryPolicy<StreamFrame>>[0]) => {
       const sessionScope = input.principal.mode === "unmanaged-local" ? undefined : input.principal.sessionScope
       if (sessionScope && input.sessionId !== sessionScope) return "omit" as const
+      const startup = sessionStartEventDecision(options, input)
+      if (startup) return startup
       const decision = delivery(input)
       // Forgotten once THIS connection has decided the deletion, never before:
       // decided after its grant was gone, the deletion itself would read as a
@@ -475,7 +516,7 @@ export function workspaceEventsHandler(options: WorkspaceEventsOptions) {
       : admitted
     if (scope.managed) {
       delivery.holdSession?.(principal, scope.sessionId, { lease: scope.lease, expiresAt: scope.expiresAt })
-    } else if (scope.lease && scope.expiresAt !== undefined) {
+    } else if (scope.grant === "workspace") {
       delivery.holdHost?.(principal, { lease: scope.lease, expiresAt: scope.expiresAt })
     }
     const opened = source.open(principal)

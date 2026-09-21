@@ -84,6 +84,10 @@
     "@claxedo/agent-sdk-runtime/subagent-admission": {
       "status": "integration",
       "purpose": "Parent-scoped subagent observation admission."
+    },
+    "@claxedo/agent-sdk-runtime/stores/session-start": {
+      "status": "integration",
+      "purpose": "Durable session creation ownership on a host-supplied SQLite database."
     }
   },
   "docs": {
@@ -113,7 +117,8 @@
     "@claxedo/agent-sdk-runtime/adapters": "f0ac0907681940a48c174d208d936d4a7f274efa341bd46a2a73136314dd9aaa",
     "@claxedo/agent-sdk-runtime/message-page": "72be477359aa9a8f2dc2a530de60cb4274d8e785e2d54657826230bcb9ccc6b0",
     "@claxedo/agent-sdk-runtime/stores/memory": "dd058c9df07fd5e6e99ac97e52a1249e724f9e50372dd36abb7caa52984ec972",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "65648a54dffa86025648b342a0921690af76c990779bd2ce80520cf0248ca6a7"
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "65648a54dffa86025648b342a0921690af76c990779bd2ce80520cf0248ca6a7",
+    "@claxedo/agent-sdk-runtime/stores/session-start": "5dde19cfbf0617660f969558643d9ca3182448722f5c2d6a47dd0103d2beb311"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [
@@ -199,7 +204,9 @@
       "resolveTurnSystem",
       "sessionInstructionsByteLength",
       "sessionModelGroupJson",
-      "projectionRenewalDue"
+      "projectionRenewalDue",
+      "acceptsSessionTitle",
+      "boundSessionTitleSource"
     ],
     "@claxedo/agent-sdk-runtime/harnesses": [
       "ProcessLifecycleDisposedError",
@@ -220,6 +227,9 @@
       "SqliteRuntimeStore",
       "UnsupportedRuntimeStoreSchemaError",
       "createSqliteRuntimeStore"
+    ],
+    "@claxedo/agent-sdk-runtime/stores/session-start": [
+      "sqliteSessionStarts"
     ]
   },
   "symbols": {

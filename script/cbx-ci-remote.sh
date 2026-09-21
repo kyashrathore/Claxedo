@@ -254,6 +254,15 @@ run_unit() {
   OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=false bun turbo test --concurrency=2
 }
 
+# Native descriptor and symlink semantics; diagnostic subset of unit-linux.
+run_workspace_files() {
+  install_root
+  (
+    cd packages/workspace-runtime
+    bun test src/workspace-files/working-tree.test.ts src/routes/diff.test.ts src/target.test.ts
+  )
+}
+
 run_typecheck() {
   install_root
   build_dist_packages
@@ -430,6 +439,7 @@ case "$LANE" in
   diagnostics-linux) run_diagnostics ;;
   release-gates-linux-x64) run_release_gates_linux_x64 ;;
   unit-linux) run_unit ;;
+  workspace-files-linux) run_workspace_files ;;
   typecheck-linux) run_typecheck ;;
   e2e-core) run_e2e_core "$@" ;;
   e2e-onboarding) run_e2e_onboarding ;;

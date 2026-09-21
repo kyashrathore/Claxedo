@@ -46,6 +46,17 @@ import {
 } from "../http"
 import { assertRuntimeMutationAuth, runtimeSnapshotInput } from "./protocol"
 import { fetchUrl } from "../../test-support/fetch-calls"
+import { configToken } from "../../workspace/supervisor/control-token"
+import { runtimes, type WorkspaceRuntimeState } from "../../workspace/supervisor/store"
+
+function runtimeHeaders() {
+  const state: WorkspaceRuntimeState = {
+    ws: { id: "ws_1", directory: "/tmp/demo", kind: "cloud", created_at: 1, updated_at: 1 },
+    status: "ready", used_at: 1, crashes: 0, retry_at: 0, active: 0, holds: [],
+  }
+  runtimes.set("ws_1", state)
+  return { "content-type": "application/json", "x-workspace-id": "ws_1", authorization: `Bearer ${configToken(state)}` }
+}
 
 function services(): ControlPlaneServices {
   let projectedMessages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
@@ -80,6 +91,7 @@ function services(): ControlPlaneServices {
 describe("control plane HTTP protocol", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
+    runtimes.delete("ws_1")
   })
 
   beforeEach(() => {
@@ -198,7 +210,7 @@ describe("control plane HTTP protocol", () => {
     expect(svc.projectionStore.sync_session_messages).toHaveBeenCalledTimes(1)
   })
 
-  test("register and heartbeat delegate to workspace and sandbox manager state", async () => {
+  test("register and heartbeat forward liveness and activity, never identity", async () => {
     const svc = services()
     const register = vi.fn(async () => ({ ok: true as const, status: "ready" as const }))
     const heartbeat = vi.fn(async () => ({ ok: true as const, status: "ready" as const }))
@@ -214,9 +226,6 @@ describe("control plane HTTP protocol", () => {
       ptyCount: 1,
       processCount: 2,
       activeProcessCount: 1,
-      url: "https://runtime.example.com",
-      leaseId: "lease_1",
-      sandboxId: "sandbox_1",
       epoch: 2,
     }
 
@@ -224,27 +233,33 @@ describe("control plane HTTP protocol", () => {
     await heartbeatControlRuntime(svc, input)
 
     expect(mocks.updateWorkspace).toHaveBeenCalledWith("ws_1", { status: "ready" })
-    expect(register).toHaveBeenCalledWith(
-      "ws_1",
-      expect.objectContaining({
-        ok: true,
-        status: "ready",
-        url: "https://runtime.example.com",
-        sandboxId: "sandbox_1",
-        epoch: 2,
-        active: true,
-      }),
-    )
-    expect(heartbeat).toHaveBeenCalledWith(
-      "ws_1",
-      expect.objectContaining({
-        ok: true,
-        url: "https://runtime.example.com",
-        sandboxId: "sandbox_1",
-        epoch: 2,
-        active: true,
-      }),
-    )
+    const forwarded = { ok: true, epoch: 2, active: true, now: expect.any(Number) }
+    expect(register).toHaveBeenCalledWith("ws_1", forwarded)
+    expect(heartbeat).toHaveBeenCalledWith("ws_1", forwarded)
+  })
+
+  test("an unhealthy runtime is reported as not serving and leaves the workspace status alone", async () => {
+    const svc = services()
+    const heartbeat = vi.fn(async () => ({ ok: true as const, status: "unavailable" as const }))
+    svc.sandbox.sandboxManager = { heartbeat } as never
+    const base = {
+      workspaceId: "ws_1",
+      directory: "/tmp/demo",
+      profile: "workspace",
+      agentType: "opencode",
+      model: null,
+      ptyCount: 0,
+      processCount: 0,
+      activeProcessCount: 0,
+      epoch: 2,
+    }
+
+    await heartbeatControlRuntime(svc, { ...base, ok: true, status: "unhealthy" })
+    await heartbeatControlRuntime(svc, { ...base, ok: true, status: "ready", healthStatus: "unavailable" })
+
+    expect(heartbeat).toHaveBeenNthCalledWith(1, "ws_1", expect.objectContaining({ ok: false }))
+    expect(heartbeat).toHaveBeenNthCalledWith(2, "ws_1", expect.objectContaining({ ok: false }))
+    expect(mocks.updateWorkspace).not.toHaveBeenCalled()
   })
 
   test("runtime mutations reject signed users and cross-workspace runtime tokens", () => {
@@ -270,27 +285,70 @@ describe("control plane HTTP protocol", () => {
       new Request("http://localhost/runtime/register"),
       { mode: "unsigned-local", reason: "local control plane" },
       "ws_1",
-    )).not.toThrow()
+    )).toThrow("Workspace runtime control token is required")
   })
 
-  test("runtime snapshot schema rejects legacy runtimeUrl snapshots", () => {
-    expect(() =>
-      runtimeSnapshotInput.parse({
+  test("runtime snapshot schema refuses identity and requires an epoch", () => {
+    const snapshot = {
+      workspaceId: "ws_1",
+      ok: true,
+      status: "ready",
+      directory: "/tmp/demo",
+      profile: "workspace",
+      agentType: "opencode",
+      model: "gpt-5.4",
+      ptyCount: 0,
+      processCount: 0,
+      activeProcessCount: 0,
+      epoch: 7,
+    }
+
+    expect(runtimeSnapshotInput.parse(snapshot)).toMatchObject({ workspaceId: "ws_1", epoch: 7 })
+
+    for (const identity of [
+      { runtimeUrl: "https://legacy-runtime.example.com" },
+      { url: "https://runtime.example.com" },
+      { sandboxId: "sandbox_b" },
+      { hostId: "host_b" },
+      { driverResourceId: "resource_b" },
+      { leaseId: "lease_b" },
+    ]) {
+      expect(() => runtimeSnapshotInput.parse({ ...snapshot, ...identity })).toThrow()
+    }
+
+    const { epoch: _epoch, ...withoutEpoch } = snapshot
+    expect(() => runtimeSnapshotInput.parse(withoutEpoch)).toThrow()
+    expect(() => runtimeSnapshotInput.parse({ ...snapshot, epoch: 0 })).toThrow()
+  })
+
+  test("the heartbeat route refuses a snapshot that names a sandbox", async () => {
+    const svc = services()
+    const heartbeat = vi.fn(async () => ({ ok: true as const, status: "ready" as const }))
+    svc.sandbox.sandboxManager = { heartbeat } as never
+
+    const res = await ControlPlaneHttpRoutes(svc).request("http://localhost/runtime/heartbeat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
         workspaceId: "ws_1",
         ok: true,
         status: "ready",
         directory: "/tmp/demo",
         profile: "workspace",
         agentType: "opencode",
-        model: "gpt-5.4",
+        model: null,
         ptyCount: 0,
         processCount: 0,
         activeProcessCount: 0,
-        runtimeUrl: "https://legacy-runtime.example.com",
-        sandboxId: "sandbox_legacy",
-        epoch: 7,
+        epoch: 2,
+        sandboxId: "sandbox_b",
+        url: "https://runtime.example.com/ws_b",
       }),
-    ).toThrow()
+    })
+
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "invalid_control_plane_payload" } })
+    expect(heartbeat).not.toHaveBeenCalled()
   })
 
   test("register and heartbeat fail closed when no sandbox manager owns the lease", async () => {
@@ -306,8 +364,6 @@ describe("control plane HTTP protocol", () => {
       ptyCount: 0,
       processCount: 0,
       activeProcessCount: 0,
-      url: "https://runtime.example.com",
-      sandboxId: "sandbox_1",
       epoch: 2,
     }
 
@@ -324,7 +380,7 @@ describe("control plane HTTP protocol", () => {
     const app = ControlPlaneHttpRoutes(svc)
     const res = await app.request("http://localhost/runtime/heartbeat", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: runtimeHeaders(),
       body: JSON.stringify(input),
     })
 
@@ -350,7 +406,6 @@ describe("control plane HTTP protocol", () => {
       ptyCount: 0,
       processCount: 0,
       activeProcessCount: 0,
-      sandboxId: "sandbox_1",
       epoch: 2,
     }
 
@@ -1005,6 +1060,7 @@ describe("control plane HTTP protocol", () => {
         ptyCount: 0,
         processCount: 0,
         activeProcessCount: 0,
+        epoch: 1,
       }),
     ).rejects.toThrow("workspace missing not found")
   })

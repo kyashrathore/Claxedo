@@ -78,14 +78,17 @@ describe("hosted local document relay", () => {
       last_opened_at: null,
       last_known_file_version: null,
     } satisfies DocumentIndexEntry
+    const entries: DocumentIndexEntry[] = [entry]
     const backend = {
       index: {
-        list: async () => [entry],
-        find: async (_org: string, id: string) => (id === entry.id ? entry : undefined),
+        list: async () => entries,
+        find: async (_org: string, id: string) => entries.find((entry) => entry.id === id),
         update: async () => entry,
       },
       workspace: managed,
     } as unknown as DocumentsRouteBackend
+    const reads = vi.spyOn(managed, "read")
+    const writes = vi.spyOn(managed, "write")
     const created = await managed.create(
       {
         origin: "managed",
@@ -192,6 +195,53 @@ describe("hosted local document relay", () => {
           })
         ).status,
       ).toBe(403)
+      // Route authority wins even when the request declares the read operation.
+      const readOnlyWrite = await local.request("http://local.test/internal/documents/document_1?org_id=org_1&project_id=project_1", {
+        method: "PUT", headers: { ...jobHeaders, "if-match": created.version, "content-type": "application/json" },
+        body: JSON.stringify({ markdown: "unauthorized change", sessionId: "session_1" }),
+      })
+      expect(readOnlyWrite.status).toBe(403)
+      expect(writes).not.toHaveBeenCalled()
+
+      const scopedRequest = async (operation: "resolve" | "write" | "read", documentId = "document_1") => {
+        const job = await mintDocumentRelayJobToken({ ...jobScope, documentId, operations: [operation] }, {
+          CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privatePem,
+          CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: publicPem,
+        })
+        const headers = { ...jobHeaders, "x-claxedo-document-capability": job.token,
+          "x-claxedo-document-operation": operation, "x-claxedo-document-id": documentId }
+        const activated = await local.request("http://local.test/internal/documents/jobs/activate?org_id=org_1&project_id=project_1", { method: "POST", headers })
+        expect(activated.status).toBe(200)
+        return headers
+      }
+      const writer = await scopedRequest("write")
+      const forgedSession = await local.request("http://local.test/internal/documents/document_1?org_id=org_1&project_id=project_1", {
+        method: "PUT", headers: { ...writer, "if-match": created.version, "content-type": "application/json" },
+        body: JSON.stringify({ markdown: "forged attribution", sessionId: "another_session" }),
+      })
+      expect(forgedSession.status).toBe(403)
+      expect(writes).not.toHaveBeenCalled()
+      // A write-only capability does not become a read capability through a header.
+      expect((await local.request("http://local.test/internal/documents/document_1?org_id=org_1&project_id=project_1", { headers: writer })).status).toBe(403)
+
+      const resolver = await scopedRequest("resolve")
+      entries.push({ ...entry, id: "document_2" }, { ...entry, id: "other_workspace", origin_kind: "repository", managed_relative_path: null, repository_id: "repo_other", workspace_id: "another_workspace", repository_relative_path: "plan.md", branch: "main" })
+      const indexUrl = "http://local.test/internal/documents/index?org_id=org_1&project_id=project_1"
+      const scopedIndex = await local.request(indexUrl, { headers: resolver })
+      expect(scopedIndex.status).toBe(200)
+      expect(await scopedIndex.json()).toMatchObject([{ id: "document_1", org_id: "org_1" }])
+      const otherWorkspace = await scopedRequest("read", "other_workspace")
+      expect((await local.request("http://local.test/internal/documents/other_workspace?org_id=org_1&project_id=project_1", { headers: otherWorkspace })).status).toBe(404)
+      expect(reads).not.toHaveBeenCalled()
+      const projectResolver = await scopedRequest("resolve", "*")
+      const projectIndex = await local.request(indexUrl, { headers: projectResolver })
+      expect((await projectIndex.json() as DocumentIndexEntry[]).map((entry) => entry.id)).toEqual(["document_1", "document_2"])
+      for (const url of [indexUrl.replace("org_1", "other_org"), indexUrl.replace("project_1", "other_project")]) {
+        expect((await local.request(url, { headers: resolver })).status).toBe(403)
+      }
+      expect((await local.request(indexUrl, { headers: { ...resolver, "x-claxedo-document-session": "another_session" } })).status).toBe(403)
+      entries.splice(1)
+
       const expired = await new SignJWT({
         user_id: "user_1",
         org_id: "org_1",
@@ -376,6 +426,7 @@ describe("hosted local document relay", () => {
         expectedVersion: created.version,
       })) as { version: string }
       expect(written.version).not.toBe(created.version)
+      expect(writes).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ sessionId: "session_1", actor: { type: "agent", id: "session_1" } }))
       expect(services.relay.provider!.mintRuntimeAccessToken).toHaveBeenLastCalledWith(
         expect.objectContaining({ role: "editor" }),
       )

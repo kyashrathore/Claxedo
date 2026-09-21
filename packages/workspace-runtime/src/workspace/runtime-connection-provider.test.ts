@@ -115,6 +115,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
     roots.push(root)
     let resolvedSecrets: Readonly<Record<string, string>> | undefined
+    let resolutions = 0
     const provider: ConnectionProvider<{ label: string }> = {
       providerKey: "fixture",
       validateConfig(input) {
@@ -123,10 +124,11 @@ describe("WorkspaceRuntime generic connection selection", () => {
       },
       project(config) { return { label: config.label, readiness: "ready", capabilities } },
       resolve({ descriptor, secrets }) {
+        resolutions++
         resolvedSecrets = secrets
         return { config: descriptor.config }
       },
-      createAdapter: adapter,
+      createAdapter: () => ({ ...adapter(), readConnectionState: () => ({ state: "ready", processes: [{ generation: "opaque-generation", role: "execution", state: "ready", observedAt: 1 }] }) }),
     }
     const host = createWorkspaceHost({
       target: { workspaceId: "ws-1", directory: root },
@@ -150,7 +152,13 @@ describe("WorkspaceRuntime generic connection selection", () => {
     })
     expect(resolvedSecrets).toEqual({ token: "runtime-only" })
     expect(host.detail().harness).toEqual({ kind: "connection", connectionId: "fixture-primary" })
+    expect(host.detail().connectionState).toEqual({ connectionId: "fixture-primary", state: "ready", processes: [{ generation: "opaque-generation", role: "execution", state: "ready", observedAt: 1 }] })
+    expect(host.readConnectionState()).toEqual(host.detail().connectionState)
+    expect(await host.readHarnessHealth({ sessionId: "unknown" })).toEqual({ status: "ok" })
+    expect(host.readConnectionState({ sessionId: "unknown" })).toBeUndefined()
+    expect(resolutions).toBe(1)
     expect(JSON.stringify(host.detail())).not.toContain("runtime-only")
+    expect(JSON.stringify(host.detail())).not.toContain("lease-1")
     await host.dispose()
   })
 
@@ -187,6 +195,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       resolve({ secrets }) { return { config: { token: secrets.token } } },
       createAdapter({ resolved }) {
         const token = resolved.config.token
+        const generation = crypto.randomUUID()
         return {
           sessionConfigOwner: "runtime" as const,
           instructionChannel: "none" as const,
@@ -201,6 +210,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
           async getSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
           async updateSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
           async getMessages() { return [] },
+          readConnectionState() { return { state: "ready", processes: [{ generation, role: "execution", state: "ready", observedAt: 1 }] } },
           readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none", harness: "fixture-primary" } },
           dispose() { disposed.push(token) },
         }
@@ -241,12 +251,19 @@ describe("WorkspaceRuntime generic connection selection", () => {
     )
     const first = await request("local-one")
     expect(first.status, await first.clone().text()).toBe(201)
+    const beforeRotation = host.readConnectionState({ sessionId: "local-one", directory: root })
+    expect(beforeRotation?.state).toBe("ready")
+    expect(beforeRotation?.connectionId).toBe("fixture-primary")
 
     lease = "lease-two"
     const second = await request("local-two")
     expect(second.status, await second.clone().text()).toBe(201)
     expect(createdWith).toEqual(["lease-one", "lease-two"])
     expect(disposed).toContain("lease-one")
+    const afterRotation = host.readConnectionState({ sessionId: "local-one", directory: root })
+    expect(afterRotation?.state).toBe("ready")
+    expect(afterRotation?.processes[0]?.generation).not.toBe(beforeRotation?.processes[0]?.generation)
+    expect(host.readConnectionState({ sessionId: "local-one", directory: "/other" })?.state).toBe("configured")
     await host.dispose()
   })
 

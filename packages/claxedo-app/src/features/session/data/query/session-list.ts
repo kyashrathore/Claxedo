@@ -151,10 +151,10 @@ export function sessionListQueryOptions(input: {
 }) {
   return queryOptions({
     queryKey: queryKeys.shell.sessionList(input.baseUrl, input.query),
-    queryFn: async () => applyFetchedSessionListPage({
+    queryFn: () => fetchSessionListQueryData({
       baseUrl: input.baseUrl,
       query: input.query,
-      page: await fetchSessionListPage(input),
+      fetchPage: (query) => fetchSessionListPage({ ...input, query }),
     }),
   })
 }
@@ -213,17 +213,36 @@ export async function fetchSessionListPage(input: {
  * ordering and pagination contract, so every reader and every event applier
  * below sees one shape.
  */
-export function applyFetchedSessionListPage(input: {
+export async function fetchSessionListQueryData(input: {
   baseUrl?: string
   query: SessionListQuery
-  page: SessionListResponse
-}): SessionListResponse {
-  if (input.query.cursor) return input.page
+  fetchPage: (query: SessionListQuery) => Promise<SessionListResponse>
+}): Promise<SessionListResponse> {
+  let page = await input.fetchPage(input.query)
+  if (input.query.cursor) return page
+  const current = queryClient.getQueryData<SessionListResponse>(
+    sessionListQueryKey(input.baseUrl, input.query),
+  )
+  // A smaller total invalidates the cached tail, but not the user's loaded
+  // depth. Read that window from the source again before replacing it. This
+  // also covers a creation event advancing the cache ahead of a list read.
+  if (page.totalKnown !== undefined && current?.totalKnown !== undefined
+    && page.totalKnown < current.totalKnown && page.items && current.items) {
+    const depth = current.items.length
+    while (page.nextCursor && page.items && page.items.length < depth) {
+      const cursor = page.nextCursor
+      const next = await input.fetchPage({ ...input.query, cursor, limit: depth - page.items.length })
+      page = {
+        ...page,
+        items: mergeSessionListItems(page.items, next.items ?? []),
+        nextCursor: next.nextCursor,
+      }
+      if (next.nextCursor === cursor) throw new Error("Session list pagination did not advance")
+    }
+  }
   return mergeSessionListResponses({
-    current: queryClient.getQueryData<SessionListResponse>(
-      sessionListQueryKey(input.baseUrl, sessionListBaseQuery(input.query)),
-    ),
-    page: input.page,
+    current,
+    page,
     append: false,
   })
 }

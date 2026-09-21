@@ -146,7 +146,7 @@ const ROUTE_RULES = [
     runtime,
   ),
   exact(["/vcs"], RouteDomain.SandboxRuntime, runtime),
-  prefix(["/session", "/permission", "/question"], RouteDomain.AgentSessionRuntime, runtime),
+  prefix(["/session", "/session-start", "/connection", "/permission", "/question"], RouteDomain.AgentSessionRuntime, runtime),
   prefix(
     ["/mcp"],
     RouteDomain.AgentConfigRegistry,

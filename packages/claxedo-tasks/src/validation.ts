@@ -12,7 +12,9 @@ export function collectFields(): FieldCollector {
   const fields: InvalidField[] = []
   return {
     add(path, reason) {
-      fields.push({ path, reason })
+      // Invalid input stays invalid after the diagnostic budget is exhausted.
+      // Do not let one rejected request allocate a field object per bad value.
+      if (fields.length < 64) fields.push({ path, reason })
     },
     get fields() {
       return fields
@@ -46,7 +48,7 @@ export type Reader = {
   nullableString(value: unknown, path: string): string | null | undefined
   integer(value: unknown, path: string): number | undefined
   boolean(value: unknown, path: string): boolean | undefined
-  array(value: unknown, path: string): readonly unknown[] | undefined
+  array(value: unknown, path: string, maxItems?: number): readonly unknown[] | undefined
 }
 
 /** A collector and the readers writing into it, threaded through one decode. */
@@ -105,9 +107,11 @@ export function reader(fields: FieldCollector): Reader {
       if (value === undefined) return miss(path, "required")
       return typeof value === "boolean" ? value : miss(path, "type")
     },
-    array(value, path) {
+    array(value, path, maxItems) {
       if (value === undefined) return miss(path, "required")
-      return Array.isArray(value) ? value : miss(path, "type")
+      if (!Array.isArray(value)) return miss(path, "type")
+      if (maxItems !== undefined && value.length > maxItems) return miss(path, "too_many")
+      return value
     },
   }
 }

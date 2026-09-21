@@ -31,6 +31,7 @@ import type {
   ProjectRoleResult,
   SessionShareFanoutTarget,
   WorkspaceAuthority,
+  WorkspaceHostAssignmentAdmission,
 } from "@claxedo/server-core/platform/auth/authority"
 import {
   directoryWithinRoots,
@@ -54,6 +55,7 @@ import {
   activeOrgById,
   authorizeProjectForUser,
   authorizeWorkspaceForUser,
+  CURRENT_CHANNEL_IDENTITY_VERSION,
   ensurePersonalOrg,
   ensureProject,
   openAuthorityDb,
@@ -716,6 +718,53 @@ export function createSqliteWorkspaceAuthority(
     return workspace
   }
 
+  /**
+   * The organization a creation lands in, admitted. A caller who names none
+   * gets their personal org, and it is checked by the same membership rule as
+   * a named one: the admission a create passes through must not depend on
+   * whether the caller filled in the selector.
+   */
+  const admittedCreationOrg = (db: SqliteAuthorityDb, who: AuthorityUser, orgId?: string) => {
+    const resolved = orgId ?? ensurePersonalOrg(db, who)
+    const membership = db.prepare<unknown[], { role: string }>(`
+      SELECT m.role FROM org_memberships m
+      JOIN orgs o ON o.org_id = m.org_id
+      WHERE m.org_id = ? AND m.token_identifier = ? AND o.deleted_at IS NULL
+    `).get(resolved, who.token_identifier)
+    if (membership?.role !== "owner" && membership?.role !== "admin") denied()
+    return resolved
+  }
+
+  /**
+   * Whether this caller may have a machine serve this workspace, and whether
+   * that files a new row. The one place that answers it: the standalone
+   * admission and the assignment's own transaction both come here, so a
+   * caller cannot be refused by one and admitted by the other.
+   *
+   * A retired machine-placed row is the same workspace coming back and is
+   * authorized as live; any other deleted row stays gone. Filing a NEW row is
+   * a creation, so it takes the creation admission — the organization the row
+   * would land in, checked now, not the caller's word for it.
+   */
+  const admitHostAssignment = (
+    db: SqliteAuthorityDb,
+    who: AuthorityUser,
+    args: { workspaceId: string; orgId?: string },
+  ): WorkspaceHostAssignmentAdmission & { existing?: WorkspaceRow } => {
+    const existing = workspaceByPublicId(db, args.workspaceId)
+    if (!existing) {
+      admittedCreationOrg(db, who, args.orgId)
+      return { registration: "cold" }
+    }
+    const revivable = existing.deleted_at !== null && existing.backing === "local-worktree"
+    const candidate = revivable ? { ...existing, deleted_at: null } : existing
+    if (candidate.deleted_at || !authorizeWorkspaceForUser(db, candidate, who, "admin")) {
+      throw new SqliteHostConnectError("workspace_not_found", "Workspace not found")
+    }
+    refuseCloudWorkspace(existing)
+    return { registration: "existing", existing }
+  }
+
   const ownedProject = (db: SqliteAuthorityDb, who: AuthorityUser, input: {
     workspaceId: string
     orgId?: string
@@ -723,15 +772,7 @@ export function createSqliteWorkspaceAuthority(
     repoUrl?: string
     remoteDirectory?: string
   }) => {
-    const orgId = input.orgId ?? ensurePersonalOrg(db, who)
-    if (input.orgId) {
-      const membership = db.prepare<unknown[], { role: string }>(`
-        SELECT m.role FROM org_memberships m
-        JOIN orgs o ON o.org_id = m.org_id
-        WHERE m.org_id = ? AND m.token_identifier = ? AND o.deleted_at IS NULL
-      `).get(input.orgId, who.token_identifier)
-      if (membership?.role !== "owner" && membership?.role !== "admin") denied()
-    }
+    const orgId = admittedCreationOrg(db, who, input.orgId)
     const projectId = ensureProject(db, {
       projectId: input.projectId ?? defaultProjectId(),
       orgId,
@@ -761,7 +802,8 @@ export function createSqliteWorkspaceAuthority(
     const link = db.prepare<unknown[], { token_identifier: string }>(`
       SELECT token_identifier FROM channel_identities
       WHERE channel = ? AND external_user_id = ? AND revoked_at IS NULL
-    `).get(args.channel, args.externalUserId)
+        AND identity_version = ?
+    `).get(args.channel, args.externalUserId, CURRENT_CHANNEL_IDENTITY_VERSION)
     if (!link) return undefined
     return db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, public_id, subject, name, image_url FROM users WHERE token_identifier = ?`)
       .get(link.token_identifier)
@@ -1272,7 +1314,8 @@ export function createSqliteWorkspaceAuthority(
       const existing = db.prepare<unknown[], { binding_id: string; token_identifier: string }>(`
         SELECT binding_id, token_identifier FROM channel_identities
         WHERE channel = ? AND external_user_id = ? AND revoked_at IS NULL
-      `).get(channel, externalUserId)
+          AND identity_version = ?
+      `).get(channel, externalUserId, CURRENT_CHANNEL_IDENTITY_VERSION)
       if (existing && existing.token_identifier !== who.token_identifier) {
         throw new Error("Channel identity is already bound")
       }
@@ -1280,9 +1323,10 @@ export function createSqliteWorkspaceAuthority(
       if (!existing) {
         db.prepare(`
           INSERT INTO channel_identities (
-            binding_id, channel, external_user_id, token_identifier, created_at, revoked_at
-          ) VALUES (?, ?, ?, ?, ?, NULL)
-        `).run(bindingId, channel, externalUserId, who.token_identifier, Date.now())
+            binding_id, channel, external_user_id, token_identifier, created_at, revoked_at,
+            identity_version
+          ) VALUES (?, ?, ?, ?, ?, NULL, ?)
+        `).run(bindingId, channel, externalUserId, who.token_identifier, Date.now(), CURRENT_CHANNEL_IDENTITY_VERSION)
       }
       return {
         bindingId,
@@ -1300,31 +1344,31 @@ export function createSqliteWorkspaceAuthority(
       const result = db.prepare(`
         UPDATE channel_identities SET revoked_at = ?
         WHERE channel = ? AND external_user_id = ? AND token_identifier = ? AND revoked_at IS NULL
+          AND identity_version = ?
       `).run(
         Date.now(),
         channel,
         externalUserId,
         who.token_identifier,
+        CURRENT_CHANNEL_IDENTITY_VERSION,
       )
       if (result.changes > 0) return { revoked: true }
+      // A pre-boundary row stopped authorizing at the migration, so there is
+      // no binding here for this actor to have revoked and nothing for the
+      // caller to tear a local projection down over.
       const latest = db.prepare<unknown[], { token_identifier: string }>(`
         SELECT token_identifier FROM channel_identities
-        WHERE channel = ? AND external_user_id = ?
+        WHERE channel = ? AND external_user_id = ? AND identity_version = ?
         ORDER BY created_at DESC, rowid DESC LIMIT 1
-      `).get(channel, externalUserId)
+      `).get(channel, externalUserId, CURRENT_CHANNEL_IDENTITY_VERSION)
       return { revoked: latest?.token_identifier === who.token_identifier }
     },
 
+    // The project selector does not appear: creation here files the project
+    // under the organization resolved below (`ownedProject`), it does not read
+    // the organization off the project.
     async authorizeWorkspaceCreate(auth: SignedControlPlaneAuth, args) {
-      if (!args.orgId) return
-      const db = database()
-      const who = user(auth)
-      const membership = db.prepare<unknown[], { role: string }>(`
-        SELECT m.role FROM org_memberships m
-        JOIN orgs o ON o.org_id = m.org_id
-        WHERE m.org_id = ? AND m.token_identifier = ? AND o.deleted_at IS NULL
-      `).get(args.orgId, who.token_identifier)
-      if (membership?.role !== "owner" && membership?.role !== "admin") denied()
+      admittedCreationOrg(database(), user(auth), args.orgId)
     },
     async authorizeWorkspaceOpen(auth: SignedControlPlaneAuth, args) {
       const db = database()
@@ -1773,6 +1817,10 @@ export function createSqliteWorkspaceAuthority(
         return { revoked, runtime_tokens_revoked: runtimeTokensRevoked }
       })()
     },
+    async authorizeWorkspaceHostAssignment(auth: SignedControlPlaneAuth, args) {
+      const { registration } = admitHostAssignment(database(), user(auth), args)
+      return { registration }
+    },
     /**
      * The OWNER's declaration that host H serves workspace X. Pure data: no
      * challenge and no TTL — liveness is the enrollment lease, consent is the
@@ -1808,18 +1856,15 @@ export function createSqliteWorkspaceAuthority(
           throw new SqliteHostConnectError("host_enrollment_not_found", "Host enrollment not found")
         }
         const scope = enrollmentScope(enrollment)
-        const existing = workspaceByPublicId(db, args.workspaceId)
-        // A retired machine-placed row is the same workspace coming back, so it
-        // is authorized as live; any other deleted row stays gone. Nothing is
-        // written until every refusal below has had its chance.
-        const revivable = existing !== undefined && existing.deleted_at !== null && existing.backing === "local-worktree"
-        if (existing) {
-          const candidate = revivable ? { ...existing, deleted_at: null } : existing
-          if (candidate.deleted_at || !authorizeWorkspaceForUser(db, candidate, who, "admin")) {
-            throw new SqliteHostConnectError("workspace_not_found", "Workspace not found")
-          }
-          refuseCloudWorkspace(existing)
-        }
+        const invitationOrgId = enrollment.invitation_org_id ?? undefined
+        // Nothing is written until every refusal below has had its chance, and
+        // the workspace refusals are the ones `authorizeWorkspaceHostAssignment`
+        // already gave this caller. The organization admitted is the one the
+        // cold register below files into, invitation included.
+        const { existing } = admitHostAssignment(db, who, {
+          ...args,
+          ...(args.orgId ?? invitationOrgId ? { orgId: args.orgId ?? invitationOrgId } : {}),
+        })
         const remoteDirectory = args.remoteDirectory === undefined ? undefined : normalizeStoredDirectory(args.remoteDirectory)
         const directory = remoteDirectory ?? existing?.remote_directory ?? undefined
         if (scope && (directory === undefined || !directoryWithinRoots(directory, scope.allowed_roots))) {
@@ -1828,7 +1873,6 @@ export function createSqliteWorkspaceAuthority(
             `${directory ?? "(no directory)"} is not under any root this machine may serve`,
           )
         }
-        const invitationOrgId = enrollment.invitation_org_id ?? undefined
         if (invitationOrgId && (existing?.org_id ?? args.orgId ?? invitationOrgId) !== invitationOrgId) {
           throw new SqliteHostConnectError(
             "host_assignment_outside_scope",
@@ -2611,13 +2655,14 @@ export function createSqliteWorkspaceAuthority(
       }))
       return { can_manage_shares: true, grants, participants, teams }
     },
-    async resolveRuntimeMachineAccess(actorId, workspaceId) {
+    async resolveRuntimeMachineAccess(actorId, workspaceId, minimumRole = "editor") {
       const db = database()
       const who = db.prepare<unknown[], AuthorityUser>(`SELECT token_identifier, subject, kind, public_id, name, image_url FROM users WHERE token_identifier = ?`).get(actorId)
       if (!who || who.kind !== "human") denied()
-      const workspace = requireWorkspace(db, who, workspaceId, "write")
+      const workspace = workspaceByPublicId(db, workspaceId)
+      if (!workspace) denied()
       const role = workspaceRoleForUser(db, workspace, who)
-      if (!role) denied()
+      if (!role || !roleAtLeast(role, minimumRole)) denied()
       return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
     },
     async recordActorRuntimeAccessToken(args) {

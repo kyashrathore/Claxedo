@@ -46,7 +46,9 @@ export {
   registeredWorkspaceDirectory,
 } from "./target"
 export { WorkspaceWorktreeManager, workspaceStorageRoot } from "./worktree"
-export { optionalGit, runGit, GitTimeoutError } from "./git"
+export { createBoundedGit, optionalGit, runGit, GitCredentialError, GitEnvironmentError, GitTimeoutError } from "./git"
+export { buildSafeEnv } from "./pty/env"
+export type { GitHttpCredential, GitRunOptions } from "./git"
 export type { WorkspaceWorktreeRecord } from "./store"
 export type {
   AgentRuntimeEvent,

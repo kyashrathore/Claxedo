@@ -49,7 +49,7 @@ describe("the first-party MCP a local session is launched with", () => {
     const file = path.join(live.workspace.directory, "mcp-document.md")
     const markdown = "# MCP document\n\nActual repository bytes 日本語\n"
     await fs.writeFile(file, markdown)
-    const created = await fetch(`http://127.0.0.1:${live.port}/documents/from-repo`, {
+    const created = await live.call(`http://127.0.0.1:${live.port}/documents/from-repo`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ directory: live.workspace.directory, workspace_id: live.workspace.id, path: "mcp-document.md", display_name: "MCP document" }),
@@ -115,16 +115,18 @@ describe("the first-party MCP a local session is launched with", () => {
 
   test("the Marketplace switch is what puts the Tasks tools on the next connection", async () => {
     const plugins = `http://127.0.0.1:${live.port}/api/claxedo/plugins`
-    const before = await (await fetch(plugins)).json() as {
+    const before = await (await live.call(plugins)).json() as {
       revision: number
       candidates: Array<{ pluginInstanceId: string; builtIn?: boolean; groups?: Array<{ id: string; enabled: boolean; tools: string[] }> }>
     }
     const builtIn = before.candidates.find((candidate) => candidate.builtIn)
     expect(builtIn?.pluginInstanceId).toBe("claxedo")
+    // The catalog is derived by running the group's own registration, so this
+    // is the registered order and every name in it is a tool with a route.
     expect(builtIn?.groups?.find((group) => group.id === "tasks"))
-      .toMatchObject({ enabled: false, tools: ["task_list", "task_get", "task_create", "task_start"] })
+      .toMatchObject({ enabled: false, tools: ["task_list", "task_get", "task_create", "task_edit", "task_start"] })
 
-    const written = await fetch(`${plugins}/activation`, {
+    const written = await live.call(`${plugins}/activation`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -142,7 +144,7 @@ describe("the first-party MCP a local session is launched with", () => {
     const names = (await reconnected.listTools()).tools.map((tool) => tool.name)
     expect(names).toEqual(expect.arrayContaining(["task_list", "task_get", "task_create", "task_start"]))
 
-    const after = await (await fetch(plugins)).json() as {
+    const after = await (await live.call(plugins)).json() as {
       candidates: Array<{ builtIn?: boolean; groups?: Array<{ id: string; enabled: boolean }> }>
     }
     expect(after.candidates.find((candidate) => candidate.builtIn)?.groups?.find((group) => group.id === "tasks"))

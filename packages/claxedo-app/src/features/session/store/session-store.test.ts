@@ -63,6 +63,11 @@ describe("session store helpers", () => {
     })).toBe(false)
   })
 
+  test("uncertain cancellation remains active while late output is observed", () => {
+    expect(isSessionTurnActive({ status: { type: "recovering", kind: "uncertain_execution", message: "Cancellation unconfirmed" } })).toBe(true)
+    expect(isSessionTurnActive({ status: idle })).toBe(false)
+  })
+
   test("detects active turns from pending interactions", () => {
     expect(isSessionTurnActive({
       status: idle,

@@ -77,8 +77,10 @@ async function installFakeBinary(dir: string, script: string): Promise<string> {
 }
 
 async function makeFakeCodex(options: {
+  imageViewPath?: string
   requestRefresh?: boolean
   mcpElicitation?: boolean
+  mcpConsent?: boolean
   auth401?: boolean
   models?: unknown[]
   subagent?: boolean
@@ -92,9 +94,11 @@ async function makeFakeCodex(options: {
   const log = path.join(dir, "requests.ndjson")
   const binary = await installFakeBinary(dir, `
 const fs = require("fs")
+const imageViewPath = ${JSON.stringify(options.imageViewPath ?? null)}
 const logPath = ${JSON.stringify(log)}
 const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
 const mcpElicitation = ${JSON.stringify(options.mcpElicitation === true)}
+const mcpConsent = ${JSON.stringify(options.mcpConsent === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
 const subagent = ${JSON.stringify(options.subagent === true)}
 const subagentActivity = ${JSON.stringify(options.subagentActivity === true)}
@@ -119,6 +123,11 @@ process.on("SIGTERM", () => {
 function completeTurn() {
   if (completed) return
   completed = true
+  if (imageViewPath) {
+    const item = { type: "imageView", id: "view-1", path: imageViewPath }
+    write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item } })
+    write({ method: "item/completed", params: { threadId: "thread-1", turnId: "turn-1", item } })
+  }
   write({ method: "item/agentMessage/delta", params: { threadId: "thread-1", turnId: "turn-1", itemId: "assistant-1", delta: "OK" } })
   write({ method: "item/completed", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "assistant-1", type: "agentMessage", text: "OK" } } })
   write({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1", status: "completed" } } })
@@ -135,6 +144,7 @@ process.stdin.on("data", (chunk) => {
     const message = JSON.parse(line)
     if (message.id) append(message)
     if ((message.id === 900 || message.id === 901) && message.result) completeTurn()
+    if (message.id === 901 && message.error && Number.isInteger(message.error.code) && typeof message.error.message === "string") completeTurn()
     if (message.method === "initialize") {
       setTimeout(() => write({ id: message.id, result: { userAgent: "fake-codex" } }), initializeDelayMs)
     }
@@ -183,6 +193,8 @@ process.stdin.on("data", (chunk) => {
       }
       if (requestRefresh) {
         write({ id: 900, method: "account/chatgptAuthTokens/refresh", params: { reason: "unauthorized", previousAccountId: "acct-1" } })
+      } else if (mcpConsent) {
+        write({ id: 901, method: "mcpServer/elicitation/request", params: { threadId: "thread-1", turnId: "turn-1", serverName: "cua_repl", mode: "form", message: "Allow Computer Use?", _meta: { codex_approval_kind: "mcp_tool_call", persist: ["session", "always"] }, requestedSchema: { type: "object", properties: {} } } })
       } else if (mcpElicitation) {
         write({ id: 901, method: "mcpServer/elicitation/request", params: { threadId: "thread-1", turnId: "turn-1", serverName: "composio", mode: "url", message: "Connect Gmail", elicitationId: "connect-1", url: "https://example.test/connect" } })
       } else {
@@ -317,6 +329,38 @@ test("public Codex first turn uses the created upstream thread and persists hist
 })
 
 describe("CodexHarnessAdapter", () => {
+  test("stores the native image reference without copying or changing it after source deletion", async () => {
+    const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "codex-viewed-image-"))
+    tempDirs.push(scratch)
+    const source = path.join(scratch, "shot.png")
+    const bytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64")
+    fs.writeFileSync(source, bytes)
+    const fake = await makeFakeCodex({ imageViewPath: source })
+    const store = createMemoryRuntimeStore()
+    const adapter = new CodexHarnessAdapter({ binary: fake.binary, store, storeRoot: path.join(fake.dir, "store") })
+    try {
+      const session = await adapter.createSession(fake.dir)
+      let sawCompletion = false
+      for await (const event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {
+        if (event.type !== "message.part.updated") continue
+        const part = event.properties.part
+        if (part.type !== "tool" || part.tool !== "view_image" || part.state.status !== "completed") continue
+        const file = part.state.attachments?.[0]
+        expect(file?.location).toEqual({ kind: "tool-file", path: source })
+        expect(fs.existsSync(path.join(fake.dir, ".claxedo", "attachments"))).toBe(false)
+        sawCompletion = true
+      }
+      expect(sawCompletion).toBe(true)
+      const before = JSON.stringify(store.getMessages(session.id))
+      fs.unlinkSync(source)
+      expect(JSON.stringify(store.getMessages(session.id))).toBe(before)
+      expect(JSON.stringify(store.getMessages(session.id))).toContain('"filename":"shot.png"')
+      expect(JSON.stringify(store.getMessages(session.id))).toContain('"kind":"tool-file"')
+    } finally {
+      await adapter.dispose()
+    }
+  })
+
   test("shares one app-server startup across concurrent session creation and model discovery", async () => {
     const fake = await makeFakeCodex({
       models: [codexModel(["low", "high"], "low")],
@@ -656,6 +700,64 @@ describe("CodexHarnessAdapter", () => {
     expect(persisted.tokens.access_token).toBe("fresh-access-token")
     expect(persisted.tokens.refresh_token).toBe("fresh-refresh-token")
   })
+
+  test("an approval storage failure replies to the provider and does not strand the public turn", async () => {
+    const fake = await makeFakeCodex({ mcpConsent: true })
+    const store = createMemoryRuntimeStore()
+    const append = store.appendEvent.bind(store)
+    store.appendEvent = (input) => {
+      if (input.payload.type === "permission.asked") throw new Error("permission storage unavailable")
+      return append(input)
+    }
+    const adapter = new CodexHarnessAdapter({ binary: fake.binary, store, storeRoot: path.join(fake.dir, "store") })
+    adapter.setModel("gpt-5.5")
+    try {
+      const session = await adapter.createSession(fake.dir)
+      const events = []
+      for await (const event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) events.push(event)
+      expect(events.some((event) => event.type === "session.idle")).toBe(true)
+      expect(await adapter.listPermissions(fake.dir)).toEqual([])
+      const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+      expect(requests.find((row) => row.id === 901 && row.error)?.error).toEqual({ code: -32603, message: "permission storage unavailable" })
+      expect(requests.some((row) => row.id === 901 && row.result)).toBe(false)
+    } finally {
+      await adapter.dispose()
+    }
+  })
+
+  for (const optionId of ["accept", "decline", "cancel", '{"persist":"session"}', '{"persist":"always"}']) {
+    test(`MCP consent preserves the advertised choice ${optionId}`, async () => {
+      const fake = await makeFakeCodex({ mcpConsent: true })
+      const adapter = new CodexHarnessAdapter({ binary: fake.binary, store: createMemoryRuntimeStore(), storeRoot: path.join(fake.dir, "store") })
+      adapter.setModel("gpt-5.5")
+      const session = await adapter.createSession(fake.dir)
+      const turn = (async () => {
+        for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
+      })()
+      try {
+        let permission: Awaited<ReturnType<typeof adapter.listPermissions>>[number] | undefined
+        for (let attempt = 0; attempt < 200; attempt++) {
+          permission = (await adapter.listPermissions(fake.dir)).find((item) => item.sessionID === session.id)
+          if (permission) break
+          await Bun.sleep(5)
+        }
+        expect(structuredClone(permission)).toMatchObject({ permission: "cua_repl", metadata: { reason: "Allow Computer Use?" }, options: expect.arrayContaining([{ id: optionId, label: expect.any(String) }]) })
+        expect(await adapter.listQuestions(fake.dir)).toEqual([])
+        expect(permission!.id).not.toBe("901")
+        await adapter.respondPermission(executionBinding(session.id, fake.dir), permission!.id, "allow_once", optionId)
+        await turn
+        expect(await adapter.listPermissions(fake.dir)).toEqual([])
+        await waitForLog(fake.log, (row) => row.id === 901 && !!row.result)
+        const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+        const persist = optionId.startsWith("{") ? JSON.parse(optionId).persist : undefined
+        expect(requests.find((row) => row.id === 901 && row.result)?.result).toEqual({
+          action: persist ? "accept" : optionId, content: persist || optionId === "accept" ? {} : null, _meta: persist ? { persist } : null,
+        })
+      } finally {
+        await adapter.dispose()
+      }
+    })
+  }
 
   test("projects MCP URL elicitations as questions and returns the user's acceptance", async () => {
     const fake = await makeFakeCodex({ mcpElicitation: true })

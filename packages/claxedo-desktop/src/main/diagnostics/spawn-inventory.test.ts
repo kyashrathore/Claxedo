@@ -90,13 +90,19 @@ async function productionFiles() {
     "packages/claxedo-server-core/src",
     "packages/workspace-runtime/src",
     "packages/agent-sdk-runtime/src",
+    // Electron main reaches this package's credential writer, whose Windows
+    // permission step is a spawn. Leaving the package unscanned would let a
+    // child the app can start sit outside the inventory this file claims is
+    // complete.
+    "packages/claxedo-helpers/src",
   ]
   const glob = new Bun.Glob("**/*.{ts,tsx,mjs}")
   const files = await Promise.all(
     directories.map(async (directory) =>
       Array.fromAsync(glob.scan({ cwd: join(root, directory), onlyFiles: true })).then((entries) =>
         entries
-          .filter((file) => !/\.(test|spec|fixture)\./.test(file) && !file.endsWith("-fixture.mjs"))
+          // `[.-]`, so a `.test-support.` helper is excluded like a `.test.` one.
+          .filter((file) => !/\.(test|spec|fixture)[.-]/.test(file) && !file.endsWith("-fixture.mjs"))
           // Glob.scan emits host separators; the inventory keys are declared
           // with forward slashes, so normalize or no Windows path ever matches.
           .map((file) => `${directory}/${file.replaceAll("\\", "/")}`),

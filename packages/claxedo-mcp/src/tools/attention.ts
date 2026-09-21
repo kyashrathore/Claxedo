@@ -3,9 +3,10 @@ import { errorMessage, sleep } from "@claxedo/helpers"
 import type { AgentPermission, AgentPresentationSession, AgentQuestion, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import { WorkspaceRuntimeClientTransportError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import type { ClaxedoMcpClient, WorkspaceTarget } from "../client/contract"
-import { assertToolAccess, McpAccessDenied, toolListed, type McpToolAccess, type McpToolContext } from "../context"
+import { assertToolAccess, toolListed, type McpToolAccess, type McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
 import type { ToolRegistrar } from "./registry"
+import { assertSessionReach } from "./session-reach"
 import { assertWritableTarget, toolTarget, toolText, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
 
 const PERMISSION_REPLY = "permission_reply"
@@ -334,13 +335,7 @@ export function registerAttentionTools(registry: ToolRegistrar): void {
     const row = (await server.question.list()).data.find((question) => question.id === args.request)
     if (!row) return mcpToolRefusal(`No question ${args.request} is pending here`)
     addressed?.(row.sessionID)
-    if (ctx.credential.kind === "runtime") {
-      const caller = ctx.credential.sessionId
-      const session = await server.session.get({ sessionID: row.sessionID }).catch(() => undefined)
-      if (!caller || session?.data.parentID !== caller) {
-        throw new McpAccessDenied("own-children-only", `Session ${row.sessionID} is not a child of this session`)
-      }
-    }
+    await assertSessionReach({ ctx, tool: "question_reply", server, target, session: row.sessionID, reach: "own-children" })
     await server.question.reply({ requestID: args.request, answers: args.answers })
     return toolText(`Answered question ${args.request} on session ${row.sessionID}.`)
   })

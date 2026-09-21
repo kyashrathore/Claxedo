@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import { setupHostServingPush } from "./serving-push"
+import { recordingDaemon } from "../test-support/daemon-fetch"
 
 const JWKS = "https://relay.test/.well-known/jwks.json"
 const AUTHORITY = "https://control-plane.test/api/runtime-authority/session-authorize"
@@ -11,19 +12,14 @@ const TUNNEL = {
   relayUrl: "https://relay.test",
 }
 
-function harness(options: { respond?: () => Response; serverUrl?: () => Promise<string> } = {}) {
-  const requests: Array<{ url: string; method?: string; body: unknown }> = []
+function harness(options: { respond?: () => Response; origin?: string | Promise<string> } = {}) {
   const logged: string[] = []
+  const { daemon, requests } = recordingDaemon({
+    ...(options.origin ? { origin: options.origin } : {}),
+    ...(options.respond ? { respond: () => options.respond!() } : {}),
+  })
   const push = setupHostServingPush({
-    serverUrl: options.serverUrl ?? (async () => "http://127.0.0.1:4000"),
-    request: async (url, init) => {
-      requests.push({
-        url,
-        ...(typeof init?.method === "string" ? { method: init.method } : {}),
-        body: typeof init?.body === "string" ? (JSON.parse(init.body) as unknown) : init?.body,
-      })
-      return options.respond?.() ?? new Response("{}", { status: 200 })
-    },
+    daemon,
     log: { info: (message) => logged.push(`info ${message}`), warn: (message) => logged.push(`warn ${message}`) },
   })
   return {
@@ -43,6 +39,9 @@ describe("the serving push", () => {
     expect(host.requests).toHaveLength(1)
     expect(host.requests[0]?.url).toBe("http://127.0.0.1:4000/api/claxedo/host-serving")
     expect(host.requests[0]?.method).toBe("PUT")
+    // The daemon refuses this route without it, so a push that stopped carrying
+    // it would fail silently at the machine rather than here.
+    expect(host.requests[0]?.capability).toBe("daemon-capability")
     expect(host.body()).toEqual({
       credential: TUNNEL,
       endpoints: { relayJwksUrl: JWKS, sessionAuthorityUrl: AUTHORITY },
@@ -88,11 +87,7 @@ describe("the serving push", () => {
   })
 
   test("a daemon that never answers is reported, not thrown at the heartbeat", async () => {
-    const host = harness({
-      serverUrl: async () => {
-        throw new Error("claxedo-server failed to start")
-      },
-    })
+    const host = harness({ origin: Promise.reject(new Error("claxedo-server failed to start")) })
 
     await host.push({ tunnel: TUNNEL })
 

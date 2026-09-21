@@ -126,6 +126,9 @@ describe("neutral ACP Goal extension", () => {
     const fakeProcess = {
       alive: true,
       supportsForkSession: () => false,
+      supportsSubagents: () => false,
+      hasSession: (id: string) => id === "agent-session",
+      configOptions: () => ({ options: [], resolvedModel: null }),
       dispose() {},
       goalCapabilities: () => ({
         implemented: true,
@@ -181,7 +184,7 @@ describe("neutral ACP Goal extension", () => {
     ]])
     internal.sessionProcesses = new Map([["local-session", "process-key"]])
 
-    expect(adapter.readHarnessCapabilities("/work", { sessionId: "local-session" }).goals).toBe(true)
+    expect((await adapter.readHarnessCapabilities("/work", { sessionId: "local-session" })).goals).toBe(true)
     expect(await adapter.goals.resume("local-session", "/work")).toMatchObject({
       ok: true,
       goal: { status: "active", lastReason: "Provider refreshed state" },
@@ -319,6 +322,7 @@ describe("neutral ACP Goal extension", () => {
       unlistenGoal(agentSessionId: string) {
         unlistened.push(agentSessionId)
       },
+      unobserveCommands() {},
     }
     const eventHub = createRuntimeEventHub()
     const published: string[] = []
@@ -426,6 +430,7 @@ describe("neutral ACP Goal extension", () => {
       key: "process-key",
       directory: "/work",
       proc: null as unknown,
+      fork: false,
       init: null,
       sessionIds: new Set(["local-session"]),
     }
@@ -451,7 +456,7 @@ describe("neutral ACP Goal extension", () => {
       objective: "Ship verified work",
       status: "active",
     })
-    expect(adapter.readHarnessCapabilities("/work", { sessionId: "local-session" }).goals).toBe(false)
+    expect((await adapter.readHarnessCapabilities("/work", { sessionId: "local-session" })).goals).toBe(false)
     expect(spawns).toEqual([])
 
     // A real Goal ACTION is still allowed to wake the agent back up.

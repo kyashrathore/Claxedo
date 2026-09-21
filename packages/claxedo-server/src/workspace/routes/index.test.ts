@@ -174,6 +174,9 @@ vi.mock("../../host-tunnel", () => ({
 }))
 
 const { localOnlyAuthAdapter } = await import("@claxedo/server-core/platform/auth/auth")
+const { SqliteProjectConflictError } = await import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store")
+// This deployment's own operator policy, not a second copy of it.
+const { selfHostedOperatorAuthorizer } = await import("../../deployments/self-hosted-node/operator")
 const { WorkspaceRoutes } = await import("./index")
 const { createFixedWindowConnectionRateLimiter } = await import("../../platform/auth/rate-limit")
 
@@ -236,12 +239,20 @@ function services(): ControlPlaneServices {
       grantSessionParticipant: vi.fn(async () => ({ participant_id: "participant_1" })),
       revokeSessionParticipant: vi.fn(async () => ({ removed: true })),
       authorizeWorkspaceOpen: vi.fn(async () => {}),
+      authorizeWorkspaceCreate: vi.fn(async () => {}),
+      authorizeWorkspaceHostAssignment: vi.fn(async () => ({ registration: "existing" as const })),
       projectRole: vi.fn(async () => ({ ok: false as const })),
       authorizeProject: vi.fn(async () => ({ ok: false as const })),
       authorizeChannelProject: vi.fn(async () => ({ ok: false as const })),
       authorizeChannelWorkspace: vi.fn(async () => {}),
       bindChannelIdentity: vi.fn(async () => ({ bindingId: "chn_1", created: true, userId: "user_1", actorId: "user_1", actorKind: "human" as const })),
       revokeChannelIdentity: vi.fn(async () => ({ revoked: true })),
+      resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => ({
+        userId: "user_1",
+        actorId: "https://issuer.example.test|user_1",
+        orgId: "org_1",
+        projectId: `project_${workspaceId}`,
+      })),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
@@ -780,6 +791,28 @@ describe("workspace routes signed control plane authority", () => {
     }))
   })
 
+  test("signed cloud create refuses a repoUrl this server will not clone", async () => {
+    const svc = services()
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    svc.sandbox.sandboxManager = { ensure } as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    for (const repoUrl of ["file:///etc/passwd", "ftp://example.com/repo.git", "not a url"]) {
+      const res = await app.request("http://localhost/create", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer user_1",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ repoUrl }),
+      })
+      expect(res.status).toBe(400)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "repo_url_invalid" } })
+    }
+    expect(ensure).not.toHaveBeenCalled()
+    expect(mocks.ensureHostForRepo).not.toHaveBeenCalled()
+  })
+
   test("signed cloud create cleans local row when SandboxManager provisioning rejects", async () => {
     const svc = services()
     svc.sandbox.sandboxManager = {
@@ -973,7 +1006,8 @@ describe("workspace routes signed control plane authority", () => {
       }),
     })
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "sandbox_driver_endpoint_invalid" } })
     expect(svc.credentials.putCredential).not.toHaveBeenCalled()
   })
 
@@ -3455,4 +3489,349 @@ describe("unsigned workspace list", () => {
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ workspaces: [] })
   })
+})
+
+/**
+ * Two signed accounts on one node, and every lifecycle verb asked who they are
+ * against the row it is about: `user_1` operates this deployment, `user_2` is
+ * an unrelated person with an equally valid signature.
+ */
+describe("workspace lifecycle authorization", () => {
+  const operator = selfHostedOperatorAuthorizer({ CLAXEDO_OPERATOR_SUBJECTS: "user_1" } as NodeJS.ProcessEnv)
+
+  function localRow() {
+    return {
+      id: "ws_local",
+      project_id: "project_1",
+      workspace_name: "Local Main",
+      directory: "/tmp/local",
+      kind: "local",
+      created_at: 1,
+      updated_at: 1,
+    }
+  }
+
+  /** A share service that must not be reached: every call is a machine effect. */
+  function unassignedHostAssignments() {
+    return {
+      hostId: vi.fn(async () => "host_machine"),
+      assignWorkspace: vi.fn(async (_auth: unknown, share: { workspaceId: string }) => ({
+        assignment: { assigned: true as const, workspace_id: share.workspaceId, host_id: "host_machine" },
+      })),
+      unassignWorkspace: vi.fn(async () => ({ unassigned: true })),
+    }
+  }
+
+  function cloudRow() {
+    return {
+      id: "ws_cloud",
+      project_id: "project_1",
+      workspace_name: "Cloud Main",
+      directory: "/workspace",
+      kind: "cloud",
+      driver: "daytona",
+      created_at: 1,
+      updated_at: 1,
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkspaceStoreMocks()
+  })
+
+  afterEach(() => {
+    resetWorkspaceStoreMocks()
+  })
+
+  test("an unrelated signed account cannot delete a workspace placed on this machine", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(localRow())
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, authorizeOperator: operator })
+
+    const res = await app.request("http://localhost/ws_local", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer user_2" },
+    })
+
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toEqual({
+      error: { code: "operator_required", message: "Deployment operator access is required" },
+    })
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
+    expect(mocks.discardSupervisorSandbox).not.toHaveBeenCalled()
+  })
+
+  test("the deployment operator deletes a workspace placed on this machine", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(localRow())
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, authorizeOperator: operator })
+
+    const res = await app.request("http://localhost/ws_local", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ ok: true })
+    expect(mocks.discardSupervisorSandbox).toHaveBeenCalledWith("ws_local", "workspace_deleted")
+    expect(mocks.deleteWorkspace).toHaveBeenCalledWith("ws_local")
+    // Machine placement is this machine's answer; the control plane holds no
+    // deletion for a row it never provisioned.
+    expect(svc.authority?.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a signed deployment with no operator authorizer deletes nothing on this machine", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(localRow())
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/ws_local", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(503)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "authority_unavailable",
+        message: "Deployment operator authorization is not configured",
+      },
+    })
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
+    expect(mocks.discardSupervisorSandbox).not.toHaveBeenCalled()
+  })
+
+  test("a provisioned workspace is deleted by its authority owner, and by nobody else", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(cloudRow())
+    const svc = services()
+    const destroy = vi.fn(async () => ({ ok: true as const, status: "destroyed" as const }))
+    svc.sandbox.sandboxManager = { destroy, release: vi.fn(async () => ({ released: true })) } as never
+    svc.authority!.deleteWorkspace = vi.fn(async (auth: unknown) => {
+      if ((auth as { token?: string }).token !== "user_1") {
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority denied workspace access")
+      }
+      return {}
+    }) as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, authorizeOperator: operator })
+
+    const denied = await app.request("http://localhost/ws_cloud", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer user_2" },
+    })
+
+    expect(denied.status).toBe(403)
+    expect(destroy).not.toHaveBeenCalled()
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
+
+    const allowed = await app.request("http://localhost/ws_cloud", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(allowed.status).toBe(200)
+    expect(destroy).toHaveBeenCalledWith("ws_cloud")
+    expect(mocks.deleteWorkspace).toHaveBeenCalledWith("ws_cloud")
+  })
+
+  test("operating this machine is not authority over a provisioned workspace", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(cloudRow())
+    const svc = services()
+    svc.authority!.deleteWorkspace = vi.fn(async () => {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority denied workspace access")
+    }) as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, authorizeOperator: operator })
+
+    const res = await app.request("http://localhost/ws_cloud", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer user_1" },
+    })
+
+    expect(res.status).toBe(403)
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a tokenless loopback caller still deletes its own machine's row", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(localRow())
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, authorizeOperator: operator })
+
+    const res = await app.request("http://localhost/ws_local", { method: "DELETE" })
+
+    expect(res.status).toBe(200)
+    expect(mocks.deleteWorkspace).toHaveBeenCalledWith("ws_local")
+    expect(svc.authority?.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a bearer this deployment cannot verify is not a local caller", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(localRow())
+    const svc = services()
+    const app = WorkspaceRoutes(
+      svc,
+      {
+        authConfig: { enabled: false, mode: "local-only", reason: "local dev" },
+        verifier,
+        authorizeOperator: operator,
+      },
+    )
+
+    const res = await app.request("http://localhost/ws_local", {
+      method: "DELETE",
+      headers: { Authorization: "Bearer user_2" },
+    })
+
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "missing_bearer_token" } })
+    expect(mocks.deleteWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("cloud creation is admitted by the authority with no organization named", async () => {
+    const svc = services()
+    svc.sandbox.sandboxManager = readySandboxManager().manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_2", "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(svc.authority?.authorizeWorkspaceCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "user_2" }),
+      {},
+    )
+  })
+
+  test("the caller's organization and project selectors reach the admission unchanged", async () => {
+    const svc = services()
+    svc.sandbox.sandboxManager = readySandboxManager().manager
+    mocks.getProjectWorkspace.mockResolvedValue({
+      id: "ws_root",
+      directory: "/tmp/root",
+      git_remote: "https://github.com/acme/demo.git",
+    } as never)
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ orgId: " org_acme ", projectId: " project_acme " }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(svc.authority?.authorizeWorkspaceCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "user_1" }),
+      { orgId: "org_acme", projectId: "project_acme" },
+    )
+  })
+
+  test("an organization the caller may not create in stops the sandbox before it is provisioned", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    svc.authority!.authorizeWorkspaceCreate = vi.fn(async () => {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority denied workspace access")
+    }) as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_2", "Content-Type": "application/json" },
+      body: JSON.stringify({ orgId: "org_acme", repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(403)
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+    expect(svc.authority?.createCloudWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("a project another tenant holds answers the caller a conflict, not a server fault", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    svc.authority!.createCloudWorkspace = vi.fn(async () => {
+      throw new SqliteProjectConflictError("project_tenant_conflict", "Project belongs to a different organization")
+    }) as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "project_theirs", repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "project_tenant_conflict" } })
+    // The row this route filed before asking the authority is withdrawn again.
+    expect(mocks.deleteWorkspace).toHaveBeenCalledTimes(1)
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+  })
+
+  test("an authority that cannot admit a creation provisions nothing", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    delete svc.authority!.authorizeWorkspaceCreate
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(503)
+    await expect(res.json()).resolves.toMatchObject({
+      error: { code: "workspace_authority_unavailable" },
+    })
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("the share delegates to the machine service with the stored workspace's facts", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(localRow())
+    const svc = services()
+    const assignments = unassignedHostAssignments()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments as never })
+
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ orgId: " org_acme " }),
+    })
+
+    expect(res.status).toBe(200)
+    // The share carries the stored row, not the caller's description of it.
+    // Whether this caller may make the machine serve it is the service's
+    // question, asked before it enrols anything
+    // (`remote-access-service.test.ts`).
+    expect(assignments.assignWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "user_1" }),
+      expect.objectContaining({ workspaceId: "ws_local", orgId: "org_acme", projectId: "project_1" }),
+    )
+  })
+
+  test("a machine share the service refuses is the caller's answer, not a server fault", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(localRow())
+    const svc = services()
+    const assignments = unassignedHostAssignments()
+    assignments.assignWorkspace = vi.fn(async () => {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace authority denied workspace access")
+    }) as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments as never })
+
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_2", "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "workspace_authorization_denied" } })
+    expect(svc.authority?.auditAllow).not.toHaveBeenCalled()
+  })
+
+
 })

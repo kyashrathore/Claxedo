@@ -37,6 +37,16 @@ afterEach(() => {
 })
 
 describe("dependency patch application", () => {
+  test("applies inside a deeply nested package without an overlong Git directory", async () => {
+    const parent = mkdtempSync(path.join(os.tmpdir(), "dependency-patch-long-"))
+    temporary.push(parent)
+    const nested = path.join(parent, "package-" + "x".repeat(Math.max(20, 210 - parent.length)))
+    mkdirSync(nested, { recursive: true })
+    const { directory, patchFile } = fixture(nested)
+    expect(directory.length).toBeGreaterThan(220)
+    await provePackageRelativeApplication(directory, patchFile)
+  })
+
   test("targets package bytes instead of silently anchoring at the enclosing worktree", async () => {
     const { directory, patchFile } = fixture(root)
     await provePackageRelativeApplication(directory, patchFile)

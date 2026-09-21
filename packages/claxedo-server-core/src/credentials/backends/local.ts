@@ -10,6 +10,7 @@ import fs from "fs"
 import path from "path"
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from "crypto"
 import type { SecretBackend } from "../types"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { isJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 
@@ -40,28 +41,6 @@ function seedPath() {
 function secretPath(ref: string) {
   const hash = createHash("sha256").update(ref).digest("hex")
   return path.join(storeDir(), `${hash}.enc`)
-}
-
-function atomicWriteFileSync(file: string, data: Buffer, mode: number) {
-  const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`)
-  const fd = fs.openSync(tmp, "w", mode)
-  try {
-    fs.writeFileSync(fd, data)
-    fs.fsyncSync(fd)
-  } finally {
-    fs.closeSync(fd)
-  }
-  fs.renameSync(tmp, file)
-  try {
-    const dir = fs.openSync(path.dirname(file), "r")
-    try {
-      fs.fsyncSync(dir)
-    } finally {
-      fs.closeSync(dir)
-    }
-  } catch {
-    // Directory fsync is not available on every platform/filesystem.
-  }
 }
 
 function ensureDir() {
@@ -139,7 +118,7 @@ export function createLocalBackend(): SecretBackend {
       ensureDir()
       const ref = `local:${id}`
       const encrypted = encrypt(getKey(), secret)
-      atomicWriteFileSync(secretPath(ref), encrypted, 0o600)
+      await writePrivateFileAtomic(secretPath(ref), encrypted)
       return ref
     },
 

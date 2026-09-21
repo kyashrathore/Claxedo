@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
 import type {
+  AgentSessionStartBinding,
   AgentPermission as PermissionRequest,
   AgentQuestion as QuestionRequest,
   AgentRuntimeStatus as SessionStatus,
@@ -36,6 +37,7 @@ import { useDirectorySessionCacheActions } from "../data/sync/directory-session-
 import {
   directorySessionCacheQueryOptions,
   type DirectorySessionCacheValue,
+  type SessionRequestsQueryData,
 } from "../data/sync/queries"
 import { removeSessionInventoryQueryData } from "../data/sync/session-inventory"
 import { removeSessionListQueryData } from "../data/query/session-list"
@@ -114,6 +116,7 @@ function scheduleDelayedTask(task: () => void, delay: number) {
 }
 
 type MetaPayload = {
+  readErrors?: SessionRequestsQueryData["readErrors"]
   status?: Record<string, SessionStatus>
   permissions?: PermissionRequest[]
   questions?: QuestionRequest[]
@@ -230,7 +233,7 @@ export async function syncSessionMeta(input: {
     if (input.signal?.aborted) return false
     throw error
   }
-  const { status, permissions, questions } = payload
+  const { status, permissions, questions, readErrors } = payload
 
   if (input.signal?.aborted) return false
   if (!shouldAcceptSessionTransportResult({
@@ -248,7 +251,7 @@ export async function syncSessionMeta(input: {
     })
   }
 
-  applyDirectorySessionMeta({ sessionID: input.sessionID, status, permissions, questions })
+  applyDirectorySessionMeta({ sessionID: input.sessionID, status, permissions, questions, readErrors })
 
   return true
 }
@@ -272,19 +275,25 @@ async function fetchSessionMeta(input: {
     if (input.signal?.aborted) throw error
     return undefined
   }
+  const readErrors: NonNullable<SessionRequestsQueryData["readErrors"]> = {}
+  const requestFailed = (kind: "permissions" | "questions") => (error: unknown) => {
+    if (input.signal?.aborted) throw error
+    readErrors[kind] = error instanceof Error ? error.message : String(error)
+    return undefined
+  }
   const [status, permissions, questions] = await Promise.all([
     input.sdk.session.status(undefined, { signal: input.signal }).then((x) => x.data)
       .catch(unavailableUnlessAborted),
     input.includeRequests === false
       ? Promise.resolve(undefined)
       : input.sdk.permission.list(undefined, { signal: input.signal }).then((x) => x.data)
-        .catch(unavailableUnlessAborted),
+        .catch(requestFailed("permissions")),
     input.includeRequests === false
       ? Promise.resolve(undefined)
       : input.sdk.question.list(undefined, { signal: input.signal }).then((x) => x.data)
-        .catch(unavailableUnlessAborted),
+        .catch(requestFailed("questions")),
   ])
-  return { status, permissions, questions }
+  return { status, permissions, questions, ...(input.includeRequests === false ? {} : { readErrors }) }
 }
 
 function loadSessionMeta(input: Parameters<typeof fetchSessionMeta>[0] & { directory: string; force?: boolean }) {
@@ -309,6 +318,7 @@ function loadSessionMeta(input: Parameters<typeof fetchSessionMeta>[0] & { direc
 export function createSessionController(input: {
   directory: Accessor<string>
   sessionID: Accessor<string | undefined>
+  pendingSessionStart?: Accessor<AgentSessionStartBinding | undefined>
   serverHealthy: Accessor<boolean | undefined>
   active?: Accessor<boolean>
   signedControlPlane?: Accessor<boolean>
@@ -339,6 +349,7 @@ export function createSessionController(input: {
     sessionRowQuery,
   } = createSessionPaneQueries({
     active: paneActive,
+    pendingSessionStart: input.pendingSessionStart,
     sessionID: input.sessionID,
     directory: input.directory,
     serverUrl: () => globalSDK.url,
@@ -434,7 +445,7 @@ export function createSessionController(input: {
   })
 
   const sourceQuestionRequest = createMemo(() => {
-    const sessionID = input.sessionID()
+    const sessionID = input.pendingSessionStart?.()?.sessionId ?? input.sessionID()
     if (!sessionID || sessionID === "new") return undefined
     return requestQuery.data?.questions[0]
   })

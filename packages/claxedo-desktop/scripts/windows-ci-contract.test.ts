@@ -32,14 +32,19 @@ describe("Windows CI contract", () => {
     expect(workflow).not.toContain("continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}")
     expect(acceptance).toContain("bun run test")
     expect(desktopManifest.scripts.test).toBe(
-      "bun run test:broad && bun run test:bundle-single && bun run test:server-boot",
+      "bun run test:broad && bun run test:bundle-single && bun run test:server-boot && bun run test:electron-boundary",
     )
-    expect(desktopManifest.scripts["test:broad"]).toContain(
-      "--path-ignore-patterns='**/bundle-single-instance.test.ts'",
-    )
-    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/claxedo-server-boot.test.ts'")
-    expect(desktopManifest.scripts["test:bundle-single"]).toContain("bun test ./scripts/bundle-single-instance.test.ts")
-    expect(desktopManifest.scripts["test:server-boot"]).toContain("bun test ./scripts/claxedo-server-boot.test.ts")
+    // Each lane `test:broad` excludes because it spawns a process of its own
+    // must be named by `test`, or excluding it silently drops its coverage.
+    for (const [lane, file] of [
+      ["test:bundle-single", "bundle-single-instance.test.ts"],
+      ["test:server-boot", "claxedo-server-boot.test.ts"],
+      ["test:electron-boundary", "renderer-daemon-access.electron.test.ts"],
+    ] as const) {
+      expect(desktopManifest.scripts["test:broad"]).toContain(`--path-ignore-patterns='**/${file}'`)
+      expect(desktopManifest.scripts[lane]).toContain(`bun test ./scripts/${file}`)
+      expect(desktopManifest.scripts.test).toContain(`bun run ${lane}`)
+    }
     expect(acceptance.indexOf("\nbun run build\n")).toBeLessThan(acceptance.indexOf("\nbun run test\n"))
   })
 

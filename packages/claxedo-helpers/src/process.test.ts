@@ -112,11 +112,25 @@ describe("stopChild", () => {
     expect((await exit).signal).toBe("SIGTERM")
   })
 
-  test("escalates to SIGKILL when the grace period expires", async () => {
+  test.skipIf(process.platform === "win32")("escalates to SIGKILL when the grace period expires", async () => {
     const child = await spawnUnkillableChild()
     const exit = exited(child)
     await stopChild(child, { graceMs: 60 })
     expect((await exit).signal).toBe("SIGKILL")
+  })
+
+  test.skipIf(process.platform !== "win32")("on Windows the first signal already terminates, so escalation never runs", async () => {
+    const child = await spawnUnkillableChild()
+    const exit = exited(child)
+    // A grace period far longer than the test could tolerate: `stopChild` may
+    // only return this fast if the SIGTERM itself reaped the child, which is
+    // what Windows does — every signal is TerminateProcess, and the handler
+    // that makes this child unkillable on POSIX is never consulted.
+    const started = Date.now()
+    await stopChild(child, { graceMs: 60_000, killWaitMs: 60_000 })
+    expect(Date.now() - started).toBeLessThan(10_000)
+    expect((await exit).signal).toBe("SIGTERM")
+    expect(child.exitCode === null).toBe(true)
   })
 
   test("concurrent calls share one promise", () => {

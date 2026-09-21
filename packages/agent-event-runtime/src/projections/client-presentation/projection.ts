@@ -45,6 +45,18 @@ export type ClientPresentationProjection = RuntimeProjection<CompatEnvelope, Cli
   terminalizeOpenTools: (error: string) => CompatEnvelope[]
 }
 
+/** Session metadata has no assistant message or turn owner. */
+export function projectSessionCommands(
+  sessionId: string,
+  directory: string,
+  chunk: Extract<AgentRuntimeEvent, { type: "available-commands-update" }>,
+): CompatEnvelope {
+  return withDir(directory, {
+    type: "session.commands",
+    properties: { sessionID: sessionId, commands: chunk.commands },
+  })
+}
+
 export type ClientPresentationProjectionOptions = {
   sessionId: string
   directory: string
@@ -700,6 +712,9 @@ function fileLocator(path: string) {
 function attachmentPart(ctx: CompatContext, id: string, attachment: RuntimeToolAttachment) {
   const common = { ctx, id, mime: attachment.mime, filename: attachmentFilename(attachment) }
   if (attachment.kind === "inline") return filePart({ ...common, url: attachment.url })
+  if (attachment.kind === "tool-file") {
+    return filePart({ ...common, url: "", location: { kind: "tool-file", path: attachment.path } })
+  }
   if (attachment.kind === "workspace-file") {
     return filePart({ ...common, url: fileLocator(attachment.path), location: { kind: "workspace-file", path: attachment.path } })
   }
@@ -1406,6 +1421,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         permission: chunk.tool,
         patterns: chunk.paths,
         metadata: { ...chunk.details },
+        ...(chunk.options === undefined ? {} : { options: chunk.options }),
         always: chunk.paths,
       }))]
 

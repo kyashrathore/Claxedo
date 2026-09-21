@@ -11,6 +11,7 @@ import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapt
 import { toolDisplayFromInput } from "../tool-display"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { text } from "../../value"
+import { imageAttachment } from "../tool-attachments"
 
 export type CursorSdkAdapterState = {
   assistantTextByRunId: Record<string, string>
@@ -388,6 +389,17 @@ function toolCompletedEvents(input: {
       ] satisfies AgentRuntimeEvent[],
     }
   }
+  const result = asRecord(successfulOutput(input.result))
+  // Cursor SDK MCP results use { image: { data, mimeType } }, not MCP's wire block.
+  const attachments = (Array.isArray(result?.content) ? result.content : []).flatMap((item) => {
+    const image = asRecord(asRecord(item)?.image)
+    const data = text(image?.data)
+    const mime = text(image?.mimeType) ?? "image/*"
+    return data && mime.startsWith("image/") ? [imageAttachment({ mime, data })] : []
+  })
+  if (input.toolName === "generate_image" && text(result?.imageData)) {
+    attachments.push(imageAttachment({ mime: "image/png", data: String(result?.imageData) }))
+  }
   return {
     state: ensured.state,
     events: [
@@ -396,6 +408,7 @@ function toolCompletedEvents(input: {
         type: "tool-output",
         toolCallId: input.toolCallId,
         output: isTaskTool(ensured.toolName) ? taskOutput(input.result) : successfulOutput(input.result),
+        ...(attachments.length ? { attachments } : {}),
         display: ensured.display,
         metadata: {
           ...(exitCode === undefined ? {} : { exitCode }),

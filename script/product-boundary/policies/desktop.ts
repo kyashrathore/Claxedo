@@ -126,7 +126,19 @@ export const desktopMainComposition: Policy = {
   // forwards the text and never parses it. Imports a type from
   // `child-protocol.ts` (already here) and uses `fetch`, so no package edge.
   // 92/24, no headroom.
-  ceilings: { modules: 92, packages: 24 },
+  // +1 module net (2026-09-20): `main/daemon-request.ts` and
+  // `main/renderer-daemon-access.ts` replace `main/renderer-origin.ts`. The
+  // daemon now admits privileged calls only from the application that owns it,
+  // and main is the process that presents that capability: once for its own
+  // calls (`daemon-request.ts`, which also pins the destination and refuses
+  // redirects) and once for the trusted renderer's (`renderer-daemon-access.ts`,
+  // which stamps it onto that one frame's HTTP and WebSocket requests and
+  // strips it from every other). Reviewed owner: Electron main, the only
+  // process that may hold the token — the renderer must not, which is why the
+  // stamping is here rather than a value handed over IPC. Electron-free by the
+  // same seam split the navigation and IPC guards use, so no package edge.
+  // 93/24, no headroom.
+  ceilings: { modules: 93, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -527,7 +539,16 @@ export const desktopRendererUnsigned: Policy = {
   // app-local ledger. The renderer shares the i18n manifest, so every locale
   // file the manifest imports rides in here too. Measured 1139 modules / 58
   // packages, with no headroom.
-  ceilings: { modules: 1139, packages: 58 },
+  // +1 module (2026-09-20): `renderer/external-link.ts` owns the shell's
+  // document-click handoff to the OS, respecting clicks already claimed by
+  // the transcript. Extracted from shell.tsx for DOM integration coverage;
+  // it adds no dependency edges of its own. Measured 1140 / 58, no headroom.
+  // Two retained shared owners: claxedo-tool-href routes tool resources through
+  // existing workspace navigation; draft-session-start persists creation-owner
+  // references and reads canonical session lifecycle status. ACP questions use
+  // the unchanged question dock; its separate UI, worker, query and action
+  // modules have been removed. Exact measured 1142 modules / 58 packages.
+  ceilings: { modules: 1142, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

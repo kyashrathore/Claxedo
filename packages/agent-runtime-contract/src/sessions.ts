@@ -20,6 +20,36 @@ export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & {
 
 export type AgentExecutionBinding = AgentWorkspaceExecutionBinding
 
+/** Ownership of creation before the provider has returned any session identity. */
+export type AgentSessionStartBinding = AgentWorkspaceIdentity & {
+  sessionId: string
+  connectionId: string
+  operationId: string
+}
+
+export type AgentSessionStart = {
+  binding: AgentSessionStartBinding
+  createdAt: number
+  updatedAt: number
+} & (
+  | { status: "starting" }
+  | { status: "created"; upstreamSessionId: string }
+  | { status: "failed"; error: string }
+)
+
+export interface AgentSessionStarts {
+  get(sessionId: string): AgentSessionStart | undefined
+  begin(binding: AgentSessionStartBinding): AgentSessionStart
+  finish(binding: AgentSessionStartBinding, outcome: { status: "created"; upstreamSessionId: string } | { status: "failed"; error: string }): AgentSessionStart
+  /**
+   * Gives the id back after an authorized deletion has already removed the
+   * provider session. Every binding field must still match, so an operation
+   * that read the record before a newer one took the id cannot retire it.
+   * Answers whether this call removed the record.
+   */
+  retire(binding: AgentSessionStartBinding): boolean
+}
+
 export type AgentExecutionBindingField = keyof AgentExecutionBinding
 
 export type AgentExecutionBindingExpectation = Readonly<{
@@ -37,6 +67,13 @@ export type AgentExecutionBindingExpectation = Readonly<{
  * lower rank than the stored one is dropped by the store.
  */
 export type AgentSessionTitleSource = "prompt" | "harness" | "user"
+
+/** Commands advertised by this agent session; invoked as slash-prefixed prompts. */
+export type AgentSessionCommand = {
+  name: string
+  description: string
+  input?: { hint: string } | null
+}
 
 export type AgentSession = {
   id: string
@@ -57,6 +94,7 @@ export type AgentSession = {
   lastTurn?: AgentTurnOutcome
   executionAvailability?: ExecutionAvailability
   harnessPayload?: unknown
+  commands?: AgentSessionCommand[]
 }
 
 export type AgentPresentationSession = AgentSession & {
@@ -112,7 +150,7 @@ export type PromptInput = {
   parentMessageId?: string
   assistantMessageId: string
   agent: string
-  model: PromptModel
+  model?: PromptModel
   tools?: Record<string, boolean>
   format?: PromptFormat
   system?: string

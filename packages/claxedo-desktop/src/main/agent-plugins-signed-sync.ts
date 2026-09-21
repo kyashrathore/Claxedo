@@ -19,6 +19,7 @@ const REFRESH_INTERVAL_MS = 10 * 60_000
 const REFRESH_LEAD_MS = 5 * 60_000
 import { readNumber, readString, readUnknown } from "../shared/json-read"
 import type { HostedOperationName } from "./account/hosted-operations"
+import type { DaemonFetch } from "./daemon-request"
 
 const RETRY_INTERVAL_MS = 60_000
 
@@ -35,12 +36,10 @@ export type AgentPluginsSignedSync = {
 export function setupAgentPluginsSignedSync(input: {
   enabled: boolean
   runAccountOperation: (name: HostedOperationName, params?: Record<string, unknown>) => Promise<unknown>
-  serverUrl: () => Promise<string>
-  request?: (url: string, init?: RequestInit) => Promise<Response>
+  daemon: DaemonFetch
   log: { info(message: string): void; warn(message: string): void }
   setTimer?: (run: () => void, delayMs: number) => ReturnType<typeof setTimeout>
 }): AgentPluginsSignedSync {
-  const request = input.request ?? fetch
   const setTimer = input.setTimer ?? setTimeout
   let signed = false
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -55,7 +54,7 @@ export function setupAgentPluginsSignedSync(input: {
   }
 
   const push = async (body: unknown) => {
-    const response = await request(new URL("/api/claxedo/plugins/signed-runtime", await input.serverUrl()).toString(), {
+    const response = await input.daemon("/api/claxedo/plugins/signed-runtime", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),

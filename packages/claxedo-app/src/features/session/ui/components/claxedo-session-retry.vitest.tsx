@@ -22,6 +22,13 @@ describe("ClaxedoSessionRetry", () => {
     expect(view.getByText("ACP process restarted after disconnect")).toBeTruthy()
   })
 
+  test("shows uncertain cancellation without a retry or restart action", () => {
+    const view = render(() => <ClaxedoSessionRetry status={{ type: "recovering", kind: "uncertain_execution", message: "Original turn remains observed; no prompt was resent" }} />)
+    expect(view.getByText("Waiting for the agent to confirm cancellation...")).toBeTruthy()
+    expect(view.queryByText("Recovering ACP client...")).toBeNull()
+    expect(view.container.querySelector("button")).toBeNull()
+  })
+
   test("delegates SDK retry status to upstream retry rendering", () => {
     const view = render(() => (
       <ClaxedoSessionRetry

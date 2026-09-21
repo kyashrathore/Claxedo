@@ -34,7 +34,7 @@ export type AgentPresentationEvent =
   | { id: string; type: "message.part.delta"; properties: { sessionID: string; messageID: string; partID: string; field: string; delta: string } }
   | { type: "message.completed"; properties: { sessionID: string; messageID: string } }
   | { id: string; type: "permission.asked"; properties: AgentPermission }
-  | { id: string; type: "permission.replied"; properties: { sessionID: string; requestID: string; reply: "once" | "always" | "reject" } }
+  | { id: string; type: "permission.replied"; properties: { sessionID: string; requestID: string } & ({ reply: "once" | "always" | "reject"; optionId?: never } | { optionId: string; reply?: never }) }
   | { id: string; type: "question.asked"; properties: AgentQuestion }
   | { id: string; type: "question.replied"; properties: { sessionID: string; requestID: string; answers: string[][] } }
   | { id: string; type: "question.rejected"; properties: { sessionID: string; requestID: string } }
@@ -47,6 +47,7 @@ export type AgentPresentationEvent =
   | { id: string; type: "session.compacted"; properties: { sessionID: string } }
   | { type: "session.agent"; properties: { sessionID: string; agentId: string } }
   | { type: "session.config"; properties: { sessionID: string; options: AgentConfigOption[] } }
+  | { type: "session.commands"; properties: { sessionID: string; commands: import("./sessions").AgentSessionCommand[] } }
   | { type: "session.usage"; properties: { sessionID: string; messageID?: string; contextSize: number; contextUsed: number; observation?: RuntimeUsageObservation; cost?: { amount: number; currency: string } } }
   | { id?: string; type: "subagent.updated"; properties: { sessionID: string; update: AgentSubagentUpdate } }
   | { id?: string; type: "goal.updated"; properties: { sessionID: string; goal: RuntimeGoalSnapshot } }
@@ -78,6 +79,7 @@ export const AGENT_PRESENTATION_EVENT_TYPE_REGISTRY = {
   "session.compacted": true,
   "session.agent": true,
   "session.config": true,
+  "session.commands": true,
   "session.usage": true,
   "subagent.updated": true,
   "goal.updated": true,

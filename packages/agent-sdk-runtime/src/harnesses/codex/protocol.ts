@@ -70,12 +70,14 @@ export async function codexSteerTurn(steer: {
   input: PromptInput
   directory: string
 }) {
-  if (!steer.turnId) throw new Error("Codex has no active turn id to steer")
+  if (!steer.turnId) return { ok: false as const, status: "no_active_turn" as const, message: "Codex has no active turn id to steer" }
   await steer.process.request("turn/steer", {
     threadId: steer.threadId,
     input: await codexUserInput({ parts: steer.input.parts, directory: steer.directory }),
     expectedTurnId: steer.turnId,
+    clientUserMessageId: steer.input.userMessageId,
   })
+  return { ok: true as const }
 }
 
 export type CodexActiveThread = {
@@ -215,5 +217,5 @@ export function codexAppServerModel(model: string | undefined) {
 }
 
 export function codexTurnModel(input: PromptInput, configuredModel: string) {
-  return codexAppServerModel(text(input.model.modelID) ?? text(configuredModel))
+  return codexAppServerModel(text(input.model?.modelID) ?? text(configuredModel))
 }

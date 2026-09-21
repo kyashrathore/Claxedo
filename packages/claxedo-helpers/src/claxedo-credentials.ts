@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
+import { writePrivateFileAtomic } from "./fs"
 import { asFiniteNumber, asRecordOrEmpty } from "./guards"
 import { trimToUndefined } from "./string"
 
@@ -67,17 +68,17 @@ export async function loadClaxedoCredentials(
 /**
  * Writes the file the CLI reads, readable only by its owner.
  *
- * The directory is created 0700 and the file 0600, then chmod'd: an existing
- * file keeps the mode it was created with, so a file that was once world
- * readable stays that way without the second call.
+ * Replacement, not truncation, is what makes that hold for a path that already
+ * had a file on it: the permissions the writer established travel with the
+ * staged file, so neither a mode nor a DACL left by whatever was there before
+ * survives. It is also why a symlink at this path is replaced rather than
+ * written through.
  */
 export async function storeClaxedoCredentials(
   value: ClaxedoCredentials | Record<string, never>,
   pathname = claxedoCredentialsPath(),
 ) {
-  await fs.mkdir(path.dirname(pathname), { recursive: true, mode: 0o700 })
-  await fs.writeFile(pathname, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 })
-  await fs.chmod(pathname, 0o600)
+  await writePrivateFileAtomic(pathname, `${JSON.stringify(value, null, 2)}\n`, { mkdir: true })
 }
 
 /** Leaves the file in place holding nothing, which `readClaxedoCredentials` reads as signed out. */

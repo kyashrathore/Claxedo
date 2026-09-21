@@ -1,3 +1,4 @@
+import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { FollowupDraft } from "@/features/session/composer/ui/submit"
 import type { SessionStatusStage as SessionStatusStageValue } from "@/features/session/ui/components/session-status-stage"
@@ -13,6 +14,7 @@ import type { RelayHostKind, WorkspaceHostKind } from "@/platform/runtime/placem
 export type PromptRetryAction = (prompt?: Prompt) => unknown
 
 export interface PromptInputProps {
+  onSessionStart?: (draftId: string, binding: AgentSessionStartBinding | undefined, outcome?: "transport-failed") => void
   class?: string
   mode: ComposerMode
   variant?: "dock" | "new-session"

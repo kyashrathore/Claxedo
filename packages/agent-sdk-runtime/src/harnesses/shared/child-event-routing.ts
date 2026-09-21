@@ -246,8 +246,8 @@ function sameTarget(left: ChildProjectionTarget, right: ChildProjectionTarget) {
     left.created === right.created &&
     left.input.userMessageId === right.input.userMessageId &&
     left.input.agent === right.input.agent &&
-    left.input.model.providerID === right.input.model.providerID &&
-    left.input.model.modelID === right.input.model.modelID &&
+    left.input.model?.providerID === right.input.model?.providerID &&
+    left.input.model?.modelID === right.input.model?.modelID &&
     left.input.variant === right.input.variant
 }
 

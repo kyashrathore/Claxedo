@@ -356,7 +356,7 @@ export async function mintSupervisorBackplaneToken(
     workspace_id: input.workspaceId,
     host_id: input.hostId,
     action: "runtime.config.apply",
-    scopes: ["runtime.config.apply"],
+    scopes: ["runtime.config.apply", "runtime.checkpoint.control"],
   })
     .setProtectedHeader({ alg, kid })
     .setIssuer(supervisorBackplaneTokenIssuer)

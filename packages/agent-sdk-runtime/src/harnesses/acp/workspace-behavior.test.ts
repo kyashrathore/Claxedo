@@ -4,6 +4,12 @@ import { committedStartTurn } from "../../test-utils/fake-runtime-store"
 import type { AgentRuntimeTurnStartInput } from "../shared/runtime-store"
 import { executionBinding } from "../../test-utils/execution-binding"
 import { AcpHarnessAdapter } from "./index"
+import type { SessionConfig } from "../../index"
+import { RequestError } from "@agentclientprotocol/sdk"
+
+class LifecycleTestAdapter extends AcpHarnessAdapter {
+  protected override bindCommandUpdates() {}
+}
 
 type BaseInternals = {
   busySessions: Set<string>
@@ -20,7 +26,7 @@ type BaseInternals = {
  * over the defaults it overrides.
  */
 function adapter<Extra extends object = Record<never, never>>() {
-  const out = Object.create(AcpHarnessAdapter.prototype) as WithInternals<
+  const out = Object.create(LifecycleTestAdapter.prototype) as WithInternals<
     AcpHarnessAdapter,
     Omit<BaseInternals, keyof Extra> & Extra
   >
@@ -36,10 +42,10 @@ function adapter<Extra extends object = Record<never, never>>() {
 }
 
 describe("AcpHarnessAdapter", () => {
-  it("reports ACP harness capabilities", () => {
+  it("reports ACP harness capabilities", async () => {
     const item = adapter()
 
-    expect(item.readHarnessCapabilities()).toEqual({
+    expect(await item.readHarnessCapabilities()).toEqual({
       harness: "openclaw",
       modelSelection: { status: "optional" },
       instructionChannel: "prompt-prefix",
@@ -47,7 +53,7 @@ describe("AcpHarnessAdapter", () => {
       reconnect: false,
       replay: true,
       permissions: true,
-      questions: false,
+      questions: true,
       todos: false,
       commands: false,
       fork: false,
@@ -56,15 +62,16 @@ describe("AcpHarnessAdapter", () => {
       configOptions: true,
       subagents: false,
       goals: false,
-      effortLevels: { status: "unsupported", models: [] },
+      effortLevels: { status: "unresolved", models: [] },
     })
   })
 
-  it("restores and syncs an existing ACP session before prompting on a fresh process", async () => {
+  it.each([true, false])("restores a session not loaded in this process (process is new: %s)", async (fresh) => {
     const calls: Array<{ name: string; args: unknown[] }> = []
     const seen: string[] = []
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         markSessionInterrupted: (id: string) => void
@@ -75,6 +82,9 @@ describe("AcpHarnessAdapter", () => {
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
+          quarantineSession: (id: string, pending: Promise<unknown>) => void
+          listenSubagents: () => () => void
+          hasSession: (id: string) => boolean
           permissionPushers: Map<string, unknown>
           resumeSession: (id: string, directory: string) => Promise<void>
           syncSession: (id: string, input: unknown) => Promise<void>
@@ -85,6 +95,7 @@ describe("AcpHarnessAdapter", () => {
     }>()
 
     item.store = {
+      getSessionConfig: () => null,
       getAgentSessionId() {
         return "acp-1"
       },
@@ -109,8 +120,11 @@ describe("AcpHarnessAdapter", () => {
     }
 
     item.getOrSpawnProcess = async (_id, _directory) => ({
-      isNew: true,
+      isNew: fresh,
       proc: {
+        quarantineSession() {},
+        listenSubagents: () => () => {},
+        hasSession: () => false,
         permissionPushers: new Map(),
         async resumeSession(id, directory) {
           calls.push({ name: "resumeSession", args: [id, directory] })
@@ -153,6 +167,7 @@ describe("AcpHarnessAdapter", () => {
   it("applies prompt response usage to the final assistant message before idle", async () => {
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         markSessionInterrupted: (id: string) => void
@@ -163,6 +178,9 @@ describe("AcpHarnessAdapter", () => {
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
+          quarantineSession: (id: string, pending: Promise<unknown>) => void
+          listenSubagents: () => () => void
+          hasSession: (id: string) => boolean
           permissionPushers: Map<string, unknown>
           resumeSession: (id: string, directory: string) => Promise<void>
           syncSession: (id: string, input: unknown) => Promise<void>
@@ -187,6 +205,7 @@ describe("AcpHarnessAdapter", () => {
     }>()
 
     item.store = {
+      getSessionConfig: () => null,
       getAgentSessionId() {
         return "acp-1"
       },
@@ -209,6 +228,9 @@ describe("AcpHarnessAdapter", () => {
     item.getOrSpawnProcess = async () => ({
       isNew: true,
       proc: {
+        quarantineSession() {},
+        listenSubagents: () => () => {},
+        hasSession: () => true,
         permissionPushers: new Map(),
         async resumeSession() {},
         async syncSession() {},
@@ -306,10 +328,15 @@ describe("AcpHarnessAdapter", () => {
     expect(restarts).toBe(1)
   })
 
-  it("recreates the ACP session when resume says resource not found after restart", async () => {
+  it.each([false, true])("rebuilds missing-session context durably (prompt fails: %s)", async (promptFails) => {
+    const persisted: unknown[] = []
     const calls: Array<{ name: string; args: unknown[] }> = []
+    let config: SessionConfig = { harness: { id: "openclaw", access: "native" } }
     const item = adapter<{
       store: {
+        getSessionConfig: () => SessionConfig
+        updateSessionConfig: (id: string, update: Partial<SessionConfig>) => SessionConfig
+        getMessages: () => import("../../index").AgentMessage[]
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         markSessionInterrupted: (id: string) => void
@@ -320,6 +347,11 @@ describe("AcpHarnessAdapter", () => {
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
+          quarantineSession: (id: string, pending: Promise<unknown>) => void
+          listenSubagents: () => () => void
+          hasSession: (id: string) => boolean
+          cancel: () => Promise<void>
+          dispose: () => void
           permissionPushers: Map<string, unknown>
           resumeSession: (id: string, directory: string) => Promise<void>
           newSession: (directory: string, title?: string) => Promise<string>
@@ -331,6 +363,15 @@ describe("AcpHarnessAdapter", () => {
     }>()
 
     item.store = {
+      getSessionConfig: () => config,
+      updateSessionConfig: (_id, update) => config = { ...config, ...update },
+      getMessages: () => [{
+        info: { id: "previous-user", sessionID: "s1", role: "user" },
+        parts: [{ id: "p0", sessionID: "s1", messageID: "previous-user", type: "text", text: "Keep the orange theme" }],
+      }, {
+        info: { id: "u1", sessionID: "s1", role: "user" },
+        parts: [{ id: "p1", sessionID: "s1", messageID: "u1", type: "text", text: "hello" }],
+      }],
       getAgentSessionId() {
         return "acp-stale"
       },
@@ -349,6 +390,7 @@ describe("AcpHarnessAdapter", () => {
         return committedStartTurn(input)
       },
       appendEvent(input) {
+        persisted.push(input.payload)
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },
     }
@@ -356,10 +398,15 @@ describe("AcpHarnessAdapter", () => {
     item.getOrSpawnProcess = async (_id, _directory) => ({
       isNew: true,
       proc: {
+        quarantineSession() {},
+        listenSubagents: () => () => {},
+        hasSession: () => true,
+        async cancel() {},
+        dispose() {},
         permissionPushers: new Map(),
         async resumeSession(id, directory) {
           calls.push({ name: "resumeSession", args: [id, directory] })
-          throw new Error("Resource not found: acp-stale")
+          throw RequestError.resourceNotFound("acp-stale")
         },
         async newSession(directory, title) {
           calls.push({ name: "newSession", args: [directory, title] })
@@ -370,6 +417,7 @@ describe("AcpHarnessAdapter", () => {
         },
         async prompt(id, input, _onUpdate) {
           calls.push({ name: "prompt", args: [id, input] })
+          if (promptFails) throw new Error("agent disconnected")
           return { stopReason: "end_turn" }
         },
       },
@@ -394,6 +442,19 @@ describe("AcpHarnessAdapter", () => {
       "syncSession",
       "prompt",
     ])
+    expect(calls.find((call) => call.name === "prompt")?.args[1]).toMatchObject({
+      system: expect.stringContaining("Keep the orange theme"),
+      parts: [{ type: "text", text: "hello" }],
+    })
+    expect(persisted).toContainEqual(expect.objectContaining({
+      type: "message.part.updated",
+      properties: expect.objectContaining({ part: expect.objectContaining({
+        messageID: "a1", type: "text",
+        text: expect.stringContaining("Cache busted — agent context rebuilt from saved conversation"),
+      }) }),
+    }))
+    if (promptFails) expect(config.handoff).toMatchObject({ pending: true, transcript: expect.stringContaining("Keep the orange theme") })
+    else expect(config.handoff).toBeNull()
     expect(calls[3]?.args[0]).toMatchObject({
       sessionId: "s1",
       directory: "/work",
@@ -405,6 +466,7 @@ describe("AcpHarnessAdapter", () => {
   it("emits recovering status instead of terminal error for recoverable ACP restarts", async () => {
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         markSessionInterrupted: (id: string) => void
@@ -415,6 +477,9 @@ describe("AcpHarnessAdapter", () => {
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
+          quarantineSession: (id: string, pending: Promise<unknown>) => void
+          listenSubagents: () => () => void
+          hasSession: (id: string) => boolean
           permissionPushers: Map<string, unknown>
           resumeSession: (id: string, directory: string) => Promise<void>
           syncSession: (id: string, input: unknown) => Promise<void>
@@ -425,6 +490,7 @@ describe("AcpHarnessAdapter", () => {
     }>()
 
     item.store = {
+      getSessionConfig: () => null,
       getAgentSessionId() {
         return "acp-1"
       },
@@ -447,14 +513,15 @@ describe("AcpHarnessAdapter", () => {
     item.getOrSpawnProcess = async () => ({
       isNew: true,
       proc: {
+        quarantineSession() {},
+        listenSubagents: () => () => {},
+        hasSession: () => true,
         permissionPushers: new Map(),
         async resumeSession() {},
         async syncSession() {},
         async prompt() {
           return { stopReason: "end_turn" }
         },
-        async cancel() {},
-        dispose() {},
       },
     })
 
@@ -489,10 +556,11 @@ describe("AcpHarnessAdapter", () => {
     expect(out.some((item) => item.type === "session.idle")).toBe(true)
   })
 
-  it("retries the prompt with a replacement ACP session when prompt says resource not found", async () => {
+  it.each(["sync", "prompt"])("does not replace a session when %s reports a missing resource", async (phase) => {
     const calls: Array<{ name: string; args: unknown[] }> = []
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         markSessionInterrupted: (id: string) => void
@@ -503,6 +571,11 @@ describe("AcpHarnessAdapter", () => {
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
+          quarantineSession: (id: string, pending: Promise<unknown>) => void
+          listenSubagents: () => () => void
+          hasSession: (id: string) => boolean
+          cancel: () => Promise<void>
+          dispose: () => void
           permissionPushers: Map<string, unknown>
           syncSession: (id: string, input: unknown) => Promise<void>
           newSession: (directory: string, title?: string) => Promise<string>
@@ -513,6 +586,7 @@ describe("AcpHarnessAdapter", () => {
     }>()
 
     item.store = {
+      getSessionConfig: () => null,
       getAgentSessionId() {
         return "acp-stale"
       },
@@ -539,9 +613,15 @@ describe("AcpHarnessAdapter", () => {
     item.getOrSpawnProcess = async (_id, _directory) => ({
       isNew: false,
       proc: {
+        quarantineSession() {},
+        listenSubagents: () => () => {},
+        hasSession: () => true,
+        async cancel() {},
+        dispose() {},
         permissionPushers: new Map(),
         async syncSession(id, input) {
           calls.push({ name: "syncSession", args: [id, input] })
+          if (phase === "sync") throw RequestError.resourceNotFound("acp-stale")
         },
         async newSession(directory, title) {
           calls.push({ name: "newSession", args: [directory, title] })
@@ -550,7 +630,7 @@ describe("AcpHarnessAdapter", () => {
         async prompt(id, input, _onUpdate) {
           calls.push({ name: "prompt", args: [id, input] })
           promptCount++
-          if (promptCount === 1) throw new Error("Resource not found")
+          if (promptCount === 1) throw RequestError.resourceNotFound("acp-stale")
           return { stopReason: "end_turn" }
         },
       },
@@ -570,24 +650,15 @@ describe("AcpHarnessAdapter", () => {
     expect(calls.map((item) => item.name)).toEqual([
       "startTurn",
       "syncSession",
-      "prompt",
-      "newSession",
-      "bindSession",
-      "syncSession",
-      "prompt",
+      ...(phase === "prompt" ? ["prompt"] : []),
     ])
-    expect(calls[4]?.args[0]).toMatchObject({
-      sessionId: "s1",
-      directory: "/work",
-      title: "Saved",
-      agentSessionId: "acp-new",
-    })
-    expect(out).toContain("session.idle")
+    expect(out).toContain("session.error")
   })
 
   it("reuses one ACP process for separate local sessions with the same process key", async () => {
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         getSession: (id: string) => { id: string } | null
         markSessionInterrupted: (id: string) => void
       }
@@ -595,10 +666,13 @@ describe("AcpHarnessAdapter", () => {
         initialize: () => Promise<void>
         dispose: () => void
         alive: boolean
+        supportsForkSession: () => boolean
+        supportsSubagents: () => boolean
       }
     }>()
     const seen: string[] = []
     item.store = {
+      getSessionConfig: () => null,
       getSession(id) {
         return { id }
       },
@@ -607,6 +681,8 @@ describe("AcpHarnessAdapter", () => {
 
     item.make = () => ({
       alive: true,
+      supportsForkSession: () => false,
+      supportsSubagents: () => false,
       async initialize() {
         seen.push("init")
       },
@@ -626,6 +702,7 @@ describe("AcpHarnessAdapter", () => {
     const calls: Array<{ sessionId: string; payload: { type: string; properties: { requestID: string } } }> = []
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         listPermissions: (directory: string) => Array<{ id: string; sessionID: string }>
         appendEvent: (input: { sessionId: string; payload: { type: string; properties: { requestID: string } } }) => {
           sessionId: string
@@ -638,6 +715,7 @@ describe("AcpHarnessAdapter", () => {
     }>()
 
     item.store = {
+      getSessionConfig: () => null,
       listPermissions() {
         return [{ id: "perm-1", sessionID: "s1" }]
       },
@@ -661,6 +739,7 @@ describe("AcpHarnessAdapter", () => {
     const recovering: Array<{ id: string; message: string }> = []
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         listPermissions: (directory: string) => Array<{ id: string; sessionID: string }>
         stalePermission: (id: string) => void
         markRecovering: (id: string, message: string) => void
@@ -669,6 +748,7 @@ describe("AcpHarnessAdapter", () => {
     }>()
 
     item.store = {
+      getSessionConfig: () => null,
       listPermissions() {
         return [
           { id: "perm-live", sessionID: "s-live" },
@@ -698,6 +778,7 @@ describe("AcpHarnessAdapter", () => {
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         markSessionInterrupted: (id: string) => void
@@ -708,6 +789,9 @@ describe("AcpHarnessAdapter", () => {
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
+          quarantineSession: (id: string, pending: Promise<unknown>) => void
+          listenSubagents: () => () => void
+          hasSession: (id: string) => boolean
           permissionPushers: Map<string, unknown>
           resumeSession: (id: string, directory: string) => Promise<void>
           syncSession: (id: string, input: unknown) => Promise<void>
@@ -723,6 +807,7 @@ describe("AcpHarnessAdapter", () => {
     })
 
     item.store = {
+      getSessionConfig: () => null,
       getAgentSessionId() {
         return "acp-1"
       },
@@ -745,16 +830,19 @@ describe("AcpHarnessAdapter", () => {
     item.getOrSpawnProcess = async () => ({
       isNew: true,
       proc: {
+        quarantineSession() {},
+        listenSubagents: () => () => {},
+        hasSession: () => true,
         permissionPushers: new Map(),
         async resumeSession() {
           await gate
         },
         async syncSession() {},
+        async cancel() {},
+        dispose() {},
         async prompt() {
           return { stopReason: "end_turn" }
         },
-        async cancel() {},
-        dispose() {},
       },
     })
 
@@ -767,14 +855,16 @@ describe("AcpHarnessAdapter", () => {
     }, "/work", Date.now())[Symbol.asyncIterator]()
     try {
       const seen: string[] = []
-      const until = Date.now() + 40
+      const until = Date.now() + 100
+      let pending = iter.next()
       while (Date.now() < until) {
         const row = await Promise.race([
-          iter.next(),
+          pending,
           new Promise<IteratorResult<{ type: string }> | null>((resolve) => setTimeout(() => resolve(null), 5)),
         ])
         if (!row) continue
         if (row.done) break
+        pending = iter.next()
         seen.push(row.value.type)
         if (row.value.type === "session.error") break
       }
@@ -795,6 +885,7 @@ describe("AcpHarnessAdapter", () => {
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "10"
     const item = adapter<{
       store: {
+        getSessionConfig: () => null
         getAgentSessionId: (id: string) => string | undefined
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
@@ -804,6 +895,9 @@ describe("AcpHarnessAdapter", () => {
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
         proc: {
+          quarantineSession: (id: string, pending: Promise<unknown>) => void
+          listenSubagents: () => () => void
+          hasSession: (id: string) => boolean
           permissionPushers: Map<string, unknown>
           resumeSession: (id: string, directory: string) => Promise<void>
           syncSession: (id: string, input: unknown) => Promise<void>
@@ -819,6 +913,7 @@ describe("AcpHarnessAdapter", () => {
     })
 
     item.store = {
+      getSessionConfig: () => null,
       getAgentSessionId() {
         return undefined
       },
@@ -838,6 +933,9 @@ describe("AcpHarnessAdapter", () => {
     item.getOrSpawnProcess = async () => ({
       isNew: true,
       proc: {
+        quarantineSession() {},
+        listenSubagents: () => () => {},
+        hasSession: () => true,
         permissionPushers: new Map(),
         async resumeSession() {},
         async syncSession() {
@@ -858,14 +956,16 @@ describe("AcpHarnessAdapter", () => {
     }, "/work", Date.now())[Symbol.asyncIterator]()
     try {
       const seen: string[] = []
-      const until = Date.now() + 40
+      const until = Date.now() + 100
+      let pending = iter.next()
       while (Date.now() < until) {
         const row = await Promise.race([
-          iter.next(),
+          pending,
           new Promise<IteratorResult<{ type: string }> | null>((resolve) => setTimeout(() => resolve(null), 5)),
         ])
         if (!row) continue
         if (row.done) break
+        pending = iter.next()
         seen.push(row.value.type)
         if (row.value.type === "session.error") break
       }

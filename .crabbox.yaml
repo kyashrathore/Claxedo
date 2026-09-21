@@ -237,6 +237,10 @@ jobs:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh unit-linux
 
+  focus-workspace-files-linux-aws:
+    <<: *aws_linux_job
+    command: bash script/cbx-ci-remote.sh workspace-files-linux
+
   pr-typecheck-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh typecheck-linux
@@ -332,6 +336,19 @@ jobs:
     serverType: m7i.2xlarge
     market: on-demand
     command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package-test -Package @claxedo/server-core
+    stop: auto
+
+  # `writeFileAtomic`'s private-file arm is Windows DACL code that Linux cannot
+  # execute at all. `CLAXEDO_WINDOWS_ACL_ACCEPTANCE` makes the native
+  # acceptance tests mandatory here, so this lane fails rather than skipping
+  # them; off the lane they are unavailable, not silently green.
+  focus-helpers-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package -Package @claxedo/helpers -AclAcceptance
     stop: auto
 
   pr-e2e-desktop-macos:

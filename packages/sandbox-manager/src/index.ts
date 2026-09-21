@@ -9,10 +9,12 @@ import {
   type SandboxCheckpointRestoreInput,
   type SandboxCheckpointResult,
 } from "./checkpoint-manager"
+import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
 
 export { DEFAULT_WORKSPACE_RUNTIME_PORT }
 export * from "./checkpoint-manager"
 export * from "./hosted-network-policy"
+export * from "./runtime-snapshot"
 
 export type SandboxRegion = string
 
@@ -359,18 +361,25 @@ export type SandboxLeaseAcquireResult =
   | { acquired: true; lease: SandboxLease }
   | { acquired: false; lease: SandboxLease; retryAfterMs: number }
 
+/**
+ * What may be said about a lease after it exists: lifecycle state, liveness,
+ * and the capture/restore record.
+ *
+ * Identity and labels are absent, and that absence is the whole ownership
+ * mechanism. `sandboxId`, `url`, `hostId`, `driverResourceId` and `labels`
+ * decide which provider resource every later checkpoint, snapshot, stop and
+ * destroy acts on; if a patch could carry them, anything that can reach a
+ * store — a status update, a heartbeat, a retry — could point one workspace's
+ * lease at another workspace's sandbox. They enter a lease only through
+ * `SandboxLeaseStore.recordTarget`, whose argument is a driver's answer.
+ */
 export type SandboxLeasePatch = Partial<
   Pick<
     SandboxLease,
     | "status"
-    | "sandboxId"
-    | "url"
-    | "hostId"
-    | "driverResourceId"
     | "retryCount"
     | "lastHeartbeatAt"
     | "lastActivityAt"
-    | "labels"
   >
 > & {
   /** `null` clears the stored value; `undefined` leaves it unchanged. */
@@ -379,8 +388,6 @@ export type SandboxLeasePatch = Partial<
   lastError?: string | null
   /** `null` clears the stored value; `undefined` leaves it unchanged. */
   checkpoint?: SandboxCheckpointReference | null
-  /** `null` clears the stored value; `undefined` leaves it unchanged. */
-  persistence?: SandboxPersistenceCapabilities | null
   /** `null` clears the stored value; `undefined` leaves it unchanged. */
   restore?: SandboxRestoreStatus | null
 }
@@ -393,26 +400,68 @@ export function applySandboxLeasePatch(current: SandboxLease, patch: SandboxLeas
   return {
     ...current,
     ...(patch.status === undefined ? {} : { status: patch.status }),
-    ...(patch.sandboxId === undefined ? {} : { sandboxId: patch.sandboxId }),
-    ...(patch.url === undefined ? {} : { url: patch.url }),
-    ...(patch.hostId === undefined ? {} : { hostId: patch.hostId }),
-    ...(patch.driverResourceId === undefined ? {} : { driverResourceId: patch.driverResourceId }),
     ...(patch.retryCount === undefined ? {} : { retryCount: patch.retryCount }),
     ...(patch.lastHeartbeatAt === undefined ? {} : { lastHeartbeatAt: patch.lastHeartbeatAt }),
     ...(patch.lastActivityAt === undefined ? {} : { lastActivityAt: patch.lastActivityAt }),
-    ...(patch.labels === undefined ? {} : { labels: patch.labels }),
     ...(patch.nextRetryAt === undefined ? {} : { nextRetryAt: patch.nextRetryAt ?? undefined }),
     ...(patch.lastError === undefined ? {} : { lastError: patch.lastError ?? undefined }),
     ...(patch.checkpoint === undefined ? {} : { checkpoint: patch.checkpoint ?? undefined }),
-    ...(patch.persistence === undefined ? {} : { persistence: patch.persistence ?? undefined }),
     ...(patch.restore === undefined ? {} : { restore: patch.restore ?? undefined }),
+    updatedAt,
+  }
+}
+
+/**
+ * The provider resource a driver answered with, and the only shape that can
+ * put identity on a lease. Every field is the driver's, taken from one
+ * `ensureHost`/`resumeHost` answer, so a lease's identity is always one
+ * coherent record of one provisioning cycle rather than fields accumulated
+ * from separate callers.
+ */
+export type SandboxProvisionedTarget = {
+  sandboxId: string
+  url: string
+  hostId: string
+  driverResourceId?: string
+  labels: Record<string, string>
+  persistence?: SandboxPersistenceCapabilities
+}
+
+/**
+ * Canonical "this lease now serves this resource" transition, shared by every
+ * lease store driver: identity, the labels it was placed with, and the end of
+ * whatever retry state the acquire was in.
+ */
+export function applySandboxProvisionedTarget(
+  current: SandboxLease,
+  target: SandboxProvisionedTarget,
+  updatedAt: number,
+): SandboxLease {
+  return {
+    ...current,
+    status: "ready",
+    sandboxId: target.sandboxId,
+    url: target.url,
+    hostId: target.hostId,
+    driverResourceId: target.driverResourceId,
+    labels: target.labels,
+    ...(target.persistence === undefined ? {} : { persistence: target.persistence }),
+    retryCount: 0,
+    nextRetryAt: undefined,
+    lastError: undefined,
     updatedAt,
   }
 }
 
 export type SandboxLeaseStore = {
   acquire: (workspaceId: string, input: SandboxLeaseAcquireInput) => Promise<SandboxLeaseAcquireResult>
-  update: (workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch) => Promise<SandboxLease | undefined>
+  /** The one writer of lease identity. Fenced on the epoch the driver was asked for. */
+  recordTarget: (
+    workspaceId: string,
+    expectedEpoch: number,
+    target: SandboxProvisionedTarget,
+  ) => Promise<SandboxLease | undefined>
+  update: (workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch, expectedStatus?: SandboxLeaseStatus) => Promise<SandboxLease | undefined>
   recordFailure: (
     workspaceId: string,
     expectedEpoch: number,
@@ -535,8 +584,8 @@ type LifecycleOperation =
 
 export type SandboxManager = {
   ensure: (workspaceId: string, input: SandboxManagerInput) => Promise<SandboxEnsureResult>
-  register: (workspaceId: string, input: SandboxRegisterInput) => Promise<SandboxMutationResult>
-  heartbeat: (workspaceId: string, input: SandboxHeartbeatInput) => Promise<SandboxMutationResult>
+  register: (workspaceId: string, input: SandboxRuntimeSnapshotInput) => Promise<SandboxMutationResult>
+  heartbeat: (workspaceId: string, input: SandboxRuntimeSnapshotInput) => Promise<SandboxMutationResult>
   target: (workspaceId: string) => Promise<SandboxTargetResult>
   touch: (workspaceId: string) => Promise<SandboxTouchResult>
   snapshot: (workspaceId: string) => Promise<SandboxSnapshotManagerResult>
@@ -570,19 +619,26 @@ export type SandboxManagerInput = {
   snapshot?: string
 }
 
-export type SandboxRegisterInput = {
-  epoch?: number
+/**
+ * What a running sandbox may report about itself: liveness and activity.
+ *
+ * Identity — `sandboxId`, `url`, `hostId`, `driverResourceId` — is absent on
+ * purpose. `provision()` writes it from the driver's answer and nothing else
+ * does, because every later lifecycle call resolves its provider target from
+ * those fields: a snapshot able to restate them lets the reporting sandbox
+ * point this workspace's checkpoint, snapshot and destroy at a resource
+ * belonging to another workspace.
+ *
+ * `epoch` is required and never defaulted. Reading the lease's own epoch when
+ * the reporter omits one makes the fence agree with whatever it is handed.
+ */
+export type SandboxRuntimeSnapshotInput = {
+  epoch: number
+  /** Whether the runtime is serving. How a reporter words that is its own. */
   ok: boolean
-  status?: string
-  sandboxId?: string | null
-  url?: string | null
-  hostId?: string | null
-  driverResourceId?: string | null
   active?: boolean
   now?: number
 }
-
-export type SandboxHeartbeatInput = SandboxRegisterInput
 
 /**
  * What a provisioning cycle is actually doing, for honest progress UI.
@@ -918,19 +974,20 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           bootMode: resuming ? "resume" : ensure.bootSource?.kind === "driver-snapshot" ? "restore" : "cold-start",
         }
       }
-      const updated = await options.leaseStore.update(workspaceId, lease.epoch, {
-        status: "ready",
+      const updated = await options.leaseStore.recordTarget(workspaceId, lease.epoch, {
         sandboxId: target.sandboxId,
         url: target.url,
         hostId: target.hostId,
         driverResourceId: target.driverResourceId,
-        retryCount: 0,
-        nextRetryAt: null,
-        lastError: null,
-        labels: target.labels ?? ensure.labels,
+        // The placement labels win over anything the driver echoed back: `app`,
+        // `workspaceId` and `epoch` are what garbage collection reads to decide
+        // whether a live sandbox belongs to this deployment, and a driver that
+        // returned its own label set would otherwise decide that answer.
+        labels: { ...target.labels, ...ensure.labels },
         persistence: options.driver.metadata.persistence,
       })
-      const resolved = await leaseTarget(updated ?? lease)
+      if (!updated) return { status: "unavailable", error: "runtime_lease_changed", epoch: lease.epoch, homeRegion }
+      const resolved = await leaseTarget(updated)
       if (resolved.status === "ready") return resolved
       return {
         status: "unavailable",
@@ -945,9 +1002,11 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         // ready target keeps resolving for relay routing while we record the
         // error for observability only. Cold-create/acquiring failures below
         // keep the demotion + backoff behaviour.
-        const updated = await options.leaseStore.update(workspaceId, lease.epoch, { lastError: error })
-        const resolved = await leaseTarget(updated ?? lease)
-        if (resolved.status === "ready") return resolved
+        const updated = await options.leaseStore.update(workspaceId, lease.epoch, { lastError: error }, "ready")
+        if (updated) {
+          const resolved = await leaseTarget(updated)
+          if (resolved.status === "ready") return resolved
+        }
       }
       const nextRetryCount = lease.retryCount + 1
       const retryCapped = nextRetryCount >= maxRetryCount
@@ -1060,10 +1119,10 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
       return provision(workspaceId, acquired.lease, input.homeRegion, input)
     },
     async register(workspaceId, input) {
-      return await updateFromRuntimeSnapshot(workspaceId, input)
+      return await runtimeSnapshot(workspaceId, input)
     },
     async heartbeat(workspaceId, input) {
-      return await updateFromRuntimeSnapshot(workspaceId, input)
+      return await runtimeSnapshot(workspaceId, input)
     },
     async target(workspaceId) {
       const lease = await options.leaseStore.get(workspaceId)
@@ -1216,32 +1275,9 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     list: () => options.leaseStore.list(),
   }
 
-  async function updateFromRuntimeSnapshot(
-    workspaceId: string,
-    input: SandboxRegisterInput,
-  ): Promise<SandboxMutationResult> {
-    const current = await options.leaseStore.get(workspaceId)
-    if (!current) return { ok: false, reason: "runtime_lease_missing" }
-    const expectedEpoch = input.epoch ?? current.epoch
-    if (current.epoch !== expectedEpoch) return { ok: false, reason: "runtime_lease_epoch_mismatch" }
-    const timestamp = input.now ?? now()
-    const status =
-      input.status === "unhealthy" || ! input.ok ? "unavailable" : input.ok ? "ready" : current.status
-    const updated = await options.leaseStore.update(workspaceId, expectedEpoch, {
-      status,
-      ...(input.sandboxId ? { sandboxId: input.sandboxId } : {}),
-      ...(input.url ? { url: input.url } : {}),
-      ...(input.hostId ? { hostId: input.hostId } : input.sandboxId ? { hostId: input.sandboxId } : {}),
-      ...(input.driverResourceId
-        ? { driverResourceId: input.driverResourceId }
-        : input.sandboxId
-          ? { driverResourceId: input.sandboxId }
-          : {}),
-      lastHeartbeatAt: timestamp,
-      ...(input.active ? { lastActivityAt: timestamp } : {}),
-      ...(input.ok ? { lastError: null } : {}),
-    })
-    if (!updated) return { ok: false, reason: "runtime_lease_epoch_mismatch" }
-    return { ok: true, status: updated.status }
+  // A manager's only observer of the sandbox is the sandbox itself, so an
+  // unhealthy report demotes the lease and spends no retry budget.
+  function runtimeSnapshot(workspaceId: string, snapshot: SandboxRuntimeSnapshotInput) {
+    return applySandboxRuntimeSnapshot({ leaseStore: options.leaseStore, workspaceId, snapshot, now })
   }
 }

@@ -27,6 +27,10 @@ const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config"
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
+  // Contract error classes cross the SDK/runtime boundary. Keep their identity
+  // owned by the installed contract package, just as the SDK build does.
+  "@claxedo/agent-runtime-contract",
+  "@claxedo/agent-runtime-contract/*",
   "@claxedo/agent-sdk-runtime",
   "@claxedo/agent-sdk-runtime/*",
   "@claxedo/agent-event-runtime",

@@ -11,13 +11,17 @@ import {
 } from "@agentclientprotocol/sdk"
 import { ACPProcess, acpClientCapabilities } from "./process"
 
-test("advertises only standard ACP client capabilities", () => {
-  expect(acpClientCapabilities()).toEqual({
+test("advertises implemented ACP capabilities and the versioned child-session extension", () => {
+  const expected = {
     auth: { terminal: false },
     fs: { readTextFile: true, writeTextFile: true },
     plan: {},
     terminal: true,
-  })
+    elicitation: { form: {}, url: {} },
+    subagents: {},
+    _meta: { jetbrains: { air: { version: 1, capabilities: ["nativeSubagentSessions"] } } },
+  }
+  expect(acpClientCapabilities()).toEqual(expected)
 })
 
 /**
@@ -61,16 +65,20 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 describe("ACPProcess.prompt quiet countdown", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "acp-process-"))
   const prevTimeout = process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS
+  const prevCancelTimeout = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
   const procs: ACPProcess[] = []
 
   beforeEach(() => {
     process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = "200"
+    process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "100"
   })
 
   afterEach(() => {
     for (const proc of procs.splice(0)) proc.dispose()
     if (prevTimeout === undefined) delete process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS
     else process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = prevTimeout
+    if (prevCancelTimeout === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
+    else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = prevCancelTimeout
   })
 
   async function connected(prompt: Parameters<typeof fakeAgent>[0]) {
@@ -137,6 +145,31 @@ describe("ACPProcess.prompt quiet countdown", () => {
     expect(answered).toEqual({ outcome: { outcome: "selected", optionId: "once" } })
   })
 
+  test("a session waiting for permission does not block another session or accept a second prompt of its own", async () => {
+    const { proc, sessionId } = await connected(async (conn, params) => {
+      if (params.sessionId === sessionId) {
+        await conn.requestPermission({
+          sessionId,
+          toolCall: { toolCallId: "held", title: "bun test", kind: "execute" },
+          options: [{ optionId: "once", kind: "allow_once", name: "Allow" }],
+        })
+      }
+      await textUpdate(conn, params.sessionId, params.sessionId)
+      return { stopReason: "end_turn" }
+    })
+    const first: string[] = []
+    const second: string[] = []
+    const turn = proc.prompt(sessionId, input, (u) => first.push(u.sessionUpdate), directory)
+    await expect(proc.prompt(sessionId, input, () => {}, directory)).rejects.toThrow("already has an active prompt")
+    await proc.prompt("other-session", input, (u) => second.push(u.sessionUpdate), directory)
+    expect(first).toEqual([])
+    expect(second).toEqual(["agent_message_chunk"])
+    const permission = [...proc.pendingPermissions.keys()][0]!
+    proc.respondPermission(permission, { outcome: { outcome: "selected", optionId: "once" } })
+    await turn
+    expect(first).toEqual(["agent_message_chunk"])
+  })
+
   test("a pusher that answers on the spot releases the hold, so silence afterwards still times out", async () => {
     const { proc, sessionId } = await connected(async (conn, params) => {
       await conn.requestPermission({
@@ -150,19 +183,32 @@ describe("ACPProcess.prompt quiet countdown", () => {
       proc.respondPermission(permId, { outcome: { outcome: "selected", optionId: "once" } })
     })
     const started = Date.now()
-    await expect(proc.prompt(sessionId, input, () => {}, directory))
-      .rejects.toThrow("ACP prompt timed out after 200ms of inactivity")
+    let markUncertain!: () => void
+    const uncertain = new Promise<void>((resolve) => { markUncertain = resolve })
+    const turn = proc.prompt(sessionId, input, () => {}, directory, markUncertain)
+    const rejected = turn.then(() => undefined, (error: Error) => error)
+    await uncertain
+    expect(proc.sessionListeners.has(sessionId)).toBe(true)
     expect(Date.now() - started).toBeLessThan(2_000)
+    proc.dispose("test shutdown")
+    expect((await rejected)?.message).toContain("ACP process replaced")
   }, 3_000)
 
-  test("silence with nothing pending fails the turn and cancels the agent's session", async () => {
+  test("silence requests cancellation while preserving the unresolved turn", async () => {
     const { proc, sessionId, fake } = await connected(() => new Promise(() => {}))
     const started = Date.now()
-    await expect(proc.prompt(sessionId, input, () => {}, directory))
-      .rejects.toThrow("ACP prompt timed out after 200ms of inactivity")
+    let markUncertain!: () => void
+    const uncertain = new Promise<void>((resolve) => { markUncertain = resolve })
+    const turn = proc.prompt(sessionId, input, () => {}, directory, markUncertain)
+    const rejected = turn.then(() => undefined, (error: Error) => error)
+    await uncertain
+    expect(proc.sessionListeners.has(sessionId)).toBe(true)
     expect(Date.now() - started).toBeLessThan(2_000)
     await sleep(20)
     expect(fake.cancelled).toEqual([sessionId])
+    await expect(proc.prompt(sessionId, input, () => {}, directory)).rejects.toThrow("outcome is uncertain")
+    proc.dispose("test shutdown")
+    expect((await rejected)?.message).toContain("ACP process replaced")
   })
 
   test("a disposal reason reaches the prompt still in flight", async () => {

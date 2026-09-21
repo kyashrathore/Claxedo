@@ -13,6 +13,15 @@ import { SESSION_SHARE_WORKSPACE_ACCESS_SQL } from "./workspace-authority"
 
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
 
+/**
+ * The generation of the sender-identity contract this build binds and reads
+ * under. A stored binding below it was keyed by whatever string its transport
+ * called a sender id, so it cannot stand for the platform account that string
+ * names today; it is history, not authority. See
+ * `migrations/control-plane/0038_channel_identity_version.sql`.
+ */
+const CURRENT_CHANNEL_IDENTITY_VERSION = 1
+
 export const D1_CHANNEL_RUNTIME_AUTHORITY_METHODS = [
   "resolveRuntimeMachineAccess",
   "recordActorRuntimeAccessToken",
@@ -95,8 +104,8 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       await this.database.prepare(`
         insert into channel_identity_bindings (
           binding_id, deployment_id, channel, external_user_id, user_id,
-          actor_id, bound_by_actor_id, created_at, revoked_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, null)
+          actor_id, bound_by_actor_id, created_at, revoked_at, identity_version
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, null, ?)
       `).bind(
         bindingId,
         this.options.deploymentId,
@@ -106,6 +115,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         who.actorId,
         who.actorId,
         this.now(),
+        CURRENT_CHANNEL_IDENTITY_VERSION,
       ).run()
       return { bindingId, created: true, userId: who.userId, actorId: who.actorId, actorKind: who.actorKind }
     } catch (error) {
@@ -129,7 +139,16 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       update channel_identity_bindings set revoked_at = ?
       where deployment_id = ? and channel = ? and external_user_id = ?
         and user_id = ? and actor_id = ? and revoked_at is null
-    `).bind(this.now(), this.options.deploymentId, channel, externalUserId, who.userId, who.actorId).run()
+        and identity_version = ?
+    `).bind(
+      this.now(),
+      this.options.deploymentId,
+      channel,
+      externalUserId,
+      who.userId,
+      who.actorId,
+      CURRENT_CHANNEL_IDENTITY_VERSION,
+    ).run()
     if (changes(result) === 1) return { revoked: true }
 
     // The route writes canonical state before deleting its local allow/binding
@@ -138,11 +157,21 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     // clear a newer actor's local projection.
     const active = await this.binding(channel, externalUserId, false)
     if (active) return { revoked: false }
+    // A pre-boundary row is not a binding this actor holds, so there is
+    // nothing here for them to have revoked. Answering otherwise would let the
+    // route delete a local projection on the strength of a row that stopped
+    // authorizing at the migration.
     const latest = await this.database.prepare(`
       select user_id, actor_id from channel_identity_bindings
       where deployment_id = ? and channel = ? and external_user_id = ?
+        and identity_version = ?
       order by rowid desc limit 1
-    `).bind(this.options.deploymentId, channel, externalUserId).first<{ user_id: string; actor_id: string }>()
+    `).bind(
+      this.options.deploymentId,
+      channel,
+      externalUserId,
+      CURRENT_CHANNEL_IDENTITY_VERSION,
+    ).first<{ user_id: string; actor_id: string }>()
     return { revoked: latest?.user_id === who.userId && latest.actor_id === who.actorId }
   }
 
@@ -186,10 +215,10 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     return { actorId: actor.actor_id, userId: actor.user_id, actorKind: "human" }
   }
 
-  async resolveRuntimeMachineAccess(actorId: string, workspaceId: string) {
+  async resolveRuntimeMachineAccess(actorId: string, workspaceId: string, minimumRole: ProjectRole = "editor") {
     const who = await this.requireActor(actorId)
     const access = await this.workspaceAccess(who.userId, requireText(workspaceId, "workspaceId"))
-    if (!access || access.role_rank < actionRank("write")) throw denied()
+    if (!access || access.role_rank < roleRank(minimumRole)) throw denied()
     return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: rankRole(access.role_rank) }
   }
 
@@ -442,9 +471,14 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
       join users user on user.user_id = binding.user_id
       join actors actor on actor.actor_id = binding.actor_id and actor.user_id = binding.user_id
       where binding.deployment_id = ? and binding.channel = ? and binding.external_user_id = ?
-        and binding.revoked_at is null
+        and binding.revoked_at is null and binding.identity_version = ?
         ${requireActiveActor ? "and user.state = 'active' and actor.state = 'active' and actor.kind = 'human'" : ""}
-    `).bind(this.options.deploymentId, channel, externalUserId).first<{
+    `).bind(
+      this.options.deploymentId,
+      channel,
+      externalUserId,
+      CURRENT_CHANNEL_IDENTITY_VERSION,
+    ).first<{
       binding_id: string
       user_id: string
       actor_id: string

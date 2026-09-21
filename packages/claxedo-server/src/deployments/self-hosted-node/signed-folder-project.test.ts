@@ -14,6 +14,8 @@ let dataDir: string
 let previousEnv: Record<string, string | undefined>
 let services: Awaited<ReturnType<typeof import("./app").createDefaultLocalControlPlaneServices>>
 let composed: ReturnType<typeof import("./app").createSelfHostedApp>
+let owner: Awaited<ReturnType<typeof signUp>>
+let stranger: typeof owner
 
 beforeAll(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-signed-folder-"))
@@ -21,12 +23,23 @@ beforeAll(async () => {
     CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
     CLAXEDO_SIGNED_CLOUD_AUTH: process.env.CLAXEDO_SIGNED_CLOUD_AUTH,
     CLAXEDO_EMBEDDED_AUTH: process.env.CLAXEDO_EMBEDDED_AUTH,
+    CLAXEDO_OPERATOR_SUBJECTS: process.env.CLAXEDO_OPERATOR_SUBJECTS,
   }
   process.env.CLAXEDO_DATA_DIR = dataDir
   process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
   process.env.CLAXEDO_EMBEDDED_AUTH = "1"
-  const { resetEmbeddedAuthForTests } = await import("./embedded-auth")
+  const { resetEmbeddedAuthForTests, getEmbeddedAuth } = await import("./embedded-auth")
   resetEmbeddedAuthForTests()
+  // Both accounts exist before the app is composed, because the operator set is
+  // read once at composition and the subject it names is minted by sign-up.
+  const embedded = getEmbeddedAuth()
+  await embedded.ready
+  const signedUp = await Promise.all(
+    ["folder-owner@selfhost.test", "someone-else@selfhost.test"].map((email) => signUp(embedded.handler, email)),
+  )
+  owner = signedUp[0]!
+  stranger = signedUp[1]!
+  process.env.CLAXEDO_OPERATOR_SUBJECTS = owner.id
   const { createDefaultLocalControlPlaneServices, createSelfHostedApp, embeddedManagedPrivateSessionPolicy } =
     await import("./app")
   services = createDefaultLocalControlPlaneServices()
@@ -61,16 +74,17 @@ afterAll(async () => {
   fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
-async function signedBearer(email: string) {
-  const res = await composed.app.request("/api/auth/sign-up/email", {
+async function signUp(handler: (request: Request) => Promise<Response>, email: string) {
+  const res = await handler(new Request("http://localhost/api/auth/sign-up/email", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password: "correct-horse-battery", name: "Folder Owner" }),
-  })
+    body: JSON.stringify({ email, password: "correct-horse-battery", name: email }),
+  }))
   expect(res.status).toBe(200)
   const token = res.headers.get("set-auth-token")
   expect(token).toBeTruthy()
-  return { authorization: `Bearer ${token}` }
+  const body = await res.json() as { user: { id: string } }
+  return { id: body.user.id, headers: { authorization: `Bearer ${token}` } }
 }
 
 function gitRepository() {
@@ -81,7 +95,7 @@ function gitRepository() {
 
 describe("a folder project on the signed self-hosted server", () => {
   test("is listed by /project and resolves to its real directory for its creator", async () => {
-    const headers = await signedBearer("folder-owner@selfhost.test")
+    const headers = owner.headers
     const directory = gitRepository()
 
     const created = await composed.app.request("/api/claxedo/projects", {
@@ -130,8 +144,7 @@ describe("a folder project on the signed self-hosted server", () => {
   })
 
   test("stays hidden from a different signed user", async () => {
-    const headers = await signedBearer("someone-else@selfhost.test")
-    const listed = await composed.app.request("/project", { headers })
+    const listed = await composed.app.request("/project", { headers: stranger.headers })
     expect(listed.status).toBe(200)
     await expect(listed.json()).resolves.toEqual([])
   })

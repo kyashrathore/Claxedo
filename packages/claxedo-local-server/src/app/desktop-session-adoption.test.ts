@@ -13,6 +13,7 @@ import {
 } from "@claxedo/server-core/agent-config/index"
 import { NO_HARNESS_EFFORT, type ConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { startLocalServer, type LocalServer } from "./start-local-server"
+import { testDaemon } from "./test-support/daemon"
 import {
   configureEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
@@ -40,7 +41,8 @@ const MEMBER = { actorId: "actor_member", actorPublicId: "user_member", actorNam
 /** Holds the workspace outright, but is not the person this machine is enrolled to. */
 const CO_OWNER = { actorId: "actor_co_owner", actorPublicId: "user_co_owner", actorName: "Co-owner", role: "owner" as const }
 
-const CONNECTION_ID = "adoption_fixture"
+/** A connection id the session-harness contract accepts: `ACP_CONNECTION_ID_PATTERN`. */
+const CONNECTION_ID = "adoption-fixture"
 
 const bearers = new Map<string, typeof OWNER | typeof MEMBER | typeof CO_OWNER>([
   ["owner-token", OWNER],
@@ -53,6 +55,7 @@ type AuthorityCall = { action: string; sessionId?: string; actorId?: string }
 let dataDir: string
 let previousDataDir: string | undefined
 let server: LocalServer | undefined
+let identity: ReturnType<typeof testDaemon>
 let authority: Server | undefined
 let origin: string
 let authorityCalls: AuthorityCall[]
@@ -181,8 +184,10 @@ beforeEach(async () => {
 
   const port = await freePort()
   origin = `http://127.0.0.1:${port}`
+  identity = testDaemon()
   server = startLocalServer({
     port,
+    daemon: identity.daemon,
     runtimeProxyOptions: {
       resolveRelayActor: async (request) => {
         const bearer = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1]
@@ -242,12 +247,12 @@ async function workspaceWithLocalSession(sessionId: string) {
   const directory = path.join(dataDir, "project")
   mkdirSync(directory)
   execFileSync("git", ["init", directory])
-  const resolved = await fetch(`${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
+  const resolved = await identity.call(`${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
   expect(resolved.status).toBe(200)
   const { workspaceId } = await resolved.json() as { workspaceId: string }
   // Created the way the user at the keyboard creates one: loopback, no relay
   // marks, no reservation, before remote access exists.
-  const created = await fetch(`${origin}/workspaces/${workspaceId}/session?connectionId=${CONNECTION_ID}`, {
+  const created = await identity.call(`${origin}/workspaces/${workspaceId}/session?connectionId=${CONNECTION_ID}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ id: sessionId, title: "Before sharing" }),
@@ -289,7 +294,7 @@ describe("a session the machine held before remote access", () => {
     expect(authorityCalls.filter((call) => call.action === "adopt")).toHaveLength(1)
 
     authorityCalls = []
-    expect((await read(workspaceId, "ses_before_sharing")).status).toBe(200)
+    expect((await read(workspaceId, "ses_before_sharing", identity.capability)).status).toBe(200)
     expect(authorityCalls).toEqual([])
   })
 

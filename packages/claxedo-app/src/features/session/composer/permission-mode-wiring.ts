@@ -111,7 +111,7 @@ export function createComposerPermissionModeWiring(input: {
     })
   }
   onCleanup(() => cancelQuietWait?.())
-  const [resource, { refetch }] = createResource(
+  const [resource, { refetch, mutate }] = createResource(
     // A DRAFT still fetches, with an empty session id, so the
     // picker can show the harness's real modes before the first message rather
     // than a placeholder — the opening turn is when the choice matters most.
@@ -162,13 +162,11 @@ export function createComposerPermissionModeWiring(input: {
    * never resolves — the same defect as the "Waiting for … to report its modes"
    * bug this whole feature replaced, one layer higher.
    *
-   * `latest` is used for the success path so a refetch does not blank a
-   * still-true answer.
+   * A scope-keyed cache retains the last answer during refetch.
    */
   /**
-   * Cache keyed by harness, so switching back and forth is instant instead of
-   * re-fetching a list that cannot have changed. Stale-while-revalidate: the
-   * cached answer shows immediately and the live fetch replaces it.
+   * The active mode belongs to a session, not just a harness. Retain answers
+   * only for the same complete request scope while refreshing.
    */
   const cache = new Map<string, HarnessModeReport>()
 
@@ -184,12 +182,12 @@ export function createComposerPermissionModeWiring(input: {
       return answered(`Could not load permission modes: ${detail}`)
     }
     const live = resource.state === "ready" ? resource() : undefined
-    const key = input.harness() ?? ""
+    const key = resourceKey()
     if (live) {
       cache.set(key, live)
       return live
     }
-    // In flight: show this harness's cached answer if we have one, and undefined
+    // In flight: show this scope's cached answer if we have one, and undefined
     // otherwise. Deliberately not `resource.latest` — that keeps the previous
     // harness's list on screen across a switch, which is the stale-read the
     // harness key exists to prevent.
@@ -210,14 +208,23 @@ export function createComposerPermissionModeWiring(input: {
 
   const writer = (): SessionPermissionWriter => ({
     setPermissionMode: async (call) => {
+      const key = resourceKey()
       const result = await setSessionPermissionModeByTransport({
         ...transportScope(),
         directory: input.directory(),
         sessionID: call.sessionID,
         modeId: call.modeId,
       })
-      void refetch()
-      setPending(undefined)
+      if (key === resourceKey()) {
+        // The write returns the agent's complete read-back. Install that answer
+        // before clearing the optimistic choice, including when it was clamped.
+        if (result.data) {
+          cache.set(key, result.data)
+          mutate(result.data)
+        }
+        setPending(undefined)
+        void refetch()
+      }
       // The harness's answer, which can name a different mode than the request.
       return { currentModeId: result.data?.currentModeId }
     },

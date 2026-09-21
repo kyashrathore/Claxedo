@@ -2,9 +2,10 @@ import { asRecord } from "@/lib/record"
 import { createMemo, createResource, createRoot, createSignal, getOwner, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
+import type { AgentPermission as PermissionRequest, AgentPermissionReply } from "@claxedo/agent-runtime-contract"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { useGlobalSDK } from "@/features/session/app-ports"
+import { applyDirectoryEventToShellQueries } from "@/features/session/data/sync/directory-event-projector"
 import { directorySessions } from "@/features/session/data/sync/directory-session-cache"
 import {
   acceptKey,
@@ -28,7 +29,7 @@ import { capture as phCapture, identityProps } from "@/platform/telemetry/analyt
 type PermissionRespondFn = (input: {
   sessionID: string
   permissionID: string
-  response: "once" | "always" | "reject"
+  response: AgentPermissionReply
   directory: PermissionDirectory
 }) => Promise<void>
 type PermissionDirectory = string
@@ -67,7 +68,13 @@ const permissionContextInput = {
       try {
         const target = input.directory
         if (!target) throw new Error("Permission response requires an explicit workspace directory")
-        await permissionClient(target).respond({ ...input, directory: target })
+        const result = await permissionClient(target).respond({
+          sessionID: input.sessionID, permissionID: input.permissionID, directory: target,
+          ...(typeof input.response === "string" ? { response: input.response } : input.response),
+        })
+        for (const event of result.data?.events ?? []) {
+          applyDirectoryEventToShellQueries({ directory: target, event })
+        }
         if (input.response === "always") enable(input.sessionID, target)
       } catch (err) {
         clearPermissionAutoResponded(input.permissionID)

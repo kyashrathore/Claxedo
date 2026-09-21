@@ -10,6 +10,8 @@ import {
 function policy(overrides: Partial<SessionAccessPolicy> = {}): SessionAccessPolicy {
   return {
     sessionAuthority: "managed-private",
+    authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+    authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
     authorize: () => ({ allowed: true }),
     authorizePrefix: () => ({ allowed: true }),
     filterSessions: (input) => input.sessionIds,

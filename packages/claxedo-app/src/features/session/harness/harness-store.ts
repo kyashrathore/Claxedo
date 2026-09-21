@@ -5,6 +5,8 @@ import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { harnessHasConfigOptions, isCatalogHarness, type HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/platform/identity/harness-selection"
 import {
+  connectionAllowsNoModel,
+  draftConnectionAllowsNoModel,
   harnessDisplayName,
   harnessModelKeyForSubmit,
   harnessModelNameForSubmit,
@@ -298,7 +300,10 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     harnessMode: (scope: string) => read(scope).harnessMode,
     harnessModelKeyForSubmit: (scope: string) => harnessModelKeyForSubmit(read(scope)),
     harnessModelNameForSubmit: (scope: string) => harnessModelNameForSubmit(read(scope)),
-    harnessReadyForSubmit: (scope: string) => harnessReadyForSubmit(read(scope)),
+    harnessReadyForSubmit: (scope: string) => draftConnectionAllowsNoModel(scope, read(scope)) || harnessReadyForSubmit(read(scope)),
+    canOmitModel: (scope: string) => connectionAllowsNoModel(read(scope)),
+    canCreateWithoutModel: (scope: string) => draftConnectionAllowsNoModel(scope, read(scope)),
+    setConnectionDeclaration: (scope: string, declaration: HarnessStoreState["connectionDeclaration"]) => { seed(scope); setStore(scope, "connectionDeclaration", declaration) },
     isHarnessMode: (scope: string) => !!read(scope).harness,
     models: (scope: string) => harnessModels(read(scope)),
     thoughtLevels: (scope: string) => read(scope).thoughtLevels ?? [],

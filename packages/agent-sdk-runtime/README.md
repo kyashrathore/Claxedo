@@ -395,6 +395,9 @@ The package ships public docs under `docs/`. Use
 
 Entry point status:
 
+- Integration: `@claxedo/agent-sdk-runtime/stores/session-start` supplies durable
+  creation ownership for a host-owned SQLite database.
+
 - Stable: `@claxedo/agent-sdk-runtime`,
   `@claxedo/agent-sdk-runtime/capabilities`
 - Stable: `@claxedo/agent-sdk-runtime/harnesses`,

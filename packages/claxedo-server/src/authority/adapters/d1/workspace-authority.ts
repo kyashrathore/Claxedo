@@ -13,6 +13,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL, organizationRoleRankSql } from "./host-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
@@ -35,6 +36,7 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "projectRole",
   "authorizeProject",
   "authorizeWorkspaceOpen",
+  "authorizeWorkspaceCreate",
   "openWorkspace",
   "listWorkspaces",
   "registerLocalForSharing",
@@ -140,13 +142,27 @@ type WorkspaceAccessRow = {
   role_rank: number
 }
 
-export class D1WorkspaceAuthorityError extends Error {
-  constructor(
-    public readonly code: "invalid_input" | "identity_conflict" | "organization_policy_denied" | "resource_conflict",
-    message: string,
-  ) {
-    super(message)
-    this.name = "D1WorkspaceAuthorityError"
+export type D1WorkspaceAuthorityErrorCode =
+  | "invalid_input"
+  | "identity_conflict"
+  | "organization_policy_denied"
+  | "resource_conflict"
+
+const D1_WORKSPACE_ERROR_STATUS: Record<D1WorkspaceAuthorityErrorCode, number> = {
+  invalid_input: 400,
+  identity_conflict: 409,
+  organization_policy_denied: 403,
+  resource_conflict: 409,
+}
+
+/**
+ * Carries its HTTP status like every other authority refusal
+ * (`D1HostAccessAuthorityError`), so a route that hands the caller a
+ * conflict answers 409 rather than reporting a fault it did not have.
+ */
+export class D1WorkspaceAuthorityError extends ClaxedoError<D1WorkspaceAuthorityErrorCode> {
+  constructor(code: D1WorkspaceAuthorityErrorCode, message: string) {
+    super({ code, message, status: D1_WORKSPACE_ERROR_STATUS[code] })
   }
 }
 
@@ -1068,6 +1084,55 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     if (!(await this.workspaceAccess(who.userId, args.workspaceId))) throw denied()
   }
 
+  /**
+   * The admission `createWorkspace` will apply, answered before the caller's
+   * billable work starts. The organization comes from `creationOrgId`, the
+   * same resolution creation uses, so a caller who names no organization is
+   * admitted against the one their workspace would actually land in — an
+   * absent selector resolves a tenant, it does not skip a check. A named
+   * organization that is not that one is refused here rather than silently
+   * ignored, which is what creation does with it.
+   */
+  async authorizeWorkspaceCreate(auth: SignedControlPlaneAuth, args: { orgId?: string; projectId?: string }) {
+    const who = await this.requirePrincipal(auth)
+    const projectId = args.projectId?.trim()
+    const orgId = await this.creationOrgId(auth, projectId ? projectId : undefined)
+    const selected = args.orgId?.trim()
+    if (selected && selected !== orgId) throw denied("Workspace creation authority was denied")
+    await this.admitCreationOrganization(who, orgId)
+  }
+
+  /**
+   * The admission a machine-placed registration will apply — the cold half of
+   * a host assignment, and `registerLocalForSharing`.
+   *
+   * It differs from the cloud create above in ONE thing, and it is the thing
+   * the two writes differ in: `localWorkspaceArgs` files into the
+   * organization the caller named when they named one, so naming an
+   * organization the caller may administer is admitted here rather than
+   * refused for disagreeing with their default.
+   */
+  async authorizeLocalWorkspaceRegistration(auth: SignedControlPlaneAuth, args: { orgId?: string; projectId?: string }) {
+    const who = await this.requirePrincipal(auth)
+    await this.admitCreationOrganization(who, await this.localRegistrationOrgId(auth, args))
+  }
+
+  /** Who may create in an organization: one rule, whatever resolved the organization. */
+  private async admitCreationOrganization(who: Principal, orgId: string) {
+    this.assertOrganizationAllowed(orgId)
+    if (!(await this.canAdminOrganization(who.userId, orgId))) {
+      throw denied("Workspace creation authority was denied")
+    }
+  }
+
+  /** The organization a machine-placed registration files into. */
+  private async localRegistrationOrgId(auth: SignedControlPlaneAuth, args: { orgId?: string; projectId?: string }) {
+    const named = args.orgId?.trim()
+    if (named) return named
+    const projectId = args.projectId?.trim()
+    return await this.creationOrgId(auth, projectId ? projectId : undefined)
+  }
+
   async openWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
     const row = await this.workspaceAccess(who.userId, args.workspaceId)
@@ -1343,7 +1408,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   ): Promise<D1WorkspaceCreateArgs> {
     return {
       ...args,
-      orgId: args.orgId ?? await this.creationOrgId(auth, args.projectId),
+      orgId: await this.localRegistrationOrgId(auth, args),
       backing: "local-worktree",
     }
   }

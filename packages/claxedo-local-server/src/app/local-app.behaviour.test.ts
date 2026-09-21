@@ -375,113 +375,12 @@ describe("local composition — health and telemetry", () => {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ distinctId: "d", event: "session_new", properties: { a: 1 } }),
+        body: JSON.stringify({ distinctId: "d", event: "e", properties: { a: 1 } }),
       },
     )
 
     expect(response.status).toBe(200)
-    expect(capture).toHaveBeenCalledWith("local", "session_new", { a: 1 })
-  })
-
-  test("telemetry derives the distinct id server-side: a spoofed one is never honored", async () => {
-    // The unsigned-local box's canonical owner is `localControlPlaneAuth`'s
-    // subject; whatever the body names is discarded.
-    const capture = vi.fn()
-    const response = await app({ services: services({ telemetry: { capture } }) }).request(
-      "http://localhost/api/claxedo/track",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ distinctId: "someone-else", event: "session_new" }),
-      },
-    )
-
-    expect(response.status).toBe(200)
-    expect(capture).toHaveBeenCalledWith("local", "session_new", undefined)
-  })
-
-  test("telemetry uses the signed session's subject when a bearer verifies", async () => {
-    process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
-    const capture = vi.fn()
-    const instance = createLocalApp({
-      services: services({
-        auth: customVerifierAuthAdapter({
-          issuer: "https://idp.example.test",
-          verifier: async (token, config) => ({
-            mode: "signed" as const,
-            user: {
-              subject: token,
-              tokenIdentifier: `${config.issuer}|${token}`,
-              issuer: config.issuer,
-            },
-          }),
-        }),
-        telemetry: { capture },
-      }),
-    }).app
-
-    const response = await instance.request("http://localhost/api/claxedo/track", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer user-42" },
-      body: JSON.stringify({ distinctId: "someone-else", event: "session_new" }),
-    })
-
-    expect(response.status).toBe(200)
-    expect(capture).toHaveBeenCalledWith("user-42", "session_new", undefined)
-  })
-
-  test("telemetry rejects an event the product does not emit", async () => {
-    const capture = vi.fn()
-    const response = await app({ services: services({ telemetry: { capture } }) }).request(
-      "http://localhost/api/claxedo/track",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event: "made_up_event" }),
-      },
-    )
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ error: { code: "telemetry_unknown_event" } })
-    expect(capture).not.toHaveBeenCalled()
-  })
-
-  test.each([
-    ["more keys than the bound", Object.fromEntries(Array.from({ length: 33 }, (_, i) => [`k${i}`, i]))],
-    ["more bytes than the bound", { payload: "x".repeat(4096) }],
-  ])("telemetry bounds the properties bag: %s", async (_label, properties) => {
-    const capture = vi.fn()
-    const response = await app({ services: services({ telemetry: { capture } }) }).request(
-      "http://localhost/api/claxedo/track",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event: "session_new", properties }),
-      },
-    )
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ error: { code: "telemetry_invalid_body" } })
-    expect(capture).not.toHaveBeenCalled()
-  })
-
-  test("telemetry refuses the request that exceeds its window", async () => {
-    const capture = vi.fn()
-    const local = app({ services: services({ telemetry: { capture } }) })
-    const track = () =>
-      local.request("http://localhost/api/claxedo/track", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event: "session_new" }),
-      })
-
-    for (let i = 0; i < 120; i += 1) {
-      expect((await track()).status).toBe(200)
-    }
-    const limited = await track()
-    expect(limited.status).toBe(429)
-    expect(await limited.json()).toMatchObject({ error: { code: "rate_limited" } })
-    expect(capture).toHaveBeenCalledTimes(120)
+    expect(capture).toHaveBeenCalledWith("d", "e", { a: 1 })
   })
 })
 

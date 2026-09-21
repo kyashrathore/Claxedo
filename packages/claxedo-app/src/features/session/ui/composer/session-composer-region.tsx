@@ -1,5 +1,6 @@
+import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import { stopSessionInteraction } from "../../composer/ui/submit-abort"
-import { Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLayout } from "@/features/session/app-ports"
 import { PromptInput } from "@/features/session/composer/composer"
@@ -73,8 +74,10 @@ export function SessionComposerRegion(props: {
   newSessionWorktree: string
   onNewSessionWorktreeChange?: (worktree: string) => void
   onNewSessionWorktreeReset: () => void
+  onSessionStart?: (draftId: string, binding: AgentSessionStartBinding | undefined, outcome?: "transport-failed") => void
   onSubmit: () => void
   onResponseSubmit: () => void
+  onRetryRequests?: () => Promise<unknown>
 
   revert?: {
     items: { id: string; text: string }[]
@@ -146,6 +149,16 @@ export function SessionComposerRegion(props: {
   beforeInput?: JSX.Element
   registerRetry?: (retry?: PromptRetryAction) => void
 }) {
+  const [retryingRequests, setRetryingRequests] = createSignal(false)
+  const [requestRetryError, setRequestRetryError] = createSignal<string>()
+  const retryRequests = async () => {
+    if (retryingRequests() || !props.onRetryRequests) return
+    setRetryingRequests(true)
+    setRequestRetryError(undefined)
+    try { await props.onRetryRequests() } catch (error) {
+      setRequestRetryError(error instanceof Error ? error.message : String(error))
+    } finally { setRetryingRequests(false) }
+  }
   const layout = useLayout()
   const prompt = usePrompt()
   const language = useLanguage()
@@ -235,6 +248,15 @@ export function SessionComposerRegion(props: {
           "md:max-w-192 md:mx-auto 2xl:max-w-[880px]": props.centered,
         }}
       >
+        <Show when={props.state.requestReadError()}>
+          {(message) => <div role="alert" class="rounded-lg border border-border-weak-base bg-background-base p-3 text-text-base">
+            <div>{language.t("session.requests.loadFailed")}</div>
+            <pre class="whitespace-pre-wrap break-all text-12-regular">{requestRetryError() ?? message()}</pre>
+            <Show when={props.onRetryRequests}>
+              <button type="button" disabled={retryingRequests()} onClick={() => void retryRequests()}>{language.t("ui.message.queued.retry")}</button>
+            </Show>
+          </div>}
+        </Show>
         <Show when={props.state.questionRequest()} keyed>
           {(request) => (
             <div>
@@ -373,12 +395,13 @@ export function SessionComposerRegion(props: {
                 })
               }}
             >
-              {props.beforeInput}
+              <Show when={!props.state.requestReadError()}>{props.beforeInput}</Show>
               <Show
                 when={child()}
                 fallback={
                   <Show when={promptable()}>
                     <PromptInput
+                      onSessionStart={props.onSessionStart}
                       mode={props.mode}
                       harnessSubmitController={promptHarnessControllers.submit}
                       harnessSelectionController={promptHarnessControllers.selection}

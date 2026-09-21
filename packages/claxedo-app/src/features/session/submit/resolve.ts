@@ -72,7 +72,7 @@ export function resolveSubmitMode(input: { mode: SubmitMode; setMode: (mode: Sub
 export function resolveSubmittedConfig(
   input: ResolveSubmittedConfigContext,
 ): SubmittedConfig | undefined {
-  if (!input.harnessModelKey) return undefined
+  if (!input.harnessModelKey) return input.modelOptional ? { agent: resolveSubmitAgent(input) } : undefined
   const variant = input.variant ?? input.harnessModelKey.variant
   return {
     model: { modelID: input.harnessModelKey.modelID, providerID: input.harnessModelKey.providerID },

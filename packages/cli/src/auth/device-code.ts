@@ -1,8 +1,8 @@
-import { spawn } from "node:child_process"
 import { config } from "../config"
 import { requestJson } from "../http"
 import { object } from "../json"
-import { cliAuthBinding, type CliAuthBinding, type FetchLike } from "./auth-descriptor"
+import { openUrl } from "../open-url"
+import { cliAuthBinding, deploymentPageUrl, type CliAuthBinding, type FetchLike } from "./auth-descriptor"
 import { OAuthError, tokenRequest, type TokenSet } from "./oauth"
 import { writeCredentials, type Credentials } from "./token-store"
 import { trimToUndefined } from "@claxedo/helpers/string"
@@ -30,7 +30,7 @@ type DeviceCode = {
   expiresAt: number
 }
 
-function deviceCode(input: unknown, now: number): DeviceCode {
+function deviceCode(input: unknown, now: number, binding: CliAuthBinding): DeviceCode {
   const row = object(input)
   const code = trimToUndefined(row.device_code)
   const userCode = trimToUndefined(row.user_code)
@@ -42,19 +42,11 @@ function deviceCode(input: unknown, now: number): DeviceCode {
   return {
     deviceCode: code,
     userCode,
-    verificationUri,
-    ...(complete ? { verificationUriComplete: complete } : {}),
+    verificationUri: deploymentPageUrl(binding, verificationUri, "verification_uri"),
+    ...(complete ? { verificationUriComplete: deploymentPageUrl(binding, complete, "verification_uri_complete") } : {}),
     intervalMs: Math.max(1, asFiniteNumber(row.interval) ?? 5) * 1000,
     expiresAt: now + Math.max(60, asFiniteNumber(row.expires_in) ?? 600) * 1000,
   }
-}
-
-function openBrowser(target: string) {
-  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open"
-  const args = process.platform === "win32" ? ["/c", "start", "", target] : [target]
-  const child = spawn(command, args, { stdio: "ignore", detached: true })
-  child.on("error", () => {})
-  child.unref()
 }
 
 export type LoginDeps = {
@@ -70,7 +62,7 @@ export type LoginDeps = {
 export function defaultLoginDeps(): LoginDeps {
   return {
     controlPlaneUrl: config().controlPlaneUrl,
-    openBrowser,
+    openBrowser: openUrl,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: () => Date.now(),
     log: (line) => console.log(line),
@@ -87,6 +79,7 @@ async function requestDeviceCode(binding: CliAuthBinding, deps: LoginDeps): Prom
       ...(deps.fetch ? { fetch: deps.fetch } : {}),
     }),
     deps.now(),
+    binding,
   )
 }
 

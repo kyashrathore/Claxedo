@@ -1,4 +1,4 @@
-import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
+import type { AgentPresentationSession as Session, AgentSessionCommand } from "@claxedo/agent-runtime-contract"
 import { asRecord, readFiniteNumber, readString } from "@/lib/record"
 
 /**
@@ -20,6 +20,19 @@ function nonEmpty(value: string | undefined) {
 
 function eventInfo(properties: unknown) {
   return asRecord(asRecord(properties)?.info)
+}
+
+/** A replacement command list belongs only to the session named by its agent. */
+export function sessionEventCommands(properties: unknown): { sessionID: string; commands: AgentSessionCommand[] } | undefined {
+  const row = asRecord(properties)
+  if (typeof row?.sessionID !== "string" || !row.sessionID || !Array.isArray(row.commands)) return
+  const commands = row.commands
+  if (!commands.every((item): item is AgentSessionCommand => {
+    const command = asRecord(item)
+    if (typeof command?.name !== "string" || typeof command.description !== "string") return false
+    return command.input == null || typeof asRecord(command.input)?.hint === "string"
+  })) return
+  return { sessionID: row.sessionID, commands }
 }
 
 /** The session id of a `session.*` event, read from `info.id`. */

@@ -138,8 +138,26 @@ export const localServer: Policy = {
   //    runtimes resolve them, and the loopback route Electron main installs
   //    them through. The parser and the `projectAuth` composition are
   //    server-core's (`credentials/host-provider-config.ts`, already a
-  //    package edge), so these two cost no package. 65/27, no headroom.
-  ceilings: { modules: 65, packages: 27 },
+  //    package edge), so these two cost no package.
+  //  - `platform/auth/project-access.ts` (owner: local-server platform): the
+  //    one authorization operation for the projects this server stores, shared
+  //    by the shell `/project` routes and the `/api/claxedo/projects` router so
+  //    a signed caller's reach is decided in one place. It reaches server-core's
+  //    authority port and branded-id leaves, both already here, so it costs no
+  //    package.
+  //  - `app/daemon-admission.ts` (owner: the desktop-local composition): who
+  //    may drive this daemon, decided once ahead of every mount. It is this
+  //    product's own authority boundary — a loopback page is not the
+  //    application — so it belongs to the composition rather than to shared
+  //    server-core, which has no daemon to authenticate. `node:crypto` and
+  //    server-core's error body, both already here.
+  //  - `workspace/runtime-dispatch/relay-admission.ts` (owner: the runtime
+  //    dispatcher): the bound within which that gate defers to relayed
+  //    traffic. It lives beside the dispatcher because the paths and the
+  //    canonical ingress verification are the dispatcher's own knowledge, and
+  //    reaches only `internals.ts` and `ingress-provenance.ts` beside it.
+  //    68/27, no headroom.
+  ceilings: { modules: 68, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

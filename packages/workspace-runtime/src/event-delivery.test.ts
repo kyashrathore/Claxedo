@@ -45,6 +45,58 @@ async function drain(release: Array<() => void>) {
 }
 
 describe("createIdentityAwareEventSource", () => {
+  test("closing cancels queued delivery before its resolver can touch disposed state", async () => {
+    const bus = createBus<Event>()
+    let disposed = false
+    let resolveDecision!: (decision: EventDeliveryDecision) => void
+    const decision = new Promise<EventDeliveryDecision>((resolve) => { resolveDecision = resolve })
+    let resolutionsAfterClose = 0
+    const delivered: string[] = []
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      policy: () => decision,
+      sessionId: (event) => {
+        if (disposed) { resolutionsAfterClose += 1; throw new Error("store is closed") }
+        return event.sessionId
+      },
+    })
+    source.open({ mode: "unmanaged-local", connectionId: "closing_local" }).subscribe((event) => { delivered.push(event.value) })
+    bus.publish({ sessionId: "ses_1", value: "first" })
+    bus.publish({ sessionId: "ses_1", value: "queued" })
+    const settled = source.flush()
+    source.close()
+    disposed = true
+    resolveDecision("deliver")
+    await settled
+    expect(resolutionsAfterClose).toBe(0)
+    expect(delivered).toEqual([])
+  })
+
+  test("closing during replay stops later authorization and refuses late attachment", async () => {
+    const bus = createBus<Event>()
+    let resolveDecision!: (decision: EventDeliveryDecision) => void
+    let decisions = 0
+    let terminated = 0
+    const source = createIdentityAwareEventSource<Event>({
+      subscribe: (fn) => bus.subscribe(fn),
+      replayConcurrency: 1,
+      policy: () => { decisions += 1; return new Promise((resolve) => { resolveDecision = resolve }) },
+      sessionId: (event) => event.sessionId,
+    })
+    for (const value of ["first", "second", "third"]) bus.publish({ sessionId: "ses_1", value })
+    const opened = source.open(participant("closing_replay"))
+    source.close()
+    resolveDecision("deliver")
+    await opened.ready
+    const unsubscribe = opened.subscribe(() => { throw new Error("closed stream delivered") }, () => { terminated += 1 })
+    await Promise.resolve()
+    expect(decisions).toBe(1)
+    expect(terminated).toBe(1)
+    expect(opened.replay.replayAfter(undefined).length).toBe(0)
+    expect(() => source.open(participant("after_close"))).toThrow("closed")
+    unsubscribe()
+  })
+
   test("bounds replay authorization concurrency while preserving event order", async () => {
     const bus = createBus<Event>()
     let active = 0
@@ -621,6 +673,8 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     calls: string[]
   }): SessionAccessPolicy => ({
     sessionAuthority: "managed-private",
+    authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+    authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
     authorize: () => ({ allowed: true }),
     filterSessions: ({ sessionIds }) => sessionIds,
     authorizePrefix: () => ({ allowed: true }),
@@ -646,13 +700,13 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     expect(await policy({ principal: reader, event: { sessionId: "ses_private", value: "x" }, sessionId: "ses_private", sensitive: false })).toBe("omit")
     expect(await policy({ principal: reader, event: { sessionId: "ses_mine", value: "y" }, sessionId: "ses_mine", sensitive: false })).toBe("deliver")
     // Both first grants presented the workspace lease, not the request's token.
-    expect(calls).toEqual(["stream ses_private lease=ws_lease", "stream ses_mine lease=ws_lease"])
+    expect(calls).toEqual(["host lease=ws_lease", "stream ses_private lease=ws_1", "stream ses_mine lease=ws_1"])
     // A refused session frames again inside its hold without a round trip.
     expect(await policy({ principal: reader, event: { sessionId: "ses_private", value: "x2" }, sessionId: "ses_private", sensitive: false })).toBe("omit")
-    expect(calls).toHaveLength(2)
+    expect(calls).toHaveLength(3)
 
     expect(await policy.renew!(reader)).toBe("deliver")
-    expect(calls.slice(2)).toEqual(["host lease=ws_lease", "stream ses_mine lease=lease_ses_mine"])
+    expect(calls.slice(3)).toEqual(["stream ses_mine lease=lease_ses_mine"])
 
     mineGranted = false
     expect(await policy.renew!(reader)).toBe("terminate")
@@ -778,6 +832,45 @@ describe("sessionEventDeliveryPolicy on the unscoped arm", () => {
     expect(await policy.renew!(scoped)).toBe("deliver")
     policy.forgetSession?.(scoped, "ses_shared")
     expect(await policy.renew!(scoped)).toBe("terminate")
+  })
+
+  test.each([
+    { allowed: true as const },
+    { allowed: true as const, lease: " ", expiresAt: Date.now() + 60_000 },
+    { allowed: true as const, lease: "lease", expiresAt: Number.NaN },
+    { allowed: true as const, lease: "lease", expiresAt: Infinity },
+    { allowed: true as const, lease: "lease", expiresAt: 0 },
+  ])("malformed workspace renewal cannot extend the original lease (%j)", async (decision) => {
+    const policy = sessionEventDeliveryPolicy<Event>({
+      ...sessionPolicy({ granted: () => true, calls: [] }), authorizeHost: () => decision,
+    })
+    const reader = participant("malformed_renewal")
+    policy.holdHost!(reader, { lease: "original", expiresAt: Date.now() + 30 })
+    expect(await policy.renew!(reader)).toBe("deliver")
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(await policy.renew!(reader)).toBe("terminate")
+    expect(await policy({ principal: reader, event: { sessionId: "", value: "sessionless" }, sensitive: false })).toBe("terminate")
+  })
+
+  test("a stalled workspace renewal cannot deliver sessionless frames past its lease expiry", async () => {
+    const policy = sessionEventDeliveryPolicy<Event>({
+      ...sessionPolicy({ granted: () => true, calls: [] }), authorizeHost: () => new Promise(() => {}),
+    })
+    const reader = participant("stalled_workspace")
+    policy.holdHost!(reader, { lease: "original", expiresAt: Date.now() + 30 })
+    void policy.renew!(reader)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(await policy.renew!(reader)).toBe("terminate")
+    expect(await policy({ principal: reader, event: { sessionId: "", value: "sessionless" }, sensitive: false })).toBe("terminate")
+  })
+
+  test("managed session delivery refuses a missing or malformed stream authority", async () => {
+    for (const authorizeStream of [undefined, async () => ({ allowed: true as const, lease: " ", expiresAt: Infinity })]) {
+      const policy = sessionEventDeliveryPolicy<Event>({
+        ...sessionPolicy({ granted: () => true, calls: [] }), authorizeStream,
+      })
+      expect(await policy({ principal: participant("invalid_session"), event: { sessionId: "private", value: "secret" }, sessionId: "private", sensitive: false })).toBe("terminate")
+    }
   })
 
   test("the workspace lease rolls at renewal and its access token's revocation ends the stream", async () => {

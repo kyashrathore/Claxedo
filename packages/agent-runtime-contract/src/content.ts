@@ -34,7 +34,8 @@ export type AgentUserMessage = {
     diffs: AgentSnapshotFileDiff[]
   }
   agent: string
-  model: AgentModelRef
+  /** Absent when the connection owns model selection. */
+  model?: AgentModelRef
   system?: string
   tools?: Record<string, boolean>
   claxedo?: { author: AgentMessageAuthor }
@@ -47,8 +48,8 @@ export type AgentAssistantMessage = {
   time: { created: number; completed?: number }
   error?: AgentMessageError
   parentID: string
-  modelID: string
-  providerID: string
+  modelID?: string
+  providerID?: string
   mode: string
   agent: string
   path: { cwd: string; root: string }
@@ -157,6 +158,7 @@ export type AgentFilePartSource = AgentFileSource | AgentSymbolSource | AgentRes
  * image was instead of rendering a broken one.
  */
 export type AgentFileLocation =
+  | { kind: "tool-file"; path: string }
   | { kind: "workspace-file"; path: string }
   | { kind: "unretained"; bytes: number }
 
@@ -300,12 +302,15 @@ export type AgentQuestionInfo = {
 
 export type AgentQuestionAnswer = string[]
 
+export type AgentPermissionReply = "once" | "always" | "reject" | { optionId: string }
+
 export type AgentPermission = {
   id: string
   sessionID: string
   tool?: { messageID: string; callID: string }
   title?: string
   permission: string
+  options?: { id: string; label: string; description?: string }[]
   patterns: string[]
   always: string[]
   metadata: Record<string, unknown>

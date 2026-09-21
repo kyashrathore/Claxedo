@@ -43,6 +43,10 @@ export function SessionHealthPeek(props: {
   )
 
   const readiness = createMemo(() => selection?.read(scope()).readiness ?? "ready")
+  const selectedHarness = createMemo(() => {
+    const harness = selection?.read(scope()).harness
+    return harness?.kind === "connection" ? `connection:${harness.connectionId}` : harness?.kind === "native" ? `native:${harness.harnessId}` : undefined
+  })
   const degraded = createMemo(() => props.turnActive() && readiness() === "degraded")
 
   const probe = () => {
@@ -71,6 +75,7 @@ export function SessionHealthPeek(props: {
     if (!selection || !props.active()) return
     // Track the scope so a session/directory change restarts the poll.
     scope()
+    selectedHarness()
     props.directory()
     probe()
     // Idle and past sessions receive the catch-up probe above so stale

@@ -31,6 +31,8 @@ const state = vi.hoisted(() => ({
   dataProviderProps: undefined as undefined | {
     data?: unknown
     onSessionHref?: (sessionID: string) => string
+    onClaxedoToolHref?: (tool: string, input: Record<string, unknown>, output?: string) => string | undefined
+    readToolImage?: (attachment: { id: string; sessionID: string; messageID: string }, signal: AbortSignal) => Promise<Blob>
     resolveSubagents?: (parentSessionId: string, toolCallId?: string) => unknown[]
   },
   sessionSyncProviderProps: undefined as undefined | {
@@ -56,6 +58,7 @@ const directoryScopeProps = {
 }
 
 vi.mock("@/app/providers/global-sync/provider", () => ({
+  useQueryOptions: () => ({ projects: () => ({ queryKey: ["projects"] }) }),
   useGlobalSync: () => ({
     refreshDirectory: state.refreshDirectory,
   }),
@@ -130,7 +133,7 @@ vi.mock("@/platform/runtime/session-switch", async (importOriginal) => ({
 vi.mock("@tanstack/solid-query", () => ({
   useQuery: (factory: () => { queryKey?: readonly unknown[]; queryFn?: () => Promise<unknown> }) => {
     const options = factory()
-    if (options.queryKey?.[0] === "directory-session-cache") {
+    if (options.queryKey?.[0] === "directory-session-cache" || options.queryKey?.[0] === "projects") {
       return {
         get data() {
           return state.queryData.get(JSON.stringify(options.queryKey))
@@ -595,6 +598,21 @@ describe("DirectoryScope bootstrap gating", () => {
     })
   })
 
+  test("links local MCP processes through the project inventory's route identity", async () => {
+    state.queryData.set(JSON.stringify(["projects"]), [{ id: "local_project", worktree: "/repo/main" }])
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), { at: 1, limit: 5, total: 0, session: [] })
+    render(() => (
+      <DirectoryScope {...directoryScopeProps} directory="/repo/main" sessionId={() => "ses_active"} surfaceId={() => state.surfaceId}>
+        <div>local session</div>
+      </DirectoryScope>
+    ))
+    await waitFor(() => {
+      expect(state.dataProviderProps?.onClaxedoToolHref?.("process_logs", { process: "web" })).toBe(
+        "/w/local_project?panel=processes&process=web",
+      )
+    })
+  })
+
   test("passes directory session cache rows to DataProvider without owning a second history fetch", async () => {
     state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), { at: 1, limit: 5, total: 0, session: readyStore.session })
 
@@ -922,4 +940,17 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(result.queryByText("Preparing workspace")).toBeNull()
     expect(result.queryByText("Failed to load sessions")).toBeNull()
   })
+})
+
+
+test("image reads use the scoped transport with attachment identity and never a client-supplied file path", async () => {
+  render(() => <DirectoryScope {...directoryScopeProps} directory="workspace:ws_1"><div /></DirectoryScope>)
+  const signal = new AbortController().signal
+  state.runtimeRequest.mockResolvedValue(new Response("pixels", { headers: { "content-type": "image/png" } }))
+  const blob = await state.dataProviderProps!.readToolImage!({ id: "image/1", sessionID: "ses_1", messageID: "msg_1" }, signal)
+  expect(blob.type).toBe("image/png")
+  expect(state.runtimeRequest).toHaveBeenCalledWith(
+    "/session/ses_1/message/msg_1/attachment/image%2F1?directory=workspace%3Aws_1",
+    { signal, cache: "no-store" },
+  )
 })

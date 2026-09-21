@@ -298,6 +298,7 @@ describe("supervisorBackplaneToken", () => {
     expect(verified.sub).toBe("supervisor_1")
     expect(verified.action).toBe("runtime.config.apply")
     expect(verified.scopes).toContain("runtime.config.apply")
+    expect(verified.scopes).toContain("runtime.checkpoint.control")
   })
 
   test("mint protected header includes a kid using the same derivation strategy as RAT", async () => {

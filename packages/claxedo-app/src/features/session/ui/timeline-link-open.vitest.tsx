@@ -5,6 +5,7 @@ import { sanitizeMarkdown } from "@opencode-ai/session-ui/markdown-cache"
 import { Suspense } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { createTimelineLinkOpen } from "./timeline-link-open"
+import { handleExternalLinkClick } from "../../../../../claxedo-desktop/src/renderer/external-link"
 
 const REPORT_URL = "http://localhost:6006/?path=/story/playground-transcript-lab--lab"
 const FILE_URL = "file:///Users/dev/work/notes.md"
@@ -38,6 +39,41 @@ function linkEvent(href: string) {
 }
 
 afterEach(() => cleanup())
+
+describe("desktop and transcript share one click", () => {
+  test.each([
+    { name: "ordinary preview click", href: REPORT_URL, modifier: {}, browser: 1, external: 0 },
+    { name: "Cmd-click", href: REPORT_URL, modifier: { metaKey: true }, browser: 0, external: 1 },
+    { name: "Ctrl-click", href: REPORT_URL, modifier: { ctrlKey: true }, browser: 0, external: 1 },
+    { name: "external website", href: "https://example.com/", modifier: {}, browser: 0, external: 1 },
+  ])("$name opens exactly one destination", async ({ href, modifier, browser, external }) => {
+    const anchor = await anchorFor(`[Open prototype](${href})`)
+    expect(anchor).toBeTruthy()
+    expect(anchor?.classList.contains("external-link")).toBe(true)
+    const openBrowser = vi.fn()
+    const openExternal = vi.fn()
+    const host = createTimelineLinkOpen({
+      workspacePanel: { open: openBrowser },
+      sdk: { directory: "/work/project" },
+      paneId: "pane-1",
+      platform: { openLink: openExternal },
+    })
+    const stop = host.listen(anchor!.parentElement!)
+    const shellClick = (event: MouseEvent) => handleExternalLinkClick(event, openExternal)
+    document.addEventListener("click", shellClick)
+    try {
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true, ...modifier })
+      anchor!.dispatchEvent(click)
+      expect(openBrowser).toHaveBeenCalledTimes(browser)
+      expect(openExternal).toHaveBeenCalledTimes(external)
+      if (external) expect(openExternal).toHaveBeenCalledWith(href)
+      expect(click.defaultPrevented).toBe(true)
+    } finally {
+      stop()
+      document.removeEventListener("click", shellClick)
+    }
+  })
+})
 
 describe("transcript links reach the host", () => {
   test("a code span carrying the reported localhost URL renders an anchor", async () => {

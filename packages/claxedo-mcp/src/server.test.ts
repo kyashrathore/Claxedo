@@ -113,7 +113,7 @@ const hosted = (options: Partial<ClaxedoMcpMountOptions> = {}) =>
     ...options,
   })
 
-async function connect(url: string, headers: Record<string, string>, elicit?: (message: string) => "accept" | "decline") {
+async function connect(url: string, headers: Record<string, string>, elicit?: (message: string) => "accept" | "decline" | "cancel") {
   const client = new Client({ name: "fixture-host", version: "0.0.0" }, elicit ? { capabilities: { elicitation: { form: {} } } } : {})
   if (elicit) {
     client.setRequestHandler(ElicitRequestSchema, async (request) => ({ action: elicit(request.params.message), content: {} }))
@@ -382,12 +382,23 @@ describe("the hosted mount", () => {
     expect(audits.map((event) => event.tool)).toEqual(["workspace_destroy"])
   })
 
-  test("runs a destructive tool unconfirmed for a host that declared no elicitation", async () => {
-    const { url } = await hosted()
+  test("refuses a destructive tool before execution for a host that declared no elicitation", async () => {
+    const { url, audits } = await hosted()
     const { client } = await connect(url, { authorization: "Bearer cli-jwt" })
     expect(await client.callTool({ name: "workspace_destroy", arguments: { workspace: "ws_2" } })).toMatchObject({
-      content: [{ type: "text", text: "destroyed:ws_2" }],
+      isError: true,
+      content: [{ type: "text", text: "workspace_destroy requires confirmation, but this client does not support elicitation" }],
     })
+    expect(audits).toEqual([])
+  })
+
+  test("cancelled and failed elicitation never executes a destructive tool", async () => {
+    const { url, audits } = await hosted()
+    for (const answer of [() => "cancel" as const, () => { throw new Error("host confirmation unavailable") }]) {
+      const { client } = await connect(url, { authorization: "Bearer cli-jwt" }, answer)
+      expect(await client.callTool({ name: "workspace_destroy", arguments: { workspace: "ws_2" } })).toMatchObject({ isError: true })
+    }
+    expect(audits).toEqual([])
   })
 })
 

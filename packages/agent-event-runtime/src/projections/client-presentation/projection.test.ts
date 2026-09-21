@@ -1180,35 +1180,3 @@ describe("client-presentation retained state hardening", () => {
     expect(state.partIdMap.size).toBeLessThanOrEqual(RETAINED_PART_IDS_MAX)
   })
 })
-
-describe("client-presentation retained state hardening", () => {
-  test("keeps reserved wire toolCallIds as ordinary map keys", () => {
-    const projection = makeProjection()
-    for (const toolCallId of ["__proto__", "constructor", "toString"]) {
-      const [event] = projection.ingest({ type: "tool-start", toolCallId, toolName: "read" })
-        .filter((item) => item.payload.type === "message.part.updated")
-      expect(event?.payload).toMatchObject({
-        properties: { part: { callID: toolCallId, type: "tool" } },
-      })
-    }
-    const state = projection.snapshot().state
-    expect(state.toolNamesByCallId.get("__proto__")).toBe("read")
-    expect(state.toolNamesByCallId.get("constructor")).toBe("read")
-    expect(state.toolNamesByCallId.get("toString")).toBe("read")
-    expect(state.partIdMap.get("constructor")).toBeTypeOf("string")
-  })
-
-  test("bounds retained tool call state by evicting the oldest entries", () => {
-    const projection = makeProjection()
-    const count = RETAINED_TOOL_CALLS_MAX + 11
-    for (let i = 0; i < count; i++) {
-      projection.ingest({ type: "tool-start", toolCallId: `tool-${i}`, toolName: "read" })
-    }
-    const state = projection.snapshot().state
-    expect(state.toolNamesByCallId.size).toBe(RETAINED_TOOL_CALLS_MAX)
-    expect(state.toolInputsByCallId.size).toBeLessThanOrEqual(RETAINED_TOOL_CALLS_MAX)
-    expect(state.toolNamesByCallId.has("tool-0")).toBe(false)
-    expect(state.toolNamesByCallId.has(`tool-${count - 1}`)).toBe(true)
-    expect(state.partIdMap.size).toBeLessThanOrEqual(RETAINED_PART_IDS_MAX)
-  })
-})

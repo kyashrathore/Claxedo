@@ -11,6 +11,11 @@ import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 
+// These fixtures isolate lifecycle operations; command projection is exercised over real ACP streams.
+class LifecycleTestAdapter extends AcpHarnessAdapter {
+  protected override bindCommandUpdates() {}
+}
+
 /**
  * Drives the adapter's *protected* surface on a real instance.
  *
@@ -51,6 +56,7 @@ function inertTransport() {
  * of the surface genuine; only the one call under test is replaced.
  */
 class SyncRejectingProcess extends ACPProcess {
+  override hasSession() { return true }
   override async syncSession(): Promise<never> {
     throw new Error("model rejected")
   }
@@ -73,7 +79,7 @@ class BoundProcessAdapter extends AcpHarnessAdapter {
 }
 
 function adapter() {
-  const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+  const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
     store: {
       listPermissions: (directory: string) => Array<{ id: string; sessionID: string }>
       appendEvent: (input: unknown) => void
@@ -249,7 +255,7 @@ describe("AcpHarnessAdapter permissions", () => {
   })
 
   test("a request covered by a saved 'always' is answered without asking", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
@@ -293,6 +299,8 @@ describe("AcpHarnessAdapter permissions", () => {
       isNew: false,
       proc: {
         permissionPushers,
+        listenSubagents: () => () => {},
+        hasSession: () => true,
         pendingPermissions: new Map([
           ["perm-1", { tool: "bun test src", kind: "execute", options: [{ kind: "allow_once", optionId: "once" }] }],
           ["perm-2", { tool: "rm -rf build", kind: "execute", options: [{ kind: "allow_once", optionId: "once" }] }],
@@ -454,7 +462,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("process-level config changes ignore stale stored process keys", () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
       currentModel: string
@@ -493,18 +501,22 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const responses: Array<{ id: string; response: unknown }> = []
     const proc = {
       alive: true,
+      listenSubagents: () => () => {},
+      hasSession: () => true,
+      rootAgentSessionId: (id: string) => id,
+      sessionIsWithin: (id: string, ancestor: string) => id === ancestor,
       pendingPermissions: new Map([
         ["perm-mine", { aid: "agent-session-1", tool: "bash", paths: [], options: [], resolve() {} }],
         ["perm-other", { aid: "agent-session-2", tool: "bash", paths: [], options: [], resolve() {} }],
       ]),
-      async cancel() {},
+      async cancelAndWait() {},
       respondPermission(id: string, response: unknown) {
         responses.push({ id, response })
         proc.pendingPermissions.delete(id)
       },
       dispose() {},
     }
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string | null
         getSessionOwnerKey: (id: string) => string | null
@@ -551,12 +563,14 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(item.permissionOwners.has("perm-other")).toBe(true)
   })
 
-  test("abort failure invalidates the whole shared process", async () => {
+  test("abort failure interrupts only its session and preserves the shared process", async () => {
     const calls: string[] = []
     const proc = {
       alive: true,
+      listenSubagents: () => () => {},
+      hasSession: () => true,
       pendingPermissions: new Map(),
-      async cancel() {
+      async cancelAndWait() {
         calls.push("cancel")
         throw new Error("cancel failed")
       },
@@ -564,7 +578,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         calls.push("dispose")
       },
     }
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
       currentModel: string
@@ -572,7 +586,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       store: {
         getAgentSessionId: (id: string) => string | null
         getSessionOwnerKey: (id: string) => string | null
-        markSessionsInterruptedByOwner: (key: string, message?: string) => void
+        markSessionInterrupted: (id: string, message?: string) => void
         stalePermission: (id: string) => void
       }
       processes: Map<string, { key: string; directory: string; proc: typeof proc | null; init: null; sessionIds: Set<string> }>
@@ -591,8 +605,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       getSessionOwnerKey() {
         return "process-key"
       },
-      markSessionsInterruptedByOwner(key, message) {
-        lost.push({ key, message })
+      markSessionInterrupted(id, message) {
+        lost.push({ id, message })
       },
       stalePermission(id) {
         calls.push(`stale:${id}`)
@@ -610,19 +624,19 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(result).toEqual({
       ok: false,
       status: "recovering",
-      message: "ACP session cancellation failed; the agent process was stopped.",
+      message: "ACP session cancellation was not acknowledged; its outcome is uncertain.",
     })
-    expect(calls).toEqual(["cancel", "stale:perm-1", "dispose"])
+    expect(calls).toEqual(["cancel"])
     expect(lost).toEqual([{
-      key: "process-key",
-      message: "ACP session cancellation failed; the agent process was stopped.",
+      id: "s1",
+      message: "ACP session cancellation was not acknowledged; its outcome is uncertain.",
     }])
-    expect(item.processes.get("process-key")?.proc).toBeNull()
+    expect(item.processes.get("process-key")?.proc).toBe(proc)
   })
 
   test("delete keeps a shared process alive while persisted siblings remain", async () => {
     const calls: string[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string | null
         getSessionOwnerKey: (id: string) => string | null
@@ -666,7 +680,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
   test("delete disposes a shared process when no in-memory or persisted siblings remain", async () => {
     const calls: string[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string | null
         getSessionOwnerKey: (id: string) => string | null
@@ -782,6 +796,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       metadata: {},
       pid: 456,
       alive: true,
+      listenSubagents: () => () => {},
+      hasSession: () => true,
       dispose() {},
     })
     const adapter = new ProtectedAcpAdapter({
@@ -847,9 +863,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.dispose()
   })
 
-  test("sendMessage applies the prompt model before process lookup", async () => {
+  test("sendMessage keeps the prompt model session scoped during process lookup", async () => {
     const calls: string[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: () => string
         getSession: () => { title: string }
@@ -880,11 +896,11 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       break
     }
 
-    expect(calls).toEqual(["setModel:gpt-5.5", "getOrSpawnProcess"])
+    expect(calls).toEqual(["getOrSpawnProcess"])
   })
 
   test("initialization timeout disposes the process", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       initialize: (proc: { initialize: () => Promise<void>; dispose: () => void }, ms: number) => Promise<void>
     }>
     let disposed = false
@@ -902,7 +918,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("initialization failure preserves ACP stderr detail", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       initialize: (proc: {
         initialize: () => Promise<void>
         dispose: () => void
@@ -926,7 +942,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   test("session creation timeout disposes the process before storing a session", async () => {
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "5"
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentModel: string
       options: { connection: { kind: "process"; command: string }; harness: string }
       store: {
@@ -983,15 +999,17 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }
   })
 
-  test("resume timeout cancels and disposes the wedged process", async () => {
+  test("resume timeout quarantines its session without disposing the process", async () => {
     const prev = process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "5"
 
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
+        getSessionConfig: () => null
+        markSessionInterrupted: () => void
         startTurn: (input: AgentRuntimeTurnStartInput) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
@@ -1000,6 +1018,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       getOrSpawnProcess: () => Promise<{
         proc: {
+          alive: boolean
+          quarantineSession: () => void
+          pendingPermissions: Map<string, never>
+          cancelAndWait: () => Promise<void>
+          listenSubagents: () => () => void
+          hasSession: () => boolean
           permissionPushers: Map<string, unknown>
           resumeSession: () => Promise<never>
           syncSession: () => Promise<void>
@@ -1023,6 +1047,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
+      getSessionConfig: () => null,
+      markSessionInterrupted() {},
       startTurn(input) {
         return committedStartTurn(input)
       },
@@ -1032,6 +1058,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.getOrSpawnProcess = async () => ({
       isNew: true,
       proc: {
+        alive: true,
+        quarantineSession() { calls.push("quarantine") },
+        pendingPermissions: new Map<string, never>(),
+        async cancelAndWait() { calls.push("cancel") },
+        listenSubagents: () => () => {},
+        hasSession: () => true,
         permissionPushers: new Map<string, unknown>(),
         async resumeSession() {
           calls.push("resume")
@@ -1063,8 +1095,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       }
 
       expect(calls).toContain("resume")
-      expect(calls).toContain("cancel")
-      expect(calls).toContain("dispose")
+      expect(calls).not.toContain("cancel")
+      expect(calls).not.toContain("dispose")
       expect(events).toContain("session.error")
       expect(item.turnLifecycle.busySessions.has("s1")).toBe(false)
       expect(item.turnLifecycle.activeTurns.size).toBe(0)
@@ -1074,16 +1106,18 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }
   })
 
-  test("a prompt the process reports as quiet cancels and disposes the wedged process", async () => {
+  test("a prompt failure leaves the shared process intact", async () => {
     // The process owns the only bound on a turn (see `ACPProcess.prompt`); the
     // runner must not add a wall clock of its own, so a prompt that outlives
     // the handshake timeout many times over is left alone until the process
     // itself gives up on it.
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
+        getSessionConfig: () => null
+        markSessionInterrupted: () => void
         startTurn: (input: AgentRuntimeTurnStartInput) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
@@ -1092,6 +1126,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       getOrSpawnProcess: () => Promise<{
         proc: {
+          alive: boolean
+          quarantineSession: () => void
+          pendingPermissions: Map<string, never>
+          cancelAndWait: () => Promise<void>
+          listenSubagents: () => () => void
+          hasSession: () => boolean
           permissionPushers: Map<string, unknown>
           resumeSession: () => Promise<void>
           syncSession: () => Promise<void>
@@ -1115,6 +1155,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
+      getSessionConfig: () => null,
+      markSessionInterrupted() {},
       startTurn(input) {
         return committedStartTurn(input)
       },
@@ -1124,6 +1166,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.getOrSpawnProcess = async () => ({
       isNew: false,
       proc: {
+        alive: true,
+        quarantineSession() { calls.push("quarantine") },
+        pendingPermissions: new Map<string, never>(),
+        async cancelAndWait() { calls.push("cancel") },
+        listenSubagents: () => () => {},
+        hasSession: () => true,
         permissionPushers: new Map<string, unknown>(),
         async resumeSession() {},
         async syncSession() {},
@@ -1156,8 +1204,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       }
 
       expect(calls).toContain("prompt")
-      expect(calls).toContain("cancel")
-      expect(calls).toContain("dispose")
+      expect(calls).not.toContain("cancel")
+      expect(calls).not.toContain("dispose")
       expect(events).toContain("session.error")
       expect(item.turnLifecycle.busySessions.has("s1")).toBe(false)
       expect(item.turnLifecycle.activeTurns.size).toBe(0)
@@ -1168,11 +1216,13 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("config apply defers restart while a turn is active", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
+        getSessionConfig: () => null
+        markSessionInterrupted: () => void
         startTurn: (input: AgentRuntimeTurnStartInput) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
@@ -1188,6 +1238,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       forgetSessionProcessBindings: () => void
       getOrSpawnProcess: () => Promise<{
         proc: {
+          alive: boolean
+          quarantineSession: () => void
+          pendingPermissions: Map<string, never>
+          cancelAndWait: () => Promise<void>
+          listenSubagents: () => () => void
+          hasSession: () => boolean
           permissionPushers: Map<string, unknown>
           resumeSession: () => Promise<void>
           syncSession: () => Promise<void>
@@ -1219,6 +1275,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
+      getSessionConfig: () => null,
+      markSessionInterrupted() {},
       startTurn(input) {
         return committedStartTurn(input)
       },
@@ -1226,7 +1284,13 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       bindSession() {},
     }
     const proc = {
-      permissionPushers: new Map<string, unknown>(),
+      alive: true,
+        quarantineSession() { calls.push("quarantine") },
+        pendingPermissions: new Map<string, never>(),
+        async cancelAndWait() { calls.push("cancel") },
+        listenSubagents: () => () => {},
+      hasSession: () => true,
+        permissionPushers: new Map<string, unknown>(),
       async resumeSession() {},
       async syncSession() {},
       async prompt() {
@@ -1276,7 +1340,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
     expect(events).toContain("session.error")
     expect(calls).toContain("cancel")
-    expect(calls).toContain("dispose")
+    expect(calls).not.toContain("dispose")
     expect(item.turnLifecycle.busySessions.has("s1")).toBe(false)
     expect(item.turnLifecycle.activeTurns.size).toBe(0)
 
@@ -1289,7 +1353,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
   })
 
   test("unchanged config apply does not drain an active turn", async () => {
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
       options: { connection: { kind: "process"; command: string }; harness: string }
@@ -1322,7 +1386,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
   test("supportsMcpServers: false keeps configured MCP servers out of the adapter entirely", async () => {
     const makeItem = (supportsMcpServers?: boolean) => {
-      const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+      const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
         currentEnv: Record<string, string>
         currentMcp: unknown[]
         options: { connection: { kind: "process"; command: string; supportsMcpServers?: boolean }; harness: string }
@@ -1364,55 +1428,26 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(offered.calls).toEqual(["restart", "forget"])
   })
 
-  test("probe config cache wait clears its polling interval", async () => {
-    const prev = process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS
-    process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS = "5"
-    const originalSetInterval = globalThis.setInterval
-    const originalClearInterval = globalThis.clearInterval
-    const intervals: number[] = []
-    let cleared = 0
-    globalThis.setInterval = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-      const id = originalSetInterval(handler, timeout, ...args)
-      intervals.push(id)
-      return id
-    }) as typeof setInterval
-    globalThis.clearInterval = ((id?: number) => {
-      if (id !== undefined && intervals.includes(id)) cleared++
-      return originalClearInterval(id)
-    }) as typeof clearInterval
-
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+  test("a completed probe with no config channel returns an authoritative empty option list", async () => {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       options: { connection: { kind: "process"; command: string }; harness: string }
-      turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
-      processes: Map<string, unknown>
       probe: null
-      getOrSpawnProbe: () => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
+      getOrSpawnProbe: () => Promise<{ alive: boolean; cachedConfigOptions: null; configOptions: (id: string) => { options: [] } }>
       boot: () => Promise<string>
     }>
     item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "openclaw-probe" }
-    item.turnLifecycle = createSessionTurnLifecycle()
-    item.processes = new Map()
     item.probe = null
-    item.getOrSpawnProbe = async () => ({ alive: true, cachedConfigOptions: null })
+    item.getOrSpawnProbe = async () => ({ alive: true, cachedConfigOptions: null, configOptions: () => ({ options: [] }) })
     item.boot = async () => "probe-session"
-
-    try {
-      await expect(item.probeConfigOptions(path.resolve("/work"))).rejects.toThrow("ACP harness did not return live config options")
-      expect(cleared).toBe(1)
-    } finally {
-      globalThis.setInterval = originalSetInterval
-      globalThis.clearInterval = originalClearInterval
-      for (const id of intervals) originalClearInterval(id)
-      if (prev === undefined) delete process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS
-      else process.env.CLAXEDO_ACP_PROBE_TIMEOUT_MS = prev
-    }
+    expect(await item.probeConfigOptions(path.resolve("/work"))).toEqual({ options: [] })
   })
+
 })
 
 describe("AcpHarnessAdapter fork support", () => {
   test("does not fabricate a fork when the ACP process does not advertise fork support", async () => {
     const calls: unknown[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentMcp: unknown[]
       store: {
         getSession: (id: string) => { title?: string } | null
@@ -1422,6 +1457,8 @@ describe("AcpHarnessAdapter fork support", () => {
       getOrSpawnProcess: () => Promise<{
         isNew: boolean
         proc: {
+          listenSubagents: () => () => void
+          hasSession: () => boolean
           supportsForkSession: () => boolean
           forkSession: () => Promise<string>
         }
@@ -1438,6 +1475,8 @@ describe("AcpHarnessAdapter fork support", () => {
     item.getOrSpawnProcess = async () => ({
       isNew: false,
       proc: {
+        listenSubagents: () => () => {},
+        hasSession: () => true,
         supportsForkSession: () => false,
         async forkSession() {
           throw new Error("should not call unsupported ACP fork")
@@ -1453,7 +1492,7 @@ describe("AcpHarnessAdapter fork support", () => {
 
   test("binds a fork to the agent session returned by session/fork", async () => {
     const calls: unknown[] = []
-    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentMcp: unknown[]
       store: {
         getSession: (id: string) => { title?: string } | null
@@ -1510,3 +1549,33 @@ describe("AcpHarnessAdapter fork support", () => {
     ])
   })
 })
+
+for (const fails of [false, true]) {
+  test(`concurrent draft discovery shares one session creation (failure=${fails})`, async () => {
+    const item = Object.create(LifecycleTestAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+      peekAcpConfigOptions: () => null
+      getOrSpawnProbe: () => Promise<ACPProcess>
+      boot: () => Promise<string>
+    }>
+    const proc = { cachedConfigOptions: null, configOptions: () => ({ options: [] }) } as unknown as ACPProcess
+    item.peekAcpConfigOptions = () => null
+    item.getOrSpawnProbe = async () => proc
+    let boots = 0
+    let settle!: () => void
+    const gate = new Promise<void>((resolve) => { settle = resolve })
+    item.boot = async () => { boots++; await gate; if (fails) throw new Error("discovery failed"); return "probe-session" }
+    const first = item.probeAcpConfigOptions(path.resolve("/work"))
+    const second = item.probeAcpConfigOptions(path.resolve("/work"))
+    await Bun.sleep(0)
+    expect(boots).toBe(1)
+    settle()
+    const results = await Promise.allSettled([first, second])
+    expect(results.map((result) => result.status)).toEqual(fails ? ["rejected", "rejected"] : ["fulfilled", "fulfilled"])
+    if (fails) {
+      item.getOrSpawnProbe = async () => ({ cachedConfigOptions: null, configOptions: () => ({ options: [] }) }) as unknown as ACPProcess
+      item.boot = async () => { boots++; return "replacement-probe-session" }
+      expect(await item.probeAcpConfigOptions(path.resolve("/work"))).toEqual({ options: [] })
+      expect(boots).toBe(2)
+    }
+  })
+}

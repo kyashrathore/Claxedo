@@ -11,7 +11,7 @@ import {
   randomNonce,
   type HostKeyPair,
 } from "./host-identity"
-import { isPlainRecord, type HostScope } from "./host-state"
+import { canonicalControlPlaneUrl, isPlainRecord, type HostScope } from "./host-state"
 import type { AssignmentDescription, HeartbeatResponse, MachineHeartbeatInput, MachineTransport, ProviderConfigRevision } from "./connector"
 
 /** What this package needs of `fetch`; the global one satisfies it under Node, Bun and Electron. */
@@ -57,6 +57,23 @@ export class HostedHttpError extends Error {
   }
 }
 
+/**
+ * A control plane that answered a machine POST with a location instead of an
+ * answer. Never followed: the body carries the invitation secret or a
+ * signature over THIS path, and a followed redirect would re-send both to
+ * wherever the 3xx pointed.
+ */
+export class HostedRedirectError extends Error {
+  readonly pathname: string
+  readonly status: number
+  constructor(pathname: string, status: number) {
+    super(`control plane answered POST ${pathname} with a redirect (${status || "opaque"}); a machine request is never re-sent elsewhere`)
+    this.name = "HostedRedirectError"
+    this.pathname = pathname
+    this.status = status
+  }
+}
+
 /** The `error.code` of a `HOSTED_HTTP <status> <json>` failure, if it carries one. */
 export function decisionCode(error: unknown): string | undefined {
   const message = error instanceof Error ? error.message : String(error)
@@ -71,8 +88,14 @@ export function decisionCode(error: unknown): string | undefined {
   }
 }
 
+/**
+ * The one composition of a machine request's URL, canonical base first: no
+ * caller reaches the wire with a base that has not been through
+ * `canonicalControlPlaneUrl`, so the path this returns is the path the
+ * signature covers.
+ */
 export function controlPlaneRequestUrl(controlPlaneUrl: string, pathname: string) {
-  return new URL(controlPlaneUrl.replace(/\/+$/, "") + pathname)
+  return new URL(canonicalControlPlaneUrl(controlPlaneUrl) + pathname)
 }
 
 /**
@@ -85,6 +108,11 @@ export function controlPlaneRequestUrl(controlPlaneUrl: string, pathname: string
  * The deadline is raced here as well as handed to `fetch` as its signal: the
  * signal is what closes the socket, the race is what returns even through a
  * `fetch` that ignores it (the response body's reader included).
+ *
+ * Redirects are refused twice over, for the same reason: `redirect: "manual"`
+ * stops a conforming `fetch` from re-sending the body, and the answer is
+ * denied afterwards so a `fetch` that ignored the option — and already
+ * followed — cannot pass an attacker's response off as the control plane's.
  */
 export async function postJson(
   fetchImpl: FetchLike,
@@ -106,6 +134,7 @@ export async function postJson(
           method: "POST",
           headers: { "content-type": "application/json", ...headers },
           body: bodyText,
+          redirect: "manual",
           signal,
         })
         return { response: answer, text: await answer.text() }
@@ -117,6 +146,9 @@ export async function postJson(
       throw new HostedRequestTimeoutError(url.pathname, timeoutMs, error)
     }
     throw error
+  }
+  if (response.redirected || response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+    throw new HostedRedirectError(url.pathname, response.status)
   }
   let parsed: unknown
   try {
@@ -231,6 +263,9 @@ export type MachineSignedTransportOptions = {
 }
 
 export function createMachineSignedTransport(options: MachineSignedTransportOptions): MachineTransport {
+  // Refused here rather than on the first beat: a transport that exists is one
+  // whose every request has an endpoint it is allowed to reach.
+  const controlPlaneUrl = canonicalControlPlaneUrl(options.controlPlaneUrl)
   const now = options.now ?? (() => Date.now())
   const nonce = options.nonce ?? randomNonce
   const timeoutMs = options.requestTimeoutMs ?? MACHINE_REQUEST_TIMEOUT_MS
@@ -238,7 +273,7 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
   const keyVersion = options.keyVersion === undefined ? {} : { keyVersion: options.keyVersion }
 
   const signedPost = async (pathname: string, body: Record<string, unknown>, requestTimeoutMs = timeoutMs) => {
-    const url = controlPlaneRequestUrl(options.controlPlaneUrl, pathname)
+    const url = controlPlaneRequestUrl(controlPlaneUrl, pathname)
     const bodyText = JSON.stringify({ enrollmentId: options.enrollmentId, hostId: options.hostId, ...body })
     // Fresh per request, never reused: the nonce is single-use at the
     // control plane and the timestamp is checked against its clock.

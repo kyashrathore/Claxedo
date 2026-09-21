@@ -21,8 +21,9 @@ import {
   persistedSubagentObservation,
   persistedTodoRow,
 } from "./persisted-rows"
-import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
+import { asRecord, isRecord, type AgentSessionStarts } from "@claxedo/agent-runtime-contract"
 import type { SubagentObservation } from "../subagent-admission"
+import { sqliteSessionStarts } from "./session-start"
 
 type SqliteStatement = {
   run(...params: unknown[]): unknown
@@ -100,6 +101,7 @@ function openDatabase(file: string): SqliteDatabase {
  * across process lifetimes and is reloaded after any failed transaction.
  */
 export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
+  readonly sessionStarts: AgentSessionStarts
   private readonly db: SqliteDatabase
   private memory = new MemoryRuntimeStore()
   private readonly turnLeases = new Map<string, string>()
@@ -113,6 +115,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     this.db.exec("PRAGMA busy_timeout = 5000")
     try {
       this.initializeSchema()
+      this.sessionStarts = sqliteSessionStarts(this.db)
       this.hydrateMemory()
     } catch (error) {
       this.db.close?.()
@@ -343,7 +346,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
         published: columnNumber(row, "published") === 1,
       })),
     }
-    this.memory = new MemoryRuntimeStore()
+    this.memory = new MemoryRuntimeStore(this.sessionStarts)
     this.memory.importSnapshot(snapshot)
   }
 
@@ -412,7 +415,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   private persistInteraction(table: "runtime_permissions" | "runtime_questions", sessionId: string, id: string) {
     const session = this.memory.getSession(sessionId) as { directory?: string } | null
-    const directory = session?.directory ?? ""
+    const directory = session?.directory ?? this.sessionStarts.get(sessionId)?.binding.directory ?? ""
     const interactions = this.memory.readDirectoryInteractions(directory)
     const rows = table === "runtime_permissions" ? interactions.permissions : interactions.questions
     const row = rows.find((item) => item.id === id)

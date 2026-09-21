@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
 import { createSignal, For } from "solid-js"
 import type { HarnessSelection, SessionRef } from "@/platform/identity/session-ref"
+import type { HarnessConnectionState } from "../../harness/profile"
 
 type CatalogProvider = {
   id: string
@@ -37,6 +38,7 @@ vi.mock("@/platform/telemetry/analytics", () => ({
   identityProps: () => ({ org_id: "org_1", user_id: "user_1", deployment_mode: "self-host" }),
 }))
 let readiness = "ready"
+let connectionState: HarnessConnectionState | undefined
 let harnessType: HarnessSelection = { kind: "native", harnessId: "claude" }
 let models: Array<{ id: string; name: string; connected?: boolean }> = []
 let selectedModel = ""
@@ -163,6 +165,7 @@ function harnessController(): HarnessSelectionController {
       harness: harnessType,
       readiness: readiness as ReturnType<HarnessSelectionController["read"]>["readiness"],
       isHarnessMode: harnessMode,
+      connectionState,
       models,
       selectedModel,
       selectedModelKey: selectedModel ? { providerID: selectedModelProvider ?? harnessId(harnessType), modelID: selectedModel } : undefined,
@@ -228,6 +231,7 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  connectionState = undefined
   discovery.mockReset().mockImplementation(async () => Response.json({ status: "supported", connections: [] }))
   harnessMode = true
   readiness = "ready"
@@ -255,6 +259,17 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("AgentHarnessSelector — existing session handoff", () => {
+  test("shows observed handshake state separately from model discovery readiness", () => {
+    harnessType = { kind: "connection", connectionId: "acp" }
+    for (const [state, label] of [["configured", "Configured"], ["connecting", "Connecting"], ["ready", "Connected"]] as const) {
+      connectionState = { connectionId: "acp", state }
+      const view = render(() => <TestAgentHarnessSelector />)
+      const badge = view.container.querySelector(`[data-connection-state='${state}']`)
+      expect(badge?.textContent).toBe(label)
+      if (state === "ready") expect(badge?.getAttribute("title")).toContain("Authentication is checked")
+      view.unmount()
+    }
+  })
   test("unsupported discovery does not create a connection group or schedule retries", async () => {
     discovery.mockImplementation(async () => Response.json({ status: "unsupported", reason: "operator_local_configuration" }))
     vi.useFakeTimers()

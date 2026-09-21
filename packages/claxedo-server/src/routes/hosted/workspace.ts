@@ -14,6 +14,7 @@
 import { Hono, type Context } from "hono"
 import { z } from "zod"
 import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
+import { safeRepoUrl } from "@claxedo/sandbox-contract"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
@@ -26,6 +27,8 @@ import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/backgr
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
+import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { contentfulStatus } from "../../platform/http/status"
 import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
@@ -294,12 +297,22 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
         const body = parsed.body
 
+        // Admission for every create, not only one that names a tenant: the
+        // authority resolves the organization this workspace would land in —
+        // from the project when the caller named one, otherwise their single
+        // membership — and admits against that. Both selectors go with it so
+        // the organization it admits is the one `createCloudWorkspace` below
+        // will resolve. An authority that cannot answer refuses the create
+        // rather than letting it reach a billable sandbox.
         try {
           const authority = requireAuthority(services)
-          if (body.orgId && !authority.authorizeWorkspaceCreate) {
+          if (!authority.authorizeWorkspaceCreate) {
             throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace creation authorization is unavailable")
           }
-          await authority.authorizeWorkspaceCreate?.(auth, (body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}))
+          await authority.authorizeWorkspaceCreate(auth, {
+            ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
+            ...(body.projectId?.trim() ? { projectId: body.projectId.trim() } : {}),
+          })
         } catch (err) {
           if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
           throw err
@@ -322,6 +335,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           )
         }
         let repoUrl = body.repoUrl?.trim()
+        if (repoUrl && !safeRepoUrl(repoUrl)) {
+          return c.json(
+            { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
+            400,
+          )
+        }
         let provisionRepoUrl = repoUrl
         let provisionSecrets: Array<{ name: string; value: string; hosts: string[]; header?: string }> | undefined
         if (body.connectionId && body.repo) {
@@ -413,6 +432,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           })
         } catch (err) {
           if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+          // A repository already assigned to another project, an
+          // organization this product may not address: the authority's answer
+          // about the world, which the caller can act on.
+          if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
           throw err
         }
 

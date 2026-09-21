@@ -8,6 +8,7 @@ type Call = { url: string; method: string; body: any }
 function harness(responder: (call: Call) => { status: number; json: any }) {
   const calls: Call[] = []
   const fetch = vi.fn(async (url: any, init: any) => {
+    expect(init?.redirect).toBe("error")
     const call: Call = {
       url: String(url),
       method: init?.method ?? "GET",
@@ -38,6 +39,18 @@ const createInput = {
 }
 
 describe("CloudflareSandboxDriver", () => {
+  test.each(["http://worker.test", "http://localhost:8787", "https://user:secret@worker.test", "https://worker.test/?query", "https://worker.test/#fragment"])("rejects insecure endpoint %s at construction", (workerUrl) => {
+    const { calls, fetch } = harness(() => ({ status: 200, json: {} }))
+    expect(() => createCloudflareSandboxDriver({ ...baseOptions, workerUrl, fetch })).toThrow(/HTTPS/)
+    expect(calls).toEqual([])
+  })
+
+  test.each([301, 307, 308])("refuses Worker redirects (%s) without another request", async (status) => {
+    const { calls, fetch } = harness(() => ({ status, json: {} }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.ensureHost(createInput)).rejects.toThrow(/redirects/)
+    expect(calls).toHaveLength(1)
+  })
   test("ensureHost boots the runtime, sends the credential env, and returns the worker-proxied url", async () => {
     // The worker now returns its own data-plane proxy URL (no exposePort preview
     // subdomain) — the driver passes it through as the host URL unchanged.

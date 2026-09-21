@@ -5,9 +5,11 @@ import type { JSX } from "solid-js"
 
 const state = vi.hoisted(() => ({
   settingsConnectionsEnabled: false,
+  agentConnections: false,
   settingsSandboxProvidersEnabled: false,
 }))
 
+vi.mock("@/platform/query/connection-catalog", () => ({ createHarnessConnectionsCatalog: () => ({ refresh: async () => {}, data: () => ({ status: "supported", connections: state.agentConnections ? [{ connectionId: "disabled-agent", enabled: false }] : [] }) }) }))
 vi.mock("@opencode-ai/ui/dialog", () => ({
   Dialog: (props: { children: JSX.Element }) => <div>{props.children}</div>,
 }))
@@ -93,6 +95,7 @@ function mount() {
 }
 
 beforeEach(() => {
+  state.agentConnections = false
   state.settingsConnectionsEnabled = false
   state.settingsSandboxProvidersEnabled = false
 })
@@ -234,4 +237,11 @@ describe("DialogSettings contributed sections", () => {
     expect(screen.getByRole("button", { name: "Contributed account" })).toBeInTheDocument()
     expect(screen.getByText("Contributed account content")).toBeInTheDocument()
   })
+})
+
+test("configured ACP connections expose administration even without external integrations", () => {
+ state.agentConnections = true
+ mount()
+ expect(screen.getByRole("button", { name: "Connections" })).toBeInTheDocument()
+ expect(screen.getByText("Connections content")).toBeInTheDocument()
 })

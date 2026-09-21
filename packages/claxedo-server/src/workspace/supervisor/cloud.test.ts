@@ -15,7 +15,9 @@
 import { describe, expect, test, beforeAll, beforeEach, afterEach, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { SandboxHoldRow, SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
+import { DEFAULT_WORKSPACE_HOST_DECISION_CONFIG } from "@claxedo/sandbox-manager/lease-policy"
 import { controlBus, type ControlPlaneEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { workspaceRuntimeTargetEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
 
 let driverId = "daytona"
 const previousRelayHostPublicKey = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK
@@ -121,10 +123,28 @@ const mockBoxLaunch = vi.fn(async (input: any) => ({
   labels: input.labels,
 }))
 const mockVercelSnapshot = vi.fn(async () => ({ snapshotId: "snap-stop-1" }))
+let duringSandboxSuspend: (() => void) | undefined
 
-async function captureRuntimeEnv(driver: string, options: any, input: any, hostId: string) {
-  const env = await options.env?.(input, { id: hostId })
-  sandboxBootEnvCalls.push({ driver, hostId, env: env ?? {} })
+/**
+ * The env a sandbox process actually receives, in the order every driver
+ * composes it: the driver's own boot env first, the supervisor's callback
+ * spread over it. Capturing only the callback's half would hide any key that
+ * contradicts what the driver already wrote.
+ *
+ * `providerResourceId` is what Daytona hands its callback — it passes the
+ * provider sandbox, not the host — while the others hand the hostId.
+ */
+async function captureRuntimeEnv(driver: string, options: any, input: any, providerResourceId: string) {
+  const env = {
+    ...workspaceRuntimeTargetEnv({
+      workspaceId: input.workspaceId,
+      hostId: input.hostId,
+      directory: input.workspaceRoot,
+      port: input.workspaceRuntimePort,
+    }),
+    ...await options.env?.(input, { id: driver === "daytona" ? providerResourceId : input.hostId }),
+  }
+  sandboxBootEnvCalls.push({ driver, hostId: input.hostId, env })
 }
 
 function latestSandboxBootEnv(driverId?: string) {
@@ -160,7 +180,13 @@ const mockCreateDaytonaSandboxDriver = vi.fn((options: any) => ({
   },
   resumeHost: async (input: any) => mockDaytonaLaunch(input.ensure),
   stop: vi.fn(async () => {}),
-  suspend: vi.fn(async () => {}),
+  suspend: vi.fn(async () => {
+    // The window a stop holds open at the provider, where a replacement
+    // provision can land on the lease it is about to record against.
+    const during = duringSandboxSuspend
+    duringSandboxSuspend = undefined
+    during?.()
+  }),
   destroy: vi.fn(async () => {}),
 }))
 const mockCreateCloudflareSandboxDriver = vi.fn((options: any) => ({
@@ -281,6 +307,10 @@ const mockGetRuntimeConfigSnapshot = vi.fn(
 
 const leases = new Map<string, SandboxLeaseRow>()
 const holds = new Map<string, SandboxHoldRow>()
+// Runs inside the lease store's `get`, after the row a caller is about to act
+// on has been read. The only way to land a lifecycle decision in the window
+// between a snapshot's read and its compare-and-set write.
+let duringLeaseRead: (() => void) | undefined
 
 function workspaceHolds(workspaceId: string) {
   return [...holds.values()].filter((hold) => hold.workspace_id === workspaceId)
@@ -359,9 +389,10 @@ vi.mock("@claxedo/server-core/credentials/registry", () => ({
 
 vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
   const status = (input: SandboxLeaseRow["status"]) => {
-    if (input === "ready" || input === "stopped") return input
-    if (input === "backoff" || input === "failed" || input === "unhealthy") return "unavailable"
-    return "acquiring"
+    if (input === "ready" || input === "stopped" || input === "destroyed") return input
+    if (input === "stopping") return "stopped"
+    if (input === "pending" || input === "acquiring" || input === "starting") return "acquiring"
+    return "unavailable"
   }
   const toSandboxLease = (input: SandboxLeaseRow) => ({
     workspaceId: input.workspace_id,
@@ -484,31 +515,6 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
       const lease = recordSupervisorSandboxLeaseFailure(workspaceId, error, Date.now() + 1_000)
       return lease ? { ok: true, lease } : { ok: false, error: "workspace not found" }
     },
-    recordSupervisorSandboxLeaseReady: (input: {
-      workspaceId: string
-      driver: SandboxLeaseRow["driver"]
-      sandboxId?: string | null
-      url: string
-      driverResourceId?: string | null
-    }) => {
-      const ts = Date.now()
-      const prev = leases.get(input.workspaceId) ?? lease(input.workspaceId, input.driver)
-      const next = {
-        ...prev,
-        status: "ready" as const,
-        sandbox_id: input.sandboxId ?? prev.sandbox_id,
-        driver_resource_id: input.driverResourceId ?? prev.driver_resource_id,
-        url: input.url,
-        retry_count: 0,
-        next_retry_at: null,
-        last_error: null,
-        last_heartbeat_at: ts,
-        last_activity_at: ts,
-        updated_at: ts,
-      }
-      leases.set(input.workspaceId, next)
-      return next
-    },
     createSupervisorSandboxLeaseStore: () => ({
       async acquire(workspaceId: string, input: any) {
         const current = leases.get(workspaceId)
@@ -539,16 +545,42 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
         leases.set(workspaceId, next)
         return { acquired: true, lease: toSandboxLease(next) }
       },
-      async update(workspaceId: string, expectedEpoch: number, patch: any) {
+      async recordTarget(workspaceId: string, expectedEpoch: number, target: any) {
         const current = leases.get(workspaceId)
         if (!current || current.epoch !== expectedEpoch) return undefined
+        if (status(current.status) === "stopped" || status(current.status) === "destroyed") return undefined
+        const next = {
+          ...current,
+          status: "ready" as const,
+          sandbox_id: target.sandboxId,
+          url: target.url,
+          lease_id: target.hostId ?? current.lease_id,
+          driver_resource_id: target.driverResourceId ?? null,
+          labels: target.labels ?? null,
+          ...(target.persistence === undefined ? {} : { persistence: target.persistence }),
+          retry_count: 0,
+          next_retry_at: null,
+          last_error: null,
+          updated_at: Date.now(),
+        }
+        leases.set(workspaceId, next)
+        return toSandboxLease(next)
+      },
+      async update(workspaceId: string, expectedEpoch: number, patch: any, expectedStatus?: string) {
+        const current = leases.get(workspaceId)
+        if (!current || current.epoch !== expectedEpoch) return undefined
+        if (expectedStatus !== undefined && status(current.status) !== expectedStatus) return undefined
+        // `sandboxLeaseRowStatus` reads the retry time the MERGED lease holds,
+        // not the one this patch happens to carry: an unavailable lease with
+        // nothing left to wait for is `failed`, not `backoff`.
+        const retryAt = patch.nextRetryAt === undefined ? current.next_retry_at : (patch.nextRetryAt ?? null)
         const next = {
           ...current,
           ...(patch.status === "ready" ? { status: "ready" as const } : {}),
           ...(patch.status === "stopped" ? { status: "stopped" as const } : {}),
           ...(patch.status === "acquiring" ? { status: "acquiring" as const } : {}),
           ...(patch.status === "unavailable"
-            ? { status: patch.nextRetryAt === undefined ? ("failed" as const) : ("backoff" as const) }
+            ? { status: retryAt === null ? ("failed" as const) : ("backoff" as const) }
             : {}),
           ...(patch.sandboxId === undefined ? {} : { sandbox_id: patch.sandboxId ?? null }),
           ...(patch.url === undefined ? {} : { url: patch.url ?? null }),
@@ -571,6 +603,7 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
       async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
         const current = leases.get(workspaceId)
         if (!current || current.epoch !== expectedEpoch) return undefined
+        if (status(current.status) === "stopped" || status(current.status) === "destroyed") return undefined
         const next = recordSupervisorSandboxLeaseFailure(workspaceId, error, nextRetryAt ?? null)
         return next ? toSandboxLease(next) : undefined
       },
@@ -579,6 +612,9 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
       },
       async get(workspaceId: string) {
         const current = leases.get(workspaceId)
+        const during = duringLeaseRead
+        duringLeaseRead = undefined
+        during?.()
         return current ? toSandboxLease(current) : undefined
       },
       async list() {
@@ -665,13 +701,26 @@ vi.mock("fs", () => {
 // a test can tell "the runtime was told" from "the supervisor returned ready".
 const configPush: Array<{ url: string; body: unknown }> = []
 let configPushResponse = () => new Response("{}", { status: 200 })
+// Run while a reattach is inside one of the two awaits it rests on. The only
+// way a test can land a stop, a destroy or a new epoch in a window the attach
+// is holding open.
+let duringHealthProbe: (() => void) | undefined
+let duringConfigPush: (() => void) | undefined
 
 globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
   const u = typeof url === "string" ? url : url instanceof URL ? url.toString() : ((url as any).url ?? "")
   if (u.includes("/api/wr/health") || u.includes("/global/health")) {
+    if (u.includes("/global/health")) {
+      const during = duringHealthProbe
+      duringHealthProbe = undefined
+      during?.()
+    }
     return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))
   }
   if (u.includes("/api/wr/config")) {
+    const during = duringConfigPush
+    duringConfigPush = undefined
+    during?.()
     configPush.push({ url: u, body: JSON.parse(typeof init?.body === "string" ? init.body : "null") })
     return Promise.resolve(configPushResponse())
   }
@@ -699,6 +748,10 @@ describe("workspace-supervisor", () => {
     holds.clear()
     configPush.length = 0
     configPushResponse = () => new Response("{}", { status: 200 })
+    duringHealthProbe = undefined
+    duringConfigPush = undefined
+    duringLeaseRead = undefined
+    duringSandboxSuspend = undefined
     snapshots.length = 0
     store.clear()
     credentials.active.length = 0
@@ -815,6 +868,142 @@ describe("workspace-supervisor", () => {
         status: "ready",
         driver: "daytona",
       })
+    })
+
+    test("a runtime snapshot reports liveness and cannot restate the lease's identity", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-snapshot-a", { homeRegion: "us-east" })
+      await manager.ensure("ws-snapshot-b", { homeRegion: "us-east" })
+      const a = supervisor.getSandboxLease("ws-snapshot-a")!
+      const b = supervisor.getSandboxLease("ws-snapshot-b")!
+
+      // The reporter is an untyped HTTP body: the cast is what a caller that
+      // smuggles identity keys past the route schema looks like from in here.
+      // The values name a resource this deployment never provisioned, so the
+      // assertions below fail the moment any of them is believed.
+      await expect(manager.heartbeat("ws-snapshot-a", {
+        ok: true,
+        epoch: a.epoch,
+        active: true,
+        sandboxId: "sandbox-owned-by-another-workspace",
+        url: "https://another-workspace.example.com",
+        hostId: "lease-owned-by-another-workspace",
+        driverResourceId: "resource-owned-by-another-workspace",
+      } as never)).resolves.toEqual({ ok: true, status: "ready" })
+
+      expect(supervisor.getSandboxLease("ws-snapshot-a")).toMatchObject({
+        sandbox_id: a.sandbox_id,
+        url: a.url,
+        lease_id: a.lease_id,
+        driver_resource_id: a.driver_resource_id,
+        status: "ready",
+      })
+      await expect(manager.target("ws-snapshot-a")).resolves.toMatchObject({
+        sandboxId: a.sandbox_id,
+        url: a.url,
+      })
+      // And the workspace it named is exactly as its own provisioning left it.
+      expect(supervisor.getSandboxLease("ws-snapshot-b")).toMatchObject({
+        sandbox_id: b.sandbox_id,
+        url: b.url,
+        lease_id: b.lease_id,
+        epoch: b.epoch,
+        last_heartbeat_at: b.last_heartbeat_at,
+      })
+    })
+
+    test("a runtime snapshot on a stale epoch or a stopped lease changes nothing", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-snapshot-fence", { homeRegion: "us-east" })
+      const live = supervisor.getSandboxLease("ws-snapshot-fence")!
+
+      await expect(manager.heartbeat("ws-snapshot-fence", { ok: true, epoch: live.epoch + 1 }))
+        .resolves.toEqual({ ok: false, reason: "runtime_lease_epoch_mismatch" })
+      await expect(manager.register("ws-snapshot-fence", { ok: true } as never))
+        .resolves.toEqual({ ok: false, reason: "runtime_lease_epoch_mismatch" })
+
+      await manager.stop("ws-snapshot-fence")
+      await expect(manager.heartbeat("ws-snapshot-fence", { ok: true, epoch: live.epoch }))
+        .resolves.toEqual({ ok: false, reason: "runtime_lease_not_serving" })
+      expect(supervisor.getSandboxLease("ws-snapshot-fence")?.status).toBe("stopped")
+    })
+
+    test("a runtime that reports itself unhealthy cannot demote a lease the owner stopped", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-snapshot-unhealthy-stopped", { homeRegion: "us-east" })
+      const live = supervisor.getSandboxLease("ws-snapshot-unhealthy-stopped")!
+      await manager.stop("ws-snapshot-unhealthy-stopped")
+
+      await expect(manager.heartbeat("ws-snapshot-unhealthy-stopped", { ok: false, epoch: live.epoch }))
+        .resolves.toEqual({ ok: false, reason: "runtime_lease_not_serving" })
+
+      expect(supervisor.getSandboxLease("ws-snapshot-unhealthy-stopped")).toMatchObject({
+        status: "stopped",
+        epoch: live.epoch,
+        last_error: null,
+      })
+    })
+
+    test("an unhealthy report spends the retry budget and a healthy one hands it back", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-snapshot-flap", { homeRegion: "us-east" })
+      const live = supervisor.getSandboxLease("ws-snapshot-flap")!
+
+      await expect(manager.heartbeat("ws-snapshot-flap", { ok: false, epoch: live.epoch }))
+        .resolves.toEqual({ ok: true, status: "unavailable" })
+
+      // Retryable, not terminal: a runtime reporting one bad minute must not
+      // brick the workspace for every later ensure.
+      const failed = supervisor.getSandboxLease("ws-snapshot-flap")!
+      expect(failed).toMatchObject({ status: "backoff", retry_count: 1, last_error: "runtime_unhealthy" })
+      expect(failed.next_retry_at).toBeGreaterThan(Date.now())
+
+      await expect(manager.heartbeat("ws-snapshot-flap", { ok: true, epoch: live.epoch, active: true }))
+        .resolves.toEqual({ ok: true, status: "ready" })
+
+      expect(supervisor.getSandboxLease("ws-snapshot-flap")).toMatchObject({
+        status: "ready",
+        retry_count: 0,
+        next_retry_at: null,
+        last_error: null,
+        sandbox_id: live.sandbox_id,
+        url: live.url,
+      })
+    })
+
+    test("a runtime that never recovers spends the budget down to a terminal lease", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-snapshot-spent", { homeRegion: "us-east" })
+      const live = supervisor.getSandboxLease("ws-snapshot-spent")!
+
+      for (let report = 0; report < DEFAULT_WORKSPACE_HOST_DECISION_CONFIG.maxRetries; report += 1) {
+        await expect(manager.heartbeat("ws-snapshot-spent", { ok: false, epoch: live.epoch }))
+          .resolves.toEqual({ ok: true, status: "unavailable" })
+      }
+
+      // Nothing left to wait for, so the row is `failed` rather than a
+      // `backoff` with a retry time no one will ever reach.
+      expect(supervisor.getSandboxLease("ws-snapshot-spent")).toMatchObject({
+        status: "failed",
+        retry_count: DEFAULT_WORKSPACE_HOST_DECISION_CONFIG.maxRetries,
+        next_retry_at: null,
+      })
+    })
+
+    test("a healthy report that races a stop is refused by the status fence", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-snapshot-race", { homeRegion: "us-east" })
+      const live = supervisor.getSandboxLease("ws-snapshot-race")!
+
+      // The stop lands after the snapshot has read a ready lease and before it
+      // writes: the read alone would answer "still serving".
+      duringLeaseRead = () => {
+        leases.set("ws-snapshot-race", { ...leases.get("ws-snapshot-race")!, status: "stopped" })
+      }
+
+      await expect(manager.heartbeat("ws-snapshot-race", { ok: true, epoch: live.epoch }))
+        .resolves.toEqual({ ok: false, reason: "runtime_lease_not_serving" })
+      expect(supervisor.getSandboxLease("ws-snapshot-race")?.status).toBe("stopped")
     })
 
     test.each([undefined, "host_secret_test"])("passes brokered secrets through the supervisor manager with host %s", async (hostId) => {
@@ -1484,6 +1673,84 @@ describe("workspace-supervisor", () => {
           method: "POST",
         }),
       )
+      // The probe is the supervisor reporting liveness on its own lease, so
+      // the attach settles the same fields a runtime callback would.
+      const settled = leases.get("ws-existing-url")!
+      expect(settled).toMatchObject({
+        status: "ready",
+        epoch: 1,
+        retry_count: 0,
+        next_retry_at: null,
+        last_error: null,
+        sandbox_id: "daytona-existing-sb",
+      })
+      expect(settled.last_heartbeat_at).toBeGreaterThan(0)
+    })
+
+    // A reattach rests on two awaits — the health probe and the config push —
+    // and the lifecycle owner can decide inside either one.
+    describe.each([
+      {
+        window: "health probe",
+        hold: (move: () => void) => { duringHealthProbe = move },
+      },
+      {
+        window: "config push",
+        hold: (move: () => void) => { duringConfigPush = move },
+      },
+    ])("a lifecycle decision taken while a reattach holds its $window open", (held) => {
+      test.each([
+        {
+          name: "stop",
+          move: (row: SandboxLeaseRow) => ({ ...row, status: "stopped" as const }),
+          reason: "runtime_lease_not_serving",
+          expected: { status: "stopped", epoch: 1, url: "http://existing-runtime.test" },
+        },
+        {
+          name: "destroy",
+          move: (row: SandboxLeaseRow) => ({ ...row, status: "destroyed" as const }),
+          reason: "runtime_lease_not_serving",
+          expected: { status: "destroyed", epoch: 1, url: "http://existing-runtime.test" },
+        },
+        {
+          name: "replacement epoch",
+          move: (row: SandboxLeaseRow) => ({
+            ...row,
+            epoch: row.epoch + 1,
+            sandbox_id: "daytona-replacement-sb",
+            url: "http://replacement-runtime.test",
+          }),
+          reason: "runtime_lease_epoch_mismatch",
+          expected: { status: "ready", epoch: 2, url: "http://replacement-runtime.test" },
+        },
+      ])("survives a $name, which advertises no target and provisions nothing", async (scenario) => {
+        const workspaceId = `ws-probe-${held.window.replace(" ", "-")}-${scenario.name.replace(" ", "-")}`
+        leases.set(workspaceId, {
+          ...lease(workspaceId),
+          status: "ready",
+          sandbox_id: "daytona-existing-sb",
+          driver_resource_id: "daytona-existing-sb",
+          url: "http://existing-runtime.test",
+        })
+        store.set(workspaceId, { ...workspace(workspaceId), status: "ready" })
+        held.hold(() => {
+          leases.set(workspaceId, scenario.move(leases.get(workspaceId)!))
+        })
+
+        await expect(supervisor.ensureSupervisorSandbox(workspaceId)).rejects.toThrow(scenario.reason)
+
+        expect(leases.get(workspaceId)).toMatchObject(scenario.expected)
+        expect(leases.get(workspaceId)?.last_heartbeat_at).toBeNull()
+        expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+        expect(mockUpdateWorkspace).not.toHaveBeenCalledWith(workspaceId, { status: "ready" })
+        // The two proofs run against the url the attach read, and only that
+        // url: the replacement's host is never spoken to, let alone served.
+        expect(configPush.map((push) => push.url)).toEqual(["http://existing-runtime.test/api/wr/config"])
+        const entry = (await import("./store")).runtimes.get(workspaceId)
+        expect(entry?.status).not.toBe("ready")
+        expect(entry?.url).toBeUndefined()
+        expect(entry?.sandbox_target).toBeUndefined()
+      })
     })
 
     test("provisions a fresh sandbox when there is no canonical sandbox lease", async () => {
@@ -1634,7 +1901,7 @@ describe("workspace-supervisor", () => {
       const env = latestSandboxBootEnv("daytona")
       expect(env.WORKSPACE_RUNTIME_CONFIG_TOKEN).toBeTruthy()
       expect(env.WORKSPACE_RUNTIME_TRUSTED_DIRECT_TOKEN).toBeTruthy()
-      expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe("daytona-sdk-sb")
+      expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe("lease-ws-hosted-config")
       expect(env.WORKSPACE_RUNTIME_RELAY_JWKS_URL).toBe("https://relay.example.test/.well-known/jwks.json")
       // The signer now refuses to mint without a published public key, so the
       // local-control-plane PEM branch is the only reachable state here.
@@ -1643,6 +1910,24 @@ describe("workspace-supervisor", () => {
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_ISSUER).toBe("claxedo-control-plane")
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE).toBe("supervisor-backplane")
       expect(env.CLAXEDO_RELAY_JWKS_URL).toBeUndefined()
+    })
+
+    test("a daytona sandbox boots on the host identity its lease routes on, not its provider resource id", async () => {
+      await supervisor.ensureSupervisorSandbox("ws-daytona-identity")
+
+      const recorded = leases.get("ws-daytona-identity")
+      const env = latestSandboxBootEnv("daytona")
+      // `lease_id` is where the store keeps the host identity, and it is what
+      // `sandboxTargetFromLease` hands the relay to route and authorize this
+      // host. A runtime told anything else binds a host nobody asks for.
+      expect(recorded?.lease_id).toBe("lease-ws-daytona-identity")
+      expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe(recorded?.lease_id)
+      // The provider's own id for the resource stays on the lease, where the
+      // driver needs it, and never stands in for the host.
+      expect(recorded?.driver_resource_id).toBe("daytona-sdk-sb")
+      expect(env.WORKSPACE_RUNTIME_HOST_ID).not.toBe(recorded?.driver_resource_id)
+      expect(env.WORKSPACE_RUNTIME_LEASE_ID).toBe("lease-ws-daytona-identity")
+      expect(env.WORKSPACE_RUNTIME_EPOCH).toBe("1")
     })
 
     test("daytona runtime uses public PEM for local management verification", async () => {
@@ -1701,10 +1986,12 @@ describe("workspace-supervisor", () => {
       )
       const env = latestSandboxBootEnv("docker")
       expect(env.CLAXEDO_CONTROL_PLANE_URL).toBeUndefined()
-      expect(env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL).toBe("http://host.docker.internal:3000/.well-known/jwks.json")
+      expect(env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL).toBeUndefined()
+      expect(env.WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM).toBeTruthy()
+      expect(env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL).toBe("http://host.docker.internal:3000/api/runtime-authority/session-authorize")
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_ISSUER).toBe("claxedo-control-plane")
       expect(env.WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE).toBe("supervisor-backplane")
-      expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe("docker-sdk-sb")
+      expect(env.WORKSPACE_RUNTIME_HOST_ID).toBe("lease-ws-docker-control-plane")
       expect(env.WORKSPACE_RUNTIME_RELAY_JWKS_URL).toBe("https://relay.example.test/.well-known/jwks.json")
       expect(env.CLAXEDO_RELAY_JWKS_URL).toBeUndefined()
     })
@@ -1948,6 +2235,70 @@ describe("workspace-supervisor", () => {
 
     test("no-op for unknown workspaceId", async () => {
       await supervisor.stopSupervisorSandbox("nonexistent", "test")
+    })
+
+    test("a stop taken while a start holds its config push open queues behind it", async () => {
+      leases.set("ws-stop-held", {
+        ...lease("ws-stop-held"),
+        status: "ready",
+        sandbox_id: "daytona-existing-sb",
+        driver_resource_id: "daytona-existing-sb",
+        url: "http://existing-runtime.test",
+      })
+      store.set("ws-stop-held", { ...workspace("ws-stop-held"), status: "ready" })
+      let stopping: Promise<void> | undefined
+      // The entry still reads "stopped" at this instant — a stop that ran now
+      // would find nothing to do and return, and the start would then publish
+      // a url and a ready workspace the stop was meant to retire.
+      duringConfigPush = () => {
+        stopping = supervisor.stopSupervisorSandbox("ws-stop-held", "test")
+      }
+
+      const entry = await supervisor.ensureSupervisorSandbox("ws-stop-held")
+      expect(entry.status).toBe("ready")
+      await stopping
+
+      expect(entry.status).toBe("stopped")
+      expect(entry.url).toBeUndefined()
+      expect(entry.sandbox_target).toBeUndefined()
+      expect(leases.get("ws-stop-held")?.status).toBe("stopped")
+      expect(store.get("ws-stop-held")?.status).toBe("stopped")
+    })
+
+    test("stopping through the manager is idempotent and writes nothing the second time", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-stop-repeat", { homeRegion: "us-east" })
+
+      await expect(manager.stop("ws-stop-repeat")).resolves.toEqual({ ok: true, status: "stopped" })
+      const stopped = leases.get("ws-stop-repeat")!
+      await expect(manager.stop("ws-stop-repeat")).resolves.toEqual({ ok: true, status: "stopped" })
+
+      expect(leases.get("ws-stop-repeat")).toEqual(stopped)
+    })
+
+    test("a stop leaves a replacement epoch that lands during its driver call alone", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-stop-fence", { homeRegion: "us-east" })
+      const live = leases.get("ws-stop-fence")!
+      duringSandboxSuspend = () => {
+        leases.set("ws-stop-fence", {
+          ...live,
+          epoch: live.epoch + 1,
+          sandbox_id: "daytona-replacement-sb",
+          url: "http://replacement-runtime.test",
+        })
+      }
+
+      // Truthful about the lease rather than about the intent: the resource
+      // this stop held is gone, and what the workspace holds now is serving.
+      await expect(manager.stop("ws-stop-fence")).resolves.toEqual({ ok: true, status: "ready" })
+
+      expect(leases.get("ws-stop-fence")).toMatchObject({
+        status: "ready",
+        epoch: live.epoch + 1,
+        sandbox_id: "daytona-replacement-sb",
+        url: "http://replacement-runtime.test",
+      })
     })
 
     test("clears health monitor on stop", async () => {

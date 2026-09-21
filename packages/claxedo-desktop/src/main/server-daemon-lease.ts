@@ -1,20 +1,23 @@
 import { readNumber, readString } from "../shared/json-read"
+import { createDaemonFetch } from "./daemon-request"
 import type { ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
-
-type RequestFn = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 export async function holdClaxedoDaemonLease(
   discovery: ClaxedoDaemonDiscovery,
   options: {
-    request?: RequestFn
+    fetch?: typeof fetch
     renewIntervalMs?: number
     retryIntervalMs?: number
     requestTimeoutMs?: number
     onError?: (error: unknown) => void
   } = {},
 ) {
-  const request = options.request ?? fetch
-  const base = `http://127.0.0.1:${String(discovery.port)}`
+  // The lifecycle bearer and the admission capability are the same published
+  // secret under the two headers the daemon reads them from.
+  const request = createDaemonFetch({
+    endpoint: () => ({ origin: `http://127.0.0.1:${String(discovery.port)}`, capability: discovery.token }),
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  })
   const headers = {
     authorization: `Bearer ${discovery.token}`,
     "x-claxedo-daemon-client": "electron-main",
@@ -35,7 +38,7 @@ export async function holdClaxedoDaemonLease(
   }
 
   async function acquire() {
-    const response = await request(`${base}/api/claxedo/daemon/leases`, {
+    const response = await request("/api/claxedo/daemon/leases", {
       method: "POST",
       headers,
       signal: AbortSignal.timeout(requestTimeoutMs),
@@ -45,7 +48,7 @@ export async function holdClaxedoDaemonLease(
   }
 
   async function renewOnce() {
-    const response = await request(`${base}/api/claxedo/daemon/leases/${encodeURIComponent(lease.id)}`, {
+    const response = await request(`/api/claxedo/daemon/leases/${encodeURIComponent(lease.id)}`, {
       method: "PUT",
       headers,
       signal: AbortSignal.timeout(requestTimeoutMs),
@@ -95,14 +98,14 @@ export async function holdClaxedoDaemonLease(
     },
     renewNow,
     async stop() {
-      await halt(() => request(`${base}/api/claxedo/daemon/leases/${encodeURIComponent(lease.id)}`, {
+      await halt(() => request(`/api/claxedo/daemon/leases/${encodeURIComponent(lease.id)}`, {
         method: "DELETE",
         headers,
         signal: AbortSignal.timeout(requestTimeoutMs),
       }))
     },
     async shutdown() {
-      await halt(() => request(`${base}/api/claxedo/daemon/shutdown`, {
+      await halt(() => request("/api/claxedo/daemon/shutdown", {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify({ leaseId: lease.id }),

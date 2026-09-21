@@ -28,7 +28,7 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeDataDir } from "./env"
-import type { SessionAccessPolicy } from "./session-access-policy"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "./session-access-policy"
 import {
   configTokenFromEnv,
   hostTunnelFromEnv,
@@ -543,6 +543,8 @@ describe("workspace runtime host route auth", () => {
       relayHostAuth,
       sessionAccessPolicy: {
         sessionAuthority: "managed-private",
+        authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+        authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
         authorize: async () => ({ allowed: true }),
         filterSessions: async (input) => input.sessionIds,
         authorizePrefix: async () => ({ allowed: true }),
@@ -834,6 +836,32 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
     expect(() => createWorkspaceRuntimeApp({})).toThrow("Workspace runtime exposure is required")
   })
 
+  test("the health snapshot carries the lease epoch it was booted with", async () => {
+    const previous = process.env.WORKSPACE_RUNTIME_EPOCH
+    const health = async () => {
+      const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
+      try {
+        return await (await runtime.app.request("http://localhost/global/health")).json()
+      } finally {
+        await runtime.host.dispose()
+      }
+    }
+    try {
+      process.env.WORKSPACE_RUNTIME_EPOCH = "7"
+      expect(await health()).toMatchObject({ epoch: 7 })
+
+      // No lease, nothing to fence: a control plane must not read one.
+      delete process.env.WORKSPACE_RUNTIME_EPOCH
+      expect(await health()).not.toHaveProperty("epoch")
+
+      process.env.WORKSPACE_RUNTIME_EPOCH = "not-a-generation"
+      expect(await health()).not.toHaveProperty("epoch")
+    } finally {
+      if (previous === undefined) delete process.env.WORKSPACE_RUNTIME_EPOCH
+      else process.env.WORKSPACE_RUNTIME_EPOCH = previous
+    }
+  })
+
   test("mounts /api/wr/health, /api/wr/capabilities, and /global/health", async () => {
     const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
     try {
@@ -857,6 +885,40 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
     } finally {
       await runtime.host.dispose()
     }
+  })
+
+  test("health observes configured ACP without launching or resolving credentials and guards session reads", async () => {
+    const dir = await pinTempWorkspaceDirectory()
+    let secretsRead = 0
+    let adapterAcquisitions = 0
+    let allowed = false
+    const operations: string[] = []
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      target: { workspaceId: "health-workspace", directory: dir },
+      storeRoot: path.join(dir, "state"),
+      beforeAdapterAcquire: async () => { adapterAcquisitions++ },
+      resolveConnectionSecrets: () => { secretsRead++; return { secrets: { token: "private-token" }, secretLeaseGeneration: "private-lease" } },
+      sessionAccessPolicy: { ...managedWorkspaceSessionAccessPolicy(), authorize(input) {
+        operations.push(`${input.operation}:${input.sessionId}`)
+        return allowed ? { allowed: true } : { allowed: false, status: 403, code: "forbidden", message: "Forbidden" }
+      } },
+    })
+    try {
+      await runtime.host.apply({ version: 4, mcp: {}, auth: {}, connections: [{ connectionId: "health-acp", providerKey: "acp", configRevision: 1, enabled: true, secretRefs: { token: "vault/token" }, config: { label: "ACP", secretBindings: { env: { TOKEN: "token" } }, connection: { kind: "process", command: "/does-not-exist-health-must-not-launch" } } }], defaultHarness: { kind: "connection", connectionId: "health-acp" } })
+      const initialReads = secretsRead
+      const response = await runtime.app.request("http://localhost/api/wr/health")
+      const body = await response.json()
+      expect(body.connectionState).toEqual({ connectionId: "health-acp", state: "configured", processes: [] })
+      expect(JSON.stringify(body)).not.toContain("private-")
+      expect(operations).toEqual([])
+      expect((await runtime.app.request("http://localhost/api/wr/health?sessionId=unknown")).status).toBe(403)
+      allowed = true
+      expect((await runtime.app.request("http://localhost/api/wr/health?sessionId=unknown")).status).toBe(200)
+      expect(operations).toEqual(["session_meta_read:unknown", "session_meta_read:unknown"])
+      expect(secretsRead).toBe(initialReads)
+      expect(adapterAcquisitions).toBe(0)
+    } finally { await runtime.host.dispose() }
   })
 
   test("creates a native session before its initial config exists", async () => {

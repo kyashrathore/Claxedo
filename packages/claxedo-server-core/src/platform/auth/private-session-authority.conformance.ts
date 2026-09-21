@@ -15,6 +15,7 @@ export const PRIVATE_SESSION_AUTHORITY_CONFORMANCE_SCENARIOS = [
 export type PrivateSessionAuthorityConformanceHarness = {
   authority: PrivateSessionAuthority
   turnAuthority?: SessionTurnAuthority
+  setWorkspaceAvailable(available: boolean): Promise<void>
   workspaceId: string
   creator: {
     auth: SignedControlPlaneAuth
@@ -81,6 +82,32 @@ export async function exercisePrivateSessionAuthorityConformance(
     "a reservation became visible before runtime registration",
   )
 
+  const startInput = { ...creator.runtime, workspaceId, sessionId, registrationOperationId: operationId }
+  await authority.authorizeRuntimeSessionStartStatus(startInput)
+  await authority.authorizeRuntimeSessionStart(startInput)
+  await harness.setWorkspaceAvailable(false)
+  try {
+    invariant(await rejects(() => authority.authorizeRuntimeSessionStart(startInput)), "startup used stale workspace access")
+    invariant(await rejects(() => authority.authorizeRuntimeSessionStartStatus(startInput)), "startup status used stale workspace access")
+  } finally {
+    await harness.setWorkspaceAvailable(true)
+  }
+  await authority.authorizeRuntimeSessionStart(startInput)
+  for (const invalid of [
+    { ...startInput, ...participant.runtime },
+    { ...startInput, sessionId: "ses_unreserved" },
+    { ...startInput, workspaceId: "workspace_unrelated" },
+    { ...startInput, registrationOperationId: "op_unreserved" },
+    { ...startInput, actorId: "actor_missing" },
+  ]) {
+    invariant(await rejects(() => authority.authorizeRuntimeSessionStart(invalid)), "startup accepted a mismatched reservation or actor")
+    invariant(await rejects(() => authority.authorizeRuntimeSessionStartStatus(invalid)), "startup status accepted a mismatched reservation or actor")
+  }
+  invariant(await rejects(() => authority.authorizeRuntimeSession({ ...creator.runtime, workspaceId, sessionId, action: "read" })),
+    "startup authorization exposed the unregistered session")
+  invariant(asArray(await authority.listSessions(creator.auth, { workspaceId })).length === 0,
+    "startup authorization published an unregistered session")
+
   const ambiguous = await authority.markSessionRegistrationAmbiguous({
     ...creator.runtime,
     operationId,
@@ -89,6 +116,7 @@ export async function exercisePrivateSessionAuthorityConformance(
     reason: "runtime outcome was not observed",
   })
   invariant(ambiguous.state === "reconciliation_required", "ambiguous registration did not require reconciliation")
+  await authority.authorizeRuntimeSessionStart(startInput)
   await authority.registerRuntimeSession({
     ...creator.runtime,
     operationId,
@@ -103,6 +131,8 @@ export async function exercisePrivateSessionAuthorityConformance(
     "exact registration retry did not reconcile the session",
   )
 
+  await authority.authorizeRuntimeSessionStartStatus(startInput)
+  invariant(await rejects(() => authority.authorizeRuntimeSessionStart(startInput)), "registered session retained startup authority")
   await authority.authorizeSessionRead(creator.auth, { sessionId, workspaceId })
   await authority.authorizeSessionWrite(creator.auth, { sessionId, workspaceId })
   await authority.authorizeRuntimeSession({
@@ -232,6 +262,9 @@ export async function exercisePrivateSessionAuthorityConformance(
     reason: "runtime definitively rejected create",
   })
   invariant(pending.state === "compensation_pending", "definitive denial did not begin compensation")
+  const compensatedStart = { ...creator.runtime, workspaceId, sessionId: compensatedSessionId, registrationOperationId: compensatedOperationId }
+  await authority.authorizeRuntimeSessionStartStatus(compensatedStart)
+  invariant(await rejects(() => authority.authorizeRuntimeSessionStart(compensatedStart)), "compensating session retained startup authority")
   invariant(
     await rejects(() =>
       authority.registerRuntimeSession({
@@ -251,6 +284,8 @@ export async function exercisePrivateSessionAuthorityConformance(
     reason: "runtime deletion confirmed",
   })
   invariant(compensated.state === "compensated", "compensation did not reach its terminal state")
+  await authority.authorizeRuntimeSessionStartStatus(compensatedStart)
+  invariant(await rejects(() => authority.authorizeRuntimeSessionStart(compensatedStart)), "compensated session retained startup authority")
 
   const releasedOperationId = `${compensatedOperationId}_after_release`
   const released = await authority.reserveSession(creator.auth, {
@@ -320,9 +355,11 @@ export async function exercisePrivateSessionAuthorityConformance(
 }
 
 export type RuntimeForkReservationConformanceReport = {
-  forkReservedUnderAReadableParent: true
+  forkReservedUnderAWritableParent: true
   registeredChildIsPrivateToItsCreator: true
   refusedUnderAnUnreadableParent: true
+  refusedUnderAFollowOnlyParent: true
+  revokedParentRefusesStartupAndRegistration: true
   refusedForAMismatchedIntent: true
 }
 
@@ -336,7 +373,9 @@ export type RuntimeForkReservationConformanceReport = {
  * from a verified proof, never from the request body.
  */
 export async function exerciseRuntimeForkReservationConformance(
-  harness: Pick<PrivateSessionAuthorityConformanceHarness, "authority" | "workspaceId" | "creator" | "participant">,
+  harness: Pick<PrivateSessionAuthorityConformanceHarness, "authority" | "workspaceId" | "creator" | "participant"> & {
+    setParentShare(sessionId: string, level: "follow" | "send" | null): Promise<void>
+  },
 ): Promise<RuntimeForkReservationConformanceReport> {
   const { authority, workspaceId, creator, participant } = harness
   const parentSessionId = "ses_fork_reservation_parent"
@@ -365,7 +404,7 @@ export async function exerciseRuntimeForkReservationConformance(
   })
   invariant(
     reserved.state === "reserved" && reserved.sessionId === sessionId,
-    "a fork under a readable parent was not reserved",
+    "a fork under a writable parent was not reserved",
   )
   await authority.registerRuntimeSession({
     ...creator.runtime,
@@ -395,6 +434,36 @@ export async function exerciseRuntimeForkReservationConformance(
     "a fork was reserved under a parent its creator cannot read",
   )
 
+  // Prove workspace creation is available, so a denial below is specifically
+  // the private parent's grant rather than an unrelated workspace role.
+  await authority.reserveRuntimeSession(participant.runtime, {
+    operationId: "op_fork_member_root", sessionId: "ses_fork_member_root", workspaceId, kind: "create",
+  })
+  const sharedFork = {
+    operationId: "op_fork_shared_parent", sessionId: "ses_fork_shared_parent", workspaceId,
+    kind: "fork" as const, parentSessionId,
+  }
+  await harness.setParentShare(parentSessionId, "follow")
+  await authority.authorizeRuntimeSession({ ...participant.runtime, sessionId: parentSessionId, workspaceId, action: "read" })
+  invariant(await rejects(() => authority.reserveRuntimeSession(participant.runtime, sharedFork)),
+    "a follow-only parent grant admitted a child that can wake it")
+  await harness.setParentShare(parentSessionId, "send")
+  await authority.reserveRuntimeSession(participant.runtime, sharedFork)
+  const startup = { ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, registrationOperationId: sharedFork.operationId }
+  await authority.authorizeRuntimeSessionStart(startup)
+  await harness.setParentShare(parentSessionId, null)
+  invariant(await rejects(() => authority.authorizeRuntimeSessionStart(startup)),
+    "a reserved child started after parent authority was revoked")
+  const register = { ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, operationId: sharedFork.operationId }
+  invariant(await rejects(() => authority.registerRuntimeSession(register)),
+    "a reserved child registered after parent authority was revoked")
+  invariant(await rejects(() => authority.authorizeRuntimeSession({ ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, action: "read" })),
+    "a refused child registration published a private session")
+  await harness.setParentShare(parentSessionId, "send")
+  await authority.authorizeRuntimeSessionStart(startup)
+  await authority.registerRuntimeSession(register)
+  await authority.authorizeRuntimeSession({ ...participant.runtime, workspaceId, sessionId: sharedFork.sessionId, action: "write" })
+
   invariant(
     await rejects(() =>
       authority.reserveRuntimeSession(creator.runtime, {
@@ -420,9 +489,11 @@ export async function exerciseRuntimeForkReservationConformance(
   )
 
   return {
-    forkReservedUnderAReadableParent: true,
+    forkReservedUnderAWritableParent: true,
     registeredChildIsPrivateToItsCreator: true,
     refusedUnderAnUnreadableParent: true,
+    refusedUnderAFollowOnlyParent: true,
+    revokedParentRefusesStartupAndRegistration: true,
     refusedForAMismatchedIntent: true,
   }
 }

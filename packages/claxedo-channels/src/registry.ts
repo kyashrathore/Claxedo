@@ -2,12 +2,28 @@ import type { ChannelId } from "./envelope"
 
 export type ChannelTransportKind = "fake" | "chat-sdk" | "baileys"
 
+/**
+ * The credentials a `@chat-adapter/*` factory is constructed with.
+ *
+ * Every adapter also reads these from `process.env` on its own, under one fixed
+ * key each. This registry accepts a `CLAXEDO_CHANNEL_*` alias per credential, so
+ * an alias-configured channel would be enabled here and unconfigured there —
+ * for Telegram's `secretToken` that means enabled ingress with verification off.
+ * Resolving them here and constructing the adapter with them keeps one answer.
+ */
+export type ChannelAdapterConfig = {
+  botToken?: string
+  /** `@chat-adapter/telegram` compares this against `x-telegram-bot-api-secret-token`. */
+  secretToken?: string
+}
+
 export type ChannelRegistration = {
   channel: ChannelId | "fake"
   enabled: boolean
   transport: ChannelTransportKind
   reason: string
   webhookPath: string
+  adapterConfig?: ChannelAdapterConfig
 }
 
 type Env = Record<string, string | undefined>
@@ -16,12 +32,25 @@ function truthy(input: string | undefined) {
   return input === "1" || input === "true" || input === "yes"
 }
 
+/** First non-blank value; the canonical key precedes its aliases. */
+function firstConfigured(env: Env, keys: string[]) {
+  for (const key of keys) {
+    const value = env[key]?.trim()
+    if (value) return value
+  }
+  return undefined
+}
+
 function any(env: Env, keys: string[]) {
-  return keys.some((key) => !!env[key]?.trim())
+  return firstConfigured(env, keys) !== undefined
 }
 
 export function createChannelRegistry(env: Env, options: { includeFake?: boolean } = {}) {
   const whatsappMode = env.CLAXEDO_CHANNEL_WHATSAPP_MODE === "personal" ? "personal" : "official"
+  const telegram: ChannelAdapterConfig = {
+    botToken: firstConfigured(env, ["TELEGRAM_BOT_TOKEN", "CLAXEDO_CHANNEL_TELEGRAM_BOT_TOKEN"]),
+    secretToken: firstConfigured(env, ["TELEGRAM_WEBHOOK_SECRET_TOKEN", "CLAXEDO_CHANNEL_TELEGRAM_WEBHOOK_SECRET_TOKEN"]),
+  }
   const registrations: ChannelRegistration[] = [
     {
       channel: "fake",
@@ -42,15 +71,13 @@ export function createChannelRegistry(env: Env, options: { includeFake?: boolean
     },
     {
       channel: "telegram",
-      enabled: (truthy(env.CLAXEDO_CHANNEL_TELEGRAM_ENABLED) || any(env, [
-        "TELEGRAM_BOT_TOKEN",
-        "CLAXEDO_CHANNEL_TELEGRAM_BOT_TOKEN",
-      ])) && any(env, ["TELEGRAM_WEBHOOK_SECRET_TOKEN", "CLAXEDO_CHANNEL_TELEGRAM_WEBHOOK_SECRET_TOKEN"]),
+      enabled: (truthy(env.CLAXEDO_CHANNEL_TELEGRAM_ENABLED) || !!telegram.botToken) && !!telegram.secretToken,
       transport: "chat-sdk",
-      reason: any(env, ["TELEGRAM_WEBHOOK_SECRET_TOKEN", "CLAXEDO_CHANNEL_TELEGRAM_WEBHOOK_SECRET_TOKEN"])
+      reason: telegram.secretToken
         ? "Telegram Chat SDK adapter"
         : "Telegram Chat SDK adapter disabled until TELEGRAM_WEBHOOK_SECRET_TOKEN is set",
       webhookPath: "/telegram",
+      adapterConfig: telegram,
     },
     {
       channel: "slack",

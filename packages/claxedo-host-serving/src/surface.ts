@@ -3,38 +3,33 @@
  * host tunnel (`serving.ts`) may reach on this machine for the
  * workspace it is tunneled to, and where each admitted request lands.
  *
- * The relay strips `/workspaces/:id` before forwarding. This router selects
- * one of three surfaces for the remaining path:
+ * The relay strips `/workspaces/:id` before forwarding. A relayed caller gets
+ * ONE surface for the remaining path: `/workspaces/:id/*`, where the embedded
+ * workspace runtime answers (`/session`, `/api/wr/*`, `/path`, its own
+ * `/global/health` identity probe, ...). Unknown workspace routes reach the
+ * runtime and return 404.
  *
- *   - the daemon's OWN root-level product routes — this machine's identity,
- *     credentials, and remote-access administration
- *     (`/api/claxedo/*`, `/api/control/*`, `/api/workspace/*`, ...). Never
- *     for a relayed caller: these describe the MACHINE, not the workspace it
- *     is serving, and the relay's Runtime Access Token authorizes exactly one
- *     workspace, not the host that happens to run it.
- *   - the root-level Claxedo client-presentation and credential routes that
- *     answers provider auth, OAuth connect, and project metadata for
- *     whichever workspace a `?directory=`/`x-claxedo-directory` names.
- *     Provider auth from a browser is a desktop capability with no other
- *     owner, so a relayed caller needs exactly what a loopback one gets.
- *   - the workspace-scoped surface `/workspaces/:id/*`, where the embedded
- *     workspace runtime answers everything else (`/session`, `/api/wr/*`,
- *     `/path`, its own `/global/health` identity probe, ...).
- * Unknown workspace routes reach the runtime and return 404. Control-plane
- * families are denied regardless of the workspace token's permissions.
+ * Everything the machine answers at its own root is denied here. Those routes
+ * describe the MACHINE — its identity, its provider accounts, its whole
+ * project inventory, its remote-access administration — while the relay's
+ * Runtime Access Token authorizes exactly one workspace and says nothing about
+ * the host that happens to run it. A machine-root route that authorizes the
+ * person at the keyboard cannot also be the authorization for whoever holds a
+ * workspace grant, so the tunnel does not carry it at all.
  */
 
 export type HostServingSurfaceTarget =
   | { kind: "deny" }
-  | { kind: "root"; url: URL }
   | { kind: "workspace"; url: URL }
 
 /**
  * Daemon-owned families that must never cross the tunnel, whichever
  * workspace the caller's connection is scoped to. Named against
  * `server-core/deployments/product-route-families.ts`'s family ids — every
- * entry below is owned there by `local-server` or `server`, and none of them
- * is part of the presentation family this module admits at root instead.
+ * entry below is owned there by `local-server` or `server`, and
+ * `route-ownership.ts` classifies every one of them
+ * `RouteHandler.CentralServer` or `RouteHandler.WorkspaceRelay`, never
+ * `SandboxRuntime`.
  *
  * Matched the same way `route-ownership.ts` matches prefixes: an exact hit,
  * or a path segment boundary (`entry + "/"`), so `/health` does not also
@@ -82,6 +77,22 @@ const DENY = [
   "/health",
   "/.well-known",
   "/internal",
+  // Families `local-config` and `credentials` — the machine's configuration
+  // document and its provider accounts. `/provider/:id/oauth/callback`
+  // (`local-server/credentials/routes/provider-auth.ts`) deletes this
+  // machine's stored credentials for a provider and writes the caller's in
+  // their place, which would point every harness on the box at an account a
+  // workspace grant never mentioned. Its gate is the control-plane bearer,
+  // which an unsigned desktop has no way to demand.
+  "/config",
+  "/provider",
+  "/auth",
+  // Family `project-files`' inventory half. `projectRoutes`
+  // (`local-server/shell/project-routes.ts`) answers for a caller it
+  // authenticates as the machine's own user when nothing signed it, so at
+  // root it lists every project this machine holds — not the one workspace
+  // the tunnel serves.
+  "/project",
 ] as const
 
 function matchesFamily(pathname: string, entry: string): boolean {
@@ -92,60 +103,24 @@ function denied(pathname: string): boolean {
   return DENY.some((entry) => matchesFamily(pathname, entry))
 }
 
-/**
- * Root presentation and credential routes retain their own authorization.
- * Provider catalogs are control-plane agent-config routes and never traverse
- * this workspace tunnel.
- */
-function isRootCompatPath(pathname: string): boolean {
-  if (pathname === "/provider/auth") return true
-  if (pathname === "/config") return true
-  if (pathname === "/project") return true
-  if (pathname === "/project/current") return true
-  // `/auth/:providerID` — PUT to connect a provider credential, DELETE to
-  // remove one. Requires a segment after `/auth/`; the compat router has no
-  // handler for bare `/auth`.
-  if (pathname.startsWith("/auth/") && pathname.length > "/auth/".length) return true
-  // `/provider/:providerID/oauth/:step`.
-  if (/^\/provider\/[^/]+\/oauth\/[^/]+$/.test(pathname)) return true
-  return false
-}
-
 function normalizedBase(localBaseUrl: string): string {
   return `${localBaseUrl.trim().replace(/\/+$/, "")}/`
-}
-
-/**
- * Force the workspace the ROOT compat route resolves against to be the
- * tunnel's OWN workspace, discarding whatever `directory` the request itself
- * carried.
- *
- * A relayed caller holds a connection scoped to exactly one workspace (the
- * per-workspace tunnel grain documented in `serving.ts`); if this
- * forwarded a caller-supplied `directory` instead, that caller could name a
- * DIFFERENT workspace id in its own query string and read that workspace's
- * `/project/current` or connect its provider credentials through THIS
- * connection's root surface — a path-confusion privilege escalation the
- * tunnel's per-workspace scoping exists to prevent.
- *
- * The bare workspace id is what the compat router actually resolves, not a
- * `workspace:<id>`-prefixed form: `resolveWorkspace({directory})`
- * (`server-core/workspace/store/index.ts`) does not parse that prefix — it
- * belongs to `session/routes/meta-routes.ts`, a different router — so a
- * prefixed value would resolve nothing. `/project/current` falls through to
- * its own "current.id === a stored project's id" fallback and answers the
- * right project on the bare id, and `/config` resolves it the same way.
- */
-function withDirectory(url: URL, workspaceId: string): URL {
-  url.searchParams.set("directory", workspaceId)
-  return url
 }
 
 /**
  * Classify one relayed request and say where it lands.
  *
  * `path` is what the tunnel hands `resolveLocalUrl` — the bare app path plus
- * its original query string, no `/workspaces/:id` prefix.
+ * its original query string, no `/workspaces/:id` prefix. The tunnel client
+ * has already resolved it and refused anything that is not a path, so the
+ * parse below cannot fail on a frame's raw string; a caller reaching past
+ * that owner would have to answer for one itself.
+ *
+ * The workspace the request runs against is the one this connection is
+ * tunneled to, taken from the prefix built here and never from the request.
+ * A caller naming a different workspace in its own `?directory=` reaches the
+ * workspace surface of the workspace its token bought, which is what the
+ * per-workspace tunnel grain means.
  */
 export function hostServingSurface(input: {
   localBaseUrl: string
@@ -153,14 +128,20 @@ export function hostServingSurface(input: {
   path: string
 }): HostServingSurfaceTarget {
   const { localBaseUrl, workspaceId, path } = input
-  const pathname = new URL(path, "http://workspace.local").pathname
-  if (denied(pathname)) return { kind: "deny" }
+  // Resolved once, and the RESOLVED pathname is what both the deny check and
+  // the prefix below read. A denied family gains nothing from `..` — it is
+  // denied in resolved form too — but an ADMITTED path pasted raw behind the
+  // prefix does: `/../../session` passes the check as `/session`, then climbs
+  // back out of `/workspaces/:id/` and lands on the machine's own root
+  // `/session`, where the workspace comes from a caller-controlled
+  // `?directory=` instead of this connection's own.
+  const requested = new URL(path, "http://workspace.local")
+  if (denied(requested.pathname)) return { kind: "deny" }
 
-  const base = normalizedBase(localBaseUrl)
-  const suffix = path.replace(/^\/+/, "")
-
-  if (isRootCompatPath(pathname)) {
-    return { kind: "root", url: withDirectory(new URL(`/${suffix}`, base), workspaceId) }
-  }
-  return { kind: "workspace", url: new URL(`/workspaces/${encodeURIComponent(workspaceId)}/${suffix}`, base) }
+  const url = new URL(
+    `/workspaces/${encodeURIComponent(workspaceId)}${requested.pathname}`,
+    normalizedBase(localBaseUrl),
+  )
+  url.search = requested.search
+  return { kind: "workspace", url }
 }

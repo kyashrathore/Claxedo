@@ -44,6 +44,7 @@ export function createComposerSubmitBlockWiring(deps: {
       sessionStatusReady: deps.statusReady?.(),
       authorityBlock: authorityBlock(),
       harnessMode,
+      draftConnectionAllowsNoModel: harnessState?.canCreateWithoutModel,
       harnessReadiness: deps.harnessReadiness(nextScope),
       harnessConfigError: !!harnessState?.configError,
       harnessOptionsLoading: !!harnessState?.optionsLoading,

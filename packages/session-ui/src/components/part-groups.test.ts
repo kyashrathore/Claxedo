@@ -53,8 +53,8 @@ describe("groupParts", () => {
     expect(isClaxedoToolPart(tool_("p1", "task_create", { server: "linear" }))).toBe(false)
   })
 
-  test("the first-party spawn stays an agents group in the engine spelling too", () => {
-    expect(shape([tool_("p1", "claxedo_create_subagent", { prompt: "go" })])).toEqual(["agents"])
+  test("the first-party spawn keeps its branded linked row in the engine spelling too", () => {
+    expect(shape([tool_("p1", "claxedo_create_subagent", { prompt: "go" })])).toEqual(["part"])
   })
 
   test("folds a single context tool but keeps a single work tool standalone", () => {

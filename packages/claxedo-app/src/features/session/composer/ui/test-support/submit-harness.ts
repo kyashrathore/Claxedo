@@ -275,6 +275,8 @@ export function testHarnessController(): HarnessSubmitController {
     harness: (): HarnessSelection => state.harnessMode ? { kind: "native", harnessId: "claude" } : PI,
     isHarnessMode: () => state.harnessMode,
     readiness: () => "ready",
+    canOmitModel: () => false,
+    canCreateWithoutModel: () => false,
     readyForSubmit: () => !!(state.harnessMode ? state.harnessSubmitModel : state.piSubmitModel),
     modelKeyForSubmit: () => (state.harnessMode ? state.harnessSubmitModel?.key : state.piSubmitModel?.key),
     claimSession: async (_scope, input) => {

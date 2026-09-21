@@ -6,7 +6,7 @@ import { columnInfo, hasColumn, hasIndex, hasTable, type SqliteSchemaReader } fr
  * stored fingerprint and forces one full repair pass per database even when
  * the schema itself has not changed.
  */
-export const REPAIR_VERSION = 4
+export const REPAIR_VERSION = 5
 
 type SqliteInstance = SqliteSchemaReader & {
   exec(sql: string): unknown
@@ -88,11 +88,11 @@ const sqls = [
   "CREATE INDEX IF NOT EXISTS `claxedo_channel_run_audit_channel_created_idx` ON `claxedo_channel_run_audit` (`channel`, `created_at`)",
   "CREATE INDEX IF NOT EXISTS `claxedo_channel_run_audit_user_created_idx` ON `claxedo_channel_run_audit` (`channel`, `external_user_id`, `created_at`)",
   "CREATE INDEX IF NOT EXISTS `claxedo_channel_run_audit_workspace_created_idx` ON `claxedo_channel_run_audit` (`workspace_id`, `created_at`)",
-  "CREATE TABLE IF NOT EXISTS `claxedo_channel_pairing` (`code` text PRIMARY KEY NOT NULL, `channel` text NOT NULL, `external_user_id` text NOT NULL, `created_at` integer NOT NULL, `expires_at` integer NOT NULL, `last_sent_at` integer NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_pairing` (`code` text PRIMARY KEY NOT NULL, `channel` text NOT NULL, `external_user_id` text NOT NULL, `created_at` integer NOT NULL, `expires_at` integer NOT NULL, `last_sent_at` integer NOT NULL, `identity_version` integer NOT NULL DEFAULT 0)",
   "CREATE INDEX IF NOT EXISTS `claxedo_channel_pairing_sender_idx` ON `claxedo_channel_pairing` (`channel`, `external_user_id`)",
   "CREATE INDEX IF NOT EXISTS `claxedo_channel_pairing_expires_idx` ON `claxedo_channel_pairing` (`expires_at`)",
-  "CREATE TABLE IF NOT EXISTS `claxedo_channel_allow` (`channel` text NOT NULL, `external_user_id` text NOT NULL, `approved_by` text, `approved_at` integer NOT NULL, PRIMARY KEY (`channel`, `external_user_id`))",
-  "CREATE TABLE IF NOT EXISTS `claxedo_channel_identity` (`channel` text NOT NULL, `external_user_id` text NOT NULL, `account_id` text, `status` text NOT NULL, `bound_at` integer NOT NULL, `bound_by` text, PRIMARY KEY (`channel`, `external_user_id`))",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_allow` (`channel` text NOT NULL, `external_user_id` text NOT NULL, `approved_by` text, `approved_at` integer NOT NULL, `identity_version` integer NOT NULL DEFAULT 0, PRIMARY KEY (`channel`, `external_user_id`))",
+  "CREATE TABLE IF NOT EXISTS `claxedo_channel_identity` (`channel` text NOT NULL, `external_user_id` text NOT NULL, `account_id` text, `status` text NOT NULL, `bound_at` integer NOT NULL, `bound_by` text, `identity_version` integer NOT NULL DEFAULT 0, PRIMARY KEY (`channel`, `external_user_id`))",
   "CREATE INDEX IF NOT EXISTS `claxedo_channel_identity_account_idx` ON `claxedo_channel_identity` (`account_id`)",
   `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_revision\` (
     \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`session_id\` text NOT NULL,
@@ -464,6 +464,27 @@ function ensureWorkspaceLeaseDriverColumns(db: SqliteInstance, out: string[]) {
   renameColumn(db, "claxedo_terminal_session", "provider", "driver", out)
 }
 
+/**
+ * Which generation of the sender-identity contract a channel projection row
+ * was written under. 0 is every row that already exists: it was keyed by
+ * whatever string a transport called a sender id, so it may name a handle
+ * rather than the platform account of the same spelling, and those are
+ * different people. Only the current version admits; the default keeps a
+ * writer that forgets the column on the non-authorizing side.
+ *
+ * A legacy row is not deleted, and it does not block anything either: these
+ * tables are keyed (channel, external_user_id) and upserted, so an explicit
+ * approval overwrites the row it collides with through the same
+ * bind-before-projection path every approval takes.
+ */
+function ensureChannelIdentityVersionColumns(db: SqliteInstance, out: string[]) {
+  for (const table of ["claxedo_channel_pairing", "claxedo_channel_allow", "claxedo_channel_identity"]) {
+    if (!hasTable(db, table) || hasColumn(db, table, "identity_version")) continue
+    db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`identity_version\` integer NOT NULL DEFAULT 0`)
+    out.push(`${table}.identity_version`)
+  }
+}
+
 function ensureUsageNativeSessionColumns(db: SqliteInstance, out: string[]) {
   for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"] as const) {
     if (!hasTable(db, table) || hasColumn(db, table, "native_session_id")) continue
@@ -506,5 +527,6 @@ export function repair(db: SqliteInstance) {
   ensureProviderCredentialColumns(db, out)
   ensureWorkspaceLeaseDriverColumns(db, out)
   ensureUsageNativeSessionColumns(db, out)
+  ensureChannelIdentityVersionColumns(db, out)
   return out
 }

@@ -1,8 +1,10 @@
+import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import {
   desiredHarness,
   hardFailedHarness,
   harnessHasConfigOptions,
   type HarnessHealthStatus,
+  type HarnessConnectionState,
   type HarnessModelOption,
   type HarnessState,
   type HarnessType,
@@ -23,6 +25,8 @@ export type HarnessStoreState = {
   thoughtLevels: HarnessModelOption[] | null
   selectedThoughtLevel: string | undefined
   readiness: HarnessReadiness
+  connectionDeclaration?: HarnessConnectionRef
+  connectionState?: HarnessConnectionState
   optionsSource: OptionsSource
   optionsStale: boolean
   optionsLoading: boolean
@@ -113,6 +117,9 @@ export function harnessStatusPatch(input: {
     selectedModel: input.data.model ?? input.current?.selectedModel ?? "",
     selectedModelProvider: input.data.modelProviderID ?? input.current?.selectedModelProvider,
     readiness,
+    connectionState: want.kind === "connection" && input.data.connectionState?.connectionId === want.connectionId
+      ? input.data.connectionState
+      : want.kind === "connection" && input.current?.connectionState?.connectionId === want.connectionId ? input.current.connectionState : undefined,
     configError: input.data.error ?? undefined,
     workspaceId: input.data.workspaceId ?? input.current?.workspaceId,
   }
@@ -152,6 +159,7 @@ export function harnessSwitchStartPatch(input: {
   type: HarnessType
 }): HarnessStorePatch {
   return {
+    connectionState: undefined,
     harness: input.type,
     harnessMode: harnessMode(input.type),
     selectedModel: "",

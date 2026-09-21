@@ -231,6 +231,7 @@ const composerState: SessionComposerState = {
   questionRequest: () => undefined,
   permissionRequest: () => undefined,
   permissionResponding: () => false,
+  requestReadError: () => undefined,
   decide: vi.fn(),
   todos: () => [],
 }

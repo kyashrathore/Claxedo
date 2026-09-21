@@ -7,7 +7,7 @@ import { createLocalTasksSessionBridge } from "@claxedo/local-server/tasks/sessi
 import { createTasksSessionRelease, createTasksSessionReserve } from "./session-reservation"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
-import type { TasksSessionGrants } from "./session-grants"
+import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 
 export type SelfHostedTasksComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]

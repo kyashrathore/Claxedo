@@ -6,6 +6,7 @@ import type { AgentHarnessAdapter } from "../adapter-contract"
 import { createMemoryRuntimeStore } from "../stores/memory"
 import { sessionIdle } from "../compat-events"
 import type { AgentRuntimeStreamEvent, PromptInput } from "../index"
+import { createRuntimeEventHub } from "../runtime-event-hub"
 
 type TurnControl = {
   finish: () => void
@@ -92,18 +93,89 @@ function promptText(input: PromptInput) {
 }
 
 async function session(factory: AgentHarnessFactory) {
-  const runtime = createAgentRuntime({ store: createMemoryRuntimeStore(), harnesses: [factory] })
+  const eventHub = createRuntimeEventHub()
+  const runtime = createAgentRuntime({ store: createMemoryRuntimeStore(), harnesses: [factory], eventHub })
   const created = await runtime.sessions.create({
     id: "ses_busy",
     workspaceId: "ws",
     directory: "/repo",
     harness: { id: "pi", access: "native" },
   })
-  return { runtime, sessionId: created.id }
+  return { runtime, sessionId: created.id, eventHub }
 }
 
+test("committed turn events publish once without an HTTP request subscription", async () => {
+  const control = openTurn("ses_busy")
+  const { runtime, sessionId, eventHub } = await session(harness({ turns: [], open: () => control }))
+  const published: string[] = []
+  const unsubscribe = eventHub.subscribeGlobal(({ payload }) => {
+    if (payload.type === "message.updated") published.push(payload.properties.info.id)
+    if (payload.type === "session.idle") published.push("idle")
+  })
+  const turn = await runtime.turns.start({ sessionId, messageId: "msg_first", text: "work" })
+  expect(published).toEqual(["msg_first", turn.assistantMessageId])
+  control.finish()
+  await runtime.dispose()
+  expect(published.filter((id) => id === "idle")).toHaveLength(1)
+  unsubscribe()
+})
+
+test("steering after the target ended does not silently start a new turn", async () => {
+  const turns: string[] = []
+  const { runtime, sessionId } = await session(harness({ turns }))
+  const result = await runtime.turns.start({ sessionId, messageId: "late", text: "late input", delivery: "steer" })
+  expect(result.steering).toMatchObject({ ok: false, status: "no_active_turn" })
+  expect(turns).toEqual([])
+  expect(await runtime.events.list(sessionId, "/repo")).toEqual([])
+  await runtime.dispose()
+})
+
+test("a steer suspended in adapter resolution cannot attach to a replacement turn", async () => {
+  const store = createMemoryRuntimeStore()
+  const eventHub = createRuntimeEventHub()
+  const turns: string[] = []
+  const steered: PromptInput[] = []
+  const controls: TurnControl[] = []
+  const factory = harness({ turns, steered, steerable: true, open: () => open(controls) })
+  const adapter = factory.create({ store, eventHub })
+  let resolved!: (adapter: AgentHarnessAdapter) => void
+  let resolving!: () => void
+  const entered = new Promise<void>((resolve) => { resolving = resolve })
+  const runtime = createAgentRuntime({
+    store, eventHub, harnesses: [factory],
+    resolveHarness: () => { resolving(); return new Promise((resolve) => { resolved = resolve }) },
+  })
+  const sessionId = "ses_busy"
+  await runtime.sessions.create({ id: sessionId, workspaceId: "ws", directory: "/repo", harness: { id: "pi", access: "native" } })
+  await runtime.turns.start({ sessionId, messageId: "first", text: "first" })
+  store.updateSessionConfig(sessionId, { harness: { id: "claude", access: "native" } })
+  const steering = runtime.turns.start({ sessionId, messageId: "steer", text: "S", delivery: "steer" })
+  await entered
+  controls[0].finish()
+  const idle = await runtime.turns.whenIdle(sessionId)
+  store.updateSessionConfig(sessionId, { harness: { id: "pi", access: "native" } })
+  await runtime.turns.start({ sessionId, messageId: "replacement", text: "replacement" })
+  idle.abandon()
+  resolved(adapter)
+  expect((await steering).steering).toMatchObject({ ok: false, status: "no_active_turn" })
+  expect(steered).toEqual([])
+  expect(turns).toEqual(["first", "replacement"])
+  controls[1].finish()
+  await runtime.dispose()
+})
+
+test("a failed host admission hook releases the runtime turn claim", async () => {
+  const control = openTurn("ses_busy")
+  const { runtime, sessionId } = await session(harness({ turns: [], open: () => control }))
+  await expect(runtime.turns.start({ sessionId, text: "rejected", onAdmitted() { throw new Error("workspace frozen") } })).rejects.toThrow("workspace frozen")
+  const admitted = await runtime.turns.start({ sessionId, text: "next" })
+  expect(admitted.delivery).toBe("start")
+  control.finish()
+  await runtime.dispose()
+})
+
 describe("prompts for a session that is already running a turn", () => {
-  test("a steer delivery reaches the running turn's driver and shows up as a user message", async () => {
+  test("provider acceptance does not invent transcript incorporation", async () => {
     const turns: string[] = []
     const steered: PromptInput[] = []
     const control = openTurn("ses_busy")
@@ -118,13 +190,14 @@ describe("prompts for a session that is already running a turn", () => {
     })
 
     expect(second.delivery).toBe("steer")
+    expect(second.steering).toEqual({ ok: true })
     expect(steered.map(promptText)).toEqual(["also update the readme"])
     expect(turns).toEqual(["start the work"])
     // The steered prompt joined the running turn rather than opening one.
     expect(second.assistantMessageId).toBe(first.assistantMessageId)
     const messages = await runtime.events.list(sessionId, "/repo")
     expect(messages.filter((message) => message.info.role === "user").map((message) => message.info.id))
-      .toEqual(["msg_first", "msg_steer"])
+      .toEqual(["msg_first"])
     expect(messages.filter((message) => message.info.role === "assistant").map((message) => message.info.id))
       .toEqual([first.assistantMessageId])
 
@@ -198,6 +271,7 @@ describe("prompts for a session that is already running a turn", () => {
     })
 
     expect(second.delivery).toBe("queue")
+    expect(second.steering).toMatchObject({ ok: false, status: "unsupported" })
     expect(turns).toEqual(["start the work"])
     control.finish()
     await runtime.dispose()

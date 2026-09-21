@@ -31,9 +31,10 @@ export interface CreateWakesOptions {
    */
   sinks?: Record<string, WakeSink>
   /**
-   * Push driver: hinted after every time-triggered create so firing needn't
-   * wait for the polling sweep. Optional — without one, behavior is exactly
-   * the polled `runDue()` loop.
+   * Push driver: hinted at every time a created wake becomes actionable — its
+   * `fireAt`, and its `expiresAt` when it has one — so neither firing nor
+   * expiry waits on the polling sweep. Optional: without one, behavior is
+   * exactly the polled `runDue()` loop.
    */
   driver?: WakeDriver
   authorize?: Authorize
@@ -115,14 +116,18 @@ export interface Wakes {
   resolve(token: Token, answer: string, resolver: Actor): Promise<ResolveOutcome>
   deliverEvent(eventKey: string, payload: Json): Promise<{ fired: number }>
   /**
-   * Fire due wakes. With `serialKey` (string = that lane, null = null-key
-   * wakes) the run is lane-scoped for a push driver: it reclaims and claims
-   * only that lane and skips the expiry sweep. A live lease that blocks the
-   * lane returns its authoritative `blockedUntil` boundary so the driver can
-   * re-arm instead of losing the pending wake. Without a key, the full polled
-   * pass runs (expiry + reclaim + claim across all lanes).
+   * Fire due wakes: expire, reclaim, then claim. With `serialKey` (string =
+   * that lane, null = null-key wakes) every pass is scoped to that lane, so a
+   * deployment driven only by push drivers still terminalizes its deadlines —
+   * one lane never sweeps another's. Without a key the pass spans all lanes.
+   *
+   * `fired` counts expiry notifications alongside fires: both are lane progress
+   * a draining driver must keep looping on. A scoped pass that made no progress
+   * returns the lane's `nextAt` obligation (absent when the lane owes nothing)
+   * so the driver re-arms its timer from the store rather than from the hint it
+   * happened to be woken by.
    */
-  runDue(serialKey?: string | null): Promise<{ fired: number; blockedUntil?: number }>
+  runDue(serialKey?: string | null): Promise<{ fired: number; nextAt?: number }>
   /** Boot sweep: re-drive `firing` rows whose leases have already lapsed. */
   recover(): Promise<{ recovered: number }>
   once<T>(sessionId: SessionId, effectKey: string, fn: () => Promise<T> | T): Promise<T>
@@ -175,9 +180,9 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
 
   // Lossy hint, never load-bearing: a throwing driver must not fail the
   // create — the row is durable and the polling sweep will deliver it.
-  function nudge(serialKey: string | null, fireAt: number): void {
+  function nudge(serialKey: string | null, actionableAt: number): void {
     try {
-      driver?.nudge({ serialKey, fireAt })
+      driver?.nudge({ serialKey, fireAt: actionableAt })
     } catch {
       // the sweep is the backstop
     }
@@ -187,7 +192,8 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
   // recurring `at` wake, enqueue the next occurrence idempotently.
   async function driveFiring(wake: Wake): Promise<void> {
     await sinkFor(wake)(wake, resultForWake(wake))
-    await store.cas(wake.id, "firing", "fired", { firedAt: now(), leaseUntil: null })
+    const completedAt = now()
+    await store.cas(wake.id, "firing", "fired", completedAt, { firedAt: completedAt, leaseUntil: null })
     if (wake.triggerType === "at" && wake.schedule) {
       if (!computeNextRun) throw new Error("recurring wake requires the computeNextRun option")
       const nextFireAt = computeNextRun(wake.schedule, wake.fireAt ?? now())
@@ -207,19 +213,19 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         },
         { skipBudget: true },
       )
-      nudge(wake.serialKey, nextFireAt)
     }
   }
 
   // pending → firing (the guard) → drive. Returns false if the guard failed.
   async function fireFromPending(wake: Wake, resultJson: string, patch?: Partial<Wake>): Promise<boolean> {
-    const ok = await store.cas(wake.id, "pending", "firing", { resultJson, leaseUntil: now() + leaseMs, ...patch })
+    const claimAt = now()
+    const ok = await store.cas(wake.id, "pending", "firing", claimAt, { resultJson, leaseUntil: claimAt + leaseMs, ...patch })
     if (!ok) return false
     await driveFiring((await store.get(wake.id))!)
     return true
   }
 
-  async function insertWake(
+  async function insertRow(
     fields: Partial<Wake> & { workspaceId: WorkspaceId; triggerType: Wake["triggerType"] },
     o?: { skipBudget?: boolean },
   ): Promise<{ wakeId: WakeId }> {
@@ -269,6 +275,20 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
     return { wakeId: wake.id }
   }
 
+  // The single owner of lane arming. A row's deadline is a lane obligation just
+  // like its fire time: on a deployment whose only runner is a per-lane push
+  // driver, a wake nobody nudges at `expiresAt` is a wake nobody ever expires.
+  async function insertWake(
+    fields: Partial<Wake> & { workspaceId: WorkspaceId; triggerType: Wake["triggerType"] },
+    o?: { skipBudget?: boolean },
+  ): Promise<{ wakeId: WakeId }> {
+    const created = await insertRow(fields, o)
+    const serialKey = fields.serialKey ?? null
+    if (fields.fireAt != null) nudge(serialKey, fields.fireAt)
+    if (fields.expiresAt != null) nudge(serialKey, fields.expiresAt)
+    return created
+  }
+
   return {
     async schedule(input) {
       const t = now()
@@ -285,7 +305,7 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       } else {
         throw new Error("schedule requires `at`, `in`, or `cron`")
       }
-      const created = await insertWake({
+      return insertWake({
         triggerType: "at",
         sessionId: input.sessionId ?? null,
         workspaceId: input.workspaceId,
@@ -299,8 +319,6 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         createdBy: input.createdBy,
         idempotencyKey: input.idempotencyKey,
       })
-      nudge(input.serialKey ?? null, fireAt)
-      return created
     },
 
     async watch(input) {
@@ -342,7 +360,8 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
 
     async cancel(wakeIdOrToken) {
       const wake = (await store.get(wakeIdOrToken)) ?? (await store.getByToken(wakeIdOrToken))
-      if (wake) await store.cas(wake.id, "pending", "cancelled", { firedAt: now() })
+      const cancelledAt = now()
+      if (wake) await store.cas(wake.id, "pending", "cancelled", cancelledAt, { firedAt: cancelledAt })
     },
 
     async resolve(token, answer, resolver) {
@@ -354,9 +373,12 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       const result: WakeResult = { trigger: "on_approval", answer, resolvedBy: resolver }
       const ok = await fireFromPending(wake, JSON.stringify(result), { resolvedBy: JSON.stringify(resolver) })
       if (ok) return { ok: true }
+      const current = await store.get(wake.id)
+      const expired = current?.state === "expired"
+        || (current?.state === "pending" && current.expiresAt !== null && current.expiresAt <= now())
       return {
         ok: false,
-        reason: (await store.get(wake.id))?.state === "expired" ? "too_late" : "already_resolved",
+        reason: expired ? "too_late" : "already_resolved",
       }
     },
 
@@ -372,19 +394,19 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
     async runDue(serialKey) {
       const t = now()
       let fired = 0
-      if (serialKey === undefined) {
-        for (const wake of await store.findExpirable(t)) {
-          // Resolve the sink before the terminal CAS so an unregistered kind
-          // cannot silently swallow the gave-up notification.
-          const sink = sinkFor(wake)
-          if (await store.cas(wake.id, "pending", "expired", { firedAt: t })) {
-            await sink(wake, {
-              trigger: "at",
-              intent: JSON.parse(wake.intentJson),
-              expired: true,
-            })
-            fired++
-          }
+      for (const wake of await store.findExpirable(t, serialKey)) {
+        // Resolve the sink before the terminal CAS so an unregistered kind
+        // cannot silently swallow the gave-up notification.
+        const sink = sinkFor(wake)
+        // The CAS elects one notifier: a lane driver racing the unscoped sweep
+        // over the same row leaves exactly one of them holding the transition.
+        if (await store.cas(wake.id, "pending", "expired", t, { firedAt: t })) {
+          await sink(wake, {
+            trigger: "at",
+            intent: JSON.parse(wake.intentJson),
+            expired: true,
+          })
+          fired++
         }
       }
       // Atomic re-claim before driving: `reclaimFiring` re-stamps the lease in
@@ -394,15 +416,13 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
         await driveFiring(wake)
         fired++
       }
-      for (const wake of await store.claimDue(t, leaseMs, batchLimit, serialKey)) {
+      for (const wake of await store.claimDue(now(), leaseMs, batchLimit, serialKey)) {
         await driveFiring(wake)
         fired++
       }
       if (serialKey === undefined || fired > 0) return { fired }
-      const blockedUntil = (await store.listFiring(serialKey))
-        .flatMap((wake) => wake.leaseUntil === null ? [] : [wake.leaseUntil])
-        .sort((a, b) => a - b)[0]
-      return blockedUntil === undefined ? { fired } : { fired, blockedUntil }
+      const nextAt = await store.nextObligationAt(serialKey)
+      return nextAt === null ? { fired } : { fired, nextAt }
     },
 
     async recover() {

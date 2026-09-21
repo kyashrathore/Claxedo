@@ -45,7 +45,7 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly sessionRef?: SessionRef
   readonly provisionalTitle?: string
   readonly agent: string
-  readonly model: { providerID: string; modelID: string }
+  readonly model?: { providerID: string; modelID: string }
   readonly variant?: string
   /**
    * The permission mode this turn runs under, sent WITH the prompt.

@@ -22,7 +22,6 @@ export function runtimeDirectAuthEnv(token: string) {
 export function sandboxLeaseEnv(input: {
   leaseId: string
   epoch: number
-  sandboxId: string
 }) {
   return sandboxLeaseVariables(input)
 }
@@ -40,7 +39,6 @@ export function relayHostVerificationEnv(
 }
 
 export function controlPlaneVerificationEnv(
-  driverId: SandboxDriverID,
   controlPlaneUrl: string,
   input: {
     options: WorkspaceSupervisorOptions
@@ -48,7 +46,7 @@ export function controlPlaneVerificationEnv(
   },
 ): Record<string, string> {
   const publicKeyPem = (input.env ?? process.env).CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM?.trim()
-  if (driverId !== "docker" && localControlPlaneConfigured(input.options) && publicKeyPem) {
+  if (localControlPlaneConfigured(input.options) && publicKeyPem) {
     return {
       WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${controlPlaneUrl.replace(/\/+$/g, "")}/api/runtime-authority/session-authorize`,
       WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: publicKeyPem,

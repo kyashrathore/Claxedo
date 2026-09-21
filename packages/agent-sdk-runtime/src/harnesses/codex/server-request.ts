@@ -1,11 +1,12 @@
 import { randomUUID } from "crypto"
 import type { AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
+import { codexMcpApproval } from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { JsonRecord, SdkRuntimeDriverHost } from "../shared/sdk-runtime-driver"
 import { asRecord } from "@claxedo/helpers/guards"
 import { text } from "../shared/sdk-runtime-values"
 import type { CodexActiveThread } from "./active-thread"
 import { spawnDynamicCodexAgent } from "./dynamic-agent"
-import { codexMcpElicitationQuestion, codexMcpElicitationResponse } from "./mcp-elicitation"
+import { mcpElicitationQuestion, mcpElicitationResponse } from "../shared/mcp-elicitation"
 import { codexCommandGrant, hasCodexCommandGrant, saveCodexCommandGrant } from "./permission-state"
 
 /** A refreshed ChatGPT credential, in the app-server's own field names below. */
@@ -28,7 +29,6 @@ export async function handleCodexServerRequest(input: {
   const payload = { ...params, requestId }
 
   if (method === "item/tool/requestUserInput") {
-    active?.project(method, payload, input.message)
     const questions = Array.isArray(params.questions) ? params.questions : []
     const answers = await new Promise<AgentQuestionAnswer[] | undefined>((resolve, reject) => {
       if (!active) {
@@ -42,7 +42,8 @@ export async function handleCodexServerRequest(input: {
         resolve,
         reject: () => resolve(undefined),
       })
-    })
+      active.project(method, payload, input.message)
+    }).finally(() => input.host.pendingQuestions.delete(requestId))
     if (!answers) return { answers: {} }
     const ids = questionIds(params)
     return {
@@ -52,14 +53,31 @@ export async function handleCodexServerRequest(input: {
     }
   }
 
-  // A plugin's remote MCP server asking the user to finish an authorization.
-  // Projected as an ordinary question so it reaches the same approval surface
-  // every other Codex prompt uses, rather than a plugin-specific one.
+  // Consent uses permissions; URL authorization and forms use questions.
   if (method === "mcpServer/elicitation/request") {
     if (!active) return { action: "cancel" }
 
-    const question = codexMcpElicitationQuestion(params)
-    active.project("item/tool/requestUserInput", { ...params, requestId, questions: [question] }, input.message)
+    const approval = codexMcpApproval(params)
+    if (approval) {
+      const optionId = await new Promise<string | undefined>((resolve) => {
+        input.host.pendingPermissions.set(requestId, {
+          sessionId: active.sessionId,
+          agentSessionId: active.agentSessionId,
+          method,
+          params,
+          resolve: (_decision, optionId) => resolve(optionId),
+        })
+        active.project(method, payload, input.message)
+      }).finally(() => input.host.pendingPermissions.delete(requestId))
+      // The interaction owner validates offered IDs before resolving the request.
+      // Cancellation from turn teardown has no selected option.
+      if (optionId === undefined) return { action: "cancel" }
+      const selected = approval.options.find((option) => option.id === optionId)
+      if (!selected) throw new Error("MCP approval option was not offered")
+      return selected.response
+    }
+
+    const question = mcpElicitationQuestion(params)
     const answers = await new Promise<AgentQuestionAnswer[] | undefined>((resolve) => {
       input.host.pendingQuestions.set(requestId, {
         sessionId: active.sessionId,
@@ -68,9 +86,10 @@ export async function handleCodexServerRequest(input: {
         resolve,
         reject: () => resolve(undefined),
       })
-    })
+      active.project("item/tool/requestUserInput", { ...params, requestId, questions: [question] }, input.message)
+    }).finally(() => input.host.pendingQuestions.delete(requestId))
     // One projected question, so its first selected answer is the elicitation result.
-    return codexMcpElicitationResponse(params, answers?.[0]?.[0])
+    return mcpElicitationResponse(params, answers?.[0]?.[0])
   }
 
   if (method === "item/tool/call") {
@@ -93,7 +112,6 @@ export async function handleCodexServerRequest(input: {
     if (active && grant && hasCodexCommandGrant(input.host, active.sessionId, grant)) {
       return permissionResponse(method, "allow_always", params)
     }
-    active?.project(method, payload, input.message)
     const decision = await new Promise<"allow_once" | "allow_always" | "deny" | "reject_always">((resolve) => {
       if (!active) {
         resolve("deny")
@@ -106,7 +124,8 @@ export async function handleCodexServerRequest(input: {
         params,
         resolve,
       })
-    })
+      active.project(method, payload, input.message)
+    }).finally(() => input.host.pendingPermissions.delete(requestId))
     if (active && grant && decision === "allow_always") saveCodexCommandGrant(input.host, active.sessionId, grant)
     return permissionResponse(method, decision, params)
   }

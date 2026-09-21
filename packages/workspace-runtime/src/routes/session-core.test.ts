@@ -1,6 +1,8 @@
+import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
 import { describe, expect, test } from "bun:test"
 import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
-import { createSessionRoutes, type SessionLifecycleEvent } from "./session-core"
+import { createSessionRoutes, type SessionLifecycleEvent, type SessionRouteContext } from "./session-core"
+import type { ChildSessionHost } from "./session-children"
 import type {
   AgentHarnessFactory,
   AgentMessage,
@@ -27,6 +29,7 @@ import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import {
   managedWorkspaceSessionAccessPolicy,
+  type ManagedSessionAuthority,
   type SessionAccessDecision,
   type SessionAccessPolicy,
 } from "../session-access-policy"
@@ -131,6 +134,29 @@ function fixtureExecutionBinding(workspaceId = "workspace-test") {
   })
 }
 
+test("session config-options applies the session read policy before reading exact-session state", async () => {
+  const calls: AgentExecutionBinding[] = []
+  const checked: string[] = []
+  const app = managedRoutes({
+    policy: managedPolicy({ authorize: async (input) => {
+      checked.push(`${input.sessionId}:${input.operation}`)
+      return input.sessionId === "owned" ? { allowed: true } : { allowed: false, status: 403, code: "session_access_denied", message: "Private session" }
+    } }),
+    adapter: { ...adapter(), probeConfigOptions: async (_directory, binding) => {
+      if (!binding) throw new Error("Missing session binding")
+      calls.push(binding)
+      return { options: [{ id: "mode", name: "Mode", type: "select", currentValue: binding.sessionId }] }
+    } },
+  })
+  const allowed = await app.request("http://localhost/session/owned/config-options?sessionId=other")
+  expect(allowed.status).toBe(200)
+  expect(await allowed.json()).toMatchObject({ options: [{ currentValue: "owned" }] })
+  const denied = await app.request("http://localhost/session/private/config-options")
+  expect(denied.status).toBe(403)
+  expect(calls.map((binding) => binding.sessionId)).toEqual(["owned"])
+  expect(checked).toEqual(["owned:session_config_read", "private:session_config_read"])
+})
+
 function managedRoutes(input: {
   policy: SessionAccessPolicy
   adapter: AgentHarnessAdapter
@@ -179,6 +205,8 @@ function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAcc
   return {
     sessionAuthority: "managed-private",
     authorize: async () => ({ allowed: true }),
+    authorizeSessionStart: async () => ({ allowed: true }),
+    authorizeSessionStartStatus: async () => ({ allowed: true }),
     authorizeStream: async () => ({ allowed: true, lease: "lease_test", expiresAt: Date.now() + 60_000 }),
     authorizePrefix: async () => ({ allowed: true }),
     filterSessions: async (input) => input.sessionIds,
@@ -780,6 +808,8 @@ function registrationPolicy(
   return {
     sessionAuthority: "managed-private",
     authorize: async () => ({ allowed: true }),
+    authorizeSessionStart: async () => ({ allowed: true }),
+    authorizeSessionStartStatus: async () => ({ allowed: true }),
     authorizePrefix: async () => ({ allowed: true }),
     filterSessions: async (input) => input.sessionIds,
     registerSession,
@@ -1007,6 +1037,8 @@ describe("createSessionRoutes directory-less sessions", () => {
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
       authorize: async () => ({ allowed: true }),
+    authorizeSessionStart: async () => ({ allowed: true }),
+    authorizeSessionStartStatus: async () => ({ allowed: true }),
       authorizePrefix: async () => ({ allowed: true }),
       filterSessions: async (input) => {
         calls.push({
@@ -1368,7 +1400,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       model: { providerID: "test", modelID: "fixture" },
       permissionMode: "winner-mode",
     }])
-    expect(events.map((event) => event.payload.type)).toEqual(["message.updated", "session.idle"])
+    expect(events).toEqual([])
   })
 
   test("preserves the cause instead of flattening a failed turn to 'Stream error'", async () => {
@@ -1939,7 +1971,9 @@ describe("createSessionRoutes directory-less sessions", () => {
         yield sessionIdle(id)
       },
     }
+    const eventHub = createRuntimeEventHub()
     const runtime = createAgentRuntime({
+      eventHub,
       store: createMemoryRuntimeStore(),
       harnesses: [{
         id: "pi",
@@ -1954,6 +1988,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       harness: { id: "pi", access: "native" },
     })
     const events: CompatEnvelope[] = []
+    eventHub.subscribeGlobal((event) => events.push(event))
     const app = createSessionRoutes({
       resolveAdapter: () => integrationAdapter,
       resolveRuntime: () => runtime,
@@ -2003,6 +2038,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     let completeDisposal = () => {}
     const disposal = new Promise<void>((resolve) => { completeDisposal = resolve })
     let disposed = false
+    let consumed = false
     const events: CompatEnvelope[] = []
     const runtime = {
       turns: {
@@ -2026,6 +2062,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       events: {
         subscribe: () => (async function* () {
           await turnGate
+          consumed = true
           yield {
             sessionId: "session_1",
             directory: undefined,
@@ -2060,7 +2097,8 @@ describe("createSessionRoutes directory-less sessions", () => {
     finishTurn()
     await disposal
 
-    expect(events.map((event) => event.payload.type)).toContain("session.idle")
+    expect(consumed).toBe(true)
+    expect(events).toEqual([])
     expect(disposed).toBe(true)
   })
 })
@@ -2717,5 +2755,569 @@ describe("a share level reaches the runtime as the authority's answer to a write
       { operation: "session_capabilities_read", write: false },
       { operation: "prompt", write: true },
     ])
+  })
+})
+
+/** Only the reads the delete cascade makes; every other member refuses rather than pretending. */
+function startupChildHost(children: Map<string, string[]>): ChildSessionHost {
+  const rows = (parentSessionId: string) => (children.get(parentSessionId) ?? [])
+    .map(childSessionId => ({ parentSessionId, childSessionId, subagentKey: `key-${childSessionId}`, status: "active" }))
+  const unused = (name: string) => () => { throw new Error(`startupChildHost.${name} is not part of the delete cascade`) }
+  return {
+    children: async (parentSessionId) => rows(parentSessionId),
+    activeChildren: async (parentSessionId) => rows(parentSessionId),
+    childOf: async (childSessionId) => [...children.keys()].flatMap(rows).find(row => row.childSessionId === childSessionId),
+    recover: async () => {},
+    dispose: () => {},
+    withCreation: unused("withCreation"),
+    deriveSessionId: unused("deriveSessionId"),
+    admitCreated: unused("admitCreated"),
+    onTurnStarted: unused("onTurnStarted"),
+    onTurnSettled: unused("onTurnSettled"),
+  }
+}
+
+function startupRouteFixture(options: {
+  updateConfig?: AgentHarnessAdapter["updateSessionConfig"]
+  refuseDelete?: () => boolean
+  beforeProviderDelete?: () => Promise<void>
+  children?: Map<string, string[]>
+} = {}) {
+  const store = createMemoryRuntimeStore()
+  const lifecycle: SessionLifecycleEvent[] = []
+  const replies: string[] = []
+  const waiting = new Map<string, { resolve: () => void; reject: (error: Error) => void }>()
+  const ready = new Map<string, () => void>()
+  const deny = { allowed: false as const, status: 403 as const, code: "private_start", message: "Another creator" }
+  const owner = (input: Parameters<SessionAccessPolicy["authorizeSessionStart"]>[0]) =>
+    input.actor?.actorId === "creator" && input.registrationOperationId === `op-${input.sessionId}` ? { allowed: true as const } : deny
+  const policy = managedPolicy({
+    authorizeSessionStart: owner,
+    authorizeSessionStartStatus: owner,
+    filterSessions: async () => [],
+  })
+  const fixture: AgentHarnessAdapter = {
+    ...adapter(),
+    createSession: async (directory, _title, id, options) => {
+      if (!id || !options?.start) throw new Error("Missing authoritative startup owner")
+      expect(store.sessionStarts!.get(id)?.binding).toEqual(options.start)
+      expect(store.getExecutionBinding(id)).toBeNull()
+      store.appendEvent({ sessionId: id, payload: { id: `event-${id}`, type: "question.asked", properties: { id: `question-${id}`, sessionID: id, questions: [{ header: "Setup", question: "Continue?", options: [] }] } } })
+      await new Promise<void>((resolve, reject) => { waiting.set(id, { resolve, reject }); ready.get(id)?.() })
+      store.bindSession({ ...options.start, upstreamSessionId: `upstream-${id}`, agentSessionId: `upstream-${id}` })
+      return { id }
+    },
+    ...(options.updateConfig ? { updateSessionConfig: options.updateConfig } : {}),
+    deleteSession: async (binding) => {
+      if (options.refuseDelete?.()) throw new Error("provider refused the delete")
+      await options.beforeProviderDelete?.()
+      store.deleteSession(binding.sessionId)
+    },
+    replySessionStartQuestion: async (start, id) => {
+      expect(id).toBe(`question-${start.sessionId}`)
+      expect(store.getExecutionBinding(start.sessionId)).toBeNull()
+      replies.push(start.sessionId)
+      waiting.get(start.sessionId)!.resolve()
+    },
+  }
+  const make = () => {
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as any).set("relayHostAuth", { actor_id: c.req.header("x-test-actor") ?? "creator", actor_kind: "human", org_id: "org", workspace_id: "workspace", host_id: "host", role: "editor" })
+      await next()
+    })
+    app.route("/", createSessionRoutes({
+      resolveAdapter: () => fixture,
+      resolveDirectory: (c) => c.req.query("directory") ?? "/workspace",
+      resolveWorkspaceId: () => "workspace",
+      resolveExecutionBinding: (_c, _directory, id) => store.getExecutionBinding(id) ?? undefined,
+      getSession: (_c, _directory, id) => store.getSession(id) ?? null,
+      listSessions: async () => store.listSessions("/workspace"),
+      listQuestions: async () => store.listQuestions("/workspace"),
+      sessionStarts: store.sessionStarts,
+      resolveSessionStartBinding: (_c, directory, sessionId, operationId) => ({ sessionId, directory: directory!, workspaceId: "workspace", connectionId: "connection:fixture", operationId }),
+      ...(options.children ? { childSessions: startupChildHost(options.children) } : {}),
+      sessionAccessPolicy: policy,
+      publishGlobal: () => {},
+      publishSessionLifecycle: event => lifecycle.push(event),
+    }))
+    return app
+  }
+  const app = make()
+  const launch = (id: string, config: Record<string, unknown> = {}) => {
+    const started = new Promise<void>(resolve => ready.set(id, resolve))
+    const response = app.request("/session", { method: "POST", headers: { "content-type": "application/json", "x-claxedo-session-registration-operation": `op-${id}` }, body: JSON.stringify({ id, ...config }) })
+    return { started, response }
+  }
+  return { app, make, launch, waiting, store, lifecycle, replies }
+}
+
+describe("public startup question lifecycle", () => {
+  test("authorizes the creator before binding and keeps concurrent creations isolated", async () => {
+    const f = startupRouteFixture()
+    const first = f.launch("first"), second = f.launch("second")
+    await Promise.all([first.started, second.started])
+    expect(f.lifecycle.filter(row => row.phase === "creating").map(row => row.start?.sessionId)).toEqual(["first", "second"])
+    expect(await (await f.app.request("/session")).json()).toEqual([])
+    expect(await (await f.app.request("/session-start/first")).json()).toMatchObject({ status: "starting", binding: { operationId: "op-first" } })
+    expect((await f.app.request("/session-start/first?directory=/other")).status).toBe(404)
+    expect((await f.app.request("/session-start/first", { headers: { "x-test-actor": "other" } })).status).toBe(403)
+    expect(await (await f.app.request("/question", { headers: { "x-test-actor": "other" } })).json()).toEqual([])
+    expect(await (await f.app.request("/question?sessionId=first")).json()).toMatchObject([{ id: "question-first" }])
+    const answer = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["yes"]] }) }
+    expect((await f.app.request("/question/question-first/reply?sessionId=second", answer)).status).toBe(409)
+    expect((await f.app.request("/question/question-first/reply", { ...answer, headers: { ...answer.headers, "x-test-actor": "other" } })).status).toBe(403)
+    expect(f.replies).toEqual([])
+    expect((await f.app.request("/question/question-first/reply", answer)).status).toBe(200)
+    expect((await first.response).status).toBe(201)
+    expect(f.store.sessionStarts!.get("first")).toMatchObject({ status: "created", upstreamSessionId: "upstream-first" })
+    expect(f.store.sessionStarts!.get("second")?.status).toBe("starting")
+    expect((await f.app.request("/question/question-second/reply", answer)).status).toBe(200)
+    expect((await second.response).status).toBe(201)
+  })
+
+  test("retry cannot finalize or release a creation while post-bind configuration is running", async () => {
+    let entered!: () => void, release!: () => void
+    const configuring = new Promise<void>(resolve => { entered = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    const f = startupRouteFixture({ updateConfig: async () => {
+      entered(); await held
+      return { harness: { id: "fixture", access: "connection" }, agent: "build", variant: null }
+    } })
+    const first = f.launch("retry", { agent: "build" })
+    await first.started
+    await f.app.request("/question/question-retry/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    await configuring
+    const duplicate = await f.app.request("/session", { method: "POST", headers: { "x-claxedo-session-registration-operation": "op-retry" }, body: JSON.stringify({ id: "retry" }) })
+    expect(duplicate.status).toBe(409)
+    expect(f.lifecycle.some(event => event.phase === "failed")).toBe(false)
+    expect(await (await f.app.request("/session-start/retry")).json()).toMatchObject({ status: "starting" })
+    release()
+    expect((await first.response).status).toBe(201)
+    expect(f.store.sessionStarts!.get("retry")?.status).toBe("created")
+  })
+
+  test("failure is durable and stale replies cannot reach the adapter", async () => {
+    const f = startupRouteFixture()
+    const creation = f.launch("failed")
+    await creation.started
+    f.waiting.get("failed")!.reject(new Error("provider disconnected"))
+    expect((await creation.response).status).toBe(500)
+    expect(await (await f.make().request("/session-start/failed")).json()).toMatchObject({ status: "failed", error: "provider disconnected" })
+    expect((await f.app.request("/question/question-failed/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })).status).toBe(404)
+    expect(f.replies).toEqual([])
+    expect(await (await f.app.request("/question")).json()).toEqual([])
+  })
+
+  test("delete cannot retire a creation whose provider configuration is still running", async () => {
+    let entered!: () => void, release!: () => void
+    const configuring = new Promise<void>(resolve => { entered = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    const f = startupRouteFixture({ updateConfig: async () => {
+      entered(); await held
+      return { harness: { id: "fixture", access: "connection" }, agent: "build", variant: null }
+    } })
+    const creation = f.launch("creating-delete", { agent: "build" })
+    await creation.started
+    await f.app.request("/question/question-creating-delete/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    await configuring
+    let status: number
+    try {
+      status = (await f.app.request("/session/creating-delete", { method: "DELETE" })).status
+    } finally {
+      release()
+    }
+    const completed = await creation.response
+    expect(status).toBe(409)
+    expect(completed.status).toBe(201)
+    expect(f.store.sessionStarts!.get("creating-delete")?.status).toBe("created")
+    expect(f.store.getSession("creating-delete")).not.toBeNull()
+  })
+
+  test("a pending delete excludes another delete and a create for its id", async () => {
+    let entered!: () => void, release!: () => void, calls = 0
+    const deleting = new Promise<void>(resolve => { entered = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    const f = startupRouteFixture({ beforeProviderDelete: async () => {
+      if (++calls === 1) { entered(); await held }
+    } })
+    const creation = f.launch("deleting")
+    await creation.started
+    await f.app.request("/question/question-deleting/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    expect((await creation.response).status).toBe(201)
+    const removal = f.app.request("/session/deleting", { method: "DELETE" })
+    await deleting
+    let createStatus: number, deleteStatus: number
+    try {
+      createStatus = (await f.app.request("/session", { method: "POST", headers: { "x-claxedo-session-registration-operation": "op-deleting" }, body: JSON.stringify({ id: "deleting" }) })).status
+      deleteStatus = (await f.app.request("/session/deleting", { method: "DELETE" })).status
+    } finally {
+      release()
+    }
+    expect((await removal).status).toBe(200)
+    expect([createStatus, deleteStatus]).toEqual([409, 409])
+    expect(calls).toBe(1)
+    expect(f.store.sessionStarts!.get("deleting")).toBeUndefined()
+  })
+
+  test("parent deletion cannot bypass the creation claim of a child in its cascade", async () => {
+    let entered!: () => void, release!: () => void
+    const configuring = new Promise<void>(resolve => { entered = resolve })
+    const held = new Promise<void>(resolve => { release = resolve })
+    const f = startupRouteFixture({
+      children: new Map([["parent", ["child"]]]),
+      updateConfig: async () => {
+        entered(); await held
+        return { harness: { id: "fixture", access: "connection" }, agent: "build", variant: null }
+      },
+    })
+    const answer = { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) }
+    const parent = f.launch("parent")
+    await parent.started
+    await f.app.request("/question/question-parent/reply", answer)
+    expect((await parent.response).status).toBe(201)
+    const child = f.launch("child", { agent: "build" })
+    await child.started
+    await f.app.request("/question/question-child/reply", answer)
+    await configuring
+    let status: number
+    try {
+      status = (await f.app.request("/session/parent", { method: "DELETE" })).status
+    } finally {
+      release()
+    }
+    expect((await child.response).status).toBe(201)
+    expect(status).toBe(409)
+    expect(f.store.getSession("parent")).not.toBeNull()
+    expect(f.store.sessionStarts!.get("child")?.status).toBe("created")
+    expect((await f.app.request("/session/parent", { method: "DELETE" })).status).toBe(200)
+    expect(f.store.sessionStarts!.get("parent")).toBeUndefined()
+    expect(f.store.sessionStarts!.get("child")).toBeUndefined()
+  })
+
+  test("an authorized delete hands the creation id back; a refused one keeps the owner", async () => {
+    let refuse = true
+    const f = startupRouteFixture({ refuseDelete: () => refuse })
+    const answer = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["yes"]] }) }
+
+    const first = f.launch("reused")
+    await first.started
+    await f.app.request("/question/question-reused/reply", answer)
+    expect((await first.response).status).toBe(201)
+    expect(f.store.sessionStarts!.get("reused")).toMatchObject({ status: "created", binding: { operationId: "op-reused" } })
+
+    const refused = await Promise.resolve(f.app.request("/session/reused", { method: "DELETE" })).then(response => response.status, () => "threw")
+    expect(refused).toBe(500)
+    expect(f.store.sessionStarts!.get("reused")).toMatchObject({ status: "created", binding: { operationId: "op-reused" } })
+    expect(f.store.getSession("reused")).not.toBeNull()
+
+    refuse = false
+    expect((await f.app.request("/session/reused", { method: "DELETE" })).status).toBe(200)
+    expect(f.store.sessionStarts!.get("reused")).toBeUndefined()
+    expect(f.store.getSession("reused")).toBeNull()
+
+    const second = f.launch("reused")
+    await second.started
+    expect(f.store.sessionStarts!.get("reused")?.status).toBe("starting")
+    await f.app.request("/question/question-reused/reply", answer)
+    expect((await second.response).status).toBe(201)
+    expect(f.store.sessionStarts!.get("reused")).toMatchObject({ status: "created", upstreamSessionId: "upstream-reused" })
+  })
+
+  test("deleting a parent gives back the creation id of every child it cascades to", async () => {
+    const f = startupRouteFixture({ children: new Map([["parent", ["child"]]]) })
+    const childStart = { sessionId: "child", directory: "/workspace", workspaceId: "workspace", connectionId: "connection:fixture", operationId: "op-child" }
+    f.store.sessionStarts!.begin(childStart)
+    f.store.bindSession({ ...childStart, parentSessionId: "parent", upstreamSessionId: "upstream-child", agentSessionId: "upstream-child" })
+    f.store.sessionStarts!.finish(childStart, { status: "created", upstreamSessionId: "upstream-child" })
+
+    const parent = f.launch("parent")
+    await parent.started
+    await f.app.request("/question/question-parent/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    expect((await parent.response).status).toBe(201)
+
+    expect((await f.app.request("/session/parent", { method: "DELETE" })).status).toBe(200)
+    expect(f.store.getSession("child")).toBeNull()
+    expect(f.store.sessionStarts!.get("child")).toBeUndefined()
+    expect(f.store.sessionStarts!.get("parent")).toBeUndefined()
+  })
+
+  test("a rolled-back creation keeps its failure readable instead of releasing the id", async () => {
+    const f = startupRouteFixture({ updateConfig: async () => { throw new Error("configuration refused") } })
+    const creation = f.launch("rolled-back", { agent: "build" })
+    await creation.started
+    await f.app.request("/question/question-rolled-back/reply", { method: "POST", body: JSON.stringify({ answers: [["yes"]] }) })
+    expect((await creation.response).status).toBe(500)
+    expect(f.store.getSession("rolled-back")).toBeNull()
+    expect(await (await f.app.request("/session-start/rolled-back")).json()).toMatchObject({ status: "failed", error: expect.stringContaining("configuration refused") })
+    const retry = await f.app.request("/session", { method: "POST", headers: { "x-claxedo-session-registration-operation": "op-rolled-back" }, body: JSON.stringify({ id: "rolled-back" }) })
+    expect(retry.status).toBe(409)
+  })
+
+  test("lost creation owner is terminal after restart without inventing a provider binding", async () => {
+    const f = startupRouteFixture()
+    f.store.sessionStarts!.begin({ sessionId: "interrupted", directory: "/workspace", workspaceId: "workspace", connectionId: "connection:fixture", operationId: "op-interrupted" })
+    expect((await f.app.request("/session-start/interrupted", { headers: { "x-test-actor": "other" } })).status).toBe(403)
+    expect(f.store.sessionStarts!.get("interrupted")?.status).toBe("starting")
+    expect(await (await f.app.request("/session-start/interrupted")).json()).toMatchObject({ status: "failed" })
+    expect(f.store.getExecutionBinding("interrupted")).toBeNull()
+  })
+})
+
+/**
+ * Two people on one managed runtime, with the real policy between the route
+ * and a plane that knows the only two facts a create turns on: which
+ * reservation holds which id, and who created which stored session. The
+ * runtime store behind the adapter is the real one, so "the session was left
+ * alone" is read back off the session rather than off a spy.
+ */
+function privateSessionFixture(input: {
+  registration?: (attempt: number) => SessionAccessDecision
+  /** False composes the same route on a host that keeps no durable creation owner. */
+  starts?: boolean
+} = {}) {
+  const store = createMemoryRuntimeStore()
+  const reservations = new Map<string, { sessionId: string; actorId: string; spent: boolean }>()
+  const creators = new Map<string, string>()
+  const deleted: string[] = []
+  const compensated: string[] = []
+  let registrations = 0
+  let holdCreate: Promise<void> | undefined
+  let failConfig: string | undefined
+
+  const reservationFor = (operationId: string, sessionId: string, actorId: string) => {
+    const row = reservations.get(operationId)
+    return row && row.sessionId === sessionId && row.actorId === actorId ? row : undefined
+  }
+  const unused = { allowed: false as const, status: 403 as const, code: "unused", message: "unused" }
+  const authority: ManagedSessionAuthority = {
+    authorizeSessionStart: ({ actor, sessionId, registrationOperationId }) =>
+      reservationFor(registrationOperationId, sessionId, actor.actorId)?.spent === false,
+    authorizeSessionStartStatus: ({ actor, sessionId, registrationOperationId }) =>
+      !!reservationFor(registrationOperationId, sessionId, actor.actorId),
+    authorizeSessionRead: ({ actor, sessionId }) => creators.get(sessionId) === actor.actorId,
+    authorizeSessionWrite: ({ actor, sessionId }) => creators.get(sessionId) === actor.actorId,
+    authorizeSessionStream: () => unused,
+    registerSession: ({ actor, sessionId, registrationOperationId }) => {
+      const decision = input.registration?.(++registrations)
+      if (decision && !decision.allowed) return decision
+      const row = reservationFor(registrationOperationId!, sessionId, actor.actorId)
+      if (!row) return { allowed: false, status: 403, code: "session_registration_denied", message: "The reservation does not hold this session" }
+      row.spent = true
+      creators.set(sessionId, actor.actorId)
+      return { allowed: true }
+    },
+    acquireTurn: () => unused,
+    renewTurn: () => unused,
+    releaseTurn: () => ({ released: false }),
+  }
+  const policy = managedWorkspaceSessionAccessPolicy({ requireActor: true, authority })
+  policy.beginRegistrationCompensation = async ({ sessionId }) => {
+    compensated.push(sessionId)
+    return { allowed: true }
+  }
+  policy.completeRegistrationCompensation = async () => ({ allowed: true })
+
+  const harness = { id: "codex", access: "native" } as const
+  const created: string[] = []
+  const fixture: AgentHarnessAdapter = {
+    ...adapter(),
+    getSession: async (binding) => store.getSession(binding.sessionId) ?? null,
+    createSession: async (directory, title, id) => {
+      const sessionId = id ?? `ses_generated_${created.length + 1}`
+      await holdCreate
+      created.push(sessionId)
+      store.bindSession({ sessionId, directory: directory ?? "", workspaceId: "ws_1", connectionId: "native:codex", upstreamSessionId: sessionId, agentSessionId: sessionId, ...(title ? { title } : {}) })
+      store.updateSessionConfig(sessionId, { harness, agent: null, variant: null })
+      return { id: sessionId }
+    },
+    getSessionConfig: async (binding) => store.getSessionConfig(binding.sessionId) ?? { harness, agent: null, variant: null },
+    updateSessionConfig: async (binding, patch) => {
+      if (failConfig === binding.sessionId) throw new Error("harness refused the configuration")
+      return store.updateSessionConfig(binding.sessionId, patch)!
+    },
+    deleteSession: async (binding) => {
+      deleted.push(binding.sessionId)
+      store.deleteSession(binding.sessionId)
+    },
+  }
+
+  const app = new Hono()
+  app.use("*", async (context, next) => {
+    ;(context as any).set("relayHostAuth", {
+      actor_id: context.req.header("x-test-actor") ?? "alice",
+      actor_kind: "human",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      host_id: "host_1",
+      role: "editor",
+    } as never)
+    await next()
+  })
+  app.route("/", createSessionRoutes({
+    resolveAdapter: () => fixture,
+    resolveDirectory: () => "/workspace",
+    resolveWorkspaceId: () => "ws_1",
+    resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+    getSession: (_c, _directory, sessionId) => store.getSession(sessionId) ?? null,
+    listSessions: async () => store.listSessions("/workspace"),
+    ...(input.starts === false ? {} : {
+      sessionStarts: store.sessionStarts,
+      resolveSessionStartBinding: (_c: SessionRouteContext, directory: RuntimeDirectory, sessionId: string, operationId: string) => ({
+        sessionId,
+        directory: directory ?? "",
+        workspaceId: "ws_1",
+        connectionId: "native:codex",
+        operationId,
+      }),
+    }),
+    sessionAccessPolicy: policy,
+    publishGlobal: () => {},
+  }))
+
+  return {
+    store,
+    created,
+    deleted,
+    compensated,
+    reserve(actorId: string, operationId: string, sessionId: string) {
+      reservations.set(operationId, { sessionId, actorId, spent: false })
+    },
+    holdCreates() {
+      let release!: () => void
+      holdCreate = new Promise<void>((resolve) => { release = resolve })
+      return () => { holdCreate = undefined; release() }
+    },
+    failConfigFor(sessionId: string) {
+      failConfig = sessionId
+    },
+    create(actorId: string, body: Record<string, unknown>, operationId?: string) {
+      return app.request("/session", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-test-actor": actorId,
+          ...(operationId ? { "x-claxedo-session-registration-operation": operationId } : {}),
+        },
+        body: JSON.stringify(body),
+      })
+    },
+  }
+}
+
+describe("create against an id that already exists", () => {
+  test("creates and configures the session its own reservation names", async () => {
+    const f = privateSessionFixture()
+    f.reserve("alice", "op_alice", "ses_alice")
+
+    const response = await f.create("alice", { id: "ses_alice", title: "Alice", agent: "build", model: { providerID: "test", modelID: "fixture" } }, "op_alice")
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({ id: "ses_alice" })
+    expect(f.store.getSession("ses_alice")).toMatchObject({ title: "Alice" })
+    expect(f.created).toEqual(["ses_alice"])
+    expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "build", model: { providerID: "test", modelID: "fixture" } })
+  })
+
+  test("an editor naming another person's session changes nothing and is told nothing about it", async () => {
+    const f = privateSessionFixture()
+    f.reserve("alice", "op_alice", "ses_alice")
+    await f.create("alice", { id: "ses_alice", title: "Alice", agent: "build" }, "op_alice")
+    f.reserve("bob", "op_bob", "ses_bob")
+
+    const refused = await f.create("bob", { id: "ses_alice", title: "Taken", agent: "plan", model: { providerID: "other", modelID: "swapped" } }, "op_bob")
+    const body = await refused.text()
+
+    expect(refused.status).toBe(403)
+    expect(body).not.toContain("Alice")
+    expect(body).not.toContain("codex")
+    expect(f.store.getSession("ses_alice")).toMatchObject({ title: "Alice" })
+    expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "build", harness: { id: "codex" } })
+    expect(f.deleted).toEqual([])
+    expect(f.created).toEqual(["ses_alice"])
+  })
+
+  test("a create for a session the authority already registered is refused instead of updating it", async () => {
+    const f = privateSessionFixture()
+    f.reserve("alice", "op_alice", "ses_alice")
+    await f.create("alice", { id: "ses_alice", agent: "build" }, "op_alice")
+
+    const repeated = await f.create("alice", { id: "ses_alice", agent: "plan" }, "op_alice")
+
+    expect(repeated.status).toBe(403)
+    expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "build" })
+    expect(f.deleted).toEqual([])
+  })
+
+  test("the retry of an ambiguous registration finishes the same session without creating a second one", async () => {
+    const f = privateSessionFixture({
+      registration: (attempt) => attempt === 1
+        ? { allowed: false, status: 503, code: "authority_unavailable", message: "retry the same reservation" }
+        : { allowed: true },
+    })
+    f.reserve("alice", "op_alice", "ses_alice")
+
+    const ambiguous = await f.create("alice", { id: "ses_alice", agent: "build" }, "op_alice")
+    expect(ambiguous.status).toBe(503)
+    expect(f.deleted).toEqual([])
+
+    const retry = await f.create("alice", { id: "ses_alice", agent: "plan" }, "op_alice")
+    expect(retry.status).toBe(201)
+    expect(f.created).toEqual(["ses_alice"])
+    expect(f.store.listSessions("/workspace").map((session) => session.id)).toEqual(["ses_alice"])
+    expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "plan" })
+  })
+
+  test("a configuration failure on the retry keeps the session the first attempt created", async () => {
+    const f = privateSessionFixture({
+      registration: (attempt) => attempt === 1
+        ? { allowed: false, status: 503, code: "authority_unavailable", message: "retry the same reservation" }
+        : { allowed: true },
+    })
+    f.reserve("alice", "op_alice", "ses_alice")
+    await f.create("alice", { id: "ses_alice", agent: "build" }, "op_alice")
+    f.failConfigFor("ses_alice")
+
+    const retry = await f.create("alice", { id: "ses_alice", agent: "plan" }, "op_alice")
+
+    expect(retry.status).toBe(500)
+    expect(f.deleted).toEqual([])
+    expect(f.store.getSession("ses_alice")).toMatchObject({ id: "ses_alice" })
+    expect(f.store.getSessionConfig("ses_alice")).toMatchObject({ agent: "build" })
+  })
+
+  test("a refused registration compensates only the session this request created", async () => {
+    const f = privateSessionFixture({
+      registration: (attempt) => attempt === 2
+        ? { allowed: false, status: 403, code: "session_registration_denied", message: "denied" }
+        : { allowed: true },
+    })
+    f.reserve("alice", "op_alice", "ses_alice")
+    await f.create("alice", { id: "ses_alice", agent: "build" }, "op_alice")
+    f.reserve("alice", "op_second", "ses_second")
+
+    const denied = await f.create("alice", { id: "ses_second" }, "op_second")
+
+    expect(denied.status).toBe(403)
+    expect(f.compensated).toEqual(["ses_second"])
+    expect(f.deleted).toEqual(["ses_second"])
+    expect(f.store.getSession("ses_alice")).toMatchObject({ id: "ses_alice" })
+    expect(f.store.getSession("ses_second")).toBeNull()
+  })
+
+  test("two creates racing for one reserved id produce one session and one refusal", async () => {
+    const f = privateSessionFixture({ starts: false })
+    f.reserve("alice", "op_alice", "ses_alice")
+    const release = f.holdCreates()
+
+    const first = f.create("alice", { id: "ses_alice", agent: "build" }, "op_alice")
+    const second = f.create("alice", { id: "ses_alice", agent: "plan" }, "op_alice")
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    release()
+    const statuses = (await Promise.all([first, second])).map((response) => response.status).sort((a, b) => a - b)
+
+    expect(statuses).toEqual([201, 409])
+    expect(f.created).toEqual(["ses_alice"])
+    expect(f.store.listSessions("/workspace").map((session) => session.id)).toEqual(["ses_alice"])
   })
 })

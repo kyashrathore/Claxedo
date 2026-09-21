@@ -4,19 +4,36 @@
     "id": 4242
   },
   "sender": {
-    "login": "octocat"
+    "login": "octocat",
+    "id": 583231,
+    "node_id": "MDQ6VXNlcjU4MzIzMQ==",
+    "type": "User"
   },
   "repository": {
+    "id": 1296269,
     "name": "infra",
+    "full_name": "acme/infra",
     "owner": {
-      "login": "acme"
+      "login": "acme",
+      "id": 9919,
+      "type": "Organization"
     }
   },
   "issue": {
     "number": 17,
-    "title": "Deploy is stuck"
+    "title": "Deploy is stuck",
+    "html_url": "https://github.com/acme/infra/issues/17"
   },
   "comment": {
-    "body": "@claxedo investigate the deployment failure"
+    "id": 1001,
+    "body": "@claxedo investigate the deployment failure",
+    "user": {
+      "login": "octocat",
+      "id": 583231,
+      "type": "User"
+    },
+    "created_at": "2026-09-19T10:00:00Z",
+    "updated_at": "2026-09-19T10:00:00Z",
+    "html_url": "https://github.com/acme/infra/issues/17#issuecomment-1001"
   }
 }

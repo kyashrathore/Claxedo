@@ -1,4 +1,5 @@
 import {
+  cloudflareWorkerBaseUrl,
   isSandboxDriverID,
   sandboxDriverCredentialFields,
   type SandboxDriverID,
@@ -32,9 +33,12 @@ export async function verifySandboxDriverAuth(
   const probe = sandboxDriverProbe(id, values)
   if (!probe) throw new CredentialVerificationError("Sandbox provider does not support verification")
 
-  const response = await (options.fetch ?? globalThis.fetch)(probe.url, probe.init).catch(() => {
+  const response = await (options.fetch ?? globalThis.fetch)(probe.url, { ...probe.init, redirect: "error" }).catch(() => {
     throw new CredentialVerificationError("Sandbox provider request failed")
   })
+  if (response.redirected || (response.status >= 300 && response.status < 400)) {
+    throw new CredentialVerificationError("Sandbox provider redirects are not allowed")
+  }
   if (response.ok) {
     await response.body?.cancel().catch(() => undefined)
     return "ok"
@@ -152,8 +156,10 @@ function sandboxDriverProbe(id: SandboxDriverID, auth: Record<string, string>): 
   // the deployed Worker, and its `GET /sandboxes` is the only non-mutating
   // route behind the same admin gate as the control actions.
   if (id === "cloudflare") {
-    const base = workerBase(auth.worker_url)
-    if (!base) return undefined
+    let base: string
+    try { base = cloudflareWorkerBaseUrl(auth.worker_url) } catch {
+      throw new CredentialVerificationError("Cloudflare Worker URL requires a valid HTTPS endpoint without credentials, query or fragment")
+    }
     return {
       url: `${base}/sandboxes`,
       init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.api_token}` } },
@@ -222,14 +228,4 @@ function probeAuth(id: SandboxDriverID, auth: Record<string, unknown>): Record<s
     if (value) values[field.key] = value
   }
   return Object.keys(values).length === sandboxDriverCredentialFields[id].length ? values : undefined
-}
-
-function workerBase(input: string): string | undefined {
-  try {
-    const url = new URL(input)
-    if (url.protocol !== "https:" && url.protocol !== "http:") return undefined
-    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`
-  } catch {
-    return undefined
-  }
 }

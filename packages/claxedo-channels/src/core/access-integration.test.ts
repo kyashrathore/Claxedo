@@ -174,6 +174,54 @@ describe("session lifecycle commands", () => {
     expect(rt.sent).toEqual(["ses_1:hello", "ses_2:hello"])
   })
 
+  test("an allowed sender cannot inspect or reset another sender's bound session", async () => {
+    const rt = runtime()
+    const sessions = createMemorySessionResolver(rt)
+    const actions: string[] = []
+    const core = createChannelCore({
+      runtime: rt, sessions, access: openAccess(),
+      dedup: createMemoryDedupStore({ initializedAt: 0 }),
+      resetSession: (threadKey) => sessions.reset!(threadKey),
+      authorize: async (input, context) => {
+        actions.push(context?.action ?? "missing")
+        return input.externalUserId === "owner" ? { ok: true } : { ok: false, message: "Session access denied" }
+      },
+    })
+    await core.handleInbound(envelope({ externalUserId: "owner" }), { reply() {} })
+    for (const kind of ["status", "new_session"] as const) {
+      const chunks: OutboundChunk[] = []
+      await core.handleInbound(envelope({ externalUserId: "other", intent: { kind } }), { reply: (chunk) => chunks.push(chunk) })
+      expect(chunks).toEqual([{ kind: "text", text: "Session access denied", final: true }])
+      expect(await sessions.get("telegram:install:chat:thread")).toMatchObject({ sessionId: "ses_1" })
+    }
+    expect(rt.aborted).toEqual([])
+    expect(actions).toEqual(["message", "status", "cancel"])
+    await core.handleInbound(envelope({ externalUserId: "owner", intent: { kind: "new_session" } }), { reply() {} })
+    expect(rt.aborted).toEqual(["ses_1"])
+    expect(await sessions.get("telegram:install:chat:thread")).toBeUndefined()
+  })
+
+  test.each(["refused", "failed"])("/new preserves the binding when runtime cancellation is %s", async (outcome) => {
+    const rt = runtime()
+    rt.abortSession = async () => {
+      if (outcome === "failed") throw new Error("runtime unavailable")
+      return { ok: false, status: "failed", message: "Session access denied" }
+    }
+    const sessions = createMemorySessionResolver(rt)
+    const core = createChannelCore({
+      runtime: rt, sessions, access: openAccess(),
+      dedup: createMemoryDedupStore({ initializedAt: 0 }),
+      resetSession: (threadKey) => sessions.reset!(threadKey),
+      authorize: async () => ({ ok: true }),
+    })
+    await core.handleInbound(envelope(), { reply() {} })
+    const chunks: OutboundChunk[] = []
+    await core.handleInbound(envelope({ intent: { kind: "new_session" } }), { reply: (chunk) => chunks.push(chunk) })
+    expect(await sessions.get("telegram:install:chat:thread")).toMatchObject({ sessionId: "ses_1" })
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).not.toMatchObject({ text: expect.stringContaining("Started a fresh session") })
+  })
+
   test("/sessions lists this sender's sessions", async () => {
     const rt = runtime()
     const core = createChannelCore({
@@ -196,7 +244,7 @@ describe("session lifecycle commands", () => {
     const access = createChannelAccess({
       dmPolicy: "pairing",
       store,
-      allowFrom: ["telegram:owner", "telegram:rando"],
+      allowIds: ["telegram:owner", "telegram:rando"],
       random: () => 0.1,
     })
     await access.gate({ channel: "telegram", externalUserId: "victim", chatType: "dm" })

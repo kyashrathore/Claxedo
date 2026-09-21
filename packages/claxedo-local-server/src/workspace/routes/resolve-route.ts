@@ -42,9 +42,9 @@ export function LocalWorkspaceRoutes(options: ControlPlaneRouteAuthOptions = {})
     })
     .use("/resolve", controlPlaneRouteAuth(options))
     .get("/resolve", async (c) => {
-      const workspaceId = c.req.query("workspaceId") || c.req.query("workspace")
+      const workspaceId = c.req.query("workspaceId") ?? c.req.query("workspace")
       const directory = c.req.query("directory")
-      if (!workspaceId && !directory) {
+      if (workspaceId === undefined && !directory) {
         return c.json({
           error: {
             code: "workspace_resolve_input_required",

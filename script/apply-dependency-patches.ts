@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { pathToFileURL } from "node:url"
 import path from "node:path"
+import os from "node:os"
 
 import { parseJsonObject, record, stringRecord } from "./json"
 
@@ -18,11 +19,13 @@ export async function runGitApply(directory: string, patch: string, args: string
   // shallow, synthetic, or partially-synced repository. Without both, Git
   // anchors paths at the outer worktree and can exit 0 after silently skipping
   // every package-relative file.
-  const gitDirectory = path.join(directory, `.claxedo-dependency-patch-no-git-${process.pid}-${randomUUID()}`)
+  // Keep this sentinel out of the nested Bun package path: Git for Windows
+  // rejects an overlong GIT_DIR before it even reaches --no-index handling.
+  const gitDirectory = path.join(os.tmpdir(), `claxedo-no-git-${randomUUID()}`)
   // Patches describe exact package bytes. Do not let a user's Git for Windows
   // configuration rewrite line endings while applying them.
   const child = spawnSync(
-    "git", ["-c", "core.autocrlf=false", "apply", "--no-index", "--whitespace=nowarn", ...args, patch],
+    "git", ["-c", "core.autocrlf=false", "-c", "core.longpaths=true", "apply", "--no-index", "--whitespace=nowarn", ...args, patch],
     {
       cwd: directory,
       env: {

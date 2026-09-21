@@ -8,6 +8,7 @@ import {
 } from "./config-sync"
 import {
   captureSupervisorSandboxCheckpoint,
+  recordSupervisorRuntimeSnapshot,
   resolveSandboxBindings,
   restoreSupervisorSandboxCheckpoint,
   sandboxAuthoritySatisfied,
@@ -19,15 +20,14 @@ import {
 import {
   acquireSupervisorSandboxHold,
   cleanExpiredSupervisorSandboxHolds,
+  createSupervisorSandboxLeaseStore,
   getSupervisorSandboxLease,
   listSupervisorSandboxLeases,
-  recordSupervisorSandboxLeaseReady,
   releaseSupervisorSandboxHold,
   releaseSupervisorSandboxLease,
   updateSupervisorSandboxLease,
   sandboxLeaseFromRow,
   sandboxLeaseStatus,
-  sandboxLeaseUrl,
   sandboxTargetFromLease,
 } from "../../sandbox/stores/sqlite-supervisor-state"
 import {
@@ -40,7 +40,6 @@ import type {
   SandboxEnsureResult,
   SandboxLease,
   SandboxManager,
-  SandboxRegisterInput,
   SandboxTarget,
   SandboxTargetResult,
 } from "@claxedo/sandbox-manager"
@@ -186,6 +185,12 @@ export function releaseSupervisorSandbox(workspaceId: string) {
 export async function stopSupervisorSandbox(workspaceId: string, reason = "manual") {
   const item = runtimes.get(workspaceId)
   if (!item) return
+  // A start in flight owns this entry and its lease epoch until it settles,
+  // and it publishes a url after awaiting a health probe and a config push.
+  // Stopping underneath it retires a target the start then advertises anyway,
+  // so this queues behind it the way the sandbox manager queues one lifecycle
+  // operation behind another.
+  if (item.start) await item.start.catch(() => undefined)
   if (item.status === "stopped") return
   const isRemote = item.remote
   const stopped = isRemote ? await stopSandbox(item, reason) : { keepSandbox: false }
@@ -269,12 +274,8 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
         }
       }
     },
-    async register(workspaceId, input) {
-      return recordSupervisorRuntimeSnapshot(workspaceId, input)
-    },
-    async heartbeat(workspaceId, input) {
-      return recordSupervisorRuntimeSnapshot(workspaceId, input)
-    },
+    register: recordSupervisorRuntimeSnapshot,
+    heartbeat: recordSupervisorRuntimeSnapshot,
     async target(workspaceId) {
       const entry = runtimes.get(workspaceId)
       const lease = getSupervisorSandboxLease(workspaceId)
@@ -303,9 +304,9 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
       return await restoreSupervisorSandboxCheckpoint(runtimeState(ws), input)
     },
     async stop(workspaceId) {
+      const observed = getSupervisorSandboxLease(workspaceId)
       await stopSupervisorSandbox(workspaceId, "sandbox_manager_stop")
-      const lease = updateSupervisorSandboxLease(workspaceId, { status: "stopped" })
-      return { ok: true, status: sandboxLeaseStatus(lease?.status ?? "stopped") }
+      return { ok: true, status: await recordSupervisorSandboxLeaseStopped(observed) }
     },
     async destroy(workspaceId) {
       await discardSupervisorSandbox(workspaceId, "sandbox_manager_destroy")
@@ -394,6 +395,29 @@ function sandboxTargetResultFromLease(lease: SandboxLeaseRow | undefined): Sandb
   return sandboxReadyResult(target, lease, "us-east")
 }
 
+/**
+ * Record a stop against the lease the stop observed.
+ *
+ * `stopSandbox` stops through the canonical manager, which records the stop
+ * itself on the epoch it stopped; this covers the paths that return before
+ * reaching it — a local workspace, no driver, no recorded sandbox — and a
+ * repeat stop, which writes nothing and still succeeds. Fenced on that
+ * observed epoch and status so a replacement provisioned while the driver
+ * call ran keeps its own status, and carrying no identity so the new epoch's
+ * target survives a stop aimed at the old one.
+ */
+async function recordSupervisorSandboxLeaseStopped(
+  observed: SandboxLeaseRow | undefined,
+): Promise<SandboxLease["status"]> {
+  if (!observed) return "stopped"
+  const status = sandboxLeaseStatus(observed.status)
+  if (status === "stopped" || status === "destroyed") return status
+  const store = createSupervisorSandboxLeaseStore()
+  const stopped = await store.update(observed.workspace_id, observed.epoch, { status: "stopped" }, status)
+  if (stopped) return stopped.status
+  return (await store.get(observed.workspace_id))?.status ?? "stopped"
+}
+
 function sandboxTargetFromSupervisorState(state: WorkspaceRuntimeState): SandboxTarget | undefined {
   if (!state.url || !state.sandbox_id) return undefined
   const lease = getSupervisorSandboxLease(state.ws.id)
@@ -412,35 +436,6 @@ function sandboxTargetFromSupervisorState(state: WorkspaceRuntimeState): Sandbox
       }
       : undefined,
   }
-}
-
-function recordSupervisorRuntimeSnapshot(workspaceId: string, input: SandboxRegisterInput) {
-  const lease = getSupervisorSandboxLease(workspaceId)
-  if (!lease) return { ok: false as const, reason: "runtime_lease_missing" }
-  const epoch = input.epoch ?? lease.epoch
-  if (lease.epoch !== epoch) return { ok: false as const, reason: "runtime_lease_epoch_mismatch" }
-  const timestamp = input.now ?? Date.now()
-  if (!input.ok || input.status === "unhealthy") {
-    updateSupervisorSandboxLease(workspaceId, {
-      status: "unhealthy",
-      last_heartbeat_at: timestamp,
-      last_health_failure_at: timestamp,
-      last_error: input.status ?? "runtime_unhealthy",
-    })
-    return { ok: true as const, status: "unavailable" as const }
-  }
-  const url = input.url ?? sandboxLeaseUrl(lease)
-  if (!url) return { ok: false as const, reason: "host_url_missing" }
-  recordSupervisorSandboxLeaseReady({
-    workspaceId,
-    driver: lease.driver,
-    sandboxId: input.sandboxId ?? lease.sandbox_id,
-    url,
-    hostId: input.hostId ?? lease.lease_id,
-    driverResourceId: input.driverResourceId ?? lease.driver_resource_id,
-  })
-  if (input.active) updateSupervisorSandboxLease(workspaceId, { last_activity_at: timestamp })
-  return { ok: true as const, status: "ready" as const }
 }
 
 async function startRuntime(state: WorkspaceRuntimeState, stated?: SandboxBindings) {

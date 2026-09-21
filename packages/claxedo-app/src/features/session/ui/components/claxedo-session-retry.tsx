@@ -10,7 +10,7 @@ type SdkSessionStatus =
 
 export type SessionRecoveringStatus = {
   type: "recovering"
-  kind: "process_restart"
+  kind: "process_restart" | "uncertain_execution"
   message: string
 }
 
@@ -35,7 +35,7 @@ export function ClaxedoSessionRetry(props: { status: ClaxedoSessionStatus; show?
               <div class="flex items-start gap-2">
                 <Spinner class="size-4 mt-0.5" />
                 <div class="min-w-0">
-                  <div data-slot="session-turn-retry-message">Recovering ACP client...</div>
+                  <div data-slot="session-turn-retry-message">{status().kind === "uncertain_execution" ? "Waiting for the agent to confirm cancellation..." : "Recovering ACP client..."}</div>
                   <div data-slot="session-turn-retry-info">{status().message}</div>
                 </div>
               </div>

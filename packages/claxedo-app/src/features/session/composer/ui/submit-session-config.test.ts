@@ -38,3 +38,9 @@ describe("existing session configuration", () => {
     expect(errors[1]).toEqual(new Error("The session configuration is not available yet. Try again after it loads."))
   })
 })
+
+test("authoritative existing connection config may omit its agent-owned model", async () => {
+  const errors: unknown[] = []
+  expect(await loadExistingSubmitConfig(async () => ({ harness: { kind: "connection", connectionId: "agent" }, agent: "build" }), (error) => errors.push(error))).toEqual({ harnessType: { kind: "connection", connectionId: "agent" }, agent: "build" })
+  expect(errors).toEqual([])
+})

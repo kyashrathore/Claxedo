@@ -2,6 +2,26 @@
 
 Claxedo's control-plane / gateway server. Node-only Hono app.
 
+## Self-hosted machine operators
+
+In signed self-hosted mode, machine-wide plugin configuration, machine enrollment and deleting a
+workspace placed on this machine require an authenticated subject listed in
+`CLAXEDO_OPERATOR_SUBJECTS` (comma-separated).
+Use the stable user ID returned by the embedded issuer's signup/signin response,
+not an email address or organization role. Configure this on the server and
+restart it after adding or removing an operator. An empty list denies plugin
+reads, activation, source management, signed-runtime handoff, enrollment and machine-placed
+workspace deletion to all signed users. Ordinary workspace membership grants no machine
+configuration authority. A provisioned cloud workspace is different: its deletion is the
+control plane's decision about that stored workspace, and operating this machine does not
+grant it.
+The unsigned single-user deployment continues to require a loopback peer.
+
+Workspace runtime control tokens are generated separately for each workspace.
+Setting `WORKSPACE_RUNTIME_CONFIG_TOKEN` in the control-plane environment no
+longer overrides those credentials. The supervisor still delivers the generated
+token to its own runtime through that runtime's environment.
+
 ## Package Boundary
 
 This package is intentionally private while the public control-plane contract is

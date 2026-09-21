@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, type ParentProps } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, untrack, type ParentProps } from "solid-js"
 import { sessionPerf } from "@/platform/performance/session-perf"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -492,6 +492,32 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const activeSurface = createMemo(() => {
     const id = state.wb.selectors.focusedContent()
     return id ? state.meta.get(id) : undefined
+  })
+  let openedPanelRoute: string | undefined
+  createEffect(() => {
+    const query = new URLSearchParams(location.search)
+    const panel = query.get("panel")
+    if (panel !== "processes" && panel !== "changes") {
+      openedPanelRoute = undefined
+      return
+    }
+    const key = `${location.pathname}${location.search}`
+    if (openedPanelRoute === key || !state.ready()) return
+    const surface = activeSurface()
+    const requestedSession = sessionId()
+    if (requestedSession && surface?.sessionId !== requestedSession) return
+    const directory = requestedSession ? surface?.directory : routeDirectory()
+    if (!directory) return
+    if (!requestedSession && surface?.directory && !sameWorkspaceDirectory(surface.directory, directory)) return
+    const process = query.get("process")
+    openedPanelRoute = key
+    untrack(() => state.workspacePanel.open("review", {
+      workspaceDir: directory,
+      navigator: panel,
+      focus: panel === "processes" && process
+        ? { kind: "process", processId: process }
+        : { kind: "review" },
+    }))
   })
   const directSessionRouteId = createMemo(() => {
     const route = shellRoute()

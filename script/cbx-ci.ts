@@ -38,8 +38,10 @@ const releaseJobs = ["pr-diagnostics-linux-aws", "pr-release-gates-linux-x64-aws
 const releaseJobSet = new Set<string>(releaseJobs)
 
 const focusedJobs = [
+  "focus-workspace-files-linux-aws",
   "focus-agent-sdk-runtime-windows",
   "focus-server-core-windows",
+  "focus-helpers-windows",
   "focus-e2e-tier-real-claude-native-linux-aws",
   "focus-e2e-tier-real-codex-native-linux-aws",
   "focus-e2e-tier-real-cursor-linux-aws",

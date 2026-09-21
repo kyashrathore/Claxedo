@@ -1,6 +1,6 @@
 import { asRecord } from "@claxedo/agent-runtime-contract"
 import { spawn, type ChildProcess } from "child_process"
-import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
+import { isWindowsShimBinary, killHarnessProcess, drainHarnessProcessGroup } from "../shared/windows-process"
 import { ndJsonStream, type Stream } from "@agentclientprotocol/sdk"
 import {
   createHttpStream,
@@ -18,10 +18,12 @@ export type ACPTransportEnv = Record<string, string | undefined>
 export type ACPTransport = {
   kind: "stdio" | "streamable-http" | "websocket"
   stream: Stream
+  /** Explicit operator assertion that the agent can read this workspace. */
+  sharedFilesystem?: boolean
   metadata: Record<string, unknown>
   pid?: number | null
   alive: boolean
-  dispose(): void
+  dispose(): void | Promise<void>
 }
 
 export type ACPTransportFactoryInput = {
@@ -43,6 +45,7 @@ export type ACPProcessConnection = {
   args?: string[]
   env?: ACPTransportEnv
   supportsMcpServers?: boolean
+  sharedFilesystem?: boolean
 }
 
 export type ACPStreamableHttpConnection = {
@@ -50,6 +53,7 @@ export type ACPStreamableHttpConnection = {
   url: string
   headers?: Record<string, string>
   supportsMcpServers?: boolean
+  sharedFilesystem?: boolean
 }
 
 export type ACPWebSocketConnection = {
@@ -58,16 +62,30 @@ export type ACPWebSocketConnection = {
   protocols?: string[]
   headers?: Record<string, string>
   supportsMcpServers?: boolean
+  sharedFilesystem?: boolean
 }
 
 export type ACPConnection = ACPProcessConnection | ACPStreamableHttpConnection | ACPWebSocketConnection
 
+// Retirement outlives adapter instances. A replacement must not race an old
+// wrapper's descendants that still own the agent's backing session storage.
+const retiring = new Map<string, Set<Promise<void>>>()
+function launchIdentity(directory: string, command: string, args: string[]) {
+  return JSON.stringify([directory, command, args])
+}
+export async function waitForACPTransportRetirement(directory: string, connection: ACPConnection) {
+  if (connection.kind !== "process") return
+  const key = launchIdentity(directory, connection.command, connection.args ?? [])
+  while (retiring.get(key)?.size) await Promise.all(retiring.get(key)!)
+}
+
 export function validateACPConnection(input: unknown): ACPConnection {
   const row = asRecord(input)
   if (!row) throw new Error("connection must be an object")
+  const sharedFilesystem = optionalBoolean(row.sharedFilesystem, "sharedFilesystem")
   const supportsMcpServers = optionalBoolean(row.supportsMcpServers, "supportsMcpServers")
   if (row.kind === "process") {
-    requireOnlyFields(row, ["kind", "command", "args", "env", "supportsMcpServers"])
+    requireOnlyFields(row, ["kind", "command", "args", "env", "supportsMcpServers", "sharedFilesystem"])
     if (typeof row.command !== "string" || row.command.length === 0) throw new Error("process connection requires command")
     return {
       kind: "process",
@@ -75,10 +93,11 @@ export function validateACPConnection(input: unknown): ACPConnection {
       ...(stringArray(row.args, "args") ? { args: stringArray(row.args, "args") } : {}),
       ...(stringRecord(row.env, "env") ? { env: stringRecord(row.env, "env") } : {}),
       ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}),
+      ...(sharedFilesystem !== undefined ? { sharedFilesystem } : {}),
     }
   }
   if (row.kind === "streamable-http") {
-    requireOnlyFields(row, ["kind", "url", "headers", "supportsMcpServers"])
+    requireOnlyFields(row, ["kind", "url", "headers", "supportsMcpServers", "sharedFilesystem"])
     if (typeof row.url !== "string" || row.url.length === 0) throw new Error("streamable-http connection requires url")
     requireUrlProtocol(row.url, ["http:", "https:"], "streamable-http")
     return {
@@ -86,10 +105,11 @@ export function validateACPConnection(input: unknown): ACPConnection {
       url: row.url,
       ...(stringRecord(row.headers, "headers") ? { headers: stringRecord(row.headers, "headers") } : {}),
       ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}),
+      ...(sharedFilesystem !== undefined ? { sharedFilesystem } : {}),
     }
   }
   if (row.kind === "websocket") {
-    requireOnlyFields(row, ["kind", "url", "protocols", "headers", "supportsMcpServers"])
+    requireOnlyFields(row, ["kind", "url", "protocols", "headers", "supportsMcpServers", "sharedFilesystem"])
     if (typeof row.url !== "string" || row.url.length === 0) throw new Error("websocket connection requires url")
     requireUrlProtocol(row.url, ["ws:", "wss:"], "websocket")
     return {
@@ -98,6 +118,7 @@ export function validateACPConnection(input: unknown): ACPConnection {
       ...(stringArray(row.protocols, "protocols") ? { protocols: stringArray(row.protocols, "protocols") } : {}),
       ...(stringRecord(row.headers, "headers") ? { headers: stringRecord(row.headers, "headers") } : {}),
       ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}),
+      ...(sharedFilesystem !== undefined ? { sharedFilesystem } : {}),
     }
   }
   throw new Error("connection kind must be process, streamable-http, or websocket")
@@ -128,6 +149,7 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
   const proc = spawn(windowsShim ? `"${input.command}"` : input.command, input.args, {
     cwd: input.directory,
     stdio: ["pipe", "pipe", "pipe"],
+    detached: process.platform !== "win32",
     ...(windowsShim ? { shell: true } : {}),
     env: acpSpawnEnv({
       ...process.env,
@@ -138,8 +160,39 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
   proc.stderr?.on("data", (data: Buffer) => {
     input.onStderr(data.toString().trim())
   })
-  proc.on("exit", input.onExit)
-  proc.on("error", input.onError)
+  let resolveExit!: () => void
+  const exited = new Promise<void>((resolve) => { resolveExit = resolve })
+  let retirement: Promise<void> | undefined
+  const retire = () => {
+    if (retirement) return retirement
+    const key = launchIdentity(input.directory, input.command!, input.args)
+    retirement = (async () => {
+      const killer = process.platform === "win32" ? killHarnessProcess(proc, "SIGTERM", true) : undefined
+      const tree = killer ? new Promise<void>((resolve, reject) => {
+        killer.once("error", reject)
+        killer.once("exit", (code) => code === 0 ? resolve() : reject(new Error(`ACP process-tree termination failed (${code})`)))
+      }) : drainHarnessProcessGroup(proc, 5_000)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      try {
+        await Promise.race([
+          Promise.all([exited, tree]),
+          new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("ACP process-tree termination timed out")), 5_000) }),
+        ])
+      } finally { if (timer) clearTimeout(timer) }
+    })()
+    const pending = retiring.get(key) ?? new Set<Promise<void>>()
+    pending.add(retirement)
+    retiring.set(key, pending)
+    // Failed retirement remains a fence: never pretend a still-owned writer
+    // was released. Attach the rejection handler even for synchronous dispose.
+    void retirement.then(() => {
+      pending.delete(retirement!)
+      if (!pending.size) retiring.delete(key)
+    }, () => {})
+    return retirement
+  }
+  proc.on("exit", (code, signal) => { resolveExit(); retire(); input.onExit(code, signal) })
+  proc.on("error", (error) => { resolveExit(); retire(); input.onError(error) })
 
   return {
     kind: "stdio",
@@ -158,7 +211,7 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
       return proc.exitCode === null && !proc.killed
     },
     dispose() {
-      killHarnessProcess(proc, "SIGTERM")
+      return retire()
     },
   }
 }
@@ -193,6 +246,15 @@ export function createWebSocketACPTransportFactory(options: ACPWebSocketTranspor
 }
 
 export function createACPTransportFactory(connection: ACPConnection): ACPTransportFactory {
+  const factory = connectionTransportFactory(connection)
+  return (input) => {
+    const transport = factory(input)
+    transport.sharedFilesystem = connection.sharedFilesystem === true
+    return transport
+  }
+}
+
+function connectionTransportFactory(connection: ACPConnection): ACPTransportFactory {
   switch (connection.kind) {
     case "process":
       return createStdioACPTransport

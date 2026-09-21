@@ -29,9 +29,14 @@ type BaseInternals = {
   }
 }
 
+// These fixtures isolate lifecycle operations; command projection is exercised over real ACP streams.
+class LifecycleTestAdapter extends AcpHarnessAdapter {
+  protected override bindCommandUpdates() {}
+}
+
 /** `Extra` names the extra internals a given test drives; see workspace-behavior.test.ts. */
 function adapter<Extra extends object = Record<never, never>>() {
-  const out = Object.create(AcpHarnessAdapter.prototype) as WithInternals<
+  const out = Object.create(LifecycleTestAdapter.prototype) as WithInternals<
     AcpHarnessAdapter,
     Omit<BaseInternals, keyof Extra> & Extra
   >
@@ -107,7 +112,7 @@ describe("AcpHarnessAdapter.createSession", () => {
     }
   })
 
-  it("spawns a separate process per session", async () => {
+  it("spawns separate processes for isolated adapters and workspaces", async () => {
     let spawns = 0
     let sessions = 0
     const make = () => {
@@ -115,6 +120,8 @@ describe("AcpHarnessAdapter.createSession", () => {
       return {
         alive: true,
         cachedConfigOptions: null,
+        supportsForkSession: () => false,
+        supportsSubagents: () => false,
         initialize: async () => {},
         newSession: async (_directory: string) => `acp-${++sessions}`,
         dispose: () => {},

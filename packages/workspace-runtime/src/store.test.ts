@@ -187,6 +187,36 @@ void describe("RuntimeStore", () => {
     assert.deepEqual(new RuntimeStore(root).listQueuedPrompts().map((row) => row.seq), [2])
   })
 
+  void it("queue identities are not reused after deletion and restart", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    const input = { sessionId: "ses_queue", parts: [{ type: "text" as const, text: "S" }], delivery: "queue" as const }
+    const old = first.queuePrompt(input)
+    first.deleteQueuedPrompt(old.sessionId, old.seq)
+    first.close()
+    const restarted = new RuntimeStore(root)
+    const next = restarted.queuePrompt(input)
+    assert.equal(next.seq, old.seq + 1)
+    restarted.deleteQueuedPrompt(old.sessionId, old.seq)
+    assert.equal(restarted.replaceQueuedPromptParts(old.sessionId, old.seq, []), false)
+    assert.equal(restarted.claimQueuedPromptDelivery(old.sessionId, old.seq, "stale", "steer"), false)
+    assert.deepEqual(restarted.listQueuedPrompts(), [next])
+  })
+
+  void it("queue persistence deduplicates by session and message identity across store handles", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    const second = new RuntimeStore(root)
+    const input = { sessionId: "ses_queue", messageId: "same-id", parts: [{ type: "text" as const, text: "same text" }], delivery: "queue" as const }
+    const original = first.queuePrompt(input)
+    assert.deepEqual(second.queuePrompt({ ...input, parts: [] }), original)
+    assert.equal(first.listQueuedPrompts().length, 1)
+    // Identical text with another id is a distinct input; another session is isolated.
+    assert.equal(second.queuePrompt({ ...input, messageId: "other-id" }).seq, original.seq + 1)
+    assert.equal(second.queuePrompt({ ...input, sessionId: "other-session" }).seq, 1)
+    assert.equal(first.listQueuedPrompts().length, 3)
+  })
+
   void it("deleting a session forgets the prompts queued for it", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
@@ -353,6 +383,157 @@ void describe("RuntimeStore", () => {
     })
     assert.equal(reopened.listSubagents("parent")[0]?.wake, "delivered")
     assert.deepEqual(reopened.listPendingSubagentWakes(), [])
+    reopened.close()
+  })
+
+  void it("keeps a child's origin actor and authority across reopen, and later observations cannot move it", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.admit({
+      parentSessionId: "parent",
+      observation: { observationId: "create", subagentKey: "subagent_host", status: "pending", childSessionId: "child" },
+      allocateKey: () => "unused",
+    })
+    store.markPublished("parent", "create")
+    const origin = {
+      provenance: "relay-replayed" as const,
+      actor: { actorId: "https://idp.example|bob", actorKind: "human" as const },
+      authority: { managed: true as const, workspaceId: "workspace_1", orgId: "org_1", role: "editor" as const },
+    }
+    store.recordSubagentOrigin("parent", "subagent_host", origin)
+    store.recordSubagentOrigin("parent", "subagent_host", {
+      provenance: "relay-replayed",
+      actor: { actorId: "https://idp.example|mallory", actorKind: "human" },
+      authority: { managed: true, workspaceId: "workspace_1", orgId: "org_1", role: "owner" },
+    })
+    assert.deepEqual(store.subagentOrigin("parent", "subagent_host"), origin)
+    store.admit({
+      parentSessionId: "parent",
+      observation: { observationId: "finished", subagentKey: "subagent_host", status: "completed", wake: "pending" },
+      allocateKey: () => "unused",
+    })
+    store.markPublished("parent", "finished")
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(reopened.subagentOrigin("parent", "subagent_host"), origin)
+    assert.equal(reopened.subagentOrigin("parent", "unknown_subagent"), undefined)
+    // The origin is identity for admission, not something the parent's
+    // subagent list hands to whoever may read the session.
+    assert.equal("origin" in (reopened.listSubagents("parent")[0] ?? {}), false)
+    // A row that is not there cannot quietly swallow the identity: the child
+    // would exist and never be able to wake anyone.
+    assert.throws(
+      () => reopened.recordSubagentOrigin("parent", "subagent_absent", origin),
+      /has no row to record a turn origin on/,
+    )
+    reopened.close()
+  })
+
+  void it("cannot upgrade or reassign an origin a pre-provenance build already recorded", () => {
+    const root = tmp()
+    const historical = new RuntimeStore(root)
+    historical.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    historical.admit({
+      parentSessionId: "parent",
+      observation: { observationId: "create", subagentKey: "subagent_legacy", status: "pending" },
+      allocateKey: () => "unused",
+    })
+    historical.markPublished("parent", "create")
+    // The row an earlier build left: actor and authority recorded, the column
+    // naming how they were admitted not yet invented.
+    db(historical)
+      .prepare(`UPDATE session_subagent SET origin_actor_id = ?, origin_actor_kind = 'human', origin_authority_json = ?
+        WHERE parent_session_id = 'parent' AND subagent_key = 'subagent_legacy'`)
+      .run("https://idp.example|bob", JSON.stringify({ managed: true, workspaceId: "workspace_1", orgId: "org_1", role: "editor" }))
+    historical.close()
+
+    const upgraded = new RuntimeStore(root)
+    assert.equal(upgraded.subagentOrigin("parent", "subagent_legacy"), undefined)
+    upgraded.recordSubagentOrigin("parent", "subagent_legacy", { provenance: "loopback-direct" })
+    upgraded.recordSubagentOrigin("parent", "subagent_legacy", {
+      provenance: "relay-replayed",
+      actor: { actorId: "https://idp.example|mallory", actorKind: "human" },
+      authority: { managed: true, workspaceId: "workspace_1", orgId: "org_1", role: "owner" },
+    })
+
+    // Neither call took: the actor it already holds is not empty, and the row
+    // stays unreadable rather than becoming someone else's or becoming local.
+    const stored = db(upgraded)
+      .prepare(`SELECT origin_provenance, origin_actor_id FROM session_subagent WHERE parent_session_id = 'parent' AND subagent_key = 'subagent_legacy'`)
+      .get() as { origin_provenance: string | null; origin_actor_id: string | null }
+    assert.deepEqual(stored, { origin_provenance: null, origin_actor_id: "https://idp.example|bob" })
+    assert.equal(upgraded.subagentOrigin("parent", "subagent_legacy"), undefined)
+    upgraded.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.equal(reopened.subagentOrigin("parent", "subagent_legacy"), undefined)
+    reopened.close()
+  })
+
+  void it("refuses a local origin that also names an actor instead of reading it as local", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.admit({
+      parentSessionId: "parent",
+      observation: { observationId: "create", subagentKey: "subagent_mixed", status: "pending" },
+      allocateKey: () => "unused",
+    })
+    store.markPublished("parent", "create")
+    // Only a migration could write this pair; answering it as local would run
+    // a verified actor's wake unleased.
+    db(store)
+      .prepare(`UPDATE session_subagent SET origin_provenance = 'loopback-direct', origin_actor_id = ?
+        WHERE parent_session_id = 'parent' AND subagent_key = 'subagent_mixed'`)
+      .run("https://idp.example|bob")
+
+    assert.equal(store.subagentOrigin("parent", "subagent_mixed"), undefined)
+    store.close()
+  })
+
+  void it("keeps a local child's provenance across reopen, and tells it apart from a row that recorded none", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    for (const key of ["subagent_local", "subagent_legacy"]) {
+      store.admit({
+        parentSessionId: "parent",
+        observation: { observationId: `create_${key}`, subagentKey: key, status: "pending" },
+        allocateKey: () => "unused",
+      })
+      store.markPublished("parent", `create_${key}`)
+    }
+    store.recordSubagentOrigin("parent", "subagent_local", { provenance: "loopback-direct" })
+    store.recordSubagentOrigin("parent", "subagent_local", {
+      provenance: "relay-replayed",
+      actor: { actorId: "https://idp.example|mallory", actorKind: "human" },
+      authority: { managed: true, workspaceId: "workspace_1", orgId: "org_1", role: "owner" },
+    })
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    // Known-local stays known-local; a row nobody recorded stays unknown, and
+    // the two are never the same answer.
+    assert.deepEqual(reopened.subagentOrigin("parent", "subagent_local"), { provenance: "loopback-direct" })
+    assert.equal(reopened.subagentOrigin("parent", "subagent_legacy"), undefined)
+    reopened.close()
+  })
+
+  void it("keeps a queued prompt's provenance across reopen so a delayed local turn is still local", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "s1", directory: "/workspace", agentSessionId: "a1" })
+    store.queuePrompt({ sessionId: "s1", messageId: "local", parts: [], delivery: "queue", provenance: "loopback-direct" })
+    store.queuePrompt({ sessionId: "s1", messageId: "legacy", parts: [], delivery: "queue" })
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(
+      reopened.listQueuedPrompts().map((row) => [row.messageId, row.provenance]),
+      [["local", "loopback-direct"], ["legacy", undefined]],
+    )
     reopened.close()
   })
 
@@ -2395,6 +2576,63 @@ void describe("RuntimeStore", () => {
     assert.equal(reopened.getSessionConfig("restricted")?.permissionState, undefined)
   })
 
+  void it("persists startup questions without an executable session or cross-directory visibility", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    const binding = { sessionId: "startup", directory: "/work", workspaceId: "workspace", connectionId: "connection:agent", operationId: "operation" }
+    store.sessionStarts.begin(binding)
+    store.appendEvent({ sessionId: "startup", payload: questionAsked({ id: "startup-question", sessionID: "startup", questions: [{ header: "Setup", question: "Continue?", options: [] }] }) })
+    assert.equal(store.getSession("startup"), null)
+    assert.deepEqual(store.listSessions("/work"), [])
+    assert.equal(store.listQuestions("/work")[0]?.id, "startup-question")
+    assert.deepEqual(store.listQuestions("/other"), [])
+    store.close()
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(reopened.sessionStarts.get("startup")?.binding, binding)
+    assert.equal(reopened.listQuestions("/work")[0]?.id, "startup-question")
+    assert.equal(reopened.getSession("startup"), null)
+  })
+
+  void it("preserves elicitation schema through reload without resurrecting process resolvers", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "elicitation", directory: "/work", agentSessionId: "agent", createdAt: 1 })
+    const questions = [{ header: "Agent", question: "Choose", options: [], elicitation: {
+      mode: "form" as const, agentName: "Agent", message: "Choose", requestedSchema: { type: "object" as const,
+        properties: { count: { type: "integer" as const, default: 2 } }, required: ["count"] },
+    } }]
+    first.appendEvent({ sessionId: "elicitation", payload: questionAsked({ id: "q1", sessionID: "elicitation", questions }) })
+    first.close()
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(reopened.listQuestions("/work")[0]?.questions, questions)
+    reopened.markSessionInterrupted("elicitation", "Agent process lost")
+    assert.deepEqual(reopened.listQuestions("/work"), [])
+  })
+
+  void it("persists agent command updates, clears them, and isolates sessions", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    for (const sessionId of ["one", "two"]) first.bindSession({ sessionId, directory: "/work", agentSessionId: `agent-${sessionId}`, createdAt: 1 })
+    const commands = [{ name: "review", description: "Review changes", input: { hint: "<path>" } }]
+    first.appendEvent({ sessionId: "one", payload: { type: "session.commands", properties: { sessionID: "one", commands } } })
+    assert.deepEqual(first.getSession("one")?.commands, commands)
+    assert.equal(first.getSession("two")?.commands, undefined)
+    first.close()
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(reopened.getSession("one")?.commands, commands)
+    reopened.bindSession({ sessionId: "one", directory: "/work", agentSessionId: "agent-one-resumed", createdAt: 1 })
+    assert.deepEqual(reopened.getSession("one")?.commands, commands)
+    assert.deepEqual(reopened.listSessions("/work").find((session) => session.id === "one")?.commands, commands)
+    reopened.appendEvent({ sessionId: "one", payload: { type: "session.commands", properties: { sessionID: "one", commands: [] } } })
+    reopened.close()
+    const cleared = new RuntimeStore(root)
+    assert.deepEqual(cleared.getSession("one")?.commands, [])
+    cleared.updateSessionConfig("one", { harness: { id: "example", access: "connection" } })
+    cleared.appendEvent({ sessionId: "one", payload: { type: "session.commands", properties: { sessionID: "one", commands } } })
+    cleared.updateSessionConfig("one", { harness: { id: "codex", access: "native" } })
+    assert.equal(cleared.getSession("one")?.commands, undefined)
+  })
+
   void it("persists session config across replay", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
@@ -2903,4 +3141,99 @@ void describe("streamed delta settlement", () => {
     assert.equal(text(reopened, "s1"), "never settled")
     reopened.close()
   })
+})
+
+void it("later events cannot checkpoint past a failed approval, and repair replays it before continuing", () => {
+  const root = tmp()
+  const store = new RuntimeStore(root)
+  store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  store.bindSession({ sessionId: "s2", directory: "/other", agentSessionId: "a2", createdAt: 1 })
+  const permission = { id: "blocked", sessionID: "s1", permission: "command", patterns: [], always: [], metadata: {} }
+  db(store).exec("ALTER TABLE pending_permission DROP COLUMN options_json")
+  assert.throws(() => store.appendEvent({ sessionId: "s1", payload: permissionAsked(permission) }), /options_json/)
+  const checkpoint = () => db(store).prepare("SELECT last_seq FROM journal_checkpoint WHERE session_id = ?").get("s1")
+  const before = checkpoint()
+  assert.throws(() => store.appendEvent({ sessionId: "s1", payload: sessionIdle("s1") }), /options_json/)
+  assert.throws(() => store.appendEvent({ sessionId: "s1", payload: messagePartDelta({ sessionID: "s1", messageID: "m", partID: "p", field: "text", delta: "later" }) }), /options_json/)
+  assert.deepEqual(checkpoint(), before)
+  // A failed session does not prevent an unrelated session from progressing.
+  store.appendEvent({ sessionId: "s2", payload: sessionIdle("s2") })
+  db(store).exec("ALTER TABLE pending_permission ADD COLUMN options_json TEXT")
+  store.appendEvent({ sessionId: "s1", payload: sessionIdle("s1") })
+  assert.deepEqual(store.listPermissions("/work"), [permission])
+  store.close()
+  const reopened = new RuntimeStore(root)
+  assert.deepEqual(reopened.listPermissions("/work"), [permission])
+})
+
+void it("migrates existing permission storage and replays an unprojected approval", () => {
+  const root = tmp()
+  const first = new RuntimeStore(root)
+  first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+  const existing = { id: "existing", sessionID: "s1", permission: "command", patterns: ["pwd"], always: [], metadata: {} }
+  first.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: permissionAsked(existing) })
+  db(first).exec("ALTER TABLE pending_permission DROP COLUMN options_json")
+  const pending = { ...existing, id: "unprojected", options: [{ id: "accept", label: "Allow once" }] }
+  // The request is journaled before projection fails against the old schema.
+  assert.throws(() => first.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: permissionAsked(pending) }), /options_json/)
+  first.close()
+
+  const next = new RuntimeStore(root)
+  assert.deepEqual(next.listPermissions("/work"), [existing, pending])
+  assert.deepEqual(next.listPermissions("/other"), [])
+  next.close()
+  const reopened = new RuntimeStore(root)
+  assert.deepEqual(reopened.listPermissions("/work"), [existing, pending])
+})
+
+void it("persists provider permission options across reload, preserving empty versus absent", () => {
+  const root = tmp()
+  const first = new RuntimeStore(root)
+  first.bindSession({ sessionId: "options-session", directory: "/work", agentSessionId: "options-agent", createdAt: 1 })
+  const choices = [{ id: '{"persist":"session"}', label: "Accept for session", description: "Supplied scope" }]
+  const permissions = [
+    { id: "dynamic", options: choices },
+    { id: "empty", options: [] },
+    { id: "native" },
+  ].map((item) => ({ ...item, sessionID: "options-session", permission: "mcp", patterns: [], always: [], metadata: {} }))
+  for (const permission of permissions) {
+    first.appendEvent({ sessionId: "options-session", agentSessionId: "options-agent", payload: permissionAsked(permission) })
+  }
+  assert.deepEqual(first.listPermissions("/work"), permissions)
+  first.close()
+  const reopened = new RuntimeStore(root)
+  assert.deepEqual(reopened.listPermissions("/work"), permissions)
+  assert.deepEqual(reopened.listPermissions("/other"), [])
+})
+
+void it("preserves canonical title precedence across binding, replay and legacy projection migration", () => {
+  const root = tmp()
+  const store = new RuntimeStore(root)
+  store.bindSession({ sessionId: "titled", directory: "/work", title: "New Session", agentSessionId: "agent-title" })
+  const update = (title: string, titleSource?: "prompt" | "harness" | "user") => store.appendEvent({
+    sessionId: "titled", payload: sessionUpdated({ id: "titled", directory: "/work", title, ...(titleSource ? { titleSource } : {}), time: { created: 1, updated: 20 } }),
+  })
+  update("Prompt placeholder", "prompt")
+  update("Agent title", "harness")
+  update("Late unranked title")
+  assert.equal(store.getSession("titled")?.title, "Agent title")
+  assert.equal(store.getSession("titled")?.titleSource, "harness")
+  store.bindSession({ sessionId: "titled", directory: "/work", title: "Agent title", agentSessionId: "agent-resumed" })
+  assert.equal(store.getSession("titled")?.titleSource, "harness")
+  store.updateSession("titled", { title: "My chosen title" })
+  update("Late generated title", "harness")
+  assert.equal(store.getSession("titled")?.title, "My chosen title")
+  assert.equal(store.getSession("titled")?.titleSource, "user")
+  assert.equal(store.listSessions("/work")[0]?.titleSource, "user")
+  const timestamp = store.getSession("titled")?.time.updated
+  // Simulate the old projection: source was absent and a stale event had
+  // overwritten the user title. Rebuild only from the authoritative journal.
+  db(store).exec("ALTER TABLE session DROP COLUMN title_source")
+  db(store).prepare("UPDATE session SET title = ? WHERE id = ?").run("Late generated title", "titled")
+  const reopened = new RuntimeStore(root)
+  assert.equal(reopened.getSession("titled")?.title, "My chosen title")
+  assert.equal(reopened.getSession("titled")?.titleSource, "user")
+  assert.equal(reopened.getSession("titled")?.time.updated, timestamp)
+  reopened.bindSession({ sessionId: "chosen", directory: "/work", title: "Chosen at creation", agentSessionId: "agent-chosen" })
+  assert.equal(reopened.getSession("chosen")?.titleSource, "user")
 })

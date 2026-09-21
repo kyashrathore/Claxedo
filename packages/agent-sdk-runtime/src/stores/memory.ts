@@ -15,10 +15,12 @@ import type {
   AgentPermission,
   AgentQuestion,
   AgentSessionTitleSource,
+  AgentSessionCommand,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import { isPlaceholderTitle } from "../session-title"
+import { acceptsSessionTitle, boundSessionTitleSource } from "../session-title"
+import { sameSessionStartBinding, SessionStartStore } from "./session-start"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
@@ -39,13 +41,6 @@ import {
   type SubagentObservation,
 } from "../subagent-admission"
 
-/**
- * A `session.updated` without `titleSource` is ranked as the prompt
- * placeholder, so a frame from a writer that predates the field can never
- * overwrite a user rename.
- */
-const TITLE_SOURCE_RANK: Record<AgentSessionTitleSource, number> = { prompt: 0, harness: 1, user: 2 }
-
 export type SessionRow = {
   scope?: "workspace"
   id: string
@@ -53,6 +48,7 @@ export type SessionRow = {
   directory: string
   title?: string | null
   titleSource?: AgentSessionTitleSource
+  commands?: AgentSessionCommand[]
   agentSessionId?: string | null
   workspaceId?: string
   connectionId?: string
@@ -80,6 +76,7 @@ export type PermissionRow = AgentPermission
 export type QuestionRow = AgentQuestion
 
 export type MemoryRuntimeStoreSnapshot = {
+  sessionStarts?: import("@claxedo/agent-runtime-contract").AgentSessionStart[]
   sessions: SessionRow[]
   configs: Array<{ sessionId: string; config: SessionConfig }>
   messages: Array<{ sessionId: string; messages: MessageRow[] }>
@@ -108,6 +105,21 @@ export type MemoryRuntimeSessionPersistenceState = {
 
 /** @internal */
 export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
+  private readonly starts = new Map<string, import("@claxedo/agent-runtime-contract").AgentSessionStart>()
+  readonly sessionStarts: import("@claxedo/agent-runtime-contract").AgentSessionStarts
+  constructor(sessionStarts?: import("@claxedo/agent-runtime-contract").AgentSessionStarts) {
+    this.sessionStarts = sessionStarts ?? new SessionStartStore({
+      get: (id) => this.starts.get(id),
+      put: (record) => { this.starts.set(record.binding.sessionId, structuredClone(record)); this.afterChange() },
+      remove: (binding) => {
+        const held = this.starts.get(binding.sessionId)
+        if (!held || !sameSessionStartBinding(held.binding, binding)) return false
+        this.starts.delete(binding.sessionId)
+        this.afterChange()
+        return true
+      },
+    })
+  }
   protected sessions = new Map<string, SessionRow>()
   protected configs = new Map<string, SessionConfig>()
   protected messages = new Map<string, MessageRow[]>()
@@ -142,11 +154,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       parentID: input.parentSessionId ?? prev?.parentID ?? null,
       directory: input.directory,
       title: input.title ?? prev?.title ?? null,
-      // A name chosen at create is the caller's; only a placeholder leaves the
-      // session open to the prompt-derived and generated titles.
-      ...(input.title !== undefined && input.title !== prev?.title
-        ? isPlaceholderTitle(input.title) ? {} : { titleSource: "user" as const }
-        : prev?.titleSource ? { titleSource: prev.titleSource } : {}),
+      titleSource: boundSessionTitleSource(input.title, prev),
       agentSessionId: input.upstreamSessionId ?? input.agentSessionId,
       workspaceId: input.workspaceId ?? prev?.workspaceId,
       connectionId: input.connectionId ?? prev?.connectionId,
@@ -161,6 +169,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       activeTurn: prev?.activeTurn,
       lastTurn: prev?.lastTurn,
       goal: prev?.goal ?? null,
+      commands: prev?.commands,
     })
     this.afterChange()
   }
@@ -168,7 +177,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   updateSessionConfig(id: string, update: SessionConfigUpdate) {
     const prev = this.configs.get(id)
     if (!prev && !update.harness) return null
-    const sameHarness = !update.harness || (update.harness.id === prev?.harness.id && update.harness.access === prev?.harness.access)
+    const sameHarness = keepsSessionHarness(prev?.harness, update.harness)
+    if (prev && !sameHarness) this.setSessionCommands(id, undefined)
     const permissionCeiling = update.permissionCeiling ?? prev?.permissionCeiling
     const permissionMode = harnessScopedField(update.permissionMode, prev?.permissionMode, sameHarness)
     const permissionState = harnessScopedField(update.permissionState, prev?.permissionState, sameHarness)
@@ -363,13 +373,21 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (input.outcome.status === "failed") {
       const message = this.ensureMessage(input.sessionId, assistantMessageId)
       const info = message.info
+      const errorMessage = input.outcome.error ?? "turn failed"
+      // Committing adapters can attach authoritative recovery details. Keep
+      // those details when finalizing that same failure, not an older error.
+      const error = info.error?.data.message === errorMessage
+        ? info.error
+        : { name: "UnknownError", data: firstTurnErrorData(errorMessage) }
+      const terminal = sessionError(errorMessage, input.sessionId)
+      terminal.properties.error = error
       events.push(
         messageUpdated({
           ...info,
           time: { created: info.time?.created ?? input.outcome.completedAt, completed: input.outcome.completedAt },
-          error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
+          error,
         }),
-        sessionError(input.outcome.error ?? "turn failed", input.sessionId),
+        terminal,
       )
       for (const event of events) this.applyEvent(input.sessionId, event)
     }
@@ -591,6 +609,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   exportSnapshot(): MemoryRuntimeStoreSnapshot {
     return {
+      sessionStarts: [...this.starts.values()].map(record => structuredClone(record)),
       sessions: [...this.sessions.values()],
       configs: [...this.configs.entries()].map(([sessionId, config]) => ({ sessionId, config })),
       messages: [...this.messages.entries()].map(([sessionId, messages]) => ({ sessionId, messages })),
@@ -608,6 +627,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   importSnapshot(snapshot: Partial<MemoryRuntimeStoreSnapshot>) {
+    this.starts.clear()
+    for (const record of snapshot.sessionStarts ?? []) this.starts.set(record.binding.sessionId, structuredClone(record))
     this.sessions = new Map((snapshot.sessions ?? []).map((session) => [session.id, session]))
     this.configs = new Map((snapshot.configs ?? []).map((row) => [row.sessionId, row.config]))
     this.messages = new Map((snapshot.messages ?? []).map((row) => [row.sessionId, row.messages]))
@@ -667,6 +688,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       directory: session.directory,
       title: session.title,
       ...(session.titleSource ? { titleSource: session.titleSource } : {}),
+      ...(session.commands ? { commands: session.commands } : {}),
       time: session.time,
       created_at: session.time.created,
       archived_at: session.time.archived ?? null,
@@ -696,9 +718,18 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     return seq
   }
 
+  private setSessionCommands(sessionId: string, commands: AgentSessionCommand[] | undefined) {
+    const session = this.sessions.get(sessionId)
+    if (session) this.sessions.set(sessionId, { ...session, commands })
+  }
+
   private applyEvent(sessionId: string, event: CompatEvent) {
     switch (event.type) {
       case "session.updated": return this.applySessionUpdated(sessionId, event)
+      case "session.commands": {
+        this.setSessionCommands(sessionId, event.properties.commands)
+        return
+      }
       case "message.updated": return this.applyMessageUpdated(sessionId, event)
       case "message.part.updated": return this.applyPartUpdated(sessionId, event)
       case "message.part.delta": return this.applyPartDelta(sessionId, event)
@@ -727,7 +758,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (!previous) return
     const titleSource = info.titleSource ?? "prompt"
     const titleAccepted = info.title !== undefined
-      && TITLE_SOURCE_RANK[titleSource] >= TITLE_SOURCE_RANK[previous.titleSource ?? "prompt"]
+      && acceptsSessionTitle(titleSource, previous.titleSource)
     this.sessions.set(previous.id, {
       ...previous,
       ...(typeof info.directory === "string" ? { directory: info.directory } : {}),
@@ -782,7 +813,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   private applyQuestionAsked(sessionId: string, event: Extract<CompatEvent, { type: "question.asked" }>) {
-    const directory = this.sessions.get(sessionId)?.directory ?? ""
+    const directory = this.sessions.get(sessionId)?.directory ?? this.sessionStarts.get(sessionId)?.binding.directory ?? ""
     const rows = this.questions.get(directory) ?? new Map()
     rows.set(event.properties.id, event.properties)
     this.questions.set(directory, rows)
@@ -836,6 +867,10 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
  * A config field the harness itself accepted. A harness change invalidates it,
  * so the previous value only survives while the harness is unchanged.
  */
+function keepsSessionHarness(previous: SessionConfig["harness"] | undefined, next: SessionConfigUpdate["harness"]) {
+  return !next || (next.id === previous?.id && next.access === previous?.access)
+}
+
 function harnessScopedField<T>(update: T | null | undefined, prev: T | undefined, sameHarness: boolean) {
   if (update !== undefined) return update ?? undefined
   return sameHarness ? prev : undefined

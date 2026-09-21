@@ -371,3 +371,32 @@ describe("PromptProvider", () => {
     await waitFor(() => expect(latest.history.entries("normal")).toHaveLength(1))
   })
 })
+
+
+test("moves a recovered startup draft into its created session without dispatch or losing attachments", async () => {
+  const [id, setId] = createSignal<string | undefined>()
+  const view = render(() => <PromptProvider directory="/startup-move" draftId="original-draft" sessionId={id}><Probe /></PromptProvider>)
+  await waitFor(() => expect(latest.ready()).toBe(true))
+  const parts = text("Keep this unsent prompt")
+  const attachment: ImageAttachmentPart = { type: "image", id: "startup-image", filename: "draft.png", mime: "image/png", dataUrl: "data:image/png;base64,AAAA" }
+  latest.set([...parts, attachment], 7)
+  latest.context.add({ type: "file", path: "notes.md" })
+  await latest.moveDraft({ dir: "/startup-move", draftId: "original-draft" }, { dir: "/startup-move", id: "created-session" })
+  expect(latest.current().map((part) => "content" in part ? part.content : "").join("")).toBe("")
+  setId("created-session")
+  await waitFor(() => expect(view.getByTestId("prompt")).toHaveTextContent("Keep this unsent prompt"))
+  expect(latest.cursor()).toBe(7)
+  expect(latest.current()).toContainEqual(attachment)
+  expect(latest.context.items()).toMatchObject([{ type: "file", path: "notes.md" }])
+  expect(latest.history.entries("normal")).toEqual([])
+})
+
+test("recovered draft transfer preserves both drafts when the destination already has user input", async () => {
+  render(() => <PromptProvider directory="/startup-collision" draftId="original"><Probe /></PromptProvider>)
+  await waitFor(() => expect(latest.ready()).toBe(true))
+  latest.set(text("Original draft"))
+  latest.set(text("Destination draft"), 5, { dir: "/startup-collision", id: "created" })
+  await expect(latest.moveDraft({ dir: "/startup-collision", draftId: "original" }, { dir: "/startup-collision", id: "created" })).rejects.toThrow("already has an unsent draft")
+  expect(latest.current()).toEqual(text("Original draft"))
+  expect(latest.current({ dir: "/startup-collision", id: "created" })).toEqual(text("Destination draft"))
+})

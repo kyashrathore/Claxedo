@@ -1,6 +1,6 @@
+import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import {
-  DEFAULT_HARNESS_MODEL,
   harnessDisplayLabel,
   harnessSelectionId,
   isCatalogHarness,
@@ -12,6 +12,7 @@ import {
 export type HarnessReadiness = "unresolved" | "polling" | "ready" | "degraded" | "error"
 
 export type HarnessSelectionState = {
+  readonly connectionDeclaration?: HarnessConnectionRef
   readonly harness?: HarnessType
   readonly selectedModel?: string
   readonly selectedModelProvider?: string
@@ -62,15 +63,10 @@ export function harnessModels(
 
 export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey | undefined {
   if (!state.harness) return undefined
+  if (state.harness.kind === "connection" && state.connectionDeclaration?.connectionId === state.harness.connectionId && state.connectionDeclaration.modelSelection?.status === "unsupported") return undefined
   const raw = state.selectedModel ?? ""
+  if (connectionAllowsNoModel(state) && isClientDefaultPlaceholder(raw)) return undefined
   if (!raw) return undefined
-  if (harnessUsesManagedDefaultModel(state)) {
-    return {
-      providerID: harnessSelectionId(state.harness),
-      modelID: DEFAULT_HARNESS_MODEL.id,
-      ...(state.selectedThoughtLevel ? { variant: state.selectedThoughtLevel } : {}),
-    }
-  }
   if (isClientDefaultPlaceholder(raw) && !state.dynamicModels?.some((item) => item.id === raw)) return undefined
   const match = harnessModels(state).find((item) => item.id === raw && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
   if (!match || match.connected === false) return undefined
@@ -91,18 +87,6 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
   }
 }
 
-/**
- * A live operator ACP can expose useful config while leaving model selection to
- * the agent itself. This exact state is distinct from unresolved (`null`),
- * loading, and failed option discovery, so it never masks a broken connection.
- */
-export function harnessUsesManagedDefaultModel(state: HarnessSelectionState) {
-  return state.harness?.kind === "connection" &&
-    state.selectedModel === DEFAULT_HARNESS_MODEL.id &&
-    Array.isArray(state.dynamicModels) && state.dynamicModels.length === 0 &&
-    !state.optionsLoading && !state.configError
-}
-
 export function harnessModelNameForSubmit(state: HarnessSelectionState) {
   const model = harnessModelKeyForSubmit(state)
   if (!model) return undefined
@@ -111,5 +95,17 @@ export function harnessModelNameForSubmit(state: HarnessSelectionState) {
 
 export function harnessReadyForSubmit(state: HarnessSelectionState) {
   if (state.configError || state.readiness === "error" || state.readiness === "degraded" || state.optionsLoading) return false
-  return !!harnessModelKeyForSubmit(state)
+  return connectionAllowsNoModel(state) || !!harnessModelKeyForSubmit(state)
+}
+
+/** Only an enabled canonical declaration can permit an omitted model. */
+export function connectionAllowsNoModel(state: HarnessSelectionState) {
+  const connection = state.connectionDeclaration
+  return state.harness?.kind === "connection" && connection?.connectionId === state.harness.connectionId
+    && connection.enabled && connection.readiness !== "disabled" && connection.readiness !== "unavailable"
+    && (connection.modelSelection?.status === "unsupported" || (connection.modelSelection?.status === "optional" && (!state.selectedModel || isClientDefaultPlaceholder(state.selectedModel))))
+}
+/** Discovery is not execution: a declared cold draft can initialize with its owner. */
+export function draftConnectionAllowsNoModel(scope: string, state: HarnessSelectionState) {
+  return !scope.startsWith("session:") && connectionAllowsNoModel(state)
 }

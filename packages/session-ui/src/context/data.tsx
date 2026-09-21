@@ -1,5 +1,6 @@
 import type {
   AgentContentPart,
+  AgentFilePart,
   AgentPresentationMessage,
   AgentPresentationProvider,
   AgentPresentationSession,
@@ -84,6 +85,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     onNavigateToSession?: NavigateToSessionFn
     onSessionHref?: SessionHrefFn
     onTaskHref?: TaskHrefFn
+    onClaxedoToolHref?: (tool: string, input: Record<string, unknown>, output?: string) => string | undefined
     resolveSubagents?: (
       parentSessionId: string,
       toolCallId?: string,
@@ -94,6 +96,7 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
      * stayed on disk carry only a path, so without this they have nothing to render.
      */
     fileUrl?: (path: string) => string | undefined
+    readToolImage?: (attachment: AgentFilePart, signal: AbortSignal) => Promise<Blob>
   }) => {
     return {
       get store() {
@@ -105,8 +108,10 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       navigateToSession: props.onNavigateToSession,
       sessionHref: props.onSessionHref,
       taskHref: props.onTaskHref,
+      claxedoToolHref: props.onClaxedoToolHref,
       resolveSubagents: props.resolveSubagents,
       fileUrl: props.fileUrl,
+      readToolImage: props.readToolImage,
     }
   },
 })

@@ -5,6 +5,7 @@ import type { AgentPermission } from "@claxedo/agent-runtime-contract"
 import { PermissionProvider, usePermission } from "./permission"
 import { acceptKey } from "./permission-auto-respond"
 import { Persist, removePersisted, setPersisted } from "@/platform/persistence/persist"
+import { shellDataKeys } from "@/platform/sync/keys"
 import { queryClient } from "@/platform/query/query-client"
 
 type AskedEvent = { name: string; details: { type: "permission.asked"; properties: AgentPermission } }
@@ -59,7 +60,7 @@ beforeEach(() => {
   removePersisted(TARGET)
   localStorage.removeItem("permission.v3")
   transport.list.mockReset().mockResolvedValue({ data: [] })
-  transport.respond.mockReset().mockResolvedValue(undefined)
+  transport.respond.mockReset().mockResolvedValue({ data: { ok: true, events: [] } })
   transport.createClient.mockReset().mockImplementation(() => ({
     permission: { list: transport.list, respond: transport.respond },
   }))
@@ -200,4 +201,28 @@ describe("explicit permission policy", () => {
     await api.respond({ sessionID: SESSION, permissionID: "pending", response: "once", directory: DIRECTORY })
     expect(transport.respond).toHaveBeenCalledTimes(1)
   })
+})
+
+test("a successful response applies the runtime reply before resolving, without waiting for SSE", async () => {
+  const permission = request("pending-http")
+  queryClient.setQueryData(shellDataKeys.sessionId(SESSION, "requests"), {
+    permissions: [permission], questions: [],
+  })
+  const { api } = await mount()
+  transport.respond.mockResolvedValueOnce({ data: { ok: true, events: [{
+    id: "event_permission_reply", type: "permission.replied", properties: { sessionID: SESSION, requestID: permission.id, reply: "once" },
+  }] } })
+  await api.respond({ sessionID: SESSION, permissionID: permission.id, response: "once", directory: DIRECTORY })
+  expect(queryClient.getQueryData<{ permissions: AgentPermission[] }>(shellDataKeys.sessionId(SESSION, "requests"))?.permissions).toEqual([])
+})
+
+test("provider choice IDs cross the transport without enabling a guessed approval policy", async () => {
+  const { api } = await mount()
+  await api.respond({ sessionID: SESSION, permissionID: "provider-choice", response: { optionId: "remember/workspace" }, directory: DIRECTORY })
+  expect(transport.respond).toHaveBeenLastCalledWith({ sessionID: SESSION, permissionID: "provider-choice", optionId: "remember/workspace", directory: DIRECTORY })
+  expect(api.isAutoAccepting(SESSION, DIRECTORY)).toBe(false)
+  api.enableAutoAccept(SESSION, DIRECTORY)
+  await waitFor(() => expect(api.requestPolicyReady(DIRECTORY)).toBe(true))
+  expect(api.autoResponds(request("legacy-read", "read"), DIRECTORY)).toBe(true)
+  expect(api.autoResponds({ ...request("manual-provider", "read"), options: [{ id: "yes", label: "Yes" }] }, DIRECTORY)).toBe(false)
 })

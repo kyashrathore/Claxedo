@@ -20,6 +20,13 @@ const view = (name: string, input: Record<string, unknown> | undefined, output?:
 
 describe("claxedoToolName resolves every harness spelling to the bare tool", () => {
   const CASES: Array<[name: string, tool: string, input: Record<string, unknown> | undefined, expected: string | undefined]> = [
+    ["codex first-party server", "process", { server: "claxedo-mcp", tool: "process", arguments: {} }, "process"],
+    ["claude first-party server", "mcp__claxedo-mcp__processes", {}, "processes"],
+    ["opencode first-party server", "claxedo-mcp_process_start", {}, "process_start"],
+    ["explicit server identifies tools outside the old roster", "claxedo-mcp_process", {}, "process"],
+    ["generic MCP wrapper uses the declared tool", "mcp", { server: "claxedo-mcp", tool: "process_logs" }, "process_logs"],
+    ["similar server names are not first-party", "mcp__claxedo-mcp-other__process", {}, undefined],
+    ["bare process is not claimed", "process", {}, undefined],
     ["claude wraps the server into the name", "mcp__claxedo__task_create", { title: "x", intent: "mcp" }, "task_create"],
     ["the projection lowercases claude's spelling", "MCP__CLAXEDO__Task_Start", undefined, "task_start"],
     ["codex sends the bare name and names the server on the input", "task_create", { server: "claxedo", tool: "task_create", arguments: {} }, "task_create"],

@@ -161,6 +161,35 @@ describe("session metadata routes", () => {
     })
   })
 
+  test("an explicit unknown workspace cannot fall back to project or directory metadata", async () => {
+    const directory = await worktree(path.join(root, "explicit-workspace-boundary"))
+    const ws = await ensureWorkspace({ workspaceId: "ws_meta_boundary", project_id: "ws_project_boundary", directory })
+    if (!ws) throw new Error("test workspace was not created")
+    await putSessionMeta("meta_boundary_session", { ws, title: "Must remain scoped" })
+    const refreshSessionProjection = vi.fn()
+    const app = SessionMetaRoutes({ refreshSessionProjection })
+    for (const workspaceId of ["ws_missing", "", "   "]) {
+      const query = new URLSearchParams({ workspaceId, directory, projectId: "ws_project_boundary" })
+      const response = await app.request(`http://localhost/api/claxedo/session?${query}`)
+      expect(response.status).toBe(404)
+    }
+    const query = new URLSearchParams({ workspaceId: "ws_missing", directory, projectId: "ws_project_boundary" })
+    const response = await app.request(`http://localhost/api/claxedo/session/meta_boundary_new/meta?${query}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "Must not be written" }),
+    })
+    expect(response.status).toBe(404)
+    expect(await sessionMeta("meta_boundary_new")).toBeUndefined()
+    expect(refreshSessionProjection).not.toHaveBeenCalled()
+    const valid = await app.request("http://localhost/api/claxedo/session?workspaceId=ws_meta_boundary")
+    expect(valid.status).toBe(200)
+    expect(await valid.json()).toMatchObject({ sessions: [expect.objectContaining({ sessionID: "meta_boundary_session" })] })
+    const project = await app.request("http://localhost/api/claxedo/session?projectId=ws_project_boundary")
+    expect(project.status).toBe(200)
+    expect(await project.json()).toMatchObject({ sessions: [expect.objectContaining({ sessionID: "meta_boundary_session" })] })
+  })
+
   test("refreshes a resolved workspace snapshot before serving its first session list", async () => {
     const directory = await worktree(path.join(root, `local-refresh-${randomUUID()}`))
     const workspaceId = `ws_local_refresh_${randomUUID()}`

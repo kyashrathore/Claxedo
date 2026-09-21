@@ -4,6 +4,7 @@ import {
 } from "@claxedo/sandbox-manager/driver-catalog"
 import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import {
+  cloudflareWorkerBaseUrl,
   sandboxDriverCredentialFields,
   type SandboxDriverAuth,
   type SandboxDriverConfig,
@@ -68,6 +69,7 @@ function parseManagedAuth<T extends SandboxDriverID>(id: T, secret: string): San
         singleFieldLegacyValues(fields, secret)
 
   if (Object.keys(values).length !== fields.length) return undefined
+  if (id === "cloudflare") values.worker_url = cloudflareWorkerBaseUrl(values.worker_url)
   return values as SandboxDriverAuth[T]
 }
 

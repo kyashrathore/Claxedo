@@ -13,6 +13,22 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("@claxedo/server-core/workspace/store/index")
 const hostLease = await import("../../sandbox/stores/sqlite-supervisor-state")
+
+/** A ready lease the way the supervisor makes one: acquire, then record the driver's answer. */
+async function provisionLease(workspaceId: string, sandboxId: string, url: string) {
+  const leaseStore = hostLease.createSupervisorSandboxLeaseStore()
+  const acquired = await leaseStore.acquire(workspaceId, {
+    homeRegion: "us-east",
+    driver: "daytona",
+    staleAfterMs: 60_000,
+  })
+  await leaseStore.recordTarget(workspaceId, acquired.lease.epoch, {
+    sandboxId,
+    url,
+    hostId: sandboxId,
+    labels: { app: "claxedo", workspaceId, epoch: String(acquired.lease.epoch) },
+  })
+}
 const { ClaxedoDB } = await import("../../platform/db")
 
 function restoreEnv(key: string, value: string | undefined) {
@@ -295,6 +311,19 @@ describe("workspace store", () => {
     expect(ws!.id).toBe("ws_rdir")
   })
 
+  test("an unknown explicit id never resolves or creates through another directory", async () => {
+    const directory = await gitDir("explicit-id-boundary")
+    await mod.ensureWorkspace({ workspaceId: "ws_actual", directory })
+    for (const workspaceId of ["ws_missing", "", "   "]) {
+      for (const create of [false, true]) {
+        expect(await mod.resolveWorkspace({ workspaceId, directory, create })).toBeUndefined()
+      }
+    }
+    expect((await mod.getWorkspaceByDirectory(directory))?.id).toBe("ws_actual")
+    expect(await mod.getWorkspace("ws_missing")).toBeUndefined()
+    expect((await mod.resolveWorkspace({ workspaceId: "ws_actual", directory: "/wrong" }))?.directory).toBe(directory)
+  })
+
   test("does not resolve a raw workspace id passed as directory", async () => {
     await mod.ensureWorkspace({
       workspaceId: "ws_cloud_dir_ref",
@@ -318,12 +347,11 @@ describe("workspace store", () => {
   test("creates workspace when create=true and directory is unknown", async () => {
     const dir = await gitDir("auto-create")
     const ws = await mod.resolveWorkspace({
-      workspaceId: "ws_auto_create",
       directory: dir,
       create: true,
     })
     expect(ws).toBeDefined()
-    expect(ws!.id).toBe("ws_auto_create")
+    expect(ws!.id).toEqual(expect.any(String))
     expect(ws!.directory).toContain("auto-create")
   })
 
@@ -421,12 +449,7 @@ describe("workspace store", () => {
     let projects = await mod.listProjects()
     expect(projects.find((item) => item.id === "proj_cloud_pending")).toBeUndefined()
 
-    hostLease.recordSupervisorSandboxLeaseReady({
-      workspaceId: "ws_cloud_pending",
-      driver: "daytona",
-      sandboxId: "sb-pending",
-      url: "https://pending.example.com",
-    })
+    await provisionLease("ws_cloud_pending", "sb-pending", "https://pending.example.com")
 
     projects = await mod.listProjects()
     expect(projects.find((item) => item.id === "proj_cloud_pending")).toBeDefined()
@@ -449,12 +472,7 @@ describe("workspace store", () => {
       driver: "daytona",
       status: "acquiring_sandbox",
     })
-    hostLease.recordSupervisorSandboxLeaseReady({
-      workspaceId: "ws_cloud_backoff",
-      driver: "daytona",
-      sandboxId: "sb-backoff",
-      url: "https://sandbox.example.com",
-    })
+    await provisionLease("ws_cloud_backoff", "sb-backoff", "https://sandbox.example.com")
     hostLease.recordSupervisorSandboxLeaseFailure("ws_cloud_backoff", "provider disabled", Date.now() + 1_000)
 
     const projects = await mod.listProjects()

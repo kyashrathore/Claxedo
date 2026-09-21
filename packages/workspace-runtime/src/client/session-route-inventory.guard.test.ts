@@ -13,6 +13,7 @@ const ids = {
   modeId: "mode",
   objective: "goal",
   messageID: "msg",
+  attachmentID: "attachment",
   providerID: "provider",
   modelID: "model",
   seq: 1,
@@ -23,7 +24,9 @@ function inventoryPattern(method: string, pathname: string) {
   const path = pathname
     .replace(/^\/session\/sid\/permissions\/pid$/, "/session/:sessionId/permissions/:permId")
     .replace(/^\/session\/sid\/queue\/1\/cancel$/, "/session/:id/queue/:seq/:action")
+    .replace(/^\/session\/sid\/message\/msg\/attachment\/attachment$/, "/session/:id/message/:messageId/attachment/:attachmentId")
     .replace(/^\/session\/sid(?=\/|$)/, "/session/:id")
+    .replace(/^\/session-start\/sid(?=\/|$)/, "/session-start/:id")
     .replace(/^\/question\/qid(?=\/|$)/, "/question/:id")
   return `${method} ${path}`
 }

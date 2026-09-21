@@ -124,6 +124,8 @@ export type LocalRemoteAccessService = RemoteAccessService & LocalHostAssignment
  */
 export function createRemoteAccessService(input: {
   authority: WorkspaceAuthority
+  /** Deployment authority over this process, separate from workspace ownership. */
+  authorizeOperator(auth: SignedControlPlaneAuth): void
   relayUrl: string
   hostTunnelTokenSigner: HostTunnelTokenSigner
   listLocalWorkspaces(): Promise<LocalWorkspace[]>
@@ -154,6 +156,12 @@ export function createRemoteAccessService(input: {
   const heartbeatIntervalMs = input.heartbeatIntervalMs ?? Math.floor(heartbeatTtlMs / 3)
 
   type ServingState = {
+    /**
+     * The operator whose enrollment this machine serves under. Assignments
+     * this process makes are recorded as this account and its subject is what
+     * the host tunnel is minted for, so only a path that proved enrollment
+     * for it may write this.
+     */
     auth: SignedControlPlaneAuth
     displayName?: string
     startAtLogin: boolean
@@ -168,7 +176,16 @@ export function createRemoteAccessService(input: {
     timer?: ReturnType<typeof setInterval>
   }
   let state: ServingState | undefined
-  /** Beats and set mutations are serialized so no two reconciliations interleave. */
+  /**
+   * Every beat and every write to `state` runs here, one at a time. Enabling,
+   * revoking, assignment changes and the loop's own beats otherwise interleave
+   * against one enrollment: two claims taken at once leave the instance
+   * beating under the generation the later one superseded, and a beat that
+   * resumes after a revoke reopens the tunnel the revoke just closed.
+   *
+   * Nothing reached from inside a `run` may call `run` again — the chain would
+   * wait on the entry that is still holding it.
+   */
   let sync = Promise.resolve<unknown>(undefined)
 
   const run = <T>(work: () => Promise<T>): Promise<T> => {
@@ -277,6 +294,7 @@ export function createRemoteAccessService(input: {
 
   /** Enroll and claim a generation only when this machine is not already serving this enrollment. */
   async function ensureEnrolled(auth: SignedControlPlaneAuth) {
+    input.authorizeOperator(auth)
     const identity = await input.localHostIdentity()
     const active = await requireMethod(authority.activeHostEnrollment, "machine enrollment")(auth)
     const live = active.active && active.host_id === identity.hostId ? active : undefined
@@ -482,27 +500,30 @@ export function createRemoteAccessService(input: {
       }
     },
     async enable(auth, options) {
+      input.authorizeOperator(auth)
       await authority.usersMe(auth)
-      const served = state?.served ?? new Set<string>()
       // This process IS the machine, so it names itself here, through the same
       // derivation the desktop uses: one machine, one name, however it
       // publishes itself. A browser asking for remote access can only describe
       // the browser, and a bare `hostname()` keeps the mDNS tail and throws on
       // a host with no name configured.
       const displayName = machineDisplayName(process.platform)
-      // Enable always re-enrolls: it re-proves key possession, re-applies the
-      // machine's own name, and clears a previous pause deterministically.
-      const { identity, enrollment } = await enrollMachine(auth, displayName)
-      await startServing({
-        auth,
-        identity,
-        enrollmentId: enrollment.enrollment_id,
-        displayName,
-        startAtLogin: options.startAtLogin,
-        served,
+      const result = await run(async () => {
+        // Enable always re-enrolls: it re-proves key possession, re-applies the
+        // machine's own name, and clears a previous pause deterministically.
+        const { identity, enrollment } = await enrollMachine(auth, displayName)
+        await startServing({
+          auth,
+          identity,
+          enrollmentId: enrollment.enrollment_id,
+          displayName,
+          startAtLogin: options.startAtLogin,
+          served: state?.served ?? new Set<string>(),
+        })
+        const synced = await syncMachine()
+        startLoop()
+        return synced
       })
-      const result = await run(syncMachine)
-      startLoop()
       input.capture(auth.user.subject, "remote_access_enabled", {
         hostId: result.hostId,
         workspaceCount: result.workspaceIds.length,
@@ -513,14 +534,16 @@ export function createRemoteAccessService(input: {
     devices,
     rename: owner.rename,
     async revoke(auth, hostId) {
-      const result = await owner.revoke(auth, hostId)
-      if (!result.revoked) return result
-      input.stopMachineTunnel(hostId)
-      if (state?.identity.hostId === hostId) {
-        stopLoop()
-        state = undefined
-      }
-      return result
+      return await run(async () => {
+        const result = await owner.revoke(auth, hostId)
+        if (!result.revoked) return result
+        input.stopMachineTunnel(hostId)
+        if (state?.identity.hostId === hostId) {
+          stopLoop()
+          state = undefined
+        }
+        return result
+      })
     },
     async markSecondDeviceOpen(auth, workspaceId) {
       const result = await input.authority.markSecondDeviceOpen?.(auth, { workspaceId })
@@ -533,6 +556,20 @@ export function createRemoteAccessService(input: {
     },
     async assignWorkspace(auth, share) {
       return await run(async () => {
+        // Both halves of a share are authorized before either happens.
+        // Operating this machine comes first, so a caller who may not do that
+        // learns nothing about which workspaces the authority holds; the
+        // workspace's own admission comes next, because everything after it
+        // here — enrolling this process, claiming a serving generation,
+        // beating — is a machine effect that a later refusal cannot take
+        // back. `assignWorkspaceHost` asks the same question again at the
+        // write, under the enrollment's invitation and scope.
+        input.authorizeOperator(auth)
+        await requireMethod(authority.authorizeWorkspaceHostAssignment, "machine share authorization")(auth, {
+          workspaceId: share.workspaceId,
+          ...(share.orgId ? { orgId: share.orgId } : {}),
+          ...(share.projectId ? { projectId: share.projectId } : {}),
+        })
         const current = await ensureEnrolled(auth)
         const assignment = await assignOne(auth, current.identity.hostId, share)
         current.served.add(share.workspaceId)
@@ -556,11 +593,12 @@ export function createRemoteAccessService(input: {
       return await run(async () => {
         const result = await requireMethod(authority.unassignWorkspaceHost, "host assignments")(auth, { workspaceId })
         if (state) {
-          state.auth = auth
           state.served.delete(workspaceId)
           state.descriptions.delete(workspaceId)
           // The next beat acks a smaller set, so machine consent shrinks with
-          // owner intent and the tunnel set follows.
+          // the caller's intent and the tunnel set follows. `state.auth` does
+          // not follow them: the authority admits any admin of the workspace
+          // here, and no operator gate stands in front of that.
           await beat()
         }
         return { unassigned: result.unassigned }

@@ -9,7 +9,7 @@ import { Pty } from "../pty/index"
 import { Process } from "../managed-processes/schema"
 import * as ProcessManager from "../managed-processes/manager"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import { assertTarget, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { denyWorkspaceViewers } from "./workspace-role"
 import {
@@ -23,8 +23,18 @@ function dir(c: { req: { query: (k: string) => string | undefined; header: (k: s
   return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
 }
 
-function bind(c: { req: { header: (k: string) => string | undefined } }, directory: string) {
-  ProcessManager.bindWorkspace(directory, c.req.header("x-workspace-id"), c.req.header("x-workspace-name"))
+/**
+ * Name the workspace whose port leases this directory's processes hold.
+ *
+ * The caller used to name it, through `x-workspace-id`. That string becomes a
+ * directory under the lease root, and `loadConfig` prunes every lease in the
+ * directory it is handed — so a request could delete another workspace's
+ * leases by claiming to be it. Only this runtime knows which workspace it was
+ * placed for; with no such identity the manager's own `real(directory)` is the
+ * label, which is derived rather than claimed.
+ */
+function bind(directory: string) {
+  ProcessManager.bindWorkspace(directory, authoritativeWorkspaceId())
 }
 
 function configNotFound(message: string) {
@@ -111,7 +121,7 @@ async function processLogs(
 
 async function init(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }) {
   const directory = dir(c)
-  bind(c, directory)
+  bind(directory)
   await ProcessManager.initialize(directory)
   return directory
 }

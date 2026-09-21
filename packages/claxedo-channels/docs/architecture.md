@@ -90,17 +90,42 @@ telegram, slack, discord, whatsapp-official), `"baileys"`
   `@chat-adapter/*` package and wires it into the `chat` SDK's `Chat`
   constructor; `createChatSdkBridge` (`src/transport/chat-sdk-bridge.ts`)
   subscribes to `onNewMention`/`onSubscribedMessage` and normalizes each
-  `(thread, message)` pair through `chatSdkEnvelope`. `threadKey` is built
+  `(thread, message)` pair through `chatSdkEnvelope`. The sender is
+  `Author.userId` and the channel is `Thread.adapter.name` — the two facts the
+  SDK states rather than ones inferred beside them (`Author.userName` is a
+  renameable handle, and `Thread.channel` is a `Channel` object, not a platform
+  string). On Telegram the author is additionally held to the raw update via
+  `telegramSenderId`: that adapter fills `Author.userId` from the CHAT when an
+  update carries neither `from` nor `sender_chat`, so the SDK's "user" can be a
+  room that named nobody. A message missing either fact yields no envelope, and
+  the bridge drops it before `thread.subscribe()`, so an unidentified sender
+  cannot make the bot a participant in their thread. A button press whose
+  thread names an unsupported platform is dropped for the same reason: no
+  prompt can have been posted there, so the press could only resolve another
+  thread's. `threadKey` is built
   per-channel from installation/team/guild + conversation/channel + thread
   root identifiers; `idempotencyKey` falls back to
   `${threadKey}:${receivedAt}:${text}` when the SDK message has no stable id.
   Provider webhook signature verification is the Chat SDK adapter's
-  responsibility, not this package's.
+  responsibility, but the credentials it verifies against are not: each
+  adapter would otherwise read one fixed env key of its own, while
+  `createChannelRegistry` also accepts a `CLAXEDO_CHANNEL_*` alias per
+  credential. The registry resolves them into `ChannelRegistration.adapterConfig`
+  and `createChatSdkBot` constructs the adapter with it, so the configuration
+  that enabled a channel is the configuration that verifies its callers. An
+  enabled Telegram registration missing either credential is refused before any
+  adapter loads, rather than letting the adapter answer from `process.env`: its
+  verification is configuration-only, so an adapter left without a secret token
+  accepts every forged update.
 - **GitHub (direct)** — `src/transport/github.ts`'s `githubWebhookEnvelope`
   is for callers building their own webhook route instead of using the Chat
   SDK adapter. It only emits an envelope for `issue_comment`,
   `pull_request_review`, or `issues` events that `@mention` the bot name, and
-  requires a `repository`, an issue/PR `number`, and a `sender.login`;
+  requires a `repository`, an issue/PR `number`, and a numeric `sender.id`,
+  which becomes `externalUserId` — the same account id
+  `@chat-adapter/github` reports as `Author.userId`, so both GitHub ingress
+  paths name one principal. `sender.login` is renameable and reassignable and
+  survives only inside `raw`;
   `verifyGitHubWebhookSignature` (HMAC-SHA256 over `X-Hub-Signature-256`,
   timing-safe compare) must be called by the caller before parsing the JSON
   body — this package does not verify webhook signatures itself.
@@ -108,10 +133,15 @@ telegram, slack, discord, whatsapp-official), `"baileys"`
   `telegramUpdateEnvelope` is the direct-webhook counterpart to the Chat SDK
   path, for callers not using `@chat-adapter/telegram`. It reads
   `message`/`edited_message`/`channel_post`, derives `externalUserId` from
-  `from.id` (falling back to `from.username`, then the chat id), and does not
+  `from.id` — or, for a post made on behalf of a chat (anonymous admin, channel
+  post), `chat:<sender_chat.id>`, the key `@chat-adapter/telegram` gives the
+  same author. An update carrying neither yields no envelope; `from.username`
+  is never a stand-in. It does not
   itself verify Telegram's `X-Telegram-Bot-Api-Secret-Token` header — the
-  caller (or `createChannelRegistry`, which only enables Telegram once a
-  webhook secret env var is set) is responsible for that.
+  caller is responsible for that, against the same secret
+  `createChannelRegistry` resolves (`TELEGRAM_WEBHOOK_SECRET_TOKEN`, then
+  `CLAXEDO_CHANNEL_TELEGRAM_WEBHOOK_SECRET_TOKEN`), without which Telegram is
+  not enabled at all.
 - **WhatsApp personal (Baileys)** — `src/transport/whatsapp-baileys.ts`'s
   `createWhatsAppBaileysTransport` wraps a `WhatsAppBaileysSocket`
   (`src/transport/whatsapp-baileys-socket.ts` builds one from
@@ -148,7 +178,12 @@ sees the pending prompt and the conversation; a regex over prose cannot tell
 
 - **Untrusted / transport-owned**: webhook signature verification, payload
   shape parsing, `InboundEnvelope` construction, `raw` payload retention.
-  Nothing here is assumed authorized.
+  Nothing here is assumed authorized. One thing a transport does decide, and
+  the gate cannot: WHICH principal the message is from. Every transport names
+  it with the platform's immutable account id, never a handle, and emits no
+  envelope when the payload names nobody — so `channel:externalUserId`, the key
+  every allow entry, pairing row, binding, rate-limit bucket and approval
+  requestee is written in, always denotes one account over time.
 - **Trust decision / core-owned**: the access gate (step 1) is the only place
   that turns "a message arrived on some channel" into "this sender may
   proceed." It is fail-closed — an unset `access`, an errored store lookup,

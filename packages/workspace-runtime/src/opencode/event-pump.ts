@@ -71,7 +71,15 @@ export type EventPump = Readonly<{
   ready(): Promise<void>
   /** Highest committed seq for an aggregate, or undefined if never seen. */
   checkpoint(aggregateID: string): number | undefined
-  /** Stop consuming and release the iterator. Safe to call repeatedly. */
+  /**
+   * Stop consuming and release the iterator. Safe to call repeatedly.
+   *
+   * The refusal lands synchronously — nothing is dispatched once the call is
+   * made — while the returned promise resolves only when the loop is finished,
+   * which cannot happen before the read the engine already handed out settles.
+   * The host owns that read: a caller that must see the pump drained closes the
+   * host without waiting here first.
+   */
   stop(): Promise<void>
 }>
 
@@ -142,9 +150,15 @@ export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): 
         markReady = undefined
         while (true) {
           const item = await next
+          if (stopped) {
+            // The engine answered the read after the refusal landed. Hand the
+            // generator its completion so the subscription is not left half
+            // open behind a loop that is leaving.
+            await iterator.return?.()
+            return
+          }
           if (item.done) break
           const raw = item.value
-          if (stopped) break
           // A healthy delivery resets the backoff ladder.
           attempt = 0
           host.setEventHealth("healthy")
@@ -164,11 +178,8 @@ export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): 
             // A bad consumer must not kill the only pump in the process.
             host.setEventHealth("degraded")
           }
-          // Never leave an unobserved speculative read behind at shutdown.
-          // Electron treats its rejection when the SDK closes as fatal.
           next = iterator.next()
         }
-        if (stopped) return
         // The stream ended without an error. That is still a loss of liveness.
         host.setEventHealth("degraded")
       } catch {

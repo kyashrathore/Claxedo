@@ -13,20 +13,30 @@ export function resolveAppPath(appName: string): string | null {
   return resolveWindowsAppPath(appName)
 }
 
+export type WslRun = (args: readonly string[]) => string
+
+/**
+ * Not `sh -lc`: a login shell writes profile output to the same stdout the
+ * value is read from.
+ */
+const LINUX_HOME_ARGV = ["-e", "sh", "-c", 'printf %s "$HOME"'] as const
+
+/**
+ * The one translation of a path between Windows and WSL. The renderer reaches
+ * it through the `wsl-path` IPC, which authorizes the sender but not the
+ * argument, so the path is attacker-influenceable text and may only travel as
+ * argv — a `~` suffix pasted into a shell command string is command execution.
+ */
+export function convertWslPath(path: string, mode: "windows" | "linux" | null, run: WslRun): string {
+  const flag = mode === "windows" ? "-w" : "-u"
+  const target = path.startsWith("~") ? `${run(LINUX_HOME_ARGV)}${path.slice(1)}` : path
+  return run(["-e", "wslpath", flag, target]).trim()
+}
+
 export function wslPath(path: string, mode: "windows" | "linux" | null): string {
   if (process.platform !== "win32") return path
-
-  const flag = mode === "windows" ? "-w" : "-u"
   try {
-    if (path.startsWith("~")) {
-      const suffix = path.slice(1)
-      const cmd = `wslpath ${flag} "$HOME${suffix.replace(/"/g, '\\"')}"`
-      const output = execFileSync("wsl", ["-e", "sh", "-lc", cmd])
-      return output.toString().trim()
-    }
-
-    const output = execFileSync("wsl", ["-e", "wslpath", flag, path])
-    return output.toString().trim()
+    return convertWslPath(path, mode, (args) => execFileSync("wsl", [...args]).toString())
   } catch (error) {
     throw new Error(`Failed to run wslpath: ${String(error)}`, { cause: error })
   }

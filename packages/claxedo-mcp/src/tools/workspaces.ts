@@ -3,7 +3,7 @@
  *
  * Every tool here is served to a person's credential only, and the three that
  * destroy or rewind compute are annotated destructive so a host prompts, are
- * confirmed through elicitation where the host offers it, and send
+ * require accepted host elicitation before execution, and send
  * `approved: true` only because the registry got that confirmation — never
  * because a model put it in an argument.
  */

@@ -22,6 +22,7 @@
  */
 
 import { asRecord } from "../../shared/json-read"
+import type { DaemonFetch } from "../daemon-request"
 import type { HostConnectorProviderConfigReady } from "./child-protocol"
 
 export type HostProviderConfigPush = {
@@ -30,17 +31,17 @@ export type HostProviderConfigPush = {
 }
 
 export function setupHostProviderConfigPush(input: {
-  serverUrl: () => Promise<string>
-  request?: (url: string, init?: RequestInit) => Promise<Response>
+  daemon: DaemonFetch
+  /** Resolves once the daemon is reachable; see `push` below. */
+  daemonReady: () => Promise<unknown>
   log: { info(message: string): void; warn(message: string): void }
 }): HostProviderConfigPush {
-  const request = input.request ?? fetch
   let latest: HostConnectorProviderConfigReady | undefined
 
-  const endpoint = async () => new URL("/api/claxedo/host-provider-config", await input.serverUrl()).toString()
+  const ENDPOINT = "/api/claxedo/host-provider-config"
 
   const deliver = async (config: HostConnectorProviderConfigReady) => {
-    const response = await request(await endpoint(), {
+    const response = await input.daemon(ENDPOINT, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ revision: config.revision, providers: config.providers }),
@@ -60,7 +61,7 @@ export function setupHostProviderConfigPush(input: {
       try {
         // Waiting for the daemon is where two startup revisions overtake each
         // other, so the newer one is decided after that wait, not before it.
-        await input.serverUrl()
+        await input.daemonReady()
         if (latest !== config) return
         await deliver(config)
       } catch (error) {
@@ -71,7 +72,7 @@ export function setupHostProviderConfigPush(input: {
       const config = latest
       if (!config) return
       try {
-        const response = await request(await endpoint())
+        const response = await input.daemon(ENDPOINT)
         if (!response.ok) {
           input.log.warn(`[host-provider-config] state read -> ${String(response.status)}`)
           return

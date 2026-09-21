@@ -1,4 +1,4 @@
-import { asRecord } from "@claxedo/agent-runtime-contract"
+import { type AgentSessionTitleSource, asRecord } from "@claxedo/agent-runtime-contract"
 
 /**
  * A title no writer chose: empty, or one of the defaults a harness mints at
@@ -32,4 +32,15 @@ export function extractPromptTitleText(parts: unknown[]) {
     if (typeof row.content === "string") return [row.content]
     return []
   }).join("\n").trim()
+}
+
+/** Canonical precedence shared by journal and in-memory projections. */
+export function boundSessionTitleSource(title: string | null | undefined, previous?: { title?: string | null; titleSource?: AgentSessionTitleSource }) {
+  if (title !== undefined && title !== previous?.title) return isPlaceholderTitle(title) ? undefined : "user" as const
+  return previous?.titleSource
+}
+
+export function acceptsSessionTitle(source: AgentSessionTitleSource | undefined, previous: AgentSessionTitleSource | undefined) {
+  const rank = { prompt: 0, harness: 1, user: 2 }
+  return rank[source ?? "prompt"] >= rank[previous ?? "prompt"]
 }

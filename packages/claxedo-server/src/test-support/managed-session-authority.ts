@@ -46,6 +46,8 @@ export function testManagedSessionAuthority(
     markSessionRegistrationAmbiguous: async () => ({ changed: true }),
     beginSessionCompensation: async () => ({ changed: true }),
     completeSessionCompensation: async () => ({ changed: true }),
+    authorizeRuntimeSessionStartStatus: async () => {},
+    authorizeRuntimeSessionStart: async () => {},
     authorizeRuntimeSession: async () => ({ allowed: true }),
     runtimeAccessTokenActive: async () => ({ active: true }),
     acquireSessionTurn,

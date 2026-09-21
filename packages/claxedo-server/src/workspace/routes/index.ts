@@ -6,11 +6,11 @@ import {
   sandboxDriverId,
   sandboxDriverAuth,
 } from "@claxedo/sandbox-manager/driver-catalog"
-import { isSandboxDriverID } from "@claxedo/sandbox-contract"
+import { isSandboxDriverID, safeRepoUrl } from "@claxedo/sandbox-contract"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import { type ControlPlaneServices } from "../../authority/services"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { ensureHostForRepo } from "@claxedo/server-core/sandbox/network/policy"
 import {
   deleteWorkspace,
@@ -27,11 +27,27 @@ import { discardSupervisorSandbox } from "../../workspace/supervisor"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
-import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import {
+  ControlPlaneAuthError,
+  bearerToken,
+  controlPlaneAuthErrorBody,
+  type SignedControlPlaneAuth,
+} from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
-import { apiError, captureWorkspaceTelemetry, parsedBody, signedAccessOptions, signedOrError, type WorkspaceRouteOptions } from "../route-support"
+import {
+  apiError,
+  captureWorkspaceTelemetry,
+  missingBearerBody,
+  parsedBody,
+  requireDeploymentOperator,
+  signedAccessOptions,
+  signedOrError,
+  type WorkspaceRouteOptions,
+} from "../route-support"
 import { asRecord } from "@claxedo/helpers/guards"
+import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { contentfulStatus } from "../../platform/http/status"
 import { controlPlaneRateLimitError } from "../runtime-token-guards"
 import { repoNameFromUrl } from "../git"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
@@ -158,11 +174,11 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
         const directory = c.req.query("directory")
         if (isGlobalDirectory(directory)) return c.json(workspaceResponse(globalWorkspace(directory!)))
-        const explicitWorkspaceId = c.req.query("workspaceId") || c.req.query("workspace")
-        const directoryWorkspaceId = explicitWorkspaceId ? undefined : workspaceIdFromDirectoryRef(directory)
+        const explicitWorkspaceId = c.req.query("workspaceId") ?? c.req.query("workspace")
+        const directoryWorkspaceId = explicitWorkspaceId === undefined ? workspaceIdFromDirectoryRef(directory) : undefined
         const authorityWorkspaceId = explicitWorkspaceId ?? directoryWorkspaceId
         const requestedCreate = c.req.query("create") === "true"
-        if (authResult.auth && !authorityWorkspaceId) {
+        if (authResult.auth && authorityWorkspaceId === undefined) {
           try {
             const opened = await openSignedWorkspaceByDirectory({
               services,
@@ -353,6 +369,11 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           return c.json(result)
         } catch (err) {
           if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+          // The authority's own refusals — a workspace this caller may not
+          // administer, a directory outside the roots this machine may serve
+          // — are the owner's answer, the same mapping the enrolled-host verbs
+          // give them.
+          if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
           throw err
         }
       })
@@ -401,36 +422,35 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         if ("error" in accessResult) return c.json(accessResult.error, accessResult.status)
         const ws = await resolveWorkspace({ workspaceId: id })
         if (!ws) return c.json({ error: apiError("workspace_not_found", "Workspace not found") }, 404)
-        if (ws.kind === "cloud" && bearerToken(c.req.raw.headers.get("authorization"))) {
-          const authResult = await signedOrError(
-            c.req.raw,
-            {
-              ...options,
-              requireSigned: true,
-            },
-            services,
-          )
-          if ("error" in authResult) return c.json(authResult.error, authResult.status)
-          const auth = authResult.auth
-          if (!auth)
-            return c.json(
-              controlPlaneAuthErrorBody(
-                new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required"),
-              ),
-              401,
-            )
+        const auth = accessResult.auth
+        // A presented credential this deployment cannot verify into a signed
+        // identity is not a tokenless local caller, and must not fall through
+        // to the local-owner branch below.
+        if (!auth && bearerToken(c.req.raw.headers.get("authorization"))) return c.json(missingBearerBody(), 401)
+        // Which authority decides follows the stored row, not the caller: a
+        // provisioned workspace is the control plane's resource and its owner
+        // answers for it, while every other placement is a directory on THIS
+        // machine, which no workspace role governs and only the deployment's
+        // operator may make this process forget. A signed caller passes one of
+        // the two before anything is destroyed; tokenless loopback is the
+        // single-owner product deleting its own machine's row.
+        if (auth) {
           try {
-            await requireAuthority(services).usersMe(auth)
-            await requireAuthority(services).deleteWorkspace(auth, { workspaceId: id })
-            captureWorkspaceTelemetry({
-              services,
-              auth,
-              event: "workspace.delete",
-              workspaceId: id,
-              properties: {
-                backing: "cloud-vm",
-              },
-            })
+            if (ws.kind === "cloud") {
+              await requireAuthority(services).usersMe(auth)
+              await requireAuthority(services).deleteWorkspace(auth, { workspaceId: id })
+              captureWorkspaceTelemetry({
+                services,
+                auth,
+                event: "workspace.delete",
+                workspaceId: id,
+                properties: {
+                  backing: "cloud-vm",
+                },
+              })
+            } else {
+              requireDeploymentOperator(options, auth)
+            }
           } catch (err) {
             if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
             throw err
@@ -474,13 +494,22 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           const err = new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
           return c.json(controlPlaneAuthErrorBody(err), err.status)
         }
+        // Admission for a signed caller is the authority's, and it is asked
+        // whether or not the caller named a tenant: the authority resolves the
+        // organization this workspace would land in and admits against that
+        // one. An authority that cannot answer is not a permissive one — the
+        // sandbox this route provisions is billable and runs on the
+        // deployment's provider credentials.
         if (authResult.auth) {
           try {
             const authority = requireAuthority(services)
-            if (body.orgId && !authority.authorizeWorkspaceCreate) {
+            if (!authority.authorizeWorkspaceCreate) {
               throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace creation authorization is unavailable")
             }
-            await authority.authorizeWorkspaceCreate?.(authResult.auth, (body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}))
+            await authority.authorizeWorkspaceCreate(authResult.auth, {
+              ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
+              ...(body.projectId?.trim() ? { projectId: body.projectId.trim() } : {}),
+            })
           } catch (err) {
             if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
             throw err
@@ -564,6 +593,12 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         const name = slug(rawWorkspaceName, "main")
 
         let repoUrl = body.repoUrl?.trim()
+        if (repoUrl && !safeRepoUrl(repoUrl)) {
+          return c.json(
+            { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
+            400,
+          )
+        }
         let provisionRepoUrl = repoUrl
         let provisionSecrets: Array<{ name: string; value: string; hosts: string[]; header?: string }> | undefined
 
@@ -676,6 +711,10 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           } catch (err) {
             await deleteWorkspace(ws.id).catch(() => {})
             if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+            // A project id or repository already held by another tenant is the
+            // authority's answer about the world, not a fault in serving the
+            // request.
+            if (isClaxedoError(err)) return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
             throw err
           }
         }

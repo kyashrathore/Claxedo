@@ -5,7 +5,7 @@ export type PreparedSessionDirectory = string
 
 export type PreparedRuntimeSessionConfig = {
   agent: string
-  model: ModelKey
+  model?: ModelKey
   variant?: string
 }
 
@@ -13,10 +13,11 @@ export type PreparedRuntimeSession = {
   id: string
   directory: PreparedSessionDirectory
   harness: HarnessType
-  model: string
+  model?: string
 }
 
 export type PreparedHarnessSessionState = {
+  modelOptional?: boolean
   harness?: HarnessType
   selectedModel?: string
 }
@@ -31,7 +32,7 @@ export type PreparedHarnessSessionPlan =
       status: "create"
       directory: PreparedSessionDirectory
       harness: HarnessType
-      model: string
+      model?: string
       stale?: PreparedRuntimeSession
     }
 
@@ -51,7 +52,7 @@ export function planPreparedHarnessSession(input: {
   if (!input.state.harness) return { status: "missing-harness" }
 
   const model = preparedHarnessSessionModel(input.state)
-  if (!model) return { status: "no-model" }
+  if (!model && !input.state.modelOptional) return { status: "no-model" }
 
   if (
     input.prepared?.directory === input.directory &&

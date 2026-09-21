@@ -16,6 +16,7 @@
 import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from "jose"
 
 import { isRecord, numberClaim, stringClaim } from "@claxedo/helpers/guards"
+import { isLoopbackHostname } from "@claxedo/helpers"
 
 export type TokenVerifierBaseClaims = {
   iss: string
@@ -102,6 +103,8 @@ export type HttpTokenVerifierOptions = {
    *  and return `{ subject: string; scopes?: string[]; claims: TokenVerifierBaseClaims }`
    *  on success, or HTTP non-2xx on failure. */
   endpoint: string
+  /** Development only: permit HTTP to the exact loopback hosts. HTTPS is otherwise required. */
+  allowInsecureLoopback?: boolean
   /** Optional fixed headers (e.g., bearer auth on the verifier itself). */
   headers?: Record<string, string>
   /** fetch override for tests. */
@@ -111,6 +114,16 @@ export type HttpTokenVerifierOptions = {
 }
 
 export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): TokenVerifier<TokenVerifierBaseClaims> {
+  let endpoint: URL
+  try {
+    endpoint = new URL(options.endpoint)
+    if (endpoint.username || endpoint.password || endpoint.hash
+      || (endpoint.protocol !== "https:" && !(options.allowInsecureLoopback && endpoint.protocol === "http:" && isLoopbackHostname(endpoint.hostname)))) {
+      throw new Error("untrusted verifier endpoint")
+    }
+  } catch {
+    throw new TokenVerifierError({ code: "verifier_endpoint_invalid", status: 500, message: "Verifier endpoint requires HTTPS without URL credentials or a fragment; explicit loopback development is the only HTTP exception" })
+  }
   const fetchImpl = options.fetch ?? globalThis.fetch
   if (!fetchImpl) {
     throw new TokenVerifierError({
@@ -125,8 +138,9 @@ export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): Toke
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), timeoutMs)
       try {
-        const res = await fetchImpl(options.endpoint, {
+        const res = await fetchImpl(endpoint.href, {
           method: "POST",
+          redirect: "error",
           headers: {
             "content-type": "application/json",
             ...options.headers,
@@ -161,6 +175,12 @@ export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): Toke
             code: "verifier_response_invalid",
             message: "Verifier response is missing required token claims",
           })
+        }
+        const now = Date.now() / 1_000
+        const nbf = claims.nbf
+        if (claims.exp <= now || claims.iat > now || claims.exp <= claims.iat
+          || (nbf !== undefined && (typeof nbf !== "number" || !Number.isFinite(nbf) || nbf > now))) {
+          throw new TokenVerifierError({ code: "verifier_claims_invalid", message: "Verifier claims are expired or not yet valid" })
         }
         return {
           subject,

@@ -14,7 +14,7 @@ describe("github recorded fixture replay", () => {
       payload: await fixture("issue_comment.json"),
     })).toMatchObject({
       channel: "github",
-      externalUserId: "octocat",
+      externalUserId: "583231",
       threadKey: "github:4242:acme/infra:issue-17",
       idempotencyKey: "fixture-issue-comment",
       text: "@claxedo investigate the deployment failure",
@@ -29,7 +29,7 @@ describe("github recorded fixture replay", () => {
       payload: await fixture("pull_request_review.json"),
     })).toMatchObject({
       channel: "github",
-      externalUserId: "reviewer",
+      externalUserId: "90210",
       threadKey: "github:4242:acme/infra:pr-18",
       idempotencyKey: "fixture-pr-review",
       text: "@claxedo verify this review feedback",

@@ -36,6 +36,7 @@ function build(entitled: boolean) {
   const services = {
     authority: {
       usersMe: vi.fn(async () => ({ subject: "user_1" })),
+      authorizeWorkspaceCreate: vi.fn(async () => {}),
       createCloudWorkspace,
       auditAllow: vi.fn(async () => ({})),
     },

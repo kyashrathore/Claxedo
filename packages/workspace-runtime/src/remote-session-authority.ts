@@ -17,6 +17,8 @@ type AuthorityAction =
   | "read"
   | "write"
   | "reserve"
+  | "start_status"
+  | "start"
   | "register"
   | "adopt"
   | "registration_ambiguous"
@@ -131,6 +133,8 @@ export function remoteWorkspaceSessionAccessPolicy(
   const policy = managedWorkspaceSessionAccessPolicy({
     requireActor: options.requireActor ?? true,
     authority: {
+      authorizeSessionStartStatus: (input) => request(input, "start_status", decodeAllowed),
+      authorizeSessionStart: (input) => request(input, "start", decodeAllowed),
       authorizeSessionRead: authorize,
       authorizeSessionWrite: authorize,
       authorizeSessionStream: (input, lease) =>
@@ -322,6 +326,8 @@ export function remoteWorkspaceSessionAccessPolicyFromEnv(env: Record<string, st
 
 function isRegistrationAction(action: string) {
   return (
+    action === "start_status" ||
+    action === "start" ||
     action === "register" ||
     action === "registration_ambiguous" ||
     action === "compensation_begin" ||

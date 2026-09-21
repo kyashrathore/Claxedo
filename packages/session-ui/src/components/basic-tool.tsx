@@ -441,7 +441,7 @@ function labelEntry(input: Record<string, unknown> | undefined) {
  */
 function args(input: Record<string, unknown> | undefined, exclude?: string) {
   if (!input) return []
-  const skip = new Set(LABEL_KEYS)
+  const skip = new Set([...LABEL_KEYS, "intent", "kind"])
   return Object.entries(input)
     .filter(([key]) => !skip.has(key))
     .flatMap(([key, value]) => {
@@ -498,6 +498,7 @@ const INTENT_ICONS: Record<string, IconProps["name"]> = {
 }
 
 export function genericToolIcon(tool: string, input?: Record<string, unknown>): IconProps["name"] {
+  if (input?.kind === "image_view" || tool === "view_image") return "photo"
   if (isMcpTool(tool, input)) return "mcp"
   const intent = input?.intent
   if (typeof intent === "string" && INTENT_ICONS[intent]) return INTENT_ICONS[intent]

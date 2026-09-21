@@ -186,6 +186,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   }
 
   const publish = (event: AgentRuntimeEventEnvelope) => {
+    const compat = toCompatEvent(event.payload)
+    if (compat) eventHub.publishGlobal({ directory: runtimeDirectory(event.directory), payload: compat })
     for (const subscriber of subscribers) {
       if (subscriber.input.sessionId && subscriber.input.sessionId !== event.sessionId) continue
       if (subscriber.input.directory !== undefined && subscriber.input.directory !== event.directory) continue
@@ -338,7 +340,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       assistantMessageId: stableAssistantMessageId,
       created: Date.now(),
       ...(fence ? { fencingToken: fence.fencingToken() } : {}),
-      onEvent: () => {},
+      onEvent: (payload) => publishTurn({ sessionId, directory, payload }),
       onRuntimeEvent: (event) => {
         if (!admitted()) return
         publishTurn({
@@ -361,7 +363,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         assistantMessageId: target.assistantMessageId,
         created: target.created,
         ...(fence ? { fencingToken: fence.fencingToken() } : {}),
-        onEvent: () => {},
+        onEvent: (payload) => publishTurn({ sessionId: target.sessionId, directory, payload }),
         onRuntimeEvent: (event) => {
           if (!admitted()) return
           publishTurn({
@@ -514,6 +516,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     // never yield again. Publish the canonical terminal frame before
     // releasing admission so route-level subscribers always settle and
     // any later adapter frames remain fenced as the old generation.
+    eventHub.publishGlobal({ directory: runtimeDirectory(directory), payload: sessionIdle(sessionId) })
     publish({ sessionId, directory, payload: { type: "finish", sessionId } })
     admissions.discard(sessionId)
   }
@@ -626,8 +629,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (turn.admission && !turn.admission.valid()) {
           throw new Error("Durable session turn admission is no longer valid")
         }
+        // Capture the target before adapter resolution yields. A replacement
+        // turn must never inherit an input addressed to the previous one.
+        const steeringTarget = turn.delivery === "steer" ? admissions.active(turn.sessionId) : undefined
         const { adapter, config } = await runtimeForSession(turn.sessionId)
         if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
+        if (turn.admission && !turn.admission.valid()) {
+          throw new Error("Durable session turn admission is no longer valid")
+        }
         const directory = session.directory ?? undefined
         const binding = executionBinding(turn.sessionId, directory)
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
@@ -635,21 +644,24 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
         const prompt = turnPrompt({ turn, config, userMessageId, assistantMessageId, channel: adapter.instructionChannel })
         const running = admissions.active(turn.sessionId)
+        if (turn.delivery === "steer" && (!steeringTarget || running?.generation !== steeringTarget.generation)) {
+          return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt,
+            delivery: "queue", steering: { ok: false, status: "no_active_turn", message: "The target turn ended before steering" } }
+        }
         if (running) {
           if (!turn.delivery) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
           return await deliverToBusySession({
             running, turn, prompt, userMessageId, assistantMessageId, directory,
             requested: turn.delivery,
             ...(adapter.steerTurn ? { steer: () => adapter.steerTurn!(binding, prompt) } : {}),
-            commit: (payload) => commitAndPublish(turn.sessionId, directory, payload, { dir: "out", method: "turn.steer" }),
           })
         }
         const claimed = admissions.claim(turn.sessionId, { turnId: userMessageId, assistantMessageId })
         if (!claimed) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
         const admission = claimed.generation
         const releaseAdmission = claimed.release
-        turn.onAdmitted?.()
         try {
+          turn.onAdmitted?.()
           const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
           const started = store.startTurn(turnStartRecord(turn, prompt, userMessageId, assistantMessageId, agentSessionId))
           for (const payload of started.events) {
@@ -709,13 +721,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async list(directory: RuntimeDirectory): Promise<AgentPermission[]> {
         return merge(adapters, (adapter) => adapter.listPermissions?.(directory))
       },
-      async respond(permissionId: string, decision: AgentRuntimePermissionDecision, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
+      async respond(permissionId: string, decision: AgentRuntimePermissionDecision, directory: RuntimeDirectory, optionId?: string): Promise<AgentRuntimeInteractionResult | void> {
         const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)))
           .find((item) => item.id === permissionId)
         if (!permission) throw new Error(`Permission ${permissionId} not found`)
         const adapter = await interactionAdapter("respondPermission", permission?.sessionID)
         if (!adapter?.respondPermission) throw new Error("No registered harness supports permissions")
-        const result = await adapter.respondPermission(executionBinding(permission.sessionID, directory), permissionId, decision)
+        const result = await adapter.respondPermission(executionBinding(permission.sessionID, directory), permissionId, decision, optionId)
         publishInteractionEvents(result?.events, directory)
         return result
       },

@@ -168,6 +168,11 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
+execFileSync(process.execPath, [path.join(root, "scripts/acp-question-package-smoke.mjs")], {
+  cwd: root,
+  stdio: "inherit",
+})
+
 console.log("Publish verification passed")
 
 function readJson(file: string) {

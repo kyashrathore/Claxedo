@@ -182,9 +182,16 @@ export function subscriptionEventToApplyArgs(
   const customerId = subscriptionCustomerId(sub)
   const orgId = subscriptionOrgId(sub)
   if (!customerId || !orgId) return undefined // unattributable → skip, route reports
+  // Neither modified_at nor created_at: nothing orders this event against the
+  // mirror. Stamping arrival time would rank a late-delivered older event above
+  // newer state and let it downgrade a live subscription, so reject it the same
+  // way a customer-state payload with no usable timestamp is rejected — the
+  // route acks and pages rather than applying a synthesized freshness.
+  const sourceTs = subscriptionModifiedAt(sub)
+  if (sourceTs === undefined) return undefined
   return {
     polar_customer_id: customerId,
-    source_ts: subscriptionModifiedAt(sub) ?? Date.now(),
+    source_ts: sourceTs,
     source: "subscription_event",
     org_states: [{ org_id: orgId, state: subscriptionState(sub, "subscription_event") }],
   }

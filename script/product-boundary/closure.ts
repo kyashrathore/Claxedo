@@ -277,10 +277,13 @@ export function walk(options: WalkOptions): Closure {
       for (const name of opaqueDynamicImports(source)) opaque.add(`${idOf(file)} -> import(${name})`)
 
       for (const specifier of new Set(read(source))) {
+        // Vite emits this explicit worker entry as a separate executable asset.
+        // Follow its source and dependencies while retaining the literal edge.
+        const sourceSpecifier = specifier.endsWith("?worker&url") ? specifier.slice(0, -"?worker&url".length) : specifier
         const applicable = aliasesFor(file, aliases, followed)
-        const resolved = isBare(specifier)
-          ? (resolveAlias(specifier, applicable) ?? resolveFollowedPackage(specifier, followed))
-          : resolveRelative(file, specifier)
+        const resolved = isBare(sourceSpecifier)
+          ? (resolveAlias(sourceSpecifier, applicable) ?? resolveFollowedPackage(sourceSpecifier, followed))
+          : resolveRelative(file, sourceSpecifier)
 
         if (resolved === null) {
           // An alias-shaped or followed-package specifier that did not resolve

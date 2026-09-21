@@ -24,6 +24,12 @@ vi.mock("../../workspace/sandbox-fetch-options", () => ({ sandboxFetchOptionsFor
 afterEach(() => vi.clearAllMocks())
 
 describe("harness routes", () => {
+  test("forwards existing-session options through the authorized session endpoint", async () => {
+    vi.mocked(sandboxFetch).mockResolvedValueOnce(Response.json({ options: [] }))
+    const response = await agentConfigHarnessRoutes().request("/harness/options?connectionId=openclaw&sessionId=session-a&workspaceId=workspace-1")
+    expect(response.status).toBe(200)
+    expect(vi.mocked(sandboxFetch).mock.calls[0][1]).toBe("/session/session-a/config-options?directory=%2Fproject&connectionId=openclaw")
+  })
   test.each([
     { kind: "native" as const, harnessId: "pi" },
     { kind: "connection" as const, connectionId: "external-opencode" },

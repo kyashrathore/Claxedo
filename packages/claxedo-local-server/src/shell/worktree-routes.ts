@@ -1,4 +1,3 @@
-import fs from "fs"
 import type { Context } from "hono"
 import path from "path"
 import { deleteWorkspaceByDirectory, getProjectWorkspace, listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
@@ -12,21 +11,7 @@ import { raw, record, trimmed } from "../platform/json"
 
 type WorktreeInfo = NonNullable<Awaited<ReturnType<typeof nextWorktreeInfo>>>
 
-/**
- * The only two directory trees a worktree request may name for a project:
- *
- *  - the project's own checkout (`root.directory`), and
- *  - the managed worktree root `<dataDir>/worktree/<project_id>`, which is
- *    where `nextWorktreeInfo` actually creates worktrees — they live beside the
- *    repository, not inside it.
- *
- * Without this, `target` is whatever the caller put in `?directory=` or in the
- * JSON body, and it flows straight into `fs.rm(target, {recursive: true, force:
- * true})` (deleteWorktree) and `git -C target reset --hard` + `git clean -ffdx`
- * (resetWorktree). Neither the primary-workspace equality check nor
- * `locate()` constrains it: `locate()` returning undefined only skips the
- * `git worktree remove` step and falls through to the unconditional `fs.rm`.
- */
+/** The project checkout and its managed worktree root bound the registry lookup below. */
 async function withinProjectScope(project_id: string, repositoryDirectory: string, target: string) {
   const [managed, repository] = await Promise.all([
     containsCanonical(path.join(dataDir(), "worktree", project_id), target),
@@ -40,6 +25,20 @@ function outsideWorkspaceBody() {
     "claxedo_worktree_outside_workspace",
     "directory is outside this workspace's project and worktree roots",
   )
+}
+
+/** Destructive operations require both an application registration and an exact Git worktree entry. */
+async function registeredWorktree(projectId: string, rootDirectory: string, target: string) {
+  const workspaces = await listWorkspaces()
+  const registered = await locate(workspaces
+    .filter((workspace) => workspace.kind === "local" && workspace.project_id === projectId)
+    .map((workspace) => ({ path: workspace.directory })), target)
+  if (!registered) return { ok: false as const, body: errorBody("claxedo_worktree_not_found", "Registered worktree not found") }
+  const list = await gitRun(rootDirectory, ["worktree", "list", "--porcelain"])
+  if (!list.ok) return { ok: false as const, body: errorBody("claxedo_worktree_list_failed", list.err || list.out || "Failed to read git worktrees") }
+  const row = await locate(trees(list.out), target)
+  if (!row?.path) return { ok: false as const, body: errorBody("claxedo_worktree_not_found", "Registered worktree not found") }
+  return { ok: true as const, path: row.path, branch: row.branch }
 }
 
 export async function createWorktree(c: Context) {
@@ -103,29 +102,16 @@ export async function deleteWorktree(c: Context) {
   if (!ws) return c.json(errorBody("claxedo_workspace_not_found", "Workspace not found"), 404)
   const root = await getProjectWorkspace(ws.project_id ?? ws.id)
   if (!root) return c.json(errorBody("claxedo_project_workspace_not_found", "Project workspace not found"), 404)
-  if (path.resolve(target) === path.resolve(root.directory)) {
+  if (await locate([{ path: root.directory }], target)) {
     return c.json(errorBody("claxedo_primary_workspace_remove_forbidden", "Cannot remove the primary workspace"), 400)
   }
   if (!(await withinProjectScope(ws.project_id ?? ws.id, root.directory, target))) {
     return c.json(outsideWorkspaceBody(), 400)
   }
-  const list = await gitRun(root.directory, ["worktree", "list", "--porcelain"])
-  if (!list.ok) return c.json(errorBody("claxedo_worktree_list_failed", list.err || list.out || "Failed to read git worktrees"), 400)
-  const row = await locate(trees(list.out), target)
-  const removed = row?.path
-    ? await gitRun(root.directory, ["worktree", "remove", "--force", row.path])
-    : { ok: true as const, out: "", err: "" }
-  if (row?.path && !removed.ok) {
-    const next = await gitRun(root.directory, ["worktree", "list", "--porcelain"])
-    if (!next.ok) {
-      return c.json(errorBody("claxedo_worktree_remove_failed", removed.err || removed.out || next.err || next.out || "Failed to remove git worktree"), 400)
-    }
-    const stale = await locate(trees(next.out), target)
-    if (stale?.path) {
-      return c.json(errorBody("claxedo_worktree_remove_failed", removed.err || removed.out || "Failed to remove git worktree"), 400)
-    }
-  }
-  await fs.promises.rm(target, { recursive: true, force: true }).catch(() => undefined)
+  const row = await registeredWorktree(ws.project_id ?? ws.id, root.directory, target)
+  if (!row.ok) return c.json(row.body, 400)
+  const removed = await gitRun(root.directory, ["worktree", "remove", "--force", row.path])
+  if (!removed.ok) return c.json(errorBody("claxedo_worktree_remove_failed", removed.err || removed.out || "Failed to remove git worktree"), 400)
   const branch = row?.branch?.replace(/^refs\/heads\//, "")
   if (branch && branch !== "HEAD" && branch.startsWith("claxedo/")) {
     const deleted = await gitRun(root.directory, ["branch", "-D", branch])
@@ -133,7 +119,7 @@ export async function deleteWorktree(c: Context) {
       return c.json(errorBody("claxedo_worktree_branch_delete_failed", deleted.err || deleted.out || "Failed to delete worktree branch"), 400)
     }
   }
-  await deleteWorkspaceByDirectory(target)
+  await deleteWorkspaceByDirectory(row.path)
   return c.json(true)
 }
 
@@ -148,23 +134,25 @@ export async function resetWorktree(c: Context) {
   if (!ws) return c.json(errorBody("claxedo_workspace_not_found", "Workspace not found"), 404)
   const root = await getProjectWorkspace(ws.project_id ?? ws.id)
   if (!root) return c.json(errorBody("claxedo_project_workspace_not_found", "Project workspace not found"), 404)
-  if (path.resolve(target) === path.resolve(root.directory)) {
+  if (await locate([{ path: root.directory }], target)) {
     return c.json(errorBody("claxedo_primary_workspace_reset_forbidden", "Cannot reset the primary workspace"), 400)
   }
   if (!(await withinProjectScope(ws.project_id ?? ws.id, root.directory, target))) {
     return c.json(outsideWorkspaceBody(), 400)
   }
+  const row = await registeredWorktree(ws.project_id ?? ws.id, root.directory, target)
+  if (!row.ok) return c.json(row.body, 400)
   const branch = await defaultBranch(root.directory)
   if (!branch) return c.json(errorBody("claxedo_default_branch_not_found", "Default branch not found"), 400)
   if (branch.target !== branch.local) {
     const fetched = await gitRun(root.directory, ["fetch", branch.target.split("/")[0], branch.local])
     if (!fetched.ok) return c.json(errorBody("claxedo_worktree_fetch_failed", fetched.err || fetched.out || `Failed to fetch ${branch.target}`), 400)
   }
-  const reset = await gitRun(target, ["reset", "--hard", branch.target])
+  const reset = await gitRun(row.path, ["reset", "--hard", branch.target])
   if (!reset.ok) return c.json(errorBody("claxedo_worktree_reset_failed", reset.err || reset.out || "Failed to reset worktree"), 400)
-  const clean = await gitRun(target, ["clean", "-ffdx"])
+  const clean = await gitRun(row.path, ["clean", "-ffdx"])
   if (!clean.ok) return c.json(errorBody("claxedo_worktree_clean_failed", clean.err || clean.out || "Failed to clean worktree"), 400)
-  const update = await gitRun(target, ["submodule", "update", "--init", "--recursive", "--force"])
+  const update = await gitRun(row.path, ["submodule", "update", "--init", "--recursive", "--force"])
   if (!update.ok) return c.json(errorBody("claxedo_worktree_submodule_update_failed", update.err || update.out || "Failed to update submodules"), 400)
   return c.json(true)
 }

@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import type { AgentMessage, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes } from "@claxedo/workspace-runtime/routes"
 import { createClaxedoMcpClient } from "../client/index"
@@ -313,8 +314,9 @@ async function listen(input: MountInput) {
   return { url: `http://127.0.0.1:${address.port}${CLAXEDO_MCP_PATH}`, audits, control, created }
 }
 
-async function connect(url: string, token: string) {
-  const client = new Client({ name: "fixture-host", version: "0.0.0" })
+async function connect(url: string, token: string, confirm?: () => "accept" | "decline" | "cancel") {
+  const client = new Client({ name: "fixture-host", version: "0.0.0" }, confirm ? { capabilities: { elicitation: { form: {} } } } : {})
+  if (confirm) client.setRequestHandler(ElicitRequestSchema, async () => ({ action: confirm(), content: {} }))
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { authorization: `Bearer ${token}` } } }))
   clients.push(client)
   return client
@@ -416,6 +418,21 @@ describe("session_create", () => {
     expect(refusal.text).toContain("ws_other")
     expect(other.creates).toEqual([])
   })
+
+  test("audits the session it created, not a session named in the request", async () => {
+    const state = local()
+    const { url, audits } = await listen({ local: state })
+    const client = await connect(url, "cli-jwt")
+    const created = await json(client, "session_create", {})
+    expect(created).toMatchObject({ id: expect.any(String) })
+    expect(audits).toEqual([
+      expect.objectContaining({
+        tool: "session_create",
+        sessionId: created.id,
+        credential: expect.objectContaining({ kind: "user" }),
+      }),
+    ])
+  })
 })
 
 describe("sessions_list", () => {
@@ -512,7 +529,12 @@ describe("reading and driving one session", () => {
   test("session_delete removes the session for a person and is never offered inside one", async () => {
     const state = local()
     const person = await listen({ local: state })
-    const client = await connect(person.url, "cli-jwt")
+    for (const confirm of [undefined, () => "decline" as const, () => "cancel" as const]) {
+      const refused = await connect(person.url, "cli-jwt", confirm)
+      expect(await call(refused, "session_delete", { session: "ses_root" })).toMatchObject({ isError: true })
+    }
+    expect(state.deleted).toEqual([])
+    const client = await connect(person.url, "cli-jwt", () => "accept")
     expect(await json(client, "session_delete", { session: "ses_root" })).toEqual({ session: "ses_root", deleted: { ok: true } })
     expect(state.deleted).toEqual(["ses_root"])
 
@@ -520,6 +542,98 @@ describe("reading and driving one session", () => {
     const agent = await connect(inside.url, "rt-token")
     expect((await agent.listTools()).tools.map((tool) => tool.name)).not.toContain("session_delete")
     expect(await call(agent, "session_delete", { session: "ses_root" })).toMatchObject({ isError: true })
+  })
+
+  test("drives its own session and the children it started, and refuses every other session in the same workspace", async () => {
+    const state = workspace({
+      id: "ws_local",
+      directory: "/w",
+      sessions: [
+        { id: "ses_root", title: "Caller", harness: "claude" },
+        { id: "ses_child", title: "Child", parentID: "ses_root", harness: "codex" },
+        { id: "ses_sibling", title: "Sibling", harness: "claude" },
+        { id: "ses_nephew", title: "Sibling's child", parentID: "ses_sibling", harness: "claude" },
+      ],
+      status: { ses_root: { type: "busy" } },
+    })
+    const { url } = await listen({ local: state, claims: { sessionId: "ses_root" } })
+    const client = await connect(url, "rt-token")
+
+    await json(client, "session_send", { session: "ses_root", text: "carry on" })
+    await json(client, "session_send", { session: "ses_child", text: "finish up" })
+    await json(client, "session_abort", { session: "ses_child" })
+    expect(state.prompts).toEqual([{ session: "ses_root", text: "carry on" }, { session: "ses_child", text: "finish up" }])
+    expect(state.aborted).toEqual(["ses_child"])
+
+    for (const session of ["ses_sibling", "ses_nephew"]) {
+      const sent = await call(client, "session_send", { session, text: "do my work" })
+      expect(sent.isError, `session_send reached ${session}`).toBe(true)
+      expect(sent.text).toContain(session)
+      const aborted = await call(client, "session_abort", { session })
+      expect(aborted.isError, `session_abort reached ${session}`).toBe(true)
+    }
+    expect(state.prompts).toHaveLength(2)
+    expect(state.aborted).toEqual(["ses_child"])
+  })
+
+  test("takes the parent from the stored session, not from anything the call carries", async () => {
+    const state = workspace({
+      id: "ws_local",
+      directory: "/w",
+      sessions: [{ id: "ses_root", title: "Caller", harness: "claude" }, { id: "ses_sibling", title: "Sibling", harness: "claude" }],
+    })
+    const { url } = await listen({ local: state, claims: { sessionId: "ses_root" } })
+    const client = await connect(url, "rt-token")
+
+    const forged = await call(client, "session_send", { session: "ses_sibling", text: "do my work", parentID: "ses_root", parent: "ses_root" })
+    expect(forged.isError).toBe(true)
+    expect(state.prompts).toEqual([])
+    const [tool] = (await client.listTools()).tools.filter((row) => row.name === "session_send")
+    expect(Object.keys(tool?.inputSchema.properties ?? {})).toEqual(["session", "workspace", "directory", "text"])
+  })
+
+  test("refuses every session on another machine the account already lets it write to, however that machine's rows read", async () => {
+    const state = local()
+    // The three shapes another machine's runtime can present: an unrelated
+    // session, a row carrying the caller's own id, and a row naming the caller
+    // as its parent. None of them is this session's to drive, and a session id
+    // is only meaningful together with the runtime that minted it.
+    const other = workspace({
+      id: "ws_other",
+      directory: "/other",
+      sessions: [
+        { id: "ses_far", title: "Far", harness: "claude" },
+        { id: "ses_root", title: "Same id, other machine", harness: "claude" },
+        { id: "ses_planted", title: "Claims this caller as its parent", parentID: "ses_root", harness: "claude" },
+      ],
+    })
+    const { url } = await listen({ local: state, workspaces: [state, other], crossMachineWrites: true, claims: { sessionId: "ses_root" } })
+    const client = await connect(url, "rt-token")
+
+    for (const session of ["ses_far", "ses_root", "ses_planted"]) {
+      const sent = await call(client, "session_send", { session, workspace: "ws_other", text: "run it" })
+      expect(sent.isError, `session_send reached ${session} on ws_other`).toBe(true)
+      expect(sent.text).toContain("ws_other")
+      const aborted = await call(client, "session_abort", { session, workspace: "ws_other" })
+      expect(aborted.isError, `session_abort reached ${session} on ws_other`).toBe(true)
+    }
+    expect(other.prompts).toEqual([])
+    expect(other.aborted).toEqual([])
+
+    // The same account setting still lets this session start work there, which
+    // is what it is for.
+    const created = await json(client, "session_create", { workspace: "ws_other", prompt: "begin" })
+    expect(other.prompts).toEqual([{ session: created.id, text: "begin" }])
+  })
+
+  test("refuses a runtime credential that names no session of its own", async () => {
+    const state = local()
+    const { url } = await listen({ local: state })
+    const client = await connect(url, "rt-token")
+    const refusal = await call(client, "session_send", { session: "ses_root", text: "carry on" })
+    expect(refusal.isError).toBe(true)
+    expect(refusal.text).toContain("names no session")
+    expect(state.prompts).toEqual([])
   })
 
   test("refuses a write a session aims at another machine and lets the read through", async () => {

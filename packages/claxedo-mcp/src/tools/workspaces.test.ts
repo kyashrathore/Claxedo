@@ -100,7 +100,7 @@ async function listen() {
   return { url: `http://127.0.0.1:${address.port}${CLAXEDO_MCP_PATH}`, control }
 }
 
-async function connect(url: string, token: string, elicit?: () => "accept" | "decline") {
+async function connect(url: string, token: string, elicit?: () => "accept" | "decline" | "cancel") {
   const client = new Client({ name: "fixture-host", version: "0.0.0" }, elicit ? { capabilities: { elicitation: { form: {} } } } : {})
   const prompts: string[] = []
   if (elicit) {
@@ -207,7 +207,19 @@ describe("changing a workspace's compute", () => {
     expect(control.calls).toEqual([])
   })
 
-  test("annotates the destructive tools so a host without elicitation still prompts", async () => {
+  test("missing or cancelled confirmation never sends downstream approval or touches compute", async () => {
+    const { url, control } = await listen()
+    for (const elicit of [undefined, () => "cancel" as const]) {
+      const { client } = await connect(url, "cli-jwt", elicit)
+      expect(await call(client, "workspace_restore", { workspace: "ws_cloud" })).toMatchObject({ isError: true })
+      for (const operation of ["stop", "replace", "cleanup", "destroy"]) {
+        expect(await call(client, "workspace_lifecycle", { workspace: "ws_cloud", operation })).toMatchObject({ isError: true })
+      }
+    }
+    expect(control.calls).toEqual([])
+  })
+
+  test("annotates the destructive tools without treating annotations as confirmation", async () => {
     const { url } = await listen()
     const { client } = await connect(url, "cli-jwt")
     const annotations = Object.fromEntries((await client.listTools()).tools.map((tool) => [tool.name, tool.annotations]))

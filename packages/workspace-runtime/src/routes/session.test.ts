@@ -1,4 +1,8 @@
 import { describe, expect, it, spyOn } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { RuntimeStore } from "../store"
 import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { fetchDouble } from "../test-support/fetch-double"
@@ -22,6 +26,8 @@ import {
   buildAssistantMessage,
   buildSession,
   buildUserMessage,
+  permissionAsked,
+  permissionReplied,
   messagePartUpdated,
   messageUpdated,
   sessionError,
@@ -620,6 +626,10 @@ describe("session prompt route", () => {
     const registered = new Set<string>()
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
+      authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup status is not admitted by this fixture" }),
+      authorizeSessionStart: (input) => input.registrationOperationId === "op_managed_create" && input.sessionId === "ses_managed_create"
+        ? { allowed: true as const }
+        : { allowed: false as const, status: 403 as const, code: "session_start_authority_required", message: "Only the reserved creation may start" },
       authorize: async (input) => input.operation !== "prompt" || registered.has(input.sessionId ?? "")
         ? { allowed: true }
         : { allowed: false, status: 403, code: "session_private", message: "private" },
@@ -2340,4 +2350,91 @@ it("publishes a successful session deletion once, on the hub the workspace strea
     expect(events[0]).toMatchObject({ directory, payload: { type: "session.deleted", properties: { info: { id: "s1", directory, parentID: "parent-1" } } } })
     expect(bus.filter((type) => type.startsWith("session."))).toEqual([])
   } finally { unsubscribe() }
+})
+
+it("returns the canonical permission reply events in the HTTP acknowledgement", async () => {
+  const directory = process.cwd()
+  const reply: CompatEvent = {
+    id: "event_permission_reply",
+    type: "permission.replied",
+    properties: { sessionID: "session_owner", requestID: "permission_1", reply: "once" },
+  }
+  const published: CompatEvent[] = []
+  const app = createSessionRoutes({
+    resolveAdapter: async () => ({ ...adapter({}), respondPermission: async () => ({ events: [reply] }) }),
+    resolveDirectory: async () => directory,
+    listPermissions: async () => [{ id: "permission_1", sessionID: "session_owner", permission: "execute", patterns: [], always: [], metadata: {} }],
+    publishGlobal(event) { published.push(event.payload) },
+  })
+  const response = await app.request(`http://localhost/session/session_owner/permissions/permission_1?directory=${encodeURIComponent(directory)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ response: "once" }),
+  })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ ok: true, events: [reply] })
+  expect(published).toEqual([reply])
+})
+
+it("requires an offered provider option and forwards its opaque ID to the adapter", async () => {
+  const calls: unknown[] = []
+  const app = createSessionRoutes({
+    resolveAdapter: () => ({ ...adapter({}), respondPermission: async (_binding, _id, decision, optionId) => { calls.push({ decision, optionId }) } }),
+    resolveDirectory: () => "/work",
+    listPermissions: async () => [{ id: "permission-provider", sessionID: "session_owner", permission: "mcp", patterns: [], always: [], metadata: {}, options: [{ id: "provider/session-policy", label: "Use for this session" }] }],
+    publishGlobal() {},
+  })
+  const request = (body: unknown) => app.request("http://localhost/session/session_owner/permissions/permission-provider?directory=%2Fwork", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  })
+  for (const body of [{ response: "once" }, { optionId: "not-offered" }, { optionId: "provider/session-policy", response: "always" }]) {
+    expect((await request(body)).status).toBe(400)
+  }
+  expect(calls).toEqual([])
+  const response = await request({ optionId: "provider/session-policy" })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ ok: true, events: [expect.objectContaining({ type: "permission.replied", properties: { sessionID: "session_owner", requestID: "permission-provider", optionId: "provider/session-policy" } })] })
+  expect(calls).toEqual([{ decision: "allow_once", optionId: "provider/session-policy" }])
+})
+
+
+it("serves and answers a persisted provider option through public permission routes after reopening the workspace store", async () => {
+  const root = mkdtempSync(join(tmpdir(), "permission-route-store-"))
+  const optionId = '{"persist":"session"}'
+  let store = new RuntimeStore(root)
+  try {
+    store.bindSession({ sessionId: "permission-session", directory: "/work", agentSessionId: "native-session", createdAt: 1 })
+    const permission = { id: "persisted-permission", sessionID: "permission-session", permission: "mcp", patterns: [], always: [], metadata: {}, options: [{ id: optionId, label: "Accept for session" }] }
+    store.appendEvent({ sessionId: permission.sessionID, payload: permissionAsked(permission) })
+    store.close()
+    store = new RuntimeStore(root)
+    const selected: string[] = []
+    const app = createSessionRoutes({
+      resolveAdapter: () => ({ ...adapter({}), respondPermission: async (_binding, id, _decision, choice) => {
+        if (choice === undefined) throw new Error("Expected provider option")
+        selected.push(choice)
+        const event = permissionReplied(permission.sessionID, id, { optionId: choice })
+        store.appendEvent({ sessionId: permission.sessionID, payload: event })
+        return { events: [event] }
+      } }),
+      resolveDirectory: () => "/work",
+      listPermissions: async () => store.listPermissions("/work"),
+      publishGlobal() {},
+    })
+    const listed = await app.request("http://localhost/permission?directory=%2Fwork")
+    expect(await listed.json()).toEqual([permission])
+    const respond = (body: unknown) => app.request("http://localhost/session/permission-session/permissions/persisted-permission?directory=%2Fwork", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    })
+    expect((await respond({ response: "always" })).status).toBe(400)
+    expect(store.listPermissions("/work")).toEqual([permission])
+    const response = await respond({ optionId })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, events: [expect.objectContaining({ properties: { sessionID: permission.sessionID, requestID: permission.id, optionId } })] })
+    expect(selected).toEqual([optionId])
+    store.close()
+    store = new RuntimeStore(root)
+    expect(store.listPermissions("/work")).toEqual([])
+  } finally {
+    store.close()
+    rmSync(root, { recursive: true, force: true })
+  }
 })

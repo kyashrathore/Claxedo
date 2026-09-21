@@ -24,6 +24,47 @@ describe("telegramUpdateEnvelope", () => {
     })
   })
 
+  test("keys the sender by account id, so a rename stays the same principal", () => {
+    // Telegram lets an account change its @username and lets the next account
+    // claim the freed one, so the handle names a different human over time.
+    const send = (from: Record<string, unknown>) => telegramUpdateEnvelope({
+      update_id: 300,
+      message: { chat: { id: 1, type: "private" }, from, text: "hello" },
+    })?.externalUserId
+
+    expect(send({ id: 11, username: "owner" })).toBe("11")
+    expect(send({ id: 11, username: "owner_renamed" })).toBe("11")
+    expect(send({ id: 22, username: "owner" })).toBe("22")
+  })
+
+  test("refuses an update that names no account", () => {
+    // A @username alone, or the chat the message landed in, would both stand in
+    // for a principal the update never identified.
+    expect(telegramUpdateEnvelope({
+      update_id: 301,
+      message: { chat: { id: 1, type: "private" }, from: { username: "owner" }, text: "hello" },
+    })).toBeUndefined()
+    expect(telegramUpdateEnvelope({
+      update_id: 302,
+      message: { chat: { id: -1001, type: "supergroup" }, text: "hello" },
+    })).toBeUndefined()
+  })
+
+  test("keys a post made on behalf of a chat under the adapter's chat key", () => {
+    // Anonymous admins and channel posts carry `sender_chat` instead of `from`;
+    // `@chat-adapter/telegram` names those `chat:<id>`, so both ingress paths
+    // hand the access gate the same principal — and the prefix keeps chat ids
+    // out of the user-id namespace.
+    expect(telegramUpdateEnvelope({
+      update_id: 303,
+      message: {
+        chat: { id: -1001, type: "supergroup" },
+        sender_chat: { id: -1001, title: "Acme Ops", type: "supergroup" },
+        text: "hello",
+      },
+    })).toMatchObject({ externalUserId: "chat:-1001" })
+  })
+
   test("parses commands at the transport boundary but never approvals", () => {
     expect(telegramUpdateEnvelope({
       update_id: 124,

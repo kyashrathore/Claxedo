@@ -11,7 +11,8 @@ import {
 } from "../session-access-policy"
 
 export type SessionEventScope =
-  | { managed: false; grant?: "workspace"; lease?: string; expiresAt?: number }
+  | { managed: false; grant?: undefined }
+  | { managed: false; grant: "workspace"; lease: string; expiresAt: number }
   | { managed: true; sessionId: string; lease: string; expiresAt: number }
 
 export function isSessionEventScopeResponse(
@@ -70,10 +71,18 @@ export async function authorizeSessionEventScope(
       path: c.req.path,
     })
     if (workspace.allowed) {
+      const now = Date.now()
+      if (!workspace.lease?.trim() || workspace.expiresAt === undefined || !Number.isFinite(workspace.expiresAt) || workspace.expiresAt <= now) {
+        return Response.json({ error: {
+          code: "session_stream_authority_invalid_response",
+          message: "Workspace authority returned an invalid stream lease",
+        } }, { status: 503 })
+      }
       return {
         managed: false,
         grant: "workspace",
-        ...(workspace.lease && workspace.expiresAt !== undefined ? { lease: workspace.lease, expiresAt: workspace.expiresAt } : {}),
+        lease: workspace.lease,
+        expiresAt: Math.min(workspace.expiresAt, now + SESSION_STREAM_LEASE_TTL_MS),
       }
     }
     // A refusal at workspace level is the reader's cue to reopen for one

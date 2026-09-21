@@ -26,9 +26,10 @@ function acpProcess(answer: Record<string, unknown>) {
   const proc = Object.create(ACPProcess.prototype) as WithInternals<ACPProcess, ProcessInternals>
   Object.assign(proc, {
     agent: { request: async () => answer as { sessionId: string } },
-    idle: { touch() {} },
+    idle: { touch() {}, lease: () => ({ release() {} }) },
     mcp: () => [],
     states: new Map(),
+    loadedSessions: new Set(),
     caps: null,
     transport: { alive: true },
     cachedConfigOptions: null,
@@ -57,6 +58,20 @@ function adapterFor(proc: FakeProcess) {
 const liveOptions = [{ id: "mode", name: "Mode", category: "mode", type: "select", options: [{ value: "code", name: "Code" }] }]
 
 describe("the model an ACP agent resolved for itself", () => {
+  it("clears probe discovery when the agent explicitly returns no options or model", async () => {
+    const answer: Record<string, unknown> = {
+      sessionId: "initial", configOptions: liveOptions,
+      models: { currentModelId: "old", availableModels: [{ modelId: "old", name: "Old" }] },
+    }
+    const proc = acpProcess(answer)
+    await proc.newSession(path.resolve("/work"))
+    expect(proc.cachedResolvedModel?.id).toBe("old")
+    Object.assign(answer, { sessionId: "empty", configOptions: [], models: null })
+    await proc.newSession(path.resolve("/work"))
+    expect(await adapterFor(proc).probeConfigOptions(path.resolve("/work"))).toEqual({ options: [] })
+    expect(proc.configOptions("initial").resolvedModel?.id).toBe("old")
+    expect(proc.configOptions("empty")).toEqual({ options: [] })
+  })
   it("reaches the config-options payload when the agent reports a current model", async () => {
     const proc = acpProcess({
       sessionId: "agent-session",

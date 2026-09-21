@@ -17,6 +17,25 @@ function ok(body: unknown, init?: ResponseInit) {
 }
 
 describe("AgentRuntimeClient", () => {
+  it("omits an agent-managed model from actual create and prompt wire bodies", async () => {
+    const bodies: Record<string, unknown>[] = []
+    const client = createAgentRuntimeClient({ serverUrl: "http://127.0.0.1:3001", request: async (_request, init) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      return ok({ id: "session-1" })
+    } })
+    await client.createSession({ directory: "/repo", harness: { kind: "connection", connectionId: "agent" }, agent: "build" })
+    await client.sendMessage({ directory: "/repo", sessionID: "session-1", agent: "build", messageID: "message-1", parts: [{ type: "text", text: "hello" }] })
+    expect(bodies).toHaveLength(2)
+    expect(bodies.every((body) => !Object.hasOwn(body, "model"))).toBe(true)
+  })
+  it("retains a 202 steering operation as pending rather than treating HTTP success as acceptance", async () => {
+    const outcome = { ok: false, status: "pending", operationId: "attempt-1", message: "Awaiting provider acknowledgement" }
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001",
+      request: async () => ok(outcome, { status: 202 }),
+    })
+    expect(await client.controlQueuedMessage({ directory: "/repo", sessionID: "session-1", seq: 1, action: "steer" })).toEqual(outcome)
+  })
   it("uses the session's permission owner and disambiguates native versus connection drafts", async () => {
     const calls: URL[] = []
     const client = createAgentRuntimeClient({

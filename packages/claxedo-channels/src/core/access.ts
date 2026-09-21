@@ -243,8 +243,17 @@ export function createChannelAccess(input: {
   groupEngagement?: ChannelGroupEngagement
   store: ChannelAccessStore
   bindings?: ChannelIdentityBindingStore
-  /** Config-seeded always-allowed senders ("telegram:123", "telegram:*", "*"). */
-  allowFrom?: string[]
+  /**
+   * Config-seeded always-allowed senders, as stable platform account ids:
+   * "telegram:123", "telegram:*", or "*".
+   *
+   * Named for what an entry has to be rather than where the sender came from.
+   * The option this replaced was read from configuration written when the
+   * transports still let a handle through, so an operator who carried those
+   * entries over would be seeding strings that now name different people;
+   * there is no compatibility path, and an unrecognized key seeds nothing.
+   */
+  allowIds?: string[]
   now?: () => number
   random?: () => number
 }): ChannelAccess {
@@ -256,7 +265,7 @@ export function createChannelAccess(input: {
   const groupEngagement = input.groupEngagement ?? "mention"
 
   const isAllowed = async (channel: ChannelId, externalUserId: string) =>
-    seedAllows(input.allowFrom, channel, externalUserId) || await input.store.isAllowed(channel, externalUserId)
+    seedAllows(input.allowIds, channel, externalUserId) || await input.store.isAllowed(channel, externalUserId)
 
   const pairingGate = async (channel: ChannelId, externalUserId: string): Promise<ChannelAccessDecision> => {
     const at = now()

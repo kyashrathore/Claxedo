@@ -15,6 +15,7 @@ function transport(input: { ok?: boolean; status?: number; body?: string } = {})
     body?: string
   }> = []
   const stub = (async (url: string | URL, init?: RequestInit) => {
+    expect(init?.redirect).toBe("error")
     const headers = (init?.headers ?? {}) as Record<string, string>
     calls.push({
       url: String(url),
@@ -150,6 +151,17 @@ describe("vercel", () => {
 })
 
 describe("cloudflare", () => {
+  test.each(["http://worker.test", "http://localhost:8787", "https://user:password@worker.test", "https://worker.test/?query", "https://worker.test/#fragment"])("does not send a token to rejected endpoint %s", async (worker_url) => {
+    const transports = transport()
+    await expect(verifySandboxDriverAuth("cloudflare", { api_token: "synthetic-token", worker_url }, { fetch: transports.stub })).rejects.toBeInstanceOf(CredentialVerificationError)
+    expect(transports.calls).toEqual([])
+  })
+
+  test.each([301, 302, 307, 308])("refuses redirect status %s instead of accepting another endpoint", async (status) => {
+    const transports = transport({ status, ok: false })
+    await expect(verifySandboxDriverAuth("cloudflare", { api_token: "synthetic-token", worker_url: "https://worker.test" }, { fetch: transports.stub })).rejects.toThrow(/redirects/)
+    expect(transports.calls).toHaveLength(1)
+  })
   /**
    * The Cloudflare credential is NOT an account API token — it is the user's
    * own Worker's `API_TOKEN` secret (drivers/cloudflare.ts:38), so

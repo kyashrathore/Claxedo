@@ -792,6 +792,20 @@ describe("createAcpEventTranslator", () => {
   })
 })
 
+test("ACP publishes images on one authoritative completion after content, including resumed and already-completed calls", () => {
+  const content = [{ type: "content", content: { type: "image", mimeType: "image/png", data: "YWJj" } }]
+  const agent = runtime()
+  agent.ingest({ source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call", toolCallId: "image", title: "Screenshot", status: "in_progress", content } })
+  const restored = runtime("acp:example", agent.snapshot())
+  const completion = { source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call_update", toolCallId: "image", status: "completed", rawOutput: "captured" } }
+  const events = restored.ingest(completion).events
+  expect(events.filter((event) => event.type === "tool-status")).toEqual([])
+  expect(events.at(-1)).toMatchObject({ type: "tool-output", output: "captured", attachments: [{ kind: "inline", mime: "image/png", url: "data:image/png;base64,YWJj" }] })
+  const initial = runtime().ingest({ source: "acp.jsonrpc", method: "session/update", payload: { sessionUpdate: "tool_call", toolCallId: "image", title: "Screenshot", status: "completed", content } }).events
+  expect(initial.filter((event) => event.type === "tool-status")).toEqual([])
+  expect(initial.at(-1)).toMatchObject({ type: "tool-output", attachments: [{ kind: "inline", url: "data:image/png;base64,YWJj" }] })
+})
+
 describe("ACP retained state hardening", () => {
   function update(payload: Record<string, unknown>) {
     return { source: "acp.jsonrpc", method: "session/update", payload }

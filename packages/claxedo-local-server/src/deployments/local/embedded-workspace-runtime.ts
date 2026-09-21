@@ -3,13 +3,20 @@ import path from "path"
 import fs from "fs/promises"
 import os from "node:os"
 import {
+  authorizePtyAttach,
+  createAuthorizedPtyConnection,
   createPersistentTranscriptHandleStore,
   createRuntimeCredentialIssuer,
   createTranscriptResolver,
   createWorkspaceRuntimeApp,
   managedWorkspaceSessionAccessPolicy,
   Pty,
+  ptyAccessRefusalResponse,
+  ptyStreamAccess,
+  PTY_NOT_FOUND_REFUSAL,
   runtimeCredentialWorkspaceId,
+  type AuthorizedPtyConnection,
+  type EmbeddedRelayHostIdentity,
   type ProcessObserver,
   type ProcessOwnerHandle,
   type RuntimeCredentialClaims,
@@ -70,12 +77,6 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
 }
 
 export type EmbeddedWorkspaceRuntimeConfigMode = "skip" | "sync"
-
-type PtySocket = {
-  readyState: number
-  send: (data: string | Uint8Array | ArrayBuffer) => void
-  close: (code?: number, reason?: string) => void
-}
 
 const hosts = new Map<string, EmbeddedRuntime>()
 const retiring = new Map<string, Promise<void>>()
@@ -213,7 +214,18 @@ export type EmbeddedFirstPartyMcpLaunch = {
  * so the declaration cannot drift from what is actually mounted.
  */
 export function embeddedWorkspaceRuntimeSessionAuthority() {
-  return (configuredSessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()).sessionAuthority
+  return embeddedSessionAccessPolicy().sessionAuthority
+}
+
+/**
+ * The policy every embedded runtime in this process is mounted with: the
+ * configured one, or the unbound `managedWorkspaceSessionAccessPolicy()` that
+ * `createWorkspaceRuntimeApp` falls back to for an embedded exposure. Written
+ * once so the marker above and the terminal attach below cannot answer for
+ * different policies than the app itself runs.
+ */
+function embeddedSessionAccessPolicy() {
+  return configuredSessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()
 }
 
 /**
@@ -464,10 +476,18 @@ export async function ensureEmbeddedWorkspaceRuntime(
   // runtime meanwhile, and one workspace id owns exactly one runtime.
   if (hosts.get(ws.id)) return ensureEmbeddedWorkspaceRuntime(ws, input)
   let activeHost: EmbeddedRuntime["host"] | undefined
-  const created = createWorkspaceRuntimeApp(options(ws, {
-    exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
-    parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
-  }, harness))
+  const created = createWorkspaceRuntimeApp({
+    ...options(ws, {
+      exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
+      parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
+    }, harness),
+    beforeAdapterAcquire: async () => {
+      // Fan-out and mutation admission refresh accepted snapshots. Read-side
+      // acquisition only supplies the missing initial snapshot (or retries a
+      // failed apply), and shares configure's in-flight promise.
+      if (runtime.host.detail().configApply.state !== "applied") await configure(runtime)
+    },
+  })
   const runtime: EmbeddedRuntime = {
     ...created,
     workspace: ws,
@@ -512,19 +532,56 @@ async function ownsPath(ws: Workspace, cwd: string) {
   return current === root || current.startsWith(root + path.sep)
 }
 
-export async function connectEmbeddedWorkspacePty(
-  ws: Workspace,
-  ptyId: string,
-  socket: PtySocket,
-  cursor?: number,
-) {
-  await ensureEmbeddedWorkspaceRuntime(ws)
-  const info = Pty.get(ptyId)
-  if (!info || !await ownsPath(ws, info.cwd)) {
-    socket.close(1008, "Session not found")
-    return undefined
+export type EmbeddedWorkspacePtyAttachment =
+  | { ok: true; connection: AuthorizedPtyConnection }
+  | { ok: false; response: Response }
+
+/**
+ * Admits a caller to a terminal this process hosts, and hands back the
+ * authorized lifetime it may have — the same one the runtime's own
+ * `/:ptyID/connect` route builds, from the same policy the app is mounted
+ * with.
+ *
+ * The caller reaching this is a WebSocket upgrade the daemon serves itself,
+ * so the identity is the one its ingress verified, passed here whole: a
+ * relay-replayed stamp, or nothing at all for this machine's own user. Nothing
+ * on this path may name an actor the ingress did not.
+ */
+export async function attachEmbeddedWorkspacePty(input: {
+  workspace: Workspace
+  ptyId: string
+  identity?: EmbeddedRelayHostIdentity
+  authorization?: string
+  method: string
+  path: string
+  cursor?: number
+}): Promise<EmbeddedWorkspacePtyAttachment> {
+  await ensureEmbeddedWorkspaceRuntime(input.workspace, {
+    config: embeddedConfigModeForPath(input.path, input.method),
+  })
+  const info = Pty.get(input.ptyId)
+  if (!info || !await ownsPath(input.workspace, info.cwd)) {
+    return { ok: false, response: ptyAccessRefusalResponse(PTY_NOT_FOUND_REFUSAL) }
   }
-  return Pty.connect(ptyId, socket, cursor)
+  const policy = embeddedSessionAccessPolicy()
+  const access = ptyStreamAccess({
+    ...(input.identity ? { identity: input.identity } : {}),
+    ...(input.authorization ? { authorization: input.authorization } : {}),
+    method: input.method,
+    path: input.path,
+  })
+  const admission = await authorizePtyAttach({ policy, access, info })
+  if (!admission.allowed) return { ok: false, response: ptyAccessRefusalResponse(admission) }
+  return {
+    ok: true,
+    connection: createAuthorizedPtyConnection({
+      ptyId: input.ptyId,
+      policy,
+      access,
+      admission,
+      ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+    }),
+  }
 }
 
 export async function syncEmbeddedWorkspaceRuntimes() {

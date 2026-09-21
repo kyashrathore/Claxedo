@@ -66,7 +66,8 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
   if (!selection) return c.json(errorBody("agent_config_harness_required", "Select an agent connection first"), 400)
   const ws = await workspace(c)
   if (!ws) return c.json(errorBody("agent_config_workspace_required", "workspaceId or directory is required"), 400)
-  const url = new URL("/api/wr/harness-config-options", "http://workspace-runtime.local")
+  const sessionId = c.req.query("sessionId") || c.req.query("session") || c.req.header("x-session-id")
+  const url = new URL(sessionId ? `/session/${encodeURIComponent(sessionId)}/config-options` : "/api/wr/harness-config-options", "http://workspace-runtime.local")
   url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
   appendSelection(url, selection)
   const response = await sandboxFetch(
@@ -121,7 +122,7 @@ function appendSelection(url: URL, selection: RuntimeHarnessSelection) {
 
 async function workspace(c: Context) {
   const directory = c.req.query("directory") || c.req.header("x-claxedo-directory")
-  const workspaceId = c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")
+  const workspaceId = c.req.query("workspaceId") ?? c.req.query("workspace") ?? c.req.header("x-workspace-id")
   return await resolveWorkspace({ workspaceId, directory })
 }
 

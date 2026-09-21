@@ -6,6 +6,8 @@
 import { createLocalDaemonLifecycle, startLocalServer } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalAgentPluginsComposition } from "@claxedo/local-server/agent-plugins/local-composition"
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
+import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
+import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
@@ -32,6 +34,10 @@ import {
 const startup = claxedoServerStartup(process.env)
 
 const agentPlugins = createLocalAgentPluginsComposition()
+// The Marketplace switch decides both halves at once: no Tasks tools for a
+// session, and no grant left answering for one that still holds a handle.
+const builtinToolGroups = localBuiltinToolGroupsReader()
+const tasks = createLocalTasksComposition({ enabled: () => builtinToolGroups().includes(BUILTIN_TASKS_TOOL_GROUP) })
 void agentPlugins.ready.catch((error) => {
   console.error("Agent Plugins startup reconciliation failed", error)
 })
@@ -62,7 +68,8 @@ const server = startLocalServer({
     lifecycle,
   },
   ...(transport ? { processObserver: transport.observer } : {}),
-  routeContributions: [...agentPlugins.routeContributions, ...createLocalTasksComposition().routeContributions],
+  routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
+  tasksGrants: tasks.grants,
   harnessLaunch: agentPlugins.harnessLaunch,
 })
 const discovery: ClaxedoDaemonDiscovery = {

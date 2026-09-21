@@ -15,7 +15,10 @@ export type ShellRequestContext = {
 export function workspaceInput(c: ShellRequestContext) {
   const directory = c.req.query("directory") || c.req.header("x-claxedo-directory")
   return {
-    workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
+    // `??`, not `||`: a supplied-but-empty id still names a workspace, and an
+    // explicit id that resolves to nothing must fail closed at the store
+    // rather than fall through to directory resolution.
+    workspaceId: c.req.query("workspaceId") ?? c.req.query("workspace") ?? c.req.header("x-workspace-id"),
     directory,
   }
 }

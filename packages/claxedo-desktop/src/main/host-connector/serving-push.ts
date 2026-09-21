@@ -11,17 +11,16 @@
  * every relayed session read answers 503.
  */
 
+import type { DaemonFetch } from "../daemon-request"
 import type { HostConnectorServing } from "./child-protocol"
 
 export function setupHostServingPush(input: {
-  serverUrl: () => Promise<string>
-  request?: (url: string, init?: RequestInit) => Promise<Response>
+  daemon: DaemonFetch
   log: { info(message: string): void; warn(message: string): void }
 }): (serving: HostConnectorServing) => Promise<void> {
-  const request = input.request ?? fetch
   return async (serving) => {
     try {
-      const response = await request(new URL("/api/claxedo/host-serving", await input.serverUrl()).toString(), {
+      const response = await input.daemon("/api/claxedo/host-serving", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

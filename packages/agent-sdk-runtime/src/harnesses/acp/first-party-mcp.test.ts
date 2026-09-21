@@ -36,7 +36,7 @@ function acpProcess() {
         return { sessionId: `agent-${requests.length}`, configOptions: [], modes: { availableModes: [], currentModeId: "" } }
       },
     },
-    idle: { touch() {} },
+    idle: { touch() {}, lease: () => ({ release() {} }) },
     mcp: (sessionId?: string) => [
       user,
       ...(sessionId
@@ -48,6 +48,7 @@ function acpProcess() {
         : []),
     ],
     states: new Map(),
+    loadedSessions: new Set(),
     caps: null,
     transport: { alive: true },
     cachedConfigOptions: null,

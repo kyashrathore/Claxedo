@@ -106,12 +106,6 @@ describe("ACP frozen compat output", () => {
     expect(payloads.filter((payload) => payload.type === "runtime.diagnostic")).toMatchObject([
       {
         properties: {
-          eventType: "available-commands-update",
-          code: "projection.client_presentation.lossy_runtime_event",
-        },
-      },
-      {
-        properties: {
           eventType: "tool-content",
           code: "projection.client_presentation.lossy_runtime_event",
         },
@@ -122,6 +116,12 @@ describe("ACP frozen compat output", () => {
           code: "projection.client_presentation.lossy_runtime_event",
         },
       },
+    ])
+    expect(payloads.filter((payload) => payload.type === "session.commands")).toEqual([
+      { type: "session.commands", properties: {
+        sessionID: "session-1",
+        commands: [{ name: "create_plan", description: "Create a plan" }],
+      } },
     ])
     expect(payloads.find((payload) => payload.type === "session.updated")).toMatchObject({
       properties: {

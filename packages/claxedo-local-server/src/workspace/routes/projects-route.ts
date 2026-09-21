@@ -1,9 +1,9 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { execFile } from "node:child_process"
-import { promisify } from "node:util"
 import { Hono } from "hono"
 import { z } from "zod"
+import { createBoundedGit } from "@claxedo/workspace-runtime/host"
+import { safeRepoUrl } from "@claxedo/sandbox-contract"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { projectEnvProblem } from "@claxedo/server-core/workspace/project-env"
 import {
@@ -16,7 +16,13 @@ import {
   upsertProjectRecord,
 } from "@claxedo/server-core/workspace/store/index"
 import { controlPlaneRouteAuth, signedRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import {
+  ControlPlaneAuthError,
+  controlPlaneAuthErrorBody,
+  type SignedControlPlaneAuth,
+} from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { projectAccess } from "../../platform/auth/project-access"
 
 /**
  * Projects on a server with its own filesystem.
@@ -31,7 +37,13 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
  * Names are unique per server (case-insensitive).
  */
 
-const execFileAsync = promisify(execFile)
+/**
+ * Cloning a repository takes as long as the repository is large, so it runs on
+ * a pool of its own: on the shared runner a clone would hold a slot the file
+ * tree and diff routes are waiting for.
+ */
+const CLONE_TIMEOUT_MS = 30 * 60_000
+const cloneGit = createBoundedGit({ timeoutMs: CLONE_TIMEOUT_MS })
 
 const createBody = z
   .object({
@@ -64,15 +76,6 @@ export function projectsDirectory() {
   return path.join(dataDir(), "projects")
 }
 
-function safeRepoUrl(input: string) {
-  try {
-    const url = new URL(input)
-    return url.protocol === "https:" || url.protocol === "http:" || url.protocol === "ssh:" ? input : undefined
-  } catch {
-    return /^[\w.-]+@[\w.-]+:[\w./-]+$/.test(input) ? input : undefined
-  }
-}
-
 export type CloneOptions = {
   /** An `Authorization` header value for the repository's host, never placed in argv. */
   authorization?: string
@@ -80,19 +83,13 @@ export type CloneOptions = {
 }
 
 async function cloneRepository(repoUrl: string, directory: string, options: CloneOptions = {}) {
-  await fs.mkdir(path.dirname(directory), { recursive: true })
-  // The credential rides in git's config environment, not on the command
-  // line, so it is invisible to `ps` and never lands in the clone's config.
-  const env = options.authorization && options.host
-    ? {
-        ...process.env,
-        GIT_CONFIG_COUNT: "1",
-        GIT_CONFIG_KEY_0: `http.https://${options.host}/.extraheader`,
-        GIT_CONFIG_VALUE_0: `Authorization: ${options.authorization}`,
-        GIT_TERMINAL_PROMPT: "0",
-      }
-    : { ...process.env, GIT_TERMINAL_PROMPT: "0" }
-  await execFileAsync("git", ["clone", "--", repoUrl, directory], { env })
+  const parent = path.dirname(directory)
+  await fs.mkdir(parent, { recursive: true })
+  await cloneGit(["clone", "--", repoUrl, directory], parent, {
+    ...(options.authorization && options.host
+      ? { credential: { host: options.host, authorization: options.authorization } }
+      : {}),
+  })
 }
 
 /** GitHub's token-in-basic-auth form for `x-access-token`, as the cloud clone path uses. */
@@ -150,9 +147,25 @@ export type LocalProjectWorkspaceRegistration = {
 export type LocalProjectRouteDeps = {
   clone?: typeof cloneRepository
   /**
-   * Registers the workspace with the signed caller's authority. Supplied by
-   * signed compositions only; the unsigned local product has no authority and
-   * no caller identity, and the route skips registration there.
+   * Answers which of this server's projects the signed caller holds a role on.
+   * Signed compositions supply it; a signed request is refused rather than
+   * served, because the store here is machine-global and nothing else in it
+   * tells one account's projects from another's.
+   */
+  authority?: WorkspaceAuthority
+  /**
+   * Machine-wide operator authorization, throwing `ControlPlaneAuthError` for a
+   * signed caller who does not hold it. A caller-named folder is an arbitrary
+   * path on this server's filesystem that belongs to no project yet, so no
+   * project role can decide it — only authority over the machine can.
+   */
+  authorizeLocalDirectoryImport?: (auth: SignedControlPlaneAuth) => void
+  /**
+   * Registers the workspace with the signed caller's authority. Required of a
+   * signed composition and checked before the first write, since it is the only
+   * thing that makes a created project reachable by the account that asked for
+   * it. The unsigned local product has no authority and no caller identity, and
+   * registers nothing.
    */
   registerWorkspace?: (auth: SignedControlPlaneAuth, workspace: LocalProjectWorkspaceRegistration) => Promise<void>
   /**
@@ -163,18 +176,62 @@ export type LocalProjectRouteDeps = {
   cloneCredential?: (auth: SignedControlPlaneAuth, repoUrl: string) => Promise<{ authorization: string } | undefined>
 }
 
+/** This router's caller is the one its per-route bearer gate already verified. */
+function verifiedCallerAccess(request: Request, deps: LocalProjectRouteDeps) {
+  return projectAccess(signedRouteAuth(request), deps)
+}
+
+/**
+ * What a signed composition must hold before this route writes anything: an
+ * authority for the new workspace to belong to, and the registration that makes
+ * it belong there. Both are checked before the first filesystem or clone write,
+ * because a project registered for nobody is one this server cloned, wrote to
+ * disk and stored while its creator — and every other account — is refused it.
+ *
+ * `undefined` is the unsigned local product: no caller to bind the workspace
+ * to, and nothing to register it with.
+ */
+function callerRegistration(request: Request, deps: LocalProjectRouteDeps) {
+  const auth = signedRouteAuth(request)
+  if (!auth) return undefined
+  requireAuthority(deps)
+  const register = deps.registerWorkspace
+  if (!register) {
+    throw new ControlPlaneAuthError(503, "authority_unavailable", "Project registration is not configured for signed callers")
+  }
+  return { auth, register: (workspace: LocalProjectWorkspaceRegistration) => register(auth, workspace) }
+}
+
 export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, deps: LocalProjectRouteDeps = {}) {
   const clone = deps.clone ?? cloneRepository
   return new Hono()
+    .onError((error, c) => {
+      if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+      throw error
+    })
     .get("/", controlPlaneRouteAuth(options), async (c) => {
+      const access = verifiedCallerAccess(c.req.raw, deps)
       const records = await listProjectRecords()
-      const projects = await Promise.all(records.map((record) => projectView(record.id)))
-      return c.json({ projects: projects.filter(Boolean) })
+      const projects = []
+      for (const record of records) {
+        if (!(await access.allowed(record.id, "read"))) continue
+        const view = await projectView(record.id)
+        if (view) projects.push(view)
+      }
+      return c.json({ projects })
     })
     .post("/", controlPlaneRouteAuth(options), async (c) => {
       const parsed = createBody.safeParse(await c.req.json().catch(() => undefined))
       if (!parsed.success) return c.json(apiError("project_invalid", "name and a directory or repository source are required"), 400)
       const body = parsed.data
+      const importer = body.source.kind === "directory" ? signedRouteAuth(c.req.raw) : undefined
+      if (importer) {
+        if (!deps.authorizeLocalDirectoryImport) {
+          throw new ControlPlaneAuthError(503, "authority_unavailable", "Deployment operator authorization is not configured")
+        }
+        deps.authorizeLocalDirectoryImport(importer)
+      }
+      const caller = callerRegistration(c.req.raw, deps)
       const envProblem = projectEnvProblem(body.env)
       if (envProblem) return c.json(apiError("project_env_invalid", envProblem), 400)
       if (await findProjectRecordByName(body.name)) {
@@ -202,8 +259,7 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
           return c.json(apiError("project_directory_taken", `${directory} already exists on this server`), 409)
         }
         try {
-          const auth = signedRouteAuth(c.req.raw)
-          const credential = auth && deps.cloneCredential ? await deps.cloneCredential(auth, repoUrl) : undefined
+          const credential = caller && deps.cloneCredential ? await deps.cloneCredential(caller.auth, repoUrl) : undefined
           const host = repositoryHost(repoUrl)
           await clone(repoUrl, directory, credential && host ? { authorization: credential.authorization, host } : {})
         } catch (cause) {
@@ -217,10 +273,9 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
       if (!workspace?.project_id) {
         return c.json(apiError("project_not_git", "Only git repositories can be projects; that folder is not one"), 400)
       }
-      const auth = signedRouteAuth(c.req.raw)
-      if (auth && deps.registerWorkspace) {
+      if (caller) {
         try {
-          await deps.registerWorkspace(auth, {
+          await caller.register({
             workspaceId: workspace.id,
             projectId: workspace.project_id,
             displayName: body.name,
@@ -236,14 +291,20 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
       return c.json({ project: await projectView(record.id) }, 201)
     })
     .get("/by-directory", controlPlaneRouteAuth(options), async (c) => {
+      const access = verifiedCallerAccess(c.req.raw, deps)
       const directory = c.req.query("directory")?.trim()
       if (!directory) return c.json(apiError("project_invalid", "directory is required"), 400)
       const workspace = await getWorkspaceByDirectory(directory)
-      const view = workspace?.project_id ? await projectView(workspace.project_id) : undefined
+      const projectId = workspace?.project_id
+      const view = projectId && await access.allowed(projectId, "read") ? await projectView(projectId) : undefined
       return view ? c.json({ project: view }) : c.json(apiError("project_not_found", "No project at that directory"), 404)
     })
     .patch("/:id", controlPlaneRouteAuth(options), async (c) => {
+      const access = verifiedCallerAccess(c.req.raw, deps)
       const id = c.req.param("id")
+      if (!await access.allowed(id, "write")) {
+        return c.json(apiError("project_access_denied", "Project write access is required"), 403)
+      }
       const existing = await getProjectRecord(id)
       if (!existing) return c.json(apiError("project_not_found", "No such project"), 404)
       const parsed = updateBody.safeParse(await c.req.json().catch(() => undefined))

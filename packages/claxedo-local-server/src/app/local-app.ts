@@ -28,7 +28,7 @@ import {
   withSecurityHeaders,
 } from "@claxedo/server-core/platform/http/security-headers"
 import { unsignedLocalRequestGuard, deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
-import { controlPlaneAuthContext, ControlPlaneAuthError, localControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthContext, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { getHarnessMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
@@ -125,69 +125,10 @@ export type LocalAppOptions = {
   }
 }
 
-const TRACK_PROPERTIES_MAX_KEYS = 32
-const TRACK_PROPERTIES_MAX_BYTES = 4096
-const TRACK_RATE_LIMIT = 120
-const TRACK_RATE_WINDOW_MS = 60_000
-
-/**
- * The event names this relay accepts: exactly the ones the app's own
- * telemetry emits — the `phCapture` literals, the onboarding funnel names,
- * the turn-outcome pair, the shell flow-log events, and PostHog's exception
- * event. Anything else did not come from this product.
- */
-const TRACK_EVENTS = new Set([
-  "app_launched",
-  "app_state_snapshot",
-  "context_selection_added",
-  "harness_selected",
-  "model_selected",
-  "permission_decided",
-  "prompt_aborted",
-  "prompt_sent",
-  "session_new",
-  "setting_changed",
-  "update_checked",
-  "update_installed",
-  "$exception",
-  "signup",
-  "setup_form_shown",
-  "setup_form_dismissed",
-  "step_done",
-  "step_verify_failed",
-  "provider_connected",
-  "first_turn_ok",
-  "first_turn_failed",
-  "sandbox_provider_configured",
-  "first_cloud_turn_ok",
-  "remote_access_enabled",
-  "second_device_open",
-  "gofurther_card_clicked",
-  "gofurther_card_dismissed",
-  "turn_completed",
-  "turn_failed",
-  "navigate",
-  "new_project_selected",
-  "new_review_click",
-  "new_session_click",
-  "new_session_cloud_guard",
-  "new_terminal_click",
-  "session_select",
-  "tab_select",
-  "workspace_created",
-  "workspace_select",
-])
-
 const TrackBody = z.object({
-  event: z.string(),
-  properties: z
-    .record(z.string(), z.unknown())
-    .refine(
-      (properties) =>
-        Object.keys(properties).length <= TRACK_PROPERTIES_MAX_KEYS &&
-        JSON.stringify(properties).length <= TRACK_PROPERTIES_MAX_BYTES,
-    )
-    .optional(),
+  distinctId: z.string().min(1),
+  event: z.string().min(1),
+  properties: z.record(z.string(), z.unknown()).optional(),
 })
 
 function authRouteOptions(services: ControlPlaneServicesContract) {
@@ -271,45 +212,14 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     app.all(BROKER_ROUTE_PATTERN, (c) => routes(c.req.raw))
   }
 
-  // One window for the whole route: the only legitimate caller is this
-  // machine's own application, so keying buys nothing — the bound is the
-  // telemetry sink's.
-  let trackCount = 0
-  let trackResetAt = 0
   app.post("/api/claxedo/track", async (c) => {
-    const now = Date.now()
-    if (now >= trackResetAt) {
-      trackResetAt = now + TRACK_RATE_WINDOW_MS
-      trackCount = 0
-    }
-    trackCount += 1
-    if (trackCount > TRACK_RATE_LIMIT) {
-      const retryAfterMs = trackResetAt - now
-      return c.json(
-        { error: { code: "rate_limited", message: "Request limit exceeded", retryAfterMs } },
-        429,
-        { "retry-after": String(Math.max(1, Math.ceil(retryAfterMs / 1000))) },
-      )
-    }
     // Validated against the canonical schema, not a hand-rolled typeof check
     // that would let any `properties` shape through.
     const parsed = TrackBody.safeParse(await c.req.json().catch(() => null))
     if (!parsed.success) {
       return c.json({ error: { code: "telemetry_invalid_body", message: "Invalid telemetry request body" } }, 400)
     }
-    if (!TRACK_EVENTS.has(parsed.data.event)) {
-      return c.json({ error: { code: "telemetry_unknown_event", message: "Event is not one this product emits" } }, 400)
-    }
-    // The caller's distinctId is never honored: identity is the session's own
-    // subject when a bearer verifies, and the canonical unsigned-local owner
-    // otherwise — anything the body claimed is discarded with the other
-    // unlisted keys.
-    const auth = await controlPlaneAuthContext(c.req.raw, {
-      config: services.auth.config,
-      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-    }).catch(() => undefined)
-    const distinctId = auth?.mode === "signed" ? auth.user.subject : localControlPlaneAuth().user.subject
-    services.telemetry.capture(distinctId, parsed.data.event, parsed.data.properties)
+    services.telemetry.capture(parsed.data.distinctId, parsed.data.event, parsed.data.properties)
     return c.json({ ok: true })
   })
 

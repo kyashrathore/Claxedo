@@ -40,6 +40,7 @@ export function isSessionTurnActive(input: {
   questions?: QuestionRequest[]
 }) {
   if (input.status?.type === "busy" || input.status?.type === "retry") return true
+  if (input.status?.type === "recovering" && input.status.kind === "uncertain_execution") return true
   if ((input.permissions ?? []).length > 0) return true
   if ((input.questions ?? []).length > 0) return true
   return false

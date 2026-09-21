@@ -65,7 +65,7 @@ export type AgentRuntimeTurnStartInput = {
   parentMessageId?: string
   assistantMessageId: string
   agent: string
-  model: { providerID: string; modelID: string }
+  model?: { providerID: string; modelID: string }
   parts: PromptInput["parts"]
   tools?: Record<string, boolean>
   format?: CompatPromptFormat
@@ -107,6 +107,7 @@ export type AgentRuntimeTurnFinishOutput = {
 }
 
 export type AgentRuntimeStoreCore = {
+  sessionStarts?: import("@claxedo/agent-runtime-contract").AgentSessionStarts
   listSessions(directory: string): AgentRuntimeSessionRow[]
   getSession(id: string): AgentSession | null | undefined
   bindSession(input: AgentRuntimeSessionBinding): void

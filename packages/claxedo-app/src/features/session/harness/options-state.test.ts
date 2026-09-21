@@ -247,10 +247,9 @@ describe("harness options state", () => {
         ],
         selectedThoughtLevel: "adaptive",
         dynamicModels: [],
-        selectedModel: "default",
+        selectedModel: "",
         configError: undefined,
       },
-      managedDefault: true,
       retry: false,
       clearTries: true,
     })
@@ -522,4 +521,10 @@ describe("harness options state — thought level", () => {
     })
     expect(result.patch.selectedModel).toBe("sonnet")
   })
+})
+
+ test("declared agent-owned model accepts a fresh empty config without masking stale discovery", () => {
+  const input = { type: { kind: "connection" as const, connectionId: "agent" }, modelOptional: true, tries: 4, payload: { source: "harness" as const, stale: false, options: [] } }
+  expect(applyHarnessOptionsResponse(input).patch).toMatchObject({ selectedModel: "", configError: undefined, optionsLoading: false })
+  expect(applyHarnessOptionsResponse({ ...input, payload: { ...input.payload, stale: true } }).patch.configError).toBeDefined()
 })

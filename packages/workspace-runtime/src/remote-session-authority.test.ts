@@ -16,6 +16,19 @@ const input = {
 }
 
 describe("remote workspace session authority", () => {
+  test("startup uses signed proof and the exact reservation without adoption", async () => {
+    const calls: unknown[] = []
+    const policy = remoteWorkspaceSessionAccessPolicy({ url: "https://control.test/authorize", fetch: async (_url, init) => {
+      calls.push({ body: fetchBodyJson(init?.body), authorization: new Headers(init?.headers).get("authorization") })
+      return Response.json({ allowed: true })
+    } })
+    expect(await policy.authorizeSessionStart({ ...input, operation: "question_response", registrationOperationId: "op_start" })).toEqual({ allowed: true })
+    expect(calls).toEqual([{ body: { sessionId: "ses_private", action: "start", operationId: "op_start" }, authorization: "Bearer signed-rht" }])
+    expect((await policy.authorizeSessionStart({ ...input, credential: undefined, operation: "question_response", registrationOperationId: "op_start" })).allowed).toBe(false)
+    expect(calls).toHaveLength(1)
+    expect(await policy.authorizeSessionStartStatus({ ...input, operation: "session_meta_read", registrationOperationId: "op_start" })).toEqual({ allowed: true })
+    expect(calls[1]).toEqual({ body: { sessionId: "ses_private", action: "start_status", operationId: "op_start" }, authorization: "Bearer signed-rht" })
+  })
   test("uses the current host-role oracle for setup reads and administration", async () => {
     const bodies: unknown[] = []
     const policy = remoteWorkspaceSessionAccessPolicy({

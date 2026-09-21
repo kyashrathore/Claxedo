@@ -1,5 +1,12 @@
 import { describe, expect, test, vi } from "vitest"
-import { brokeredPlaceholderEnv, brokeredSecretPlaceholder, createSandboxManager, type SandboxDriver } from "."
+import {
+  brokeredPlaceholderEnv,
+  brokeredSecretPlaceholder,
+  createSandboxManager,
+  type SandboxCheckpointRuntime,
+  type SandboxDriver,
+  type SandboxTarget,
+} from "."
 import { createMemoryLeaseStore, sandboxLease } from "./stores/memory"
 
 function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
@@ -31,7 +38,62 @@ function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
   }
 }
 
+/** A driver whose resources are told apart by which one each call reached. */
+function twoResourceDriver() {
+  const calls: Array<{ op: string; sandboxId: string }> = []
+  const record = (op: string) => async (target: SandboxTarget) => {
+    calls.push({ op, sandboxId: target.sandboxId })
+  }
+  const driver = fakeDriver({
+    suspend: record("suspend"),
+    stop: record("stop"),
+    destroy: record("destroy"),
+    touch: record("touch"),
+    snapshot: async (target) => {
+      calls.push({ op: "snapshot", sandboxId: target.sandboxId })
+      return { snapshotId: `snap_${target.sandboxId}` }
+    },
+  })
+  return { driver, calls }
+}
+
+function checkpointRuntime(): SandboxCheckpointRuntime {
+  return {
+    freeze: vi.fn(async () => {}),
+    flush: vi.fn(async () => {}),
+    scrub: vi.fn(async () => {}),
+    resume: vi.fn(async () => {}),
+    reconcile: vi.fn(async () => {}),
+  }
+}
+
 describe("sandbox manager", () => {
+  test.each(["stopped", "destroyed"] as const)("a failed in-flight resume does not overwrite %s or return its stale target", async (status) => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver({ resumeHost: async () => {
+      await store.update("ws_1", 1, { status })
+      throw new Error("resume disconnected")
+    } })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+    expect(await manager.ensure("ws_1", { homeRegion: "us-east" })).toMatchObject({ status: "ready" })
+    expect(await manager.ensure("ws_1", { homeRegion: "us-east" })).toMatchObject({ status: "unavailable" })
+    expect(await store.get("ws_1")).toMatchObject({ status })
+  })
+
+  test.each(["stopped", "destroyed"] as const)("a runtime report read before %s cannot revive the lease", async (status) => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver()
+    const manager = createSandboxManager({ leaseStore: store, driver })
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+    const update = store.update.bind(store)
+    vi.spyOn(store, "update").mockImplementationOnce(async (workspaceId, epoch, patch, expectedStatus) => {
+      await update(workspaceId, epoch, { status })
+      return update(workspaceId, epoch, patch, expectedStatus)
+    })
+    expect(await manager.heartbeat("ws_1", { epoch: 1, ok: true })).toMatchObject({ ok: false })
+    expect(await store.get("ws_1")).toMatchObject({ status })
+  })
+
   test("concurrent ensure calls share a fresh acquiring lease", async () => {
     let now = 1_000
     const store = createMemoryLeaseStore()
@@ -204,7 +266,13 @@ describe("sandbox manager", () => {
   test("stale epoch writes are rejected by the lease store", async () => {
     const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_1", epoch: 4, status: "acquiring" })])
 
-    await expect(store.update("ws_1", 3, { status: "ready", hostId: "host_1" })).resolves.toBeUndefined()
+    await expect(store.update("ws_1", 3, { status: "ready" })).resolves.toBeUndefined()
+    await expect(store.recordTarget("ws_1", 3, {
+      sandboxId: "sandbox_1",
+      url: "https://runtime.test/ws_1",
+      hostId: "host_1",
+      labels: {},
+    })).resolves.toBeUndefined()
     await expect(store.get("ws_1")).resolves.toMatchObject({ status: "acquiring", epoch: 4 })
   })
 
@@ -723,12 +791,16 @@ describe("sandbox manager", () => {
     })
   })
 
-  test("register records the sandbox target and heartbeat timestamps on the current epoch", async () => {
+  test("register records liveness and activity without touching the provisioned identity", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
         workspaceId: "ws_1",
-        status: "acquiring",
+        status: "ready",
         epoch: 3,
+        sandboxId: "sandbox_1",
+        url: "https://runtime.test/ws_1",
+        hostId: "host_1",
+        driverResourceId: "resource_1",
       }),
     ])
     const manager = createSandboxManager({
@@ -738,60 +810,60 @@ describe("sandbox manager", () => {
     })
 
     await expect(
-      manager.register("ws_1", {
-        ok: true,
-        status: "ready",
-        epoch: 3,
-        sandboxId: "sandbox_1",
-        url: "https://runtime.test/ws_1",
-        active: true,
-        now: 12_345,
-      }),
+      manager.register("ws_1", { ok: true, epoch: 3, active: true, now: 12_345 }),
     ).resolves.toEqual({ ok: true, status: "ready" })
 
-    await expect(manager.target("ws_1")).resolves.toMatchObject({
+    await expect(store.get("ws_1")).resolves.toMatchObject({
       status: "ready",
       sandboxId: "sandbox_1",
       url: "https://runtime.test/ws_1",
-      hostId: "sandbox_1",
-      epoch: 3,
-    })
-    await expect(store.get("ws_1")).resolves.toMatchObject({
-      status: "ready",
+      hostId: "host_1",
+      driverResourceId: "resource_1",
       lastHeartbeatAt: 12_345,
       lastActivityAt: 12_345,
     })
   })
 
-  test("register only accepts canonical url input", async () => {
+  test("a snapshot cannot make an unprovisioned lease serve", async () => {
     const store = createMemoryLeaseStore([
-      sandboxLease({
-        workspaceId: "ws_url",
-        status: "acquiring",
-        epoch: 3,
-      }),
+      sandboxLease({ workspaceId: "ws_1", status: "acquiring", epoch: 3 }),
     ])
     const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver() })
 
-    await expect(
-      manager.register("ws_url", {
-        ok: true,
-        status: "ready",
-        epoch: 3,
-        sandboxId: "sandbox_url",
-        url: "https://runtime.test/canonical",
-      }),
-    ).resolves.toEqual({ ok: true, status: "ready" })
+    await expect(manager.register("ws_1", { ok: true, epoch: 3 }))
+      .resolves.toEqual({ ok: false, reason: "runtime_lease_not_provisioned" })
+    await expect(manager.heartbeat("ws_1", { ok: true, epoch: 3 }))
+      .resolves.toEqual({ ok: false, reason: "runtime_lease_not_provisioned" })
 
-    await expect(manager.target("ws_url")).resolves.toMatchObject({
-      status: "ready",
-      sandboxId: "sandbox_url",
-      url: "https://runtime.test/canonical",
+    await expect(store.get("ws_1")).resolves.toMatchObject({ status: "acquiring" })
+    await expect(manager.target("ws_1")).resolves.toEqual({
+      status: "unavailable",
+      reason: "runtime_lease_not_ready",
     })
-    await expect(store.get("ws_url")).resolves.not.toHaveProperty("runtimeUrl")
   })
 
-  test("heartbeat rejects stale epochs without mutating the serving target", async () => {
+  test("a snapshot cannot revive a stopped or destroyed lease", async () => {
+    const identity = {
+      sandboxId: "sandbox_1",
+      url: "https://runtime.test/ws_1",
+      hostId: "host_1",
+    }
+    const store = createMemoryLeaseStore([
+      sandboxLease({ workspaceId: "ws_stopped", status: "stopped", epoch: 2, ...identity }),
+      sandboxLease({ workspaceId: "ws_destroyed", status: "destroyed", epoch: 2, ...identity }),
+    ])
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver() })
+
+    await expect(manager.heartbeat("ws_stopped", { ok: true, epoch: 2 }))
+      .resolves.toEqual({ ok: false, reason: "runtime_lease_not_serving" })
+    await expect(manager.register("ws_destroyed", { ok: true, epoch: 2 }))
+      .resolves.toEqual({ ok: false, reason: "runtime_lease_not_serving" })
+
+    await expect(store.get("ws_stopped")).resolves.toMatchObject({ status: "stopped" })
+    await expect(store.get("ws_destroyed")).resolves.toMatchObject({ status: "destroyed" })
+  })
+
+  test("heartbeat rejects a stale epoch without mutating the serving target", async () => {
     const store = createMemoryLeaseStore([
       sandboxLease({
         workspaceId: "ws_1",
@@ -806,17 +878,108 @@ describe("sandbox manager", () => {
     const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver() })
 
     await expect(
-      manager.heartbeat("ws_1", {
-        ok: true,
-        epoch: 3,
-        url: "https://runtime.test/stale",
-        now: 9_999,
-      }),
+      manager.heartbeat("ws_1", { ok: true, epoch: 3, now: 9_999 }),
     ).resolves.toEqual({ ok: false, reason: "runtime_lease_epoch_mismatch" })
 
     await expect(store.get("ws_1")).resolves.toMatchObject({
       epoch: 4,
       lastHeartbeatAt: 1_000,
+    })
+  })
+
+  test("workspace A's runtime cannot move A's lease onto B's sandbox, or reach B through it", async () => {
+    const { driver, calls } = twoResourceDriver()
+    const store = createMemoryLeaseStore()
+    const manager = createSandboxManager({
+      leaseStore: store,
+      driver: {
+        ...driver,
+        metadata: {
+          ...driver.metadata,
+          persistence: {
+            resume: "replacement-restore",
+            capture: "filesystem",
+            clone: false,
+            captureSource: "preserved",
+            retention: "explicit",
+            restoreMount: "new-resource",
+          },
+        },
+      },
+    })
+    const runtime = checkpointRuntime()
+
+    await expect(manager.ensure("ws_a", { homeRegion: "us-east" }))
+      .resolves.toMatchObject({ status: "ready", sandboxId: "sandbox_ws_a" })
+    await expect(manager.ensure("ws_b", { homeRegion: "us-east" }))
+      .resolves.toMatchObject({ status: "ready", sandboxId: "sandbox_ws_b" })
+    const a = await store.get("ws_a")
+    const b = await store.get("ws_b")
+    calls.length = 0
+
+    // Everything the runtime in sandbox A can say, with B's identity in it.
+    // The casts are the point: on the wire this is an untyped JSON body, so
+    // the keys arrive whether or not a type admits them.
+    const smuggled = {
+      sandboxId: b?.sandboxId,
+      url: b?.url,
+      hostId: b?.hostId,
+      driverResourceId: b?.sandboxId,
+      labels: b?.labels,
+    }
+    await expect(manager.heartbeat("ws_a", { ok: true, epoch: 1, active: true, ...smuggled } as never))
+      .resolves.toEqual({ ok: true, status: "ready" })
+    await expect(manager.register("ws_a", { ok: true, epoch: 1, ...smuggled } as never))
+      .resolves.toEqual({ ok: true, status: "ready" })
+    // Nor by reaching the store the snapshot path writes through.
+    await store.update("ws_a", 1, smuggled as never)
+
+    await expect(store.get("ws_a")).resolves.toMatchObject({
+      sandboxId: a?.sandboxId,
+      url: a?.url,
+      hostId: a?.hostId,
+      driverResourceId: a?.driverResourceId,
+      labels: a?.labels,
+    })
+    await expect(manager.target("ws_a")).resolves.toMatchObject({ sandboxId: "sandbox_ws_a" })
+
+    // So every lifecycle call A can provoke lands on A's own resource, and
+    // B's resource is never named by any of them.
+    await manager.touch("ws_a")
+    await manager.snapshot("ws_a")
+    await manager.checkpoint("ws_a", { runtime })
+    await manager.destroy("ws_a")
+    expect(calls.map((call) => call.sandboxId)).toEqual(Array(calls.length).fill("sandbox_ws_a"))
+    expect(calls.map((call) => call.op)).toEqual(["touch", "snapshot", "snapshot", "destroy"])
+    await expect(store.get("ws_b")).resolves.toMatchObject({
+      status: "ready",
+      sandboxId: "sandbox_ws_b",
+      url: b?.url,
+    })
+  })
+
+  test("an unhealthy snapshot marks the lease unavailable and keeps its identity", async () => {
+    const store = createMemoryLeaseStore([
+      sandboxLease({
+        workspaceId: "ws_1",
+        status: "ready",
+        epoch: 2,
+        sandboxId: "sandbox_1",
+        url: "https://runtime.test/ws_1",
+        hostId: "host_1",
+      }),
+    ])
+    const manager = createSandboxManager({ leaseStore: store, driver: fakeDriver() })
+
+    await expect(manager.heartbeat("ws_1", { ok: false, epoch: 2, now: 7_000 }))
+      .resolves.toEqual({ ok: true, status: "unavailable" })
+
+    await expect(store.get("ws_1")).resolves.toMatchObject({
+      status: "unavailable",
+      sandboxId: "sandbox_1",
+      url: "https://runtime.test/ws_1",
+      hostId: "host_1",
+      lastHeartbeatAt: 7_000,
     })
   })
 

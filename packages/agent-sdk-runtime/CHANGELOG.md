@@ -47,6 +47,14 @@ covers. Commits are on `dev`.
 
 ### Added
 
+- `@claxedo/agent-sdk-runtime/stores/session-start`: `sqliteSessionStarts`
+  supplies the `AgentSessionStarts` contract on a host-owned SQLite database.
+  Creation ownership persists independently of provider binding, and `retire`
+  removes only the matching binding after successful authorized deletion.
+  Both built-in stores expose this same contract through `sessionStarts`.
+- Root: `acceptsSessionTitle` and `boundSessionTitleSource` expose the shared
+  title-source policy used by host projections and runtime stores.
+
 - Root: `SessionConfig.permissionCeiling` / `permissionMode` /
   `permissionState`, `AutoLevel`, `AgentPermissionMode`, and the
   `permission-ceiling` helpers (`AUTO_LEVEL_ORDER`, `comparePermissionLevels`,

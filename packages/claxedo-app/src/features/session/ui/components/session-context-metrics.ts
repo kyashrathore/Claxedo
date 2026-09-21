@@ -20,8 +20,8 @@ type Context = {
   message: AssistantMessage
   provider?: Provider
   model?: Model
-  providerLabel: string
-  modelLabel: string
+  providerLabel?: string
+  modelLabel?: string
   limit: number | undefined
   input: number
   output: number
@@ -59,7 +59,7 @@ const build = (messages: Message[], providers: Provider[]): Metrics => {
   if (!message) return { totalCost, context: undefined }
 
   const provider = providers.find((item) => item.id === message.providerID)
-  const model = provider?.models[message.modelID]
+  const model = message.modelID ? provider?.models[message.modelID] : undefined
   const limit = model?.limit.context
   const total = tokenTotal(message)
 

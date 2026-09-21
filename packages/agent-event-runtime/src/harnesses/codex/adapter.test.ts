@@ -22,6 +22,27 @@ function runtime(initialSnapshot?: RuntimeSnapshot<CodexAppServerAdapterState>) 
 }
 
 describe("codexAppServerAdapter", () => {
+  test("projects explicitly marked MCP consent with its advertised persistence choices", () => {
+    const agent = runtime()
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "mcpServer/elicitation/request",
+      payload: {
+        requestId: "consent-1", serverName: "cua_repl", mode: "form",
+        _meta: { codex_approval_kind: "mcp_tool_call", persist: ["session", "always"] },
+        message: 'Allow Computer Use to use "Claxedo Dev (dev)"?',
+        requestedSchema: { type: "object", properties: {} },
+      },
+    }).events).toMatchObject([{
+      type: "permission-request", requestId: "consent-1", tool: "cua_repl", paths: [],
+      details: { reason: 'Allow Computer Use to use "Claxedo Dev (dev)"?' },
+      options: [
+        { id: "accept", label: "Accept" }, { id: "decline", label: "Decline" }, { id: "cancel", label: "Cancel" },
+        { id: '{"persist":"session"}', label: "Accept (session)" }, { id: '{"persist":"always"}', label: "Accept (always)" },
+      ],
+    }])
+  })
+
   test("translates native plan progress into canonical task status", () => {
     const agent = runtime()
     const result = agent.ingest({
@@ -1071,4 +1092,11 @@ describe("codexAppServerAdapter", () => {
       { type: "tool-input", toolCallId: "mcp-other-1", input: { server: "claxedo", tool: "session_list", arguments: {} } },
     ])
   })
+})
+
+test("native imageView completion records the authoritative path without filesystem access", () => {
+  const events = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+    id: "view-1", type: "imageView", path: "/tmp/no-such-image.png",
+  } } }).events
+  expect(events.at(-1)).toMatchObject({ type: "tool-output", attachments: [{ kind: "tool-file", path: "/tmp/no-such-image.png", mime: "image/*", filename: "no-such-image.png" }] })
 })

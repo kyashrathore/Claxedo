@@ -12,13 +12,15 @@
  * what the transactional store would have produced for the second caller.
  */
 
-import { applySandboxLeasePatch } from "@claxedo/sandbox-manager"
+import { applySandboxLeasePatch, applySandboxProvisionedTarget } from "@claxedo/sandbox-manager"
 import type {
   SandboxLease,
   SandboxLeaseAcquireInput,
   SandboxLeaseAcquireResult,
   SandboxLeasePatch,
+  SandboxLeaseStatus,
   SandboxLeaseStore,
+  SandboxProvisionedTarget,
 } from "@claxedo/sandbox-manager"
 import type { SandboxLeaseRow } from "@claxedo/sandbox-manager/lease-types"
 import type { D1Database } from "@cloudflare/workers-types"
@@ -59,6 +61,12 @@ const COLUMNS = [
 
 /** Everything except the primary key and `created_at`, which an upsert preserves. */
 const CONFLICT_COLUMNS = COLUMNS.filter((column) => column !== "workspace_id" && column !== "created_at")
+
+const PATCH_COLUMNS = [
+  ["status", "status"], ["retryCount", "retry_count"], ["nextRetryAt", "next_retry_at"],
+  ["lastHeartbeatAt", "last_heartbeat_at"], ["lastActivityAt", "last_activity_at"], ["lastError", "last_error"],
+  ["checkpoint", "checkpoint_json"], ["restore", "restore_json"],
+] as const satisfies ReadonlyArray<readonly [keyof SandboxLeasePatch, typeof COLUMNS[number]]>
 
 /**
  * D1 hands back `Record<string, unknown>`; the narrowing every column needs is
@@ -164,6 +172,32 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     return row ? toLeaseRow(row) : undefined
   }
 
+  /** Write only this operation's fields; a delayed health write must never restore stale identity. */
+  async function writeFenced(
+    workspaceId: string,
+    expectedEpoch: number,
+    next: SandboxLease,
+    current: SandboxLeaseRow,
+    columns: readonly typeof COLUMNS[number][],
+    expectedStatus?: string,
+    lastHealthFailureAt?: number,
+  ) {
+    const values = rowValues(next, current, { lastHealthFailureAt })
+    const result = await database
+      .prepare(
+        `update ${TABLE} set ${columns.map((column) => `${column} = ?`).join(", ")}
+         where workspace_id = ? and epoch = ?${expectedStatus === undefined ? "" : " and status = ?"} returning *`,
+      )
+      .bind(
+        ...columns.map((column) => values[COLUMNS.indexOf(column)] ?? null),
+        workspaceId,
+        expectedEpoch,
+        ...(expectedStatus === undefined ? [] : [expectedStatus]),
+      )
+      .first()
+    return result ? toSandboxLease(toLeaseRow(result)) : undefined
+  }
+
   /**
    * One acquire attempt. Returns `undefined` when the guarded write lost the
    * race, which tells the caller to re-read and decide again.
@@ -232,28 +266,44 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
       throw new Error(`sandbox lease for ${workspaceId} could not be acquired or read`)
     },
 
-    async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch) {
+    async recordTarget(workspaceId: string, expectedEpoch: number, target: SandboxProvisionedTarget) {
       const current = await read(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
-      const next = applySandboxLeasePatch(toSandboxLease(current), patch, clock())
-      const values = rowValues(next, current)
-      const result = await database
-        .prepare(
-          `update ${TABLE} set ${CONFLICT_COLUMNS.map((column) => `${column} = ?`).join(", ")}
-           where workspace_id = ? and epoch = ?`,
-        )
-        .bind(
-          ...CONFLICT_COLUMNS.map((column) => values[COLUMNS.indexOf(column)] ?? null),
-          workspaceId,
-          expectedEpoch,
-        )
-        .run()
-      return result.meta.changes === 0 ? undefined : next
+      if (sandboxLeaseStatus(current.status) === "stopped" || sandboxLeaseStatus(current.status) === "destroyed") return undefined
+      return await writeFenced(
+        workspaceId,
+        expectedEpoch,
+        applySandboxProvisionedTarget(toSandboxLease(current), target, clock()),
+        current,
+        ["lease_id", "sandbox_id", "url", "driver_resource_id", "labels_json", "persistence_json", "status", "retry_count", "next_retry_at", "last_error", "updated_at"],
+        current.status,
+      )
+    },
+
+    async update(workspaceId: string, expectedEpoch: number, patch: SandboxLeasePatch, expectedStatus?: SandboxLeaseStatus) {
+      const current = await read(workspaceId)
+      if (!current || current.epoch !== expectedEpoch) return undefined
+      if (expectedStatus !== undefined && sandboxLeaseStatus(current.status) !== expectedStatus) return undefined
+      const columns = new Set<typeof COLUMNS[number]>(["updated_at"])
+      for (const [key, column] of PATCH_COLUMNS) {
+        if (patch[key] !== undefined) columns.add(column)
+      }
+      // The stored unavailable state distinguishes retry backoff from failure.
+      if (patch.nextRetryAt !== undefined) columns.add("status")
+      return await writeFenced(
+        workspaceId,
+        expectedEpoch,
+        applySandboxLeasePatch(toSandboxLease(current), patch, clock()),
+        current,
+        [...columns],
+        expectedStatus === undefined ? undefined : current.status,
+      )
     },
 
     async recordFailure(workspaceId: string, expectedEpoch: number, error: string, nextRetryAt?: number) {
       const current = await read(workspaceId)
       if (!current || current.epoch !== expectedEpoch) return undefined
+      if (sandboxLeaseStatus(current.status) === "stopped" || sandboxLeaseStatus(current.status) === "destroyed") return undefined
       const failedAt = clock()
       const next: SandboxLease = {
         ...toSandboxLease(current),
@@ -263,19 +313,8 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
         nextRetryAt,
         updatedAt: failedAt,
       }
-      const values = rowValues(next, current, { lastHealthFailureAt: failedAt })
-      const result = await database
-        .prepare(
-          `update ${TABLE} set ${CONFLICT_COLUMNS.map((column) => `${column} = ?`).join(", ")}
-           where workspace_id = ? and epoch = ?`,
-        )
-        .bind(
-          ...CONFLICT_COLUMNS.map((column) => values[COLUMNS.indexOf(column)] ?? null),
-          workspaceId,
-          expectedEpoch,
-        )
-        .run()
-      return result.meta.changes === 0 ? undefined : next
+      return await writeFenced(workspaceId, expectedEpoch, next, current,
+        ["status", "retry_count", "next_retry_at", "last_error", "last_health_failure_at", "updated_at"], current.status, failedAt)
     },
 
     async release(workspaceId: string) {

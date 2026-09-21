@@ -1,6 +1,8 @@
 import type {
+  AgentSessionStart,
   AgentMessage,
   AgentPermission,
+  AgentPresentationEvent,
   AgentPresentationSession,
   AgentPromptResponse,
   AgentQuestion,
@@ -9,6 +11,7 @@ import type {
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
 import type {
+  AgentConfigOptions,
   AgentGoalMutationResult,
   AgentRuntimeAbortResult,
   AgentPermissionModeState,
@@ -42,6 +45,9 @@ export type SessionUpdateInput = SessionInput & {
   [key: string]: unknown
 }
 export type SessionMessageInput = SessionInput & Record<string, unknown>
+export type SessionDeliveryAcknowledgement =
+  | { delivery: "queue" | "steer"; messageID?: string }
+  | { ok: false; status: "pending" | "unknown"; operationId?: string; message: string }
 export type SessionListInput = WorkspaceScope & {
   scope?: "project"
   path?: string
@@ -59,6 +65,7 @@ export type SessionGoalStartInput = SessionInput & { objective: string }
 
 /** A prompt the runtime holds behind a running turn, as the queue route reports it. */
 export type QueuedSessionPrompt = {
+  steering?: { mode: "start" | "steer"; operationId: string; state: "dispatching" | "accepted" | "unknown" | "rejected"; message?: string }
   seq: number
   messageId?: string
   queuedAt: number
@@ -77,6 +84,9 @@ export type WorkspaceSessionClient = {
   summaries(input?: SessionSummaryListInput, options?: Options): Reply<Record<string, unknown>[]>
   create(input?: SessionCreateInput, options?: Options): Reply<AgentPresentationSession>
   get(input: SessionInput, options?: Options): Reply<AgentPresentationSession>
+  start(input: SessionInput, options?: Options): Reply<AgentSessionStart>
+  configOptions(input: SessionInput, options?: Options): Reply<AgentConfigOptions>
+  attachment(input: SessionInput & { messageID: string; attachmentID: string }, options?: Options): Promise<Response>
   delete(input: SessionInput, options?: Options): Reply<Ok>
   update(input: SessionUpdateInput, options?: Options): Reply<AgentPresentationSession>
   status(input?: WorkspaceScope, options?: Options): Reply<Record<string, AgentRuntimeStatus>>
@@ -89,9 +99,9 @@ export type WorkspaceSessionClient = {
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
   abort(input: SessionInput, options?: Options): Reply<AgentRuntimeAbortResult>
   summarize(input: SessionInput & { providerID: string; modelID: string; auto?: boolean }, options?: Options): Reply<Ok>
-  prompt(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
-  /** `204 No Content` on admission; the turn runs on after the response. */
-  promptAsync(input: SessionMessageInput, options?: Options): Reply<void>
+  prompt(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse | SessionDeliveryAcknowledgement>
+  /** Immediate admission has no body; explicit delivery requests return their durable admission state. */
+  promptAsync(input: SessionMessageInput, options?: Options): Reply<void | SessionDeliveryAcknowledgement>
   command(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
   shell(input: SessionMessageInput, options?: Options): Reply<AgentPromptResponse>
   revert(input: SessionInput & { messageID: string; partID?: string }, options?: Options): Reply<AgentPresentationSession>
@@ -106,7 +116,7 @@ export type WorkspaceSessionClient = {
   }
   queue: {
     list(input: SessionInput, options?: Options): Reply<QueuedSessionPrompt[]>
-    control(input: SessionQueueControlInput, options?: Options): Reply<Ok>
+    control(input: SessionQueueControlInput, options?: Options): Reply<Ok | { ok: false; status: "pending" | "unknown"; operationId: string; message: string }>
   }
   goal: {
     state(input: SessionInput, options?: Options): Reply<{ capabilities: GoalCapabilities; goal: RuntimeGoalSnapshot | null }>
@@ -123,7 +133,7 @@ export type WorkspaceSessionClient = {
 export type WorkspacePermissionClient = {
   list(input?: WorkspaceScope, options?: Options): Reply<AgentPermission[]>
   modes(input?: WorkspaceScope, options?: Options): Reply<AgentPermissionModeState>
-  respond(input: WorkspaceScope & { sessionID: string; permissionID: string; response?: "once" | "always" | "reject" }, options?: Options): Reply<Ok>
+  respond(input: WorkspaceScope & { sessionID: string; permissionID: string; response?: "once" | "always" | "reject"; optionId?: string }, options?: Options): Reply<Ok & { events: AgentPresentationEvent[] }>
 }
 
 export type WorkspaceQuestionClient = {
@@ -152,6 +162,9 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     summaries: (input = {}, options) => caller.call({ operation: "session.summaries", path: "/experimental/session", scope: input, query: namedMembers(input, SESSION_SUMMARY_QUERY), options }),
     create: (input = {}, options) => caller.call({ operation: "session.create", method: "POST", path: "/session", scope: input, body: without(input), options }),
     get: (input, options) => read("session.get", input, "", options),
+    start: (input, options) => caller.call({ operation: "session.start", path: `/session-start/${encodeURIComponent(input.sessionID)}`, scope: input, options }),
+    configOptions: (input, options) => read("session.configOptions", input, "/config-options", options),
+    attachment: async (input, options) => (await caller.send({ operation: "session.attachment", path: sessionPath(input, `/message/${encodeURIComponent(input.messageID)}/attachment/${encodeURIComponent(input.attachmentID)}`), scope: input, options })).response,
     delete: (input, options) => write("session.delete", "DELETE", input, "", options),
     update: (input, options) => write("session.update", "PATCH", input, "", options, without(input, ["sessionID"])),
     status: (input = {}, options) => caller.call({ operation: "session.status", path: "/session/status", scope: input, options }),
@@ -164,14 +177,15 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     abort: (input, options) => write("session.abort", "POST", input, "/abort", options),
     summarize: (input, options) => write("session.summarize", "POST", input, "/summarize", options, without(input, ["sessionID"])),
     prompt: (input, options) => write("session.prompt", "POST", input, "/message", options, without(input, ["sessionID"])),
-    promptAsync: (input, options) => caller.callNoContent({
-      operation: "session.promptAsync",
-      method: "POST",
-      path: sessionPath(input, "/prompt_async"),
-      scope: input,
-      body: without(input, ["sessionID"]),
-      options,
-    }),
+    promptAsync: (input, options) => {
+      const request = {
+        operation: "session.promptAsync", method: "POST", path: sessionPath(input, "/prompt_async"),
+        scope: input, body: without(input, ["sessionID"]), options,
+      }
+      return input.delivery === "queue" || input.delivery === "steer"
+        ? caller.call<SessionDeliveryAcknowledgement>(request)
+        : caller.callNoContent(request)
+    },
     command: (input, options) => write("session.command", "POST", input, "/command", options, without(input, ["sessionID"])),
     shell: (input, options) => write("session.shell", "POST", input, "/shell", options, without(input, ["sessionID"])),
     revert: (input, options) => write("session.revert", "POST", input, "/revert", options, without(input, ["sessionID"])),
@@ -186,7 +200,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
     },
     queue: {
       list: (input, options) => read<QueuedSessionPrompt[]>("session.queue.list", input, "/queue", options),
-      control: (input, options) => write<Ok>(
+      control: (input, options) => write<Ok | { ok: false; status: "pending" | "unknown"; operationId: string; message: string }>(
         "session.queue.control",
         "POST",
         input,
@@ -217,7 +231,7 @@ export function permissionClient(caller: WorkspaceRuntimeCaller): WorkspacePermi
       method: "POST",
       path: `/session/${encodeURIComponent(input.sessionID)}/permissions/${encodeURIComponent(input.permissionID)}`,
       scope: input,
-      body: { response: input.response },
+      body: { ...(input.response !== undefined ? { response: input.response } : {}), ...(input.optionId !== undefined ? { optionId: input.optionId } : {}) },
       options,
     }),
   }

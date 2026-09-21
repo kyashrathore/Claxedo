@@ -2,6 +2,7 @@ import {
   SESSION_HANDOFF_STATES,
   SESSION_LIVENESS,
   START_BLOCKER_CODES,
+  TASKS_BOUNDS,
   isConfigurationSlot,
   isTaskAttachmentMime,
   isTaskStatus,
@@ -75,13 +76,17 @@ export function decodeExecution(ctx: DecodeContext, value: unknown, path: string
   }
 
   if (mode !== "selected") ctx.fields.add(`${path}.capabilities.mode`, "unknown_value")
-  const plugins = ctx.read.array(capabilities?.plugins, `${path}.capabilities.plugins`) ?? []
-  const skills = ctx.read.array(capabilities?.skills, `${path}.capabilities.skills`) ?? []
+  const plugins =
+    ctx.read.array(capabilities?.plugins, `${path}.capabilities.plugins`, TASKS_BOUNDS.pluginReferencesMax) ?? []
+  const skills =
+    ctx.read.array(capabilities?.skills, `${path}.capabilities.skills`, TASKS_BOUNDS.skillReferencesMax) ?? []
   return {
     placement: "cloud",
     capabilities: {
       mode: "selected",
-      plugins: plugins.map((entry, index) => decodePluginReference(ctx, entry, `${path}.capabilities.plugins[${index}]`)),
+      plugins: plugins.map((entry, index) =>
+        decodePluginReference(ctx, entry, `${path}.capabilities.plugins[${index}]`),
+      ),
       skills: skills.map((entry, index) => decodeSkillReference(ctx, entry, `${path}.capabilities.skills[${index}]`)),
     },
   }
@@ -295,12 +300,18 @@ function startPreviewOf(ctx: DecodeContext, value: unknown, path: string): Start
           liveness: liveness(ctx, currentRow?.liveness, `${path}.currentSession.liveness`),
         }
       : null,
-    previousTranscriptReadable: ctx.read.boolean(row?.previousTranscriptReadable, `${path}.previousTranscriptReadable`) ?? false,
+    previousTranscriptReadable:
+      ctx.read.boolean(row?.previousTranscriptReadable, `${path}.previousTranscriptReadable`) ?? false,
     destinationDescription: ctx.read.string(row?.destinationDescription, `${path}.destinationDescription`) ?? "",
   }
 }
 
-function decodePage<T>(ctx: DecodeContext, value: unknown, path: string, item: (entry: unknown, itemPath: string) => T): Page<T> {
+function decodePage<T>(
+  ctx: DecodeContext,
+  value: unknown,
+  path: string,
+  item: (entry: unknown, itemPath: string) => T,
+): Page<T> {
   const row = ctx.read.record(value, path)
   const items = ctx.read.array(row?.items, `${path}.items`) ?? []
   return {
@@ -378,7 +389,8 @@ export function decodeCapabilitiesResponse(value: unknown): Parsed<TasksCapabili
         }
         return placement
       }),
-      cloudSelectedCapabilities: ctx.read.boolean(row?.cloudSelectedCapabilities, "body.cloudSelectedCapabilities") ?? false,
+      cloudSelectedCapabilities:
+        ctx.read.boolean(row?.cloudSelectedCapabilities, "body.cloudSelectedCapabilities") ?? false,
       configurationSlots: slots.map((entry, index) => decodeSlot(ctx, entry, `body.configurationSlots[${index}]`)),
       bounds: boundsOf(ctx, row?.bounds),
     }

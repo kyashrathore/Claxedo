@@ -1,3 +1,4 @@
+import type { AgentSessionStart, AgentQuestion } from "@claxedo/agent-runtime-contract"
 import type { AgentContentPart, AgentPresentationMessage, AgentPresentationSession, AgentSession, AgentTodo, PromptDelivery, PromptModel } from "@claxedo/agent-runtime-contract"
 import { apiBearerToken, authFetch } from "@/platform/api/api"
 import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
@@ -61,6 +62,7 @@ export type {
 
 /** A prompt the runtime is holding behind a running turn, as `GET /session/:id/queue` reports it. */
 export type QueuedMessageRecord = {
+  steering?: { mode: "start" | "steer"; operationId: string; state: "dispatching" | "accepted" | "unknown" | "rejected"; message?: string }
   seq: number
   messageId?: string
   queuedAt: number
@@ -74,7 +76,7 @@ export type AgentRuntimeSessionCreateInput = {
   directory: AgentRuntimeDirectory
   harness: HarnessSelection
   agent: string
-  model: PromptModel
+  model?: PromptModel
   variant?: string
   headers?: Record<string, string>
 }
@@ -571,6 +573,15 @@ export function createAgentRuntimeClient(options: {
     /**
      * Permission modes for a session, in the HARNESS's own vocabulary.
      */
+    async getSessionStart(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
+      const res = await fetchRuntimePath({ directory: input.directory, path: `/session-start/${encodeURIComponent(input.sessionID)}`, init: { cache: "no-store", signal: input.signal } })
+      return { data: await readJson<AgentSessionStart>(res) }
+    },
+    async getStartingSessionQuestions(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
+      const query = new URLSearchParams({ directory: input.directory, sessionId: input.sessionID })
+      const res = await fetchRuntimePath({ directory: input.directory, path: `/question?${query}`, init: { cache: "no-store" } })
+      return { data: await readJson<AgentQuestion[]>(res) }
+    },
     async getPermissionModes(input: { directory: AgentRuntimeDirectory; sessionID: string; harness?: HarnessSelection }) {
       const init: RequestInit = { cache: "no-store", headers: { Accept: "application/json" } }
       // Existing sessions own their binding; drafts must name an explicit
@@ -611,6 +622,7 @@ export function createAgentRuntimeClient(options: {
     async controlQueuedMessage(input: { directory: AgentRuntimeDirectory; sessionID: string; seq: number; action: "cancel" | "steer" | "hold" | "release" }) {
       const res = await fetchRuntimeSession({ ...input, suffix: `/queue/${input.seq}/${input.action}`, init: { method: "POST" } })
       if (!res.ok) throw await runtimeRequestError(res)
+      return await readJson<{ ok: boolean; status?: "pending" | "unknown"; message?: string; operationId?: string }>(res)
     },
     /** Swaps a waiting message's parts; 409 once the runtime has admitted or dropped it. */
     async replaceQueuedMessage(input: { directory: AgentRuntimeDirectory; sessionID: string; seq: number; parts: AgentRuntimePromptPayload["parts"] }) {

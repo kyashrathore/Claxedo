@@ -20,12 +20,13 @@ export function turnPrompt(input: {
 }): PromptInput {
   const { turn, config } = input
   const system = resolveTurnSystem(config, input.channel, turn.system)
+  const model = turn.model ?? resolveSessionModel(config)
   return {
     parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
     userMessageId: input.userMessageId,
     assistantMessageId: input.assistantMessageId,
     agent: turn.agent ?? config.agent ?? "build",
-    model: turn.model ?? resolveSessionModel(config),
+    ...(model ? { model } : {}),
     ...(turn.tools ? { tools: turn.tools } : {}),
     ...(turn.format ? { format: turn.format } : {}),
     ...(system ? { system } : {}),

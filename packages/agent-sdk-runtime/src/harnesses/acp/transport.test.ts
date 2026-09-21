@@ -27,6 +27,19 @@ describe("ACP connection transport", () => {
     })
   })
 
+  test("filesystem reachability is an explicit assertion independent of transport", () => {
+    for (const connection of [
+      { kind: "process", command: "bridge" },
+      { kind: "streamable-http", url: "https://agent.example/acp" },
+      { kind: "websocket", url: "wss://agent.example/acp" },
+    ]) {
+      expect(validateACPConnection(connection).sharedFilesystem).toBeUndefined()
+      expect(validateACPConnection({ ...connection, sharedFilesystem: true }).sharedFilesystem).toBe(true)
+      expect(validateACPConnection({ ...connection, sharedFilesystem: false }).sharedFilesystem).toBe(false)
+      expect(() => validateACPConnection({ ...connection, sharedFilesystem: "yes" })).toThrow("sharedFilesystem must be boolean")
+    }
+  })
+
   test("rejects aliases, mixed local/remote fields, and missing authorities", () => {
     expect(() => validateACPConnection({ kind: "process" })).toThrow("process connection requires command")
     expect(() => validateACPConnection({ kind: "process", command: "agent", url: "https://example.test" })).toThrow(

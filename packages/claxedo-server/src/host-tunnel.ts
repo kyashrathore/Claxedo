@@ -148,11 +148,17 @@ export async function startMachineHostTunnel(input: {
       // The relay carries only workspace-runtime traffic. CentralServer-owned
       // routes remain loopback-only even when a malicious relay asks for one.
       if (!registration.current.has(workspaceId)) return undefined
-      if (routeOwnership(new URL(path, "http://workspace.local").pathname).handler !== RouteHandler.SandboxRuntime) return undefined
-      return new URL(
-        `/workspaces/${encodeURIComponent(workspaceId)}/${path.replace(/^\/+/, "")}`,
+      // Resolved once: the ownership verdict and the prefixed URL below are
+      // the same path, so a route that passes the check cannot be a different
+      // one by the time it is bound to this workspace.
+      const requested = new URL(path, "http://workspace.local")
+      if (routeOwnership(requested.pathname).handler !== RouteHandler.SandboxRuntime) return undefined
+      const target = new URL(
+        `/workspaces/${encodeURIComponent(workspaceId)}${requested.pathname}`,
         `${normalized(localBaseUrl)}/`,
       )
+      target.search = requested.search
+      return target
     },
     tokenProvider: () => token.current(),
     // This machine replays a relay-delivered request onto its OWN loopback

@@ -132,19 +132,6 @@ function promptDelivery(input: unknown): PromptDeliveryRequest | undefined {
   return input === "steer" || input === "queue" ? input : undefined
 }
 
-/**
- * What a client may do to a prompt still waiting: drop it, hand it to the
- * running turn, keep it back from the next idle while it is being edited
- * (`hold` / `release`), or swap its parts — which also releases it.
- */
-export type QueuedPromptAction = "cancel" | "steer" | "hold" | "release" | { replace: NonNullable<PromptInput["parts"]> }
-
-type QueuedIdleHandoff = Awaited<ReturnType<AgentRuntime["turns"]["whenIdle"]>>
-type QueuedWaitDecision =
-  | { kind: "start"; handoff: QueuedIdleHandoff }
-  | { kind: "cancel" | "steer" | "hold" | "release" }
-  | { kind: "replace"; parts: NonNullable<PromptInput["parts"]> }
-
 export type SessionPromptTurnResult = {
   sessionId: string
   prompt: PromptInput
@@ -190,8 +177,7 @@ export type RuntimePromptTurnInput = {
   createActiveTurnScope?: () => ActiveTurnScope | undefined
   streamErrorMessage?: (error: unknown) => string
   onAdmissionSettled?: (error?: unknown) => void
-  queuedAction?: () => Promise<QueuedPromptAction>
-  onQueuedWaitEnd?: () => void
+  onSteeringResult?: (result: NonNullable<Awaited<ReturnType<AgentRuntime["turns"]["start"]>>["steering"]>) => void
   onDelivery?: PromptDeliveryObserver
   /** Current durable lease generation, checked before every producer publish. */
   turnAdmission?: { valid(): boolean; fencingToken(): number }
@@ -273,16 +259,16 @@ function prompt(adapter: AgentHarnessAdapter, body: SessionPromptBody, config?: 
   const defaultModel = config
     ? defaultSessionModel(config.harness)
     : { providerID: "anthropic", modelID: "claude-sonnet-4-6" }
+  const providerID = body.model?.providerID ?? config?.model?.providerID ?? defaultModel?.providerID
+  const modelID = body.model?.modelID ?? config?.model?.modelID ?? defaultModel?.modelID
+  if (!!providerID !== !!modelID) throw new Error("A selected model requires both providerID and modelID")
   const system = resolveTurnSystem(config, adapter.instructionChannel, body.system)
   return {
     parts: body.parts ?? [],
     userMessageId,
     assistantMessageId: mkAssistantId(userMessageId),
     agent: body.agent ?? config?.agent ?? "build",
-    model: {
-      providerID: body.model?.providerID ?? config?.model?.providerID ?? defaultModel.providerID,
-      modelID: body.model?.modelID ?? config?.model?.modelID ?? defaultModel.modelID,
-    },
+    ...(providerID && modelID ? { model: { providerID, modelID } } : {}),
     ...(body.tools ? { tools: body.tools } : {}),
     ...(body.format ? { format: body.format } : {}),
     ...(system ? { system } : {}),
@@ -437,7 +423,7 @@ function reply(messages: unknown[], assistantId: string) {
 
 export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promise<SessionPromptTurnResult> {
   const subscribe = () => input.runtime.events.subscribe({ sessionId: input.sessionId })[Symbol.asyncIterator]()
-  let iterator = subscribe()
+  const iterator = subscribe()
   const scope = compatScope(input.directory, input.sessionId)
   let turn: Awaited<ReturnType<RuntimePromptTurnInput["runtime"]["turns"]["start"]>> | undefined
   let assistantId = ""
@@ -475,9 +461,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.author ? { author: input.author } : {}),
       ...(input.turnAdmission ? { admission: input.turnAdmission } : {}),
     } satisfies Omit<AgentRuntimeTurnStartInput, "actorId" | "actorKind">
-    // Read at every start, not captured in turnInput: a replace action while
-    // the prompt waits swaps the parts the eventual turn is started with.
-    let parts = input.body.parts ?? []
+    const parts = input.body.parts ?? []
     const start = (delivery = input.body.delivery) => input.actor
       ? input.runtime.turns.start({
           ...turnInput,
@@ -488,57 +472,13 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
         })
       : input.runtime.turns.start({ ...turnInput, parts, delivery })
     turn = await start()
-    // A queued prompt waits here, in the host request that holds it, because
-    // the turn it becomes needs this loop to reach the event bus: the runtime
-    // publishes to subscribers, and this subscription is the only one bridging
-    // them to the client.
-    // A held prompt is being edited: it waits for its next action alone and
-    // lets the session go idle past it, so the text the user is still typing
-    // over cannot start a turn.
-    let held = false
-    while (turn.delivery === "queue") {
-      input.onDelivery?.("queue")
-      settleAdmission()
-      const idle: Promise<QueuedIdleHandoff> | undefined = held ? undefined : input.runtime.turns.whenIdle(input.sessionId)
-      const decision: QueuedWaitDecision = await Promise.race([
-        idle?.then((handoff) => ({ kind: "start" as const, handoff })) ?? new Promise<never>(() => {}),
-        input.queuedAction?.().then((action) => typeof action === "object"
-          ? { kind: "replace" as const, parts: action.replace }
-          : { kind: action }) ?? new Promise<never>(() => {}),
-      ])
-      input.onQueuedWaitEnd?.()
-      if (decision.kind !== "start") void idle?.then((handoff) => handoff.abandon())
-      if (decision.kind === "hold" || decision.kind === "release") {
-        held = decision.kind === "hold"
-        continue
-      }
-      if (decision.kind === "replace") {
-        parts = decision.parts
-        held = false
-        continue
-      }
-      if (decision.kind === "cancel") {
-        return { sessionId: input.sessionId, prompt: turn.prompt, scope, assistantId: turn.assistantMessageId,
-          assistantMessagePublished: false, messages: await input.runtime.events.list(input.sessionId, input.directory) }
-      }
-      try {
-        // The first subscription may contain the previous turn's buffered
-        // terminal event. The next turn must bridge only its own events, and
-        // must subscribe before start() can publish its first message.
-        await iterator.return?.()
-        iterator = subscribe()
-        turn = await start(decision.kind === "steer" ? "steer" : input.body.delivery)
-      } catch (error) {
-        if (decision.kind === "start") decision.handoff.abandon()
-        throw error
-      }
-    }
+    if (turn.steering) input.onSteeringResult?.(turn.steering)
     input.onDelivery?.(turn.delivery)
     settleAdmission()
     assistantId = turn.assistantMessageId
-    // A steered prompt joined the running turn, and that turn's own driver is
-    // already publishing its events through a subscription of its own.
-    if (turn.delivery === "steer") {
+    // Acceptance transfers input to the provider. Its transcript evidence is
+    // published independently through the runtime hub.
+    if (turn.delivery === "steer" || turn.delivery === "queue") {
       return {
         sessionId: input.sessionId,
         prompt: turn.prompt,
@@ -560,7 +500,6 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       if (input.turnAdmission && !input.turnAdmission.valid()) break
       for (const event of projection.events(item.payload)) {
         if (input.turnAdmission && !input.turnAdmission.valid()) break
-        input.publishGlobal(withDir(scope, event))
         if (event.type === "message.updated" && event.properties.info.role === "assistant") {
           assistantId = event.properties.info.id
           assistantMessagePublished = true

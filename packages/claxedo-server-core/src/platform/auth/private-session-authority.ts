@@ -74,6 +74,13 @@ export type TransitionPrivateSessionRegistrationInput = PrivateSessionRuntimePri
  */
 export type SessionWriteClass = "agent_turn" | "session_control"
 
+/** Startup control only: proves a live reservation without granting session access. */
+export type AuthorizeRuntimeSessionStartInput = PrivateSessionRuntimePrincipal & {
+  sessionId: string
+  workspaceId: string
+  registrationOperationId: string
+}
+
 export type AuthorizeRuntimePrivateSessionInput = PrivateSessionRuntimePrincipal & {
   sessionId: string
   workspaceId: string
@@ -226,6 +233,9 @@ export type PrivateSessionAuthority = {
     auth: SignedControlPlaneAuth,
     input: { sessionId: string; workspaceId: string },
   ) => Promise<void>
+  /** Reads only the creator-owned registration outcome, including terminal states. */
+  authorizeRuntimeSessionStartStatus: (input: AuthorizeRuntimeSessionStartInput) => Promise<void>
+  authorizeRuntimeSessionStart: (input: AuthorizeRuntimeSessionStartInput) => Promise<void>
   authorizeRuntimeSession: (input: AuthorizeRuntimePrivateSessionInput) => Promise<void>
 
   grantSessionParticipant: (
@@ -282,6 +292,8 @@ export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
   "authorizeSessionWrite",
   "authorizeRuntimeSession",
+  "authorizeRuntimeSessionStart",
+  "authorizeRuntimeSessionStartStatus",
   "grantSessionParticipant",
   "revokeSessionParticipant",
   "listSessions",

@@ -16,7 +16,7 @@ import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platfo
 import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
 import type { ControlPlaneServices } from "../authority/services"
 import { createSelfHostedTasksComposition } from "./self-hosted-composition"
-import { createTasksSessionGrants } from "./session-grants"
+import { createTasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 
 const bridgeInputs = vi.hoisted(() => [] as unknown[])
 vi.mock("@claxedo/local-server/tasks/session-bridge", async (importOriginal) => {

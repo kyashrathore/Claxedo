@@ -21,13 +21,13 @@ export function commitPermissionReply(
     source: RuntimeAppendSource
   },
 ): AgentInteractionResult | undefined {
-  port.owners.delete(input.permId)
   const committed = port.store.appendEvent({
     sessionId: input.sessionId,
     ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
     payload: permissionReplied(input.sessionId, input.permId, input.reply),
     source: input.source,
   })
+  port.owners.delete(input.permId)
   return committed?.payload ? { events: [committed.payload] } : undefined
 }
 
@@ -47,8 +47,7 @@ export function cancelPendingPermissions(
   // A snapshot: `respondPermission` deletes from the map being walked.
   const pendingNow = [...proc.pendingPermissions]
   for (const [permId, pending] of pendingNow) {
-    if (pending.aid !== agentSessionId) continue
-    proc.respondPermission(permId, { outcome: { outcome: "cancelled" } })
+    if (!proc.sessionIsWithin(pending.aid, agentSessionId)) continue
     commitPermissionReply(port, {
       sessionId,
       agentSessionId,
@@ -56,5 +55,6 @@ export function cancelPendingPermissions(
       reply: "reject",
       source: { dir: "out", method: "permission.abort", frame: { outcome: "cancelled" } },
     })
+    proc.respondPermission(permId, { outcome: { outcome: "cancelled" } })
   }
 }

@@ -40,7 +40,7 @@ export function sessionMetaProjectionTap(
       const rawDir = c.req.query("directory") || c.req.header("x-claxedo-directory") || undefined
       const directory = rawDir ? decodeURIComponent(rawDir) : undefined
       const workspaceId =
-        c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id") || undefined
+        c.req.query("workspaceId") ?? c.req.query("workspace") ?? c.req.header("x-workspace-id") ?? undefined
       const ws = await resolveWorkspace({ workspaceId, directory }).catch(() => undefined)
       // Cloud sessions are owned by the hosted control plane.
       if (ws?.kind === "cloud") return

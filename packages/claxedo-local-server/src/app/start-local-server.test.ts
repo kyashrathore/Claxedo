@@ -11,6 +11,8 @@ import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
+import { DAEMON_CAPABILITY_HEADER } from "./daemon-admission"
+import { openDaemonSocket, testDaemon } from "./test-support/daemon"
 
 /**
  * Boots the real server on a real socket and talks to it over HTTP.
@@ -89,10 +91,14 @@ function services(overrides: Record<string, unknown> = {}) {
   } as unknown as LocalAppOptions["services"]
 }
 
+let identity: ReturnType<typeof testDaemon>
+
 async function boot() {
   const port = await freePort()
+  identity = testDaemon()
   server = startLocalServer({
     port,
+    daemon: identity.daemon,
     services: services(),
     corsOrigin: (origin) => origin,
   })
@@ -121,7 +127,13 @@ describe("startLocalServer", () => {
     await server.ready
     lifecycle.start()
     const base = `http://127.0.0.1:${server.port}/api/claxedo/daemon`
-    const headers = { authorization: "Bearer shutdown-test", "content-type": "application/json" }
+    const headers = {
+      authorization: "Bearer shutdown-test",
+      "content-type": "application/json",
+      // The capability and the lifecycle bearer are the same secret presented
+      // under the two headers the daemon reads them from.
+      [DAEMON_CAPABILITY_HEADER]: "shutdown-test",
+    }
     const acquired = await fetch(`${base}/leases`, { method: "POST", headers })
     expect(acquired.status).toBe(201)
     const lease = await acquired.json() as { id: string }
@@ -150,6 +162,7 @@ describe("startLocalServer", () => {
     const port = await freePort()
     server = startLocalServer({
       port,
+      daemon: (identity = testDaemon()).daemon,
       services: services({
         auth: customVerifierAuthAdapter({
           issuer: "https://idp.example.test",
@@ -168,12 +181,36 @@ describe("startLocalServer", () => {
     })
     await server.ready
 
-    const response = await fetch(`http://127.0.0.1:${port}/api/claxedo/usage?view=quota&since=0&until=86400000`, {
+    const response = await identity.call(`http://127.0.0.1:${port}/api/claxedo/usage?view=quota&since=0&until=86400000`, {
       headers: { Authorization: "Bearer alpha-user" },
     })
 
     expect(response.status).toBe(200)
     expect(listCredentials).toHaveBeenCalledWith("org-alpha")
+  }, 30_000)
+
+  // The launcher's declaration of where the renderer document lives, which is
+  // the same variable Electron main trusts to decide which document may hold
+  // the IPC bridge. A packaged desktop sets none and answers its own origin.
+  test("reflects the development renderer origin the launcher declared, and no other", async () => {
+    const previousRendererUrl = process.env.ELECTRON_RENDERER_URL
+    process.env.ELECTRON_RENDERER_URL = "http://localhost:5173/index.local.html"
+    try {
+      const port = await freePort()
+      identity = testDaemon()
+      const local = server = startLocalServer({ port, daemon: identity.daemon, services: services() })
+      await local.ready
+      const health = `http://127.0.0.1:${port}/api/claxedo/health`
+
+      const dev = await fetch(health, { headers: { origin: "http://localhost:5173" } })
+      const other = await fetch(health, { headers: { origin: "http://localhost:4173" } })
+
+      expect(dev.headers.get("access-control-allow-origin")).toBe("http://localhost:5173")
+      expect(other.headers.get("access-control-allow-origin")).toBeNull()
+    } finally {
+      if (previousRendererUrl === undefined) delete process.env.ELECTRON_RENDERER_URL
+      else process.env.ELECTRON_RENDERER_URL = previousRendererUrl
+    }
   }, 30_000)
 
   test("ships the unified usage endpoint in the desktop-local composition", async () => {
@@ -219,7 +256,7 @@ describe("startLocalServer", () => {
     local.app.get("/api/claxedo/test-shutdown-stream", () => new Response(new ReadableStream({
       start(controller) { controller.enqueue(new TextEncoder().encode("data: ready\n\n")) },
     }), { headers: { "content-type": "text/event-stream" } }))
-    const response = await fetch(`http://127.0.0.1:${local.port}/api/claxedo/test-shutdown-stream`)
+    const response = await identity.call(`http://127.0.0.1:${local.port}/api/claxedo/test-shutdown-stream`)
     expect(response.status).toBe(200)
     const reader = response.body!.getReader()
     expect(new TextDecoder().decode((await reader.read()).value)).toBe("data: ready\n\n")
@@ -233,9 +270,12 @@ describe("startLocalServer", () => {
     const port = await freePort()
     // The shell's event route is gated by the control-plane route auth, which
     // passes unsigned callers only under the real local-only configuration.
-    const local = server = startLocalServer({ port, services: services({ auth: localOnlyAuthAdapter() }) })
+    identity = testDaemon()
+    const local = server = startLocalServer({ port, daemon: identity.daemon, services: services({ auth: localOnlyAuthAdapter() }) })
     await local.ready
-    const socket = new WebSocket(`ws://127.0.0.1:${local.port}/api/cp/events`)
+    // The handshake carries the capability exactly as Electron main stamps it
+    // onto the renderer's sockets; the gate reads upgrades and plain requests alike.
+    const socket = openDaemonSocket(`ws://127.0.0.1:${local.port}/api/cp/events`, identity.capability)
     await new Promise<void>((resolve, reject) => {
       socket.addEventListener("open", () => resolve(), { once: true })
       socket.addEventListener("error", () => reject(new Error("event WebSocket did not open")), { once: true })
@@ -261,15 +301,17 @@ describe("createLocalControlPlaneServices", () => {
     // will pass. Booting on them proves the SQLite session projection, the
     // credential registry and the loopback auth adapter actually compose.
     const port = await freePort()
+    identity = testDaemon()
     server = startLocalServer({
       port,
+      daemon: identity.daemon,
       services: createLocalControlPlaneServices(),
       corsOrigin: (origin) => origin,
     })
 
     expect((await fetch(`http://127.0.0.1:${port}/api/claxedo/health`)).status).toBe(200)
     // Unsigned by construction: no account, nothing to verify a bearer against.
-    expect((await fetch(`http://127.0.0.1:${port}/api/claxedo/credentials`)).status).toBe(200)
+    expect((await identity.call(`http://127.0.0.1:${port}/api/claxedo/credentials`)).status).toBe(200)
     expect(workspaceSupervisorInstalled()).toBe(false)
   }, 30_000)
 

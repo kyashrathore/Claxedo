@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { createDiffRoutes, DiffRoutes } from "./diff"
+import { createDiffRoutes } from "./diff"
 
 const execFileAsync = promisify(execFile)
 
@@ -32,9 +32,9 @@ async function withGitRepo(fn: (directory: string) => Promise<void>) {
   }
 }
 
-describe("DiffRoutes", () => {
+describe("diff routes", () => {
   test("returns structured validation errors", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     for (const endpoint of ["targets", "vcs", "refs"]) {
       const response = await app.request(`/api/wr/diff/${endpoint}`)
@@ -62,7 +62,7 @@ describe("DiffRoutes", () => {
   })
 
   test("keeps untracked files out of uncommitted stats", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       await writeFile(path.join(directory, "tracked.txt"), "after\n")
@@ -82,7 +82,7 @@ describe("DiffRoutes", () => {
   })
 
   test("loads summaries first and file patches on demand", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       await writeFile(path.join(directory, "tracked.txt"), "after\n")
@@ -119,7 +119,7 @@ describe("DiffRoutes", () => {
   })
 
   test("uses the pinned workspace directory when relay requests omit directory", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       await writeFile(path.join(directory, "tracked.txt"), "after\n")
@@ -141,7 +141,7 @@ describe("DiffRoutes", () => {
   })
 
   test("rejects caller-selected directories outside the pinned workspace", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async () => {
       const outside = await mkdtemp(path.join(tmpdir(), "workspace-runtime-diff-outside-"))
@@ -168,7 +168,7 @@ describe("DiffRoutes", () => {
   })
 
   test("rejects absolute and escaping diff file paths", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       for (const file of [
@@ -191,7 +191,7 @@ describe("DiffRoutes", () => {
   })
 
   test("compares a root commit against the empty tree", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       const root = (await execFileAsync("git", ["rev-list", "--max-parents=0", "HEAD"], { cwd: directory })).stdout.trim()
@@ -207,7 +207,7 @@ describe("DiffRoutes", () => {
   })
 
   test("rejects unsafe or non-existent range refs before invoking diff", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       for (const fromRef of ["-bad", "HEAD~1", "tracked.txt"]) {
@@ -236,7 +236,7 @@ describe("DiffRoutes", () => {
     })
   })
 
-  test("uses -- to separate range refs from file paths", async () => {
+  test("reads the caller's file as a filename, after -- and after the range refs", async () => {
     const calls: string[][] = []
     const app = new Hono().route("/api/wr/diff", createDiffRoutes({
       git: async (args) => {
@@ -252,6 +252,9 @@ describe("DiffRoutes", () => {
       )
       expect(response.status).toBe(200)
       expect(calls).toContainEqual([
+        // Leads the arguments, so the path below is the file it names and not
+        // a pattern git may expand past what the route authorized.
+        "--literal-pathspecs",
         "diff",
         "--patch",
         "--no-ext-diff",
@@ -294,7 +297,7 @@ describe("DiffRoutes", () => {
   })
 
   test("marks only origin-backed refs as cloud branches and excludes symbolic remote HEAD", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       const current = (await execFileAsync("git", ["branch", "--show-current"], { cwd: directory })).stdout.trim()
@@ -336,7 +339,7 @@ describe("DiffRoutes", () => {
   })
 
   test("uses rename-aware stats for uncommitted files", async () => {
-    const app = new Hono().route("/api/wr/diff", DiffRoutes())
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       await git(directory, ["mv", "tracked.txt", "renamed.txt"])

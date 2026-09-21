@@ -9,6 +9,9 @@ import type { WorkspaceEventFramesTap } from "../routes/events"
 import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeCredentialIssuer } from "../first-party-mcp/credential"
 import type { FirstPartyMcpServerEntry } from "../first-party-mcp/index"
+import type { ConnectionRuntimeStatus } from "@claxedo/agent-runtime-contract"
+
+export type WorkspaceConnectionState = ConnectionRuntimeStatus & { connectionId: string }
 
 export type RuntimeConfigApplyStatus = {
   state: "idle" | "applying" | "applied" | "failed"
@@ -90,11 +93,13 @@ export type WorkspaceHost = {
     harness?: RuntimeHarnessSelection
     error: string
     harnessHealth: AgentHarnessAdapterHealth
+    connectionState?: WorkspaceConnectionState
     workspaceHarnessEnabled: boolean
     configApply: RuntimeConfigApplyStatus
   }
   /** Read health for one session's resolved harness, without unrelated session history. */
   readHarnessHealth: (input: { sessionId: string; directory?: string }) => Promise<AgentHarnessAdapterHealth>
+  readConnectionState: (input?: { sessionId?: string; directory?: string }) => WorkspaceConnectionState | undefined
   capabilities: () => WorkspaceCapabilities
   /** Canonical in-process work that prevents daemon quiescence. */
   activity: () => {

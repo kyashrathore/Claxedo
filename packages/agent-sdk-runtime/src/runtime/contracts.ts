@@ -134,6 +134,7 @@ export type AgentRuntimeTurnStartResult = {
   directory: RuntimeDirectory
   prompt: PromptInput
   delivery: PromptDelivery
+  steering?: import("../adapter-contract").SteerResult
 }
 
 export type AgentRuntimeGoalStartInput = {

@@ -18,7 +18,7 @@ const ACP_CONNECTION_CAPABILITIES: HarnessConnectionCapabilities = {
   reconnect: false,
   replay: true,
   permissions: true,
-  questions: false,
+  questions: true,
   todos: false,
   commands: false,
   fork: false,
@@ -58,7 +58,7 @@ export function createAcpConnectionProvider(): ConnectionProvider<AcpConnectionP
     project(config) {
       return {
         label: config.label,
-        readiness: "ready",
+        readiness: "configured",
         capabilities: ACP_CONNECTION_CAPABILITIES,
         ...(config.modelSelection ? { modelSelection: config.modelSelection } : {}),
       }

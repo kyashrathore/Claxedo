@@ -3,6 +3,7 @@ import type {
   AgentMessageAuthor,
   AgentMessageInfo,
   AgentPermission,
+  AgentPermissionReply,
   AgentPresentationEvent,
   PromptInput,
   AgentQuestion,
@@ -102,6 +103,7 @@ const kinds: ReadonlySet<string> = new Set<CompatEvent["type"]>([
   "session.compacted",
   "session.agent",
   "session.config",
+  "session.commands",
   "session.usage",
   "runtime.diagnostic",
   "server.connected",
@@ -174,7 +176,7 @@ export function buildUserMessage(input: {
   id: string
   sessionID: string
   agent: string
-  model: { providerID: string; modelID: string }
+  model?: { providerID: string; modelID: string }
   created?: number
   tools?: Record<string, boolean>
   format?: CompatPromptFormat
@@ -188,7 +190,7 @@ export function buildUserMessage(input: {
     role: "user",
     time: { created: input.created ?? Date.now() },
     agent: input.agent,
-    model: input.model,
+    ...(input.model ? { model: input.model } : {}),
     ...(input.tools ? { tools: input.tools } : {}),
     ...(input.format ? { format: input.format } : {}),
     ...(input.system ? { system: input.system } : {}),
@@ -201,7 +203,7 @@ export function buildAssistantMessage(input: {
   sessionID: string
   parentID: string
   agent: string
-  model: { providerID: string; modelID: string }
+  model?: { providerID: string; modelID: string }
   directory: string
   created?: number
   completed?: number
@@ -218,8 +220,7 @@ export function buildAssistantMessage(input: {
       ...(input.completed ? { completed: input.completed } : {}),
     },
     parentID: input.parentID,
-    modelID: input.model.modelID,
-    providerID: input.model.providerID,
+    ...(input.model ? { modelID: input.model.modelID, providerID: input.model.providerID } : {}),
     mode: "auto",
     agent: input.agent,
     path: { cwd: input.directory, root: input.directory },
@@ -343,11 +344,11 @@ export function permissionAsked(properties: AgentPermission): EventPermissionAsk
   }
 }
 
-export function permissionReplied(sessionID: string, requestID: string, reply: "once" | "always" | "reject"): EventPermissionReplied {
+export function permissionReplied(sessionID: string, requestID: string, reply: AgentPermissionReply): EventPermissionReplied {
   return {
     id: `permission.replied:${requestID}`,
     type: "permission.replied",
-    properties: { sessionID, requestID, reply },
+    properties: { sessionID, requestID, ...(typeof reply === "string" ? { reply } : reply) },
   }
 }
 

@@ -49,14 +49,17 @@ async function workspace(c: {
   const headerWorkspaceId = directoryHeader?.startsWith("workspace:")
     ? directoryHeader.slice("workspace:".length)
     : undefined
+  const workspaceId = c.req.query("workspaceId") ??
+    c.req.query("workspace") ??
+    c.req.header("x-workspace-id") ??
+    headerWorkspaceId
   const hit = await resolveWorkspace({
-    workspaceId: c.req.query("workspaceId") ||
-      c.req.query("workspace") ||
-      c.req.header("x-workspace-id") ||
-      headerWorkspaceId ||
-      (projectId?.startsWith("ws_") ? projectId : undefined),
+    workspaceId,
     directory: c.req.query("directory") || (headerWorkspaceId ? undefined : directoryHeader),
   })
+  if (workspaceId !== undefined && !hit) {
+    throw new HTTPException(404, { message: "Local workspace not found" })
+  }
   if (hit) return hit
   return projectId ? await getProjectWorkspace(projectId) : undefined
 }
@@ -198,6 +201,7 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (err instanceof ControlPlaneAuthError) {
         return c.json(controlPlaneAuthErrorBody(err), err.status)
       }
+      if (err instanceof HTTPException) return err.getResponse()
       throw err
     })
     // The desktop-local session inventory. `/api/control/sessions` belongs to
@@ -206,7 +210,7 @@ export function SessionMetaRoutes(options: Options = {}) {
     .get("/api/claxedo/session", async (c) => {
       const authResult = await signedOrError(c.req.raw, options)
       if (authResult.error) return c.json(authResult.error, authResult.status)
-      const resolved = await workspace(c).catch(() => undefined)
+      const resolved = await workspace(c)
       await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
       // Signed callers get participant-scoped authority rows. Projection metas
       // are workspace-complete and would leak private sessions to editors who
@@ -260,7 +264,7 @@ export function SessionMetaRoutes(options: Options = {}) {
           )).flat()
           return c.json(buildSessionListResponse({ query, sessions }))
         }
-        const resolved = await workspace(c).catch(() => undefined)
+        const resolved = await workspace(c)
         await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
         if (authResult.auth && resolved?.id) {
           const sessions = await requireAuthority(options.services).listSessions(authResult.auth, {
@@ -304,7 +308,7 @@ export function SessionMetaRoutes(options: Options = {}) {
       const hit = await sessionMeta(c.req.param("id"))
       const ws = hit?.workspaceID
         ? undefined
-        : await workspace(c).catch(() => undefined)
+        : await workspace(c)
       await authorizeRead(authResult.auth, options, {
         sessionId: c.req.param("id"),
         workspaceId: hit?.workspaceID ?? ws?.id,
@@ -316,7 +320,7 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (authResult.error) return c.json(authResult.error, authResult.status)
       const body = await c.req.json().catch(() => ({}))
       const next = parseSessionMeta(body)
-      const ws = await workspace(c).catch(() => undefined)
+      const ws = await workspace(c)
       const previous = await sessionMeta(c.req.param("id"))
       // The session's recorded workspace decides authorization; a
       // caller-selected workspace must not stand in for it, and rebinding to

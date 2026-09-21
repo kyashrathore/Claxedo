@@ -42,6 +42,7 @@ const DEFAULT_RECOVERY_GRACE_MS = 1500
 export async function createSessionWithLifecycle(input: {
   draftId?: string
   events?: ClaxedoLifecycleListener
+  onLifecycle?: (event: SessionLifecycleEvent) => void
   perform: () => Promise<CreatedSessionTarget>
   recoveryGraceMs?: number
 }): Promise<CreatedSessionTarget> {
@@ -60,6 +61,7 @@ export async function createSessionWithLifecycle(input: {
 
   const unsubscribe = input.events.on("session.lifecycle", (event) => {
     if (event.draftId !== input.draftId) return
+    input.onLifecycle?.(event)
     if (event.phase === "created" && event.sessionID) {
       recovered = { id: event.sessionID }
       resolveRecovered?.(recovered)
@@ -115,7 +117,6 @@ export async function createSessionWithLifecycle(input: {
       throw new Error(failure, { cause: err })
     }
     if (settled) return settled
-    if (input.draftId) markRolledBackDraft(input.draftId)
     throw err
   } finally {
     if (timer !== undefined) clearTimeout(timer)

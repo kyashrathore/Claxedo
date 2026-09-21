@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import {
+  attachEmbeddedWorkspacePty,
   configureEmbeddedWorkspaceRuntime,
   cursorTranscriptRoot,
   embeddedWorkspaceRuntimeSessionAuthority,
@@ -22,7 +23,7 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { localWorkspaceRuntimeSessionAuthority } from "@claxedo/server-core/workspace/local-runtime-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
-import { managedWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
+import { managedWorkspaceSessionAccessPolicy, Pty, type EmbeddedRelayHostIdentity } from "@claxedo/workspace-runtime"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
 import { createAcpConnectionProvider, NO_HARNESS_EFFORT, type ConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
@@ -347,6 +348,11 @@ describe("embedded workspace runtime", () => {
       // writes but not the stream capability would 503 every managed terminal
       // with `terminal_capability_authority_unavailable`.
       authority: {
+        // The reservation is the plane's, made before the runtime was asked to
+        // create anything; only the creation it names may start.
+        authorizeSessionStart: (input) => input.actor.actorId === "actor_alice"
+          && input.sessionId === "private-session"
+          && input.registrationOperationId === "reserve-private-session",
         authorizeSessionRead: (input) => {
           authorityCalls.push(`${input.actor.actorId}:read:${input.sessionId}:${input.credential}`)
           return input.actor.actorId === "actor_alice"
@@ -638,6 +644,25 @@ describe("embedded workspace runtime", () => {
     }
   })
 
+  test("concurrent adapter reads apply one initial snapshot without blocking stored reads", async () => {
+    const { root, project } = await makeWorkspaceRoot("embedded-cold-adapter-")
+    try {
+      process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+      await saveUserConfig({ ...(await loadUserConfig()), defaultHarness: { kind: "native", harnessId: "pi" } })
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_cold_adapter", project), { config: "skip" })
+      expect((await runtime.app.request("http://runtime.test/session")).status).toBe(200)
+      expect(runtime.host.detail().configApply.state).toBe("idle")
+      const responses = await Promise.all(["/permission/modes", "/session/capabilities", "/agent"].map((route) =>
+        runtime.app.request(`http://runtime.test${route}?directory=${encodeURIComponent(project)}`)))
+      expect(await responses[2]!.json()).toMatchObject({ error: { code: "unsupported_operation", harness: "pi", capability: "agents" } })
+      expect(responses.map((response) => response.status)).toEqual([200, 200, 409])
+      expect(runtime.host.detail().configApply).toMatchObject({ state: "applied", revision: 1 })
+    } finally {
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+
   test("a runtime created for a read selects the configured default harness before any config sync", async () => {
     const configured = await makeWorkspaceRoot("claxedo-embedded-default-harness-")
     const unconfigured = await makeWorkspaceRoot("claxedo-embedded-no-default-harness-")
@@ -827,6 +852,156 @@ describe("embedded workspace runtime", () => {
       ]])
     } finally {
       configureEmbeddedWorkspaceRuntime({})
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+})
+
+/**
+ * The in-process terminal attach, asked directly: this is the entrypoint the
+ * daemon's WebSocket proxy calls instead of the runtime's own route, so the
+ * questions the route would have asked have to be asked here.
+ */
+describe("attaching to an embedded workspace terminal", () => {
+  const relayed = (role: "viewer" | "editor" = "editor"): EmbeddedRelayHostIdentity => ({
+    principal_kind: "user",
+    actor_id: "actor_member",
+    actor_kind: "human",
+    actor_public_id: "user_member",
+    actor_name: "Member",
+    org_id: "org_1",
+    workspace_id: "ws_terminal",
+    role,
+  })
+
+  function policyDeciding(verdict: (operation: string) => boolean) {
+    const asked: string[] = []
+    const denial = {
+      allowed: false as const,
+      status: 403 as const,
+      code: "private_session",
+      message: "Session is private",
+    }
+    const policy = managedWorkspaceSessionAccessPolicy({
+      authority: {
+        authorizeSessionRead: () => ({ allowed: true }),
+        authorizeSessionWrite: () => ({ allowed: true }),
+        authorizeSessionStream: (input) => {
+          asked.push(input.operation)
+          return verdict(input.operation)
+            ? { allowed: true as const, lease: "stream-lease", expiresAt: Date.now() + 60_000 }
+            : denial
+        },
+        registerSession: () => ({ allowed: true }),
+        acquireTurn: () => denial,
+        renewTurn: () => denial,
+        releaseTurn: () => denial,
+      },
+    })
+    return { policy, asked }
+  }
+
+  async function terminal(cwd: string, sessionId: string) {
+    const info = await Pty.create({ command: "/bin/sh", cwd, sessionId })
+    Pty.commit(info.id)
+    return info
+  }
+
+  test("a terminal outside the workspace is not this workspace's to attach to", async () => {
+    const { root, project } = await makeWorkspaceRoot("embedded-terminal-foreign-")
+    const elsewhere = await makeWorkspaceRoot("embedded-terminal-elsewhere-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    const pty = await terminal(elsewhere.project, "ses_1")
+    try {
+      const attach = await attachEmbeddedWorkspacePty({
+        workspace: workspace("ws_terminal", project),
+        ptyId: pty.id,
+        method: "GET",
+        path: `/api/wr/pty/${pty.id}/connect`,
+      })
+
+      expect(attach.ok).toBe(false)
+      expect(attach.ok ? undefined : attach.response.status).toBe(404)
+    } finally {
+      await Pty.remove(pty.id)
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root, elsewhere.root)
+    }
+  })
+
+  test("the identity the ingress verified is the one the mounted policy is asked about", async () => {
+    const { root, project } = await makeWorkspaceRoot("embedded-terminal-identity-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    const refusing = policyDeciding(() => false)
+    configureEmbeddedWorkspaceRuntime({ sessionAccessPolicy: refusing.policy })
+    const pty = await terminal(project, "ses_1")
+    try {
+      const ws = workspace("ws_terminal", project)
+      const request = {
+        workspace: ws,
+        ptyId: pty.id,
+        authorization: "Bearer relay-token",
+        method: "GET",
+        path: `/api/wr/pty/${pty.id}/connect`,
+      }
+
+      const viewer = await attachEmbeddedWorkspacePty({ ...request, identity: relayed("viewer") })
+      const member = await attachEmbeddedWorkspacePty({ ...request, identity: relayed() })
+      const owner = await attachEmbeddedWorkspacePty(request)
+
+      expect(viewer.ok ? undefined : viewer.response.status).toBe(403)
+      expect(member.ok ? undefined : member.response.status).toBe(403)
+      // A workspace viewer never reaches the session question at all.
+      expect(refusing.asked).toEqual(["pty_read"])
+      // The machine's own user carries no identity, so the policy has nobody
+      // to refuse and the socket is its own.
+      expect(owner.ok).toBe(true)
+    } finally {
+      configureEmbeddedWorkspaceRuntime({})
+      await Pty.remove(pty.id)
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("an admitted member gets a connection that reads the terminal and drops what it may not type", async () => {
+    const { root, project } = await makeWorkspaceRoot("embedded-terminal-readonly-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    const readOnly = policyDeciding((operation) => operation === "pty_read")
+    configureEmbeddedWorkspaceRuntime({ sessionAccessPolicy: readOnly.policy })
+    const pty = await terminal(project, "ses_1")
+    const received: string[] = []
+    try {
+      const attach = await attachEmbeddedWorkspacePty({
+        workspace: workspace("ws_terminal", project),
+        ptyId: pty.id,
+        identity: relayed(),
+        authorization: "Bearer relay-token",
+        method: "GET",
+        path: `/api/wr/pty/${pty.id}/connect`,
+      })
+      expect(attach.ok).toBe(true)
+      if (!attach.ok) return
+
+      attach.connection.onOpen({
+        readyState: 1,
+        bufferedAmount: 0,
+        send: (data) => {
+          received.push(typeof data === "string" ? data : new TextDecoder().decode(data as ArrayBuffer))
+        },
+        close: () => {},
+      })
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      attach.connection.onMessage("echo pwned\r")
+      await new Promise((resolve) => setTimeout(resolve, 750))
+
+      expect(received.length).toBeGreaterThan(0)
+      expect(received.join("")).not.toContain("pwned")
+      expect(readOnly.asked).toEqual(["pty_read", "pty_write"])
+    } finally {
+      configureEmbeddedWorkspaceRuntime({})
+      await Pty.remove(pty.id)
       await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }

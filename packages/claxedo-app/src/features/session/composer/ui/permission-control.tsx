@@ -47,7 +47,7 @@ export function PromptPermissionControl(props: {
             data-action="prompt-permission-mode"
             data-mode={props.current()?.id ?? ""}
             type="button"
-            aria-label={props.label}
+            aria-label={triggerText()}
             disabled={props.disabled()}
             tabIndex={props.disabled() ? -1 : undefined}
             style={props.style()}

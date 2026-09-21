@@ -240,6 +240,62 @@ describe("POST /experimental/worktree/reset keeps `git reset --hard`/`clean -ffd
   })
 })
 
+describe("destructive worktree operations require a registered Git worktree", () => {
+  test.each([["DELETE", "/experimental/worktree"], ["POST", "/experimental/worktree/reset"]])("%s %s refuses descendants and Git metadata without changing them", async (method, route) => {
+    const child = path.join(project, `ordinary-child-${randomUUID()}`)
+    await fs.mkdir(child)
+    await fs.writeFile(path.join(child, "sentinel"), "keep this")
+    const head = await fs.readFile(path.join(project, ".git", "HEAD"), "utf8")
+    for (const target of [child, path.join(project, ".git")]) {
+      const res = await app.request(`${route}?workspaceId=ws_a&directory=${encodeURIComponent(target)}`, { method })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ error: { code: "claxedo_worktree_not_found" } })
+    }
+    expect(await fs.readFile(path.join(child, "sentinel"), "utf8")).toBe("keep this")
+    expect(await fs.readFile(path.join(project, ".git", "HEAD"), "utf8")).toBe(head)
+  })
+
+  test.each([["DELETE", "/experimental/worktree"], ["POST", "/experimental/worktree/reset"]])("%s %s refuses a primary-checkout alias", async (method, route) => {
+    const alias = path.join(project, `primary-alias-${randomUUID()}`)
+    await fs.symlink(project, alias, "junction")
+    const res = await app.request(`${route}?workspaceId=ws_a&directory=${encodeURIComponent(alias)}`, { method })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: method === "DELETE" ? "claxedo_primary_workspace_remove_forbidden" : "claxedo_primary_workspace_reset_forbidden" } })
+    expect(await exists(path.join(project, ".git", "HEAD"))).toBe(true)
+    await fs.unlink(alias)
+  })
+
+  test("reset accepts the worktree created by the canonical provisioner", async () => {
+    const { provisionRegisteredWorktree } = await import("../workspace/worktree")
+    const directory = path.join(dataDir(), "worktree", "proj_a", `reset-${randomUUID()}`)
+    const workspace = await provisionRegisteredWorktree({ repositoryDirectory: project, directory, workspaceName: "Reset fixture", checkout: { kind: "branch", branch: `claxedo/reset-${randomUUID()}` } })
+    await fs.writeFile(path.join(directory, "README.md"), "modified")
+    await fs.writeFile(path.join(directory, "untracked"), "remove this")
+    const res = await app.request(`/experimental/worktree/reset?workspaceId=ws_a&directory=${encodeURIComponent(workspace.directory)}`, { method: "POST" })
+    expect(res.status).toBe(200)
+    expect(await fs.readFile(path.join(directory, "README.md"), "utf8")).toBe("# project-a\n")
+    expect(await exists(path.join(directory, "untracked"))).toBe(false)
+  })
+
+  test("neither an application row alone nor an unregistered Git worktree authorizes destruction", async () => {
+    const applicationOnly = path.join(project, `registered-folder-${randomUUID()}`)
+    await fs.mkdir(applicationOnly)
+    await fs.writeFile(path.join(applicationOnly, "sentinel"), "preserve")
+    await ensureWorkspace({ workspaceId: `ws_${randomUUID()}`, project_id: "proj_a", directory: applicationOnly })
+    const gitOnly = path.join(dataDir(), "worktree", "proj_a", `unregistered-${randomUUID()}`)
+    git(project, ["worktree", "add", "-b", `claxedo/unregistered-${randomUUID()}`, gitOnly])
+    await fs.writeFile(path.join(gitOnly, "sentinel"), "preserve")
+    for (const target of [applicationOnly, gitOnly]) {
+      for (const [method, route] of [["DELETE", "/experimental/worktree"], ["POST", "/experimental/worktree/reset"]]) {
+        const res = await app.request(`${route}?workspaceId=ws_a&directory=${encodeURIComponent(target)}`, { method })
+        expect(res.status).toBe(400)
+        expect(await res.json()).toMatchObject({ error: { code: "claxedo_worktree_not_found" } })
+        expect(await fs.readFile(path.join(target, "sentinel"), "utf8")).toBe("preserve")
+      }
+    }
+  })
+})
+
 describe("GET /agent is discovery, not provisioning", () => {
   test("an unregistered directory earns workspace_required and stays unregistered", async () => {
     // A real repository on purpose: had the route still resolved with

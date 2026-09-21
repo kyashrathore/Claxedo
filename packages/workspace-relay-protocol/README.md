@@ -100,8 +100,11 @@ endpoint and expects `{ subject, scopes?, claims }` back. The endpoint is a
 trusted operator configuration value. Do not derive it from a request, tenant
 record, query string, workspace config, or other user-controlled input.
 
-The endpoint should normally be an HTTPS URL on infrastructure you control. It
-must enforce issuer, audience, expiry, key selection, and replay/revocation
+The endpoint requires HTTPS and redirects are refused. Explicit
+`allowInsecureLoopback: true` permits HTTP only to `localhost`, `127.0.0.1`, or
+`::1` for development. URL credentials and fragments are rejected. Returned
+claims must match the subject and be within their issued/expiry/not-before
+window. The endpoint must enforce issuer, audience, key selection, and replay/revocation
 policy before returning claims. Treat a compromised verifier endpoint as
 equivalent to a compromised token issuer.
 

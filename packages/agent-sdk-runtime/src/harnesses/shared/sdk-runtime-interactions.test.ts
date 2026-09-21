@@ -138,3 +138,40 @@ for (const operation of ["reply", "reject"] as const) {
     })
   }
 }
+
+for (const options of [undefined, [], [{ id: "provider-specific", label: "Remember for this workspace" }]]) {
+  test(`provider option validation preserves pending permission until a supported reply: ${JSON.stringify(options)}`, () => {
+    const decisions: unknown[] = []
+    const events: unknown[] = []
+    const interactions = new SdkRuntimeInteractions({
+      listPermissions: () => [{ id: "permission-1", sessionID: "session-1", options }],
+      appendEvent: (event: { payload: unknown }) => { events.push(event.payload); return event },
+    } as unknown as SdkRuntimeStore)
+    interactions.permissions.set("permission-1", {
+      sessionId: "session-1", agentSessionId: "agent-1", method: "permission", params: {},
+      resolve: (decision, optionId) => decisions.push({ decision, optionId }),
+    })
+    const binding = executionBinding("session-1", "/work")
+    expect(() => interactions.respondPermission(binding, "permission-1", "allow_once", "unknown")).toThrow()
+    if (options !== undefined) {
+      expect(() => interactions.respondPermission(binding, "permission-1", "allow_once")).toThrow()
+    }
+    expect(events).toEqual([])
+    expect(decisions).toEqual([])
+    expect(interactions.permissions.has("permission-1")).toBe(true)
+    if (!options?.length) return
+    interactions.respondPermission(binding, "permission-1", "allow_once", "provider-specific")
+    expect(decisions).toEqual([{ decision: "allow_once", optionId: "provider-specific" }])
+    expect(events).toEqual([expect.objectContaining({ type: "permission.replied", properties: { sessionID: "session-1", requestID: "permission-1", optionId: "provider-specific" } })])
+    expect(interactions.permissions.has("permission-1")).toBe(false)
+  })
+}
+
+test("all-question shutdown keeps an uncommitted rejection live", () => {
+  const interactions = new SdkRuntimeInteractions(rejectingStore())
+  let rejected = false
+  interactions.questions.set("question-1", { sessionId: "session-1", agentSessionId: "agent-1", questions: [], resolve() {}, reject() { rejected = true } })
+  expect(() => interactions.rejectAllQuestions()).toThrow("durable write failed")
+  expect(rejected).toBe(false)
+  expect(interactions.questions.has("question-1")).toBe(true)
+})

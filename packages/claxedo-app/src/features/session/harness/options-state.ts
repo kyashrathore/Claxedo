@@ -1,5 +1,4 @@
 import {
-  DEFAULT_HARNESS_MODEL,
   extractModelsFromConfigOptions,
   extractThoughtLevelFromConfigOptions,
   isNativeSdkHarness,
@@ -29,8 +28,6 @@ export type HarnessOptionsStatePatch = {
 
 export type HarnessOptionsDecision = {
   patch: HarnessOptionsStatePatch
-  /** A live operator ACP answered, but owns model selection outside ACP. */
-  managedDefault?: boolean
   retry: boolean
   clearTries: boolean
 }
@@ -60,6 +57,7 @@ function terminalEmptyOptionsDecision(input: {
 export function applyHarnessOptionsResponse(input: {
   type: HarnessType
   selectedModel?: string
+  modelOptional?: boolean
   preserveSelectedModel?: boolean
   payload: OptionsResponse
   tries: number
@@ -85,14 +83,13 @@ export function applyHarnessOptionsResponse(input: {
     // harnesses, their agents are not required to expose a `model` config
     // option. A fresh live response with other options proves the agent is up;
     // in that case model ownership stays with the agent (OpenClaw, for example,
-    // uses its Gateway default). `default` is the runtime's protocol sentinel,
-    // not a selectable row synthesized into the picker.
+    // uses its Gateway default). Model omission is declared by the connection.
     if (input.type.kind === "connection" && input.payload.source === "harness" &&
-      !input.payload.stale && input.payload.options.length > 0) {
+      !input.payload.stale && (input.payload.options.length > 0 || input.modelOptional)) {
       // Such an agent can still NAME the model it resolved for itself. That
       // named model IS the picker's single row, so the control reads the real
       // model and the prompt carries the real model id. Only an agent that
-      // named nothing falls back to the client-side sentinel.
+      // named nothing leaves the selection absent.
       const resolved = input.payload.resolvedModel
       if (resolved) {
         return {
@@ -111,11 +108,10 @@ export function applyHarnessOptionsResponse(input: {
         patch: {
           ...base,
           dynamicModels: [],
-          selectedModel: DEFAULT_HARNESS_MODEL.id,
+          selectedModel: "",
           configError: undefined,
           optionsLoading: false,
         },
-        managedDefault: true,
         retry: false,
         clearTries: true,
       }

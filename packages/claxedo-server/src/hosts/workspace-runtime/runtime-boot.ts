@@ -38,7 +38,6 @@ export type ClaxedoWorkspaceRuntimeBoot = {
 export function claxedoWorkspaceRuntimeLaunch(input: {
   workspaceId: string
   hostId: string
-  sandboxId: string
   leaseId: string
   epoch: number
   directory: string
@@ -71,7 +70,6 @@ export function claxedoWorkspaceRuntimeLaunch(input: {
       ...sandboxLeaseEnv({
         leaseId: input.leaseId,
         epoch: input.epoch,
-        sandboxId: input.sandboxId,
       }),
       ...workspaceRuntimeDirectAuthEnv({ token: input.credential.token }),
       WORKSPACE_RUNTIME_BOOTSTRAP_EXPIRES_AT: String(input.credential.expiresAt),

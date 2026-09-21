@@ -1,6 +1,13 @@
 import { Hono } from "hono"
 import { assertTarget, WorkspaceTargetError } from "../target"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { errorBody, webStreamFrom } from "./http"
+import {
+  authorizeWorktreeTarget,
+  deniedWorktreeFilter,
+  type WorktreeTargetAccessOptions,
+  type WorktreeTargetContext,
+} from "./worktree-target-access"
 import {
   listAllWorkspaceFiles,
   listWorkspaceDirectory,
@@ -20,13 +27,8 @@ type FileRouteContext = {
   }
 }
 
-type Options = {
-  resolveRoot?: (c: FileRouteContext) => string | Promise<string>
-}
-
-async function root(c: FileRouteContext, options: Options) {
+function root(c: FileRouteContext) {
   try {
-    if (options.resolveRoot) return await options.resolveRoot(c)
     return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
   } catch (err) {
     if (err instanceof WorkspaceTargetError) return undefined
@@ -51,41 +53,64 @@ async function routeFile(root: string, input?: string) {
   }
 }
 
-export function FileRoutes(options: Options = {}) {
-  return new Hono()
+export function FileRoutes(options: WorktreeTargetAccessOptions = {}) {
+  /**
+   * The root every handler reads under, or the refusal it answers with: the
+   * directory has to be this runtime's, and it and the path asked for have to
+   * belong to a session this caller may read. `path` names a directory on the
+   * listing routes, so what is under it counts as asked for too.
+   */
+  const readable = async (c: WorktreeTargetContext): Promise<string | Response> => {
+    const base = root(c)
+    if (!base) return c.json(invalidDirectory(), 400)
+    return await authorizeWorktreeTarget(c, options, {
+      operation: "worktree_read",
+      directory: base,
+      paths: [c.req.query("path")],
+    }) ?? base
+  }
+
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .get("/find/file", async (c) => {
-      const base = await root(c, options)
-      if (!base) return c.json(invalidDirectory(), 400)
+      const base = await readable(c)
+      if (typeof base !== "string") return base
       const query = c.req.query("query") ?? ""
       const type = c.req.query("type") === "directory" ? "directory" : c.req.query("dirs") === "false" ? "file" : "any"
       const limit = Math.min(Number(c.req.query("limit") ?? "50") || 50, 200)
-      return c.json(await searchWorkspaceFiles(base, query, type, limit))
+      // `ls-files` and the walk behind the index both name their entries from
+      // this directory, so no repository lookup is involved and a directory
+      // outside Git still searches.
+      const visible = await deniedWorktreeFilter(c, options, { directory: base, bases: ["directory"] })
+      // Refused entries are dropped after the match, not before: the index is
+      // shared by every caller of this root and must not be cut to one of them.
+      return c.json((await searchWorkspaceFiles(base, query, type, limit)).filter((item) => visible(item)))
     })
     .get("/file", async (c) => {
-      const base = await root(c, options)
-      if (!base) return c.json(invalidDirectory(), 400)
+      const base = await readable(c)
+      if (typeof base !== "string") return base
       const dir = await routeFile(base, c.req.query("path"))
       if (!dir) return c.json(invalidPath(), 400)
       // The tree lists a directory when the panel opens, seconds before the
       // first keystroke reaches /find/file — build the index off that path so
       // the search itself never pays for the listing.
       warmWorkspaceSearchIndex(base)
+      const visible = await deniedWorktreeFilter(c, options, { directory: base, bases: ["directory"] })
       try {
-        return c.json(await listWorkspaceDirectory(base, dir))
+        return c.json((await listWorkspaceDirectory(base, dir)).filter((entry) => visible(entry.path)))
       } catch {
         return c.json([])
       }
     })
     .get("/file/content", async (c) => {
-      const base = await root(c, options)
-      if (!base) return c.json(invalidDirectory(), 400)
+      const base = await readable(c)
+      if (typeof base !== "string") return base
       const full = await routeFile(base, c.req.query("path"))
       if (!full) return c.json(invalidPath(), 400)
       return c.json(await readWorkspaceFileContent(full))
     })
     .get("/file/raw", async (c) => {
-      const base = await root(c, options)
-      if (!base) return c.json(invalidDirectory(), 400)
+      const base = await readable(c)
+      if (typeof base !== "string") return base
       const full = await routeFile(base, c.req.query("path"))
       if (!full) return c.json(invalidPath(), 400)
 
@@ -109,13 +134,18 @@ export function FileRoutes(options: Options = {}) {
       }
     })
     .get("/file/status", async (c) => {
-      const base = await root(c, options)
-      if (!base) return c.json(invalidDirectory(), 400)
-      return c.json(await workspaceFileStatus(base))
+      const base = await readable(c)
+      if (typeof base !== "string") return base
+      // Mixed: the tracked arm is `diff --numstat HEAD`, named from the
+      // repository and covering all of it; the untracked arm is `ls-files`,
+      // named from this directory.
+      const visible = await deniedWorktreeFilter(c, options, { directory: base, bases: ["directory", "repository"] })
+      return c.json((await workspaceFileStatus(base)).filter((entry) => visible(entry.path)))
     })
     .get("/file/all", async (c) => {
-      const base = await root(c, options)
-      if (!base) return c.json(invalidDirectory(), 400)
-      return c.json({ paths: await listAllWorkspaceFiles(base) })
+      const base = await readable(c)
+      if (typeof base !== "string") return base
+      const visible = await deniedWorktreeFilter(c, options, { directory: base, bases: ["directory"] })
+      return c.json({ paths: (await listAllWorkspaceFiles(base)).filter((item) => visible(item)) })
     })
 }
