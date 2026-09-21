@@ -24,12 +24,8 @@ import type {
 } from "@claxedo/channels"
 import { ClaxedoDB } from "../platform/db"
 import { channelId } from "./channel-id"
-import {
-  ClaxedoChannelAllowTable,
-  ClaxedoChannelIdentityTable,
-  ClaxedoChannelPairingTable,
-  CURRENT_CHANNEL_IDENTITY_VERSION,
-} from "./access.sql"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
+import { ClaxedoChannelAllowTable, ClaxedoChannelIdentityTable, ClaxedoChannelPairingTable } from "./access.sql"
 
 /** A row whose channel is no longer a supported one reads as absent, exactly as `identity` treats an unknown status. */
 function pairing(row: typeof ClaxedoChannelPairingTable.$inferSelect): PairingRequest | undefined {

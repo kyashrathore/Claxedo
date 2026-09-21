@@ -1,11 +1,5 @@
 import { sqliteTable, text, integer, index, primaryKey } from "drizzle-orm/sqlite-core"
 
-/**
- * The live DDL defaults every `identity_version` column below to 0, so a
- * writer that omits it lands on the non-authorizing side.
- */
-export { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
-
 /** Pending pairing requests (short-lived codes). One row per (channel, sender). */
 export const ClaxedoChannelPairingTable = sqliteTable(
   "claxedo_channel_pairing",
