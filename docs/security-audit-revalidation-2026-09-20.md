@@ -228,9 +228,9 @@ The next-action column is the first step; each finding link opens the complete e
 | 30 | Next fixes / validation | [P-17 — Expired wakes can fire before the sweep](#finding-p-17) | MED → Medium for approvals | Fixed; focused checks passed | Retain atomic deadline admission and expiry-boundary regression tests. |
 | 31 | Next fixes / validation | [P-10 — Missing MCP confirmation support silently means approval](#finding-p-10) | MED → Medium | Fixed; HTTP/SDK tests passed | Retain the shared confirmation gate and positive/negative destructive-tool coverage. |
 | 32 | Next fixes / validation | [P-21 — Channel reset runs before per-session authorization](#finding-p-21) | MED → Medium | Fixed; focused checks passed | Retain canonical session admission before commands and preserve binding on cancellation failure. |
-| 33 | Next fixes / validation | [P-27 — Some channel identities use usernames](#finding-p-27) | MED-LOW → Medium where mutable identity is authoritative | Partial | Persist platform-stable user ids, keep usernames only for display, and reject missing stable ids. |
+| 33 | Next fixes / validation | [P-27 — Some channel identities use usernames](#finding-p-27) | MED-LOW → Medium where mutable identity is authoritative | Fixed; pre-boundary tokens refused by iat floor, channel tokens carry provenance | Retain the floor and provenance regressions. |
 | 34 | Next fixes / validation | [P-108 — Localhost cookies are shared across ports](#finding-p-108) | MED → Low, accepted on localhost | Accepted; exact origins and guard order fixed, cookie receipt by another local port is a compromised-machine scenario | None beyond the exact-origin guard; production is HTTPS on a real hostname. |
-| 35 | Next fixes / validation | [P-109 — Device approval may be driven through permissive local CSRF policy](#finding-p-109) | MED → Medium, HTTP embedded + hostile localhost origin | Partial exploit confirmation | Require explicit approval with exact-origin CSRF protection, make GET read-only and bind approval to the displayed device transaction. |
+| 35 | Next fixes / validation | [P-109 — Device approval may be driven through permissive local CSRF policy](#finding-p-109) | MED → Medium, HTTP embedded + hostile localhost origin | Fixed; exact origins, read-only GET, transaction-bound approval on both issuers | Retain the hostile-origin and transaction regressions. |
 | 36 | Next fixes / validation | [P-89 — Workspace tunnel exposes machine credential compatibility routes](#finding-p-89) | MED-HIGH → Medium; credential write chain conditional | Fixed; tunnel and local account checks passed | Retain denial before replay and local account-management acceptance. |
 | 37 | Next fixes / validation | [P-67 — MCP discovery's private-network predicate is incomplete](#finding-p-67) | MED → Medium | Fixed; focused discovery tests | Use canonical IP parsing and enforce destination policy at connection time and every redirect, with DNS rebinding protection. |
 | 38 | Next fixes / validation | [S-12 — Repository cloning can contact internal services](#finding-s-12) | LOW-MED → Medium, deployment-dependent | Fixed; focused tests | Apply deployment-specific repository destination policy and network egress restrictions to cloning, including resolved IPs. |
@@ -245,7 +245,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 47 | Next fixes / validation | [P-6 — Tilde-prefixed paths become shell code](#finding-p-6) | MED → Medium, Windows/WSL only | Partial; source fixed, Windows acceptance open | Linux home is resolved separately and renderer paths travel as argv; verify the real Windows/WSL launch. |
 | 48 | Next fixes / validation | [P-22 — Device-login URL reaches the Windows command shell](#finding-p-22) | MED → Medium, conditional | Partial; source fixed, native Windows acceptance open | Device URLs are checked against descriptor origins and the shell launcher is removed; native Windows acceptance remains. |
 | 49 | Next fixes / validation | [P-7 — Renderer-selected store names escape the settings directory](#finding-p-7) | MED → Medium, renderer prerequisite | Fixed; boundary grammar + bounds | Store names pass a basename grammar before path resolution; keys and values bounded at IPC. |
-| 50 | Next fixes / validation | [P-8 — Opening a file can execute it](#finding-p-8) | MED → Medium, renderer prerequisite | Present | Separate opening directories in tools from opening documents. |
+| 50 | Next fixes / validation | [P-8 — Opening a file can execute it](#finding-p-8) | MED → Medium, renderer prerequisite | Fixed; open-path decision tests | Retain the executable, script, symlink and directory cases. |
 | 51 | Next fixes / validation | [P-26 — Browser registry accepts non-guest webContents](#finding-p-26) | MED-LOW → Medium, renderer prerequisite | Fixed; guest admission required | Registry accepts only partition-pinned webview guests admitted at web-contents-created, one pane per guest. |
 | 52 | Next fixes / validation | [P-9 — Beta and stable share update metadata](#finding-p-9) | MED → Medium operational risk | Fixed; per-channel feeds | Beta publishes its own channel/feed/artifacts; `autoUpdater.channel` per build, downgrades off. Signed-variant verification needs a beta pipeline. |
 | 53 | Next fixes / validation | [P-23 — Web openLink does not validate schemes](#finding-p-23) | MED-LOW → Medium, potential XSS | Fixed; focused opener tests | Retain the single scheme-gated opener and noopener/noreferrer on every web `window.open` path. |
@@ -262,7 +262,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 64 | Scheduled fixes | [P-76 — Device polling can hold a request indefinitely](#finding-p-76) | LOW → Low-Medium | Fixed; focused deadline tests | Bound total polling by the provider expiry and request cancellation, then remove pending state. |
 | 65 | Scheduled fixes | [P-128 — Anonymous first traffic influences relay room placement](#finding-p-128) | LOW-MED → Low-Medium availability | Fixed; authenticated placement | Resolve region from authoritative workspace placement before object creation, or authenticate the hint. |
 | 66 | Scheduled fixes | [P-71 — Provider command strings contain secrets](#finding-p-71) | MED-LOW → Low-Medium, provider logging dependent | Fixed; focused driver tests | Use provider secret/env APIs or private files/stdin, avoid secrets in command strings and redact diagnostics. |
-| 67 | Scheduled fixes | [P-29 — Host consent state and redirects need stronger boundaries](#finding-p-29) | MED-LOW → Low-Medium, conditional | Fixed; persisted scope fence + refusal state | Restarts fence on the stored scope revision; unack records a refusal that survives redelivery until the revision advances; redirects were already refused. |
+| 67 | Scheduled fixes | [P-29 — Host consent state and redirects need stronger boundaries](#finding-p-29) | MED-LOW → Low-Medium, conditional | Fixed; scope revision persisted, withdrawal recorded first, redirects refused | Retain the replayed-scope, withdrawal-durability and redirect regressions. |
 | 68 | Scheduled fixes | [P-49 — CI bootstrap executes downloaded tooling without independent verification](#finding-p-49) | LOW → Low-Medium supply-chain hardening | Fixed; pinned digests + structural argv | Downloads verify against pinned sha256s; test args travel as positional argv, not shell text; lane credentials hidden from npm lifecycle. |
 | 69 | Scheduled fixes | [H-3 — Revocation and installed credentials have different lifetimes](#finding-h-3) | LOW → Low | Partial | Make revocation trigger canonical delivery reconciliation, clear installed material, and revoke the key at its provider when needed. |
 | 70 | Scheduled fixes | [R-2 — Revocation has a bounded cache delay](#finding-r-2) | LOW → Low | Fixed; bound specified and tested | Revocation delay is bounded by the revocation cache TTL for HTTP requests, plus one active-check interval for open sockets; token exp caps every path during an authority outage. |
@@ -291,15 +291,15 @@ The next-action column is the first step; each finding link opens the complete e
 | 93 | Scheduled fixes | [R-1 — A header cannot prove relay provenance](#finding-r-1) | MED → Low, accepted | Accepted; the marker is provenance, the runtime enforces authorization itself | None; any relay-only policy must also live on the runtime. |
 | 94 | Scheduled fixes | [P-15 — Relay forwards upstream cookie and CORS headers too broadly](#finding-p-15) | MED-LOW → Low, conditional | Fixed; header constraint | Strip upstream Set-Cookie and all access-control headers at the shared relay boundary, then emit only relay-owned CORS. |
 | 95 | Scheduled fixes | [P-38 — Protocol validators accept more than transport policy should](#finding-p-38) | LOW → Low; authentication impact conditional | Fixed; focused protocol/adapter tests | Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. |
-| 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Fixed; compensation, required gate, serialized polls | Failed upserts compensate the credential write; `gate` is a required option; device polls serialize per attempt; auth-failure reports fenced to `available`. |
+| 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Fixed; credential fence, declared route policy, serialized completion | The row is written only after the credential reads back; every route declares a policy; device completion yields one connection under concurrency; auth-failure reports fenced to `available`. |
 | 97 | Scheduled fixes | [P-42 — Adapter identifiers and transport metadata need validation](#finding-p-42) | LOW → Low; HTTP transport conditional | Fixed; grammar + destination + redaction tests | Opaque-id grammar bars dot segments; resolved URLs pinned to the configured origin/path; diagnostics redacted at every yield. |
 | 98 | Scheduled fixes | [P-43 — CLI-generated files trust operator strings](#finding-p-43) | LOW → Low; transport risk separate | Fixed; focused validation/serialization tests | Validate app/region identifiers, serialize TOML safely and escape systemd syntax. |
 | 99 | Scheduled fixes | [P-55 — Channel approval parsing and administration need tightening](#finding-p-55) | INFO → Low; authorization effect conditional | Fixed; exact actions + gated callbacks | Approval requires an exact actionId; callbacks run the inbound access/rate/dedup gates; pairing consume is atomic; webhooks are method-scoped. |
 | 100 | Scheduled fixes | [P-115 — Unmanaged hook updates can name unowned terminal ids](#finding-p-115) | LOW → Low | Fixed; focused hook tests | Require an existing terminal and its bound hook capability for lifecycle writes. |
 | 101 | Scheduled fixes | [P-136 — Embedded cookie-plus-bearer precedence is not explicit rejection](#finding-p-136) | LOW → Low | Fixed; focused bridge tests | Reject dual presentation before authentication or change the declared contract if precedence is intentional. |
-| 102 | Scheduled fixes | [P-25 — Deep links can register a caller-named project](#finding-p-25) | MED-LOW → Low, user interaction required | Present | Confirm externally initiated project registration with the resolved directory visible; never auto-submit a deep-link prompt. |
+| 102 | Scheduled fixes | [P-25 — Deep links can register a caller-named project](#finding-p-25) | MED-LOW → Low, user interaction required | Fixed; opener tests | Retain the unregistered-directory confirmation and no-submit regressions. |
 | 103 | Scheduled fixes | [P-31 — Guest content can influence prompt context](#finding-p-31) | LOW → Low | Fixed; host-side gating plus trusted-input gates in the preload | Retain the host component tests and the preload gate tests. |
-| 104 | Scheduled fixes | [S-9 — Open-path grants broad OS file-opening power](#finding-s-9) | LOW → Low in isolation | Present | Use reveal-in-folder for location navigation and explicit user actions for executable opening. |
+| 104 | Scheduled fixes | [S-9 — Open-path grants broad OS file-opening power](#finding-s-9) | LOW → Low in isolation | Fixed with P-8 | None. |
 | 105 | Scheduled fixes | [P-33 — ACP Windows arguments are interpreted by a shell](#finding-p-33) | LOW → Low, configuration-dependent | Partial; source fixed, Windows acceptance open | Windows .cmd/.bat shims resolve to the wrapped executable and spawn as direct argv — cmd.exe never parses arguments. Native Windows run remains. |
 | 106 | Scheduled fixes | [P-75 — Daytona list delimiters and image arguments are not locally validated](#finding-p-75) | LOW → Low, input-policy dependent | Fixed; focused validation tests | Validate hostname/CIDR lists before formatting and reject option-like image identifiers at the driver boundary. |
 | 107 | Scheduled fixes | [P-46 — Small helper contracts fail on edge cases](#finding-p-46) | LOW → Low correctness/hardening | Fixed; focused helper tests | Return a typed invalid-reference error, use path-relative containment, constrain URL path inputs and private atomic writes. |
@@ -320,7 +320,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 122 | Hardening / latent | [P-118 — Reading a cloud connection can start compute](#finding-p-118) | LOW-MED → Low | Fixed; reads never provision | Keep `sandboxManager.ensure` behind the explicit POST connect; reads resolve the lease via `target` and report stopped/provisioning. |
 | 123 | Hardening / latent | [P-48 — Storybook CSS writer lacks a strong request boundary](#finding-p-48) | LOW → Low, development-only | Fixed; focused boundary tests | Require a dev capability/origin check and canonical path containment with a separator boundary. |
 | 124 | Hardening / latent | [P-47 — Development proxy forwards sensitive headers](#finding-p-47) | LOW → Low, development-only proxy | Fixed; focused proxy tests | Bind the proxy to loopback, strip credentials unless explicitly needed and keep it out of production artifacts. |
-| 125 | Hardening / latent | [P-51 — Renderer configuration and default-session permissions are broad](#finding-p-51) | INFO → Informational/Low | Mixed | Validate persisted endpoint schemes, clamp zoom, restrict privileged browser permissions and retain sender checks. |
+| 125 | Hardening / latent | [P-51 — Renderer configuration and default-session permissions are broad](#finding-p-51) | INFO → Informational/Low | Fixed; permission, URL and zoom tests | Keep the permission allowlist in step with what the renderer actually requests. |
 | 126 | Hardening / latent | [P-53 — Wake cancellation trusts possession and host scope has constraints](#finding-p-53) | INFO → Low/Informational | Fixed; engine-side authorization | Cancellation requires the wake's own session or the authorize hook; cross-session ids and held tokens are denied. |
 | 127 | Hardening / latent | [P-106 — Custom verifier results lack a local expiry check](#finding-p-106) | MED → Low now; High if insecure verifier composed | Fixed; focused verifier tests | Enforce exp/nbf and a maximum lifetime after every verifier result, regardless of implementation. |
 | 128 | Hardening / latent | [P-126 — Resolver headers can overwrite relay-owned authorization](#finding-p-126) | LOW (latent) → Low hardening | Fixed; focused resolver tests | Allowlist provider-specific headers and stamp reserved authentication/identity headers last. |
@@ -557,11 +557,9 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-s-9"></a>
 ### S-9 — Open-path grants broad OS file-opening power
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low in isolation.
+**Original severity:** LOW. **Current:** Fixed with P-8. **Reassessed severity:** Low in isolation.
 
-**What happens and why it matters:** The guarded IPC handler still calls shell.openPath for an absolute path. An authenticated renderer can invoke OS file handlers; a remote page cannot invoke the bridge merely by knowing the channel name. Script/executable handling is covered in P-8.
-
-**Fix and acceptance:** Use reveal-in-folder for location navigation and explicit user actions for executable opening. Test file types and keep the IPC sender guard.
+**What changed:** `shell.openPath` is reachable only through the P-8 decision; a directory target is revealed with `shell.showItemInFolder`. No renderer caller passes an app name today, so no IPC contract changed. The sender guard stays. Committed as f9b57bb444.
 
 **Current code:** [packages/claxedo-desktop/src/main/ipc.ts](../packages/claxedo-desktop/src/main/ipc.ts). [Concept walkthrough F](#flow-f).
 
@@ -680,11 +678,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-8"></a>
 ### P-8 — Opening a file can execute it
 
-**Original severity:** MED. **Current:** Present. **Reassessed severity:** Medium, renderer prerequisite.
+**Original severity:** MED. **Current:** Fixed; open-path decision tests. **Reassessed severity:** Medium, renderer prerequisite.
 
-**What happens and why it matters:** The open-in list still includes Terminal and powershell and the path guard checks syntax rather than directory/file kind. Passing a script to its interpreter or default OS handler can execute it after renderer compromise.
+**What changed:** `main/open-in.ts` is the one owner of what an `open-path` request may do, with the four effects injected: a directory is revealed, or opened in a terminal entry, which now accepts directories only; a document opens through the OS handler; a target that is executable by mode bit or by extension, resolved through symlinks, opens only after a parented native confirmation. The open-in list carries each entry's kind.
 
-**Fix and acceptance:** Separate opening directories in tools from opening documents. Require directory targets for terminal actions, and a user-confirmed OS open for executable files. Test .command, .ps1 and executable targets without running payloads.
+**Acceptance:** Tests refuse `.command`, `.ps1`, an exec-bit file, a symlink decoy with an innocuous extension and an `.app` bundle with the open function never called, open a directory in Terminal and a `.md` document, and prove every OS call sits behind the decision; mutation runs turn each guard red. The native dialog was not exercised in a running app. Committed as f9b57bb444.
 
 **Current code:** [packages/claxedo-desktop/src/main/open-in-apps.ts](../packages/claxedo-desktop/src/main/open-in-apps.ts); [packages/claxedo-desktop/src/main/open-in-guard.ts](../packages/claxedo-desktop/src/main/open-in-guard.ts); [packages/claxedo-desktop/src/main/ipc.ts](../packages/claxedo-desktop/src/main/ipc.ts). [Concept walkthrough F](#flow-f).
 
@@ -871,11 +869,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-25"></a>
 ### P-25 — Deep links can register a caller-named project
 
-**Original severity:** MED-LOW. **Current:** Present. **Reassessed severity:** Low, user interaction required.
+**Original severity:** MED-LOW. **Current:** Fixed; opener tests. **Reassessed severity:** Low, user interaction required.
 
-**What happens and why it matters:** route-bridge accepts open-project/new-session deep links and starts the local project-open flow. The protocol is allowed by transcript links. This is not automatic command execution; opening a sensitive directory and prompt seeding are distinct from submitting a turn.
+**What changed:** `route-deep-links.ts` owns the decision: the directory is collapsed lexically and refused unless absolute, and the same string is both shown and registered. A directory the project list does not already hold shows a confirmation with that directory and any prompt text; cancel registers nothing; a registered project opens without a dialog. Transcript links re-enter through the same handler. The route's prompt has no reader, so nothing is submitted. Main performs no path resolution on deep links; the renderer is the first interpreter.
 
-**Fix and acceptance:** Confirm externally initiated project registration with the resolved directory visible; never auto-submit a deep-link prompt. Test first-time sensitive paths and already-open projects.
+**Acceptance:** The opener's effects are injected and asserted by exact log, so a send would have to appear as a fifth effect; removing the confirmation gate turns six tests red. Committed as 3c31d5a5cf.
 
 **Current code:** [packages/claxedo-app/src/app/workbench/state/route-bridge.tsx](../packages/claxedo-app/src/app/workbench/state/route-bridge.tsx); [packages/ui/src/context/marked.tsx](../packages/ui/src/context/marked.tsx); [packages/claxedo-desktop/src/main/navigation-guard.ts](../packages/claxedo-desktop/src/main/navigation-guard.ts). [Concept walkthrough E](#flow-e).
 
@@ -899,7 +897,7 @@ The next-action column is the first step; each finding link opens the complete e
 
 **Acceptance:** Root's isolated SQLite/D1 migration run passes 36 tests, covering an old numeric handle colliding with a different stable account ID, denial before fresh approval, successful new binding, revocation and reopening. The configured server test harness now sets temporary storage before test imports, clears inherited leaf path overrides and closes the database before cleanup. A fixture missing its cloud driver was corrected to use the actual required contract; 64 channel/isolation/database/store tests now pass from fresh temporary state. Earlier transport tests covered actual installed Chat SDK and Telegram adapter behavior; real external platform webhooks are not newly claimed.
 
-**Remaining:** Runtime access tokens issued before the boundary do not record channel provenance, so existing tokens remain active until expiry even though renewal and new channel admission are denied. A deliberate invalidation/provenance policy is required; do not invent identity mappings. The earlier channel test incident is recorded in remediation progress and cannot be described as only a schema addition.
+**Provenance and invalidation:** A runtime access token minted for a channel actor carries the channel, external user id and identity version the authority admitted, forwarded onto the relay host token; the relay refuses a channel token whose claim is missing, malformed or older than the current identity version. Every runtime access token must carry an `iat` at or after 2026-09-21T00:00:00Z, so everything issued before the boundary is refused without a revocation list. The identity version has one definition in the relay protocol package. Tests cover the old-shape channel token, a pre-floor token, an older version, a matching version and unaffected app tokens. Committed as 4ba0c059db. The earlier channel test incident is recorded in remediation progress and cannot be described as only a schema addition.
 
 **Current code:** [GitHub transport](../packages/claxedo-channels/src/transport/github.ts); [Telegram transport](../packages/claxedo-channels/src/transport/telegram.ts); [Chat SDK bridge](../packages/claxedo-channels/src/transport/chat-sdk-bridge.ts); [projection store](../packages/claxedo-server/src/channels/access-store.ts); [D1 boundary migration](../packages/claxedo-server/migrations/control-plane/0038_channel_identity_version.sql). [Concept walkthrough G](#flow-g).
 
@@ -917,11 +915,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-29"></a>
 ### P-29 — Host consent state and redirects need stronger boundaries
 
-**Original severity:** MED-LOW. **Current:** Partial. **Reassessed severity:** Low-Medium, conditional.
+**Original severity:** MED-LOW. **Current:** Fixed; scope revision persisted, withdrawal recorded first, redirects refused. **Reassessed severity:** Low-Medium, conditional.
 
-**What happens and why it matters:** scopeRevision remains process-local and postJson follows redirects. Restart alone does not let an attacker forge a trusted HTTPS response; the scope replay claim needs that extra control. Consent removal must also remain withdrawn when an assignment is redelivered.
+**What changed:** The accepted scope revision lives in the CLI host's state file and seeds the connector, which applies only a strictly newer revision, so a replayed broader scope at an older revision is not consented. The desktop child's consent record is Electron main's share list, the one storage owner; the child re-consents on start only to what the list names, and a share withdrawal is now written to that list before it takes effect, so a write the file never received cannot undo the withdrawal at the next launch, and a store that refuses fails the unshare with the workspace still shared. The machine transport pins manual redirects and refuses any 3xx or opaque-redirect answer before it is followed.
 
-**Fix and acceptance:** Persist the accepted scope revision and explicit refusal state, and refuse credential-bearing redirects. Test restart with an old response and redelivery after unack.
+**Acceptance:** Tests cover the replayed broader scope, both withdrawal-durability orderings, and a same-origin credential-bearing redirect refused with one fetch recorded. Committed as 9846ade53c.
 
 **Current code:** [packages/claxedo-host-connector/src/connector.ts](../packages/claxedo-host-connector/src/connector.ts); [packages/cli/src/connect/host.ts](../packages/cli/src/connect/host.ts). [Concept walkthrough D](#flow-d).
 
@@ -1057,9 +1055,9 @@ The next-action column is the first step; each finding link opens the complete e
 
 **Original severity:** LOW. **Current:** Fixed. **Reassessed severity:** Low.
 
-**What changed:** A refused connection upsert now compensates the fresh credential write (`deleteByProvider`, best-effort) before rethrowing — the concurrent-connect race loser included; an existing row's own slot is deliberately preserved. `reportAuthFailure` is fenced to credentials currently `available`. `IntegrationsRouteOptions.gate` is required — no implicit allow-all; the hosted compositions pass explicit `gate: () => null` where upstream auth already ran. Device polls serialize per attempt through a promise queue; `peek` treats a `completing` entry as absent on both the in-memory and D1 stores. `timeoutFetch` pins `redirect: "manual"` for credential-bearing requests.
+**What changed:** The credential and connection stores share no transaction, so the order carries the pairing: the credential is written first and the row is refused unless the store hands the credential back; nothing is compensated on the way out, and an interrupted write leaves at most a secret no route can address. Every integrations route declares one of four policies at the route (public, authenticated, turn-credential, team-write) and a route without one fails at registration; the token and auth-failure routes carry turn-credential so the token gate cannot be dropped. `reportAuthFailure` is fenced to credentials currently `available`. Device polls serialize per attempt; two concurrent completions of one D1 attempt yield one connection through the store's single-statement claim. `timeoutFetch` pins `redirect: "manual"` for credential-bearing requests.
 
-**Acceptance:** Tests cover refused-upsert compensation, existing-row preservation, the non-available report fence, concurrent polls producing one upstream call, gate-required refusal, cross-partition auth-failure 404 and redirect pinning. 242 connections tests.
+**Acceptance:** Tests cover the credential fence, no undo on a refused row, the non-available report fence, concurrent polls producing one upstream call, an undeclared route failing at registration, the team-write gate, two concurrent D1 completions producing one connection, cross-partition auth-failure 404 and redirect pinning. 244 connections tests and 113 hosted connection tests. Committed as 9846ade53c.
 
 **Current code:** [packages/claxedo-connections/src/service.ts](../packages/claxedo-connections/src/service.ts); [packages/claxedo-connections/src/routes.ts](../packages/claxedo-connections/src/routes.ts); [packages/claxedo-connections/src/impls/fetch-timeout.ts](../packages/claxedo-connections/src/impls/fetch-timeout.ts). [Concept walkthrough D](#flow-d).
 
@@ -1071,6 +1069,8 @@ The next-action column is the first step; each finding link opens the complete e
 **What changed:** `OPAQUE_UPSTREAM_ID` admits only unreserved characters (excluding `.`/`..`), so `encodeURIComponent` can never leave a live dot segment; bindings and upstream-returned session ids are both refused before a request is built. `request()` pins the resolved URL to the configured origin and path prefix — any deviation (dot segments, `%2e`, query or fragment drift) is `transport_error` — and sends `credentials: "omit"` with `redirect: "error"`. `redactDiagnostics` now covers `error` and `tool-error` events at all four yield sites, and redactions include percent-encoded variants of every secret.
 
 **Acceptance:** 16 tests cover the hostile-id table, invalid headers (name, CRLF tenant, CRLF secret), the safe dotted id, upstream `..` refusal, path-prefixed baseUrl, and raw+encoded secret redaction through the reconcile path.
+
+**Further (2026-09-21):** a plain-http base URL is accepted only for a loopback host, the reserved header set covers the names the adapter decides per request and the hop-by-hop set, and `tool-output` events pass every string through redaction. Committed as e4a45fa1ff.
 
 **Current code:** [packages/opencode-server-adapter/src/adapter.ts](../packages/opencode-server-adapter/src/adapter.ts); [packages/opencode-server-adapter/src/config.ts](../packages/opencode-server-adapter/src/config.ts). [Concept walkthrough C](#flow-c).
 
@@ -1167,11 +1167,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-51"></a>
 ### P-51 — Renderer configuration and default-session permissions are broad
 
-**Original severity:** INFO. **Current:** Mixed. **Reassessed severity:** Informational/Low.
+**Original severity:** INFO. **Current:** Fixed; permission, URL and zoom tests. **Reassessed severity:** Informational/Low.
 
-**What happens and why it matters:** The IPC bridge exposes server URL persistence and display/app lookup operations; CSP and default-session permission restrictions are incomplete. Renderer code already has some intended settings powers, so this row should not be counted as multiple remote vulnerabilities.
+**What changed:** The app window's session installs permission request and check handlers that deny everything except `notifications`, `clipboard-sanitized-write` and `clipboard-read`, the only permissions the renderer's source and its xterm clipboard addon request, and only for the trusted main-frame document; the agent-browser partition keeps its own guards. The persisted server URL must be an http or https origin with no credentials, refused at the IPC boundary; the zoom factor is clamped by one range shared with the renderer. The packaged CSP already carried `object-src 'none'`, `base-uri 'none'` and `form-action 'none'`; the dev policy gains `form-action 'none'`.
 
-**Fix and acceptance:** Validate persisted endpoint schemes, clamp zoom, restrict privileged browser permissions and retain sender checks. Test a compromised-renderer input model separately from normal settings UI.
+**Acceptance:** Tests cover the allowlist and denial, URL refusal, zoom clamping and the wiring of each into main; the production build was inspected. Committed as f9b57bb444.
 
 **Current code:** [packages/claxedo-desktop/src/main/ipc.ts](../packages/claxedo-desktop/src/main/ipc.ts); [packages/claxedo-desktop/src/main/apps.ts](../packages/claxedo-desktop/src/main/apps.ts). [Concept walkthrough F](#flow-f).
 
@@ -1217,6 +1217,8 @@ The next-action column is the first step; each finding link opens the complete e
 
 **Acceptance:** Tests cover ambiguous strings ignored, gate-refused and rate-limited presses, repeated-press dedup, unattributable presses refused, concurrent approve single-winner, and method-scoped webhook 403s. 208 channel tests + 35 server channel tests + 15 deployment-mode tests. Live Chat SDK delivery end-to-end not exercised (no bot); contract verified against installed SDK types.
 
+**Further (2026-09-21):** the press path no longer carries its own copy of the gate ladder; both paths run `admitSender` and `recordApproval`, a refused decision releases its delivery claim on both, and the in-memory access store reports a consumed code only for a live row. Committed as 72fc0a66df.
+
 **Current code:** [packages/claxedo-server-core/src/authority/deployment-mode.ts](../packages/claxedo-server-core/src/authority/deployment-mode.ts); [packages/claxedo-channels/src/core/command-emit.ts](../packages/claxedo-channels/src/core/command-emit.ts); [packages/claxedo-channels/src/transport/chat-sdk-actions.ts](../packages/claxedo-channels/src/transport/chat-sdk-actions.ts). [Concept walkthrough G](#flow-g).
 
 <a id="finding-p-56"></a>
@@ -1227,6 +1229,8 @@ The next-action column is the first step; each finding link opens the complete e
 **What changed:** Forwarded upstream responses now strip every credential slot the binding owns — injected header names plus `authorization`, all `API_KEY_HEADERS`, `set-cookie` and `content-encoding` — so e.g. `x-goog-api-key` cannot echo back. Query credential slots (`key`, `access_token`, `api_key`, `apikey`) are deleted from the forwarded query. Per-request `currentRuntime` validation retained; installed jose 6.2.4 has no reachable advisory (GHSA-hhhv-q57g-882q affects ≤4.15.4 JWE; we verify JWS only).
 
 **Acceptance:** Tests cover response-slot stripping, query-slot stripping and teardown with an otherwise unexpired token. 45/45 broker tests.
+
+**Further (2026-09-21):** forwarded answer headers are an explicit allowlist rather than a deny-list, a request that fills a query slot the bound vendor declares as a credential slot is refused instead of silently substituting the operator's account, and a revoked runtime credential is refused on the very next brokered request. Committed as 352fd08313.
 
 **Current code:** [packages/egress-broker/src/broker.ts](../packages/egress-broker/src/broker.ts); [packages/egress-broker/src/token.ts](../packages/egress-broker/src/token.ts). [Concept walkthrough B](#flow-b).
 
@@ -1799,7 +1803,7 @@ The next-action column is the first step; each finding link opens the complete e
 
 **What changed:** Bun rejects when either pre-open queue bound is exceeded, caps each pending HTTP response's overflow buffer, and acquires direct-request capacity before bounded body reads. Both slow-consumer failure conditions use the existing pending-response teardown. Streaming responses remain streaming; a cumulative response-size ceiling would break legitimate large transfers and is not the same as a buffered-memory bound.
 
-**Acceptance and remaining work:** The implementation delegate reports 106 Bun adapter tests passed, including real HTTP/WebSocket byte-only, frame-only, positive-burst and request-body admission cases. Root confirmed all 106 Bun tests, then corrected the independent review's missing slow-consumer CORS headers and added cumulative-frame coverage: six focused tests, package typecheck and lint pass. Cancellation and wider resource budgets remain open. Cloudflare and runtime host-client queue predicates still need correction. Aggregate admission, direct-response buffering, and cancellation remain tracked under overlapping P-14/P-129; the full relay finding is not closed.
+**Acceptance and remaining work:** The implementation delegate reports 106 Bun adapter tests passed, including real HTTP/WebSocket byte-only, frame-only, positive-burst and request-body admission cases. Root confirmed all 106 Bun tests, then corrected the independent review's missing slow-consumer CORS headers and added cumulative-frame coverage: six focused tests, package typecheck and lint pass. Cancellation and wider resource budgets remain open. Cloudflare and runtime host-client queue predicates still need correction. Aggregate admission, direct-response buffering, and cancellation remain tracked under overlapping P-14/P-129; the full relay finding is not closed. The direct-HTTP limiter queue is bounded and abort-aware: a full queue answers 429 instead of unbounded waiters pinning whole Request objects, with tests for queue-full refusal and abort-while-queued freeing slots (9e7a0407d7); `directHttpConcurrency` remains opt-in via env.
 
 **Current code:** [packages/workspace-relay/src/bun.ts](../packages/workspace-relay/src/bun.ts). [Concept walkthrough H](#flow-h).
 
@@ -1819,11 +1823,13 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-109"></a>
 ### P-109 — Device approval may be driven through permissive local CSRF policy
 
-**Original severity:** MED. **Current:** Partial exploit confirmation. **Reassessed severity:** Medium, HTTP embedded + hostile localhost origin.
+**Original severity:** MED. **Current:** Fixed; exact origins, read-only GET, transaction-bound approval on both issuers. **Reassessed severity:** Medium, HTTP embedded + hostile localhost origin.
 
-**What changed:** The direct-HTTP limiter queue is bounded and abort-aware: a full queue answers 429 instead of unbounded waiters pinning whole Request objects. (directHttpConcurrency remains opt-in via env — residual.)
+**What happens and why it matters:** The claim/approve flow exists and embedded trusted origins included all localhost ports. The report's zero-click chain depends on actual browser cookie/content-type behavior; arbitrary remote websites are not the same as a trusted localhost origin.
 
-**Acceptance:** Focused tests cover queue-full refusal and abort-while-queued freeing slots. Committed as 9e7a0407d7.
+**What changed:** Trusted origins are exact and the browser guard runs ahead of `/api/auth/*` (0722ad19b0). On both the hosted and the self-hosted issuer, one Better Auth plugin appends an unguessable transaction to the GET that claims a device request and refuses an approve or deny that does not carry it; the transaction is derived from the issuer secret, the request row and its claimant, so it is stored nowhere and names exactly one request. No device route approves, denies or consumes on GET or HEAD. The approval page sends the transaction for the request it loaded.
+
+**Acceptance:** Removing the plugin registrations turns the transaction tests red on both issuers; a cookie-bearing approve from `http://localhost:9999` is refused, a cross-site fetch is refused under the HTTPS origin, and the exact origin with the transaction succeeds. Committed as 0bbf983a6c.
 
 **Current code:** [packages/claxedo-server/src/deployments/self-hosted-node/device-login.test.ts](../packages/claxedo-server/src/deployments/self-hosted-node/device-login.test.ts); [packages/claxedo-server/src/deployments/self-hosted-node/embedded-auth.ts](../packages/claxedo-server/src/deployments/self-hosted-node/embedded-auth.ts). [Concept walkthrough C](#flow-c).
 
