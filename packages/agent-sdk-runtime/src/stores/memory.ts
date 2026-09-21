@@ -92,8 +92,10 @@ export type MemoryRuntimeStoreSnapshot = {
    * Who holds each session's turn. A durable store that reloads this reducer
    * mid-turn restores them: the lease outlives the reload, so the reducer must
    * not be the thing that forgets it and refuses the writer that still owns it.
+   * Required, because a store that exports without naming its leases hands back
+   * a snapshot whose restore silently releases every one of them.
    */
-  turnLeases?: Array<{ sessionId: string; leaseId: string; acquiredAt: number }>
+  turnLeases: Array<{ sessionId: string; leaseId: string; acquiredAt: number }>
   subagents: Array<{
     parentSessionId: string
     observation: SubagentObservation
