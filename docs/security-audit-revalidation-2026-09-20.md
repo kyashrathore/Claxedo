@@ -263,7 +263,7 @@ The next-action column is the first step; each finding link opens the complete e
 | 65 | Scheduled fixes | [P-128 — Anonymous first traffic influences relay room placement](#finding-p-128) | LOW-MED → Low-Medium availability | Fixed; authenticated placement | Resolve region from authoritative workspace placement before object creation, or authenticate the hint. |
 | 66 | Scheduled fixes | [P-71 — Provider command strings contain secrets](#finding-p-71) | MED-LOW → Low-Medium, provider logging dependent | Fixed; focused driver tests | Use provider secret/env APIs or private files/stdin, avoid secrets in command strings and redact diagnostics. |
 | 67 | Scheduled fixes | [P-29 — Host consent state and redirects need stronger boundaries](#finding-p-29) | MED-LOW → Low-Medium, conditional | Partial | Persist the accepted scope revision and explicit refusal state, and refuse credential-bearing redirects. |
-| 68 | Scheduled fixes | [P-49 — CI bootstrap executes downloaded tooling without independent verification](#finding-p-49) | LOW → Low-Medium supply-chain hardening | Present | Pin versions and verify checksums/signatures, pass test arguments structurally, and constrain CI secret exposure. |
+| 68 | Scheduled fixes | [P-49 — CI bootstrap executes downloaded tooling without independent verification](#finding-p-49) | LOW → Low-Medium supply-chain hardening | Fixed; pinned digests + structural argv | Downloads verify against pinned sha256s; test args travel as positional argv, not shell text; lane credentials hidden from npm lifecycle. |
 | 69 | Scheduled fixes | [H-3 — Revocation and installed credentials have different lifetimes](#finding-h-3) | LOW → Low | Partial | Make revocation trigger canonical delivery reconciliation, clear installed material, and revoke the key at its provider when needed. |
 | 70 | Scheduled fixes | [R-2 — Revocation has a bounded cache delay](#finding-r-2) | LOW → Low | Fixed; bound specified and tested | Revocation delay is bounded by the revocation cache TTL for HTTP requests, plus one active-check interval for open sockets; token exp caps every path during an authority outage. |
 | 71 | Scheduled fixes | [P-125 — Unknown explicit workspace ids fall back to directory](#finding-p-125) | LOW → Low; boundary impact caller-dependent | Fixed; store and HTTP verification passed | Unknown explicit IDs cannot fall back to directory/project discovery or creation; preserve real store and metadata-route regressions. |
@@ -1141,11 +1141,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-49"></a>
 ### P-49 — CI bootstrap executes downloaded tooling without independent verification
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low-Medium supply-chain hardening.
+**Original severity:** LOW. **Current:** Fixed; pinned digests + structural argv. **Reassessed severity:** Low-Medium supply-chain hardening.
 
-**What happens and why it matters:** Several scripts trust HTTPS downloads/installers and interpolate E2E_ARGS into remote shell text. Trusted operator-supplied shell settings are not an external injection by themselves; compromised download sources or untrusted job inputs are the relevant threat.
+**What changed:** Node (`v24.15.0`/`v22.23.2` × x64/arm64), the Bun binary (per-arch sha256 over the integrity-verified npm artifacts) and rustup (versioned archive URL + per-triple sha256) all verify a pinned digest before use — unknown version/arch fails closed. Harness CLIs pin exact versions and npm runs under `env -i HOME PATH` so downloaded lifecycle scripts can't read lane credentials. `E2E_ARGS` is no longer interpolated into remote shell text: args forward as positional argv (`bash -c "$REMOTE_SCRIPT" e2e-shard ...`), with shard counts and box slugs validated.
 
-**Fix and acceptance:** Pin versions and verify checksums/signatures, pass test arguments structurally, and constrain CI secret exposure. Test the generated remote command and reject unexpected inputs.
+**Acceptance:** `cbx-e2e-shard.test.ts` covers positional forwarding (space-preserving), `E2E_ARGS` inertness, slug rejection and usage errors. Residuals: checksum paths are Linux-only (untested end-to-end on macOS), `cbx-rebake` pipe-to-shell and `cbx` `.env` sourcing remain out of scope, floating rustup `stable` toolchain intentionally unpinned.
 
 **Current code:** [script/cbx-ci-remote.sh](../script/cbx-ci-remote.sh); [script/cbx-e2e-shard.sh](../script/cbx-e2e-shard.sh). [Concept walkthrough F](#flow-f).
 
