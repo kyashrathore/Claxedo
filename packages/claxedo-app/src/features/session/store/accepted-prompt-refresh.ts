@@ -152,7 +152,10 @@ export function readTurnCoverage(target: TurnCoverageTarget, page?: CoveragePage
 } {
   if (!page || page.turnId !== target.turnId) return { merge: false, answer: "unresolved" }
   if (page.coverage === "unavailable") return { merge: false, answer: "unavailable" }
-  return { merge: true, answer: page.coverage === "complete" ? "complete" : "unresolved" }
+  // Only a complete page is merged. A partial one is a snapshot of a turn still
+  // being written, and applying it over the window the live stream is filling
+  // replaces newer rows with older ones; the stream is already delivering them.
+  return { merge: page.coverage === "complete", answer: page.coverage === "complete" ? "complete" : "unresolved" }
 }
 
 /**

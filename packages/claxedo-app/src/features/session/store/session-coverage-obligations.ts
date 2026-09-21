@@ -163,7 +163,13 @@ export function createTurnCoverageOwner(input: {
     // no turns; reconstructing from it would conclude nothing is owed.
     if (loaded.length === 0) return
     reconstructed = scope
-    const awaiting = turnsAwaitingCoverage(loaded, (turnId) => conversationHasTurnReply(directory, sessionID, turnId))
+    // The newest turn of a session the runtime reports busy is the one it is
+    // running. The status carries no turn id, so this is the only thing that
+    // identifies it — and taking an obligation on a live turn would read its
+    // half-written transcript back over the window the stream is filling.
+    const settled = loaded.slice(0, loaded.length - 1)
+    const candidates = status.type === "idle" ? loaded : settled
+    const awaiting = turnsAwaitingCoverage(candidates, (turnId) => conversationHasTurnReply(directory, sessionID, turnId))
     for (const turnId of awaiting) requestAcceptedPromptRefresh({ directory, sessionID, messageID: turnId })
   })
 

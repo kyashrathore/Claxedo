@@ -161,8 +161,10 @@ describe("what a coverage page settles", () => {
     expect(readTurnCoverage(owed, { turnId: "msg_1", coverage: "complete" })).toEqual({ merge: true, answer: "complete" })
   })
 
-  test("a partial page for this turn is merged but settles nothing", () => {
-    expect(readTurnCoverage(owed, { turnId: "msg_1", coverage: "partial" })).toEqual({ merge: true, answer: "unresolved" })
+  // A partial page is a snapshot of a turn still being written. Merging it over
+  // the window the live stream is filling puts older rows back on screen.
+  test("a partial page for this turn is neither merged nor an answer", () => {
+    expect(readTurnCoverage(owed, { turnId: "msg_1", coverage: "partial" })).toEqual({ merge: false, answer: "unresolved" })
   })
 
   // The defect this rule exists for: a reply describing the turn that replaced
