@@ -1,7 +1,8 @@
+import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import { requireAuthority, type WorkspaceAuthority, type WorkspaceOpenResult } from "@claxedo/server-core/platform/auth/authority"
+import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import {
   apiError,
   captureWorkspaceTelemetry,
@@ -17,22 +18,44 @@ import {
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
-import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
+import { hostedSandboxNetworkPolicy, type SandboxManager } from "@claxedo/sandbox-manager"
 
-export async function hostedConnectionInfo(
+type HostedConnectionDenial = {
+  error: ReturnType<typeof apiError>
+  status: ContentfulStatusCode
+}
+
+type CloudConnectionIngress =
+  | HostedConnectionDenial
+  | { tunnel: true }
+  | {
+      authority: WorkspaceAuthority
+      result: WorkspaceOpenResult
+      hostManager: SandboxManager
+      homeRegion: ClaxedoRegion
+      relayUrl: string
+    }
+
+/**
+ * Everything a cloud connection request shares BEFORE it decides whether to
+ * spend: open authorization, the backing check, the cloud entitlement gate and
+ * relay/host-manager resolution. `sandboxManager.ensure` — the call that can
+ * start billable compute — is deliberately NOT here: it is what separates the
+ * connect path (`hostedConnectionInfo`, POST) from the read path
+ * (`hostedConnectionStatus`, GET).
+ */
+async function cloudConnectionIngress(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
   auth: SignedControlPlaneAuth,
   workspaceId: string,
-  controlPlaneUrl: string,
-  previousJti?: string,
-) {
+): Promise<CloudConnectionIngress> {
   const authority = requireAuthority(services)
   const result = await authority.openWorkspace(auth, { workspaceId })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
   if (authz) return authz
   if (result.workspace?.backing === "local-worktree") {
-    return hostTunnelConnectionInfo(services, options, auth, workspaceId, previousJti)
+    return { tunnel: true } as const
   }
   if (result.workspace?.backing !== "cloud-vm") {
     return {
@@ -48,6 +71,10 @@ export async function hostedConnectionInfo(
   // HostedWorkspaceRoutes mount, so self-host / local never gate. Denied → the
   // typed billing_entitlement_required (402) the frontend acts on, BEFORE any
   // sandbox wake side effect.
+  //
+  // It gates the READ path too: the read still mints a Runtime Access Token
+  // for a workspace whose sandbox is already running, and a canceled
+  // subscription must not keep minting off a warm lease either.
   if (options.requireCloudWorkspaceEntitlement) {
     const denied = await options.requireCloudWorkspaceEntitlement(auth)
     if (denied) {
@@ -87,6 +114,127 @@ export async function hostedConnectionInfo(
       relayRoom: workspaceId,
     },
   })
+  return { authority, result, hostManager, homeRegion, relayUrl }
+}
+
+/** The mint tail both paths share once a ready sandbox target exists. */
+async function mintCloudConnection(
+  services: ControlPlaneServices | undefined,
+  options: WorkspaceRouteOptions,
+  auth: SignedControlPlaneAuth,
+  input: {
+    authority: WorkspaceAuthority
+    result: WorkspaceOpenResult
+    workspaceId: string
+    homeRegion: ClaxedoRegion
+    relayUrl: string
+    target: { hostId: string; epoch: number; driverResourceId?: string }
+    previousJti?: string
+  },
+) {
+  const { authority, result, workspaceId, homeRegion, relayUrl, target, previousJti } = input
+  const previousToken = await previousRuntimeAccessTokenError(services, auth, {
+    previousJti,
+    workspaceId,
+    hostId: target.hostId,
+  })
+  if (previousToken) return previousToken
+
+  const role = relayRole(result.role)
+  const actor = await resolveRuntimeActor(authority, auth)
+  const signer = configuredRuntimeAccessTokenSigner(options)
+  const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
+  const token = await signer({
+    principalKind: "user",
+    ...actor,
+    orgId,
+    workspaceId,
+    hostId: target.hostId,
+    role,
+  })
+  await authority.recordRuntimeAccessToken(auth, {
+    jti: token.jti,
+    workspaceId,
+    hostId: target.hostId,
+    actorId: actor.actorId,
+    actorKind: actor.actorKind,
+    role,
+    expiresAt: token.tokenExpiresAt,
+  })
+  await authority.auditAllow(auth, {
+    action: "runtime_access_token.minted",
+    workspaceId,
+    metadata: {
+      jti: token.jti,
+      hostId: target.hostId,
+      expiresAt: token.tokenExpiresAt,
+      backing: "cloud-vm",
+      homeRegion,
+      leaseEpoch: target.epoch,
+      ...(target.driverResourceId ? { driverResourceId: target.driverResourceId } : {}),
+      relayRoom: workspaceId,
+      relayUrl,
+    },
+  })
+  captureWorkspaceTelemetry({
+    services,
+    auth,
+    event: "runtime_access_token.minted",
+    workspaceId,
+    properties: {
+      backing: "cloud-vm",
+      hostId: target.hostId,
+      role,
+      jti: token.jti,
+      expiresAt: token.tokenExpiresAt,
+      homeRegion,
+      leaseEpoch: target.epoch,
+      ...(target.driverResourceId ? { driverResourceId: target.driverResourceId } : {}),
+      relayRoom: workspaceId,
+      relayUrl,
+    },
+  })
+  if (previousJti) {
+    await authority.revokeRuntimeAccessToken(auth, { jti: previousJti, workspaceId })
+  }
+  return {
+    connection: {
+      backing: "cloud-vm" as const,
+      // The hosted sandbox runs the workspace runtime behind the relay with a
+      // non-loopback exposure, so it composes the remote session authority and
+      // serves session-scoped event streams only. See the sibling
+      // `host-tunnel-connection.ts` for the other composition.
+      sessionAuthority: "managed-private" as const,
+      workspaceId,
+      homeRegion,
+      relayUrl,
+      runtimeAccessToken: token.runtimeAccessToken,
+      tokenExpiresAt: token.tokenExpiresAt,
+      role,
+      hostId: target.hostId,
+    },
+  } as const
+}
+
+/**
+ * The connect path (POST `/:id/connection`, POST `/:id/connection/refresh`):
+ * the ONLY route that runs `sandboxManager.ensure`, so starting billable
+ * compute always traces to an explicit connect — never to a read.
+ */
+export async function hostedConnectionInfo(
+  services: ControlPlaneServices | undefined,
+  options: WorkspaceRouteOptions,
+  auth: SignedControlPlaneAuth,
+  workspaceId: string,
+  controlPlaneUrl: string,
+  previousJti?: string,
+) {
+  const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
+  if ("error" in ingress) return ingress
+  if ("tunnel" in ingress) {
+    return hostTunnelConnectionInfo(services, options, auth, workspaceId, previousJti)
+  }
+  const { authority, result, hostManager, homeRegion, relayUrl } = ingress
 
   const runtimeContext = { workspaceId }
   let preparation
@@ -102,7 +250,7 @@ export async function hostedConnectionInfo(
     homeRegion,
     net: hostedSandboxNetworkPolicy({
       controlPlane: [relayUrl, controlPlaneUrl],
-      source: typeof result.workspace.repo_url === "string"
+      source: typeof result.workspace?.repo_url === "string"
         ? { kind: "git", repoUrl: result.workspace.repo_url }
         : { kind: "empty" },
       extraHosts: options.sandboxEgressExtraHosts,
@@ -176,85 +324,79 @@ export async function hostedConnectionInfo(
     } as const
   }
 
-  const previousToken = await previousRuntimeAccessTokenError(services, auth, {
+  return mintCloudConnection(services, options, auth, {
+    authority,
+    result,
+    workspaceId,
+    homeRegion,
+    relayUrl,
+    target: ensured,
     previousJti,
-    workspaceId,
-    hostId: ensured.hostId,
   })
-  if (previousToken) return previousToken
+}
 
-  const role = relayRole(result.role)
-  const actor = await resolveRuntimeActor(authority, auth)
-  const signer = configuredRuntimeAccessTokenSigner(options)
-  const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
-  const token = await signer({
-    principalKind: "user",
-    ...actor,
-    orgId,
-    workspaceId,
-    hostId: ensured.hostId,
-    role,
-  })
-  await authority.recordRuntimeAccessToken(auth, {
-    jti: token.jti,
-    workspaceId,
-    hostId: ensured.hostId,
-    actorId: actor.actorId,
-    actorKind: actor.actorKind,
-    role,
-    expiresAt: token.tokenExpiresAt,
-  })
-  await authority.auditAllow(auth, {
-    action: "runtime_access_token.minted",
-    workspaceId,
-    metadata: {
-      jti: token.jti,
-      hostId: ensured.hostId,
-      expiresAt: token.tokenExpiresAt,
-      backing: "cloud-vm",
-      homeRegion,
-      leaseEpoch: ensured.epoch,
-      ...(ensured.driverResourceId ? { driverResourceId: ensured.driverResourceId } : {}),
-      relayRoom: workspaceId,
-      relayUrl,
-    },
-  })
+/**
+ * The read path (GET `/:id/connection`): reports the connection's CURRENT
+ * state without ever provisioning. `sandboxManager.target` resolves from the
+ * lease row alone — no driver call, no acquire, no boot — so a read can never
+ * start billable compute:
+ *
+ *  - lease ready → the running workspace's connection, with a freshly minted
+ *    Runtime Access Token (a viewer may legitimately need the running runtime
+ *    to read a session — P-118; what a read may not do is START one),
+ *  - lease acquiring → `status: "provisioning"`: an explicit connect is
+ *    already booting it, and the read says so without joining the spend,
+ *  - anything else (missing, stopped, unavailable, destroyed) →
+ *    `status: "stopped"`, the not-running indicator an explicit POST turns
+ *    into a start.
+ */
+export async function hostedConnectionStatus(
+  services: ControlPlaneServices | undefined,
+  options: WorkspaceRouteOptions,
+  auth: SignedControlPlaneAuth,
+  workspaceId: string,
+) {
+  const ingress = await cloudConnectionIngress(services, options, auth, workspaceId)
+  if ("error" in ingress) return ingress
+  if ("tunnel" in ingress) {
+    return hostTunnelConnectionInfo(services, options, auth, workspaceId)
+  }
+  const { authority, result, hostManager, homeRegion, relayUrl } = ingress
+
+  const target = await hostManager.target(workspaceId)
   captureWorkspaceTelemetry({
     services,
     auth,
-    event: "runtime_access_token.minted",
+    event: "sandbox.target",
     workspaceId,
     properties: {
-      backing: "cloud-vm",
-      hostId: ensured.hostId,
-      role,
-      jti: token.jti,
-      expiresAt: token.tokenExpiresAt,
+      status: target.status,
       homeRegion,
-      leaseEpoch: ensured.epoch,
-      ...(ensured.driverResourceId ? { driverResourceId: ensured.driverResourceId } : {}),
       relayRoom: workspaceId,
-      relayUrl,
+      ...(target.status === "unavailable" ? { reason: target.reason, leaseStatus: target.leaseStatus } : {}),
+      ...(target.status === "ready" ? {
+        hostId: target.hostId,
+        leaseEpoch: target.epoch,
+        ...(target.driverResourceId ? { driverResourceId: target.driverResourceId } : {}),
+      } : {}),
     },
   })
-  if (previousJti) {
-    await authority.revokeRuntimeAccessToken(auth, { jti: previousJti, workspaceId })
+  if (target.status !== "ready") {
+    return {
+      connection: {
+        status: target.leaseStatus === "acquiring" ? ("provisioning" as const) : ("stopped" as const),
+        workspaceId,
+        homeRegion,
+        ...(target.retryAfterMs !== undefined ? { retryAfterMs: target.retryAfterMs } : {}),
+      },
+    } as const
   }
-  return {
-    connection: {
-      backing: "cloud-vm" as const,
-      // The hosted sandbox runs the workspace runtime behind the relay with a
-      // non-loopback exposure, so it composes the remote session authority and
-      // serves session-scoped event streams only. See the sibling
-      // `host-tunnel-connection.ts` for the other composition.
-      sessionAuthority: "managed-private" as const,
-      workspaceId,
-      homeRegion,
-      relayUrl,
-      runtimeAccessToken: token.runtimeAccessToken,
-      tokenExpiresAt: token.tokenExpiresAt,
-      role,
-      hostId: ensured.hostId,
-    },
-  } as const
+  return mintCloudConnection(services, options, auth, {
+    authority,
+    result,
+    workspaceId,
+    homeRegion,
+    relayUrl,
+    target,
+  })
 }

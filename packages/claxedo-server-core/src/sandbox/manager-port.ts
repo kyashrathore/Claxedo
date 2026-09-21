@@ -28,9 +28,22 @@ export type SandboxEnsureResult =
   | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: string; bootMode?: "restore" | "resume" | "cold-start" }
   | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: string }
 
+export type SandboxLeaseStatus = "acquiring" | "ready" | "unavailable" | "stopped" | "destroyed"
+
 export type SandboxTargetResult =
   | SandboxReadyTarget
-  | { status: "unavailable"; reason: string }
+  | {
+      status: "unavailable"
+      reason: string
+      /**
+       * The lease's own lifecycle word when a lease exists; absent when none
+       * does. A read path needs it to tell "a start is already in flight"
+       * apart from "nothing is running" — the two report differently.
+       */
+      leaseStatus?: SandboxLeaseStatus
+      /** Delay until the lease's own next scheduled retry, when it carries one. */
+      retryAfterMs?: number
+    }
 
 export type SandboxManagerPort = {
   ensure(workspaceId: string, input: { homeRegion: string }): Promise<SandboxEnsureResult>

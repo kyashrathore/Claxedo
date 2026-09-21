@@ -657,7 +657,19 @@ export type SandboxEnsureResult =
 
 export type SandboxTargetResult =
   | ({ status: "ready" } & SandboxTarget & { epoch: number; homeRegion: SandboxRegion })
-  | { status: "unavailable"; reason: string }
+  | {
+      status: "unavailable"
+      reason: string
+      /**
+       * The lease's own lifecycle word when a lease exists (`"acquiring"`,
+       * `"stopped"`, `"unavailable"`, `"destroyed"`); absent when none does.
+       * `target()` deliberately does not collapse these — a read path needs to
+       * tell "a start is already in flight" apart from "nothing is running".
+       */
+      leaseStatus?: SandboxLeaseStatus
+      /** Delay until the lease's own next scheduled retry, when it carries one. */
+      retryAfterMs?: number
+    }
 
 export type SandboxTouchResult = { touched: boolean; status: SandboxLeaseStatus | "missing" }
 export type SandboxMutationResult = { ok: true; status: SandboxLeaseStatus } | { ok: false; reason: string }
@@ -887,7 +899,12 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   async function leaseTarget(lease: SandboxLease): Promise<SandboxTargetResult> {
     if (lease.status !== "ready" || !lease.sandboxId || !lease.url || !lease.hostId) {
-      return { status: "unavailable", reason: "runtime_lease_not_ready" }
+      return {
+        status: "unavailable",
+        reason: "runtime_lease_not_ready",
+        leaseStatus: lease.status,
+        ...(lease.nextRetryAt !== undefined ? { retryAfterMs: Math.max(0, lease.nextRetryAt - now()) } : {}),
+      }
     }
     return {
       status: "ready",
