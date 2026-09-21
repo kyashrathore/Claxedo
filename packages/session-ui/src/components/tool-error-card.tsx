@@ -7,6 +7,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import { ToolExitCode } from "./basic-tool"
+import { safeLinkHref } from "./safe-link"
 
 export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   icon?: IconProps["name"]
@@ -64,6 +65,8 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     if (!key.includes(".")) return key
     return i18n.t(key)
   })
+  /** The subtitle link a caller supplied, dropped unless it survives the scheme policy. */
+  const href = createMemo(() => safeLinkHref(split.href))
   const cleaned = createMemo(() => split.error.replace(/^Error:\s*/, "").trim())
   const tail = createMemo(() => {
     const value = cleaned()
@@ -116,13 +119,13 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
                   <div data-slot="basic-tool-tool-info-main">
                     <span data-slot="basic-tool-tool-title">{name()}</span>
                     <Show
-                      when={split.href && split.subtitle}
+                      when={href() && split.subtitle}
                       fallback={<span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>}
                     >
                       <a
                         data-slot="basic-tool-tool-subtitle"
                         class="clickable subagent-link"
-                        href={split.href}
+                        href={href()}
                         onClick={(e) => e.stopPropagation()}
                       >
                         {subtitle()}
