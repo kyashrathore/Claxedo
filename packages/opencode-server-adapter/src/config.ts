@@ -1,5 +1,5 @@
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
-import { isRecord } from "@claxedo/helpers/guards"
+import { isLoopbackHostname, isRecord } from "@claxedo/helpers"
 import { OpenCodeServerAdapterError } from "./errors"
 
 export type OpenCodeServerAuthRef =
@@ -55,7 +55,23 @@ export function validateOpenCodeServerConnectionConfig(input: unknown): OpenCode
   const deadlines = config.deadlines === undefined
     ? { requestMs: 15_000, streamIdleMs: 30_000 }
     : parseDeadlines(config.deadlines)
-  const reserved = new Set(["x-opencode-directory", "content-length", "host"])
+  // Content negotiation, body framing and the workspace stamp are decided per
+  // request by the adapter, and the hop-by-hop names belong to whichever
+  // transport or intermediary carries it. A configured value on any of them
+  // redirects a credentialed request instead of authenticating it.
+  const reserved = new Set([
+    "accept",
+    "connection",
+    "content-length",
+    "content-type",
+    "host",
+    "keep-alive",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "x-opencode-directory",
+  ])
   for (const name of Object.keys(trustedHeaders ?? {})) {
     if (reserved.has(name.toLowerCase())) throw invalid(`trustedHeaders cannot set reserved header ${name}`)
   }
@@ -143,6 +159,11 @@ function parseServerUrl(value: string) {
   let url: URL
   try { url = new URL(value) } catch { throw invalid("baseUrl must be a valid URL") }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw invalid("baseUrl must use http or https")
+  // Connection credentials ride on every request to this base URL, so cleartext
+  // is only survivable when the bytes never leave the machine.
+  if (url.protocol === "http:" && !isLoopbackHostname(url.hostname)) {
+    throw invalid("baseUrl must use https unless the OpenCode server is on this machine's loopback interface")
+  }
   if (url.username || url.password) throw invalid("baseUrl must not contain credentials")
   if (url.search || url.hash) throw invalid("baseUrl must not contain a query or fragment")
   return url

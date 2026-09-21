@@ -495,7 +495,38 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   private redactDiagnostics(event: AgentRuntimeEvent): AgentRuntimeEvent {
     if (event.type === "error" || event.type === "tool-error") return { ...event, error: this.redact(event.error) }
+    if (event.type === "tool-output") return { ...event, output: this.redactOutput(event.output) }
     return event
+  }
+
+  /**
+   * Tool output is whatever the upstream tool printed — a shell transcript that
+   * echoed a request header, a structured result holding a URL — so a string
+   * anywhere inside it can carry this connection's credential. The walk is
+   * iterative and rewrites in place: the value was parsed by this adapter for
+   * this one event, and nesting is bounded only by the body limit, so a
+   * recursive walk would exhaust the stack on hostile JSON.
+   */
+  private redactOutput(value: unknown): unknown {
+    if (typeof value === "string") return this.redact(value)
+    const pending: unknown[] = [value]
+    while (pending.length > 0) {
+      const node = pending.pop()
+      if (Array.isArray(node)) {
+        for (const [index, item] of node.entries()) {
+          if (typeof item === "string") node[index] = this.redact(item)
+          else if (item !== null && typeof item === "object") pending.push(item)
+        }
+        continue
+      }
+      const record = asRecord(node)
+      if (!record) continue
+      for (const [key, item] of Object.entries(record)) {
+        if (typeof item === "string") record[key] = this.redact(item)
+        else if (item !== null && typeof item === "object") pending.push(item)
+      }
+    }
+    return value
   }
 
   private error(code: ConstructorParameters<typeof OpenCodeServerAdapterError>[0], message: string, operation?: string, status?: number, body?: unknown) {
