@@ -239,10 +239,58 @@ describe("cancel + expiry", () => {
   it("cancel prevents a wake from firing", async () => {
     const { clock, wakes, spawned } = harness()
     const { wakeId } = await wakes.schedule({ sessionId: "s1", workspaceId: WS, at: clock.t + 1000, intent: {} })
-    await wakes.cancel(wakeId)
+    expect(await wakes.cancel(wakeId, { sessionId: "s1" })).toEqual({ ok: true })
     clock.t += 1000
     await wakes.runDue()
     expect(spawned).toHaveLength(0)
+  })
+
+  it("denies possession alone: a cross-session id needs an authorized actor", async () => {
+    const { clock, wakes, store } = harness({ authorize: (a) => a.userId === "admin" })
+    const { wakeId } = await wakes.schedule({ sessionId: "s1", workspaceId: WS, at: clock.t + 1000, intent: {} })
+    expect(await wakes.cancel(wakeId, { sessionId: "s2" })).toEqual({ ok: false, reason: "unauthorized" })
+    expect(await wakes.cancel(wakeId, {})).toEqual({ ok: false, reason: "unauthorized" })
+    expect(await wakes.cancel(wakeId, { actor: { userId: "mallory" } })).toEqual({
+      ok: false,
+      reason: "unauthorized",
+    })
+    expect((await store.get(wakeId))!.state).toBe("pending")
+    expect(await wakes.cancel(wakeId, { actor: { userId: "admin" } })).toEqual({ ok: true })
+    expect((await store.get(wakeId))!.state).toBe("cancelled")
+  })
+
+  it("a held approval token does not cancel without ownership or authorization", async () => {
+    const { clock, wakes, store } = harness({ authorize: (a) => a.userId === "admin" })
+    const { token, wakeId } = await wakes.requestApproval({
+      sessionId: "s1",
+      workspaceId: WS,
+      prompt: "?",
+      expiresAt: clock.t + 1000,
+    })
+    expect(await wakes.cancel(token, { sessionId: "s2" })).toEqual({ ok: false, reason: "unauthorized" })
+    expect(await wakes.cancel(token, { actor: { userId: "mallory" } })).toEqual({
+      ok: false,
+      reason: "unauthorized",
+    })
+    expect((await store.get(wakeId))!.state).toBe("pending")
+    expect(await wakes.cancel(token, { actor: { userId: "admin" } })).toEqual({ ok: true })
+    expect((await store.get(wakeId))!.state).toBe("cancelled")
+  })
+
+  it("a sessionless wake can only be cancelled through authorize", async () => {
+    const { clock, wakes, store } = harness({ authorize: (a) => a.userId === "admin" })
+    const { wakeId } = await wakes.schedule({ workspaceId: WS, at: clock.t + 1000, intent: {} })
+    expect(await wakes.cancel(wakeId, { sessionId: "s1" })).toEqual({ ok: false, reason: "unauthorized" })
+    expect(await wakes.cancel(wakeId, { actor: { userId: "admin" } })).toEqual({ ok: true })
+    expect((await store.get(wakeId))!.state).toBe("cancelled")
+  })
+
+  it("cancel reports not_found and not_pending distinctly", async () => {
+    const { clock, wakes } = harness()
+    expect(await wakes.cancel("wake_nope", { sessionId: "s1" })).toEqual({ ok: false, reason: "not_found" })
+    const { wakeId } = await wakes.schedule({ sessionId: "s1", workspaceId: WS, at: clock.t + 1000, intent: {} })
+    expect(await wakes.cancel(wakeId, { sessionId: "s1" })).toEqual({ ok: true })
+    expect(await wakes.cancel(wakeId, { sessionId: "s1" })).toEqual({ ok: false, reason: "not_pending" })
   })
 
   it("expiry fires a 'gave up' turn", async () => {

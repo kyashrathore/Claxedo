@@ -75,8 +75,9 @@ One durable record: *when trigger T fires, run sink K with this payload.*
 
 ## The engine (`wakes.ts` — `createWakes`, line ~119)
 
-Options: `store` (required), `authorize` (required approval-resolution policy —
-no implicit allow; `() => false` disables approvals), `spawnTurn` (sugar for
+Options: `store` (required), `authorize` (required approval-resolution and
+out-of-session-cancel policy — no implicit allow; `() => false` disables
+approvals and actor-initiated cancels), `spawnTurn` (sugar for
 the `session_turn` sink), `sinks` (kind → handler; at least one of
 spawnTurn/sinks required), `driver` (optional push), `budgets`, `now`
 (injectable clock — all tests are wall-clock-free), `computeNextRun` (cron
@@ -255,8 +256,10 @@ absent until a host wires delivery paths for `deliverEvent`/`resolve` — a tool
 that promises a resumption no host can deliver is worse than no tool. Security
 properties enforced by construction: sessionId/workspaceId come from the
 host-supplied `WakeToolContext`, never from the agent (a tool can only touch
-its own session's wakes — `cancel_wake` checks `listForSession` ownership,
-and that view redacts approval `token`s so a list reader cannot resolve a
+its own session's wakes — `cancel_wake` passes that context sessionId into
+`cancel`, where the engine itself requires session ownership or an
+`authorize`-cleared actor, so possession of an id or token never suffices;
+`listForSession` redacts approval `token`s so a list reader cannot resolve a
 wake it can see);
 `toolCallId` becomes the idempotency key so a retried tool call can't
 double-book; `depth+1` flows into the budget recursion bound. Its `parseWhen` accepts

@@ -12,6 +12,8 @@ export type {
   Actor,
   Authorize,
   Budgets,
+  CancelCaller,
+  CancelOutcome,
   ComputeNextRun,
   Json,
   ListedWake,

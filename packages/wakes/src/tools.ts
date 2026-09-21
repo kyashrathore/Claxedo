@@ -130,9 +130,10 @@ export async function handleWakeToolCall(
       return { ok: true, text: `Scheduled a follow-up for ${new Date(at).toISOString()} (wake ${wakeId}).` }
     }
     case "cancel_wake": {
-      const owned = (await ctx.wakes.listForSession(ctx.sessionId)).some((w) => w.id === args.wake_id)
-      if (!owned) return { ok: false, text: `No pending wake "${args.wake_id}" for this session.` }
-      await ctx.wakes.cancel(args.wake_id)
+      // The engine enforces ownership: a session-scoped cancel only lands on
+      // a wake whose sessionId matches this host-injected context.
+      const outcome = await ctx.wakes.cancel(args.wake_id, { sessionId: ctx.sessionId })
+      if (!outcome.ok) return { ok: false, text: `No pending wake "${args.wake_id}" for this session.` }
       return { ok: true, text: `Cancelled wake ${args.wake_id}.` }
     }
     default:

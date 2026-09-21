@@ -4,6 +4,8 @@ import type {
   Actor,
   Authorize,
   Budgets,
+  CancelCaller,
+  CancelOutcome,
   ComputeNextRun,
   Json,
   ListedWake,
@@ -119,7 +121,13 @@ export interface Wakes {
     token: Token
     wakeId: WakeId
   }>
-  cancel(wakeIdOrToken: string): Promise<void>
+  /**
+   * Cancel a pending wake by id or approval token. Possession alone is never
+   * sufficient: `caller.sessionId` must be the wake's own session, or
+   * `caller.actor` must pass the workspace `authorize` policy. Losing the
+   * `pending` CAS to a concurrent fire reports `not_pending`.
+   */
+  cancel(wakeIdOrToken: string, caller: CancelCaller): Promise<CancelOutcome>
   resolve(token: Token, answer: string, resolver: Actor): Promise<ResolveOutcome>
   /**
    * Fire pending `on_event` watches for the addressed workspace. Tenant
@@ -391,10 +399,16 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       return { token: (await store.get(wakeId))!.token!, wakeId }
     },
 
-    async cancel(wakeIdOrToken) {
+    async cancel(wakeIdOrToken, caller) {
       const wake = (await store.get(wakeIdOrToken)) ?? (await store.getByToken(wakeIdOrToken))
+      if (!wake) return { ok: false, reason: "not_found" }
+      const ownsSession = caller.sessionId != null && wake.sessionId === caller.sessionId
+      const allowed =
+        ownsSession || (caller.actor !== undefined && (await authorize(caller.actor, wake.workspaceId)))
+      if (!allowed) return { ok: false, reason: "unauthorized" }
       const cancelledAt = now()
-      if (wake) await store.cas(wake.id, "pending", "cancelled", cancelledAt, { firedAt: cancelledAt })
+      const applied = await store.cas(wake.id, "pending", "cancelled", cancelledAt, { firedAt: cancelledAt })
+      return applied ? { ok: true } : { ok: false, reason: "not_pending" }
     },
 
     async resolve(token, answer, resolver) {
