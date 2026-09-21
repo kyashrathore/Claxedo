@@ -259,5 +259,67 @@ The lane attributes the two `Thinking` failures to running with transcript recon
 - The packaged desktop acceptance flow is unexecuted (R-15), which leaves four §7 rows unmet.
 - No real provider was driven: every harness test in this run uses a fake.
 - Linux and Windows are unmeasured for every process-ownership capability.
-- R-6, R-7, R-10, R-13 and R-14 are branch-introduced and open. R-7 and R-10 describe product behaviour rather than a test or a ratchet, and R-10 is the one a user would meet: session creation answering 500 on a Node host.
+- R-6, R-7, R-10, R-13 and R-14 are branch-introduced and open. R-7 and R-10 describe product behaviour rather than a test or a ratchet, and R-10 is the one a user would meet: session creation answering 500 on a Node host. **All five were closed the following day; §11 records what the same commands answer now, and corrects the R-6 entry, which recorded a workaround as a diagnosis.**
 - Three e2e specs fail (§9); two are attributed to a disabled reconstruction path and one to the branch base, and neither attribution was re-derived here.
+
+## 11. Re-run, 2026-09-22
+
+Three lanes landed fixes for the five branch-introduced reds in §2 after that section was written. Nothing above is rewritten; this section records what the same commands answer now. Measured at `7045e7519b` unless a row says otherwise, on the same machine.
+
+Fixes landed, by lane. Launch: `799c3a7740` (gate loader and the R-6 test), `ce66f86aad` (three helper names), `7045e7519b` (PTY disposal), `81c06f62ca` (two unread bindings). Harness: `ac17e7d9a0` (Codex disposal), `adbf678d72` (two helper names). This lane: `3a6009130e` and `ba9c0f0d2e` (the lint sweep), `ff427d057d` and `9ac83b4530` (four helper names), `fd903a84b2` (the duplicated closure ceiling).
+
+### Commands
+
+| Command | Where | Exit | Then | Now |
+|---|---|---|---|---|
+| `bun run test` | claxedo-server | 1 | 3132 pass / 4 fail | **3133 pass / 3 fail**, and the one remaining branch red is closed below |
+| `bun run test` | claxedo-local-server | 1 | 760 pass / 21 fail | **763 pass / 18 fail** — exactly the 18 that fail at base |
+| `bun run test` | workspace-runtime | 1 | 1498 pass / 3 fail | **1498 pass / 3 fail**, unchanged |
+| `bun run test` | agent-sdk-runtime | 1 | 1078 pass / 6 fail | **1080 pass / 4 fail** |
+| `bun test src/launch src/harnesses/codex` | agent-sdk-runtime | 0 | — | 148 pass / 0 fail, twice, at the package's own budget |
+| `bun run test:architecture-ratchets` | repo root | **0** | 7 helper divergences | passes; closure unchanged |
+| `bun ./script/helpers/verify.ts` | repo root | **0** | 7 findings | 14,083 helpers, 0 findings, no baseline re-recorded |
+| `bun run lint` | repo root | 1 | 288 errors | **165** against 140 at base |
+| `bun run predev` / `bundleClaxedoServer` | claxedo-desktop | 1 | blocked | still blocked, same `connectEmbeddedWorkspacePty` break |
+
+### The five branch-introduced reds
+
+- **R-6 and R-7 were one defect, and the R-6 entry above is wrong.** §2 recorded R-6 as a test-budget defect — `launch-gate.test.ts` sleeping exactly Bun's default 5 s — and offered widening the budget as the fix. That was a workaround written up as a diagnosis: the test was reached through a `--timeout 20000` run that made it green without explaining why it was red. The real cause is R-7's. `CodexAppServerProcess.start` fired its failure-path retirement and forgot it, so disposal resolved while the retirement ran on; with the reviewed 3 s TERM grace the process outlived the disposal that claimed to have stopped it. Fixing that cleared both tests. The lane deliberately did **not** widen the budget, because a budget covering TERM-then-KILL would also have gone green and would then have kept passing if disposal ever regressed. Closed by `ac17e7d9a0`.
+- **R-10 closed by `799c3a7740`**, and the cause was worse than §2 recorded: `tsx` is not resolvable from `agent-sdk-runtime` at all — it is a `workspace-runtime` devDependency — so `--import tsx` only ever worked when the host process happened to have it, and never for a gate spawned into the payload's directory. `runnerFor` now resolves the loader to an absolute `file://` URL from the owning package, returns nothing when it cannot, and the resolver skips a candidate it cannot execute rather than spawning a child that exits 1. The gate's startup stderr is attached to the failure, and a gate that never reports is wrapped in a typed refusal instead of reaching a route as a bare 500. `claxedo-local-server`'s `embedded-workspace-runtime.test.ts` is 29/29 with no environment override.
+- **R-13 closed**, in three passes: the launch lane took three names, the harness lane two, and this lane the remaining four. `errorText` in the OpenCode adapter was the notable one — a second spelling inside a file that already imported the package's stated one way to turn a thrown value into text. One fix introduced a new finding of its own — a single-use type parameter was resolved by naming the function for its mechanism, `readJson`, which is what three other helpers that read a file or a request body are already called — and needed a fourth pass (`9ac83b4530`, `readOwnershipColumn`). The rule that falls out: a helper named for what it does to a value has to say what kind of value. The ratchet runs at the repo root, so a package-scoped lint pass never sees the collision.
+- **R-14 is 288 → 165 against 140 at base.** What was removed and what remains is §12.
+
+### The three claxedo-server failures, classified
+
+- `deployment-closures.test.ts` — self-hosted-node closed over 41 packages against a ceiling of 40. The test file is untouched by this branch and its ceiling reads 40 at base too, so the branch added the package: `@claxedo/agent-runtime-contract`, reached from `src/channels/control-plane.ts` so a channel Stop decodes the outcome rather than reading fields off the JSON. That dependency was already reviewed and recorded at `script/product-boundary/policies/server.ts`, which is why the root walker accepts 41 — one measurement written down twice, with only one copy updated. Raised to exactly 41 with no headroom in `fd903a84b2`; that file alone is 8/8. The full suite was not re-run for a one-line ceiling change, so the standing count is 3133 pass / 2 fail.
+- `machine-dispatch.runtime.test.ts` and `host-tunnel.e2e.test.ts` — **pre-existing**. Both fail at `892ad3202c` with the same messages ("Machine prompt completed without an observed terminal event", "Expected WebSocket message was not received"), in a base worktree with the five dist-resolving packages built. Both sit downstream of the `connectEmbeddedWorkspacePty` break in §5. Classifying them needed the base tree to build at all, which it only does with `@claxedo/agent-event-runtime`'s dist present — the gap `13d32b8acc` closes for source-first consumers.
+
+### A regression this sweep caused and caught
+
+Committing the auto-fixable half of the lint findings turned `opencode-server-adapter` red: three `!` assertions in `agent-sdk-runtime/src/launch/identity.ts` that `no-unnecessary-type-assertion` calls unnecessary are load-bearing for a consumer that compiles the same source with `noUncheckedIndexedAccess`. A fourth, on `acp/process.ts:418`, turned agent-sdk-runtime itself red. Both were reverted. The rule is not safe to auto-fix across a source-first seam, and is recorded as such rather than suppressed.
+
+### Two findings about method, from the lanes
+
+Both are about believing a green test, and both cost a lane a cycle in this wave:
+
+1. **When a green test has two independently sufficient causes, mutating them one at a time proves nothing** — each mutant survives on the other. Only reverting both reproduces the failure. This is how a test-budget change and a real containment fix looked equally sufficient for R-6/R-7.
+2. **The first honest implementation can turn a green test red by exposing what was already broken.** It happened twice here: the PTY parentage guard, and the PTY disposal in `7045e7519b`, where the old code deleted the session regardless, so a terminal that was never verifiably stopped looked stopped. A newly red test after an honesty fix is evidence about the old code, not about the new.
+3. **Review does not catch a wrong premise; a real resource does.** The launch lane's `parentPid === process.pid` ownership guard read as obviously correct and passed review, and was wrong because node-pty's spawn helper, not the runtime, is a terminal's parent. Only a test against a real PTY found it.
+
+The common shape under all three: green means no assertion fired, and an assertion can fail to fire for reasons that have nothing to do with the behaviour under test.
+
+## 12. Lint residuals, owned
+
+`bun run lint` at the root: **165** errors, against **140** at the branch base and **288** when §1 was written. Measured by diffing findings per rule and file between the two trees, the branch had added **144**; **99** of those are gone, along with about sixteen that predate the branch. What went: forty dead imports the recovery cutover left behind, and forty-four assertions and casts on values that no longer need them.
+
+The **45** that remain are not mechanical. Each was read before being left:
+
+| Rule | Count | Where | Why it is still here |
+|---|---|---|---|
+| `no-floating-promises` | 23 | `harnesses/acp/{index,process,process-manager}.ts` (10), `harnesses/pi/driver.ts` (4), and the acp test files (9) | `dispose()` and `restart()` became async and their synchronous call sites were never revisited. `void` would silence the rule and swallow exactly the failure this refactor exists to surface; each site has to decide whether to await or route the failure to an owner. Harness owner. |
+| `no-unsafe-type-assertion` | 15 | `workspace-runtime/src/ownership/launch-ownership-sqlite.ts` (6), `claxedo-local-server/src/app/{daemon-ownership-snapshot,daemon-operation-store}.ts` (4), `claxedo-desktop/src/main/{daemon-recovery,server-daemon-lease}.ts` (2), + 3 | All one shape: a durable record asserted onto a type rather than read. Each needs a decoder, the way the U8 smoke's `inspectMachine` was rewritten. Ownership and daemon owners. |
+| `no-unnecessary-type-assertion` | 3 | `agent-sdk-runtime/src/launch/identity.ts:63,69,103` | The rule is wrong across the source-first seam: agent-sdk-runtime compiles without `noUncheckedIndexedAccess` and `opencode-server-adapter` compiles the same source with it. Removing them was tried and turned that package red. Keep. |
+| `consistent-return` | 3 | `claxedo-mcp/src/tools/recovery-report.ts:49,99`, `claxedo-channels/src/core/session-stop.ts:38` | Exhaustive switches over `RecoveryRefusal` whose cases read per-variant fields, so a lookup table cannot replace them. Silencing the rule needs an `assertNever`, which would itself be a new duplicated name. |
+| `no-useless-spread` | 1 | `agent-sdk-runtime/src/harnesses/shared/sdk-runtime-interactions.ts:221` | The rule is wrong: the spread snapshots a collection the loop then mutates. Removing it introduces a mutation-during-iteration bug. Keep. |
+
+Two changes in the sweep are not removals and are worth naming: `AgentRuntimeFactoryContext.reportOwnerFailure` and its harness twin became property signatures, which is what the five factories passing the function by reference already assumed, and `draftSessionStart.update` did the same for its two call sites. The harness lane made the same change to `CodexTurnStop.stop` for the same reason.
