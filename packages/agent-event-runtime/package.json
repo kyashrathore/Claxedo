@@ -91,9 +91,9 @@
       "default": "./dist/harnesses/cursor.mjs"
     },
     "./harnesses/pi": {
+      "development": "./src/harnesses/pi/index.ts",
+      "bun": "./src/harnesses/pi/index.ts",
       "types": "./dist/harnesses/pi/index.d.ts",
-      "bun": "./dist/harnesses/pi.mjs",
-      "development": "./dist/harnesses/pi.mjs",
       "import": "./dist/harnesses/pi.mjs",
       "default": "./dist/harnesses/pi.mjs"
     }
