@@ -100,7 +100,7 @@ function adapter(input: {
     ...(input.getMessagePage ? {
       getMessagePage: (binding, page) => input.getMessagePage!(binding.sessionId, page, binding.directory),
     } : {}),
-    abort: async () => ({ ok: true, status: "cancelled" }),
+    cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
     revert: async () => {},
     unrevert: async () => {},
     forkSession: async () => ({ id: "forked" }),

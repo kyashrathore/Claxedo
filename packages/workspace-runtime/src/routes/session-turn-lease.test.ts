@@ -1,7 +1,48 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionAccessPolicy, SessionTurnLeaseDecision } from "../session-access-policy"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { DEFAULT_RECOVERY_BUDGETS, type RecoveryFacts, type RecoveryOutcome, type RecoveryOperationState, type RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { acquireSessionTurnLease } from "./session-turn-lease"
+
+const target: RecoveryTurnTarget = {
+  scope: "turn",
+  workspaceId: "ws_1",
+  sessionId: "ses_1",
+  turnId: "msg_1",
+  ownerGeneration: "lease_1",
+}
+
+function facts(observedAt: number): RecoveryFacts {
+  return {
+    execution: { value: "terminal", source: "fixture", observedAt, generation: "lease_1" },
+    cleanup: { value: "verified_clear", source: "fixture", observedAt, generation: "lease_1" },
+    persistence: { value: "committed", source: "fixture", observedAt, generation: "lease_1" },
+  }
+}
+
+function contained(state: RecoveryOperationState = "succeeded"): RecoveryOutcome {
+  const at = Date.now()
+  return {
+    kind: "operation",
+    operation: {
+      operationId: "op_1",
+      requestId: "req_1",
+      target,
+      action: "cancel_turn",
+      scopeRevision: "lease_1",
+      attempt: 1,
+      state,
+      phase: "graceful_cancel",
+      phaseDeadlineAt: at + 1_000,
+      facts: facts(at),
+      cleanupErrors: [],
+      nextActions: [],
+      receipt: "durable",
+      createdAt: at,
+      updatedAt: at,
+    },
+  }
+}
 
 const access = {
   actor: { actorId: "actor_1", actorKind: "human" as const },
@@ -43,7 +84,7 @@ describe("durable session turn lease controller", () => {
             fencingToken: 1, acquiredAt: now, expiresAt: now + 1_000, ...invalid }),
           renewTurn: async () => { throw new Error("Invalid admission must not renew") },
           releaseTurn: async () => ({ released: true }),
-        }), access, turnId: "msg_invalid", onLost: () => {}, now: () => now,
+        }), access, turnId: "msg_invalid", onLost: () => contained(), now: () => now,
       })
       expect(acquisition).toMatchObject({ acquired: false, decision: { code: "session_turn_authority_invalid_response" } })
     }
@@ -60,7 +101,7 @@ describe("durable session turn lease controller", () => {
         renewTurn: () => ({ allowed: true, turnId: "msg_renew", leaseId: "proof_invalid", fencingToken: 1,
           acquiredAt: started, expiresAt: Number.POSITIVE_INFINITY }),
         releaseTurn: async () => ({ released: true }),
-      }), access, turnId: "msg_renew", onLost: lost,
+      }), access, turnId: "msg_renew", onLost: () => { lost(); return contained() },
     })
     expect(acquisition.acquired).toBe(true)
     if (!acquisition.acquired) return
@@ -97,7 +138,7 @@ describe("durable session turn lease controller", () => {
       }),
       access,
       turnId: "msg_clock_ahead",
-      onLost: () => { losses += 1 },
+      onLost: () => { losses += 1; return contained() },
       now: () => localNow,
     })
     expect(acquisition.acquired).toBe(true)
@@ -125,7 +166,7 @@ describe("durable session turn lease controller", () => {
           return new Promise((resolve) => { finishRenewal = resolve })
         },
         releaseTurn: async () => ({ released: true }),
-      }), access, turnId: "msg_delayed", now: () => localNow, onLost: () => { losses += 1 },
+      }), access, turnId: "msg_delayed", now: () => localNow, onLost: () => { losses += 1; return contained() },
     })
     expect(acquisition.acquired).toBe(true)
     if (!acquisition.acquired) return
@@ -154,7 +195,7 @@ describe("durable session turn lease controller", () => {
           fencingToken: 1, acquiredAt: started, expiresAt: started + 200 }),
         renewTurn: () => { renewals += 1; throw new Error("authority unavailable") },
         releaseTurn: async () => ({ released: true }),
-      }), access, turnId: "msg_throw", onLost: () => { losses += 1; throw new Error("cleanup failed") },
+      }), access, turnId: "msg_throw", onLost: (): RecoveryOutcome => { losses += 1; throw new Error("cleanup failed") },
     })
     expect(acquisition.acquired).toBe(true)
     if (!acquisition.acquired) return
@@ -191,7 +232,7 @@ describe("durable session turn lease controller", () => {
       }),
       access,
       turnId: "msg_1",
-      onLost: () => { losses += 1 },
+      onLost: () => { losses += 1; return contained() },
     })
     expect(acquisition.acquired).toBe(true)
     if (!acquisition.acquired) return
@@ -238,7 +279,7 @@ describe("durable session turn lease controller", () => {
       }),
       access,
       turnId: "msg_2",
-      onLost: () => {},
+      onLost: () => contained(),
     })
     expect(acquisition.acquired).toBe(true)
     if (!acquisition.acquired) return
@@ -249,4 +290,87 @@ describe("durable session turn lease controller", () => {
     expect(released).toEqual(["proof_2"])
     expect(acquisition.lease.valid()).toBe(false)
   })
+  test("keeps what containment reached, whatever it reached", async () => {
+    const cases: Array<[string, () => Promise<RecoveryOutcome> | RecoveryOutcome, (result: unknown) => void]> = [
+      ["a containment that stopped the turn", () => contained(), (result) => {
+        expect(result).toMatchObject({ outcome: { kind: "operation", operation: { state: "succeeded" } } })
+      }],
+      ["a containment the owner refused", () => ({ kind: "refused", refusal: { kind: "generation_conflict", message: "replaced" } }), (result) => {
+        expect(result).toMatchObject({ outcome: { kind: "refused", refusal: { kind: "generation_conflict" } } })
+      }],
+      ["a containment that rejected", () => Promise.reject(new Error("runtime is gone")), (result) => {
+        expect(result).toMatchObject({ error: "runtime is gone" })
+      }],
+      ["a containment that threw synchronously", (): RecoveryOutcome => { throw new Error("adapter exploded") }, (result) => {
+        expect(result).toMatchObject({ error: "adapter exploded" })
+      }],
+    ]
+    for (const [name, onLost, assert] of cases) {
+      const acquisition = await expiringLease(onLost)
+      expect(acquisition.acquired, name).toBe(true)
+      if (!acquisition.acquired) continue
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        expect(acquisition.lease.lost(), name).toBe(true)
+        const result = acquisition.lease.lossResult()
+        expect(result, name).toBeDefined()
+        expect(result!.at, name).toBeGreaterThan(0)
+        assert(result)
+      } finally {
+        await acquisition.lease.release()
+      }
+    }
+  })
+
+  test("a containment that outruns the graceful-cancel budget is recorded as unresolved, and a late success does not rewrite it", async () => {
+    let clock = Date.now()
+    const started = clock
+    let settle!: (outcome: RecoveryOutcome) => void
+    const acquisition = await acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId: "msg_slow", leaseId: "proof", fencingToken: 1,
+          acquiredAt: started, expiresAt: started + 20 }),
+        renewTurn: async () => await new Promise(() => {}),
+        releaseTurn: async () => ({ released: true }),
+      }),
+      access,
+      turnId: "msg_slow",
+      onLost: () => new Promise<RecoveryOutcome>((resolve) => { settle = resolve }),
+      now: () => clock,
+    })
+    expect(acquisition.acquired).toBe(true)
+    if (!acquisition.acquired) return
+    try {
+      clock = started + 21
+      await new Promise((resolve) => setTimeout(resolve, 30))
+      expect(acquisition.lease.lost()).toBe(true)
+      expect(acquisition.lease.lossResult()).toBeUndefined()
+
+      clock = started + 21 + DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs
+      await Bun.sleep(DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs + 20)
+      const expired = acquisition.lease.lossResult()
+      expect(expired).toMatchObject({ error: `Containing the lost turn exceeded ${DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs}ms` })
+
+      settle(contained())
+      await Bun.sleep(5)
+      expect(acquisition.lease.lossResult()).toEqual(expired!)
+    } finally {
+      await acquisition.lease.release()
+    }
+  }, DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs + 5_000)
 })
+
+function expiringLease(onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome) {
+  const started = Date.now()
+  return acquireSessionTurnLease({
+    policy: policy({
+      acquireTurn: () => ({ allowed: true, turnId: "msg_lost", leaseId: "proof", fencingToken: 1,
+        acquiredAt: started, expiresAt: started + 30 }),
+      renewTurn: async () => await new Promise(() => {}),
+      releaseTurn: async () => ({ released: true }),
+    }),
+    access,
+    turnId: "msg_lost",
+    onLost,
+  })
+}

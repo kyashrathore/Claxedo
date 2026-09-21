@@ -1,13 +1,14 @@
 import { HTTPException } from "hono/http-exception"
 import { flushRuntimeSessionDocuments } from "./document-hydration"
 import { acquireSessionTurnLease, type ActiveSessionTurnLease } from "./session-turn-lease"
-import { createSessionRoutes, type SessionRouteContext } from "./session-core"
+import { captureTurnTarget, containLostTurn, createSessionRoutes, type SessionRouteContext } from "./session-core"
 import { createChildSessionHost, type ChildOriginStore, type PendingChildWake } from "./session-children"
 import { createSessionDeliveryOwner, type SessionDeliveryStore } from "../session/delivery-owner"
 import { isAgentRuntimeTurnConflictError, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
 import { admitSessionPromptTurn, runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
 import {
   type AgentRuntime,
+  type AgentRuntimeRecovery,
   type AgentMessage,
   type AgentMessageAuthor,
   type AgentPermission,
@@ -92,6 +93,13 @@ export function SessionRoutes(
     sessionAccessPolicy?: SessionAccessPolicy
     beforeSessionOperation?: (input: { sessionId: string; operation: string }) => Response | undefined
     resolveRuntime?: (input?: { sessionId?: string; directory?: string; harness?: SessionHarness }) => AgentRuntime | Promise<AgentRuntime | undefined> | undefined
+    /**
+     * The recovery API of the runtime that already owns this session. It is
+     * separate from `resolveRuntime` because recovery never builds a harness
+     * and never waits on a closing workspace: a host that cannot answer it
+     * synchronously has no owner to answer for.
+     */
+    resolveRecoveryOwner?: (input: { sessionId: string }) => AgentRuntimeRecovery | undefined
     resolveExecutionBinding?: (input: {
       adapter: AgentHarnessAdapter
       directory: string
@@ -330,6 +338,7 @@ export function SessionRoutes(
     // revoked actor costs the session no process and no config write.
     let runtime: AgentRuntime | undefined
     let lease: ActiveSessionTurnLease | undefined
+    const lostTurn = captureTurnTarget()
     const access = {
       ...(relayed ? { actor: relayed.actor, authority: relayed.authority } : {}),
       operation: "prompt" as const,
@@ -341,7 +350,12 @@ export function SessionRoutes(
         policy: options.sessionAccessPolicy,
         access,
         turnId: input.body.messageID,
-        onLost: async () => { await runtime?.turns.abort(input.sessionId, input.directory, { turnId: input.body.messageID }) },
+        onLost: () => containLostTurn({
+          runtime: runtime?.recovery,
+          sessionId: input.sessionId,
+          target: lostTurn.get(),
+          caller: { callerId: `actor:${relayed.actor.actorId}`, authority: "session" },
+        }),
       })
       if (!acquired.acquired) return decline(acquired.decision.message)
       lease = acquired.lease
@@ -390,6 +404,7 @@ export function SessionRoutes(
             body: input.body,
             publishGlobal,
             createActiveTurnScope: scope,
+            onTurnTarget: lostTurn.set,
             ...(lease ? { turnAdmission: lease } : {}),
             ...(input.author ? { author: input.author } : {}),
             ...(relayed ? { actor: relayed.actor } : {}),
@@ -454,6 +469,9 @@ export function SessionRoutes(
         ...(harness ? { harness } : {}),
       })
     },
+    ...(options?.resolveRecoveryOwner
+      ? { resolveRecoveryOwner: (_c: SessionRouteContext, input: { sessionId: string }) => options.resolveRecoveryOwner!(input) }
+      : {}),
     resolveRuntime: options?.resolveRuntime
       ? async (c, input) => {
           const harness = requestedHarness(c)

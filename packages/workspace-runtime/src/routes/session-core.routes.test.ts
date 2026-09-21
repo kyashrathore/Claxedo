@@ -39,6 +39,8 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "GET /session/:id/message/:messageId/attachment/:attachmentId",
   "GET /session/:id/permission-mode",
   "GET /session/:id/queue",
+  "GET /session/:id/recovery",
+  "GET /session/:id/recovery/operations/:operationId",
   "GET /session/:id/subagents",
   "GET /session/:id/todo",
   "GET /session/capabilities",
@@ -48,7 +50,6 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "POST /question/:id/reject",
   "POST /question/:id/reply",
   "POST /session",
-  "POST /session/:id/abort",
   "POST /session/:id/command",
   "POST /session/:id/fork",
   "POST /session/:id/goal",
@@ -58,6 +59,7 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "POST /session/:id/message",
   "POST /session/:id/prompt_async",
   "POST /session/:id/queue/:seq/:action",
+  "POST /session/:id/recovery",
   "POST /session/:id/revert",
   "POST /session/:id/shell",
   "POST /session/:id/summarize",
@@ -128,10 +130,10 @@ describe("Claxedo client-presentation session route inventory", () => {
     expect(byClass.agent_turn).toEqual([
       "POST /question/:id/reject",
       "POST /question/:id/reply",
-      "POST /session/:id/abort",
       "POST /session/:id/message",
       "POST /session/:id/prompt_async",
       "POST /session/:id/queue/:seq/:action",
+      "POST /session/:id/recovery",
       "POST /session/:sessionId/permissions/:permId",
     ])
     expect(byClass.session_control).toEqual([

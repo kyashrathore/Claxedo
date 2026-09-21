@@ -6,6 +6,7 @@ import {
   assertAgentExecutionBinding,
   type AgentExecutionBinding,
   type AgentRuntimeError,
+  type RecoveryTurnTarget,
 } from "@claxedo/agent-runtime-contract"
 import type {
   AgentMessage,
@@ -179,6 +180,12 @@ export type RuntimePromptTurnInput = {
   onAdmissionSettled?: (error?: unknown) => void
   onSteeringResult?: (result: NonNullable<Awaited<ReturnType<AgentRuntime["turns"]["start"]>>["steering"]>) => void
   onDelivery?: PromptDeliveryObserver
+  /**
+   * The admitted turn's recovery identity, the moment admission returns it.
+   * The lease owner needs it before it can contain a turn whose authority was
+   * revoked, and it is the only place this host learns it.
+   */
+  onTurnTarget?: (target: RecoveryTurnTarget) => void
   /** Current durable lease generation, checked before every producer publish. */
   turnAdmission?: { valid(): boolean; fencingToken(): number }
   actor?: { actorId: string; actorKind: "human" | "agent" }
@@ -472,6 +479,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
         })
       : input.runtime.turns.start({ ...turnInput, parts, delivery })
     turn = await start()
+    if (turn.target) input.onTurnTarget?.(turn.target)
     if (turn.steering) input.onSteeringResult?.(turn.steering)
     input.onDelivery?.(turn.delivery)
     settleAdmission()

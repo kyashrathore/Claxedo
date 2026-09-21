@@ -8,6 +8,8 @@ import type {
   AgentPermission,
   AgentQuestion,
   AgentRuntime,
+  AgentRuntimeRecovery,
+  AgentRuntimeRecoveryInspection,
   AgentSession,
   RuntimeDirectory,
   SessionConfig,
@@ -15,8 +17,18 @@ import type {
   SessionModelGroup,
   HarnessCapabilities,
   AgentGoalMutationResult,
+  RecoveryCaller,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
+import {
+  parseRecoveryRequest,
+  RecoveryContractError,
+  serializeRecoveryOutcome,
+  type RecoveryOutcome,
+  type RecoveryRefusal,
+  type RecoveryTurnTarget,
+  type RecoveryRequest,
+} from "@claxedo/agent-runtime-contract"
 import { elicitationError } from "./elicitation-error"
 import type {
   AgentHarnessAdapter,
@@ -40,14 +52,12 @@ import {
   questionRejected,
   questionReplied,
   sessionError,
-  sessionStatus,
   sessionUpdated,
   sessionDeleted,
   withDir,
   type CompatEvent,
   type CompatEnvelope,
 } from "../compat-events"
-import { recovering } from "@claxedo/agent-sdk-runtime/status"
 import { isAgentRuntimeGoalError } from "@claxedo/agent-sdk-runtime"
 import {
   admitSessionPromptTurn,
@@ -300,7 +310,13 @@ async function cascadeToChildren(
     if (!await readSession(opts, c, directory, childSessionId)) continue
     const childAdapter = await opts.resolveAdapter(c, { sessionId: childSessionId, directory })
     const binding = await requireExecutionBinding(opts, c, directory, childSessionId, childAdapter)
-    await childAdapter.abort?.(binding).catch(() => undefined)
+    // Archiving a child stops the turn it is running. The runtime keeps the
+    // operation whatever it reaches, so a cancellation that does not land is
+    // visible through the child's own recovery inspection rather than lost.
+    const childOwner = opts.resolveRecoveryOwner?.(c, { sessionId: childSessionId })
+    if (childOwner) {
+      await cancelAdmittedTurn(childOwner, childSessionId, recoveryCaller(c), `archive-child:${childSessionId}:${randomUUID()}`)
+    }
     const body = { time: { archived: updates.archived ?? Date.now() } }
     const session = await childAdapter.updateSession(binding, body)
     if (!session) continue
@@ -429,6 +445,14 @@ type Opts = {
       directory?: string
     },
   ) => Promise<AgentRuntime | undefined> | AgentRuntime | undefined
+  /**
+   * The runtime that already owns this session, or nothing. Recovery resolves
+   * no harness and awaits nothing: `resolveRuntime` builds an adapter when the
+   * session has none, which starts the very compute a caller is trying to
+   * contain, and it refuses outright once the workspace is closing — which is
+   * when recovery most has to answer.
+   */
+  resolveRecoveryOwner?: (c: Ctx, input: { sessionId: string }) => AgentRuntimeRecovery | undefined
   resolveExecutionBinding?: (
     c: Ctx,
     directory: RuntimeDirectory,
@@ -838,7 +862,7 @@ async function acquireManagedPromptLease(input: {
   c: Ctx
   sessionId: string
   turnId?: string
-  onLost: () => Promise<void> | void
+  onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome
 }): Promise<{ lease?: ActiveSessionTurnLease; rejected?: Response }> {
   if (!managedSessionLifecycle(input.opts, input.c)) return {}
   if (!input.turnId) {
@@ -873,18 +897,69 @@ function turnScope(base: ActiveTurnScope | undefined, lease: ActiveSessionTurnLe
   }
 }
 
-async function stopLostTurn(
-  runtime: AgentRuntime | undefined,
-  adapter: AgentHarnessAdapter,
-  sessionId: string,
-  directory: RuntimeDirectory,
-  binding: () => Promise<AgentExecutionBinding>,
-) {
-  if (runtime) {
-    await runtime.turns.abort(sessionId, directory).catch(() => undefined)
-    return
+/**
+ * The admitted turn's recovery identity, filled the moment admission returns
+ * it. The lease is taken before any turn exists, so its loss callback has
+ * nothing to name until this is set.
+ */
+export function captureTurnTarget() {
+  let target: RecoveryTurnTarget | undefined
+  return {
+    set: (next: RecoveryTurnTarget) => { target = next },
+    get: () => target,
   }
-  await adapter.abort?.(await binding()).catch(() => undefined)
+}
+
+/**
+ * Contain the turn whose durable authority was just revoked, under the exact
+ * identity admission handed back. A cancellation carrying only the session
+ * would reach whatever is running when it arrives, which after a replacement
+ * is somebody else's turn.
+ */
+export async function containLostTurn(input: {
+  runtime: AgentRuntimeRecovery | undefined
+  sessionId: string
+  target: RecoveryTurnTarget | undefined
+  caller: RecoveryCaller
+}): Promise<RecoveryOutcome> {
+  if (!input.runtime) {
+    return refusedOutcome("unavailable", `No runtime owns session ${input.sessionId} to contain its lost turn`)
+  }
+  const target = input.target
+  if (!target) {
+    return refusedOutcome("generation_conflict", `Session ${input.sessionId} lost its turn authority before a turn was admitted`)
+  }
+  return await submitCancelTurn(input.runtime, target, input.caller, `session-turn-lease-loss:${target.turnId}:${target.ownerGeneration}`)
+}
+
+/** Cancel whichever turn the owner reports as admitted, or nothing when none is. */
+async function cancelAdmittedTurn(
+  runtime: AgentRuntimeRecovery,
+  sessionId: string,
+  caller: RecoveryCaller,
+  requestId: string,
+): Promise<RecoveryOutcome | undefined> {
+  const target = runtime.inspect(sessionId).target
+  return target ? await submitCancelTurn(runtime, target, caller, requestId) : undefined
+}
+
+function submitCancelTurn(
+  runtime: AgentRuntimeRecovery,
+  target: RecoveryTurnTarget,
+  caller: RecoveryCaller,
+  requestId: string,
+): Promise<RecoveryOutcome> {
+  return runtime.submit({
+    requestId,
+    action: "cancel_turn",
+    target,
+    scopeRevision: target.ownerGeneration,
+    attempt: 1,
+  }, caller)
+}
+
+function refusedOutcome(kind: "unavailable" | "generation_conflict", message: string): RecoveryOutcome {
+  return { kind: "refused", refusal: { kind, message } }
 }
 
 function lostTurnResponse(sessionId: string) {
@@ -1033,6 +1108,60 @@ async function creationReservationGuard(opts: Opts, c: Ctx, sessionId: string, o
     path: c.req.path,
   })
   return decision.allowed ? undefined : sessionAccessDenied(decision)
+}
+
+const RECOVERY_REFUSAL_STATUS: Readonly<Record<RecoveryRefusal["kind"], ContentfulStatusCode>> = {
+  generation_conflict: 409,
+  intent_conflict: 409,
+  scope_changed: 409,
+  receipt_expired: 410,
+  unauthorized: 403,
+  unavailable: 503,
+  version_update_required: 426,
+}
+
+/** Every recovery path, for a host deciding what it still serves while closing. */
+export function isSessionRecoveryPath(pathname: string) {
+  return /^\/session\/[^/]+\/recovery(\/operations\/[^/]+)?$/.test(pathname)
+}
+
+/**
+ * Who the runtime records the operation against. It comes from the claims a
+ * boundary verified, never from the body: a caller able to name itself could
+ * join or read an operation another caller owns. An unnamed request still has
+ * one thing established about it — how it reached this runtime — and that is
+ * what it is recorded as, rather than a shared anonymous identity.
+ */
+function recoveryCaller(c: Ctx): RecoveryCaller {
+  const { actor } = sessionAccessContext(c)
+  if (actor) return { callerId: `actor:${actor.actorId}`, authority: "session" }
+  return { callerId: `provenance:${sessionRequestProvenance(c)}`, authority: "session" }
+}
+
+/**
+ * The bound a session route can answer for. `parseRecoveryRequest` already
+ * refuses an action whose scope is not the one it names, so a harness or
+ * machine target arriving here is a caller asking this session's authority to
+ * retire something it does not own.
+ */
+function recoveryOutOfSessionScope(request: RecoveryRequest, sessionId: string): RecoveryRefusal | undefined {
+  const target = request.target
+  if (target.scope !== "turn" && target.scope !== "session") {
+    return { kind: "unauthorized", message: `Session authority cannot ${request.action} a ${target.scope}` }
+  }
+  if (target.sessionId !== sessionId) {
+    return { kind: "unauthorized", message: `Recovery target names session ${target.sessionId}, not ${sessionId}` }
+  }
+  return undefined
+}
+
+function recoveryResponse(c: Ctx, outcome: RecoveryOutcome) {
+  const status = outcome.kind === "operation" ? 200 : RECOVERY_REFUSAL_STATUS[outcome.refusal.kind]
+  return c.body(serializeRecoveryOutcome(outcome), status, { "content-type": "application/json" })
+}
+
+function recoveryRefused(c: Ctx, refusal: RecoveryRefusal) {
+  return recoveryResponse(c, { kind: "refused", refusal })
 }
 
 async function sessionOperationGuard(
@@ -1336,6 +1465,52 @@ export function createSessionRoutes(opts: Opts) {
       if (timer) clearTimeout(timer)
     }
   }
+  /**
+   * Recovery is registered ahead of every gate this router adds, so a request
+   * to inspect or contain a session is not queued behind the serving path it
+   * is about. The workspace host owes the same of its own closing gate.
+   */
+  app
+    .get("/session/:id/recovery", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "recovery_inspect")
+      if (guarded) return guarded
+      const runtime = opts.resolveRecoveryOwner?.(c, { sessionId })
+      if (!runtime) {
+        return c.json(errorBody("recovery_owner_unavailable", `No runtime owns session ${sessionId} on this host`), 503)
+      }
+      return c.json<AgentRuntimeRecoveryInspection>(runtime.inspect(sessionId))
+    })
+    .get("/session/:id/recovery/operations/:operationId", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "recovery_inspect")
+      if (guarded) return guarded
+      const runtime = opts.resolveRecoveryOwner?.(c, { sessionId })
+      if (!runtime) return recoveryRefused(c, { kind: "unavailable", message: `No runtime owns session ${sessionId} on this host` })
+      const operationId = c.req.param("operationId")
+      const outcome = runtime.read(operationId, recoveryCaller(c))
+      // An id this owner has never held is not an expired receipt: it names no
+      // operation whose retention could have lapsed.
+      if (!outcome) return c.json(errorBody("recovery_operation_unknown", `Recovery operation ${operationId} is not held by this owner`), 404)
+      return recoveryResponse(c, outcome)
+    })
+    .post("/session/:id/recovery", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "recovery_submit")
+      if (guarded) return guarded
+      let request: RecoveryRequest
+      try {
+        request = parseRecoveryRequest(await boundedJsonBody(c))
+      } catch (error) {
+        if (!(error instanceof RecoveryContractError)) throw error
+        return c.json(errorBody("recovery_request_invalid", error.message, { code: error.code }), 400)
+      }
+      const outOfScope = recoveryOutOfSessionScope(request, sessionId)
+      if (outOfScope) return recoveryRefused(c, outOfScope)
+      const runtime = opts.resolveRecoveryOwner?.(c, { sessionId })
+      if (!runtime) return recoveryRefused(c, { kind: "unavailable", message: `No runtime owns session ${sessionId} on this host` })
+      return recoveryResponse(c, await runtime.submit(request, recoveryCaller(c)))
+    })
   // Wakes left by a previous process are re-issued on the first request, once
   // the host has a store and adapters to deliver them with.
   app.use("*", async (_c, next) => {
@@ -1930,12 +2105,13 @@ export function createSessionRoutes(opts: Opts) {
         if (result.ok) return c.json({ delivery: "steer", messageID: body.messageID })
         return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
       }
+      const lostTurn = captureTurnTarget()
       const turnAdmission = await acquireManagedPromptLease({
         opts,
         c,
         sessionId: id,
         turnId: body.messageID,
-        onLost: () => stopLostTurn(runtime, adapter, id, directory, () => requireExecutionBinding(opts, c, directory, id, adapter)),
+        onLost: () => containLostTurn({ runtime: runtime?.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
       })
       if (turnAdmission.rejected) return turnAdmission.rejected
       if (!runtime) await applyTurnPermissionMode({ adapter, binding: await requireExecutionBinding(opts, c, directory, id, adapter), modeId: body.permissionMode })
@@ -1954,6 +2130,7 @@ export function createSessionRoutes(opts: Opts) {
                 body,
                 publishGlobal: opts.publishGlobal,
                 activeTurn,
+                onTurnTarget: lostTurn.set,
                 ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
                 actor: access.actor,
                 author: access.author,
@@ -2174,26 +2351,6 @@ export function createSessionRoutes(opts: Opts) {
         throw error
       }
     })
-    .post("/session/:id/abort", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "abort")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "abort", "abort")
-      if (unsupported) return unsupported
-      const runtime = await opts.resolveRuntime?.(c, { sessionId, directory })
-      // A Stop names the turn the caller was looking at, so a request that
-      // lands after that turn ended cannot cancel the one that replaced it.
-      const turnId = c.req.query("turnId")
-      const result = runtime
-        ? await runtime.turns.abort(sessionId, directory, turnId ? { turnId } : undefined)
-        : await adapter.abort!(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
-      if (result.status === "recovering") {
-        opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionStatus(sessionId, recovering(result.message))))
-      }
-      return c.json(result)
-    })
     .post("/session/:id/revert", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "revert")
@@ -2405,12 +2562,13 @@ export function createSessionRoutes(opts: Opts) {
           if (result.ok) return c.json({ delivery: "steer" })
           return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : 409)
         }
+        const lostTurn = captureTurnTarget()
         const turnAdmission = await acquireManagedPromptLease({
           opts,
           c,
           sessionId: id,
           turnId: body.messageID,
-          onLost: () => stopLostTurn(runtime, adapter, id, directory, () => requireExecutionBinding(opts, c, directory, id, adapter)),
+          onLost: () => containLostTurn({ runtime: runtime?.recovery, sessionId: id, target: lostTurn.get(), caller: recoveryCaller(c) }),
         })
         if (turnAdmission.rejected) return turnAdmission.rejected
         let settleAdmission: ((error?: unknown) => void) | undefined
@@ -2435,6 +2593,7 @@ export function createSessionRoutes(opts: Opts) {
               : undefined,
             ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
             streamErrorMessage: streamTurnErrorMessage,
+            onTurnTarget: lostTurn.set,
             onAdmissionSettled: settleAdmission,
             actor: access.actor,
             author: access.author,

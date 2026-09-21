@@ -60,7 +60,8 @@ export type SessionAccessOperation =
   | "question_response"
   | "todo_read"
   | "queue_read"
-  | "abort"
+  | "recovery_inspect"
+  | "recovery_submit"
   | "revert"
   | "unrevert"
   | "fork"
@@ -311,7 +312,9 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "POST /question/:id/reject": { kind: "authorize", operation: "question_response" },
   "POST /question/:id/reply": { kind: "authorize", operation: "question_response" },
   "POST /session": { kind: "authorize", operation: "session_create" },
-  "POST /session/:id/abort": { kind: "authorize", operation: "abort" },
+  "GET /session/:id/recovery": { kind: "authorize", operation: "recovery_inspect" },
+  "GET /session/:id/recovery/operations/:operationId": { kind: "authorize", operation: "recovery_inspect" },
+  "POST /session/:id/recovery": { kind: "authorize", operation: "recovery_submit" },
   "POST /session/:id/command": { kind: "authorize", operation: "command" },
   "POST /session/:id/fork": { kind: "authorize", operation: "fork" },
   "POST /session/:id/message": { kind: "authorize", operation: "prompt" },
@@ -337,7 +340,7 @@ const AGENT_TURN_OPERATIONS = new Set<SessionAccessOperation>([
   "prompt",
   "permission_response",
   "question_response",
-  "abort",
+  "recovery_submit",
 ])
 
 const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([

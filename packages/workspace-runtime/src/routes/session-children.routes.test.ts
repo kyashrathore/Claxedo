@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
+import { NO_HARNESS_EFFORT, type RecoveryFacts } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage, AgentPermissionMode, AgentPermissionModeState, AgentSession, SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
@@ -100,10 +100,6 @@ function fixture(input: {
       return (async function* () {})()
     },
     getMessages: async (binding) => messages.get(binding.sessionId) ?? [],
-    abort: async (binding) => {
-      calls.aborted.push(binding.sessionId)
-      return { ok: true, status: "cancelled" }
-    },
     executeCommand: async () => {},
     listCommands: async () => [],
     listAgents: async () => [],
@@ -129,10 +125,39 @@ function fixture(input: {
     runtimeEvents.push(event)
   })
   const admissions: Array<{ sessionId: string; fencingToken?: number }> = []
+  const recoveryFacts: RecoveryFacts = {
+    execution: { value: "terminal", source: "fixture", observedAt: 1, generation: "lease_1" },
+    cleanup: { value: "verified_clear", source: "fixture", observedAt: 1, generation: "lease_1" },
+    persistence: { value: "committed", source: "fixture", observedAt: 1, generation: "lease_1" },
+  }
+  const recovery = {
+    inspect: (sessionId: string) => ({
+      sessionId,
+      target: { scope: "turn" as const, workspaceId: "workspace-test", sessionId, turnId: "msg_active", ownerGeneration: "lease_1" },
+      facts: recoveryFacts,
+      health: { status: "ok" as const },
+      failures: [],
+      operations: [],
+      queued: 0,
+    }),
+    submit: async (request: { requestId: string; target: { sessionId: string } }) => {
+      calls.aborted.push(request.target.sessionId)
+      return {
+        kind: "operation" as const,
+        operation: {
+          operationId: `op_${calls.aborted.length}`, requestId: request.requestId, target: request.target as never,
+          action: "cancel_turn" as const, scopeRevision: "lease_1", attempt: 1, state: "succeeded" as const,
+          phase: "graceful_cancel" as const, phaseDeadlineAt: 2, facts: recoveryFacts, cleanupErrors: [],
+          nextActions: [], receipt: "durable" as const, createdAt: 1, updatedAt: 1,
+        },
+      }
+    },
+    read: () => undefined,
+  }
   const runtime = {
+    recovery,
     turns: {
       whenIdle: async () => ({ abandon() {} }),
-      abort: async () => {},
       start: async (turn: { sessionId: string; messageId: string; parts: unknown[]; admission?: { fencingToken(): number }; onAdmitted?: () => void }) => {
         calls.prompts.push({
           sessionId: turn.sessionId,
@@ -156,6 +181,7 @@ function fixture(input: {
     eventHub,
     ...(input.policy ? { sessionAccessPolicy: input.policy } : {}),
     ...(input.withRuntime ? { resolveRuntime: () => runtime as never } : {}),
+    resolveRecoveryOwner: () => recovery as never,
     afterCreateSession: ({ session }) => { calls.projected.push(session) },
     resolveExecutionBinding: ({ directory, sessionId }) => ({
       sessionId,
@@ -459,7 +485,7 @@ describe("POST /session with parentID", () => {
     expect(await unknown.json()).toMatchObject({ error: { code: "unknown_permission_mode" } })
   })
 
-  test("archiving or deleting the parent cascades to its children on their own adapter", async () => {
+  test("archiving or deleting the parent cancels each child's turn through its own recovery owner", async () => {
     const item = fixture()
     item.seedParent("parent")
     const child = await (await item.create({ parentID: "parent" })).json() as { id: string }

@@ -270,7 +270,7 @@ describe("a share level narrows the authority's answer, not the runtime's questi
         return Response.json({ allowed: true })
       },
     })
-    const turnOperations = ["prompt", "permission_response", "question_response", "abort"] as const
+    const turnOperations = ["prompt", "permission_response", "question_response", "recovery_submit"] as const
     const controlOperations = [
       "shell",
       "permission_mode_write",

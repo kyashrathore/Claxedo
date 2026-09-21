@@ -5,6 +5,8 @@ import type {
   SessionTurnReleaseDecision,
 } from "../session-access-policy"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
+import { DEFAULT_RECOVERY_BUDGETS, type RecoveryOutcome } from "@claxedo/agent-runtime-contract"
+import { errorMessage } from "@claxedo/helpers"
 
 type Timer = ReturnType<typeof setTimeout>
 
@@ -12,11 +14,22 @@ function unref(timer: Timer) {
   ;(timer as Timer & { unref?: () => void }).unref?.()
 }
 
+/**
+ * What containment produced for the turn this lease was revoked under. An
+ * outcome that refuses, or an `onLost` that rejected or outran the graceful
+ * cancel budget, is a cleanup obligation this host still owns: the fence stops
+ * its writes, it does not stop the provider running tools.
+ */
+export type SessionTurnLeaseLossResult =
+  | { at: number; outcome: RecoveryOutcome }
+  | { at: number; error: string }
+
 export type ActiveSessionTurnLease = {
   signal: AbortSignal
   valid(): boolean
   lost(): boolean
   fencingToken(): number
+  lossResult(): SessionTurnLeaseLossResult | undefined
   release(): Promise<SessionTurnReleaseDecision>
 }
 
@@ -43,7 +56,7 @@ export async function acquireSessionTurnLease(input: {
   policy: SessionAccessPolicy
   access: SessionAccessPolicyInput & { sessionId: string }
   turnId: string
-  onLost: () => Promise<void> | void
+  onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome
   now?: () => number
 }): Promise<SessionTurnLeaseAcquisition> {
   const { policy } = input
@@ -71,6 +84,7 @@ export async function acquireSessionTurnLease(input: {
   let renewTimer: Timer | undefined
   let expiryTimer: Timer | undefined
   let lossStarted = false
+  let lossResult: SessionTurnLeaseLossResult | undefined
 
   const clearTimers = () => {
     if (renewTimer) clearTimeout(renewTimer)
@@ -78,17 +92,40 @@ export async function acquireSessionTurnLease(input: {
     renewTimer = undefined
     expiryTimer = undefined
   }
+  const recordLoss = (result: SessionTurnLeaseLossResult) => {
+    lossResult ??= result
+  }
   const lose = () => {
     if (closed || lossStarted) return
     lossStarted = true
     leaseLost = true
     clearTimers()
     controller.abort(new Error("Durable session turn lease was lost"))
-    try {
-      void Promise.resolve(input.onLost()).catch(() => {})
-    } catch {
-      // The fence is already closed even if producer cleanup fails synchronously.
-    }
+    let timer: Timer | undefined
+    const expired = new Promise<SessionTurnLeaseLossResult>((resolve) => {
+      timer = setTimeout(
+        () => resolve({ at: now(), error: `Containing the lost turn exceeded ${DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs}ms` }),
+        DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs,
+      )
+      unref(timer)
+    })
+    void (async () => {
+      try {
+        const attempted = Promise.resolve(input.onLost()).then(
+          (outcome): SessionTurnLeaseLossResult => ({ at: now(), outcome }),
+          (error): SessionTurnLeaseLossResult => ({ at: now(), error: errorMessage(error) }),
+        )
+        // A budget that expires first is what this lease keeps: the attempt is
+        // detached, not cancelled, and the runtime holds the operation it
+        // eventually settles. Letting a late success overwrite the record here
+        // would rewrite a timed-out containment into one that worked.
+        recordLoss(await Promise.race([attempted, expired]))
+      } catch (error) {
+        recordLoss({ at: now(), error: errorMessage(error) })
+      } finally {
+        if (timer) clearTimeout(timer)
+      }
+    })()
   }
   const stillValid = () => {
     if (closed || leaseLost) return false
@@ -142,6 +179,7 @@ export async function acquireSessionTurnLease(input: {
       valid: stillValid,
       lost: () => leaseLost,
       fencingToken: () => current.fencingToken,
+      lossResult: () => lossResult,
       async release() {
         if (closed) return { released: false }
         closed = true

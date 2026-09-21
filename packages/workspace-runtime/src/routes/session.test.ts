@@ -127,7 +127,7 @@ function adapter(input: {
     ...(input.getMessagePage ? {
       getMessagePage: (binding, page) => input.getMessagePage!(binding.sessionId, page, binding.directory),
     } : {}),
-    abort: async () => ({ ok: true, status: "cancelled" }),
+    cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
     revert: async () => {},
     unrevert: async () => {},
     forkSession: async () => ({ id: "forked" }),
@@ -1545,85 +1545,6 @@ describe("session prompt route", () => {
     expect(executions).toBe(3)
   })
 
-  it("returns structured abort result and publishes recovery status", async () => {
-    const directory = process.cwd()
-    const seen: CompatEvent[] = []
-    const app = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        // This test specifically exercises the recovery
-        // surface; override the default adapter's abort (which
-        // returns "cancelled") so the route receives the recovering
-        // shape it then publishes through the global bus.
-        abort: async () => ({
-          ok: false as const,
-          status: "recovering" as const,
-          message: "ACP session cancellation failed; the agent process was stopped.",
-        }),
-      }),
-      resolveDirectory: async () => directory,
-      publishGlobal(event) {
-        seen.push(event.payload)
-      },
-    })
-
-    const res = await app.request(`http://localhost/session/s1/abort?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-    })
-
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({
-      ok: false,
-      status: "recovering",
-      message: "ACP session cancellation failed; the agent process was stopped.",
-    })
-    expect(seen).toEqual([{
-      id: "session.status:s1",
-      type: "session.status",
-      properties: {
-        sessionID: "s1",
-        status: {
-          type: "recovering",
-          kind: "process_restart",
-          message: "ACP session cancellation failed; the agent process was stopped.",
-        },
-      },
-    }])
-  })
-
-  it("aborts through the session runtime so cancellation becomes a durable turn outcome", async () => {
-    const directory = process.cwd()
-    const calls = { adapterAborts: 0, runtimeAborts: 0 }
-    const app = createSessionRoutes({
-      resolveAdapter: async () => ({
-        ...adapter({}),
-        abort: async () => {
-          calls.adapterAborts++
-          return { ok: true as const, status: "cancelled" as const }
-        },
-      }),
-      resolveRuntime: async () => ({
-        turns: {
-          abort: async () => {
-            calls.runtimeAborts++
-            return { ok: true as const, status: "cancelled" as const }
-          },
-        },
-      }) as unknown as AgentRuntime,
-      resolveDirectory: async () => directory,
-      publishGlobal() {},
-    })
-
-    const res = await app.request(`http://localhost/session/s1/abort?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-    })
-
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true, status: "cancelled" })
-    expect(calls.runtimeAborts).toBe(1)
-    expect(calls.adapterAborts).toBe(0)
-  })
-
   it("returns typed unsupported operation failures from harness capabilities", async () => {
     const directory = process.cwd()
     const calls: string[] = []
@@ -1647,10 +1568,6 @@ describe("session prompt route", () => {
         instructionChannel: "turn-system-prompt",
         goals: false,
       }),
-      abort: async () => {
-        calls.push("abort")
-        return { ok: true as const, status: "cancelled" as const }
-      },
       revert: async () => {
         calls.push("revert")
       },
@@ -1676,7 +1593,6 @@ describe("session prompt route", () => {
     }))
 
     for (const item of [
-      { method: "POST", path: "/session/s1/abort", operation: "abort" },
       { method: "POST", path: "/session/s1/revert", operation: "revert" },
       { method: "POST", path: "/session/s1/unrevert", operation: "unrevert" },
       { method: "POST", path: "/session/s1/fork", operation: "fork", body: { messageId: "m1" } },

@@ -51,7 +51,7 @@ function adapter(): AgentHarnessAdapter {
     readHarnessCapabilities: () => ({ harness: "codex", abort: true }) as never,
     executeTurn: () => (async function* () {})(),
     getMessages: async () => [],
-    abort: async () => ({ ok: true, status: "cancelled" }),
+    cancelTurn: async () => ({ execution: "terminal" as const, cleanup: "verified_clear" as const }),
     dispose: () => {},
   }
 }
@@ -59,7 +59,6 @@ function adapter(): AgentHarnessAdapter {
 function runtimeDouble(input: {
   starts: AgentRuntimeTurnStartInput[]
   deliveries: PromptDelivery[]
-  aborts?: Array<{ turnId?: string } | undefined>
   idle?: () => Promise<void>
   refuse?: (attempt: number) => Error | undefined
   abandons?: number[]
@@ -89,10 +88,6 @@ function runtimeDouble(input: {
       whenIdle: async () => {
         await (input.idle?.() ?? Promise.resolve())
         return { abandon: () => input.abandons?.push(input.starts.length) }
-      },
-      abort: async (_sessionId: string, _directory: unknown, scope?: { turnId?: string }) => {
-        input.aborts?.push(scope)
-        return { ok: true, status: "cancelled" }
       },
     },
     events: {
@@ -387,27 +382,6 @@ describe("how a prompt for a busy session is delivered", () => {
     expect(response.status).toBe(204)
     expect(await response.text()).toBe("")
     expect(starts.map((turn) => turn.delivery)).toEqual([undefined])
-  })
-})
-
-describe("scoping Stop to a turn", () => {
-  test("the turn the caller names reaches the runtime's abort", async () => {
-    const aborts: Array<{ turnId?: string } | undefined> = []
-    const response = await routes(runtimeDouble({ starts: [], deliveries: [], aborts }))
-      .request("http://localhost/session/session_1/abort?turnId=msg_first", { method: "POST" })
-
-    expect(response.status).toBe(200)
-    expect(aborts).toEqual([{ turnId: "msg_first" }])
-  })
-
-  test("a Stop with no turn named still aborts whatever is running", async () => {
-    const aborts: Array<{ turnId?: string } | undefined> = []
-    const response = await routes(runtimeDouble({ starts: [], deliveries: [], aborts }))
-      .request("http://localhost/session/session_1/abort", { method: "POST" })
-
-    expect(response.status).toBe(200)
-    expect(aborts).toHaveLength(1)
-    expect(aborts[0]).toBeUndefined()
   })
 })
 
