@@ -512,3 +512,18 @@ describe("the recovery command a Stop leaves behind", () => {
     expect(command?.outcome).toBeUndefined()
   })
 })
+
+test("an owner that refuses inspection leaves a command the user can act on", async () => {
+  clearSessionRecoveryCommand("inspect-refused")
+  const refusal = { kind: "refused" as const, refusal: { kind: "unavailable" as const, message: "no owner on this machine" } }
+  const double = clientDouble({
+    sessionID: "inspect-refused",
+    inspect: async () => ({ data: refusal }),
+  })
+
+  const result = await stopRunningTurn({ client: double.client, sessionID: "inspect-refused" })
+
+  expect(result).toEqual({ cancelled: true, outcome: refusal })
+  expect(sessionRecoveryCommand("inspect-refused")?.outcome).toEqual(refusal)
+  expect(double.requests).toEqual([])
+})

@@ -90,8 +90,20 @@ export async function stopRunningTurn(input: {
   const scope = input.directory === undefined ? {} : { directory: input.directory }
   const inspected = await input.client.session.recovery.inspect({ sessionID: input.sessionID, ...scope })
   // An owner that refused to answer has not said this session is idle, so the
-  // refusal is the Stop's outcome rather than a quiet "nothing to do".
-  if (isRecoveryOutcome(inspected.data)) return { cancelled: true, outcome: inspected.data }
+  // refusal is the Stop's outcome rather than a quiet "nothing to do". It is
+  // recorded as the command too: a refusal at inspection is the whole answer a
+  // user got, and without it the session has a failed Stop and nothing to act on.
+  if (isRecoveryOutcome(inspected.data)) {
+    const refusedRequestId = `composer-stop:${crypto.randomUUID()}`
+    startSessionRecoveryCommand({
+      sessionID: input.sessionID,
+      requestId: refusedRequestId,
+      action: "cancel_turn",
+      attempt: 1,
+    })
+    settleSessionRecoveryCommand({ sessionID: input.sessionID, requestId: refusedRequestId, outcome: inspected.data })
+    return { cancelled: true, outcome: inspected.data }
+  }
   const target = inspected.data.target
   if (!target) return { cancelled: false }
   if (input.expectedTurnId && target.turnId !== input.expectedTurnId) return { cancelled: false }
