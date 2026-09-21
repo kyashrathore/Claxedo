@@ -1,8 +1,15 @@
 import type { Accessor } from "solid-js"
-import type { RecoveryOutcome, RecoveryRequest, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
+import { isRecoveryOutcome, turnStopped, type RecoveryOutcome, type RecoveryRequest, type RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { setPromptSessionStatus, takePendingPrompt } from "../../submit/index"
-import { dispatchSessionRequestsEvent } from "../../store/session-status-dispatcher"
+import {
+  dispatchSessionRequestsEvent,
+  failSessionRecoveryCommand,
+  settleSessionRecoveryCommand,
+  startSessionRecoveryCommand,
+} from "../../store/session-status-dispatcher"
+import { describeRecoveryOutcome, describeRecoveryUnreachable } from "../../ui/recovery-outcome-copy"
+import type { RecoveryCopy } from "../../ui/recovery-outcome-copy"
 import { upsertDirectorySession } from "../../data/sync/directory-session-cache"
 import type { ClaxedoSession } from "../../data/session-types"
 import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../../data/sync/queries"
@@ -18,7 +25,7 @@ type SessionRequestItem = (PermissionRequest | QuestionRequest) & { sessionID?: 
 export type SessionRecoveryClient = {
   session: {
     recovery: {
-      inspect(input: { sessionID: string; directory?: string }): Promise<{ data: { target?: RecoveryTurnTarget } }>
+      inspect(input: { sessionID: string; directory?: string }): Promise<{ data: { target?: RecoveryTurnTarget } | RecoveryOutcome }>
       submit(input: { sessionID: string; directory?: string; request: RecoveryRequest }): Promise<{ data: RecoveryOutcome }>
     }
   }
@@ -37,18 +44,16 @@ type AbortClient = SessionRecoveryClient & {
   }
 }
 
-/** Only an operation that reached its postcondition stopped the turn. */
-export function turnCancellationSucceeded(outcome: RecoveryOutcome) {
-  return outcome.kind === "operation" && outcome.operation.state === "succeeded"
-}
-
-/** What to show a user whose Stop did not stop the turn. */
-export function recoveryOutcomeMessage(outcome: RecoveryOutcome) {
-  if (outcome.kind === "refused") return outcome.refusal.message
-  const operation = outcome.operation
-  return operation.initiatingError?.message
-    ?? operation.cleanupErrors[0]?.message
-    ?? `Cancellation is ${operation.state} in phase ${operation.phase}`
+/**
+ * A Stop that did not stop the turn, carrying the reading that says why. The
+ * message is the owner's own words when it gave any; a renderer with the
+ * dictionary to hand shows the reading's copy instead.
+ */
+export class RecoveryCommandFailure extends Error {
+  constructor(readonly copy: RecoveryCopy) {
+    super(copy.ownerMessage ?? copy.reading)
+    this.name = "RecoveryCommandFailure"
+  }
 }
 
 /**
@@ -59,6 +64,10 @@ export function recoveryOutcomeMessage(outcome: RecoveryOutcome) {
  */
 const cancellingTurns = new Map<string, string>()
 
+export type StopRunningTurnResult =
+  | { cancelled: false }
+  | { cancelled: true; outcome: RecoveryOutcome }
+
 /**
  * Stop the turn the owner reports as admitted, under the identity it reports
  * it with. `expectedTurnId` is the turn this caller started: when the owner is
@@ -66,31 +75,62 @@ const cancellingTurns = new Map<string, string>()
  * what replaced it would stop work nobody asked to stop. `cancelled: false`
  * therefore means there was nothing of this caller's to stop, which is not a
  * Stop that failed.
+ *
+ * `retryOf` makes the submission an explicit new attempt against the same
+ * turn: a fresh request id so the owner runs it rather than reading the
+ * finished one back, linked to the attempt it follows.
  */
 export async function stopRunningTurn(input: {
   client: SessionRecoveryClient
   sessionID: string
   directory?: string
   expectedTurnId?: string
-}): Promise<{ cancelled: false } | { cancelled: true; outcome: RecoveryOutcome }> {
+  retryOf?: { operationId: string; attempt: number }
+}): Promise<StopRunningTurnResult> {
   const scope = input.directory === undefined ? {} : { directory: input.directory }
   const inspected = await input.client.session.recovery.inspect({ sessionID: input.sessionID, ...scope })
+  // An owner that refused to answer has not said this session is idle, so the
+  // refusal is the Stop's outcome rather than a quiet "nothing to do".
+  if (isRecoveryOutcome(inspected.data)) return { cancelled: true, outcome: inspected.data }
   const target = inspected.data.target
   if (!target) return { cancelled: false }
   if (input.expectedTurnId && target.turnId !== input.expectedTurnId) return { cancelled: false }
   const key = `${target.sessionId}:${target.turnId}:${target.ownerGeneration}`
-  const requestId = cancellingTurns.get(key) ?? `composer-stop:${crypto.randomUUID()}`
+  const retry = input.retryOf
+  const requestId = retry
+    ? `composer-stop:${crypto.randomUUID()}`
+    : cancellingTurns.get(key) ?? `composer-stop:${crypto.randomUUID()}`
+  const attempt = retry ? retry.attempt + 1 : 1
   cancellingTurns.set(key, requestId)
+  startSessionRecoveryCommand({ sessionID: input.sessionID, requestId, action: "cancel_turn", attempt })
   try {
     const submitted = await input.client.session.recovery.submit({
       sessionID: input.sessionID,
       ...scope,
-      request: { requestId, action: "cancel_turn", target, scopeRevision: target.ownerGeneration, attempt: 1 },
+      request: {
+        requestId,
+        action: "cancel_turn",
+        target,
+        scopeRevision: target.ownerGeneration,
+        attempt,
+        ...(retry ? { linkedOperationId: retry.operationId } : {}),
+      },
     })
+    settleSessionRecoveryCommand({ sessionID: input.sessionID, requestId, outcome: submitted.data })
     return { cancelled: true, outcome: submitted.data }
+  } catch (error) {
+    // The owner never answered, so there are no facts: the turn may still be
+    // running. Recording the reach failure keeps the command visible and
+    // retryable instead of leaving the user with a toast and no operation.
+    failSessionRecoveryCommand({ sessionID: input.sessionID, requestId, message: stopReachMessage(error) })
+    throw error
   } finally {
     cancellingTurns.delete(key)
   }
+}
+
+function stopReachMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -175,8 +215,8 @@ export function createPromptAbort(input: {
       directory,
       ...(expectedTurnId ? { expectedTurnId } : {}),
     })
-    if (cancelled.cancelled && !turnCancellationSucceeded(cancelled.outcome)) {
-      throw new Error(recoveryOutcomeMessage(cancelled.outcome))
+    if (cancelled.cancelled && !turnStopped(cancelled.outcome)) {
+      throw new RecoveryCommandFailure(describeRecoveryOutcome(cancelled.outcome))
     }
     // Nothing here is the cancellation: these reads reconcile what the turn
     // left behind, so one of them failing is not a Stop that failed.
@@ -205,7 +245,8 @@ export function createPromptAbort(input: {
 export function createSubmitAbort(input: Parameters<typeof createPromptAbort>[0] & {
   hasActiveGoal?: () => boolean
   stopGoal?: () => void | Promise<unknown>
-  stopFailedTitle: () => string
+  /** Resolves a reading's keys against the active locale; only the caller has the dictionary. */
+  recoveryToast: (copy: RecoveryCopy) => { title: string; description: string }
   stopGoalFailedTitle: () => string
   errorMessage: (err: unknown) => string
   showToast: (toast: { title: string; description: string; variant: "error" }) => void
@@ -218,7 +259,10 @@ export function createSubmitAbort(input: Parameters<typeof createPromptAbort>[0]
       try {
         await promptAbort()
       } catch (err) {
-        input.showToast({ title: input.stopFailedTitle(), description: input.errorMessage(err), variant: "error" })
+        const copy = err instanceof RecoveryCommandFailure
+          ? err.copy
+          : describeRecoveryUnreachable(input.errorMessage(err))
+        input.showToast({ ...input.recoveryToast(copy), variant: "error" })
       }
     },
     onStopGoalError: (err) => {

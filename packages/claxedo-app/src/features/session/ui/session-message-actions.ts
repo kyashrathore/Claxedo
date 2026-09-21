@@ -14,7 +14,9 @@ import type { useSDK } from "@/features/session/app-ports"
 import type { useLanguage } from "@/platform/i18n/provider"
 import type { usePrompt } from "@/features/session/providers/prompt"
 import { forkSessionWithReservation } from "@/platform/runtime/private-session-reservation"
-import { stopRunningTurn, recoveryOutcomeMessage, turnCancellationSucceeded } from "../composer/ui/submit-abort"
+import { RecoveryCommandFailure, stopRunningTurn } from "../composer/ui/submit-abort"
+import { turnStopped } from "@claxedo/agent-runtime-contract"
+import { describeRecoveryOutcome, recoveryToastText } from "./recovery-outcome-copy"
 
 export function createSessionMessageActions(input: {
   sessionID: () => string | undefined
@@ -56,6 +58,10 @@ export function createSessionMessageActions(input: {
   }
 
   const fail = (err: unknown) => {
+    if (err instanceof RecoveryCommandFailure) {
+      showToast({ variant: "error", ...recoveryToastText(language.t, err.copy) })
+      return
+    }
     showToast({
       variant: "error",
       title: language.t("common.requestFailed"),
@@ -70,15 +76,17 @@ export function createSessionMessageActions(input: {
 
   /**
    * Revert and restore rewrite the transcript the turn is still writing, so
-   * they run only once the turn is known to have stopped. A cancellation that
-   * refused, failed or needs action is not that, and a caught rejection was
-   * never evidence of it either.
+   * they run only once the turn stopped and that is recorded. Cleanup the
+   * harness could not verify does not hold them back — nothing they rewrite
+   * depends on it — but an uncommitted finish does: it comes back on the next
+   * read and reopens what they just changed. A caught rejection was never
+   * evidence of either.
    */
   const halt = async (sessionID: string) => {
     if (!busy() || !supports("abort")) return
     const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
     if (!cancelled.cancelled) return
-    if (!turnCancellationSucceeded(cancelled.outcome)) throw new Error(recoveryOutcomeMessage(cancelled.outcome))
+    if (!turnStopped(cancelled.outcome)) throw new RecoveryCommandFailure(describeRecoveryOutcome(cancelled.outcome))
   }
 
   const fork = (forkInput: { sessionID: string; messageID: string }) => {

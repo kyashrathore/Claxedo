@@ -1,4 +1,4 @@
-import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeStatus as SessionStatus, RecoveryAction, RecoveryOutcome } from "@claxedo/agent-runtime-contract"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
   setSessionRequestsQueryData as writeSessionRequestsQueryData,
@@ -69,6 +69,27 @@ export type SessionStatusTimeoutStageEvent = {
   stage: SessionStatusStage
 }
 
+/**
+ * A recovery command a user asked for and what its owner answered.
+ *
+ * This is deliberately not a session status: a Stop that is in flight, or one
+ * that came back saying the harness may still be running, says nothing about
+ * what the transcript is doing. Writing either into the status query would
+ * replace the last thing the runtime actually reported with a guess.
+ */
+export type SessionRecoveryCommand = {
+  requestId: string
+  action: RecoveryAction
+  attempt: number
+  startedAt: number
+  /** Absent while the owner has not answered. */
+  outcome?: RecoveryOutcome
+  /** Set when the request never reached an owner, so there is no outcome to read. */
+  unreachable?: string
+}
+
+const RECOVERY_COMMAND_KEY_PART = "recovery-command"
+
 type SessionStatusTimeout = ReturnType<typeof setTimeout>
 
 const promptSessionStatusTimeouts = new Map<string, SessionStatusTimeout[]>()
@@ -76,6 +97,7 @@ const promptSessionStatusTimeouts = new Map<string, SessionStatusTimeout[]>()
 function createSessionNotificationDispatcher() {
   const byActivity = new Map<string, Set<VoidFunction>>()
   const byStatusMeta = new Map<string, Set<VoidFunction>>()
+  const byRecoveryCommand = new Map<string, Set<VoidFunction>>()
   const subscribe = (index: Map<string, Set<VoidFunction>>, sessionID: string, listener: VoidFunction) => {
     const listeners = index.get(sessionID) ?? new Set<VoidFunction>()
     listeners.add(listener)
@@ -89,13 +111,17 @@ function createSessionNotificationDispatcher() {
     notify(sessionID: string, type: unknown) {
       const listeners = type === "status-meta"
         ? byStatusMeta.get(sessionID)
-        : type === "status" || type === "requests"
-          ? byActivity.get(sessionID)
-          : undefined
+        : type === RECOVERY_COMMAND_KEY_PART
+          ? byRecoveryCommand.get(sessionID)
+          : type === "status" || type === "requests"
+            ? byActivity.get(sessionID)
+            : undefined
       for (const listener of listeners ?? []) listener()
     },
     subscribeActivity: (sessionID: string, listener: VoidFunction) => subscribe(byActivity, sessionID, listener),
     subscribeStatusMeta: (sessionID: string, listener: VoidFunction) => subscribe(byStatusMeta, sessionID, listener),
+    subscribeRecoveryCommand: (sessionID: string, listener: VoidFunction) =>
+      subscribe(byRecoveryCommand, sessionID, listener),
   }
 }
 
@@ -335,6 +361,71 @@ export function promptSessionStatusStage(sessionID: string | undefined) {
  */
 export function subscribePromptSessionStatusMeta(sessionID: string, listener: VoidFunction) {
   return sessionNotifications.subscribeStatusMeta(sessionID, listener)
+}
+
+export function sessionRecoveryCommand(sessionID: string | undefined) {
+  if (!sessionID) return undefined
+  return queryClient.getQueryData<SessionRecoveryCommand>(recoveryCommandKey(sessionID))
+}
+
+export function subscribeSessionRecoveryCommand(sessionID: string, listener: VoidFunction) {
+  return sessionNotifications.subscribeRecoveryCommand(sessionID, listener)
+}
+
+export function startSessionRecoveryCommand(input: {
+  sessionID: string
+  requestId: string
+  action: RecoveryAction
+  attempt: number
+  now?: number
+}) {
+  writeRecoveryCommand(input.sessionID, {
+    requestId: input.requestId,
+    action: input.action,
+    attempt: input.attempt,
+    startedAt: input.now ?? Date.now(),
+  })
+}
+
+/**
+ * Record what an owner answered, for the request that is still displayed.
+ *
+ * A late answer to a superseded request is dropped: the user is looking at the
+ * retry they asked for, and overwriting it with the attempt they already gave
+ * up on would show a stale verdict as the current one.
+ */
+export function settleSessionRecoveryCommand(input: {
+  sessionID: string
+  requestId: string
+  outcome: RecoveryOutcome
+}) {
+  const current = sessionRecoveryCommand(input.sessionID)
+  if (current?.requestId !== input.requestId) return false
+  writeRecoveryCommand(input.sessionID, { ...current, outcome: input.outcome })
+  return true
+}
+
+export function failSessionRecoveryCommand(input: { sessionID: string; requestId: string; message: string }) {
+  const current = sessionRecoveryCommand(input.sessionID)
+  if (current?.requestId !== input.requestId) return false
+  writeRecoveryCommand(input.sessionID, { ...current, unreachable: input.message })
+  return true
+}
+
+export function clearSessionRecoveryCommand(sessionID: string) {
+  writeRecoveryCommand(sessionID)
+}
+
+function writeRecoveryCommand(sessionID: string, command?: SessionRecoveryCommand) {
+  if (!command) {
+    removeExactQuery(recoveryCommandKey(sessionID))
+    return
+  }
+  queryClient.setQueryData(recoveryCommandKey(sessionID), command)
+}
+
+function recoveryCommandKey(sessionID: string) {
+  return shellDataKeys.sessionId(sessionID, RECOVERY_COMMAND_KEY_PART)
 }
 
 export function clearAllPromptSessionStatusTimeoutsForTest() {

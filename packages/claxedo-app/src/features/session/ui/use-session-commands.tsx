@@ -65,7 +65,9 @@ import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identi
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { createModelSelectionPicker } from "../commands/model-selection"
 import { focusComposerWhenReady } from "../composer/ui/composer-focus"
-import { stopRunningTurn, recoveryOutcomeMessage, turnCancellationSucceeded } from "../composer/ui/submit-abort"
+import { RecoveryCommandFailure, stopRunningTurn } from "../composer/ui/submit-abort"
+import { turnStopped } from "@claxedo/agent-runtime-contract"
+import { describeRecoveryOutcome } from "./recovery-outcome-copy"
 
 const DialogSelectFile = lazyDialog(() => import("@/features/session/ui/dialogs/select-file").then((module) => ({
   default: module.DialogSelectFile,
@@ -560,13 +562,14 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const sessionID = args.sessionId()
         if (!sessionID) return
         const currentStatus = args.status()
-        // Undo rewrites the transcript the turn is still writing. A
-        // cancellation that did not stop it fails the command instead of
-        // reverting under a turn that is still producing.
+        // Undo rewrites the transcript the turn is still writing, so it runs
+        // only once the turn stopped and that finish is committed. Cleanup the
+        // harness could not verify does not hold it back; an uncommitted finish
+        // does, because it comes back on the next read.
         if (supports("abort") && (currentStatus.type === "busy" || currentStatus.type === "retry")) {
           const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
-          if (cancelled.cancelled && !turnCancellationSucceeded(cancelled.outcome)) {
-            throw new Error(recoveryOutcomeMessage(cancelled.outcome))
+          if (cancelled.cancelled && !turnStopped(cancelled.outcome)) {
+            throw new RecoveryCommandFailure(describeRecoveryOutcome(cancelled.outcome))
           }
         }
         const revert = info()?.revert?.messageID

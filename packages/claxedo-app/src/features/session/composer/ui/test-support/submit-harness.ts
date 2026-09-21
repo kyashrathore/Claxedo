@@ -851,9 +851,57 @@ export async function installSubmitMocks(mock: ModuleMocker) {
               if (state.commandError) throw state.commandError
               return { data: undefined }
             },
-            abort: async () => {
-              calls.transportAbort += 1
-              return { data: { ok: true, status: "cancelled" } }
+            recovery: {
+              inspect: async (input: { sessionID: string }) => ({
+                data: {
+                  target: {
+                    scope: "turn" as const,
+                    workspaceId: "ws_1",
+                    sessionId: input.sessionID,
+                    turnId: "msg_running",
+                    ownerGeneration: "lease_1",
+                  },
+                },
+              }),
+              // A harness that cannot prove cleanup is what every adapter
+              // reports today, so the double answers what the real one does:
+              // the turn ended and the interruption is committed, cleanup
+              // unproven, and the operation therefore still `needs_action`.
+              submit: async ({ request }: { request: Record<string, unknown> }) => {
+                calls.transportAbort += 1
+                const evidence = (value: string, source: string) => ({
+                  value,
+                  source,
+                  observedAt: 1_000,
+                  generation: "lease_1",
+                })
+                return {
+                  data: {
+                    kind: "operation" as const,
+                    operation: {
+                      operationId: "op_1",
+                      requestId: request.requestId,
+                      target: request.target,
+                      action: request.action,
+                      scopeRevision: request.scopeRevision,
+                      attempt: request.attempt,
+                      state: "needs_action" as const,
+                      phase: "graceful_cancel" as const,
+                      phaseDeadlineAt: 2_000,
+                      facts: {
+                        execution: evidence("terminal", "codex"),
+                        cleanup: evidence("unknown", "codex"),
+                        persistence: evidence("committed", "store"),
+                      },
+                      cleanupErrors: [],
+                      nextActions: [],
+                      receipt: "durable" as const,
+                      createdAt: 1_000,
+                      updatedAt: 1_000,
+                    },
+                  },
+                }
+              },
             },
             status: async () => ({ data: {} }),
           },

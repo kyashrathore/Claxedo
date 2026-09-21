@@ -102,7 +102,9 @@ import { createSessionComposerModes } from "@/features/session/ui/composer/sessi
 import { createNewSessionDeepLinkPromptSeed } from "@/features/session/ui/composer/deep-link-prompt"
 import { assistantMessageIdForUserMessage } from "@/features/session/data/session-types"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
-import { stopRunningTurn, recoveryOutcomeMessage, turnCancellationSucceeded } from "../composer/ui/submit-abort"
+import { RecoveryCommandFailure, stopRunningTurn } from "../composer/ui/submit-abort"
+import { turnStopped } from "@claxedo/agent-runtime-contract"
+import { describeRecoveryOutcome } from "./recovery-outcome-copy"
 import { createQueuedMessagesController } from "@/features/session/queue/queued-messages-controller"
 import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
@@ -1457,8 +1459,8 @@ export default function SessionPage(props: {
               canAbort={() => supports("abort")}
               onAbort={async (sessionID) => {
                 const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
-                if (cancelled.cancelled && !turnCancellationSucceeded(cancelled.outcome)) {
-                  throw new Error(recoveryOutcomeMessage(cancelled.outcome))
+                if (cancelled.cancelled && !turnStopped(cancelled.outcome)) {
+                  throw new RecoveryCommandFailure(describeRecoveryOutcome(cancelled.outcome))
                 }
               }}
               canPrompt={() => supports("permissions")}
@@ -1478,6 +1480,7 @@ export default function SessionPage(props: {
               }
               registerRetry={firstTurnOnboarding.registerRetry}
               sessionDirectory={dir()}
+              recoveryClient={() => sdk.client}
               sessionRef={activeSessionRef}
               signedControlPlane={signedControlPlane}
               workspaceId={signedWorkspaceId}

@@ -9,14 +9,35 @@ import {
   registerPendingPrompt,
   hasPendingPrompt,
 } from "../../store/pending-prompt-registry"
-import { createGoalAwareAbort, createPromptAbort, createSubmitAbort, stopSessionInteraction } from "./submit-abort"
+import { createGoalAwareAbort, createPromptAbort, createSubmitAbort, stopRunningTurn, stopSessionInteraction } from "./submit-abort"
+import { clearSessionRecoveryCommand, sessionRecoveryCommand } from "../../store/session-status-dispatcher"
 
 function target(sessionId: string, turnId = "msg_running"): RecoveryTurnTarget {
   return { scope: "turn", workspaceId: "ws_1", sessionId, turnId, ownerGeneration: "lease_1" }
 }
 
-function operation(request: RecoveryRequest, state: RecoveryOperationState): RecoveryOperation {
-  const stopped = state === "succeeded"
+type Facts = RecoveryOperation["facts"]
+
+function facts(execution: "running" | "terminal" | "unknown", cleanup: "owned" | "verified_clear" | "unknown", persistence: "committed" | "pending" | "unavailable"): Facts {
+  return {
+    execution: { value: execution, source: "codex", observedAt: 1_000, generation: "lease_1" },
+    cleanup: { value: cleanup, source: "codex", observedAt: 1_000, generation: "lease_1" },
+    persistence: { value: persistence, source: "store", observedAt: 1_000, generation: "lease_1" },
+  }
+}
+
+/** What a harness that cannot prove cleanup reports for a turn it did stop. */
+const STOPPED_CLEANUP_UNVERIFIED = facts("terminal", "unknown", "committed")
+const STOPPED_AND_PROVEN = facts("terminal", "verified_clear", "committed")
+const STILL_RUNNING = facts("unknown", "unknown", "pending")
+const SAVE_FAILED = facts("terminal", "unknown", "pending")
+
+function operation(
+  request: RecoveryRequest,
+  state: RecoveryOperationState,
+  value: Facts = STOPPED_AND_PROVEN,
+  error?: string,
+): RecoveryOperation {
   return {
     operationId: "op_1",
     requestId: request.requestId,
@@ -27,24 +48,20 @@ function operation(request: RecoveryRequest, state: RecoveryOperationState): Rec
     state,
     phase: "graceful_cancel",
     phaseDeadlineAt: 2_000,
-    facts: {
-      execution: { value: stopped ? "terminal" : "unknown", source: "codex", observedAt: 1_000, generation: "lease_1" },
-      cleanup: { value: stopped ? "verified_clear" : "unknown", source: "codex", observedAt: 1_000, generation: "lease_1" },
-      persistence: { value: stopped ? "committed" : "pending", source: "store", observedAt: 1_000, generation: "lease_1" },
-    },
-    ...(stopped
-      ? {}
-      : {
+    facts: value,
+    ...(error
+      ? {
           initiatingError: {
             code: "cancellation_timeout" as const,
             origin: "codex",
             target: request.target,
             stage: "graceful_cancel" as const,
             executionMayContinue: true,
-            message: "Stop request failed",
+            message: error,
             at: 1_000,
           },
-        }),
+        }
+      : {}),
     cleanupErrors: [],
     nextActions: [],
     receipt: "durable",
@@ -187,8 +204,16 @@ test("interaction Stop surfaces Goal failure after interrupting its turn", async
 describe("prompt Stop results", () => {
   const failures: Array<[string, (request: RecoveryRequest) => Promise<RecoveryOutcome> | RecoveryOutcome, string]> = [
     ["a rejected request", () => Promise.reject(new Error("Stop request failed")), "Stop request failed"],
-    ["an operation that failed", (request) => ({ kind: "operation", operation: operation(request, "failed") }), "Stop request failed"],
-    ["an operation still owed an action", (request) => ({ kind: "operation", operation: operation(request, "needs_action") }), "Stop request failed"],
+    [
+      "an operation whose execution never went terminal",
+      (request) => ({ kind: "operation", operation: operation(request, "needs_action", STILL_RUNNING, "Stop request failed") }),
+      "Stop request failed",
+    ],
+    [
+      "an operation whose interrupted state was never saved",
+      (request) => ({ kind: "operation", operation: operation(request, "needs_action", SAVE_FAILED, "Stop request failed") }),
+      "Stop request failed",
+    ],
     ["a refusal", () => ({ kind: "refused", refusal: { kind: "generation_conflict", message: "the turn was replaced" } }), "the turn was replaced"],
     ["an unavailable owner", () => ({ kind: "refused", refusal: { kind: "unavailable", message: "the runtime is closing" } }), "the runtime is closing"],
   ]
@@ -200,7 +225,7 @@ describe("prompt Stop results", () => {
       sessionID: () => "stop-failure",
       defaultDirectory: "/repo",
       clientForDirectory: () => double.client,
-      stopFailedTitle: () => "Request failed",
+      recoveryToast: (copy) => ({ title: "Request failed", description: copy.ownerMessage ?? copy.reading }),
       stopGoalFailedTitle: () => "Goal Stop failed",
       errorMessage: (error) => (error as Error).message,
       showToast: (toast) => { toasts.push(toast) },
@@ -210,6 +235,31 @@ describe("prompt Stop results", () => {
 
     expect(toasts).toEqual([{ title: "Request failed", description: message, variant: "error" }])
     expect(double.calls.filter((call) => call !== "inspect" && call !== "submit")).toEqual([])
+  })
+
+  // The headline of this wave: no adapter can yet prove `verified_clear`, so a
+  // working Stop closes as `needs_action`. Reading that as a failure would put
+  // a red toast on every Stop and skip the reconcile the interrupted turn needs.
+  test("a turn that ended and was saved is stopped even when cleanup is unverified", async () => {
+    const toasts: unknown[] = []
+    const double = clientDouble({
+      sessionID: "stop-unverified",
+      answer: (request) => ({ kind: "operation", operation: operation(request, "needs_action", STOPPED_CLEANUP_UNVERIFIED) }),
+    })
+    const abort = createSubmitAbort({
+      sessionID: () => "stop-unverified",
+      defaultDirectory: "/repo",
+      clientForDirectory: () => double.client,
+      recoveryToast: (copy) => ({ title: "Request failed", description: copy.reading }),
+      stopGoalFailedTitle: () => "Goal Stop failed",
+      errorMessage: (error) => (error as Error).message,
+      showToast: (toast) => { toasts.push(toast) },
+    })
+
+    await abort()
+
+    expect(toasts).toEqual([])
+    expect(double.calls).toEqual(["inspect", "submit", "get", "status", "permissions", "questions"])
   })
 
   test("an operation that reached its postcondition refreshes the server snapshot", async () => {
@@ -405,5 +455,60 @@ describe("prompt Stop feedback", () => {
     expect(cleanups).toEqual(["cleanup"])
     expect(doubles.get("ses_sent")!.requests).toHaveLength(1)
     expect(hasPendingPrompt("ses_sent")).toBe(false)
+  })
+})
+
+describe("an explicit retry", () => {
+  test("opens a new attempt linked to the one it follows instead of reading it back", async () => {
+    const double = clientDouble({ sessionID: "retry" })
+
+    const first = await stopRunningTurn({ client: double.client, sessionID: "retry" })
+    const retried = await stopRunningTurn({
+      client: double.client,
+      sessionID: "retry",
+      retryOf: { operationId: "op_1", attempt: 1 },
+    })
+
+    expect(first.cancelled && retried.cancelled).toBe(true)
+    const [initial, again] = double.requests
+    expect(again.requestId).not.toBe(initial.requestId)
+    expect(again.attempt).toBe(2)
+    expect(again.linkedOperationId).toBe("op_1")
+    expect(initial.linkedOperationId).toBeUndefined()
+  })
+})
+
+describe("the recovery command a Stop leaves behind", () => {
+  test("records the owner's answer against the request that is displayed", async () => {
+    clearSessionRecoveryCommand("command-answered")
+    const double = clientDouble({
+      sessionID: "command-answered",
+      answer: (request) => ({ kind: "operation", operation: operation(request, "needs_action", STOPPED_CLEANUP_UNVERIFIED) }),
+    })
+
+    await stopRunningTurn({ client: double.client, sessionID: "command-answered" })
+
+    const command = sessionRecoveryCommand("command-answered")
+    expect(command?.action).toBe("cancel_turn")
+    expect(command?.attempt).toBe(1)
+    expect(command?.requestId).toBe(double.requests[0].requestId)
+    expect(command?.outcome).toEqual({ kind: "operation", operation: operation(double.requests[0], "needs_action", STOPPED_CLEANUP_UNVERIFIED) })
+    expect(command?.unreachable).toBeUndefined()
+  })
+
+  test("a Stop that never reached an owner stays visible as unreached, with no facts invented", async () => {
+    clearSessionRecoveryCommand("command-unreached")
+    const double = clientDouble({
+      sessionID: "command-unreached",
+      answer: () => Promise.reject(new Error("the machine did not answer")),
+    })
+
+    await expect(stopRunningTurn({ client: double.client, sessionID: "command-unreached" })).rejects.toThrow(
+      "the machine did not answer",
+    )
+
+    const command = sessionRecoveryCommand("command-unreached")
+    expect(command?.unreachable).toBe("the machine did not answer")
+    expect(command?.outcome).toBeUndefined()
   })
 })
