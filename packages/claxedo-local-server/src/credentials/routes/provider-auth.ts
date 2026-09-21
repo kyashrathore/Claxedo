@@ -112,6 +112,9 @@ export function ProviderAuthRoutes(services: ControlPlaneServicesContract, optio
           method: body.data.method,
           code: body.data.code,
           org: org(c.req.raw),
+          // The callback long-polls upstream for device approval; a
+          // disconnected client must take the poll down with it.
+          signal: c.req.raw.signal,
         }))
       } catch (error) {
         return c.json(authError(error), 400)

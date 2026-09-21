@@ -64,7 +64,9 @@ export class ProviderAuthError extends Error {
       | "provider_auth_method_not_oauth"
       | "provider_auth_missing_pending"
       | "provider_auth_authorize_failed"
-      | "provider_auth_callback_failed",
+      | "provider_auth_callback_failed"
+      | "provider_auth_callback_expired"
+      | "provider_auth_callback_aborted",
     message: string,
   ) {
     super(message)
@@ -88,7 +90,7 @@ export function providerAuthOrg(org?: string | null): string {
 export type ProviderAuthService = {
   methods: () => ProviderAuthMethods
   authorize: (input: { providerId: string; method?: number; inputs?: Record<string, string>; org?: string }) => Promise<ProviderAuthorization | null>
-  callback: (input: { providerId: string; method?: number; code?: string; org?: string }) => Promise<boolean>
+  callback: (input: { providerId: string; method?: number; code?: string; org?: string; signal?: AbortSignal }) => Promise<boolean>
 }
 
 type ProviderAuthOptions = {
@@ -101,10 +103,11 @@ type ProviderAuthOptions = {
 }
 
 /**
- * Upstream device codes expire on their own; this only bounds how long a
- * started-but-never-completed authorization sits in memory waiting to be
- * consumed. The UI posts the callback immediately after authorize, so the
- * real gap is seconds.
+ * Upstream device codes expire on their own; this is the local stand-in for
+ * that expiry. It bounds how long a started-but-never-completed authorization
+ * stays claimable AND how long a callback may keep polling for it — matching
+ * the ~15 minutes OpenAI gives a device_auth_id before the poll can only ever
+ * fail.
  */
 const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
 
@@ -204,7 +207,7 @@ export function createProviderAuthService(
     }
   }
 
-  const callback = async (input: { providerId: string; method?: number; org?: string }) => {
+  const callback = async (input: { providerId: string; method?: number; code?: string; org?: string; signal?: AbortSignal }) => {
     const method = requireMethod(methods(), input.providerId, input.method ?? 0)
     if (method.type !== "oauth") {
       throw new ProviderAuthError("provider_auth_method_not_oauth", "Selected provider method is not OAuth")
@@ -219,12 +222,24 @@ export function createProviderAuthService(
     // An authorization started by ANOTHER tenant is not visible here at all —
     // this reads as "never started", which is what it is for this caller.
     if (!item) throw new ProviderAuthError("provider_auth_missing_pending", "OAuth authorization has not been started")
-    if (clock() - item.startedAt > pendingTtlMs) {
+    const deadline = item.startedAt + pendingTtlMs
+    if (clock() > deadline) {
       pending.delete(key)
       throw new ProviderAuthError("provider_auth_missing_pending", "OAuth authorization has expired — start it again")
     }
-    const tokens = await exchangeDeviceTokens(request, item, wait, pollingSafetyMs)
-    pending.delete(key)
+    let tokens: TokenResponse
+    try {
+      tokens = await exchangeDeviceTokens(request, item, wait, pollingSafetyMs, {
+        clock,
+        deadline,
+        signal: input.signal,
+      })
+    } finally {
+      // The attempt is over once its bounded poll ends — approved, refused,
+      // expired or disconnected — so the entry cannot be claimed twice or sit
+      // in the map until some later caller trips the TTL check.
+      pending.delete(key)
+    }
 
     const expires = clock() + (tokens.expires_in ?? 3600) * 1000
     const accountId = extractAccountId(tokens)
@@ -274,49 +289,104 @@ async function exchangeDeviceTokens(
   pending: CodexPending,
   wait: (ms: number) => Promise<void>,
   pollingSafetyMs: number,
+  bounds: { clock: () => number; deadline: number; signal?: AbortSignal },
 ): Promise<TokenResponse> {
-  while (true) {
-    const codeResponse = await request(`${OPENAI_ISSUER}/api/accounts/deviceauth/token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "claxedo",
-      },
-      body: JSON.stringify({
-        device_auth_id: pending.deviceAuthId,
-        user_code: pending.userCode,
-      }),
-    })
+  // Two things end a device poll: the caller disconnecting and the
+  // authorization expiring. One controller joins them so the in-flight poll
+  // request observes both; without the deadline a user who never completes
+  // device login holds the callback request open forever.
+  const poll = new AbortController()
+  const stop = () => poll.abort()
+  bounds.signal?.addEventListener("abort", stop, { once: true })
+  // A listener registered on an already-aborted signal never fires.
+  if (bounds.signal?.aborted) stop()
+  const timer = setTimeout(stop, Math.max(bounds.deadline - bounds.clock(), 0))
+  const ended = () =>
+    bounds.signal?.aborted
+      ? new ProviderAuthError("provider_auth_callback_aborted", "Device authorization was cancelled")
+      : new ProviderAuthError("provider_auth_callback_expired", "Device authorization expired before it was approved")
 
-    if (!codeResponse.ok) {
-      if (codeResponse.status === 403 || codeResponse.status === 404) {
-        await wait(pending.intervalMs + pollingSafetyMs)
-        continue
+  try {
+    while (true) {
+      if (poll.signal.aborted) throw ended()
+      let codeResponse: Response
+      try {
+        codeResponse = await request(`${OPENAI_ISSUER}/api/accounts/deviceauth/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "claxedo",
+          },
+          body: JSON.stringify({
+            device_auth_id: pending.deviceAuthId,
+            user_code: pending.userCode,
+          }),
+          signal: poll.signal,
+        })
+      } catch (error) {
+        if (poll.signal.aborted) throw ended()
+        throw error
       }
-      throw new ProviderAuthError("provider_auth_callback_failed", `Device token polling failed: ${codeResponse.status}`)
-    }
 
-    const code = record(await codeResponse.json()) ?? {}
-    if (typeof code.authorization_code !== "string" || typeof code.code_verifier !== "string") {
-      throw new ProviderAuthError("provider_auth_callback_failed", "Device token polling returned an invalid body")
-    }
+      if (!codeResponse.ok) {
+        if (codeResponse.status === 403 || codeResponse.status === 404) {
+          const remaining = bounds.deadline - bounds.clock()
+          if (remaining <= 0) throw ended()
+          await pause(Math.min(pending.intervalMs + pollingSafetyMs, remaining), wait, poll.signal)
+          continue
+        }
+        throw new ProviderAuthError("provider_auth_callback_failed", `Device token polling failed: ${codeResponse.status}`)
+      }
 
-    const tokenResponse = await request(`${OPENAI_ISSUER}/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        code: code.authorization_code,
-        redirect_uri: OPENAI_DEVICE_REDIRECT_URI,
-        client_id: OPENAI_CLIENT_ID,
-        code_verifier: code.code_verifier,
-      }).toString(),
-    })
-    if (!tokenResponse.ok) {
-      throw new ProviderAuthError("provider_auth_callback_failed", `Token exchange failed: ${tokenResponse.status}`)
-    }
+      const code = record(await codeResponse.json()) ?? {}
+      if (typeof code.authorization_code !== "string" || typeof code.code_verifier !== "string") {
+        throw new ProviderAuthError("provider_auth_callback_failed", "Device token polling returned an invalid body")
+      }
 
-    return tokenResponseFrom(await tokenResponse.json(), "provider_auth_callback_failed")
+      let tokenResponse: Response
+      try {
+        tokenResponse = await request(`${OPENAI_ISSUER}/oauth/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "authorization_code",
+            code: code.authorization_code,
+            redirect_uri: OPENAI_DEVICE_REDIRECT_URI,
+            client_id: OPENAI_CLIENT_ID,
+            code_verifier: code.code_verifier,
+          }).toString(),
+          signal: poll.signal,
+        })
+      } catch (error) {
+        if (poll.signal.aborted) throw ended()
+        throw error
+      }
+      if (!tokenResponse.ok) {
+        throw new ProviderAuthError("provider_auth_callback_failed", `Token exchange failed: ${tokenResponse.status}`)
+      }
+
+      return tokenResponseFrom(await tokenResponse.json(), "provider_auth_callback_failed")
+    }
+  } finally {
+    clearTimeout(timer)
+    bounds.signal?.removeEventListener("abort", stop)
+  }
+}
+
+/** Sleeps between polls, waking early when the poll's signal fires. */
+async function pause(ms: number, wait: (ms: number) => Promise<void>, signal: AbortSignal) {
+  if (signal.aborted || ms <= 0) return
+  let onAbort: (() => void) | undefined
+  try {
+    await Promise.race([
+      wait(ms),
+      new Promise<void>((resolve) => {
+        onAbort = resolve
+        signal.addEventListener("abort", onAbort, { once: true })
+      }),
+    ])
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort)
   }
 }
 

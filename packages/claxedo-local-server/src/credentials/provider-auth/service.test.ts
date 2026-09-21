@@ -186,6 +186,103 @@ describe("OAuth pending state is keyed by tenant", () => {
   })
 })
 
+describe("device polling cannot hold a callback open forever", () => {
+  /** Upstream that issues a code, then answers "still pending" forever, clock ticking one interval per poll. */
+  function neverApproved(tick: () => void) {
+    return (async (input: string | URL) => {
+      const url = input.toString()
+      if (url.endsWith("/api/accounts/deviceauth/usercode")) {
+        return json({ device_auth_id: "dev_1", user_code: "ABCD-EFGH", interval: "1" })
+      }
+      if (url.endsWith("/api/accounts/deviceauth/token")) {
+        tick()
+        return json({ error: "authorization_pending" }, 403)
+      }
+      return json({ error: "unexpected" }, 404)
+    }) as typeof fetch
+  }
+
+  test("a provider that never approves fails the poll at the authorization's expiry", async () => {
+    const c = credentials()
+    let now = 1_000
+    let polls = 0
+    const auth = createProviderAuthService(c.registry, {
+      now: () => now,
+      sleep: async () => {},
+      pollingSafetyMs: 0,
+      pendingTtlMs: 10_000,
+      fetch: neverApproved(() => {
+        polls += 1
+        now += 1_000
+      }),
+    })
+
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await expect(auth.callback({ providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
+      code: "provider_auth_callback_expired",
+    })
+    // Bounded: ten 1s-interval polls inside the 10s TTL, not an open loop.
+    expect(polls).toBeLessThanOrEqual(10)
+    expect(c.writes).toEqual([])
+
+    // The ended attempt removed its pending entry — a retry reads as
+    // never-started instead of resuming a poll for a dead authorization.
+    await expect(auth.callback({ providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
+      code: "provider_auth_missing_pending",
+    })
+  })
+
+  test("a client disconnect wakes the inter-poll wait and ends the callback", async () => {
+    const c = credentials()
+    const abort = new AbortController()
+    const auth = createProviderAuthService(c.registry, {
+      now: () => 1_000,
+      // Never resolves: only the abort can release the wait between polls.
+      sleep: () => new Promise<void>(() => {}),
+      pollingSafetyMs: 0,
+      pendingTtlMs: 60_000,
+      fetch: (async (input: string | URL) => {
+        const url = input.toString()
+        if (url.endsWith("/api/accounts/deviceauth/usercode")) {
+          return json({ device_auth_id: "dev_1", user_code: "ABCD-EFGH", interval: "1" })
+        }
+        if (url.endsWith("/api/accounts/deviceauth/token")) {
+          abort.abort()
+          return json({ error: "authorization_pending" }, 403)
+        }
+        return json({ error: "unexpected" }, 404)
+      }) as typeof fetch,
+    })
+
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await expect(
+      auth.callback({ providerId: "codex-app-server", org: "org-a", signal: abort.signal }),
+    ).rejects.toMatchObject({ code: "provider_auth_callback_aborted" })
+    expect(c.writes).toEqual([])
+
+    await expect(auth.callback({ providerId: "codex-app-server", org: "org-a" })).rejects.toMatchObject({
+      code: "provider_auth_missing_pending",
+    })
+  })
+
+  test("an approval landing just inside the expiry still completes", async () => {
+    const c = credentials()
+    let now = 1_000
+    const auth = createProviderAuthService(c.registry, {
+      now: () => now,
+      sleep: async () => {},
+      pollingSafetyMs: 0,
+      pendingTtlMs: 60_000,
+      fetch: upstream({ userCode: "ABCD-EFGH", accessToken: "access_token" }),
+    })
+
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    now = 60_999
+    expect(await auth.callback({ providerId: "codex-app-server", org: "org-a" })).toBe(true)
+    expect(c.writes).toHaveLength(1)
+  })
+})
+
 describe("provider-auth routes resolve the tenant the same way credential routes do", () => {
   function app(registry: ControlPlaneCredentials, resolveOrg: (request: Request) => string) {
     const auth = service(registry)
