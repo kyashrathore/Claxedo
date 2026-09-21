@@ -69,16 +69,71 @@ async function openWithoutFollowing(file: string): Promise<WorkingTreeEntry | un
 }
 
 /**
+ * fcntl command that writes the opened vnode's path into a caller buffer.
+ * fcntl is variadic, so the koffi declaration below must keep its "...": on
+ * arm64 a fixed-arity call would pass the buffer in a register fcntl ignores.
+ */
+const F_GETPATH = 50
+
+type MacDescriptorPath = {
+  getPath: (fd: number) => string | undefined
+  // The loaded dylib and its bound function must stay reachable: letting them
+  // be collected finalizes the FFI handles getPath still calls.
+  keep: unknown[]
+}
+
+let macDescriptorPath: Promise<MacDescriptorPath | null> | undefined
+
+/**
+ * macOS answers where a descriptor landed through F_GETPATH, a call Node does
+ * not bind; koffi — already this package's declared dependency — reaches it.
+ * Loaded once and remembered. A host that cannot load it cannot answer, and
+ * every read below then refuses, the same doctrine as an unreadable /proc
+ * entry.
+ */
+function loadMacDescriptorPath() {
+  macDescriptorPath ??= (async () => {
+    try {
+      const { load } = await import("koffi")
+      const lib = load("libSystem.B.dylib")
+      const fcntl = lib.func("int fcntl(int fd, int cmd, ...)")
+      const getPath = (fd: number) => {
+        try {
+          const buffer = Buffer.alloc(4096)
+          if (fcntl(fd, F_GETPATH, "void *", buffer) !== 0) return undefined
+          const end = buffer.indexOf(0)
+          return buffer.toString("utf8", 0, end < 0 ? buffer.length : end) || undefined
+        } catch {
+          return undefined
+        }
+      }
+      return { getPath, keep: [lib, fcntl] }
+    } catch {
+      return null
+    }
+  })()
+  return macDescriptorPath
+}
+
+/**
  * Whether the descriptor is still inside the workspace, for platforms that
- * publish where a descriptor landed. Linux does, through /proc/self/fd; an
- * unreadable one there is a missing answer, not a pass. macOS (fcntl
- * F_GETPATH) and Windows (GetFinalPathNameByHandle) keep it behind calls Node
- * does not bind, and on those a parent directory replaced between the check
- * below and the open goes unnoticed — the race this cannot close.
+ * publish where a descriptor landed. Linux answers through /proc/self/fd and
+ * macOS through F_GETPATH; the reported path is the vnode's real location, so
+ * a parent directory replaced between the check above and the open shows up
+ * as the outside path the open actually travelled. An unanswered read on
+ * either is a missing answer, not a pass. Windows keeps
+ * GetFinalPathNameByHandle behind a call still unbound here, so the race stays
+ * open there.
  */
 async function descriptorInsideWorkspace(directory: string, handle: FileHandle) {
-  if (process.platform !== "linux") return true
-  const opened = await fs.readlink(`/proc/self/fd/${handle.fd}`).catch(() => undefined)
+  let opened: string | undefined
+  if (process.platform === "linux") {
+    opened = await fs.readlink(`/proc/self/fd/${handle.fd}`).catch(() => undefined)
+  } else if (process.platform === "darwin") {
+    opened = (await loadMacDescriptorPath())?.getPath(handle.fd)
+  } else {
+    return true
+  }
   if (opened === undefined) return false
   return await resolveWorkspacePath(directory, opened, { allowAbsoluteWithinRoot: true }).then(() => true, () => false)
 }

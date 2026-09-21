@@ -14,6 +14,11 @@ import { readWorkingTreeText, workspaceRelativeFile } from "./working-tree"
 const execFileAsync = promisify(execFile)
 const SECRET = "synthetic-secret-value-for-p85\n"
 
+// Loaded koffi libraries and their bound functions must stay reachable for the
+// suite's life: a collected one finalizes mid-flight, and Bun panics when that
+// finalizer runs inside GC.
+const darwinHandles: unknown[] = []
+
 async function git(directory: string, args: string[]) {
   await execFileAsync("git", args, { cwd: directory })
 }
@@ -230,7 +235,7 @@ describe("working-tree reads", () => {
     })
   })
 
-  test.skipIf(process.platform !== "linux")("a parent swapped for a symlink at the open is not read", async () => {
+  test.skipIf(process.platform === "win32")("a parent swapped for a symlink at the open is not read", async () => {
     await withWorkspace(async ({ directory, outside }) => {
       const sub = path.join(directory, "sub")
       await mkdir(sub)
@@ -242,6 +247,35 @@ describe("working-tree reads", () => {
         () => {
           rmSync(sub, { recursive: true, force: true })
           symlinkSync(outside, sub)
+        },
+        async () => {
+          text = await readWorkingTreeText({ directory, file: "sub/file.txt" })
+        },
+      )
+
+      expect(text).toBeUndefined()
+    })
+  })
+
+  test.skipIf(process.platform !== "darwin")("a parent rename-exchanged for a symlink at the open is not read", async () => {
+    await withWorkspace(async ({ directory, outside }) => {
+      const sub = path.join(directory, "sub")
+      const slot = path.join(directory, "slot")
+      await mkdir(sub)
+      await writeFile(path.join(sub, "file.txt"), "inside\n")
+      await writeFile(path.join(outside, "file.txt"), SECRET)
+      await symlink(outside, slot)
+
+      const { load } = await import("koffi")
+      const lib = load("libSystem.B.dylib")
+      const renamex = lib.func("int renamex_np(const char *from, const char *to, unsigned int flags)")
+      darwinHandles.push(lib, renamex)
+      const RENAME_SWAP = 0x2
+
+      let text: string | undefined
+      await swappingAtOpen(
+        () => {
+          expect(renamex(slot, sub, RENAME_SWAP)).toBe(0)
         },
         async () => {
           text = await readWorkingTreeText({ directory, file: "sub/file.txt" })
