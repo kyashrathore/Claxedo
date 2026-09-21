@@ -548,7 +548,11 @@ export const desktopRendererUnsigned: Policy = {
   // references and reads canonical session lifecycle status. ACP questions use
   // the unchanged question dock; its separate UI, worker, query and action
   // modules have been removed. Exact measured 1142 modules / 58 packages.
-  ceilings: { modules: 1142, packages: 58 },
+  // +1 module (2026-09-21): `lib/open-link.ts` — see the app-local ledger.
+  // The terminal link fallback reaches it in the shared renderer bundle; the
+  // desktop's own openLink still goes through the scheme-gated `open-link`
+  // IPC in main. Exact measured 1143 modules / 58 packages.
+  ceilings: { modules: 1143, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

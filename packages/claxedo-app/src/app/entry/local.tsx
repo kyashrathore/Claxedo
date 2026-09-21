@@ -30,6 +30,7 @@ import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { writeBrowserRoute } from "@/lib/browser-history"
+import { openLink } from "@/lib/open-link"
 import { ConfigProvider } from "../providers/config"
 import { resolveDeploymentPosture } from "@/app/boot/data/deployment-posture"
 
@@ -59,9 +60,7 @@ const platform: Platform = {
   platform: "web",
   version: "local",
   fetch: (input, init) => fetch(input, init),
-  openLink(url: string) {
-    window.open(url, "_blank")
-  },
+  openLink,
   restart: async () => {
     window.location.reload()
   },

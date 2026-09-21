@@ -493,7 +493,12 @@ export const appLocal: Policy = {
   // references and reads canonical session lifecycle status. ACP questions use
   // the unchanged question dock; its separate UI, worker, query and action
   // modules have been removed. Exact measured 1099 modules / 58 packages.
-  ceilings: { modules: 1099, packages: 58 },
+  // +1 module (2026-09-21): `lib/open-link.ts` is the web document's one
+  // scheme-gated link opener — `platform.openLink` in both web entries, the
+  // connect-integration dialog's default `openUrl`, and the terminal link
+  // fallback all bind it. It imports nothing; no new package edge. Exact
+  // measured 1100 modules / 58 packages.
+  ceilings: { modules: 1100, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

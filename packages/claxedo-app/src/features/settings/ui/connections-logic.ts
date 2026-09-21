@@ -226,7 +226,7 @@ export type ConnectFlowOptions = {
   request: ConnectionsRequest
   /** Called once after a successful connect (key verify or oauth completion). */
   onConnected?: () => void | Promise<void>
-  /** Defaults to window.open in the component; injectable for tests. */
+  /** Injectable for tests; the dialog defaults to the scheme-gated link opener. */
   openUrl?: (url: string) => void
   /** Injectable delay for oauth polling; defaults to setTimeout. */
   sleep?: (ms: number) => Promise<void>

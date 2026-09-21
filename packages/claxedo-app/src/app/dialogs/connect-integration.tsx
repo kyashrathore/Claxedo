@@ -10,6 +10,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
+import { openableLinkHref, openLink } from "@/lib/open-link"
 import {
   createConnectFlow,
   isOAuthOnly,
@@ -35,7 +36,7 @@ export function DialogConnectIntegration(props: {
     teamScopeEnabled: props.teamScopeEnabled,
     initialScope: props.initialScope,
     oauthFields: props.oauthFields,
-    openUrl: props.openUrl ?? ((url) => window.open(url, "_blank", "noopener")),
+    openUrl: props.openUrl ?? openLink,
     onConnected: async () => {
       await props.onConnected?.()
       dialog.close()
@@ -118,14 +119,18 @@ export function DialogConnectIntegration(props: {
                     </span>
                     <Show when={flow.state.verificationUrl}>
                       {(url) => (
-                        <a
-                          class="text-13-regular text-text-interactive-base"
-                          href={url()}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open {props.integration.name} to enter it
-                        </a>
+                        <Show when={openableLinkHref(url())}>
+                          {(href) => (
+                            <a
+                              class="text-13-regular text-text-interactive-base"
+                              href={href()}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open {props.integration.name} to enter it
+                            </a>
+                          )}
+                        </Show>
                       )}
                     </Show>
                   </div>
