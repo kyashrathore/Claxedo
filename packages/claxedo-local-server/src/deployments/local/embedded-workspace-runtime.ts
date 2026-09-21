@@ -69,9 +69,10 @@ export type EmbeddedWorkspaceRuntimePhase = "mounted" | "retired" | "disposed"
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
   /**
-   * Minted when this runtime mounted. Random rather than derived from its
-   * state, so a workspace re-mounted after a retirement can never present the
-   * generation the previous owner was authorized under.
+   * The mount, as its own workspace runtime names it. Taken from the host
+   * rather than minted here: the runtime is what records launches under it,
+   * and a second id for one owner is how a live runtime reconciles its own
+   * launches away.
    */
   generation: string
   observed: MountedEmbeddedWorkspaceRuntime
@@ -598,7 +599,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
   const runtime: EmbeddedRuntime = {
     ...created,
     workspace: ws,
-    generation: crypto.randomUUID(),
+    generation: created.host.ownerGeneration,
     observed: { workspace: ws, frames: created.host.frames },
     ...(configuredProcessObserver
       ? {

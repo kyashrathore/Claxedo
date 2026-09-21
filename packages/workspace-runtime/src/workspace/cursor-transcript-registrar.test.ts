@@ -28,6 +28,7 @@ test("Cursor native receives the parent/workspace-bound opaque transcript regist
   if (!entry) throw new Error("Expected the Cursor native registry entry")
   const adapter = entry.create({
     runner,
+    ownerGeneration: "generation-under-test",
     store: createMemoryRuntimeStore() as unknown as WorkspaceRuntimeStore,
     options: {
       transcripts: {

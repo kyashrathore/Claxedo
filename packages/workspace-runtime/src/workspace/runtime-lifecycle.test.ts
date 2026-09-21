@@ -295,7 +295,7 @@ describe("workspace runtime public lifecycle", () => {
     for (const id of ["claude", "codex", "cursor", "pi"] as const) {
       const runner = { id, access: "native" as const }
       const entry = defaultWorkspaceHarnessRegistry().find((entry) => entry.match(runner))!
-      const adapter = entry.create({ runner, options: { storeRoot: directory }, store })
+      const adapter = entry.create({ runner, options: { storeRoot: directory }, store, ownerGeneration: "generation-under-test" })
       await adapter.dispose()
     }
     expect({ closed, recovered }).toEqual({ closed: 0, recovered: 0 })
@@ -700,18 +700,16 @@ describe("workspace runtime public lifecycle", () => {
     // for which no creation identity was recorded, so nothing the replacement
     // can check establishes whether that process is still running.
     const seeded = new RuntimeStore(f.storeRoot)
-    const prepared = await seeded.launchOwnership().prepare({
+    const prepared = await seeded.launchOwnership("previous-owner-generation").prepare({
       role: "terminal",
       protocol: "direct",
       scope: { workspaceId: f.target.workspaceId },
     })
     seeded.close()
 
+    // No wait here on purpose: ingress is what must not admit a write before
+    // reconciliation has settled, so the request itself proves the gate.
     const replacement = f.open()
-    // The ingress reads the settled answer rather than waiting for it, so a
-    // caller that needs it waits here — a replacement deciding whether it may
-    // admit writes is exactly that caller.
-    await replacement.host.launchReconciliation()
     const refused = await replacement.request("/session", "POST", { id: "after-crash" })
     expect(refused.status, await refused.clone().text()).toBe(503)
     const body = await refused.json() as { error?: string }
@@ -723,7 +721,7 @@ describe("workspace runtime public lifecycle", () => {
     expect(replacement.host.activity().launches).toMatchObject({ examined: 1, retired: 0, unresolved: 1 })
 
     const resolving = new RuntimeStore(f.storeRoot)
-    await resolving.launchOwnership().recordRetirement(prepared.launchId, {
+    await resolving.launchOwnership("previous-owner-generation").recordRetirement(prepared.launchId, {
       leader: "exited",
       descendants: "verified_clear",
       signals: [],
@@ -731,7 +729,6 @@ describe("workspace runtime public lifecycle", () => {
     resolving.close()
 
     const resolved = f.open()
-    await resolved.host.launchReconciliation()
     await resolved.host.apply(f.snapshot())
     expect((await resolved.request("/session", "POST", { id: "after-resolution" })).status).toBe(201)
     expect(resolved.host.activity().launches).toMatchObject({ examined: 0, retired: 0, unresolved: 0 })

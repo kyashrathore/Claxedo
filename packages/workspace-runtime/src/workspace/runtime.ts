@@ -119,7 +119,7 @@ export type WorkspaceRuntimeStore =
      * volatile, recorded as such in its own row, and nothing it started can be
      * identified as a survivor after a restart.
      */
-    launchOwnership?: () => LaunchOwnershipStore
+    launchOwnership?: (ownerGeneration: string) => LaunchOwnershipStore
     getSessionMaxSeq(sessionId: string): number
     getSessionFencingToken?: (sessionId: string) => number | undefined
     listSubagents: (parentSessionId: string) => unknown[]
@@ -474,6 +474,12 @@ export type WorkspaceHarnessAdapterInput = {
   options: WorkspaceHostOptions
   /** Borrowed host store: adapters must not recover or close it. */
   store: WorkspaceRuntimeStore
+  /**
+   * The mount this adapter belongs to. Every process it launches is recorded
+   * under this generation, so the runtime reconciling after a crash can tell
+   * its own launches from the ones it inherited.
+   */
+  ownerGeneration: string
 }
 
 /**
@@ -508,7 +514,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
     {
       match: (runner) => nativeSdk(runner),
-      create: ({ runner, options, store }) => {
+      create: ({ runner, options, store, ownerGeneration }) => {
         // `match` narrowed this runner, but the registry hands `create` the
         // unnarrowed entry, so the guard is re-applied here rather than
         // asserting the key and letting an unknown id fail as "not a constructor".
@@ -523,7 +529,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
           store,
           // Every process this adapter launches is recorded against the store
           // of the workspace it serves, not whichever one opened first.
-          ownership: store.launchOwnership?.() ?? volatileLaunchOwnership(),
+          ownership: store.launchOwnership?.(ownerGeneration) ?? volatileLaunchOwnership(),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           // Pi's profile holds `models.json`, and that file carries the broker
           // placeholder; without a store root to scope it, the workspace id is
@@ -603,6 +609,7 @@ function createAdapter(
   options: WorkspaceHostOptions,
   registry: WorkspaceHarnessRegistry,
   store: WorkspaceRuntimeStore,
+  ownerGeneration: string,
 ): AgentHarnessAdapter {
   const entry = registry.find((item) => item.match(harness))
   if (!entry) {
@@ -611,7 +618,7 @@ function createAdapter(
     // runner must fail loudly here.
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
-  return entry.create({ runner: harness, options, store })
+  return entry.create({ runner: harness, options, store, ownerGeneration })
 }
 
 function scopedToolPrompt(
@@ -754,6 +761,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let sessionConfigStore: WorkspaceRuntimeStore | undefined
   let launchReconciliation: Promise<LaunchOwnershipReconciliation> | undefined
   let launchOwnershipSummary: LaunchOwnershipReconciliation | undefined
+  /**
+   * This mount, to the launch records it makes. Minted here because the
+   * workspace runtime is what owns the processes: a standalone composition has
+   * no embedded mount to borrow an id from, and a second id for one owner is
+   * how a live runtime ends up reconciling its own launches away.
+   */
+  const ownerGeneration = crypto.randomUUID()
   let disposeDeliveries: (() => Promise<void>) | undefined
   let reissueQueuedPrompts: (() => void) | undefined
   let closing = false
@@ -940,7 +954,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       await configureAdapter(existing, nextRunner)
       return existing
     }
-    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store())
+    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), ownerGeneration)
     sessionAdapters.set(key, next)
     sessionAdapterRunners.set(key, nextRunner)
     adapterRuntimeKeys.set(next, key)
@@ -1181,13 +1195,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (!sessionConfigStore) {
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
       sessionConfigStore = storeFactory({ storeRoot: options.storeRoot })
-      const ownership = sessionConfigStore.launchOwnership?.()
+      const ownership = sessionConfigStore.launchOwnership?.(ownerGeneration)
       // Started before anything else this store does, because until it has
       // run the processes of a previous owner still hold this workspace's
       // ports, working directories and agent session storage, and nothing
       // else in the system is looking for them.
       if (ownership) {
         launchReconciliation = reconcileLaunchOwnership(ownership, {
+          currentOwnerGeneration: ownerGeneration,
           scope: { workspaceId: options.target?.workspaceId ?? workspaceId() },
           budgets: DEFAULT_RECOVERY_BUDGETS,
         }).then((summary) => {
@@ -1208,11 +1223,26 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
    * reconciliation exists to prevent, and there is nothing this process can
    * check that would change the answer — an operator is the resolution.
    */
-  function launchAdmissionRefusal() {
-    if (!launchOwnershipSummary?.unresolved.length) return undefined
-    return `workspace_launch_unreconciled: ${launchOwnershipSummary.unresolved
-      .map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`)
-      .join("; ")}`
+  /**
+   * A launch this workspace could not account for keeps its writes out.
+   *
+   * The wait is the point: until reconciliation has settled, a previous
+   * owner's process may still hold this workspace's ports, working directories
+   * and session storage, and admitting a writer beside it is what the
+   * reconciliation exists to prevent. Rows from this mount's own generation are
+   * skipped by the reconciler, so waiting here cannot deadlock on a launch this
+   * runtime is making.
+   */
+  async function assertLaunchAdmission() {
+    store()
+    if (!launchReconciliation) return
+    const summary = await launchReconciliation
+    if (summary.unresolved.length === 0) return
+    throw new HTTPException(503, {
+      message: `workspace_launch_unreconciled: ${summary.unresolved
+        .map((row) => `${row.launchId} (${row.outcome}: ${row.reason})`)
+        .join("; ")}`,
+    })
   }
 
   /**
@@ -1224,7 +1254,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
    * records leaves each launch volatile, recorded as such in its own row.
    */
   function launchOwnership() {
-    return store().launchOwnership?.() ?? volatileLaunchOwnership()
+    return store().launchOwnership?.(ownerGeneration) ?? volatileLaunchOwnership()
   }
 
   /**
@@ -1746,12 +1776,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
         if (closing) return c.json({ error: "Workspace runtime is disposed" }, 503)
         if (!["GET", "HEAD", "OPTIONS"].includes(c.req.method)) {
-          // Read, never awaited: the ingress must not open this workspace's
-          // store or wait on a process probe to answer a request that has not
-          // reached a handler yet. A caller that needs the settled answer
-          // first awaits `host.launchReconciliation()`.
-          const refusal = launchAdmissionRefusal()
-          if (refusal) return c.json({ error: refusal }, 503)
+          try {
+            await assertLaunchAdmission()
+          } catch (error) {
+            if (!(error instanceof HTTPException)) throw error
+            return c.json({ error: error.message }, 503)
+          }
         }
         let finish!: () => void
         const request = new Promise<void>((resolve) => { finish = resolve })
@@ -2169,6 +2199,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
       return turns
     },
+    ownerGeneration,
     /** Settles when startup reconciliation has finished, or immediately when there is none. */
     async launchReconciliation() {
       return await launchReconciliation
@@ -2178,7 +2209,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // durable and the replacement owner will read them from the same store
       // root, and "none" here would read as "nothing left to reconcile".
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
-      const ownership = store().launchOwnership?.()
+      const ownership = store().launchOwnership?.(ownerGeneration)
       if (!ownership) return []
       // After reconciliation, so the list is what it could not settle rather
       // than what it had not looked at yet.
@@ -2196,6 +2227,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           ? {
             launches: {
               examined: launchOwnershipSummary.examined,
+              live: launchOwnershipSummary.live,
               retired: launchOwnershipSummary.retired,
               unresolved: launchOwnershipSummary.unresolved.length,
             },

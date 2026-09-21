@@ -99,6 +99,12 @@ export type WorkspaceHost = {
    */
   activeTurns: () => RecoveryTurnTarget[]
   /**
+   * This mount, as the launch records it makes name it. A re-mount of the same
+   * workspace is a different generation, so nothing acknowledged for the
+   * previous one carries to it.
+   */
+  ownerGeneration: string
+  /**
    * Settles when the startup reconciliation of this workspace's launches has
    * finished. A caller that must see the settled answer — a drain preview, a
    * replacement deciding whether it may admit writes — awaits this first;
@@ -152,6 +158,11 @@ export type WorkspaceHost = {
     activeTurns: number
     activeWrites: number
     checkpointState: WorkspaceCheckpointState
+    /**
+     * What startup reconciliation found. Absent until it settles, because
+     * "nothing unresolved" and "not looked yet" are different answers.
+     */
+    launches?: { examined: number; live: number; retired: number; unresolved: number }
   }
   registerSessionTools: (input: {
     sessionId: string

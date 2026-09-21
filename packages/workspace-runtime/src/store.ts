@@ -816,7 +816,12 @@ export class RuntimeStore {
   private settleTimer: ReturnType<typeof setTimeout> | undefined
   private databaseFile: string
   private hadDatabaseFile: boolean
-  private launchOwnershipStore: ReturnType<typeof sqliteLaunchOwnership> | undefined
+  /**
+   * Keyed by generation: a store that outlives a mount must not hand the next
+   * one an instance stamped with the previous owner, or the launches it
+   * records would be reconciled out from under it as somebody else's.
+   */
+  private launchOwnershipStores = new Map<string, ReturnType<typeof sqliteLaunchOwnership>>()
 
   constructor(root = workspaceRuntimeStoreDir()) {
     this.root = root
@@ -4571,13 +4576,17 @@ export class RuntimeStore {
   }
 
   /**
-   * The durable owner a launch made for this workspace is recorded against.
-   * One instance per store: every launch has to be reconcilable against the
-   * same table, and two views of it would let a survivor be owned twice.
+   * The durable owner a launch made for this workspace is recorded against,
+   * stamped with the generation that is making it. One instance per
+   * generation: every launch of one runtime has to agree about who owns it,
+   * and two views would let a survivor be owned twice.
    */
-  launchOwnership() {
-    this.launchOwnershipStore ??= sqliteLaunchOwnership(this.db)
-    return this.launchOwnershipStore
+  launchOwnership(ownerGeneration: string) {
+    const held = this.launchOwnershipStores.get(ownerGeneration)
+    if (held) return held
+    const store = sqliteLaunchOwnership(this.db, { ownerGeneration })
+    this.launchOwnershipStores.set(ownerGeneration, store)
+    return store
   }
 
   /** Who may currently write for this session, as the durable lease row says. */
