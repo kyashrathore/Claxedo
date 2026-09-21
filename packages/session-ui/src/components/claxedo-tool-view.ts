@@ -1,7 +1,7 @@
 import type { UiI18n, UiI18nKey } from "@opencode-ai/ui/context/i18n"
 import { asArray, asFiniteNumber, asRecord, nonEmptyString } from "@claxedo/helpers/guards"
 import { jsonRecord } from "@claxedo/helpers"
-import { isRecoveryOutcome, parseRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
+import { readRecoveryPayloadLine, isRecoveryOutcome, parseRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
 import { clampLabel } from "./message-part-text"
 
 export const CLAXEDO_MCP_SERVER = "claxedo"
@@ -98,8 +98,10 @@ export function claxedoToolResult(output: string | undefined): Record<string, un
   if (!text) return undefined
   const whole = jsonRecord(text)
   if (whole) return whole
-  const opens = text.indexOf("\n{")
-  return opens < 0 ? undefined : jsonRecord(text.slice(opens + 1))
+  // A tool that answers in prose and payload marks the payload's line, so this
+  // decodes what the producer named rather than guessing where the prose ends.
+  const marked = readRecoveryPayloadLine(text)
+  return marked === undefined ? undefined : jsonRecord(marked)
 }
 
 export type ClaxedoLink = { kind: "task" | "session"; id: string; label: string }

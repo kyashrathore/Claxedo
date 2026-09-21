@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
-import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
+import { readRecoveryPayloadLine, NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -202,6 +202,10 @@ function recoveryOwner(state: Workspace, _sessionId: string) {
     },
     read: () => undefined,
     reportContainmentFailure: () => {},
+    // The owner's failure sink. The fixture drops what it is handed rather than
+    // declining to be one: a partial owner would compile only until the runtime
+    // needed the member these tools do not exercise.
+    reportOwnerFailure: () => {},
   }
 }
 
@@ -459,25 +463,30 @@ async function call(client: Client, name: string, args: Record<string, unknown> 
 /** A recovery tool answers with its summary ahead of the payload, so both are read. */
 async function cancel(client: Client, args: Record<string, unknown>) {
   const result = await client.callTool({ name: "session_cancel_turn", arguments: args })
-  const [summary, payload] = result.content as Array<{ type: string; text: string }>
+  const [summary, ...rest] = result.content as Array<{ type: string; text: string }>
+  const marked = readRecoveryPayloadLine(rest.map((block) => block.text ?? "").join("\n"))
+  if (marked === undefined) throw new Error(`session_cancel_turn marked no payload: ${summary?.text ?? ""}`)
   return {
     summary: summary?.text ?? "",
-    payload: JSON.parse(payload?.text ?? "{}") as Record<string, unknown>,
+    payload: JSON.parse(marked) as Record<string, unknown>,
     isError: result.isError === true,
   }
 }
 
-/** A recovery tool puts its summary ahead of the payload, so the payload is found by parsing. */
+/**
+ * A recovery tool marks its payload's line; every other tool answers with the
+ * payload alone. Reading the marker first keeps a malformed payload an error
+ * rather than something the next block quietly satisfies.
+ */
 async function json(client: Client, name: string, args: Record<string, unknown> = {}) {
   const result = await client.callTool({ name, arguments: args })
   const blocks = result.content as Array<{ type: string; text: string }>
   if (result.isError === true) throw new Error(blocks[0]?.text ?? "")
-  for (const block of blocks) {
-    try {
-      return JSON.parse(block.text ?? "") as Record<string, unknown>
-    } catch {}
-  }
-  throw new Error(`${name} answered no JSON payload: ${blocks.map((block) => block.text).join(" | ")}`)
+  const marked = readRecoveryPayloadLine(blocks.map((block) => block.text ?? "").join("\n"))
+  if (marked !== undefined) return JSON.parse(marked) as Record<string, unknown>
+  const only = blocks[0]?.text
+  if (only === undefined) throw new Error(`${name} answered no payload`)
+  return JSON.parse(only) as Record<string, unknown>
 }
 
 const local = (overrides: Partial<Workspace> = {}) =>

@@ -3,13 +3,13 @@
  * the text a caller reads, and the tool result both are assembled into.
  */
 import {
+  RECOVERY_PAYLOAD_PREFIX,
   turnStopped,
   type RecoveryOperation,
   type RecoveryOutcome,
   type RecoveryRefusal,
 } from "@claxedo/agent-runtime-contract"
 import type { McpToolResult } from "../mcp-tool"
-import { toolJson } from "./target"
 
 /**
  * Anything the caller still has to deal with: a turn that is not over and
@@ -37,7 +37,10 @@ export function recoveryText(outcome: RecoveryOutcome): string {
 /** The summary rides ahead of the payload so a caller reads it without parsing JSON. */
 export function recoveryResult(payload: unknown, outcome: RecoveryOutcome): McpToolResult {
   return {
-    content: [{ type: "text", text: recoveryText(outcome) }, ...toolJson(payload).content],
+    content: [
+      { type: "text", text: recoveryText(outcome) },
+      { type: "text", text: `${RECOVERY_PAYLOAD_PREFIX}${JSON.stringify(payload)}` },
+    ],
     ...(recoveryFailed(outcome) ? { isError: true } : {}),
   }
 }

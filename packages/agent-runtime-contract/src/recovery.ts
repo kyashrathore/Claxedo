@@ -378,6 +378,26 @@ export function recoveryPostconditionHolds(action: RecoveryAction, facts: Recove
  * over and written down. Cleanup stays a separate fact rather than a weaker
  * form of this one.
  */
+/**
+ * Marks the line carrying a recovery tool's JSON payload.
+ *
+ * A tool answers in two parts — a sentence a person reads, then the payload a
+ * renderer decodes — and they arrive joined into one string. Without a marker a
+ * reader has to guess where the prose stops, and the first guess (the first
+ * line opening a brace) silently lost the payload as soon as the prose above it
+ * changed shape.
+ */
+export const RECOVERY_PAYLOAD_PREFIX = "recovery-payload: "
+
+/** The payload a recovery tool marked, or nothing when the text carries none. */
+export function readRecoveryPayloadLine(text: string): string | undefined {
+  for (const line of text.split("\n")) {
+    const trimmed = line.trimStart()
+    if (trimmed.startsWith(RECOVERY_PAYLOAD_PREFIX)) return trimmed.slice(RECOVERY_PAYLOAD_PREFIX.length)
+  }
+  return undefined
+}
+
 export function turnStopped(outcome: RecoveryOutcome): boolean {
   return outcome.kind === "operation"
     && outcome.operation.facts.execution.value === "terminal"

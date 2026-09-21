@@ -1,3 +1,4 @@
+import { RECOVERY_PAYLOAD_PREFIX } from "@claxedo/agent-runtime-contract"
 import { describe, expect, test } from "bun:test"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
 import {
@@ -282,8 +283,14 @@ describe("claxedoToolView", () => {
       },
       cleanupErrors: [], nextActions: [], receipt: "durable", createdAt: 1, updatedAt: 1,
     })
+    // Mirrors what the tool actually emits: a sentence, then the payload on
+    // the line it marks.
     const cancelled = (cancellation: unknown) =>
-      view("session_cancel_turn", { session: "ses_x" }, `Stopped.\n${JSON.stringify({ session: "ses_x", cancellation })}`)
+      view(
+        "session_cancel_turn",
+        { session: "ses_x" },
+        `Stopped.\n${RECOVERY_PAYLOAD_PREFIX}${JSON.stringify({ session: "ses_x", cancellation })}`,
+      )
 
     expect(cancelled({ kind: "operation", operation: operation("needs_action", {}) }))
       .toMatchObject({ note: "stopped, cleanup unverified" })
