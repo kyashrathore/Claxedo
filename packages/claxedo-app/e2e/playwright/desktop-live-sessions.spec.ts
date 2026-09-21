@@ -1,3 +1,5 @@
+import { parseRecoveryOutcome, turnStopped } from "@claxedo/agent-runtime-contract"
+import { randomUUID } from "node:crypto"
 import { deletePendingQuestion } from "../helpers/question-deletion"
 import { cancelPendingPermission } from "../helpers/permission-cancellation"
 import { expectSessionRenamePersistence } from "../helpers/session-rename"
@@ -201,8 +203,34 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect(created.ok()).toBe(true)
       const session = await created.json() as { id: string }
       cleanupDocumentSession = async () => {
-        const response = await fetch(`${serverBase}/session/${session.id}/abort?directory=${encodeURIComponent(directory)}`, { method: "POST" })
-        expect(response.ok, "Document test cleanup must cancel any unfinished tool approval").toBe(true)
+        // Recovery names the turn it cancels, so the cleanup asks the owner what
+        // it is running before telling it to stop. A session that finished on
+        // its own reports no turn, which is nothing to cancel rather than a
+        // cleanup that failed.
+        const scope = `directory=${encodeURIComponent(directory)}`
+        const inspected = await fetch(`${serverBase}/session/${session.id}/recovery?${scope}`)
+        expect(inspected.ok, "Document test cleanup could not reach the session's recovery owner").toBe(true)
+        const target = (await inspected.json() as { target?: Record<string, unknown> }).target
+        if (!target) return
+        const submitted = await fetch(`${serverBase}/session/${session.id}/recovery?${scope}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            requestId: `desktop-live-cleanup:${randomUUID()}`,
+            action: "cancel_turn",
+            target,
+            scopeRevision: String(target.ownerGeneration ?? ""),
+            attempt: 1,
+          }),
+        })
+        const outcome = parseRecoveryOutcome(await submitted.text())
+        // No adapter can prove cleanup yet, so a working cancellation closes as
+        // `needs_action`; the turn being over and recorded is the postcondition
+        // this cleanup needs.
+        expect(
+          turnStopped(outcome),
+          `Document test cleanup did not stop the turn: ${JSON.stringify(outcome)}`,
+        ).toBe(true)
       }
       type Part = { id: string; type: string; tool?: string; text?: string; state?: { status: string; output?: string } }
       const read = async (): Promise<Part[]> => {
