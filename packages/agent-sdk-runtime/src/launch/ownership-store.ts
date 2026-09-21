@@ -17,6 +17,13 @@ export type LaunchScope = {
   directory?: string
 }
 
+/**
+ * Reconciliation lists by workspace, so a prepared launch that names no
+ * workspace is one no later owner will look for. It is the only part of the
+ * scope a launch cannot be recorded without.
+ */
+export type LaunchOwnerScope = LaunchScope & { workspaceId: string }
+
 export type PreparedLaunch = {
   launchId: string
   role: LaunchRole
@@ -40,7 +47,7 @@ export type PrepareLaunchInput = {
   role: LaunchRole
   protocol: LaunchProtocol
   parentOwnerId?: string
-  scope: LaunchScope
+  scope: LaunchOwnerScope
 }
 
 /**

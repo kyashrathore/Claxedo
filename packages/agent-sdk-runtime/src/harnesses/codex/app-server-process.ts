@@ -153,6 +153,8 @@ export class CodexAppServerProcess {
     signal?: AbortSignal
     /** Required: a composition with no durable store passes the volatile one itself. */
     ownership: LaunchOwnershipStore
+    /** The workspace this launch is recorded under, and reconciled with. */
+    workspaceId: string
     sessionId?: string
     budgets?: Partial<RecoveryBudgets>
   }) {
@@ -163,7 +165,7 @@ export class CodexAppServerProcess {
     const launch = await launchOwnedProcess({
       ownership: input.ownership,
       role: "harness",
-      scope: { directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
+      scope: { workspaceId: input.workspaceId, directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
       payload: {
         command: windowsShim ? `"${command.command}"` : command.command,
         args: command.args,

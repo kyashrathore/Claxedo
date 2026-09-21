@@ -740,7 +740,15 @@ export namespace Pty {
     // this launch records its identity immediately after the spawn instead and
     // reconciles a crash in that window as unknown rather than as no execution.
     const prepared = await ownership
-      .prepare({ role: "terminal", protocol: "direct", scope: { directory: cwd, ...(input.sessionId ? { sessionId: input.sessionId } : {}) } })
+      .prepare({
+        role: "terminal",
+        protocol: "direct",
+        scope: {
+          workspaceId: observation?.workspaceId ?? runtimeWorkspaceId(),
+          directory: cwd,
+          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        },
+      })
       .catch((error: unknown) => { throw new LaunchRefusedError("terminal", error) })
 
     const t3 = performance.now()

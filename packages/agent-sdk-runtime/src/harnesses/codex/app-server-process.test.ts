@@ -32,7 +32,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
 });
 `)
     server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env,
-      requestHandler: async () => { throw new Error("permission storage failed") }, ownership,
+      requestHandler: async () => { throw new Error("permission storage failed") }, ownership, workspaceId: "ws",
     })
     expect(await server.request("test/approval", {}, soon())).toEqual({
       id: "approval-1", error: { code: -32603, message: "permission storage failed" },
@@ -68,7 +68,7 @@ readline.createInterface({ input: process.stdin }).on('line', async line => {
   }
 });
 `)
-    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership })
+    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership, workspaceId: "ws" })
     const response = await server.request("test/descendant", {}, soon()) as { descendant: number }
     descendant = response.descendant
     process.kill(descendant, 0)
@@ -100,7 +100,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (msg.id !== undefined) process.stdout.write(JSON.stringify({ id: msg.id, result: { ok: true } }) + '\\n');
 });
 `)
-    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership })
+    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership, workspaceId: "ws" })
     const deadline = { signal: new AbortController().signal, deadlineAt: Date.now() + 200 }
     await expect(server.request("test/silent", {}, deadline)).rejects.toThrow(/did not answer within its deadline/)
     expect(await server.request("test/after", {}, soon())).toEqual({ ok: true })
@@ -118,7 +118,7 @@ test.skipIf(process.platform === "win32")("a launch is refused when ownership ca
       prepare: async () => { throw new Error("launch_ownership is unavailable") },
     }
     const failure = await CodexAppServerProcess.start({
-      binary: process.execPath, directory: dir, env: process.env, requestHandler: async () => ({}), ownership,
+      binary: process.execPath, directory: dir, env: process.env, requestHandler: async () => ({}), ownership, workspaceId: "ws",
     }).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(LaunchRefusedError)
   } finally {

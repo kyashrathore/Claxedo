@@ -8,6 +8,9 @@ import type {
   RetirementResult,
 } from "@claxedo/agent-sdk-runtime/launch"
 import { retirementSettled } from "@claxedo/agent-sdk-runtime/launch"
+import { Log } from "../log"
+
+const log = Log.create({ service: "launch-ownership" })
 
 /** The narrow slice of a SQLite handle this table needs. */
 export type SqliteDatabase = {
@@ -71,14 +74,21 @@ type LaunchOwnershipRow = {
  * `retired_at` null and stays in `listUnresolved`.
  */
 export function sqliteLaunchOwnership(db: SqliteDatabase): LaunchOwnershipStore {
+  // Both drivers report a change count; without one, a write against a launch
+  // id nothing prepared would look like a success.
+  const probe = db.prepare("UPDATE launch_ownership SET retired_at = retired_at WHERE launch_id = ?").run("")
+  if (typeof (probe as { changes?: unknown } | undefined)?.changes !== "number") {
+    throw new Error("This SQLite driver does not report a change count, so launch-ownership writes cannot be verified")
+  }
   const write = (sql: string, params: unknown[]) => {
-    const changes = db.prepare(sql).run(...params) as { changes?: number } | undefined
-    if (changes && typeof changes.changes === "number" && changes.changes === 0) {
-      throw new Error(`No prepared launch matched ${String(params.at(-1))}`)
-    }
+    const { changes } = db.prepare(sql).run(...params) as { changes: number }
+    if (changes === 0) throw new Error(`No prepared launch matched ${String(params.at(-1))}`)
   }
   return {
     async prepare(input: PrepareLaunchInput) {
+      if (!input.scope.workspaceId) {
+        throw new Error(`Refusing to prepare a ${input.role} launch with no workspaceId: reconciliation lists by workspace, and a row without one is never found again`)
+      }
       const prepared = {
         launchId: randomUUID(),
         role: input.role,
@@ -119,8 +129,10 @@ export function sqliteLaunchOwnership(db: SqliteDatabase): LaunchOwnershipStore 
     },
 
     async recordRetirement(launchId: string, result: RetirementResult) {
+      // COALESCE, not assignment: a later attempt that establishes less than
+      // the one that settled this row must not reopen it.
       write(
-        "UPDATE launch_ownership SET cleanup_json = ?, retired_at = ? WHERE launch_id = ?",
+        "UPDATE launch_ownership SET cleanup_json = ?, retired_at = COALESCE(retired_at, ?) WHERE launch_id = ?",
         [JSON.stringify(result), retirementSettled(result) ? Date.now() : null, launchId],
       )
     },
@@ -162,12 +174,27 @@ function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord 
       ...(row.directory ? { directory: row.directory } : {}),
     },
     preparedAt: row.prepared_at,
-    ...(row.identity_json ? { identity: JSON.parse(row.identity_json) as CreationIdentity } : {}),
+    ...decoded<CreationIdentity>(row.launch_id, "identity", row.identity_json, (identity) => ({ identity })),
     ...(row.gate_nonce ? { gateNonce: row.gate_nonce } : {}),
     ...(row.identity_received_at ? { identityReceivedAt: row.identity_received_at } : {}),
     ...(row.activation_authorized_at ? { activationAuthorizedAt: row.activation_authorized_at } : {}),
     ...(row.activation_acknowledged_at ? { activationAcknowledgedAt: row.activation_acknowledged_at } : {}),
     ...(row.retired_at ? { retiredAt: row.retired_at } : {}),
-    ...(row.cleanup_json ? { cleanup: JSON.parse(row.cleanup_json) as RetirementResult } : {}),
+    ...decoded<RetirementResult>(row.launch_id, "cleanup", row.cleanup_json, (cleanup) => ({ cleanup })),
+  }
+}
+
+/**
+ * A column that will not parse costs its field, never the row: without the row
+ * nothing knows a launch happened at all, and a record missing its identity
+ * reconciles as unknown, which is the honest answer.
+ */
+function decoded<T>(launchId: string, field: string, raw: string | null, onto: (value: T) => object) {
+  if (!raw) return {}
+  try {
+    return onto(JSON.parse(raw) as T)
+  } catch (error) {
+    log.error("a launch ownership column could not be read", { launchId, field, error: String(error) })
+    return {}
   }
 }

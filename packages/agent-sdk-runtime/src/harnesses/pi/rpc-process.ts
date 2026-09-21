@@ -42,6 +42,8 @@ export type PiRpcProcessInput = {
   observer?: AgentProcessObserver
   /** Required: a composition with no durable store passes the volatile one itself. */
   ownership: LaunchOwnershipStore
+  /** The workspace this launch is recorded under, and reconciled with. */
+  workspaceId: string
   sessionId?: string
   budgets?: Partial<RecoveryBudgets>
 }
@@ -70,7 +72,7 @@ export class PiRpcProcess {
     const launch = await launchOwnedProcess({
       ownership: input.ownership,
       role: "harness",
-      scope: { directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
+      scope: { workspaceId: input.workspaceId, directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
       payload: { command: command.file, args: command.args },
       cwd: input.directory,
       env: input.env,

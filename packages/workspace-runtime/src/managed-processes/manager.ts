@@ -7,7 +7,16 @@
  * deterministic workspace ports, and graceful shutdown.
  */
 
-import { LaunchRefusedError, retirementSettled, type LaunchOwnershipStore, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
+import {
+  LaunchRefusedError,
+  readCreationIdentity,
+  retire,
+  retirementSettled,
+  type LaunchOwnershipStore,
+  type RetirementBudgets,
+  type RetirementResult,
+} from "@claxedo/agent-sdk-runtime/launch"
 import { workspaceRuntimeBus } from "../bus"
 import { Pty } from "../pty/index"
 import { Log } from "../log"
@@ -303,44 +312,41 @@ async function conflict(directory: string, text: string | undefined, ptyId?: str
   return await getPortOccupier(directory, hit)
 }
 
+export type PortReclamation =
+  | { reclaimed: true }
+  | { reclaimed: false; reason: "port_free" | "occupier_unknown" | "ownership_unverified" | "still_held"; pid?: number }
+
 /**
- * Kill the process occupying a preferred port and reclaim it.
+ * Take back a preferred port from whatever is sitting on it.
+ *
+ * The pid comes from a port lookup, not from anything this manager launched,
+ * so it is verified immediately before each signal and again between them: the
+ * gap between reading a port's occupier and signalling it is exactly where a
+ * recycled pid turns this into killing an unrelated process tree. An occupier
+ * whose identity cannot be established is reported, never guessed at.
  */
-async function killAndReclaimPort(port: number): Promise<boolean> {
+export async function killAndReclaimPort(port: number, budgets: RetirementBudgets = DEFAULT_RECOVERY_BUDGETS): Promise<PortReclamation> {
   const pid = await findPidOnPort(port)
-  if (!pid) {
-    return await tryPort(port)
+  if (!pid) return (await tryPort(port)) ? { reclaimed: true } : { reclaimed: false, reason: "port_free" }
+
+  const identity = await readCreationIdentity(pid).catch(() => undefined)
+  if (!identity) {
+    log.warn("port-picker: refusing to signal a port occupier with no creation identity", { port, pid })
+    return { reclaimed: false, reason: "occupier_unknown", pid }
   }
 
-  log.warn("port-picker: killing existing process on preferred port", { port, pid })
-  try {
-    if (process.platform !== "win32") {
-      try {
-        process.kill(-pid, "SIGTERM")
-      } catch {}
-    }
-    try {
-      process.kill(pid, "SIGTERM")
-    } catch {}
-    await new Promise((r) => setTimeout(r, 1000))
-    if (await tryPort(port)) {
-      log.info("port-picker: reclaimed preferred port after kill", { port })
-      return true
-    }
-    if (process.platform !== "win32") {
-      try {
-        process.kill(-pid, "SIGKILL")
-      } catch {}
-    }
-    try { process.kill(pid, "SIGKILL") } catch {}
-    await new Promise((r) => setTimeout(r, 500))
-    if (await tryPort(port)) return true
-  } catch (err) {
-    log.warn("port-picker: failed to kill process on port", { port, pid, err: String(err) })
+  log.warn("port-picker: retiring the process holding a preferred port", { port, pid })
+  const retirement = await retire({ identity }, budgets)
+  if (retirement.error?.code === "signal_denied" || retirement.error?.code === "ownership_unverified") {
+    log.warn("port-picker: the port occupier is no longer the recorded process", { port, pid, retirement })
+    return { reclaimed: false, reason: "ownership_unverified", pid }
   }
-
-  log.warn("port-picker: could not reclaim preferred port", { port })
-  return false
+  if (await tryPort(port)) {
+    log.info("port-picker: reclaimed preferred port", { port, leader: retirement.leader, descendants: retirement.descendants })
+    return { reclaimed: true }
+  }
+  log.warn("port-picker: could not reclaim preferred port", { port, pid, retirement })
+  return { reclaimed: false, reason: "still_held", pid }
 }
 
 function claimed(port: number, owner: string): boolean {
@@ -420,7 +426,7 @@ async function resolvePort(
   }
 
   if (strategy === "kill-existing") {
-    const reclaimed = await killAndReclaimPort(start)
+    const reclaimed = (await killAndReclaimPort(start)).reclaimed
     if (reclaimed && await reservePort(start, owner)) return start
   } else {
     log.info("port-picker: preferred port occupied, picking new", {

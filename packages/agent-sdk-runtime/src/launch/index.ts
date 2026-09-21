@@ -24,6 +24,7 @@ export {
   type LaunchOwnershipStore,
   type LaunchProtocol,
   type LaunchRole,
+  type LaunchOwnerScope,
   type LaunchScope,
   type PrepareLaunchInput,
   type PreparedLaunch,

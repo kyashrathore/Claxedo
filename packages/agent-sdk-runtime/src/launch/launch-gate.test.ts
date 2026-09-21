@@ -69,7 +69,7 @@ test.skipIf(!posix)("an acknowledged launch owns a group the payload is inside",
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: sleeper(30),
     cwd: directory,
     env: process.env,
@@ -102,7 +102,7 @@ test.skipIf(!posix)("ownership is durable before the payload can run", async () 
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: { command: "/bin/sh", args: ["-c", `touch ${marker}; sleep 30`] },
     cwd: directory,
     env: process.env,
@@ -125,7 +125,7 @@ test.skipIf(!posix)("a store that refuses to prepare refuses the launch and spaw
   const failure = await launchOwnedProcess({
     ownership,
     role: "managed-process",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: sleeper(30),
     cwd: directory,
     env: process.env,
@@ -147,7 +147,7 @@ test.skipIf(!posix)("a store that fails after the gate reports leaves no payload
   const failure = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: { command: "/bin/sh", args: ["-c", `touch ${marker}; sleep 30`] },
     cwd: directory,
     env: process.env,
@@ -188,14 +188,14 @@ test.skipIf(!posix)("the gate exits when the private channel closes before activ
 
 test.skipIf(!posix)("a prepared launch that never reported reconciles as no execution", async () => {
   const ownership = volatileLaunchOwnership()
-  const prepared = await ownership.prepare({ role: "harness", protocol: "gate", scope: {} })
+  const prepared = await ownership.prepare({ role: "harness", protocol: "gate", scope: { workspaceId: "ws" } })
   const record = await ownership.read(prepared.launchId)
   expect(reconcileLaunch(record!).execution).toBe("none")
 })
 
 test.skipIf(!posix)("a prepared direct launch stays unknown, because its spawn precedes its record", async () => {
   const ownership = volatileLaunchOwnership()
-  const prepared = await ownership.prepare({ role: "terminal", protocol: "direct", scope: {} })
+  const prepared = await ownership.prepare({ role: "terminal", protocol: "direct", scope: { workspaceId: "ws" } })
   const record = await ownership.read(prepared.launchId)
   expect(reconcileLaunch(record!).execution).toBe("unknown")
 })
@@ -206,7 +206,7 @@ test.skipIf(!posix)("retirement escalates to KILL for a payload that ignores TER
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: ignoresTerm(path.join(directory, "ready")),
     cwd: directory,
     env: process.env,
@@ -239,7 +239,7 @@ test.skipIf(!posix)("a descendant that leaves the group leaves cleanup unknown",
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: { command: process.execPath, args: [escapee, marker] },
     cwd: directory,
     env: process.env,
@@ -261,7 +261,7 @@ test.skipIf(!posix)("retirement refuses to signal a recorded identity another pr
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: sleeper(30),
     cwd: directory,
     env: process.env,
@@ -296,7 +296,7 @@ test.skipIf(!posix)("an identity probe that fails reports unknown rather than cl
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: sleeper(30),
     cwd: directory,
     env: process.env,
@@ -325,7 +325,7 @@ test.skipIf(!posix)("retiring an already exited leader reports its surviving gro
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: sleeper(30),
     cwd: directory,
     env: process.env,
@@ -348,7 +348,7 @@ test.skipIf(!posix)("a second retirement of a settled launch is idempotent", asy
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: sleeper(30),
     cwd: directory,
     env: process.env,
@@ -368,7 +368,7 @@ test.skipIf(!posix)("closeNative runs between TERM and KILL", async () => {
   const launch = await launchOwnedProcess({
     ownership,
     role: "terminal",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: ignoresTerm(path.join(directory, "ready")),
     cwd: directory,
     env: process.env,
@@ -426,7 +426,7 @@ const crashProxy = (mode: "before-identity" | "before-ack", store: string, marke
   `}`,
   mode === "before-identity" ? `process.kill(process.pid, "SIGKILL")` : ``,
   `await launchOwnedProcess({`,
-  `  ownership, role: "harness", scope: {},`,
+  `  ownership, role: "harness", scope: { workspaceId: "ws" },`,
   `  payload: { command: "/bin/sh", args: ["-c", "touch ${marker}; sleep 30"] },`,
   `  cwd: ${JSON.stringify(process.cwd())}, env: process.env, activationDeadlineMs: 4000,`,
   `})`,
@@ -497,7 +497,7 @@ test.skipIf(!posix)("the payload cannot run while authorization is still being r
   const launching = launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: { command: "/bin/sh", args: ["-c", `touch ${marker}; sleep 30`] },
     cwd: directory,
     env: process.env,
@@ -541,7 +541,7 @@ test.skipIf(!posix)("a boot identity that differs is a mismatch, not a live proc
   const launch = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { directory },
+    scope: { workspaceId: "ws", directory },
     payload: sleeper(30),
     cwd: directory,
     env: process.env,

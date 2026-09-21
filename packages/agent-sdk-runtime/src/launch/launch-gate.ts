@@ -9,7 +9,7 @@ import {
   LaunchRefusedError,
   type LaunchOwnershipStore,
   type LaunchRole,
-  type LaunchScope,
+  type LaunchOwnerScope,
   type PreparedLaunch,
 } from "./ownership-store"
 import { neverExecuted, retire, type RetirementBudgets, type RetirementResult } from "./retirement"
@@ -166,7 +166,7 @@ export type LaunchOwnedProcessInput = {
   ownership: LaunchOwnershipStore
   role: LaunchRole
   parentOwnerId?: string
-  scope: LaunchScope
+  scope: LaunchOwnerScope
   payload: GatePayload
   cwd: string
   env: NodeJS.ProcessEnv
