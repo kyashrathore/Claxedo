@@ -37,6 +37,7 @@
  * name filtering as the capability that qualifies a driver for hosted use.
  */
 
+import { publicRepoHost } from "@claxedo/sandbox-contract"
 import type { SandboxNetworkPolicy, SandboxSource } from "."
 
 /**
@@ -99,10 +100,16 @@ function hostOf(value: string | undefined): string | undefined {
  * allowlist, matching how `authenticatedGitHubCloneSource` scopes the clone
  * credential it brokers (`hosts: ["github.com"]`) — the credential and the
  * network policy should describe the same reachable surface.
+ *
+ * The host is caller-selected, so only a public spelling earns an allowlist
+ * entry: `169.254.169.254` or `localhost` named as a repoUrl would otherwise
+ * open the sandbox's egress to the provisioning network's own addresses. A
+ * DNS name cannot be seen through here (no resolver in this module); a name
+ * that hides a private answer is clone admission's refusal, not this one's.
  */
 export function sandboxSourceHost(source: SandboxSource | undefined): string | undefined {
   if (!source || source.kind !== "git") return undefined
-  return hostOf(source.repoUrl)
+  return publicRepoHost(source.repoUrl)
 }
 
 export type HostedSandboxNetworkPolicyInput = {

@@ -17,6 +17,16 @@ export function selfHostedOperatorAuthorizer(env: NodeJS.ProcessEnv = process.en
   }
 }
 
+/**
+ * The operator's explicitly permitted non-public clone destinations, named by
+ * `CLAXEDO_PRIVATE_REPO_HOSTS` as a comma-separated hostname list — a private
+ * Git server on this server's own network that signed callers may clone from
+ * even though it does not resolve to a public address.
+ */
+export function selfHostedPrivateRepoHosts(env: NodeJS.ProcessEnv = process.env) {
+  return (env.CLAXEDO_PRIVATE_REPO_HOSTS ?? "").split(",").map((host) => host.trim()).filter(Boolean)
+}
+
 export function selfHostedOperatorGuard(
   auth: ControlPlaneAuthAdapter,
   authorize = selfHostedOperatorAuthorizer(),

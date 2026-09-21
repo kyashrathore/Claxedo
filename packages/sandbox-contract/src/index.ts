@@ -6,6 +6,12 @@
  * values without making sandbox provisioning reachable from the local product.
  */
 import { trimToUndefined } from "@claxedo/helpers/string"
+import {
+  isLoopbackIpAddress,
+  isPrivateIpAddress,
+  parseIpAddress,
+  type IpAddress,
+} from "@claxedo/helpers"
 
 export const sandboxDriverIds = ["exe", "daytona", "modal", "vercel", "cloudflare", "box", "docker"] as const
 
@@ -176,6 +182,112 @@ export function safeRepoUrl(input: string): string | undefined {
   } catch {
     return /^[\w.-]+@[\w.-]+:[\w./-]+$/.test(input) ? input : undefined
   }
+}
+
+/**
+ * The host `git clone` would dial for every form `safeRepoUrl` admits: the URL
+ * hostname for http(s) and ssh URLs, and the `host` of the scp-style
+ * `user@host:path` form. WHATWG lowercases the hostname and keeps IPv6
+ * brackets; the scp arm lowercases to match. Undefined for inputs that are
+ * not an admitted form, so the shape check cannot be skipped by reading the
+ * host alone.
+ */
+export function repoUrlHost(input: string): string | undefined {
+  if (!safeRepoUrl(input)) return undefined
+  try {
+    const host = new URL(input).hostname
+    return host || undefined
+  } catch {
+    return /^[\w.-]+@([\w.-]+):[\w./-]+$/.exec(input)?.[1]?.toLowerCase()
+  }
+}
+
+/** `[::1]` and `::1` must classify alike; a URL hostname keeps the brackets. */
+function bareRepoHost(host: string) {
+  const bare = host.trim().toLowerCase()
+  return bare.startsWith("[") && bare.endsWith("]") && bare.includes(":") ? bare.slice(1, -1) : bare
+}
+
+/** `localhost` names are loopback by definition (RFC 6761), whatever DNS says. */
+function loopbackRepoName(bare: string) {
+  return bare === "localhost" || bare.endsWith(".localhost")
+}
+
+function permittedRepoAddress(ip: IpAddress, loopback: boolean) {
+  return !isPrivateIpAddress(ip) || (loopback && isLoopbackIpAddress(ip))
+}
+
+/**
+ * The clone host of a repository URL when it SPELLS a public destination: an
+ * admitted `safeRepoUrl` form whose host is no private or loopback IP literal
+ * and no localhost name. A DNS name passes here — whether it hides a private
+ * answer is `admittedRepoUrl`'s question, which only a runtime with a
+ * resolver can answer. This is the half of the admission policy a name-only
+ * egress allowlist can apply.
+ */
+export function publicRepoHost(repoUrl: string): string | undefined {
+  const host = repoUrlHost(repoUrl)
+  if (!host) return undefined
+  const bare = bareRepoHost(host)
+  if (loopbackRepoName(bare)) return undefined
+  const ip = parseIpAddress(bare)
+  if (ip && isPrivateIpAddress(ip)) return undefined
+  return host
+}
+
+/**
+ * The DNS answers behind a clone hostname, as IP literals. Every runtime fills
+ * this port with what it has — `node:dns` on a server, DNS-over-HTTPS inside a
+ * Worker — because the policy cannot check a name it cannot see through.
+ */
+export type RepoAddressResolver = (hostname: string) => Promise<readonly string[]>
+
+export type RepoDestinationPolicy = {
+  /**
+   * Admit loopback destinations — repositories served by the machine the clone
+   * runs on. For a caller that already holds that machine (the unsigned local
+   * product); for a signed remote caller `localhost` is the SERVER's network,
+   * which is exactly the reachability this policy exists to refuse.
+   */
+  loopback?: boolean
+  /**
+   * Hosts the operator explicitly approves even though they are not public —
+   * a private Git server on the server's own network, named by exact
+   * hostname. Matching is deliberate policy, not a lookup: an approved name
+   * is admitted without resolving it.
+   */
+  privateHosts?: readonly string[]
+  /**
+   * DNS answers behind a hostname. A named host cannot be checked without a
+   * resolver and is refused; a name that resolves to nothing is refused the
+   * same way — an unverifiable destination must fail closed, not open.
+   */
+  resolve?: RepoAddressResolver
+}
+
+/**
+ * The one repository admission policy applied before a clone and before a
+ * clone-derived egress allowlist: a `safeRepoUrl` shape, then a destination
+ * the cloning host may dial — literals and localhost names by spelling, DNS
+ * names through `resolve`, every resolved address held to the same rule a
+ * literal would be. Returns the input when admitted, undefined when refused.
+ */
+export async function admittedRepoUrl(input: string, policy: RepoDestinationPolicy = {}): Promise<string | undefined> {
+  const host = repoUrlHost(input)
+  if (!host) return undefined
+  const bare = bareRepoHost(host)
+  if (policy.privateHosts?.some((approved) => bareRepoHost(approved) === bare)) return input
+  const loopback = policy.loopback === true
+  const literal = parseIpAddress(bare)
+  if (literal) return permittedRepoAddress(literal, loopback) ? input : undefined
+  if (loopbackRepoName(bare)) return loopback ? input : undefined
+  const addresses = await policy.resolve?.(host)
+  if (!addresses?.length) return undefined
+  for (const address of addresses) {
+    const ip = parseIpAddress(bareRepoHost(address))
+    if (!ip || !permittedRepoAddress(ip, loopback)) return undefined
+  }
+  return input
 }
 
 export function sandboxDriverId(

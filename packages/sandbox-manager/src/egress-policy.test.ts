@@ -6,6 +6,7 @@ import {
   hostedSandboxNetworkPolicy,
   sandboxEgressDisposition,
   sandboxSourceHost,
+  SANDBOX_BASELINE_EGRESS_HOSTS,
   SANDBOX_MODEL_PROVIDER_HOSTS,
   type SandboxDriver,
   type SandboxDriverEnsureInput,
@@ -591,8 +592,32 @@ describe("hostedSandboxNetworkPolicy", () => {
   test("allows the one git host this workspace clones from", () => {
     expect(policy.hosts).toContain("github.com")
     expect(sandboxSourceHost({ kind: "git", repoUrl: "https://gitlab.com/a/b.git" })).toBe("gitlab.com")
+    expect(sandboxSourceHost({ kind: "git", repoUrl: "git@github.com:a/b.git" })).toBe("github.com")
     expect(sandboxSourceHost({ kind: "empty" })).toBeUndefined()
-    expect(sandboxSourceHost({ kind: "git", repoUrl: "git@github.com:a/b.git" })).toBeUndefined()
+  })
+
+  test("a caller-selected git host earns an entry only when it spells a public destination", () => {
+    // The repoUrl is caller input, so a private or loopback spelling must not
+    // open the sandbox's egress to the provisioning network's own addresses.
+    // A name that hides a private answer is refused earlier, at clone
+    // admission — this layer sees only the spelling.
+    for (const repoUrl of [
+      "http://169.254.169.254/latest/meta-data",
+      "https://10.0.0.5/acme/repo.git",
+      "http://127.0.0.1:8080/acme/repo.git",
+      "http://localhost:8080/acme/repo.git",
+      "ssh://git@[::1]/acme/repo.git",
+      "git@192.168.1.10:acme/repo.git",
+      "file:///etc/passwd",
+      "not a url",
+    ]) {
+      const source = { kind: "git" as const, repoUrl }
+      expect(sandboxSourceHost(source), repoUrl).toBeUndefined()
+      expect(
+        hostedSandboxNetworkPolicy({ controlPlane: ["https://cp.test"], source }).hosts,
+        repoUrl,
+      ).toEqual(["cp.test", ...SANDBOX_BASELINE_EGRESS_HOSTS])
+    }
   })
 
   test("allows the model providers an agent harness has to reach", () => {

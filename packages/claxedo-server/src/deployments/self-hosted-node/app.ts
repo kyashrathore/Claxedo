@@ -148,7 +148,7 @@ import {
 } from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
-import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard } from "./operator"
+import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard, selfHostedPrivateRepoHosts } from "./operator"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
@@ -1198,6 +1198,7 @@ export function createSelfHostedApp(
     "/api/claxedo/projects",
     LocalProjectRoutes(authRouteOptions(services), {
       authorizeLocalDirectoryImport: authorizeOperator,
+      privateRepoHosts: selfHostedPrivateRepoHosts(),
       ...(projectAuthority ? { authority: projectAuthority } : {}),
       cloneCredential: async (auth, repoUrl) => {
         if (!repoUrl.startsWith("https://github.com/")) return undefined

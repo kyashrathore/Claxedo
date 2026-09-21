@@ -253,8 +253,15 @@ describe("@claxedo/local-server closure", () => {
     // surface a relayed request may reach — for this daemon and a
     // `claxedo connect` host alike, and reaches only server-core's log and
     // peer-address leaves and the runtime's relay subpath.
+    // `node:timers` is the device-code poll's sleep in
+    // `credentials/provider-auth/service.ts` — bounded waits on the server
+    // thread, which only a Node runtime has. `node:dns` is clone destination
+    // admission in `workspace/routes/projects-route.ts`: a signed caller's
+    // repoUrl is held to public destinations through the system resolver,
+    // because getaddrinfo honours /etc/hosts, mDNS and split-horizon DNS —
+    // the answers `git` will dial.
     const { modules, packages } = closure({ runtimeOnly: true })
     expect(modules.size).toBeLessThanOrEqual(96)
-    expect(packages.size).toBeLessThanOrEqual(27)
+    expect(packages.size).toBeLessThanOrEqual(29)
   })
 })

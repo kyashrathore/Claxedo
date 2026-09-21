@@ -47,6 +47,8 @@ function build(entitled: boolean) {
     authConfig,
     verifier,
     requireCloudWorkspaceEntitlement,
+    // No real DNS in tests: clone admission resolves through this stub.
+    resolveRepoAddresses: async () => ["140.82.112.3"],
   })
   return { app, createCloudWorkspace, ensure, requireCloudWorkspaceEntitlement }
 }

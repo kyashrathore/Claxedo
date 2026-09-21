@@ -160,8 +160,13 @@ export const localServer: Policy = {
   //    search): a caller-named regex can backtrack catastrophically on the
   //    server thread, and only `worker.terminate()` interrupts synchronous
   //    evaluation, so grepSearch evaluates the pattern in a bounded worker.
-  //    68/28, no headroom.
-  ceilings: { modules: 68, packages: 28 },
+  //  - `node:dns` via `workspace/routes/projects-route.ts` (owner: clone
+  //    destination admission): a signed caller's repoUrl is held to public
+  //    destinations through the system resolver, because getaddrinfo honours
+  //    /etc/hosts, mDNS and split-horizon DNS — the answers `git` will dial —
+  //    and only a Node runtime has it (the hosted Worker resolves over DoH).
+  //    68/29, no headroom.
+  ceilings: { modules: 68, packages: 29 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

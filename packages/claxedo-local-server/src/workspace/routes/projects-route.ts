@@ -1,9 +1,10 @@
 import fs from "node:fs/promises"
 import path from "node:path"
+import { lookup } from "node:dns/promises"
 import { Hono } from "hono"
 import { z } from "zod"
 import { createBoundedGit } from "@claxedo/workspace-runtime/host"
-import { safeRepoUrl } from "@claxedo/sandbox-contract"
+import { admittedRepoUrl, safeRepoUrl, type RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { projectEnvProblem } from "@claxedo/server-core/workspace/project-env"
 import {
@@ -105,6 +106,15 @@ function repositoryHost(repoUrl: string) {
   }
 }
 
+/**
+ * The system resolver, so clone admission sees the answers `git` will actually
+ * dial: getaddrinfo honours /etc/hosts, mDNS and split-horizon DNS, and a
+ * private answer anywhere is a private destination. An unresolvable name
+ * answers empty, which the admission reads as refused.
+ */
+const systemRepoAddresses: RepoAddressResolver = async (hostname) =>
+  (await lookup(hostname, { all: true }).catch(() => [])).map((answer) => answer.address)
+
 function apiError(code: string, message: string) {
   return { error: { code, message } }
 }
@@ -174,6 +184,21 @@ export type LocalProjectRouteDeps = {
    * Signed compositions supply it from the connections host.
    */
   cloneCredential?: (auth: SignedControlPlaneAuth, repoUrl: string) => Promise<{ authorization: string } | undefined>
+  /**
+   * DNS answers behind a clone host — the port a signed caller's destination
+   * refusal resolves through. Defaults to the system resolver; a composition
+   * without it, or a test, supplies its own.
+   */
+  resolveRepoAddresses?: RepoAddressResolver
+  /**
+   * The deployment's explicitly permitted non-public clone destinations — a
+   * private Git server on this server's own network — by exact hostname. Only
+   * a signed caller is held to the public-destination rule at all: the
+   * unsigned local product's caller is this machine's own operator, for whom
+   * `127.0.0.1` and `git.lan` are ordinary repositories, not reachability
+   * into a network they cannot already see.
+   */
+  privateRepoHosts?: readonly string[]
 }
 
 /** This router's caller is the one its per-route bearer gate already verified. */
@@ -252,6 +277,21 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
       } else {
         repoUrl = safeRepoUrl(body.source.repoUrl)
         if (!repoUrl) return c.json(apiError("project_repository_invalid", "That is not a repository URL this server can clone"), 400)
+        // A signed caller drives this server's network remotely: the clone
+        // must not become a reachability oracle into the deployment's own
+        // addresses. `caller` exists exactly for a verified signed request;
+        // the unsigned local product's operator keeps loopback and LAN
+        // repositories, which are legitimate clone sources on one's own
+        // machine.
+        if (caller) {
+          const admitted = await admittedRepoUrl(repoUrl, {
+            resolve: deps.resolveRepoAddresses ?? systemRepoAddresses,
+            ...(deps.privateRepoHosts ? { privateHosts: deps.privateRepoHosts } : {}),
+          })
+          if (!admitted) {
+            return c.json(apiError("project_repository_refused", "That repository is not a destination this server may clone"), 400)
+          }
+        }
         const slug = projectSlug(body.name)
         if (!slug) return c.json(apiError("project_invalid", "name must contain a letter or digit"), 400)
         directory = path.join(projectsDirectory(), slug)

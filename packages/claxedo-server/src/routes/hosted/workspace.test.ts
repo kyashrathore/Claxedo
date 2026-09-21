@@ -121,6 +121,9 @@ function buildApp(opts: {
     relayUrl: "https://relay.test",
     runtimeAccessTokenSigner: ratSigner,
     hostTunnelTokenSigner: httSigner,
+    // Tests never dial DNS: clone admission resolves through this stub (a
+    // public answer) unless a case overrides it to answer private or nothing.
+    resolveRepoAddresses: async () => ["93.184.216.34"],
     ...opts.options,
   })
   return { app, authority, capture }
@@ -447,7 +450,7 @@ describe("hosted connection", () => {
     })
   })
 
-  test("returns provisioning metadata for a cloud workspace while ensure is still acquiring", async () => {
+  test("the explicit POST connect returns provisioning metadata while ensure is still acquiring", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
         allowed: true,
@@ -459,7 +462,7 @@ describe("hosted connection", () => {
       ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 3, homeRegion: "apac-south" })),
     } as unknown as SandboxManager
     const { app, capture } = buildApp({ authority: authority, sandboxManager })
-    const res = await app.fetch(get("/ws_1/connection"))
+    const res = await app.fetch(post("/ws_1/connection", {}))
     expect(res.status).toBe(200)
     expect(sandboxManager.ensure).toHaveBeenCalledWith("ws_1", {
       homeRegion: "apac-south",
@@ -487,6 +490,99 @@ describe("hosted connection", () => {
     })
   })
 
+  test("GET reports an in-flight start as provisioning without provisioning itself", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "apac-south" },
+      })),
+    })
+    // No `ensure` on this fake: the read resolves the lease row through
+    // `target` and a stray provisioning call throws instead of passing silently.
+    const sandboxManager = {
+      target: vi.fn(async () => ({
+        status: "unavailable" as const,
+        reason: "runtime_lease_not_ready",
+        leaseStatus: "acquiring" as const,
+        retryAfterMs: 2_000,
+      })),
+    } as unknown as SandboxManager
+    const { app, capture } = buildApp({ authority: authority, sandboxManager })
+    const res = await app.fetch(get("/ws_1/connection"))
+    expect(res.status).toBe(200)
+    expect(sandboxManager.target).toHaveBeenCalledWith("ws_1")
+    expect(capture).toHaveBeenCalledWith("user_1", "sandbox.target", {
+      workspaceId: "ws_1",
+      status: "unavailable",
+      homeRegion: "apac-south",
+      relayRoom: "ws_1",
+      reason: "runtime_lease_not_ready",
+      leaseStatus: "acquiring",
+    })
+    expect(await res.json()).toEqual({
+      status: "provisioning",
+      workspaceId: "ws_1",
+      homeRegion: "apac-south",
+      retryAfterMs: 2_000,
+    })
+  })
+
+  test("GET reports a stopped cloud workspace without provisioning it", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "us-east" },
+      })),
+    })
+    const ensure = vi.fn()
+    const sandboxManager = {
+      target: vi.fn(async () => ({
+        status: "unavailable" as const,
+        reason: "runtime_lease_not_ready",
+        leaseStatus: "stopped" as const,
+      })),
+      ensure,
+    } as unknown as SandboxManager
+    const { app, authority: auth } = buildApp({ authority: authority, sandboxManager })
+    const res = await app.fetch(get("/ws_1/connection"))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      status: "stopped",
+      workspaceId: "ws_1",
+      homeRegion: "us-east",
+    })
+    // Reading a dormant workspace must not start billable compute (P-118):
+    // no ensure, no mint.
+    expect(ensure).not.toHaveBeenCalled()
+    expect(auth!.recordRuntimeAccessToken).not.toHaveBeenCalled()
+  })
+
+  test("GET reports a cloud workspace with no lease as stopped", async () => {
+    const authority = fakeAuthority({
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { workspace_id: "ws_1", backing: "cloud-vm", home_region: "us-east" },
+      })),
+    })
+    const ensure = vi.fn()
+    const sandboxManager = {
+      target: vi.fn(async () => ({ status: "unavailable" as const, reason: "runtime_lease_missing" })),
+      ensure,
+    } as unknown as SandboxManager
+    const { app } = buildApp({ authority: authority, sandboxManager })
+    const res = await app.fetch(get("/ws_1/connection"))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      status: "stopped",
+      workspaceId: "ws_1",
+      homeRegion: "us-east",
+    })
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
   test("mints a Runtime Access Token for a ready cloud workspace without driver internals", async () => {
     const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
@@ -496,7 +592,7 @@ describe("hosted connection", () => {
       })),
     })
     const sandboxManager = {
-      ensure: vi.fn(async () => ({
+      target: vi.fn(async () => ({
         status: "ready",
         sandboxId: "sandbox_1",
         url: "https://runtime.test/ws_1",
@@ -527,7 +623,7 @@ describe("hosted connection", () => {
         }),
       }),
     )
-    expect(capture).toHaveBeenCalledWith("user_1", "sandbox.ensure", {
+    expect(capture).toHaveBeenCalledWith("user_1", "sandbox.target", {
       workspaceId: "ws_1",
       status: "ready",
       homeRegion: "eu-west",
@@ -585,7 +681,9 @@ describe("hosted connection", () => {
       })),
     } as unknown as SandboxManager
     const { app, capture } = buildApp({ authority: authority, sandboxManager })
-    const res = await app.fetch(get("/ws_1/connection"))
+    // The 409 is the explicit connect's answer; the GET read reports the same
+    // lease as `stopped` instead.
+    const res = await app.fetch(post("/ws_1/connection", {}))
     expect(res.status).toBe(409)
     expect(await res.json()).toMatchObject({
       error: {
@@ -659,7 +757,12 @@ describe("hosted connection rate limiting (mint-only)", () => {
 
   test("10 consecutive provisioning polls never hit the Runtime Access Token mint limit", async () => {
     const sandboxManager = {
-      ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" })),
+      target: vi.fn(async () => ({
+        status: "unavailable" as const,
+        reason: "runtime_lease_not_ready",
+        leaseStatus: "acquiring" as const,
+        retryAfterMs: 2_000,
+      })),
     } as unknown as SandboxManager
     const { app } = buildApp({ authority: cloudWorkspaceAuthority(), sandboxManager })
 
@@ -680,12 +783,18 @@ describe("hosted connection rate limiting (mint-only)", () => {
       epoch: 2,
       homeRegion: "us-east",
     }
-    const ensure = vi.fn(async () => ready as never)
-    ensure
-      .mockResolvedValueOnce({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" } as never)
-      .mockResolvedValueOnce({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" } as never)
-      .mockResolvedValueOnce({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" } as never)
-    const sandboxManager = { ensure } as unknown as SandboxManager
+    const acquiring = {
+      status: "unavailable",
+      reason: "runtime_lease_not_ready",
+      leaseStatus: "acquiring",
+      retryAfterMs: 2_000,
+    }
+    const target = vi.fn(async () => ready as never)
+    target
+      .mockResolvedValueOnce(acquiring as never)
+      .mockResolvedValueOnce(acquiring as never)
+      .mockResolvedValueOnce(acquiring as never)
+    const sandboxManager = { target } as unknown as SandboxManager
     const { app, authority } = buildApp({
       authority: cloudWorkspaceAuthority(),
       sandboxManager,
@@ -708,7 +817,12 @@ describe("hosted connection rate limiting (mint-only)", () => {
 
   test("provisioning polls beyond the control-plane request cap get 429 before any the authority read", async () => {
     const sandboxManager = {
-      ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" })),
+      target: vi.fn(async () => ({
+        status: "unavailable" as const,
+        reason: "runtime_lease_not_ready",
+        leaseStatus: "acquiring" as const,
+        retryAfterMs: 2_000,
+      })),
     } as unknown as SandboxManager
     const { app, authority } = buildApp({
       authority: cloudWorkspaceAuthority(),
@@ -734,12 +848,17 @@ describe("hosted connection rate limiting (mint-only)", () => {
     }
     // Rejected polls never reached the authority reads.
     expect(authority!.usersMe.mock.calls.length).toBe(authorityReadsAtCap)
-    expect(sandboxManager.ensure).toHaveBeenCalledTimes(3)
+    expect(sandboxManager.target).toHaveBeenCalledTimes(3)
   })
 
   test("repeated rate-limit rejections in one window audit to the authority exactly once", async () => {
     const sandboxManager = {
-      ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" })),
+      target: vi.fn(async () => ({
+        status: "unavailable" as const,
+        reason: "runtime_lease_not_ready",
+        leaseStatus: "acquiring" as const,
+        retryAfterMs: 2_000,
+      })),
     } as unknown as SandboxManager
     const { app, authority } = buildApp({
       authority: cloudWorkspaceAuthority(),
@@ -982,6 +1101,84 @@ describe("hosted cloud workspace create (POST /create)", () => {
     }
     expect(createCloudWorkspace).not.toHaveBeenCalled()
     expect(ensure).not.toHaveBeenCalled()
+  })
+
+  test("rejects a repoUrl whose destination is not public", async () => {
+    // Clone admission is the same policy the egress allowlist is derived
+    // from: a signed caller must not turn a hosted create into reachability
+    // into the deployment's own addresses (P-72).
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const { app } = buildApp({
+      authority,
+      sandboxManager: { ensure } as unknown as SandboxManager,
+    })
+
+    const refused = [
+      "http://169.254.169.254/latest/meta-data",
+      "https://10.0.0.5/acme/repo.git",
+      "http://127.0.0.1:8080/acme/repo.git",
+      "http://localhost:8080/acme/repo.git",
+      "ssh://git@[::1]/acme/repo.git",
+      "git@192.168.1.10:acme/repo.git",
+    ]
+    for (const [i, repoUrl] of refused.entries()) {
+      // A fresh subject per request: the per-caller create budget (5/min) is
+      // not the refusal under test.
+      const res = await app.fetch(post("/create", { workspaceName: "Internal", repoUrl }, `user_${i}`))
+      expect(res.status, repoUrl).toBe(400)
+      await expect(res.json()).resolves.toMatchObject({ error: { code: "repo_url_invalid" } })
+    }
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
+  test("rejects a clone hostname that resolves private, or does not resolve", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const resolveRepoAddresses = vi.fn(async () => ["93.184.216.34", "10.0.0.5"])
+    const { app } = buildApp({
+      authority,
+      sandboxManager: { ensure } as unknown as SandboxManager,
+      options: { resolveRepoAddresses },
+    })
+
+    const mixed = await app.fetch(post("/create", { workspaceName: "Mixed", repoUrl: "https://git.acme.test/repo.git" }))
+    expect(mixed.status).toBe(400)
+    await expect(mixed.json()).resolves.toMatchObject({ error: { code: "repo_url_invalid" } })
+    expect(resolveRepoAddresses).toHaveBeenCalledWith("git.acme.test")
+
+    const { app: unresolvable } = buildApp({
+      authority,
+      sandboxManager: { ensure } as unknown as SandboxManager,
+      options: { resolveRepoAddresses: async () => [] },
+    })
+    const nowhere = await unresolvable.fetch(post("/create", { workspaceName: "Nowhere", repoUrl: "https://git.acme.test/repo.git" }))
+    expect(nowhere.status).toBe(400)
+    expect(createCloudWorkspace).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
+  test("admits an operator-approved private Git host by exact name", async () => {
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const resolveRepoAddresses = vi.fn(async () => ["10.0.0.5"])
+    const { app } = buildApp({
+      authority,
+      sandboxManager: { ensure } as unknown as SandboxManager,
+      options: { privateRepoHosts: ["git.corp.internal"], resolveRepoAddresses },
+    })
+
+    const approved = await app.fetch(post("/create", { workspaceName: "Corp", repoUrl: "https://git.corp.internal/acme/repo.git" }))
+    expect(approved.status).toBe(200)
+    // Approval is an exact-name policy, not a lookup: the resolver never runs.
+    expect(resolveRepoAddresses).not.toHaveBeenCalled()
+
+    const sibling = await app.fetch(post("/create", { workspaceName: "Sibling", repoUrl: "https://other.corp.internal/acme/repo.git" }))
+    expect(sibling.status).toBe(400)
   })
 
   test("asks the authority to admit a create that names no organization", async () => {

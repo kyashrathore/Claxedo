@@ -15,7 +15,8 @@ import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
 import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
-import { safeRepoUrl } from "@claxedo/sandbox-contract"
+import { admittedRepoUrl, type RepoAddressResolver } from "@claxedo/sandbox-contract"
+import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
@@ -25,7 +26,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
-import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
+import { hostedConnectionInfo, hostedConnectionStatus } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
@@ -83,6 +84,22 @@ export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
    * default nobody chose.
    */
   sandboxEgressExtraHosts?: string[]
+  /**
+   * DNS answers behind a clone hostname, for the admission check a
+   * caller-selected `repoUrl` is held to before it is cloned or allowed into
+   * the sandbox's egress allowlist. workerd has no `node:dns`, so the default
+   * resolves over DNS-over-HTTPS — the same port MCP discovery fills. A name
+   * that does not resolve is refused: clone admission fails closed, not open.
+   * Tests and compositions without resolver egress supply their own.
+   */
+  resolveRepoAddresses?: RepoAddressResolver
+  /**
+   * Non-public clone destinations the operator explicitly permits — a private
+   * Git server, named by exact hostname. Pair each entry with
+   * `sandboxEgressExtraHosts`: the admission lets the create through, and the
+   * egress entry lets the provisioned sandbox actually reach the host.
+   */
+  privateRepoHosts?: readonly string[]
 }
 
 /**
@@ -170,13 +187,22 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     })
   const sandboxLeaseCap = options.sandboxLeaseCap ?? DEFAULT_SANDBOX_LEASE_CAP
   const countActiveOrgSandboxLeases = options.countActiveOrgSandboxLeases ?? unavailableActiveLeaseCounter
+  // One canonical admission for every repository this route will have a
+  // sandbox clone: the `safeRepoUrl` forms, then a destination that is public
+  // (or operator-approved) once the name is resolved. Every caller here is
+  // signed, so a private answer is reachability into the deployment's network
+  // granted by a remote tenant — refused.
+  const repoAdmission = {
+    resolve: options.resolveRepoAddresses ?? dohAddressResolver((url, init) => fetch(url, init)),
+    ...(options.privateRepoHosts ? { privateHosts: options.privateRepoHosts } : {}),
+  }
   const hostAssignment = hostAssignmentHandlers(services, options, controlPlaneRateLimiter)
 
   const authOptions = () => ({
     ...options,
     requireSigned: true as const,
   })
-  const connectionResponse = async (c: Context, previousJti?: string) => {
+  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean } = {}) => {
     const workspaceId = routeParam(c, "id")
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
@@ -197,10 +223,18 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       if (controlPlaneLimit) return c.json(controlPlaneLimit.body, controlPlaneLimit.status)
       const rateLimit = await connectionRateLimitError(services, connectionRateLimiter, auth, workspaceId)
       if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-      const result = await hostedConnectionInfo(services, options, auth, workspaceId, new URL(c.req.url).origin, previousJti)
+      // GET is the read: it reports the lease's current state and may mint only
+      // off an already-running sandbox. POST is the explicit connect: the only
+      // path that runs `sandboxManager.ensure` and so the only one that can
+      // start billable compute (P-118).
+      const result = input.readOnly
+        ? await hostedConnectionStatus(services, options, auth, workspaceId)
+        : await hostedConnectionInfo(services, options, auth, workspaceId, new URL(c.req.url).origin, input.previousJti)
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
-      if ("status" in result.connection && result.connection.status === "provisioning") {
+      // Any status-bearing body (`provisioning`, `stopped`) minted nothing, so
+      // the mint budget it consumed goes back.
+      if ("status" in result.connection) {
         connectionRateLimiter.refund?.({ userId: auth.user.subject, workspaceId })
       }
       return c.json(result.connection)
@@ -336,7 +370,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           )
         }
         let repoUrl = body.repoUrl?.trim()
-        if (repoUrl && !safeRepoUrl(repoUrl)) {
+        if (repoUrl && !(await admittedRepoUrl(repoUrl, repoAdmission))) {
           return c.json(
             { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
             400,
@@ -358,6 +392,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           const access = await options.connections.repositoryForAuth(auth, body.connectionId, body.repo.fullName)
           if (!access.ok) return c.json({ error: apiError(access.code, "Repository connection is not available") }, access.status)
           repoUrl = access.repository.cloneUrl
+          if (!(await admittedRepoUrl(repoUrl, repoAdmission))) {
+            return c.json(
+              { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
+              400,
+            )
+          }
           const source = authenticatedGitHubCloneSource(access.repository.cloneUrl, access.token)
           provisionRepoUrl = source.repoUrl
           provisionSecrets = [source.secret]
@@ -573,16 +613,16 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         return c.json({ workspaceId, directory })
       })
-      .get("/:id/connection", (c) => connectionResponse(c))
+      .get("/:id/connection", (c) => connectionResponse(c, { readOnly: true }))
       .post("/:id/connection", async (c) => {
         const body = parsedBody(refreshConnectionBody, await c.req.json().catch(() => ({})))
         if (!body.ok) return c.json({ error: body.error }, body.status)
-        return connectionResponse(c, body.body.previousJti)
+        return connectionResponse(c, { previousJti: body.body.previousJti })
       })
       .post("/:id/connection/refresh", async (c) => {
         const body = parsedBody(refreshConnectionBody, await c.req.json().catch(() => ({})))
         if (!body.ok) return c.json({ error: body.error }, body.status)
-        return connectionResponse(c, body.body.previousJti)
+        return connectionResponse(c, { previousJti: body.body.previousJti })
       })
       .post("/:id/host-assignment", hostAssignment.assign)
       .delete("/:id/host-assignment", hostAssignment.unassign)
