@@ -259,8 +259,14 @@ function getConfig() {
         ...base,
         appId: "ai.claxedo.desktop.beta",
         productName: "Claxedo Beta",
+        // Per-variant artifact names and a separate update feed: `channel:
+        // "beta"` makes electron-builder emit beta.yml / beta-mac.yml /
+        // beta-linux.yml and stamps that feed into the packaged app-update.yml,
+        // so a beta install polls only beta metadata and a stable artifact can
+        // never be offered to it (nor vice versa).
+        artifactName: "claxedo-desktop-beta-${os}-${arch}.${ext}",
         protocols: { name: "Claxedo Beta", schemes: ["claxedo"] },
-        publish: { provider: "github", owner: "kyashrathore", repo: "Claxedo", channel: "latest" },
+        publish: { provider: "github", owner: "kyashrathore", repo: "Claxedo", channel: "beta" },
         rpm: { packageName: "claxedo-beta" },
       }
     }
@@ -270,6 +276,8 @@ function getConfig() {
         appId: "ai.claxedo.desktop",
         productName: "Claxedo",
         protocols: { name: "Claxedo", schemes: ["claxedo"] },
+        // "latest" is the installed base's feed — latest.yml / latest-mac.yml /
+        // latest-linux.yml — kept deliberately so stable clients keep updating.
         publish: { provider: "github", owner: "kyashrathore", repo: "Claxedo", channel: "latest" },
         rpm: { packageName: "claxedo" },
       }

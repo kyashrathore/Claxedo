@@ -42,10 +42,16 @@ function makeResolver(map: Map<number, FakeWc>): WebContentsFromId {
   }) as WebContentsFromId
 }
 
+/** Registry + resolver where every fake is pre-admitted as a guest. */
+function admittedRegistry(...ids: number[]) {
+  const registry = new BrowserRegistry(makeResolver(new Map(ids.map((id) => [id, makeFake(id)]))))
+  for (const id of ids) registry.admitGuest(id)
+  return registry
+}
+
 describe("BrowserRegistry", () => {
   test("register creates a handle keyed by paneId", () => {
-    const wc = makeFake(42)
-    const registry = new BrowserRegistry(makeResolver(new Map([[42, wc]])))
+    const registry = admittedRegistry(42)
 
     const handle = registry.register("pane-a", 42)
 
@@ -55,8 +61,7 @@ describe("BrowserRegistry", () => {
   })
 
   test("re-register with same paneId+wc returns the existing handle", () => {
-    const wc = makeFake(42)
-    const registry = new BrowserRegistry(makeResolver(new Map([[42, wc]])))
+    const registry = admittedRegistry(42)
 
     const first = registry.register("pane-a", 42)
     const second = registry.register("pane-a", 42)
@@ -77,28 +82,57 @@ describe("BrowserRegistry", () => {
   test("register throws when resolved webContents is destroyed", () => {
     const wc: FakeWc = { id: 7, destroyed: true }
     const registry = new BrowserRegistry(makeResolver(new Map([[7, wc]])))
+    registry.admitGuest(7)
     expect(() => registry.register("pane-a", 7)).toThrow(/destroyed/)
   })
 
-  test("registering same paneId to a different webContents is rejected", () => {
-    const a = makeFake(1)
-    const b = makeFake(2)
+  test("register refuses a webContents that was never admitted as a guest", () => {
+    // The main window's own webContents resolves fine and is alive — what it
+    // lacks is guest admission, so the pane machinery (and its CDP debugger)
+    // can never be attached to the privileged host document.
+    const host = makeFake(1)
+    const guest = makeFake(2)
     const registry = new BrowserRegistry(
       makeResolver(
         new Map([
-          [1, a],
-          [2, b],
+          [1, host],
+          [2, guest],
         ]),
       ),
     )
+    registry.admitGuest(2)
+
+    expect(() => registry.register("pane-a", 1)).toThrow(/not an admitted guest/)
+    expect(() => registry.register("pane-a", 2)).not.toThrow()
+  })
+
+  test("a destroyed guest drops its admission and can no longer register", () => {
+    const wc = makeFake(5)
+    const registry = new BrowserRegistry(makeResolver(new Map([[5, wc]])))
+    registry.admitGuest(5)
+    registry.dropGuest(5)
+
+    expect(() => registry.register("pane-a", 5)).toThrow(/not an admitted guest/)
+  })
+
+  test("registering an admitted guest already bound to another pane is rejected", () => {
+    const registry = admittedRegistry(1, 2)
+
+    registry.register("pane-a", 1)
+    expect(() => registry.register("pane-b", 1)).toThrow(/already bound to pane pane-a/)
+    // The other guest is unaffected.
+    expect(() => registry.register("pane-b", 2)).not.toThrow()
+  })
+
+  test("registering same paneId to a different webContents is rejected", () => {
+    const registry = admittedRegistry(1, 2)
 
     registry.register("pane-a", 1)
     expect(() => registry.register("pane-a", 2)).toThrow(/already bound/)
   })
 
   test("unregister removes the entry and is idempotent", () => {
-    const wc = makeFake(42)
-    const registry = new BrowserRegistry(makeResolver(new Map([[42, wc]])))
+    const registry = admittedRegistry(42)
 
     registry.register("pane-a", 42)
     expect(registry.get("pane-a")).toBeDefined()
@@ -116,16 +150,8 @@ describe("BrowserRegistry", () => {
   })
 
   test("clear drops every handle", () => {
-    const a = makeFake(1)
-    const b = makeFake(2)
-    const registry = new BrowserRegistry(
-      makeResolver(
-        new Map([
-          [1, a],
-          [2, b],
-        ]),
-      ),
-    )
+    const registry = admittedRegistry(1, 2)
+
     registry.register("pane-a", 1)
     registry.register("pane-b", 2)
     expect(registry.paneIds().length).toBe(2)
@@ -135,16 +161,7 @@ describe("BrowserRegistry", () => {
   })
 
   test("independent paneIds map to independent handles", () => {
-    const a = makeFake(1)
-    const b = makeFake(2)
-    const registry = new BrowserRegistry(
-      makeResolver(
-        new Map([
-          [1, a],
-          [2, b],
-        ]),
-      ),
-    )
+    const registry = admittedRegistry(1, 2)
 
     const handleA = registry.register("pane-a", 1)
     const handleB = registry.register("pane-b", 2)

@@ -20,6 +20,7 @@ import { runRestart } from "../shared/restart-policy"
 import { registerProcessDiagnosticsIpc } from "./diagnostics/ipc"
 import type { Profiler } from "./diagnostics/profiler"
 import { getStore } from "./store"
+import { assertStoreKey, assertStoreValue } from "./store-policy"
 
 type Deps = {
   awaitInitialization: (sendStep: (step: InitStep) => void) => Promise<ServerReadyData>
@@ -97,15 +98,19 @@ export function registerIpcHandlers(deps: Deps) {
     ipcMain.handle("parse-markdown", (_event: IpcMainInvokeEvent, source: string) => parseMarkdown(source))
   }
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    assertStoreKey(key)
     const store = getStore(name)
     const value = store.get(key)
     if (value === undefined || value === null) return null
     return typeof value === "string" ? value : JSON.stringify(value)
   })
   ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
+    assertStoreKey(key)
+    assertStoreValue(value)
     getStore(name).set(key, value)
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    assertStoreKey(key)
     getStore(name).delete(key)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {

@@ -87,6 +87,8 @@ export function setupBrowserTab(): BrowserTabSetup | undefined {
     willAttach(event, webPreferences, params)
   }
 
+  const registry = new BrowserRegistry((id) => electronWebContents.fromId(id) ?? undefined)
+
   app.on("web-contents-created", (_event, contents) => {
     contents.on("will-attach-webview", willAttachListener)
     // If this web-contents itself belongs to the agent-browser partition (i.e.
@@ -95,6 +97,14 @@ export function setupBrowserTab(): BrowserTabSetup | undefined {
       // `partition` is a runtime-only field on `Session` — Electron does not
       // declare it — so probe for it instead of asserting it exists.
       const sessionPartition = readString(contents.session, "partition")
+      // A guest only reaches this event if its attach survived the
+      // will-attach-webview gate, which pins the partition — so a webview
+      // already carrying it came through the sanctioned path. Registration
+      // (browser:register) refuses any webContentsId never admitted here.
+      if (contents.getType?.() === "webview" && sessionPartition === AGENT_BROWSER_PARTITION) {
+        registry.admitGuest(contents.id)
+        contents.once("destroyed", () => registry.dropGuest(contents.id))
+      }
       if (contents.getType?.() === "webview" || sessionPartition === AGENT_BROWSER_PARTITION) {
         installAgentBrowserNavigationGuards(contents)
       }
@@ -114,8 +124,6 @@ export function setupBrowserTab(): BrowserTabSetup | undefined {
       log.error("[browser-tab] failed to configure partition", { error: String(err) })
     }
   })
-
-  const registry = new BrowserRegistry((id) => electronWebContents.fromId(id) ?? undefined)
 
   return { registry, partition: AGENT_BROWSER_PARTITION }
 }

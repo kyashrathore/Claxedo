@@ -138,7 +138,13 @@ export const desktopMainComposition: Policy = {
   // stamping is here rather than a value handed over IPC. Electron-free by the
   // same seam split the navigation and IPC guards use, so no package edge.
   // 93/24, no headroom.
-  ceilings: { modules: 93, packages: 24 },
+  // +1 module (2026-09-21): `main/store-policy.ts`, the one owner of the
+  // settings-store boundary grammar — the basename check `getStore` applies to
+  // renderer-supplied store names before `conf` resolves them to a path, and
+  // the key/value bounds the store-* IPC handlers enforce. Electron-free so
+  // `bun test` can exercise it (store.ts constructs electron-store at import),
+  // reached from `main/ipc.ts` and `main/store.ts`; no package edge. 94/24.
+  ceilings: { modules: 94, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

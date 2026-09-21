@@ -59,7 +59,7 @@ import { resolveSystemClaude } from "./claude-executable"
 import { loadServerEnvForDevelopment, resolveDesktopServerDataDir } from "./server-env"
 import type { BrowserRegistry } from "./browser/registry"
 import { setupBrowserTab } from "./browser/setup"
-import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
+import { CHANNEL, IS_PACKAGED, UPDATE_CHANNEL, UPDATER_ENABLED } from "./constants"
 import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { runRestart } from "../shared/restart-policy"
@@ -1145,9 +1145,11 @@ function cleanupLegacyDevCaches() {
 function setupAutoUpdater() {
   if (!UPDATER_ENABLED) return
   autoUpdater.logger = logger
-  autoUpdater.channel = "latest"
+  autoUpdater.channel = UPDATE_CHANNEL
   autoUpdater.allowPrerelease = false
-  autoUpdater.allowDowngrade = true
+  // Downgrades re-install older builds whose fixes shipped later; the updater
+  // must only ever move forward.
+  autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
   logger.log("auto updater configured", {

@@ -5,6 +5,11 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { MAIN_RENDERER_DOCUMENT } from "./src/main/navigation-guard"
+import {
+  DEV_RENDERER_CSP,
+  PACKAGED_RENDERER_CSP,
+  rendererCspMetaTag,
+} from "./src/renderer/document-csp"
 import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
@@ -33,6 +38,22 @@ function rendererDocumentRoutes(): Plugin {
         ) request.url = `/${MAIN_RENDERER_DOCUMENT}`
         next()
       })
+    },
+  }
+}
+
+/**
+ * Stamp the document CSP meta into every built HTML entry. `file://` documents
+ * get no response headers, so this tag is the only CSP carrier in the packaged
+ * window; in dev the same tag carries the looser policy Vite's client/HMR need.
+ */
+function rendererDocumentCsp(mode: string): Plugin {
+  const content = mode === "development" ? DEV_RENDERER_CSP : PACKAGED_RENDERER_CSP
+  return {
+    name: "desktop-renderer-document-csp",
+    transformIndexHtml: {
+      order: "pre",
+      handler: () => [rendererCspMetaTag(content)],
     },
   }
 }
@@ -71,7 +92,13 @@ export function createElectronRenderer(mode: string): UserConfig {
       // "undefined", which is truthy and would be handed to a phone verbatim.
       "import.meta.env.VITE_CLAXEDO_APP_ORIGIN": JSON.stringify(appOrigin),
     },
-    plugins: [rendererDocumentRoutes(), solidPlugin(), tailwindcss(), desktopRendererBoundaryManifestPlugin(desktopDir)],
+    plugins: [
+      rendererDocumentRoutes(),
+      rendererDocumentCsp(mode),
+      solidPlugin(),
+      tailwindcss(),
+      desktopRendererBoundaryManifestPlugin(desktopDir),
+    ],
     publicDir: normalize(path.join(claxedoAppDir, "public")),
     root: rendererRoot,
     worker: {
