@@ -157,6 +157,17 @@ the same role hosted. Slow, dumb, cannot miss.
    small engine option away if a consumer needs it.
 9. **Observability is thin.** No per-wake metrics or firing-latency
    histograms. Errors surface via the host's `reportError`/`onError` only.
+10. **Remote child-completion wakes fail closed (recorded 2026-09-21).** The
+    parent wake that fires when a child session settles is delivered by the
+    workspace runtime (`packages/workspace-runtime/src/session/delivery-owner.ts`
+    and `remote-session-authority.ts`), not by this engine. On a
+    remote-authority deployment that wake carries neither a live request
+    credential nor a renewable grant, so it cannot acquire a turn lease and is
+    dropped; embedded deployments re-authorize the persisted origin and work.
+    Closing it needs a control-plane-signed wake grant bound to actor,
+    workspace, child and intent, with expiry and revocation; the workspace
+    owner must not stand in for the original actor. Tracked as P-93 in
+    `docs/security-audit-revalidation-2026-09-20.md`.
 
 ## Deployment cheat sheet
 
