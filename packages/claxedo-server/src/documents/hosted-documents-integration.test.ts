@@ -16,6 +16,7 @@ import {
   flushRuntimeDocument,
   forgetRuntimeDocuments,
   relayWorkspaceRuntimeExposure,
+  remoteWorkspaceSessionAccessPolicy,
 } from "../../../workspace-runtime/src/index"
 import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
@@ -107,13 +108,19 @@ describe("hosted remote documents genuine integration", () => {
         services: { auth: localOnlyAuthAdapter() } as never,
       }))
 
+    const sessionAccessPolicy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://authority.test/session-authorize",
+      fetch: async () => Response.json({ allowed: true }),
+    })
     const localRuntime = createWorkspaceRuntimeApp({
       exposure: relayWorkspaceRuntimeExposure({ key: signing.publicKey, workspaceId: "local_ws", hostId: "local_host" }),
       internalSecrets: { localDocumentBrokerToken: "installation-secret" },
+      sessionAccessPolicy,
     })
     const cloudRuntime = createWorkspaceRuntimeApp({
       exposure: relayWorkspaceRuntimeExposure({ key: signing.publicKey, workspaceId: "cloud_ws", hostId: "cloud_host" }),
       internalSecrets: {},
+      sessionAccessPolicy,
     })
     const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
     directory.registerHostTunnel({ hostId: "local_host", workspaceIds: ["local_ws"] })

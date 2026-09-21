@@ -61,6 +61,7 @@ export type SessionAccessOperation =
   | "agent_setup_write"
   | "worktree_read"
   | "worktree_write"
+  | "document_write"
   | "goal_state"
   | "goal_capabilities"
   | "goal_read"
@@ -334,6 +335,7 @@ const SESSION_CONTROL_OPERATIONS = new Set<SessionAccessOperation>([
   "goal_delete",
   "agent_setup_write",
   "worktree_write",
+  "document_write",
 ])
 
 const SESSION_FILTER_CONCURRENCY = 16

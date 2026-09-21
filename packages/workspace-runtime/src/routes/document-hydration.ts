@@ -7,6 +7,9 @@ import { Hono } from "hono"
 import { z } from "zod"
 import { boundedJson, RequestBodyTooLargeError } from "./bounded-json"
 import { num, rec, str } from "../json-value"
+import { authorizeHostCapability } from "./host-capability-access"
+import { sessionAccessContext, type SessionAccessPolicy } from "../session-access-policy"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 
 const Job = z
   .object({
@@ -110,13 +113,14 @@ export function RuntimeDocumentHydrationRoutes(
     afterWatcherCreated?: (watcher: FSWatcher) => void
     renewalTimer?: RuntimeDocument["renewalTimer"]
     requestTimeoutMs?: number
+    sessionAccessPolicy?: SessionAccessPolicy
   } = {},
 ) {
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   if (!Number.isFinite(requestTimeoutMs) || requestTimeoutMs <= 0) {
     throw new Error("Runtime document request timeout must be positive")
   }
-  return new Hono()
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((error, context) => {
       if (error instanceof RequestBodyTooLargeError) return context.json({ error: "request_body_too_large" }, 413)
       if (error instanceof SyntaxError || error instanceof z.ZodError) {
@@ -212,6 +216,14 @@ export function RuntimeDocumentHydrationRoutes(
       if (!/^[A-Za-z0-9_-]+$/.test(sessionId) || !/^[A-Za-z0-9_-]+$/.test(documentId)) {
         return context.json({ error: "document_request_invalid" }, 400)
       }
+      const denied = await authorizeHostCapability(
+        context,
+        options,
+        "document_write",
+        sessionAccessContext(context),
+        sessionId,
+      )
+      if (denied) return denied
       Activation.parse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
       return await withDocumentLifecycle(`${sessionId}:${documentId}`, async () => {
         const document = documents.get(`${sessionId}:${documentId}`)
@@ -246,10 +258,18 @@ export function RuntimeDocumentHydrationRoutes(
     })
     .post("/api/wr/documents/:sessionId/:documentId/resolve", async (context) => {
       if (!options.trustedTransport) return context.notFound()
-      const parsedBody = Resolution.safeParse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
-      const body = parsedBody.success ? parsedBody.data : undefined
       const sessionId = context.req.param("sessionId")
       const documentId = context.req.param("documentId")
+      const denied = await authorizeHostCapability(
+        context,
+        options,
+        "document_write",
+        sessionAccessContext(context),
+        sessionId,
+      )
+      if (denied) return denied
+      const parsedBody = Resolution.safeParse(await boundedJson(context.req.raw, MAX_DOCUMENT_BYTES))
+      const body = parsedBody.success ? parsedBody.data : undefined
       const key = `${sessionId}:${documentId}`
       return await withDocumentLifecycle(key, async () => {
         const document = documents.get(key)
