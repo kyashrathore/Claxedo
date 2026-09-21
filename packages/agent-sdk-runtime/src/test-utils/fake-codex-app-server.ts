@@ -14,7 +14,7 @@ import path from "path"
  * - `hold-turn`: the Goal turn stays inProgress until interrupted, so callers
  *   can exercise pause/stop against an in-flight turn.
  */
-export async function installFakeCodexAppServer(options: { command?: boolean; terminateFails?: boolean; terminalSurvives?: boolean } = {}) {
+export async function installFakeCodexAppServer(options: { command?: boolean; terminateFails?: boolean; terminalSurvives?: boolean; childCommand?: boolean; listFails?: boolean } = {}) {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-goal-"))
   const log = path.join(directory, "requests.jsonl")
   const goalFile = path.join(directory, "goal.json")
@@ -27,6 +27,10 @@ const terminateFails = ${JSON.stringify(options.terminateFails ?? false)}
 // Acknowledges the termination and keeps listing the terminal: a provider that
 // accepted the request and did not carry it out.
 const terminalSurvives = ${JSON.stringify(options.terminalSurvives ?? false)}
+// A subagent thread this turn spawned, running a command of its own. Its
+// terminal lives on that thread's inventory, not the parent's.
+const childCommand = ${JSON.stringify(options.childCommand ?? false)}
+const listFails = ${JSON.stringify(options.listFails ?? false)}
 let buffer = ""
 let goal = fs.existsSync(goalFile) ? JSON.parse(fs.readFileSync(goalFile, "utf8")) : null
 let threadKnown = false
@@ -72,11 +76,16 @@ process.stdin.on("data", (chunk) => {
         write({ method: "item/started", params: { threadId: "thread-1", turnId: "previous-turn", item: { id: "cmd-previous", type: "commandExecution", processId: "process-previous", command: "sleep 100", status: "inProgress" } } })
         write({ method: "item/started", params: { threadId: "other-thread", turnId: "other-turn", item: { id: "cmd-other", type: "commandExecution", processId: "process-other", command: "sleep 100", status: "inProgress" } } })
         write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "cmd-current", type: "commandExecution", processId: "process-current", command: "sleep 100", status: "inProgress" } } })
+        if (childCommand) {
+          write({ method: "thread/started", params: { thread: { id: "child-thread", parentThreadId: "thread-1", status: { type: "active" } } } })
+          write({ method: "item/started", params: { threadId: "child-thread", turnId: "child-turn", item: { id: "cmd-child", type: "commandExecution", processId: "process-child", command: "sleep 100", status: "inProgress" } } })
+        }
       }
     }
     else if (message.method === "thread/backgroundTerminals/list") {
       // A terminated terminal leaves the inventory. Paging is preserved so the
       // caller still has to read both pages to learn what survived.
+      if (listFails) { write({ id: message.id, error: { message: "terminal inventory is unavailable" } }); continue }
       const page = message.params.cursor === "second"
         ? [{ itemId: "cmd-current", processId: "process-current" }]
         : [{ itemId: "cmd-previous", processId: "process-previous" }]

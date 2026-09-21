@@ -7,6 +7,7 @@ const ownership = volatileLaunchOwnership()
 import os from "node:os"
 import path from "node:path"
 import { CodexAppServerProcess } from "./app-server-process"
+import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-server"
 
 const soon = () => ({ signal: new AbortController().signal, deadlineAt: Date.now() + 5_000 })
 
@@ -125,3 +126,28 @@ test.skipIf(process.platform === "win32")("a launch is refused when ownership ca
     await fs.rm(dir, { recursive: true, force: true })
   }
 }, 10_000)
+
+test("a request to an app-server that already exited is refused, not left to its deadline", async () => {
+  const fake = await installFakeCodexAppServer()
+  const server = await CodexAppServerProcess.start({
+    binary: fake.binary,
+    directory: fake.directory,
+    env: process.env,
+    requestHandler: async () => ({}),
+    ownership: volatileLaunchOwnership(),
+    workspaceId: "",
+  })
+  try {
+    await server.dispose()
+    const started = Date.now()
+    await expect(server.request("model/list", {}, {
+      signal: new AbortController().signal,
+      deadlineAt: Date.now() + 30_000,
+    })).rejects.toThrow("the app-server has exited")
+    // The point is that it answered at once rather than sitting on a deadline
+    // nobody can satisfy.
+    expect(Date.now() - started).toBeLessThan(1_000)
+  } finally {
+    await fs.rm(fake.directory, { recursive: true, force: true })
+  }
+})

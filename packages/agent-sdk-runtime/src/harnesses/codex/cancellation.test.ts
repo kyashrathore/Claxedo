@@ -112,3 +112,51 @@ test("a terminal Codex acknowledged terminating and still lists is owned, not cl
     await fs.rm(fake.directory, { recursive: true, force: true })
   }
 })
+
+/** One prompt turn on a fake app-server, stopped once its command is running. */
+async function stopTurnOn(options: Parameters<typeof installFakeCodexAppServer>[0]) {
+  const fake = await installFakeCodexAppServer({ command: true, ...options })
+  const adapter = new CodexHarnessAdapter({
+    binary: fake.binary,
+    store: createMemoryRuntimeStore(),
+    eventHub: createRuntimeEventHub(),
+    codexHome: path.join(fake.directory, "codex-home"),
+  })
+  let commandStarted!: () => void
+  const started = new Promise<void>((resolve) => { commandStarted = resolve })
+  try {
+    const session = await adapter.createSession(fake.directory)
+    const turn = (async () => {
+      for await (const event of executeTestTurn(adapter, session.id, {
+        parts: [{ type: "text", text: "Run a command" }],
+        userMessageId: "user-1",
+        assistantMessageId: "assistant-1",
+        agent: "build",
+        model: { providerID: "codex", modelID: "default" },
+      }, fake.directory)) {
+        if (JSON.stringify(event).includes("cmd-current")) commandStarted()
+      }
+    })()
+    await started
+    const outcome = await cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex"))
+    await turn
+    return outcome
+  } finally {
+    await adapter.dispose()
+    await fs.rm(fake.directory, { recursive: true, force: true })
+  }
+}
+
+test("a command a subagent thread started is owned, because this thread's inventory cannot see it", async () => {
+  // The parent's own terminal is terminated and leaves the parent's inventory,
+  // but the child thread's terminal is on an inventory this owner never reads.
+  expect(await stopTurnOn({ childCommand: true })).toMatchObject({ cleanup: "owned" })
+})
+
+test("a terminal inventory this owner could not read leaves cleanup unknown, never clear", async () => {
+  expect(await stopTurnOn({ listFails: true })).toMatchObject({
+    cleanup: "unknown",
+    execution: "unknown",
+    error: { code: "provider_unreachable", message: "terminal inventory is unavailable" },
+  })
+})

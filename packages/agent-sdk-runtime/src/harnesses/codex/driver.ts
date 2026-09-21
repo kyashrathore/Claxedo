@@ -356,7 +356,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       const method = text(message.method)
       const params = asRecord(message.params) ?? {}
       if (!method) return
-      cancellation.observe(params)
+      cancellation.observe(method, params)
       if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
       messageQueue = messageQueue.then(async () => {
         const { parentOwned } = await projectCodexThreadNotification(input, threadId, method, params, message)

@@ -359,7 +359,7 @@ export class CodexGoalController {
         this.host.driverHost.lifecycle().set(binding.sessionId, { abort: input.abort, close: cancellation.stop, stops, turnId })
         try {
           for await (const event of queue) {
-            cancellation.observe(asRecord(event.payload) ?? {})
+            cancellation.observe(event.method ?? "codex.goal-turn", asRecord(event.payload) ?? {})
             const eventMethod = event.method ?? "codex.goal-turn"
             await this.host.projectThreadNotification(
               input,

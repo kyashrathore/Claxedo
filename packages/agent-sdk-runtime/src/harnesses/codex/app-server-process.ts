@@ -14,6 +14,7 @@ import { isWindowsShimBinary } from "../shared/windows-process"
 import {
   launchOwnedProcess,
   settleAtRequestDeadline,
+  RecoveryCodedError,
   type LaunchOwnershipStore,
   type OwnedLaunch,
   type RequestDeadline,
@@ -219,6 +220,15 @@ export class CodexAppServerProcess {
   }
 
   request(method: string, params: unknown, deadline: RequestDeadline): Promise<unknown> {
+    // A request written to an exited process's stdin is never answered and
+    // would sit here until its deadline, reporting a timeout where the real
+    // answer is that there is nothing to ask.
+    if (!this.alive) {
+      return Promise.reject(new RecoveryCodedError(
+        "provider_unreachable",
+        `codex ${method} was not sent: the app-server has exited`,
+      ))
+    }
     const id = ++this.seq
     const answer = new Promise<unknown>((resolve, reject) => {
       this.pending.set(id, { resolve, reject })

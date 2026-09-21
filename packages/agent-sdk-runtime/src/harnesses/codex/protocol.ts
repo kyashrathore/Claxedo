@@ -1,5 +1,6 @@
 import type { PromptInput } from "../../index"
 import { isRuntimeGoalStatus, type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { codexStartedSubagent } from "@claxedo/agent-event-runtime/harnesses/codex"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -15,7 +16,7 @@ import type { RequestDeadline } from "../../launch"
 import type { CodexAppServerProcess } from "./app-server-process"
 
 export type CodexTurnStop = {
-  observe(params: JsonRecord): void
+  observe(method: string, params: JsonRecord): void
   stop(deadline?: RequestDeadline): Promise<void>
   /** Where each attempt's outcome is recorded for `cancelTurn` to read. */
   readonly record: TurnStopRecord
@@ -36,55 +37,84 @@ export function createCodexTurnStop(input: {
   record: TurnStopRecord
 }): CodexTurnStop {
   const commandProcesses = new Map<string, Set<string>>()
+  /**
+   * The threads this turn is answerable for: its own, and every subagent
+   * thread started beneath one of them. A command on an unrelated thread
+   * belongs to whoever started it.
+   */
+  const ownedThreads = new Set([input.threadId])
+  /**
+   * Commands a subagent thread started under this turn. They carry that
+   * thread's turn id rather than this one's, and this owner enumerates only
+   * its own thread's terminals — so they are accounted for but never verified.
+   */
+  const childCommands = new Set<string>()
 
   const attempt = async (deadline: RequestDeadline) => {
     const turnId = await input.turnId()
     if (!turnId) return
     await input.process.request("turn/interrupt", { threadId: input.threadId, turnId }, deadline)
-    const processes = commandProcesses.get(turnId)
-    if (!processes?.size) {
-      // This turn started no command, and Codex runs its tools nowhere else.
-      input.record.cleanup = "verified_clear"
-      return
-    }
-    const remaining = await survivors(processes, deadline)
+    const ours = commandProcesses.get(turnId) ?? new Set<string>()
+    // The inventory is read even when this owner saw no command start: a turn
+    // can reach a terminal through a thread whose notifications it never
+    // watched, and an empty local map is not an observation of Codex.
+    let remaining = await survivors(ours, deadline)
     if (remaining.size) {
       input.record.cleanup = "owned"
       for (const processId of remaining) {
         await input.process.request("thread/backgroundTerminals/terminate", { threadId: input.threadId, processId }, deadline)
       }
+      // An acknowledged terminate is a promise; the inventory read back
+      // without them is the proof.
+      remaining = await survivors(ours, deadline)
     }
-    // Codex's own terminal inventory is the authority on what this turn still
-    // holds, so an inventory with none of them left is proof, where an
-    // acknowledged terminate on its own would only be a promise.
-    input.record.cleanup = (await survivors(processes, deadline)).size ? "owned" : "verified_clear"
+    input.record.cleanup = remaining.size || childCommands.size ? "owned" : "verified_clear"
   }
 
-  /** This turn's command processes that Codex still lists, across every page. */
+  /**
+   * This turn's command processes that Codex still lists, across every page.
+   * A list this owner could not read leaves cleanup unknown rather than clear:
+   * the absence of an answer is not an empty inventory.
+   */
   const survivors = async (processes: Set<string>, deadline: RequestDeadline) => {
     const remaining = new Set<string>()
     let cursor: string | undefined
-    do {
-      const response = asRecord(await input.process.request("thread/backgroundTerminals/list", { threadId: input.threadId, ...(cursor ? { cursor } : {}) }, deadline))
-      if (!Array.isArray(response?.data)) throw new Error("Codex returned an invalid background terminal list")
-      for (const terminal of response.data) {
-        const processId = text(asRecord(terminal)?.processId)
-        if (processId && processes.has(processId)) remaining.add(processId)
-      }
-      cursor = text(response?.nextCursor)
-    } while (cursor)
+    try {
+      do {
+        const response = asRecord(await input.process.request("thread/backgroundTerminals/list", { threadId: input.threadId, ...(cursor ? { cursor } : {}) }, deadline))
+        if (!Array.isArray(response?.data)) throw new Error("Codex returned an invalid background terminal list")
+        for (const terminal of response.data) {
+          const processId = text(asRecord(terminal)?.processId)
+          if (processId && processes.has(processId)) remaining.add(processId)
+        }
+        cursor = text(response?.nextCursor)
+      } while (cursor)
+    } catch (error) {
+      input.record.cleanup = "unknown"
+      throw error
+    }
     return remaining
   }
 
   return {
     record: input.record,
-    observe(params: JsonRecord) {
-      if (params.threadId !== input.threadId) return
+    observe(method: string, params: JsonRecord) {
+      if (method === "thread/started") {
+        const started = codexStartedSubagent(params)
+        if (started && ownedThreads.has(started.parentThreadId)) ownedThreads.add(started.id)
+        return
+      }
       const item = asRecord(params.item)
       if (item?.type !== "commandExecution") return
       const processId = text(item.processId)
+      const threadId = text(params.threadId)
+      if (!processId || !threadId || !ownedThreads.has(threadId)) return
+      if (threadId !== input.threadId) {
+        childCommands.add(processId)
+        return
+      }
       const turnId = text(params.turnId)
-      if (!processId || !turnId) return
+      if (!turnId) return
       const processes = commandProcesses.get(turnId) ?? new Set<string>()
       processes.add(processId)
       commandProcesses.set(turnId, processes)
