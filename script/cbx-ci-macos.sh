@@ -17,25 +17,10 @@ export NODE_OPTIONS=--max-old-space-size=4096
 # discover identities through a runner's login Keychain; that can block a
 # headless Crabbox job behind an interactive "Keychain Not Found" dialog.
 export CSC_IDENTITY_AUTO_DISCOVERY=false
-# The PR lane builds an unsigned directory package. Never let electron-builder
-# discover identities through a runner's login Keychain; that can block a
-# headless Crabbox job behind an interactive "Keychain Not Found" dialog.
-export CSC_IDENTITY_AUTO_DISCOVERY=false
 
 bun install --frozen-lockfile
 npm install -g @anthropic-ai/claude-code@2.1.150
-bun turbo build \
-  --filter=@claxedo/agent-event-runtime \
-  --filter=@claxedo/agent-sdk-runtime \
-  --filter=@claxedo/channels \
-  --filter=@claxedo/connections \
-  --filter=@claxedo/mcp \
-  --filter=@claxedo/sandbox-contract \
-  --filter=@claxedo/sandbox-manager \
-  --filter=@claxedo/wakes \
-  --filter=@claxedo/workspace-relay-protocol \
-  --filter=@claxedo/workspace-relay \
-  --filter=@claxedo/workspace-runtime
+bun run build:packages
 bun run --cwd packages/claxedo-local-server build
 (
   cd packages/claxedo-desktop

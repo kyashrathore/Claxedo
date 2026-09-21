@@ -41,19 +41,8 @@ $env:RUST_TARGET = "x86_64-pc-windows-msvc"
 $env:CLAXEDO_DIAGNOSTICS_EXPECTED_ARCH = "x64"
 $env:CLAXEDO_DIAGNOSTICS_DEBUG = "1"
 
-bun turbo build `
-  --filter=@claxedo/agent-event-runtime `
-  --filter=@claxedo/agent-sdk-runtime `
-  --filter=@claxedo/channels `
-  --filter=@claxedo/connections `
-  --filter=@claxedo/mcp `
-  --filter=@claxedo/sandbox-contract `
-  --filter=@claxedo/sandbox-manager `
-  --filter=@claxedo/wakes `
-  --filter=@claxedo/workspace-relay-protocol `
-  --filter=@claxedo/workspace-relay `
-  --filter=@claxedo/workspace-runtime
-Assert-LastExitCode "workspace build"
+bun run build:packages
+Assert-LastExitCode "bun run build:packages"
 
 Set-Location $desktop
 bun run typecheck

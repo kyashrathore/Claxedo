@@ -28,7 +28,19 @@ const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "
   { entry: "process", target: "node" },
   { entry: "net", target: "node" },
   { entry: "machine-name", target: "node" },
+  { entry: "route-param", target: "browser" },
 ]
+
+// package.json is what consumers resolve, so a subpath it exports must have a
+// bundle here or every dist-resolved consumer breaks at build time.
+const exported = new Set(
+  JSON.stringify(JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).exports)
+    .matchAll(/\.\/dist\/([a-z0-9-]+)\.mjs/g)
+    .map((match) => match[1]),
+)
+const built = new Set(ENTRIES.map(({ entry }) => entry))
+const unbuilt = [...exported].filter((entry) => !built.has(entry))
+if (unbuilt.length > 0) throw new Error(`package.json exports subpaths with no build entry: ${unbuilt.join(", ")}`)
 
 if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true })
 fs.mkdirSync(DIST, { recursive: true })
