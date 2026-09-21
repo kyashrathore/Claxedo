@@ -123,15 +123,17 @@ describe("startup clock probe placement", () => {
   test("the machine fence is closed before this port is announced to anyone", () => {
     const start = childEntry.indexOf("lifecycle.start()")
     const announce = childEntry.indexOf("parent?.send(claxedoServerReadyMessage(startup.port))")
-    const identity = childEntry.indexOf("await readCreationIdentity(process.pid)")
+    // The call site, not the function body below it: what is being pinned is
+    // the order these three steps run in.
+    const identity = childEntry.indexOf("await publishIdentity()")
 
-    // start() is what closes machine admission for the launch reconciliation.
-    // A listener reachable before that hold exists admits work over launches
-    // nothing has accounted for yet, and reading the creation identity costs a
-    // subprocess — so it must not sit between the two.
+    // start() closes machine admission before the port is announced, and the
+    // discovery record is published before it too: main reads that record as
+    // soon as it hears ready, and one that is not there yet reads as a daemon
+    // that never published its authenticated identity.
     expect(start).toBeGreaterThan(-1)
-    expect(announce).toBeGreaterThan(start)
-    expect(identity).toBeGreaterThan(announce)
+    expect(identity).toBeGreaterThan(start)
+    expect(announce).toBeGreaterThan(identity)
   })
 
   test("the server child sends its ready message before it stamps", () => {

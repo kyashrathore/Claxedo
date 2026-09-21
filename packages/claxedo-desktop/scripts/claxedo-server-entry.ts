@@ -172,27 +172,27 @@ requestExit = exit
 process.once("SIGTERM", exit)
 process.once("SIGINT", exit)
 
-void server.ready.then(() => {
+void server.ready.then(async () => {
   // FIRST, before this port is announced to anyone: start() is what closes
   // machine admission for the launch reconciliation, and a listener that is
   // reachable before that hold exists admits work over launches nothing has
   // accounted for yet.
   lifecycle.start()
-  // The IPC send goes next and unconditionally: the probe below is a
-  // diagnostic, and a diagnostic that can delay the message main waits on to
-  // publish the server URL would be measuring a cost it created.
+  // THEN the discovery record, and only then the ready message: main reads the
+  // record as soon as it hears ready, and a record that is not there yet reads
+  // as a daemon that never published its authenticated identity.
+  await publishIdentity()
   parent?.send(claxedoServerReadyMessage(startup.port))
   recordStartupClock("server-listening", { port: startup.port })
   ownership.start()
-  void publishIdentity()
 })
 
 /**
  * Publishes the discovery record once this process can say what it is.
  *
- * The creation identity is read here rather than before the announcement
- * because it costs a subprocess, and a record without it is worse than a late
- * one: a launcher that adopts it has nothing to verify before signalling.
+ * A record without the creation identity is worse than a late one: a launcher
+ * that adopts it has nothing to verify before signalling. So the subprocess
+ * this costs is paid before anyone is told the port exists.
  */
 async function publishIdentity() {
   creation = await readCreationIdentity(process.pid)
