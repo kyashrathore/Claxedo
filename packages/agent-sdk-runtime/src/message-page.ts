@@ -1,4 +1,4 @@
-import type { AgentMessage } from "./index"
+import type { AgentMessage, AgentTurnOutcome } from "./index"
 
 /**
  * An authoritative transcript-window request. Cursors are opaque to every
@@ -23,6 +23,45 @@ export type AgentMessagePageInput =
       limit: number
       before?: string
     }
+
+/**
+ * A coverage request for one named turn, answered by whoever owns its journal.
+ *
+ * Either of the turn's two message ids names it: a caller that admitted the
+ * turn holds the user message id, while the journal keys the turn on the
+ * assistant message id, and neither side can derive the other.
+ */
+export type AgentTurnCoverageInput = {
+  turnId: string
+}
+
+/** What a `GET /session/:id/message` read asks for; the shapes are exclusive. */
+export type AgentMessageReadInput = AgentMessagePageInput | AgentTurnCoverageInput
+
+/**
+ * How much of one turn a producer can account for.
+ *
+ * `complete` is a claim that nothing more will be added to this turn and that
+ * every message of it is in `messages`; only a producer holding the turn's
+ * journal can make it. `partial` names a turn whose extent is known and whose
+ * transcript is not all here yet. `unavailable` is the answer of a producer
+ * that cannot establish either, and it always carries a reason.
+ */
+export type AgentTurnCoverage = "complete" | "partial" | "unavailable"
+
+/** One turn, and how much of it the answering producer can account for. */
+export type AgentTurnCoveragePage = {
+  /** The turn that was asked for, never the turn the producer found instead. */
+  turnId: string
+  coverage: AgentTurnCoverage
+  /** Why the coverage is not `complete`, from the producer that decided it. */
+  reason?: string
+  /** Present only when the journal records the turn finished. */
+  terminal?: AgentTurnOutcome
+  /** The last journal sequence the answering projection applied, not the journal's head. */
+  committedSequence: number
+  messages: AgentMessage[]
+}
 
 /** One chronological transcript page and the cursor for the next older page. */
 export type AgentMessagePage = {

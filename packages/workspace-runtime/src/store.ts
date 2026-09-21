@@ -12,7 +12,11 @@ import {
   type AgentMessagePage,
   type AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { projectLatestSurfaceMessages } from "@claxedo/agent-sdk-runtime/message-page"
+import {
+  projectLatestSurfaceMessages,
+  type AgentTurnCoverage,
+  type AgentTurnCoveragePage,
+} from "@claxedo/agent-sdk-runtime/message-page"
 import {
   acceptsSessionTitle,
   boundSessionTitleSource,
@@ -39,7 +43,7 @@ import type {
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentSessionTitleSource, AgentExecutionBinding, AgentSessionCommand, AgentSessionStarts } from "@claxedo/agent-runtime-contract"
-import { DEFAULT_RECOVERY_BUDGETS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
+import { RECOVERY_OPERATION_RETENTION_MS, parseRecoveryOperation, type RecoveryOperation } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -749,6 +753,22 @@ function provisionalPromptWidth(messageId: string, provisionalIds: readonly stri
  */
 type ProjectionFailure = { seq: number; reason: string; repairable: boolean }
 
+/**
+ * Open a snapshot and make SQLite read it end to end. A copy whose bytes
+ * landed is not yet a backup: only the reopened file can say whether the pages
+ * are coherent, and a restore is the worst moment to find out they are not.
+ */
+function assertReadableDatabase(file: string) {
+  let db: SqliteDatabase | undefined
+  try {
+    db = openDatabase(file)
+    const row = db.prepare<{ integrity_check: string }>("PRAGMA integrity_check").get()
+    if (row?.integrity_check !== "ok") throw new Error(`integrity_check reported ${row?.integrity_check ?? "nothing"}`)
+  } finally {
+    db?.close?.()
+  }
+}
+
 export class RuntimeProjectionBlockedError extends Error {
   readonly code = "runtime_projection_blocked"
 
@@ -773,13 +793,6 @@ export class RuntimeStoreMigrationBlockedError extends Error {
 function recoveryOperationSettled(operation: RecoveryOperation) {
   return operation.state === "succeeded" || operation.state === "failed"
 }
-
-/**
- * How long a settled recovery operation stays listed and stored. Ten reconcile
- * budgets: long enough that a caller which lost its connection can still read
- * its own receipt, short enough that the list is current work.
- */
-const RECOVERY_OPERATION_RETENTION_MS = DEFAULT_RECOVERY_BUDGETS.reconcileMs * 10
 
 export class RuntimeStore {
   readonly sessionStarts: AgentSessionStarts
@@ -1306,7 +1319,9 @@ export class RuntimeStore {
   }
 
   private migrateRecoveryOperations() {
-    if (this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'recovery_operation'").get()) return
+    const present = (name: string) =>
+      !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
+    if (present("recovery_operation") && present("recovery_operation_caller")) return
     if (this.hadDatabaseFile) this.snapshotBeforeRecoveryMigration()
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS recovery_operation (
@@ -1335,6 +1350,16 @@ export class RuntimeStore {
       CREATE INDEX IF NOT EXISTS recovery_operation_session_idx
       ON recovery_operation (session_id, updated_at DESC)
     `)
+    // Who may read a receipt: its creator, plus every caller that coalesced
+    // onto it. Separate from `recovery_operation.caller_id`, which is one third
+    // of the claim key and must stay the single caller that won the insert.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recovery_operation_caller (
+        operation_id TEXT NOT NULL,
+        caller_id TEXT NOT NULL,
+        PRIMARY KEY (operation_id, caller_id)
+      )
+    `)
   }
 
   /**
@@ -1361,11 +1386,20 @@ export class RuntimeStore {
       throw new RuntimeStoreMigrationBlockedError(this.root, "another connection holds the database open")
     }
     const stamp = `${this.databaseFile}.pre-recovery-${Date.now()}.bak`
-    fs.copyFileSync(this.databaseFile, stamp)
-    for (const suffix of ["-wal", "-shm"]) {
-      if (fs.existsSync(`${this.databaseFile}${suffix}`)) {
+    const written = [stamp]
+    try {
+      fs.copyFileSync(this.databaseFile, stamp)
+      for (const suffix of ["-wal", "-shm"]) {
+        if (!fs.existsSync(`${this.databaseFile}${suffix}`)) continue
         fs.copyFileSync(`${this.databaseFile}${suffix}`, `${stamp}${suffix}`)
+        written.push(`${stamp}${suffix}`)
       }
+      assertReadableDatabase(stamp)
+    } catch (error) {
+      // A half-written copy is worse than none: a restore would reach for it.
+      for (const file of written) fs.rmSync(file, { force: true })
+      if (error instanceof RuntimeStoreMigrationBlockedError) throw error
+      throw new RuntimeStoreMigrationBlockedError(this.root, `snapshot could not be written (${String(error)})`)
     }
   }
 
@@ -4343,15 +4377,7 @@ export class RuntimeStore {
         `,
         )
         .all(sessionId, boundary.ord)
-      const user = readColumn.messageInfo(turn[0].info_json)
-      const contiguous =
-        turn.length > 0 &&
-        turn.every((row, index) => {
-          const message = readColumn.messageInfo(row.info_json)
-          if (index === 0) return message.role === "user" && message.id === user.id
-          return message.role === "assistant" && message.parentID === user.id
-        })
-      if (!contiguous) {
+      if (!this.isContiguousTurn(turn)) {
         throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
       }
       const older = this.db
@@ -4386,6 +4412,108 @@ export class RuntimeStore {
       messages: this.hydrateMessages(sessionId, selected),
       ...(hasMore && selected[0] ? { nextCursor: encodeMessagePageCursor(sessionId, selected[0].ord) } : {}),
     }
+  }
+
+  /** One whole turn: its user message, then only assistants that name it as parent. */
+  private isContiguousTurn(rows: MessageProjectionRow[]) {
+    const first = rows[0]
+    if (!first) return false
+    const user = readColumn.messageInfo(first.info_json)
+    if (user.role !== "user" || user.id !== first.id) return false
+    return rows.slice(1).every((row) => {
+      const message = readColumn.messageInfo(row.info_json)
+      return message.role === "assistant" && message.parentID === user.id
+    })
+  }
+
+  /**
+   * How much of one turn this store's projection accounts for, for a reader
+   * deciding whether the transcript it already holds for that turn is final.
+   *
+   * The turn is named by either of its two message ids, the way `turnEvidence`
+   * accepts either. Nothing here infers an end from a later turn or from an
+   * exhausted page: only a journaled `turn.finish` ends a turn, and the answer
+   * is `unavailable` wherever this store cannot establish the extent at all.
+   */
+  turnCoverage(sessionId: string, turnId: string): AgentTurnCoveragePage {
+    this.settleDeltas(sessionId)
+    if (!this.getSession(sessionId)) {
+      throw new AgentMessagePageError(404, `Session not found: ${sessionId}`)
+    }
+    const replay = this.replayJournal(sessionId)
+    const evidence = this.turnEvidence(sessionId, turnId)
+    const answer = (
+      coverage: AgentTurnCoverage,
+      detail: { reason?: string; messages?: AgentMessage[] },
+    ): AgentTurnCoveragePage => ({
+      turnId,
+      coverage,
+      ...(detail.reason === undefined ? {} : { reason: detail.reason }),
+      ...(evidence.finished && evidence.outcome ? { terminal: evidence.outcome } : {}),
+      committedSequence: replay.position,
+      messages: detail.messages ?? [],
+    })
+
+    if (!evidence.started) {
+      return answer("unavailable", { reason: `The journal records no turn ${turnId} for session ${sessionId}` })
+    }
+    if (replay.blocked) {
+      return answer("unavailable", {
+        reason: `The projection for session ${sessionId} is blocked at seq ${replay.blocked.seq}: ${replay.blocked.reason}`,
+      })
+    }
+    const projected = this.db
+      .prepare<{ present: number }>("SELECT 1 AS present FROM message WHERE session_id = ? LIMIT 1")
+      .get(sessionId)
+    if (!projected) {
+      return answer("unavailable", { reason: `Session ${sessionId} has no projected transcript in this store` })
+    }
+    const named = this.db
+      .prepare<{ id: string; ord: number; role: string; parent_id: string | null }>(
+        `
+        SELECT id, ord, role, json_extract(info_json, '$.parentID') AS parent_id
+        FROM message
+        WHERE session_id = ? AND id = ?
+      `,
+      )
+      .get(sessionId, turnId)
+    if (!named) {
+      return answer("partial", { reason: `The projection holds no message ${turnId}` })
+    }
+    const boundary = named.role === "user"
+      ? named
+      : named.parent_id === null
+        ? undefined
+        : this.db
+          .prepare<{ id: string; ord: number }>("SELECT id, ord FROM message WHERE session_id = ? AND id = ?")
+          .get(sessionId, named.parent_id)
+    if (!boundary) {
+      return answer("partial", { reason: `The projection holds no user message owning ${turnId}` })
+    }
+    const next = this.db
+      .prepare<{ ord: number | null }>(
+        "SELECT MIN(ord) AS ord FROM message WHERE session_id = ? AND role = 'user' AND ord > ?",
+      )
+      .get(sessionId, boundary.ord)
+    const end = next?.ord ?? null
+    const rows = this.db
+      .prepare<MessageProjectionRow>(
+        `
+        SELECT id, ord, info_json
+        FROM message
+        WHERE session_id = ? AND ord >= ? AND (? IS NULL OR ord < ?)
+        ORDER BY ord ASC
+      `,
+      )
+      .all(sessionId, boundary.ord, end, end)
+    const messages = this.hydrateMessages(sessionId, rows)
+    if (!this.isContiguousTurn(rows)) {
+      return answer("partial", { reason: `Turn ${turnId} is not contiguous in the projection`, messages })
+    }
+    if (!evidence.finished) {
+      return answer("partial", { reason: `The journal records no end for turn ${turnId}`, messages })
+    }
+    return answer("complete", { messages })
   }
 
   getSessionMaxSeq(sessionId: string) {
@@ -4500,7 +4628,12 @@ export class RuntimeStore {
         operation.updatedAt,
         JSON.stringify(operation),
       )
-    if (created.changes === 1) return { created: true as const }
+    if (created.changes === 1) {
+      this.db
+        .prepare("INSERT OR IGNORE INTO recovery_operation_caller (operation_id, caller_id) VALUES (?, ?)")
+        .run(operation.operationId, caller.callerId)
+      return { created: true as const }
+    }
     const existing = requireRow(
       this.db
         .prepare<{ payload_json: string }>(
@@ -4537,10 +4670,31 @@ export class RuntimeStore {
     }
   }
 
-  readRecoveryOperation(operationId: string) {
+  /**
+   * Record a caller that coalesced onto an operation someone else created. Its
+   * own request id claimed nothing, so without this nothing would say it may
+   * read the receipt of the effect being issued on its behalf. An id this
+   * store does not hold records nobody: the caller list must not outlive the
+   * operation it describes.
+   */
+  addRecoveryOperationCaller(operationId: string, caller: { callerId: string }) {
+    if (!this.db.prepare("SELECT 1 FROM recovery_operation WHERE operation_id = ?").get(operationId)) return
+    this.db
+      .prepare("INSERT OR IGNORE INTO recovery_operation_caller (operation_id, caller_id) VALUES (?, ?)")
+      .run(operationId, caller.callerId)
+  }
+
+  readRecoveryOperation(operationId: string, caller: { callerId: string }) {
     const row = this.db
-      .prepare<{ payload_json: string }>("SELECT payload_json FROM recovery_operation WHERE operation_id = ?")
-      .get(operationId)
+      .prepare<{ payload_json: string }>(
+        `
+        SELECT op.payload_json FROM recovery_operation AS op
+        JOIN recovery_operation_caller AS reader
+          ON reader.operation_id = op.operation_id AND reader.caller_id = ?
+        WHERE op.operation_id = ?
+      `,
+      )
+      .get(caller.callerId, operationId)
     return row ? parseRecoveryOperation(JSON.parse(row.payload_json)) : undefined
   }
 
@@ -4555,7 +4709,12 @@ export class RuntimeStore {
         `
         SELECT payload_json FROM recovery_operation
         WHERE (? IS NULL OR session_id = ?)
-          AND (state NOT IN ('succeeded', 'failed') OR updated_at >= ?)
+          AND (
+            state NOT IN ('succeeded', 'failed')
+            OR updated_at >= ?
+            OR cleanup_fact <> 'verified_clear'
+            OR persistence_fact = 'pending'
+          )
         ORDER BY updated_at DESC
       `,
       )
@@ -4570,17 +4729,18 @@ export class RuntimeStore {
    * nobody has discharged.
    */
   private pruneRecoveryOperations() {
-    this.db
-      .prepare(
-        `
-        DELETE FROM recovery_operation
+    this.transaction(() => {
+      const expired = `
+        SELECT operation_id FROM recovery_operation
         WHERE state IN ('succeeded', 'failed')
           AND updated_at < ?
           AND cleanup_fact = 'verified_clear'
           AND persistence_fact <> 'pending'
-      `,
-      )
-      .run(Date.now() - RECOVERY_OPERATION_RETENTION_MS)
+      `
+      const cutoff = Date.now() - RECOVERY_OPERATION_RETENTION_MS
+      this.db.prepare(`DELETE FROM recovery_operation_caller WHERE operation_id IN (${expired})`).run(cutoff)
+      this.db.prepare(`DELETE FROM recovery_operation WHERE operation_id IN (${expired})`).run(cutoff)
+    })
   }
 
   /**

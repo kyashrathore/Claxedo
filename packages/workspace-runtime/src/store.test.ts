@@ -3652,3 +3652,112 @@ void it("turnEvidence answers for either of a turn's two message ids", () => {
   })
   store.close()
 })
+
+void it("turnCoverage calls a finished turn complete against the id it was asked for", () => {
+  const store = new RuntimeStore(tmp())
+  const leaseId = turnFixture(store)
+  store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId })
+
+  const byUser = store.turnCoverage("s1", "u1")
+  const byAssistant = store.turnCoverage("s1", "m1")
+  assert.equal(byUser.coverage, "complete")
+  assert.equal(byUser.reason, undefined)
+  assert.equal(byUser.turnId, "u1")
+  assert.deepEqual(byUser.terminal, { status: "completed", completedAt: 5, assistantMessageId: "m1" })
+  assert.deepEqual(byUser.messages.map((message) => message.info.id), ["u1", "m1"])
+  assert.equal(byUser.committedSequence, store.replayJournal("s1").position)
+
+  assert.equal(byAssistant.turnId, "m1")
+  assert.equal(byAssistant.coverage, "complete")
+  assert.deepEqual(byAssistant.messages.map((message) => message.info.id), byUser.messages.map((message) => message.info.id))
+  store.close()
+})
+
+void it("turnCoverage reports a running turn partial and names no terminal for it", () => {
+  const store = new RuntimeStore(tmp())
+  turnFixture(store)
+
+  const running = store.turnCoverage("s1", "u1")
+  assert.equal(running.coverage, "partial")
+  assert.match(running.reason ?? "", /no end for turn u1/)
+  assert.equal("terminal" in running, false)
+  assert.deepEqual(running.messages.map((message) => message.info.id), ["u1", "m1"])
+  store.close()
+})
+
+void it("turnCoverage refuses to account for a turn the journal never started", () => {
+  const store = new RuntimeStore(tmp())
+  turnFixture(store)
+
+  const unknown = store.turnCoverage("s1", "never-started")
+  assert.equal(unknown.coverage, "unavailable")
+  assert.equal(unknown.turnId, "never-started")
+  assert.match(unknown.reason ?? "", /records no turn never-started/)
+  assert.deepEqual(unknown.messages, [])
+  store.close()
+})
+
+void it("turnCoverage calls a turn partial while a message inside it belongs to another", () => {
+  const store = new RuntimeStore(tmp())
+  const leaseId = turnFixture(store)
+  store.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId })
+  store.appendEvent({
+    sessionId: "s1",
+    agentSessionId: "a1",
+    payload: messageUpdated({
+      id: "stray",
+      sessionID: "s1",
+      role: "assistant",
+      parentID: "another-user",
+      time: { created: 9 },
+    } as any),
+  })
+
+  const strayed = store.turnCoverage("s1", "u1")
+  assert.equal(strayed.coverage, "partial")
+  assert.match(strayed.reason ?? "", /not contiguous/)
+  // The turn finished, so the journal still names its outcome: a projection
+  // defect does not unmake a recorded end.
+  assert.deepEqual(strayed.terminal, { status: "completed", completedAt: 5, assistantMessageId: "m1" })
+  store.close()
+})
+
+void it("turnCoverage refuses a finished turn whose projection is blocked behind the journal", () => {
+  const root = tmp()
+  const first = new RuntimeStore(root)
+  const leaseId = turnFixture(first)
+  first.finishTurn({ sessionId: "s1", assistantMessageId: "m1", outcome: { status: "completed", completedAt: 5 }, leaseId })
+  first.appendEvent({ sessionId: "s1", payload: todoUpdated("s1", [{ content: "last", status: "pending", priority: "low" }]) })
+  const head = first.getSessionMaxSeq("s1")
+  db(first).prepare("DELETE FROM journal_checkpoint WHERE session_id = ?").run("s1")
+  db(first).prepare("UPDATE runtime_journal SET payload_json = ? WHERE session_id = ? AND seq = ?").run("{not json", "s1", head)
+  first.close()
+
+  const store = new RuntimeStore(root)
+  const blocked = store.turnCoverage("s1", "u1")
+  assert.equal(blocked.coverage, "unavailable")
+  assert.match(blocked.reason ?? "", new RegExp(`blocked at seq ${head}`))
+  assert.deepEqual(blocked.messages, [])
+  assert.equal(blocked.committedSequence, head - 1)
+  store.close()
+})
+
+void it("turnCoverage refuses a session whose transcript this store does not project", () => {
+  const store = new RuntimeStore(tmp())
+  turnFixture(store)
+  db(store).prepare("DELETE FROM message WHERE session_id = ?").run("s1")
+
+  const unprojected = store.turnCoverage("s1", "u1")
+  assert.equal(unprojected.coverage, "unavailable")
+  assert.match(unprojected.reason ?? "", /no projected transcript/)
+  store.close()
+})
+
+void it("turnCoverage refuses a session it does not hold at all", () => {
+  const store = new RuntimeStore(tmp())
+  assert.throws(
+    () => store.turnCoverage("missing", "u1"),
+    (error: unknown) => error instanceof AgentMessagePageError && error.status === 404,
+  )
+  store.close()
+})
