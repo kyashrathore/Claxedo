@@ -80,7 +80,7 @@ function claimedResource(request: Request, deps: OAuthMcpCredentialDeps) {
  *
  * Undefined — never a throw — for a request the mount should answer 401 to:
  * no bearer, a token the server does not recognise, one issued for another
- * resource, or one carrying no `claxedo:` scope at all.
+ * resource or for none, or one carrying no `claxedo:` scope at all.
  */
 export async function resolveOAuthMcpCredential(
   request: Request,
@@ -90,10 +90,11 @@ export async function resolveOAuthMcpCredential(
   if (!token) return undefined
   const claims = await deps.verifyAccessToken(token)
   if (!claims) return undefined
-  // An audience-bound token names what it may reach. A token minted for the
-  // control-plane resource is the whole account, and must not be spendable
-  // here just because it is live.
-  if (claims.audience && !claims.audience.includes(claimedResource(request, deps))) return undefined
+  // This endpoint serves exactly one resource, so the token must be bound to
+  // it. The authorization server mints no `aud` at all for a token request
+  // that names no `resource`, and an unbound token is as little a token for
+  // here as one minted for the account-wide control-plane resource.
+  if (!claims.audience?.includes(claimedResource(request, deps))) return undefined
   const scopes = grantedScopes(claims)
   if (scopes.size === 0) return undefined
   return {

@@ -20,8 +20,6 @@ export type McpCredential =
       userId?: string
       /** Session named by the verified runtime credential. */
       sessionId?: string
-      /** The caller's permission mode, the ceiling for anything it creates. */
-      permissionMode?: string
       /** Account setting "agents may act on my other machines"; off by default. */
       crossMachineWrites: boolean
       readOnly: boolean

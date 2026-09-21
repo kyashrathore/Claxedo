@@ -20,13 +20,15 @@ import { assertWritableTarget, targetScope, toolJson, toolTarget, WORKSPACE_TARG
 const NATIVE_HARNESSES = ["claude", "codex", "cursor", "pi", "opencode"] as const satisfies readonly RuntimeNativeHarnessId[]
 
 /**
- * `permissionCeiling` on `POST /session`, widest first. A session a runtime
- * credential creates carries the caller's own level (security review S4), and
- * a caller whose level is unknown caps at `ask` — the direction
- * `permissionModeLevel` takes for an unranked mode.
+ * `permissionCeiling` on `POST /session`. A session created from inside a
+ * session caps at `ask`: the runtime credential carries no mode of its own,
+ * and `ask` is the direction `permissionModeLevel` takes for an unranked mode.
+ * A human credential names no ceiling — its ceiling is the workspace's own
+ * policy, and naming one here would let a scope-limited token widen it.
  */
-const PERMISSION_CEILINGS = ["ask", "auto", "full"] as const
-type PermissionCeiling = (typeof PERMISSION_CEILINGS)[number]
+function permissionCeiling(ctx: McpToolContext): "ask" | undefined {
+  return ctx.credential.kind === "runtime" ? "ask" : undefined
+}
 
 const SESSION_ARG = {
   session: z.string().trim().min(1).describe("Session id."),
@@ -220,17 +222,6 @@ export function registerSessionTools(registry: ToolRegistrar) {
       return toolJson({ session: args.session, deleted: deleted.data })
     },
   )
-}
-
-/**
- * The ceiling a created session runs under. Only a runtime credential carries
- * one: a human credential's ceiling is the workspace's own policy, and naming
- * one here would let a scope-limited token widen it.
- */
-function permissionCeiling(ctx: McpToolContext): PermissionCeiling | undefined {
-  if (ctx.credential.kind !== "runtime") return undefined
-  const declared = ctx.credential.permissionMode
-  return PERMISSION_CEILINGS.find((level) => level === declared) ?? "ask"
 }
 
 /**

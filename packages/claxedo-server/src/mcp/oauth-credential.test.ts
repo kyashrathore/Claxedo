@@ -48,6 +48,7 @@ describe("resolveOAuthMcpCredential", () => {
       subject: "user-1",
       clientId: "aBcD",
       scopes: ["claxedo:read"],
+      audience: [RESOURCE],
     }))
 
     expect(credential).toMatchObject({ readOnly: true })
@@ -58,6 +59,7 @@ describe("resolveOAuthMcpCredential", () => {
       subject: "user-1",
       clientId: "aBcD",
       scopes: ["claxedo:read", "claxedo:act"],
+      audience: [RESOURCE],
     }))
     if (!credential) throw new Error("expected a credential")
 
@@ -73,6 +75,7 @@ describe("resolveOAuthMcpCredential", () => {
       subject: "user-1",
       clientId: "aBcD",
       scopes: ["claxedo:read", "claxedo:act", "claxedo:approve"],
+      audience: [RESOURCE],
     }))
     if (!credential) throw new Error("expected a credential")
 
@@ -84,11 +87,13 @@ describe("resolveOAuthMcpCredential", () => {
       subject: "user-1",
       clientId: "aBcD",
       scopes: ["claxedo:read", "claxedo:admin"],
+      audience: [RESOURCE],
     }))
     const cli = await resolveOAuthMcpCredential(bearer("t"), deps({
       subject: "user-1",
       clientId: "claxedo-cli",
       scopes: ["claxedo:read", "claxedo:admin"],
+      audience: [RESOURCE],
     }))
 
     expect(dynamic?.kind === "user" && [...dynamic.scopes]).toEqual(["read"])
@@ -108,6 +113,15 @@ describe("resolveOAuthMcpCredential", () => {
       subject: "user-1",
       clientId: "claxedo-cli",
       scopes: ["openid", "workspace:write"],
+      audience: [RESOURCE],
+    }))).resolves.toBeUndefined()
+  })
+
+  test("refuses a live token carrying no audience", async () => {
+    await expect(resolveOAuthMcpCredential(bearer("t"), deps({
+      subject: "user-1",
+      clientId: "claxedo-cli",
+      scopes: ["claxedo:read", "claxedo:act"],
     }))).resolves.toBeUndefined()
   })
 

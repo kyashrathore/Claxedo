@@ -355,17 +355,7 @@ describe("session_create", () => {
     expect(state.sessions.at(-1)).toMatchObject({ id: created.id, title: "Consult" })
   })
 
-  test("caps a session a runtime credential creates at that credential's own permission mode", async () => {
-    const state = local()
-    const { url } = await listen({ local: state, claims: { permissionMode: "auto" } })
-    const client = await connect(url, "rt-token")
-    const created = await json(client, "session_create", {})
-    expect(created).toMatchObject({ permissionCeiling: "auto" })
-    expect(state.creates.at(-1)?.body).toMatchObject({ permissionCeiling: "auto" })
-    expect(state.modes[String(created.id)]).toBe("auto")
-  })
-
-  test("caps at ask when the runtime credential declares no mode, and names no ceiling for a person", async () => {
+  test("caps a session a runtime credential creates at ask, and names no ceiling for a person", async () => {
     const state = local()
     const runtime = await listen({ local: state })
     const capped = await json(await connect(runtime.url, "rt-token"), "session_create", {})

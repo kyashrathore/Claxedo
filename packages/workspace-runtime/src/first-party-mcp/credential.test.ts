@@ -31,6 +31,8 @@ describe("runtime credential issuer", () => {
     const token = issuer.current()
     expect(issuer.header()).toBe(`Bearer ${token}`)
     expect(token.split(".")).toHaveLength(3)
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()) as Record<string, unknown>
+    expect(Object.keys(payload).sort()).toEqual(["aud", "exp", "iat", "iss", "jti", "sub", "user_id", "workspace_id"])
     expect(issuer.verify(token)).toEqual({
       runtimeId: "rt-1",
       workspaceId: "ws-1",

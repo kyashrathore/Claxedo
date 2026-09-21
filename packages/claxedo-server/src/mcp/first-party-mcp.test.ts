@@ -196,7 +196,9 @@ function oauthComposed(tokens: Readonly<Record<string, readonly string[]>>) {
   const app = new Hono()
   const { answered, server } = attentionRuntime()
   const claims = (token: string): OAuthAccessTokenClaims | undefined =>
-    tokens[token] ? { subject: "user_7", clientId: "mcp-host-1", scopes: tokens[token] } : undefined
+    tokens[token]
+      ? { subject: "user_7", clientId: "mcp-host-1", scopes: tokens[token], audience: [`${CONTROL_PLANE_ORIGIN}/api/claxedo/mcp`] }
+      : undefined
   const contribution = firstPartyMcpContribution({
     mount: "hosted",
     app,

@@ -303,7 +303,7 @@ async function mount(runtime: ReturnType<typeof fakeRuntime>, options: Partial<C
     enabledToolGroups: () => ["subagents"],
     verifyRuntimeCredential: (token) =>
       token.startsWith("rt-token:")
-        ? { runtimeId: "rt_1", workspaceId: WORKSPACE, sessionId: token.slice("rt-token:".length), userId: "user_1", permissionMode: "ask", expiresAt: Number.MAX_SAFE_INTEGER }
+        ? { runtimeId: "rt_1", workspaceId: WORKSPACE, sessionId: token.slice("rt-token:".length), userId: "user_1", expiresAt: Number.MAX_SAFE_INTEGER }
         : undefined,
     createClient: () => createClaxedoMcpClient({
       deployment: "loopback",
@@ -496,7 +496,7 @@ describe("subagent tools", () => {
     expect(capabilities).toMatchObject({ canSpawn: false, activeChildren: 4, maxActiveChildren: 4 })
   })
 
-  test("subagent_capabilities reports the runtime's harness, the ceiling and the wait bound", async () => {
+  test("subagent_capabilities reports the runtime's harness and the wait bound", async () => {
     const runtime = fakeRuntime()
     const url = await mount(runtime)
     runtime.seed("parent")
@@ -506,7 +506,6 @@ describe("subagent tools", () => {
     expect(capabilities).toMatchObject({
       canSpawn: true,
       parentSessionId: "parent",
-      permissionCeiling: "ask",
       activeChildren: 0,
       maxActiveChildren: 4,
       waitTimeoutMaxMs: 50_000,

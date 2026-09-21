@@ -56,7 +56,6 @@ export type RuntimeCredentialClaims = Readonly<{
   workspaceId: string
   sessionId?: string
   userId?: string
-  permissionMode?: string
   expiresAt: number
 }>
 
@@ -160,7 +159,7 @@ export function mcpAuditRecord(event: McpAuditEvent) {
 export function credentialKey(credential: McpCredential): string {
   return JSON.stringify(credential.kind === "runtime"
     ? [credential.kind, credential.runtimeId, credential.workspaceId, credential.userId, credential.sessionId,
-      credential.permissionMode, credential.crossMachineWrites, credential.readOnly]
+      credential.crossMachineWrites, credential.readOnly]
     : [credential.kind, credential.actorId, credential.clientId, credential.readOnly, [...credential.scopes].sort()])
 }
 
@@ -210,7 +209,6 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
       workspaceId: claims.workspaceId,
       ...(claims.userId ? { userId: claims.userId } : {}),
       ...(sessionId ? { sessionId } : {}),
-      ...(claims.permissionMode ? { permissionMode: claims.permissionMode } : {}),
       crossMachineWrites: options.crossMachineWrites?.(claims) ?? false,
       readOnly: false,
     }

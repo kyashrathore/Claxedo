@@ -34,9 +34,6 @@ const POLL_MAX_MS = 2_000
 const ACTIVE_STATUSES = ["pending", "running", "paused"] as const
 const TERMINAL_STATUSES = ["completed", "failed", "killed", "interrupted"] as const
 
-/** `permissionCeiling` on the create route is a level, not a mode id; anything else is dropped there. */
-const PERMISSION_LEVELS = ["ask", "auto", "full"] as const
-
 /**
  * `RUNTIME_NATIVE_HARNESS_IDS` itself lives beside the runtime's config
  * routes, so importing the value would drag that route module's server
@@ -67,7 +64,7 @@ type ChildLocator = { subagentKey?: string; sessionId?: string }
 export function registerSubagentTools(registry: ToolRegistrar): void {
   registry.tool("subagent_capabilities", {
     description:
-      "Whether this session may run a subagent, which harnesses the runtime can start one on, the permission ceiling a child inherits, and how many children are already active.",
+      "Whether this session may run a subagent, which harnesses the runtime can start one on, and how many children are already active.",
     inputSchema: {},
     access: { audiences: ["runtime"], write: false, scope: "act" },
   }, surfaced(async (_args, ctx) => jsonResult(await capabilities(ctx))))
@@ -178,11 +175,9 @@ async function createChildSession(
   choice: Choice,
   instructions: string | undefined,
 ): Promise<{ subagentKey: string; sessionId: string }> {
-  // A credential that declares no level leaves `permissionCeiling` off rather
-  // than falling back to `ask` the way a parentless `session_create` must: the
-  // route already caps a child at the parent session's own current mode, and
-  // naming the floor here would refuse a child under a parent that is wider.
-  const ceiling = oneOf(ctx.credential.kind === "runtime" ? ctx.credential.permissionMode : undefined, PERMISSION_LEVELS)
+  // No `permissionCeiling` goes on the create: the route already caps a child
+  // at the parent session's own current mode, and naming the floor here would
+  // refuse a child under a parent that is wider.
   const body = await postRuntimeJson(ctx, `/session`, harnessQuery(choice.harness), {
     parentID,
     ...(args.role ? { role: args.role, title: args.role } : {}),
@@ -191,7 +186,6 @@ async function createChildSession(
     ...(instructions ? { instructions } : {}),
     ...(args.permissionMode ? { permissionMode: args.permissionMode } : {}),
     ...(args.clientRequestId ? { clientRequestId: args.clientRequestId } : {}),
-    ...(ceiling ? { permissionCeiling: ceiling } : {}),
   })
   const row = record(body)
   const sessionId = text(row?.id)
@@ -379,7 +373,6 @@ async function runtimeDefaultHarness(ctx: McpToolContext) {
 
 async function capabilities(ctx: McpToolContext) {
   const parent = ctx.credential.kind === "runtime" ? ctx.credential.sessionId : undefined
-  const permissionCeiling = ctx.credential.kind === "runtime" ? ctx.credential.permissionMode : undefined
   const runtime = await runtimeDefaultHarness(ctx)
   const runtimeHarness = "harness" in runtime ? runtime.harness : undefined
   const harnesses = RUNTIME_HARNESSES.map((id) => id === runtimeHarness
@@ -418,7 +411,6 @@ async function capabilities(ctx: McpToolContext) {
       ? {}
       : { reason: `This session already has ${activeChildren} active children` }),
     parentSessionId: parent,
-    ...(permissionCeiling ? { permissionCeiling } : {}),
     activeChildren,
     // The slot keys `create_subagent`'s `configuration` accepts; a session
     // started outside a model group reports the empty set.
