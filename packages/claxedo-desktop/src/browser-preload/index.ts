@@ -30,6 +30,11 @@
  *      anchored to the picked element. The popover submits via
  *      `claxedo-browser-comment-submit` IPC. Returning `true` from
  *      `onElementSelect` suppresses react-grab's default copy flow.
+ *      Page script shares this DOM and react-grab never checks
+ *      `isTrusted`, so both IPC sends sit behind `trusted-input.ts`: a
+ *      pick needs a trusted input event within the last
+ *      `TRUSTED_INPUT_WINDOW_MS`, and Send needs the activating event
+ *      itself to be trusted.
  *
  *   3. Disables react-grab's toolbar AND its built-in selection-label /
  *      textarea via `theme.toolbar.enabled: false` and
@@ -45,6 +50,8 @@
  */
 
 import { ipcRenderer } from "electron"
+
+import { TRUSTED_INPUT_EVENT_TYPES, createTrustedInputGate, isTrustedActivation } from "./trusted-input"
 
 // ─── Diagnostics ─────────────────────────────────────────────────────────
 // Every step of the bootstrap sends a breadcrumb both to the host renderer
@@ -67,6 +74,16 @@ diag("preload-loaded", {
   hasReactGrabModule: typeof globalThis.__REACT_GRAB_MODULE__ === "object",
   hasReactGrab: typeof globalThis.__REACT_GRAB__ === "object",
 })
+
+const trustedInput = createTrustedInputGate(() => performance.now())
+if (typeof window !== "undefined") {
+  // Capture on window, registered at document-start, runs ahead of every
+  // page listener, so page script cannot stop a real event from being
+  // recorded before react-grab's own bubble-phase `pointerup` handler sees it.
+  for (const type of TRUSTED_INPUT_EVENT_TYPES) {
+    window.addEventListener(type, (ev) => trustedInput.noteTrustedEvent(ev), { capture: true, passive: true })
+  }
+}
 
 type PickPayload = {
   selector: string
@@ -472,7 +489,11 @@ function showPopover(el: Element): void {
     clearHighlight()
     getReactGrabAPI()?.activate?.()
   }
-  const submit = () => {
+  const submit = (ev: Event) => {
+    if (!isTrustedActivation(ev)) {
+      diag("submit-refused", { reason: "untrusted-activation", type: ev.type })
+      return
+    }
     const content = textarea.value.trim()
     if (!content) return
     // Order matters: remove popover from DOM, force a paint cycle, THEN send
@@ -498,7 +519,7 @@ function showPopover(el: Element): void {
       dismiss()
     } else if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
       ev.preventDefault()
-      submit()
+      submit(ev)
     }
   })
   cancelBtn.addEventListener("click", dismiss)
@@ -564,10 +585,14 @@ const claxedoCommentPlugin: ReactGrabPlugin = {
   },
   hooks: {
     onElementSelect: (element: Element) => {
+      // Return true on every path to suppress react-grab's default flow
+      // (copy in activate() mode) so nothing lands on the system clipboard.
+      if (!trustedInput.hasRecentTrustedInput()) {
+        diag("pick-refused", { reason: "no-recent-trusted-input" })
+        return true
+      }
       sendPick(element)
       showPopover(element)
-      // Return true to suppress react-grab's default flow (copy in
-      // activate() mode) so nothing lands on the system clipboard.
       return true
     },
   },
