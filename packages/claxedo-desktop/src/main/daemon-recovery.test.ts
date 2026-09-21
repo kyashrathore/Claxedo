@@ -11,7 +11,11 @@ import {
   readDaemonOwnershipView,
   recoverPublishedDaemon,
 } from "./daemon-recovery"
-import { CLAXEDO_DAEMON_PROTOCOL, type ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
+import {
+  CLAXEDO_DAEMON_PROTOCOL,
+  verifyClaxedoDaemonDiscovery,
+  type ClaxedoDaemonDiscovery,
+} from "./server-daemon-discovery"
 
 const roots: string[] = []
 const children: Array<() => void> = []
@@ -180,6 +184,57 @@ describe("recovering a published daemon", () => {
     expect(result.replacementAllowed).toBe(false)
     expect(aliveNow(child.pid!)).toBe(true)
   })
+
+  test("a daemon whose event loop is blocked is unreachable over HTTP and recoverable through the OS", async () => {
+    // A real listener that answers once and then blocks its loop for a minute:
+    // no timer inside it can fire, which is the whole reason the launcher owns
+    // this path rather than asking the daemon to stop itself.
+    const child = spawn(process.execPath, ["-e", `
+      const http = require("node:http")
+      const server = http.createServer(() => {
+        process.send && process.send("blocking")
+        const until = Date.now() + 60_000
+        while (Date.now() < until) {}
+      })
+      server.listen(0, "127.0.0.1", () => process.send && process.send({ port: server.address().port }))
+    `], { detached: true, stdio: ["ignore", "ignore", "ignore", "ipc"] })
+    children.push(() => {
+      try {
+        process.kill(-child.pid!, "SIGKILL")
+      } catch {
+        // Already gone.
+      }
+    })
+    const port = await new Promise<number>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("the fake daemon never listened")), 10_000)
+      child.on("message", (message: unknown) => {
+        if (typeof message === "object" && message !== null && "port" in message) {
+          clearTimeout(timer)
+          resolve((message as { port: number }).port)
+        }
+      })
+    })
+    const creation = await readCreationIdentity(child.pid!)
+    if (!creation) throw new Error("the fake daemon reported no creation identity")
+    const record = discovery({ pid: child.pid!, port, identity: creation })
+
+    // The probe's own deadline is what returns, not the blocked loop.
+    expect(await verifyClaxedoDaemonDiscovery(record)).toBeUndefined()
+
+    const asked: string[] = []
+    const result = await recoverPublishedDaemon({
+      discovery: record,
+      authorize: (preview) => {
+        asked.push(preview.summary)
+        return true
+      },
+    })
+
+    expect(asked).toHaveLength(1)
+    expect(operationOf(result).facts.execution.value).toBe("terminal")
+    expect(result.replacementAllowed).toBe(true)
+    expect(aliveNow(child.pid!)).toBe(false)
+  }, 30_000)
 
   test("a receipt from here is always volatile", async () => {
     const result = await recoverPublishedDaemon({
