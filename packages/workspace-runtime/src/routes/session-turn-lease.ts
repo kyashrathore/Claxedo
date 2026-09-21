@@ -44,6 +44,8 @@ export async function acquireSessionTurnLease(input: {
   policy: SessionAccessPolicy
   access: SessionAccessPolicyInput & { sessionId: string }
   turnId: string
+  /** Proof for acquisition only; the lease itself is what renews and releases. */
+  grant?: string
   onLost: () => Promise<void> | void
   now?: () => number
 }): Promise<SessionTurnLeaseAcquisition> {
@@ -54,7 +56,7 @@ export async function acquireSessionTurnLease(input: {
       decision: denied("session_turn_authority_unavailable", "Durable session turn authority is unavailable"),
     }
   }
-  const acquired = await policy.acquireTurn({ ...input.access, turnId: input.turnId })
+  const acquired = await policy.acquireTurn({ ...input.access, turnId: input.turnId, ...(input.grant ? { grant: input.grant } : {}) })
   if (!acquired.allowed) return { acquired: false, decision: acquired }
   if (!validLease(acquired, input.turnId, (input.now ?? Date.now)())) {
     return {
