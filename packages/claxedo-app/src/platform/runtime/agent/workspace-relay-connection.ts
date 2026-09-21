@@ -330,13 +330,15 @@ async function fetchConnectionBody(
   const url = operation === "workspace.connection.mint"
     ? workspaceConnectionUrl({ serverUrl: options.serverUrl, workspaceId: params.id })
     : workspaceConnectionRefreshUrl({ serverUrl: options.serverUrl, workspaceId: params.id })
-  const init: RequestInit | undefined = operation === "workspace.connection.refresh"
-    ? {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify((params.previousJti ? { previousJti: params.previousJti } : {})),
-      }
-    : undefined
+  // Both are POSTs: minting can start billable compute server-side, so the
+  // explicit connect never travels as a GET. `GET /connection` is the
+  // read-only status path; only a ready sandbox answers it with a minted
+  // connection (P-118).
+  const init: RequestInit = {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params.previousJti ? { previousJti: params.previousJti } : {}),
+  }
 
   if (configuredAuthority) {
     return operation === "workspace.connection.refresh"

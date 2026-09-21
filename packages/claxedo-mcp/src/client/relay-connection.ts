@@ -84,13 +84,22 @@ export function createWorkspaceConnectionCache(options: WorkspaceConnectionOptio
   }
 }
 
+// The first mint POSTs an empty body: minting can start billable compute
+// server-side, so it is not a GET — `GET /connection` is the read-only status
+// path (P-118).
+const MINT_INIT: RequestInit = {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: "{}",
+}
+
 async function handshake(workspaceId: string, options: WorkspaceConnectionOptions, refresh: RequestInit | undefined) {
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const attempts = options.provisioningMaxAttempts ?? DEFAULT_PROVISIONING_MAX_ATTEMPTS
   const path = workspaceConnectionPath(workspaceId, refresh ? "refresh" : undefined)
   const operation = refresh ? "workspace.connection.refresh" : "workspace.connection"
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const response = await options.controlPlane(path, refresh ?? { method: "GET" })
+    const response = await options.controlPlane(path, refresh ?? MINT_INIT)
     if (!response.ok) throw await workspaceRuntimeClientError(operation, response)
     const body: unknown = await response.json()
     const row = asRecord(body)
