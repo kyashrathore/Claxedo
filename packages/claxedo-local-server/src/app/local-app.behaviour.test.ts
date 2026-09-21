@@ -384,6 +384,57 @@ describe("local composition — health and telemetry", () => {
     lifecycle.stop()
   })
 
+  test("a machine that is fenced spends no stored key and records no telemetry", async () => {
+    const identity = { token: "installation-secret", protocol: 1, generation: "generation-1", pid: 42 }
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: () => ({ ...emptyActivity(), residencyPins: 1, replacementBlockers: 1 }),
+      onStop() {},
+      machine: { machineId: "local", generation: "generation-1", budgets: { drainMs: 10_000 } },
+      pollIntervalMs: 10_000,
+    })
+    lifecycle.start()
+    const capture = vi.fn()
+    const local = app({ daemon: { identity, lifecycle }, services: services({ telemetry: { capture } }) })
+    const headers = { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" }
+
+    const inspected = await (await local.request("http://localhost/api/claxedo/daemon/recovery", { headers })).json() as {
+      scopeRevision: string
+      target: unknown
+    }
+    const drained = await local.request("http://localhost/api/claxedo/daemon/recovery", {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({
+        requestId: "drain-1",
+        action: "drain_daemon",
+        target: inspected.target,
+        scopeRevision: inspected.scopeRevision,
+        attempt: 1,
+      }),
+    })
+    expect(drained.status).toBe(200)
+
+    // The two families registered before the route mounts. The broker spends a
+    // stored credential at a vendor, which is the last thing a machine that has
+    // not established what it owns should be doing on its behalf.
+    const brokered = await local.request("http://localhost/api/claxedo/broker/anthropic/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })
+    expect(brokered.status).toBe(503)
+    expect(await brokered.json()).toMatchObject({ error: { code: "machine_recovery_pending" } })
+
+    const tracked = await local.request("http://localhost/api/claxedo/track", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ distinctId: "d", event: "e" }),
+    })
+    expect(tracked.status).toBe(503)
+    expect(capture).not.toHaveBeenCalled()
+    lifecycle.stop()
+  })
+
   test("a session Stop submitted during a machine drain is served before the drain settles", async () => {
     const identity = { token: "installation-secret", protocol: 1, generation: "generation-1", pid: 42 }
     // Pinned work, so the drain is still waiting for the whole test.
