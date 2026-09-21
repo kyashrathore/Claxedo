@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
 import { num, str } from "../json-value"
 import type { WorkspaceCheckpointControl, WorkspaceCheckpointDrainPolicy } from "../workspace/host"
 import type { WorkspaceWorktreeManager } from "../worktree"
@@ -30,7 +31,17 @@ export function CheckpointRoutes(input: {
     .post("/freeze", async (c) => {
       const body = await boundedJsonRecord(c)
       const policy: WorkspaceCheckpointDrainPolicy = body.policy === "interrupt" ? "interrupt" : "drain"
-      return c.json(await input.checkpoint.freeze(policy))
+      const requested = num(body.deadlineMs)
+      if (requested !== undefined && (!Number.isFinite(requested) || requested < 0)) {
+        return c.json(errorBody("workspace_checkpoint_freeze_invalid", "deadlineMs must be a non-negative number"), 400)
+      }
+      const result = await input.checkpoint.freeze(policy, {
+        deadlineAt: Date.now() + (requested ?? DEFAULT_RECOVERY_BUDGETS.drainMs),
+      })
+      // 409, not 200 with a state field a caller might not read: a blocked
+      // freeze did not fence the writers it names, and the gate it kept is
+      // not the same thing as a taken checkpoint.
+      return c.json(result, result.state === "frozen" ? 200 : 409)
     })
     .post("/flush", async (c) => {
       try {

@@ -48,15 +48,40 @@ export type WorkspaceHostMountOptions = {
 export type WorkspaceCheckpointState = "active" | "freezing" | "frozen"
 export type WorkspaceCheckpointDrainPolicy = "drain" | "interrupt"
 
+export type WorkspaceCheckpointDetail = {
+  state: WorkspaceCheckpointState
+  activeWrites: number
+  activeTurns: number
+  reconciledEpoch?: number
+}
+
+/**
+ * One writer a freeze could not account for. `sessionId` is absent only for a
+ * checkpoint write, which belongs to no session; `detail` carries how many.
+ */
+export type WorkspaceCheckpointBlocker = {
+  sessionId?: string
+  turnId?: string
+  reason: string
+  error?: string
+}
+
+/**
+ * A freeze either fenced everything it could see, or names what it could not.
+ * There is no third answer: reporting frozen over a writer nobody accounted
+ * for is what let a checkpoint be taken beside a live producer.
+ */
+export type WorkspaceCheckpointFreezeResult =
+  | { state: "frozen"; detail: WorkspaceCheckpointDetail }
+  | { state: "blocked"; blockers: WorkspaceCheckpointBlocker[]; detail: WorkspaceCheckpointDetail }
+
 export type WorkspaceCheckpointControl = {
-  detail: () => {
-    state: WorkspaceCheckpointState
-    activeWrites: number
-    activeTurns: number
-    reconciledEpoch?: number
-  }
+  detail: () => WorkspaceCheckpointDetail
   beginWrite: () => (() => void) | undefined
-  freeze: (policy: WorkspaceCheckpointDrainPolicy) => Promise<ReturnType<WorkspaceCheckpointControl["detail"]>>
+  freeze: (
+    policy: WorkspaceCheckpointDrainPolicy,
+    options?: { deadlineAt?: number },
+  ) => Promise<WorkspaceCheckpointFreezeResult>
   flush: () => Promise<void>
   scrub: () => Promise<void>
   resume: () => Promise<ReturnType<WorkspaceCheckpointControl["detail"]>>

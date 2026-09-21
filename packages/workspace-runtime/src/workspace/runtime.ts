@@ -43,9 +43,17 @@ import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { assertTarget, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot, type ProviderProjection } from "../routes/config"
 import { num, rec, str } from "../json-value"
-import { AgentRuntimeContractError, assertAgentExecutionBinding, requireAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import {
+  AgentRuntimeContractError,
+  DEFAULT_RECOVERY_BUDGETS,
+  assertAgentExecutionBinding,
+  requireAgentExecutionBinding,
+  type RecoveryOutcome,
+  type RecoveryTurnTarget,
+} from "@claxedo/agent-runtime-contract"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { SessionRoutes } from "../routes/session"
+import { isSessionRecoveryPath } from "../routes/session-core"
 import type { SessionDeliveryStore } from "../session/delivery-owner"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
 import {
@@ -56,7 +64,13 @@ import {
   mountWorkspacePty,
   type MountedWorkspaceEvents,
 } from "./core"
-import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
+import type {
+  RuntimeConfigApplyStatus,
+  WorkspaceCheckpointBlocker,
+  WorkspaceCheckpointFreezeResult,
+  WorkspaceHost,
+  WorkspaceHostMountOptions,
+} from "./host"
 import { firstPartyMcpAdapterConfig, firstPartyMcpServerFor, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
 import { createWorkspaceEventFramesTap, type WorkspaceEventParents } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
@@ -220,7 +234,27 @@ export type WorkspaceHostOptions = {
   firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
 }
 
-const RUNNER_REPLACEMENT_DRAIN_TIMEOUT_MS = 1_000
+/**
+ * A harness adapter whose retirement is in progress or stuck. It is kept in
+ * `retiringAdapters` while unresolved: the adapter's processes are still this
+ * workspace's, so it is neither reusable for a session nor gone.
+ */
+type AdapterRetirement = {
+  key: string
+  state: "retiring" | "retire_failed"
+  attempt: number
+  error?: string
+  done: Promise<void>
+}
+
+/** One turn a drain tried to stop, and whether its scope actually closed. */
+type TurnDrainResult = {
+  sessionId: string
+  turnId?: string
+  drained: boolean
+  reason?: string
+  error?: string
+}
 
 type ActiveTurn = {
   sessionId: string
@@ -228,6 +262,12 @@ type ActiveTurn = {
   controller: AbortController
   done: Promise<void>
   finish: () => void
+  /**
+   * The owner to ask for this turn's identity and cancellation. Captured when
+   * the scope opens, because by the time a checkpoint has to drain the turn
+   * the adapter may already have been replaced.
+   */
+  runtime?: AgentRuntime
 }
 
 type RuntimeRunner = SessionHarness
@@ -698,7 +738,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let closing = false
   let disposal: Promise<void> | undefined
   const pendingRequests = new Set<Promise<void>>()
-  const retiringAdapters = new Map<AgentHarnessAdapter, Promise<void>>()
+  const retiringAdapters = new Map<AgentHarnessAdapter, AdapterRetirement>()
   const adapterTeardowns = new WeakMap<AgentHarnessAdapter, Promise<void>>()
   const sessionAdapters = new Map<string, AgentHarnessAdapter>()
   const sessionRuntimes = new Map<string, AgentRuntime>()
@@ -985,6 +1025,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       store: store(),
       eventHub,
       adapterOwnership: "caller",
+      // The runtime cannot know which workspace it serves, and a recovery
+      // target that invented one would be indistinguishable from a real one
+      // at every caller downstream.
+      identity: { workspaceId: options.target?.workspaceId ?? "" },
       // This session's adapter is already built, so the factory hands the same
       // one back and ignores the creation context the contract offers.
       harnesses: [{
@@ -1007,27 +1051,47 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return done
   }
 
-  function retireAdapter(key: string, target: AgentHarnessAdapter) {
+  /**
+   * Retire one harness adapter, keeping the owner entry until it succeeds.
+   *
+   * A failed attempt is retained as state rather than as a rejected promise:
+   * the adapter's processes and the runtime built on it are still this
+   * workspace's, and `retiringAdapters` is what `dispose` and
+   * `observedSessionAdapter` read to know that. `retry` starts a checked new
+   * attempt; without it a failed retirement reports itself and starts nothing.
+   */
+  function retireAdapter(key: string, target: AgentHarnessAdapter, options: { retry?: boolean } = {}) {
     const previous = retiringAdapters.get(target)
-    if (previous) return previous
+    if (previous && (previous.state === "retiring" || !options.retry)) return previous.done
+    const record: AdapterRetirement = previous ?? { key, state: "retiring", attempt: 0, done: Promise.resolve() }
+    record.attempt += 1
+    record.state = "retiring"
+    delete record.error
     const retire = async () => {
-      const turns = activeTurns.get(target)
-      if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
-      if (sessionAdapters.get(key) !== target) return
-      const runtime = sessionRuntimes.get(key)
-      sessionAdapters.delete(key)
-      sessionAdapterRunners.delete(key)
-      if (adapter === target) adapter = undefined
-      await runtime?.dispose()
-      await disposeAdapter(target)
-      sessionRuntimes.delete(key)
-      activeTurns.delete(target)
+      try {
+        const turns = activeTurns.get(target)
+        if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
+        if (sessionAdapters.get(key) === target) {
+          const runtime = sessionRuntimes.get(key)
+          sessionAdapters.delete(key)
+          sessionAdapterRunners.delete(key)
+          if (adapter === target) adapter = undefined
+          await runtime?.dispose()
+          await disposeAdapter(target)
+          sessionRuntimes.delete(key)
+          activeTurns.delete(target)
+        }
+        retiringAdapters.delete(target)
+      } catch (error) {
+        record.state = "retire_failed"
+        record.error = String(error)
+        Log.create({ service: "workspace-runtime" })
+          .error("Adapter retirement failed", { key, attempt: record.attempt, error })
+      }
     }
-    const pending = retire()
-    retiringAdapters.set(target, pending)
-    void pending.then(() => retiringAdapters.delete(target), () => {})
-    void pending.catch((error) => Log.create({ service: "workspace-runtime" }).error("Adapter retirement failed", { error }))
-    return pending
+    record.done = retire()
+    retiringAdapters.set(target, record)
+    return record.done
   }
 
   function retireSupersededConnectionAdapters(nextRunner: RuntimeRunner, keepKey: string, directory: string) {
@@ -1148,7 +1212,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   function createActiveTurnScope(input: { adapter: AgentHarnessAdapter; directory: string; sessionId: string }) {
     if (checkpointState !== "active") throw new Error("workspace_checkpoint_frozen")
     let finish = () => {}
-    const turn = {
+    const key = adapterRuntimeKeys.get(input.adapter)
+    const turnRuntime = key ? sessionRuntimes.get(key) : undefined
+    const turn: ActiveTurn = {
       sessionId: input.sessionId,
       directory: input.directory,
       controller: new AbortController(),
@@ -1156,12 +1222,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         finish = resolve
       }),
       finish: () => finish(),
+      ...(turnRuntime ? { runtime: turnRuntime } : {}),
     }
     const turns = activeTurns.get(input.adapter) ?? new Set<ActiveTurn>()
     turns.add(turn)
     activeTurns.set(input.adapter, turns)
-    const key = adapterRuntimeKeys.get(input.adapter)
-    const owner = { adapter: input.adapter, runtime: key ? sessionRuntimes.get(key) : undefined, directory: input.directory }
+    const owner = { adapter: input.adapter, runtime: turnRuntime, directory: input.directory }
     if (!activeSessionOwners.has(input.sessionId)) activeSessionOwners.set(input.sessionId, owner)
     return {
       signal: turn.controller.signal,
@@ -1210,19 +1276,88 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     applyQueue = pending.catch(() => {})
   }
 
-  async function drainActiveTurns(next: AgentHarnessAdapter) {
+  /** Resolves true when `wait` settles first, false when the deadline does. */
+  function withinDeadline<T>(wait: Promise<T>, deadlineAt: number) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expiry = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), Math.max(0, deadlineAt - Date.now()))
+    })
+    timer?.unref?.()
+    return Promise.race([wait.then(() => true), expiry]).finally(() => {
+      if (timer) clearTimeout(timer)
+    })
+  }
+
+  /**
+   * Cancel one active turn through its own runtime and wait for its scope to
+   * close, under the caller's deadline.
+   *
+   * The turn's identity comes from `recovery.inspect`, the owner that minted
+   * it: a cancellation naming only the session reaches whatever is running
+   * when it arrives, which after a replacement is somebody else's turn. When
+   * the deadline expires the operation is not abandoned — the runtime retains
+   * it and its later facts — but this drain stops waiting and says so.
+   */
+  async function cancelActiveTurn(turn: ActiveTurn, deadlineAt: number): Promise<TurnDrainResult> {
+    turn.controller.abort()
+    const blocker = (reason: string, extra: { turnId?: string; error?: string } = {}): TurnDrainResult =>
+      ({ sessionId: turn.sessionId, drained: false, reason, ...extra })
+    if (!turn.runtime) {
+      return await withinDeadline(turn.done, deadlineAt)
+        ? { sessionId: turn.sessionId, drained: true }
+        : blocker("no_runtime_owner_and_scope_never_closed")
+    }
+    let target: RecoveryTurnTarget | undefined
+    try {
+      target = turn.runtime.recovery.inspect(turn.sessionId, turn.directory).target
+      if (target) {
+        const submitted = turn.runtime.recovery.submit({
+          requestId: `workspace-checkpoint:${target.sessionId}:${target.turnId}:${target.ownerGeneration}`,
+          action: "cancel_turn",
+          target,
+          scopeRevision: target.ownerGeneration,
+          attempt: 1,
+        }, { callerId: "workspace-checkpoint", authority: "workspace" })
+        let outcome: RecoveryOutcome | undefined
+        if (!await withinDeadline(submitted.then((value) => { outcome = value }), deadlineAt)) {
+          return blocker("cancel_deadline_exceeded", { turnId: target.turnId })
+        }
+        if (outcome?.kind === "refused") {
+          return blocker(`cancel_refused:${outcome.refusal.kind}`, { turnId: target.turnId, error: outcome.refusal.message })
+        }
+        const failure = outcome?.kind === "operation" ? outcome.operation.initiatingError : undefined
+        if (failure) return blocker(`cancel_failed:${failure.code}`, { turnId: target.turnId, error: failure.message })
+      }
+    } catch (error) {
+      return blocker("cancel_threw", { ...(target ? { turnId: target.turnId } : {}), error: String(error) })
+    }
+    if (!await withinDeadline(turn.done, deadlineAt)) {
+      return blocker("turn_scope_never_closed", { ...(target ? { turnId: target.turnId } : {}) })
+    }
+    return { sessionId: turn.sessionId, drained: true, ...(target ? { turnId: target.turnId } : {}) }
+  }
+
+  /**
+   * The runtime a recovery request for this session must reach.
+   *
+   * The owner of its running turn when it has one — that is the runtime
+   * holding the admission, the lease and the adapter the cancellation has to
+   * go through. Otherwise the runtime already built for this workspace's
+   * current adapter, which can still read the session's durable facts. Builds
+   * nothing and reads no store: a session whose store is wedged is exactly
+   * the one a caller needs this for, and answering nothing is honest.
+   */
+  function recoveryOwner(sessionId: string) {
+    const active = activeSessionOwners.get(sessionId)?.runtime
+    if (active) return active.recovery
+    const key = adapter ? adapterRuntimeKeys.get(adapter) : undefined
+    return key ? sessionRuntimes.get(key)?.recovery : undefined
+  }
+
+  async function drainActiveTurns(next: AgentHarnessAdapter, deadlineAt: number): Promise<TurnDrainResult[]> {
     const turns = activeTurns.get(next)
-    if (!turns?.size) return
-    const pending = [...turns]
-    for (const turn of pending) turn.controller.abort()
-    const aborts = next.abort
-      ? pending.map((turn) => next.abort!(canonicalExecutionBinding(turn.sessionId, turn.directory)).catch(() => {}))
-      : []
-    const drained = Promise.all([...aborts, ...pending.map((turn) => turn.done)])
-    await Promise.race([
-      drained,
-      new Promise((resolve) => setTimeout(resolve, RUNNER_REPLACEMENT_DRAIN_TIMEOUT_MS)),
-    ])
+    if (!turns?.size) return []
+    return await Promise.all([...turns].map((turn) => cancelActiveTurn(turn, deadlineAt)))
   }
 
   function activeTurnCount() {
@@ -1243,12 +1378,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return activeCheckpointWrites === 0 && activeTurnCount() === 0
   }
 
-  async function waitForCheckpointIdle() {
+  /**
+   * Wait until no write and no turn is in flight, or the deadline passes.
+   * Returns whether the runtime actually reached idle: an unbounded wait here
+   * is what let one stuck owner leave a workspace gated with nothing to look
+   * at, and a `true` it did not observe would be the same lie in less time.
+   */
+  async function waitForCheckpointIdle(deadlineAt: number) {
     // `checkpointIdle()` is re-read after every wake: both counters are moved by
     // other callers, and `notifyCheckpointWaiters` only wakes us once they are 0.
     while (!checkpointIdle()) {
-      await new Promise<void>((resolve) => checkpointWriteWaiters.add(resolve))
+      const woken = new Promise<void>((resolve) => checkpointWriteWaiters.add(resolve))
+      if (!await withinDeadline(woken, deadlineAt)) return checkpointIdle()
     }
+    return true
   }
 
   function notifyCheckpointWaiters() {
@@ -1257,15 +1400,50 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     checkpointWriteWaiters.clear()
   }
 
-  async function freezeCheckpoint(policy: "drain" | "interrupt") {
-    if (checkpointState === "frozen") return checkpointDetail()
+  /**
+   * Gate writes and report whether this runtime actually went quiet under one
+   * deadline carried through interruption and idle verification.
+   *
+   * A blocked freeze keeps the gate: the writers it could not account for are
+   * exactly the reason admission must stay closed until a checked retirement
+   * or an explicit resume establishes it is safe to reopen.
+   */
+  async function freezeCheckpoint(
+    policy: "drain" | "interrupt",
+    options: { deadlineAt?: number } = {},
+  ): Promise<WorkspaceCheckpointFreezeResult> {
+    if (checkpointState === "frozen") return { state: "frozen", detail: checkpointDetail() }
+    const deadlineAt = options.deadlineAt ?? Date.now() + DEFAULT_RECOVERY_BUDGETS.drainMs
     checkpointState = "freezing"
+    const blockers: WorkspaceCheckpointBlocker[] = []
     if (policy === "interrupt") {
-      await Promise.all([...activeTurns.keys()].map((next) => drainActiveTurns(next)))
+      const drained = await Promise.all([...activeTurns.keys()].map((next) => drainActiveTurns(next, deadlineAt)))
+      for (const result of drained.flat()) {
+        if (result.drained) continue
+        blockers.push({
+          sessionId: result.sessionId,
+          ...(result.turnId ? { turnId: result.turnId } : {}),
+          reason: result.reason ?? "unknown",
+          ...(result.error ? { error: result.error } : {}),
+        })
+      }
     }
-    await waitForCheckpointIdle()
+    if (!await waitForCheckpointIdle(deadlineAt)) {
+      const named = new Set(blockers.map((blocker) => blocker.sessionId))
+      for (const turns of activeTurns.values()) {
+        for (const turn of turns) {
+          if (named.has(turn.sessionId)) continue
+          named.add(turn.sessionId)
+          blockers.push({ sessionId: turn.sessionId, reason: "turn_still_active" })
+        }
+      }
+      // A checkpoint write belongs to no session; the count is all this owner
+      // knows about it, and `detail` carries it.
+      if (blockers.length === 0) blockers.push({ reason: "checkpoint_writes_still_active" })
+    }
+    if (blockers.length > 0) return { state: "blocked", blockers, detail: checkpointDetail() }
     checkpointState = "frozen"
-    return checkpointDetail()
+    return { state: "frozen", detail: checkpointDetail() }
   }
 
   function runnerHealth(): AgentHarnessAdapterHealth {
@@ -1479,7 +1657,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   return {
     mount(app: Hono, options: WorkspaceHostMountOptions) {
       app.use("*", async (c, next) => {
-        if (closing) return c.json({ error: "Workspace runtime is disposed" }, 503)
+        // Inspecting a wedged session, and reading the receipt of an operation
+        // already accepted, are exactly what a caller needs while this runtime
+        // is closing; the runtime answers both without the store. Everything
+        // that would write goes on being refused.
+        const inspecting = c.req.method === "GET" && isSessionRecoveryPath(new URL(c.req.url).pathname)
+        if (closing && !inspecting) return c.json({ error: "Workspace runtime is disposed" }, 503)
         let finish!: () => void
         const request = new Promise<void>((resolve) => { finish = resolve })
         pendingRequests.add(request)
@@ -1735,6 +1918,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         listPermissions: (c, directory) => listPermissions(c.req.query("sessionId"), directory),
         listQuestions: (_c, directory) => listQuestions(directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),
+        resolveRecoveryOwner: ({ sessionId }) => recoveryOwner(sessionId),
         transformPromptBody: ({ sessionId, body }) => {
           const registration = sessionToolPrompts.get(sessionId)
           if (!registration) return body
@@ -1800,13 +1984,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // Stop only this session's host readers while their execution binding
           // still exists. Deleting first can fence out the terminal frame that
           // those readers need to release their residency pins.
-          const pending = [...activeTurns.entries()].flatMap(([adapter, turns]) =>
-            [...turns].filter((turn) => turn.sessionId === sessionId).map((turn) => ({ adapter, turn })))
-          for (const { turn } of pending) turn.controller.abort()
-          await Promise.all(pending.map(async ({ adapter, turn }) => {
-            await adapter.abort?.(canonicalExecutionBinding(sessionId, turn.directory))
-            await turn.done
-          }))
+          const pending = [...activeTurns.values()].flatMap((turns) =>
+            [...turns].filter((turn) => turn.sessionId === sessionId))
+          const deadlineAt = Date.now() + DEFAULT_RECOVERY_BUDGETS.gracefulCancelMs
+          const results = await Promise.all(pending.map((turn) => cancelActiveTurn(turn, deadlineAt)))
+          const stuck = results.filter((result) => !result.drained)
+          if (stuck.length > 0) {
+            // Deleting a session whose turn is still executing would remove the
+            // rows its producer is about to write against, so the caller is
+            // told what is still running rather than shown a silent partial.
+            throw new HTTPException(409, {
+              message: `Session ${sessionId} still has running work: ${stuck.map((result) => result.reason).join(", ")}`,
+            })
+          }
         },
         afterDeleteSession: ({ sessionId }) => {
           // A store-owned inventory needs its own row removed here, or it
@@ -1965,7 +2155,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         await Promise.all([
           deliveriesDone,
           ...adaptersDone,
-          ...retiringAdapters.values(),
+          ...[...retiringAdapters.values()].map((record) => record.done),
           ...new Set([...sessionRuntimes.values()].map((runtime) => runtime.dispose())),
         ])
         sessionAdapters.clear()

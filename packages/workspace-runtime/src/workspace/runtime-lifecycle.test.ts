@@ -20,7 +20,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
-async function fixture(options: { runtimeConfig?: boolean; configurable?: boolean; scoped?: boolean; native?: boolean; hold?: boolean; holdCreate?: boolean; releaseOnDispose?: boolean } = {}) {
+async function fixture(options: { runtimeConfig?: boolean; configurable?: boolean; scoped?: boolean; native?: boolean; hold?: boolean; holdCreate?: boolean; releaseOnDispose?: boolean; cancelNeverSettles?: boolean } = {}) {
   const directory = await mkdtemp(join(tmpdir(), "workspace-lifecycle-"))
   roots.push(directory)
   const target = { workspaceId: "workspace-lifecycle", directory }
@@ -128,7 +128,14 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
           yield { type: "text-delta", delta: "real routed answer" }
           yield { type: "finish", sessionId: binding.sessionId }
         },
-        async abort(binding) { controls.push({ instance, action: "abort" }); const key = `${instance}:${binding.sessionId}`; turnReleases.get(key)?.(); turnReleases.delete(key); return { ok: true as const, status: "cancelled" as const, sessionId: binding.sessionId } },
+        async cancelTurn(binding: AgentExecutionBinding) {
+          controls.push({ instance, action: "cancel" })
+          if (options.cancelNeverSettles) return await new Promise<never>(() => {})
+          const key = `${instance}:${binding.sessionId}`
+          turnReleases.get(key)?.()
+          turnReleases.delete(key)
+          return { execution: "terminal" as const, cleanup: "verified_clear" as const }
+        },
         async listPermissions() { return options.hold && instance === 1 ? [{ id: "pending", sessionID: "local", permission: "tool", patterns: [], metadata: {}, always: [] }] : [] },
         async respondPermission() { controls.push({ instance, action: "permission" }) },
         readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none", harness: descriptor.connectionId } },
@@ -171,6 +178,26 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
     return { host, request }
   }
   return { ...open(), open, snapshot, rotateSecretLease, target, storeRoot, upstream, executions, disposed, resolvedDirectories, startedTurn, release, controls, configurations, storeLifecycle, creates: () => creates, adapters: () => adapters }
+}
+
+/**
+ * Cancel the session's admitted turn the way a caller must: read the identity
+ * from the owner that minted it, then send it back unchanged. A request naming
+ * only the session would reach whatever is running when it arrives.
+ */
+async function cancelAdmittedTurn(
+  f: { request: (pathname: string, method?: string, body?: unknown) => Promise<Response> | Response },
+  sessionId: string,
+) {
+  const inspected = await (await f.request(`/session/${sessionId}/recovery`)).json() as { target?: { ownerGeneration: string } }
+  expect(inspected.target, "the session has an admitted turn to cancel").toBeDefined()
+  return await f.request(`/session/${sessionId}/recovery`, "POST", {
+    requestId: `lifecycle-cancel:${sessionId}:${inspected.target!.ownerGeneration}`,
+    action: "cancel_turn",
+    target: inspected.target,
+    scopeRevision: inspected.target!.ownerGeneration,
+    attempt: 1,
+  })
 }
 
 describe("workspace runtime public lifecycle", () => {
@@ -333,7 +360,7 @@ describe("workspace runtime public lifecycle", () => {
     expect((await f.request("/session", "POST", { id: "healthy" })).status).toBe(201)
   })
 
-  test("credential rotation keeps active permission and abort controls on the executing generation", async () => {
+  test("credential rotation keeps active permission and cancellation controls on the executing generation", async () => {
     const f = await fixture({ runtimeConfig: true, hold: true })
     cleanups.push(f.release)
     const first = f.snapshot()
@@ -348,8 +375,8 @@ describe("workspace runtime public lifecycle", () => {
       expect(f.disposed).not.toContain(1)
       const permission = await f.request("/session/local/permissions/pending", "POST", { response: "once" })
       expect(permission.status, await permission.clone().text()).toBe(200)
-      expect((await f.request("/session/local/abort", "POST")).status).toBe(200)
-      expect(f.controls).toEqual([{ instance: 1, action: "permission" }, { instance: 1, action: "abort" }])
+      expect((await cancelAdmittedTurn(f, "local")).status).toBe(200)
+      expect(f.controls).toEqual([{ instance: 1, action: "permission" }, { instance: 1, action: "cancel" }])
       expect((await prompt).status).toBe(200)
     } finally {
       f.release()
@@ -369,8 +396,8 @@ describe("workspace runtime public lifecycle", () => {
       next.defaultHarness = { kind: "connection", connectionId: "secondary" }
       await f.host.apply(next)
       expect(f.disposed).not.toContain(1)
-      expect((await f.request("/session/local/abort", "POST")).status).toBe(200)
-      expect(f.controls).toEqual([{ instance: 1, action: "abort" }])
+      expect((await cancelAdmittedTurn(f, "local")).status).toBe(200)
+      expect(f.controls).toEqual([{ instance: 1, action: "cancel" }])
       expect((await prompt).status).toBe(200)
       expect(f.disposed.filter((instance) => instance === 1)).toHaveLength(1)
       expect(f.storeLifecycle.closed).toBe(0)
@@ -576,6 +603,29 @@ describe("workspace runtime public lifecycle", () => {
 
     await until(() => prompts.length > 0)
     expect(prompts).toEqual(["then run the tests"])
+  })
+  test("a cancellation that never settles leaves the freeze blocked, naming the turn, with writes still gated", async () => {
+    const f = await fixture({ runtimeConfig: true, configurable: true, hold: true, cancelNeverSettles: true })
+    await f.host.apply(f.snapshot())
+    await f.request("/session", "POST", { id: "local" })
+    const prompt = f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "wait" }] })
+    try {
+      await f.startedTurn
+      const result = await f.host.checkpoint.freeze("interrupt", { deadlineAt: Date.now() + 100 })
+
+      expect(result.state).toBe("blocked")
+      expect(result.state === "blocked" && result.blockers).toEqual([
+        { sessionId: "local", turnId: expect.any(String), reason: "cancel_deadline_exceeded" },
+      ])
+      expect(f.controls).toEqual([{ instance: 1, action: "cancel" }])
+      // The gate it could not verify stays closed: the turn is still running,
+      // so nothing here established that a writer may be admitted.
+      expect(f.host.checkpoint.detail().state).toBe("freezing")
+      expect(f.host.checkpoint.beginWrite()).toBeUndefined()
+    } finally {
+      f.release()
+      await prompt
+    }
   })
 })
 

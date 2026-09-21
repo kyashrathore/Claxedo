@@ -82,7 +82,7 @@ describe("workspace checkpoint routes", () => {
     expect(host.checkpoint.detail()).toMatchObject({ state: "freezing", activeWrites: 1 })
     expect(resolved).toBe(false)
     release()
-    await expect(frozen).resolves.toMatchObject({ state: "frozen", activeWrites: 0 })
+    await expect(frozen).resolves.toMatchObject({ state: "frozen", detail: { state: "frozen", activeWrites: 0 } })
 
     await host.dispose()
   })
@@ -96,6 +96,65 @@ describe("workspace checkpoint routes", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ epoch: 0, checkpointId: "" }),
     })).status).toBe(400)
+
+    await runtime.dispose()
+  })
+
+  test("a write that never settles leaves the freeze blocked, gated, and naming it", async () => {
+    const host = createWorkspaceHost()
+    const release = host.checkpoint.beginWrite()
+    if (!release) throw new Error("write unexpectedly fenced")
+
+    const result = await host.checkpoint.freeze("drain", { deadlineAt: Date.now() + 20 })
+
+    expect(result.state).toBe("blocked")
+    expect(result.state === "blocked" && result.blockers).toEqual([{ reason: "checkpoint_writes_still_active" }])
+    expect(result.detail).toMatchObject({ activeWrites: 1 })
+    // The gate it could not verify is kept, not reopened and not upgraded to
+    // frozen: a checkpoint taken here would be taken beside a live writer.
+    expect(host.checkpoint.detail().state).toBe("freezing")
+    expect(host.checkpoint.beginWrite()).toBeUndefined()
+
+    release()
+    await expect(host.checkpoint.freeze("drain", { deadlineAt: Date.now() + 1_000 }))
+      .resolves.toMatchObject({ state: "frozen" })
+    await host.dispose()
+  })
+
+  test("POST /freeze answers 409 with the blockers it could not fence", async () => {
+    const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
+    const release = runtime.host.checkpoint.beginWrite()
+    if (!release) throw new Error("write unexpectedly fenced")
+
+    const blocked = await runtime.app.request("/api/wr/checkpoint/freeze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ policy: "interrupt", deadlineMs: 20 }),
+    })
+    expect(blocked.status).toBe(409)
+    expect(await blocked.json()).toMatchObject({
+      state: "blocked",
+      blockers: [{ reason: "checkpoint_writes_still_active" }],
+    })
+    // Admission stays gated while the freeze is unresolved.
+    expect((await runtime.app.request("/api/wr/config", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })).status).toBe(423)
+
+    expect((await runtime.app.request("/api/wr/checkpoint/freeze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ policy: "drain", deadlineMs: -1 }),
+    })).status).toBe(400)
+
+    release()
+    expect((await runtime.app.request("/api/wr/checkpoint/freeze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ policy: "drain" }),
+    })).status).toBe(200)
 
     await runtime.dispose()
   })

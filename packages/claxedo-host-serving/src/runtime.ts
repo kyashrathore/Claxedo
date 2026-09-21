@@ -279,22 +279,20 @@ export async function createHostRuntimeListener(options: HostRuntimeListenerOpti
   const retirements = new Map<string, Retirement>()
 
   const drain = async (record: Retirement) => {
-    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadlineAt = Date.now() + drainTimeoutMs
     try {
-      const raced = await Promise.race([
-        record.entry.runtime.host.checkpoint.freeze("drain").then(() => "frozen" as const),
-        new Promise<"timed_out">((resolve) => {
-          timer = setTimeout(() => resolve("timed_out"), drainTimeoutMs)
-        }),
-      ])
-      record.timedOut = raced === "timed_out"
+      const frozen = await record.entry.runtime.host.checkpoint.freeze("drain", { deadlineAt })
+      record.timedOut = frozen.state !== "frozen"
+      if (frozen.state === "blocked") {
+        // Teardown still runs — that is the point of retiring — but the
+        // writers the freeze named were never fenced, so what this runtime
+        // was holding is unverified.
+        record.drainError = `checkpoint blocked: ${frozen.blockers.map((blocker) => blocker.reason).join(", ")}`
+        log.warn("host runtime drain blocked; disposing anyway", { workspaceId: record.workspaceId, blockers: frozen.blockers })
+      }
     } catch (error) {
-      // Teardown still runs — that is the point of retiring — but a refused
-      // drain means nothing verified what the runtime was still holding.
       record.drainError = String(error)
       log.warn("host runtime drain failed; disposing anyway", { workspaceId: record.workspaceId, error })
-    } finally {
-      if (timer) clearTimeout(timer)
     }
     record.drained = true
   }
