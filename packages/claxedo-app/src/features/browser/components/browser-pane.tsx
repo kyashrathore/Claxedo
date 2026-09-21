@@ -5,16 +5,17 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { showToast } from "@opencode-ai/ui/toast"
+import { asFiniteNumber, isRecord } from "@claxedo/helpers/guards"
 
 import {
   BrowserPaneProvider,
   getDefaultBrowserBridge,
   useBrowserPane,
   type BrowserBridgeApi,
-  type BrowserNodeSelectedPayload,
+  type BrowserNavigationKind,
 } from "../store/browser-pane-context"
 import { browserToolbarSlot } from "@/ui/controls/portal-slot"
-import { normalizeAddressBarInput } from "./browser-url"
+import { normalizeAddressBarInput, sameOrigin } from "./browser-url"
 import { syncBrowserPaneUrl } from "./browser-pane-navigation"
 import { HostedBrowserFrame } from "./hosted-browser-frame"
 
@@ -104,27 +105,6 @@ type WebviewElement = HTMLElement & {
   }>
   addEventListener: HTMLElement["addEventListener"]
   removeEventListener: HTMLElement["removeEventListener"]
-}
-
-/**
- * Structured payload received from the guest preload's `sendToHost`. Kept in
- * sync with `PickPayload` in `packages/claxedo-desktop/src/browser-preload/`.
- * Converting to the renderer's `BrowserNodeSelectedPayload` shape happens in
- * `handleGuestPick` below.
- */
-type GuestPickPayload = {
-  selector?: string
-  frameUrl?: string
-  tagName?: string
-  outerHTML?: string
-  boundingBox?: { x: number; y: number; width: number; height: number }
-  computedStyles?: {
-    color?: string
-    backgroundColor?: string
-    fontFamily?: string
-    fontSize?: string
-    display?: string
-  }
 }
 
 const AGENT_BROWSER_PARTITION = "persist:agent-browser"
@@ -721,18 +701,27 @@ function WebviewHost(props: WebviewHostProps) {
     }
   }
 
-  const handleDidNavigate = (e: Event & { url?: string }) => {
-    const url = e.url
+  const handleMainFrameNavigation = (url: string | undefined, kind: BrowserNavigationKind) => {
     ctx.setCurrentUrl(url)
     if (url && props.onNavigationChange) {
       props.onNavigationChange({ currentUrl: url })
     }
-    // Navigating invalidates any picked element — the DOM the user was
-    // annotating no longer exists. Clear the selection so the floating card
-    // (and any open composer) dismiss with the page.
-    ctx.clearLastSelectedNode()
-    // After a navigation completes, canGoBack/canGoForward may flip.
+    ctx.noteNavigation(kind)
     void ctx.refreshNavigationState()
+  }
+
+  const handleDidNavigate = (e: Event & { url?: string }) => {
+    handleMainFrameNavigation(e.url, "load")
+  }
+
+  // `did-navigate` covers only full loads; a page can move `location.href`
+  // through hash or history changes, which arrive here instead. Subframes
+  // are ignored: the preload runs only in the main frame, whose DOM and
+  // URL they cannot touch. (`did-frame-navigate` is not listened to — for a
+  // main-frame load it duplicates `did-navigate`.)
+  const handleDidNavigateInPage = (e: Event & { url?: string; isMainFrame?: boolean }) => {
+    if (e.isMainFrame !== true) return
+    handleMainFrameNavigation(e.url, "in-page")
   }
 
   const handlePageTitleUpdated = (e: Event & { title?: string }) => {
@@ -742,98 +731,85 @@ function WebviewHost(props: WebviewHostProps) {
     }
   }
 
+  const captureScreenshot = async (): Promise<string | undefined> => {
+    if (!webview || typeof webview.capturePage !== "function") return undefined
+    try {
+      const image = await webview.capturePage()
+      if (image && typeof image.toDataURL === "function") {
+        if (typeof image.isEmpty === "function" && image.isEmpty()) return undefined
+        return image.toDataURL()
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn("[browser-pane] capturePage failed", err)
+    }
+    return undefined
+  }
+
+  const handleGuestPick = (raw: GuestPickPayload, pageUrl: string) => {
+    ctx.setLastSelectedNode({
+      ok: true,
+      selector: raw.selector,
+      frameUrl: pageUrl,
+      tagName: raw.tagName ?? "unknown",
+      outerHTML: raw.outerHTML,
+      boundingBox: raw.boundingBox,
+      computedStyles: raw.computedStyles,
+    })
+  }
+
+  const handleGuestCommentSubmit = (raw: GuestPickPayload, pageUrl: string) => {
+    const picked = ctx.lastSelectedNode()
+    if (!picked?.ok) return
+    if (picked.selector !== raw.selector) return
+    if (picked.navigationGeneration !== ctx.navigationGeneration()) return
+    const content = raw.content ?? ""
+    // "<comment>\n\n<element snippet>" when a comment was typed.
+    const splitIdx = content.indexOf("\n\n")
+    const commentText = splitIdx >= 0 ? content.slice(0, splitIdx).trim() : ""
+
+    // Capture before disarming the picker so the guest's highlight around the
+    // picked element is still drawn in the screenshot.
+    void (async () => {
+      const screenshotDataUrl = await captureScreenshot()
+      const payload: BrowserPaneCommentPayload = {
+        tabId: props.tabId ?? "",
+        pageUrl,
+        selector: raw.selector,
+        comment: commentText || content,
+        noteText: content,
+        outerHTML: raw.outerHTML,
+        boundingBox: raw.boundingBox,
+        screenshotDataUrl,
+      }
+      const routed = props.onPageComment ? props.onPageComment(payload) : false
+      if (routed) {
+        showToast({ title: "Comment sent to session", variant: "success", duration: 2000 })
+      } else if (props.onPageComment) {
+        showToast({ title: "No session focused — comment saved locally", variant: "default", duration: 3000 })
+      }
+      void ctx.setInspectMode(false)
+    })()
+  }
+
   /**
-   * Handle `ipc-message` events from the guest. The react-grab preload
-   * calls `ipcRenderer.sendToHost("claxedo-browser-pick", payload)` when
-   * the user picks an element with the overlay; Electron surfaces that on
-   * the `<webview>` element as `ipc-message` with `{ channel, args }`.
-   * We translate the guest payload into the renderer's
-   * `BrowserNodeSelectedPayload` shape and push it onto the pane context
-   * for the floating-card + composer + session-routing pipeline.
-   *
-   * We listen directly on the webview rather than going through the main
-   * process because the payload originates in the same renderer
-   * world-group (host renderer ← webview host) and a round-trip would
-   * cost nothing visible but double the surface to maintain.
+   * `ipc-message` from the guest preload's `ipcRenderer.sendToHost`. The guest
+   * runs page-controlled JavaScript, so a message only counts while the user
+   * has the picker armed, and its `frameUrl` is used for nothing but an
+   * origin check against the URL the host itself observed.
    */
   const handleGuestIpc = (e: Event & { channel?: string; args?: unknown[] }) => {
-    if (e.channel === "claxedo-preload:diag") {
+    if (e.channel !== "claxedo-browser-pick" && e.channel !== "claxedo-browser-comment-submit") return
+    if (!ctx.inspectMode()) return
+    const raw = readGuestPickPayload(firstGuestArg(e))
+    if (!raw) return
+    const pageUrl = ctx.currentUrl() ?? ""
+    if (raw.frameUrl !== undefined && !sameOrigin(raw.frameUrl, pageUrl)) return
+    if (e.channel === "claxedo-browser-pick") {
+      handleGuestPick(raw, pageUrl)
       return
     }
-    // User submitted a comment in react-grab's inline popover. The preload
-    // hooks `onCopySuccess(elements, content)` and forwards the compiled
-    // prompt string (user's comment + element snippet) plus the structured
-    // element payload. We hand it to the parent panel, which writes it onto
-    // the focused session's prompt.context. (Old multi-pane build went
-    // through pane-bus + binding; the workspace-panel always has a
-    // deterministic target session, so routing is just a callback.)
-    if (e.channel === "claxedo-browser-comment-submit") {
-      const raw = firstGuestArg(e)
-      if (!isGuestPickPayload(raw)) return
-      const content = typeof raw.content === "string" ? raw.content : ""
-      // The content is "<user comment>\n\n<element snippet>" when a comment
-      // was typed. Split so we can surface the comment separately.
-      const splitIdx = content.indexOf("\n\n")
-      const commentText = splitIdx >= 0 ? content.slice(0, splitIdx).trim() : ""
-
-      // Capture the webview's visible viewport BEFORE deactivating the picker
-      // so react-grab's selection box (still drawn around the picked element)
-      // appears in the screenshot. The preload no longer self-deactivates on
-      // submit; we drive it via setInspectMode(false) below, after capture.
-      const captureScreenshot = async (): Promise<string | undefined> => {
-        if (!webview || typeof webview.capturePage !== "function") return undefined
-        try {
-          const image = await webview.capturePage()
-          if (image && typeof image.toDataURL === "function") {
-            if (typeof image.isEmpty === "function" && image.isEmpty()) return undefined
-            return image.toDataURL()
-          }
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn("[browser-pane] capturePage failed", err)
-        }
-        return undefined
-      }
-
-      void (async () => {
-        const screenshotDataUrl = await captureScreenshot()
-        const payload: BrowserPaneCommentPayload = {
-          tabId: props.tabId ?? "",
-          pageUrl: typeof raw.frameUrl === "string" ? raw.frameUrl : (ctx.currentUrl() ?? ""),
-          selector: typeof raw.selector === "string" ? raw.selector : "",
-          comment: commentText || content,
-          noteText: content,
-          outerHTML: typeof raw.outerHTML === "string" ? raw.outerHTML : undefined,
-          boundingBox: raw.boundingBox ?? undefined,
-          screenshotDataUrl,
-        }
-        const routed = props.onPageComment ? props.onPageComment(payload) : false
-        if (routed) {
-          showToast({ title: "Comment sent to session", variant: "success", duration: 2000 })
-        } else if (props.onPageComment) {
-          showToast({ title: "No session focused — comment saved locally", variant: "default", duration: 3000 })
-        }
-        void ctx.setInspectMode(false)
-      })()
-      return
-    }
-    if (e.channel !== "claxedo-browser-pick") return
-    const raw = firstGuestArg(e)
-    if (!isGuestPickPayload(raw)) return
-    const payload: BrowserNodeSelectedPayload = {
-      ok: true,
-      selector: typeof raw.selector === "string" ? raw.selector : "",
-      frameUrl: typeof raw.frameUrl === "string" ? raw.frameUrl : (ctx.currentUrl() ?? ""),
-      tagName: typeof raw.tagName === "string" ? raw.tagName : "unknown",
-      outerHTML: typeof raw.outerHTML === "string" ? raw.outerHTML : undefined,
-      boundingBox: raw.boundingBox ?? undefined,
-      computedStyles: raw.computedStyles ?? undefined,
-    }
-    // Don't deactivate inspect mode here. The pick event is just a breadcrumb
-    // — the guest's popover is opening and the picker must stay armed (with
-    // its highlight + our popover both live) until either comment-submit or
-    // dismiss. setInspectMode(false) lives in the comment-submit branch above.
-    ctx.setLastSelectedNode(payload)
+    handleGuestCommentSubmit(raw, pageUrl)
   }
 
   // Re-push theme tokens whenever Claxedo flips its color scheme — the data
@@ -857,6 +833,7 @@ function WebviewHost(props: WebviewHostProps) {
     if (webview) {
       webview.removeEventListener("dom-ready", handleDomReady as EventListener)
       webview.removeEventListener("did-navigate", handleDidNavigate as EventListener)
+      webview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage as EventListener)
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated as EventListener)
       webview.removeEventListener("ipc-message", handleGuestIpc as EventListener)
       ctx.detachWebview()
@@ -870,6 +847,7 @@ function WebviewHost(props: WebviewHostProps) {
     webview = el
     el.addEventListener("dom-ready", handleDomReady as EventListener)
     el.addEventListener("did-navigate", handleDidNavigate as EventListener)
+    el.addEventListener("did-navigate-in-page", handleDidNavigateInPage as EventListener)
     el.addEventListener("page-title-updated", handlePageTitleUpdated as EventListener)
     el.addEventListener("ipc-message", handleGuestIpc as EventListener)
     // Publish the webview to the pane context so `setInspectMode` can
@@ -894,6 +872,83 @@ function firstGuestArg(e: { args?: unknown[] }): unknown {
   return e.args[0]
 }
 
-function isGuestPickPayload(value: unknown): value is GuestPickPayload & { content?: string } {
-  return !!value && typeof value === "object"
+/**
+ * What the guest preload (`packages/claxedo-desktop/src/browser-preload/`)
+ * sends on `claxedo-browser-pick` and `claxedo-browser-comment-submit`. The
+ * guest runs page-controlled JavaScript, so every field is re-validated and
+ * rebuilt into a fresh object; nothing from the wire is passed through.
+ */
+type GuestPickPayload = {
+  selector: string
+  frameUrl?: string
+  tagName?: string
+  outerHTML?: string
+  content?: string
+  boundingBox?: { x: number; y: number; width: number; height: number }
+  computedStyles?: {
+    color?: string
+    backgroundColor?: string
+    fontFamily?: string
+    fontSize?: string
+    display?: string
+  }
+}
+
+// The preload cuts outerHTML at 2048 characters and appends one ellipsis.
+const GUEST_OUTER_HTML_MAX_CHARS = 2048 + 1
+const GUEST_SELECTOR_MAX_CHARS = 2048
+const GUEST_TAG_NAME_MAX_CHARS = 128
+const GUEST_FRAME_URL_MAX_CHARS = 8192
+const GUEST_CONTENT_MAX_CHARS = 8192
+const GUEST_STYLE_VALUE_MAX_CHARS = 1024
+const GUEST_STYLE_KEYS = ["color", "backgroundColor", "fontFamily", "fontSize", "display"] as const
+
+type GuestField<T> = { ok: boolean; value?: T }
+
+function guestString(value: unknown, maxChars: number): GuestField<string> {
+  if (value === undefined) return { ok: true }
+  return typeof value === "string" && value.length <= maxChars ? { ok: true, value } : { ok: false }
+}
+
+function guestBox(value: unknown): GuestField<GuestPickPayload["boundingBox"]> {
+  if (value === undefined) return { ok: true }
+  if (!isRecord(value)) return { ok: false }
+  const [x, y, width, height] = [value.x, value.y, value.width, value.height].map(asFiniteNumber)
+  if (x === undefined || y === undefined || width === undefined || height === undefined) return { ok: false }
+  return { ok: true, value: { x, y, width, height } }
+}
+
+function guestStyles(value: unknown): GuestField<GuestPickPayload["computedStyles"]> {
+  if (value === undefined) return { ok: true }
+  if (!isRecord(value)) return { ok: false }
+  const styles: NonNullable<GuestPickPayload["computedStyles"]> = {}
+  for (const key of GUEST_STYLE_KEYS) {
+    const field = guestString(value[key], GUEST_STYLE_VALUE_MAX_CHARS)
+    if (!field.ok) return { ok: false }
+    if (field.value !== undefined) styles[key] = field.value
+  }
+  return { ok: true, value: styles }
+}
+
+/** `undefined` when the selector is missing or any field is mistyped or over its cap. */
+function readGuestPickPayload(value: unknown): GuestPickPayload | undefined {
+  if (!isRecord(value)) return undefined
+  const selector = guestString(value.selector, GUEST_SELECTOR_MAX_CHARS)
+  const frameUrl = guestString(value.frameUrl, GUEST_FRAME_URL_MAX_CHARS)
+  const tagName = guestString(value.tagName, GUEST_TAG_NAME_MAX_CHARS)
+  const outerHTML = guestString(value.outerHTML, GUEST_OUTER_HTML_MAX_CHARS)
+  const content = guestString(value.content, GUEST_CONTENT_MAX_CHARS)
+  const boundingBox = guestBox(value.boundingBox)
+  const computedStyles = guestStyles(value.computedStyles)
+  const fields = [selector, frameUrl, tagName, outerHTML, content, boundingBox, computedStyles]
+  if (selector.value === undefined || fields.some((field) => !field.ok)) return undefined
+  return {
+    selector: selector.value,
+    frameUrl: frameUrl.value,
+    tagName: tagName.value,
+    outerHTML: outerHTML.value,
+    content: content.value,
+    boundingBox: boundingBox.value,
+    computedStyles: computedStyles.value,
+  }
 }

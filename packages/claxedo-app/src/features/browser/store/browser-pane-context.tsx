@@ -157,6 +157,16 @@ export type WebviewRef = HTMLElement & {
   send?: (channel: string, ...args: unknown[]) => void
 }
 
+/**
+ * A pick the guest reported, stamped with the navigation generation the host
+ * had observed at that moment. A later submit must carry the same generation;
+ * the guest can change `location.href` without a `did-navigate`, so only the
+ * host-side count says whether the picked DOM is still the one on screen.
+ */
+export type BrowserSelectedNode = BrowserNodeSelectedPayload & { navigationGeneration: number }
+
+export type BrowserNavigationKind = "load" | "in-page"
+
 export type BrowserPaneState = {
   paneId: Accessor<string>
   bridge: Accessor<BrowserBridgeApi | undefined>
@@ -169,10 +179,19 @@ export type BrowserPaneState = {
   setCurrentUrl: (url: string | undefined) => void
   inspectMode: Accessor<boolean>
   setInspectMode: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
-  lastSelectedNode: Accessor<BrowserNodeSelectedPayload | undefined>
-  /** Publish a node-selected payload (used by the guest `ipc-message` path). */
+  lastSelectedNode: Accessor<BrowserSelectedNode | undefined>
+  /** Stamps the payload with the current navigation generation. */
   setLastSelectedNode: (payload: BrowserNodeSelectedPayload | undefined) => void
   clearLastSelectedNode: () => void
+  /** Incremented by `noteNavigation`; never reset while the pane lives. */
+  navigationGeneration: Accessor<number>
+  /**
+   * Main-frame navigation observed on the `<webview>`. Both kinds bump the
+   * generation and drop the pick. Only a full load disarms the picker: an
+   * in-page navigation is a hash or history change, which scroll-spy sites
+   * fire while the user is still looking for an element.
+   */
+  noteNavigation: (kind: BrowserNavigationKind) => void
   clearConsole: () => void
   captureScreenshot: (opts?: { clip?: BrowserScreenshotClip }) => Promise<BrowserScreenshotResult>
   /**
@@ -204,7 +223,8 @@ const browserPaneContextInput = {
     const [isLoading, setLoading] = createSignal(false)
     const [currentUrl, setCurrentUrl] = createSignal(props.initialUrl)
     const [inspectMode, setInspectModeSig] = createSignal(false)
-    const [lastSelectedNode, setLastSelectedNode] = createSignal<BrowserNodeSelectedPayload>()
+    const [lastSelectedNode, setLastSelectedNodeSig] = createSignal<BrowserSelectedNode>()
+    const [navigationGeneration, setNavigationGeneration] = createSignal(0)
 
     const appendEntry = (e: BrowserConsoleEntry) => {
       const arr = consoleEntries()
@@ -271,7 +291,16 @@ const browserPaneContextInput = {
       return { ok: false, error: "no-webview" }
     }
 
-    const clearLastSelectedNode = () => setLastSelectedNode(undefined)
+    const setLastSelectedNode = (payload: BrowserNodeSelectedPayload | undefined) => {
+      setLastSelectedNodeSig(payload ? { ...payload, navigationGeneration: navigationGeneration() } : undefined)
+    }
+    const clearLastSelectedNode = () => setLastSelectedNodeSig(undefined)
+
+    const noteNavigation = (kind: BrowserNavigationKind) => {
+      setNavigationGeneration((n) => n + 1)
+      clearLastSelectedNode()
+      if (kind === "load" && inspectMode()) void setInspectMode(false)
+    }
 
     const [canGoBack, setCanGoBack] = createSignal(false)
     const [canGoForward, setCanGoForward] = createSignal(false)
@@ -331,8 +360,10 @@ const browserPaneContextInput = {
       inspectMode,
       setInspectMode,
       lastSelectedNode,
-      setLastSelectedNode: (payload) => setLastSelectedNode(payload),
+      setLastSelectedNode,
       clearLastSelectedNode,
+      navigationGeneration,
+      noteNavigation,
       clearConsole,
       captureScreenshot,
       attachWebview,

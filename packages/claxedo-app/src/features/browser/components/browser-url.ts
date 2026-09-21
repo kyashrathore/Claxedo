@@ -22,3 +22,19 @@ export function normalizeAddressBarInput(raw: string): string {
   }
   return `https://www.google.com/search?q=${encodeURIComponent(s)}`
 }
+
+/**
+ * False when either URL fails to parse. An opaque origin (`about:blank`,
+ * `data:`) serializes as "null" and would match every other opaque origin, so
+ * those only match on the exact URL.
+ */
+export function sameOrigin(a: string, b: string): boolean {
+  try {
+    const left = new URL(a)
+    const right = new URL(b)
+    if (left.origin === "null" || right.origin === "null") return left.href === right.href
+    return left.origin === right.origin
+  } catch {
+    return false
+  }
+}

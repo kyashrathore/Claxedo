@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test"
-import { normalizeAddressBarInput } from "./browser-url"
+import { normalizeAddressBarInput, sameOrigin } from "./browser-url"
 
 describe("normalizeAddressBarInput", () => {
   test("passes through fully-qualified https URLs unchanged", () => {
@@ -58,5 +58,24 @@ describe("normalizeAddressBarInput", () => {
     // the user almost certainly meant to search.
     const dataOut = normalizeAddressBarInput("data:text/plain,hi")
     expect(dataOut.startsWith("https://www.google.com/search?q=")).toBe(true)
+  })
+})
+
+describe("sameOrigin", () => {
+  test("matches scheme, host, and port, ignoring path and fragment", () => {
+    expect(sameOrigin("https://app.example.com/a#x", "https://app.example.com/b?y=1")).toBe(true)
+    expect(sameOrigin("https://app.example.com/", "https://app.example.com:8443/")).toBe(false)
+    expect(sameOrigin("http://app.example.com/", "https://app.example.com/")).toBe(false)
+    expect(sameOrigin("https://evil.example.net/", "https://app.example.com/")).toBe(false)
+  })
+
+  test("opaque origins only match on the exact URL", () => {
+    expect(sameOrigin("about:blank", "about:blank")).toBe(true)
+    expect(sameOrigin("data:text/html,hi", "about:blank")).toBe(false)
+  })
+
+  test("an unparsable URL never matches", () => {
+    expect(sameOrigin("", "https://app.example.com/")).toBe(false)
+    expect(sameOrigin("https://app.example.com/", "not a url")).toBe(false)
   })
 })
