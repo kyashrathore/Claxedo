@@ -264,44 +264,44 @@ The next-action column is the first step; each finding link opens the complete e
 | 69 | Scheduled fixes | [H-3 — Revocation and installed credentials have different lifetimes](#finding-h-3) | LOW → Low | Partial | Make revocation trigger canonical delivery reconciliation, clear installed material, and revoke the key at its provider when needed. |
 | 70 | Scheduled fixes | [R-2 — Revocation has a bounded cache delay](#finding-r-2) | LOW → Low | Present | Specify the maximum revocation delay from configured TTLs and test removal during cached HTTP requests and an open socket, including authority outage and hard token expiry. |
 | 71 | Scheduled fixes | [P-125 — Unknown explicit workspace ids fall back to directory](#finding-p-125) | LOW → Low; boundary impact caller-dependent | Fixed; store and HTTP verification passed | Unknown explicit IDs cannot fall back to directory/project discovery or creation; preserve real store and metadata-route regressions. |
-| 72 | Scheduled fixes | [P-36 — Workspace fallback and session audit issues differ](#finding-p-36) | LOW → Low | Mixed | Fail closed on unknown explicit ids; retain created-session audit evidence. |
+| 72 | Scheduled fixes | [P-36 — Workspace fallback and session audit issues differ](#finding-p-36) | LOW → Low | Fixed; focused tests | Fail closed on unknown explicit ids; retain created-session audit evidence. |
 | 73 | Scheduled fixes | [P-133 — Hydration activation can use a stored capability](#finding-p-133) | LOW → Low before remediation | Fixed; mounted route checks | Session access policy authorizes the caller against the stored session before activation or resolution uses its stored capability. |
 | 74 | Scheduled fixes | [P-134 — Unattributed lifecycle frames have broad visibility](#finding-p-134) | LOW → Low | Present source concern | Stamp canonical workspace/session ownership at the producer and omit sensitive unowned frames. |
 | 75 | Scheduled fixes | [P-32 — Auth and attachment writes lack some filesystem protections](#finding-p-32) | LOW → Low; secret exposure conditional | Present | Use atomic writes in private verified directories, explicitly set existing modes, resolve attachment parents securely, cap bytes and pass prompts through stdin. |
-| 76 | Scheduled fixes | [P-121 — Existing credential seed permissions are not repaired](#finding-p-121) | LOW → Low; local filesystem prerequisite | Present | Reject malformed seeds and enforce private ownership/modes on existing paths without following symlinks. |
+| 76 | Scheduled fixes | [P-121 — Existing credential seed permissions are not repaired](#finding-p-121) | LOW → Low; local filesystem prerequisite | Fixed; focused backend tests | Reject malformed seeds and enforce private ownership/modes on existing paths without following symlinks. |
 | 77 | Scheduled fixes | [P-122 — Connection turn credentials are created without a visible mint path](#finding-p-122) | INFO → Low availability | Present source gap | Issue the credential at canonical authorized turn admission and expire it with the turn. |
 | 78 | Scheduled fixes | [P-124 — Signed node's in-process MCP fetch lacks actor credentials](#finding-p-124) | LOW → Low availability | Present source gap | Pass a canonical verified runtime principal through the in-process boundary using the existing dispatch owner. |
 | 79 | Scheduled fixes | [P-137 — Daytona runtime identity can differ from its lease identity](#finding-p-137) | LOW-MED → Low availability; live provider unverified | Partial; source identity corrected | Verify one real Daytona relay connection with the driver-owned host identity. |
 | 80 | Scheduled fixes | [P-119 — Missing subscription timestamp becomes arrival time](#finding-p-119) | LOW → Low integrity | Fixed; timestamp-less webhook rejected | Retain signed-webhook rejection coverage; external authority ordering remains separately unverified. |
-| 81 | Scheduled fixes | [S-10 — An SSE resume cursor can inject control lines](#finding-s-10) | LOW → Low | Present | Validate the cursor format and reject CR/LF at ingress, and update the affected Hono dependency. |
+| 81 | Scheduled fixes | [S-10 — An SSE resume cursor can inject control lines](#finding-s-10) | LOW → Low | Fixed; focused route tests | Validate the cursor format and reject CR/LF at ingress, and update the affected Hono dependency. |
 | 82 | Scheduled fixes | [P-39 — Event projection accepts unbounded identifiers and raw data](#finding-p-39) | LOW → Low availability; disclosure conditional | Fixed; focused checks passed | Retain safe keyed maps, retained-state bounds and diagnostic-surface-only raw frames. |
 | 83 | Scheduled fixes | [P-40 — Runtime type guards and maps accept unexpected values](#finding-p-40) | LOW → Low | Fixed; focused checks passed | Retain own-property lookups, nested wire-value validation and explicit expected bindings at trust boundaries. |
 | 84 | Scheduled fixes | [P-44 — Task identifiers, attachments and provenance need bounds](#finding-p-44) | LOW → Low | Mixed | Bound ids, verify allowed image bytes, stamp provenance from authenticated context and keep authorization on historical links. |
 | 85 | Scheduled fixes | [P-45 — Wake APIs leave policy and concurrency to callers](#finding-p-45) | LOW → Low | Mixed | Require explicit policy, redact approval tokens from list views, atomically claim once receipts and reject nonfinite times. |
-| 86 | Scheduled fixes | [P-135 — Prompt dedup marker precedes lease acquisition](#finding-p-135) | LOW → Low, narrow concurrency window | Partial | Represent pending admission separately from completed admission and let duplicates await the canonical result. |
+| 86 | Scheduled fixes | [P-135 — Prompt dedup marker precedes lease acquisition](#finding-p-135) | LOW → Low, narrow concurrency window | Fixed; focused admission tests | Represent pending admission separately from completed admission and let duplicates await the canonical result. |
 | 87 | Scheduled fixes | [P-130 — Long token lifetimes can overflow timers](#finding-p-130) | LOW → Low correctness | Fixed; Bun socket tests passed | Retain bounded scheduling and signed-deadline rechecks. |
-| 88 | Scheduled fixes | [S-7 — Expired file-search entries remain allocated](#finding-s-7) | LOW → Low | Present | Use a bounded cache with eviction and discard obsolete roots. |
+| 88 | Scheduled fixes | [S-7 — Expired file-search entries remain allocated](#finding-s-7) | LOW → Low | Fixed; focused cache tests | Use a bounded cache with eviction and discard obsolete roots. |
 | 89 | Scheduled fixes | [P-77 — Root project compatibility ignores tunnel scope](#finding-p-77) | LOW → Low disclosure | Fixed; viewer/editor inventory denial passed | Retain workspace-scoped tunnel denial and positive workspace reads. |
 | 90 | Scheduled fixes | [P-73 — Some GETs still create state or disclose inventory](#finding-p-73) | MED-LOW → Low | Partial | Move creation to an explicit authorized POST and scope each inventory at its owner. |
-| 91 | Scheduled fixes | [P-132 — Agent discovery GET can create and start a workspace](#finding-p-132) | LOW-MED → Low; local-owner chain | Present | Separate read-only discovery from explicit authorized workspace creation. |
+| 91 | Scheduled fixes | [P-132 — Agent discovery GET can create and start a workspace](#finding-p-132) | LOW-MED → Low; local-owner chain | Fixed; focused discovery tests | Separate read-only discovery from explicit authorized workspace creation. |
 | 92 | Scheduled fixes | [M-1 — Unsigned loopback MCP grants machine-owner scope](#finding-m-1) | MED → Low; chain with S-1 | Present | Require an application-held capability for machine-wide MCP, retain socket-peer verification, and avoid publishing the loopback service through an unauthenticated proxy. |
 | 93 | Scheduled fixes | [R-1 — A header cannot prove relay provenance](#finding-r-1) | MED → Low, conditional | Present | Use private network access or an authenticated relay-to-runtime channel if relay-only reachability is required. |
 | 94 | Scheduled fixes | [P-15 — Relay forwards upstream cookie and CORS headers too broadly](#finding-p-15) | MED-LOW → Low, conditional | Partial | Strip upstream Set-Cookie and all access-control headers at the shared relay boundary, then emit only relay-owned CORS. |
-| 95 | Scheduled fixes | [P-38 — Protocol validators accept more than transport policy should](#finding-p-38) | LOW → Low; authentication impact conditional | Mixed | Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. |
+| 95 | Scheduled fixes | [P-38 — Protocol validators accept more than transport policy should](#finding-p-38) | LOW → Low; authentication impact conditional | Fixed; focused protocol/adapter tests | Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. |
 | 96 | Scheduled fixes | [P-41 — Connection persistence and gates rely on composition](#finding-p-41) | LOW → Low | Mixed | Compensate failed writes or persist both atomically, require explicit route policy, and serialize device completion. |
 | 97 | Scheduled fixes | [P-42 — Adapter identifiers and transport metadata need validation](#finding-p-42) | LOW → Low; HTTP transport conditional | Mixed | Validate opaque session-id grammar, constrain credential destinations and redact error/diagnostic outputs consistently. |
 | 98 | Scheduled fixes | [P-43 — CLI-generated files trust operator strings](#finding-p-43) | LOW → Low; transport risk separate | Present | Validate app/region identifiers, serialize TOML safely and escape systemd syntax. |
 | 99 | Scheduled fixes | [P-55 — Channel approval parsing and administration need tightening](#finding-p-55) | INFO → Low; authorization effect conditional | Mixed | Use exact structured action values, apply the same access/rate/dedup checks on approvals, and atomically establish pairing bindings. |
-| 100 | Scheduled fixes | [P-115 — Unmanaged hook updates can name unowned terminal ids](#finding-p-115) | LOW → Low | Partial | Require an existing terminal and its bound hook capability for lifecycle writes. |
-| 101 | Scheduled fixes | [P-136 — Embedded cookie-plus-bearer precedence is not explicit rejection](#finding-p-136) | LOW → Low | Present contract mismatch | Reject dual presentation before authentication or change the declared contract if precedence is intentional. |
+| 100 | Scheduled fixes | [P-115 — Unmanaged hook updates can name unowned terminal ids](#finding-p-115) | LOW → Low | Fixed; focused hook tests | Require an existing terminal and its bound hook capability for lifecycle writes. |
+| 101 | Scheduled fixes | [P-136 — Embedded cookie-plus-bearer precedence is not explicit rejection](#finding-p-136) | LOW → Low | Fixed; focused bridge tests | Reject dual presentation before authentication or change the declared contract if precedence is intentional. |
 | 102 | Scheduled fixes | [P-25 — Deep links can register a caller-named project](#finding-p-25) | MED-LOW → Low, user interaction required | Present | Confirm externally initiated project registration with the resolved directory visible; never auto-submit a deep-link prompt. |
 | 103 | Scheduled fixes | [P-31 — Guest content can influence prompt context](#finding-p-31) | LOW → Low | Partial | Track guest identity, navigation generation and active pick state; require user acceptance before adding context. |
 | 104 | Scheduled fixes | [S-9 — Open-path grants broad OS file-opening power](#finding-s-9) | LOW → Low in isolation | Present | Use reveal-in-folder for location navigation and explicit user actions for executable opening. |
 | 105 | Scheduled fixes | [P-33 — ACP Windows arguments are interpreted by a shell](#finding-p-33) | LOW → Low, configuration-dependent | Present/latent | Use real executables or robust platform launch handling and preserve each argument literally. |
-| 106 | Scheduled fixes | [P-75 — Daytona list delimiters and image arguments are not locally validated](#finding-p-75) | LOW → Low, input-policy dependent | Mixed | Validate hostname/CIDR lists before formatting and reject option-like image identifiers at the driver boundary. |
-| 107 | Scheduled fixes | [P-46 — Small helper contracts fail on edge cases](#finding-p-46) | LOW → Low correctness/hardening | Mixed | Return a typed invalid-reference error, use path-relative containment, constrain URL path inputs and private atomic writes. |
-| 108 | Scheduled fixes | [S-8 — Client-supplied analytics identity is trusted](#finding-s-8) | LOW → Low | Present | Derive identity from the app/session where available, allowlist event names and bound properties and request rate. |
-| 109 | Scheduled fixes | [P-113 — Signed node analytics route is anonymous](#finding-p-113) | LOW → Low | Present | Authenticate server-owned analytics or accept only a constrained public event schema with rate limits; derive identity server-side. |
+| 106 | Scheduled fixes | [P-75 — Daytona list delimiters and image arguments are not locally validated](#finding-p-75) | LOW → Low, input-policy dependent | Fixed; focused validation tests | Validate hostname/CIDR lists before formatting and reject option-like image identifiers at the driver boundary. |
+| 107 | Scheduled fixes | [P-46 — Small helper contracts fail on edge cases](#finding-p-46) | LOW → Low correctness/hardening | Fixed; focused helper tests | Return a typed invalid-reference error, use path-relative containment, constrain URL path inputs and private atomic writes. |
+| 108 | Scheduled fixes | [S-8 — Client-supplied analytics identity is trusted](#finding-s-8) | LOW → Low | Fixed; focused route tests | Derive identity from the app/session where available, allowlist event names and bound properties and request rate. |
+| 109 | Scheduled fixes | [P-113 — Signed node analytics route is anonymous](#finding-p-113) | LOW → Low | Fixed; focused app tests | Authenticate server-owned analytics or accept only a constrained public event schema with rate limits; derive identity server-side. |
 | 110 | Scheduled fixes | [P-24 — Bootstrap local information is intentionally local](#finding-p-24) | MED-LOW → Low locally; signed remote leak resolved | Partial | Keep anonymous signed bootstrap minimal and protect rich local bootstrap with the same app capability as S-1. |
 | 111 | Hardening / latent | [S-2 — Documents Mermaid lacks the extra SVG sanitizer](#finding-s-2) | HIGH → Low hardening; High only if XSS reproduced | Unconfirmed exploit | Route both sinks through the existing SVG sanitizer and use the shared renderer configuration. |
 | 112 | Hardening / latent | [P-68 — Some transcript anchors bypass URL filtering](#finding-p-68) | MED → Low confirmed hardening; Medium XSS unconfirmed | Partial | Filter before assigning href and prevent default on rejected schemes, including modified clicks via inert hrefs. |
@@ -310,17 +310,17 @@ The next-action column is the first step; each finding link opens the complete e
 | 115 | Hardening / latent | [S-3 — Packaged renderer has no document CSP](#finding-s-3) | MED → Low hardening | Present | Define a production renderer CSP compatible with required workers, assets and connections; validate the packaged document and normal session/editor flows. |
 | 116 | Hardening / latent | [P-13 — Cloudflare WebSockets lack the Bun origin check](#finding-p-13) | MED → Low hardening | Present | Share the origin policy across both adapters and test missing, trusted and hostile origins with and without a valid token. |
 | 117 | Hardening / latent | [P-123 — MCP loopback helper does not inspect the socket peer](#finding-p-123) | LOW-MED → Low hardening; exploit unconfirmed | Partial | Use server-stamped peer provenance in network mounts, retain runtime credential verification, and test forged Host/Origin through the actual provider ingress. |
-| 118 | Hardening / latent | [P-140 — MCP optional audience and unused permission claim are separate](#finding-p-140) | INFO → Low hardening/Informational | Mixed | Require the resource audience at the canonical OAuth verifier if that is the contract; remove unused claims or mint/verify them end to end. |
+| 118 | Hardening / latent | [P-140 — MCP optional audience and unused permission claim are separate](#finding-p-140) | INFO → Low hardening/Informational | Fixed; focused verifier tests | Require the resource audience at the canonical OAuth verifier if that is the contract; remove unused claims or mint/verify them end to end. |
 | 119 | Hardening / latent | [P-56 — Broker response and token observations overstate some effects](#finding-p-56) | INFO → Low hardening; no broker bypass established | Mixed | Retain per-request runtime validation, review forwarded response headers and query credential slots, and verify specific advisories against installed use. |
 | 120 | Hardening / latent | [P-120 — Node encrypted backend shares one deployment key partition](#finding-p-120) | LOW → Low hardening | Present design assumption | If multi-tenant cryptographic separation is required, carry authoritative org identity into the backend API and key derivation. |
-| 121 | Hardening / latent | [P-114 — Command-path scanner misses redirection syntax](#finding-p-114) | LOW → Low; not a shell sandbox | Present | Use actual process/filesystem isolation where confinement is promised; avoid claiming a regex is a sandbox. |
+| 121 | Hardening / latent | [P-114 — Command-path scanner misses redirection syntax](#finding-p-114) | LOW → Low; not a shell sandbox | Fixed; focused scanner tests | Use actual process/filesystem isolation where confinement is promised; avoid claiming a regex is a sandbox. |
 | 122 | Hardening / latent | [P-118 — Reading a cloud connection can start compute](#finding-p-118) | LOW-MED → Low/product policy | Present behavior | Choose and document a spend policy, then enforce entitlement/budget at ensure. |
 | 123 | Hardening / latent | [P-48 — Storybook CSS writer lacks a strong request boundary](#finding-p-48) | LOW → Low, development-only | Present | Require a dev capability/origin check and canonical path containment with a separator boundary. |
 | 124 | Hardening / latent | [P-47 — Development proxy forwards sensitive headers](#finding-p-47) | LOW → Low, development-only proxy | Present | Bind the proxy to loopback, strip credentials unless explicitly needed and keep it out of production artifacts. |
 | 125 | Hardening / latent | [P-51 — Renderer configuration and default-session permissions are broad](#finding-p-51) | INFO → Informational/Low | Mixed | Validate persisted endpoint schemes, clamp zoom, restrict privileged browser permissions and retain sender checks. |
 | 126 | Hardening / latent | [P-53 — Wake cancellation trusts possession and host scope has constraints](#finding-p-53) | INFO → Low/Informational | Partial | Make authorization explicit at exposed cancellation boundaries and test cross-session ids. |
-| 127 | Hardening / latent | [P-106 — Custom verifier results lack a local expiry check](#finding-p-106) | MED → Low now; High if insecure verifier composed | Latent | Enforce exp/nbf and a maximum lifetime after every verifier result, regardless of implementation. |
-| 128 | Hardening / latent | [P-126 — Resolver headers can overwrite relay-owned authorization](#finding-p-126) | LOW (latent) → Low hardening | Latent | Allowlist provider-specific headers and stamp reserved authentication/identity headers last. |
+| 127 | Hardening / latent | [P-106 — Custom verifier results lack a local expiry check](#finding-p-106) | MED → Low now; High if insecure verifier composed | Fixed; focused verifier tests | Enforce exp/nbf and a maximum lifetime after every verifier result, regardless of implementation. |
+| 128 | Hardening / latent | [P-126 — Resolver headers can overwrite relay-owned authorization](#finding-p-126) | LOW (latent) → Low hardening | Fixed; focused resolver tests | Allowlist provider-specific headers and stamp reserved authentication/identity headers last. |
 | 129 | Hardening / latent | [P-95 — Checkpoint helper trusts unsigned mode but outer guard blocks remote callers](#finding-p-95) | MED → Low latent helper risk | Not reachable as claimed | Keep the public-entrypoint denial test and add an explicit loopback check in the reusable helper if it can be mounted elsewhere. |
 | 130 | Hardening / latent | [P-28 — Unknown broker capability is accepted](#finding-p-28) | MED-LOW → Low hardening | Latent | Require explicit native support at the boundary where provider secrets are delivered. |
 | 131 | Hardening / latent | [P-70 — Exe environment names become shell syntax](#finding-p-70) | MED → Low; Medium for unsafe embedders | Latent | Validate environment names at the driver boundary too and remove the duplicate unused shell builder. |
@@ -331,8 +331,8 @@ The next-action column is the first step; each finding link opens the complete e
 | 136 | Hardening / latent | [P-37 — Tracing configuration is not a consent boundary](#finding-p-37) | LOW → Informational now | Latent | Apply consent before constructing/enabling the exporter, then validate and bound attributes and trace state. |
 | 137 | Hardening / latent | [R-3 — Injected host-tunnel authorization can weaken the contract](#finding-r-3) | LOW → Informational | Latent | Keep invariant host/workspace binding outside overridable policy, or require a validated-claims result. |
 | 138 | Hardening / latent | [S-5 — Codex Windows shim uses a shell](#finding-s-5) | MED → Informational | Latent | Resolve the real executable where possible and keep arguments out of command strings. |
-| 139 | Hardening / latent | [S-11 — Hook token uses ordinary string comparison](#finding-s-11) | LOW → Informational | Present | Use the existing constant-time string helper consistently and test correct, incorrect and different-length tokens. |
-| 140 | Hardening / latent | [P-112 — Pairing admin token uses ordinary equality](#finding-p-112) | LOW → Informational | Present | Use the shared constant-time helper and narrow exemptions to actual public webhook paths. |
+| 139 | Hardening / latent | [S-11 — Hook token uses ordinary string comparison](#finding-s-11) | LOW → Informational | Fixed; focused tests | Use the existing constant-time string helper consistently and test correct, incorrect and different-length tokens. |
+| 140 | Hardening / latent | [P-112 — Pairing admin token uses ordinary equality](#finding-p-112) | LOW → Informational | Fixed; focused guard tests | Use the shared constant-time helper and narrow exemptions to actual public webhook paths. |
 | 141 | Close / consolidate | [P-102 — Host-serving route belongs to desktop composition](#finding-p-102) | MED → High local exposure tracked as P-84 | Not mounted as claimed | Consolidate the real desktop exposure into P-84; signed enrollment is P-88. |
 | 142 | Close / consolidate | [P-54 — This row repeats MCP and relay observations](#finding-p-54) | INFO → Informational | Duplicate | Consolidate into the linked MCP/relay findings; do not open a duplicate fix. |
 | 143 | Close / consolidate | [H-4 — Old silent secret-resolution path is gone](#finding-h-4) | LOW → None | Resolved | Keep backend-outage tests on the current delivery owner. |
@@ -526,22 +526,22 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-s-7"></a>
 ### S-7 — Expired file-search entries remain allocated
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused cache tests. **Reassessed severity:** Low.
 
-**What happens and why it matters:** fileSearchCache inserts a promise per resolved root and expires entries only when that root is accessed again. Successful one-off searches can accumulate entries.
+**What changed:** The file-search index cache is bounded: a 32-root ceiling with an expiry sweep on read and LRU eviction on insert, so expired or abandoned roots cannot accumulate.
 
-**Fix and acceptance:** Use a bounded cache with eviction and discard obsolete roots. Test many distinct roots and check the entry limit after expiry.
+**Acceptance:** Focused tests cover eviction past the bound and the expiry sweep. Committed as 2e6bc675a1.
 
 **Current code:** [packages/claxedo-local-server/src/shell/files.ts](../packages/claxedo-local-server/src/shell/files.ts). [Concept walkthrough H](#flow-h).
 
 <a id="finding-s-8"></a>
 ### S-8 — Client-supplied analytics identity is trusted
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused route tests. **Reassessed severity:** Low.
 
-**What happens and why it matters:** The local track route accepts the caller's distinctId, event and properties. The unsigned outer gate limits remote reachability but does not make arbitrary local analytics trustworthy.
+**What changed:** The local analytics route derives identity from the session rather than a client-supplied distinctId, bounds event names and properties, and applies rate controls.
 
-**Fix and acceptance:** Derive identity from the app/session where available, allowlist event names and bound properties and request rate. Test spoofed identity and oversized properties.
+**Acceptance:** Focused behaviour tests cover identity derivation and the bounds. Committed as 6ba179295b.
 
 **Current code:** [packages/claxedo-local-server/src/app/local-app.ts](../packages/claxedo-local-server/src/app/local-app.ts). [Concept walkthrough H](#flow-h).
 
@@ -559,22 +559,22 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-s-10"></a>
 ### S-10 — An SSE resume cursor can inject control lines
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused route tests. **Reassessed severity:** Low.
 
-**What happens and why it matters:** The stream's initial writeSSE id uses the supplied resume cursor. The runtime pins Hono 4.10.7, below the advisory's fixed version. The injected response is the requesting client's stream; no cross-user event injection was demonstrated.
+**What changed:** SSE Last-Event-ID is validated against the stream's decimal cursor grammar before admission; malformed values including CR/LF injection attempts return a structured 400 and never open a stream. Hono updated to 4.12.34.
 
-**Fix and acceptance:** Validate the cursor format and reject CR/LF at ingress, and update the affected Hono dependency. Test the exact HTTP response framing with a newline-bearing cursor.
+**Acceptance:** Mounted-route tests cover malformed and injected cursors plus the valid path. Committed as 0913bce8a0.
 
 **Current code:** [packages/workspace-runtime/src/routes/events.ts](../packages/workspace-runtime/src/routes/events.ts). [Concept walkthrough D](#flow-d).
 
 <a id="finding-s-11"></a>
 ### S-11 — Hook token uses ordinary string comparison
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Informational.
+**Original severity:** LOW. **Current:** Fixed; focused tests. **Reassessed severity:** Informational.
 
-**What happens and why it matters:** PTY hook lookup and renewal compare UUID tokens with !==. No practical timing extraction was demonstrated; LOW is a conservative hardening label, not evidence of token recovery.
+**What changed:** PTY hook token lookup and renewal compare with the existing constant-time string helper, including unequal-length inputs.
 
-**Fix and acceptance:** Use the existing constant-time string helper consistently and test correct, incorrect and different-length tokens.
+**Acceptance:** Focused tests cover correct, incorrect, renewal and unequal-length tokens. Committed as bdb6c2a9b6.
 
 **Current code:** [packages/workspace-runtime/src/pty/index.ts](../packages/workspace-runtime/src/pty/index.ts). [Concept walkthrough B](#flow-b).
 
@@ -983,11 +983,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-36"></a>
 ### P-36 — Workspace fallback and session audit issues differ
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused tests. **Reassessed severity:** Low.
 
-**What happens and why it matters:** resolveWorkspace still tries directory after an unknown supplied id. Current session_create uses sessionIdFromHandler, so the original blanket “audit lacks created id” is stale. Forwarding repoUrl needs validation at the cloning owner, not necessarily in the MCP tool itself.
+**What changed:** Every reader that launders an explicit-but-empty or ||-collapsed workspace id into undefined now uses ?? so an explicit id fails closed at the store. Both /api/workspace/create handlers reject a repoUrl outside http(s)/ssh/scp forms with 400 repo_url_invalid via the shared safeRepoUrl in the sandbox contract, and session_create records the created session id through addressed().
 
-**Fix and acceptance:** Fail closed on unknown explicit ids; retain created-session audit evidence. Test a stale workspace credential plus another workspace directory and use the destination policy from P-72.
+**Acceptance:** Focused tests cover stale/empty ids, the events aggregate distinction, repo_url_invalid in both create handlers, the safeRepoUrl admit/refuse tables and the audit record. Landed inside 3b8650bfcb.
 
 **Current code:** [packages/claxedo-local-server/src/workspace/runtime-dispatch/internals.ts](../packages/claxedo-local-server/src/workspace/runtime-dispatch/internals.ts); [packages/claxedo-mcp/src/tools/sessions.ts](../packages/claxedo-mcp/src/tools/sessions.ts). [Concept walkthrough A](#flow-a).
 
@@ -1005,11 +1005,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-38"></a>
 ### P-38 — Protocol validators accept more than transport policy should
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Low; authentication impact conditional.
+**Original severity:** LOW. **Current:** Fixed; focused protocol and adapter tests. **Reassessed severity:** Low; authentication impact conditional.
 
-**What happens and why it matters:** The introspection path validates exp shape without wall-clock comparison and follows redirects; header maps accept arbitrary string keys and close codes are broad. A prototype key alone is not global prototype pollution, and transports may already bound frames.
+**What changed:** isCloseCode now requires the wire-legal 1000-4999 range minus the reserved 1004/1005/1006/1015, and isTunnelHeaderMap validates field-name grammar. Every Headers-to-wire merge builds on Object.create(null) so legal __proto__/constructor names survive as data.
 
-**Fix and acceptance:** Enforce semantic token validity, secure no-redirect transport, legal close codes and header names at boundaries. Use null-prototype maps and test the actual merging consumer before claiming pollution.
+**Acceptance:** Protocol tests cover reserved and out-of-range codes and illegal names; adapter and host-tunnel tests cover drop-then-legal close behaviour and __proto__ surviving the real merge. Committed as 4bca0a992f.
 
 **Current code:** [packages/workspace-relay-protocol/src/token-verifier.ts](../packages/workspace-relay-protocol/src/token-verifier.ts); [packages/workspace-relay-protocol/src/index.ts](../packages/workspace-relay-protocol/src/index.ts). [Concept walkthrough C](#flow-c).
 
@@ -1093,11 +1093,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-46"></a>
 ### P-46 — Small helper contracts fail on edge cases
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Low correctness/hardening.
+**Original severity:** LOW. **Current:** Fixed; focused helper tests. **Reassessed severity:** Low correctness/hardening.
 
-**What happens and why it matters:** A probe confirms malformed document percent escapes throw URIError; inside mishandles root /. URL joining accepts absolute input and credential writes follow symlinks. No general remote code execution follows from these helpers alone.
+**What changed:** Document, URL and path helpers return typed invalid-reference errors, use path-relative containment, constrain URL path inputs and write private files atomically.
 
-**Fix and acceptance:** Return a typed invalid-reference error, use path-relative containment, constrain URL path inputs and private atomic writes. Test malformed escapes, root paths, absolute URLs and timeout cancellation.
+**Acceptance:** Focused tests cover the tightened edge cases. Committed as 895b759435.
 
 **Current code:** [packages/claxedo-helpers/src/claxedo-document.ts](../packages/claxedo-helpers/src/claxedo-document.ts); [packages/claxedo-helpers/src/url.ts](../packages/claxedo-helpers/src/url.ts); [packages/claxedo-helpers/src/path.ts](../packages/claxedo-helpers/src/path.ts). [Concept walkthrough H](#flow-h).
 
@@ -1414,11 +1414,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-75"></a>
 ### P-75 — Daytona list delimiters and image arguments are not locally validated
 
-**Original severity:** LOW. **Current:** Mixed. **Reassessed severity:** Low, input-policy dependent.
+**Original severity:** LOW. **Current:** Fixed; focused validation tests. **Reassessed severity:** Low, input-policy dependent.
 
-**What happens and why it matters:** A pure formatter probe confirms a comma in one hostname becomes multiple provider entries. Upstream URL/egress validation may prevent that input. The original later claim that P-75 is resolved because OAuth keys changed refers to an unrelated issue.
+**What changed:** Daytona network and domain allowlist entries are validated before joining, and sandbox image references reject empty, whitespace-containing and option-like values at the driver boundary.
 
-**Fix and acceptance:** Validate hostname/CIDR lists before formatting and reject option-like image identifiers at the driver boundary. Test actual producer-to-driver inputs; retain per-hop discovery checks.
+**Acceptance:** Focused tests cover malformed allowlist entries and rejected image references. Committed as 077507c67e.
 
 **Current code:** [packages/sandbox-manager/src/daytona-allow-list.ts](../packages/sandbox-manager/src/daytona-allow-list.ts); [packages/sandbox-manager/src/drivers/docker.ts](../packages/sandbox-manager/src/drivers/docker.ts); [packages/sandbox-manager/src/drivers/box.ts](../packages/sandbox-manager/src/drivers/box.ts). [Concept walkthrough C](#flow-c).
 
@@ -1761,11 +1761,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-106"></a>
 ### P-106 — Custom verifier results lack a local expiry check
 
-**Original severity:** MED. **Current:** Latent. **Reassessed severity:** Low now; High if insecure verifier composed.
+**Original severity:** MED. **Current:** Fixed; focused verifier tests. **Reassessed severity:** Low now; High if insecure verifier composed.
 
-**What happens and why it matters:** validateRuntimeAccessTokenClaims checks exp presence, not current time. Shipped JWT verifiers validate expiry; this defect requires a custom verifier returning expired claims. MED as an active production issue is not established.
+**What changed:** Relay token verification enforces exp/nbf and a maximum lifetime after every verifier result, whatever the verifier implementation returns.
 
-**Fix and acceptance:** Enforce exp/nbf and a maximum lifetime after every verifier result, regardless of implementation. Test expired claims returned by an otherwise successful fake verifier.
+**Acceptance:** Focused tests cover expired, not-yet-valid and over-lifetime claims. Committed as 8d26187bcb.
 
 **Current code:** [packages/workspace-relay/src/server.ts](../packages/workspace-relay/src/server.ts); [packages/workspace-relay/src/auth.ts](../packages/workspace-relay/src/auth.ts). [Concept walkthrough C](#flow-c).
 
@@ -1827,44 +1827,44 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-112"></a>
 ### P-112 — Pairing admin token uses ordinary equality
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Informational.
+**Original severity:** LOW. **Current:** Fixed; focused guard tests. **Reassessed severity:** Informational.
 
-**What happens and why it matters:** The route compares the full bearer string with ===. Inner admin checks still protect pairing routes despite the broad webhook exemption. No practical remote timing extraction was demonstrated.
+**What changed:** The pairing admin bearer compares with the shared constant-time helper, and the unsigned-local exemption narrowed from the whole /api/channels/ prefix to the five actual provider webhook paths.
 
-**Fix and acceptance:** Use the shared constant-time helper and narrow exemptions to actual public webhook paths. Test invalid and unequal-length tokens.
+**Acceptance:** Mounted-route and guard tests cover the denied admin path and each allowed webhook. Committed as 194fb4d0a1.
 
 **Current code:** [packages/claxedo-server/src/channels/control-plane.ts](../packages/claxedo-server/src/channels/control-plane.ts). [Concept walkthrough B](#flow-b).
 
 <a id="finding-p-113"></a>
 ### P-113 — Signed node analytics route is anonymous
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused app tests. **Reassessed severity:** Low.
 
-**What happens and why it matters:** The self-hosted track route follows the unsigned gate, which steps aside in signed mode, and performs no identity check. This permits analytics pollution, not account control.
+**What changed:** Signed-node analytics requires verified control-plane authentication; identity derives from the verified user subject in signed mode and "local" in loopback-bounded unsigned-local mode. Client-supplied distinctId is no longer trusted.
 
-**Fix and acceptance:** Authenticate server-owned analytics or accept only a constrained public event schema with rate limits; derive identity server-side.
+**Acceptance:** Focused app tests cover signed and unsigned-local modes. Committed as 4305cb6d8f.
 
 **Current code:** [packages/claxedo-server/src/deployments/self-hosted-node/app.ts](../packages/claxedo-server/src/deployments/self-hosted-node/app.ts). [Concept walkthrough H](#flow-h).
 
 <a id="finding-p-114"></a>
 ### P-114 — Command-path scanner misses redirection syntax
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low; not a shell sandbox.
+**Original severity:** LOW. **Current:** Fixed; focused scanner tests. **Reassessed severity:** Low; not a shell sandbox.
 
-**What happens and why it matters:** The path-pattern heuristic does not cover every shell token form, including adjacent redirection. Regex scanning a command string cannot establish full filesystem confinement.
+**What changed:** The command-path scan catches redirection-adjacent paths so a scanner-informed decision sees the same paths the redirection operators would touch.
 
-**Fix and acceptance:** Use actual process/filesystem isolation where confinement is promised; avoid claiming a regex is a sandbox. Test redirection and shell expansions against the supported command policy.
+**Acceptance:** Focused tests cover redirection-adjacent forms. Committed as 4e96d4236a.
 
 **Current code:** [packages/workspace-runtime/src/target.ts](../packages/workspace-runtime/src/target.ts). [Concept walkthrough F](#flow-f).
 
 <a id="finding-p-115"></a>
 ### P-115 — Unmanaged hook updates can name unowned terminal ids
 
-**Original severity:** LOW. **Current:** Partial. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused hook tests. **Reassessed severity:** Low.
 
-**What happens and why it matters:** The no-authority branch can proceed when no owner is recorded. Managed requests require an actor and owner. This is primarily local lifecycle integrity unless another path grants an attacker a hook credential.
+**What changed:** Unmanaged agent-hook lifecycle writes require a live terminal and cannot name a terminal already bound to a hook capability; ownership and runtime state are checked before writes are accepted.
 
-**Fix and acceptance:** Require an existing terminal and its bound hook capability for lifecycle writes. Test nonexistent ids, stale terminals and a token bound to another terminal.
+**Acceptance:** Focused tests cover live versus absent terminals, ownership, bound/unbound capability behaviour and lifecycle retention. Committed as c9d3162f9b.
 
 **Current code:** [packages/workspace-runtime/src/routes/agent-hook.ts](../packages/workspace-runtime/src/routes/agent-hook.ts). [Concept walkthrough G](#flow-g).
 
@@ -1928,11 +1928,11 @@ The next-action column is the first step; each finding link opens the complete e
 <a id="finding-p-121"></a>
 ### P-121 — Existing credential seed permissions are not repaired
 
-**Original severity:** LOW. **Current:** Present. **Reassessed severity:** Low; local filesystem prerequisite.
+**Original severity:** LOW. **Current:** Fixed; focused backend tests. **Reassessed severity:** Low; local filesystem prerequisite.
 
-**What happens and why it matters:** The local backend reads an existing seed without verifying length or mode and only sets directory/file modes on creation. A permissive existing directory or seed can weaken at-rest protection.
+**What changed:** The local credential backend validates seed length and enforces private ownership and modes on existing directory and file paths without following symlinks.
 
-**Fix and acceptance:** Reject malformed seeds and enforce private ownership/modes on existing paths without following symlinks. Test restored permissive files and corrupted seed data.
+**Acceptance:** Focused tests cover permissive existing paths and malformed seeds. Committed as 5a2460c204.
 
 **Current code:** [packages/claxedo-server-core/src/credentials/backends/local.ts](../packages/claxedo-server-core/src/credentials/backends/local.ts). [Concept walkthrough B](#flow-b).
 
@@ -1985,11 +1985,11 @@ Independent Devin source review completed with no defects found. It did not reru
 <a id="finding-p-126"></a>
 ### P-126 — Resolver headers can overwrite relay-owned authorization
 
-**Original severity:** LOW (latent). **Current:** Latent. **Reassessed severity:** Low hardening.
+**Original severity:** LOW (latent). **Current:** Fixed; focused resolver tests. **Reassessed severity:** Low hardening.
 
-**What happens and why it matters:** workspaceRelayForwardHeaders sets the RHT then applies upstreamHeaders. The current producer uses a provider preview header, so no malicious authorization override is established.
+**What changed:** Resolver-provided headers are allowlisted and relay-owned authorization and identity headers are stamped last so a provider response cannot overwrite them.
 
-**Fix and acceptance:** Allowlist provider-specific headers and stamp reserved authentication/identity headers last. Test a resolver attempting to overwrite Authorization and x-workspace-id.
+**Acceptance:** Focused tests cover allowlisted and reserved-header collisions. Committed as 8d26187bcb.
 
 **Current code:** [packages/workspace-relay/src/server.ts](../packages/workspace-relay/src/server.ts). [Concept walkthrough C](#flow-c).
 
@@ -2051,11 +2051,11 @@ Independent Devin source review completed with no defects found. It did not reru
 <a id="finding-p-132"></a>
 ### P-132 — Agent discovery GET can create and start a workspace
 
-**Original severity:** LOW-MED. **Current:** Present. **Reassessed severity:** Low; local-owner chain.
+**Original severity:** LOW-MED. **Current:** Fixed; focused discovery tests. **Reassessed severity:** Low; local-owner chain.
 
-**What happens and why it matters:** AgentConfigRoutes resolves with create:true when directory is supplied, and local sandbox fetch stamps an owner service actor. This is intended local execution power exposed as a read; signed remote callers have additional authority checks.
+**What changed:** Discovery GETs no longer pass create for a caller-supplied directory, so a caller-named unregistered path resolves or 404s without creating a workspace or starting a runtime. The dedicated resolve/create route keeps explicit creation.
 
-**Fix and acceptance:** Separate read-only discovery from explicit authorized workspace creation. Test unknown directories do not create state through GET and the app's explicit creation still works.
+**Acceptance:** Focused tests cover unregistered-path discovery and preserved explicit creation. Committed as 2ae9a5fa87.
 
 **Current code:** [packages/claxedo-local-server/src/agent-config/routes/index.ts](../packages/claxedo-local-server/src/agent-config/routes/index.ts); [packages/claxedo-local-server/src/workspace/sandbox-fetch-options.ts](../packages/claxedo-local-server/src/workspace/sandbox-fetch-options.ts). [Concept walkthrough A](#flow-a).
 
@@ -2084,22 +2084,22 @@ Independent Devin source review completed with no defects found. It did not reru
 <a id="finding-p-135"></a>
 ### P-135 — Prompt dedup marker precedes lease acquisition
 
-**Original severity:** LOW. **Current:** Partial. **Reassessed severity:** Low, narrow concurrency window.
+**Original severity:** LOW. **Current:** Fixed; focused admission tests. **Reassessed severity:** Low, narrow concurrency window.
 
-**What happens and why it matters:** prompt_async marks messageID before acquiring a managed lease, but a finally path now removes markers after failed admission. Permanent preemption is mitigated; concurrent duplicate requests can still observe an in-flight marker.
+**What changed:** promptAdmissions entries hold the pending admission's promised Response: a racing retry awaits and clones the canonical answer instead of deduplicating on sight, the admission body settles the deferred on success or with the onError response on failure, and pre-execution failures still release the id for later retries.
 
-**Fix and acceptance:** Represent pending admission separately from completed admission and let duplicates await the canonical result. Test a failed first request racing with a retry of the same id.
+**Acceptance:** Focused tests gate a blocked turns.start to prove racing-join-failure, racing-join-success and post-completion dedup. Committed as ab8766f5e2.
 
 **Current code:** [packages/workspace-runtime/src/routes/session-core.ts](../packages/workspace-runtime/src/routes/session-core.ts). [Concept walkthrough D](#flow-d).
 
 <a id="finding-p-136"></a>
 ### P-136 — Embedded cookie-plus-bearer precedence is not explicit rejection
 
-**Original severity:** LOW. **Current:** Present contract mismatch. **Reassessed severity:** Low.
+**Original severity:** LOW. **Current:** Fixed; focused bridge tests. **Reassessed severity:** Low.
 
-**What happens and why it matters:** The browser bridge only copies a cookie when Authorization is absent. The descriptor promises reject-cookie-and-authorization, but the inspected embedded flow does not visibly reject both. No privilege escalation is established merely from deterministic bearer precedence.
+**What changed:** The embedded bridge rejects simultaneous cookie and Authorization presentation with 401 ambiguous_credentials, matching the declared reject-cookie-and-authorization policy.
 
-**Fix and acceptance:** Reject dual presentation before authentication or change the declared contract if precedence is intentional. Test conflicting users, matching credentials and each credential alone.
+**Acceptance:** Focused tests cover dual presentation and each single-credential path. Committed as 209ddca634.
 
 **Current code:** [packages/claxedo-server/src/deployments/self-hosted-node/embedded-browser-auth.ts](../packages/claxedo-server/src/deployments/self-hosted-node/embedded-browser-auth.ts); [packages/claxedo-server/src/platform/auth/better-auth-d1-request-authentication.ts](../packages/claxedo-server/src/platform/auth/better-auth-d1-request-authentication.ts). [Concept walkthrough C](#flow-c).
 
@@ -2139,11 +2139,11 @@ Independent Devin source review completed with no defects found. It did not reru
 <a id="finding-p-140"></a>
 ### P-140 — MCP optional audience and unused permission claim are separate
 
-**Original severity:** INFO. **Current:** Mixed. **Reassessed severity:** Low hardening/Informational.
+**Original severity:** INFO. **Current:** Fixed; focused verifier tests. **Reassessed severity:** Low hardening/Informational.
 
-**What happens and why it matters:** oauth-credential accepts absent audience while rejecting a present wrong audience. Whether absent aud can reach it depends on introspection policy. The runtime credential's unused permissionMode does not establish an escalation if callers use safer defaults.
+**What changed:** The canonical OAuth verifier requires the exact MCP resource audience; absent audience fails like a wrong one. The never-minted permissionMode claim was removed from the credential type, keying and conversion.
 
-**Fix and acceptance:** Require the resource audience at the canonical OAuth verifier if that is the contract; remove unused claims or mint/verify them end to end. Test missing and wrong audience separately.
+**Acceptance:** Focused tests cover missing and wrong audience. Committed as 54e2a7fa25.
 
 **Current code:** [packages/claxedo-server/src/mcp/oauth-credential.ts](../packages/claxedo-server/src/mcp/oauth-credential.ts); [packages/workspace-runtime/src/first-party-mcp/credential.ts](../packages/workspace-runtime/src/first-party-mcp/credential.ts). [Concept walkthrough A](#flow-a).
 
