@@ -913,7 +913,8 @@ export type ClaudeDirectLaunch = {
  * process did not start, and `reconcileLaunch` says exactly that.
  */
 function ownDirectClaudeLaunch(input: {
-  proc: SpawnedProcess
+  /** Only the pid is read: `SpawnedProcess` does not carry one, but every local spawn does. */
+  proc: { pid?: number }
   ownership: LaunchOwnershipStore
   sessionId?: string
   directory?: string

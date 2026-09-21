@@ -40,6 +40,8 @@ import { generateAcpTitle } from "./title"
 import type { SessionTitleRequest } from "../../title-generation"
 import { acpTurnFailure, ACP_CONTEXT_REBUILT, AcpSessionUncertainError, missingAcpSession, renderAcpRecoveryContext, uncertainAcpSession } from "./recovery"
 import { cancelPendingPermissions, type PermissionReplyPort } from "./permission-reply"
+import { createTurnStopRecord, observeStopAttempt, type TurnStopRecord } from "../shared/cancellation-facts"
+import { finalizeAuthoredTurn, registerTurnAuthority, type TurnAuthority } from "../shared/turn-authority"
 
 const log = Log.create({ service: "acp-turn-runner" })
 const activePromptCounts = new Map<string, number>()
@@ -54,10 +56,12 @@ type GoalProjection = {
   agentSessionId: string
   directory: string
   assistantMessageId: string
+  /** Captured at projection start; the store rejects a terminal that presents any other. */
+  authority: TurnAuthority
   runtime: ReturnType<typeof createAgentEventRuntime>
   projector: ReturnType<typeof createTurnEventProjector>
   proc: ACPProcess
-  turn: { drain(message: string): void }
+  turn: { drain(message: string): void; stops: TurnStopRecord }
   leaveBusy: () => void
 }
 
@@ -219,13 +223,9 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         frame: { sessionId },
       })
     }
-    const finished = this.store.finishTurn({
-      sessionId,
-      assistantMessageId: projection.assistantMessageId,
-      outcome: error
-        ? { status: "failed", completedAt: Date.now(), error }
-        : { status: "completed", completedAt: Date.now() },
-    })
+    const finished = finalizeAuthoredTurn(this.store, projection.authority, error
+      ? { status: "failed", completedAt: Date.now(), error }
+      : { status: "completed", completedAt: Date.now() })
     for (const event of finished.events) this.options.eventHub?.publishGlobal({ directory: projection.directory, payload: event })
     this.lifecycle().delete(sessionId, projection.turn)
     projection.leaveBusy()
@@ -240,8 +240,16 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
   ) {
     const leaveBusy = this.lifecycle().enter(sessionId)
     if (!leaveBusy) return null
-    const config = this.store.getSessionConfig(sessionId)
     const assistantMessageId = randomUUID()
+    // The identity this projection will present at its terminal, captured
+    // before anything is written. Without the lease the session already has an
+    // owner, and a Goal turn projected over it would finalize their work.
+    const authority = registerTurnAuthority(this.store, "acp_goal", { sessionId, assistantMessageId })
+    if (!authority) {
+      leaveBusy()
+      return null
+    }
+    const config = this.store.getSessionConfig(sessionId)
     const created = Date.now()
     const input: PromptInput = {
       parts: [],
@@ -281,14 +289,20 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       })
       this.options.eventHub?.publishGlobal({ directory, payload: event })
     })
+    const stops = createTurnStopRecord()
     const turn = {
+      stops,
       drain: (message: string) => {
         cancelPendingPermissions(this.permissionReplyPort(), proc, sessionId, agentSessionId)
-        void proc.cancel(agentSessionId).catch(() => {})
-        this.finishGoalProjection(sessionId, message)
+        // A cancel the agent refused is recorded, not discarded: this turn is
+        // being finalized either way, and the caller that asked for it needs
+        // to know the provider was never reached.
+        void observeStopAttempt(stops, "provider_unreachable", () => proc.cancel(agentSessionId))
+          .catch(() => {})
+          .finally(() => this.finishGoalProjection(sessionId, message))
       },
     }
-    const projection = { agentSessionId, directory, assistantMessageId, runtime, projector, proc, turn, leaveBusy }
+    const projection = { agentSessionId, directory, assistantMessageId, authority, runtime, projector, proc, turn, leaveBusy }
     this.goalProjectionMap().set(sessionId, projection)
     this.lifecycle().set(sessionId, turn)
     return projection

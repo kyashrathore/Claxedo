@@ -6,12 +6,24 @@ import type { SubagentObservation } from "../../subagent-admission"
 import type { ChildProjectionTarget } from "./child-event-routing"
 import type { AgentRuntimeSessionBinding, AgentRuntimeStoreCore } from "./runtime-store"
 import { scopedSubagentKey, subagentOutcome } from "./subagent-transcript"
+import {
+  finalizeAuthoredTurn,
+  registerTurnAuthority,
+  TurnAuthorityUnavailableError,
+  type TurnAuthority,
+} from "./turn-authority"
 import type { RuntimeAppendSource } from "./turn-projection"
 
 export type SubagentChild = {
   sessionId: string
   agentSessionId: string
   target: ChildProjectionTarget
+  /**
+   * Captured when the child's turn is seeded. Absent when the session's lease
+   * was already held, which is what makes a late settle against a replacement
+   * generation refusable rather than silently authoritative.
+   */
+  authority?: TurnAuthority
 }
 
 const UNSETTLED_SUBAGENT_STATUSES: ReadonlySet<string> = new Set(["pending", "running", "paused"])
@@ -28,7 +40,7 @@ export function createSubagentChildren(host: {
   directory: string
   input: Pick<PromptInput, "agent" | "model" | "variant">
   fenced: { fencingToken?: number }
-  store: Pick<AgentRuntimeStoreCore, "startTurn" | "finishTurn" | "getSessionConfig" | "updateSessionConfig">
+  store: Pick<AgentRuntimeStoreCore, "startTurn" | "finishTurn" | "getSessionConfig" | "updateSessionConfig" | "acquireTurnLease" | "releaseTurnLease">
   children: Map<string, SubagentChild>
   bindSession: (input: AgentRuntimeSessionBinding) => void
   publish: (event: CompatEvent) => void
@@ -59,6 +71,12 @@ export function createSubagentChildren(host: {
       title: title(observation),
       agentSessionId,
     })
+    const authority = registerTurnAuthority(host.store, "provider_child", {
+      sessionId: childSessionId,
+      assistantMessageId: target.assistantMessageId,
+      ...(host.fenced.fencingToken === undefined ? {} : { fencingToken: host.fenced.fencingToken }),
+    })
+    if (!authority) throw new TurnAuthorityUnavailableError("provider_child", childSessionId)
     const parentConfig = host.store.getSessionConfig(host.parentSessionId)
     if (parentConfig) host.store.updateSessionConfig(childSessionId, parentConfig)
     const started = host.store.startTurn({
@@ -74,7 +92,7 @@ export function createSubagentChildren(host: {
     })
     for (const event of started.events) host.publish(event)
     host.projectChild(target, { type: "session-status", status: "busy" }, source)
-    return { sessionId: childSessionId, agentSessionId, target }
+    return { sessionId: childSessionId, agentSessionId, target, authority }
   }
 
   return {
@@ -123,15 +141,14 @@ export function createSubagentChildren(host: {
     settle(child: SubagentChild, observation: SubagentObservation, source: RuntimeAppendSource) {
       const outcome = subagentOutcome(observation)
       if (!outcome) return
+      // A child this turn never seeded is one it never had authority over, so
+      // its terminal belongs to whoever did.
+      if (!child.authority) throw new TurnAuthorityUnavailableError("provider_child", child.sessionId)
       if (outcome.status !== "failed") {
         host.projectChild(child.target, { type: "finish", sessionId: child.sessionId }, source)
       }
-      const finished = host.store.finishTurn({
-        ...host.fenced,
-        sessionId: child.sessionId,
-        assistantMessageId: child.target.assistantMessageId,
-        outcome,
-      })
+      const finished = finalizeAuthoredTurn(host.store, child.authority, outcome)
+      child.authority = undefined
       for (const event of finished.events) host.publish(event)
     },
 
