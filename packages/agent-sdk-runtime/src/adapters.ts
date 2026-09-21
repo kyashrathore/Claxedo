@@ -1,4 +1,5 @@
 export type {
+  AdapterCancelOutcome,
   AgentHarnessAdapter,
   AgentHarnessAdapterCore,
   AgentHarnessAdapterHealth,

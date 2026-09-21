@@ -49,14 +49,18 @@ import {
   createCodexTurnStop,
   type CodexActiveThread,
   codexAppServerModel,
+  codexControlDeadline,
   codexGoalSnapshot,
   codexIdleTimeoutMs,
   codexSpawnEnv,
+  codexTurnDeadline,
   codexTurnModel,
   codexSteerTurn,
   codexUserInput,
   startTurnWithThreadRecovery,
 } from "./protocol"
+import { createTurnStopRecord } from "../shared/cancellation-facts"
+import { RecoveryCodedError, retirementSettled, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
 
 export {
   codexGoalSnapshot,
@@ -69,6 +73,14 @@ export {
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
 
+function unresolvedLaunch(retained: { result: RetirementResult }) {
+  const { result } = retained
+  return new RecoveryCodedError(
+    result.error?.code ?? "exit_unverified",
+    `The Codex app-server this driver launched was not established as stopped (leader ${result.leader}, group ${result.descendants}); no replacement was started${result.error ? `: ${result.error.message}` : ""}`,
+  )
+}
+
 export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: CodexDriverOptions = {}): SdkRuntimeDriver {
   return new CodexAppServerDriver(host, options)
 }
@@ -79,6 +91,8 @@ type CodexDriverOptions = {
   codexHome?: string
   /** Where the account-free Codex home a brokered turn runs under is built. */
   brokeredHome?: string
+  /** Durable launch records, so an app-server outliving this process stays a recoverable owner. */
+  ownership?: LaunchOwnershipStore
 }
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
@@ -101,6 +115,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private lifecycleRevision = 0
   private disposed = false
   private processError: string | null = null
+  /** A launch whose retirement did not establish that it stopped. Blocks the next one. */
+  private unretired: { result: RetirementResult } | null = null
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPluginLaunch: CodexPluginLaunch | undefined
@@ -176,8 +192,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.lifecycleRevision++
     this.processStartupAbort?.abort()
     const startup = this.processStartup
-    await this.process?.dispose()
+    const retiring = this.process
     this.process = null
+    if (retiring) await this.retireProcess(retiring)
     if (startup) await startup.catch(() => undefined)
   }
 
@@ -211,7 +228,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       // its own default provider unless the start request says otherwise.
       ...(this.broker.selected ? { modelProvider: CODEX_BROKER_PROVIDER } : {}),
       ...this.threadConfig(input.sessionId),
-    }).then((response) => asRecord(response) ?? {})
+    }, codexControlDeadline()).then((response) => asRecord(response) ?? {})
     const thread = asRecord(result.thread)
     const threadId = text(thread?.id)
     if (!threadId) throw new Error("Codex app-server did not return a thread id")
@@ -240,7 +257,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     // only through an already-running app-server: local deletion must neither
     // spawn a process nor fail because the provider cleanup did.
     const proc = this.process
-    if (proc?.alive) await proc.request("thread/archive", { threadId: agentSessionId }).catch(() => {})
+    if (proc?.alive) await proc.request("thread/archive", { threadId: agentSessionId }, codexControlDeadline()).catch(() => {})
   }
 
   /**
@@ -270,9 +287,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const proc = await this.ensureProcess(input.directory)
     let turnId = ""
     let startPending: Promise<JsonRecord> | undefined
+    const stops = createTurnStopRecord()
     const cancellation = createCodexTurnStop({
       process: proc,
       threadId,
+      record: stops,
       turnId: async () => {
         if (startPending) {
           const result = await startPending
@@ -299,7 +318,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       rejectTurnStart?.(err)
     }
     const onAbort = () => {
-      void stop().catch(() => {})
+      // Recorded rather than awaited: the turn must fail now, and the stop's
+      // own outcome reaches the caller through the lifecycle entry.
+      void stop()
       failTurn(new Error("Codex turn aborted"))
     }
     const onStderr = (message: string) => {
@@ -352,6 +373,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.host.lifecycle().set(input.sessionId, {
       abort: input.abort,
       close: stop,
+      stops,
       steer: (steered) => codexSteerTurn({ process: proc, threadId, turnId, input: steered, directory: input.directory }),
     })
     const startTurn = async (): Promise<JsonRecord> => asRecord(await proc.request("turn/start", {
@@ -366,7 +388,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       ),
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
-    })) ?? {}
+    }, codexTurnDeadline())) ?? {}
 
     try {
       if (input.abort.signal.aborted) throw new Error("Codex turn aborted")
@@ -374,7 +396,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         startTurn,
         resumeThread: async () => {
           log.info("codex thread missing from app-server process; resuming from disk", { threadId })
-          await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.threadConfig(input.sessionId) })
+          await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.threadConfig(input.sessionId) }, codexControlDeadline())
         },
       })
       const result = await Promise.race([startPending, turnStartFailed])
@@ -384,7 +406,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       await completed
     } finally {
       try {
-        if (input.abort.signal.aborted) await stop()
+        // Awaited so the producer does not leave its busy section before the
+        // stop settles. A stop that failed belongs to `stops`, where the
+        // cancelling caller reads it; resurfacing it here would report a
+        // failed cancellation as a failed turn.
+        if (input.abort.signal.aborted) await stop().catch(() => {})
       } finally {
         input.abort.signal.removeEventListener("abort", onAbort)
         unsubscribeStderr()
@@ -475,6 +501,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   readRuntimeHealth(): AgentHarnessAdapterHealth {
+    if (this.unretired) return {
+      status: "unavailable",
+      reason: "harness_retirement_unresolved",
+      message: unresolvedLaunch(this.unretired).message,
+    }
     if (!this.processError) return { status: "ok" }
     return {
       status: "degraded",
@@ -497,9 +528,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     log.info("codex app-server idle timeout, disposing", { idleMs: this.idleMs })
     this.processGoalUnsubscribe?.()
     this.processGoalUnsubscribe = null
-    // The idle timer is not awaited by anyone; `dispose()` never rejects.
-    void this.process.dispose()
+    const retiring = this.process
     this.process = null
+    // Reclaiming memory must not silently leave a Codex process behind: an
+    // unresolved retirement is retained and refuses the next launch.
+    void retiring.dispose().then((result) => {
+      if (!retirementSettled(result)) this.unretired = { result }
+    })
   }
 
   /** Resolves once every app-server process this driver owns has exited. */
@@ -516,7 +551,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const running = this.process
     const startup = this.processStartup
     this.process = null
-    await Promise.all([running?.dispose(), startup?.then((proc) => proc.dispose(), () => undefined)])
+    const results = await Promise.all([running?.dispose(), startup?.then((proc) => proc.dispose(), () => undefined)])
+    const unresolved = results.find((result) => result && !retirementSettled(result))
+    if (unresolved) this.unretired = { result: unresolved }
   }
 
   async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
@@ -550,15 +587,25 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     log.warn("codex app-server process died; cleared interactive state", { err })
   }
 
+  /**
+   * One app-server at a time, and a replacement only once the launch it
+   * replaces has been established as stopped. Two app-servers sharing this
+   * driver's Codex home would write each other's threads and auth file, so an
+   * unresolved retirement is retained and refused rather than raced.
+   */
   private async ensureProcess(directory: string) {
     if (this.disposed) throw new Error("Codex app-server driver is disposed")
+    if (this.unretired) throw unresolvedLaunch(this.unretired)
     if (!this.process?.alive && !this.processStartup) {
-      // Replacing a dead process; nothing waits on the old one's teardown.
-      void this.process?.dispose()
+      const retiring = this.process
+      this.process = null
       const revision = this.lifecycleRevision
       const abort = new AbortController()
       this.processStartupAbort = abort
-      const startup = this.startProcess(directory, revision, abort.signal)
+      const startup = (async () => {
+        if (retiring) await this.retireProcess(retiring)
+        return await this.startProcess(directory, revision, abort.signal)
+      })()
       const pending = startup.finally(() => {
         if (this.processStartup === pending) {
           this.processStartup = null
@@ -568,6 +615,18 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       this.processStartup = pending
     }
     return this.processStartup ? await this.processStartup : this.process!
+  }
+
+  /**
+   * Retires one launch and keeps it if the retirement did not establish that it
+   * stopped. Nothing else in this driver may start a Codex process until an
+   * owner has resolved it.
+   */
+  private async retireProcess(proc: CodexAppServerProcess) {
+    const result = await proc.dispose()
+    if (retirementSettled(result)) return result
+    this.unretired = { result }
+    throw unresolvedLaunch(this.unretired)
   }
 
   private async startProcess(directory: string, lifecycleRevision: number, signal: AbortSignal) {
@@ -583,6 +642,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       processObserver: this.host.processObserver,
       mcp: this.currentMcp,
       signal,
+      ...(this.options.ownership ? { ownership: this.options.ownership } : {}),
       onClose: (err) => {
         if (this.process === started) {
           this.processGoalUnsubscribe?.()

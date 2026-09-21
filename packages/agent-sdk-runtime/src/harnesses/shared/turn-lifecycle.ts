@@ -1,9 +1,15 @@
+import type { RequestDeadline } from "../../launch"
+import type { TurnStopRecord } from "./cancellation-facts"
+
 export type TrackedTurn = {
   abort?: AbortController
-  close?: () => void | Promise<void>
+  /** The turn's own stop authority, bounded by the deadline of whoever asked. */
+  close?: (deadline?: RequestDeadline) => void | Promise<void>
   closed?: Promise<void>
   drain?: (message: string) => void
   turnId?: string
+  /** What this turn's owner observed while stopping it, read after it settles. */
+  stops?: TurnStopRecord
 }
 
 // An intentional stop is a cancelled outcome. Teardown paths use abortAll()
@@ -16,9 +22,9 @@ export function createSessionTurnLifecycle<T extends TrackedTurn>() {
   const activeTurns = new Map<string, T>()
   const idleWaiters = new Map<string, Set<() => void>>()
 
-  const close = (turn: T) => {
+  const close = (turn: T, deadline?: RequestDeadline) => {
     if (turn.closed) return
-    const result = turn.close?.()
+    const result = turn.close?.(deadline)
     if (!result) return
     turn.closed = Promise.resolve(result)
     // The caller observes cleanup failure through whenIdle().
@@ -72,11 +78,11 @@ export function createSessionTurnLifecycle<T extends TrackedTurn>() {
     drainAll(message: string) {
       for (const turn of activeTurns.values()) turn.drain?.(message)
     },
-    abort(sessionId: string) {
+    abort(sessionId: string, deadline?: RequestDeadline) {
       const turn = activeTurns.get(sessionId)
       if (!turn) return false
       turn.abort?.abort(EXPLICIT_TURN_ABORT_REASON)
-      close(turn)
+      close(turn, deadline)
       return true
     },
     abortAll() {

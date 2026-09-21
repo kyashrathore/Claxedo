@@ -31,11 +31,15 @@ import { listPiCatalogModels } from "./catalog"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
 import { ensurePiTitleExtension, generatePiTitle, setPiSessionName } from "./title-extension"
 import type { SessionTitleRequest } from "../../title-generation"
+import { cleanupFromRetirement, createTurnStopRecord, observeStopAttempt } from "../shared/cancellation-facts"
+import { RecoveryCodedError, retirementSettled, type LaunchOwnershipStore, type RetirementResult } from "../../launch"
 
 export type PiDriverOptions = {
   binary?: string
   agentDir: string
   idleMs?: number
+  /** Durable launch records, so a Pi process outliving this one stays a recoverable owner. */
+  ownership?: LaunchOwnershipStore
 }
 type Entry = {
   process: PiRpcProcess
@@ -43,6 +47,15 @@ type Entry = {
   busy: boolean
   idleGeneration: number
   idle?: ReturnType<typeof setTimeout>
+  /** Set when a retirement did not establish that this launch stopped. */
+  retiring?: RetirementResult
+}
+
+function unresolvedPiLaunch(result: RetirementResult) {
+  return new RecoveryCodedError(
+    result.error?.code ?? "exit_unverified",
+    `A Pi process this driver launched was not established as stopped (leader ${result.leader}, group ${result.descendants})${result.error ? `: ${result.error.message}` : ""}`,
+  )
 }
 
 export function createPiRpcDriver(host: SdkRuntimeDriverHost, options: PiDriverOptions): SdkRuntimeDriver {
@@ -66,6 +79,8 @@ class PiRpcDriver implements SdkRuntimeDriver {
   private thinking: string[] = []
   private selectedThinking = "off"
   private processError?: string
+  /** Retirements that did not establish an exit; they defer the auth profile's release. */
+  private readonly unresolved: RetirementResult[] = []
   private readonly agentDir: string
   private readonly authProfile: ReturnType<typeof retainPiAuth>
 
@@ -248,18 +263,19 @@ class PiRpcDriver implements SdkRuntimeDriver {
     const binary = this.options.binary ?? requirePiExecutable()
     await verifyPiExecutable(binary)
     const titleExtension = await ensurePiTitleExtension(this.agentDir)
-    const process = new PiRpcProcess({
+    const process = await PiRpcProcess.start({
       binary,
       directory,
       args: ["--mode", "rpc", "--session-dir", path.join(this.agentDir, "sessions"), "-e", titleExtension, ...args],
       env: this.environment(),
       observer: this.host.processObserver,
+      ...(this.options.ownership ? { ownership: this.options.ownership } : {}),
     })
     try {
       await process.request("get_state")
       return process
     } catch (error) {
-      process.dispose()
+      this.recordUnresolved(await process.dispose())
       throw error
     }
   }
@@ -288,7 +304,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
   async generateTitle(input: { agentSessionId: string; request: SessionTitleRequest }) {
     const entry = await this.ensure(input.agentSessionId, input.request.directory)
     if (entry.busy) return null
-    this.reap(entry)
+    this.reap(input.agentSessionId, entry)
     return await generatePiTitle(entry.process, input.request)
   }
   /** Only a live process is renamed: a reaped session's name lives on in the Claxedo store, and is not worth a respawn. */
@@ -300,15 +316,39 @@ class PiRpcDriver implements SdkRuntimeDriver {
   private remember(id: string, process: PiRpcProcess, directory: string) {
     const entry: Entry = { process, directory, busy: false, idleGeneration: 0 }
     this.entries.set(id, entry)
+    // A leader exit is not the end of what this launch started. The entry is
+    // dropped only once retirement establishes that its group went with it.
     process.onExit((error) => {
-      if (entry.idle) clearTimeout(entry.idle)
-      if (this.entries.get(id) === entry) this.entries.delete(id)
       if (entry.busy) this.processError = error.message
+      void this.retire(id, entry)
     })
-    this.reap(entry)
+    this.reap(id, entry)
     return entry
   }
-  private reap(entry: Entry) {
+
+  /**
+   * Retires one Pi launch and forgets it only on evidence that it stopped. An
+   * unresolved retirement is retained on its entry, which refuses the session
+   * a replacement process and blocks the shared auth profile's release.
+   */
+  private async retire(id: string, entry: Entry): Promise<RetirementResult> {
+    if (entry.idle) clearTimeout(entry.idle)
+    const result = await entry.process.dispose()
+    if (retirementSettled(result)) {
+      if (this.entries.get(id) === entry) this.entries.delete(id)
+      return result
+    }
+    entry.retiring = result
+    this.recordUnresolved(result)
+    return result
+  }
+
+  private recordUnresolved(result: RetirementResult) {
+    if (retirementSettled(result)) return
+    this.unresolved.push(result)
+    this.processError = unresolvedPiLaunch(result).message
+  }
+  private reap(sessionId: string, entry: Entry) {
     const generation = ++entry.idleGeneration
     if (entry.idle) clearTimeout(entry.idle)
     if (entry.busy) return
@@ -326,11 +366,11 @@ class PiRpcDriver implements SdkRuntimeDriver {
               () => false,
             ))
           if (!current()) return
-          if (persisted) entry.process.dispose()
-          else this.reap(entry)
+          if (persisted) await this.retire(sessionId, entry)
+          else this.reap(sessionId, entry)
         })
-        .catch(() => {
-          if (current()) entry.process.dispose()
+        .catch(async () => {
+          if (current()) await this.retire(sessionId, entry)
         })
     }, this.options.idleMs ?? 60_000)
     entry.idle.unref()
@@ -338,6 +378,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
   private async ensure(id: string, directory: string) {
     const entry = this.entries.get(id)
     if (entry) {
+      if (entry.retiring) throw unresolvedPiLaunch(entry.retiring)
       if (entry.directory !== directory) throw new Error("Pi native session directory mismatch")
       return entry
     }
@@ -351,15 +392,16 @@ class PiRpcDriver implements SdkRuntimeDriver {
       if (state?.sessionId !== id) throw new Error("Pi resumed a different session")
       return this.remember(id, process, directory)
     } catch (error) {
-      process.dispose()
+      this.recordUnresolved(await process.dispose())
       throw error
     }
   }
   async runTurn(input: SdkRuntimeTurnInput) {
-    const entry = await this.ensure(input.getAgentSessionId(), input.directory)
+    const agentSessionId = input.getAgentSessionId()
+    const entry = await this.ensure(agentSessionId, input.directory)
     if (entry.busy) throw new Error("Pi already has an active turn")
     entry.busy = true
-    this.reap(entry)
+    this.reap(agentSessionId, entry)
     this.processError = undefined
     const process = entry.process
     const questionIds = new Set<string>()
@@ -376,19 +418,21 @@ class PiRpcDriver implements SdkRuntimeDriver {
     })
     // The stream may fail while awaiting command acknowledgement.
     void settled.catch(() => {})
+    const stops = createTurnStopRecord()
     const abort = () => {
       if (cancelling) return
-      cancelling = Promise.resolve()
-        .then(async () => {
-          for (const id of questionIds) this.host.pendingQuestions.get(id)?.reject()
-          await process.request("clear_queue")
-          await process.request("abort")
-          finish()
-        })
-        .catch((error) => {
-          process.dispose()
-          fail(error)
-        })
+      cancelling = observeStopAttempt(stops, "provider_unreachable", async () => {
+        for (const id of questionIds) this.host.pendingQuestions.get(id)?.reject()
+        await process.request("clear_queue")
+        await process.request("abort")
+        finish()
+      }).catch(async (error: unknown) => {
+        // Pi refused or never answered the cancel, so the only remaining
+        // authority over this turn is the launch it runs in.
+        const result = await this.retire(agentSessionId, entry)
+        stops.cleanup = cleanupFromRetirement(result)
+        fail(error instanceof Error ? error : new Error(String(error)))
+      })
     }
     try {
       removeExit = process.onExit(fail)
@@ -425,6 +469,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
       this.host.lifecycle().set(input.sessionId, {
         abort: input.abort,
         close: abort,
+        stops,
         steer: async (steered) => {
           const steeredImages = piImageContents(steered.parts)
           await process.request("steer", {
@@ -455,8 +500,9 @@ class PiRpcDriver implements SdkRuntimeDriver {
       })
       await settled
     } catch (error) {
-      // Losing an acknowledgement does not authorize replay; stop this process before admitting another turn.
-      process.dispose()
+      // Losing an acknowledgement does not authorize replay; retire this launch
+      // before another turn may be admitted on the session.
+      stops.cleanup = cleanupFromRetirement(await this.retire(agentSessionId, entry))
       throw error
     } finally {
       await cancelling
@@ -465,7 +511,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
       input.abort.signal.removeEventListener("abort", abort)
       for (const id of questionIds) this.host.pendingQuestions.delete(id)
       entry.busy = false
-      if (process.alive) this.reap(entry)
+      if (process.alive) this.reap(agentSessionId, entry)
     }
   }
   private question(input: SdkRuntimeTurnInput, process: PiRpcProcess, event: PiRpcMessage, ids: Set<string>) {
@@ -576,24 +622,42 @@ class PiRpcDriver implements SdkRuntimeDriver {
     ]
   }
   readRuntimeHealth() {
+    if (this.unresolved.length) return {
+      status: "unavailable" as const,
+      reason: "harness_retirement_unresolved" as const,
+      message: unresolvedPiLaunch(this.unresolved[this.unresolved.length - 1]!).message,
+    }
     return this.processError
       ? { status: "degraded" as const, reason: "harness_process_lost" as const, message: this.processError }
       : { status: "ok" as const }
   }
-  deleteAgentSession(_sessionId: string, agentSessionId: string) {
-    this.entries.get(agentSessionId)?.process.dispose()
+  async deleteAgentSession(_sessionId: string, agentSessionId: string) {
+    const entry = this.entries.get(agentSessionId)
+    if (entry) await this.retire(agentSessionId, entry)
   }
+  /**
+   * The shared auth profile is scrubbed only once every launch under it has
+   * been established as stopped. Releasing it over an unresolved Pi process
+   * would pull that process's credentials out from under work still running.
+   */
   async dispose() {
     await this.goalController.dispose()
-    this.closeProcesses()
+    await this.closeProcesses()
+    if (this.unresolved.length) return
     await this.authProfile.release()
   }
-  private closeProcesses() {
-    for (const entry of this.entries.values()) {
-      if (entry.idle) clearTimeout(entry.idle)
-      entry.process.dispose()
+  private async closeProcesses() {
+    const retiring = [...this.entries].map(([sessionId, entry]) => this.retire(sessionId, entry))
+    const results = await Promise.all(retiring)
+    for (const [sessionId, entry] of [...this.entries]) {
+      if (!entry.retiring) this.entries.delete(sessionId)
     }
-    this.entries.clear()
+    return results
+  }
+
+  /** Retirements that never established an exit, and the auth release they hold. */
+  retirementBlockers(): readonly RetirementResult[] {
+    return this.unresolved
   }
 }
 

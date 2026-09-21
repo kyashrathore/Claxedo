@@ -2,11 +2,13 @@ import { asRecord } from "@claxedo/helpers/guards"
 import { Log } from "../../log"
 import type { SessionTitleRequest } from "../../title-generation"
 import { text, type JsonRecord } from "../shared/sdk-runtime-adapter"
+import type { RequestDeadline } from "../../launch"
+import { codexControlDeadline, codexTurnDeadline } from "./protocol"
 
 const log = Log.create({ service: "codex-title" })
 
 export type CodexTitleProcess = {
-  request(method: string, params: unknown): Promise<unknown>
+  request(method: string, params: unknown, deadline: RequestDeadline): Promise<unknown>
   onMessage(listener: (message: JsonRecord) => void): () => void
 }
 
@@ -40,13 +42,13 @@ export async function generateCodexTitle(input: CodexTitleInput): Promise<string
       ...(input.model ? { model: input.model } : {}),
       ...(input.modelProvider ? { modelProvider: input.modelProvider } : {}),
       config: input.config,
-    }))
+    }, codexControlDeadline()))
     const threadId = text(asRecord(started?.thread)?.id)
     if (!threadId) return null
     try {
       return await titleTurn(proc, threadId, input)
     } finally {
-      await proc.request("thread/archive", { threadId }).catch(() => {})
+      await proc.request("thread/archive", { threadId }, codexControlDeadline()).catch(() => {})
     }
   } catch (error) {
     log.warn("Codex title turn failed", { error: error instanceof Error ? error.message : String(error) })
@@ -59,7 +61,7 @@ export async function generateCodexTitle(input: CodexTitleInput): Promise<string
 /** Write an accepted title to the thread so `codex resume` lists the same name. */
 export async function setCodexThreadName(proc: CodexTitleProcess | null, threadId: string, title: string) {
   if (!proc || !title.trim()) return
-  await proc.request("thread/name/set", { threadId, name: title }).catch((error: unknown) => {
+  await proc.request("thread/name/set", { threadId, name: title }, codexControlDeadline()).catch((error: unknown) => {
     log.warn("thread/name/set failed", { threadId, error: error instanceof Error ? error.message : String(error) })
   })
 }
@@ -73,7 +75,7 @@ function titleTurn(proc: CodexTitleProcess, threadId: string, input: CodexTitleI
       resolve(value)
     }
     const onAbort = () => {
-      if (turnId) void proc.request("turn/interrupt", { threadId, turnId }).catch(() => {})
+      if (turnId) void proc.request("turn/interrupt", { threadId, turnId }, codexControlDeadline()).catch(() => {})
       finish(null)
     }
     const unsubscribe = proc.onMessage((frame) => {
@@ -108,7 +110,7 @@ function titleTurn(proc: CodexTitleProcess, threadId: string, input: CodexTitleI
         required: ["title"],
         additionalProperties: false,
       },
-    }).then((response) => {
+    }, codexTurnDeadline()).then((response) => {
       turnId = text(asRecord(asRecord(response)?.turn)?.id)
       if (input.request.signal.aborted) onAbort()
     }, (error: unknown) => {

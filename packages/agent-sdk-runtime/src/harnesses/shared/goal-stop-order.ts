@@ -1,4 +1,4 @@
-import type { AgentGoalMutationResult } from "../../adapter-contract"
+import type { AgentGoalMutationFailure, AgentGoalMutationResult } from "../../adapter-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 
 /** The slice of a session turn lifecycle a Goal stop needs. */
@@ -21,6 +21,16 @@ export async function interruptGoalTurn(sessionId: string, lifecycle: GoalTurnIn
 }
 
 /**
+ * A Goal stop whose interrupt failed is a failed stop. Continuation is already
+ * disabled, but the turn it was meant to end was not established as stopped,
+ * and answering with the disabled Goal would report work as paused that this
+ * owner never reached.
+ */
+function interruptFailure(error: unknown): AgentGoalMutationFailure {
+  return { ok: false, status: "failed", message: error instanceof Error ? error.message : String(error) }
+}
+
+/**
  * Run a Goal stop, pause, or delete in the one safe order:
  * disable continuation, interrupt the in-flight turn, wait for the session to
  * release it, and only then settle.
@@ -39,6 +49,10 @@ export async function settleGoalStop<Goal extends RuntimeGoalSnapshot | null>(in
 }): Promise<AgentGoalMutationResult<Goal>> {
   const disabled = await input.disableContinuation()
   if (!disabled.ok) return disabled
-  await interruptGoalTurn(input.sessionId, input.lifecycle)
+  try {
+    await interruptGoalTurn(input.sessionId, input.lifecycle)
+  } catch (error) {
+    return interruptFailure(error)
+  }
   return input.settle ? await input.settle() : disabled
 }

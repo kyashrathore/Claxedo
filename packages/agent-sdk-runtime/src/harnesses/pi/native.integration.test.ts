@@ -173,7 +173,7 @@ test(
       // session file needs the bound account back for the summary turn.
       const profile = retainPiAuth(agentDir)
       await profile.write(piProviderOverrides({ groq: projection }))
-      const rpc = new PiRpcProcess({
+      const rpc = await PiRpcProcess.start({
         binary,
         directory,
         args: ["--mode", "rpc", "--session", nativeFile, "--provider", "groq", "--model", PROOF_MODEL],
@@ -184,7 +184,7 @@ test(
         expect(compacted).toHaveProperty("summary")
         expect(await fs.readFile(nativeFile, "utf8")).toContain('"type":"compaction"')
       } finally {
-        rpc.dispose()
+        await rpc.dispose()
         await profile.release()
       }
       runtime = await create()

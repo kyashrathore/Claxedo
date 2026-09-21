@@ -6,6 +6,7 @@ import { GOAL_ACTIONS, goalCapabilities } from "../../capabilities"
 import { Log } from "../../log"
 import { requireWorkspaceDirectory } from "../../target"
 import { settleGoalStop } from "../shared/goal-stop-order"
+import { createTurnStopRecord } from "../shared/cancellation-facts"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
@@ -19,6 +20,7 @@ import {
   GoalTurnEventQueue,
   createCodexTurnStop,
   type CodexActiveThread,
+  codexControlDeadline,
   codexGoalSnapshot,
   startTurnWithThreadRecovery,
 } from "./protocol"
@@ -125,7 +127,7 @@ export class CodexGoalController {
   ) {
     return startTurnWithThreadRecovery({
       startTurn: async () => {
-        const response = asRecord(await proc.request(method, params))
+        const response = asRecord(await proc.request(method, params, codexControlDeadline()))
         if (!response) throw new Error(`Codex app-server did not return a ${method} response`)
         return response
       },
@@ -134,7 +136,7 @@ export class CodexGoalController {
           threadId,
           cwd: directory,
           ...this.host.threadConfig(sessionId),
-        })
+        }, codexControlDeadline())
       },
     })
   }
@@ -330,7 +332,8 @@ export class CodexGoalController {
       void this.host.driverHost.runProviderTurn({ ...binding, ...(userMessage ? { userMessage } : {}) }, async (input) => {
         if (this.pendingGoalRequests.get(threadId) === userMessage) this.pendingGoalRequests.delete(threadId)
         const proc = await this.host.ensureProcess(binding.directory)
-        const cancellation = createCodexTurnStop({ process: proc, threadId, turnId: () => turnId })
+        const stops = createTurnStopRecord()
+        const cancellation = createCodexTurnStop({ process: proc, threadId, record: stops, turnId: () => turnId })
         const project = (eventMethod: string, payload: JsonRecord, frame: unknown) => input.ingest({
           source: CODEX_SOURCE,
           method: eventMethod,
@@ -348,11 +351,12 @@ export class CodexGoalController {
           observeSubagent: input.observeSubagent,
         })
         const onAbort = () => {
-          void cancellation.stop().catch(() => {})
+          // Recorded on `stops` rather than awaited; the Goal turn ends now.
+          void cancellation.stop()
           queue.end()
         }
         input.abort.signal.addEventListener("abort", onAbort, { once: true })
-        this.host.driverHost.lifecycle().set(binding.sessionId, { abort: input.abort, close: cancellation.stop, turnId })
+        this.host.driverHost.lifecycle().set(binding.sessionId, { abort: input.abort, close: cancellation.stop, stops, turnId })
         try {
           for await (const event of queue) {
             cancellation.observe(asRecord(event.payload) ?? {})

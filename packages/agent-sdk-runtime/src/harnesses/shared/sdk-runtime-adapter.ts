@@ -85,6 +85,7 @@ import type {
 import { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
 import { createSubagentChildren } from "./subagent-lifecycle"
+import { cancellationFailure, stopFailure, type CancellationFailure } from "./cancellation-facts"
 import {
   admissibleSubagentObservation,
   openSubagentTranscript,
@@ -798,15 +799,36 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     requireAgentExecutionBinding(binding)
     const id = binding.sessionId
     const lifecycle = this.lifecycle()
+    const turn = lifecycle.get(id)
     // No local entry is not evidence that nothing is running: this adapter's
     // process may have restarted under a turn the store still holds open.
-    if (!lifecycle.abort(id)) return { execution: "unknown", cleanup: "unknown" }
+    if (!lifecycle.abort(id, { signal: input.signal, deadlineAt: input.deadlineAt })) {
+      return { execution: "unknown", cleanup: "unknown" }
+    }
     // Leaving the busy section is what makes a replacement turn safe to admit,
-    // so it is the only thing here that establishes termination.
-    const left = await Promise.race([lifecycle.whenIdle(id).then(() => true), stoppedWaiting(input)])
-    if (left) return { execution: "terminal", cleanup: "unknown" }
-    const message = `${this.driver.type} turn ${input.turnId} had not left its producer when the deadline passed`
-    return { execution: "running", cleanup: "unknown", error: { code: "cancellation_timeout", message } }
+    // so it is the only thing here that establishes local termination. A turn
+    // whose cleanup rejected still left it, and that rejection is a fact about
+    // the cancellation, reported below rather than thrown at the caller.
+    let closeFailure: CancellationFailure | undefined
+    const settled = lifecycle.whenIdle(id).then(() => true, (error: unknown) => {
+      closeFailure = cancellationFailure(error, "provider_unreachable")
+      return true
+    })
+    const left = await Promise.race([settled, stoppedWaiting(input)])
+    const cleanup = turn?.stops?.cleanup ?? "unknown"
+    const failure = stopFailure(turn?.stops) ?? closeFailure
+    if (!left) return {
+      execution: "running",
+      cleanup,
+      error: failure ?? {
+        code: "cancellation_timeout",
+        message: `${this.driver.type} turn ${input.turnId} had not left its producer when the deadline passed`,
+      },
+    }
+    // The producer left, but a cancellation the provider never accepted leaves
+    // whatever it was running upstream unaccounted for.
+    if (failure) return { execution: "unknown", cleanup, error: failure }
+    return { execution: "terminal", cleanup }
   }
 
   async listCommands(_directory: string): Promise<AgentCommand[]> { return listCommands() }

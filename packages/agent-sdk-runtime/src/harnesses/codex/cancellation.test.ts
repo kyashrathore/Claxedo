@@ -47,9 +47,16 @@ for (const terminateFails of [false, true]) {
       await started
       const stopping = goalMode ? adapter.goals!.stop(session.id, fake.directory) : cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex"))
       if (terminateFails) {
-        await expect(stopping).rejects.toThrow("terminal cleanup failed")
+        // Codex named a live terminal for this turn and then refused to
+        // terminate it, so the turn's fate upstream is unknown and the
+        // terminal is still owned.
+        await expect(stopping).resolves.toMatchObject(goalMode
+          ? { ok: false, status: "failed", message: expect.stringContaining("terminal cleanup failed") }
+          : { execution: "unknown", cleanup: "owned", error: { code: "provider_unreachable", message: "terminal cleanup failed" } })
       } else {
-        await expect(stopping).resolves.toMatchObject(goalMode ? { ok: true, goal: { status: "paused" } } : { execution: "terminal" })
+        // Codex's terminal inventory no longer lists this turn's command, and
+        // Codex runs its tools nowhere else, so the turn's resources are clear.
+        await expect(stopping).resolves.toMatchObject(goalMode ? { ok: true, goal: { status: "paused" } } : { execution: "terminal", cleanup: "verified_clear" })
         expect(await fs.readFile(fake.goalFile + ".terminated", "utf8")).toBe("process-current")
       }
       await turn

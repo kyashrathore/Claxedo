@@ -26,6 +26,8 @@ import type { RuntimeEventRoute, ChildProjectionTarget } from "./child-event-rou
 import type { AgentRuntimeStoreCore } from "./runtime-store"
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { SessionTurnLifecycle } from "./turn-lifecycle"
+import type { TurnStopRecord } from "./cancellation-facts"
+import type { RequestDeadline } from "../../launch"
 import type { ProviderProjection } from "../../provider-projection"
 import type { SessionTitleRequest } from "../../title-generation"
 
@@ -73,8 +75,10 @@ export type PendingQuestion = {
 
 export type ActiveTurn = {
   abort: AbortController
-  close?: () => void
+  close?: (deadline?: RequestDeadline) => void | Promise<void>
   turnId?: string
+  /** What this turn's owner observed while stopping it, read after it settles. */
+  stops?: TurnStopRecord
   /** Present only while this turn's protocol can accept another user message. */
   steer?: (input: PromptInput) => Promise<import("../../adapter-contract").SteerResult>
 }

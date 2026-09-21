@@ -27,6 +27,7 @@ const terminateFails = ${JSON.stringify(options.terminateFails ?? false)}
 let buffer = ""
 let goal = fs.existsSync(goalFile) ? JSON.parse(fs.readFileSync(goalFile, "utf8")) : null
 let threadKnown = false
+const terminated = new Set()
 function write(message) { process.stdout.write(JSON.stringify(message) + "\\n") }
 function persistGoal() {
   if (goal) fs.writeFileSync(goalFile, JSON.stringify(goal))
@@ -71,14 +72,21 @@ process.stdin.on("data", (chunk) => {
       }
     }
     else if (message.method === "thread/backgroundTerminals/list") {
-      write({ id: message.id, result: message.params.cursor === "second"
-        ? { data: [{ itemId: "cmd-current", processId: "process-current" }], nextCursor: null }
-        : { data: [{ itemId: "cmd-previous", processId: "process-previous" }], nextCursor: "second" } })
+      // A terminated terminal leaves the inventory. Paging is preserved so the
+      // caller still has to read both pages to learn what survived.
+      const page = message.params.cursor === "second"
+        ? [{ itemId: "cmd-current", processId: "process-current" }]
+        : [{ itemId: "cmd-previous", processId: "process-previous" }]
+      write({ id: message.id, result: {
+        data: page.filter((row) => !terminated.has(row.processId)),
+        nextCursor: message.params.cursor === "second" ? null : "second",
+      } })
     }
     else if (message.method === "thread/backgroundTerminals/terminate") {
       setTimeout(() => {
         if (terminateFails) write({ id: message.id, error: { message: "terminal cleanup failed" } })
         else {
+          terminated.add(message.params.processId)
           fs.writeFileSync(goalFile + ".terminated", message.params.processId)
           write({ id: message.id, result: {} })
         }

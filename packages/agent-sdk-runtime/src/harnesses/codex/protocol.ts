@@ -1,5 +1,6 @@
 import type { PromptInput } from "../../index"
 import { isRuntimeGoalStatus, type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { DEFAULT_RECOVERY_BUDGETS, capChildBudget } from "@claxedo/agent-runtime-contract"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -8,18 +9,101 @@ import {
   type JsonRecord,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import { observeStopAttempt, type TurnStopRecord } from "../shared/cancellation-facts"
 import { deliverPromptAttachments, promptImageAttachments } from "../shared/prompt-attachments"
+import type { RequestDeadline } from "../../launch"
 import type { CodexAppServerProcess } from "./app-server-process"
 
-/** Cancel generation and terminate only command processes owned by this turn. */
+/**
+ * A control request's own budget, never outliving the operation that asked for
+ * it. Without a parent it still expires, so no caller of this protocol waits
+ * on an app-server that has stopped answering.
+ */
+export function codexControlDeadline(parent?: RequestDeadline): RequestDeadline {
+  const now = Date.now()
+  if (!parent) return { signal: new AbortController().signal, deadlineAt: now + DEFAULT_RECOVERY_BUDGETS.providerQueryMs }
+  return { signal: parent.signal, deadlineAt: capChildBudget(parent.deadlineAt, DEFAULT_RECOVERY_BUDGETS.providerQueryMs, now) }
+}
+
+/**
+ * A turn request runs as long as the model does, so a provider budget here
+ * would cancel healthy work for being slow. It is bounded by the app-server
+ * exiting, which rejects everything still pending.
+ *
+ * It is deliberately NOT bound to the turn's own abort: `turn/start` answers
+ * with the turn id that `turn/interrupt` needs, so abandoning it on abort
+ * destroys the cancellation it was meant to serve. A deadline past 2^31-1 ms
+ * is not "no deadline" either — Node truncates that timer to 1ms.
+ */
+export function codexTurnDeadline(): RequestDeadline {
+  return { signal: new AbortController().signal, deadlineAt: Date.now() + 2_147_483_647 }
+}
+
+export type CodexTurnStop = {
+  observe(params: JsonRecord): void
+  stop(deadline?: RequestDeadline): Promise<void>
+  /** Where each attempt's outcome is recorded for `cancelTurn` to read. */
+  readonly record: TurnStopRecord
+}
+
+/**
+ * Cancel generation and terminate only the command processes this turn owns.
+ *
+ * One attempt runs at a time and a completed one is not repeated, but a
+ * rejected attempt is kept only as evidence: a stop that never reached the
+ * provider has established nothing, so the next caller gets a new request
+ * rather than the old rejection.
+ */
 export function createCodexTurnStop(input: {
   process: Pick<CodexAppServerProcess, "request">
   threadId: string
   turnId: () => Promise<string> | string
-}) {
+  record: TurnStopRecord
+}): CodexTurnStop {
   const commandProcesses = new Map<string, Set<string>>()
-  let stopping: Promise<void> | undefined
+  let inflight: Promise<void> | undefined
+
+  const attempt = async (deadline: RequestDeadline) => {
+    const turnId = await input.turnId()
+    if (!turnId) return
+    await input.process.request("turn/interrupt", { threadId: input.threadId, turnId }, deadline)
+    const processes = commandProcesses.get(turnId)
+    if (!processes?.size) {
+      // This turn started no command, and Codex runs its tools nowhere else.
+      input.record.cleanup = "verified_clear"
+      return
+    }
+    const remaining = await survivors(processes, deadline)
+    if (remaining.size) {
+      input.record.cleanup = "owned"
+      for (const processId of remaining) {
+        await input.process.request("thread/backgroundTerminals/terminate", { threadId: input.threadId, processId }, deadline)
+      }
+    }
+    // Codex's own terminal inventory is the authority on what this turn still
+    // holds, so an inventory with none of them left is proof, where an
+    // acknowledged terminate on its own would only be a promise.
+    input.record.cleanup = (await survivors(processes, deadline)).size ? "owned" : "verified_clear"
+  }
+
+  /** This turn's command processes that Codex still lists, across every page. */
+  const survivors = async (processes: Set<string>, deadline: RequestDeadline) => {
+    const remaining = new Set<string>()
+    let cursor: string | undefined
+    do {
+      const response = asRecord(await input.process.request("thread/backgroundTerminals/list", { threadId: input.threadId, ...(cursor ? { cursor } : {}) }, deadline))
+      if (!Array.isArray(response?.data)) throw new Error("Codex returned an invalid background terminal list")
+      for (const terminal of response.data) {
+        const processId = text(asRecord(terminal)?.processId)
+        if (processId && processes.has(processId)) remaining.add(processId)
+      }
+      cursor = text(response?.nextCursor)
+    } while (cursor)
+    return remaining
+  }
+
   return {
+    record: input.record,
     observe(params: JsonRecord) {
       if (params.threadId !== input.threadId) return
       const item = asRecord(params.item)
@@ -31,27 +115,18 @@ export function createCodexTurnStop(input: {
       processes.add(processId)
       commandProcesses.set(turnId, processes)
     },
-    stop: () => stopping ??= (async () => {
-      const turnId = await input.turnId()
-      if (!turnId) return
-      await input.process.request("turn/interrupt", { threadId: input.threadId, turnId })
-      const processes = commandProcesses.get(turnId)
-      if (!processes?.size) return
-      const remaining = new Set<string>()
-      let cursor: string | undefined
-      do {
-        const response = asRecord(await input.process.request("thread/backgroundTerminals/list", { threadId: input.threadId, ...(cursor ? { cursor } : {}) }))
-        if (!Array.isArray(response?.data)) throw new Error("Codex returned an invalid background terminal list")
-        for (const terminal of response.data) {
-          const processId = text(asRecord(terminal)?.processId)
-          if (processId && processes.has(processId)) remaining.add(processId)
-        }
-        cursor = text(response?.nextCursor)
-      } while (cursor)
-      for (const processId of remaining) {
-        await input.process.request("thread/backgroundTerminals/terminate", { threadId: input.threadId, processId })
-      }
-    })(),
+    stop(deadline?: RequestDeadline) {
+      if (inflight) return inflight
+      const last = input.record.attempts.at(-1)
+      if (last?.settledAt && !last.failure) return Promise.resolve()
+      const running = observeStopAttempt(input.record, "provider_unreachable", () => attempt(codexControlDeadline(deadline)))
+        .finally(() => { inflight = undefined })
+      // The abort path starts a stop nobody awaits; its failure is read off the
+      // record instead of crashing the process as an unobserved rejection.
+      void running.catch(() => {})
+      inflight = running
+      return running
+    },
   }
 }
 
@@ -76,20 +151,11 @@ export async function codexSteerTurn(steer: {
     input: await codexUserInput({ parts: steer.input.parts, directory: steer.directory }),
     expectedTurnId: steer.turnId,
     clientUserMessageId: steer.input.userMessageId,
-  })
+  }, codexControlDeadline())
   return { ok: true as const }
 }
 
-export type CodexActiveThread = {
-  sessionId: string
-  agentSessionId: string
-  directory: string
-  model?: string
-  effort?: string
-  process: CodexAppServerProcess
-  project: (method: string, payload: JsonRecord, frame: unknown) => void
-  observeSubagent: SdkRuntimeTurnInput["observeSubagent"]
-}
+export type { CodexActiveThread } from "./active-thread"
 
 export function codexIdleTimeoutMs() {
   const configured = Number(process.env.CLAXEDO_CODEX_IDLE_TIMEOUT_MS)
