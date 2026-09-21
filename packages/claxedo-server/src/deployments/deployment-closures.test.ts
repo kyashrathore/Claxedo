@@ -103,8 +103,14 @@ const ENTRIES = [
   // on an enrolled machine, which the self-host workspace routes dispatch to
   // on a `hostId` body; hosted-shared's `hosted-remote-access-service.ts`
   // owns revoke; `platform/http/status.ts` is how the two routes answer an
-  // authority refusal with its own status. 125/40.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 125, packages: 40 },
+  // authority refusal with its own status.
+  //
+  // The 41st package is `@claxedo/agent-runtime-contract`, reached from
+  // `src/channels/control-plane.ts` so a channel Stop decodes the outcome its
+  // workspace runtime answers with instead of reading fields off the JSON.
+  // `script/product-boundary/policies/server.ts` holds the review; this is the
+  // same measurement recorded a second time, so the two must agree. 125/41.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 125, packages: 41 },
 ] as const
 
 /** The remaining cloud compositions. */
