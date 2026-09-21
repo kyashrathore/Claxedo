@@ -155,6 +155,28 @@ export namespace Process {
 
   export type LaunchResult = z.infer<typeof LaunchResult>
 
+  /**
+   * What stopping a process reached. `unresolved` means the workspace could not
+   * prove the process gone and therefore kept it, its port and its pty id;
+   * reading it as a stop leaves the pane showing a stopped row over a process
+   * that is still running. `retirement` is absent when nothing observed it.
+   */
+  export const StopResult = z
+    .object({
+      state: z.enum(["stopped", "unresolved"]),
+      retirement: z
+        .object({
+          leader: z.enum(["exited", "alive", "unknown"]),
+          descendants: z.enum(["verified_clear", "owned", "unknown"]),
+        })
+        .loose()
+        .optional(),
+    })
+    .loose()
+    .meta({ ref: "ProcessStopResult" })
+
+  export type StopResult = z.infer<typeof StopResult>
+
   export const ListResponse = z
     .object({
       configs: ProcessConfig.array(),

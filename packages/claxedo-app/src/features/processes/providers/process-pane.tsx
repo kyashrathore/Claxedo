@@ -607,15 +607,15 @@ const processPaneContextInput = {
           })
           sync()
         }
-        await run(() => client.stop(configId))
-        // Belt-and-suspenders: the server's stop() waits for the PTY to exit,
-        // so by the time the HTTP response arrives the process is definitely
-        // stopped. Force the status in case the SSE event was missed.
+        const stopped = await run(() => client.stop(configId))
+        // The response, not its arrival, says whether the process is gone: an
+        // unresolved stop leaves it running and its port held, so the row stays
+        // as it was rather than being forced to stopped over a live process.
         const current = store.processes[configId]
         if (current && current.status === "stopping") {
           setStore("processes", configId, {
             ...current,
-            status: "stopped" as ProcessStatus,
+            status: stopped?.state === "stopped" ? ("stopped" as ProcessStatus) : ("running" as ProcessStatus),
           })
           sync()
         }
@@ -741,16 +741,16 @@ const processPaneContextInput = {
           }
         })
         sync()
-        // Fire individual stop calls concurrently
-        await Promise.all(toStop.map((config) => run(() => client.stop(config.id))))
-        // Belt-and-suspenders: force any still-stopping processes to stopped.
+        const results = await Promise.all(
+          toStop.map(async (config) => [config.id, await run(() => client.stop(config.id))] as const),
+        )
         batch(() => {
-          for (const config of toStop) {
-            const current = store.processes[config.id]
+          for (const [configId, stopped] of results) {
+            const current = store.processes[configId]
             if (current && current.status === "stopping") {
-              setStore("processes", config.id, {
+              setStore("processes", configId, {
                 ...current,
-                status: "stopped" as ProcessStatus,
+                status: stopped?.state === "stopped" ? ("stopped" as ProcessStatus) : ("running" as ProcessStatus),
               })
             }
           }

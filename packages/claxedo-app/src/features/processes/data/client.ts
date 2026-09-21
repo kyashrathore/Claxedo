@@ -241,15 +241,21 @@ export function createProcessClient(input: Input) {
 
     restart,
 
-    async stop(id: string) {
+    /**
+     * The workspace answers with what stopping reached. Anything this client
+     * could not read is `unresolved` with no evidence: nothing here observed
+     * the process, and an unobserved stop is not one that happened.
+     */
+    async stop(id: string): Promise<Process.StopResult> {
       try {
         const { res, raw } = await req(`/${encodeURIComponent(id)}/stop`, {
           method: "POST",
         })
-        if (!res.ok) return false
-        return raw === undefined ? true : raw === true
+        if (!res.ok) return { state: "unresolved" }
+        const parsed = (await loadProcessSchemas()).StopResult.safeParse(raw)
+        return parsed.success ? parsed.data : { state: "unresolved" }
       } catch {
-        return false
+        return { state: "unresolved" }
       }
     },
 

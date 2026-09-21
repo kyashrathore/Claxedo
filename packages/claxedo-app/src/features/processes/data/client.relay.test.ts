@@ -68,7 +68,7 @@ describe("process client relay transport", () => {
       }
 
       if (req.url === "https://relay.example.test/workspaces/ws_1/api/wr/process/proc_1/stop") {
-        return Response.json(true)
+        return Response.json({ state: "stopped", retirement: { leader: "exited", descendants: "verified_clear" } })
       }
 
       throw new Error(`Unexpected request: ${req.method} ${req.url}`)
@@ -91,7 +91,7 @@ describe("process client relay transport", () => {
       await client.createConfig({ name: "dev", command: "bun dev" })
       await client.updateConfig("proc_1", { name: "dev", command: "bun dev" })
       await client.start("proc_1")
-      await client.stop("proc_1")
+      expect(await client.stop("proc_1")).toMatchObject({ state: "stopped" })
       await client.deleteConfig("proc_1")
     } finally {
       globalThis.fetch = previous
