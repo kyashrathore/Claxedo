@@ -157,4 +157,19 @@ describe("workspace checkpoint routes", () => {
 
     await runtime.dispose()
   })
+
+  test("a freeze deadline beyond the bound is refused rather than becoming an open-ended wait", async () => {
+    const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
+    const freeze = (deadlineMs: number) => runtime.app.request("/api/wr/checkpoint/freeze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ policy: "drain", deadlineMs }),
+    })
+
+    expect((await freeze(30_000 * 4 + 1)).status).toBe(400)
+    expect(runtime.host.checkpoint.detail().state, "a refused request changes nothing").toBe("active")
+    expect((await freeze(30_000 * 4)).status).toBe(200)
+
+    await runtime.dispose()
+  })
 })

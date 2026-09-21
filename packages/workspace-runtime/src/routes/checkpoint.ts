@@ -1,5 +1,13 @@
 import { Hono } from "hono"
 import { DEFAULT_RECOVERY_BUDGETS } from "@claxedo/agent-runtime-contract"
+
+/**
+ * The longest freeze a caller may ask for. Four drain budgets: room for a slow
+ * but real drain, and short enough that a caller cannot turn a bounded
+ * operation back into the open-ended wait this deadline replaced by naming a
+ * deadline nobody will outlive.
+ */
+const MAX_FREEZE_DEADLINE_MS = DEFAULT_RECOVERY_BUDGETS.drainMs * 4
 import { num, str } from "../json-value"
 import type { WorkspaceCheckpointControl, WorkspaceCheckpointDrainPolicy } from "../workspace/host"
 import type { WorkspaceWorktreeManager } from "../worktree"
@@ -32,8 +40,14 @@ export function CheckpointRoutes(input: {
       const body = await boundedJsonRecord(c)
       const policy: WorkspaceCheckpointDrainPolicy = body.policy === "interrupt" ? "interrupt" : "drain"
       const requested = num(body.deadlineMs)
-      if (requested !== undefined && (!Number.isFinite(requested) || requested < 0)) {
-        return c.json(errorBody("workspace_checkpoint_freeze_invalid", "deadlineMs must be a non-negative number"), 400)
+      if (requested !== undefined && (!Number.isFinite(requested) || requested < 0 || requested > MAX_FREEZE_DEADLINE_MS)) {
+        return c.json(
+          errorBody(
+            "workspace_checkpoint_freeze_invalid",
+            `deadlineMs must be a number between 0 and ${MAX_FREEZE_DEADLINE_MS}`,
+          ),
+          400,
+        )
       }
       const result = await input.checkpoint.freeze(policy, {
         deadlineAt: Date.now() + (requested ?? DEFAULT_RECOVERY_BUDGETS.drainMs),

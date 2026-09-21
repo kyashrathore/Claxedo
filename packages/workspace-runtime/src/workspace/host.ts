@@ -68,8 +68,8 @@ export type WorkspaceCheckpointBlocker = {
 
 /**
  * A freeze either fenced everything it could see, or names what it could not.
- * There is no third answer: reporting frozen over a writer nobody accounted
- * for is what let a checkpoint be taken beside a live producer.
+ * There is no third answer, because a checkpoint taken under `frozen` is
+ * trusted to have no writer behind it.
  */
 export type WorkspaceCheckpointFreezeResult =
   | { state: "frozen"; detail: WorkspaceCheckpointDetail }

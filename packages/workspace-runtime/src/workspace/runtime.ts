@@ -520,6 +520,9 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         const registerTranscript = resolver?.register?.bind(resolver)
         return new Adapter({
           store,
+          // Every process this adapter launches is recorded against the store
+          // of the workspace it serves, not whichever one opened first.
+          ownership: store.launchOwnership?.() ?? volatileLaunchOwnership(),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           // Pi's profile holds `models.json`, and that file carries the broker
           // placeholder; without a store root to scope it, the workspace id is
@@ -1352,8 +1355,22 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         if (outcome?.kind === "refused") {
           return blocker(`cancel_refused:${outcome.refusal.kind}`, { turnId: target.turnId, error: outcome.refusal.message })
         }
-        const failure = outcome?.kind === "operation" ? outcome.operation.initiatingError : undefined
-        if (failure) return blocker(`cancel_failed:${failure.code}`, { turnId: target.turnId, error: failure.message })
+        if (outcome?.kind === "operation") {
+          const { operation } = outcome
+          // Only a settled operation can be read as "this turn is stopped". One
+          // still running, or waiting for an owner, is an outstanding
+          // obligation whose id belongs in the blocker so a caller can follow
+          // it; calling it drained would fence a writer nobody has stopped.
+          if (operation.state === "running" || operation.state === "needs_action" || operation.state === "accepted") {
+            return blocker(`cancel_${operation.state}:${operation.operationId}`, { turnId: target.turnId })
+          }
+          if (operation.initiatingError) {
+            return blocker(`cancel_failed:${operation.initiatingError.code}`, {
+              turnId: target.turnId,
+              error: operation.initiatingError.message,
+            })
+          }
+        }
       }
     } catch (error) {
       return blocker("cancel_threw", { ...(target ? { turnId: target.turnId } : {}), error: String(error) })
@@ -1684,12 +1701,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   return {
     mount(app: Hono, options: WorkspaceHostMountOptions) {
       app.use("*", async (c, next) => {
-        // A recovery request is served while this runtime is closing, and it is
-        // not something disposal waits for. Both halves are the same point: a
-        // wedged session is contained BY cancelling it, so draining that
+        // A recovery request is served while this runtime is closing, and it
+        // is not something disposal waits for. Both halves are the same point:
+        // a wedged session is contained BY cancelling it, so draining that
         // request before tearing down would make the containment and the
-        // teardown it contains each other's precondition. The runtime answers
-        // recovery without the store, which is what makes this safe.
+        // teardown it contains each other's precondition. It may still write
+        // its receipt; what it never does is wait on the admission, producer
+        // or apply queue that disposal is trying to drain.
         if (isSessionRecoveryPath(new URL(c.req.url).pathname)) {
           await next()
           return undefined

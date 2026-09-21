@@ -4669,6 +4669,12 @@ export class RuntimeStore {
     return { created: false as const, existing: parseRecoveryOperation(JSON.parse(existing.payload_json)) }
   }
 
+  /**
+   * Takes no caller, unlike the read. An update is the owner writing what it
+   * observed about work it is already performing; the read is a caller asking
+   * for a receipt that names a turn and its owner generation. Only one of those
+   * is a disclosure.
+   */
   updateRecoveryOperation(operation: RecoveryOperation) {
     const result = this.db
       .prepare(
