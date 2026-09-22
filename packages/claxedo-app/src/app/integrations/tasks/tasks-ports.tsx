@@ -1,4 +1,4 @@
-import { createMemo, lazy, type JSX } from "solid-js"
+import { createMemo, lazy } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocation } from "@solidjs/router"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"

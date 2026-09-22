@@ -85,7 +85,7 @@ first-party sites watch a directory on Windows:
 | `packages/workspace-runtime/src/routes/document-hydration.ts` | `path.dirname(document.path)`, never resolved | yes |
 | `packages/claxedo-server-core/src/documents/session-hydration.ts` | `hydrated.directory`; `fs.realpath` is called nearby but only for a containment check, and the unresolved string is what is watched | yes |
 
-`packages/workspace-runtime/src/real-directory.ts` already owns the guard
+`packages/claxedo-helpers/src/real-path.ts` already owns the guard
 (`realDirectoryPath`). The two exposed sites were not changed here: they need
 their own Windows reproduction, and the server-core site would have to reach a
 helper that currently lives in another package, which is an architecture-ratchet

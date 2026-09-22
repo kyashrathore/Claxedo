@@ -1,7 +1,6 @@
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
 import { Show, createEffect, createMemo, createSignal, onCleanup, untrack, type Accessor, type JSX } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type PickerItem, type PickerState } from "@/features/session/ui/model/model-list"
 import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model-picker"
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
@@ -90,7 +89,6 @@ interface AgentHarnessSelectorProps {
 }
 
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
-  const dialog = useDialog()
   const navigate = useNavigate()
   const connections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
   const connectionRows = createMemo(() => {

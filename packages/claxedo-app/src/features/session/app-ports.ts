@@ -36,7 +36,6 @@ import type * as LayoutActions from "@/app/workbench/actions/shared"
 import type * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
 import type * as ManageModels from "@/app/dialogs/manage-models"
 import type * as DocumentMentions from "@/app/integrations/document-mentions"
-import type { JSX } from "solid-js"
 import type * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 export { WORKBENCH_DRAG_MIME } from "@/lib/workbench-drag"
 

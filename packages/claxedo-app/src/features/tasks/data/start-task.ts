@@ -1,5 +1,4 @@
 import { createSignal } from "solid-js"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { ConfigurationSlot, Preset, SessionReference, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
 import type { StartChoice, TaskStartOffer } from "../ui/shared/task-row-controls"
 import { SLOT_LABELS, groupLinksBySlot, openableSlot, slotAttempt } from "../view-model"
@@ -153,7 +152,6 @@ export type StartOfferOptions = {
  */
 export function useTaskStartOffers(scope: () => TasksScope, store: TasksStore) {
   const ports = useTasksAppPorts()
-  const dialog = useDialog()
   const openPresetSettings = ports.useOpenPresetSettings()
   const commands = useStartTaskCommands(scope)
   const presets = usePresetList(scope, () => false)

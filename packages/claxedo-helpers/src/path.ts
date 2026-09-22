@@ -1,4 +1,6 @@
-import { isAbsolute, relative, sep } from "node:path"
+import { isAbsolute, join, relative, sep } from "node:path"
+import { homedir } from "node:os"
+import { envText } from "./env"
 
 /**
  * Containment by relative path: the candidate is inside when its path down
@@ -28,4 +30,23 @@ export function inside(root: string, candidate: string): boolean {
 export function absoluteConfiguredDir(key: string, value: string): string {
   if (isAbsolute(value)) return value
   throw new Error(`${key} must be an absolute path, received ${JSON.stringify(value)}`)
+}
+
+/**
+ * Where this process keeps Claxedo's data, and the state under it. One owner:
+ * the runtime, the server and their tests all resolve `CLAXEDO_DATA_DIR` the
+ * same way, including the `:memory:` sentinel that `ClaxedoDB.Path` forwards
+ * to sqlite instead of joining a file onto.
+ */
+export function claxedoDataDir(env: Record<string, string | undefined> = process.env): string {
+  const configured = envText(env, "CLAXEDO_DATA_DIR")
+  if (configured === undefined) return join(homedir(), ".claxedo")
+  if (configured === ":memory:") return configured
+  return absoluteConfiguredDir("CLAXEDO_DATA_DIR", configured)
+}
+
+export function claxedoStateDir(env: Record<string, string | undefined> = process.env): string {
+  const configured = envText(env, "CLAXEDO_STATE_DIR")
+  if (configured === undefined) return join(claxedoDataDir(env), "state")
+  return absoluteConfiguredDir("CLAXEDO_STATE_DIR", configured)
 }
