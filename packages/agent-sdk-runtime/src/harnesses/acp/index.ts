@@ -72,6 +72,7 @@ import { firstPartyMcpProvider } from "../../first-party-mcp"
 import { requireWorkspaceDirectory } from "../../target"
 import type { ACPProcess } from "./process"
 import {
+  fencedRetirement,
   type ACPConnection,
   type ACPTransportEnv,
   type ACPTransportFactory,
@@ -175,8 +176,8 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
   private assertSessionStart(start: AgentSessionStartBinding) {
     const row = this.store.sessionStarts?.get(start.sessionId)
-    if (!row || row.status !== "starting" || !["sessionId", "operationId", "workspaceId", "directory", "connectionId"].every((field) => {
-      const key = field as keyof AgentSessionStartBinding
+    const fields: Array<keyof AgentSessionStartBinding> = ["sessionId", "operationId", "workspaceId", "directory", "connectionId"]
+    if (!row || row.status !== "starting" || !fields.every((key) => {
       return typeof start[key] === "string" && start[key].length > 0 && row.binding[key] === start[key]
     })) throw new Error("Session start is not owned by this reservation")
   }
@@ -418,7 +419,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       ? (this.store.listSessionsByOwnerKey?.(key) ?? []).filter((sessionId) => sessionId !== id)
       : []
     if (key && entry && entry.sessionIds.size === 0 && persistedSiblings.length === 0) {
-      entry.proc?.dispose()
+      fencedRetirement(entry.proc?.dispose())
       this.processMap().delete(key)
     }
   }
@@ -668,7 +669,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     this.currentMcp = nextMcp
     this.currentEnv = nextEnv
     this.configRestartPending = false
-    this.restart()
+    fencedRetirement(this.restart())
     this.forgetSessionProcessBindings()
     log.info("Applied config in-memory, restarted ACP process", {
       keys: Object.keys(config),
@@ -683,7 +684,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     }
     if (!this.configRestartPending) return
     this.configRestartPending = false
-    this.restart()
+    fencedRetirement(this.restart())
     this.forgetSessionProcessBindings()
     log.info("Applied deferred ACP config after active prompts completed", {
       harness: this.harnessId(),
@@ -763,6 +764,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       store: this.store,
       harnessId: this.harnessId(),
       activeTurns: this.lifecycle().activeTurns,
+      retirementBlockers: this.retirementBlockers(),
       directory: requireWorkspaceDirectory(directory),
       ...(context ? { context } : {}),
     })
@@ -776,7 +778,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       harness: this.harnessId(),
       transport: this.connection().kind,
     })
-    this.restart()
+    fencedRetirement(this.restart())
     this.processMap().clear()
     this.sessionProcessMap().clear()
     this.probe = null

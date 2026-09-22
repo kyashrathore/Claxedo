@@ -239,7 +239,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
     if (JSON.stringify(providers) !== JSON.stringify(this.projectedProviders)) {
       if (this.evaluators || [...this.entries.values()].some((entry) => entry.busy))
         throw new Error("Cannot rotate Pi credentials during an active turn")
-      this.closeProcesses()
+      await this.closeProcesses()
       await this.authProfile.write(providers)
       this.projectedProviders = providers
       this.models = []
@@ -301,7 +301,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
         ...(provider && modelId ? { model: { providerID: "pi", modelID: `${provider}/${modelId}` } } : {}),
       }
     } catch (error) {
-      process.dispose()
+      this.recordUnresolved(`start:${randomUUID()}`, await process.dispose())
       throw error
     }
   }
@@ -500,7 +500,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       })
       input.abort.signal.addEventListener("abort", onTurnAbort, { once: true })
       if (input.abort.signal.aborted) {
-        abort()
+        await abort()
         await settled
         return
       }
@@ -619,7 +619,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       this.models = this.models.map((model) => ({ ...model, isDefault: model.id === selectedId }))
       return this.peekConfigOptions(currentModel)
     } finally {
-      probe.dispose()
+      this.recordUnresolved(`probe:${randomUUID()}`, await probe.dispose())
     }
   }
   peekConfigOptions(currentModel: string): AgentConfigOption[] {

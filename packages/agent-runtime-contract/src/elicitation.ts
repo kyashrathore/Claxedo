@@ -32,23 +32,38 @@ export function elicitationChoices(field: ElicitationField): ElicitationChoice[]
     : field.oneOf ?? field.enum?.map((value) => ({ const: value }))
 }
 
+const ELICITATION_FIELD_TYPES = ["string", "number", "integer", "boolean", "array"] as const
+
 export function readElicitationSchema(input: unknown): ElicitationSchema {
   if (!isRecord(input) || input.type !== "object" || !isRecord(input.properties)) throw new Error("Elicitation requires a flat object schema")
   const fields: Record<string, ElicitationField> = Object.create(null)
   for (const [name, value] of Object.entries(input.properties)) {
-    if (!isRecord(value) || !["string", "number", "integer", "boolean", "array"].includes(String(value.type))) throw new Error(`Unsupported field ${name}`)
+    const type = isRecord(value) ? ELICITATION_FIELD_TYPES.find((candidate) => candidate === value.type) : undefined
+    if (!isRecord(value) || !type) throw new Error(`Unsupported field ${name}`)
     if (value.pattern != null && typeof value.pattern !== "string") throw new Error(`Invalid pattern for ${name}`)
     const choices = value.type === "array" ? isRecord(value.items) ? value.items : undefined : value
     if (value.type === "array" && (!choices || (!Array.isArray(choices.enum) && !Array.isArray(choices.anyOf)))) throw new Error(`Field ${name} must be a string choice array`)
     if (choices?.enum != null && (!Array.isArray(choices.enum) || !choices.enum.every((item) => typeof item === "string"))) throw new Error(`Invalid choices for ${name}`)
     const titled = choices?.oneOf ?? choices?.anyOf
     if (titled != null && (!Array.isArray(titled) || !titled.every((item) => isRecord(item) && typeof item.const === "string"))) throw new Error(`Invalid titled choices for ${name}`)
-    // The primitive discriminant and enum payload are checked above. Preserve
-    // schema annotations, including unknown string formats, exactly as sent.
-    fields[name] = value as ElicitationField
+    // The primitive discriminant and enum payload are checked above. Spreading
+    // preserves the rest of the annotations, including unknown string formats,
+    // exactly as sent.
+    fields[name] = { ...value, type }
   }
-  if (input.required != null && (!Array.isArray(input.required) || !input.required.every((name) => typeof name === "string" && Object.hasOwn(fields, name)))) throw new Error("Invalid required fields")
-  return { ...input, type: "object", properties: fields, required: input.required ? input.required as string[] : undefined }
+  const required = requiredFieldNames(input.required, fields)
+  return { ...input, type: "object", properties: fields, required }
+}
+
+function requiredFieldNames(value: unknown, fields: Record<string, ElicitationField>): string[] | undefined {
+  if (value == null) return undefined
+  if (!Array.isArray(value)) throw new Error("Invalid required fields")
+  const names: string[] = []
+  for (const name of value) {
+    if (typeof name !== "string" || !Object.hasOwn(fields, name)) throw new Error("Invalid required fields")
+    names.push(name)
+  }
+  return names
 }
 
 function validElicitationDate(text: string): boolean {
@@ -95,10 +110,10 @@ export function validateElicitationContent(schema: ElicitationSchema, value: unk
       if (schema.required?.includes(name)) throw new Error(`${field.title ?? name} is required`)
       continue
     }
-    const fail = () => { throw new Error(`Invalid value for ${field.title ?? name}`) }
+    const fail: () => never = () => { throw new Error(`Invalid value for ${field.title ?? name}`) }
     if (field.type === "string") {
       if (typeof item !== "string") fail()
-      const text = String(item)
+      const text = item
       if (typeof field.minLength === "number" || typeof field.maxLength === "number") {
         let length = 0
         for (const _point of text) length++
@@ -112,7 +127,7 @@ export function validateElicitationContent(schema: ElicitationSchema, value: unk
       if (typeof item !== "boolean") fail()
     } else if (field.type === "number" || field.type === "integer") {
       if (typeof item !== "number" || !Number.isFinite(item) || field.type === "integer" && !Number.isInteger(item)) fail()
-      if (typeof field.minimum === "number" && Number(item) < field.minimum || typeof field.maximum === "number" && Number(item) > field.maximum) fail()
+      if (typeof field.minimum === "number" && item < field.minimum || typeof field.maximum === "number" && item > field.maximum) fail()
     } else if (!Array.isArray(item) || !item.every((entry) => typeof entry === "string") || new Set(item).size !== item.length
       || typeof field.minItems === "number" && item.length < field.minItems || typeof field.maxItems === "number" && item.length > field.maxItems) fail()
     const choices = elicitationChoices(field)

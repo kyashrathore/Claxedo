@@ -73,8 +73,8 @@ describe("ACPProcess.prompt quiet countdown", () => {
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "100"
   })
 
-  afterEach(() => {
-    for (const proc of procs.splice(0)) proc.dispose()
+  afterEach(async () => {
+    for (const proc of procs.splice(0)) await proc.dispose()
     if (prevTimeout === undefined) delete process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS
     else process.env.CLAXEDO_ACP_PROMPT_TIMEOUT_MS = prevTimeout
     if (prevCancelTimeout === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS
@@ -190,7 +190,7 @@ describe("ACPProcess.prompt quiet countdown", () => {
     await uncertain
     expect(proc.sessionListeners.has(sessionId)).toBe(true)
     expect(Date.now() - started).toBeLessThan(2_000)
-    proc.dispose("test shutdown")
+    await proc.dispose("test shutdown")
     expect((await rejected)?.message).toContain("ACP process replaced")
   }, 3_000)
 
@@ -207,7 +207,7 @@ describe("ACPProcess.prompt quiet countdown", () => {
     await sleep(20)
     expect(fake.cancelled).toEqual([sessionId])
     await expect(proc.prompt(sessionId, input, () => {}, directory)).rejects.toThrow("outcome is uncertain")
-    proc.dispose("test shutdown")
+    await proc.dispose("test shutdown")
     expect((await rejected)?.message).toContain("ACP process replaced")
   })
 
@@ -215,7 +215,7 @@ describe("ACPProcess.prompt quiet countdown", () => {
     const { proc, sessionId } = await connected(() => new Promise(() => {}))
     const turn = proc.prompt(sessionId, input, () => {}, directory)
     await sleep(10)
-    proc.dispose("ACP prompt timed out after 200ms of inactivity")
+    await proc.dispose("ACP prompt timed out after 200ms of inactivity")
     await expect(turn).rejects.toThrow("ACP process replaced: ACP prompt timed out after 200ms of inactivity")
   })
 })

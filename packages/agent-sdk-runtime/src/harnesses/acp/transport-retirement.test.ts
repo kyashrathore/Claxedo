@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
+import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { AcpHarnessAdapter } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
@@ -49,6 +50,26 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
   } finally {
     first.dispose(); second.dispose()
     await waitForACPTransportRetirement(process.cwd(), connection)
+    await rm(directory, { recursive: true, force: true })
+  }
+}, 15_000)
+
+test("a launch whose creation identity was never established is reported as unavailable", async () => {
+  // A command that cannot be spawned has no pid, so nothing this process ever
+  // saw can be signalled or verified: the fence keeps that launch and health
+  // has to say so rather than report an ordinary process loss.
+  const connection = { kind: "process" as const, command: join(tmpdir(), `acp-absent-${randomUUID()}`) }
+  const directory = await mkdtemp(join(tmpdir(), "acp-unverified-"))
+  const adapter = new AcpHarnessAdapter({ harness: "unverified-test", connection, store: new MemoryRuntimeStore() })
+  try {
+    expect(adapter.readRuntimeHealth(directory)).toEqual({ status: "ok" })
+    await expect(adapter.createSession(directory, undefined, "session-1")).rejects.toThrow()
+    expect(adapter.readRuntimeHealth(directory)).toMatchObject({
+      status: "unavailable",
+      reason: "harness_retirement_unresolved",
+    })
+  } finally {
+    adapter.dispose()
     await rm(directory, { recursive: true, force: true })
   }
 }, 15_000)

@@ -39,7 +39,7 @@ for (const callback of ["onError", "onExit"] as const) test(`synchronous ${callb
   await Promise.resolve()
   expect(deaths).toBe(1)
   expect(disposals).toBe(1)
-  proc.dispose()
+  await proc.dispose()
 })
 
 test("cancelling an intermediate child settles only its descendant interactions", async () => {
@@ -62,7 +62,7 @@ test("cancelling an intermediate child settles only its descendant interactions"
   expect(cancelled).toEqual(["child", "grandchild"])
   expect(questions).toEqual(["child", "grandchild"])
   expect([...proc.pendingPermissions.keys()]).toEqual(["root", "sibling"])
-  proc.dispose()
+  await proc.dispose()
 })
 
 test("a synchronous error followed by constructor failure does not schedule death callbacks", async () => {

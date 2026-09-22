@@ -673,80 +673,76 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       }
       const run = async (): Promise<void> => {
         install()
-        try {
-          // No wall clock on a turn: `ACPProcess.prompt` fails it only when the
-          // agent goes quiet with nothing waiting on the human.
-          const promptInput = rebuiltContext
-            ? { ...input, system: input.system?.includes(rebuiltContext) ? input.system : [input.system, rebuiltContext].filter(Boolean).join("\n\n") }
-            : input
-          promptSubmitted = true
-          const result = await untilDrained(proc.prompt(agentSessionId, promptInput, forward, directory, (error) => {
-            const status = sessionStatus(id, { type: "recovering", kind: "uncertain_execution", message: error.message })
-            this.store.appendEvent({ ...fenced, sessionId: id, agentSessionId, payload: status,
-              source: { dir: "in", method: "acp.cancellation.uncertain", frame: { message: error.message } } })
-            push(status)
-          }))
-          if (rebuiltContext && isCompletedStopReason(result.stopReason)
-            && this.store.getSessionConfig(id)?.handoff?.transcript === rebuiltContext) {
-            this.store.updateSessionConfig(id, { handoff: null })
-          }
-          // Prompt-result usage is the ONLY meterable usage on this rail:
-          // mid-turn `usage_update` notifications carry a context meter, not
-          // token categories. The ACP agent is authoritative for the final
-          // per-turn usage payload.
-          const usableUsage = hasMeteredUsage(result.usage)
-          if (!usableUsage && isCompletedStopReason(result.stopReason)) {
-            router.project({
-              type: "diagnostic",
-              diagnostic: {
-                code: "acp_prompt_usage_missing",
-                message: `ACP agent returned no token usage for a completed turn (stopReason: ${result.stopReason}); the turn meters as unavailable`,
-                severity: "warn",
-                source: "acp-adapter",
-              },
-            }, {
-              dir: "in",
-              method: "prompt.result.usage",
-              frame: { stopReason: result.stopReason },
-            })
-          }
-          if (result.usage && usableUsage) {
-            router.project(runtimeUsage(result.usage, agentSessionId), {
-              dir: "in",
-              method: "prompt.result.usage",
-              frame: { usage: result.usage },
-            })
-            const event = messageUpdated({
-              ...buildAssistantMessage({
-                id: assistantMsgId,
-                sessionID: id,
-                parentID: input.userMessageId ?? id,
-                agent: input.agent,
-                model: input.model,
-                directory,
-                created,
-                completed: Date.now(),
-                variant: input.variant,
-              }),
-              tokens: messageUsage(result.usage),
-            })
-            this.store.appendEvent({
-              ...fenced,
-              sessionId: id,
-              agentSessionId,
-              payload: event,
-              source: {
-                dir: "in",
-                method: "prompt.result",
-                frame: { usage: result.usage },
-              },
-            })
-            push(event)
-          }
-          stop(result.stopReason)
-        } catch (err) {
-          throw err
+        // No wall clock on a turn: `ACPProcess.prompt` fails it only when the
+        // agent goes quiet with nothing waiting on the human.
+        const promptInput = rebuiltContext
+          ? { ...input, system: input.system?.includes(rebuiltContext) ? input.system : [input.system, rebuiltContext].filter(Boolean).join("\n\n") }
+          : input
+        promptSubmitted = true
+        const result = await untilDrained(proc.prompt(agentSessionId, promptInput, forward, directory, (error) => {
+          const status = sessionStatus(id, { type: "recovering", kind: "uncertain_execution", message: error.message })
+          this.store.appendEvent({ ...fenced, sessionId: id, agentSessionId, payload: status,
+            source: { dir: "in", method: "acp.cancellation.uncertain", frame: { message: error.message } } })
+          push(status)
+        }))
+        if (rebuiltContext && isCompletedStopReason(result.stopReason)
+          && this.store.getSessionConfig(id)?.handoff?.transcript === rebuiltContext) {
+          this.store.updateSessionConfig(id, { handoff: null })
         }
+        // Prompt-result usage is the ONLY meterable usage on this rail:
+        // mid-turn `usage_update` notifications carry a context meter, not
+        // token categories. The ACP agent is authoritative for the final
+        // per-turn usage payload.
+        const usableUsage = hasMeteredUsage(result.usage)
+        if (!usableUsage && isCompletedStopReason(result.stopReason)) {
+          router.project({
+            type: "diagnostic",
+            diagnostic: {
+              code: "acp_prompt_usage_missing",
+              message: `ACP agent returned no token usage for a completed turn (stopReason: ${result.stopReason}); the turn meters as unavailable`,
+              severity: "warn",
+              source: "acp-adapter",
+            },
+          }, {
+            dir: "in",
+            method: "prompt.result.usage",
+            frame: { stopReason: result.stopReason },
+          })
+        }
+        if (result.usage && usableUsage) {
+          router.project(runtimeUsage(result.usage, agentSessionId), {
+            dir: "in",
+            method: "prompt.result.usage",
+            frame: { usage: result.usage },
+          })
+          const event = messageUpdated({
+            ...buildAssistantMessage({
+              id: assistantMsgId,
+              sessionID: id,
+              parentID: input.userMessageId ?? id,
+              agent: input.agent,
+              model: input.model,
+              directory,
+              created,
+              completed: Date.now(),
+              variant: input.variant,
+            }),
+            tokens: messageUsage(result.usage),
+          })
+          this.store.appendEvent({
+            ...fenced,
+            sessionId: id,
+            agentSessionId,
+            payload: event,
+            source: {
+              dir: "in",
+              method: "prompt.result",
+              frame: { usage: result.usage },
+            },
+          })
+          push(event)
+        }
+        stop(result.stopReason)
       }
       promptPromise = Promise.race([run(), drainPromise])
       .catch((err: unknown) => {

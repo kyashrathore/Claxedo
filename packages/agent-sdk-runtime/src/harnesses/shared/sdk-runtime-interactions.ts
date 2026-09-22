@@ -65,7 +65,7 @@ export class SessionQuestionInteractions<T extends { sessionId: string }> {
 export class SdkRuntimeInteractions {
   readonly permissions: PendingInteractions<PendingPermission>
   private readonly questionOwner: SessionQuestionInteractions<PendingQuestion>
-  readonly questions: Map<string, PendingQuestion>
+  readonly questions: PendingInteractions<PendingQuestion>
 
   constructor(
     private readonly store: SdkRuntimeStore,
@@ -179,7 +179,7 @@ export class SdkRuntimeInteractions {
     if (pending.sessionId !== binding.sessionId) {
       throw new Error(`Question ${questionId} does not belong to session ${binding.sessionId}`)
     }
-    if (!(this.questions as PendingInteractions<PendingQuestion>).current(questionId)) {
+    if (!this.questions.current(questionId)) {
       const stale = new StaleInteractionError("Question", questionId, binding.sessionId)
       this.host.reportOwnerFailure?.(binding.sessionId, stale)
       throw stale
@@ -218,6 +218,7 @@ export class SdkRuntimeInteractions {
   }
 
   rejectAllQuestions() {
-    for (const id of [...this.questions.keys()]) this.rejectPendingQuestion(id)
+    // Snapshot: rejecting deletes from the map this walks.
+    for (const id of Array.from(this.questions.keys())) this.rejectPendingQuestion(id)
   }
 }

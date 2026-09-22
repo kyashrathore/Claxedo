@@ -272,17 +272,12 @@ export function messageUpdated(info: EventMessageUpdated["properties"]["info"]):
  * nothing on the client read back and every history read then carried.
  */
 export function buildUserPromptParts(sessionID: string, messageID: string, parts: PromptInput["parts"]): CompatPart[] {
-  return parts.map((part, index): CompatPart => {
-    const id = part.id ?? `${messageID}-part-${index}`
-    switch (part.type) {
-      case "text":
-        return { ...part, id, sessionID, messageID }
-      case "agent":
-        return { ...part, id, sessionID, messageID }
-      case "file":
-        return { ...part, id, sessionID, messageID }
-    }
-  })
+  return parts.map((part, index): CompatPart => ({
+    ...part,
+    id: part.id ?? `${messageID}-part-${index}`,
+    sessionID,
+    messageID,
+  }))
 }
 
 /**

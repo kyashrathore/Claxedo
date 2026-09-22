@@ -28,9 +28,17 @@ export type ACPSubagentUpdate = {
 /** Only explicit provider lineage creates a child. Tool names and tool metadata
  * never imply a child session. The caller must negotiate support before parsing.
  */
+/** Provider state names, and the observation status each one reports. */
+const ACP_SUBAGENT_STATUS = new Map<string, NonNullable<SubagentObservation["status"]>>([
+  ["completed", "completed"],
+  ["failed", "failed"],
+  ["cancelled", "killed"],
+  ["disconnected", "interrupted"],
+])
+
 export function acpSubagentUpdate(update: unknown): ACPSubagentUpdate | undefined {
   const row = asRecord(update)
-  if (!row || typeof row.subagentSessionId !== "string" || !row.subagentSessionId.trim()) return
+  if (!row || typeof row.subagentSessionId !== "string" || !row.subagentSessionId.trim()) return undefined
   const agentSessionId = row.subagentSessionId
   const identity = {
     providerId: agentSessionId,
@@ -39,10 +47,10 @@ export function acpSubagentUpdate(update: unknown): ACPSubagentUpdate | undefine
     transcript: { kind: "messages" as const },
   }
   if (row.sessionUpdate === "subagent_spawned") {
-    if (typeof row.name !== "string" || typeof row.task !== "string" || !asRecord(row.capabilities)) return
+    if (typeof row.name !== "string" || typeof row.task !== "string" || !asRecord(row.capabilities)) return undefined
     const capabilities = asRecord(row.capabilities)!
-    if (capabilities.cancel !== undefined && typeof capabilities.cancel !== "boolean") return
-    if (capabilities.close !== undefined && typeof capabilities.close !== "boolean") return
+    if (capabilities.cancel !== undefined && typeof capabilities.cancel !== "boolean") return undefined
+    if (capabilities.close !== undefined && typeof capabilities.close !== "boolean") return undefined
     return {
       agentSessionId,
       capabilities: { cancel: capabilities.cancel === true, close: capabilities.close === true },
@@ -55,16 +63,13 @@ export function acpSubagentUpdate(update: unknown): ACPSubagentUpdate | undefine
       },
     }
   }
-  if (row.sessionUpdate !== "subagent_state_update") return
-  const status = row.state === "completed" ? "completed"
-    : row.state === "failed" ? "failed"
-    : row.state === "cancelled" ? "killed"
-    : row.state === "disconnected" ? "interrupted"
-    : undefined
-  if (!status) return
+  if (row.sessionUpdate !== "subagent_state_update") return undefined
+  const state = typeof row.state === "string" ? row.state : ""
+  const status = ACP_SUBAGENT_STATUS.get(state)
+  if (!status) return undefined
   return {
     agentSessionId,
-    observation: { ...identity, observationId: `acp:subagent:${agentSessionId}:${row.state}`, status },
+    observation: { ...identity, observationId: `acp:subagent:${agentSessionId}:${state}`, status },
   }
 }
 

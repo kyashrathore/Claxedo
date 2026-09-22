@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
+import { isRecord } from "@claxedo/helpers/guards"
 import { GATE_EXIT, type GatePayload } from "./launch-gate"
 import { readCreationIdentity } from "./identity"
 
@@ -75,6 +76,18 @@ function argument(name: string) {
   return index === -1 ? undefined : process.argv[index + 1]
 }
 
+function gatePayload(value: unknown): GatePayload | undefined {
+  if (!isRecord(value)) return undefined
+  const { command, args } = value
+  if (typeof command !== "string" || !Array.isArray(args)) return undefined
+  const parts: string[] = []
+  for (const arg of args) {
+    if (typeof arg !== "string") return undefined
+    parts.push(arg)
+  }
+  return { command, args: parts }
+}
+
 function waitForActivation(gateNonce: string, activationDeadlineMs: number) {
   return new Promise<Activation>((resolve) => {
     const timer = setTimeout(() => finish({ outcome: "deadline" }), activationDeadlineMs)
@@ -83,7 +96,11 @@ function waitForActivation(gateNonce: string, activationDeadlineMs: number) {
       const message = frame as { type?: unknown; gateNonce?: unknown; payload?: unknown }
       if (message.type !== "activate") return
       if (message.gateNonce !== gateNonce) return finish({ outcome: "nonce-mismatch" })
-      finish({ outcome: "activate", payload: message.payload as GatePayload })
+      const payload = gatePayload(message.payload)
+      // An activate frame carrying no command authorizes nothing to run, so
+      // this gate keeps waiting and the deadline reports that none arrived.
+      if (!payload) return
+      finish({ outcome: "activate", payload })
     }
     const onChannelLost = () => finish({ outcome: "channel-lost" })
     const finish = (result: Activation) => {

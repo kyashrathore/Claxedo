@@ -3,7 +3,8 @@ import { test } from "node:test"
 import { acp } from "../dist/harness-factories/acp.mjs"
 import { MemoryRuntimeStore } from "../dist/stores/memory.mjs"
 
-test("built ACP factory validates patterns in an isolated worker without external assets", { timeout: 10000 }, async () => {
+// node:test resolves the returned promise itself and reports failures through the runner.
+void test("built ACP factory validates patterns in an isolated worker without external assets", { timeout: 10000 }, async () => {
   const store = new MemoryRuntimeStore()
   let send
   let newId

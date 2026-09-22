@@ -781,7 +781,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     ])
   })
 
-  test("registers direct ACP harness, probe, and MCP lifecycles without launch secrets", () => {
+  test("registers direct ACP harness, probe, and MCP lifecycles without launch secrets", async () => {
     const sentinel = "acp-observer-sentinel"
     const descriptors: AgentProcessDescriptor[] = []
     const exits: unknown[] = []
@@ -836,8 +836,8 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       ["mcp", undefined, descriptors[2].ownerId],
     ])
     expect(JSON.stringify(descriptors)).not.toContain(sentinel)
-    harness.dispose()
-    probe.dispose()
+    await harness.dispose()
+    await probe.dispose()
     expect(exits).toHaveLength(4)
   })
 
@@ -866,7 +866,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     await expect(item.updateSessionConfig(executionBinding("s1", path.resolve("/work")), { variant: "high" }))
       .rejects.toThrow("model rejected")
     expect(store.getSessionConfig("s1")?.variant).toBe("medium")
-    item.bound.dispose()
+    await item.bound.dispose()
     item.dispose()
   })
 

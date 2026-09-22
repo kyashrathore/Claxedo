@@ -52,7 +52,7 @@ import { ACP_SUBAGENT_CLIENT_CAPABILITIES, acpRootSessionId, receiveACPSubagentN
 import { createIdleReaper, type IdleReaper } from "../shared/process-lifecycle"
 import type { RetirementResult } from "../../launch"
 import { createACPExitGate, type ACPExitGate } from "./process-retirement"
-import type { ACPTransport, ACPTransportEnv, ACPTransportFactory } from "./transport"
+import { fencedRetirement, type ACPTransport, type ACPTransportEnv, type ACPTransportFactory } from "./transport"
 import type { AgentProcessObserverHandle } from "../../process-observer"
 
 const log = Log.create({ service: "acp-adapter" })
@@ -172,7 +172,7 @@ export class ACPProcess {
       idleMs: IDLE_TIMEOUT_MS,
       onIdle: () => {
         log.info("ACP process idle timeout, disposing", { directory: this.directory, idleMs: IDLE_TIMEOUT_MS })
-        this.dispose()
+        fencedRetirement(this.dispose())
       },
     })
     this.exit = createACPExitGate({

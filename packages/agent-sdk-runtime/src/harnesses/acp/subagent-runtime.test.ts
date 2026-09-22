@@ -121,5 +121,5 @@ test.each([true, false])("subagent negotiation=%s rejects spoofed lineage withou
     expect(received).toHaveLength(negotiated ? 2 : 0)
     expect(proc.alive).toBe(true)
     if (negotiated) expect(proc.rootAgentSessionId("child")).toBe("root")
-  } finally { proc.dispose() }
+  } finally { await proc.dispose() }
 })

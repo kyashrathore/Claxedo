@@ -113,6 +113,21 @@ export async function waitForACPTransportRetirement(directory: string, connectio
 }
 
 /**
+ * Acknowledges a retirement the fence above already owns.
+ *
+ * `retire()` answers with a `RetirementResult` rather than throwing, and
+ * registers it in `retiring` before handing the promise out, so a caller with
+ * nowhere to await is not losing a failure: an unresolved result keeps
+ * blocking the next launch of the same command and is what `readRuntimeHealth`
+ * reports. What these callers give up is the waiting, not the fact.
+ */
+export function fencedRetirement(
+  retirement: Promise<RetirementResult | undefined> | Array<Promise<RetirementResult | undefined>> | undefined,
+) {
+  void retirement
+}
+
+/**
  * Drops the fence for one launch configuration. It is an operator accepting
  * that those processes are unaccounted for, not evidence that they stopped;
  * the unresolved results are returned so the decision is made against them.

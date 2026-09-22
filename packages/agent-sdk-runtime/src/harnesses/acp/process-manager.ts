@@ -9,7 +9,9 @@ import { ACPProcess } from "./process"
 import { createACPConnectionObservations, type ACPConnectionObservationUpdate } from "./connection-state"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
 import {
+  acpTransportRetirementBlockers,
   createACPTransportFactory,
+  fencedRetirement,
   validateACPConnection,
   waitForACPTransportRetirement,
   type ACPConnection,
@@ -243,7 +245,7 @@ export abstract class AcpProcessManager {
         this.permissionOwnerMap().delete(permId)
         this.store.stalePermission?.(permId)
       }
-      if (options?.dispose !== false) target.dispose(message)
+      if (options?.dispose !== false) fencedRetirement(target.dispose(message))
     }
     if (options?.recover === false) return
     if (this.store.markSessionsInterruptedByOwner) {
@@ -275,6 +277,11 @@ export abstract class AcpProcessManager {
     delete entry.fork
     delete entry.subagents
     return retirements
+  }
+
+  /** Launches this manager never established as stopped, read under the key it fences them by. */
+  protected retirementBlockers(): readonly RetirementResult[] {
+    return acpTransportRetirementBlockers(root(), this.connection())
   }
 
   protected restartProbe(): Promise<RetirementResult | undefined>[] {
@@ -310,7 +317,7 @@ export abstract class AcpProcessManager {
       throw new Error("ACP process config cannot change while a prompt is active")
     }
     this.currentEnv = next
-    this.restart()
+    fencedRetirement(this.restart())
     this.forgetSessionProcessBindings()
     log.info("ACP env updated, ACP session processes disposed", {
       harness: this.harnessId(),
@@ -467,7 +474,7 @@ export abstract class AcpProcessManager {
         return { proc, isNew: true }
       } catch (err) {
         if (entry.starting === starting) entry.proc = null
-        proc.dispose()
+        fencedRetirement(proc.dispose())
         throw err
       }
     })().finally(() => {
@@ -490,7 +497,7 @@ export abstract class AcpProcessManager {
 
   protected async getOrSpawnProbe(directory: string): Promise<ACPProcess> {
     if (this.probe && this.probe.directory !== directory) {
-      this.restartProbe()
+      fencedRetirement(this.restartProbe())
       this.probe = null
     }
     this.probe ??= {
@@ -525,7 +532,7 @@ export abstract class AcpProcessManager {
         return proc
       } catch (err) {
         if (this.probe?.proc === proc) this.probe.proc = null
-        proc.dispose()
+        fencedRetirement(proc.dispose())
         throw err
       } finally {
         if (this.probe?.init) this.probe.init = null

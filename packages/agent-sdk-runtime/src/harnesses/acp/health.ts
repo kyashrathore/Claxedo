@@ -1,8 +1,14 @@
 import type { AgentHarnessAdapterHealth, AgentHarnessAdapterHealthContext } from "../../adapter-contract"
 import type { AgentRuntimeStoreCore } from "../shared/runtime-store"
+import type { RetirementResult } from "../../launch"
 
 /**
  * Health for one ACP connection.
+ *
+ * An unresolved retirement outranks a recovering session: it is the launch
+ * fence refusing a replacement, and it clears only when an operator releases
+ * it, so reporting a recovering session over it would name a remedy that
+ * cannot work yet.
  *
  * The runtime store is shared by every harness in a workspace, so a recovering
  * row only belongs to this adapter when the session's harness is this
@@ -13,10 +19,19 @@ export function acpRuntimeHealth(input: {
   store: Pick<AgentRuntimeStoreCore, "listSessions" | "getSessionConfig">
   harnessId: string
   activeTurns: { has(sessionId: string): boolean }
+  /** Launches this connection never established as stopped, from the launch fence. */
+  retirementBlockers: readonly RetirementResult[]
   context?: AgentHarnessAdapterHealthContext
   directory: string
 }): AgentHarnessAdapterHealth {
   const { store, context } = input
+  const blocker = input.retirementBlockers.at(-1)
+  if (blocker) return {
+    status: "unavailable",
+    reason: "harness_retirement_unresolved",
+    message: blocker.error?.message
+      ?? `an ACP launch was not established as stopped (leader ${blocker.leader}, descendants ${blocker.descendants})`,
+  }
   // Exact-session health is turn-correlated. Persisted recovery state is
   // historical unless this adapter currently owns an active turn for it.
   if (context?.sessionId && !input.activeTurns.has(context.sessionId)) return { status: "ok" }
