@@ -604,6 +604,17 @@ describe("state/orchestration", () => {
     expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
   })
 
+  test("openPagesIndex reuses the index opened by back-to-index when a route-aware opener asks for it", () => {
+    const { layout, meta, getState } = makeFixture()
+    const fromBackToIndex = layout.openPagesIndex("/workspace")
+    const fromNewPage = layout.openPagesIndex("/workspace", { workspaceRouteId: "ws_a" })
+
+    expect(fromNewPage).toBe(fromBackToIndex)
+    expect(meta.get(fromBackToIndex)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(getState().contentIds.filter((id) => meta.get(id)?.type === "pages-index")).toEqual([fromBackToIndex])
+    expect(layout.openPagesIndex("/workspace", { workspaceRouteId: "ws_b" })).not.toBe(fromBackToIndex)
+  })
+
   test("openPage stores the workspace route identity used to restore its URL", () => {
     const { layout, meta } = makeFixture()
     const id = layout.openPage("page_1", "Notes", "/workspace", undefined, { workspaceRouteId: "ws_a" })

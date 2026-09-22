@@ -499,11 +499,19 @@ export function createLayoutOrchestration(input: {
     },
 
     openPagesIndex(directory, opts) {
-      const existing = meta.find((m) =>
-        m.type === "pages-index" &&
-        m.directory === directory &&
-        (!opts?.workspaceRouteId || m.content?.workspaceRouteId === opts.workspaceRouteId)
-      )
+      // Pinned, so a duplicate index could never be closed: an absent route id
+      // on either side is the same workspace, as for sessions.
+      const requestedRouteId = opts?.workspaceRouteId
+      const existing = meta.find((m) => {
+        if (m.type !== "pages-index" || m.directory !== directory) return false
+        const storedRouteId = m.content?.workspaceRouteId
+        return !requestedRouteId || !storedRouteId || storedRouteId === requestedRouteId
+      })
+      if (existing && requestedRouteId && !existing.content?.workspaceRouteId) {
+        meta.patch(existing.id, {
+          content: { ...existing.content, type: "pages-index", workspaceRouteId: requestedRouteId },
+        })
+      }
       return showOrCreate(existing, () => {
         const id = newId("pages-index")
         return {
