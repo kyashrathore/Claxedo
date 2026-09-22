@@ -346,7 +346,14 @@ async function main() {
     // the one that would carry the fix. The row itself holds the identity that
     // finishes it, so staging opens it and carries on; production has no
     // `--dev-open` at all and still stops here.
-    if (ledger.activePhase === "locked" && !dryRun) {
+    if (ledger.activePhase === "locked" && dryRun) {
+      console.log(
+        `the active release ${ledger.activeReleaseId} is locked; a release would finish it first with ` +
+          "prepare-better-auth-d1.ts --dev-open --staging, then release over it",
+      )
+      return
+    }
+    if (ledger.activePhase === "locked") {
       console.log(`finishing ${ledger.activeReleaseId}, left locked by an interrupted release`)
       await inherit(process.execPath, ["run", "scripts/deploy/prepare-better-auth-d1.ts", "--dev-open", "--staging"], {
         ...process.env,
