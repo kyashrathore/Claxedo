@@ -433,6 +433,7 @@ export const dict = {
   "terminal.connectionLost.description":
     "A conexão do terminal foi interrompida. Isso pode acontecer quando o servidor reinicia.",
   "common.dismiss": "Descartar",
+  "session.requests.loadFailed": "Não foi possível carregar as permissões ou perguntas pendentes. Tente novamente para continuar.",
   "common.requestFailed": "Requisição falhou",
   "common.moreOptions": "Mais opções",
   "common.learnMore": "Saiba mais",

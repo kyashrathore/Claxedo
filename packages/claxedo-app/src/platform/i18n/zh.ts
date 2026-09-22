@@ -494,6 +494,7 @@ export const dict = {
   "terminal.connectionLost.description": "终端连接已中断。这可能发生在服务器重启时。",
 
   "common.dismiss": "忽略",
+  "session.requests.loadFailed": "无法加载待处理的权限请求或问题。请重试以继续。",
   "common.requestFailed": "请求失败",
   "common.moreOptions": "更多选项",
   "common.learnMore": "了解更多",

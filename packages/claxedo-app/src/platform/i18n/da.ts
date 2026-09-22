@@ -489,6 +489,7 @@ export const dict = {
   "terminal.connectionLost.title": "Forbindelse mistet",
   "terminal.connectionLost.description": "Terminalforbindelsen blev afbrudt. Dette kan ske, når serveren genstarter.",
   "common.dismiss": "Afvis",
+  "session.requests.loadFailed": "Kunne ikke indlæse ventende tilladelser eller spørgsmål. Prøv igen for at fortsætte.",
   "common.requestFailed": "Forespørgsel mislykkedes",
   "common.moreOptions": "Flere muligheder",
   "common.learnMore": "Lær mere",

@@ -496,6 +496,7 @@ export const dict = {
     "La conexión del terminal se interrumpió. Esto puede ocurrir cuando el servidor se reinicia.",
 
   "common.dismiss": "Descartar",
+  "session.requests.loadFailed": "No se pudieron cargar los permisos ni las preguntas pendientes. Reinténtalo para continuar.",
   "common.requestFailed": "Solicitud fallida",
   "common.moreOptions": "Más opciones",
   "common.learnMore": "Saber más",

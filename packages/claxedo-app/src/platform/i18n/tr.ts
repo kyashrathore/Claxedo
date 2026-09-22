@@ -501,6 +501,7 @@ export const dict = {
     "Terminal bağlantısı kesildi. Bu durum sunucu yeniden başladığında oluşabilir.",
 
   "common.dismiss": "Kapat",
+  "session.requests.loadFailed": "Bekleyen izinler veya sorular yüklenemedi. Devam etmek için yeniden deneyin.",
   "common.requestFailed": "İstek başarısız",
   "common.moreOptions": "Daha fazla seçenek",
   "common.learnMore": "Daha fazla bilgi",

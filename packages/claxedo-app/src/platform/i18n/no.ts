@@ -496,6 +496,7 @@ export const dict = {
     "Terminalforbindelsen ble avbrutt. Dette kan skje når serveren starter på nytt.",
 
   "common.dismiss": "Avvis",
+  "session.requests.loadFailed": "Kunne ikke laste ventende tillatelser eller spørsmål. Prøv igjen for å fortsette.",
   "common.requestFailed": "Forespørsel mislyktes",
   "common.moreOptions": "Flere alternativer",
   "common.learnMore": "Lær mer",

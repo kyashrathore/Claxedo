@@ -432,6 +432,7 @@ export const dict = {
   "terminal.connectionLost.description":
     "Połączenie z terminalem zostało przerwane. Może się to zdarzyć przy restarcie serwera.",
   "common.dismiss": "Odrzuć",
+  "session.requests.loadFailed": "Nie udało się wczytać oczekujących uprawnień ani pytań. Spróbuj ponownie, aby kontynuować.",
   "common.requestFailed": "Żądanie nie powiodło się",
   "common.moreOptions": "Więcej opcji",
   "common.learnMore": "Dowiedz się więcej",

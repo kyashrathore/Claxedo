@@ -442,6 +442,7 @@ export const dict = {
   "terminal.connectionLost.description":
     "Die Terminalverbindung wurde unterbrochen. Das kann passieren, wenn der Server neu startet.",
   "common.dismiss": "Verwerfen",
+  "session.requests.loadFailed": "Ausstehende Berechtigungen oder Fragen konnten nicht geladen werden. Erneut versuchen, um fortzufahren.",
   "common.requestFailed": "Anfrage fehlgeschlagen",
   "common.moreOptions": "Weitere Optionen",
   "common.learnMore": "Mehr erfahren",

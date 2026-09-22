@@ -490,6 +490,7 @@ export const dict = {
   "terminal.connectionLost.description": "การเชื่อมต่อเทอร์มินัลถูกขัดจังหวะ อาจเกิดขึ้นเมื่อเซิร์ฟเวอร์รีสตาร์ท",
 
   "common.dismiss": "ปิด",
+  "session.requests.loadFailed": "ไม่สามารถโหลดคำขอสิทธิ์หรือคำถามที่รอดำเนินการได้ ลองอีกครั้งเพื่อดำเนินการต่อ",
   "common.requestFailed": "คำขอล้มเหลว",
   "common.moreOptions": "ตัวเลือกเพิ่มเติม",
   "common.learnMore": "เรียนรู้เพิ่มเติม",

@@ -430,6 +430,7 @@ export const dict = {
   "terminal.connectionLost.description":
     "터미널 연결이 중단되었습니다. 서버가 재시작하면 이런 일이 발생할 수 있습니다.",
   "common.dismiss": "닫기",
+  "session.requests.loadFailed": "대기 중인 권한 요청이나 질문을 불러오지 못했습니다. 다시 시도하여 계속하세요.",
   "common.requestFailed": "요청 실패",
   "common.moreOptions": "더 많은 옵션",
   "common.learnMore": "더 알아보기",

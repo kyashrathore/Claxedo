@@ -432,6 +432,7 @@ export const dict = {
   "terminal.connectionLost.description":
     "ターミナルの接続が中断されました。これはサーバーが再起動したときに発生することがあります。",
   "common.dismiss": "閉じる",
+  "session.requests.loadFailed": "保留中の権限リクエストや質問を読み込めませんでした。再試行して続行してください。",
   "common.requestFailed": "リクエスト失敗",
   "common.moreOptions": "その他のオプション",
   "common.learnMore": "詳細",

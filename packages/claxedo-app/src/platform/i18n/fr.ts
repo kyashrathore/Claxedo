@@ -438,6 +438,7 @@ export const dict = {
   "terminal.connectionLost.description":
     "La connexion au terminal a été interrompue. Cela peut arriver lorsque le serveur redémarre.",
   "common.dismiss": "Ignorer",
+  "session.requests.loadFailed": "Impossible de charger les autorisations ou les questions en attente. Réessayez pour continuer.",
   "common.requestFailed": "La demande a échoué",
   "common.moreOptions": "Plus d'options",
   "common.learnMore": "En savoir plus",

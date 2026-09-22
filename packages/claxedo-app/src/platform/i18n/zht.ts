@@ -490,6 +490,7 @@ export const dict = {
   "terminal.connectionLost.title": "連線中斷",
   "terminal.connectionLost.description": "終端機連線已中斷。這可能會在伺服器重新啟動時發生。",
   "common.dismiss": "忽略",
+  "session.requests.loadFailed": "無法載入待處理的權限要求或問題。請重試以繼續。",
   "common.requestFailed": "要求失敗",
   "common.moreOptions": "更多選項",
   "common.learnMore": "深入了解",

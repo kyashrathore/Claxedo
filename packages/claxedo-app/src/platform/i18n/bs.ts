@@ -495,6 +495,7 @@ export const dict = {
     "Veza s terminalom je prekinuta. Ovo se može desiti kada se server restartuje.",
 
   "common.dismiss": "Odbaci",
+  "session.requests.loadFailed": "Nije moguće učitati dozvole ili pitanja na čekanju. Pokušajte ponovo da nastavite.",
   "common.requestFailed": "Zahtjev nije uspio",
   "common.moreOptions": "Više opcija",
   "common.learnMore": "Saznaj više",

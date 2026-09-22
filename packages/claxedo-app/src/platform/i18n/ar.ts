@@ -429,6 +429,7 @@ export const dict = {
   "terminal.connectionLost.title": "فقد الاتصال",
   "terminal.connectionLost.description": "انقطع اتصال المحطة الطرفية. يمكن أن يحدث هذا عند إعادة تشغيل الخادم.",
   "common.dismiss": "رفض",
+  "session.requests.loadFailed": "تعذّر تحميل الأذونات أو الأسئلة المعلّقة. أعد المحاولة للمتابعة.",
   "common.requestFailed": "فشل الطلب",
   "common.moreOptions": "مزيد من الخيارات",
   "common.learnMore": "اعرف المزيد",
