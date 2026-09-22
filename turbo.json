@@ -43,6 +43,11 @@
     // under 2-core contention with server/app they miss their windows the same
     // way (CI: 203-vs-200 = fetch raced tunnel registration). Chain it after
     // the two big suites; relay then runs after runtime, effectively alone.
+    "@claxedo/server#test": {
+      "outputs": [".artifacts/unit/junit.xml"],
+      "env": ["CLAXEDO_SERVER_TEST_SHARD"],
+      "passThroughEnv": ["*"]
+    },
     "@claxedo/workspace-runtime#test": {
       "dependsOn": ["@claxedo/server#test", "@claxedo/app#test"],
       "outputs": [".artifacts/unit/junit.xml", ".artifacts/unit/junit-relay.xml"],

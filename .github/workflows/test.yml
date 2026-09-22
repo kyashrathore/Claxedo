@@ -93,7 +93,7 @@ jobs:
         # claxedo-server is 236 serialized files; beside the other 30 packages
         # it took the whole suite past 35 minutes on a 2-core runner. The lanes
         # share this job's setup and run as two jobs.
-        lane: [server, rest]
+        lane: [server-1, server-2, server-3, server-4, rest]
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -214,7 +214,7 @@ jobs:
         run: bun run --cwd packages/claxedo-host-connector verify:closure
 
       - name: Verify server package boundary
-        if: runner.os == 'Linux' && matrix.lane == 'server' && needs.changes.outputs.boundary_server == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'server-1' && needs.changes.outputs.boundary_server == 'true'
         run: bun run --cwd packages/claxedo-server verify:closure
 
       # `bun turbo test` used to be a near-no-op: turbo.json declared only five
@@ -224,13 +224,11 @@ jobs:
       # declares ONE generic `test` task, so this command runs every package
       # that has a `test` script, including ones added later.
       #
-      # 35 min per lane, and the lanes are why: the single job reached that
-      # ceiling on 2026-09-22 (run 35744231812) and was killed mid-suite.
-      # claxedo-server is ~4.5 min wall clock on a fast dev machine with
-      # `fileParallelism: false` (236 files serialized) and materially worse
-      # on a 2-core runner, so it runs beside the other packages rather than
-      # after them. Both lanes gate every caller through this job's name, so
-      # branch protection must require each one it already required.
+      # 35 min per lane. claxedo-server keeps `fileParallelism: false` (304
+      # files serialized): 22 min on a 2-core Linux runner and past 35 on
+      # Windows as one lane, so it runs as four vitest shards beside the other
+      # packages. The shard reaches the suite as CLAXEDO_SERVER_TEST_SHARD,
+      # which turbo hashes so one shard never replays another's cached pass.
       #
       # Linux runs two package tasks to match the runner's core count. Windows
       # runs one package task at a time: its OpenCode suite contains wall-clock
@@ -253,6 +251,8 @@ jobs:
           lane=--filter=@claxedo/server
           if [[ "${{ matrix.lane }}" == "rest" ]]; then
             lane=--filter=!@claxedo/server
+          else
+            export CLAXEDO_SERVER_TEST_SHARD="${LANE#server-}/4"
           fi
           if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
             bun turbo test "$lane" --concurrency="$concurrency"
@@ -262,6 +262,7 @@ jobs:
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LANE: ${{ matrix.lane }}
 
       - name: Publish unit reports
         if: always()
