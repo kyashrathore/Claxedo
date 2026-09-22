@@ -278,7 +278,7 @@ function createPublicAuthRateLimiter(
   })
 }
 
-function rateLimited(
+function rateLimitedResponse(
   request: Request,
   cors: ReadonlyArray<readonly [string, string]>,
   retryAfterMs: number,
@@ -351,7 +351,7 @@ export function createBetterAuthD1CandidateWorker(input: {
           const decision = await createPublicAuthRateLimiter(env, publicAuthRateLimiter).check({
             key: `public-auth:${requestClientKeyFromHeaders(request.headers)}`,
           })
-          if (!decision.allowed) return rateLimited(request, cors, decision.retryAfterMs)
+          if (!decision.allowed) return rateLimitedResponse(request, cors, decision.retryAfterMs)
         }
         const identity = await betterAuthD1ReleaseIdentity(env, configured, {
           browserBuildId: requiredReleaseIdentifier(env.CLAXEDO_BROWSER_BUILD_ID, "CLAXEDO_BROWSER_BUILD_ID"),

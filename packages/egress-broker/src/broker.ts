@@ -99,7 +99,7 @@ function once(run: () => void): () => void {
  * — a hung authority cannot be un-hung from here — but the caller, and the
  * lane it holds, stop waiting on it.
  */
-function bounded<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+function stopWaitingAfter<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   return Promise.race([
     work,
@@ -155,7 +155,7 @@ function concurrencyGate(max: number) {
   return { enter }
 }
 
-function deadlineSignal(timeoutMs: number, signal: AbortSignal) {
+function deadlineWithCallerAbort(timeoutMs: number, signal: AbortSignal) {
   const controller = new AbortController()
   const abortFromCaller = () => controller.abort(signal.reason)
   const timer = setTimeout(
@@ -205,10 +205,10 @@ export function createEgressBroker(options: BrokerOptions) {
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
   const lane = concurrencyGate(options.maxConcurrentUpstream ?? DEFAULT_MAX_CONCURRENT_UPSTREAM)
   const authority: BindingAuthority = {
-    resolve: (bindingId) => bounded(options.authority.resolve(bindingId), authorityTimeoutMs),
-    currentRuntime: (identity: RuntimeIdentity) => bounded(options.authority.currentRuntime(identity), authorityTimeoutMs),
-    markUsed: (bindingId) => bounded(options.authority.markUsed(bindingId), authorityTimeoutMs),
-    reportFailure: (failure: BindingFailure) => bounded(options.authority.reportFailure(failure), authorityTimeoutMs),
+    resolve: (bindingId) => stopWaitingAfter(options.authority.resolve(bindingId), authorityTimeoutMs),
+    currentRuntime: (identity: RuntimeIdentity) => stopWaitingAfter(options.authority.currentRuntime(identity), authorityTimeoutMs),
+    markUsed: (bindingId) => stopWaitingAfter(options.authority.markUsed(bindingId), authorityTimeoutMs),
+    reportFailure: (failure: BindingFailure) => stopWaitingAfter(options.authority.reportFailure(failure), authorityTimeoutMs),
   }
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
@@ -285,7 +285,7 @@ export function createEgressBroker(options: BrokerOptions) {
       }
       await authority.markUsed(bindingId)
       let upstream: Response
-      const deadline = deadlineSignal(upstreamTimeoutMs, request.signal)
+      const deadline = deadlineWithCallerAbort(upstreamTimeoutMs, request.signal)
       try {
         upstream = await (options.fetch ?? fetch)(target, {
           method: request.method,
