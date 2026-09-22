@@ -22,11 +22,13 @@ is what has to be green, not the diff that reached it. `unit` is `test.yml`
 called as a reusable workflow, so a red suite blocks the release through
 `needs:` instead of through a race between two independent runs. It is called
 with `linux-unit-only`: the whole unit suite on Linux, no Windows leg and no
-e2e. The e2e shards fail before any test runs because those jobs never build
-the workspace dist output their helpers import, and the Windows leg fails in
-the embedded OpenCode verification; both have been red on `dev` since at least
-2026-09-02, so a gate that required them would never open. They still run on
-every push to `dev` through `test.yml` itself. `staging` is deliberately absent
+e2e. Every e2e job reaches real Playwright results and every one of them has
+failing tests (run 35737110865 on 2026-09-22: 12 core shards, both onboarding
+legs and tier-real), and the Windows leg is still red in package suites after
+its embedded OpenCode verification step, so a gate that required them would
+never open. They still run
+on every push to `dev` through `test.yml` itself; once they are green, drop
+the input here and in `deploy-staging.yml`. `staging` is deliberately absent
 from `test.yml`'s `push.branches`: a push trigger would run the same suite a
 second time in a run the deploy does not depend on.
 

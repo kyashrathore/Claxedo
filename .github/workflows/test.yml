@@ -14,12 +14,12 @@ on:
       linux-unit-only:
         description: >-
           Run the whole unit suite on Linux and nothing else: no Windows leg, no
-          e2e. The e2e shards fail before any test runs (workspace dist output
-          is not built in those jobs) and the Windows leg is still red in
-          package suites after its embedded OpenCode verification step
-          (docs/verification/windows-unit-opencode-node-2026-09-22.md), so a
-          release gate that required them could never open; the deploy gates
-          on what this repository can prove.
+          e2e. Every e2e shard, both onboarding legs and tier-real reach real
+          Playwright results and every one of them has failing tests (run
+          35737110865), and the Windows leg is still red in package suites
+          after its embedded OpenCode verification step, so a release gate that
+          required them could never open; the deploy gates on what this
+          repository can prove.
         type: boolean
         default: false
 
