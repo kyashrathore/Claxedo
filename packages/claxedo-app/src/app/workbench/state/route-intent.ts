@@ -299,13 +299,20 @@ export function createRouteIntentAdapter(input: {
     if (!input.resolveSession) return false
     if (pendingSessionResolution.has(sessionId)) return true
     pendingSessionResolution.add(sessionId)
+    const focusedAtStart = focusedContentId()
     void Promise.resolve(input.resolveSession(sessionId))
       .then((rawTarget) => {
         // A resolver can outlive the route that launched it. Closing or
         // archiving that session while metadata is in flight is authoritative;
         // a late result must not recreate the surface that was just removed.
         if (isRouteIntentClosed({ sessionId })) return
-        if (input.currentSessionId?.() && input.currentSessionId() !== sessionId) return
+        // Optional-call, not optional-read: a reader that answers `undefined`
+        // still answers, and skipping the comparison let a resolver for a
+        // session nobody is on claim the surface.
+        if (input.currentSessionId && input.currentSessionId() !== sessionId) return
+        // Whatever the user moved to while this was in flight keeps the focus,
+        // including a terminal this session never owned.
+        if (focusedContentId() !== focusedAtStart) return
         if (rawTarget && "unavailable" in rawTarget) {
           markRouteIntentClosed({ sessionId })
           if (rawTarget.redirect) redirect(rawTarget.redirect)

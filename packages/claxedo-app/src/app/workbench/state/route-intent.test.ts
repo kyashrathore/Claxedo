@@ -108,6 +108,7 @@ function createHarness(input: {
   canUseDocuments?: boolean
 } = {}) {
   let focused = input.focused ?? null
+  let currentSessionId: string | undefined
   let sessionInventory = input.sessionInventory
   const meta = new Map((input.meta ?? []).map((item) => [item.id, item]))
   const opened: OpenCall[] = []
@@ -356,7 +357,7 @@ function createHarness(input: {
       loaded: sessionInventory?.loaded ?? true,
     }),
     resolveSession: input.resolveSession,
-    currentSessionId: () => undefined,
+    currentSessionId: () => currentSessionId,
     canUseDocuments: () => input.canUseDocuments,
     navigate: (path, options) => navigateCalls.push({ path, replace: options?.replace }),
   })
@@ -374,8 +375,9 @@ function createHarness(input: {
     setSessionInventory: (next: typeof input.sessionInventory) => {
       sessionInventory = next
     },
-    receive: (intent: Partial<RouteIntent>) =>
-      adapter.receive({
+    receive: (intent: Partial<RouteIntent>) => {
+      currentSessionId = intent.sessionId
+      return adapter.receive({
         ready: true,
         marketplace: false,
         workspaceId: "/workspace/main",
@@ -387,7 +389,8 @@ function createHarness(input: {
         sessionTitle: "",
         sessionBadge: undefined,
         ...intent,
-      }),
+      })
+    },
   }
 }
 
@@ -881,6 +884,22 @@ describe("state route intent", () => {
     ).toHaveLength(1)
     expect(harness.refreshCalls).toEqual(["/repo/main"])
     expect(harness.focused()).toBe("session:ses-coalesced")
+  })
+
+  test("a pending session resolver cannot focus chat after navigation to a terminal", async () => {
+    let resolveTarget!: (target: { directory: string }) => void
+    const pendingTarget = new Promise<{ directory: string }>((resolve) => { resolveTarget = resolve })
+    const harness = createHarness({
+      sessionInventory: { loaded: false },
+      resolveSession: async () => pendingTarget,
+    })
+    harness.receive({ workspaceId: undefined, sessionId: "ses-late" })
+    harness.receive({ terminalId: "new" })
+    const terminal = harness.focused()
+    resolveTarget({ directory: "/repo/main" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(harness.focused()).toBe(terminal)
+    expect(harness.opened.filter((call) => call.name === "openSession")).toEqual([])
   })
 
   test("a pending session resolver cannot recreate a session closed while it was in flight", async () => {
