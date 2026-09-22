@@ -4,6 +4,7 @@ import {
   setSessionRequestsQueryData as writeSessionRequestsQueryData,
   setSessionStatusQueryData as writeSessionStatusQueryData,
   setSessionTodoQueryData as writeSessionTodoQueryData,
+  setSessionTurnFailedQueryData as writeSessionTurnFailedQueryData,
 } from "../data/sync/writers"
 import type { SessionRequestsQueryData, Todo } from "../data/sync/queries"
 import { queryClient, removeExactQuery } from "@/platform/query/query-client"
@@ -93,6 +94,21 @@ export type SessionRecoveryCommand = {
 }
 
 const RECOVERY_COMMAND_KEY_PART = "recovery-command"
+const TURN_FAILED_KEY_PART = "turn-failed"
+
+/**
+ * Whether the session's last turn ended in `session.error`. The status query
+ * cannot say so: the runtime reports the failed turn as idle, and an idle
+ * usually follows the error on the wire.
+ */
+export function sessionTurnFailed(sessionID: string) {
+  return queryClient.getQueryData<boolean>(shellDataKeys.sessionId(sessionID, TURN_FAILED_KEY_PART)) === true
+}
+
+function setSessionTurnFailed(sessionID: string, failed: boolean) {
+  if (sessionTurnFailed(sessionID) === failed) return
+  writeSessionTurnFailedQueryData({ queryClient, sessionId: sessionID, failed })
+}
 
 type SessionStatusTimeout = ReturnType<typeof setTimeout>
 
@@ -117,7 +133,7 @@ function createSessionNotificationDispatcher() {
         ? byStatusMeta.get(sessionID)
         : type === RECOVERY_COMMAND_KEY_PART
           ? byRecoveryCommand.get(sessionID)
-          : type === "status" || type === "requests"
+          : type === "status" || type === "requests" || type === TURN_FAILED_KEY_PART
             ? byActivity.get(sessionID)
             : undefined
       for (const listener of listeners ?? []) listener()
@@ -180,6 +196,8 @@ export function dispatchSessionStatusEvent(input: {
     && hasPendingPrompt(input.event.sessionID)
   ) return
   setSessionStatusQueryData(input.event.sessionID, status)
+  if (input.event.type === "session.error") setSessionTurnFailed(input.event.sessionID, true)
+  else if (status.type !== "idle") setSessionTurnFailed(input.event.sessionID, false)
   if (input.event.source === "server" || input.event.type !== "session.status" || !input.event.status || input.event.status.type === "idle") {
     clearPromptSessionStatusTimeouts(input.event.sessionID)
     setPromptSessionStatusMeta(input.event.sessionID)

@@ -14,7 +14,7 @@ import { escapeRegExp } from "@claxedo/helpers/string"
 import { expect, type Locator, type Page } from "@playwright/test"
 
 /** Mirrors the status union both dots render; local so e2e/ does not import app source. */
-export type SurfaceStatus = "idle" | "working" | "permission" | "done"
+export type SurfaceStatus = "idle" | "working" | "permission" | "error" | "done"
 
 export type ParityEvidence = {
   sessionId: string

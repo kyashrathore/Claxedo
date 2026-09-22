@@ -38,7 +38,7 @@ const PLACEHOLDER_TITLE = /^(New Session|Untitled session)$/
 export async function expectTerminalRailStatus(opts: {
   page: Page
   terminalId: string
-  status: "working" | "permission" | "done"
+  status: "working" | "permission" | "error" | "done"
   timeout?: number
 }) {
   const row = opts.page.locator(SELECTORS.terminalRow(opts.terminalId))

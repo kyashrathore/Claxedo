@@ -1,7 +1,7 @@
 import { For, Show, createMemo } from "solid-js"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { NavigationRow, NavigationRowGlyph, NavigationStatusDot, type SwitcherStatus } from "@/features/terminal/app-ports"
+import { NavigationRow, NavigationRowGlyph, NavigationStatusMark, type SwitcherStatus } from "@/features/terminal/app-ports"
 import { terminalSurfaceTitle } from "./terminal-surface-title"
 import {
   type NavigationDragStart,
@@ -102,7 +102,7 @@ function TerminalSurfaceNavigationRow(props: {
           </span>
           <Show when={status() !== "idle"}>
             <span class="relative z-[1] pointer-events-none flex">
-              <NavigationStatusDot status={status()} />
+              <NavigationStatusMark status={status()} />
             </span>
           </Show>
         </>
@@ -124,7 +124,7 @@ function TerminalSurfaceNavigationRow(props: {
               </span>
             }
           >
-            <NavigationStatusDot status={status()} />
+            <NavigationStatusMark status={status()} />
           </Show>
         </NavigationRowGlyph>
       </Show>

@@ -20,7 +20,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { RailWorktreeInfo } from "./rail-project-session-info"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
-import { subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
+import { sessionTurnFailed, subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
 
 export function useRailHeaderSurfaces(input: {
   state: ClaxedoStateApi
@@ -73,6 +73,11 @@ export function useRailHeaderSurfaces(input: {
         ? queryClient.getQueryData<SessionRequestsQueryData>(shellDataKeys.sessionId(id, "requests"))
         : undefined
     }
+    const sessionFailed = () => {
+      activityRevision()
+      const id = sessionId()
+      return id ? sessionTurnFailed(id) : false
+    }
     const sessionActive = createMemo(() => sessionSurfaceActive({
       statusType: sessionStatus()?.type,
       requests: sessionRequests(),
@@ -111,6 +116,7 @@ export function useRailHeaderSurfaces(input: {
         sessionStatusType: sessionStatus()?.type,
         sessionRequests: sessionRequests(),
         sessionUnseenDone: sessionUnseenDone(),
+        sessionFailed: sessionFailed(),
         autoResponds: input.autoResponds,
       })
     }

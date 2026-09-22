@@ -5,6 +5,7 @@ import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxed
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { NUMBERED_SURFACE_SHORTCUTS } from "../rail/rail-keyboard-shortcuts"
+import { NavigationStatusMark } from "../navigation/navigation-row"
 
 const ACTIVE_SCROLL_DELAY_MS = 120
 const SWITCH_COMMIT_DELAY_MS = 48
@@ -23,52 +24,43 @@ function fallback(value: string | undefined, empty = "Not available") {
   return value?.trim() || empty
 }
 
-function hasVisibleStatus(item: SwitcherItem) {
-  return !!item.status && item.status !== "idle"
-}
-
-function StatusDot(props: { status?: SwitcherItem["status"] }) {
-  const visible = () => (props.status && props.status !== "idle" ? props.status : undefined)
-  return (
-    <Show when={visible()}>
-      {(status) => (
-        <span
-          aria-hidden="true"
-          data-switcher-status={status()}
-          class="inline-flex size-1.5 shrink-0 rounded-full"
-          classList={{
-            "bg-text-weak": status() === "working" || status() === "done",
-            "animate-pulse": status() === "working",
-            "bg-icon-critical-base": status() === "permission",
-          }}
-        />
-      )}
-    </Show>
-  )
-}
+// Working, waiting and failed take the whole avatar slot: they are what the
+// tab is about right now, so they stay at full opacity on inactive tabs too.
+const takesAvatarSlot = (status: SwitcherItem["status"]) =>
+  status === "working" || status === "permission" || status === "error"
 
 function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; status: Accessor<SwitcherItem["status"]> }) {
-  const status = createMemo(() => props.status())
+  const status = createMemo(() => props.status() ?? "idle")
   return (
     <span
       aria-hidden="true"
       data-testid="switcher-identity"
       class="relative flex h-full w-5 shrink-0 items-center justify-center text-text-weaker transition-opacity duration-100"
       classList={{
-        "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
-        "opacity-100": props.active,
+        "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100":
+          !props.active && status() === "idle",
+        "opacity-100": props.active || status() !== "idle",
       }}
     >
-      <ProjectAvatar
-        data-switcher-project-avatar
-        fallback={fallback(props.item.projectLabel, "Global")}
-        variant="outline"
-        class="size-4 shrink-0"
-      />
-      <Show when={hasVisibleStatus({ ...props.item, status: status() })}>
-        <span class="absolute bottom-[3px] right-0 flex rounded-full bg-background-base p-px">
-          <StatusDot status={status()} />
-        </span>
+      <Show
+        when={takesAvatarSlot(status())}
+        fallback={
+          <>
+            <ProjectAvatar
+              data-switcher-project-avatar
+              fallback={fallback(props.item.projectLabel, "Global")}
+              variant="outline"
+              class="size-4 shrink-0"
+            />
+            <Show when={status() === "done"}>
+              <span class="absolute bottom-[3px] right-0 flex rounded-full bg-background-base p-px">
+                <NavigationStatusMark status="done" surface="switcher" />
+              </span>
+            </Show>
+          </>
+        }
+      >
+        <NavigationStatusMark status={status()} surface="switcher" />
       </Show>
     </span>
   )
@@ -387,7 +379,11 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                         gradient that dissolves the last 16px reads as a render
                         glitch at that width — the reader cannot tell a clipped
                         title from a faint one. `truncate` ends it on a glyph. */}
-                    <span data-testid="switcher-title" class="min-w-0 flex-1 truncate">
+                    <span
+                      data-testid="switcher-title"
+                      class="min-w-0 flex-1 truncate"
+                      classList={{ "font-medium text-text-base": item().status === "done" }}
+                    >
                       {item().title}
                     </span>
                   </button>

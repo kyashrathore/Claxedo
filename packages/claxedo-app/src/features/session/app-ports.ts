@@ -74,7 +74,7 @@ export type SessionAppPorts = {
   DirectoryScope: typeof DirectoryScopeModule.DirectoryScope
   terminalSurfaceStatus: typeof SurfaceStatus.terminalSurfaceStatus
   NavigationRow: typeof Navigation.NavigationRow
-  NavigationStatusDot: typeof Navigation.NavigationStatusDot
+  NavigationStatusMark: typeof Navigation.NavigationStatusMark
   NavigationRowStatusGutter: typeof Navigation.NavigationRowStatusGutter
   NavigationRowGlyph: typeof Navigation.NavigationRowGlyph
   ensureActionDirectorySessionCache: typeof LayoutActions.ensureDirectorySessionCache
@@ -160,7 +160,7 @@ export type PanePresentation = Workbench.PanePresentation
 export type SwitcherStatus = SwitcherItems.SwitcherStatus
 export const terminalSurfaceStatus = bind((ports) => ports.terminalSurfaceStatus)
 export const NavigationRow = bind((ports) => ports.NavigationRow)
-export const NavigationStatusDot = bind((ports) => ports.NavigationStatusDot)
+export const NavigationStatusMark = bind((ports) => ports.NavigationStatusMark)
 export const NavigationRowStatusGutter = bind((ports) => ports.NavigationRowStatusGutter)
 export const NavigationRowGlyph = bind((ports) => ports.NavigationRowGlyph)
 export type SessionItem = RailTypes.SessionItem

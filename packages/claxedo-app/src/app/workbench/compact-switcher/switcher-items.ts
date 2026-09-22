@@ -3,7 +3,7 @@ import type { ContentMeta, ContentType } from "../state/types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { SessionTitleTarget } from "@/features/session/store/session-title-projection"
 
-export type SwitcherStatus = "idle" | "working" | "permission" | "done"
+export type SwitcherStatus = "idle" | "working" | "permission" | "error" | "done"
 export type SwitcherKind = "session" | "terminal" | "page" | "marketplace" | "tasks"
 
 export type SwitcherItem = {

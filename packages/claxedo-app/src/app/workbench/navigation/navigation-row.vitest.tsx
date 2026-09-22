@@ -1,11 +1,13 @@
 /**
- * NavigationRow / NavigationStatusDot: activation, drag source, and status-dot
- * color/aria mapping shared by the session and terminal sidebar islands.
+ * NavigationRow / NavigationStatusMark: activation, drag source, and the status
+ * mark shared by the sidebar rows and the compact tab.
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render } from "@solidjs/testing-library"
-import { NavigationRow, NavigationStatusDot } from "./navigation-row"
+import { createSignal } from "solid-js"
+import { NavigationRow, NavigationStatusMark } from "./navigation-row"
+import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import { workbenchDrag } from "../workbench/index"
 import type { SessionNavigationRow } from "../../../features/session/ui/navigation/session-navigation"
 
@@ -154,19 +156,44 @@ describe("NavigationRow", () => {
   })
 })
 
-describe("NavigationStatusDot", () => {
-  test("working status renders the pulsing ringed dot", () => {
-    const view = render(() => <NavigationStatusDot status="working" />)
-    const dot = view.container.querySelector('[data-sidebar-status="working"]')
-    expect(dot).not.toBeNull()
-    expect(dot?.classList.contains("animate-pulse")).toBe(true)
+describe("NavigationStatusMark", () => {
+  const mark = (container: HTMLElement) => container.querySelector<HTMLElement>("[data-sidebar-status]")
+
+  test("working shows the app spinner in place of a dot", () => {
+    const view = render(() => <NavigationStatusMark status="working" />)
+    expect(mark(view.container)?.dataset.sidebarStatus).toBe("working")
+    expect(mark(view.container)?.querySelector('[data-component="spinner"]')).not.toBeNull()
   })
 
-  test("non-working status renders a solid grey dot", () => {
-    const view = render(() => <NavigationStatusDot status="done" />)
-    const dot = view.container.querySelector('[data-sidebar-status="done"]')
-    expect(dot).not.toBeNull()
-    expect(dot?.classList.contains("animate-pulse")).toBe(false)
-    expect(dot?.classList.contains("bg-text-weak")).toBe(true)
+  test("needs-input and error share the tinted square and differ only in tone", () => {
+    const tone = (status: "permission" | "error") => {
+      const view = render(() => <NavigationStatusMark status={status} />)
+      const square = mark(view.container)!
+      const dot = square.firstElementChild as HTMLElement
+      const result = { square: [...square.classList].filter((c) => c.startsWith("bg-")), dot: [...dot.classList].filter((c) => c.startsWith("bg-")) }
+      view.unmount()
+      return result
+    }
+    expect(tone("permission")).toEqual({ square: ["bg-icon-warning-base/15"], dot: ["bg-icon-warning-base"] })
+    expect(tone("error")).toEqual({ square: ["bg-icon-critical-base/15"], dot: ["bg-icon-critical-base"] })
+  })
+
+  test("done is a text-coloured dot and idle renders nothing", () => {
+    const done = render(() => <NavigationStatusMark status="done" />)
+    expect(mark(done.container)?.classList.contains("bg-text-base")).toBe(true)
+    expect(mark(done.container)?.querySelector("*")).toBeNull()
+    const idle = render(() => <NavigationStatusMark status="idle" />)
+    expect(idle.container.innerHTML).toBe("")
+  })
+
+  test("a mounted mark follows its status instead of freezing at mount", () => {
+    const [status, setStatus] = createSignal<SwitcherStatus>("idle")
+    const view = render(() => <NavigationStatusMark status={status()} surface="switcher" />)
+    expect(view.container.querySelector("[data-switcher-status]")).toBeNull()
+    for (const next of ["working", "permission", "error", "done"] as const) {
+      setStatus(next)
+      expect(view.container.querySelector<HTMLElement>("[data-switcher-status]")?.dataset.switcherStatus).toBe(next)
+    }
+    expect(view.container.querySelector("[data-sidebar-status]")).toBeNull()
   })
 })

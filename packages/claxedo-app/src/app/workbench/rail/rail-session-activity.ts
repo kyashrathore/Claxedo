@@ -19,6 +19,7 @@ export type RailSessionRowRequests = {
 export type RailSessionRowInput = Pick<RailSessionStatusTarget, "directory"> & {
   statusType: string | undefined
   requests: RailSessionRowRequests | undefined
+  failed: boolean
 }
 
 export type RailSessionActivity = {
@@ -67,6 +68,8 @@ export function createRailSessionActivity(input: {
   liveStatusType: (sessionID: string) => string | undefined
   /** When this client's own send optimistically marked the session busy. */
   optimisticStartedAt: (sessionID: string) => number | undefined
+  /** Whether the session's last turn ended in an error, from the same session-id cache. */
+  turnFailed: (sessionID: string) => boolean
   autoResponds: PermissionAutoResponder
 }): RailSessionActivity {
   const [statuses, setStatuses] = createSignal<Record<string, string | undefined>>({})
@@ -96,6 +99,7 @@ export function createRailSessionActivity(input: {
             ...(readAt[target.key] !== undefined ? { batchReadStartedAt: readAt[target.key] } : {}),
           }),
           requests: rowRequests[target.key],
+          failed: input.turnFailed(target.sessionID),
         },
       ] as const
     }))

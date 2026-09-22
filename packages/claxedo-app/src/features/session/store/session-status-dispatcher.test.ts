@@ -13,6 +13,7 @@ import {
   dispatchSessionTodoEvent,
   promptSessionStatusMeta,
   promptSessionStatusStage,
+  sessionTurnFailed,
   subscribeSessionActivity,
   subscribePromptSessionStatusMeta,
 } from "./session-status-dispatcher"
@@ -206,6 +207,26 @@ describe("session-status dispatcher", () => {
 
     expect(statusFor("ses_error")).toEqual({ type: "idle" })
     expect(promptSessionStatusMeta("ses_error")).toBeUndefined()
+  })
+
+  test("a failed turn survives the idle that follows it and clears when the next turn starts", () => {
+    let notified = 0
+    const unsubscribe = subscribeSessionActivity("ses_failed", () => notified++)
+    const sse = (type: string, properties: Record<string, unknown>) =>
+      applySessionStatusSseEvent({ event: { type, properties: { sessionID: "ses_failed", ...properties } } })
+
+    sse("session.status", { status: { type: "busy" } })
+    sse("session.error", { error: { name: "UnknownError" } })
+    expect(sessionTurnFailed("ses_failed")).toBe(true)
+    sse("session.idle", {})
+    expect(sessionTurnFailed("ses_failed")).toBe(true)
+    expect(sessionTurnFailed("ses_other")).toBe(false)
+
+    const before = notified
+    dispatchSessionStatusEvent({ event: { type: "session.status", source: "optimistic", sessionID: "ses_failed", status: { type: "busy" } } })
+    expect(sessionTurnFailed("ses_failed")).toBe(false)
+    expect(notified).toBeGreaterThan(before)
+    unsubscribe()
   })
 
   test("session.idle releases optimistic busy status", () => {

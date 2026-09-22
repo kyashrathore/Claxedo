@@ -13,7 +13,11 @@ function target(id: string): RailSessionStatusTarget {
  * counts how many times an outside reader of the projection was re-run, which
  * is what the reactive nesting is made of.
  */
-function harness(seed: RailSessionStatusTarget[], focused?: () => RailSessionStatusTarget | undefined) {
+function harness(
+  seed: RailSessionStatusTarget[],
+  focused?: () => RailSessionStatusTarget | undefined,
+  turnFailed: (sessionID: string) => boolean = () => false,
+) {
   return createRoot((dispose) => {
     const [targets, setTargets] = createSignal(seed)
     const [revision, bumpRevision] = createSignal(0)
@@ -22,6 +26,7 @@ function harness(seed: RailSessionStatusTarget[], focused?: () => RailSessionSta
       focusedTarget: focused ?? (() => undefined),
       activityRevision: revision,
       liveStatusType: () => undefined,
+      turnFailed,
       optimisticStartedAt: () => undefined,
       autoResponds: () => false,
     })
@@ -46,6 +51,18 @@ function harness(seed: RailSessionStatusTarget[], focused?: () => RailSessionSta
 }
 
 describe("createRailSessionActivity", () => {
+  test("carries each row's failed-turn flag, re-read when session activity bumps", () => {
+    const failed = new Set<string>()
+    const rail = harness([target("a"), target("b")], undefined, (id) => failed.has(id))
+    expect(rail.activity.rowInputs().get("central:a")?.failed).toBe(false)
+
+    failed.add("a")
+    rail.bumpRevision((value) => value + 1)
+    expect(rail.activity.rowInputs().get("central:a")?.failed).toBe(true)
+    expect(rail.activity.rowInputs().get("central:b")?.failed).toBe(false)
+    rail.dispose()
+  })
+
   test("projects a directory batch read onto the rows it answered for", () => {
     const rail = harness([target("a"), target("b")])
     rail.activity.applyBatchRead({

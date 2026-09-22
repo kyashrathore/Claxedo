@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { createSignal } from "solid-js"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { CompactSwitcher } from "./compact-switcher"
 import type { SwitcherItem } from "./switcher-items"
@@ -71,23 +72,72 @@ describe("CompactSwitcher", () => {
     )
   })
 
-  test("renders item status dots", () => {
+  const identity = (index: number) => {
+    const element = screen.getAllByTestId("switcher-identity")[index]
+    if (!element) throw new Error(`no tab at ${index}`)
+    return element
+  }
+  const statusOf = (index: number) =>
+    identity(index).querySelector<HTMLElement>("[data-switcher-status]")?.dataset.switcherStatus ?? "idle"
+  const hasAvatar = (index: number) => !!identity(index).querySelector("[data-switcher-project-avatar]")
+
+  test("working, waiting and failed tabs show their status in place of the project avatar", () => {
     render(() => (
       <CompactSwitcher
         items={[
-          { ...items[0], status: "working" },
-          { ...items[1], status: "permission" },
+          { ...items[0], contentId: "a", title: "A", status: "working" },
+          { ...items[0], contentId: "b", title: "B", status: "permission" },
+          { ...items[0], contentId: "c", title: "C", status: "error" },
         ]}
       />
     ))
 
-    expect(
-      screen.getAllByTestId("switcher-prefix-trigger")[0].querySelector("[data-switcher-status='working']"),
-    ).toBeInTheDocument()
-    expect(
-      screen.getAllByTestId("switcher-prefix-trigger")[1].querySelector("[data-switcher-status='permission']"),
-    ).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Build fix" }).querySelector("[data-switcher-status]")).toBeNull()
+    expect([0, 1, 2].map(statusOf)).toEqual(["working", "permission", "error"])
+    expect([0, 1, 2].map(hasAvatar)).toEqual([false, false, false])
+    // Status is a signal, not chrome: it is not dimmed on an inactive tab.
+    expect([0, 1, 2].map((index) => identity(index).classList.contains("opacity-55"))).toEqual([false, false, false])
+    expect(screen.getByRole("button", { name: "A" }).querySelector("[data-switcher-status]")).toBeNull()
+  })
+
+  test("a finished tab nobody has looked at keeps its avatar at full strength and brightens its title", () => {
+    render(() => (
+      <CompactSwitcher
+        items={[
+          { ...items[0], contentId: "done", title: "Done", status: "done" },
+          { ...items[0], contentId: "idle", title: "Idle", status: "idle" },
+        ]}
+      />
+    ))
+
+    expect(statusOf(0)).toBe("done")
+    expect(hasAvatar(0)).toBe(true)
+    expect(identity(0).classList.contains("opacity-55")).toBe(false)
+    const title = (name: string) => screen.getByRole("button", { name }).querySelector("[data-testid='switcher-title']")
+    expect(title("Done")?.classList.contains("font-medium")).toBe(true)
+    expect(title("Done")?.classList.contains("text-text-base")).toBe(true)
+
+    expect(statusOf(1)).toBe("idle")
+    expect(hasAvatar(1)).toBe(true)
+    expect(identity(1).classList.contains("opacity-55")).toBe(true)
+    expect(title("Idle")?.classList.contains("font-medium")).toBe(false)
+  })
+
+  test("a mounted tab swaps between avatar and status as its session moves through a turn", () => {
+    const [status, setStatus] = createSignal<SwitcherItem["status"]>("idle")
+    render(() => <CompactSwitcher items={[{ ...items[0], get status() { return status() } }]} />)
+
+    const seen = (["working", "permission", "working", "error", "done", "idle"] as const).map((next) => {
+      setStatus(next)
+      return [statusOf(0), hasAvatar(0)]
+    })
+    expect(seen).toEqual([
+      ["working", false],
+      ["permission", false],
+      ["working", false],
+      ["error", false],
+      ["done", true],
+      ["idle", true],
+    ])
   })
 
   test("keeps collapsed tab controls constrained to one row", () => {

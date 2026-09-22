@@ -1,4 +1,5 @@
-import { Show, createEffect, on, onCleanup, type JSX } from "solid-js"
+import { Match, Show, Switch, createEffect, on, onCleanup, type JSX } from "solid-js"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { createHoverEngagement } from "../rail/rail-hover-engagement"
 import { useDragSource } from "../workbench/index"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
@@ -172,7 +173,7 @@ export function NavigationRowGlyph(props: { children: JSX.Element }) {
 }
 
 /**
- * The status dot in that glyph column. Separate from {@link NavigationRowGlyph}
+ * The status mark in that glyph column. Separate from {@link NavigationRowGlyph}
  * so a terminal row can put its own icon in the same column when idle.
  */
 export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
@@ -180,42 +181,61 @@ export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
   // component body runs exactly once, so an early return would capture whatever
   // status the row had at mount — idle, for every row that has not started work
   // yet — and the glyph would never appear when that row later went busy.
-  // `NavigationStatusDot` has the same early-return shape and survives it only
-  // because every caller already wraps it in its own `<Show>`.
   return (
     <Show when={props.status !== "idle"}>
       <NavigationRowGlyph>
-        <NavigationStatusDot status={props.status} />
+        <NavigationStatusMark status={props.status} />
       </NavigationRowGlyph>
     </Show>
   )
 }
 
 /**
- * Sidebar status indicator dot shared by both navigation islands. `working`
- * renders a pulsing ringed dot; every other lifecycle state renders a solid
- * dot colored by status. `aria-hidden` because the surrounding row already
- * conveys status textually.
+ * The one status mark for a session or terminal, drawn by the sidebar rows and
+ * the compact tab alike so the two never disagree. It fits the 16px avatar and
+ * glyph slot:
+ *   working          → the app spinner, grey
+ *   permission/error → an avatar-shaped tint around a 6px dot; warning for
+ *                      "needs you", critical for a failed turn
+ *   done             → a 6px dot in the text colour
+ *   idle             → nothing
+ * `surface` picks the data attribute each surface's e2e oracle reads.
  */
-export function NavigationStatusDot(props: { status: SwitcherStatus }) {
-  // Status is conveyed by a single small dot, identical to the tab/compact-
-  // switcher StatusDot (keep the two in sync). Palette is deliberately minimal —
-  // grey for working/done, red only for "needs you", nothing for idle:
-  //   working    → pulsing grey (in progress)
-  //   done       → solid grey   (finished)
-  //   permission → solid red    (needs you)
-  //   idle       → no dot
-  if (props.status === "idle") return null
+export function NavigationStatusMark(props: { status: SwitcherStatus; surface?: "sidebar" | "switcher" }) {
+  const data = () => props.surface === "switcher"
+    ? { "data-switcher-status": props.status }
+    : { "data-sidebar-status": props.status }
   return (
-    <span
-      aria-hidden="true"
-      data-sidebar-status={props.status}
-      class="size-1.5 shrink-0 rounded-full"
-      classList={{
-        "bg-text-weak": props.status === "working" || props.status === "done",
-        "animate-pulse": props.status === "working",
-        "bg-icon-critical-base": props.status === "permission",
-      }}
-    />
+    <Switch>
+      <Match when={props.status === "working"}>
+        {/* The spinner animates through inline styles, so only `!important`
+            stops it; its rects then read as a still grid. */}
+        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 items-center justify-center text-icon-weak-base">
+          <Spinner class="motion-reduce:[&_rect]:!animate-none" style={{ width: "14px" }} />
+        </span>
+      </Match>
+      <Match when={props.status === "permission" || props.status === "error"}>
+        <span
+          aria-hidden="true"
+          {...data()}
+          class="flex size-4 shrink-0 items-center justify-center rounded-sm"
+          classList={{
+            "bg-icon-warning-base/15": props.status === "permission",
+            "bg-icon-critical-base/15": props.status === "error",
+          }}
+        >
+          <span
+            class="size-1.5 rounded-full"
+            classList={{
+              "bg-icon-warning-base": props.status === "permission",
+              "bg-icon-critical-base": props.status === "error",
+            }}
+          />
+        </span>
+      </Match>
+      <Match when={props.status === "done"}>
+        <span aria-hidden="true" {...data()} class="size-1.5 shrink-0 rounded-full bg-text-base" />
+      </Match>
+    </Switch>
   )
 }
