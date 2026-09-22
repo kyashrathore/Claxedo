@@ -119,21 +119,27 @@ describe("applyDirectorySessionMeta", () => {
   // Replaying the same payload must not churn the stored objects. It still
   // emits a cache event -- `setQueryData` always does -- so this pins the
   // identity contract the two cache-only observers read through, not silence.
+  // A full read stamps `reconciledAt` from the clock, so the clock is held.
   test("replaying an identical payload keeps the stored objects", () => {
-    const payload = {
-      sessionID: SESSION,
-      status: { [SESSION]: { type: "idle" as const } },
-      permissions: [],
-      questions: [],
+    setSystemTime(1_790_000_000_000)
+    try {
+      const payload = {
+        sessionID: SESSION,
+        status: { [SESSION]: { type: "idle" as const } },
+        permissions: [],
+        questions: [],
+      }
+      applyDirectorySessionMeta(payload)
+      const status = readStatus(SESSION)
+      const requests = readRequests(SESSION)
+
+      applyDirectorySessionMeta(payload)
+
+      expect(readStatus(SESSION)).toBe(status)
+      expect(readRequests(SESSION)).toBe(requests)
+    } finally {
+      setSystemTime()
     }
-    applyDirectorySessionMeta(payload)
-    const status = readStatus(SESSION)
-    const requests = readRequests(SESSION)
-
-    applyDirectorySessionMeta(payload)
-
-    expect(readStatus(SESSION)).toBe(status)
-    expect(readRequests(SESSION)).toBe(requests)
   })
 })
 
