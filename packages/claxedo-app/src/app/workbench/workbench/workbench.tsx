@@ -251,11 +251,13 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   const clearDropTarget = () => setDropTarget(null)
   onMount(() => {
     const dispose = workbenchDrag.registerDropZone({
-      onMove: (_contentId, x, y) => setDropTarget(hitTestPaneAt(x, y)),
+      onMove: (_contentId, x, y) => setDropTarget(hitTestPaneAt(x, y, rootEl)),
       onDrop: (contentId, x, y) => {
-        const target = hitTestPaneAt(x, y)
+        const target = hitTestPaneAt(x, y, rootEl)
         clearDropTarget()
-        if (target) commitDrop(target.paneId, target.edge, contentId)
+        if (!target) return false
+        commitDrop(target.paneId, target.edge, contentId)
+        return true
       },
       onCancel: clearDropTarget,
     })

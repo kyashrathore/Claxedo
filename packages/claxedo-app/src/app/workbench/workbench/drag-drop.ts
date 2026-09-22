@@ -28,10 +28,14 @@ export type DropTarget = { paneId: string; edge: Edge }
  * Find the pane under a pointer position and the edge it would split on.
  * `elementFromPoint` finds the pane under the cursor; the drag ghost is
  * `pointer-events:none` so it never occludes it.
+ * `within` bounds the search to the workbench's own pane area: rail rows also
+ * carry `data-pane-id` (as a navigation label, not a drop target), so an
+ * unbounded walk-up treats a drifted release over the rail as a pane drop.
  */
-export function hitTestPaneAt(x: number, y: number): DropTarget | null {
+export function hitTestPaneAt(x: number, y: number, within?: HTMLElement): DropTarget | null {
   if (typeof document === "undefined" || !document.elementFromPoint) return null
   const hit = document.elementFromPoint(x, y)
+  if (within && !within.contains(hit)) return null
   // `elementFromPoint` yields an Element (an SVG glyph inside a pane, say);
   // walk to the first HTML ancestor and from there up to the pane node.
   let el: HTMLElement | null = hit instanceof HTMLElement ? hit : (hit?.parentElement ?? null)

@@ -94,6 +94,11 @@ export function NavigationRow(props: NavigationRowProps) {
           setWorkbenchDragData: () => {},
         })
       },
+      // A press that drifts past the 5px threshold and is released back over the
+      // rail drops onto no pane. Without this the row is dead: the drag took
+      // pointer capture, so the browser retargeted the click off the activate
+      // button onto this element, and no drop ran either.
+      onDropMissed: activate,
     })
     onCleanup(dispose)
   }

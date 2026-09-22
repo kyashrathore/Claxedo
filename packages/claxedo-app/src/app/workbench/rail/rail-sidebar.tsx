@@ -1176,6 +1176,12 @@ export function RailSidebar(props: RailSidebarProps) {
     afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return
       scheduleSidebarStatusPrime(session.id)
+      // The delay reaches 2.1s, so this can land long after the reader moved to
+      // a terminal or page. `onTabSelect` navigates to the session's route and
+      // route intent turns a session route back into a focus, which would take
+      // the pane off whatever they moved to. `sessionActivationSerial` does not
+      // cover that — only another session click bumps it.
+      if (claxedoState.wb.selectors.focusedContent() !== contentId) return
       const meta = claxedoState.meta.get(contentId)
       if (meta) props.onTabSelect?.(meta)
     })

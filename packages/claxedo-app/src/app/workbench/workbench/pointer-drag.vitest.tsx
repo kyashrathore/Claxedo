@@ -21,13 +21,18 @@ function pointer(
 let el: HTMLElement
 let dispose: () => void
 
-function mountSource(opts?: { contentId?: () => string | undefined; enabled?: () => boolean }) {
+function mountSource(opts?: {
+  contentId?: () => string | undefined
+  enabled?: () => boolean
+  onDropMissed?: () => void
+}) {
   el = document.createElement("button")
   document.body.appendChild(el)
   dispose = useDragSource(el, {
     contentId: opts?.contentId ?? (() => "surface-1"),
     sourceKind: "tab",
     enabled: opts?.enabled,
+    onDropMissed: opts?.onDropMissed,
   })
 }
 
@@ -156,6 +161,51 @@ describe("useDragSource — touch", () => {
     pointer(window, "pointermove", { clientX: 40, clientY: 0, pointerType: "touch" })
     vi.advanceTimersByTime(300)
     expect(workbenchDrag.active()).toBe(false)
+  })
+})
+
+// A press that drifts past the threshold takes pointer capture on the source, so
+// the browser retargets the click off any inner activate control onto it. The
+// press is then neither a drop nor a click unless the source is told the drop
+// missed.
+describe("useDragSource — a drag nothing accepted is still a press", () => {
+  test("fires onDropMissed when no zone takes the content", () => {
+    const onDropMissed = vi.fn()
+    mountSource({ onDropMissed })
+    pointer(el, "pointerdown", { clientX: 0, clientY: 0 })
+    pointer(window, "pointermove", { clientX: 40, clientY: 0 })
+    pointer(window, "pointerup", { clientX: 40, clientY: 0 })
+    expect(onDropMissed).toHaveBeenCalledTimes(1)
+  })
+
+  test("stays silent when a zone commits the drop", () => {
+    const onDropMissed = vi.fn()
+    const off = workbenchDrag.registerDropZone({ onDrop: () => true })
+    mountSource({ onDropMissed })
+    pointer(el, "pointerdown", { clientX: 0, clientY: 0 })
+    pointer(window, "pointermove", { clientX: 40, clientY: 0 })
+    pointer(window, "pointerup", { clientX: 40, clientY: 0 })
+    off()
+    expect(onDropMissed).not.toHaveBeenCalled()
+  })
+
+  test("stays silent below the drag threshold, where the real click survives", () => {
+    const onDropMissed = vi.fn()
+    mountSource({ onDropMissed })
+    pointer(el, "pointerdown", { clientX: 0, clientY: 0 })
+    pointer(window, "pointermove", { clientX: 3, clientY: 0 })
+    pointer(window, "pointerup", { clientX: 3, clientY: 0 })
+    expect(onDropMissed).not.toHaveBeenCalled()
+  })
+
+  test("stays silent after Escape aborts the drag", () => {
+    const onDropMissed = vi.fn()
+    mountSource({ onDropMissed })
+    pointer(el, "pointerdown", { clientX: 0, clientY: 0 })
+    pointer(window, "pointermove", { clientX: 40, clientY: 0 })
+    workbenchDrag.cancel()
+    pointer(window, "pointerup", { clientX: 40, clientY: 0 })
+    expect(onDropMissed).not.toHaveBeenCalled()
   })
 })
 

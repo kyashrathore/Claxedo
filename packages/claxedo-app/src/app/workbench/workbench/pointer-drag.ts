@@ -22,7 +22,9 @@ export type DragSourceKind = "workbench-pane" | "tab" | "navigation-row"
  */
 export type DropZone = {
   onMove?: (contentId: string, x: number, y: number) => void
-  onDrop?: (contentId: string, x: number, y: number) => void
+  /** Return true when the zone commits the drop, so the source can tell a
+   *  completed drag from a release over nothing. */
+  onDrop?: (contentId: string, x: number, y: number) => boolean | void
   onCancel?: () => void
 }
 
@@ -124,13 +126,18 @@ export const workbenchDrag = {
     for (const zone of dropZones.slice()) zone.onMove?.(s.contentId, x, y)
   },
 
-  /** Pointer released over a target — commit the drop. */
-  end() {
+  /** Pointer released over a target — commit the drop. Returns whether any zone took it. */
+  end(): boolean {
     const s = state()
-    if (!s.active) return
+    if (!s.active) return false
     setState({ ...s, active: false })
     removeGhost()
-    if (s.contentId != null) for (const zone of dropZones.slice()) zone.onDrop?.(s.contentId, s.x, s.y)
+    if (s.contentId == null) return false
+    let consumed = false
+    for (const zone of dropZones.slice()) {
+      if (zone.onDrop?.(s.contentId, s.x, s.y) === true) consumed = true
+    }
+    return consumed
   },
 
   /** Drag aborted (Escape / pointercancel) — targets must NOT commit. */
@@ -177,6 +184,14 @@ export type DragSourceOptions = {
   onBegin?: (event: PointerEvent) => void
   /** Fires when the drag ends or aborts. */
   onEnd?: () => void
+  /**
+   * The pointer was released without any drop zone taking the content — a press
+   * that drifted past the threshold and landed back on nothing. The source's own
+   * `click` cannot serve here: capture is held by the source element, so the
+   * browser retargets the click off any inner activate control onto it, and the
+   * press would otherwise be neither a drop nor a click.
+   */
+  onDropMissed?: () => void
 }
 
 /**
@@ -273,8 +288,13 @@ export function useDragSource(el: HTMLElement, options: DragSourceOptions): () =
 
   const onUp = (event: PointerEvent) => {
     if (pointerId != null && event.pointerId !== pointerId) return
-    if (dragging) workbenchDrag.end()
+    // `workbenchDrag.active()` is read before `end()`: Escape aborts through
+    // `cancel()` while this source still holds the pointer, and that release
+    // must stay an abort rather than fall through to the missed-drop click.
+    const recoverable = dragging && workbenchDrag.active()
+    const consumed = dragging ? workbenchDrag.end() : false
     teardownSession()
+    if (recoverable && !consumed) options.onDropMissed?.()
   }
 
   const onCancel = (event: PointerEvent) => {
