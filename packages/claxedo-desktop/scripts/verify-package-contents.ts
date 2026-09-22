@@ -248,6 +248,33 @@ export function verifyPackageContents(
     }
   }
   for (const archive of asars) {
+    // The launch gate child is spawned by its unpacked path and resolves its
+    // imports from there, where nothing else from the asar exists. Only a run
+    // proves the copy is self-contained; presence proved nothing when the
+    // child shared a chunk with the runtime bundle.
+    const gateChild = path.join(`${archive}.unpacked`, "out/main/launch-gate-child.mjs")
+    if (!fs.existsSync(gateChild)) {
+      failures.push(`${archive}: launch gate child is not unpacked at ${gateChild}`)
+      continue
+    }
+    if (!canSmokePackagedBinary(target)) continue
+    const executable = packagedExecutable(archive)
+    if (!executable) {
+      failures.push(`${archive}: cannot locate the packaged executable to run the launch gate child`)
+      continue
+    }
+    const gate = spawnSync(executable, [gateChild], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      encoding: "utf8",
+      timeout: 30_000,
+    })
+    if (gate.status !== 23) {
+      failures.push(
+        `${archive}: launch gate child exited ${gate.status} instead of 23 (no parent channel) when run from its unpacked path:\n${gate.stderr.trim().split("\n").slice(0, 4).join("\n")}`,
+      )
+    }
+  }
+  for (const archive of asars) {
     const found = inspectLocales(archive)
     // Only assert when a locale directory is actually present: some targets
     // (and the asar-only fixtures in tests) have no Chromium resources beside
@@ -311,4 +338,25 @@ if (import.meta.main) {
   console.log(
     `[verify-package-contents] ok — ${asars.length} package(s) contain only bundled output + native modules and a working rich-content renderer`,
   )
+}
+
+/**
+ * The app binary next to a packaged `app.asar`, by electron-builder's layout:
+ * `<name>.app/Contents/MacOS/<name>` on macOS, the single `.exe` beside
+ * `resources/` on Windows, the pinned `claxedo` on Linux.
+ */
+function packagedExecutable(archive: string): string | undefined {
+  const resources = path.dirname(archive)
+  if (process.platform === "darwin") {
+    const macos = path.join(resources, "..", "MacOS")
+    const entries = fs.existsSync(macos) ? fs.readdirSync(macos) : []
+    return entries.length === 1 ? path.join(macos, entries[0]) : undefined
+  }
+  const appDir = path.dirname(resources)
+  if (process.platform === "win32") {
+    const exes = fs.readdirSync(appDir).filter((entry) => entry.endsWith(".exe"))
+    return exes.length === 1 ? path.join(appDir, exes[0]) : undefined
+  }
+  const linux = path.join(appDir, "claxedo")
+  return fs.existsSync(linux) ? linux : undefined
 }

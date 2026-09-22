@@ -127,6 +127,7 @@ function withAsar(
     corruptHostConnector?: boolean
     includeRichContent?: boolean
     includeSdk?: boolean
+    includeLaunchGate?: boolean
   } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-asar-"))
@@ -157,6 +158,11 @@ function withAsar(
     const richContent = path.join(resources, "rich-content")
     fs.mkdirSync(richContent, { recursive: true })
     fs.writeFileSync(path.join(richContent, "claxedo-rich-content-renderer.exe"), "synthetic fixture")
+  }
+  if (options.includeLaunchGate !== false) {
+    const unpacked = path.join(resources, "app.asar.unpacked/out/main")
+    fs.mkdirSync(unpacked, { recursive: true })
+    fs.writeFileSync(path.join(unpacked, "launch-gate-child.mjs"), "synthetic fixture")
   }
   try {
     // This fixture proves package structure, not native execution. Declare a
@@ -222,6 +228,11 @@ test("a packaged app must carry the verified Host Connector sidecar", () => {
 test("a packaged app must carry exactly one native rich-content renderer", () => {
   const missing = withAsar(["package.json", "out/main/index.js"], { includeRichContent: false })
   expect(missing).toContainEqual(expect.stringContaining("expected one packaged rich-content renderer"))
+})
+
+test("a packaged app must unpack the launch gate child beside its main bundle", () => {
+  const missing = withAsar(["out/main/index.js"], { includeLaunchGate: false })
+  expect(missing).toContainEqual(expect.stringContaining("launch gate child is not unpacked"))
 })
 
 test("an undeclared structural directory fails, reported once by root", () => {
