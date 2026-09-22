@@ -7,7 +7,7 @@ export type TimelinePrependAnchor = {
 
 export function captureTimelinePrependAnchor(root: HTMLElement): TimelinePrependAnchor | undefined {
   const view = root.getBoundingClientRect()
-  const anchor = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")]
+  const anchor = [...root.querySelectorAll<HTMLElement>('[data-timeline-key]:not([data-timeline-anchor="none"])')]
     .map((element) => ({ element, rect: element.getBoundingClientRect() }))
     .filter((item) => item.rect.bottom > view.top && item.rect.top < view.bottom)
     .sort((a, b) => a.rect.top - b.rect.top)[0]

@@ -251,6 +251,15 @@ export namespace TimelineRow {
    * External observers verifying "this exact message painted" read the
    * `data-content-message-id` attribute stamped from this.
    */
+  /**
+   * Rows a reading position can be restored against. The previous-messages row
+   * is keyed by the first rendered turn, so the reveal it anchors re-keys or
+   * removes it, leaving the restore nothing to find.
+   */
+  export function anchorsReadingPosition(row: TimelineRow) {
+    return row._tag !== "PreviousMessages"
+  }
+
   /** Rows that anchor a user-message position (scroll targets, row index). */
   export function anchorsMessage(row: TimelineRow) {
     return row._tag === "CommentStrip" || (row._tag === "UserMessage" && row.anchor)

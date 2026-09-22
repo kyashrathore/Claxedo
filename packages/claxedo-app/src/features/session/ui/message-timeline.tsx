@@ -1601,6 +1601,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         {(current) => (
           <div
             data-timeline-key={props.rowKey}
+            data-timeline-anchor={TimelineRow.anchorsReadingPosition(current().row) ? undefined : "none"}
             data-timeline-row-rich-ready={ready() ? "true" : "false"}
             style={{
               position: "absolute",

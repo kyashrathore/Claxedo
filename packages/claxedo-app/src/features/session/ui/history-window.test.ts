@@ -199,6 +199,42 @@ describe("createSessionHistoryWindow", () => {
     root.dispose()
   })
 
+  test("a prefetch that lands after a backfill moved the window keeps the fetched turns hidden", async () => {
+    const older = Array.from({ length: 10 }, (_, index) => ({ ...userMessage(index + 1), id: `older-${index + 1}` }))
+    const root = createRoot((dispose) => {
+      const [messages, setMessages] = createSignal(userMessages(12))
+      const [userScrolled, setUserScrolled] = createSignal(false)
+      const scroller = document.createElement("div")
+      scroller.scrollTop = 0
+      return {
+        dispose,
+        setUserScrolled,
+        historyWindow: createSessionHistoryWindow({
+          sessionID: () => "s-1",
+          messagesReady: () => true,
+          visibleUserMessages: messages,
+          historyMore: () => true,
+          historyLoading: () => false,
+          loadMore: async () => {
+            await Promise.resolve()
+            setMessages([...older, ...messages()])
+          },
+          userScrolled,
+          scroller: () => scroller,
+        }),
+      }
+    })
+
+    root.setUserScrolled(true)
+    root.historyWindow.onScrollerScroll()
+    expect(root.historyWindow.turnStart()).toBe(0)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(ids(root.historyWindow.renderedUserMessages())).toEqual(ids(userMessages(12)))
+    expect(root.historyWindow.hiddenTurnCount()).toBe(10)
+    root.dispose()
+  })
+
   test("turnInit 1 renders only the last turn", () => {
     const root = createRoot((dispose) => {
       const [messages] = createSignal(userMessages(12))

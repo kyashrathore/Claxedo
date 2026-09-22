@@ -252,7 +252,13 @@ export function createSessionHistoryWindow(input: Input) {
     }
 
     if (growth <= 0) return
-    if (turnStart() !== start) return
+    // A backfill moved the window while this page was in flight. The page grew
+    // the list at its head, so an unshifted start would render the fetched
+    // turns above the reader with no anchor left to hold their place.
+    if (turnStart() !== start) {
+      setTurnStart(turnStart() + growth)
+      return
+    }
 
     const reveal = !opts?.prefetch
     const currentRendered = renderedUserMessages().length
