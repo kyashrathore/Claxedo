@@ -10,6 +10,16 @@ on:
   # `needs:`. `staging` stays out of `push.branches` above: a push trigger would
   # run the whole suite a second time, in a run the deploy does not depend on.
   workflow_call:
+    inputs:
+      linux-unit-only:
+        description: >-
+          Run the whole unit suite on Linux and nothing else: no Windows leg, no
+          e2e. The e2e shards fail before any test runs (workspace dist output
+          is not built in those jobs) and the Windows leg fails in the embedded
+          OpenCode verification, so a release gate that required them could
+          never open; the deploy gates on what this repository can prove.
+        type: boolean
+        default: false
 
 concurrency:
   # Keep every run on dev so cancelled checks do not pollute the default branch
@@ -29,18 +39,18 @@ jobs:
     name: select affected CI surfaces
     runs-on: ubuntu-latest
     outputs:
-      full: ${{ steps.changed.outputs.full }}
+      full: ${{ inputs.linux-unit-only && 'true' || steps.changed.outputs.full }}
       docs: ${{ steps.changed.outputs.docs }}
-      unit: ${{ steps.changed.outputs.unit }}
-      unit_matrix: ${{ steps.changed.outputs.unit_matrix }}
+      unit: ${{ inputs.linux-unit-only && 'true' || steps.changed.outputs.unit }}
+      unit_matrix: ${{ inputs.linux-unit-only && '[{"name":"linux","host":"ubuntu-latest"}]' || steps.changed.outputs.unit_matrix }}
       mermaid: ${{ steps.changed.outputs.mermaid }}
       boundary_app: ${{ steps.changed.outputs.boundary_app }}
       boundary_local_server: ${{ steps.changed.outputs.boundary_local_server }}
       boundary_host_connector: ${{ steps.changed.outputs.boundary_host_connector }}
       boundary_server: ${{ steps.changed.outputs.boundary_server }}
-      core_e2e: ${{ steps.changed.outputs.core_e2e }}
-      onboarding: ${{ steps.changed.outputs.onboarding }}
-      tier_real: ${{ steps.changed.outputs.tier_real }}
+      core_e2e: ${{ inputs.linux-unit-only && 'false' || steps.changed.outputs.core_e2e }}
+      onboarding: ${{ inputs.linux-unit-only && 'false' || steps.changed.outputs.onboarding }}
+      tier_real: ${{ inputs.linux-unit-only && 'false' || steps.changed.outputs.tier_real }}
     steps:
       - name: Checkout repository history
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

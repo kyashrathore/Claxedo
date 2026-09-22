@@ -9,7 +9,7 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 | - | --- | --- | --- |
 | 1 | `plan` | nothing — selects components | `.github/actions/detect-ci-changes` |
 | 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
-| 2 | `unit` | nothing | `.github/workflows/test.yml` (whole CI suite) |
+| 2 | `unit` | nothing | `.github/workflows/test.yml` with `linux-unit-only` (full unit suite, Linux) |
 | 3 | `control-plane` | Better Auth + D1 Worker **and the browser app** | `packages/claxedo-server/scripts/deploy/staging-release.ts` |
 | 4 | `relay` | workspace relay Worker (Durable Object) | `packages/workspace-relay/scripts/deploy-cloudflare.ts` |
 | 5 | `sandbox-image` | Cloudflare sandbox Worker container image | `.github/workflows/deploy-cloudflare-sandbox-worker.yml` |
@@ -20,9 +20,15 @@ order, each `needs:` the one before it. `gate` runs the full repository rather
 than the affected surfaces `typecheck.yml` selects — the branch being released
 is what has to be green, not the diff that reached it. `unit` is `test.yml`
 called as a reusable workflow, so a red suite blocks the release through
-`needs:` instead of through a race between two independent runs. `staging` is
-deliberately absent from `test.yml`'s `push.branches`: a push trigger would run
-the same suite a second time in a run the deploy does not depend on.
+`needs:` instead of through a race between two independent runs. It is called
+with `linux-unit-only`: the whole unit suite on Linux, no Windows leg and no
+e2e. The e2e shards fail before any test runs because those jobs never build
+the workspace dist output their helpers import, and the Windows leg fails in
+the embedded OpenCode verification; both have been red on `dev` since at least
+2026-09-02, so a gate that required them would never open. They still run on
+every push to `dev` through `test.yml` itself. `staging` is deliberately absent
+from `test.yml`'s `push.branches`: a push trigger would run the same suite a
+second time in a run the deploy does not depend on.
 
 The whole run shares the `claxedo-cloud-deploy` concurrency group with
 `deploy-claxedo-app-staging.yml`, and a queued run waits instead of cancelling:

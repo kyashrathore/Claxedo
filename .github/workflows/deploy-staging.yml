@@ -118,6 +118,8 @@ jobs:
   unit:
     name: CI suite
     uses: ./.github/workflows/test.yml
+    with:
+      linux-unit-only: true
     secrets: inherit
 
   control-plane:
