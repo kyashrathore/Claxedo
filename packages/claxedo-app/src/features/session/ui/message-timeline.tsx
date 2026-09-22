@@ -638,7 +638,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       hasScrollGesture: props.hasScrollGesture(),
     })
     if (plan.prepareOverscan) prepareScrollOverscan()
-    if (plan.clearPrependAnchor) prepend.clear()
+    if (plan.settlePrependAnchor) prepend.settle()
     return plan
   }
   let virtualContent: HTMLDivElement | undefined
