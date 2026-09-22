@@ -64,4 +64,4 @@ The stored ceiling is a host/API policy, not merely selecting a restrictive mode
 | Other harnesses | Authenticate Antigravity/Droid/Pi and repeat actual turns, tools, status/sound and restart. | Cursor/Amp have scoped passes; remaining advertised harness coverage is incomplete. |
 | Onboarding—last | Fresh profile: open a local project, connect provider, first useful result; interrupt/restart setup. Then test cloud and signed-web onboarding separately. | Missing cloud credentials must not block unsigned local work; actionable login/quota/setup errors; completed steps persist. |
 
-Detailed chronological evidence remains in `packages/claxedo-app/.artifacts/launch-flow-audit-evidence.md`; the full nested matrix is `launch-flow-audit.md` beside it. Known failing tests are retained intentionally rather than weakened or marked as passes.
+Detailed chronological evidence was written to packages/claxedo-app/.artifacts/launch-flow-audit-evidence.md, with the full nested matrix in launch-flow-audit.md beside it; that directory is untracked and neither file was committed. Known failing tests are retained intentionally rather than weakened or marked as passes.

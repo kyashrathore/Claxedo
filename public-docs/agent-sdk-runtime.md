@@ -137,7 +137,7 @@ The package-local docs are the canonical API and recipe source:
 Implemented in:
 
 - `packages/agent-sdk-runtime/src/index.ts`
-- `packages/agent-sdk-runtime/src/harness-types.ts`
+- `packages/agent-runtime-contract/src/harnesses.ts`
 - `packages/agent-sdk-runtime/src/harnesses/index.ts`
 - `packages/agent-sdk-runtime/src/runtime.ts`
 - `packages/agent-sdk-runtime/src/stores/*`

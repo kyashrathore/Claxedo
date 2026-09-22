@@ -18,7 +18,7 @@ Do not use RE2 as an invisible substitute. A read-only probe of `re2js@2.8.6` fo
 
 1. `packages/agent-sdk-runtime/src/harnesses/acp/elicitation.ts`, `AcpElicitationInteractions.create`, calls `readElicitationSchema` before persisting `question.asked`. The contract reader currently rejects every non-null pattern.
 2. `packages/agent-runtime-contract/src/elicitation.ts` owns structural schema reading and synchronous primitive/content validation. Both runtime and UI use this package. It has no worker or platform imports.
-3. `packages/claxedo-app/src/features/session/ui/composer/session-elicitation-dock.tsx`, `finish`, validates the draft synchronously and submits serialized content through the existing question reply route. Draft values are a Solid store and need a plain snapshot before structured cloning.
+3. `packages/claxedo-app/src/features/session/ui/composer/session-question-dock.tsx`, `reply`, submits the draft through the existing question reply route. It does not yet validate against the schema; that is the browser lane this plan leaves open. Draft values are a Solid store and need a plain snapshot before structured cloning.
 4. `AcpElicitationInteractions.respond` parses that JSON and validates again, then `finish` commits `question.replied`, deletes the live resolver, and resolves the ACP request. Startup replies and bound-session replies share this path.
 5. `packages/agent-sdk-runtime/src/harnesses/acp/index.ts`, `replySessionStartQuestion`, currently calls `interactions.replyStart` without returning/awaiting it. This is safe only while the callee is synchronous. Audit both normal and startup forwarding, adapter contracts, and public routes when introducing async work.
 
