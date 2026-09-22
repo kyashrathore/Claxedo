@@ -12,7 +12,8 @@ const execFileAsync = promisify(execFile)
  */
 const PROBE_TIMEOUT_MS = 2_000
 
-export type CreationIdentitySource = "darwin-ps" | "linux-procfs" | "win32-cim"
+const CREATION_IDENTITY_SOURCES = ["darwin-ps", "linux-procfs", "win32-cim"] as const
+export type CreationIdentitySource = (typeof CREATION_IDENTITY_SOURCES)[number]
 
 /**
  * What makes a pid answerable for a specific launch. `startSecond` has
@@ -40,6 +41,28 @@ export type CreationIdentity = {
    */
   startedAtMs: number
   source: CreationIdentitySource
+}
+
+/**
+ * A `CreationIdentity` read back out of a record something else wrote — a
+ * durable ownership row, a daemon discovery file.
+ *
+ * `pid` must be positive because pid 0 and the negative form address a process
+ * GROUP, which is what every signal in `retirement.ts` is careful not to reach
+ * by accident. `source` is checked against the sources that exist rather than
+ * "some string", because the return type claims the union: a row carrying a
+ * source this build cannot produce is not an identity it may verify against.
+ */
+export function isCreationIdentity(value: unknown): value is CreationIdentity {
+  if (!isRecord(value)) return false
+  const { pid, processGroupId, parentPid, startedAtMs, startSecond, bootTime, source } = value
+  return typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0
+    && typeof processGroupId === "number" && Number.isSafeInteger(processGroupId)
+    && typeof parentPid === "number" && Number.isSafeInteger(parentPid)
+    && typeof startedAtMs === "number" && Number.isFinite(startedAtMs)
+    && typeof startSecond === "string" && startSecond.length > 0
+    && typeof bootTime === "string" && bootTime.length > 0
+    && CREATION_IDENTITY_SOURCES.some((candidate) => candidate === source)
 }
 
 export type IdentityVerdict =

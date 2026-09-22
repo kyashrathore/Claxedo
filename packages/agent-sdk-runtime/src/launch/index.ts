@@ -1,4 +1,5 @@
 export {
+  isCreationIdentity,
   launchErrorText,
   readBootTime,
   readCreationIdentity,
