@@ -2,6 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createShellSettle, type ShellSettleMotion } from "./workspace-panel-shell-settle"
 
+const clockNames = [
+  "requestAnimationFrame",
+  "cancelAnimationFrame",
+  "requestIdleCallback",
+  "cancelIdleCallback",
+  "setTimeout",
+  "clearTimeout",
+] as const
+
 /**
  * Drives the gate's clocks by hand, so each test states exactly which frames,
  * idle slices and timers have happened. The gate's whole job is ordering, and
@@ -11,14 +20,13 @@ function createClocks() {
   const frames: Array<FrameRequestCallback | undefined> = []
   const idles: Array<IdleRequestCallback | undefined> = []
   const timers: Array<{ run: () => void; delayMs: number } | undefined> = []
-  const original = {
-    requestAnimationFrame: globalThis.requestAnimationFrame,
-    cancelAnimationFrame: globalThis.cancelAnimationFrame,
-    requestIdleCallback: globalThis.requestIdleCallback,
-    cancelIdleCallback: globalThis.cancelIdleCallback,
-    setTimeout: globalThis.setTimeout,
-    clearTimeout: globalThis.clearTimeout,
-  }
+  // happy-dom defines no idle callbacks, and @xterm/headless picks its idle
+  // task queue by `"requestIdleCallback" in globalThis` when it loads, so a
+  // clock that did not exist has to be deleted again rather than set back to
+  // undefined: the key alone breaks every later terminal reflow in the run.
+  const original = new Map(
+    clockNames.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const),
+  )
   globalThis.requestAnimationFrame = (callback) => frames.push(callback)
   globalThis.cancelAnimationFrame = (handle) => {
     frames[handle - 1] = undefined
@@ -44,7 +52,12 @@ function createClocks() {
     timer: () => {
       for (const timer of timers.splice(0, timers.length)) timer?.run()
     },
-    restore: () => Object.assign(globalThis, original),
+    restore: () => {
+      for (const [name, descriptor] of original) {
+        if (descriptor) Object.defineProperty(globalThis, name, descriptor)
+        else Reflect.deleteProperty(globalThis, name)
+      }
+    },
   }
 }
 
@@ -101,6 +114,14 @@ afterEach(() => {
   active = undefined
   clocks?.restore()
   clocks = undefined
+})
+
+describe("createClocks", () => {
+  test("restore leaves every clock exactly as it found it, absent ones included", () => {
+    const before = clockNames.map((name) => [name, name in globalThis] as const)
+    createClocks().restore()
+    expect(clockNames.map((name) => [name, name in globalThis] as const)).toEqual(before)
+  })
 })
 
 describe("createShellSettle motion tracking", () => {
