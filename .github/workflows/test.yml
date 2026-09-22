@@ -15,9 +15,11 @@ on:
         description: >-
           Run the whole unit suite on Linux and nothing else: no Windows leg, no
           e2e. The e2e shards fail before any test runs (workspace dist output
-          is not built in those jobs) and the Windows leg fails in the embedded
-          OpenCode verification, so a release gate that required them could
-          never open; the deploy gates on what this repository can prove.
+          is not built in those jobs) and the Windows leg is still red in
+          package suites after its embedded OpenCode verification step
+          (docs/verification/windows-unit-opencode-node-2026-09-22.md), so a
+          release gate that required them could never open; the deploy gates
+          on what this repository can prove.
         type: boolean
         default: false
 
@@ -81,13 +83,17 @@ jobs:
         run: bun run docs:check-links
 
   unit:
-    name: unit (${{ matrix.settings.name }})
+    name: unit (${{ matrix.settings.name }}, ${{ matrix.lane }})
     needs: changes
     if: needs.changes.outputs.unit == 'true'
     strategy:
       fail-fast: false
       matrix:
         settings: ${{ fromJSON(needs.changes.outputs.unit_matrix) }}
+        # claxedo-server is 236 serialized files; beside the other 30 packages
+        # it took the whole suite past 35 minutes on a 2-core runner. The lanes
+        # share this job's setup and run as two jobs.
+        lane: [server, rest]
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -150,7 +156,7 @@ jobs:
       # green the whole time, because a sanitizer cannot notice that nothing
       # calls it.
       - name: Read Playwright version
-        if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.mermaid == 'true'
         id: playwright-version
         run: |
           version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
@@ -158,21 +164,21 @@ jobs:
 
       # Same key as the e2e jobs below, so this shares their cache entry.
       - name: Cache Playwright browsers
-        if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.mermaid == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ github.workspace }}/.playwright-browsers
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
 
       - name: Install Playwright Chromium
-        if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.mermaid == 'true'
         working-directory: packages/claxedo-app
         run: npx playwright install chromium
 
       # No `bun turbo build` needed: everything these two import
       # (@opencode-ai/ui, /core, /sdk) is exported from source, not dist.
       - name: Verify mermaid rendering (sanitizer + wiring)
-        if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.mermaid == 'true'
         timeout-minutes: 15
         working-directory: packages/session-ui
         run: bun run verify:mermaid
@@ -189,6 +195,7 @@ jobs:
         run: bun run build:packages
 
       - name: Verify embedded OpenCode on the Node runtime
+        if: matrix.lane == 'rest'
         run: bun run --cwd packages/workspace-runtime test:opencode-node
 
       # Product boundaries are independent release artifacts. Keep each public
@@ -196,19 +203,19 @@ jobs:
       # server products, and ordinary CI never invokes Desktop's production
       # build. The release workflows retain Desktop's complete boundary gate.
       - name: Verify app package boundary
-        if: runner.os == 'Linux' && needs.changes.outputs.boundary_app == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.boundary_app == 'true'
         run: bun run --cwd packages/claxedo-app verify:closure
 
       - name: Verify local-server package boundary
-        if: runner.os == 'Linux' && needs.changes.outputs.boundary_local_server == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.boundary_local_server == 'true'
         run: bun run --cwd packages/claxedo-local-server verify:closure
 
       - name: Verify Host Connector package boundary
-        if: runner.os == 'Linux' && needs.changes.outputs.boundary_host_connector == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'rest' && needs.changes.outputs.boundary_host_connector == 'true'
         run: bun run --cwd packages/claxedo-host-connector verify:closure
 
       - name: Verify server package boundary
-        if: runner.os == 'Linux' && needs.changes.outputs.boundary_server == 'true'
+        if: runner.os == 'Linux' && matrix.lane == 'server' && needs.changes.outputs.boundary_server == 'true'
         run: bun run --cwd packages/claxedo-server verify:closure
 
       # `bun turbo test` used to be a near-no-op: turbo.json declared only five
@@ -218,12 +225,13 @@ jobs:
       # declares ONE generic `test` task, so this command runs every package
       # that has a `test` script, including ones added later.
       #
-      # 35 min, up from 20: claxedo-server alone is ~4.5 min wall clock on a
-      # fast dev machine with `fileParallelism: false` (236 files serialized),
-      # and a 2-core runner is materially slower. If the observed wall clock
-      # ever crowds this ceiling, split claxedo-server into its own job rather
-      # than raising the number again -- but that job must then be added to
-      # branch protection, or it runs without gating anything.
+      # 35 min per lane, and the lanes are why: the single job reached that
+      # ceiling on 2026-09-22 (run 35744231812) and was killed mid-suite.
+      # claxedo-server is ~4.5 min wall clock on a fast dev machine with
+      # `fileParallelism: false` (236 files serialized) and materially worse
+      # on a 2-core runner, so it runs beside the other packages rather than
+      # after them. Both lanes gate every caller through this job's name, so
+      # branch protection must require each one it already required.
       #
       # Linux runs two package tasks to match the runner's core count. Windows
       # runs one package task at a time: its OpenCode suite contains wall-clock
@@ -243,10 +251,14 @@ jobs:
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             concurrency=1
           fi
+          lane=--filter=@claxedo/server
+          if [[ "${{ matrix.lane }}" == "rest" ]]; then
+            lane=--filter=!@claxedo/server
+          fi
           if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
-            bun turbo test --concurrency="$concurrency"
+            bun turbo test "$lane" --concurrency="$concurrency"
           else
-            bun turbo test --affected --concurrency="$concurrency"
+            bun turbo test "$lane" --affected --concurrency="$concurrency"
           fi
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
@@ -266,7 +278,7 @@ jobs:
           # from the published check.
           report_paths: |
             packages/*/.artifacts/unit/junit*.xml
-          check_name: "unit results (${{ matrix.settings.name }})"
+          check_name: "unit results (${{ matrix.settings.name }}, ${{ matrix.lane }})"
           detailed_summary: true
           include_time_in_summary: true
           fail_on_failure: false
@@ -275,7 +287,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: unit-${{ matrix.settings.name }}-${{ github.run_attempt }}
+          name: unit-${{ matrix.settings.name }}-${{ matrix.lane }}-${{ github.run_attempt }}
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
