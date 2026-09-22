@@ -284,8 +284,7 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
       })
       expect(embeddedHealth.status).toBe(200)
       const embeddedHealthBody = await embeddedHealth.json() as Record<string, unknown>
-      expect(embeddedHealthBody).toMatchObject({ service: "workspace-runtime" })
-      expect(embeddedHealthBody).not.toHaveProperty("workspaceId")
+      expect(embeddedHealthBody).toMatchObject({ service: "workspace-runtime", workspaceId: ws!.id })
 
       const relayFetch = (route: string) =>
         fetch(`${relay.url}/workspaces/${ws!.id}${route}`, {
@@ -300,8 +299,7 @@ describe("server-owned machine-placed Workspace Relay host tunnel E2E", () => {
       })
       expect(health.status).toBe(200)
       const healthBody = await health.json() as Record<string, unknown>
-      expect(healthBody).toMatchObject({ service: "workspace-runtime" })
-      expect(healthBody).not.toHaveProperty("workspaceId")
+      expect(healthBody).toMatchObject({ service: "workspace-runtime", workspaceId: ws!.id })
 
       const raw = await relayFetch("/file/raw?path=hello.txt")
       expect(raw.status).toBe(200)

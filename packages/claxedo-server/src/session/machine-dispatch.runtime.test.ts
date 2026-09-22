@@ -87,11 +87,12 @@ afterEach(() => {
 describe("machine dispatch against the workspace runtime it reads", () => {
   test("a dispatched prompt's turn is read off wr/events, session-scoped, through the embedded runtime", async () => {
     const adapter = adapterFixture()
+    const hub = createRuntimeEventHub()
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
       harnesses: [{ id: "pi", access: "native", create: () => adapter } as never],
+      eventHub: hub,
     })
-    const hub = createRuntimeEventHub()
     const bus = createBus<WorkspaceRuntimeEvent>()
     const app = new Hono()
     app.route("/", createSessionRoutes({

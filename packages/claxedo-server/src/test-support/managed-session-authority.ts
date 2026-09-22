@@ -1,6 +1,6 @@
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
-import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import { normalizeGrantSessionTurnInput, type SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 
 type ManagedTestAuthority = WorkspaceAuthority & PrivateSessionAuthority & SessionTurnAuthority
 
@@ -40,17 +40,25 @@ export function testManagedSessionAuthority(
     turnId: input.turnId,
     fencingToken: input.fencingToken,
   })
-  const grantSessionTurn: SessionTurnAuthority["grantSessionTurn"] = async (input) => ({
-    grantId: `grant_${input.sessionId}`,
-    sessionId: input.sessionId,
-    workspaceId: input.workspaceId,
-    actorId: input.actorId,
-    intent: input.intent,
-    ...(input.subjectSessionId === undefined ? {} : { subjectSessionId: input.subjectSessionId }),
-    ...(input.turnId === undefined ? {} : { turnId: input.turnId }),
-    issuedAt: Date.now(),
-    expiresAt: Date.now() + 60_000,
-  })
+  const grantSessionTurn: SessionTurnAuthority["grantSessionTurn"] = async (input) => {
+    // The intent-specific fields — the child's wake turn-id prefix above all —
+    // come from the same normalizer the D1 and SQLite adapters write their rows
+    // from, so a grant this seam mints is one the real verifier accepts.
+    const grant = normalizeGrantSessionTurnInput(input)
+    const now = Date.now()
+    return {
+      grantId: `grant_${input.sessionId}`,
+      sessionId: input.sessionId,
+      workspaceId: input.workspaceId,
+      actorId: input.actorId,
+      intent: grant.intent,
+      ...(grant.subjectSessionId === undefined ? {} : { subjectSessionId: grant.subjectSessionId }),
+      ...(grant.turnId === undefined ? {} : { turnId: grant.turnId }),
+      ...(grant.turnIdPrefix === undefined ? {} : { turnIdPrefix: grant.turnIdPrefix }),
+      issuedAt: now,
+      expiresAt: now + grant.ttlMs,
+    }
+  }
   const revokeSessionTurnGrants: SessionTurnAuthority["revokeSessionTurnGrants"] = async () => ({ revoked: 0 })
   return {
     reserveSession,
