@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
+import { generateKeyPairSync, sign } from "node:crypto"
 import { once } from "node:events"
-import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises"
+import { mkdtemp, rm, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { createServer } from "node:net"
 import { createServer as createHttpServer } from "node:http"
@@ -10,12 +11,12 @@ import { setTimeout as delay } from "node:timers/promises"
 
 const directory = await mkdtemp(path.join(tmpdir(), "workspace-runtime-image-"))
 const marker = "claxedo-image-native-turn"
-const agentDir = path.join(directory, "pi-agent")
-await mkdir(agentDir)
 const providerRequests = []
+const providerCalls = []
 const provider = createHttpServer(async (request, response) => {
   const chunks = []
   for await (const chunk of request) chunks.push(chunk)
+  providerCalls.push({ path: request.url, authorization: request.headers.authorization })
   providerRequests.push(JSON.parse(Buffer.concat(chunks).toString()))
   const tool = providerRequests.length === 1
   const delta = tool ? {
@@ -31,10 +32,21 @@ const provider = createHttpServer(async (request, response) => {
   response.end("data: [DONE]\n\n")
 })
 await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve))
-await writeFile(path.join(agentDir, "models.json"), JSON.stringify({ providers: { proof: {
-  baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: "openai-completions", apiKey: "image-proof-placeholder",
-  models: [{ id: "proof", reasoning: false, contextWindow: 32000, maxTokens: 1024 }],
-} } }))
+// The harness owns Pi's models.json and rewrites it from every config apply, so
+// the provider reaches Pi the way a control-plane push does. Groq is the Pi
+// provider whose built-in wire protocol is chat completions.
+const management = generateKeyPairSync("ed25519")
+const managementIssuer = "workspace-runtime-image-smoke"
+const managementAudience = "workspace-runtime"
+function managementToken() {
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url")
+  const now = Math.floor(Date.now() / 1000)
+  const unsigned = `${encode({ alg: "EdDSA", typ: "JWT" })}.${encode({
+    iss: managementIssuer, aud: managementAudience, sub: "image-smoke", iat: now, exp: now + 300,
+    workspace_id: "image-smoke", host_id: "image-smoke", action: "runtime.config.apply",
+  })}`
+  return `${unsigned}.${sign(null, Buffer.from(unsigned), management.privateKey).toString("base64url")}`
+}
 const probe = createServer()
 probe.listen(0, "127.0.0.1")
 await once(probe, "listening")
@@ -54,7 +66,9 @@ const runtime = spawn(process.argv[2] ? process.execPath : "workspace-runtime", 
     WORKSPACE_RUNTIME_STATE_DIR: path.join(directory, "state"),
     WORKSPACE_RUNTIME_STORE_DIR: path.join(directory, "store"),
     WORKSPACE_RUNTIME_NATIVE_HARNESS: "pi",
-    PI_CODING_AGENT_DIR: agentDir,
+    WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: management.publicKey.export({ type: "spki", format: "pem" }).toString(),
+    WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: managementIssuer,
+    WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: managementAudience,
   },
 })
 let launchError
@@ -83,7 +97,18 @@ try {
   assert(ready, "workspace-runtime did not become ready")
   const id = `ses_image_${"w".repeat(200)}`
   const mutation = (method, body) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  const created = await json("/session", mutation("POST", { id, title: "Image smoke", model: { providerID: "pi", modelID: "proof/proof" } }))
+  await json("/api/wr/config", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-workspace-runtime-management-token": managementToken() },
+    body: JSON.stringify({
+      version: 4,
+      mcp: {},
+      connections: [],
+      defaultHarness: { kind: "native", harnessId: "pi" },
+      auth: { groq: { baseUrl: `http://127.0.0.1:${provider.address().port}`, apiPath: "/openai/v1", placeholder: "image-proof-placeholder", authMode: "bearer" } },
+    }),
+  })
+  const created = await json("/session", mutation("POST", { id, title: "Image smoke", model: { providerID: "pi", modelID: "groq/llama-3.1-8b-instant" } }))
   assert.equal(created.id, id)
   assert.equal(created.directory, directory)
   const config = await json(`/session/${id}/config`)
@@ -115,6 +140,8 @@ try {
     assert.equal(assistant.flatMap((message) => message.parts).filter((part) => part.type === "text").map((part) => part.text).join(""), marker)
     assert.equal(await readFile(path.join(directory, "native-proof.txt"), "utf8"), marker)
     assert.equal(providerRequests.length, 2)
+    assert.deepEqual(providerCalls.map((call) => call.path), ["/openai/v1/chat/completions", "/openai/v1/chat/completions"])
+    assert(providerCalls.every((call) => call.authorization === "Bearer image-proof-placeholder"), "Pi did not send the projected placeholder")
     assert(providerRequests[1].messages.some((message) => message.role === "tool"), "native tool result did not reach provider")
     assert(history.maxEventOrdinal > 0, "history omitted the committed event ordinal")
   } finally {

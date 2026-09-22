@@ -67,6 +67,7 @@ COPY .build/ /opt/workspace-runtime/
 RUN cd /opt/workspace-runtime && \
     npm install --omit=dev --min-release-age=2 --legacy-peer-deps && \
     test -f /opt/workspace-runtime/workspace-runtime-host.mjs && \
+    test -f /opt/workspace-runtime/launch-gate-child.mjs && \
     chmod 0755 /opt/workspace-runtime/workspace-runtime-host.mjs && \
     ln -sf /opt/workspace-runtime/workspace-runtime-host.mjs /usr/local/bin/workspace-runtime && \
     test -x /usr/local/bin/workspace-runtime && \

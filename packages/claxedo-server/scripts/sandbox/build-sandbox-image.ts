@@ -27,6 +27,7 @@ const IMAGE_REQUIRED_DEPENDENCIES = [
 export const HOST_BUNDLE_FILENAME = "workspace-runtime-host.mjs"
 export const IMAGE_SMOKE_FILENAME = "workspace-runtime-image-smoke.mjs"
 export const WORKSPACE_RUNTIME_VERSION_FILENAME = "workspace-runtime-version"
+export const LAUNCH_GATE_CHILD_FILENAME = "launch-gate-child.mjs"
 
 function defaultExec(cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
   execFileSync(cmd, args, {
@@ -314,6 +315,13 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   fs.writeFileSync(packageJsonPath, packageJson)
   const smokePath = path.join(outDir, IMAGE_SMOKE_FILENAME)
   fs.copyFileSync(new URL(`./${IMAGE_SMOKE_FILENAME}`, import.meta.url), smokePath)
+  // The host spawns the launch gate child by path, and the bundle has no
+  // node_modules entry for @claxedo/agent-sdk-runtime to resolve it through;
+  // resolveLaunchGateChild() finds it beside the bundle.
+  const gateChildSource = path.join(workspacePackageRoot("@claxedo/agent-sdk-runtime"), "dist/launch", LAUNCH_GATE_CHILD_FILENAME)
+  if (!fs.existsSync(gateChildSource)) throw new Error(`${gateChildSource} does not exist; @claxedo/agent-sdk-runtime did not build it`)
+  const gateChildPath = path.join(outDir, LAUNCH_GATE_CHILD_FILENAME)
+  fs.copyFileSync(gateChildSource, gateChildPath)
   // Content build-id: sha256 over the emitted bundle + generated package.json,
   // truncated to 10 hex chars. Distinguishes two builds at the same core
   // version (the npm-publish immutability gate is gone), so a rebuilt image
@@ -323,6 +331,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
     .update(fs.readFileSync(versionFile))
     .update(packageJson)
     .update(fs.readFileSync(smokePath))
+    .update(fs.readFileSync(gateChildPath))
     .update(stagedPatches.digest)
     .digest("hex")
     .slice(0, 10)
@@ -330,6 +339,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
     bundle: bundlePath,
     packageJson: packageJsonPath,
     versionFile,
+    launchGateChild: gateChildPath,
     buildId,
   }
 }

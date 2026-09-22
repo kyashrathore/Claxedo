@@ -7,6 +7,7 @@ import {
   esbuildHostBundleOptions,
   HOST_BUNDLE_FILENAME,
   IMAGE_SMOKE_FILENAME,
+  LAUNCH_GATE_CHILD_FILENAME,
   WORKSPACE_RUNTIME_VERSION_FILENAME,
   hostBundleDependencies,
   hostBundlePackageRoots,
@@ -196,6 +197,7 @@ describe("build-sandbox-image", () => {
       dockerfile.includes(`ln -sf /opt/workspace-runtime/${HOST_BUNDLE_FILENAME} /usr/local/bin/workspace-runtime`)
     )).toBe(true)
     expect(dockerfiles.every((dockerfile) => !dockerfile.includes("claxedo-workspace-runtime-*.tgz"))).toBe(true)
+    expect(dockerfiles.every((dockerfile) => dockerfile.includes(`test -f /opt/workspace-runtime/${LAUNCH_GATE_CHILD_FILENAME}`))).toBe(true)
     expect(dockerfiles.every((dockerfile) =>
       dockerfile.includes(`test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/${WORKSPACE_RUNTIME_VERSION_FILENAME})"`)
     )).toBe(true)
