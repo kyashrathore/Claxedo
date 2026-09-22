@@ -1,5 +1,7 @@
 # Session rendering: current checks
 
+Most of the evidence this record cites — recordings, screenshots, timing files and logs — was never committed. Those citations are written as plain paths; the few files that did land are under `evidence/` and stay linked.
+
 Fresh runs on 2026-09-13 replace the old Claude-login and Pi-version blockers. The Pi session-file defect was fixed and the four journeys rerun on 2026-09-14; they now fail at the model request instead.
 
 | Check | Result |
@@ -22,10 +24,10 @@ Both identity modes means `local-unsigned` and `test-user`. All browser runs use
 
 ## Commands and evidence
 
-- [CLI commands, sanitized results and Pi executable tests](evidence/prerequisite-rerun/prerequisites.json).
-- Claude live: [unsigned command](evidence/prerequisite-rerun/claude-command.json), [result](evidence/prerequisite-rerun/claude-live.json); [Test User command](evidence/prerequisite-rerun/claude-signed-command.json), [result](evidence/prerequisite-rerun/claude-signed.json).
-- Pi native (superseded — missing session file): [unsigned command](evidence/prerequisite-rerun/pi-command.json), [result](evidence/prerequisite-rerun/pi.json); [Test User command](evidence/prerequisite-rerun/pi-signed-command.json), [result](evidence/prerequisite-rerun/pi-signed.json).
+- CLI commands, sanitized results and Pi executable tests (evidence/prerequisite-rerun/prerequisites.json).
+- Claude live: unsigned command (evidence/prerequisite-rerun/claude-command.json), result (evidence/prerequisite-rerun/claude-live.json); Test User command (evidence/prerequisite-rerun/claude-signed-command.json), result (evidence/prerequisite-rerun/claude-signed.json).
+- Pi native (superseded — missing session file): unsigned command (evidence/prerequisite-rerun/pi-command.json), result (evidence/prerequisite-rerun/pi.json); Test User command (evidence/prerequisite-rerun/pi-signed-command.json), result (evidence/prerequisite-rerun/pi-signed.json).
 - Pi native after the session-file fix: [findings](evidence/pi-session-fix/findings.md), [unsigned command](evidence/pi-session-fix/pi-unsigned-command.json) + [result](evidence/pi-session-fix/pi-unsigned.json), [Test User command](evidence/pi-session-fix/pi-test-user-command.json) + [result](evidence/pi-session-fix/pi-test-user.json).
-- [Six browser cases, retry counts and visual-review results](evidence/prerequisite-rerun/summary.json).
+- Six browser cases, retry counts and visual-review results (evidence/prerequisite-rerun/summary.json).
 
 The Pi driver fix and its regression test are committed as `20fdb18874` (three explicit paths: `driver.ts`, `driver.test.ts`, `fake-pi-rpc.mjs`). `agent-sdk-runtime` typecheck and the focused driver/auth/runtime/goal-conformance suites pass; the app's production lint/architecture gates were not rerun for this slice.

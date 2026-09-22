@@ -1,6 +1,6 @@
 # Pi missing session file: diagnosis, fix, and rerun
 
-Date: 2026-09-14. Prior evidence: [prerequisite-rerun](../prerequisite-rerun/).
+Date: 2026-09-14. Prior evidence: prerequisite-rerun (../prerequisite-rerun/).
 
 ## Confirmed mechanism
 
