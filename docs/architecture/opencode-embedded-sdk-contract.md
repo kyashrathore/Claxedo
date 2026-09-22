@@ -118,7 +118,7 @@ real packages instead of rebundling its native/data-relative graph. The desktop
 ships these outside app.asar. Neither product spawns a Bun process.
 
 VERIFIED: public SDK calls, process-lock contention and persistence on Node
-26.8.1 and Electron 43.2.0 / Node 24.18.0, macOS arm64. The public workspace
+26.8.1 and Electron 44.4.3 / Node 24.21.0, macOS arm64. The public workspace
 host smoke also exercises session creation, prompt failure, durable recovery
 and shutdown. Node 22.22.3 cannot parse the published util package's
 `await using`; standalone and sandbox runtimes therefore require Node 24.

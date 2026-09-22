@@ -17,7 +17,7 @@ The runtime is owned by `packages/workspace-runtime/src/opencode` and exposed
 as `@claxedo/workspace-runtime/opencode`. Bun is not needed to execute it.
 The runtime minimum is Node 24: Node 22.22.3 fails to parse the published
 `@opencode-ai/util` resource-management syntax. Sandbox images use Node 24.18.0;
-Electron remains 43.2.0 with its existing Node 24.18.0 runtime.
+Electron is 44.4.3 with its Node 24.21.0 runtime.
 
 Verification from `packages/workspace-runtime`:
 
@@ -32,8 +32,8 @@ bun run build
 The Node probe checks real cross-process contention, fd-release/reacquisition,
 invalid-fd errors, health, location-dependent config/agent/provider calls and
 session persistence. It isolates configuration and state in a temporary root.
-Verified locally on macOS arm64 with Node 26.8.1 and Electron 43.2.0 / Node
-24.18.0. The staged SDK and the emitted desktop server entrypoint also pass
+Verified locally on macOS arm64 with Node 26.8.1 and Electron 44.4.3 / Node
+24.21.0. The staged SDK and the emitted desktop server entrypoint also pass
 under Electron, including workspace/session routes and PTY creation. A clean
 npm install passes the SDK probe on Linux arm64 / Node 24.18.0, and the emitted
 HTTP host passes session creation, durable failure and snapshot checks there.
