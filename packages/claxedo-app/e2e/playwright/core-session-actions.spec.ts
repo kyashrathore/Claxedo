@@ -768,7 +768,8 @@ test.describe("core session actions: switcher tab title sync @core", () => {
     // (src/app/workbench/compact-switcher/compact-switcher.tsx) in the workbench header,
     // rendered only while the sidebar rail is unpinned — `sidebarPinned` is
     // `railRegion().docked !== false`, so collapsing the rail with the `sidebar-toggle`
-    // button un-docks it and reveals the strip.
+    // button un-docks it (the toggle stays mounted and reports `docked` through
+    // `aria-pressed`) and reveals the strip.
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, projectName: PROJECT_NAME, harnessModels: SEND_MODELS })
     const mutations = trackSessionMutations(page)
     await mutations.install()
@@ -777,7 +778,7 @@ test.describe("core session actions: switcher tab title sync @core", () => {
     const toggle = page.locator('[data-testid="sidebar-toggle"]')
     await expect(toggle).toBeVisible({ timeout: 10_000 })
     await toggle.click()
-    await expect(toggle).toHaveCount(0)
+    await expect(toggle).toHaveAttribute("aria-pressed", "false")
 
     const switcher = page.locator('[data-testid="compact-switcher"]')
     await expect(switcher).toBeVisible({ timeout: 10_000 })
