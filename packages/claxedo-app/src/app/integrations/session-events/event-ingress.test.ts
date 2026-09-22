@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -59,10 +59,15 @@ const revocationDefaults = {
   flushNavigationPersistence: async () => undefined,
 }
 
+// The conversation registry is module state shared by every test file in the
+// process, and file order is whatever the filesystem returns.
+beforeEach(() => clearConversationChatRegistryForTest())
+
 afterEach(() => {
   resetQueryPersisterForTest()
   setConversationPersistencePrincipal(undefined)
   setConversationPersistenceStorageForTest(undefined)
+  clearConversationChatRegistryForTest()
 })
 
 test("authority changes invalidate already-issued inventory responses", async () => {

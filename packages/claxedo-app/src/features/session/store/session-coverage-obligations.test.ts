@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import type { AgentPresentationMessage as Message, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
-import { hydrateRegisteredConversationSnapshot } from "../conversation/conversation-registry"
+import { clearConversationChatRegistryForTest, hydrateRegisteredConversationSnapshot } from "../conversation/conversation-registry"
 import { createTurnCoverageOwner, type TurnCoverageClient } from "./session-coverage-obligations"
 import { outstandingTurnCoverage, resetAcceptedPromptRefreshForTest } from "./accepted-prompt-refresh"
 
 const DIR = "/repo/main"
 const SESSION = "ses_reload"
 
-afterEach(() => resetAcceptedPromptRefreshForTest())
+afterEach(() => {
+  resetAcceptedPromptRefreshForTest()
+  clearConversationChatRegistryForTest()
+})
 
 function userRow(id: string): Message {
   return { id, sessionID: SESSION, role: "user", time: { created: 1 }, agent: "build" } as Message
