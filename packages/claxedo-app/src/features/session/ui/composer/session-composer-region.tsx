@@ -287,13 +287,13 @@ export function SessionComposerRegion(props: {
 
         <Show when={props.goalController} keyed>
           {(controller) => (
-            <Show when={controller.goal()} keyed>
+            <Show when={controller.goal()}>
               {(goal) => (
-                <Show when={controller.goalCapabilities()} keyed>
+                <Show when={controller.goalCapabilities()}>
                   {(capabilities) => (
                     <SessionGoalDock
-                      goal={goal}
-                      capabilities={capabilities}
+                      goal={goal()}
+                      capabilities={capabilities()}
                       onPause={controller.pauseGoal}
                       onResume={controller.resumeGoal}
                       onDelete={controller.deleteGoal}
@@ -438,13 +438,13 @@ export function SessionComposerRegion(props: {
               >
                 <div
                   ref={props.inputRef}
-                  class="w-full rounded-[var(--radius-2xl)] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
+                  class="w-full px-3 py-2 text-center text-12-regular text-text-weaker"
                 >
                   <span>{language.t("session.child.promptDisabled")} </span>
                   <Show when={!readOnly()}>
                     <button
                       type="button"
-                      class="text-text-base transition-colors hover:text-text-strong"
+                      class="text-text-weak underline-offset-2 transition-colors hover:text-text-base hover:underline"
                       onClick={() => props.onNavigateParent()}
                     >
                       {language.t("session.child.backToParent")}

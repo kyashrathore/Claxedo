@@ -6,6 +6,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 
 type GoalAction = "pause" | "resume" | "delete"
 
@@ -40,6 +41,7 @@ export function SessionGoalDock(props: {
   const dialog = useDialog()
   const [pending, setPending] = createSignal<GoalAction>()
   const [error, setError] = createSignal<string>()
+  const [expanded, setExpanded] = createSignal(false)
   const controls = () => sessionGoalControls(props)
   const run = async (action: GoalAction) => {
     if (pending()) return false
@@ -98,45 +100,68 @@ export function SessionGoalDock(props: {
   return (
     <section
       data-component="session-goal-dock"
+      data-expanded={expanded() ? "true" : undefined}
       aria-label={language.t("session.goal.title")}
-      class="mb-2 flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-border-weak-base bg-background-base px-3 py-2"
+      class="mb-2 min-w-0 rounded-xl border border-border-weak-base bg-background-base"
     >
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="text-12-medium text-text-strong">{language.t("session.goal.title")}</span>
-          <span
-            data-slot="session-goal-status"
-            data-status={props.goal.status}
-            aria-live="polite"
-            class="rounded-full bg-surface-raised-base px-2 py-0.5 text-11-medium text-text-base"
-          >
-            {language.t(STATUS_KEYS[props.goal.status])}
+      <button
+        type="button"
+        data-slot="session-goal-toggle"
+        aria-expanded={expanded() ? "true" : "false"}
+        onClick={() => setExpanded((value) => !value)}
+        class="group/goal flex h-8 w-full min-w-0 items-center gap-2 rounded-xl px-3 text-left focus-visible:outline-none"
+      >
+        <span class="shrink-0 text-12-medium text-text-strong">{language.t("session.goal.title")}</span>
+        <span
+          data-slot="session-goal-status"
+          data-status={props.goal.status}
+          aria-live="polite"
+          class="shrink-0 rounded-full bg-surface-raised-base px-2 py-0.5 text-11-medium text-text-base"
+        >
+          {language.t(STATUS_KEYS[props.goal.status])}
+        </span>
+        <Show when={!expanded()}>
+          <span data-slot="session-goal-objective-preview" class="min-w-0 flex-1 truncate text-13-regular text-text-weak">
+            {props.goal.objective}
           </span>
-          <For each={metrics()}>{(metric) => <span class="text-11-regular text-text-weak">{metric}</span>}</For>
+        </Show>
+        <span class="ml-auto inline-flex shrink-0 items-center text-text-weak opacity-60 group-hover/goal:opacity-100">
+          <Icon name={expanded() ? "chevron-down" : "chevron-right"} size="small" />
+        </span>
+      </button>
+      <Show when={expanded()}>
+        <div data-slot="session-goal-body" class="flex min-w-0 flex-wrap items-end gap-2 px-3 pb-2">
+          <div class="min-w-[min(100%,16rem)] flex-1">
+            <p class="break-words text-13-regular text-text-base">{props.goal.objective}</p>
+            <Show when={props.goal.lastReason}>
+              <p class="mt-0.5 break-words text-12-regular text-text-weak">{props.goal.lastReason}</p>
+            </Show>
+            <Show when={metrics().length > 0}>
+              <div class="mt-1 flex flex-wrap gap-2">
+                <For each={metrics()}>{(metric) => <span class="text-11-regular text-text-weak">{metric}</span>}</For>
+              </div>
+            </Show>
+            <Show when={error()}>{(message) => <p role="alert" class="mt-1 text-12-regular text-icon-critical-base">{message()}</p>}</Show>
+          </div>
+          <div class="flex min-h-8 flex-wrap items-center justify-end gap-1">
+            <Show when={controls().pause}>
+              <Button variant="ghost" size="normal" disabled={!!pending()} onClick={() => void run("pause")}>
+                {pending() === "pause" ? language.t("common.loading") : language.t("session.goal.pause")}
+              </Button>
+            </Show>
+            <Show when={controls().resume}>
+              <Button variant="secondary" size="normal" disabled={!!pending()} onClick={() => void run("resume")}>
+                {pending() === "resume" ? language.t("common.loading") : language.t("session.goal.resume")}
+              </Button>
+            </Show>
+            <Show when={controls().delete}>
+              <Button variant="ghost" size="normal" disabled={!!pending()} onClick={confirmDelete}>
+                {language.t("session.goal.delete")}
+              </Button>
+            </Show>
+          </div>
         </div>
-        <p class="mt-0.5 break-words text-13-regular text-text-base">{props.goal.objective}</p>
-        <Show when={props.goal.lastReason}>
-          <p class="mt-0.5 break-words text-12-regular text-text-weak">{props.goal.lastReason}</p>
-        </Show>
-        <Show when={error()}>{(message) => <p role="alert" class="mt-1 text-12-regular text-icon-critical-base">{message()}</p>}</Show>
-      </div>
-      <div class="flex min-h-8 flex-wrap items-center justify-end gap-1">
-        <Show when={controls().pause}>
-          <Button variant="ghost" size="normal" disabled={!!pending()} onClick={() => void run("pause")}>
-            {pending() === "pause" ? language.t("common.loading") : language.t("session.goal.pause")}
-          </Button>
-        </Show>
-        <Show when={controls().resume}>
-          <Button variant="secondary" size="normal" disabled={!!pending()} onClick={() => void run("resume")}>
-            {pending() === "resume" ? language.t("common.loading") : language.t("session.goal.resume")}
-          </Button>
-        </Show>
-        <Show when={controls().delete}>
-          <Button variant="ghost" size="normal" disabled={!!pending()} onClick={confirmDelete}>
-            {language.t("session.goal.delete")}
-          </Button>
-        </Show>
-      </div>
+      </Show>
     </section>
   )
 }

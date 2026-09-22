@@ -11,6 +11,7 @@ import { createSignal } from "solid-js"
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { AgentPermission, AgentQuestion, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { SessionComposerRegion } from "./session-composer-region"
 import type { SessionComposerState } from "./session-composer-state"
 
@@ -251,6 +252,7 @@ function mountRegion(input: {
   onRetryRequests?: () => Promise<unknown>
   sessionID?: string
   status?: () => AgentRuntimeStatus
+  goalController?: Parameters<typeof SessionComposerRegion>[0]["goalController"]
 }) {
   return render(() => (
     <SessionComposerRegion
@@ -272,6 +274,7 @@ function mountRegion(input: {
       beforeInput={<span>Normal running status</span>}
       onNavigateParent={input.onNavigateParent ?? (() => {})}
       setPromptDockRef={() => {}}
+      goalController={input.goalController}
     />
   ))
 }
@@ -384,4 +387,34 @@ test("native startup questions retain the same canonical composer dock", () => {
   expect(questionDock()?.closest('[data-component="session-prompt-dock"]')).not.toBeNull()
   expect(editor()).toBeNull()
   expect(document.querySelector('[data-component="session-new-design"]')).toBeNull()
+})
+
+describe("the goal dock above the composer", () => {
+  test("stays open when the next goal snapshot arrives", () => {
+    const [goal, setGoal] = createSignal<RuntimeGoalSnapshot>({
+      sessionId: "ses_child",
+      objective: "Ship when verification passes",
+      status: "active",
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    const view = mountRegion({
+      goalController: {
+        goal,
+        goalCapabilities: () => ({ implemented: true, available: true, actions: ["pause", "resume", "delete"], recovery: "reconcile", optionalFields: [] }),
+        refreshGoal: async () => true,
+        pauseGoal: async () => {},
+        resumeGoal: async () => {},
+        stopGoal: async () => {},
+        deleteGoal: async () => {},
+      },
+    })
+    const toggle = () => view.getByRole("button", { name: /session\.goal\.title/ })
+
+    fireEvent.click(toggle())
+    setGoal({ ...goal(), status: "paused", updatedAt: 2 })
+
+    expect(toggle().getAttribute("aria-expanded")).toBe("true")
+    expect(view.getByRole("button", { name: "session.goal.resume" })).toBeTruthy()
+  })
 })

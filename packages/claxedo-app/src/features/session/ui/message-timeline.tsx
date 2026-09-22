@@ -1890,6 +1890,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
             </div>
           </div>
         </Show>
+        {/* A surface that hides the title row names the child itself; this heading
+            stays so opening a subagent tab still has somewhere to land focus. */}
+        <Show when={!showHeader() && parentID()}>
+          <h1 data-subagent-child-heading tabIndex={-1} class="sr-only">
+            {childTitle()}
+          </h1>
+        </Show>
         <Show when={ambientSubagents().length > 0}>
           <section
             aria-labelledby="background-subagents-heading"

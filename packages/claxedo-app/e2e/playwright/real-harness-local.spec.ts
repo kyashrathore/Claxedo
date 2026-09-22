@@ -220,6 +220,8 @@ async function startGoalFromComposer(page: Page, input: Locator, entry: GoalEntr
   const dock = page.locator('[data-component="session-goal-dock"]')
   await expect(dock).toBeVisible({ timeout: 30_000 })
   await expect(dock).toContainText(objective)
+  await dock.locator('[data-slot="session-goal-toggle"]').click()
+  await expect(dock).toHaveAttribute("data-expanded", "true")
   return dock
 }
 
