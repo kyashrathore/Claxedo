@@ -401,7 +401,9 @@ async function until(predicate: () => boolean, label: string) {
 
 describe("subagent tools", () => {
   test("create_subagent answers a binding block naming the child the runtime minted", async () => {
-    const runtime = fakeRuntime()
+    // The child must still be running when the block is read back; the fake's
+    // 10ms default completed it under a 390ms tool call on a slow runner.
+    const runtime = fakeRuntime({ turnMs: 60_000 })
     const url = await mount(runtime)
     runtime.seed("parent")
     const client = await asRuntime(url, "parent")
