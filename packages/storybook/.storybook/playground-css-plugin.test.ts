@@ -5,6 +5,15 @@ import os from "node:os"
 import path from "node:path"
 import { containedFile, devWriteAllowed, playgroundCssMiddleware } from "./playground-css-plugin"
 
+/**
+ * What the plugin resolves to. `realpathSync.native` is the canonical
+ * spelling: on Windows the plain call answers the 8.3 short form of a temp
+ * directory (`RUNNER~1`) while the native one answers `runneradmin`.
+ */
+function realPath(file: string) {
+  return path.resolve(fs.realpathSync.native?.(file) ?? fs.realpathSync(file))
+}
+
 function tempTree() {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "playground-css-"))
   const root = path.join(base, "components")
@@ -20,8 +29,8 @@ describe("containedFile", () => {
     try {
       const target = path.join(root, "card.css")
       fs.writeFileSync(target, "")
-      expect(containedFile("card.css", [root])).toBe(fs.realpathSync(target))
-      expect(containedFile("nested/../card.css", [root])).toBe(fs.realpathSync(target))
+      expect(containedFile("card.css", [root])).toBe(realPath(target))
+      expect(containedFile("nested/../card.css", [root])).toBe(realPath(target))
     } finally {
       fs.rmSync(base, { recursive: true, force: true })
     }
