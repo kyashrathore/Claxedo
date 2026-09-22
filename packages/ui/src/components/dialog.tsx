@@ -7,7 +7,9 @@ export interface DialogProps extends ParentProps {
   title?: JSXElement
   description?: JSXElement
   action?: JSXElement
-  size?: "normal" | "large" | "x-large"
+  size?: "normal" | "large" | "x-large" | "viewport"
+  /** Dims the page behind this dialog enough to read as a separate surface on dark themes. */
+  scrim?: "strong"
   /**
    * Drop the body's horizontal inset so content runs edge to edge.
    *
@@ -42,6 +44,7 @@ export function Dialog(props: DialogProps) {
       data-fit={props.fit ? true : undefined}
       data-flush={props.flush ? true : undefined}
       data-size={props.size || "normal"}
+      data-scrim={props.scrim}
       data-transition={props.transition ? true : undefined}
     >
       <div data-slot="dialog-container" class="ui-dialog-container">

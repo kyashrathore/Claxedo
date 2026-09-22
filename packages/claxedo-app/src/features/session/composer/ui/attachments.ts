@@ -2,7 +2,7 @@ import { createEffect } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { showToast } from "@opencode-ai/ui/toast"
 import { usePaneCtx } from "@/features/session/app-ports"
-import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/features/session/providers/prompt"
+import { usePrompt, type ContentPart, type ImageAttachmentPart, type ImageMark } from "@/features/session/providers/prompt"
 import { useLanguage } from "@/platform/i18n/provider"
 import { uuid } from "@/lib/uuid"
 import { getCursorPosition } from "./editor-dom"
@@ -138,6 +138,16 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     prompt.set(next, prompt.cursor())
   }
 
+  const setImageMarks = (id: string, marks: ImageMark[]) => {
+    const next = prompt.current().map((part) => {
+      if (part.type !== "image" || part.id !== id) return part
+      if (marks.length > 0) return { ...part, marks }
+      const { marks: _removed, ...rest } = part
+      return rest
+    })
+    prompt.set(next, prompt.cursor())
+  }
+
   const handlePaste = async (event: PromptPasteEvent) => {
     const clipboardData = event.clipboardData
     if (!clipboardData) return
@@ -249,6 +259,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     addAttachment,
     addAttachments,
     removeAttachment,
+    setImageMarks,
     handlePaste,
   }
 }

@@ -7,6 +7,12 @@
   background-color: hsl(from var(--background-base) h s l / 0.2);
 }
 
+/* The overlay is rendered by the dialog host as the previous sibling of the
+   layer that holds the dialog, so the dialog can only reach it through `:has`. */
+.ui-dialog-overlay:has(+ [data-dialog-layer] [data-component="dialog"][data-scrim="strong"]) {
+  background-color: hsl(0 0% 0% / 0.6);
+}
+
 [data-component="dialog"] {
   position: fixed;
   inset: 0;
@@ -160,6 +166,11 @@
   &[data-size="x-large"] .ui-dialog-container {
     width: min(calc(100vw - 32px), 980px);
     height: min(calc(100vh - 92px), 600px);
+  }
+
+  &[data-size="viewport"] .ui-dialog-container {
+    width: min(calc(100vw - 64px), 1400px);
+    height: calc(100vh - 64px);
   }
 }
 

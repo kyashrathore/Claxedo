@@ -61,7 +61,23 @@ export interface ImageAttachmentPart {
    */
   sourcePath?: string
   mime: string
+  /** Always the image as pasted; marks are drawn onto a copy only when the prompt is sent. */
   dataUrl: string
+  marks?: ImageMark[]
+}
+
+/**
+ * A region the user marked on an image, in the image's natural pixels. A zero
+ * width and height is a pin at `x`,`y`. Marks carry no number: numbers run
+ * across every marked image in the draft in order, so they are derived where
+ * they are shown.
+ */
+export type ImageMark = {
+  x: number
+  y: number
+  width: number
+  height: number
+  comment: string
 }
 
 /**
@@ -172,7 +188,7 @@ function cloneSelection(selection?: FileSelection) {
 
 function clonePart(part: ContentPart): ContentPart {
   if (part.type === "text") return { ...part }
-  if (part.type === "image") return { ...part }
+  if (part.type === "image") return part.marks ? { ...part, marks: part.marks.map((mark) => ({ ...mark })) } : { ...part }
   if (part.type === "agent") return { ...part }
   return {
     ...part,

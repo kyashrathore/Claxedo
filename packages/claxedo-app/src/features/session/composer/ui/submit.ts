@@ -48,6 +48,7 @@ import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-w
 import { createSubmitCommentActions } from "./comment-routing"
 import { createSubmitBootWriter, createSubmitOptimisticTimeline } from "./submit-ui-state"
 import type { PromptSubmitInput } from "./submit-input"
+import { flattenMarkedImages, hasImageMarks } from "@/features/session/image-marks/flatten"
 import { harnessSelectionValue, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { createHostedWorkspace } from "@/platform/runtime/agent/workspace-create-authority"
 import { asHostKind, isRelayHostKind } from "@/platform/runtime/placement-wire"
@@ -168,7 +169,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const setBooting = createSubmitBootWriter(input)
     const currentPrompt = prompt.current()
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
-    const images = input.imageAttachments().slice()
+    const draftImages = input.imageAttachments().slice()
     const permissionMode = input.permissionMode?.()
     const userMode: SubmitMode = input.mode()
     let mode = userMode
@@ -177,12 +178,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     const admission = admitPromptSubmission({
       bodyMd: text,
-      imageCount: images.length,
+      imageCount: draftImages.length,
       commentCount: input.commentCount(),
       working: input.working(),
     })
     if (admission === "abort-active") return abort()
     if (admission === "ignore") return undefined
+    let images = draftImages
+    if (hasImageMarks(draftImages)) {
+      try {
+        images = await flattenMarkedImages(draftImages)
+      } catch (err) {
+        showToast({ title: language.t("prompt.toast.promptSendFailed.title"), description: errorMessage(err) })
+        return undefined
+      }
+    }
     // A draft sent while a turn runs goes to that turn; the runtime answers
     // whether the harness took it or it waits for the next one.
     const delivery = admission === "steer" ? ("queue" as const) : undefined

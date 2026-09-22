@@ -137,6 +137,37 @@ describe("preparePromptRequest", () => {
       ...result.requestParts[0], sessionID: "ses_1", messageID: result.messageID,
     })])
   })
+
+  test("each image mark becomes a numbered note right after its image, numbered across images", () => {
+    const image = (id: string, filename: string, comments: string[]): ImageAttachmentPart => ({
+      type: "image",
+      id,
+      filename,
+      mime: "image/png",
+      dataUrl: `data:image/png;base64,${id}`,
+      marks: comments.map((comment) => ({ x: 1, y: 1, width: 5, height: 5, comment })),
+    })
+    const result = preparePromptRequest({
+      prompt: emptyPrompt,
+      contextItems: [],
+      images: [image("a", "first.png", ["button misaligned", "wrong label"]), image("b", "second.png", ["too dark"])],
+      text: "fix these",
+      sessionID: "ses_1",
+      sessionDirectory: "/repo/main",
+    })
+    const tail = result.requestParts.slice(-5).map((part) =>
+      part.type === "file" ? `file:${part.filename}` : part.type === "text" ? part.text : part.type,
+    )
+    expect(tail).toEqual([
+      "file:first.png",
+      "The user made the following comment regarding the region numbered 1 on the image first.png: button misaligned",
+      "The user made the following comment regarding the region numbered 2 on the image first.png: wrong label",
+      "file:second.png",
+      "The user made the following comment regarding the region numbered 3 on the image second.png: too dark",
+    ])
+    const note = result.requestParts.find((part) => part.type === "text" && part.text.includes("region numbered 3"))
+    expect(note).toMatchObject({ synthetic: true, metadata: { claxedoImageMark: { filename: "second.png", number: 3, comment: "too dark" } } })
+  })
 })
 
 describe("createPromptTimelineReconciliation", () => {

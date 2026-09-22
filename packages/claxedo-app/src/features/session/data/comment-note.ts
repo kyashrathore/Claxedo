@@ -79,3 +79,34 @@ export function parseCommentNote(text: string) {
     comment: match[6],
   } satisfies PromptComment
 }
+
+export type PromptImageMarkComment = {
+  filename: string
+  number: number
+  comment: string
+}
+
+export function createImageMarkMetadata(input: PromptImageMarkComment) {
+  return { claxedoImageMark: { filename: input.filename, number: input.number, comment: input.comment } }
+}
+
+export function readImageMarkMetadata(value: unknown): PromptImageMarkComment | undefined {
+  const meta = readField(value, "claxedoImageMark")
+  const filename = readString(meta, "filename")
+  const number = readFiniteNumber(meta, "number")
+  const comment = readString(meta, "comment")
+  if (filename === undefined || number === undefined || comment === undefined) return undefined
+  return { filename, number, comment }
+}
+
+export function formatImageMarkNote(input: PromptImageMarkComment) {
+  return `The user made the following comment regarding the region numbered ${input.number} on the image ${input.filename}: ${input.comment}`
+}
+
+export function parseImageMarkNote(text: string): PromptImageMarkComment | undefined {
+  const match = text.match(
+    /^The user made the following comment regarding the region numbered (\d+) on the image (.+?): ([\s\S]+)$/,
+  )
+  if (!match) return undefined
+  return { number: Number(match[1]), filename: match[2], comment: match[3] }
+}

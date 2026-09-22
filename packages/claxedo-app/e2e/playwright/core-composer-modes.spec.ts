@@ -405,7 +405,7 @@ test.describe("core composer modes @core", () => {
     },
   )
 
-  test("attach button adds a thumbnail, preview opens on click, and remove deletes it", async ({
+  test("attach button adds a thumbnail, the markup editor opens on click, and remove deletes it", async ({
     page,
   }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
@@ -419,17 +419,117 @@ test.describe("core composer modes @core", () => {
     await expect(thumbnail).toBeVisible({ timeout: 10_000 })
 
     await thumbnail.click()
-    await expect(page.locator('[data-component="image-preview"] [data-slot="image-preview-image"]')).toHaveAttribute(
-      "alt",
-      "attach-me.png",
-      { timeout: 10_000 },
-    )
-    await page.locator('[data-slot="image-preview-close"]').click()
-    await expect(page.locator('[data-component="image-preview"]')).toHaveCount(0)
+    const markEditor = page.locator('[data-component="image-mark-editor"]')
+    await expect(markEditor.locator('img[alt="attach-me.png"]')).toBeVisible({ timeout: 10_000 })
+    await markEditor.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(markEditor).toHaveCount(0)
 
     await page.getByRole("button", { name: "Remove attachment" }).click()
     await expect(thumbnail).toHaveCount(0)
     await expect(editor).toBeVisible()
+  })
+
+  test("marking a pasted image numbers each region, shows its comment as a chip, and sends both", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await seedProjects(page, [DIR])
+    const editor = await openDraftPrompt(page, DIR)
+    await editor.click()
+
+    await editor.evaluate(async (el) => {
+      const canvas = document.createElement("canvas")
+      canvas.width = 800
+      canvas.height = 1800
+      const context = canvas.getContext("2d")
+      if (!context) throw new Error("no 2d context")
+      context.fillStyle = "#ffffff"
+      context.fillRect(0, 0, 800, 1800)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"))
+      if (!blob) throw new Error("no png")
+      const dt = new DataTransfer()
+      dt.items.add(new File([blob], "screen.png", { type: "image/png" }))
+      el.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: dt }))
+    })
+    await expect(page.locator('img[alt="screen.png"]')).toBeVisible({ timeout: 10_000 })
+
+    await page.getByRole("button", { name: "Mark up image" }).click()
+    const markEditor = page.locator('[data-component="image-mark-editor"]')
+    const surface = markEditor.locator('[data-slot="image-mark-surface"]')
+    await expect(surface).toBeVisible({ timeout: 10_000 })
+    await expect(surface).toBeInViewport({ ratio: 1 })
+    await expect(markEditor.getByRole("button", { name: "Save", exact: true })).toBeInViewport({ ratio: 1 })
+    const box = await surface.boundingBox()
+    if (!box) throw new Error("mark surface has no box")
+
+    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.1)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.3, { steps: 5 })
+    await page.mouse.up()
+    await expect(markEditor.locator('[data-slot="image-mark"][data-mark-number="1"]')).toBeVisible()
+    await page.keyboard.type("button is misaligned")
+    await page.keyboard.press("Enter")
+
+    await page.mouse.click(box.x + box.width * 0.7, box.y + box.height * 0.6)
+    await page.keyboard.type("label should say Save")
+
+    await page.mouse.click(box.x + box.width * 0.2, box.y + box.height * 0.8)
+    await page.keyboard.press("Escape")
+    await expect(markEditor.locator('[data-slot="image-mark"]')).toHaveCount(2)
+    await expect(markEditor.locator('[data-slot="image-mark"][data-mark-number="2"]')).toBeVisible()
+
+    await markEditor.getByRole("button", { name: "Save", exact: true }).click()
+    await expect(markEditor).toHaveCount(0)
+
+    const chips = page.locator('[data-slot="image-mark-chip"]')
+    await expect(chips).toHaveCount(2)
+    await expect(chips.nth(0)).toContainText("1")
+    await expect(chips.nth(0)).toContainText("button is misaligned")
+    await expect(chips.nth(1)).toContainText("label should say Save")
+
+    await chips.nth(1).click()
+    await expect(markEditor.locator('[data-slot="line-comment-textarea"]')).toHaveValue("label should say Save")
+    await expect(markEditor.locator('[data-slot="line-comment-textarea"]')).toBeFocused()
+    await page.keyboard.press("Escape")
+    await expect(markEditor.locator('[data-slot="line-comment-textarea"]')).toHaveCount(0)
+    await markEditor.getByRole("button", { name: "Cancel", exact: true }).click()
+    await expect(markEditor).toHaveCount(0)
+
+    const sent = page.waitForRequest((request) => request.url().includes("/prompt_async") && request.method() === "POST")
+    await editor.click()
+    await page.keyboard.type("fix these")
+    await ensureComposerModelSelected(page)
+    await page.locator(SELECTORS.submitControl).last().click()
+    const parts = ((await sent).postDataJSON() as { parts: { type: string; text?: string; url?: string; mime?: string }[] }).parts
+    const image = parts.find((part) => part.type === "file" && part.mime === "image/png")
+    expect(image?.url?.startsWith("data:image/png;base64,")).toBe(true)
+    expect(parts.filter((part) => part.type === "text").map((part) => part.text)).toEqual(
+      expect.arrayContaining([
+        "The user made the following comment regarding the region numbered 1 on the image screen.png: button is misaligned",
+        "The user made the following comment regarding the region numbered 2 on the image screen.png: label should say Save",
+      ]),
+    )
+
+    const pixels = await page.evaluate(async (url) => {
+      const img = new Image()
+      img.src = url
+      await img.decode()
+      const canvas = document.createElement("canvas")
+      canvas.width = img.naturalWidth
+      canvas.height = img.naturalHeight
+      const context = canvas.getContext("2d")
+      if (!context) throw new Error("no 2d context")
+      context.drawImage(img, 0, 0)
+      const at = (x: number, y: number) => Array.from(context.getImageData(x, y, 1, 1).data.slice(0, 3))
+      return { size: [img.naturalWidth, img.naturalHeight], boxEdge: at(200, 180), pinBadge: at(568, 1080), untouched: at(700, 100) }
+    }, image?.url ?? "")
+    const red = (rgb: number[]) => rgb[0] > 200 && rgb[1] < 120 && rgb[2] < 120
+    expect(pixels.size).toEqual([800, 1800])
+    expect(red(pixels.boxEdge)).toBe(true)
+    expect(red(pixels.pinBadge)).toBe(true)
+    expect(pixels.untouched).toEqual([255, 255, 255])
+
+    const strip = page.locator('[data-slot="image-mark-comment"]')
+    await expect(strip).toHaveCount(2, { timeout: 15_000 })
+    await expect(strip.nth(1)).toContainText("label should say Save")
   })
 
   test("clipboard paste adds a supported attachment", async ({ page }) => {

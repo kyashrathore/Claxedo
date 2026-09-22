@@ -635,7 +635,13 @@ export const desktopRendererUnsigned: Policy = {
   // under the 800-line budget when the pane hit test was bounded to the
   // workbench root. It sits beside the drag helpers it already used and
   // reaches nothing new. Owner: `app/workbench/workbench`. No new package edge.
-  ceilings: { modules: 1175, packages: 58 },
+  // +5 modules (2026-09-23): `features/session/image-marks/{marks,flatten}.ts`,
+  // `mark-layer.tsx`, `mark-badge.tsx` and the lazily imported
+  // `image-mark-editor.tsx` — numbered marks and comments on a pasted image.
+  // The composer, the request builder and the transcript's comment strip all
+  // read them, so they sit beside those owners rather than inside the
+  // composer. Owner: `features/session/image-marks`. No new package edge.
+  ceilings: { modules: 1180, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

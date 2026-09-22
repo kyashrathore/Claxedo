@@ -1,12 +1,12 @@
 import { Show, type Accessor, type Component, type JSX } from "solid-js"
 import { DockShellForm } from "@opencode-ai/ui/dock-surface"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import type { PickerState } from "@/features/session/ui/model/model-list"
 import type { ImageAttachmentPart } from "@/features/session/providers/prompt"
 import { PromptContextItems } from "@/features/session/composer/ui/context-items"
 import { PromptDragOverlay } from "@/features/session/composer/ui/drag-overlay"
 import { PromptImageAttachments } from "@/features/session/composer/ui/image-attachments"
+import { firstMarkNumber, type NumberedImageMark } from "@/features/session/image-marks/marks"
 import {
   PromptPopover,
   PROMPT_POPOVER_LISTBOX_ID,
@@ -76,6 +76,9 @@ export const PromptInputFrame: Component<{
   openComment: (item: PromptContextItem) => void
   removeContextItem: (item: PromptContextItem) => void
   imageAttachments: ImageAttachmentPart[]
+  imageMarks: NumberedImageMark[]
+  openImageMarks: (attachment: ImageAttachmentPart, focusIndex?: number) => void
+  removeImageMark: (entry: NumberedImageMark) => void
   removeAttachment: (id: string) => void
   fileInputRef: (el: HTMLInputElement) => void
   acceptedFileTypes: readonly string[]
@@ -128,7 +131,6 @@ export const PromptInputFrame: Component<{
   onChooseModel: VoidFunction
   workspaceRoleBlocked: Accessor<boolean>
   t: (key: string) => string
-  showDialog: (content: () => JSX.Element) => void
 }> = (props) => {
   // `aria-activedescendant` target: the currently-highlighted option in the open
   // popover, or undefined when nothing is active / the popover is closed.
@@ -251,13 +253,21 @@ export const PromptInputFrame: Component<{
         active={props.contextActive}
         openComment={props.openComment}
         remove={props.removeContextItem}
+        imageMarks={props.imageMarks}
+        openImageMark={(entry) => {
+          const attachment = props.imageAttachments.find((part) => part.id === entry.imageId)
+          if (attachment) props.openImageMarks(attachment, entry.index)
+        }}
+        removeImageMark={props.removeImageMark}
         t={props.t}
       />
       <PromptImageAttachments
         attachments={props.imageAttachments}
-        onOpen={(attachment) => props.showDialog(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)}
+        firstMarkNumber={(id) => firstMarkNumber(props.imageAttachments, id)}
+        onOpen={(attachment) => props.openImageMarks(attachment)}
         onRemove={props.removeAttachment}
         removeLabel={props.t("prompt.attachment.remove")}
+        markLabel={props.t("prompt.imageMarks.open")}
       />
       <div
         data-slot="composer-editor"

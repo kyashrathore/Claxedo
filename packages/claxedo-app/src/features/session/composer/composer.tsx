@@ -1,5 +1,5 @@
 // Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
-import { createEffect, Component, createMemo, createSignal, onCleanup } from "solid-js"
+import { createEffect, Component, createMemo, createSignal, lazy, onCleanup } from "solid-js"
 import { composerCollapsed } from "@/features/session/composer/collapsed-state"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocal } from "@/features/session/providers/session-selection"
@@ -24,6 +24,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { scrollPromptCursorIntoView, setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { submitHardBlocked } from "@/features/session/composer/submit-block-reason"
 import { createPromptAttachments } from "@/features/session/composer/ui/attachments"
+import { firstMarkNumber, numberImageMarks } from "@/features/session/image-marks/marks"
 import { ACCEPTED_FILE_TYPES } from "@/features/session/composer/ui/files"
 import { promptLength } from "@/features/session/composer/ui/history"
 import { createPromptCommentRouter } from "@/features/session/composer/ui/comment-routing"
@@ -59,6 +60,12 @@ import { createComposerPermissionSurface } from "./permission-mode-wiring"
 import { createPromptToolbarMotion } from "./ui/toolbar-motion"
 import { createComposerGoalController } from "./goal-controller"
 const idleSessionStatus = { type: "idle" as const }
+const ImageMarkEditor = lazy(() =>
+  import("@/features/session/image-marks/image-mark-editor").then((module) => ({
+    default: module.ImageMarkEditor,
+  })),
+)
+
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
   const queryOptions = useQueryOptions()
@@ -307,6 +314,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )
 
+  const imageMarks = createMemo(() => numberImageMarks(imageAttachments()))
+
   const [placeholderIndex, setPlaceholderIndex] = createSignal(Math.floor(Math.random() * PROMPT_EXAMPLES.length))
   // Input engine: Claxedo's own editor/popover/history machinery or upstream's
   // vendored `createPromptInputV2Controller`, behind `v2/engine-contract.ts`.
@@ -456,7 +465,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onEditLoaded: props.onEditLoaded,
   })
 
-  const { addAttachments, removeAttachment, handlePaste } = createPromptAttachments({
+  const { addAttachments, removeAttachment, setImageMarks, handlePaste } = createPromptAttachments({
     active: () => sessionParams.active?.() ?? true,
     editor: () => editorRef,
     root: () => rootEl,
@@ -700,6 +709,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         prompt.context.remove(item.key)
       }}
       imageAttachments={imageAttachments()}
+      imageMarks={imageMarks()}
+      openImageMarks={(attachment, focusIndex) =>
+        dialog.show(() => (
+          <ImageMarkEditor
+            image={attachment}
+            firstNumber={firstMarkNumber(imageAttachments(), attachment.id)}
+            focusIndex={focusIndex}
+            onSave={(marks) => setImageMarks(attachment.id, marks)}
+          />
+        ))
+      }
+      removeImageMark={(entry) => {
+        const image = imageAttachments().find((part) => part.id === entry.imageId)
+        if (!image) return
+        setImageMarks(entry.imageId, (image.marks ?? []).filter((_, index) => index !== entry.index))
+      }}
       removeAttachment={removeAttachment}
       fileInputRef={(el) => (fileInputRef = el)}
       acceptedFileTypes={ACCEPTED_FILE_TYPES}
@@ -756,7 +781,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onChooseModel={openModelPicker}
       workspaceRoleBlocked={() => authorityBlock() === "workspace-role"}
       t={(key) => language.t(key as Parameters<typeof language.t>[0])}
-      showDialog={(content) => dialog.show(content)}
     />
   )
 }

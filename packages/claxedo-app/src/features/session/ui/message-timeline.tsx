@@ -8,11 +8,13 @@ import {
   createSignal,
   For,
   Index,
+  Match,
   on,
   onCleanup,
   onMount,
   Show,
   mapArray,
+  Switch,
   type Accessor,
   type JSX,
 } from "solid-js"
@@ -76,6 +78,7 @@ import { latchSessionTitle, type LatchedSessionTitle } from "@/features/session/
 import { createActivePaneProjection } from "../store/active-pane-projection"
 import { createTimelineWorkingStatus } from "./timeline-working-status"
 import { MessageComment, Timeline } from "./message-timeline.data"
+import { ImageMarkBadge } from "@/features/session/image-marks/mark-badge"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
 import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineLoadingRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
@@ -1382,22 +1385,40 @@ export function MessageTimeline(props: MessageTimelineProps) {
                   <Index each={comments()}>
                     {(comment) => (
                       <div class="shrink-0 max-w-[260px] rounded-md border border-border-weak-base bg-background-stronger px-2.5 py-2">
-                        <div class="flex items-center gap-1.5 min-w-0 text-11-medium text-text-strong">
-                          <FileIcon node={{ path: comment().path, type: "file" }} class="size-3.5 shrink-0" />
-                          <span class="truncate">{getFilename(comment().path)}</span>
-                          <Show when={comment().selection}>
-                            {(selection) => (
-                              <span class="shrink-0 text-text-weak">
-                                {selection().startLine === selection().endLine
-                                  ? `:${selection().startLine}`
-                                  : `:${selection().startLine}-${selection().endLine}`}
-                              </span>
+                        <Switch>
+                          <Match when={MessageComment.asImageMark(comment())}>
+                            {(mark) => (
+                              <div class="flex items-start gap-1.5 min-w-0" data-slot="image-mark-comment">
+                                <ImageMarkBadge number={mark().number} />
+                                <span class="text-12-regular text-text-strong whitespace-pre-wrap break-words">
+                                  {mark().comment}
+                                </span>
+                              </div>
                             )}
-                          </Show>
-                        </div>
-                        <div class="pt-1 text-12-regular text-text-strong whitespace-pre-wrap break-words">
-                          {comment().comment}
-                        </div>
+                          </Match>
+                          <Match when={MessageComment.asFile(comment())}>
+                            {(file) => (
+                              <>
+                                <div class="flex items-center gap-1.5 min-w-0 text-11-medium text-text-strong">
+                                  <FileIcon node={{ path: file().path, type: "file" }} class="size-3.5 shrink-0" />
+                                  <span class="truncate">{getFilename(file().path)}</span>
+                                  <Show when={file().selection}>
+                                    {(selection) => (
+                                      <span class="shrink-0 text-text-weak">
+                                        {selection().startLine === selection().endLine
+                                          ? `:${selection().startLine}`
+                                          : `:${selection().startLine}-${selection().endLine}`}
+                                      </span>
+                                    )}
+                                  </Show>
+                                </div>
+                                <div class="pt-1 text-12-regular text-text-strong whitespace-pre-wrap break-words">
+                                  {file().comment}
+                                </div>
+                              </>
+                            )}
+                          </Match>
+                        </Switch>
                       </div>
                     )}
                   </Index>

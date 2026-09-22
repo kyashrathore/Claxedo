@@ -319,6 +319,7 @@ export const LineCommentEditor = (props: LineCommentEditorProps) => {
             refs.textarea = el
           }}
           data-slot="line-comment-textarea"
+          autofocus={split.autofocus !== false}
           rows={split.rows ?? 3}
           placeholder={split.placeholder ?? i18n.t("ui.lineComment.placeholder")}
           value={split.value}

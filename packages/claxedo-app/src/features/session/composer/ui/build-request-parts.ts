@@ -9,7 +9,13 @@ import type { FileSelection } from "@/platform/files/types"
 import { encodeFilePath } from "@/platform/files/path"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
 import { Identifier } from "@/lib/id"
-import { createCommentMetadata, formatCommentNote } from "@/features/session/data/comment-note"
+import {
+  createCommentMetadata,
+  createImageMarkMetadata,
+  formatCommentNote,
+  formatImageMarkNote,
+} from "@/features/session/data/comment-note"
+import { numberImageMarks } from "@/features/session/image-marks/marks"
 
 type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id: string }
 
@@ -187,15 +193,28 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
     ]
   })
 
-  const images = input.images.map((attachment) => {
-    return {
+  const marks = numberImageMarks(input.images)
+  const images = input.images.flatMap((attachment) => [
+    {
       id: Identifier.ascending("part"),
       type: "file",
       mime: attachment.mime,
       url: attachment.dataUrl,
       filename: attachment.filename,
-    } satisfies PromptRequestPart
-  })
+    } satisfies PromptRequestPart,
+    ...marks
+      .filter((entry) => entry.imageId === attachment.id)
+      .map((entry) => {
+        const note = { filename: attachment.filename, number: entry.number, comment: entry.mark.comment }
+        return {
+          id: Identifier.ascending("part"),
+          type: "text",
+          text: formatImageMarkNote(note),
+          synthetic: true,
+          metadata: createImageMarkMetadata(note),
+        } satisfies PromptRequestPart
+      }),
+  ])
 
   requestParts.push(...files, ...context, ...agents, ...images)
 

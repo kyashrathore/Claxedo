@@ -1,5 +1,10 @@
 import { asRecord, isRecord, readField, readString } from "@/lib/record"
-import { parseCommentNote, readCommentMetadata } from "@/features/session/data/comment-note"
+import {
+  parseCommentNote,
+  parseImageMarkNote,
+  readCommentMetadata,
+  readImageMarkMetadata,
+} from "@/features/session/data/comment-note"
 import type {
   AgentAssistantMessage as AssistantMessage,
   AgentContentPart as Part,
@@ -562,7 +567,8 @@ function renderablePart(part: Part, showReasoning = true) {
 }
 
 export namespace MessageComment {
-  export type MessageComment = {
+  export type FileComment = {
+    kind: "file"
     path: string
     comment: string
     selection?: {
@@ -571,11 +577,26 @@ export namespace MessageComment {
     }
   }
 
+  export type ImageMarkComment = {
+    kind: "image-mark"
+    filename: string
+    number: number
+    comment: string
+  }
+
+  export type MessageComment = FileComment | ImageMarkComment
+
+  export const asFile = (comment: MessageComment) => (comment.kind === "file" ? comment : undefined)
+  export const asImageMark = (comment: MessageComment) => (comment.kind === "image-mark" ? comment : undefined)
+
   export const fromPart = (part: Part): MessageComment | undefined => {
     if (part.type !== "text" || !part.synthetic) return undefined
+    const mark = readImageMarkMetadata(part.metadata) ?? parseImageMarkNote(part.text)
+    if (mark) return { kind: "image-mark", ...mark }
     const next = readCommentMetadata(part.metadata) ?? parseCommentNote(part.text)
     if (!next) return undefined
     return {
+      kind: "file",
       path: next.path,
       comment: next.comment,
       selection: next.selection
