@@ -218,6 +218,7 @@ export class SdkRuntimeInteractions {
   }
 
   rejectAllQuestions() {
-    for (const id of [...this.questions.keys()]) this.rejectPendingQuestion(id)
+    // Snapshot: settling deletes from the same map this walks.
+    for (const id of Array.from(this.questions.keys())) this.rejectPendingQuestion(id)
   }
 }

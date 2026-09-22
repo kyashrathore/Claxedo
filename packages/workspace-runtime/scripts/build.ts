@@ -60,6 +60,7 @@ const EXTERNALS = [
 
 const DECLARATION_EXTERNALS = [
   /^@claxedo\//,
+  /^@opencode-ai\//,
   /^hono(\/.*)?$/,
   /^@hono\//,
   /^node:/,
