@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import type { AgentPresentationMessage as Message, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
-import { clearConversationChatRegistryForTest, hydrateRegisteredConversationSnapshot } from "../conversation/conversation-registry"
+import {
+  clearConversationChatRegistryForTest,
+  hydrateRegisteredConversationSnapshot,
+  registeredConversationSnapshot,
+} from "../conversation/conversation-registry"
 import { createTurnCoverageOwner, type TurnCoverageClient } from "./session-coverage-obligations"
 import { outstandingTurnCoverage, resetAcceptedPromptRefreshForTest } from "./accepted-prompt-refresh"
 
@@ -138,6 +142,60 @@ describe("rebuilding a reopened range", () => {
     await Promise.resolve()
 
     expect(consulted).toBe(1)
+    dispose()
+  })
+})
+
+describe("applying a covered turn", () => {
+  // The coverage page carries the asked-for turn's rows and nothing else, so
+  // applying it as a whole page would leave the range holding one turn.
+  test("a complete page rewrites its own turn and keeps every other turn in the range", async () => {
+    seed([userRow("u1"), userRow("u2"), assistantRow("u2_r", "u2"), userRow("u3")])
+    const reads: string[] = []
+    const client: TurnCoverageClient = {
+      session: {
+        messages: async (input) => {
+          reads.push(input.turn)
+          return {
+            data: {
+              turnId: input.turn,
+              coverage: "complete",
+              messages: [
+                { info: userRow("u1"), parts: [] },
+                {
+                  info: assistantRow("u1_r", "u1"),
+                  parts: [{ id: "u1_r_text", type: "text", sessionID: SESSION, messageID: "u1_r", text: "done" }],
+                },
+              ],
+            },
+          }
+        },
+        status: async () => ({ data: {} }),
+      },
+    }
+    let dispose = () => {}
+    createRoot((disposer) => {
+      dispose = disposer
+      createTurnCoverageOwner({
+        sessionID: () => SESSION,
+        directory: () => DIR,
+        paneActive: () => true,
+        client,
+        createReadEpoch: () => ({ active: () => true, signal: new AbortController().signal, abort: () => {} }),
+        loadedTurnIds: () => ["u1", "u2", "u3"],
+        status: () => ({ type: "busy" }),
+      })
+    })
+    const owed = () => outstandingTurnCoverage({ directory: DIR, sessionID: SESSION })
+    const deadline = Date.now() + 3_000
+    while (owed().length > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+
+    expect(reads).toEqual(["u1"])
+    expect(registeredConversationSnapshot(DIR, SESSION).messages.map((message) => message.id))
+      .toEqual(["u1", "u1_r", "u2", "u2_r", "u3"])
+    expect(owed()).toEqual([])
     dispose()
   })
 })

@@ -62,10 +62,11 @@ export function createTurnCoverageOwner(input: {
   const key = (target: TurnCoverageTarget) => `${target.directory}\0${target.sessionID}\0${target.turnId}`
 
   /**
-   * Fetch one named turn and merge it. No page mode is passed: the default
-   * merge applies this turn's messages without touching the rest of the
-   * window, so completing an older turn cannot replace the live one a newer
-   * turn is still writing.
+   * Fetch one named turn and merge it. The page holds only this turn's rows,
+   * and a canonical page with no mode is taken as the whole membership, so it
+   * must be applied as a window replace: the turn's own span is rewritten and
+   * every other turn in the range, including the live one a newer turn is
+   * still writing, stays where it is.
    */
   const applyCoverage = async (target: TurnCoverageTarget, signal: AbortSignal) => {
     const page = await input.client.session.messages(
@@ -79,6 +80,7 @@ export function createTurnCoverageOwner(input: {
         directory: target.directory,
         sessionID: target.sessionID,
         rows: covered.messages,
+        mode: "replace-window",
         messageCompleteness: "canonical",
         partCompleteness: "canonical",
       })
