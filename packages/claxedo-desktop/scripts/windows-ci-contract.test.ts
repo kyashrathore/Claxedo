@@ -56,7 +56,8 @@ describe("Windows CI contract", () => {
 
   test("prepares bare Windows hosts from the repository's toolchain contract", () => {
     expect(prepare).toContain("$bunVersion = $manifest.packageManager")
-    expect(prepare).toContain("https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt")
+    expect(prepare).toContain('"https://nodejs.org/dist/latest-v24.x"')
+    expect(prepare).toContain('"$nodeDist/SHASUMS256.txt"')
     expect(prepare).toContain("Microsoft.VisualStudio.Workload.VCTools")
     expect(prepare).toContain("Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre")
     expect(prepare).toContain("bun install --frozen-lockfile")
