@@ -113,7 +113,9 @@ describe("what a blob is bound to", () => {
     const aad = hostMachineSealAad({ enrollmentId: "enr_1", revision: 1 })
     const sealed = await sealForHostMachine(pair.publicKey, "the secret", aad)
     const parts = sealed.split(".")
-    const flipped = `${parts[3]?.slice(0, -1) ?? ""}${parts[3]?.endsWith("A") ? "B" : "A"}`
+    // The first character's six bits are all ciphertext; the last one's may
+    // be padding a decoder ignores, and "A" to "B" there changes nothing.
+    const flipped = `${parts[3]?.startsWith("A") ? "B" : "A"}${parts[3]?.slice(1) ?? ""}`
     await expect(openMachineSeal(pair.privateKeyJwk, [parts[0], parts[1], parts[2], flipped].join("."), aad)).rejects.toThrow()
   })
 })
