@@ -73,8 +73,22 @@ vi.mock("@/features/settings/app-ports", async () => {
   const { useProviders } = await import("@/app/providers/use-providers")
   const { loadMachineLogins, useMachineLogin, verifyAIConnection } = await import("@/features/onboarding/ai-connect-api")
   const { localHarnessChecks } = await import("@/features/onboarding/ai-connect-state")
+  const { groupHarnessModels } = await import("@/features/session/harness/harness-model-options")
+  const { resolveModelVisibility } = await import("@/features/session/providers/models")
   return {
     useProviders,
+    groupHarnessModels,
+    // This suite is about accounts; the models half only has to mount.
+    loadHarnessModelOptions: async () => [],
+    useModelVisibility: () => ({
+      visible: (
+        key: { providerID: string; modelID: string },
+        context: { defaults?: Record<string, string> } = {},
+      ) => resolveModelVisibility({ model: key, defaults: context.defaults ?? {} }),
+      setVisibility: () => {},
+      groupVisibility: () => undefined,
+      setGroupVisibility: () => {},
+    }),
     verifyAIConnection,
     loadMachineLogins,
     useMachineLogin,
@@ -145,11 +159,17 @@ vi.mock("@/platform/i18n/provider", () => ({
   }),
 }))
 
+// The dialog's chrome is the UI kit's; this suite renders what goes inside it.
+vi.mock("@opencode-ai/ui/dialog", () => ({
+  Dialog: (props: { children?: JSX.Element }) => <div data-component="dialog">{props.children}</div>,
+}))
 vi.mock("@opencode-ai/ui/context/dialog", () => ({
   useDialog: () => ({
     show: (element: () => JSX.Element) => {
       state.dialogs.push(element)
+      return Promise.resolve()
     },
+    close: () => {},
   }),
 }))
 vi.mock("@opencode-ai/ui/provider-icon", () => ({ ProviderIcon: () => null }))
@@ -171,7 +191,7 @@ vi.mock("@/platform/api/api", async (importOriginal) => ({
 }))
 
 const { SettingsScopeProvider } = await import("@/features/settings/scope/settings-scope")
-const { SettingsProviders } = await import("./providers")
+const { SettingsModels } = await import("./models")
 const { useProviderAuth } = await import("@/app/providers/use-providers")
 
 /** The JSON a fetch call carried. A non-string body is not something we send. */
@@ -286,13 +306,22 @@ function mount(client = newClient()) {
   return render(() => (
     <QueryClientProvider client={client}>
       <SettingsScopeProvider>
-        <SettingsProviders />
+        <SettingsModels />
       </SettingsScopeProvider>
     </QueryClientProvider>
   ))
 }
 
+/**
+ * A catalog harness's providers sit in its own section; the machine logins are
+ * spread one harness at a time across the page, so "agents" is the page.
+ */
 function section(name: "pi" | "opencode" | "agents") {
+  if (name === "agents") {
+    const page = document.querySelector<HTMLElement>("[data-component=\"settings-models-page\"]")
+    if (!page) throw new Error("the page is not mounted")
+    return page
+  }
   const root = document.querySelector<HTMLElement>(`[data-component="${name}-providers-section"]`)
   if (!root) throw new Error(`${name} section is not on the page`)
   return root
@@ -300,21 +329,43 @@ function section(name: "pi" | "opencode" | "agents") {
 
 /** The provider rows one section rendered, by id. */
 function providerIds(name: "pi" | "opencode" | "agents") {
-  return [...section(name).querySelectorAll<HTMLElement>("[data-provider]")]
+  // The machine logins are agent rows wherever they sit; a catalog section's
+  // own rows are the only ones inside it.
+  const selector = name === "agents" ? '[data-component="agent-harness-row"][data-provider]' : "[data-provider]"
+  return [...section(name).querySelectorAll<HTMLElement>(selector)]
     .map((node) => node.getAttribute("data-provider") ?? "")
     .filter(Boolean)
     .sort()
 }
 
 function agentRow(id: string) {
-  const row = section("agents").querySelector<HTMLElement>(`[data-provider="${id}"]`)
+  const row = section("agents").querySelector<HTMLElement>(`[data-component="agent-harness-row"][data-provider="${id}"]`)
   if (!row) throw new Error(`no agent row for ${id}`)
   return row
 }
 
-/** The one action the header offers, or "" where it offers none. */
+/**
+ * The one action offered for a harness, or "" where it offers none.
+ *
+ * "Add an account" sits on the harness section's tab row now, beside Accounts
+ * and Models, rather than inside the row it acts on; a harness whose row is
+ * headerless keeps its in-row actions (Reconnect on a rejected account).
+ */
 function agentAction(id: string) {
-  return agentRow(id).querySelector('[data-component="provider-actions"] button')?.getAttribute("data-action") ?? ""
+  const inRow = agentRow(id).querySelector('[data-component="provider-actions"] button')
+  if (inRow) return inRow.getAttribute("data-action") ?? ""
+  const section = agentRow(id).closest('[data-component^="models-section-"]')
+  const onTabRow = section?.querySelector('[data-component="models-harness-tabs"] [data-action="agent-add-account"]')
+  return onTabRow ? "agent-add-account" : ""
+}
+
+/** The Add-an-account control for a harness, wherever the surface draws it. */
+function addAccountControl(id: string) {
+  const section = agentRow(id).closest('[data-component^="models-section-"]')
+  const control = section?.querySelector<HTMLButtonElement>('[data-action="agent-add-account"]')
+    ?? agentRow(id).querySelector<HTMLButtonElement>('[data-action="agent-add-account"]')
+  if (!control) throw new Error(`no add-account control for ${id}`)
+  return control
 }
 
 /** The entries a harness listed, by account key, in order. */
@@ -510,7 +561,12 @@ describe("Settings → Providers reads both credential stores for the workspace 
     await waitFor(() => expect(providerIds("opencode")).toEqual(["external-backend"]))
     expect(section("pi").querySelector('[data-action="settings-providers-add-custom"]')).toBeNull()
 
-    fireEvent.click(section("opencode").querySelector<HTMLElement>('[data-action="settings-providers-add-custom"]')!)
+    // The custom-provider control sits on the section's tab row now.
+    fireEvent.click(
+      section("opencode")
+        .closest('[data-component^="models-section-"]')!
+        .querySelector<HTMLElement>('[data-component="models-harness-tabs"] [data-action="agent-add-account"]')!,
+    )
 
     expect(state.dialogs).toHaveLength(1)
     render(state.dialogs[0])
@@ -545,7 +601,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     // differs from the answer is visible rather than merely improbable.
     const painted: string[] = []
     const observer = new MutationObserver(() => {
-      const keys = [...document.querySelectorAll<HTMLElement>('[data-component="agents-providers-section"] [data-component="agent-account"]')]
+      const keys = [...document.querySelectorAll<HTMLElement>('[data-component="agent-harness-row"] [data-component="agent-account"]')]
         .map((node) => node.getAttribute("data-account") ?? "").join(",")
       if (keys && painted.at(-1) !== keys) painted.push(keys)
     })
@@ -597,9 +653,9 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
     expect(agentAction("cursor")).toBe("agent-add-account")
     expect(accountIds("cursor")).toEqual([])
-    // The header is the name and the one button, and says nothing else.
-    expect(agentRow("cursor").querySelector("div")?.textContent)
-      .toBe("Cursorsettings.providers.agents.addAccount")
+    // The row itself is headerless here — the section above already names the
+    // harness and carries its one action — so it lists accounts and nothing else.
+    expect(agentRow("cursor").textContent).toBe("")
   })
 
   test("a harness on a working stored account offers only Add an account, and the row carries the check", async () => {
@@ -709,7 +765,10 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     accountRow("anthropic", "cred_bad").querySelector<HTMLButtonElement>('[data-action="agent-reconnect"]')!.click()
 
-    expect(agentRow("anthropic").querySelector('[data-component="provider-connect-card"]')?.getAttribute("data-credential"))
+    // Reconnect opens the connect dialog naming the row it came from.
+    expect(state.dialogs).toHaveLength(1)
+    const { container } = render(state.dialogs.at(-1)!)
+    expect(container.querySelector('[data-component="provider-connect-card"]')?.getAttribute("data-credential"))
       .toBe("cred_bad")
   })
 
@@ -1134,16 +1193,19 @@ describe("Settings → Providers reports the agent logins on this machine", () =
   test("Add an account opens the connect card with no row named, and saving rescans", async () => {
     mount()
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
-    expect(agentRow("cursor").querySelector('[data-component="provider-connect-card"]')).toBeNull()
+    expect(state.dialogs).toHaveLength(0)
 
-    agentRow("cursor").querySelector<HTMLButtonElement>('[data-action="agent-add-account"]')!.click()
+    addAccountControl("cursor").click()
 
-    const card = agentRow("cursor").querySelector('[data-component="provider-connect-card"]')
+    // A dialog, not a card under the row: the list stays where it was.
+    expect(state.dialogs).toHaveLength(1)
+    const { container } = render(state.dialogs.at(-1)!)
+    const card = container.querySelector('[data-component="provider-connect-card"]')
     expect(card?.getAttribute("data-credential")).toBeNull()
     expect(card?.textContent).toContain("provider.connect.title.harness:Cursor")
     state.credentialCalls.length = 0
 
-    within(agentRow("cursor")).getByTestId("provider-connect-save").click()
+    within(container).getByTestId("provider-connect-save").click()
 
     await waitFor(() => expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/machine-logins"))
   })

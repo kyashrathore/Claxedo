@@ -124,7 +124,7 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
     ),
     useOpenSession: () => openSession,
     useOpenPage: () => () => {},
-    openPresetSettings: () => {},
+    useOpenPresetSettings: () => () => {},
     usePaneCtx: () => undefined,
   })
 

@@ -552,9 +552,9 @@ test.describe("core settings + auth @core", () => {
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
       await expect(page.getByRole("heading", { name: "Keyboard shortcuts", exact: true })).toBeVisible()
 
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
-      await expect(page.getByRole("heading", { name: "Providers", exact: true })).toBeVisible()
+      await expect(page.getByRole("heading", { name: "Models", exact: true })).toBeVisible()
 
       await selectTab(page, "connections")
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
@@ -958,7 +958,7 @@ test.describe("core settings + auth @core", () => {
       await mockCredentialRoutes(page, credHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
 
       const harnessSection = page.locator('[data-component="pi-providers-section"]')
       await expect(harnessSection.getByText("Anthropic")).toBeVisible()
@@ -990,7 +990,7 @@ test.describe("core settings + auth @core", () => {
       await mockAuthRoutes(page, authHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
 
       const harnessSection = page.locator('[data-component="pi-providers-section"]')
       const envRow = harnessSection.locator('[data-provider="anthropic"]')
@@ -1022,7 +1022,7 @@ test.describe("core settings + auth @core", () => {
       await mockAuthRoutes(page, authHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
       const row = page.locator('[data-component="pi-providers-section"] [data-provider="clinepass-2"]')
       await expect(row.getByText("Config", { exact: true })).toBeVisible()
       await expect(row.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
@@ -1036,7 +1036,7 @@ test.describe("core settings + auth @core", () => {
       await mockProviderCatalog(page, { connected: [], popular: [] })
       await openWorkbench(page, DIR)
       await openSettings(page)
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
       await expect(page.locator('[data-component="custom-provider-section"]')).toHaveCount(0)
     })
   })
@@ -1064,10 +1064,14 @@ test.describe("core settings + auth @core", () => {
       await page.locator('[data-action="settings-scope-harness"]').click()
       await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22opencode%22%7D"]').click()
 
-      const modelsPanel = page.locator('[data-slot="tabs-content"]:not([hidden])')
-      await expect(modelsPanel.getByText("OpenCode Zen")).toBeVisible({ timeout: 15_000 })
-      await expect(modelsPanel.getByRole("switch", { name: "Big Pickle" })).toBeVisible({ timeout: 15_000 })
-      await expect(modelsPanel.getByRole("switch", { name: "Second Model" })).toBeVisible({ timeout: 15_000 })
+      // A harness opens on its accounts; its models are the other tab, and a
+      // provider's own models sit behind its row.
+      const harness = page.locator('[data-component="models-section-opencode"]')
+      await harness.locator('[data-action="settings-models-tab-models"]').click()
+      await expect(harness.getByText("OpenCode Zen")).toBeVisible({ timeout: 15_000 })
+      await harness.locator('[data-action="settings-models-group-expand"]').first().click()
+      await expect(harness.getByRole("switch", { name: "Big Pickle" })).toBeVisible({ timeout: 15_000 })
+      await expect(harness.getByRole("switch", { name: "Second Model" })).toBeVisible({ timeout: 15_000 })
     })
   })
 

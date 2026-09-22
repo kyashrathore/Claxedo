@@ -67,8 +67,13 @@ vi.mock("@/platform/i18n/provider", () => ({
 
 vi.mock("@/features/session/app-ports", () => ({
   loadManageModelsDialog: async () => ({ DialogManageModels: () => null }),
-  openSettingsProviders: vi.fn(),
+  openSettingsModels: vi.fn(),
 }))
+
+const navigated = vi.fn()
+// Connecting a provider is a navigation now, not a dialog; these suites mount
+// the control without a router.
+vi.mock("@solidjs/router", () => ({ useNavigate: () => navigated, useLocation: () => ({ pathname: "/", search: "" }) }))
 
 import { DialogSelectModel } from "./select-model"
 

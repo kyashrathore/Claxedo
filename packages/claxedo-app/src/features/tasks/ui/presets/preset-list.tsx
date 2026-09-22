@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
-import { Switch } from "@opencode-ai/ui/switch"
 import type { Preset } from "@claxedo/tasks"
+import { SettingsEmpty, SettingsList, SettingsRow } from "@/ui/controls/settings-list"
 import { ListFailureNotice, type ListFailure } from "../shared/list-failure"
 import { LoadMore, type MorePages } from "../shared/load-more"
 import { PLACEMENT_LABELS, SLOT_LABELS, configuredSlotsOf, shortAge } from "../../view-model"
@@ -10,8 +10,6 @@ export type PresetListProps = {
   presets: readonly Preset[]
   selectedPresetId?: string
   loading?: boolean
-  includeArchived: boolean
-  onIncludeArchivedChange: (value: boolean) => void
   busyPresetId?: string
   /** A refused command, which the user retries by repeating the command rather than through a control here. */
   error?: string
@@ -23,110 +21,93 @@ export type PresetListProps = {
   onRestore: (input: { presetId: string; revision: number }) => void
 }
 
+/**
+ * The preset catalog, as the rows every other Settings section is made of.
+ *
+ * It was a six-column table, which is the Tasks surface's language: presets are
+ * only ever read here, and a table of its own read as another product's screen
+ * dropped into Settings. The columns that survived the move are the ones a
+ * preset is chosen by, on the row's second line.
+ */
 export function PresetList(props: PresetListProps) {
   const now = Date.now()
 
   return (
-    <div class="tsk tsk-root" data-testid="preset-list">
-      <div class="tsk-toolbar">
-        <p class="tsk-hint tsk-spacer">
-          Presets are yours. They describe how and where an agent works, and are reusable across your projects.
-        </p>
-        <Switch
-          data-testid="preset-list-include-archived"
-          checked={props.includeArchived}
-          onChange={(value: boolean) => props.onIncludeArchivedChange(value)}
-        >
-          Show archived
-        </Switch>
-      </div>
-
+    <div class="flex flex-col gap-3" data-testid="preset-list">
       <Show when={props.error}>
         {(message) => (
-          <p class="tsk-error tsk-inset" role="alert">
+          <p class="text-12-regular text-icon-critical-base" role="alert">
             {message()}
           </p>
         )}
       </Show>
       <ListFailureNotice failure={props.failure} testId="preset-list-retry" />
 
-      <div class="tsk-listing" aria-busy={props.loading ? "true" : "false"}>
-        <div class="tsk-thead tsk-tr-preset">
-          <span>Name</span>
-          <span class="tsk-cell">Placement</span>
-          <span class="tsk-cell">Primary configuration</span>
-          <span class="tsk-cell">Slots</span>
-          <span class="tsk-cell">Updated</span>
-          <span />
-        </div>
-
-        <For
-          each={props.presets}
-          fallback={
+      <div aria-busy={props.loading ? "true" : "false"}>
+        <Show
+          when={props.presets.length > 0}
+          fallback={(
             <Show when={props.failure === undefined}>
-              <div class="tsk-empty">
-                <p>No presets yet.</p>
-                <Button size="small" variant="ghost" class="tsk-empty-action" onClick={() => props.onCreate()}>
-                  New preset
-                </Button>
-              </div>
-            </Show>
-          }
-        >
-          {(preset, index) => (
-            <div
-              class="tsk-tr tsk-tr-preset tsk-rise"
-              style={{ "--tsk-i": String(index()) }}
-              data-selected={props.selectedPresetId === preset.id ? "true" : undefined}
-              data-archived={preset.archivedAt === null ? undefined : "true"}
-            >
-              <button
-                type="button"
-                class="tsk-open"
-                data-testid={`preset-list-row-${preset.id}`}
-                aria-current={props.selectedPresetId === preset.id ? "true" : undefined}
-                onClick={() => props.onSelect(preset.id)}
-              >
-                <span class="tsk-open-name">{preset.name}</span>
-                <Show when={preset.archivedAt !== null}>
-                  <span class="tsk-parent">Archived</span>
-                </Show>
-              </button>
-
-              <span class="tsk-cell">{PLACEMENT_LABELS[preset.execution.placement]}</span>
-              <span class="tsk-cell tsk-mono tsk-truncate">{primarySummary(preset)}</span>
-              <span class="tsk-cell tsk-truncate">{slotSummary(preset)}</span>
-              <span class="tsk-cell tsk-cell-time">{shortAge(preset.updatedAt, now)}</span>
-
-              <Show
-                when={preset.archivedAt === null}
-                fallback={
-                  <Button
-                    size="small"
-                    variant="ghost"
-                    class="tsk-row-quiet"
-                    data-testid={`preset-list-restore-${preset.id}`}
-                    disabled={props.busyPresetId === preset.id}
-                    onClick={() => props.onRestore({ presetId: preset.id, revision: preset.revision })}
-                  >
-                    Restore
+              <SettingsEmpty>
+                <span class="flex flex-col items-center gap-2">
+                  <span>No presets yet.</span>
+                  <Button size="small" variant="secondary" data-testid="preset-list-create" onClick={() => props.onCreate()}>
+                    New preset
                   </Button>
-                }
-              >
-                <Button
-                  size="small"
-                  variant="ghost"
-                  class="tsk-row-quiet"
-                  data-testid={`preset-list-archive-${preset.id}`}
-                  disabled={props.busyPresetId === preset.id}
-                  onClick={() => props.onArchive({ presetId: preset.id, revision: preset.revision })}
-                >
-                  Archive
-                </Button>
-              </Show>
-            </div>
+                </span>
+              </SettingsEmpty>
+            </Show>
           )}
-        </For>
+        >
+          <SettingsList>
+            <For each={props.presets}>
+              {(preset) => (
+                <SettingsRow
+                  title={(
+                    <button
+                      type="button"
+                      class="flex min-w-0 items-center gap-2 border-none bg-transparent p-0 text-left text-14-medium text-text-strong"
+                      data-testid={`preset-list-row-${preset.id}`}
+                      aria-current={props.selectedPresetId === preset.id ? "true" : undefined}
+                      onClick={() => props.onSelect(preset.id)}
+                    >
+                      <span class="truncate">{preset.name}</span>
+                      <Show when={preset.archivedAt !== null}>
+                        <span class="shrink-0 text-12-regular text-text-weak">Archived</span>
+                      </Show>
+                    </button>
+                  )}
+                  description={presetSummary(preset, now)}
+                >
+                  <Show
+                    when={preset.archivedAt === null}
+                    fallback={(
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        data-testid={`preset-list-restore-${preset.id}`}
+                        disabled={props.busyPresetId === preset.id}
+                        onClick={() => props.onRestore({ presetId: preset.id, revision: preset.revision })}
+                      >
+                        Restore
+                      </Button>
+                    )}
+                  >
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      data-testid={`preset-list-archive-${preset.id}`}
+                      disabled={props.busyPresetId === preset.id}
+                      onClick={() => props.onArchive({ presetId: preset.id, revision: preset.revision })}
+                    >
+                      Archive
+                    </Button>
+                  </Show>
+                </SettingsRow>
+              )}
+            </For>
+          </SettingsList>
+        </Show>
       </div>
 
       <LoadMore more={props.more} testId="preset-list-load-more" />
@@ -134,10 +115,15 @@ export function PresetList(props: PresetListProps) {
   )
 }
 
-function slotSummary(preset: Preset) {
-  return configuredSlotsOf(preset)
-    .map((slot) => SLOT_LABELS[slot])
-    .join(" · ")
+/** What a preset is chosen by, in the order it is read: where, what, how much, how old. */
+function presetSummary(preset: Preset, now: number) {
+  const slots = configuredSlotsOf(preset).map((slot) => SLOT_LABELS[slot])
+  return [
+    PLACEMENT_LABELS[preset.execution.placement],
+    primarySummary(preset),
+    ...(slots.length > 0 ? [slots.join(" · ")] : []),
+    shortAge(preset.updatedAt, now),
+  ].filter(Boolean).join(" · ")
 }
 
 /** The primary slot as one line: harness, model, effort — the fields a preset is chosen by. */

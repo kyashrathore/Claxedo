@@ -30,6 +30,13 @@ vi.mock("@/platform/api/api", async (importOriginal) => ({
 
 vi.mock("@/platform/sync/local-event-websocket", () => ({ openLocalEventWebSocket: transport.request }))
 
+const analytics = vi.hoisted(() => ({ captureException: vi.fn() }))
+
+vi.mock("@/platform/telemetry/analytics", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/platform/telemetry/analytics")>(),
+  captureException: analytics.captureException,
+}))
+
 const account = vi.hoisted(() => ({
   available: false,
   open: vi.fn<(input: { operation: string; params?: Record<string, unknown>; signal?: AbortSignal }) => Promise<Response>>(),
@@ -80,7 +87,7 @@ function openStream(signal?: AbortSignal | null) {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.spyOn(Math, "random").mockReturnValue(0)
-  vi.spyOn(console, "debug").mockImplementation(() => {})
+  analytics.captureException.mockReset()
   transport.request.mockReset()
   queryClient.clear()
   // Every case here mounts against a loopback daemon, and the aggregate exists
@@ -171,8 +178,8 @@ describe("ClaxedoEventsProvider reconnects", () => {
     expect(screen.getByText("connected")).toBeInTheDocument()
   })
 
-  test("backs off and escalates once per sustained failure run, resetting after a successful open", async () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+  test("backs off and reports once per sustained failure run, resetting after a successful open", async () => {
+    const errors = analytics.captureException
     transport.request.mockImplementation(controlPlaneOnly(() => new Response("offline", { status: 503 })))
     mount()
     await vi.advanceTimersByTimeAsync(0)
@@ -187,6 +194,10 @@ describe("ClaxedoEventsProvider reconnects", () => {
       expect(cpCalls()).toHaveLength(attempts + 1)
     }
     expect(errors).toHaveBeenCalledTimes(1)
+    expect(errors).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ surface: "app_shell", cause: "runtime-response:503", stream: "cp" }),
+    )
 
     const recovered = openStream()
     let recoveries = 0
@@ -256,7 +267,7 @@ describe("the workspace stream's two arms", () => {
   })
 
   test("refused on a route that names no session, the target waits for one instead of retrying as an outage", async () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    const errors = analytics.captureException
     transport.request.mockImplementation(async (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
       if (!isWorkspaceStream(url)) return quiet()
@@ -277,7 +288,7 @@ describe("the workspace stream's two arms", () => {
   })
 
   test("a session the runtime itself refuses is parked, not retried as an outage; another session named reopens", async () => {
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {})
+    const errors = analytics.captureException
     const refusedSession = () => Response.json({ error: { code: "session_event_stream_denied", message: "revoked", cause: "session_private" } }, { status: 403 })
     transport.request.mockImplementation(async (input) => {
       const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
@@ -640,8 +651,6 @@ describe("the host aggregate the desktop opens for every local runtime", () => {
       refs: 1,
       rolePlacement: { state: "role-known", workspaceId: "ws_cloud", role: "owner" },
     })
-    vi.spyOn(console, "error").mockImplementation(() => {})
-
     let reachable = false
     transport.request.mockImplementation(async (input) => {
       const url = requestUrl(input)

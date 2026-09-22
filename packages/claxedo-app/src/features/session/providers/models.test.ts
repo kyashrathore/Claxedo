@@ -38,16 +38,40 @@ describe("decodeModelStoreRecord", () => {
 })
 
 describe("decodeModelVisibilityRecord", () => {
-  test("keeps show/hide entries and drops anything else", () => {
+  test("keeps show/hide answers and drops anything else, per model and per group", () => {
     expect(decodeModelVisibilityRecord({
       entries: { "anthropic:opus": "hide", "claude:sonnet": "show", "openai:gpt": "maybe", "pi:x": 1 },
-    })).toEqual({ entries: { "anthropic:opus": "hide", "claude:sonnet": "show" } })
-    expect(decodeModelVisibilityRecord(undefined)).toEqual({ entries: {} })
-    expect(decodeModelVisibilityRecord({ entries: [] })).toEqual({ entries: {} })
+      groups: { anthropic: "show", "pi/amazon-bedrock": "hide", openai: "maybe" },
+    })).toEqual({
+      entries: { "anthropic:opus": "hide", "claude:sonnet": "show" },
+      groups: { anthropic: "show", "pi/amazon-bedrock": "hide" },
+    })
+    expect(decodeModelVisibilityRecord(undefined)).toEqual({ entries: {}, groups: {} })
+    expect(decodeModelVisibilityRecord({ entries: [] })).toEqual({ entries: {}, groups: {} })
+  })
+
+  test("a record written before group answers existed decodes with none", () => {
+    expect(decodeModelVisibilityRecord({ entries: { "anthropic:opus": "hide" } }))
+      .toEqual({ entries: { "anthropic:opus": "hide" }, groups: {} })
   })
 })
 
 describe("resolveModelVisibility", () => {
+  test("a group answer covers its models, and a per-model answer overrides it", () => {
+    const model = { providerID: "pi", modelID: "amazon-bedrock/nova-lite" }
+    expect(resolveModelVisibility({ model, defaults: {}, group: "hide" })).toBe(false)
+    expect(resolveModelVisibility({ model, defaults: {}, group: "hide", user: "show" })).toBe(true)
+    expect(resolveModelVisibility({ model, defaults: {}, group: "show", connected: false })).toBe(true)
+  })
+
+  test("a model the harness holds no credential for is off until it is asked for", () => {
+    const model = { providerID: "pi", modelID: "amazon-bedrock/nova-lite" }
+    expect(resolveModelVisibility({ model, defaults: {}, connected: false })).toBe(false)
+    expect(resolveModelVisibility({ model, defaults: {}, connected: true })).toBe(true)
+    // A harness that reports no such fact keeps the list it reported as the offer.
+    expect(resolveModelVisibility({ model, defaults: {} })).toBe(true)
+  })
+
   test("an explicit user choice wins over the provider default", () => {
     const model = { providerID: "anthropic", modelID: "opus" }
     const defaults = { anthropic: "opus" }

@@ -10,7 +10,8 @@ import { useCapabilityCatalog } from "./capability-catalog"
 import { useOpenTaskSession } from "./open-task-session"
 import { useOpenTasksPage } from "./open-tasks-page"
 import { TASKS_PRESETS_SETTINGS_TAB } from "./settings-section"
-import { openSettings } from "@/features/settings/open-settings"
+import { useNavigate } from "@solidjs/router"
+import { settingsRoute } from "@/platform/settings/route"
 import { usePaneCtx } from "@/app/workbench/context/pane-ctx"
 import type { ConfigurationEditorProps } from "@/features/tasks/preset-editor-model"
 import type { ProseEditorProps } from "@/features/tasks/app-ports"
@@ -51,12 +52,14 @@ export function useCapabilityCatalogPort() {
 /**
  * Sends a Start control to the preset catalog.
  *
- * The dialog is loaded rather than imported, so the Tasks chunk does not carry
- * Settings: the feature asks for "where presets are kept" and the app answers
- * with the tab it contributed.
+ * A hook rather than a plain function: `tasksAppPorts()` is built at
+ * contribution time, outside any component, so the navigation has to be
+ * resolved where it is used. The destination is the settings section Tasks
+ * contributed, which the shell draws without unmounting the caller.
  */
-export function openPresetSettings(dialog: { show: (element: () => JSX.Element) => unknown }) {
-  void openSettings(dialog, () => import("@/app/dialogs/settings"), TASKS_PRESETS_SETTINGS_TAB)
+export function useOpenPresetSettings() {
+  const navigate = useNavigate()
+  return () => navigate(settingsRoute(TASKS_PRESETS_SETTINGS_TAB))
 }
 
 export function useTasksProjectsPort() {
@@ -90,7 +93,7 @@ export function tasksAppPorts(): TasksAppPorts {
     ProseEditor: (props: ProseEditorProps) => TasksProseEditor(props),
     useOpenSession: useOpenTaskSession,
     useOpenPage: useOpenTasksPage,
-    openPresetSettings,
+    useOpenPresetSettings,
     usePaneCtx,
   }
 }

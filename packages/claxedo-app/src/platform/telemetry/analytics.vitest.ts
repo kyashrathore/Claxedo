@@ -105,16 +105,56 @@ describe("posthog wrapper", () => {
     })
   })
 
-  test("boundary exceptions reach captureException with their surface", async () => {
+  test("handled exceptions carry the surface, the call's context and the current identity", async () => {
     const analytics = await loadAnalytics()
     const error = new Error("boom")
+    analytics.identify("user_1")
+    analytics.group("org", "org_1")
+    analytics.setDeploymentMode("cloud")
 
-    analytics.captureException(error, { ...analytics.identityProps(), surface: "error_page" })
+    analytics.captureException(error, { surface: "documents", operation: "index-load" })
 
-    expect(client.captureException).toHaveBeenCalledWith(
+    expect(client.captureException).toHaveBeenCalledWith(error, {
+      org_id: "org_1",
+      user_id: "user_1",
+      deployment_mode: "cloud",
+      surface: "documents",
+      operation: "index-load",
+    })
+  })
+
+  test("a dev build has no client, so a handled exception reaches the console and nothing else", async () => {
+    vi.stubEnv("DEV", true)
+    vi.stubEnv("VITE_CLAXEDO_TELEMETRY_MODE", "on")
+    vi.stubEnv("VITE_POSTHOG_KEY", "phc_test_key")
+    vi.resetModules()
+    const analytics = await import("./analytics")
+    analytics.initPostHog()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const error = new Error("boom")
+
+    analytics.captureException(error, { surface: "session", operation: "revoked-session-access" })
+    await Promise.resolve()
+
+    expect(consoleError).toHaveBeenCalledWith(
+      "[claxedo:session]",
       error,
-      expect.objectContaining({ surface: "error_page" }),
+      expect.objectContaining({ surface: "session", operation: "revoked-session-access" }),
     )
+    expect(client.init).not.toHaveBeenCalled()
+    expect(client.captureException).not.toHaveBeenCalled()
+    consoleError.mockRestore()
+  })
+
+  test("a production build writes nothing to the console", async () => {
+    const analytics = await loadAnalytics()
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+
+    analytics.captureException(new Error("boom"), { surface: "error_page" })
+
+    expect(consoleError).not.toHaveBeenCalled()
+    expect(client.captureException).toHaveBeenCalledTimes(1)
+    consoleError.mockRestore()
   })
 
   test("queues calls made before the client is ready", async () => {
@@ -165,7 +205,7 @@ describe("VITE_CLAXEDO_TELEMETRY_MODE", () => {
     analytics.identify("user_1")
     analytics.group("org", "org_1")
     analytics.capture("session_new", { ...analytics.identityProps(), surface: "command_palette" })
-    analytics.captureException(new Error("boom"), { ...analytics.identityProps(), surface: "error_page" })
+    analytics.captureException(new Error("boom"), { surface: "error_page" })
     // Enabled cases observe initialization before asserting forwarded calls.
     if (mode?.trim().toLowerCase() === "on") await vi.waitFor(() => expect(client.init).toHaveBeenCalled())
     else await Promise.resolve()

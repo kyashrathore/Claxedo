@@ -120,10 +120,11 @@ export function initPostHog() {
       //
       // Spelled out rather than `true` so the console setting is pinned by us
       // instead of inherited from an SDK default that could flip in a future
-      // release. `capture_console_errors` stays OFF deliberately: this app uses
-      // `console.error` for benign diagnostics (failed optional probes, expected
-      // race warnings), and turning those into exception events would bury the
-      // real crashes under noise that nobody can action.
+      // release. `capture_console_errors` stays OFF: a production bundle
+      // writes nothing to the console (`no-console` is enforced over the
+      // browser packages) and handled errors arrive through `captureException`
+      // below, so the console hook could only ever re-capture third-party
+      // noise from extensions and embedded pages.
       capture_exceptions: {
         capture_unhandled_errors: true,
         capture_unhandled_rejections: true,
@@ -202,9 +203,29 @@ export function capture(event: string, properties: ProductEventProperties) {
 }
 
 /**
- * Handled-boundary exceptions. Unhandled ones already arrive via
- * `capture_exceptions`; this covers errors an ErrorBoundary swallowed.
+ * Properties on a handled exception. `surface` is required so every report
+ * names the boundary that swallowed the error; the rest is free-form context
+ * (an operation name, a status, a diagnostic classification).
  */
-export function captureException(error: unknown, properties?: ProductEventProperties) {
-  enqueue((client) => client.captureException(error, properties))
+export type ExceptionProperties = {
+  surface: Surface
+  [key: string]: unknown
+}
+
+/**
+ * Handled exceptions: errors a boundary, a `.catch`, or a background retry
+ * swallowed, which `capture_exceptions` therefore never sees. Identity is
+ * merged here so a call site names only what it knows.
+ *
+ * A dev build never constructs a PostHog client, so the console is the only
+ * place the error can surface there; the branch is a build-time constant and
+ * drops out of a production bundle, which writes nothing to the console.
+ */
+export function captureException(error: unknown, properties: ExceptionProperties) {
+  const payload = { ...identityProps(), ...properties }
+  if (import.meta.env.DEV) {
+    // oxlint-disable-next-line no-console
+    console.error(`[claxedo:${properties.surface}]`, error, payload)
+  }
+  enqueue((client) => client.captureException(error, payload))
 }

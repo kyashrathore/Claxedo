@@ -13,7 +13,6 @@ type CatalogProvider = {
 const dialogState = vi.hoisted(() => ({
   show: vi.fn(),
 }))
-const openSettingsProviders = vi.hoisted(() => vi.fn())
 const discovery = vi.hoisted(() => vi.fn())
 vi.mock("@/platform/api/api", async (original) => ({
   ...await original<typeof import("@/platform/api/api")>(),
@@ -69,7 +68,6 @@ vi.mock("@/features/session/app-ports", () => ({
     refresh: async () => { catalogRefreshCalls += 1 },
     default: () => catalogDefaults,
   }),
-  openSettingsProviders,
 }))
 
 vi.mock("@opencode-ai/ui/context/dialog", () => ({
@@ -146,6 +144,11 @@ vi.mock("@opencode-ai/ui/v2/tooltip-v2", () => ({
     </span>
   ),
 }))
+
+const navigated = vi.fn()
+// Connecting a provider is a navigation now, not a dialog; these suites mount
+// the control without a router.
+vi.mock("@solidjs/router", () => ({ useNavigate: () => navigated, useLocation: () => ({ pathname: "/", search: "" }) }))
 
 import { AgentHarnessSelector } from "./agent-harness-selector"
 import {
@@ -251,7 +254,7 @@ beforeEach(() => {
   draftDefaultState = "ready"
   draftDefaultLabels = undefined
   dialogState.show.mockClear()
-  vi.mocked(openSettingsProviders).mockClear()
+  navigated.mockClear()
 })
 
 // ---------------------------------------------------------------------------
@@ -752,7 +755,7 @@ describe("AgentHarnessSelector — native Pi models", () => {
     expect(container.querySelector("[data-testid='model-option-anthropic/sonnet']")?.getAttribute("data-connected")).toBe("true")
     fireEvent.click(container.querySelector("[data-testid='model-option-amazon-bedrock/nova']") as HTMLButtonElement)
     expect(setModelCalls).toEqual([])
-    expect(openSettingsProviders).toHaveBeenCalled()
+    expect(navigated).toHaveBeenCalledWith("/settings/models")
     expect(container.querySelector("[data-testid='model-option-anthropic/sonnet']")?.getAttribute("data-provider-name")).toBe("Anthropic")
   })
 

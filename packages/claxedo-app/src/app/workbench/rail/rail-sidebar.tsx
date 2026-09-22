@@ -265,6 +265,12 @@ export type RailSidebarProps = {
   hasActiveTabs?: boolean
   homedir?: string
   children?: JSX.Element
+  /**
+   * Drawn in place of the projects when the shell is somewhere else entirely.
+   * The header above it and the account footer below stay where they are, so
+   * only what the rail LISTS changes.
+   */
+  navOverride?: () => JSX.Element
   trafficLightPad?: boolean
 }
 
@@ -2241,26 +2247,30 @@ export function RailSidebar(props: RailSidebarProps) {
       data-surface="sidebar"
       aria-label={language.t("sidebar.nav.projectsAndSessions")}
     >
+      {/*
+        The control keeps one place across all three states — collapsed (drawn
+        by the surface's own header), hovered, and pinned — so pinning does not
+        move the thing the pointer is on. That means this header matches the
+        workbench header it sits beside: same height, same inset, same size.
+      */}
       <div
-        class="flex h-9 shrink-0 items-center gap-2 border-b border-border-weaker-base bg-background-base px-3"
+        class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base bg-background-base px-1"
         style={{ "padding-left": props.trafficLightPad ? "78px" : undefined }}
       >
-        <Show when={docked()}>
-          <Tooltip placement="bottom" value="Hide Sidebar">
-            <div class="max-md:hidden shrink-0">
-              <IconButton
-                icon="layout-left-full"
-                variant="ghost"
-                class="h-7 w-7 rounded-md text-icon-weak-base hover:text-icon-base"
-                onClick={props.onToggleSidebar}
-                aria-label="Hide Sidebar"
-                aria-pressed="true"
-                data-icon-interaction="binary"
-                data-testid="sidebar-toggle"
-              />
-            </div>
-          </Tooltip>
-        </Show>
+        <Tooltip placement="bottom" value={docked() ? "Hide Sidebar" : "Pin Sidebar"}>
+          <div class="max-md:hidden shrink-0">
+            <IconButton
+              icon={docked() ? "layout-left-full" : "layout-left-partial"}
+              variant="ghost"
+              class="size-6 rounded-sm text-icon-weak-base hover:text-icon-base"
+              onClick={props.onToggleSidebar}
+              aria-label={docked() ? "Hide Sidebar" : "Pin Sidebar"}
+              aria-pressed={docked() ? "true" : "false"}
+              data-icon-interaction="binary"
+              data-testid="sidebar-toggle"
+            />
+          </div>
+        </Tooltip>
         <div class="flex-1" />
       </div>
 
@@ -2272,6 +2282,8 @@ export function RailSidebar(props: RailSidebarProps) {
           "scrollbar-color": "var(--scrollbar-thumb) transparent",
         }}
       >
+        <Show when={props.navOverride} fallback={(
+          <>
         <GlobalNavigation
           newProjectLabel={language.t("workspace.new")}
           onNewProject={props.onNewProject}
@@ -2314,6 +2326,10 @@ export function RailSidebar(props: RailSidebarProps) {
         {/* Custom content slot */}
         <Show when={props.children}>
           <div>{props.children}</div>
+        </Show>
+          </>
+        )}>
+          {(nav) => nav()()}
         </Show>
       </div>
 

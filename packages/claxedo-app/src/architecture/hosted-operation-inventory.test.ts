@@ -51,6 +51,8 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Workspace panel: `hostedControlCall` runs the injected hosted operation when the account bridge is signed and otherwise its `api` calls against the attached server's own checkpoint and lifecycle routes at `getDefaultBaseUrl()`; neither is a Hosted Server AccountPort surface.",
   "features/workspaces/data/project-api.ts":
     "Projects live on servers with a filesystem (`/api/claxedo/projects` on the local and self-hosted servers); the hosted plane has no such route, so this is not a Hosted Server AccountPort surface.",
+  "app/integrations/settings/settings-sections-registry.tsx":
+    "The section registry reads the local server's harness-connection catalog (`createHarnessConnectionsCatalog` on `getClaxedoServerUrl()`) to decide whether the Connections section exists; every hosted account operation belongs to the section it renders, not to the registry.",
   "features/settings/ui/harness-providers-section.tsx":
     "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest, and the harness auth entry is dropped through the local server's own `/auth/:providerId`; hosted account identity stays on account-section.",
   "features/settings/ui/sandbox-section.tsx":

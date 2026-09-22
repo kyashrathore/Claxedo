@@ -84,6 +84,7 @@ import {
 export type { ClaxedoEvent } from "./claxedo-event-frames"
 import { errorMessage } from "@/lib/server-errors"
 import { accountStreamAvailable } from "@/platform/account/account-stream-fetch"
+import { captureException } from "@/platform/telemetry/analytics"
 
 // ─── Context ──────────────────────────────────────────────────────────────
 
@@ -544,34 +545,21 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       }).catch((error) => {
         if (stopped || closed || attempt.signal.aborted) return
         if (error instanceof DOMException && error.name === "AbortError") return
-        // Diagnostic: the per-workspace event stream silently failing is the #1
-        // thing that makes the app look dead (no live updates / no streamed
-        // agent response). Log a precise, greppable classification so an
-        // interactive session can read the ROOT cause from the console without
-        // guessing: a network/CORS failure ("Failed to fetch") points at the
-        // relay edge; a `connection failed: <status>` points at the Runtime
-        // Access Token mint (401 = bad/expired browser auth, 409 = no active
-        // host, 429 = rate limit); an `events stream failed: <status>` is the
-        // relayed runtime response itself. The first few consecutive failures
-        // are the tunnel settling (transient 502s / mint races) and self-heal
-        // via backoff, so keep them on a quiet `console.debug` path; only a
-        // SUSTAINED failure run escalates to `console.error`. `state.failures`
-        // is the count of PRIOR failures (incremented later in
-        // `scheduleReconnect`), so it is 0 on the first failure.
-        const diagnostic = describeEventStreamFailure(error, target)
-        const escalation = failureEscalation(state.failures)
-        if (escalation === "escalate") {
-          // Escalate exactly once when the failure run first becomes sustained,
-          // so a real outage surfaces a single greppable diagnostic instead of
-          // re-spamming on every backoff tick. (`state.failures` resets to 0 on
-          // a successful open, so a later run can escalate again.)
-          console.error("[claxedo-events] stream failed", JSON.stringify(diagnostic))
+        // The per-workspace event stream silently failing is what makes the
+        // app look dead (no live updates, no streamed agent response). The
+        // first few consecutive failures are the tunnel settling (transient
+        // 502s, mint races) and self-heal via backoff; only a SUSTAINED run is
+        // reported, exactly once, with the classified root cause
+        // (`describeEventStreamFailure`) so an outage reads as one event rather
+        // than one per backoff tick. `state.failures` counts PRIOR failures
+        // (incremented later in `scheduleReconnect`), so it is 0 on the first
+        // one and resets to 0 on a successful open.
+        if (failureEscalation(state.failures) === "escalate") {
+          captureException(error, { surface: "app_shell", ...describeEventStreamFailure(error, target) })
           // A SUSTAINED workspace-stream outage nudges the authority
           // `ready → reconnecting` (queries park, NO teardown) — the first
-          // transient failures stay quiet and do NOT flip readiness.
+          // transient failures do NOT flip readiness.
           if (target.kind === "wr" && target.scope !== "host") markWorkspaceReconnecting(target.workspaceId)
-        } else if (escalation === "quiet") {
-          console.debug("[claxedo-events] stream failed (transient, retrying)", diagnostic)
         }
         state.abort = null
         setStreamConnected(false)

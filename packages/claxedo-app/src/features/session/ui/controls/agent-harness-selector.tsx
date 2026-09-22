@@ -17,7 +17,9 @@ import {
   createModelSelectionController,
   modelKeyFromPickerSelection,
 } from "@/features/session/commands/model-selection"
-import { openSettingsProviders, useProviders } from "@/features/session/app-ports"
+import { useProviders } from "@/features/session/app-ports"
+import { useNavigate } from "@solidjs/router"
+import { settingsRoute } from "@/platform/settings/route"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import {
   NATIVE_HARNESS_IDS,
@@ -89,6 +91,7 @@ interface AgentHarnessSelectorProps {
 
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const dialog = useDialog()
+  const navigate = useNavigate()
   const connections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
   const connectionRows = createMemo(() => {
     const catalog = connections.data()
@@ -390,7 +393,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     }),
   )
   const openProviders = () => {
-    void openSettingsProviders(dialog)
+    navigate(settingsRoute("models"))
   }
   const model = createMemo<PickerState>(() => ({
     list: () => rows() as PickerItem[],

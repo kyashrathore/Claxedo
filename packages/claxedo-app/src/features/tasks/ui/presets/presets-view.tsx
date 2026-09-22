@@ -7,7 +7,8 @@ import { refusalOf } from "../../data/tasks-api"
 import { followRetry, listFailure, useTasksClient, useTasksInvalidation, usePresetList, type TasksScope } from "../../data/queries"
 import type { TasksStore } from "../../store/tasks-store"
 import { PresetDraftEditor } from "./preset-draft-editor"
-import { TasksHeader } from "../tasks-header"
+import { Switch } from "@opencode-ai/ui/switch"
+import { SettingsSectionHeading } from "@/ui/controls/settings-list"
 
 export type PresetsViewProps = {
   store: TasksStore
@@ -47,17 +48,29 @@ export function PresetsView(props: PresetsViewProps) {
   }
 
   const editing = () => props.store.state.presetDraft !== undefined
+  // The empty state carries its own New preset, and two of the same primary
+  // action on one screen is a choice the reader has to make for no reason.
+  const emptyStateOffersCreate = () => presets.items().length === 0 && listFailure(presets) === undefined
 
   return (
-    <div class="tsk tsk-root" data-testid="presets-view">
-      <TasksHeader
+    <div class="flex flex-col pb-10" data-testid="presets-view">
+      <SettingsSectionHeading
         title="Presets"
-        count={presets.items().length}
+        description="Presets are yours. They describe how and where an agent works, and are reusable across your projects."
         action={
           <Show when={!editing()}>
-            <Button variant="primary" size="small" data-testid="preset-list-create" onClick={createPreset}>
-              New preset
-            </Button>
+            <Switch
+              data-testid="preset-list-include-archived"
+              checked={includeArchived()}
+              onChange={(value: boolean) => showArchived(value)}
+            >
+              Show archived
+            </Switch>
+            <Show when={!emptyStateOffersCreate()}>
+              <Button variant="primary" size="small" data-testid="preset-list-create" onClick={createPreset}>
+                New preset
+              </Button>
+            </Show>
           </Show>
         }
       />
@@ -68,8 +81,6 @@ export function PresetsView(props: PresetsViewProps) {
           <PresetList
             presets={presets.items()}
             loading={presets.pending()}
-            includeArchived={includeArchived()}
-            onIncludeArchivedChange={showArchived}
             busyPresetId={busy() ? props.store.state.selectedPresetId : undefined}
             selectedPresetId={props.store.state.selectedPresetId}
             error={props.store.state.presetRefusal?.message}
@@ -82,7 +93,7 @@ export function PresetsView(props: PresetsViewProps) {
           />
         }
       >
-        <div class="tsk-page">
+        <div class="tsk tsk-root tsk-page">
           <PresetDraftEditor store={props.store} scope={props.scope} />
         </div>
       </Show>

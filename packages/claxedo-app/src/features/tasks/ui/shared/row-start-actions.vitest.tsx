@@ -81,7 +81,7 @@ function mount(input: { links?: unknown[]; presets?: Preset[]; transcriptReadabl
     ),
     useOpenSession: () => openSession,
     useOpenPage: () => (next?: TasksPage) => setPage(() => next),
-    openPresetSettings,
+    useOpenPresetSettings: () => openPresetSettings,
     usePaneCtx: () => undefined,
   })
 

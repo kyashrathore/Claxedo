@@ -8,7 +8,9 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/platform/i18n/provider"
-import { loadManageModelsDialog, openSettingsProviders } from "@/features/session/app-ports"
+import { loadManageModelsDialog } from "@/features/session/app-ports"
+import { useNavigate } from "@solidjs/router"
+import { settingsRoute } from "@/platform/settings/route"
 import type { Surface } from "@/platform/telemetry/analytics"
 import { ModelList, type PickerState } from "./model-list"
 
@@ -40,6 +42,7 @@ export function ModelSelectorPopover(props: {
     dismiss: null,
   })
   const dialog = useDialog()
+  const navigate = useNavigate()
 
   const close = (dismiss: Dismiss) => {
     setStore("dismiss", dismiss)
@@ -55,7 +58,7 @@ export function ModelSelectorPopover(props: {
 
   const handleConnectProvider = () => {
     close("provider")
-    void openSettingsProviders(dialog)
+    navigate(settingsRoute("models"))
   }
   const language = useLanguage()
 
@@ -139,10 +142,11 @@ export function ModelSelectorPopover(props: {
 
 export const DialogSelectModel: Component<{ provider?: string; model: PickerState; surface?: Surface }> = (props) => {
   const dialog = useDialog()
+  const navigate = useNavigate()
   const language = useLanguage()
 
   const provider = () => {
-    void openSettingsProviders(dialog)
+    navigate(settingsRoute("models"))
   }
 
   const manage = () => {

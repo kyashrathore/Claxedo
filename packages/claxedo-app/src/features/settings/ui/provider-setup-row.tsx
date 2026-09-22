@@ -1,7 +1,8 @@
 import { Button } from "@opencode-ai/ui/button"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { createSignal, Show, type Component } from "solid-js"
-import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
+import { DialogProviderConnect } from "@/features/settings/ui/dialog-provider-connect"
 import { useLanguage } from "@/platform/i18n/provider"
 import { connectContextFor } from "@/platform/identity/harness-catalog"
 
@@ -18,7 +19,21 @@ export const ProviderSetupRow: Component<{
   onConnected?: () => void | Promise<void>
 }> = (props) => {
   const language = useLanguage()
-  const [expanded, setExpanded] = createSignal(false)
+  const dialog = useDialog()
+  const [connecting, setConnecting] = createSignal(false)
+
+  const openConnect = () => {
+    setConnecting(true)
+    void dialog.show(() => (
+      <DialogProviderConnect
+        provider={props.providerId}
+        context={connectContextFor({ providerId: props.providerId, engine: props.harness, vendor: props.name })}
+        harness={props.harness}
+        {...(props.scope === undefined ? {} : { scope: props.scope })}
+        {...(props.onConnected ? { onConnected: props.onConnected } : {})}
+      />
+    )).finally(() => setConnecting(false))
+  }
 
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>
@@ -26,7 +41,7 @@ export const ProviderSetupRow: Component<{
         <button
           type="button"
           class="flex min-w-0 flex-1 items-start gap-3 border-none bg-transparent p-0 text-left"
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => openConnect()}
         >
           <ProviderIcon id={props.id} class="size-5 shrink-0 icon-strong-base" />
           <div class="flex min-w-0 flex-col gap-0.5">
@@ -38,9 +53,9 @@ export const ProviderSetupRow: Component<{
         </button>
         <div class="flex shrink-0 items-center gap-2" data-component="provider-actions">
           <Show
-            when={expanded()}
+            when={connecting()}
             fallback={(
-              <Button size="large" variant="ghost" onClick={() => setExpanded(true)}>
+              <Button size="large" variant="ghost" onClick={() => openConnect()}>
                 {language.t("common.connect")}
               </Button>
             )}
@@ -49,16 +64,6 @@ export const ProviderSetupRow: Component<{
           </Show>
         </div>
       </div>
-      <Show when={expanded()}>
-        <ProviderConnectCard
-          provider={props.providerId}
-          context={connectContextFor({ providerId: props.providerId, engine: props.harness, vendor: props.name })}
-          harness={props.harness}
-          scope={props.scope}
-          onConnected={props.onConnected}
-          onClose={() => setExpanded(false)}
-        />
-      </Show>
     </div>
   )
 }

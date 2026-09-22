@@ -17,6 +17,10 @@ vi.mock("@/platform/i18n/provider", () => ({ useLanguage: () => ({ t: (key: stri
 vi.mock("@opencode-ai/ui/context/dialog", () => ({ useDialog: () => ({ show: vi.fn() }) }))
 vi.mock("@opencode-ai/ui/dialog", () => ({ Dialog: (props: { children?: unknown }) => <div>{props.children as never}</div> }))
 
+const navigated = vi.fn()
+// Connecting a provider navigates to the settings surface now.
+vi.mock("@solidjs/router", () => ({ useNavigate: () => navigated, useLocation: () => ({ pathname: "/", search: "" }) }))
+
 import { DialogManageModels } from "./manage-models"
 
 beforeEach(() => {

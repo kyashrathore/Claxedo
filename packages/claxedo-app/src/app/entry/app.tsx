@@ -720,6 +720,12 @@ export function AppInterface(props: {
         />
         <Route path="/s/:sessionId" component={HiddenRouteOutlet} />
         <Route path="/marketplace" component={HiddenRouteOutlet} />
+        {/* Settings is drawn by the shell, which reads the path: the rail
+            lists its sections and the workbench column draws the open one, so
+            the route itself has nothing to render and must not replace the
+            workbench the way `/permissions` does. */}
+        <Route path="/settings" component={HiddenRouteOutlet} />
+        <Route path="/settings/:section" component={HiddenRouteOutlet} />
         <Route path="/tasks" component={HiddenRouteOutlet} />
         <Route path="/tasks/presets" component={HiddenRouteOutlet} />
         <Route path="/tasks/presets/:presetId" component={HiddenRouteOutlet} />

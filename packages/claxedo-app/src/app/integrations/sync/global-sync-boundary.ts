@@ -113,7 +113,6 @@ export function createPrincipalDataIsolation(input: {
     }
     if (previousScope === nextScope) return
     const softened = isSamePersonGainingContext(previousPrincipal, principal)
-    console.info("[principal] transition", { from: previousScope, to: nextScope, action: softened ? "refresh" : "clear" })
     previousScope = nextScope
     previousPrincipal = principal
     if (softened) (input.refresh ?? refreshPrincipalData)()

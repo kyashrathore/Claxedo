@@ -1,9 +1,16 @@
-import { Show, createSignal, onCleanup, type Accessor } from "solid-js"
+import { lazy, Show, createSignal, onCleanup, type Accessor } from "solid-js"
 
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
 import { RailSidebar } from "./rail-sidebar"
+import { useSettingsSurfaceOptional } from "@/features/settings/settings-surface"
+// Lazy: the nav reaches the registry, and the registry reaches every settings
+// panel. Imported eagerly here it would put all of them in the shell's own
+// chunk, which is what the dialog it replaced was careful not to do.
+const SettingsNav = lazy(async () => ({
+  default: (await import("@/app/integrations/settings/settings-nav")).SettingsNav,
+}))
 import type { ProjectItem, SessionItem, WorkspaceItem } from "./domain-types"
 
 export type RailSidebarShellProps = {
@@ -58,6 +65,9 @@ export type RailSidebarShellProps = {
 }
 
 export function RailSidebarShell(props: RailSidebarShellProps) {
+  // Optional: a composition that never opens settings does not mount the
+  // surface, and the rail then simply has no override to draw.
+  const settings = useSettingsSurfaceOptional()
   let resizing = false
   let startX = 0
   let startWidth = 0
@@ -172,6 +182,15 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
       >
         <div class="flex-1 min-h-0 h-full">
           <RailSidebar
+            navOverride={settings?.isOpen()
+              ? () => (
+                <SettingsNav
+                  section={settings.section()!}
+                  onSection={(section) => settings.open(section)}
+                  onBack={() => settings.close()}
+                />
+              )
+              : undefined}
             projects={props.projects}
             activeProjectId={props.activeProjectId}
             activeDirectory={props.activeDirectory}

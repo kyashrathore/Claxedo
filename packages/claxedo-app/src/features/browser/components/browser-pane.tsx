@@ -17,6 +17,7 @@ import {
 import { browserToolbarSlot } from "@/ui/controls/portal-slot"
 import { normalizeAddressBarInput, sameOrigin } from "./browser-url"
 import { syncBrowserPaneUrl } from "./browser-pane-navigation"
+import { captureException } from "@/platform/telemetry/analytics"
 import { HostedBrowserFrame } from "./hosted-browser-frame"
 
 /**
@@ -434,7 +435,7 @@ function BrowserAddressBar(props: { initialUrl?: string; api?: BrowserBridgeApi 
       // The main-process side handles invalid URLs with a structured error.
       void props.api
         .navigate(ctx.paneId(), normalized)
-        .catch((err) => console.warn("[browser-pane] navigate failed", err))
+        .catch((err) => captureException(err, { surface: "desktop", operation: "browser-pane.navigate", url: normalized }))
     }
     setFocused(false)
   }
@@ -658,12 +659,12 @@ function WebviewHost(props: WebviewHostProps) {
     try {
       wcId = getId.call(webview)
     } catch (err) {
-      console.warn("[browser-pane] failed to read webContentsId", err)
+      captureException(err, { surface: "desktop", operation: "browser-pane.web-contents-id" })
       return
     }
     void props.api.register(props.paneId, wcId).then((res) => {
       if (!res.ok) {
-        console.warn("[browser-pane] registry.register failed", res.error)
+        captureException(new Error(res.error ?? "register failed"), { surface: "desktop", operation: "browser-pane.register" })
         return
       }
       markNavigationReady()
@@ -740,8 +741,7 @@ function WebviewHost(props: WebviewHostProps) {
         return image.toDataURL()
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn("[browser-pane] capturePage failed", err)
+      captureException(err, { surface: "desktop", operation: "browser-pane.capture-page" })
     }
     return undefined
   }

@@ -1,7 +1,6 @@
 import { startTransition } from "solid-js"
 import {
   DialogDeleteWorkspace,
-  DialogSettings,
   directorySessionCacheQueryOptions,
   ensureDirectorySessionCache,
   findProjectForWorkspace,
@@ -339,10 +338,6 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     return workspaceId ? { directory: created.directory, workspaceId } : undefined
   }
 
-  const handleSettings = () => {
-    void props.dialog.show(() => <DialogSettings />)
-  }
-
   const handleHelp = () => {
     // Claxedo does not yet have a dedicated docs site (tracked separately);
     // point at the project repo, which is also what claxedo-web's own
@@ -509,7 +504,6 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     handleNewLocalWorkspace,
     handleNewCloudWorkspace,
     createWorkspaceDirectory,
-    handleSettings,
     handleHelp,
     handleDeleteWorkspace,
     handleRemoveProject,

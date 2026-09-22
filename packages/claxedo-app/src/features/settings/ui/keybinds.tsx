@@ -11,7 +11,7 @@ import fuzzysort from "fuzzysort"
 import { formatKeybind, parseKeybind, useCommand } from "@/features/settings/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useSettings } from "@/platform/settings/provider"
-import { SettingsList } from "./list"
+import { SettingsList } from "@/ui/controls/settings-list"
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 const PALETTE_ID = "command.palette"
@@ -367,11 +367,11 @@ export const SettingsKeybinds: Component = () => {
   })
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar bg-inherit px-4 pb-10 sm:px-10 sm:pb-10">
+    <div class="flex flex-col bg-inherit pb-10">
       {/* Search stays pinned; `bg-inherit` keeps it the exact colour of the pane behind it
           (a fixed token drifts from the pane background in themes that repaint it). */}
       <div class="sticky top-0 z-10 bg-inherit">
-        <div class="flex flex-col gap-4 pt-6 pb-6 max-w-[720px]">
+        <div class="flex flex-col gap-4 pt-6 pb-6">
           <div class="flex items-center justify-between gap-4">
             <h2 class="text-18-medium text-text-strong">{language.t("settings.shortcuts.title")}</h2>
             <Button size="small" variant="secondary" onClick={resetAll} disabled={!hasOverrides()}>
@@ -400,7 +400,7 @@ export const SettingsKeybinds: Component = () => {
         </div>
       </div>
 
-      <div class="flex flex-col gap-8 max-w-[720px]">
+      <div class="flex flex-col gap-8">
         <For each={GROUPS}>
           {(group) => (
             <Show when={(filtered().get(group) ?? []).length > 0}>

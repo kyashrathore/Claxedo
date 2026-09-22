@@ -73,7 +73,7 @@ function ports(request: TasksAppPorts["request"]): TasksAppPorts {
     ),
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
     useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
-    openPresetSettings: () => {},
+    useOpenPresetSettings: () => () => {},
     usePaneCtx: () => undefined,
   }
 }

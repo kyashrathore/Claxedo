@@ -243,7 +243,7 @@ vi.doMock("@/features/session/app-ports", () => ({
     throw new Error("no claxedo state")
   },
   loadManageModelsDialog: async () => ({ DialogManageModels: () => null }),
-  openSettingsProviders: vi.fn(),
+  openSettingsModels: vi.fn(),
 }))
 
 const { registerSessionCommands, useSessionCommands } = await import("./use-session-commands")

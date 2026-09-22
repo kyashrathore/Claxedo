@@ -1,9 +1,10 @@
 import { Button } from "@opencode-ai/ui/button"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-list"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { createSignal, For, Show, type Component, type JSX } from "solid-js"
-import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
+import { createSignal, For, onMount, Show, type Component, type JSX } from "solid-js"
+import { DialogProviderConnect } from "@/features/settings/ui/dialog-provider-connect"
 import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton } from "@/ui/controls/claxedo-icon-button"
 import {
@@ -38,6 +39,13 @@ export type AgentAccount = {
   checkedAt?: number
   /** The provider refused this login: a ring on the radio and a Reconnect on the row. */
   refused?: true
+  /**
+   * The provider will not serve this login right now — its own cap, or a check
+   * that never reached it. A mark beside the label; the sentence itself is
+   * already the second line, so the mark carries it only for readers who
+   * cannot see it.
+   */
+  alert?: string
   /** An identity worth having on the row but not worth reading. */
   identity?: string
   /** Where the authority says a turn on this account can run, where anywhere. */
@@ -78,7 +86,12 @@ export const AgentHarnessRow: Component<{
   /** The entry whose removal is in flight. */
   removing?: string
   onConnected?: () => void | Promise<void>
+  /** Set where the surrounding surface already names the harness. */
+  headerless?: boolean
+  /** Hands the opener out, so a headerless mount can draw the control itself. */
+  onAddAccountRef?: (open: () => void) => void
 }> = (props) => {
+  const dialog = useDialog()
   const language = useLanguage()
   const [connecting, setConnecting] = createSignal<{ credentialId?: string }>()
   const [confirmingRemove, setConfirmingRemove] = createSignal<string>()
@@ -148,7 +161,7 @@ export const AgentHarnessRow: Component<{
                   size="small"
                   variant="secondary"
                   data-action="agent-reconnect"
-                  onClick={() => setConnecting({ credentialId: self.account.ids[0] })}
+                  onClick={() => openConnect(self.account.ids[0])}
                 >
                   {language.t("settings.providers.agents.reconnectAccount")}
                 </Button>
@@ -203,8 +216,26 @@ export const AgentHarnessRow: Component<{
     </Show>
   )
 
+  // A surface that already names the harness above the row asks for the
+  // opener instead, and draws it where its own heading is.
+  const openConnect = (credentialId?: string) => {
+    setConnecting(credentialId === undefined ? {} : { credentialId })
+    void dialog.show(() => (
+      <DialogProviderConnect
+        provider={props.providerId}
+        context={harnessConnectContext(props.harness, props.name)}
+        harness={props.harness}
+        {...(credentialId === undefined ? {} : { credentialId })}
+        {...(props.onConnected ? { onConnected: props.onConnected } : {})}
+      />
+    )).finally(() => setConnecting(undefined))
+  }
+
+  onMount(() => props.onAddAccountRef?.(() => openConnect()))
+
   return (
-    <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>
+    <div class="border-b border-border-weak-base last:border-none" data-component="agent-harness-row" data-provider={props.id}>
+      <Show when={!props.headerless}>
       <div class="flex w-full flex-wrap items-center justify-between gap-4 py-3">
         <div class="flex min-w-0 flex-1 items-center gap-3">
           <ProviderIcon id={props.id} class="size-5 shrink-0 icon-strong-base" />
@@ -216,7 +247,7 @@ export const AgentHarnessRow: Component<{
               size="large"
               variant="ghost"
               data-action="agent-add-account"
-              onClick={() => setConnecting({})}
+              onClick={() => openConnect()}
             >
               {language.t("settings.providers.agents.addAccount")}
             </Button>
@@ -226,7 +257,8 @@ export const AgentHarnessRow: Component<{
           </Show>
         </div>
       </div>
-      <div class="mb-3 ml-8 flex flex-col" data-component="agent-accounts">
+      </Show>
+      <div class="mb-3 flex flex-col" classList={{ "ml-8": !props.headerless }} data-component="agent-accounts">
         <Show when={props.accounts.length > 0}>
           <RadioList
             name={group()}
@@ -266,6 +298,19 @@ export const AgentHarnessRow: Component<{
                           </LabelHint>
                         )}
                       </Show>
+                      <Show when={account.alert}>
+                        {(alert) => (
+                          <ClaxedoIcon
+                            name="circle-alert"
+                            size="small"
+                            class="icon-warning-base"
+                            role="img"
+                            aria-hidden="false"
+                            aria-label={alert()}
+                            data-component="agent-account-alert"
+                          />
+                        )}
+                      </Show>
                       <Show when={account.reach}>
                         {(reach) => <Reach reach={reach()} />}
                       </Show>
@@ -295,18 +340,6 @@ export const AgentHarnessRow: Component<{
           </RadioList>
         </Show>
       </div>
-      <Show when={connecting()}>
-        {(open) => (
-          <ProviderConnectCard
-            provider={props.providerId}
-            context={harnessConnectContext(props.harness, props.name)}
-            harness={props.harness}
-            credentialId={open().credentialId}
-            onConnected={props.onConnected}
-            onClose={() => setConnecting(undefined)}
-          />
-        )}
-      </Show>
     </div>
   )
 }

@@ -49,18 +49,38 @@ describe("pre-push architecture ratchet", () => {
     expect(config.categories).toEqual({ correctness: "error", suspicious: "error" })
     expect(config.options.typeAware).toBe(true)
 
-    // Every override is either one of the two test-scoped glob entries or a
+    // An override either turns rules on or turns them off, never both. The
+    // ones that turn rules on widen the gate and are pinned by content; every
+    // other override is an exemption, and those are pinned by path below.
+    type Override = { files: string[]; rules: Record<string, string> }
+    const overrides: Override[] = config.overrides
+    const tightening = overrides.filter((o) => Object.values(o.rules).every((level) => level === "error"))
+    const exemptions = overrides.filter((o) => Object.values(o.rules).every((level) => level === "off"))
+    expect(tightening.length + exemptions.length).toBe(overrides.length)
+
+    // The browser-delivered packages write nothing to the devtools console;
+    // handled errors go to PostHog through `platform/telemetry/analytics.ts`.
+    expect(tightening).toEqual([
+      {
+        files: [
+          "packages/claxedo-app/src/**",
+          "packages/claxedo-web/src/**",
+          "packages/session-app/src/**",
+          "packages/session-ui/src/**",
+          "packages/ui/src/**",
+        ],
+        rules: { "no-console": "error" },
+      },
+    ])
+
+    // Every exemption is either one of the three test-scoped glob entries or a
     // single exact path. Checking only the exact paths would let a new glob
     // entry through untouched, so both partitions are pinned and their sizes
-    // are asserted — a third glob entry fails on the count alone.
-    const globbed = config.overrides.filter((o: { files: string[] }) =>
-      o.files.some((f) => f.includes("*")),
-    )
-    const exact = config.overrides.filter((o: { files: string[] }) =>
-      o.files.every((f) => !f.includes("*")),
-    )
-    expect(globbed.length + exact.length).toBe(config.overrides.length)
-    expect(globbed.length).toBe(2)
+    // are asserted — a fourth glob entry fails on the count alone.
+    const globbed = exemptions.filter((o) => o.files.some((f) => f.includes("*")))
+    const exact = exemptions.filter((o) => o.files.every((f) => !f.includes("*")))
+    expect(globbed.length + exact.length).toBe(exemptions.length)
+    expect(globbed.length).toBe(3)
 
     expect(globbed[0].files).toEqual([
       "**/*.test.ts", "**/*.test.tsx", "**/*.test.mjs",
@@ -73,10 +93,24 @@ describe("pre-push architecture ratchet", () => {
       "packages/claxedo-app/e2e/**", "packages/claxedo-app/**/test-support/**",
       "packages/claxedo-app/**/tests/**",
     ])
+    // Test code and stories inside the no-console packages may print; the
+    // production sources they sit beside stay under the tightening above.
+    expect(globbed[2].files).toEqual([
+      "packages/claxedo-app/src/**/*.test.ts", "packages/claxedo-app/src/**/*.test.tsx",
+      "packages/claxedo-app/src/**/*.vitest.ts", "packages/claxedo-app/src/**/*.vitest.tsx",
+      "packages/claxedo-app/src/**/test-support/**", "packages/claxedo-app/src/**/tests/**",
+      "packages/claxedo-app/src/**/__tests__/**",
+      "packages/claxedo-web/src/**/*.test.ts",
+      "packages/session-app/src/**/*.test.ts", "packages/session-app/src/**/*.test.tsx",
+      "packages/session-ui/src/**/*.test.ts", "packages/session-ui/src/**/*.test.tsx",
+      "packages/ui/src/**/*.test.ts", "packages/ui/src/**/*.test.tsx",
+      "packages/ui/src/**/*.stories.tsx", "packages/ui/src/storybook/**",
+    ])
+    expect(globbed[2].rules).toEqual({ "no-console": "off" })
 
     // Exact-path overrides: one file per entry, each a module whose own job is
     // the claim it excuses.
-    expect(exact.flatMap((o: { files: string[] }) => o.files).sort(byCodePoint)).toEqual([
+    expect(exact.flatMap((o) => o.files).sort(byCodePoint)).toEqual([
       "packages/claxedo-app/src/lib/total-record.ts",
       "packages/claxedo-app/src/platform/identity/brand.ts",
       "packages/claxedo-app/src/platform/persistence/solid-store-erasure.ts",
@@ -87,17 +121,16 @@ describe("pre-push architecture ratchet", () => {
       "packages/workspace-runtime/src/client/request.ts",
     ])
 
-    // Only these three type rules may be relaxed anywhere. `no-floating-promises`,
-    // `no-base-to-string` and the correctness category stay on everywhere.
-    const relaxed = new Set(config.overrides.flatMap((o: { rules: object }) => Object.keys(o.rules)))
+    // Only these rules may be relaxed anywhere, and `no-console` only where it
+    // was first turned on. `no-floating-promises`, `no-base-to-string` and the
+    // correctness category stay on everywhere.
+    const relaxed = new Set(exemptions.flatMap((o) => Object.keys(o.rules)))
     expect([...relaxed].sort(byCodePoint)).toEqual([
+      "no-console",
       "typescript/await-thenable",
       "typescript/no-redundant-type-constituents",
       "typescript/no-unsafe-type-assertion",
     ])
-    for (const override of config.overrides) {
-      expect(Object.values(override.rules)).toEqual(Object.values(override.rules).map(() => "off"))
-    }
   })
 
   test("teaches both agents to fix accidental edges before changing ceilings", async () => {

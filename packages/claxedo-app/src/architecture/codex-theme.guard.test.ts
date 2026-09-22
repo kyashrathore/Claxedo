@@ -119,8 +119,9 @@ describe("Codex theme architecture", () => {
 
   test("keeps page-scale workspaces on the page canvas instead of the dialog surface", () => {
     const shell = read("src/app/styles/app-shell.css")
+    // Settings is not here: it is a shell surface now, drawn by the rail and
+    // the workbench column, so it has no dialog surface to keep on the canvas.
     const owners = [
-      read("src/app/dialogs/settings.tsx"),
       read("src/app/dialogs/usage.tsx"),
       read("src/features/processes/ui/dialog-process-diagnostics.tsx"),
     ]

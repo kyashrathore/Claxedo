@@ -110,6 +110,7 @@ export async function openAccountStreamResponse(input: {
               typeof payload.sentAt === "number" ||
               readBoolean(globalThis, "__CLAXEDO_ACCOUNT_PERF__") === true
             ) {
+              // oxlint-disable-next-line no-console -- opt-in perf tracing, armed by main or a harness
               console.debug("[account-perf]", "account.stream_open_to_renderer_first_byte_ms", detail)
             }
           }

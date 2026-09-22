@@ -10,12 +10,15 @@ import type { ClaxedoProviderAuthorization as ProviderAuthAuthorization } from "
 import type { ClaxedoProviderAuthMethod as ProviderAuthMethod } from "@/platform/api/claxedo-api-types"
 import { Button } from "@opencode-ai/ui/button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { createMemo, For, Match, Show, Switch, type Component } from "solid-js"
+import { createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Link } from "@/app/controls/link"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
+import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useProviderAuth, useProviders } from "@/app/providers/use-providers"
@@ -64,7 +67,6 @@ export type ProviderConnectFormProps = {
    * Opens on the first method so the card is never a dead end. Off by default:
    * a dialog opened on "connect something" waits for a pick.
    */
-  preselectFirstMethod?: boolean
 }
 
 function useProviderConnectForm(props: ProviderConnectFormProps) {
@@ -104,15 +106,25 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     error: undefined as string | undefined,
     saving: false,
   })
-  // A single method is not a choice, and a segmented picker opens on the first.
+  // A single method is not a choice, so it is simply the method. Two or more
+  // stay unchosen until the reader picks one — preselecting put the first
+  // method's fields on screen before they had read what the methods were.
   const selected = createMemo(() => {
     const list = options()
     if (store.methodIndex !== undefined) return list.find((option) => option.index === store.methodIndex)
-    if (list.length === 1 || props.preselectFirstMethod === true) return list.at(0)
+    if (list.length === 1) return list.at(0)
     return undefined
   })
+  /** A negative index withdraws the choice and puts the list back. */
   const pickMethod = (index: number) => {
-    setStore({ methodIndex: index, authorization: undefined, state: undefined, error: undefined, value: "", code: "" })
+    setStore({
+      methodIndex: index < 0 ? undefined : index,
+      authorization: undefined,
+      state: undefined,
+      error: undefined,
+      value: "",
+      code: "",
+    })
   }
   const methodCopy = (option: ConnectMethodOption, part: "title" | "for" | "how") =>
     language.t(`${option.spec.copy}.${part}`, contextVars())
@@ -256,19 +268,23 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
 export function ProviderConnectForm(props: ProviderConnectFormProps) {
   const form = useProviderConnectForm(props)
   const { store, setStore, language } = form
+  const platform = usePlatform()
+  const openLink = (url: string) => platform.openLink(url)
+  const [copied, setCopied] = createSignal(false)
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  const copyCommand = async (command: string) => {
+    await navigator.clipboard.writeText(command)
+    setCopied(true)
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => setCopied(false), 1500)
+  }
+  onCleanup(() => clearTimeout(copiedTimer))
   const choosing = () => form.options().length > 1
-
-  /** Title, who the method is for, and how to obtain it — the same three lines whether or not it is a choice. */
-  const MethodBody: Component<{ option: ConnectMethodOption }> = (self) => (
-    <>
-      <span class="text-13-medium text-text-strong">{form.methodCopy(self.option, "title")}</span>
-      <span class="text-12-regular text-text-base">{form.methodCopy(self.option, "for")}</span>
-      <span class="text-12-regular text-text-weak">{form.methodCopy(self.option, "how")}</span>
-    </>
-  )
+  /** Nothing is chosen yet, so the only thing to draw is the choice. */
+  const picking = () => choosing() && form.selected() === undefined
 
   return (
-    <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-5">
       <Show when={!props.hideHeading}>
         <div class="flex items-center gap-3">
           <ProviderIcon id={props.provider} class="size-5 shrink-0 icon-strong-base" />
@@ -276,63 +292,111 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
         </div>
       </Show>
 
-      <div class="flex flex-col gap-3">
-        <div class="text-13-regular text-text-weak">
-          {language.t(form.contextKey(CONNECT_CONTEXT_COPY.context), form.contextVars())}
-        </div>
-        <Show when={choosing()}>
-          <div class="text-14-regular text-text-base">
+      {/*
+        One step at a time. Every method's title, audience and instructions at
+        once was four paragraphs the reader had to sort through before they
+        could act; the choice is a list, and the instructions belong to the one
+        they chose.
+      */}
+      <Show when={picking()}>
+        <div class="flex flex-col gap-2">
+          <span class="text-14-regular text-text-base">
             {language.t("provider.connect.selectMethod", { vendor: form.contextVars().vendor })}
-          </div>
-        </Show>
-        <div
-          class="flex flex-col gap-2"
-          data-component="provider-connect-methods"
-          role={choosing() ? "radiogroup" : undefined}
-        >
-          <For each={form.options()}>
-            {(option) => (
-              <Show
-                when={choosing()}
-                fallback={(
-                  <div
-                    class="flex flex-col gap-1 rounded-md border border-border-weak-base p-3 text-left"
-                    data-component="provider-connect-method"
-                    data-method-type={option.type}
-                  >
-                    <MethodBody option={option} />
-                  </div>
-                )}
-              >
+          </span>
+          <div class="flex flex-col gap-1" data-component="provider-connect-methods" role="radiogroup">
+            <For each={form.options()}>
+              {(option) => (
                 <button
                   type="button"
                   role="radio"
-                  aria-checked={form.selected()?.index === option.index}
+                  aria-checked={false}
                   data-action="provider-connect-method"
                   data-method-type={option.type}
-                  class="flex flex-col gap-1 rounded-md border p-3 text-left"
-                  classList={{
-                    "bg-surface-raised-base border-border-strong-base": form.selected()?.index === option.index,
-                    "border-border-weak-base hover:border-border-strong-base": form.selected()?.index !== option.index,
-                  }}
+                  class="flex items-center justify-between gap-3 rounded-md border border-border-weak-base px-3 py-2.5 text-left transition-colors hover:border-border-strong-base hover:bg-surface-base-hover/35"
                   onClick={() => form.pickMethod(option.index)}
                 >
-                  <MethodBody option={option} />
+                  <span class="flex min-w-0 flex-col gap-0.5">
+                    <span data-slot="method-title" class="text-13-medium text-text-strong">{form.methodCopy(option, "title")}</span>
+                    <span class="text-12-regular text-text-weak">{form.methodCopy(option, "for")}</span>
+                  </span>
+                  <Icon name="chevron-right" size="small" class="shrink-0 text-icon-weak-base" />
                 </button>
-              </Show>
-            )}
-          </For>
+              )}
+            </For>
+          </div>
         </div>
-      </div>
+      </Show>
+
+      {/*
+        The chosen method is context, not a heading. Stated bold above the
+        instructions it outranked the one thing on the step that matters — the
+        button — so it reads as a way back instead: quiet, small, and the whole
+        row is the control.
+      */}
+      <Show when={!picking() && form.selected()}>
+        {(option) => (
+          <div class="flex flex-col gap-1.5" data-component="provider-connect-method" data-method-type={option().type}>
+            <Show
+              when={choosing()}
+              fallback={(
+                <span data-slot="method-title" class="text-12-regular text-text-weak">
+                  {form.methodCopy(option(), "title")}
+                </span>
+              )}
+            >
+              <button
+                type="button"
+                class="-mx-1 flex w-fit items-center gap-1.5 rounded-md border-none bg-transparent px-1 py-0.5 text-12-regular text-text-weak transition-colors hover:text-text-base"
+                data-action="provider-connect-change-method"
+                onClick={() => form.pickMethod(-1)}
+              >
+                <Icon name="arrow-left" size="small" />
+                <span data-slot="method-title">{form.methodCopy(option(), "title")}</span>
+              </button>
+            </Show>
+            <span class="text-13-regular text-text-base">{form.methodCopy(option(), "how")}</span>
+          </div>
+        )}
+      </Show>
 
       <Switch>
         <Match when={form.pastes()}>
           <form onSubmit={form.saveApiKey} class="flex flex-col items-start gap-4" data-method={form.selected()?.type ?? "api"}>
+            {/* A command to run, not a field to fill: a bordered input with a
+                copy affordance was read as somewhere to type. */}
             <Show when={form.selected()?.command}>
-              {(command) => <TextField label={language.t("provider.connect.token.command")} value={command()} readOnly copyable />}
+              {(command) => (
+                <div class="flex w-full flex-col gap-1.5">
+                  <span class="text-12-regular text-text-weak">{language.t("provider.connect.token.command")}</span>
+                  <div class="flex items-center gap-2 rounded-md bg-surface-base px-3 py-2">
+                    <code class="min-w-0 flex-1 truncate font-mono text-13-regular text-text-strong">{command()}</code>
+                    <IconButton
+                      icon={copied() ? "check-small" : "copy"}
+                      variant="ghost"
+                      aria-label={language.t("provider.connect.token.copyCommand")}
+                      data-action="provider-connect-copy-command"
+                      onClick={() => void copyCommand(command())}
+                    />
+                  </div>
+                </div>
+              )}
             </Show>
             <Show when={form.selected()?.spec.url}>
-              {(url) => <Link href={url()}>{language.t("provider.connect.method.openKeyPage")}</Link>}
+              {(url) => (
+                <Button
+                  class="w-auto"
+                  type="button"
+                  size="large"
+                  variant="secondary"
+                  data-action="provider-connect-open-key-page"
+                  onClick={() => openLink(url())}
+                >
+                  <span class="flex items-center gap-1.5">
+                    {language.t("provider.connect.method.openKeyPage")}
+                    <Icon name="open-external" size="small" />
+                  </span>
+                </Button>
+              )}
             </Show>
             <TextField
               autofocus

@@ -40,13 +40,13 @@ export function reconnectDelayMs(failures: number, quietDelay: number, random: (
 export type FailureEscalation = "escalate" | "quiet" | "silent"
 
 /**
- * How loudly to report the current failure.
- * - `quiet` (failures < threshold): early tunnel-settling failures — `console.debug`.
- * - `escalate` (failures === threshold): the run just became sustained — log a
- *   single `console.error` and nudge the connection authority to reconnecting.
- * - `silent` (failures > threshold): already escalated once; stay quiet so the
- *   backoff ticks don't re-spam. `failures` resets to 0 on a successful open,
- *   so a later failure run escalates again.
+ * Whether the current failure is the one that reports.
+ * - `quiet` (failures < threshold): early tunnel-settling failures, retried silently.
+ * - `escalate` (failures === threshold): the run just became sustained — report
+ *   it once and nudge the connection authority to reconnecting.
+ * - `silent` (failures > threshold): already reported; the backoff ticks stay
+ *   silent. `failures` resets to 0 on a successful open, so a later failure
+ *   run escalates again.
  */
 export function failureEscalation(failures: number): FailureEscalation {
   if (failures === SUSTAINED_FAILURE_THRESHOLD) return "escalate"

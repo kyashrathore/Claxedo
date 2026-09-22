@@ -1295,8 +1295,14 @@
   text-transform: uppercase;
 }
 
-.tsk-tr-preset {
-  grid-template-columns: minmax(0, 1fr) 76px minmax(0, 210px) 112px 60px 84px;
+/* A column header is a label, not a paragraph: uppercase with tracking runs
+   wider than the fixed columns it sits in, and without this the labels ran
+   into each other rather than being cut. */
+.tsk-thead > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tsk-row-quiet.ui-button {

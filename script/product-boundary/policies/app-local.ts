@@ -522,8 +522,29 @@ export const appLocal: Policy = {
   // first-turn onboarding (eager, under session-screen) can render the list
   // without carrying the dialog and popover, which stay behind the lazy
   // `DialogSelectModel` import. Same code, one more file; no new package edge.
-  // Exact measured 1123 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1123, packages: 58 },
+  // +3 modules (2026-09-22): Settings became a shell surface instead of a
+  // dialog — `platform/settings/route.ts`, `features/settings/settings-surface.tsx`
+  // and the nav/content/registry split that replaced `settings-page.tsx`,
+  // `app/dialogs/settings.tsx` and `features/settings/open-settings.tsx`. The
+  // rail lists the sections and the workbench column draws the open one, so
+  // the surface is reachable from the shell rather than from a lazy dialog;
+  // the nav itself is still lazily imported so the panels stay out of the
+  // shell's chunk. Owner: `features/settings`. No new package edge.
+  // +1 module (2026-09-22): `features/settings/ui/settings-header.tsx` — the
+  // settings column's own bar, one tab and the sidebar control, replacing the
+  // workbench header that acts on a workspace. Owner: `features/settings`.
+  // +1 module (2026-09-22): `features/settings/ui/dialog-provider-connect.tsx`
+  // — connecting an account moved out of the row it came from and into a
+  // dialog, so the list stays where the user left it. Owner:
+  // `features/settings`. No new package edge.
+  // +2 modules (2026-09-22): `features/settings/ui/machines-section.tsx` and
+  // `platform/remote-access/machine-online.ts` — the Machines panel is
+  // Settings' own surface now (the fleet list and the enrollment instructions
+  // left the shared onboarding surface, which enrolls one machine and has no
+  // list), and a machine is reported connected by one rule both halves read.
+  // Owner: `features/settings`. No new package edge.
+  // Exact measured 1130 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1130, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

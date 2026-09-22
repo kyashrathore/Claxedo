@@ -80,10 +80,9 @@ afterEach(() => {
   state.opened.length = 0
 })
 
-/** The card's option titles, in the order a reader sees them. */
+/** The method titles a reader sees, whether offered as a list or stated as the one chosen. */
 function optionTitles() {
-  return [...document.querySelectorAll('[data-component="provider-connect-methods"] > *')]
-    .map((node) => node.firstElementChild?.textContent ?? "")
+  return [...document.querySelectorAll('[data-slot="method-title"]')].map((node) => node.textContent ?? "")
 }
 
 function option(type: string) {
@@ -101,10 +100,12 @@ describe("ProviderConnectForm method chooser", () => {
       "provider.connect.method.anthropic.apiKey.title:Claude Code|Anthropic",
     ])
     const body = document.body.textContent ?? ""
+    // Who each method is for, so the choice can be made. How to obtain it
+    // belongs to the method that was chosen, not to the list.
     expect(body).toContain("provider.connect.method.anthropic.subscription.for:Claude Code|Anthropic")
-    expect(body).toContain("provider.connect.method.anthropic.subscription.how:Claude Code|Anthropic")
     expect(body).toContain("provider.connect.method.anthropic.apiKey.for:Claude Code|Anthropic")
-    expect(body).toContain("provider.connect.method.anthropic.apiKey.how:Claude Code|Anthropic")
+    expect(body).not.toContain("provider.connect.method.anthropic.subscription.how:Claude Code|Anthropic")
+    expect(body).not.toContain("provider.connect.method.anthropic.apiKey.how:Claude Code|Anthropic")
     // Nothing is picked yet, so there is no field to fill in.
     expect(document.querySelector("form")).toBeNull()
   })
@@ -117,9 +118,11 @@ describe("ProviderConnectForm method chooser", () => {
     fireEvent.click(option("token"))
 
     await waitFor(() => expect(document.querySelector('form[data-method="token"]')).not.toBeNull())
-    expect(screen.getByDisplayValue("claude setup-token")).toBeInTheDocument()
-    expect(option("token").getAttribute("aria-checked")).toBe("true")
-    expect(option("api").getAttribute("aria-checked")).toBe("false")
+    // A command to run, not a field to fill.
+    expect(document.querySelector("code")?.textContent).toBe("claude setup-token")
+    // The list is spent: only the chosen method is named, and it can be changed.
+    expect(optionTitles()).toEqual(["provider.connect.method.anthropic.subscription.title:Claude Code|Anthropic"])
+    expect(document.querySelector('[data-action="provider-connect-change-method"]')).not.toBeNull()
     expect(document.body.textContent)
       .toContain("provider.connect.method.anthropic.subscription.how:Claude Code|Anthropic")
     // The key page belongs to the other method, which is not the one selected.
@@ -134,8 +137,8 @@ describe("ProviderConnectForm method chooser", () => {
     fireEvent.click(option("api"))
 
     await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
-    expect(screen.queryByDisplayValue("claude setup-token")).toBeNull()
-    fireEvent.click(screen.getByText("provider.connect.method.openKeyPage"))
+    expect(document.querySelector("code")).toBeNull()
+    fireEvent.click(document.querySelector<HTMLElement>('[data-action="provider-connect-open-key-page"]')!)
     expect(state.opened).toEqual(["https://platform.claude.com/settings/keys"])
   })
 
@@ -174,7 +177,7 @@ describe("ProviderConnectForm method chooser", () => {
     fireEvent.click(option("token"))
 
     await waitFor(() => expect(document.querySelector('form[data-method="token"]')).not.toBeNull())
-    expect(screen.getByDisplayValue("claude setup-token")).toBeInTheDocument()
+    expect(document.querySelector("code")?.textContent).toBe("claude setup-token")
   })
 
   test("a vendor the catalog has never heard of is explained in its own name", async () => {
@@ -184,39 +187,33 @@ describe("ProviderConnectForm method chooser", () => {
     await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
     expect(optionTitles()).toEqual(["provider.connect.method.generic.apiKey.title:Pi|Moonshot"])
     expect(document.body.textContent).toContain("provider.connect.method.generic.apiKey.how:Pi|Moonshot")
-    // One method is not a choice, so it is stated rather than offered.
+    // One method is not a choice, so it is stated rather than offered, and
+    // there is nothing to change it to.
     expect(document.querySelector('[data-action="provider-connect-method"]')).toBeNull()
-    expect(document.querySelector('[data-component="provider-connect-methods"]')?.getAttribute("role")).toBeNull()
+    expect(document.querySelector('[data-component="provider-connect-methods"]')).toBeNull()
+    expect(document.querySelector('[data-action="provider-connect-change-method"]')).toBeNull()
   })
 
-  test("the card says what connecting will do, in the words of the surface that opened it", async () => {
-    state.methods = [{ type: "api", label: "API Key" }]
-    const view = render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
-    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
-    expect(document.body.textContent).toContain("provider.connect.context.harness:Claude Code|Anthropic")
-    expect(document.body.textContent).not.toContain("claude-sdk")
-    view.unmount()
-
-    render(() => <ProviderConnectForm provider="anthropic" context={engineConnectContext("pi", "Anthropic")} harness="pi" hideHeading />)
-    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
-    expect(document.body.textContent).toContain("provider.connect.context.engine:Pi|Anthropic")
-  })
-
-  test("a segmented picker opens on the first method rather than asking twice", async () => {
+  test("a choice is asked once and can be withdrawn, and nothing is picked for the reader", async () => {
     state.methods = [...OPENAI_METHODS]
     render(() => (
-      <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading preselectFirstMethod />
+      <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading />
     ))
 
-    await waitFor(() => expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull())
-    expect(option("oauth").getAttribute("aria-checked")).toBe("true")
+    // Neither method's controls are on screen before one is chosen.
+    await waitFor(() => expect(optionTitles()).toHaveLength(2))
+    expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).toBeNull()
     expect(document.querySelector("form")).toBeNull()
     expect(state.authorized).toEqual([])
 
     fireEvent.click(option("api"))
-
     await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
     expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).toBeNull()
+
+    fireEvent.click(document.querySelector<HTMLElement>('[data-action="provider-connect-change-method"]')!)
+
+    await waitFor(() => expect(optionTitles()).toHaveLength(2))
+    expect(document.querySelector("form")).toBeNull()
   })
 })
 
