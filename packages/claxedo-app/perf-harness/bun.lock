@@ -5,7 +5,7 @@
     "": {
       "name": "@claxedo/perf-harness",
       "dependencies": {
-        "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#f8cc01d828928c75054f272fea48696c938781d4",
+        "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#3089047b9dfb0b04beb6fc1d9e847f4b7d4f4fed",
       },
       "devDependencies": {
         "@playwright/test": "1.61.1",
@@ -22,7 +22,7 @@
 
     "@types/node": ["@types/node@25.8.0", "", { "dependencies": { "undici-types": ">=7.24.0 <7.24.7" } }, "sha512-TCFSk8IZh+iLX1xtksoBVtdmgL+1IX0fC9BeU4QqFSuNdN/K+HUlhqOzEmSYYpZUVsLYcPqc9KX+60iDuninSQ=="],
 
-    "agent-app-benchmark": ["agent-app-benchmark@github:kyashrathore/agent-app-benchmark#f8cc01d", { "dependencies": { "ajv": "8.20.0" }, "bin": { "agent-app-benchmark": "./bin/agent-app-benchmark.mjs", "agentappbench": "./bin/agent-app-benchmark.mjs" } }, "kyashrathore-agent-app-benchmark-f8cc01d", "sha512-eD0Dj2tHc3zN//9uKxTCTeXu6jCrtzjeOxGFt0zqsECkUN/7UNTCOkoaheUQXk3v2dUITdaBfM6GnvVUk2bVIA=="],
+    "agent-app-benchmark": ["agent-app-benchmark@github:kyashrathore/agent-app-benchmark#3089047", { "dependencies": { "ajv": "8.20.0" }, "bin": { "agent-app-benchmark": "./bin/agent-app-benchmark.mjs", "agentappbench": "./bin/agent-app-benchmark.mjs" } }, "kyashrathore-agent-app-benchmark-3089047", "sha512-f0qDLj/ZiwpHPL13fsvoR2QsGfpQLTLt1mVtGgD9MhLavI91BWWZOGGwAc/ytWylT2g5iDVEZBVNDZawBZ3b7w=="],
 
     "ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
