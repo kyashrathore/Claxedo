@@ -1,6 +1,5 @@
 import { checksum } from "@opencode-ai/ui/utils/encode"
 import DOMPurify from "dompurify"
-import { project } from "./markdown-stream"
 import { transcriptLinkUriPattern } from "./transcript-link"
 
 export type MarkdownCacheEntry = {
@@ -267,6 +266,9 @@ export async function preloadMarkdown(
   cacheKey: string,
   parser: { parse(text: string): string | Promise<string> },
 ) {
+  // This module sits on the boot path through session-kit-loaders; the block
+  // projector pulls in marked, which only the markdown chunk may load.
+  const { project } = await import("./markdown-stream")
   await Promise.all(
     project(undefined, text, false).blocks.map(async (block, index) => {
       if (block.mode === "code") return

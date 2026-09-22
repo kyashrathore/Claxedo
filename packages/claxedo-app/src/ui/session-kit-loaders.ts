@@ -1,6 +1,10 @@
 import { ensureOpenCodeTheme } from "@opencode-ai/ui/context/marked"
 
 export { preloadMarkdown, sanitizeSvg } from "@opencode-ai/session-ui/markdown-cache"
+// Diff normalisation is pure parsing; the eager timeline row imports it here
+// rather than through the session-kit barrel, whose `export *` lines carry
+// the Markdown renderer and Shiki into whichever chunk imports them.
+export { normalize } from "@opencode-ai/session-ui/session-diff"
 
 export async function loadFileComponent() {
   const [module] = await Promise.all([import("@opencode-ai/session-ui/file"), ensureOpenCodeTheme()])
