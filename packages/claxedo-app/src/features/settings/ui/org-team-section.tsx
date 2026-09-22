@@ -71,7 +71,7 @@ export const OrgTeamSettingsSection: Component = () => {
       when={signedAccountKey()}
       fallback={
         <section class="flex flex-col gap-3">
-          <h3 class="text-14-medium text-text-strong">Organizations & teams</h3>
+          <h2 class="text-14-medium text-text-strong">Organizations & teams</h2>
           <p class="text-12-regular text-text-weak">
             {account.state().status === "pending"
               ? "Checking account…"
@@ -100,7 +100,7 @@ export const OrgTeamSettingsSection: Component = () => {
       <ErrorBoundary
         fallback={(error) => (
           <section class="flex flex-col gap-3">
-            <h3 class="text-14-medium text-text-strong">Could not load organizations</h3>
+            <h2 class="text-14-medium text-text-strong">Could not load organizations</h2>
             <p class="text-12-regular text-text-weak">
               {error instanceof Error ? error.message : String(error)}
             </p>
@@ -109,7 +109,7 @@ export const OrgTeamSettingsSection: Component = () => {
       >
       <div class="flex flex-col gap-6">
       <section class="flex flex-col gap-3">
-        <h3 class="text-14-medium text-text-strong">Organizations</h3>
+        <h2 class="text-14-medium text-text-strong">Organizations</h2>
         <p class="text-12-regular text-text-weak">
           An org is your company tenant. Teams inside an org control project access.
         </p>
@@ -165,7 +165,7 @@ export const OrgTeamSettingsSection: Component = () => {
 
       <Show when={selectedOrgId()}>
         <section class="flex flex-col gap-3">
-          <h3 class="text-14-medium text-text-strong">Teams</h3>
+          <h2 class="text-14-medium text-text-strong">Teams</h2>
           <div class="flex gap-2">
             <input
               class="flex-1 rounded-md border border-border-weak-base bg-transparent px-3 py-2 text-14-regular"
@@ -218,7 +218,7 @@ export const OrgTeamSettingsSection: Component = () => {
 
       <Show when={selectedTeamId()}>
         <section class="flex flex-col gap-3">
-          <h3 class="text-14-medium text-text-strong">Team members</h3>
+          <h2 class="text-14-medium text-text-strong">Team members</h2>
           <div class="flex gap-2">
             <input
               class="flex-1 rounded-md border border-border-weak-base bg-transparent px-3 py-2 text-14-regular"

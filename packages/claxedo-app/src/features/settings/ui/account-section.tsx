@@ -98,9 +98,9 @@ export const AccountSettingsSection: Component<AccountSettingsSectionProps> = (p
 
   return (
     <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">
+      <h2 class="text-14-medium text-text-strong pb-2">
         {props.t("settings.general.section.account")}
-      </h3>
+      </h2>
 
       <div class="bg-surface-raised-base px-4 rounded-lg">
         <Show when={identity()}>

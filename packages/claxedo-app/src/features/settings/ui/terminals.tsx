@@ -66,13 +66,13 @@ export const SettingsTerminals: Component = () => {
   return (
     <div class="flex flex-col pb-10">
       <div class="flex flex-col gap-1 pt-6 pb-8">
-        <h2 class="text-18-medium text-text-strong">Terminals</h2>
+        <h1 class="text-18-medium text-text-strong">Terminals</h1>
         <p class="text-12-regular text-text-weak">Configure the commands used when launching terminal sessions. The creator offers an agent once its CLI is installed on the machine the terminal runs on.</p>
       </div>
 
       <div class="flex flex-col gap-8 w-full">
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">Agent Commands</h3>
+          <h2 class="text-14-medium text-text-strong pb-2">Agent Commands</h2>
           <div class="bg-surface-raised-base px-4 rounded-lg">
             <For each={terminalAgents()}>
               {(agent) => (
@@ -98,7 +98,7 @@ export const SettingsTerminals: Component = () => {
         <div class="flex flex-col gap-1">
           <div class="flex items-center justify-between pb-2">
             <div class="flex flex-col gap-0.5">
-              <h3 class="text-14-medium text-text-strong">Custom Commands</h3>
+              <h2 class="text-14-medium text-text-strong">Custom Commands</h2>
               <p class="text-12-regular text-text-weak">Add custom commands that appear as tiles in the terminal creator.</p>
             </div>
             <Button size="small" variant="secondary" icon="plus-small" onClick={addCustomCommand}>

@@ -488,7 +488,7 @@ const HarnessSection: Component<{
         <div class="flex items-baseline justify-between gap-4">
           <div class="flex items-center gap-2">
             <ProviderIcon id={props.source.option.slug} class="size-4 shrink-0 icon-strong-base" />
-            <h3 class="text-14-medium text-text-strong">{props.source.option.label}</h3>
+            <h2 class="text-14-medium text-text-strong">{props.source.option.label}</h2>
           </div>
           <span class="text-12-regular text-text-weak tabular-nums">
             {language.t("settings.models.enabled.count", { count: String(enabledCount()) })}
