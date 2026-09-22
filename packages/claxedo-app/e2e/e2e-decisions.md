@@ -951,7 +951,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A**: mount `HostProviderConfigRoutes` and compose `hostProviderConfigProjectAuth` into the self-hosted-node app, then bind the scripted server through it. Widens that binary's loopback control surface to owner-chosen base URLs; a security call. M.
   - **B**: run the Pi tier-real scenarios against the desktop daemon composition (`startLocalServer`), which already mounts the push route. Changes which product the tier proves for Pi. M.
   - **C**: add a first-class custom OpenAI-compatible provider path for Pi (a real product gap: the harness replaces any user `models.json`). L.
-- **Decision**:
+- **Decision**: Option C, chosen by the owner 2026-09-23, to land once CI is green: Pi reads the declared custom providers `custom-provider.ts` already owns and validates, the broker binds a declared provider to its declared base URL, and the scripted double declares one on loopback.
 
 ## 3. Live-suite skips (not in core CI)
 
