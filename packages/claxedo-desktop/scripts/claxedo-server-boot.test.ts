@@ -8,6 +8,7 @@ import * as path from "node:path"
 
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { CLAXEDO_DAEMON_CAPABILITY_HEADER, createDaemonFetch } from "../src/main/daemon-request"
+import { CLAXEDO_DAEMON_PROTOCOL } from "../src/main/server-daemon-discovery"
 import { resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
@@ -204,11 +205,24 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       headers: { authorization: `Bearer ${daemonToken}` },
     })
     expect(daemonIdentity.status).toBe(200)
+    // Exact, not a subset: this route is the pre-signal read, and a field it
+    // grows without a decision here is a field a launcher would act on. The
+    // creation identity is what makes the read verifiable — a launcher that
+    // retires this daemon compares it against the one it recorded.
     expect(await daemonIdentity.json()).toEqual({
       service: "claxedo-local-daemon",
       protocol: CLAXEDO_DAEMON_PROTOCOL,
       generation,
       pid: child.pid,
+      identity: {
+        pid: child.pid,
+        processGroupId: expect.any(Number),
+        parentPid: expect.any(Number),
+        startedAtMs: expect.any(Number),
+        startSecond: expect.any(String),
+        bootTime: expect.any(String),
+        source: expect.any(String),
+      },
     })
 
     // The other half of the same claim, against the real bundled daemon: a page
@@ -222,8 +236,12 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
     expect((await hostile(`/api/claxedo/daemon`)).status).toBe(401)
     expect((await hostile("/api/claxedo/health")).status).toBe(200)
 
-    // Mirror the app's open-workspace flow: register the workspace first.
+    // Mirror the app's open-workspace flow: register the workspace first. The
+    // routes below resolve a workspace for the directory and never create one,
+    // so an unregistered directory answers 404 rather than a project.
     const directory = encodeURIComponent(workspaceDirectory)
+    const registeredWorkspace = await daemon(`/api/claxedo/workspace/resolve?directory=${directory}`, { method: "POST" })
+    expect(registeredWorkspace.status).toBe(200)
     const project = await daemon(`/project/current?directory=${directory}`)
     expect(project.status).toBe(200)
     expect(await project.json()).toMatchObject({ worktree: fs.realpathSync(workspaceDirectory) })

@@ -25,6 +25,16 @@ describe("main's daemon fetch", () => {
     expect(sent[0]?.headers.get(CLAXEDO_DAEMON_CAPABILITY_HEADER)).toBe("installation-secret")
   })
 
+  // The lifecycle routes are exempt from the admission gate and read the bearer
+  // instead, so a caller that sets no `Authorization` would be answered 401.
+  test("presents the same secret as the lifecycle bearer when the caller brings none", async () => {
+    const { daemon, sent } = harness()
+
+    await daemon("/api/claxedo/daemon/leases", { method: "POST" })
+
+    expect(sent[0]?.headers.get("authorization")).toBe("Bearer installation-secret")
+  })
+
   // A redirect would replay these headers at whatever `Location` named, which is
   // how a loopback credential leaves the machine. The daemon issues none.
   test("never follows a redirect", async () => {
@@ -46,13 +56,13 @@ describe("main's daemon fetch", () => {
     const { daemon, sent } = harness()
 
     await daemon("/api/claxedo/daemon", {
-      headers: { [CLAXEDO_DAEMON_CAPABILITY_HEADER]: "a-caller's-idea", authorization: "Bearer installation-secret" },
+      headers: { [CLAXEDO_DAEMON_CAPABILITY_HEADER]: "a-caller's-idea", authorization: "Bearer a-signed-desktop" },
     })
 
     expect(sent[0]?.headers.get(CLAXEDO_DAEMON_CAPABILITY_HEADER)).toBe("installation-secret")
-    // The lifecycle routes authenticate the bearer; the gate ahead of them reads
-    // the capability. Neither presentation may consume the other's header.
-    expect(sent[0]?.headers.get("authorization")).toBe("Bearer installation-secret")
+    // The gate reads the capability and a signed desktop's control-plane token
+    // rides `Authorization`. Neither presentation may consume the other's header.
+    expect(sent[0]?.headers.get("authorization")).toBe("Bearer a-signed-desktop")
   })
 
   // A server main was pointed at but never given an identity for. Sending
@@ -61,11 +71,14 @@ describe("main's daemon fetch", () => {
     const daemon = createDaemonFetch({
       endpoint: () => ({ origin: DAEMON, capability: undefined }),
       fetch: async (_url, init) =>
-        Response.json({ capability: new Headers(init.headers).get(CLAXEDO_DAEMON_CAPABILITY_HEADER) }),
+        Response.json({
+          capability: new Headers(init.headers).get(CLAXEDO_DAEMON_CAPABILITY_HEADER),
+          authorization: new Headers(init.headers).get("authorization"),
+        }),
     })
 
     const answer = await daemon("/api/claxedo/host-serving")
 
-    expect(await answer.json()).toEqual({ capability: null })
+    expect(await answer.json()).toEqual({ capability: null, authorization: null })
   })
 })

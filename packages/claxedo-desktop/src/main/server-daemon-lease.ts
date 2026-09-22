@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { readNumber, readString } from "../shared/json-read"
+import { readNumber, readRecord, readString, readUnknown } from "../shared/json-read"
 import { createDaemonFetch } from "./daemon-request"
 import {
   CLAXEDO_DAEMON_PROTOCOL,
@@ -17,14 +17,11 @@ export async function holdClaxedoDaemonLease(
     onError?: (error: unknown) => void
   } = {},
 ) {
-  // The lifecycle bearer and the admission capability are the same published
-  // secret under the two headers the daemon reads them from.
   const request = createDaemonFetch({
     endpoint: () => ({ origin: `http://127.0.0.1:${String(discovery.port)}`, capability: discovery.token }),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   })
   const headers = {
-    authorization: `Bearer ${discovery.token}`,
     "x-claxedo-daemon-client": "electron-main",
     [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL),
   }
@@ -132,15 +129,22 @@ export async function holdClaxedoDaemonLease(
           signal: AbortSignal.timeout(requestTimeoutMs),
         })
         if (!inspected.ok) return inspected
-        const machine = await inspected.json() as { scopeRevision: string; target: unknown }
+        const machine: unknown = await inspected.json()
+        const scopeRevision = readString(machine, "scopeRevision")
+        // Submitting without them would ask the daemon to drain a scope it
+        // never described, which it answers by refusing on the revision — a
+        // refusal that reads like a race rather than an unreadable inspection.
+        if (!scopeRevision || !readRecord(machine, "target")) {
+          throw new Error("the daemon's recovery inspection named no machine scope to drain")
+        }
         return await request("/api/claxedo/daemon/recovery", {
           method: "POST",
           headers: { ...headers, "content-type": "application/json" },
           body: JSON.stringify({
             requestId: `electron-main-drain-${randomUUID()}`,
             action: "drain_daemon",
-            target: machine.target,
-            scopeRevision: machine.scopeRevision,
+            target: readUnknown(machine, "target"),
+            scopeRevision,
             attempt: 1,
           }),
           signal: AbortSignal.timeout(requestTimeoutMs),

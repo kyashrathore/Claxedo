@@ -149,7 +149,7 @@ function specialSeams(classified: Map<string, number>): Array<readonly [string, 
   return [
     "packages/workspace-runtime/src/pty/index.ts:ptySpawn",
     "packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:sdkQuery",
-    "packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:agentCreate",
+    "packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:agentSpawn",
   ].map((key) => [key, classified.get(key) ?? 0] as const)
 }
 
@@ -161,7 +161,10 @@ function expression(callee: string) {
   // turn reading as absent while the model probe alone is classified, so the
   // inline default is counted as the callsite it is.
   if (callee === "sdkQuery") return /\bquery\s*\(|\?\?\s*query\s*\)\s*\(/g
-  if (callee === "agentCreate") return /\bAgent\.create\s*\(/g
+  // `Agent.resume` carries the same `local: { cwd }` as `Agent.create` and
+  // starts the same CLI, so a seam that stopped creating and only resumed would
+  // otherwise read as gone.
+  if (callee === "agentSpawn") return /\bAgent\.(?:create|resume)\s*\(/g
   return new RegExp(`\\b${escape(callee)}\\s*\\(`, "g")
 }
 
@@ -171,31 +174,61 @@ function count(text: string, pattern: RegExp) {
 
 /**
  * The inventory counts spawn CALLSITES, not textual occurrences. A doc comment
- * that mentions `query()` in prose is not a process spawn, so comments are
- * removed before counting. Absorbing such a mention by bumping a declared
- * `calls` count would be the wrong fix: the count would stop meaning "how many
- * real spawn seams live here" and a genuinely new, unclassified seam could then
- * slip past this gate.
+ * that mentions `query()` in prose is not a process spawn, and neither is the
+ * body of a template literal: `generateAmpPlugin` in workspace-runtime's
+ * agent-hooks emits a plugin whose SOURCE imports `spawn` and calls it, and the
+ * plugin runs inside Amp, not here. Both are dropped before counting, keeping
+ * `${...}` substitutions because a real call can appear in one. Absorbing
+ * either by declaring a `calls` count would be the wrong fix: the count would
+ * stop meaning "how many real spawn seams live here", and an inventory that
+ * invents a child this app cannot start is as false as one that misses a child
+ * it can.
  */
 function stripComments(text: string) {
   let out = ""
   let index = 0
   let quote: string | undefined
+  let templateDepth = 0
   while (index < text.length) {
     const char = text[index]
     if (quote) {
+      const emitting = quote !== "`" || templateDepth > 0
       if (char === "\\") {
-        out += char + (text[index + 1] ?? "")
+        if (emitting) out += char + (text[index + 1] ?? "")
         index += 2
         continue
       }
-      if (char === quote) quote = undefined
-      out += char
+      if (quote === "`" && char === "$" && text[index + 1] === "{") {
+        templateDepth += 1
+        out += "${"
+        index += 2
+        continue
+      }
+      if (quote === "`" && char === "{" && templateDepth > 0) {
+        templateDepth += 1
+        out += "{"
+        index += 1
+        continue
+      }
+      if (quote === "`" && char === "}" && templateDepth > 0) {
+        templateDepth -= 1
+        out += "}"
+        index += 1
+        continue
+      }
+      if (char === quote && templateDepth === 0) {
+        quote = undefined
+        out += char
+        index += 1
+        continue
+      }
+      if (emitting) out += char
       index += 1
       continue
     }
     if (char === '"' || char === "'" || char === "`") {
       quote = char
+      templateDepth = 0
       out += char
       index += 1
       continue

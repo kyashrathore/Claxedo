@@ -76,8 +76,11 @@ describe("shipped claxedo-server bundle", () => {
       "better-auth": /betterAuth\(|better-auth\//,
       "Polar billing": /@polar-sh|PolarCore\b/,
       "Daytona driver": /@daytona\/sdk|DaytonaClient\b/,
-      "disabled Agent Plugins module": /\/api\/claxedo\/plugins|agent_plugin_activation_meta/,
     }
+    // Agent Plugins is NOT on this list. The desktop serves
+    // `/api/claxedo/plugins` from the local composition and its packaged e2e
+    // installs a plugin through that catalog, so the module belongs in this
+    // bundle; the entry that forbade it predates the capability shipping.
 
     expect(
       Object.entries(forbidden)

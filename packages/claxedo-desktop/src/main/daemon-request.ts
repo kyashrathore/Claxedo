@@ -12,9 +12,14 @@
  *     whatever `Location` named;
  *   - a caller's own capability header is dropped before this one is set.
  *
- * `Authorization` is left alone: the lifecycle routes authenticate the same
- * secret as a bearer and a signed desktop carries a control-plane token there,
- * so the capability rides its own header and neither consumes the other.
+ * The daemon reads the one published secret from two headers: the admission
+ * gate ahead of every route family reads the capability, and the lifecycle
+ * routes exempted from that gate authenticate the same secret as a bearer. Both
+ * are set here for the same reason the capability is — a caller that attaches
+ * one for itself is a caller the next one forgets, and the lifecycle routes
+ * answer a missing bearer with 401 rather than anything that names the cause. A
+ * caller that brings its own `Authorization` keeps it: a signed desktop carries
+ * a control-plane token there.
  */
 
 export const CLAXEDO_DAEMON_CAPABILITY_HEADER = "x-claxedo-daemon-capability"
@@ -52,7 +57,10 @@ export function createDaemonFetch(input: {
     }
     const headers = new Headers(init?.headers)
     headers.delete(CLAXEDO_DAEMON_CAPABILITY_HEADER)
-    if (capability) headers.set(CLAXEDO_DAEMON_CAPABILITY_HEADER, capability)
+    if (capability) {
+      headers.set(CLAXEDO_DAEMON_CAPABILITY_HEADER, capability)
+      if (!headers.has("authorization")) headers.set("authorization", `Bearer ${capability}`)
+    }
     return await request(url, { ...init, headers, redirect: "error" })
   }
 }

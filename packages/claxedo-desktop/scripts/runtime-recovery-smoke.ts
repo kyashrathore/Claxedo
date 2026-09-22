@@ -11,7 +11,7 @@ import { parseRecoveryOutcome, type RecoveryMachineTarget, type RecoveryOperatio
 import { readArray, readNumber, readRecord, readString } from "../src/shared/json-read"
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { createDaemonFetch, type DaemonFetch } from "../src/main/daemon-request"
-import { CLAXEDO_DAEMON_PROTOCOL, type ClaxedoDaemonDiscovery } from "../src/main/server-daemon-discovery"
+import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER, type ClaxedoDaemonDiscovery } from "../src/main/server-daemon-discovery"
 import { recoverPublishedDaemon } from "../src/main/daemon-recovery"
 import { localServerBundleEntry } from "./local-server"
 
@@ -84,7 +84,13 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
   child.stderr?.on("data", (chunk) => { stderr += String(chunk) })
   const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
   const base = `http://127.0.0.1:${port}`
-  const daemon = createDaemonFetch({ endpoint: () => ({ origin: base, capability: token }) })
+  // Every guarded daemon route refuses a caller that declares no protocol, so
+  // the smoke declares it the way Electron main does rather than per call.
+  const authenticated = createDaemonFetch({ endpoint: () => ({ origin: base, capability: token }) })
+  const daemon: DaemonFetch = (path, init) => authenticated(path, {
+    ...init,
+    headers: { ...Object.fromEntries(new Headers(init?.headers).entries()), [DAEMON_PROTOCOL_HEADER]: String(CLAXEDO_DAEMON_PROTOCOL) },
+  })
   const directory = encodeURIComponent(workspaceDirectory)
 
   try {
@@ -108,6 +114,11 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
       throw new Error(`inventory names generation ${empty.target.ownerGeneration}`)
     }
     record("machine inventory", `${String(empty.owners.length)} owners, ${String(empty.residencyPins)} residency pins, receipt ${empty.receipt}`)
+
+    // The runtime proxy resolves a workspace for this directory and never
+    // creates one, so an unregistered directory falls through to a 404 rather
+    // than to a terminal. The desktop registers it through the same route.
+    await json(await daemon(`/api/claxedo/workspace/resolve?directory=${directory}`, { method: "POST" }), 200)
 
     const ptyId = id(await json(await daemon(`/api/wr/pty?directory=${directory}`, {
       method: "POST",
