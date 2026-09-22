@@ -16,7 +16,7 @@ import { createStore } from "solid-js/store"
 import type { PaneRect, WorkbenchState } from "./types"
 import { useWorkbench, useWorkbenchContext } from "./provider"
 import { computePaneRects } from "./reducers/tree-helpers"
-import { hitTestPaneAt, type DropTarget } from "./drag-drop"
+import { createWorkbenchDropTarget } from "./drop-target"
 import { collapsePaneRects, isCollapsedWidth } from "./collapse-projection"
 import { useDragSource, workbenchDrag } from "./pointer-drag"
 import { createSurfaceKeyRouter, matchKey, resolveKeyMap, eventTargetIsEditable, type SurfaceKeySlot } from "./keyboard"
@@ -244,25 +244,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     }
   })
 
-  // -- Drop target: driven by the pointer-drag controller (mouse + touch + pen).
-  //    The controller feeds us the live pointer position; we hit-test our panes
-  //    with elementFromPoint, drive the edge overlay, and commit the split.
-  const [dropTarget, setDropTarget] = createSignal<DropTarget | null>(null)
-  const clearDropTarget = () => setDropTarget(null)
-  onMount(() => {
-    const dispose = workbenchDrag.registerDropZone({
-      onMove: (_contentId, x, y) => setDropTarget(hitTestPaneAt(x, y, rootEl)),
-      onDrop: (contentId, x, y) => {
-        const target = hitTestPaneAt(x, y, rootEl)
-        clearDropTarget()
-        if (!target) return false
-        commitDrop(target.paneId, target.edge, contentId)
-        return true
-      },
-      onCancel: clearDropTarget,
-    })
-    onCleanup(dispose)
-  })
+  const dropTarget = createWorkbenchDropTarget({ root: () => rootEl, commitDrop: (...args) => commitDrop(...args) })
   // Escape aborts an in-flight pointer drag.
   const onWindowKey = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return

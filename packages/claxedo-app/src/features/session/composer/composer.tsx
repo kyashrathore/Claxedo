@@ -457,6 +457,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   const { addAttachments, removeAttachment, handlePaste } = createPromptAttachments({
+    active: () => sessionParams.active?.() ?? true,
     editor: () => editorRef,
     root: () => rootEl,
     isDialogActive: () => !!dialog.active,
