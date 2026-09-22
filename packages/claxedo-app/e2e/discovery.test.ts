@@ -60,12 +60,24 @@ function collectedSpecs(): Promise<Spec[]> {
   return collected
 }
 
+const repoRoot = path.resolve(appRoot, "../..")
+const tierRealWorkflow = ".github/workflows/test.yml"
+const tierRealReplay = "script/cbx-ci-remote.sh"
+
 /** The `--grep` patterns the tier-real CI job loops over, read from the workflow itself. */
-function tierRealGatePatterns(): RegExp[] {
-  const workflow = readFileSync(path.resolve(appRoot, "../../.github/workflows/test.yml"), "utf8")
+function tierRealGatePatterns(): string[] {
+  const workflow = readFileSync(path.resolve(repoRoot, tierRealWorkflow), "utf8")
   const loop = /for scenario in\s*\\?\n?((?:\s*"[^"]+"\s*\\?\n?)+);\s*do/.exec(workflow)
-  if (!loop) throw new Error("test.yml no longer has the tier-real `for scenario in` loop")
-  return [...loop[1].matchAll(/"([^"]+)"/g)].map((match) => new RegExp(match[1]))
+  if (!loop) throw new Error(`${tierRealWorkflow} no longer has the tier-real \`for scenario in\` loop`)
+  return [...loop[1].matchAll(/"([^"]+)"/g)].map((match) => match[1])
+}
+
+/** The same patterns as the crabbox replay lane carries them. */
+function tierRealReplayPatterns(): string[] {
+  const lane = readFileSync(path.resolve(repoRoot, tierRealReplay), "utf8")
+  const list = /TIER_REAL_SCENARIOS=\(((?:\s*"[^"]+")+)\s*\)/.exec(lane)
+  if (!list) throw new Error(`${tierRealReplay} no longer declares TIER_REAL_SCENARIOS`)
+  return [...list[1].matchAll(/"([^"]+)"/g)].map((match) => match[1])
 }
 
 describe("Playwright discovery", () => {
@@ -95,8 +107,12 @@ describe("Playwright discovery", () => {
     const titles = (await collectedSpecs())
       .filter((spec) => spec.file.replaceAll("\\", "/").endsWith("playwright/real-harness-local.spec.ts"))
       .map((spec) => spec.title)
-    const patterns = tierRealGatePatterns()
+    const patterns = tierRealGatePatterns().map((pattern) => new RegExp(pattern))
     expect(patterns.length).toBe(4)
     expect(patterns.filter((pattern) => !titles.some((title) => pattern.test(title))).map(String)).toEqual([])
   }, 30_000)
+
+  test("the crabbox tier-real replay runs the workflow's exact patterns", () => {
+    expect(tierRealReplayPatterns()).toEqual(tierRealGatePatterns())
+  })
 })

@@ -384,8 +384,32 @@ prepare_e2e_tier_real() {
   install_chromium
 }
 
+# test.yml's tier-real gate loop, one --grep per entry; e2e/discovery.test.ts
+# pins this list to the workflow's.
+TIER_REAL_SCENARIOS=(
+  "pi-workspace harness completes exact turns|local new-worktree session receives its first reply"
+  "claude native SDK harness completes exact turns"
+  "codex native SDK harness completes exact turns"
+  "cursor harness materializes without silently routing"
+)
+
+# .crabbox.yaml is never synced to the box, so a focused job names its scenario
+# by a fragment of one TIER_REAL_SCENARIOS entry rather than carrying a copy.
+tier_real_scenario_for() {
+  local key=${1:?tier-real scenario key is required} match="" entry
+  for entry in "${TIER_REAL_SCENARIOS[@]}"; do
+    [[ "$entry" == *"$key"* ]] && match=$entry
+  done
+  if [[ -z "$match" ]]; then
+    echo "no tier-real scenario matches '$key'; see TIER_REAL_SCENARIOS in script/cbx-ci-remote.sh" >&2
+    return 2
+  fi
+  printf '%s\n' "$match"
+}
+
 run_e2e_tier_real_scenario() {
-  local scenario="${1:?tier-real scenario grep is required}"
+  local scenario
+  scenario=$(tier_real_scenario_for "${1:?tier-real scenario key is required}") || return
   prepare_e2e_tier_real
   (
     cd packages/claxedo-app
@@ -407,6 +431,7 @@ run_e2e_tier_real_web() {
         --config playwright.config.ts \
         e2e/playwright/web-signed-cloud.spec.ts \
         e2e/playwright/web-signed-host-tunnel.spec.ts \
+        e2e/playwright/web-signed-org-team-multiplayer.spec.ts \
         --workers=1
   )
 }
@@ -438,13 +463,7 @@ run_e2e_tier_real() {
   (
     cd packages/claxedo-app
     VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:4317 bun run build:e2e
-    for scenario in \
-      "behaviors 1,6,9" \
-      "behaviors 2,6,8,9" \
-      "behaviors 3,6,8,9" \
-      "behaviors 4,6,8,9" \
-      "behaviors 5,6,8,9" \
-      "behavior 7"; do
+    for scenario in "${TIER_REAL_SCENARIOS[@]}"; do
       CLAXEDO_E2E_SERVE_MODE=preview PLAYWRIGHT_VIDEO=0 \
         bun run test:e2e:real -- --grep "$scenario"
     done
@@ -456,6 +475,7 @@ run_e2e_tier_real() {
         --config playwright.config.ts \
         e2e/playwright/web-signed-cloud.spec.ts \
         e2e/playwright/web-signed-host-tunnel.spec.ts \
+        e2e/playwright/web-signed-org-team-multiplayer.spec.ts \
         --workers=1
   )
 }
