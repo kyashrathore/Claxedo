@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { comparePickerProviderGroups, type PickerItem } from "./select-model"
+import { comparePickerProviderGroups, type PickerItem } from "./model-list"
 
 const group = (providerID: string, connected?: boolean) => ({
   category: providerID,

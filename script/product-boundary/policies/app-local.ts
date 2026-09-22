@@ -516,9 +516,14 @@ export const appLocal: Policy = {
   // `features/session/store/session-coverage-obligations.ts`, extracted from
   // the dialog and the controller that were over budget. The size guard
   // forbids raising a file's line ceiling, so this count is that rule's
-  // consequence. No new package edge. Exact measured 1122 modules /
-  // 58 packages, with no headroom.
-  ceilings: { modules: 1122, packages: 58 },
+  // consequence. No new package edge.
+  // +1 module (2026-09-22): `features/session/ui/model/model-list.tsx` — the
+  // model list and picker types, split out of `select-model.tsx` so the
+  // first-turn onboarding (eager, under session-screen) can render the list
+  // without carrying the dialog and popover, which stay behind the lazy
+  // `DialogSelectModel` import. Same code, one more file; no new package edge.
+  // Exact measured 1123 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1123, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

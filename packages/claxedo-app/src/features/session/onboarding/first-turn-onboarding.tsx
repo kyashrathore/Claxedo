@@ -11,7 +11,7 @@ import { capture, identityProps } from "@/platform/telemetry/analytics"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { Dialog } from "@opencode-ai/ui/dialog"
-import { ModelList, type PickerItem } from "@/features/session/ui/model/select-model"
+import { ModelList, type PickerItem } from "@/features/session/ui/model/model-list"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 

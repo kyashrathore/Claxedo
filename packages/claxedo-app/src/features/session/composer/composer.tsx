@@ -17,7 +17,7 @@ import { usePrompt, ImageAttachmentPart } from "@/features/session/providers/pro
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { useComments } from "@/platform/comments/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import type { PickerState } from "@/features/session/ui/model/select-model"
+import type { PickerState } from "@/features/session/ui/model/model-list"
 import { usePermission } from "@/features/session/providers/permission"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
