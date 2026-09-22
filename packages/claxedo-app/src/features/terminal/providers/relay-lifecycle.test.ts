@@ -174,7 +174,7 @@ describe("terminal relay lifecycle", () => {
     })
 
     expect(ptyId).toBe("pty_1")
-    const create = calls.find((call) => call.method === "POST")
+    const create = calls.find((call) => call.method === "POST" && call.url.endsWith("/api/wr/pty"))
     expect(create?.body?.command).toBe("/srv/home/.claxedo/bin/claude")
     expect(create?.body?.args).toEqual(["--dangerously-skip-permissions"])
     expect(create?.body?.initialCommand).toBeUndefined()
