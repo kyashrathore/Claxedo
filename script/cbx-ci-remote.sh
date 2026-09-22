@@ -284,6 +284,7 @@ run_unit() {
   install_linux_gui_dependencies
   install_root
   install_app_server_native_dependencies
+  (cd packages/claxedo-app/perf-harness && bun install --frozen-lockfile)
   git config --global user.email "github-actions[bot]@users.noreply.github.com"
   git config --global user.name "github-actions[bot]"
   bun run docs:check-links

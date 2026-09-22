@@ -101,6 +101,13 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      # The app's `test` script ends in the perf-harness suite, and perf-harness
+      # is not a workspace package: the root install leaves its node_modules
+      # empty and every `agent-app-benchmark` import fails to resolve.
+      - name: Install performance harness
+        working-directory: packages/claxedo-app/perf-harness
+        run: bun install --frozen-lockfile
+
       - name: Configure git identity
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
