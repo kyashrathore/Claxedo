@@ -69,7 +69,7 @@ import {
   deepLinkEvent,
   drainPendingDeepLinks,
 } from "./route-deep-links"
-import { requestConfirm } from "@/app/dialogs/confirm"
+import { requestConfirm } from "@/ui/dialogs/confirm"
 import type { ProjectItem } from "../rail/domain-types"
 import { onlyStrings, readField } from "@/lib/record"
 

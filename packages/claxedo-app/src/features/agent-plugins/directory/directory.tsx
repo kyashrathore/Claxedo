@@ -15,7 +15,7 @@ import {
 } from "../api"
 import { oauthServers, type AgentPluginConnectionPort, type AgentPluginConnectionSummary } from "../connections"
 import { AddSourceForm } from "./add-source"
-import { requestConfirm } from "@/app/dialogs/confirm"
+import { requestConfirm } from "@/ui/dialogs/confirm"
 import { DirectoryCard, PersonalCard, personalEntryKey } from "./card"
 import { PersonalPane } from "./personal-pane"
 import { GHOST_ICON_BUTTON } from "./chrome"
