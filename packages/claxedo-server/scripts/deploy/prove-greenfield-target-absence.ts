@@ -81,6 +81,7 @@ export const GREENFIELD_CONTROL_PLANE_TABLE_COUNTS = Object.freeze({
   session_participants: 0,
   session_registration_operations: 0,
   session_share_grants: 0,
+  session_turn_grants: 0,
   session_turn_leases: 0,
   session_turn_producers: 0,
   sessions: 0,
