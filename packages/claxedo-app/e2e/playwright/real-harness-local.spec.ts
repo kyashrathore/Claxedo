@@ -1208,6 +1208,7 @@ test.describe("real harness journeys @core @tier-real", () => {
   })
 
   test("local new-worktree session receives its first reply", async ({ page }) => {
+    test.fixme(true, "The scripted Pi double cannot reach Pi in a local workspace; e2e/e2e-decisions.md #81")
     scripted?.resetCounts()
     const dir = await makeWorkspace("new-local-worktree")
     await seedOneProject(page, dir)
