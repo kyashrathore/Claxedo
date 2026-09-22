@@ -61,23 +61,115 @@ describe("diff routes", () => {
     })
   })
 
-  test("keeps untracked files out of uncommitted stats", async () => {
+  test("counts a new file as uncommitted, in the summary, the full diff and its patch", async () => {
     const app = new Hono().route("/api/wr/diff", createDiffRoutes())
 
     await withGitRepo(async (directory) => {
       await writeFile(path.join(directory, "tracked.txt"), "after\n")
       await writeFile(path.join(directory, "new.txt"), "new\n")
 
-      const request = async (mode: string) => {
+      const files = async (mode: string, content: string) => {
         const response = await app.request(
-          `/api/wr/diff/vcs?${new URLSearchParams({ directory, mode })}`,
+          `/api/wr/diff/vcs?${new URLSearchParams({ directory, mode, content })}`,
         )
         expect(response.status).toBe(200)
         return (await response.json() as Array<{ file: string }>).map((diff) => diff.file).sort()
       }
 
-      expect(await request("unstaged")).toEqual(["new.txt", "tracked.txt"])
-      expect(await request("uncommitted")).toEqual(["tracked.txt"])
+      for (const content of ["summary", "full"]) {
+        expect(await files("unstaged", content)).toEqual(["new.txt", "tracked.txt"])
+        expect(await files("uncommitted", content)).toEqual(["new.txt", "tracked.txt"])
+      }
+
+      const patch = await app.request(
+        `/api/wr/diff/vcs/file?${new URLSearchParams({ directory, mode: "uncommitted", file: "new.txt" })}`,
+      )
+      expect(patch.status).toBe(200)
+      expect(await patch.json()).toEqual({ file: "new.txt", before: "", after: "new\n" })
+    })
+  })
+
+  test("measures branch modes from the fork point, so the base moving on is not shown as a revert", async () => {
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
+
+    await withGitRepo(async (directory) => {
+      await git(directory, ["branch", "-M", "base"])
+      await git(directory, ["checkout", "-b", "feature"])
+      await writeFile(path.join(directory, "feature.txt"), "feature\n")
+      await git(directory, ["add", "."])
+      await git(directory, ["commit", "-m", "feature"])
+      await git(directory, ["checkout", "base"])
+      await writeFile(path.join(directory, "base-only.txt"), "later on base\n")
+      await git(directory, ["add", "."])
+      await git(directory, ["commit", "-m", "base moves on"])
+      await git(directory, ["checkout", "feature"])
+      await writeFile(path.join(directory, "tracked.txt"), "edited\n")
+      await writeFile(path.join(directory, "new.txt"), "new\n")
+
+      const files = async (query: Record<string, string>) => {
+        const response = await app.request(`/api/wr/diff/vcs?${new URLSearchParams({ directory, ...query })}`)
+        expect(response.status).toBe(200)
+        return (await response.json() as Array<{ file: string }>).map((diff) => diff.file).sort()
+      }
+
+      expect(await files({ mode: "to-from", fromRef: "base", toRef: "HEAD" })).toEqual(["base-only.txt", "feature.txt"])
+      for (const content of ["summary", "full"]) {
+        expect(await files({ mode: "branch", fromRef: "base", content })).toEqual(["feature.txt"])
+        expect(await files({ mode: "branch-worktree", fromRef: "base", content })).toEqual(["feature.txt", "new.txt", "tracked.txt"])
+      }
+
+      const committed = await app.request(
+        `/api/wr/diff/vcs/file?${new URLSearchParams({ directory, mode: "branch", fromRef: "base", file: "tracked.txt" })}`,
+      )
+      expect(await committed.json()).toEqual({ file: "tracked.txt", patch: "" })
+      const onDisk = await app.request(
+        `/api/wr/diff/vcs/file?${new URLSearchParams({ directory, mode: "branch-worktree", fromRef: "base", file: "tracked.txt" })}`,
+      )
+      expect((await onDisk.json() as { patch: string }).patch).toContain("+edited")
+      const untracked = await app.request(
+        `/api/wr/diff/vcs/file?${new URLSearchParams({ directory, mode: "branch-worktree", fromRef: "base", file: "new.txt" })}`,
+      )
+      expect(await untracked.json()).toEqual({ file: "new.txt", before: "", after: "new\n" })
+    })
+  })
+
+  test("offers no default base in a repository with no base branch, and the local main when there is one", async () => {
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
+
+    await withGitRepo(async (directory) => {
+      await git(directory, ["branch", "-M", "topic"])
+      const targets = async () => (await app.request(`/api/wr/diff/targets?${new URLSearchParams({ directory })}`)).json()
+      expect(await targets()).toEqual({ candidates: ["HEAD"] })
+      await git(directory, ["branch", "main"])
+      expect(await targets()).toEqual({ defaultRef: "main", candidates: ["main"] })
+    })
+  })
+
+  test("refuses a branch mode without a base, with an unknown base, or with a base sharing no history", async () => {
+    const app = new Hono().route("/api/wr/diff", createDiffRoutes())
+
+    await withGitRepo(async (directory) => {
+      const emptyTree = (await execFileAsync("git", ["hash-object", "-t", "tree", "/dev/null"], { cwd: directory })).stdout.trim()
+      const unrelatedRoot = (await execFileAsync("git", ["commit-tree", emptyTree, "-m", "unrelated root"], { cwd: directory })).stdout.trim()
+      await git(directory, ["branch", "unrelated", unrelatedRoot])
+
+      const refusal = async (query: Record<string, string>) => {
+        for (const endpoint of ["vcs", "vcs/file"]) {
+          const response = await app.request(
+            `/api/wr/diff/${endpoint}?${new URLSearchParams({ directory, file: "tracked.txt", ...query })}`,
+          )
+          expect(response.status).toBe(400)
+          const body = await response.json() as { error: { code: string } }
+          expect(body.error.code).toBe(query.expected)
+        }
+      }
+
+      for (const mode of ["branch", "branch-worktree"]) {
+        await refusal({ mode, expected: "diff_base_required" })
+        await refusal({ mode, fromRef: "no-such-branch", expected: "diff_invalid_ref" })
+        await refusal({ mode, fromRef: "-bad", expected: "diff_invalid_ref" })
+        await refusal({ mode, fromRef: "unrelated", expected: "diff_no_fork_point" })
+      }
     })
   })
 

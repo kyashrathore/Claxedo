@@ -9,6 +9,7 @@ import {
 import {
   canonicalPartMessageIds,
   hydrateConversationPage,
+  pageContinuesConversation,
   resolveStoredMessages,
   resolveStoredParts,
 } from "./conversation-hydrator"
@@ -153,6 +154,28 @@ describe("conversation hydrator", () => {
       messages: [{ id: "msg_1", sessionID: "ses_1" }],
       parts: { msg_1: [{ id: "part_1" }] },
     })
+  })
+
+  test("a newest page that continues the held history refreshes its span and keeps the older pages", () => {
+    registerSessionConversationChat(scope("ses_1"))
+    const row = (id: string) => ({ info: message(id), parts: [part(`part_${id}`, id)] })
+    hydrateConversationPage({ directory: "/repo", ...canonicalPage, sessionID: "ses_1", rows: ["msg_5", "msg_6", "msg_7"].map(row) })
+    hydrateConversationPage({ directory: "/repo", ...canonicalPage, sessionID: "ses_1", mode: "prepend", rows: ["msg_1", "msg_2", "msg_3", "msg_4"].map(row) })
+    const newest = ["msg_6", "msg_7", "msg_8"].map(row)
+
+    expect(pageContinuesConversation({ directory: "/repo", sessionID: "ses_1", rows: newest })).toBe(true)
+    hydrateConversationPage({ directory: "/repo", ...canonicalPage, sessionID: "ses_1", mode: "replace-window", rows: newest })
+
+    expect(registeredConversationSnapshot("/repo", "ses_1").messages.map((item) => item.id))
+      .toEqual(["msg_1", "msg_2", "msg_3", "msg_4", "msg_5", "msg_6", "msg_7", "msg_8"])
+  })
+
+  test("a newest page with nothing in common with the held history does not continue it", () => {
+    registerSessionConversationChat(scope("ses_1"))
+    const row = (id: string) => ({ info: message(id), parts: [] })
+    hydrateConversationPage({ directory: "/repo", ...canonicalPage, sessionID: "ses_1", rows: ["msg_1", "msg_2"].map(row) })
+
+    expect(pageContinuesConversation({ directory: "/repo", sessionID: "ses_1", rows: ["msg_8", "msg_9"].map(row) })).toBe(false)
   })
 
   test("prunes a stale streaming part when a canonical page replaces a SETTLED message", () => {

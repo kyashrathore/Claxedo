@@ -22,17 +22,11 @@ import {
   diffRefs,
   diffSummary,
   filePatchDiff,
-  isRangeMode,
-  refsExist,
+  fullDiff,
   relativeDiffFile,
-  stagedDiff,
-  toFromDiff,
-  uncommittedDiff,
-  unstagedDiff,
-  validRefSyntax,
+  resolveDiffTarget,
   type DiffRoutesDeps,
-  type DiffRuntime,
-  type FileDiff,
+  type DiffTargetRefusal,
 } from "../workspace-files/diff"
 
 function directoryRequired() {
@@ -81,13 +75,19 @@ function gitTimeoutBody() {
   return errorBody("diff_git_timeout", "Git command timed out")
 }
 
-async function validateRangeRefs(runtime: DiffRuntime, directory: string, fromRef: string | undefined, toRef: string | undefined) {
-  if (!fromRef || !toRef) {
-    return errorBody("diff_refs_required", "to-from mode requires fromRef and toRef")
+const TARGET_REFUSAL = {
+  refs_required: () => errorBody("diff_refs_required", "to-from mode requires fromRef and toRef"),
+  base_required: () => errorBody("diff_base_required", "branch modes require fromRef"),
+  invalid_ref: invalidRef,
+  no_fork_point: () => errorBody("diff_no_fork_point", "fromRef shares no history with HEAD"),
+} satisfies Record<DiffTargetRefusal, () => ReturnType<typeof errorBody>>
+
+function targetFromQuery(c: DiffRouteContext) {
+  return {
+    mode: c.req.query("mode") ?? "uncommitted",
+    fromRef: c.req.query("fromRef"),
+    toRef: c.req.query("toRef"),
   }
-  if (!validRefSyntax(fromRef) || !validRefSyntax(toRef)) return invalidRef()
-  if (!await refsExist(runtime, directory, fromRef, toRef)) return invalidRef()
-  return undefined
 }
 
 function routeFailure(err: unknown) {
@@ -132,26 +132,14 @@ export function createDiffRoutes(deps: DiffRoutesDeps = {}, options: WorktreeTar
       const directory = await readable(c)
       if (typeof directory !== "string") return directory
 
-      const mode = c.req.query("mode") ?? "uncommitted"
-      const fromRef = c.req.query("fromRef")
-      const toRef = c.req.query("toRef")
       const content = c.req.query("content") ?? "full"
 
       try {
-        if (isRangeMode(mode)) {
-          const refsError = await validateRangeRefs(runtime, directory, fromRef, toRef)
-          if (refsError) return c.json(refsError, 400)
-        }
-
-        const diffs: FileDiff[] = content === "summary"
-          ? await diffSummary(runtime, directory, mode, fromRef, toRef)
-          : mode === "staged"
-            ? await stagedDiff(runtime, directory)
-            : mode === "unstaged"
-              ? await unstagedDiff(runtime, directory)
-              : isRangeMode(mode)
-                ? await toFromDiff(runtime, directory, fromRef!, toRef!)
-                : await uncommittedDiff(runtime, directory)
+        const target = await resolveDiffTarget(runtime, directory, targetFromQuery(c))
+        if (typeof target === "string") return c.json(TARGET_REFUSAL[target](), 400)
+        const diffs = content === "summary"
+          ? await diffSummary(runtime, directory, target)
+          : await fullDiff(runtime, directory, target)
         // Mixed bases: the tracked arms name their paths from the repository,
         // the untracked arm reads the working tree through `ls-files` and names
         // them from this directory. Resolved through this route's own runner,
@@ -177,17 +165,10 @@ export function createDiffRoutes(deps: DiffRoutesDeps = {}, options: WorktreeTar
       const directory = await readable(c, file)
       if (typeof directory !== "string") return directory
 
-      const mode = c.req.query("mode") ?? "uncommitted"
-      const fromRef = c.req.query("fromRef")
-      const toRef = c.req.query("toRef")
-
-      if (isRangeMode(mode)) {
-        const refsError = await validateRangeRefs(runtime, directory, fromRef, toRef)
-        if (refsError) return c.json(refsError, 400)
-      }
-
       try {
-        return c.json(await filePatchDiff({ runtime, directory, mode, fromRef, toRef, file }))
+        const target = await resolveDiffTarget(runtime, directory, targetFromQuery(c))
+        if (typeof target === "string") return c.json(TARGET_REFUSAL[target](), 400)
+        return c.json(await filePatchDiff({ runtime, directory, target, file }))
       } catch (err) {
         const failure = routeFailure(err)
         if ("body" in failure) return c.json(failure.body, failure.status)

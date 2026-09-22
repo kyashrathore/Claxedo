@@ -77,7 +77,7 @@ import {
   type ReviewWorkspaceWorkingSetSnapshot,
 } from "./review-workspace-working-set"
 import { ReviewWorkspaceProcessSection } from "./review-workspace-process-section"
-import type { ReviewMode } from "@/features/review/review-intent"
+import { reviewDiffRefs, type ReviewMode } from "@/features/review/review-intent"
 
 export type ReviewWorkspaceProps = {
   sessionId: string
@@ -158,8 +158,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       const diffs = peekReviewVcsDiff({
         directory: props.directory,
         mode: review.mode,
-        fromRef: review.mode === "to-from" ? review.fromRef?.trim() || undefined : undefined,
-        toRef: review.mode === "to-from" ? review.toRef?.trim() || undefined : undefined,
+        ...reviewDiffRefs({ mode: review.mode, fromRef: review.fromRef, toRef: review.toRef }),
       })
       if (!diffs) return undefined
       return diffs.some((diff) => diff.file === path)

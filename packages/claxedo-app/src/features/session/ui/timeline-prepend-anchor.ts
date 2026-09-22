@@ -7,7 +7,7 @@ export type TimelinePrependAnchor = {
 
 export function captureTimelinePrependAnchor(root: HTMLElement): TimelinePrependAnchor | undefined {
   const view = root.getBoundingClientRect()
-  const anchor = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")]
+  const anchor = [...root.querySelectorAll<HTMLElement>('[data-timeline-key]:not([data-timeline-anchor="none"])')]
     .map((element) => ({ element, rect: element.getBoundingClientRect() }))
     .filter((item) => item.rect.bottom > view.top && item.rect.top < view.bottom)
     .sort((a, b) => a.rect.top - b.rect.top)[0]
@@ -63,6 +63,7 @@ export function createTimelinePrependAnchor(input: {
   const frames = createDisplayedFrameLoop({ displayed: input.displayed })
   let anchor: TimelinePrependAnchor | undefined
   let loading = false
+  const clear = () => { loading = false; anchor = undefined; frames.stop() }
   const update = () => {
     const root = input.root()
     if (root) anchor = captureTimelinePrependAnchor(root) ?? anchor
@@ -88,6 +89,18 @@ export function createTimelinePrependAnchor(input: {
     resume: frames.resume,
     capture: () => { loading = true; update() },
     restore: () => { loading = false; apply() },
-    clear: () => { loading = false; anchor = undefined; frames.stop() },
+    clear,
+    /**
+     * Hand the viewport to the reader's gesture without dropping the restore it
+     * owes. A gesture routinely arrives before the loop's first frame, and the
+     * virtualizer anchors a settled transcript to the start, so a restore that
+     * is only cleared leaves the reader on the top of the revealed history,
+     * where the next scroll event reveals the batch above it.
+     */
+    settle: () => {
+      const root = input.root()
+      if (frames.running && root && anchor) applyTimelinePrependAnchor(root, anchor, input.resolveRowStart)
+      clear()
+    },
   }
 }

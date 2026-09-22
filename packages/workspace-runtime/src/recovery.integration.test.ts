@@ -325,6 +325,27 @@ describe("cancelling a turn through the public route", () => {
   })
 })
 
+describe("inspecting a session after its turn ended", () => {
+  test("reaches the runtime of the session's own harness, not the host's default", async () => {
+    const f = await fixture()
+    const { prompt } = await startHeldTurn(f, "ses_idle", "msg_idle")
+    f.releaseTurn("ses_idle")
+    await prompt
+    await until(() => f.store().getSession("ses_idle")?.status === "idle", "the turn to finish")
+
+    await f.host.apply({
+      ...f.snapshot,
+      connections: [...f.snapshot.connections, { connectionId: "secondary", providerKey: "recovery-fixture", configRevision: 1, enabled: true, config: { name: "secondary" } }],
+      defaultHarness: { kind: "connection", connectionId: "secondary" },
+    })
+
+    const inspection = await inspect(f, "ses_idle")
+    expect(inspection.sessionId).toBe("ses_idle")
+    expect(inspection.facts.execution.value).toBe("terminal")
+    expect(inspection.facts.persistence.value).toBe("committed")
+  })
+})
+
 describe("a freeze that cannot drain", () => {
   test("is refused with the turn that blocked it, and takes no checkpoint", async () => {
     const f = await fixture()

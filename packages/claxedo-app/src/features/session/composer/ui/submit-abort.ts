@@ -9,8 +9,7 @@ import {
   settleSessionRecoveryCommand,
   startSessionRecoveryCommand,
 } from "../../store/session-status-dispatcher"
-import { describeRecoveryOutcome, describeRecoveryUnreachable } from "../../ui/recovery-outcome-copy"
-import type { RecoveryCopy } from "../../ui/recovery-outcome-copy"
+import { reportStopFailure, stopFailureKind, type StopFailureKind } from "./stop-failure-report"
 import { upsertDirectorySession } from "../../data/sync/directory-session-cache"
 import type { ClaxedoSession } from "../../data/session-types"
 import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../../data/sync/queries"
@@ -46,13 +45,15 @@ type AbortClient = SessionRecoveryClient & {
 }
 
 /**
- * A Stop that did not stop the turn, carrying the reading that says why. The
- * message is the owner's own words when it gave any; a renderer with the
- * dictionary to hand shows the reading's copy instead.
+ * A Stop that did not stop the turn. `stopRunningTurn` has already reported
+ * it, so a caller only decides whether the action that needed the Stop goes on.
  */
 export class RecoveryCommandFailure extends Error {
-  constructor(readonly copy: RecoveryCopy) {
-    super(copy.ownerMessage ?? copy.reading)
+  readonly kind: StopFailureKind
+  constructor(outcome: RecoveryOutcome) {
+    const kind = stopFailureKind(outcome)
+    super(`The running turn did not stop (${kind})`)
+    this.kind = kind
     this.name = "RecoveryCommandFailure"
   }
 }
@@ -81,20 +82,15 @@ export async function stopRunningTurn(input: {
   retryOf?: { operationId: string; attempt: number }
 }): Promise<StopRunningTurnResult> {
   const scope = input.directory === undefined ? {} : { directory: input.directory }
-  const inspected = await input.client.session.recovery.inspect({ sessionID: input.sessionID, ...scope })
+  const report = { sessionID: input.sessionID, ...scope }
+  const inspected = await input.client.session.recovery.inspect({ sessionID: input.sessionID, ...scope }).catch((error: unknown) => {
+    reportStopFailure({ ...report, error })
+    throw error
+  })
   // An owner that refused to answer has not said this session is idle, so the
-  // refusal is the Stop's outcome rather than a quiet "nothing to do". It is
-  // recorded as the command too: a refusal at inspection is the whole answer a
-  // user got, and without it the session has a failed Stop and nothing to act on.
+  // refusal is the Stop's outcome rather than a quiet "nothing to do".
   if (isRecoveryOutcome(inspected.data)) {
-    const refusedRequestId = `composer-stop:${crypto.randomUUID()}`
-    startSessionRecoveryCommand({
-      sessionID: input.sessionID,
-      requestId: refusedRequestId,
-      action: "cancel_turn",
-      attempt: 1,
-    })
-    settleSessionRecoveryCommand({ sessionID: input.sessionID, requestId: refusedRequestId, outcome: inspected.data })
+    reportStopFailure({ ...report, outcome: inspected.data })
     return { cancelled: true, outcome: inspected.data }
   }
   const target = inspected.data.target
@@ -135,12 +131,14 @@ export async function stopRunningTurn(input: {
       },
     })
     settleSessionRecoveryCommand({ sessionID: input.sessionID, requestId, outcome: submitted.data })
+    if (!turnStopped(submitted.data)) reportStopFailure({ ...report, outcome: submitted.data })
     return { cancelled: true, outcome: submitted.data }
   } catch (error) {
-    // The owner never answered, so there are no facts: the turn may still be
-    // running. Recording the reach failure keeps the command visible and
-    // retryable instead of leaving the user with a toast and no operation.
+    // The owner never answered, so the turn may still be running. Marking the
+    // command unreached makes the next Stop mint a new request rather than
+    // join this one.
     failSessionRecoveryCommand({ sessionID: input.sessionID, requestId, message: stopReachMessage(error) })
+    reportStopFailure({ ...report, error })
     throw error
   }
 }
@@ -232,7 +230,7 @@ export function createPromptAbort(input: {
       ...(expectedTurnId ? { expectedTurnId } : {}),
     })
     if (cancelled.cancelled && !turnStopped(cancelled.outcome)) {
-      throw new RecoveryCommandFailure(describeRecoveryOutcome(cancelled.outcome))
+      throw new RecoveryCommandFailure(cancelled.outcome)
     }
     // Nothing here is the cancellation: these reads reconcile what the turn
     // left behind, so one of them failing is not a Stop that failed.
@@ -261,8 +259,6 @@ export function createPromptAbort(input: {
 export function createSubmitAbort(input: Parameters<typeof createPromptAbort>[0] & {
   hasActiveGoal?: () => boolean
   stopGoal?: () => void | Promise<unknown>
-  /** Resolves a reading's keys against the active locale; only the caller has the dictionary. */
-  recoveryToast: (copy: RecoveryCopy) => { title: string; description: string }
   stopGoalFailedTitle: () => string
   errorMessage: (err: unknown) => string
   showToast: (toast: { title: string; description: string; variant: "error" }) => void
@@ -272,14 +268,9 @@ export function createSubmitAbort(input: Parameters<typeof createPromptAbort>[0]
     hasActiveGoal: input.hasActiveGoal,
     stopGoal: input.stopGoal,
     promptAbort: async () => {
-      try {
-        await promptAbort()
-      } catch (err) {
-        const copy = err instanceof RecoveryCommandFailure
-          ? err.copy
-          : describeRecoveryUnreachable(input.errorMessage(err))
-        input.showToast({ ...input.recoveryToast(copy), variant: "error" })
-      }
+      // `stopRunningTurn` reported whatever went wrong; the turn's own status
+      // is what the user sees, so a Stop that did not land keeps Stop offered.
+      await promptAbort().catch(() => undefined)
     },
     onStopGoalError: (err) => {
       input.showToast({

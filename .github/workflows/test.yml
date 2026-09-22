@@ -598,11 +598,13 @@ jobs:
           path: ${{ github.workspace }}/.playwright-browsers
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
 
-      # The claude/codex CLIs the native-SDK scenarios spawn. No credentials —
+      # The claude/codex/pi CLIs the native scenarios spawn. No credentials —
       # the scripted endpoint answers everything, so these never authenticate.
-      # ACP agents are operator configuration, so this lane installs none.
+      # Pi is pinned to PI_VERSION (agent-sdk-runtime harnesses/pi/executable.ts),
+      # which refuses any other build. ACP agents are operator configuration, so
+      # this lane installs none.
       - name: Install harness CLIs
-        run: npm install -g @anthropic-ai/claude-code @openai/codex
+        run: npm install -g @anthropic-ai/claude-code @openai/codex @earendil-works/pi-coding-agent@0.85.1
 
       - name: Download reusable workspace dist
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

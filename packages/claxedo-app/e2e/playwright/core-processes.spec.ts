@@ -321,7 +321,7 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
         proc.exitCode = 0
         proc.exitedAt = Date.now()
       }
-      return json(route, true)
+      return json(route, { state: "stopped" })
     }
     const restartMatch = pathname.match(/^\/api\/wr\/process\/([^/]+)\/restart$/)
     if (restartMatch && method === "POST") {

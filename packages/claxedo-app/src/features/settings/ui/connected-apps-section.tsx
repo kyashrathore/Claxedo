@@ -47,7 +47,7 @@ export const ConnectedAppsSettingsSection: Component<{
 
   return (
     <div class="flex flex-col gap-1">
-      <h3 class="text-14-medium text-text-strong pb-2">{props.t("settings.general.section.connectedApps")}</h3>
+      <h2 class="text-14-medium text-text-strong pb-2">{props.t("settings.general.section.connectedApps")}</h2>
 
       <div class="bg-surface-raised-base px-4 rounded-lg">
         <Show

@@ -30,7 +30,6 @@ import { QUEUED_MESSAGES_QUERY_KEY } from "@/features/session/queue/queued-messa
 import { cloudWorkspaceCreateInput, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-admission"
 import { createSubmitAbort } from "./submit-abort"
-import { recoveryToastText } from "../../ui/recovery-outcome-copy"
 import { createSubmitHarnessSelection } from "./mode-commands"
 import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef } from "./submit-create-session"
 import { resolvePreparedSubmitDirectory } from "./submit-directory"
@@ -152,7 +151,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         : directory === sdk.directory
           ? sdk.client
           : sdk.createClient({ directory }),
-    recoveryToast: (copy) => recoveryToastText(language.t, copy),
     hasActiveGoal: input.hasActiveGoal,
     stopGoal: input.stopGoal,
     stopGoalFailedTitle: () => language.t("prompt.toast.goalStopFailed.title"),

@@ -641,7 +641,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       hasScrollGesture: props.hasScrollGesture(),
     })
     if (plan.prepareOverscan) prepareScrollOverscan()
-    if (plan.clearPrependAnchor) prepend.clear()
+    if (plan.settlePrependAnchor) prepend.settle()
     return plan
   }
   let virtualContent: HTMLDivElement | undefined
@@ -1622,6 +1622,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         {(current) => (
           <div
             data-timeline-key={props.rowKey}
+            data-timeline-anchor={TimelineRow.anchorsReadingPosition(current().row) ? undefined : "none"}
             data-timeline-row-rich-ready={ready() ? "true" : "false"}
             style={{
               position: "absolute",
@@ -1910,6 +1911,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
               </Show>
             </div>
           </div>
+        </Show>
+        {/* A surface that hides the title row names the child itself; this heading
+            stays so opening a subagent tab still has somewhere to land focus. */}
+        <Show when={!showHeader() && parentID()}>
+          <h1 data-subagent-child-heading tabIndex={-1} class="sr-only">
+            {childTitle()}
+          </h1>
         </Show>
         <Show when={ambientSubagents().length > 0}>
           <section

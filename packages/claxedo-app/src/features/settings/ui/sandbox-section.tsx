@@ -198,17 +198,10 @@ export const SandboxSettingsSection: Component = () => {
 
   return (
     <div class="flex flex-col pb-10">
-      <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
-        <h2 class="text-18-medium text-text-strong">Sandbox Providers</h2>
-        <p class="text-12-regular text-text-weak">
-          Manage sandbox providers and network access for cloud environments.
-        </p>
-      </div>
-
       <div class="flex flex-col gap-8 max-w-[720px]">
         {/* ── Provider picker ─────────────────────────────────────── */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">Provider</h3>
+          <h2 class="text-14-medium text-text-strong pb-2">Provider</h2>
           <div class="bg-surface-raised-base px-4 rounded-lg">
             <SettingsRow title="Provider" description="Cloud environments run on one provider at a time.">
               <Select
@@ -256,7 +249,7 @@ export const SandboxSettingsSection: Component = () => {
         <Show when={selectedDriver()}>
           {(driver) => (
             <div class="flex flex-col gap-1">
-              <h3 class="text-14-medium text-text-strong pb-2">Credentials</h3>
+              <h2 class="text-14-medium text-text-strong pb-2">Credentials</h2>
               <div class="bg-surface-raised-base rounded-lg p-4 flex flex-col gap-4">
                 <div class="flex items-center gap-3">
                   <SandboxDriverLogo
@@ -352,7 +345,7 @@ export const SandboxSettingsSection: Component = () => {
 
         {/* ── Network policy ─────────────────────────────────────── */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">Network Policy</h3>
+          <h2 class="text-14-medium text-text-strong pb-2">Network Policy</h2>
           <div class="bg-surface-raised-base px-4 py-4 rounded-lg">
             <NetworkPolicySettings />
           </div>

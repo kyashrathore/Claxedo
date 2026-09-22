@@ -84,6 +84,10 @@ class ClaxedoEventBus {
         updatedAt: Date.now(),
       })
     }
+    // The runtime forgets a terminal's recorded lifecycle the moment its PTY
+    // exits, so `/hook/terminal-session` answers `null` and a reconnect
+    // reconcile has nothing to re-pin the indicator from.
+    if (payload.type === "pty.exited" && typeof payload.id === "string") this.terminalSessions.delete(payload.id)
     for (const slot of this.slots) {
       slot.pending.push(payload)
       const waiters = slot.waiters

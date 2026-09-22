@@ -6,7 +6,10 @@
  *     slot, and only for a SIGNED account on a session whose `SessionRef`
  *     names a workspace. It reads its own state from
  *     `GET /api/control/sessions/:id/shares?workspaceId=…` and never from the
- *     workspace runtime.
+ *     workspace runtime. The subject is therefore a signed principal in both
+ *     auth modes: `stampTestAuth` signs the visitor before boot and the
+ *     bootstrap pins a session-issuing central, since the `local-unsigned`
+ *     matrix leg would otherwise have no account and no control.
  *   - A grant and a level change are the SAME request: the control plane keeps
  *     one active grant per (session, recipient), so `POST …/shares` with a
  *     different `level` moves that grant. There is no separate downgrade route,
@@ -18,6 +21,7 @@
  */
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
+import { stampTestAuth } from "../playwright-global-setup"
 
 const DIR = "/tmp/e2e-core-session-share-levels"
 const SESSION_ID = "ses_share_levels"
@@ -134,6 +138,7 @@ async function openSession(
   page: Page,
   cloud: { role?: "owner" | "viewer"; sessionPrompt?: boolean } = {},
 ) {
+  await stampTestAuth(page.context())
   await seedProject(page)
   // A local-only session is unshareable by design, so the session under test
   // is on the relay lane: only a relay-backed ref carries the workspace id the
@@ -143,6 +148,7 @@ async function openSession(
     sessionId: SESSION_ID,
     projectId: PROJECT_ID,
     projectName: "share-levels",
+    issuesSessions: true,
     cloud: {
       workspaceId: WORKSPACE_ID,
       relayOrigin: RELAY_ORIGIN,

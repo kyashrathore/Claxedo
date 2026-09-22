@@ -100,7 +100,7 @@ export const SettingsMachines: Component = () => {
 const MachinesSection: Component<{ title: string; description?: string; children: JSX.Element }> = (props) => (
   <section class="flex flex-col gap-2">
     <div class="flex flex-col gap-0.5">
-      <h3 class="text-14-medium text-text-strong">{props.title}</h3>
+      <h2 class="text-14-medium text-text-strong">{props.title}</h2>
       <Show when={props.description}>
         {(text) => <p class="text-12-regular text-text-weak">{text()}</p>}
       </Show>

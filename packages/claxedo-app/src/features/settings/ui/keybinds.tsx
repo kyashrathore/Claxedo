@@ -373,7 +373,7 @@ export const SettingsKeybinds: Component = () => {
       <div class="sticky top-0 z-10 bg-inherit">
         <div class="flex flex-col gap-4 pt-6 pb-6">
           <div class="flex items-center justify-between gap-4">
-            <h2 class="text-18-medium text-text-strong">{language.t("settings.shortcuts.title")}</h2>
+            <h1 class="text-18-medium text-text-strong">{language.t("settings.shortcuts.title")}</h1>
             <Button size="small" variant="secondary" onClick={resetAll} disabled={!hasOverrides()}>
               {language.t("settings.shortcuts.reset.button")}
             </Button>
@@ -405,7 +405,7 @@ export const SettingsKeybinds: Component = () => {
           {(group) => (
             <Show when={(filtered().get(group) ?? []).length > 0}>
               <div class="flex flex-col gap-1">
-                <h3 class="text-14-medium text-text-strong pb-2">{language.t(groupKey[group])}</h3>
+                <h2 class="text-14-medium text-text-strong pb-2">{language.t(groupKey[group])}</h2>
                 <SettingsList>
                   <For each={filtered().get(group) ?? []}>
                     {(id) => (

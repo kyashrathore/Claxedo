@@ -232,6 +232,57 @@ describe("Claude native subagent routing", () => {
     await adapter.dispose()
   })
 
+  test("publishes a failed child's terminal on the channel its start used, so a live reader sees it fail", async () => {
+    const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: claudeDriverFor([
+        {
+          type: "assistant",
+          uuid: "parent-agent-call",
+          session_id: "claude-parent-thread",
+          parent_tool_use_id: null,
+          message: { content: [{ type: "tool_use", id: "tool-agent-1", name: "Agent", input: { description: "Review auth", subagent_type: "general-purpose" } }] },
+        },
+        {
+          type: "user",
+          uuid: "parent-agent-result",
+          session_id: "claude-parent-thread",
+          parent_tool_use_id: null,
+          message: { content: [{ type: "tool_result", tool_use_id: "tool-agent-1", content: "usage limit reached", is_error: true }] },
+          tool_use_result: { status: "failed", agentId: "agent-42", content: [{ type: "text", text: "usage limit reached" }] },
+        },
+      ]),
+    })
+    const parent = await adapter.createSession(path.resolve("/repo"))
+
+    for await (const _ of executeTestTurn(adapter, parent.id, {
+      parts: [{ type: "text", text: "Delegate review" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "build",
+      model: { providerID: "claude", modelID: "test" },
+    }, path.resolve("/repo"))) { /* drain */ }
+
+    const child = (store.listSessions(path.resolve("/repo")) as Array<{ id: string }>)
+      .find((session) => session.id !== parent.id)
+    expect(child).toBeDefined()
+    const childLifecycle = runtimeEvents
+      .filter((event) => event.sessionId === child!.id)
+      .map((event) => event.payload)
+    expect(childLifecycle).toContainEqual({ type: "session-status", status: "busy" })
+    expect(childLifecycle).toContainEqual(expect.objectContaining({ type: "error" }))
+    const childAssistant = (store.getMessages(child!.id) as Array<{ info: { role: string; error?: unknown; time?: { completed?: number } } }>)
+      .find((message) => message.info.role === "assistant")
+    expect(childAssistant?.info.time?.completed).toEqual(expect.any(Number))
+    expect(childAssistant?.info.error).toBeDefined()
+    await adapter.dispose()
+  })
+
   test("replays a task row's buffered child events once the spawn tool call is known", async () => {
     const store = createMemoryRuntimeStore()
     const eventHub = createRuntimeEventHub()

@@ -10,11 +10,13 @@
  * staged and unstaged lists, commits and upstream the writes mutate, the way `git` would.
  * The Review tab reads the workspace-runtime `/api/wr/diff/vcs` routes and the OpenCode
  * `/file/status` summary; both are seeded here from the same files so the file the user
- * clicks in Changes is the file the review focuses. A `to-from` read is answered from
- * `COMPARE_DIFFS` by its `fromRef..toRef` pair: the seeded branch against HEAD, and each
- * seeded commit against its parent (the empty tree for the root), which is what the
- * compare pill, the Compared changes group and a graph commit click request. The pill's
- * ref list comes from `/api/wr/diff/refs`, served here as `SEEDED_REFS`.
+ * clicks in Changes is the file the review focuses. A ref comparison is answered from
+ * `COMPARE_DIFFS`: a `to-from` read by its `fromRef..toRef` pair (each seeded commit
+ * against its parent, the empty tree for the root, as a graph commit click requests),
+ * a `branch` read by `fromRef...HEAD` and a `branch-worktree` read by
+ * `fromRef...worktree`, which is what the compare pill and the Compared changes group
+ * request. The pill's ref list comes from `/api/wr/diff/refs`, served here as
+ * `SEEDED_REFS`, and its default base from `/api/wr/diff/targets`.
  *
  * Create PR reads the workspace's remote from the project catalog (`GET /project`,
  * `useWorkspaceRemoteUrl`), which the shared mock serves without a remote; the scenarios
@@ -163,6 +165,9 @@ const SEEDED_DIFFS = [
   },
 ]
 
+/** The picker's fixed rows above the refs, with `DEFAULT_BRANCH` as the default base. */
+const MODE_ROWS = ["Uncommitted changes", "Staged changes", "Unstaged changes", "Branch changes", `Everything since ${DEFAULT_BRANCH}`]
+
 const SEEDED_REFS = {
   branches: [DEFAULT_BRANCH, COMPARE_BRANCH, `origin/${DEFAULT_BRANCH}`],
   tags: ["v1.0.0"],
@@ -181,16 +186,23 @@ function addedDiff(file: string, lines: string[]) {
   }
 }
 
-/** Every `to-from` summary the scenarios request, by `fromRef..toRef`. */
-const COMPARE_DIFFS: Record<string, ReturnType<typeof addedDiff>[]> = {
-  [`${COMPARE_BRANCH}..HEAD`]: [addedDiff(COMPARE_FILE, ["export const compared = true", "export const again = 2"]), addedDiff(COMPARE_DOC, ["one"])],
+const COMPARE_BRANCH_DIFFS = [addedDiff(COMPARE_FILE, ["export const compared = true", "export const again = 2"]), addedDiff(COMPARE_DOC, ["one"])]
+
+/** Every ref-comparison summary the scenarios request, keyed as `seededDiffsFor` reads them. */
+const COMPARE_DIFFS: Record<string, readonly { file: string }[]> = {
+  [`${COMPARE_BRANCH}...HEAD`]: COMPARE_BRANCH_DIFFS,
+  [`${COMPARE_BRANCH}...worktree`]: [...COMPARE_BRANCH_DIFFS, ...SEEDED_DIFFS],
   [`${seededHash(1)}..${seededHash(2)}`]: [addedDiff(SECOND_COMMIT_FILE, ["export const second = 2"])],
   [`${EMPTY_TREE}..${seededHash(1)}`]: [addedDiff(FIRST_COMMIT_FILE, ["export const first = 1"])],
 }
 
-function seededDiffsFor(params: URLSearchParams) {
-  if (params.get("mode") !== "to-from") return SEEDED_DIFFS
-  return COMPARE_DIFFS[`${params.get("fromRef")}..${params.get("toRef")}`] ?? []
+function seededDiffsFor(params: URLSearchParams): readonly { file: string }[] {
+  const mode = params.get("mode")
+  const fromRef = params.get("fromRef")
+  if (mode === "to-from") return COMPARE_DIFFS[`${fromRef}..${params.get("toRef")}`] ?? []
+  if (mode === "branch") return COMPARE_DIFFS[`${fromRef}...HEAD`] ?? []
+  if (mode === "branch-worktree") return COMPARE_DIFFS[`${fromRef}...worktree`] ?? []
+  return SEEDED_DIFFS
 }
 
 type GitFixtureSeed = {
@@ -506,6 +518,8 @@ async function installSeededWorkspace(
 
   await page.route("**/file/status**", (route) => route.fulfill(json(JSON.stringify(SEEDED_STATUS))))
   await page.route("**/api/wr/diff/refs**", (route) => (isApiRequest(route) ? route.fulfill(json(JSON.stringify(SEEDED_REFS))) : route.continue()))
+  await page.route("**/api/wr/diff/targets**", (route) =>
+    isApiRequest(route) ? route.fulfill(json(JSON.stringify({ defaultRef: DEFAULT_BRANCH, candidates: [DEFAULT_BRANCH] }))) : route.continue())
   await page.route("**/api/wr/diff/vcs**", (route) => {
     const url = new URL(route.request().url())
     const pathname = url.pathname.replace(/^\/workspaces\/[^/]+/, "")
@@ -765,14 +779,23 @@ async function expectPanelInReviewForChanges(page: Page) {
   await expect(panel).toHaveAttribute("data-state-workspace-dir", DIR)
 }
 
+/** The Review tab's rendered item for `path`: CodeView's container, stamped with the review file. */
+function reviewDiff(page: Page, path: string) {
+  return panelShell(page).locator(`[data-component="session-review"] [data-slot="session-review-diff-wrapper"][data-review-file="${path}"]`)
+}
+
+/** The header row portalled into that item; it is where the focused-file mark lands. */
+function reviewHeader(page: Page, path: string) {
+  return panelShell(page).locator(`[data-component="session-review"] [data-slot="accordion-item"][data-review-file="${path}"]`)
+}
+
 /** The Review tab is the selected workspace tab and `path` is the focused diff in it. */
 async function expectReviewFocused(page: Page, path: string) {
   const panel = panelShell(page)
   await expect(panel.locator('[data-slot="workspace-tab"][data-workspace-tab-id="review"]')).toHaveAttribute("data-selected", "true", { timeout: 15_000 })
   await expect(panel.locator('[data-testid="review-pane-root"]')).toBeVisible({ timeout: 15_000 })
-  const file = panel.locator(`[data-component="session-review"] [data-review-file="${path}"]`)
-  await expect(file).toBeVisible({ timeout: 15_000 })
-  await expect(file, `${path} is listed but not the focused (selected) diff`).toHaveAttribute("data-selected", "", { timeout: 15_000 })
+  await expect(reviewDiff(page, path)).toBeVisible({ timeout: 15_000 })
+  await expect(reviewHeader(page, path), `${path} is listed but not the focused (selected) diff`).toHaveAttribute("data-selected", "", { timeout: 15_000 })
 }
 
 async function expectSessionFloating(page: Page) {
@@ -978,7 +1001,7 @@ test.describe("core source control @core", () => {
 
     const menu = await openComparePicker(page)
     await expect(menuOptions(menu)).toHaveText([
-      "Uncommitted changes",
+      ...MODE_ROWS,
       DEFAULT_BRANCH,
       COMPARE_BRANCH,
       `origin/${DEFAULT_BRANCH}`,
@@ -987,14 +1010,14 @@ test.describe("core source control @core", () => {
     ])
 
     await page.keyboard.type("compare")
-    await expect(menuOptions(menu)).toHaveText(["Uncommitted changes", COMPARE_BRANCH])
+    await expect(menuOptions(menu)).toHaveText([...MODE_ROWS, COMPARE_BRANCH])
     await captureEvidence({ page, spec: SPEC, scenario: "compare-search-branch" })
 
     await menu.getByTestId("review-compare-search").fill("seeded")
-    await expect(menuOptions(menu)).toHaveText(["Uncommitted changes", ...SEEDED_GIT.commits.map((commit) => `${commit.shortHash}${commit.subject}`)])
+    await expect(menuOptions(menu)).toHaveText([...MODE_ROWS, ...SEEDED_GIT.commits.map((commit) => `${commit.shortHash}${commit.subject}`)])
 
     await menu.getByTestId("review-compare-search").fill("nothing here")
-    await expect(menuOptions(menu)).toHaveText(["Uncommitted changes"])
+    await expect(menuOptions(menu)).toHaveText(MODE_ROWS)
     await expect(menu.getByTestId("review-compare-no-matches")).toHaveText("No matching refs")
 
     await page.keyboard.press("Escape")
@@ -1003,7 +1026,7 @@ test.describe("core source control @core", () => {
     await expectUncommittedReview(page)
   })
 
-  test("picking a branch shows the Compared changes group with the branch's files, and Uncommitted changes removes it", async ({ page }) => {
+  test("picking a branch compares from where HEAD left it, shows the Compared changes group, and Uncommitted changes removes it", async ({ page }) => {
     await installSeededWorkspace(page)
     await gotoSession(page)
     await openSourceControl(page)
@@ -1014,7 +1037,7 @@ test.describe("core source control @core", () => {
     await menuOptions(menu).filter({ hasText: COMPARE_BRANCH }).click()
     await expect(compareMenu(page)).toHaveCount(0, { timeout: 15_000 })
 
-    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "to-from", { timeout: 15_000 })
+    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "branch", { timeout: 15_000 })
     await expect(comparePill(page)).toContainText(COMPARE_BRANCH)
     await expect(comparePill(page)).toContainText(DEFAULT_BRANCH)
 
@@ -1033,7 +1056,7 @@ test.describe("core source control @core", () => {
     await changeRow(page, COMPARE_FILE).locator('[data-slot="open"]').click()
     await expectPanelInReviewForChanges(page)
     await expectReviewFocused(page, COMPARE_FILE)
-    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "to-from")
+    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "branch")
     await expect(changeRow(page, COMPARE_FILE)).toHaveClass(/bg-surface-base-active/)
     await captureEvidence({ page, spec: SPEC, scenario: "compare-branch-file-focused" })
 
@@ -1041,6 +1064,44 @@ test.describe("core source control @core", () => {
     await reopened.getByTestId("review-compare-uncommitted").click()
     await expectUncommittedReview(page)
     await expectGroupCounts(page, 1, 3)
+  })
+
+  test("the base button opens a base picker; a chosen base carries into Everything since, which includes the worktree", async ({ page }) => {
+    await installSeededWorkspace(page)
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectUncommittedReview(page)
+
+    const menu = await openComparePicker(page)
+    await expect(menu.getByTestId("review-compare-base")).toHaveText(`against ${DEFAULT_BRANCH}`)
+    await menu.getByTestId("review-compare-base").click()
+    const baseMenu = page.getByTestId("review-base-menu")
+    await expect(baseMenu).toBeVisible({ timeout: 15_000 })
+    await expect(baseMenu.getByTestId("review-compare-search")).toBeFocused()
+    await expect(menuOptions(baseMenu)).toHaveText([DEFAULT_BRANCH, COMPARE_BRANCH, `origin/${DEFAULT_BRANCH}`, "v1.0.0"])
+    await expect(baseMenu).toContainText("Default branch")
+    await captureEvidence({ page, spec: SPEC, scenario: "compare-base-picker" })
+
+    await baseMenu.getByTestId("review-base-back").click()
+    await expect(compareMenu(page)).toBeVisible()
+    await compareMenu(page).getByTestId("review-compare-base").click()
+    await page.keyboard.type("compare")
+    await page.keyboard.press("Enter")
+    await expect(page.getByTestId("review-base-menu")).toHaveCount(0, { timeout: 15_000 })
+    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "branch", { timeout: 15_000 })
+    await expect(compareGroup(page)).toHaveAttribute("data-count", String(COMPARE_BRANCH_DIFFS.length), { timeout: 15_000 })
+
+    const reopened = await openComparePicker(page)
+    await expect(reopened.getByTestId("review-compare-base")).toHaveText(`against ${COMPARE_BRANCH}`)
+    await reopened.getByTestId("review-compare-branch-worktree").click()
+    await expect(comparePill(page)).toHaveAttribute("data-review-mode", "branch-worktree", { timeout: 15_000 })
+    await expect(comparePill(page)).toContainText(COMPARE_BRANCH)
+    await expect(comparePill(page)).toContainText("working tree")
+    const group = compareGroup(page)
+    await expect(group).toContainText(`${COMPARE_BRANCH} → working tree`, { timeout: 15_000 })
+    await expect(group).toHaveAttribute("data-count", String(COMPARE_BRANCH_DIFFS.length + SEEDED_DIFFS.length), { timeout: 15_000 })
+    await expectRow(page, COMPARE_FILE, "compare", "added", "A")
+    await captureEvidence({ page, spec: SPEC, scenario: "compare-branch-worktree" })
   })
 
   test("clicking a graph commit shows its files and the pill; clicking it again returns to Uncommitted", async ({ page }) => {
@@ -1067,7 +1128,7 @@ test.describe("core source control @core", () => {
     await expect(group).toContainText(`${first.shortHash} → ${second.shortHash}`)
     await expectRow(page, SECOND_COMMIT_FILE, "compare", "added", "A")
     await expect(changeRow(page, FIRST_COMMIT_FILE)).toHaveCount(0)
-    await expect(panelShell(page).locator(`[data-component="session-review"] [data-review-file="${SECOND_COMMIT_FILE}"]`)).toBeVisible({ timeout: 15_000 })
+    await expect(reviewDiff(page, SECOND_COMMIT_FILE)).toBeVisible({ timeout: 15_000 })
     await captureEvidence({ page, spec: SPEC, scenario: "compare-graph-commit" })
 
     // The root commit compares against the empty tree.
@@ -1082,7 +1143,7 @@ test.describe("core source control @core", () => {
     await commitRows(page).nth(1).click()
     await expect(commitRows(page).nth(1)).toHaveAttribute("aria-selected", "false", { timeout: 15_000 })
     await expectUncommittedReview(page)
-    await expect(panelShell(page).locator(`[data-component="session-review"] [data-review-file="${FOCUS_FILE}"]`)).toBeVisible({ timeout: 15_000 })
+    await expect(reviewDiff(page, FOCUS_FILE)).toBeVisible({ timeout: 15_000 })
     await captureEvidence({ page, spec: SPEC, scenario: "compare-graph-deselected" })
   })
 

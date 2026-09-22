@@ -40,16 +40,18 @@
     // push it after the three big suites so it effectively runs last and
     // alone, without touching global concurrency.
     // workspace-runtime hosts the socket-heavy relay-e2e/host-tunnel suites;
-    // under 2-core contention with server/app they miss their windows the same
-    // way (CI: 203-vs-200 = fetch raced tunnel registration). Chain it after
-    // the two big suites; relay then runs after runtime, effectively alone.
+    // under 2-core contention they miss their windows the same way (CI:
+    // 203-vs-200 = fetch raced tunnel registration). Chain it after the app
+    // suite; relay then runs after runtime, effectively alone. The server suite
+    // runs in its own CI lanes, and an edge to it would pull it back into
+    // every lane that filters it out.
     "@claxedo/server#test": {
       "outputs": [".artifacts/unit/junit.xml"],
       "env": ["CLAXEDO_SERVER_TEST_SHARD"],
       "passThroughEnv": ["*"]
     },
     "@claxedo/workspace-runtime#test": {
-      "dependsOn": ["@claxedo/server#test", "@claxedo/app#test"],
+      "dependsOn": ["@claxedo/app#test"],
       "outputs": [".artifacts/unit/junit.xml", ".artifacts/unit/junit-relay.xml"],
       "passThroughEnv": ["*"]
     },

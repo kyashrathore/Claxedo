@@ -178,6 +178,36 @@ describe("Claude native Goal lifecycle", () => {
     expect(await driver.nativeGoal!.read("session-1", "/repo")).toMatchObject({ status: "paused" })
   })
 
+  test("clears the Goal when an ordinary turn after /goal reports it met", async () => {
+    const published: unknown[] = []
+    const fakeQuery = ((input: {
+      prompt: unknown
+      options: {
+        sessionStore: { append(key: { projectKey: string; sessionId: string }, entries: unknown[]): Promise<void> }
+      }
+    }) => {
+      const goalTurn = typeof input.prompt === "string" && input.prompt.startsWith("/goal ")
+      const stream = (async function* () {
+        await input.options.sessionStore.append({ projectKey: "/repo", sessionId: "claude-session" }, [{
+          type: "attachment",
+          timestamp: "2023-11-14T22:13:20.000Z",
+          attachment: { type: "goal_status", met: !goalTurn, condition: "Ship when checks pass" },
+        }])
+        if (!goalTurn) yield { type: "result", subtype: "success", is_error: false, num_turns: 1, session_id: "claude-session" }
+      })()
+      return Object.assign(stream, { close() {} }) as unknown as Query
+    }) as never
+    const driver = goalDriver({ query: fakeQuery }, (goal) => published.push(goal))
+
+    await driver.nativeGoal!.run(goalTurnInput(), "Ship when checks pass", () => {})
+    await driver.runTurn(goalTurnInput())
+
+    // The Stop hook the /goal turn installed keeps the Goal alive across later
+    // turns, so the turn that meets it is usually not the /goal turn.
+    expect(published).toMatchObject([{ objective: "Ship when checks pass", status: "active" }, null])
+    expect(await driver.nativeGoal!.read("session-1", "/repo")).toBeNull()
+  })
+
   test("hands every Goal turn an empty mirror so the CLI resumes from its own transcript", async () => {
     const atSpawn: unknown[] = []
     const fakeQuery = ((input: {
@@ -210,9 +240,8 @@ describe("Claude native Goal lifecycle", () => {
     await driver.nativeGoal!.run(input, "Ship when checks pass", (goal) => observed.push(goal))
     await driver.nativeGoal!.run(input, "Ship when checks pass", (goal) => observed.push(goal))
 
-    // Never seeded, and never carried over: the previous Goal turn's entries
-    // must not become the transcript the next resume is built from, because a
-    // mirror only ever sees Goal turns — ordinary turns bypass it entirely.
+    // Never seeded, and never carried over: the previous turn's entries must
+    // not become the transcript the next resume is built from.
     expect(atSpawn.map((entries) => (entries as unknown[] | null)?.length ?? 0)).toEqual([0, 0])
     // The appends still arrive, which is the whole reason the mirror exists.
     expect(observed).toMatchObject([

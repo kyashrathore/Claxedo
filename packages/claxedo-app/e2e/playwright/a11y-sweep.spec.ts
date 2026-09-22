@@ -187,7 +187,8 @@ test.describe("a11y sweep @core", () => {
     await seedNoProjects(page)
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
+    // With no project, the workbench opens on the first project's form.
+    await expect(page.getByRole("heading", { name: "Start with a project", level: 1 })).toBeVisible({ timeout: 20_000 })
 
     await assertMatchesBaseline(page, "home")
   })
@@ -197,10 +198,10 @@ test.describe("a11y sweep @core", () => {
     await assertMatchesBaseline(page, "session-page")
   })
 
-  test("settings dialog (open) has no new axe violations", async ({ page }) => {
+  test("settings surface (open) has no new axe violations", async ({ page }) => {
     await settleOneTurn(page, DIR)
     await openSettings(page)
-    await assertMatchesBaseline(page, "settings-dialog")
+    await assertMatchesBaseline(page, "settings-surface")
   })
 
   test("command palette (open) has no new axe violations", async ({ page }) => {

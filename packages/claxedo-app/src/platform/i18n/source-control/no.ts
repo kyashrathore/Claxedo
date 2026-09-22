@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "Sammenlignede endringer",
   "navigator.sourceControl.compare.search.placeholder": "Søk i grener, tagger, commits",
   "navigator.sourceControl.compare.noMatches": "Ingen samsvarende referanser",
+  "navigator.sourceControl.compare.workingTree": "arbeidstre",
   "navigator.sourceControl.stage": "Klargjør",
   "navigator.sourceControl.unstage": "Fjern klargjøring",
   "navigator.sourceControl.stageAll": "Klargjør alle",

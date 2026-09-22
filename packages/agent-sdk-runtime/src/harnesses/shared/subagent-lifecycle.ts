@@ -46,7 +46,11 @@ export function createSubagentChildren(host: {
   children: Map<string, SubagentChild>
   bindSession: (input: AgentRuntimeSessionBinding) => void
   publish: (event: CompatEvent) => void
-  projectChild: (target: ChildProjectionTarget, event: { type: "session-status"; status: "busy" } | { type: "finish"; sessionId: string }, source: RuntimeAppendSource) => void
+  projectChild: (
+    target: ChildProjectionTarget,
+    event: { type: "session-status"; status: "busy" } | { type: "finish"; sessionId: string } | { type: "error"; error: string },
+    source: RuntimeAppendSource,
+  ) => void
 }) {
   const open = new Map<string, { status?: SubagentStatus; mode?: SubagentMode }>()
   const title = (observation: SubagentObservation) =>
@@ -144,9 +148,11 @@ export function createSubagentChildren(host: {
     },
 
     /**
-     * `finishTurn` commits terminal events only for a failed turn. Without the
-     * projected `finish` the child's assistant message never closes and its
-     * transcript reads "Thinking" for the life of the process.
+     * The child's start was projected, so its end must be too: a reader that
+     * saw the projected `busy` waits on that channel for the terminal. A
+     * completed or cancelled child projects `finish`, which closes its
+     * assistant message; a failed one projects `error`, and `finishTurn`
+     * closes the message with that error.
      */
     settle(child: SubagentChild, observation: SubagentObservation, source: RuntimeAppendSource) {
       const outcome = subagentOutcome(observation)
@@ -158,9 +164,13 @@ export function createSubagentChildren(host: {
       // A child this turn never seeded is one it never had authority over, so
       // its terminal belongs to whoever did.
       if (!child.authority) throw new TurnAuthorityUnavailableError("provider_child", child.sessionId)
-      if (outcome.status !== "failed") {
-        host.projectChild(child.target, { type: "finish", sessionId: child.sessionId }, source)
-      }
+      host.projectChild(
+        child.target,
+        outcome.status === "failed"
+          ? { type: "error", error: outcome.error }
+          : { type: "finish", sessionId: child.sessionId },
+        source,
+      )
       const finished = finalizeAuthoredTurn(host.store, child.authority, outcome)
       child.authority = undefined
       child.settled = true

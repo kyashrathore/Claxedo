@@ -126,17 +126,10 @@ export const SettingsConnections: Component<{ agentConnections: ReturnType<typeo
 
   return (
     <div class="flex flex-col pb-10">
-      <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
-        <h2 class="text-18-medium text-text-strong">Connections</h2>
-        <p class="text-13-regular text-text-weak">
-          Manage agent runtimes and external tools available to your workspace.
-        </p>
-      </div>
-
       <div class="flex flex-col gap-8 max-w-[720px]">
         <div class="flex flex-col gap-2" data-component="agent-connections-section">
           <div class="flex flex-col gap-1">
-            <h3 class="text-14-medium text-text-strong">Agent connections</h3>
+            <h2 class="text-14-medium text-text-strong">Agent connections</h2>
             <p class="text-12-regular text-text-weak">
               Trusted runtime details and credentials stay on the host. This list contains only safe discovery metadata.
             </p>

@@ -47,15 +47,14 @@
  *     automatic, not a button: `src/context/server.tsx`'s own `healthQuery` (native
  *     `GET /health`, `refetchInterval: 10s`) drives a `createEffect` inside
  *     `ConnectionGate` that calls `actions.refetch()` once `server.healthy() === true`.
- *   - Missing-session handling: `src/session/store/session-controller.ts`'s
- *     `syncCompatSession` classifies a fetch failure via `isSessionNotFoundError`
- *     (matches `"session_not_found"`, `"Session not found"`, or
- *     `"Request failed: 404"`). On a match it calls `removeMissingSession()`, which
- *     prunes both the directory-session cache row and the shared session-inventory
- *     react-query cache entry (`removeSessionInventoryQueryData` — the same cache that
- *     feeds the sidebar's session rows) and flips a per-session `missingSessions`
- *     signal that `src/pages/session.tsx`'s `sessionMissing` memo reads to swap the
- *     timeline for the `session-unavailable` placeholder.
+ *   - Missing-session handling: the session controller classifies a history read
+ *     failure via `isSessionNotFoundError` (`session_not_found`, `Session not found`,
+ *     or `Request failed: 404`). On a match `forgetUnavailableSession` prunes the
+ *     directory-session cache row and the session-inventory and session-list query
+ *     caches that feed the sidebar, then — on an unsigned server — closes every
+ *     surface of that session through `layout.closeDeletedSession`, so the pane is
+ *     gone rather than parked. Only a signed control plane keeps the pane and shows
+ *     the `session-unavailable` placeholder while it schedules a repair pull.
  *
  * ANATOMY —
  *   `[data-claxedo]` — shell root (`src/app/app-shell-layout.tsx:301`); it lives INSIDE
@@ -83,8 +82,9 @@
  *   `[data-testid="session-content-missing-workspace"][data-session-id]` — a session pane with
  *     no resolvable workspace backing ("Missing workspace").
  *   `[data-testid="session-unavailable"][data-session-id]` — INSIDE a resolved
- *     `session-content` pane, rendered by `src/pages/session.tsx` when the session's
- *     own message/detail fetch 404s ("Session unavailable").
+ *     `session-content` pane, rendered by the session screen when a session's own
+ *     read 404s on a signed control plane ("Session unavailable"). Not reachable
+ *     here: an unsigned server closes the pane instead (behavior 8).
  *   `[data-testid="rail-sidebar-session-row"][data-session-id]` — a sidebar session
  *     row (`src/claxedo-ui/navigation-islands/session-navigation-list.tsx`).
  *   Composer/timeline selectors are shared with `core-first-prompt-local` and
@@ -117,8 +117,9 @@
  *      parseable-but-structurally-invalid JSON in `claxedo.state.v5` produce a clean
  *      boot (`[data-claxedo]` visible, no "Something went wrong" error screen, no
  *      `pageerror` console entries) instead of a crash.
- *   8. A session whose detail/message fetch 404s renders `session-unavailable` inside
- *      its pane, and a subsequent fresh boot at that session's URL no longer lists it
+ *   8. A session whose detail/message fetch 404s has every surface of it closed —
+ *      nothing carrying its `data-session-id` remains and the draft composer is what
+ *      is left on screen — and a fresh boot at that session's URL no longer lists it
  *      in the sidebar (pruned from the cached session inventory).
  *   9. Startup gate: a session-owning route (`/s/…`, `/w/…`) reveals real content
  *      (the resolved session pane) promptly even while `/api/claxedo/health` never
@@ -210,9 +211,14 @@ async function seedDestination(page: Page, destination: "local" | "cloud" | "bot
   }, destination)
 }
 
+/**
+ * No `localStorage.clear()` here: a test's context starts empty, and an init
+ * script re-runs on every document including `page.reload()`, so a clear would
+ * erase the answer setup persisted — the reload in the cloud-hold test exists
+ * to prove that answer survives.
+ */
 async function seedNoProjects(page: Page) {
   await page.addInitScript(() => {
-    localStorage.clear()
     // Without a serverUrl the app targets the cross-origin default backend
     // (127.0.0.1:3001), outside every same-origin route mock in this file.
     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string } }).__CLAXEDO__ = {
@@ -398,7 +404,8 @@ test.describe("core boot, deep links, and home @core", () => {
       await expect(setupPage.getByRole("button", { name: "Back" })).toHaveCount(0)
       await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-empty.png", fullPage: true })
     } else {
-      await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByTestId("first-project-canvas")).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
       await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
     }
     // `not.toBeVisible`, not `toHaveCount(0)`: the home route stays mounted in a hidden subtree.
@@ -424,15 +431,14 @@ test.describe("core boot, deep links, and home @core", () => {
     await page.route("**/api/claxedo/credentials**", async (route) => {
       credentialRequests += 1
       const pathname = new URL(route.request().url()).pathname
-      if (pathname.endsWith("/discover")) {
+      if (pathname.endsWith("/machine-logins")) {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({
-            discovery_id: "discovery_onboarding",
-            items: [
-              { provider_id: "anthropic", kind: "subscription_session", label: "Claude", origin: "local subscription", probe: { state: "broken", reason: "Signed out" } },
-              { provider_id: "openai", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
+            machine_logins: [
+              { harness: "claude", providerIds: ["anthropic"], state: "signed_out" },
+              { harness: "codex", providerIds: ["openai"], state: "signed_in", email: "dev@example.com" },
             ],
           }),
         })
@@ -524,7 +530,16 @@ test.describe("core boot, deep links, and home @core", () => {
 
   test("saying yes to the cloud holds the user until the cloud can actually run @onboarding-enabled", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
+    await page.route("**/project**", (route) => {
+      const type = route.request().resourceType()
+      if (type !== "fetch" && type !== "xhr") return route.continue()
+      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
+    })
     await page.route("**/api/claxedo/credentials**", async (route) => {
+      if (new URL(route.request().url()).pathname.endsWith("/machine-logins")) {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ machine_logins: [] }) })
+        return
+      }
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -634,7 +649,7 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(mock.requests.console.filter((entry) => entry.startsWith("pageerror:"))).toEqual([])
   })
 
-  test("a session that 404s on fetch shows session-unavailable and is pruned from the sidebar", async ({ page }) => {
+  test("a session that 404s on fetch closes its pane and is pruned from the sidebar", async ({ page }) => {
     const primaryUrl = (await createSessionViaFirstSend(page, "core boot missing session turn")).url
 
     // Installed only after the send settles: advertising the session in the list before
@@ -653,14 +668,19 @@ test.describe("core boot, deep links, and home @core", () => {
       const type = route.request().resourceType()
       return type === "fetch" || type === "xhr"
     }
-    await page.route(`**/session/${SESSION_ID}`, (route) => {
+    const sessionGone = (route: Route) => {
       if (!isApiCall(route) || route.request().method() !== "GET") return route.fallback()
       return route.fulfill({
         status: 404,
         contentType: "application/json",
         body: JSON.stringify({ error: "session_not_found" }),
       })
-    })
+    }
+    // A URL glob matches the whole URL, query string included; the row read
+    // carries `?directory=`, so without the second pattern the mock still
+    // serves the row and only the transcript is gone.
+    await page.route(`**/session/${SESSION_ID}`, sessionGone)
+    await page.route(`**/session/${SESSION_ID}?**`, sessionGone)
     await page.route(`**/session/${SESSION_ID}/message**`, (route) => {
       if (!isApiCall(route) || route.request().method() !== "GET") return route.fallback()
       return route.fulfill({
@@ -698,12 +718,13 @@ test.describe("core boot, deep links, and home @core", () => {
     await page.goto(primaryUrl, { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    await expect(page.locator(`[data-testid="session-unavailable"][data-session-id="${SESSION_ID}"]`)).toBeVisible({
-      timeout: 20_000,
-    })
+    // A missing read closes every surface of the session rather than parking a
+    // placeholder in its pane, so the draft composer is what remains on screen.
     await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)).toHaveCount(0, {
       timeout: 45_000,
     })
+    await expect(page.locator(`[data-session-id="${SESSION_ID}"]`)).toHaveCount(0)
+    await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
   })
 
   test("session routes reveal the shell immediately while server health is failing", async ({ page }) => {
@@ -783,7 +804,8 @@ test.describe("core boot, deep links, and home @core", () => {
     await expect(page.getByText("Retrying automatically")).toBeVisible()
     await expect(page.getByRole("button", { name: /retry/i })).toHaveCount(0)
 
-    await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByTestId("first-project-canvas")).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
     await expect(page.getByText(/Could not reach/)).toHaveCount(0)
   })
 })

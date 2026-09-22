@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "비교된 변경 사항",
   "navigator.sourceControl.compare.search.placeholder": "브랜치, 태그, 커밋 검색",
   "navigator.sourceControl.compare.noMatches": "일치하는 참조 없음",
+  "navigator.sourceControl.compare.workingTree": "작업 트리",
   "navigator.sourceControl.stage": "스테이징",
   "navigator.sourceControl.unstage": "스테이징 해제",
   "navigator.sourceControl.stageAll": "모두 스테이징",

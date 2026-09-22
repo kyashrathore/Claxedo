@@ -127,7 +127,7 @@ vi.mock("@/features/review/ui/review-vcs-load", () => ({
   }),
 }))
 
-import { SourceControlView } from "./source-control-view"
+import { SourceControlView, type SourceControlReviewMode } from "./source-control-view"
 
 const REVIEW_SCOPE = "session:ses-1"
 const reviewSelection = () => createPanePreferences(localStorage).get("reviewMode", REVIEW_SCOPE)
@@ -169,7 +169,7 @@ const commitsFixture = (): GitCommitSummary[] => [
 
 const clients: QueryClient[] = []
 
-function renderView(input: { onFileClick?: (path: string, mode: "staged" | "unstaged" | "to-from") => void; activePath?: string } = {}) {
+function renderView(input: { onFileClick?: (path: string, mode: SourceControlReviewMode) => void; activePath?: string } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
   return render(() => (
@@ -603,6 +603,27 @@ describe("SourceControlView graph", () => {
     expect(reviewSelection()).toEqual({ mode: "uncommitted" })
     expect(commitRow("1111111111111111111111111111111111111111").getAttribute("aria-selected")).toBe("false")
     expect(screen.queryByTestId("source-control-group-compare")).toBeNull()
+  })
+
+  test("a branch mode lists the files since the base, labelled by what it runs up to, and opens them in that mode", async () => {
+    h.compare["main..undefined"] = [{ file: "src/branch.ts", status: "added", additions: 3, deletions: 0 }]
+    setReviewSelection({ mode: "branch", fromRef: "main" })
+    const onFileClick = vi.fn()
+    renderView({ onFileClick })
+    await loaded()
+
+    await waitFor(() => expect(group("compare").getAttribute("data-count")).toBe("1"))
+    expect(within(group("compare")).getByText("main → feat/x")).toBeTruthy()
+    expect(h.compareRequests).toEqual([{ directory: "/repo/main", mode: "branch", fromRef: "main", content: "summary" }])
+    fireEvent.click(within(rows("compare")[0]).getByText("branch.ts"))
+    expect(onFileClick).toHaveBeenLastCalledWith("src/branch.ts", "branch")
+
+    setReviewSelection({ mode: "branch-worktree", fromRef: "main" })
+    await waitFor(() => expect(within(group("compare")).getByText("main → working tree")).toBeTruthy())
+    expect(h.compareRequests.at(-1)).toEqual({ directory: "/repo/main", mode: "branch-worktree", fromRef: "main", content: "summary" })
+    await waitFor(() => expect(rows("compare")).toHaveLength(1))
+    fireEvent.click(within(rows("compare")[0]).getByText("branch.ts"))
+    expect(onFileClick).toHaveBeenLastCalledWith("src/branch.ts", "branch-worktree")
   })
 
   test("a root commit compares against the empty tree", async () => {

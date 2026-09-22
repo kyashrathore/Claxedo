@@ -31,12 +31,12 @@ const capabilities: AgentRuntimeGoalCapabilities = {
   optionalFields: ["iteration"],
 }
 
-function renderDock(overrides?: Partial<Parameters<typeof SessionGoalDock>[0]>) {
+function renderDock(overrides?: Partial<Parameters<typeof SessionGoalDock>[0]>, snapshot = () => goal) {
   const noop = () => Promise.resolve()
   return render(() => (
     <DialogProvider>
       <SessionGoalDock
-        goal={goal}
+        goal={snapshot()}
         capabilities={capabilities}
         onPause={noop}
         onResume={noop}
@@ -47,9 +47,37 @@ function renderDock(overrides?: Partial<Parameters<typeof SessionGoalDock>[0]>) 
   ))
 }
 
+function toggle() {
+  return screen.getByRole("button", { name: /session\.goal\.title/ })
+}
+
+describe("SessionGoalDock peek", () => {
+  test("starts as one line with status and objective and hides details and actions", () => {
+    renderDock({}, () => ({ ...goal, lastReason: "Waiting on CI" }))
+    expect(toggle().getAttribute("aria-expanded")).toBe("false")
+    expect(toggle().textContent).toContain("session.goal.status.active")
+    expect(toggle().textContent).toContain("Ship when verification passes")
+    expect(screen.queryByText("Waiting on CI")).toBeNull()
+    expect(screen.queryByText("session.goal.metric.iteration:3")).toBeNull()
+    expect(screen.queryByText("session.goal.pause")).toBeNull()
+    expect(screen.queryByText("session.goal.delete")).toBeNull()
+  })
+
+  test("toggles open and closed", () => {
+    renderDock()
+    fireEvent.click(toggle())
+    expect(toggle().getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByText("session.goal.pause")).toBeTruthy()
+    fireEvent.click(toggle())
+    expect(toggle().getAttribute("aria-expanded")).toBe("false")
+    expect(screen.queryByText("session.goal.pause")).toBeNull()
+  })
+})
+
 describe("SessionGoalDock delete confirmation", () => {
   test("renders localized status and metrics instead of raw enums", () => {
     renderDock()
+    fireEvent.click(toggle())
     expect(screen.getByText("session.goal.status.active")).toBeTruthy()
     expect(screen.getByText("session.goal.metric.iteration:3")).toBeTruthy()
   })
@@ -64,6 +92,7 @@ describe("SessionGoalDock delete confirmation", () => {
     })
     renderDock({ onDelete })
 
+    fireEvent.click(toggle())
     fireEvent.click(screen.getByText("session.goal.delete"))
     await waitFor(() => expect(screen.getByText("session.goal.deleteTitle")).toBeTruthy())
 

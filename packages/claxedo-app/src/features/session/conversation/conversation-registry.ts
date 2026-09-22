@@ -6,6 +6,7 @@ import {
   mergeConversationSnapshot,
   agentConversationSnapshot,
   agentConversationProjection,
+  holdsFragmentParts,
   type ConversationChatHandle,
 } from "./agent-conversation"
 import type {
@@ -309,8 +310,11 @@ function sameConversationMessages(left: UIMessage[], right: UIMessage[]) {
   if (left.length !== right.length) return false
   return left.every((message, index) => {
     // Merge preserves references for unchanged messages; stringify is the
-    // fallback for genuinely rebuilt ones only.
+    // fallback for genuinely rebuilt ones only. The fragment mark lives outside
+    // the bytes, so a canonical read that lifts it from a byte-identical row
+    // (a turn stored with no parts) is a change stringify cannot see.
     if (message === right[index]) return true
+    if (holdsFragmentParts(message) !== holdsFragmentParts(right[index])) return false
     try {
       return JSON.stringify(message) === JSON.stringify(right[index])
     } catch {

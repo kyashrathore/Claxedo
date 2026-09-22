@@ -174,13 +174,13 @@ export const SettingsGeneral: Component = () => {
   return (
     <div class="flex flex-col pb-10">
       <div class="flex flex-col gap-1 pt-6 pb-8">
-        <h2 class="text-18-medium text-text-strong">{language.t("settings.tab.general")}</h2>
+        <h1 class="text-18-medium text-text-strong">{language.t("settings.tab.general")}</h1>
       </div>
 
       <div class="flex flex-col gap-8 w-full">
         {/* Language Section */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.row.language.title")}</h3>
+          <h2 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.row.language.title")}</h2>
 
           <SettingsList>
             <SettingsRow
@@ -289,7 +289,7 @@ export const SettingsGeneral: Component = () => {
         </div>
 
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h3>
+          <h2 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.appearance")}</h2>
 
           <SettingsList>
             <SettingsRow
@@ -465,7 +465,7 @@ export const SettingsGeneral: Component = () => {
 
         {/* System notifications Section */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.notifications")}</h3>
+          <h2 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.notifications")}</h2>
 
           <SettingsList>
             <SettingsRow
@@ -533,7 +533,7 @@ export const SettingsGeneral: Component = () => {
 
         {/* Sound effects Section */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.sounds")}</h3>
+          <h2 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.sounds")}</h2>
 
           <SettingsList>
             <SettingsRow
@@ -621,7 +621,7 @@ export const SettingsGeneral: Component = () => {
 
         {/* Updates Section */}
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h3>
+          <h2 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h2>
 
           <SettingsList>
             <SettingsRow

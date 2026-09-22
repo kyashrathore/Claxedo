@@ -340,7 +340,7 @@ describe("Claxedo session loaded-empty rendering", () => {
       hasScrollGesture: false,
     })).toEqual({
       prepareOverscan: true,
-      clearPrependAnchor: true,
+      settlePrependAnchor: true,
       yieldToUserScroll: false,
     })
     expect(timelineInteractionPlan({
@@ -348,7 +348,7 @@ describe("Claxedo session loaded-empty rendering", () => {
       hasScrollGesture: false,
     })).toEqual({
       prepareOverscan: true,
-      clearPrependAnchor: false,
+      settlePrependAnchor: false,
       yieldToUserScroll: false,
     })
     expect(timelineInteractionPlan({
@@ -356,7 +356,7 @@ describe("Claxedo session loaded-empty rendering", () => {
       hasScrollGesture: true,
     })).toEqual({
       prepareOverscan: true,
-      clearPrependAnchor: true,
+      settlePrependAnchor: true,
       yieldToUserScroll: true,
     })
     expect(timelineInteractionPlan({
@@ -364,7 +364,7 @@ describe("Claxedo session loaded-empty rendering", () => {
       hasScrollGesture: true,
     })).toEqual({
       prepareOverscan: true,
-      clearPrependAnchor: false,
+      settlePrependAnchor: false,
       yieldToUserScroll: true,
     })
   })

@@ -142,7 +142,7 @@ export function timelineInteractionPlan(input: {
 }) {
   return {
     prepareOverscan: true,
-    clearPrependAnchor: !input.prependLoading,
+    settlePrependAnchor: !input.prependLoading,
     yieldToUserScroll: input.hasScrollGesture,
   }
 }

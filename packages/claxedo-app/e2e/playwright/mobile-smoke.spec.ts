@@ -78,12 +78,22 @@ function timelineScroller(page: Page) {
 }
 
 /** Mocks the terminal PTY create route (`/api/wr/pty`) so a pane can mount and
- * activate; websocket I/O is not modeled. */
+ * activate; websocket I/O is not modeled. `GET /pty/agents` reports the agent
+ * binaries the machine can start (`workspace-runtime/src/routes/pty.ts`); the
+ * creator offers a tile only for an agent named there. */
 function installPtyMock(page: Page) {
   let counter = 0
   return page.route("**/api/wr/pty**", async (route) => {
     const request = route.request()
     const url = new URL(request.url())
+    if (request.method() === "GET" && url.pathname.endsWith("/api/wr/pty/agents")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ installed: ["claude"] }),
+      })
+      return
+    }
     if (request.method() === "POST" && url.pathname.endsWith('/api/wr/pty')) {
       counter += 1
       const body = request.postDataJSON?.() as { title?: string } | undefined

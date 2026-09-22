@@ -154,7 +154,7 @@ export function PresetEditor(props: PresetEditorProps) {
         <div class="tsk-divider" />
 
         <section class="tsk-stack" aria-label="Configurations">
-          <h3 class="tsk-section-title">Primary configuration</h3>
+          <h2 class="tsk-section-title">Primary configuration</h2>
           <SlotEditor
             editorKey={props.editorKey}
             slot="primary"
@@ -165,7 +165,7 @@ export function PresetEditor(props: PresetEditorProps) {
             onChange={(value) => setConfiguration("primary", value)}
           />
 
-          <h3 class="tsk-section-title">Additional configurations</h3>
+          <h2 class="tsk-section-title">Additional configurations</h2>
           <p class="tsk-hint">
             Labels describe intended use. They are settings you pick when starting a session, not stages that run on
             their own.
@@ -188,7 +188,7 @@ export function PresetEditor(props: PresetEditorProps) {
             {(slot) => (
               <Show when={props.draft.configurations[slot] !== null}>
                 <div class="tsk-stack">
-                  <h4 class="tsk-label">{SLOT_LABELS[slot]}</h4>
+                  <h3 class="tsk-label">{SLOT_LABELS[slot]}</h3>
                   <SlotEditor
                     editorKey={props.editorKey}
                     slot={slot}
@@ -222,7 +222,7 @@ export function PresetEditor(props: PresetEditorProps) {
         </div>
 
         <section class="tsk-stack" aria-label="Capabilities">
-          <h3 class="tsk-section-title">Capabilities</h3>
+          <h2 class="tsk-section-title">Capabilities</h2>
           <CapabilityNotice placement={props.draft.placement} testId="preset-editor-capability-guarantee" />
           <Show when={isCloud()}>
             <CapabilityPicker draft={props.draft} catalog={props.catalog} onDraftChange={props.onDraftChange} />

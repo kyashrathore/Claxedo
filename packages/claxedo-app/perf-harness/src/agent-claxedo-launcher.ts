@@ -335,7 +335,6 @@ export async function launchPackagedClaxedo(input: {
       CLAXEDO_DATA_DIR: input.dataDirectory,
       CLAXEDO_SERVER_PORT: String(serverPort),
       CLAXEDO_DEVTOOLS: "0",
-      GOMAXPROCS: process.env.GOMAXPROCS ?? "2",
       ...input.extraEnv,
     },
     stdout: "pipe",
@@ -429,7 +428,7 @@ export async function launchPackagedClaxedo(input: {
       const deadline = performance.now() + timeoutMs;
       while (performance.now() < deadline) {
         const visible = readFlag(await connectedPage.evaluate((ids) => {
-          return ids.some((sessionId) => {
+          const rowVisible = () => ids.some((sessionId) => {
             const row = document.querySelector<HTMLElement>(
               `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(sessionId)}"]`,
             );
@@ -440,6 +439,19 @@ export async function launchPackagedClaxedo(input: {
               bounds.height > 0 &&
               getComputedStyle(row).visibility !== "hidden"
             );
+          });
+          return new Promise<boolean>((resolve) => {
+            if (rowVisible()) return resolve(true);
+            const settle = (value: boolean) => {
+              observer.disconnect();
+              clearTimeout(timer);
+              resolve(value);
+            };
+            const observer = new MutationObserver(() => {
+              if (rowVisible()) settle(true);
+            });
+            observer.observe(document, { subtree: true, childList: true, attributes: true });
+            const timer = setTimeout(() => settle(rowVisible()), 200);
           });
         }, sessionIds));
         if (visible) break;
@@ -457,7 +469,6 @@ export async function launchPackagedClaxedo(input: {
           .nth(0)
           .click({ timeout: 400 })
           .catch(() => undefined);
-        await Bun.sleep(200);
       }
       const visible = readFlag(await connectedPage.evaluate((ids) => {
         return ids.some((sessionId) => {
@@ -502,8 +513,6 @@ export async function launchPackagedClaxedo(input: {
     // display before any measured interaction. This keeps the content viewport
     // dynamic for the machine instead of silently benchmarking two geometries.
     const requestedViewport = await stableAgentAppBenchmarkViewport(connectedPage);
-    // [PERF-DIAG TEMPORARY] renderer clock at the exact semantic-readiness row paint.
-    const rowVisibleRendererNow = readNumber(await connectedPage.evaluate(() => performance.now()));
     // Check after the first production session row so electron-window-state has
     // completed its startup bounds work before any measured action begins.
     const exactViewport = readSize(await connectedPage.evaluate(() => ({ width: innerWidth, height: innerHeight })));
@@ -516,9 +525,15 @@ export async function launchPackagedClaxedo(input: {
     const readinessTarget = input.readinessTargets[0];
     if (!readinessTarget) throw new Error("Packaged Claxedo readiness requires a canonical session target");
     const semanticReadiness = await measureSessionActivation(connectedPage, readinessTarget);
+    const endTimestamp = performance.now();
     if (semanticReadiness.state !== "exact") {
       throw new Error(`Packaged Claxedo strict semantic readiness failed: ${semanticReadiness.reason}`);
     }
+    if (ownershipTimer) clearInterval(ownershipTimer);
+    ownershipTimer = undefined;
+    await refreshKnown();
+    // Readiness already required trusted input on the activated row; this
+    // keyboard probe only rejects a window that stopped accepting input.
     await stablePaint(connectedPage);
     ready = true;
     const token = `cold-ready-${crypto.randomUUID()}`;
@@ -537,7 +552,6 @@ export async function launchPackagedClaxedo(input: {
       throw new Error(
         "Claxedo did not accept the cold-ready trusted input probe",
       );
-    const endTimestamp = performance.now();
     // [PERF-DIAG TEMPORARY] deterministic cold-ready critical-path dump.
     try {
       const serial = coldReadyDiagnosticsSerial++;
@@ -548,10 +562,6 @@ export async function launchPackagedClaxedo(input: {
         phase: "cold-ready",
         coldReadyMs: endTimestamp - startTimestamp,
       });
-      await writeJson(
-        path.join(runDirectory, `cold-ready-diagnostics-${String(serial).padStart(3, "0")}-row-visible.json`),
-        { serial, rowVisibleRendererNow },
-      );
     } catch {}
     const initialTable = await readProcessTable();
     const rootSnapshot = initialTable.find((item) => item.pid === application.pid);

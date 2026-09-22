@@ -175,10 +175,11 @@ export async function diffBaseTargets(runtime: DiffRuntime, directory: string) {
     candidates.unshift(defaultRef)
   }
 
-  // Fallback
-  if (!defaultRef) defaultRef = candidates[0] ?? "HEAD"
+  defaultRef ??= candidates[0]
 
-  return { defaultRef, candidates: candidates.length > 0 ? candidates : ["HEAD"] }
+  // HEAD measured against itself is always empty, so a repository with no
+  // base branch answers with no default rather than offering HEAD as one.
+  return { ...(defaultRef ? { defaultRef } : {}), candidates: candidates.length > 0 ? candidates : ["HEAD"] }
 }
 
 async function numstatFile(
@@ -237,40 +238,50 @@ function diffStatus(status: string): FileDiff["status"] {
   return "modified"
 }
 
-async function trackedDiffSummary(
-  runtime: DiffRuntime,
-  directory: string,
-  mode: string,
-  fromRef: string | undefined,
-  toRef: string | undefined,
-) {
-  const staged = mode === "staged"
+/**
+ * What one request diffs, with any base already resolved to a commit:
+ * `worktree` is that commit against the files on disk, new files included.
+ */
+export type DiffTarget =
+  | { kind: "staged" }
+  | { kind: "unstaged" }
+  | { kind: "worktree"; base: string }
+  | { kind: "range"; from: string; to: string }
+
+function targetRevisions(target: DiffTarget): string[] {
+  if (target.kind === "staged") return ["--cached"]
+  if (target.kind === "unstaged") return []
+  if (target.kind === "worktree") return [target.base]
+  return [target.from, target.to]
+}
+
+function numstatSides(target: DiffTarget): [from: string | undefined, to: string | undefined, staged: boolean] {
+  if (target.kind === "staged") return [undefined, undefined, true]
+  if (target.kind === "unstaged") return [undefined, undefined, false]
+  if (target.kind === "worktree") return [target.base, undefined, false]
+  return [target.from, target.to, false]
+}
+
+function targetNumstat(runtime: DiffRuntime, directory: string, target: DiffTarget) {
+  return numstatFiles(runtime, directory, ...numstatSides(target))
+}
+
+function targetFileNumstat(runtime: DiffRuntime, directory: string, target: DiffTarget, file: string) {
+  const [from, to, staged] = numstatSides(target)
+  return numstatFile(runtime, directory, from, to, file, staged)
+}
+
+function includesUntracked(target: DiffTarget) {
+  return target.kind === "unstaged" || target.kind === "worktree"
+}
+
+async function trackedDiffSummary(runtime: DiffRuntime, directory: string, target: DiffTarget) {
   const [nameStatus, stats] = await Promise.all([
-    staged
-      ? optionalGit(runtime, ["diff", "--cached", "--name-status", "-z"], directory)
-      : mode === "unstaged"
-        ? optionalGit(runtime, ["diff", "--name-status", "-z"], directory)
-        : isRangeMode(mode) && fromRef && toRef
-          ? optionalGit(runtime, ["diff", "--name-status", "-z", fromRef, toRef, "--"], directory)
-          : optionalGit(runtime, ["diff", "--name-status", "-z", "HEAD", "--"], directory),
-    staged
-      ? numstatFiles(runtime, directory, undefined, undefined, true)
-      : mode === "unstaged"
-        ? numstatFiles(runtime, directory, undefined, undefined)
-        : isRangeMode(mode) && fromRef && toRef
-          ? numstatFiles(runtime, directory, fromRef, toRef)
-          : numstatFiles(runtime, directory, "HEAD", undefined),
+    optionalGit(runtime, ["diff", "--name-status", "-z", ...targetRevisions(target), "--"], directory),
+    targetNumstat(runtime, directory, target),
   ])
   return Promise.all(parseNameStatus(nameStatus).map(async (item) => {
-    const changes = await fileStats(
-      runtime,
-      stats,
-      directory,
-      isRangeMode(mode) ? fromRef : mode === "uncommitted" ? "HEAD" : undefined,
-      isRangeMode(mode) ? toRef : undefined,
-      item.targetFile,
-      staged,
-    )
+    const changes = stats.get(item.targetFile) ?? await targetFileNumstat(runtime, directory, target, item.targetFile)
     return {
       file: item.targetFile,
       ...renameSource(item),
@@ -291,16 +302,17 @@ async function untrackedSummaries(runtime: DiffRuntime, directory: string) {
   }))
 }
 
-export async function diffSummary(
-  runtime: DiffRuntime,
-  directory: string,
-  mode: string,
-  fromRef: string | undefined,
-  toRef: string | undefined,
-): Promise<FileDiff[]> {
-  const diffs = await trackedDiffSummary(runtime, directory, mode, fromRef, toRef)
-  if (mode === "unstaged") diffs.push(...await untrackedSummaries(runtime, directory))
+export async function diffSummary(runtime: DiffRuntime, directory: string, target: DiffTarget): Promise<FileDiff[]> {
+  const diffs = await trackedDiffSummary(runtime, directory, target)
+  if (includesUntracked(target)) diffs.push(...await untrackedSummaries(runtime, directory))
   return diffs
+}
+
+export async function fullDiff(runtime: DiffRuntime, directory: string, target: DiffTarget): Promise<FileDiff[]> {
+  if (target.kind === "staged") return stagedDiff(runtime, directory)
+  if (target.kind === "unstaged") return unstagedDiff(runtime, directory)
+  if (target.kind === "worktree") return worktreeDiff(runtime, directory, target.base)
+  return toFromDiff(runtime, directory, target.from, target.to)
 }
 
 function parseNameStatus(output: string) {
@@ -378,25 +390,16 @@ export async function stagedDiff(runtime: DiffRuntime, directory: string): Promi
   })
 }
 
-export async function uncommittedDiff(runtime: DiffRuntime, directory: string): Promise<FileDiff[]> {
-  let trackedStatus: string
-  try {
-    trackedStatus = await runGit(runtime, ["diff", "--name-status", "-z", "HEAD", "--"], directory)
-  } catch (err) {
-    if (err instanceof GitTimeoutError) throw err
-    return []
-  }
-
-  const diffs: FileDiff[] = []
-  const stats = await numstatFiles(runtime, directory, "HEAD", undefined)
-  const trackedFiles = parseNameStatus(trackedStatus)
-
-  diffs.push(...await mapLimit(trackedFiles, DIFF_CONTENT_CONCURRENCY, async (item) => {
-    const before = item.statusChar === "A" ? "" : await getFileContent(runtime, directory, "HEAD", item.file)
+/** `base` against the files on disk, new files included. */
+export async function worktreeDiff(runtime: DiffRuntime, directory: string, base: string): Promise<FileDiff[]> {
+  const trackedStatus = await optionalGit(runtime, ["diff", "--name-status", "-z", base, "--"], directory)
+  const stats = await numstatFiles(runtime, directory, base, undefined)
+  const diffs = await mapLimit(parseNameStatus(trackedStatus), DIFF_CONTENT_CONCURRENCY, async (item) => {
+    const before = item.statusChar === "A" ? "" : await getFileContent(runtime, directory, base, item.file)
     const after = item.statusChar === "D"
       ? ""
       : await readWorkingTreeText({ directory, file: item.targetFile }) ?? ""
-    const changes = await fileStats(runtime, stats, directory, "HEAD", undefined, item.targetFile)
+    const changes = await fileStats(runtime, stats, directory, base, undefined, item.targetFile)
     return {
       file: item.targetFile,
       ...renameSource(item),
@@ -406,8 +409,8 @@ export async function uncommittedDiff(runtime: DiffRuntime, directory: string): 
       deletions: changes.deletions,
       status: diffStatus(item.statusChar),
     }
-  }))
-
+  })
+  diffs.push(...await untrackedDiffs(runtime, directory))
   return diffs
 }
 
@@ -481,22 +484,8 @@ export async function toFromDiff(runtime: DiffRuntime, directory: string, from: 
  * The one place a caller's own path reaches git here, so it is the one place
  * that has to be read as a filename rather than a pathspec.
  */
-function vcsPatchArgs(input: {
-  mode: string
-  fromRef?: string
-  toRef?: string
-  file: string
-}) {
-  if (input.mode === "staged") {
-    return [LITERAL_PATHSPECS, "diff", "--cached", "--patch", "--no-ext-diff", "--unified=3", "--", input.file]
-  }
-  if (input.mode === "unstaged") {
-    return [LITERAL_PATHSPECS, "diff", "--patch", "--no-ext-diff", "--unified=3", "--", input.file]
-  }
-  if (isRangeMode(input.mode) && input.fromRef && input.toRef) {
-    return [LITERAL_PATHSPECS, "diff", "--patch", "--no-ext-diff", "--unified=3", input.fromRef, input.toRef, "--", input.file]
-  }
-  return [LITERAL_PATHSPECS, "diff", "--patch", "--no-ext-diff", "--unified=3", "HEAD", "--", input.file]
+function vcsPatchArgs(target: DiffTarget, file: string) {
+  return [LITERAL_PATHSPECS, "diff", "--patch", "--no-ext-diff", "--unified=3", ...targetRevisions(target), "--", file]
 }
 
 async function isUntracked(runtime: DiffRuntime, directory: string, file: string) {
@@ -511,15 +500,13 @@ async function isUntracked(runtime: DiffRuntime, directory: string, file: string
 export async function filePatchDiff(input: {
   runtime: DiffRuntime
   directory: string
-  mode: string
-  fromRef?: string
-  toRef?: string
+  target: DiffTarget
   file: string
 }): Promise<Partial<FileDiff> & { file: string }> {
-  const patch = await optionalGit(input.runtime, vcsPatchArgs(input), input.directory)
+  const patch = await optionalGit(input.runtime, vcsPatchArgs(input.target, input.file), input.directory)
   if (patch) return { file: input.file, patch }
 
-  if (input.mode === "unstaged" && await isUntracked(input.runtime, input.directory, input.file)) {
+  if (includesUntracked(input.target) && await isUntracked(input.runtime, input.directory, input.file)) {
     const after = await readWorkingTreeText({ directory: input.directory, file: input.file }) ?? ""
     return { file: input.file, before: "", after }
   }
@@ -527,11 +514,37 @@ export async function filePatchDiff(input: {
   return { file: input.file, patch: "" }
 }
 
-export function isRangeMode(mode: string) {
-  return mode === "to-from" || mode === "range"
+export type DiffTargetRefusal = "refs_required" | "base_required" | "invalid_ref" | "no_fork_point"
+
+/**
+ * The target a requested mode names. `branch` and `branch-worktree` measure
+ * from the commit where HEAD left `fromRef`, so commits that landed on the
+ * base afterwards are not shown as if HEAD had reverted them.
+ */
+export async function resolveDiffTarget(
+  runtime: DiffRuntime,
+  directory: string,
+  input: { mode: string; fromRef?: string; toRef?: string },
+): Promise<DiffTarget | DiffTargetRefusal> {
+  const { mode, fromRef, toRef } = input
+  if (mode === "staged") return { kind: "staged" }
+  if (mode === "unstaged") return { kind: "unstaged" }
+  if (mode === "to-from" || mode === "range") {
+    if (!fromRef || !toRef) return "refs_required"
+    if (!await refsExist(runtime, directory, fromRef, toRef)) return "invalid_ref"
+    return { kind: "range", from: fromRef, to: toRef }
+  }
+  if (mode === "branch" || mode === "branch-worktree") {
+    if (!fromRef) return "base_required"
+    if (!await refsExist(runtime, directory, fromRef, "HEAD")) return "invalid_ref"
+    const forkPoint = (await optionalGit(runtime, ["merge-base", "--end-of-options", fromRef, "HEAD"], directory)).trim()
+    if (!forkPoint) return "no_fork_point"
+    return mode === "branch" ? { kind: "range", from: forkPoint, to: "HEAD" } : { kind: "worktree", base: forkPoint }
+  }
+  return { kind: "worktree", base: "HEAD" }
 }
 
-export function validRefSyntax(ref: string) {
+function validRefSyntax(ref: string) {
   if (ref.length === 0 || ref.length > 256) return false
   if (ref.startsWith("-") || ref.includes("\0")) return false
   if (/[\s\x00-\x1f\x7f]/.test(ref)) return false
@@ -541,7 +554,8 @@ export function validRefSyntax(ref: string) {
   return true
 }
 
-export async function refsExist(runtime: DiffRuntime, directory: string, fromRef: string, toRef: string) {
+async function refsExist(runtime: DiffRuntime, directory: string, fromRef: string, toRef: string) {
+  if (!validRefSyntax(fromRef) || !validRefSyntax(toRef)) return false
   const [fromExists, toExists] = await Promise.all([
     existsRef(runtime, fromRef, directory),
     existsRef(runtime, toRef, directory),

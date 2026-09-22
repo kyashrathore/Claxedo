@@ -142,7 +142,7 @@ test.describe("@core permission picker — the harness's own modes", () => {
       const url = new URL(response.url())
       return url.pathname.endsWith("/permission/modes") && url.searchParams.get("nativeHarness") === "claude"
     })
-    await selectSignedHarness(page, "Claude", "claude")
+    await selectSignedHarness(page, "Claude Code", "claude")
     expect((await modesResponse).ok()).toBe(true)
     await openPicker(page)
     await expect.poll(() => rowIds(page)).toEqual(["default", "acceptEdits", "auto", "plan", "dontAsk", "bypassPermissions"])

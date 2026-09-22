@@ -160,6 +160,25 @@ describe("cancelling a turn across an asynchronous boundary", () => {
     await runtime.dispose()
   })
 
+  test("a harness that ends the turn's stream before answering the cancellation reports the turn saved", async () => {
+    const { runtime, store, turns, cancels } = fixture()
+    const sessionId = await openSession(runtime, "ses_stream_first")
+    const started = await runtime.turns.start({ sessionId, messageId: "msg_a", text: "first" })
+
+    const cancelling = runtime.recovery.submit(cancelTurnRequest(started.target!), RECOVERY_TEST_CALLER)
+    await until(() => cancels.length === 1, "the harness to be asked to cancel")
+    turns[0].finish()
+    await until(() => store.getSession(sessionId)?.status !== "busy", "the producer to finalize the turn")
+    cancels[0].settle({ execution: "terminal", cleanup: "unknown" })
+
+    const operation = submittedOperation(await cancelling)
+    expect(operation.facts.execution.value).toBe("terminal")
+    expect(operation.facts.persistence.value).toBe("committed")
+    expect(operation.nextActions.map((next) => next.action)).not.toContain("reconcile_session")
+    expect(runtime.recovery.inspect(sessionId).facts.persistence.value).toBe("committed")
+    await runtime.dispose()
+  })
+
   test("a cancellation naming the turn a lease loss was observed for is refused once that turn ended", async () => {
     const { runtime, store, turns, cancels } = fixture()
     const sessionId = await openSession(runtime, "ses_stale")

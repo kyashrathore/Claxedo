@@ -941,6 +941,18 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **C**: drop `text-delta` replays for sessions whose messages are still loading instead of applying then merging.
 - **Decision**: Option A applied 2026-09-15: `preserveMessageFields` in `conversation-snapshot.ts` carries `time.completed` through the merge, so the settled-message guard keeps rejecting replayed `text-delta` frames on the fresh `000000_<msg>-text` part id. Enabled and passing in both auth modes.
 
+### 81. real-harness-local — a scripted Pi turn in a local workspace reaches the real OpenAI endpoint
+
+- **Status**: failing-everywhere (tier-real gate, every run since at least 2026-09-10); `test.fixme` 2026-09-23 pending this decision.
+- **Tests**: `local new-worktree session receives its first reply`; the sibling `pi-workspace harness completes exact turns` fixme shares the routing and its recorded reason is unverified until this is decided.
+- **Expected**: the Pi turn is answered by the scripted model server and the reply renders.
+- **Why**: the scripted double cannot reach Pi. `configureScriptedPi` (`e2e/helpers/real-local-server.ts`) stores an `openai` key and hand-writes a `models.json` into `PI_CODING_AGENT_DIR`, but `piAgentDir()` (`agent-sdk-runtime/src/harnesses/pi/agent-dir.ts`) prefers the workspace store root, which every embedded workspace has, and the harness rewrites that profile's `models.json` from the broker projection on every apply. The broker sends an `openai` key to the hard-coded `https://api.openai.com` (`server-core/src/credentials/destinations.ts`), which answers 401 for `test-key`. The one product path that binds Pi to an owner-chosen origin, `PUT /api/claxedo/host-provider-config`, is mounted by `createLocalApp` only; tier-real runs the self-hosted-node app, which mounts no such route. CI additionally never installed the pinned Pi binary, so the picker offered no Pi models (fixed separately).
+- **Options**:
+  - **A**: mount `HostProviderConfigRoutes` and compose `hostProviderConfigProjectAuth` into the self-hosted-node app, then bind the scripted server through it. Widens that binary's loopback control surface to owner-chosen base URLs; a security call. M.
+  - **B**: run the Pi tier-real scenarios against the desktop daemon composition (`startLocalServer`), which already mounts the push route. Changes which product the tier proves for Pi. M.
+  - **C**: add a first-class custom OpenAI-compatible provider path for Pi (a real product gap: the harness replaces any user `models.json`). L.
+- **Decision**: Option C, chosen by the owner 2026-09-23, to land once CI is green: Pi reads the declared custom providers `custom-provider.ts` already owns and validates, the broker binds a declared provider to its declared base URL, and the scripted double declares one on loopback.
+
 ## 3. Live-suite skips (not in core CI)
 
 These four `*.spec.ts` suites are gated behind `CLAXEDO_E2E_LIVE=1` (Tier L: real claxedo-server, real relay/tunnel, real MCP subprocess, real harness binaries) and do **not** run in core CI. Within them, the following bodies are `test.fixme` (real app bug/gap) or `test.skip` (missing prereq). Listed for triage; not blocking core CI.

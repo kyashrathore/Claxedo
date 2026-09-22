@@ -916,12 +916,15 @@ test.describe("core sidebar tree @core", () => {
 
     // The `docked`-state half of behavior 13, isolated from the width half the
     // sibling test below owns (which pins the full 260 -> 0 -> 260 transition).
-    // The toggle button is rendered only while docked (`Show when={docked()}`
-    // in rail-sidebar.tsx), so it disappearing on click IS the state flip.
+    // The toggle stays mounted in every rail state and reports `docked` through
+    // `aria-pressed` (rail-sidebar.tsx), so the attribute flipping IS the state flip.
     const toggle = page.locator('[data-testid="sidebar-toggle"]')
     await expect(toggle).toBeVisible()
+    await expect(toggle).toHaveAttribute("aria-pressed", "true")
+    await expect(toggle).toHaveAttribute("aria-label", "Hide Sidebar")
     await toggle.click()
-    await expect(toggle).toHaveCount(0)
+    await expect(toggle).toHaveAttribute("aria-pressed", "false")
+    await expect(toggle).toHaveAttribute("aria-label", "Pin Sidebar")
   })
 
   test("sidebar-toggle collapses/expands the rail's width", async ({ page }) => {
@@ -937,11 +940,12 @@ test.describe("core sidebar tree @core", () => {
 
     await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
 
-    // Collapsing the docked rail flips `docked` (the toggle hides) AND drives
-    // the rail's width to 0 — `railToggleCommand` dispatches both on one
-    // `region.update`, and `sidebarWidth()` must reflect the dispatched size.
+    // Collapsing the docked rail flips `docked` (the toggle reports it through
+    // `aria-pressed`) AND drives the rail's width to 0 — `railToggleCommand`
+    // dispatches both on one `region.update`, and `sidebarWidth()` must reflect
+    // the dispatched size.
     await page.locator('[data-testid="sidebar-toggle"]').click()
-    await expect(page.locator('[data-testid="sidebar-toggle"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="sidebar-toggle"]')).toHaveAttribute("aria-pressed", "false")
     // Collapsing holds: the Show-Sidebar affordance rendering under the still
     // cursor must NOT re-peek the rail (the peek is muted until the pointer
     // leaves the corner), so the width settles at 0 without moving the mouse.
@@ -950,6 +954,7 @@ test.describe("core sidebar tree @core", () => {
     await page.getByRole("button", { name: "Show Sidebar" }).click()
     await expect.poll(railWidth, { timeout: 10_000 }).toBe(260)
     await expect(page.locator('[data-testid="sidebar-toggle"]')).toBeVisible()
+    await expect(page.locator('[data-testid="sidebar-toggle"]')).toHaveAttribute("aria-pressed", "true")
   })
 
   test("hot-zone peek expands an unpinned collapsed sidebar; leaving the rail auto-collapses it", async ({ page }) => {

@@ -67,7 +67,6 @@ import { createModelSelectionPicker } from "../commands/model-selection"
 import { focusComposerWhenReady } from "../composer/ui/composer-focus"
 import { RecoveryCommandFailure, stopRunningTurn } from "../composer/ui/submit-abort"
 import { turnStopped } from "@claxedo/agent-runtime-contract"
-import { describeRecoveryOutcome } from "./recovery-outcome-copy"
 
 const DialogSelectFile = lazyDialog(() => import("@/features/session/ui/dialogs/select-file").then((module) => ({
   default: module.DialogSelectFile,
@@ -569,7 +568,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         if (supports("abort") && (currentStatus.type === "busy" || currentStatus.type === "retry")) {
           const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
           if (cancelled.cancelled && !turnStopped(cancelled.outcome)) {
-            throw new RecoveryCommandFailure(describeRecoveryOutcome(cancelled.outcome))
+            throw new RecoveryCommandFailure(cancelled.outcome)
           }
         }
         const revert = info()?.revert?.messageID

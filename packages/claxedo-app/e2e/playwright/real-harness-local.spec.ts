@@ -220,6 +220,8 @@ async function startGoalFromComposer(page: Page, input: Locator, entry: GoalEntr
   const dock = page.locator('[data-component="session-goal-dock"]')
   await expect(dock).toBeVisible({ timeout: 30_000 })
   await expect(dock).toContainText(objective)
+  await dock.locator('[data-slot="session-goal-toggle"]').click()
+  await expect(dock).toHaveAttribute("data-expanded", "true")
   return dock
 }
 
@@ -1208,6 +1210,7 @@ test.describe("real harness journeys @core @tier-real", () => {
   })
 
   test("local new-worktree session receives its first reply", async ({ page }) => {
+    test.fixme(true, "The scripted Pi double cannot reach Pi in a local workspace; e2e/e2e-decisions.md #81")
     scripted?.resetCounts()
     const dir = await makeWorkspace("new-local-worktree")
     await seedOneProject(page, dir)

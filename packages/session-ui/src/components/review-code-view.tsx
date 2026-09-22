@@ -349,8 +349,12 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
       // review list this replaces, whose rows sit 2px apart.
       layout: { paddingTop: 0, paddingBottom: 8, gap: 2 },
       renderCustomItem: (item) => acquireCustomHost(item.id),
+      // Keyed by the item id, never `fileDiff.name`: Pierre names a parsed
+      // patch from its `+++` header, so a bare `--- a/x` / `+++ b/x` diff is
+      // named `b/x` while `open`, `focusedFile` and `renderHeader` all speak
+      // the review file `x`.
       ...(props.renderHeader
-        ? { renderCustomHeader: (fileDiff) => acquireHeaderHost(fileDiff.name) }
+        ? { renderCustomHeader: (_source: unknown, context: { item: { id: string } }) => acquireHeaderHost(context.item.id) }
         : {}),
       ...(comments
         ? {

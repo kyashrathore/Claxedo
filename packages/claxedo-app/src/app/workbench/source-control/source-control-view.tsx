@@ -12,7 +12,7 @@ import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 import { workspaceDiffSummaryQueryOptions } from "@/platform/files/workspace-diff-summary-query"
 import { workspaceGitLogQueryOptions, workspaceGitStatusQueryOptions } from "@/platform/files/workspace-git-status-query"
 import { isWorkspaceGitError, type GitCommitSummary, type GitWorktreeStatus } from "@/platform/runtime/workspace-git-client"
-import { commitReviewSelection, createReviewSelection, shortRef, type ReviewMode } from "@/features/review/review-intent"
+import { commitReviewSelection, createReviewSelection, isBaseReviewMode, reviewDiffRefs, shortRef, type ReviewMode } from "@/features/review/review-intent"
 import { createReviewDiffClient } from "@/features/review/ui/review-vcs-load"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { SemanticIcon } from "@/ui/semantic-icon"
@@ -58,8 +58,11 @@ export function SourceControlView(props: {
   const review = createReviewSelection({ scope: () => ({ directory: params.directory(), sessionId: params.sessionId() }) })
   const compareTarget = createMemo(() => {
     const selection = review.selection()
-    if (selection.mode !== "to-from" || !selection.fromRef || !selection.toRef) return undefined
-    return { mode: selection.mode, fromRef: selection.fromRef, toRef: selection.toRef }
+    const mode = selection.mode
+    if (mode !== "to-from" && !isBaseReviewMode(mode)) return undefined
+    const { fromRef, toRef } = reviewDiffRefs(selection)
+    if (!fromRef || (mode === "to-from" && !toRef)) return undefined
+    return { mode, fromRef, toRef }
   })
 
   const statusQuery = useQuery(() => ({
@@ -167,10 +170,14 @@ export function SourceControlView(props: {
   const compareLabel = createMemo(() => {
     const target = compareTarget()
     if (!target) return ""
-    const head = target.toRef === "HEAD" ? branch() ?? "HEAD" : shortRef(target.toRef)
+    if (target.mode === "branch-worktree") return `${shortRef(target.fromRef)} → ${language.t("navigator.sourceControl.compare.workingTree")}`
+    const head = !target.toRef || target.toRef === "HEAD" ? branch() ?? "HEAD" : shortRef(target.toRef)
     return `${shortRef(target.fromRef)} → ${head}`
   })
-  const selectedCommitHash = () => compareTarget()?.toRef
+  const selectedCommitHash = () => {
+    const target = compareTarget()
+    return target?.mode === "to-from" ? target.toRef : undefined
+  }
   const selectCommit = (commit: GitCommitSummary) => {
     review.set(selectedCommitHash() === commit.hash ? { mode: "uncommitted" } : commitReviewSelection(commit))
   }
@@ -264,7 +271,7 @@ export function SourceControlView(props: {
                 collapsed={collapsed().compare}
                 onToggle={() => toggle("compare")}
                 activePath={activePath()}
-                onOpen={(entry) => open(entry, "to-from")}
+                onOpen={(entry) => open(entry, compareTarget()?.mode ?? "to-from")}
               />
             </Show>
             <ChangeGroup

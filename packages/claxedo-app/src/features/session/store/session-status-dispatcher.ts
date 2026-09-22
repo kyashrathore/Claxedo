@@ -70,7 +70,8 @@ export type SessionStatusTimeoutStageEvent = {
 }
 
 /**
- * A recovery command a user asked for and what its owner answered.
+ * The latest Stop this client sent for a session, so a second Stop for the
+ * same turn joins it instead of opening a conflicting request.
  *
  * This is deliberately not a session status: a Stop that is in flight, or one
  * that came back saying the harness may still be running, says nothing about
@@ -378,12 +379,10 @@ export function subscribeSessionRecoveryCommand(sessionID: string, listener: Voi
 }
 
 /**
- * Show a command the owner has accepted.
- *
- * A row still waiting for its answer is never replaced by an earlier attempt:
- * a plain Stop landing while a retry is in flight would otherwise put attempt 1
- * back on screen over attempt 2, and the retry's answer would then arrive
- * against a row that no longer says it was asked for.
+ * A command still waiting for its answer is never replaced by an earlier
+ * attempt: a plain Stop landing while a retry is in flight would otherwise put
+ * attempt 1 back over attempt 2, and the retry's answer would then be dropped
+ * as belonging to a superseded request.
  */
 export function startSessionRecoveryCommand(input: {
   sessionID: string
@@ -436,11 +435,8 @@ export function cancellationRequestId(input: {
 }
 
 /**
- * Record what an owner answered, for the request that is still displayed.
- *
- * A late answer to a superseded request is dropped: the user is looking at the
- * retry they asked for, and overwriting it with the attempt they already gave
- * up on would show a stale verdict as the current one.
+ * A late answer to a superseded request is dropped, so the command always
+ * describes the newest attempt.
  */
 export function settleSessionRecoveryCommand(input: {
   sessionID: string

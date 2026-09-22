@@ -803,6 +803,17 @@ body:has([data-slot="dialog-content"].claxedo-modal-backdrop) .ui-dialog-overlay
   }
 }
 
+/* The floating session stack's `z-index: 40` is trapped inside its pane slot's
+   `contain: strict` stacking context, so it can only reach above the panel
+   (`z-30`, a sibling of this column) when the column itself is a positioned
+   layer above the panel. The column paints and catches nothing of its own;
+   the stack re-enables pointer events for itself (session-presentation.css). */
+[data-floating-host] {
+  position: relative;
+  z-index: 40;
+  background: transparent;
+  pointer-events: none;
+}
 /* The workbench root paints its ground inline; the override has to outrank it. */
 [data-floating-host] [data-testid="workbench-root"] {
   background-color: transparent !important;

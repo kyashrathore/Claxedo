@@ -23,9 +23,9 @@ export type SettingsSectionEntry = {
   icon: ClaxedoIconName
   /**
    * What the panel says about itself, for the sections that say nothing.
-   * General and Models open with their own title and blurb; the rest were
-   * written as panels inside a tab and start straight at their first control,
-   * so the surface gives them the same opening the others have.
+   * General, Shortcuts and Terminals draw their own title, and a contributed
+   * section draws its own surface; every other section is given its opening
+   * here. Never both: the section's name is the page's one level-one heading.
    */
   heading?: { title: string; description?: string }
   render: () => JSX.Element

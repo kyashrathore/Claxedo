@@ -42,7 +42,7 @@ import type { AgentVcsFileDiff as VcsFileDiff } from "@claxedo/agent-runtime-con
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { createReviewDiffClient, normalizeVcsStatus, reviewVcsDiffSummaryQueryOptions } from "./review-vcs-load"
-import { createReviewSelection, type ReviewMode } from "@/features/review/review-intent"
+import { createReviewSelection, isBaseReviewMode, reviewDiffRefs, type ReviewMode } from "@/features/review/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
 import { reviewToggleAllAction } from "./review-toggle-all"
 import { reviewLoadedDiffIdentity } from "./review-loaded-diff-identity"
@@ -197,12 +197,8 @@ export function ReviewTab(props: ReviewTabProps) {
   /** The review target: which changed-file set this surface is showing. */
   const diffTarget = createMemo(() => {
     const mode = activeMode()
-    return {
-      directory: props.directory,
-      mode,
-      fromRef: mode === "to-from" ? activeFromRef().trim() || undefined : undefined,
-      toRef: mode === "to-from" ? activeToRef().trim() || undefined : undefined,
-    }
+    const refs = reviewDiffRefs({ mode, fromRef: activeFromRef(), toRef: activeToRef() })
+    return { directory: props.directory, mode, fromRef: refs.fromRef, toRef: refs.toRef }
   })
   const diffKey = createMemo(() => {
     const target = diffTarget()
@@ -388,6 +384,8 @@ export function ReviewTab(props: ReviewTabProps) {
     if (activeMode() === "unstaged") return `unstaged changes${branchLabel}`
     if (activeMode() === "uncommitted") return `uncommitted changes${branchLabel}`
     if (activeMode() === "to-from") return `${activeFromRef()} -> ${activeToRef()}`
+    if (activeMode() === "branch") return `changes since ${activeFromRef()}${branchLabel}`
+    if (activeMode() === "branch-worktree") return `everything since ${activeFromRef()}${branchLabel}, uncommitted included`
     return `uncommitted changes${branchLabel}`
   })
   const loading = () => diffQuery.isFetching
@@ -626,6 +624,7 @@ export function ReviewTab(props: ReviewTabProps) {
         fromRef={activeFromRef()}
         toRef={activeToRef()}
         currentBranch={vcsInfo()?.branch ?? undefined}
+        defaultBaseRef={defaultBranchRef()}
         vcsRefs={vcsRefs()}
         onApplyMode={setReviewMode}
         hasReview={hasReview()}
@@ -740,12 +739,9 @@ export function ReviewTab(props: ReviewTabProps) {
               <div class="text-14-regular text-text-weak max-w-72">
                 No changes for this review mode
               </div>
-              {/* When uncommitted is empty but the branch
-                  is ahead of its tracking ref, the user almost always
-                  wants to see the branch diff. Offer a one-click
-                  switch into to-from mode targeting the resolved
-                  default ref. */}
-              <Show when={defaultBranchRef() && activeMode() !== "to-from"}>
+              {/* An empty worktree review usually means the work is
+                  already committed; the branch view is where it shows. */}
+              <Show when={defaultBranchRef() && activeMode() !== "to-from" && !isBaseReviewMode(activeMode())}>
                 <button
                   type="button"
                   data-testid="review-pane-empty-show-branch-diff"
@@ -753,7 +749,7 @@ export function ReviewTab(props: ReviewTabProps) {
                   onClick={() => {
                     const ref = defaultBranchRef()
                     if (!ref) return
-                    setReviewMode("to-from", ref, "HEAD")
+                    setReviewMode("branch", ref, "")
                   }}
                 >
                   Show branch diff vs <span class="font-mono">{defaultBranchRef()}</span>

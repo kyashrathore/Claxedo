@@ -82,6 +82,11 @@ export function agentConversationProjection(messages: UIMessage[]) {
   }
 }
 
+/** Whether this message object still holds only a `latest-surface` fragment of its turn's parts. */
+export function holdsFragmentParts(message: UIMessage) {
+  return fragmentPartMessages.has(message)
+}
+
 export type ConversationSnapshotMergeOptions = {
   order?: "snapshot"
   /** The caller has already resolved the desired server-backed membership. */

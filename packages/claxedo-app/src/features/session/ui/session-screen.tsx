@@ -104,7 +104,6 @@ import { assistantMessageIdForUserMessage } from "@/features/session/data/sessio
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
 import { RecoveryCommandFailure, stopRunningTurn } from "../composer/ui/submit-abort"
 import { turnStopped } from "@claxedo/agent-runtime-contract"
-import { describeRecoveryOutcome } from "./recovery-outcome-copy"
 import { createQueuedMessagesController } from "@/features/session/queue/queued-messages-controller"
 import { previewPromptText } from "@/features/session/ui/prompt-preview"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
@@ -1335,7 +1334,7 @@ export default function SessionPage(props: {
                           historyShift={false}
                           userMessages={historyWindow.renderedUserMessages()}
                           hiddenTurnCount={historyWindow.hiddenTurnCount}
-                          hideTitle={floating}
+                          hideTitle={() => floating() || readOnly()}
                           onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
                           navMessages={visibleUserMessages()}
                           currentMessage={activeMessage()}
@@ -1460,7 +1459,7 @@ export default function SessionPage(props: {
               onAbort={async (sessionID) => {
                 const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
                 if (cancelled.cancelled && !turnStopped(cancelled.outcome)) {
-                  throw new RecoveryCommandFailure(describeRecoveryOutcome(cancelled.outcome))
+                  throw new RecoveryCommandFailure(cancelled.outcome)
                 }
               }}
               canPrompt={() => supports("permissions")}
@@ -1480,7 +1479,6 @@ export default function SessionPage(props: {
               }
               registerRetry={firstTurnOnboarding.registerRetry}
               sessionDirectory={dir()}
-              recoveryClient={() => sdk.client}
               sessionRef={activeSessionRef}
               signedControlPlane={signedControlPlane}
               workspaceId={signedWorkspaceId}

@@ -16,7 +16,6 @@ import type { usePrompt } from "@/features/session/providers/prompt"
 import { forkSessionWithReservation } from "@/platform/runtime/private-session-reservation"
 import { RecoveryCommandFailure, stopRunningTurn } from "../composer/ui/submit-abort"
 import { turnStopped } from "@claxedo/agent-runtime-contract"
-import { describeRecoveryOutcome, recoveryToastText } from "./recovery-outcome-copy"
 
 export function createSessionMessageActions(input: {
   sessionID: () => string | undefined
@@ -58,8 +57,10 @@ export function createSessionMessageActions(input: {
   }
 
   const fail = (err: unknown) => {
+    // The failed Stop is already reported; the reader only needs to know the
+    // revert did not happen.
     if (err instanceof RecoveryCommandFailure) {
-      showToast({ variant: "error", ...recoveryToastText(language.t, err.copy) })
+      showToast({ variant: "error", title: language.t("common.requestFailed") })
       return
     }
     showToast({
@@ -86,7 +87,7 @@ export function createSessionMessageActions(input: {
     if (!busy() || !supports("abort")) return
     const cancelled = await stopRunningTurn({ client: sdk.client, sessionID })
     if (!cancelled.cancelled) return
-    if (!turnStopped(cancelled.outcome)) throw new RecoveryCommandFailure(describeRecoveryOutcome(cancelled.outcome))
+    if (!turnStopped(cancelled.outcome)) throw new RecoveryCommandFailure(cancelled.outcome)
   }
 
   const fork = (forkInput: { sessionID: string; messageID: string }) => {

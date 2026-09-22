@@ -26,9 +26,21 @@ import {
   type WorkspacePanelCase,
 } from "./public-workspace-panel"
 
+/**
+ * The resource workload's return to control is a validity check, not a scored
+ * latency; the compared driver uses the same ceiling so a return that never
+ * becomes ready costs both runs the same bounded wait.
+ */
+const RESOURCE_CONTROL_READINESS_TIMEOUT_MS = 5_000
+
+const APP_START_SCENARIO_IDS: readonly string[] = ["app-start-v1", "app-start-fast-v1"]
+const SESSION_SWITCH_SCENARIO_IDS: readonly string[] = ["session-switch-v1", "session-switch-fast-v1"]
+
 export const PUBLIC_SCENARIO_IDS = [
   "app-start-v1",
+  "app-start-fast-v1",
   "session-switch-v1",
+  "session-switch-fast-v1",
   "session-navigation-v1",
   "workspace-panel-v1",
 ] as const
@@ -95,7 +107,7 @@ type DriverDependencies = {
   hello: Record<string, unknown>
   prepare(params: PrepareParams): Promise<Prepared>
   launch(stateHandle: string, initialSessionId: string): Promise<ActiveLaunch>
-  activate(target: Target): Promise<Clock>
+  activate(target: Target, readinessTimeoutMs?: number): Promise<Clock>
   executePanelAction?(
     benchmarkCase: WorkspacePanelCase,
     target: Target,
@@ -242,7 +254,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         const measured = await dependencies.executePanelAction(params.case, target, preset)
         return panelExecution(params.case.caseId, measured)
       }
-      if (params.scenarioId === "app-start-v1") {
+      if (APP_START_SCENARIO_IDS.includes(params.scenarioId)) {
         if (active) throw new Error("Claxedo app-start requires no running application")
         if (!("startMode" in params.case) || !params.stateHandle)
           throw new Error("Claxedo app-start request is incomplete")
@@ -252,7 +264,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         return execution(params.case.caseId, launch.clock, withTimingEvidence(launch.readiness, launch.clock.end))
       }
       if (
-        params.scenarioId !== "session-switch-v1" ||
+        !SESSION_SWITCH_SCENARIO_IDS.includes(params.scenarioId) ||
         "startMode" in params.case ||
         "action" in params.case ||
         "navigationType" in params.case
@@ -267,7 +279,10 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         if (benchmarkCase.sessionState === "warm") await dependencies.activate(destination)
         await dependencies.activate(control)
       }
-      const clock = await dependencies.activate(destination)
+      const clock = await dependencies.activate(
+        destination,
+        benchmarkCase.workload === "resource-control" ? RESOURCE_CONTROL_READINESS_TIMEOUT_MS : undefined,
+      )
       return execution(benchmarkCase.caseId, clock, readinessReceipt(clock.end))
     },
     shutdown: async () => {
@@ -352,6 +367,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
   let activeStateRoot: string | undefined
   let removeActiveState = false
   let attemptSequence = 0
+  let attemptsRoot: string | undefined
 
   const closeCurrent = async () => {
     const launch = current
@@ -408,9 +424,17 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
       guiFramework: "electron",
     },
     prepare: async (params) => {
-      const privateRoot = path.join(path.resolve(params.runDirectory), "driver-state", "claxedo")
+      const runRoot = path.join(path.resolve(params.runDirectory), "driver-state", "claxedo")
+      attemptsRoot = path.join(runRoot, "attempts")
+      const cacheRoot = params.workspaceFixtureManifest ? undefined : process.env.AGENT_APP_BENCHMARK_STATE_CACHE
+      const privateRoot = cacheRoot ?? runRoot
       const p0 = path.join(privateRoot, "P0")
       const p1 = path.join(privateRoot, "P1")
+      const cached = cacheRoot ? await readPreparedCache(cacheRoot, params.corpusDigestSha256) : undefined
+      if (cached) {
+        readinessTargets = cached.readinessTargets
+        return { materialization: cached, stateHandles: { P0: p0, P1: p1 } }
+      }
       await Promise.all([
         mkdir(path.join(p0, "profile"), { recursive: true, mode: 0o700 }),
         mkdir(path.join(p0, "data"), { recursive: true, mode: 0o700 }),
@@ -443,11 +467,13 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
         const evidence = await preserveLaunchFailureEvidence(p1, error)
         throw new Error(`Claxedo P1 initialization failed: ${error instanceof Error ? error.message : String(error)}; logs kept at ${evidence}`, { cause: error })
       }
+      if (cacheRoot) await writePreparedCache(cacheRoot, materialization)
       return { materialization, stateHandles: { P0: p0, P1: p1 } }
     },
     launch: async (stateHandle, initialSessionId) => {
       if (initialSessionId !== "control") throw new Error("Claxedo public launch must begin at the control session")
-      const attempt = path.join(path.dirname(stateHandle), "attempts", String(attemptSequence++))
+      if (!attemptsRoot) throw new Error("Claxedo launch requires preparation")
+      const attempt = path.join(attemptsRoot, String(attemptSequence++))
       await mkdir(path.dirname(attempt), { recursive: true, mode: 0o700 })
       await cp(stateHandle, attempt, { recursive: true, errorOnExist: true, mode: fsConstants.COPYFILE_FICLONE })
       try {
@@ -457,9 +483,9 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
         throw error
       }
     },
-    activate: async (target) => {
+    activate: async (target, readinessTimeoutMs) => {
       if (!current) throw new Error("Claxedo renderer is not running")
-      const result = await measureSessionActivation(current.page, target)
+      const result = await measureSessionActivation(current.page, target, { readinessTimeoutMs })
       if (result.state !== "exact") throw new Error(`Claxedo session activation failed: ${result.reason}`)
       return {
         kind: "single-monotonic-clock",
@@ -554,6 +580,119 @@ async function discoverPackagedExecutable() {
         : path.join(desktop, "dist", "linux-unpacked", productName.toLowerCase().replaceAll(" ", "-"))
   await access(candidate)
   return candidate
+}
+
+const PREPARED_CACHE_FILE = "prepared.json"
+
+/**
+ * Written only after P1 seeding succeeded, so its presence means both state
+ * handles beside it are complete. Launches copy the handles, which keeps P0
+ * never-launched for every scenario that reuses it.
+ */
+export async function writePreparedCache(cacheRoot: string, materialization: ClaxedoPublicMaterialization) {
+  await writeFile(
+    path.join(cacheRoot, PREPARED_CACHE_FILE),
+    JSON.stringify({ ...materialization, readinessTargets: [...materialization.readinessTargets] }),
+    { mode: 0o600 },
+  )
+}
+
+export async function readPreparedCache(
+  cacheRoot: string,
+  corpusDigestSha256: string,
+): Promise<ClaxedoPublicMaterialization | undefined> {
+  const text = await readFile(path.join(cacheRoot, PREPARED_CACHE_FILE), "utf8").catch(() => undefined)
+  if (text === undefined) return undefined
+  const record: unknown = JSON.parse(text)
+  const materialization = isRecord(record) ? parsePreparedCache(record) : undefined
+  if (!materialization || materialization.corpusDigestSha256 !== corpusDigestSha256)
+    throw new Error("Claxedo prepared-state cache is unreadable or belongs to a different corpus")
+  return materialization
+}
+
+function parsePreparedCache(record: Record<string, unknown>): ClaxedoPublicMaterialization | undefined {
+  const corpusDigestSha256 = textField(record, "corpusDigestSha256")
+  const eventSchemaDigestSha256 = textField(record, "eventSchemaDigestSha256")
+  const mappingDigestSha256 = textField(record, "mappingDigestSha256")
+  const workspaceFixtureDigestSha256 = textField(record, "workspaceFixtureDigestSha256")
+  const sessionMapping = stringRecord(record.sessionMapping)
+  const messageCount = numberField(record, "messageCount")
+  const transcriptBytes = numberField(record, "transcriptBytes")
+  const entries = Array.isArray(record.readinessTargets) ? record.readinessTargets : undefined
+  if (
+    !corpusDigestSha256 ||
+    !eventSchemaDigestSha256 ||
+    !mappingDigestSha256 ||
+    !sessionMapping ||
+    messageCount === undefined ||
+    transcriptBytes === undefined ||
+    !entries
+  )
+    return undefined
+  const readinessTargets = new Map<string, Target>()
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || typeof entry[0] !== "string" || !isRecord(entry[1])) return undefined
+    const target = parseCachedTarget(entry[1])
+    if (!target) return undefined
+    readinessTargets.set(entry[0], target)
+  }
+  return {
+    corpusDigestSha256,
+    eventSchemaDigestSha256,
+    mappingDigestSha256,
+    ...(workspaceFixtureDigestSha256 ? { workspaceFixtureDigestSha256 } : {}),
+    sessionMapping,
+    readinessTargets,
+    messageCount,
+    transcriptBytes,
+  }
+}
+
+function parseCachedTarget(
+  record: Record<string, unknown>,
+): Target | undefined {
+  const sessionId = textField(record, "sessionId")
+  const title = textField(record, "title")
+  const logicalSessionId = textField(record, "logicalSessionId")
+  const workspaceDirectory = textField(record, "workspaceDirectory")
+  const expectedMessageIds = stringArray(record.expectedMessageIds)
+  const expectedPartIds = stringArray(record.expectedPartIds)
+  const expectedContentSha256 = stringRecord(record.expectedContentSha256)
+  const expectedTextPartSha256 = stringRecord(record.expectedTextPartSha256)
+  if (
+    !sessionId ||
+    title === undefined ||
+    !logicalSessionId ||
+    !workspaceDirectory ||
+    !expectedMessageIds ||
+    !expectedPartIds ||
+    !expectedContentSha256 ||
+    !expectedTextPartSha256
+  )
+    return undefined
+  return {
+    sessionId,
+    title,
+    logicalSessionId,
+    workspaceDirectory,
+    expectedMessageIds,
+    expectedPartIds,
+    expectedContentSha256,
+    expectedTextPartSha256,
+  }
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const strings = value.filter((item): item is string => typeof item === "string")
+  return strings.length === value.length ? strings : undefined
+}
+
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined
+  const entries = Object.entries(value)
+  const strings = entries.filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  return strings.length === entries.length ? Object.fromEntries(strings) : undefined
 }
 
 async function applicationBuildFiles(executable: string) {

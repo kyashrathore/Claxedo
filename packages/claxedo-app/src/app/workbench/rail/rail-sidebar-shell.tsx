@@ -186,8 +186,14 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
               ? () => (
                 <SettingsNav
                   section={settings.section()!}
-                  onSection={(section) => settings.open(section)}
-                  onBack={() => settings.close()}
+                  onSection={(section) => {
+                    settings.open(section)
+                    props.closeMobileSidebar()
+                  }}
+                  onBack={() => {
+                    settings.close()
+                    props.closeMobileSidebar()
+                  }}
                 />
               )
               : undefined}

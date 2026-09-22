@@ -208,6 +208,10 @@ async function createCdpPage(url: string, timeoutMs: number): Promise<BenchmarkP
           return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         })()`, optionalPoint)
         if (!point) throw new Error(`benchmark click target is missing: ${selector}`)
+        // Playwright's click, which drives the compared app, moves the pointer
+        // onto the target and lets hover render before pressing.
+        await command("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y })
+        await evaluateExpression("new Promise((resolve) => requestAnimationFrame(() => resolve(true)))", () => undefined)
         await command("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 })
         await command("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 })
       },

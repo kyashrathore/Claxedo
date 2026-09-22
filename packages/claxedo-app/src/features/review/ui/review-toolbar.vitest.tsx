@@ -24,6 +24,7 @@ function renderToolbar(
     fromRef?: string
     toRef?: string
     currentBranch?: string
+    defaultBaseRef?: string
     vcsRefs?: VcsRefs
     onApplyMode?: (mode: ReviewMode, from: string, to: string) => void
   } = {},
@@ -34,6 +35,7 @@ function renderToolbar(
       fromRef={input.fromRef ?? ""}
       toRef={input.toRef ?? ""}
       currentBranch={input.currentBranch}
+      defaultBaseRef={input.defaultBaseRef}
       vcsRefs={input.vcsRefs ?? refs}
       onApplyMode={input.onApplyMode ?? (() => undefined)}
       hasReview
@@ -62,6 +64,8 @@ const options = (menu: HTMLElement) => within(menu).getAllByRole("option").map((
 const choose = (menu: HTMLElement, label: string | RegExp) => fireEvent.click(within(menu).getByRole("option", { name: label }))
 const groupLabels = (menu: HTMLElement) =>
   [...menu.querySelectorAll('[role="listbox"] > div:not([role="option"]):not([data-testid])')].map((el) => el.textContent)
+const WORKTREE_ROWS = ["Uncommitted changes", "Staged changes", "Unstaged changes"]
+const baseButton = (menu: HTMLElement) => within(menu).getByTestId("review-compare-base")
 
 describe("ReviewToolbar compare pill", () => {
   afterEach(() => cleanup())
@@ -99,11 +103,11 @@ describe("ReviewToolbar compare pill", () => {
     expect(pillText()).toBe("2222222 1111111")
   })
 
-  test("lists uncommitted, then local branches, remote branches, tags and recent commits", async () => {
+  test("lists the worktree modes, then local branches, remote branches, tags and recent commits", async () => {
     renderToolbar()
     const menu = await openMenu()
     expect(options(menu)).toEqual([
-      "Uncommitted changes",
+      ...WORKTREE_ROWS,
       "main",
       "feat/x",
       "origin/main",
@@ -111,45 +115,109 @@ describe("ReviewToolbar compare pill", () => {
       "v1.0.0",
       "abc1234fix: the thing",
     ])
-    expect(groupLabels(menu)).toEqual(["Compare against", "Branches", "Remote branches", "Tags", "Commits"])
+    expect(groupLabels(menu)).toEqual(["Branches", "Remote branches", "Tags", "Commits"])
+    expect(menu.textContent).toContain("Compare against")
+  })
+
+  test("with no base to measure from, offers no branch modes and asks for a base", async () => {
+    renderToolbar()
+    const menu = await openMenu()
+    expect(within(menu).queryByTestId("review-compare-branch")).toBeNull()
+    expect(baseButton(menu).textContent).toBe("Choose base")
+  })
+
+  test("with a default base, the header names it and the branch modes measure from it", async () => {
+    const onApplyMode = vi.fn()
+    renderToolbar({ defaultBaseRef: "origin/main", onApplyMode })
+    const menu = await openMenu()
+    expect(baseButton(menu).textContent).toBe("against origin/main")
+    expect(options(menu).slice(0, 5)).toEqual([...WORKTREE_ROWS, "Branch changes", "Everything since origin/main"])
+
+    choose(menu, "Branch changes")
+    expect(onApplyMode).toHaveBeenLastCalledWith("branch", "origin/main", "")
+    choose(await openMenu(), "Everything since origin/main")
+    expect(onApplyMode).toHaveBeenLastCalledWith("branch-worktree", "origin/main", "")
+  })
+
+  test("in a branch mode, the base on screen wins over the default", async () => {
+    renderToolbar({ mode: "branch", fromRef: "feat/x", defaultBaseRef: "main", currentBranch: "topic" })
+    expect(pillText()).toBe("feat/x topic")
+    const menu = await openMenu()
+    expect(baseButton(menu).textContent).toBe("against feat/x")
+    expect(options(menu)).toContain("Everything since feat/x")
+  })
+
+  test("reads base → working tree in branch-worktree mode", () => {
+    renderToolbar({ mode: "branch-worktree", fromRef: "main", currentBranch: "topic" })
+    expect(pillText()).toBe("main working tree")
+  })
+
+  test("the base button opens a base picker with the default pinned; choosing keeps a branch mode or enters branch", async () => {
+    const onApplyMode = vi.fn()
+    renderToolbar({ defaultBaseRef: "main", onApplyMode })
+    fireEvent.click(baseButton(await openMenu()))
+    const baseMenu = await screen.findByTestId("review-base-menu")
+    await waitFor(() => expect(document.activeElement).toBe(search(baseMenu)))
+    expect(options(baseMenu)).toEqual(["main", "feat/x", "origin/main", "origin/release", "v1.0.0"])
+    expect(groupLabels(baseMenu)).toEqual(["Default branch", "Branches", "Remote branches", "Tags"])
+
+    fireEvent.click(within(baseMenu).getByTestId("review-base-back"))
+    expect(await screen.findByTestId("review-compare-menu")).toBeTruthy()
+    fireEvent.click(baseButton(screen.getByTestId("review-compare-menu")))
+    choose(await screen.findByTestId("review-base-menu"), "origin/release")
+    expect(onApplyMode).toHaveBeenLastCalledWith("branch", "origin/release", "")
+    await waitFor(() => expect(pill().getAttribute("aria-expanded")).toBe("false"))
+    cleanup()
+
+    renderToolbar({ mode: "branch-worktree", fromRef: "main", defaultBaseRef: "main", onApplyMode })
+    fireEvent.click(baseButton(await openMenu()))
+    choose(await screen.findByTestId("review-base-menu"), "feat/x")
+    expect(onApplyMode).toHaveBeenLastCalledWith("branch-worktree", "feat/x", "")
+  })
+
+  test("a reopened picker starts on the compare view", async () => {
+    renderToolbar({ defaultBaseRef: "main" })
+    fireEvent.click(baseButton(await openMenu()))
+    fireEvent.keyDown(search(await screen.findByTestId("review-base-menu")), { key: "Escape" })
+    await waitFor(() => expect(pill().getAttribute("aria-expanded")).toBe("false"))
+    expect(await openMenu()).toBeTruthy()
   })
 
   test("omits a group whose fixture is empty", async () => {
     renderToolbar({ vcsRefs: { branches: ["main"], tags: [], recent: [] } })
     const menu = await openMenu()
-    expect(options(menu)).toEqual(["Uncommitted changes", "main"])
-    expect(groupLabels(menu)).toEqual(["Compare against", "Branches"])
+    expect(options(menu)).toEqual([...WORKTREE_ROWS, "main"])
+    expect(groupLabels(menu)).toEqual(["Branches"])
   })
 
-  test("focuses the search on open and filters every group by substring, keeping Uncommitted", async () => {
+  test("focuses the search on open and filters every group by substring, keeping the mode rows", async () => {
     renderToolbar()
     const menu = await openMenu()
     await waitFor(() => expect(document.activeElement).toBe(search(menu)))
 
     fireEvent.input(search(menu), { target: { value: "MAIN" } })
-    expect(options(menu)).toEqual(["Uncommitted changes", "main", "origin/main"])
-    expect(groupLabels(menu)).toEqual(["Compare against", "Branches", "Remote branches"])
+    expect(options(menu)).toEqual([...WORKTREE_ROWS, "main", "origin/main"])
+    expect(groupLabels(menu)).toEqual(["Branches", "Remote branches"])
 
     fireEvent.input(search(menu), { target: { value: "thing" } })
-    expect(options(menu)).toEqual(["Uncommitted changes", "abc1234fix: the thing"])
+    expect(options(menu)).toEqual([...WORKTREE_ROWS, "abc1234fix: the thing"])
 
     fireEvent.input(search(menu), { target: { value: "nothing here" } })
-    expect(options(menu)).toEqual(["Uncommitted changes"])
+    expect(options(menu)).toEqual(WORKTREE_ROWS)
     expect(within(menu).getByTestId("review-compare-no-matches").textContent).toBe("navigator.sourceControl.compare.noMatches")
   })
 
-  test("arrow keys walk the filtered list and Enter compares the active ref against HEAD", async () => {
+  test("arrow keys walk the filtered list and Enter measures the active branch from where HEAD left it", async () => {
     const onApplyMode = vi.fn()
     renderToolbar({ onApplyMode })
     const menu = await openMenu()
     const input = search(menu)
     fireEvent.input(input, { target: { value: "origin" } })
-    expect(options(menu)).toEqual(["Uncommitted changes", "origin/main", "origin/release"])
+    expect(options(menu)).toEqual([...WORKTREE_ROWS, "origin/main", "origin/release"])
     const selected = () => within(menu).getByRole("option", { selected: true }).textContent
 
     expect(selected()).toBe("Uncommitted changes")
-    fireEvent.keyDown(input, { key: "ArrowDown" })
-    fireEvent.keyDown(input, { key: "ArrowDown" })
+    fireEvent.keyDown(input, { key: "End" })
     expect(selected()).toBe("origin/release")
     expect(input.getAttribute("aria-activedescendant")).toBe(within(menu).getByRole("option", { selected: true }).id)
     fireEvent.keyDown(input, { key: "ArrowDown" })
@@ -158,28 +226,28 @@ describe("ReviewToolbar compare pill", () => {
     expect(selected()).toBe("origin/release")
 
     fireEvent.keyDown(input, { key: "Enter" })
-    expect(onApplyMode).toHaveBeenCalledWith("to-from", "origin/release", "HEAD")
+    expect(onApplyMode).toHaveBeenCalledWith("branch", "origin/release", "")
     await waitFor(() => expect(pill().getAttribute("aria-expanded")).toBe("false"))
   })
 
-  test("choosing a ref compares it against HEAD", async () => {
+  test("choosing a branch or tag enters branch mode; choosing a commit compares it against HEAD", async () => {
     const onApplyMode = vi.fn()
     renderToolbar({ onApplyMode })
-    choose(await openMenu(), "origin/release")
-    expect(onApplyMode).toHaveBeenCalledWith("to-from", "origin/release", "HEAD")
-    cleanup()
-
-    onApplyMode.mockClear()
-    renderToolbar({ onApplyMode })
+    choose(await openMenu(), "v1.0.0")
+    expect(onApplyMode).toHaveBeenLastCalledWith("branch", "v1.0.0", "")
     choose(await openMenu(), /fix: the thing/)
-    expect(onApplyMode).toHaveBeenCalledWith("to-from", "abc1234", "HEAD")
+    expect(onApplyMode).toHaveBeenLastCalledWith("to-from", "abc1234", "HEAD")
   })
 
-  test("choosing Uncommitted changes leaves to-from mode", async () => {
+  test("choosing a worktree mode leaves any ref comparison", async () => {
     const onApplyMode = vi.fn()
     renderToolbar({ mode: "to-from", fromRef: "dev", toRef: "HEAD", currentBranch: "feat/x", onApplyMode })
     choose(await openMenu(), "Uncommitted changes")
-    expect(onApplyMode).toHaveBeenCalledWith("uncommitted", "", "")
+    expect(onApplyMode).toHaveBeenLastCalledWith("uncommitted", "", "")
+    choose(await openMenu(), "Staged changes")
+    expect(onApplyMode).toHaveBeenLastCalledWith("staged", "", "")
+    choose(await openMenu(), "Unstaged changes")
+    expect(onApplyMode).toHaveBeenLastCalledWith("unstaged", "", "")
   })
 
   test("Escape closes the picker", async () => {

@@ -1,5 +1,5 @@
 /**
- * Settings dialog, account/auth, providers/connections/sandbox, and the
+ * Settings surface, account/auth, providers/connections/sandbox, and the
  * signed-auth system routes (`/login`, `/cli-login`, the top-level error
  * page). Whether a signed session is required at all is the server's
  * declaration and is covered by `core-deployment-posture.spec.ts`, which owns
@@ -296,6 +296,16 @@ async function selectTab(page: Page, value: string) {
   await expect(tabTrigger(page, value)).toHaveAttribute("aria-current", "page")
 }
 
+/** The settings column: one panel, the open section's, under its one level-one heading. */
+async function expectOpenSection(page: Page, value: string, title: string) {
+  await expect(tabTrigger(page, value)).toHaveAttribute("aria-current", "page")
+  const content = page.locator('[data-component="settings-content"]')
+  await expect(content).toHaveCount(1)
+  await expect(content).toHaveAttribute("data-section", value)
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1)
+  await expect(page.getByRole("heading", { name: title, level: 1, exact: true })).toBeVisible()
+}
+
 async function openSelect(page: Page, dataAction: string) {
   await page.locator(`[data-action="${dataAction}"] [data-slot="select-select-trigger"]`).click()
 }
@@ -536,33 +546,28 @@ function mockSandboxDrivers(page: Page, initial: { default_driver: string; drive
 }
 
 test.describe("core settings + auth @core", () => {
-  test.describe("settings dialog: tabs, gating, mobile nav", () => {
-    test("General is active by default; switching tabs shows exactly one panel", async ({ page }) => {
+  test.describe("settings surface: sections, gating, mobile nav", () => {
+    test("General is open by default; picking a section draws exactly that section's panel", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
       await openSettings(page)
 
-      await expect(tabTrigger(page, "general")).toHaveAttribute("aria-selected", "true")
-      await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
-      await expect(page.getByRole("heading", { name: "General", exact: true })).toBeVisible()
+      await expectOpenSection(page, "general", "General")
 
       await selectTab(page, "shortcuts")
-      await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
-      await expect(page.getByRole("heading", { name: "Keyboard shortcuts", exact: true })).toBeVisible()
+      await expectOpenSection(page, "shortcuts", "Keyboard shortcuts")
 
       await selectTab(page, "models")
-      await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
-      await expect(page.getByRole("heading", { name: "Models", exact: true })).toBeVisible()
+      await expectOpenSection(page, "models", "Models")
 
       await selectTab(page, "connections")
-      await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
-      await expect(page.getByRole("heading", { name: "Connections", exact: true })).toBeVisible()
+      await expectOpenSection(page, "connections", "Connections")
     })
 
     // The core browser command explicitly enables the preview entry point; the
     // underlying sandbox authorization and mutation contracts remain separate.
-    test("the Sandbox preview flag exposes its settings tab", async ({ page }) => {
+    test("the Sandbox preview flag exposes its settings section", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockSandboxDrivers(page, { default_driver: "docker", drivers: [] }).install()
@@ -571,38 +576,40 @@ test.describe("core settings + auth @core", () => {
 
       await expect(tabTrigger(page, "compute")).toBeVisible()
       await selectTab(page, "compute")
-      await expect(page.getByRole("heading", { name: "Sandbox Providers", exact: true })).toBeVisible()
+      await expectOpenSection(page, "compute", "Sandbox")
     })
 
-    test("mobile viewport: menu mode by default, tab selection drills into content, back returns to menu", async ({ page }) => {
+    // On a phone the rail is a drawer, so the section list is reached through the
+    // drawer opener, and picking a section (or leaving settings) dismisses it the way
+    // every other rail navigation does.
+    test("mobile viewport: the panel fills the screen, the nav is the drawer, picking a section dismisses it", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
-      // Open at the default (desktop) viewport — the rail sidebar's gear
-      // button reachability under <640px is the outer shell's responsive
-      // layout, not this spec's territory. Resize AFTER the
-      // dialog is open so only the dialog's own `.settings-mobile-*` media
-      // query (`src/claxedo-ui/claxedo-layout.css`, max-width:639px) is
-      // under test.
-      const dialog = await openSettings(page)
+      const content = await openSettings(page)
       await page.setViewportSize({ width: 375, height: 812 })
 
-      await expect(dialog.locator(".settings-mobile-menu")).toHaveCount(1)
-      await expect(dialog.locator('[data-slot="tabs-list"]')).toBeVisible()
-      // `:visible`, not `:not([hidden])`: Kobalte marks only inactive panels `hidden`, and
-      // menu mode hides the active one through a CSS rule instead, so an attribute query
-      // would always see one panel here.
-      await expect(dialog.locator('[data-slot="tabs-content"]:visible')).toHaveCount(0)
+      const nav = page.locator('[data-component="settings-nav"]')
+      const scrim = page.getByTestId("mobile-sidebar-scrim")
+      await expect(content).toBeInViewport()
+      await expect(nav).not.toBeInViewport()
+      await expect(scrim).toHaveCount(0)
+
+      await page.getByTestId("mobile-sidebar-opener").click()
+      await expect(nav).toBeInViewport()
+      await expect(scrim).toHaveCount(1)
 
       await tabTrigger(page, "shortcuts").click()
-      await expect(dialog.locator(".settings-mobile-content")).toHaveCount(1)
-      await expect(dialog.locator('[data-slot="tabs-list"]')).toBeHidden()
-      await expect(dialog.locator(".settings-mobile-back")).toBeVisible()
-      await expect(page.getByRole("heading", { name: "Keyboard shortcuts", exact: true })).toBeVisible()
+      await expect(content).toHaveAttribute("data-section", "shortcuts")
+      await expect(page.getByRole("heading", { name: "Keyboard shortcuts", exact: true })).toBeInViewport()
+      await expect(nav).not.toBeInViewport()
+      await expect(scrim).toHaveCount(0)
 
-      await dialog.locator(".settings-mobile-back").click()
-      await expect(dialog.locator(".settings-mobile-menu")).toHaveCount(1)
-      await expect(dialog.locator('[data-slot="tabs-list"]')).toBeVisible()
+      await page.getByTestId("mobile-sidebar-opener").click()
+      await expect(nav).toBeInViewport()
+      await page.locator('[data-action="settings-nav-back"]').click()
+      await expect(page.locator('[data-component="settings-content"]')).toHaveCount(0)
+      await expect(scrim).toHaveCount(0)
     })
   })
 
@@ -639,8 +646,8 @@ test.describe("core settings + auth @core", () => {
     })
 
     // Settings still opens and the rest of General renders; only the account
-    // surface is gone. The signed case above is the control: the same dialog,
-    // the same tab, the heading present.
+    // surface is gone. The signed case above is the control: the same surface,
+    // the same section, the heading present.
     test("a server that issues no sessions has no account surface in Settings", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, issuesSessions: false })
       await seedProject(page, DIR)
@@ -704,12 +711,8 @@ test.describe("core settings + auth @core", () => {
       await darkOption.dispatchEvent("pointerenter", { pointerType: "mouse" })
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe("dark")
 
-      // Move off without selecting — closing the popover cancels the preview.
-      // NOT Escape: the Settings dialog's own escape-to-close handling wins the
-      // race against the popover's escape-to-dismiss, so Escape here makes the
-      // select TRIGGER disappear too, i.e. it closes the whole dialog and not
-      // just the popover. Clicking elsewhere in the dialog is a true outside
-      // click and dismisses only the popover.
+      // Move off without selecting — closing the popover cancels the preview. An
+      // outside click on the panel dismisses only the popover.
       await page.getByRole("heading", { name: "General", exact: true }).click()
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe(committedBefore)
       // Reopening while the close transition is still in flight is flaky, so wait for the
@@ -903,16 +906,10 @@ test.describe("core settings + auth @core", () => {
       await page.keyboard.press(isMac ? "Meta+Shift+P" : "Control+Shift+P")
 
       await expect(page.getByText("Shortcut already in use")).toBeVisible({ timeout: 5_000 })
-      // On conflict the capture handler toasts and `return`s WITHOUT calling
-      // `stop()` (src/components/settings-keybinds.tsx) — capture
-      // mode deliberately stays active (row still reads "Press keys") so the
-      // user can immediately try a different combo. NOT Escape to exit: the
-      // Settings dialog has its own escape-to-close handling that wins the
-      // race against the capture listener's own Escape handling (verified
-      // live — pressing Escape here closes the whole dialog, not just
-      // capture mode). Clicking the SAME row again is the app's other exit
-      // path (`start(id)`: `if (store.active === id) { stop(); return }`,
-      // same file :276-280) and doesn't touch the dialog.
+      // On conflict the capture handler toasts and returns without calling
+      // `stop()`: capture mode deliberately stays active (row still reads
+      // "Press keys") so the user can immediately try a different combo.
+      // Clicking the same row again is the app's own exit path out of capture.
       await anotherRow.click()
       await expect(anotherRow).toHaveText(beforeText ?? "")
 
@@ -960,17 +957,35 @@ test.describe("core settings + auth @core", () => {
       await selectTab(page, "models")
 
       const harnessSection = page.locator('[data-component="pi-providers-section"]')
-      await expect(harnessSection.getByText("Anthropic")).toBeVisible()
-      const row = harnessSection.locator("div.border-b").filter({ hasText: "Anthropic" })
+      const row = harnessSection.locator('[data-provider="anthropic"]')
+      await expect(row.getByText("Anthropic")).toBeVisible()
       await row.getByRole("button", { name: "Connect" }).click()
 
-      await expect(row.getByLabel(/Anthropic API key/i)).toBeVisible()
-      await row.getByLabel(/Anthropic API key/i).fill("sk-test-anthropic-key")
-      await row.getByRole("button", { name: "Continue" }).click()
+      // Connecting opens in a dialog and, with two methods on offer (subscription
+      // token, API key), waits for one to be picked before showing its field.
+      const card = page.locator('[data-component="provider-connect-card"]')
+      await expect(card).toBeVisible()
+      await card.getByRole("radio").and(card.locator('[data-method-type="api"]')).click()
+      await expect(card.getByLabel(/Anthropic API key/i)).toBeVisible()
+      await card.getByLabel(/Anthropic API key/i).fill("sk-test-anthropic-key")
+      // A new credential needs a name of the user's own, or the row would be
+      // listed under the provider id, which reads the same for every key.
+      await card.getByRole("button", { name: "Continue" }).click()
+      await expect(card.getByText("Add a label so you can recognize this account")).toBeVisible()
+      expect(credHits.put).toEqual([])
+      await card.getByLabel("Label", { exact: true }).fill("work key")
+      await card.getByRole("button", { name: "Continue" }).click()
 
       await expect.poll(() => credHits.put.length, { timeout: 10_000 }).toBe(1)
-      expect(credHits.put[0]).toMatchObject({ provider_id: "anthropic", kind: "api_key", secret: "sk-test-anthropic-key" })
+      expect(credHits.put[0]).toMatchObject({
+        provider_id: "anthropic",
+        kind: "api_key",
+        secret: "sk-test-anthropic-key",
+        label: "work key",
+      })
       await expect(page.getByText("Anthropic connected")).toBeVisible()
+      // The list is where the user left it: the dialog closes on its own.
+      await expect(card).toHaveCount(0)
     })
 
     test("an env-sourced connected provider has no Disconnect button; API-key Disconnect DELETEs credentials and engine auth", async ({ page }) => {
@@ -1044,29 +1059,38 @@ test.describe("core settings + auth @core", () => {
     test("Settings Models lists every model after connected-provider detail hydration", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
+      // Two connected providers, so each one is named above its models. With a
+      // single provider whose id is the harness's own, the harness heading stands
+      // for it and no provider row is drawn.
       await mockProviderCatalog(page, {
-        connected: [{
-          id: "opencode",
-          name: "OpenCode Zen",
-          models: {
-            "big-pickle": { id: "big-pickle", name: "Big Pickle" },
-            "model-two": { id: "model-two", name: "Second Model" },
+        connected: [
+          {
+            id: "opencode",
+            name: "OpenCode Zen",
+            models: {
+              "big-pickle": { id: "big-pickle", name: "Big Pickle" },
+              "model-two": { id: "model-two", name: "Second Model" },
+            },
           },
-        }],
+          { id: "anthropic", name: "Anthropic", models: { "claude-x": { id: "claude-x", name: "Claude X" } } },
+        ],
         popular: [],
       })
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "models")
 
-      // A harness opens on its accounts; its models are the other tab, and a
-      // provider's own models sit behind its row.
+      // A harness opens on its accounts; its models are the other tab. The index
+      // catalog names only each provider's default model, so "Second Model" is on
+      // screen only once the provider's detail has been fetched.
       const harness = page.locator('[data-component="models-section-opencode"]')
       await harness.locator('[data-action="settings-models-tab-models"]').click()
-      await expect(harness.getByText("OpenCode Zen")).toBeVisible({ timeout: 15_000 })
-      await harness.locator('[data-action="settings-models-group-expand"]').first().click()
-      await expect(harness.getByRole("switch", { name: "Big Pickle" })).toBeVisible({ timeout: 15_000 })
-      await expect(harness.getByRole("switch", { name: "Second Model" })).toBeVisible({ timeout: 15_000 })
+      const group = harness.locator('[data-component="models-group"][data-provider="opencode"]')
+      await expect(group.getByText("OpenCode Zen")).toBeVisible({ timeout: 15_000 })
+      // A provider with a model on opens already, so its rows need no expand click.
+      await expect(group.getByRole("switch", { name: "Big Pickle" })).toBeVisible({ timeout: 15_000 })
+      await expect(group.getByRole("switch", { name: "Second Model" })).toBeVisible({ timeout: 15_000 })
+      await expect(harness.locator('[data-component="models-group"][data-provider="anthropic"]').getByText("Anthropic")).toBeVisible()
     })
   })
 
@@ -1331,10 +1355,7 @@ test.describe("core settings + auth @core", () => {
 
       const useForNew = page.getByRole("button", { name: "Use for new workspaces" })
       await expect(useForNew).toHaveCount(0)
-      // Scoped to the active panel: inactive `Tabs.Content` stays mounted under a `hidden`
-      // attribute, so an unscoped trigger locator matches selects from every panel and
-      // `.first()` resolves to different elements across retries.
-      await page.locator('[data-slot="tabs-content"]:not([hidden]) [data-slot="select-select-trigger"]').first().click()
+      await page.locator('[data-component="settings-content"] [data-slot="select-select-trigger"]').first().click()
       // `{ force: true }`: the Select popover never settles under Playwright's
       // hover-stability check, which is `packages/ui` Select behaviour rather than anything
       // this row wires up.
@@ -1391,10 +1412,10 @@ test.describe("core settings + auth @core", () => {
       await expect(
         page.getByText("Signed hosted sessions can view local sandbox providers but cannot change local credentials."),
       ).toBeVisible()
-      await expect(page.locator('[data-slot="tabs-content"]:not([hidden]) [data-slot="select-select-trigger"]').first()).toBeDisabled()
+      await expect(page.locator('[data-component="settings-content"] [data-slot="select-select-trigger"]').first()).toBeDisabled()
       // The credential form is always open, so the read-only lock has to reach
       // the input itself, not just the buttons around it.
-      await expect(page.locator('[data-slot="tabs-content"]:not([hidden]) input[type="password"]').first()).toBeDisabled()
+      await expect(page.locator('[data-component="settings-content"] input[type="password"]').first()).toBeDisabled()
       await expect(page.getByRole("button", { name: "Remove" })).toBeDisabled()
     })
 

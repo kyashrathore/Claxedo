@@ -86,6 +86,9 @@ export const SettingsEmpty: Component<{ children: JSX.Element }> = (props) => (
  * `SettingsContent` draws this for the sections whose registry entry supplies
  * the words; a section that needs an action beside its name draws it itself,
  * which is the only reason this is a component rather than markup in there.
+ *
+ * An `h1`: the settings surface replaces the workbench column, so the open
+ * section's name is the page's one level-one heading.
  */
 export const SettingsSectionHeading: Component<{
   title: string
@@ -94,7 +97,7 @@ export const SettingsSectionHeading: Component<{
 }> = (props) => (
   <div class="flex items-start justify-between gap-4 pt-6 pb-6" data-component="settings-section-heading">
     <div class="flex min-w-0 flex-col gap-1">
-      <h2 class="text-18-medium text-text-strong">{props.title}</h2>
+      <h1 class="text-18-medium text-text-strong">{props.title}</h1>
       <Show when={props.description}>
         {(text) => <p class="text-12-regular text-text-weak">{text()}</p>}
       </Show>

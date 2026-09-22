@@ -10,6 +10,7 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSDK } from "@/features/review/app-ports"
 import { createReviewDiffClient, fetchReviewVcsDiffSummary } from "@/features/review/ui/review-vcs-load"
+import { reviewDiffRefs } from "@/features/review/review-intent"
 import type { useClaxedoState } from "../state/index"
 import { WorkspacePanelHeader } from "./workbench-shell-header"
 import { WorkspacePanelBody } from "./workspace-panel-body"
@@ -63,7 +64,6 @@ export function RailWorkspacePanelShell(props: {
     const key = panelReviewWorkingSetKey({ directory: dir })
     const retained = key ? props.state.workspacePanel.reviewWorkingSet.get(key)?.review : undefined
     const mode = retained?.mode ?? PANEL_REVIEW_MODE
-    const toFrom = mode === "to-from"
     const client = createReviewDiffClient({
       serverUrl: getClaxedoServerUrl(),
       directory: dir,
@@ -75,8 +75,7 @@ export function RailWorkspacePanelShell(props: {
       client,
       directory: dir,
       mode,
-      fromRef: toFrom ? retained?.fromRef?.trim() || undefined : undefined,
-      toRef: toFrom ? retained?.toRef?.trim() || undefined : undefined,
+      ...reviewDiffRefs({ mode, fromRef: retained?.fromRef, toRef: retained?.toRef }),
     }).catch(() => {})
     // Code second: the corpus request is the one the rendered surface blocks
     // on, so it claims the connection first; the body's chunks then load

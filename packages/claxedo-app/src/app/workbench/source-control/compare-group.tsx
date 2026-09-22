@@ -4,7 +4,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import type { WorkspaceDiffSummaryEntry } from "@/platform/files/workspace-diff-summary-query"
 import { ChangeRow, SourceControlSectionHeader } from "./change-group"
 
-/** The files a `to-from` comparison changes, above the worktree groups while that comparison is the pane's review. */
+/** The files a ref comparison changes, above the worktree groups while that comparison is the pane's review. */
 export function CompareGroup(props: {
   label: string
   entries?: readonly WorkspaceDiffSummaryEntry[]
