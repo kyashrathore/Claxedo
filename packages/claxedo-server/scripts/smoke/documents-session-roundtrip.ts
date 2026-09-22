@@ -21,7 +21,7 @@ export async function runDocumentsSessionRoundtripSmoke() {
   let rpc: PiRpcProcess | undefined
   try {
     const hydratedPath = await hydrateSessionDocument({ sessionId, workspaceRoot: root, documentId: "document-session-smoke", displayName: "Session Smoke", markdown: before, baseVersion: "version-1", sync: async markdown => { canonical = markdown; return "version-2" } })
-    rpc = await PiRpcProcess.start({ binary, directory: root, args: ["--mode", "rpc", "--no-session"], env: { ...process.env, PI_CODING_AGENT_DIR: path.join(root, "pi-agent") }, ownership: volatileLaunchOwnership(), workspaceId: "" })
+    rpc = await PiRpcProcess.start({ binary, directory: root, args: ["--mode", "rpc", "--no-session"], env: { ...process.env, PI_CODING_AGENT_DIR: path.join(root, "pi-agent") }, ownership: volatileLaunchOwnership() })
     const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
     const result = asRecord(await rpc.request("bash", { command: `printf %s ${quote(after)} > ${quote(hydratedPath)}` }, controlRequestDeadline()))
     await syncHydratedSessionDocuments(sessionId)

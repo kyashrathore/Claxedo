@@ -61,6 +61,7 @@ import {
 } from "./compat-events"
 import { workspaceRuntimeStoreDir } from "./env"
 import { migrateLaunchOwnership, sqliteLaunchOwnership } from "./ownership/launch-ownership-sqlite"
+import type { LaunchOwnershipOwner } from "@claxedo/agent-sdk-runtime/launch"
 import type { SessionRequestProvenance, SessionTurnOrigin, SessionWorkspaceAuthority } from "./session-access-policy"
 import { isRecord, num, rec, str } from "./json-value"
 
@@ -819,9 +820,9 @@ export class RuntimeStore {
   private databaseFile: string
   private hadDatabaseFile: boolean
   /**
-   * Keyed by generation: a store that outlives a mount must not hand the next
-   * one an instance stamped with the previous owner, or the launches it
-   * records would be reconciled out from under it as somebody else's.
+   * Keyed by scope and generation: a store that outlives a mount must not hand
+   * the next one an instance stamped with the previous owner, or the launches
+   * it records would be reconciled out from under it as somebody else's.
    */
   private launchOwnershipStores = new Map<string, ReturnType<typeof sqliteLaunchOwnership>>()
 
@@ -4605,16 +4606,17 @@ export class RuntimeStore {
   }
 
   /**
-   * The durable owner a launch made for this workspace is recorded against,
-   * stamped with the generation that is making it. One instance per
-   * generation: every launch of one runtime has to agree about who owns it,
-   * and two views would let a survivor be owned twice.
+   * The durable owner a launch is recorded against, stamped with the scope and
+   * generation making it. One instance per owner: every launch of one runtime
+   * has to agree about who owns it, and two views would let a survivor be
+   * owned twice.
    */
-  launchOwnership(ownerGeneration: string) {
-    const held = this.launchOwnershipStores.get(ownerGeneration)
+  launchOwnership(owner: LaunchOwnershipOwner) {
+    const key = `${owner.scope.kind === "workspace" ? owner.scope.workspaceId : ""}:${owner.ownerGeneration}`
+    const held = this.launchOwnershipStores.get(key)
     if (held) return held
-    const store = sqliteLaunchOwnership(this.db, { ownerGeneration })
-    this.launchOwnershipStores.set(ownerGeneration, store)
+    const store = sqliteLaunchOwnership(this.db, owner)
+    this.launchOwnershipStores.set(key, store)
     return store
   }
 

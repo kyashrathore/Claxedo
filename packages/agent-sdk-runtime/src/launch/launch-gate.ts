@@ -9,7 +9,7 @@ import {
   LaunchRefusedError,
   type LaunchOwnershipStore,
   type LaunchRole,
-  type LaunchOwnerScope,
+  type LaunchSite,
   type PreparedLaunch,
 } from "./ownership-store"
 import { neverExecuted, retire, type RetirementBudgets, type RetirementResult } from "./retirement"
@@ -181,7 +181,7 @@ export type LaunchOwnedProcessInput = {
   ownership: LaunchOwnershipStore
   role: LaunchRole
   parentOwnerId?: string
-  scope: LaunchOwnerScope
+  scope?: LaunchSite
   payload: GatePayload
   cwd: string
   env: NodeJS.ProcessEnv
@@ -206,7 +206,7 @@ export async function launchOwnedProcess(input: LaunchOwnedProcessInput): Promis
       role: input.role,
       protocol: "gate",
       ...(input.parentOwnerId ? { parentOwnerId: input.parentOwnerId } : {}),
-      scope: input.scope,
+      ...(input.scope ? { scope: input.scope } : {}),
     })
   } catch (error) {
     throw new LaunchRefusedError(input.role, error)

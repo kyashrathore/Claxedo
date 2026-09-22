@@ -11,18 +11,29 @@ export type LaunchRole = "turn" | "harness" | "managed-process" | "terminal"
  */
 export type LaunchProtocol = "gate" | "direct"
 
-export type LaunchScope = {
-  workspaceId?: string
+/**
+ * Which rows a runtime's own launches are, and the only thing reconciliation
+ * lists by.
+ *
+ * A workspace host names its workspace, because one store holds the launches
+ * of every workspace mounted against it. A runtime nobody gave a workspace to
+ * has a store of its own, and the rows in it that name no workspace are all
+ * its own — there is nothing narrower to say, and saying a directory or a
+ * minted label instead would file the row under a key the next owner of the
+ * same store does not reproduce.
+ */
+export type LaunchOwnerScope =
+  | { kind: "workspace"; workspaceId: string }
+  | { kind: "standalone" }
+
+/** What a launch names inside its owner's scope. */
+export type LaunchSite = {
   sessionId?: string
   directory?: string
 }
 
-/**
- * Reconciliation lists by workspace, so a prepared launch that names no
- * workspace is one no later owner will look for. It is the only part of the
- * scope a launch cannot be recorded without.
- */
-export type LaunchOwnerScope = LaunchScope & { workspaceId: string }
+/** A recorded launch's whole scope: the store's owner, and what the launch named inside it. */
+export type LaunchScope = LaunchOwnerScope & LaunchSite
 
 export type PreparedLaunch = {
   launchId: string
@@ -55,12 +66,15 @@ export type PrepareLaunchInput = {
   role: LaunchRole
   protocol: LaunchProtocol
   parentOwnerId?: string
-  scope: LaunchOwnerScope
+  /** Only what this launch names; the owner comes from the store, so no caller can file a row somewhere it will not be found. */
+  scope?: LaunchSite
 }
 
 export type LaunchOwnershipOwner = {
   /** Identifies the owning runtime; every row this store prepares carries it. */
   ownerGeneration: string
+  /** The scope every row this store prepares is filed under, and the one reconciliation lists by. */
+  scope: LaunchOwnerScope
 }
 
 /**
@@ -79,7 +93,7 @@ export interface LaunchOwnershipStore {
   recordRetirement(launchId: string, result: RetirementResult): Promise<void>
   read(launchId: string): Promise<LaunchOwnershipRecord | undefined>
   /** Launches with no settled retirement, for reconciliation after an owner restart. */
-  listUnresolved(scope?: LaunchScope): Promise<LaunchOwnershipRecord[]>
+  listUnresolved(scope: LaunchScope): Promise<LaunchOwnershipRecord[]>
 }
 
 export type ExecutionReconciliation = {

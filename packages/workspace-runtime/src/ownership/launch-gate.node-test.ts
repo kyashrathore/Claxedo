@@ -58,7 +58,7 @@ void test("a launch into a directory that knows nothing runs its payload", async
   const owned = await launchOwnedProcess({
     ownership,
     role: "harness",
-    scope: { workspaceId: "ws", directory: cwd },
+    scope: { directory: cwd },
     payload: { command: "/bin/sh", args: ["-c", "sleep 30"] },
     cwd,
     env: process.env,
@@ -83,7 +83,7 @@ void test("a gate that cannot start refuses with what the child actually said", 
     const failure = await launchOwnedProcess({
       ownership: volatileLaunchOwnership(),
       role: "harness",
-      scope: { workspaceId: "ws", directory: cwd },
+      scope: { directory: cwd },
       payload: { command: "/bin/sh", args: ["-c", "sleep 30"] },
       cwd,
       env: process.env,

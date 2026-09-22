@@ -910,7 +910,7 @@ describe("startup launch reconciliation", () => {
     ownerGeneration: "mount-0",
     role: "harness" as const,
     protocol: "gate" as const,
-    scope: { workspaceId: "ws_a" },
+    scope: { kind: "workspace" as const, workspaceId: "ws_a" },
     preparedAt: 1,
     ...over,
   })

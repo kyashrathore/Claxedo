@@ -814,7 +814,6 @@ export namespace Pty {
         role: "terminal",
         protocol: "direct",
         scope: {
-          workspaceId: observation?.workspaceId ?? runtimeWorkspaceId(),
           directory: cwd,
           ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         },

@@ -73,7 +73,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
 });
 `)
     server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env,
-      requestHandler: async () => { throw new Error("permission storage failed") }, ownership, workspaceId: "ws",
+      requestHandler: async () => { throw new Error("permission storage failed") }, ownership,
     })
     expect(await server.request("test/approval", {}, soon())).toEqual({
       id: "approval-1", error: { code: -32603, message: "permission storage failed" },
@@ -109,7 +109,7 @@ readline.createInterface({ input: process.stdin }).on('line', async line => {
   }
 });
 `)
-    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership, workspaceId: "ws" })
+    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership })
     const response = await server.request("test/descendant", {}, soon()) as { descendant: number }
     descendant = response.descendant
     process.kill(descendant, 0)
@@ -141,7 +141,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (msg.id !== undefined) process.stdout.write(JSON.stringify({ id: msg.id, result: { ok: true } }) + '\\n');
 });
 `)
-    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership, workspaceId: "ws" })
+    server = await CodexAppServerProcess.start({ binary, directory: dir, env: process.env, requestHandler: async () => ({}), ownership })
     const deadline = { signal: new AbortController().signal, deadlineAt: Date.now() + 200 }
     await expect(server.request("test/silent", {}, deadline)).rejects.toThrow(/did not answer within its deadline/)
     expect(await server.request("test/after", {}, soon())).toEqual({ ok: true })
@@ -159,7 +159,7 @@ test.skipIf(process.platform === "win32")("a launch is refused when ownership ca
       prepare: async () => { throw new Error("launch_ownership is unavailable") },
     }
     const failure = await CodexAppServerProcess.start({
-      binary: process.execPath, directory: dir, env: process.env, requestHandler: async () => ({}), ownership, workspaceId: "ws",
+      binary: process.execPath, directory: dir, env: process.env, requestHandler: async () => ({}), ownership,
     }).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(LaunchRefusedError)
   } finally {
@@ -175,7 +175,6 @@ test("a request to an app-server that already exited is refused, not left to its
     env: process.env,
     requestHandler: async () => ({}),
     ownership: volatileLaunchOwnership(),
-    workspaceId: "",
   })
   try {
     await server.dispose()
@@ -237,7 +236,6 @@ test("a request during the TERM grace is still sent, because a signalled process
     env: process.env,
     requestHandler: async () => ({}),
     ownership: volatileLaunchOwnership(),
-    workspaceId: "",
   })
   try {
     // Node sets `killed` on delivery, not on exit. A process inside its

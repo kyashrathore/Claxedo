@@ -155,8 +155,6 @@ export class CodexAppServerProcess {
     signal?: AbortSignal
     /** Required: a composition with no durable store passes the volatile one itself. */
     ownership: LaunchOwnershipStore
-    /** The workspace this launch is recorded under, and reconciled with. */
-    workspaceId: string
     sessionId?: string
     budgets?: Partial<RecoveryBudgets>
     /** Called with what retiring a failed startup's process established, and whose launch it was. */
@@ -171,7 +169,7 @@ export class CodexAppServerProcess {
     const launch = await launchOwnedProcess({
       ownership: input.ownership,
       role: "harness",
-      scope: { workspaceId: input.workspaceId, directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
+      scope: { directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
       payload,
       cwd: input.directory,
       env: input.env,

@@ -218,8 +218,6 @@ export type ClaudeSdkDriverOptions = {
   brokeredConfigDir?: { root: string; source?: string }
   /** Durable launch records, so a Claude CLI outliving this process stays a recoverable owner. */
   ownership?: LaunchOwnershipStore
-  /** The workspace a later owner reconciles this driver's launches under. */
-  workspaceId?: string
 }
 
 export function createClaudeSdkDriver(
@@ -641,7 +639,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           sessionId: input.sessionId,
           mcp: this.currentMcp,
           onLaunch: (owned) => { launch = owned },
-          workspaceId: this.driverOptions.workspaceId ?? "",
           ...(this.driverOptions.ownership ? { ownership: this.driverOptions.ownership } : {}),
         }),
       },

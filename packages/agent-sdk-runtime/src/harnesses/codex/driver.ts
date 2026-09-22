@@ -82,8 +82,6 @@ type CodexDriverOptions = {
   brokeredHome?: string
   /** Durable launch records, so an app-server outliving this process stays a recoverable owner. */
   ownership?: LaunchOwnershipStore
-  /** The workspace a later owner reconciles this driver's launches under. */
-  workspaceId?: string
 }
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
@@ -554,9 +552,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       // record; it just cannot be reconciled after a restart, which is what
       // volatile ownership says about itself.
       ownership: this.options.ownership ?? volatileLaunchOwnership(),
-      // Empty when the composition named no workspace: a launch nobody will
-      // reconcile is worth saying so, and inventing an id would hide it.
-      workspaceId: this.options.workspaceId ?? "",
       // A startup that failed retires its own process; what that established
       // is this driver's to hold, because an unresolved one must refuse the
       // next launch exactly as a failed reap does.

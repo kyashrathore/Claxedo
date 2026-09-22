@@ -42,7 +42,7 @@ import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventEnvelope, type RuntimeEventHub } from "../runtime-event-hub"
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
-import { assertTarget, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
+import { assertTarget, authoritativeWorkspaceId, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot, type ProviderProjection } from "../routes/config"
 import { num, rec, str } from "../json-value"
 import {
@@ -67,7 +67,7 @@ import {
   mountWorkspacePty,
   type MountedWorkspaceEvents,
 } from "./core"
-import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
+import { volatileLaunchOwnership, type LaunchOwnershipOwner, type LaunchOwnershipStore } from "@claxedo/agent-sdk-runtime/launch"
 import type {
   RuntimeConfigApplyStatus,
   WorkspaceCheckpointBlocker,
@@ -115,12 +115,12 @@ export type WorkspaceRuntimeStore =
      */
     turnCoverage?: (id: string, turnId: string) => AgentTurnCoveragePage
     /**
-     * The durable owner a launch made for this workspace is recorded against.
+     * The durable owner a launch made under this scope is recorded against.
      * Optional: a store that cannot keep launch records leaves each launch
      * volatile, recorded as such in its own row, and nothing it started can be
      * identified as a survivor after a restart.
      */
-    launchOwnership?: (ownerGeneration: string) => LaunchOwnershipStore
+    launchOwnership?: (owner: LaunchOwnershipOwner) => LaunchOwnershipStore
     getSessionMaxSeq(sessionId: string): number
     getSessionFencingToken?: (sessionId: string) => number | undefined
     listSubagents: (parentSessionId: string) => unknown[]
@@ -477,10 +477,10 @@ export type WorkspaceHarnessAdapterInput = {
   store: WorkspaceRuntimeStore
   /**
    * The mount this adapter belongs to. Every process it launches is recorded
-   * under this generation, so the runtime reconciling after a crash can tell
-   * its own launches from the ones it inherited.
+   * under this scope and generation, so the runtime reconciling after a crash
+   * finds them and can tell its own from the ones it inherited.
    */
-  ownerGeneration: string
+  launchOwner: LaunchOwnershipOwner
   /**
    * Where an adapter reports a failure belonging to a session's owner rather
    * than to whoever called it. The host routes it to the runtime currently
@@ -521,7 +521,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
     {
       match: (runner) => nativeSdk(runner),
-      create: ({ runner, options, store, ownerGeneration, reportOwnerFailure }) => {
+      create: ({ runner, options, store, launchOwner, reportOwnerFailure }) => {
         // `match` narrowed this runner, but the registry hands `create` the
         // unnarrowed entry, so the guard is re-applied here rather than
         // asserting the key and letting an unknown id fail as "not a constructor".
@@ -536,7 +536,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
           store,
           // Every process this adapter launches is recorded against the store
           // of the workspace it serves, not whichever one opened first.
-          ownership: store.launchOwnership?.(ownerGeneration) ?? volatileLaunchOwnership(),
+          ownership: store.launchOwnership?.(launchOwner) ?? volatileLaunchOwnership(launchOwner),
           reportOwnerFailure,
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           // Pi's profile holds `models.json`, and that file carries the broker
@@ -621,7 +621,7 @@ function createAdapter(
   options: WorkspaceHostOptions,
   registry: WorkspaceHarnessRegistry,
   store: WorkspaceRuntimeStore,
-  ownerGeneration: string,
+  launchOwner: LaunchOwnershipOwner,
   reportOwnerFailure: (sessionId: string, error: unknown) => void,
 ): AgentHarnessAdapter {
   const entry = registry.find((item) => item.match(harness))
@@ -631,7 +631,7 @@ function createAdapter(
     // runner must fail loudly here.
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
-  return entry.create({ runner: harness, options, store, ownerGeneration, reportOwnerFailure })
+  return entry.create({ runner: harness, options, store, launchOwner, reportOwnerFailure })
 }
 
 function scopedToolPrompt(
@@ -781,6 +781,22 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
    * how a live runtime ends up reconciling its own launches away.
    */
   const ownerGeneration = crypto.randomUUID()
+  /**
+   * The owner every launch record this runtime writes is filed under, and the
+   * only thing a later owner of the same store lists by.
+   *
+   * A workspace when a placer named one, by this host's target or by the
+   * environment it was started in. Otherwise this runtime serves no workspace
+   * and owns the rows of its store that name none: `workspaceId()` would
+   * answer here too, but what it answers when nothing assigned an id is a
+   * label minted for this process, and rows filed under that are rows the next
+   * process never lists again.
+   */
+  const assignedWorkspaceId = options.target?.workspaceId ?? authoritativeWorkspaceId()
+  const launchOwner: LaunchOwnershipOwner = {
+    ownerGeneration,
+    scope: assignedWorkspaceId ? { kind: "workspace", workspaceId: assignedWorkspaceId } : { kind: "standalone" },
+  }
   let disposeDeliveries: (() => Promise<void>) | undefined
   let reissueQueuedPrompts: (() => void) | undefined
   let closing = false
@@ -969,7 +985,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       await configureAdapter(existing, nextRunner)
       return existing
     }
-    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), ownerGeneration, reportAdapterFailure)
+    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store(), launchOwner, reportAdapterFailure)
     sessionAdapters.set(key, next)
     sessionAdapterRunners.set(key, nextRunner)
     adapterRuntimeKeys.set(next, key)
@@ -1210,7 +1226,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (!sessionConfigStore) {
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
       sessionConfigStore = storeFactory({ storeRoot: options.storeRoot })
-      const ownership = sessionConfigStore.launchOwnership?.(ownerGeneration)
+      const ownership = sessionConfigStore.launchOwnership?.(launchOwner)
       // Started before anything else this store does, because until it has
       // run the processes of a previous owner still hold this workspace's
       // ports, working directories and agent session storage, and nothing
@@ -1218,7 +1234,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (ownership) {
         launchReconciliation = reconcileLaunchOwnership(ownership, {
           currentOwnerGeneration: ownerGeneration,
-          scope: { workspaceId: options.target?.workspaceId ?? workspaceId() },
+          scope: launchOwner.scope,
           budgets: DEFAULT_RECOVERY_BUDGETS,
         }).then((summary) => {
           launchOwnershipSummary = summary
@@ -1261,15 +1277,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   }
 
   /**
-   * The owner every launch this workspace makes is recorded against.
+   * The owner every launch this runtime makes is recorded against.
    *
-   * Resolved per launch rather than captured at mount: one process serves
-   * several workspaces, so a store fixed at mount time would record another
-   * workspace's terminals against this one. A store that cannot keep launch
-   * records leaves each launch volatile, recorded as such in its own row.
+   * Resolved per launch rather than captured at mount: the store opens on
+   * first use, and a mount that never launched anything must not open it. A
+   * store that cannot keep launch records leaves each launch volatile,
+   * recorded as such in its own row.
    */
   function launchOwnership() {
-    return store().launchOwnership?.(ownerGeneration) ?? volatileLaunchOwnership()
+    return store().launchOwnership?.(launchOwner) ?? volatileLaunchOwnership(launchOwner)
   }
 
   /**
@@ -2269,12 +2285,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // durable and the replacement owner will read them from the same store
       // root, and "none" here would read as "nothing left to reconcile".
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
-      const ownership = store().launchOwnership?.(ownerGeneration)
+      const ownership = store().launchOwnership?.(launchOwner)
       if (!ownership) return []
       // After reconciliation, so the list is what it could not settle rather
       // than what it had not looked at yet.
       await launchReconciliation
-      return await ownership.listUnresolved({ workspaceId: options.target?.workspaceId ?? workspaceId() })
+      return await ownership.listUnresolved(launchOwner.scope)
     },
     activity() {
       return {

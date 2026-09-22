@@ -81,7 +81,7 @@ type LaunchOwnershipRow = {
 }
 
 /**
- * Launch ownership on the workspace's own database.
+ * Launch ownership on the owning runtime's own database.
  *
  * Forward-only: a row is written before the launch that might need it and is
  * never deleted while its cleanup is unresolved, because the row is the only
@@ -104,16 +104,13 @@ export function sqliteLaunchOwnership(db: SqliteDatabase, owner: LaunchOwnership
     ownerGeneration: owner.ownerGeneration,
 
     async prepare(input: PrepareLaunchInput) {
-      if (!input.scope.workspaceId) {
-        throw new Error(`Refusing to prepare a ${input.role} launch with no workspaceId: reconciliation lists by workspace, and a row without one is never found again`)
-      }
       const prepared = {
         launchId: randomUUID(),
         ownerGeneration: owner.ownerGeneration,
         role: input.role,
         protocol: input.protocol,
         ...(input.parentOwnerId ? { parentOwnerId: input.parentOwnerId } : {}),
-        scope: input.scope,
+        scope: { ...owner.scope, ...input.scope },
         preparedAt: Date.now(),
       }
       db.prepare(`
@@ -125,9 +122,9 @@ export function sqliteLaunchOwnership(db: SqliteDatabase, owner: LaunchOwnership
         prepared.role,
         prepared.protocol,
         input.parentOwnerId ?? null,
-        input.scope.workspaceId ?? null,
-        input.scope.sessionId ?? null,
-        input.scope.directory ?? null,
+        owner.scope.kind === "workspace" ? owner.scope.workspaceId : null,
+        input.scope?.sessionId ?? null,
+        input.scope?.directory ?? null,
         prepared.preparedAt,
       )
       return prepared
@@ -162,13 +159,21 @@ export function sqliteLaunchOwnership(db: SqliteDatabase, owner: LaunchOwnership
       return row ? launchOwnershipFromRow(row) : undefined
     },
 
-    async listUnresolved(scope?: LaunchScope) {
+    async listUnresolved(scope: LaunchScope) {
+      // A standalone runtime's rows are the ones naming no workspace, which is
+      // not the same query as "do not filter by workspace": that one would hand
+      // this runtime every mounted workspace's launches to retire.
       const filters: string[] = ["retired_at IS NULL"]
       const params: unknown[] = []
+      if (scope.kind === "workspace") {
+        filters.push("workspace_id = ?")
+        params.push(scope.workspaceId)
+      } else {
+        filters.push("workspace_id IS NULL")
+      }
       for (const [column, value] of [
-        ["workspace_id", scope?.workspaceId],
-        ["session_id", scope?.sessionId],
-        ["directory", scope?.directory],
+        ["session_id", scope.sessionId],
+        ["directory", scope.directory],
       ] as const) {
         if (value === undefined) continue
         filters.push(`${column} = ?`)
@@ -190,7 +195,7 @@ function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord 
     protocol: row.protocol as LaunchOwnershipRecord["protocol"],
     ...(row.parent_owner_id ? { parentOwnerId: row.parent_owner_id } : {}),
     scope: {
-      ...(row.workspace_id ? { workspaceId: row.workspace_id } : {}),
+      ...(row.workspace_id ? { kind: "workspace" as const, workspaceId: row.workspace_id } : { kind: "standalone" as const }),
       ...(row.session_id ? { sessionId: row.session_id } : {}),
       ...(row.directory ? { directory: row.directory } : {}),
     },

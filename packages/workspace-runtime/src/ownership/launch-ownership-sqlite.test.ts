@@ -1,14 +1,16 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
-import { reconcileLaunch, type CreationIdentity, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
+import { reconcileLaunch, type CreationIdentity, type LaunchOwnerScope, type RetirementResult } from "@claxedo/agent-sdk-runtime/launch"
 import { migrateLaunchOwnership, sqliteLaunchOwnership, type SqliteDatabase } from "./launch-ownership-sqlite"
 
 const generation = "gen-1"
+const mounted: LaunchOwnerScope = { kind: "workspace", workspaceId: "ws" }
+const alone: LaunchOwnerScope = { kind: "standalone" }
 
-function store() {
+function store(scope: LaunchOwnerScope = mounted) {
   const db = new Database(":memory:") as unknown as SqliteDatabase
   migrateLaunchOwnership(db)
-  return { db, ownership: sqliteLaunchOwnership(db, { ownerGeneration: generation }) }
+  return { db, ownership: sqliteLaunchOwnership(db, { ownerGeneration: generation, scope }) }
 }
 
 const identity: CreationIdentity = {
@@ -29,7 +31,7 @@ test("the prepared row exists before anything is spawned", async () => {
     role: "harness",
     protocol: "gate",
     parentOwnerId: "owner-1",
-    scope: { workspaceId: "ws", sessionId: "s1", directory: "/tmp/p" },
+    scope: { sessionId: "s1", directory: "/tmp/p" },
   })
   const record = await ownership.read(prepared.launchId)
 
@@ -39,7 +41,7 @@ test("the prepared row exists before anything is spawned", async () => {
     role: "harness",
     protocol: "gate",
     parentOwnerId: "owner-1",
-    scope: { workspaceId: "ws", sessionId: "s1", directory: "/tmp/p" },
+    scope: { kind: "workspace", workspaceId: "ws", sessionId: "s1", directory: "/tmp/p" },
     preparedAt: prepared.preparedAt,
   })
   expect(reconcileLaunch(record!).execution).toBe("none")
@@ -47,7 +49,7 @@ test("the prepared row exists before anything is spawned", async () => {
 
 test("activation authorization is durable before the gate could have been told", async () => {
   const { db, ownership } = store()
-  const prepared = await ownership.prepare({ role: "harness", protocol: "gate", scope: { workspaceId: "ws" } })
+  const prepared = await ownership.prepare({ role: "harness", protocol: "gate" })
   await ownership.recordIdentity(prepared.launchId, identity, "nonce-1")
   await ownership.authorizeActivation(prepared.launchId)
 
@@ -63,7 +65,7 @@ test("activation authorization is durable before the gate could have been told",
 
 test("a launch whose cleanup is unresolved is retained for a later owner", async () => {
   const { ownership } = store()
-  const prepared = await ownership.prepare({ role: "managed-process", protocol: "gate", scope: { workspaceId: "ws", directory: "/tmp/p" } })
+  const prepared = await ownership.prepare({ role: "managed-process", protocol: "gate", scope: { directory: "/tmp/p" } })
   await ownership.recordIdentity(prepared.launchId, identity, "nonce-1")
   await ownership.authorizeActivation(prepared.launchId)
   await ownership.acknowledgeActivation(prepared.launchId)
@@ -76,36 +78,36 @@ test("a launch whose cleanup is unresolved is retained for a later owner", async
   }
   await ownership.recordRetirement(prepared.launchId, unresolved)
 
-  const open = await ownership.listUnresolved({ directory: "/tmp/p" })
+  const open = await ownership.listUnresolved({ ...mounted, directory: "/tmp/p" })
   expect(open.map((item) => item.launchId)).toEqual([prepared.launchId])
   expect(open[0]?.cleanup).toEqual(unresolved)
   expect(open[0]?.identity).toEqual(identity)
 
   await ownership.recordRetirement(prepared.launchId, cleared)
-  expect(await ownership.listUnresolved({ directory: "/tmp/p" })).toEqual([])
+  expect(await ownership.listUnresolved({ ...mounted, directory: "/tmp/p" })).toEqual([])
 })
 
 test("a leader that exited over a group it still owns stays unresolved", async () => {
   const { ownership } = store()
-  const prepared = await ownership.prepare({ role: "harness", protocol: "gate", scope: { workspaceId: "ws" } })
+  const prepared = await ownership.prepare({ role: "harness", protocol: "gate" })
   await ownership.recordIdentity(prepared.launchId, identity, "nonce-1")
   await ownership.recordRetirement(prepared.launchId, { leader: "exited", descendants: "owned", signals: [] })
 
-  expect((await ownership.listUnresolved()).map((item) => item.launchId)).toEqual([prepared.launchId])
+  expect((await ownership.listUnresolved(mounted)).map((item) => item.launchId)).toEqual([prepared.launchId])
 })
 
 test("unresolved launches are listed per scope, not globally", async () => {
   const { ownership } = store()
-  const mine = await ownership.prepare({ role: "terminal", protocol: "direct", scope: { workspaceId: "ws", sessionId: "s1" } })
-  await ownership.prepare({ role: "terminal", protocol: "direct", scope: { workspaceId: "ws", sessionId: "s2" } })
+  const mine = await ownership.prepare({ role: "terminal", protocol: "direct", scope: { sessionId: "s1" } })
+  await ownership.prepare({ role: "terminal", protocol: "direct", scope: { sessionId: "s2" } })
 
-  expect((await ownership.listUnresolved({ sessionId: "s1" })).map((item) => item.launchId)).toEqual([mine.launchId])
-  expect((await ownership.listUnresolved()).length).toBe(2)
+  expect((await ownership.listUnresolved({ ...mounted, sessionId: "s1" })).map((item) => item.launchId)).toEqual([mine.launchId])
+  expect((await ownership.listUnresolved(mounted)).length).toBe(2)
 })
 
 test("migration is idempotent and keeps existing rows", async () => {
   const { db, ownership } = store()
-  const prepared = await ownership.prepare({ role: "harness", protocol: "gate", scope: { workspaceId: "ws" } })
+  const prepared = await ownership.prepare({ role: "harness", protocol: "gate" })
   migrateLaunchOwnership(db)
   expect((await ownership.read(prepared.launchId))?.launchId).toBe(prepared.launchId)
 })
@@ -115,8 +117,17 @@ test("writing against a launch id nothing prepared is an error, not a silent no-
   await expect(ownership.authorizeActivation("absent")).rejects.toThrow(/No prepared launch/)
 })
 
-test("a launch with no workspace is refused, because reconciliation would never find it", async () => {
-  const { ownership } = store()
-  await expect(ownership.prepare({ role: "harness", protocol: "gate", scope: { directory: "/tmp/p" } as never }))
-    .rejects.toThrow(/no workspaceId/)
+test("a standalone runtime's launch is listed by its own scope and by no workspace's", async () => {
+  const { db, ownership } = store(alone)
+  const prepared = await ownership.prepare({ role: "harness", protocol: "gate", scope: { directory: "/tmp/p" } })
+  expect((await ownership.read(prepared.launchId))?.scope).toEqual({ kind: "standalone", directory: "/tmp/p" })
+  expect((await ownership.listUnresolved(alone)).map((item) => item.launchId)).toEqual([prepared.launchId])
+  expect(await ownership.listUnresolved(mounted)).toEqual([])
+
+  // The same database, because a standalone runtime whose scope matched a
+  // mounted workspace's rows would retire that workspace's live processes.
+  const hosted = sqliteLaunchOwnership(db, { ownerGeneration: generation, scope: mounted })
+  const theirs = await hosted.prepare({ role: "harness", protocol: "gate" })
+  expect((await hosted.listUnresolved(mounted)).map((item) => item.launchId)).toEqual([theirs.launchId])
+  expect((await ownership.listUnresolved(alone)).map((item) => item.launchId)).toEqual([prepared.launchId])
 })

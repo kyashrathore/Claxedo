@@ -295,7 +295,7 @@ describe("workspace runtime public lifecycle", () => {
     for (const id of ["claude", "codex", "cursor", "pi"] as const) {
       const runner = { id, access: "native" as const }
       const entry = defaultWorkspaceHarnessRegistry().find((entry) => entry.match(runner))!
-      const adapter = entry.create({ runner, options: { storeRoot: directory }, store, ownerGeneration: "generation-under-test", reportOwnerFailure: () => {} })
+      const adapter = entry.create({ runner, options: { storeRoot: directory }, store, launchOwner: { ownerGeneration: "generation-under-test", scope: { kind: "standalone" } }, reportOwnerFailure: () => {} })
       await adapter.dispose()
     }
     expect({ closed, recovered }).toEqual({ closed: 0, recovered: 0 })
@@ -700,10 +700,10 @@ describe("workspace runtime public lifecycle", () => {
     // for which no creation identity was recorded, so nothing the replacement
     // can check establishes whether that process is still running.
     const seeded = new RuntimeStore(f.storeRoot)
-    const prepared = await seeded.launchOwnership("previous-owner-generation").prepare({
+    const previousOwner = { ownerGeneration: "previous-owner-generation", scope: { kind: "workspace" as const, workspaceId: f.target.workspaceId } }
+    const prepared = await seeded.launchOwnership(previousOwner).prepare({
       role: "terminal",
       protocol: "direct",
-      scope: { workspaceId: f.target.workspaceId },
     })
     seeded.close()
 
@@ -721,7 +721,7 @@ describe("workspace runtime public lifecycle", () => {
     expect(replacement.host.activity().launches).toMatchObject({ examined: 1, retired: 0, unresolved: 1 })
 
     const resolving = new RuntimeStore(f.storeRoot)
-    await resolving.launchOwnership("previous-owner-generation").recordRetirement(prepared.launchId, {
+    await resolving.launchOwnership(previousOwner).recordRetirement(prepared.launchId, {
       leader: "exited",
       descendants: "verified_clear",
       signals: [],

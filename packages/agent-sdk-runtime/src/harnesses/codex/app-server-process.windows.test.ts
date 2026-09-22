@@ -22,7 +22,6 @@ describe.skipIf(process.platform !== "win32")("CodexAppServerProcess through a r
       env: { ...process.env, ...shim.env },
       requestHandler: async () => ({}),
       ownership: volatileLaunchOwnership(),
-      workspaceId: "ws",
     })
     try {
       expect(shim.read()).toEqual({ execPath: process.execPath, argv: ["app-server", "--listen", "stdio://"] })
@@ -41,7 +40,6 @@ describe.skipIf(process.platform !== "win32")("CodexAppServerProcess through a r
       env: process.env,
       requestHandler: async () => ({}),
       ownership: volatileLaunchOwnership(),
-      workspaceId: "ws",
     })).rejects.toThrow("does not resolve to a real executable")
     await sleep(300)
     expect(existsSync(shim.marker), "the shim body ran, so a shell executed it").toBe(false)

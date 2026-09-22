@@ -37,7 +37,6 @@ test("a launch whose pid was recycled records no identity, so its retirement sig
   const launch = ownDirectClaudeLaunch({
     proc: { pid: 4242 },
     ownership,
-    workspaceId: "ws",
     // The pid now answers for a process that started long before this spawn.
     readIdentity: async () => identity(Date.now() - 60_000),
   })
@@ -63,7 +62,6 @@ test("a launch whose identity matches the spawn is recorded and retirable", asyn
         await ownership.recordIdentity(launchId, observed)
       },
     },
-    workspaceId: "ws",
     readIdentity: async () => identity(Date.now()),
   })
 

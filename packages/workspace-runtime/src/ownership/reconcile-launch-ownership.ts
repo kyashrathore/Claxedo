@@ -42,8 +42,8 @@ export type LaunchOwnershipReconciliation = {
 }
 
 /**
- * Reads the launches a previous owner of this workspace never finished
- * retiring, and finishes them.
+ * Reads the launches a previous owner of this scope never finished retiring,
+ * and finishes them.
  *
  * It runs before the workspace admits work, because until it has run the
  * processes of that previous owner are still holding this workspace's ports,
@@ -61,7 +61,8 @@ export async function reconcileLaunchOwnership(
   input: {
     /** Rows from this generation belong to a runtime that is running now. */
     currentOwnerGeneration: string
-    scope?: LaunchScope
+    /** Whose launches to finish: this runtime's workspace, or its own store when it serves no workspace. */
+    scope: LaunchScope
     budgets?: Partial<RecoveryBudgets>
   },
 ): Promise<LaunchOwnershipReconciliation> {

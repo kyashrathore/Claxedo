@@ -24,8 +24,6 @@ export function spawnObservedClaudeCodeProcess(input: {
   /** Called with the launch this spawn owns, so the turn can retire it. */
   onLaunch?: (launch: ClaudeDirectLaunch) => void
   ownership?: LaunchOwnershipStore
-  /** The workspace a later owner reconciles this launch under; empty when none was named. */
-  workspaceId?: string
 }): SpawnedProcess {
   const proc = (input.spawnProcess ?? spawn)(
     input.options.command,
@@ -44,7 +42,6 @@ export function spawnObservedClaudeCodeProcess(input: {
   input.onLaunch?.(ownDirectClaudeLaunch({
     proc,
     ownership: input.ownership ?? volatileLaunchOwnership(),
-    workspaceId: input.workspaceId ?? "",
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.options.cwd ? { directory: input.options.cwd } : {}),
   }))
@@ -141,7 +138,6 @@ export function ownDirectClaudeLaunch(input: {
   /** Only the pid is read: `SpawnedProcess` does not carry one, but every local spawn does. */
   proc: { pid?: number }
   ownership: LaunchOwnershipStore
-  workspaceId: string
   sessionId?: string
   directory?: string
   /** Injectable so the identity decision can be driven without a real process. */
@@ -153,7 +149,6 @@ export function ownDirectClaudeLaunch(input: {
       role: "harness",
       protocol: "direct",
       scope: {
-        workspaceId: input.workspaceId,
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.directory ? { directory: input.directory } : {}),
       },

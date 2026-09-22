@@ -69,7 +69,6 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       args: ["--mode", "rpc", "--no-session"],
       env: { ...process.env, PI_CODING_AGENT_DIR: directory },
       ownership,
-      workspaceId: "ws",
     })
     try {
       const [state, catalog] = await Promise.all([rpc.request("get_state", {}, soon()), rpc.request("get_available_models", {}, soon())])
@@ -106,7 +105,6 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       args: ["--mode", "rpc", "--no-session"],
       env: { ...process.env, PI_CODING_AGENT_DIR: path.join(directory, "managed-profile") },
       ownership,
-      workspaceId: "ws",
     })
     try {
       expect(await rpc.request("get_state", {}, soon())).toHaveProperty("sessionId")
@@ -155,7 +153,7 @@ const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch
 
 test.skipIf(process.platform === "win32")("dispose retires the owned group, including a descendant that ignores TERM", async () => {
   const { directory, binary } = await fakePi(respondingPi)
-  const rpc = await PiRpcProcess.start({ binary: process.execPath, directory, args: [binary], env: process.env, ownership, workspaceId: "ws" })
+  const rpc = await PiRpcProcess.start({ binary: process.execPath, directory, args: [binary], env: process.env, ownership })
   try {
     const descendant = await new Promise<number>((resolve) => {
       rpc.onEvent((event) => { if (event.type === "descendant") resolve(Number(event.pid)) })
@@ -178,7 +176,7 @@ test.skipIf(process.platform === "win32")("exit is published when the OS reports
   const observer = {
     register: () => ({ update: () => {}, exit: (event: { reason: string }) => observed.push(event.reason) }),
   } as never
-  const rpc = await PiRpcProcess.start({ binary: process.execPath, directory, args: [binary], env: process.env, observer, ownership, workspaceId: "ws" })
+  const rpc = await PiRpcProcess.start({ binary: process.execPath, directory, args: [binary], env: process.env, observer, ownership })
   const exits: string[] = []
   rpc.onExit((error) => exits.push(error.message))
   try {
