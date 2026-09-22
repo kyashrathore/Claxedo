@@ -66,43 +66,77 @@ function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; statu
   )
 }
 
-function MetadataRow(props: { icon: ClaxedoIconProps["name"]; label: string; value?: string }) {
+function MetadataRow(props: {
+  icon: ClaxedoIconProps["name"]
+  label: string
+  value?: string
+  detail?: string
+  tone?: "warning" | "critical"
+}) {
   const value = () => props.value?.trim()
+  // A row with nothing to say is left out rather than drawn as a placeholder:
+  // the card is a glance, and an empty row is a row the eye still has to read.
   return (
-    <div class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
-      {/*
-        No chip behind the glyph. Five filled squares stacked down a 320px card
-        were the loudest thing in it, and they encode what the label beside them
-        already says — the icon is here to help the eye find a row, not to be a
-        second label.
-      */}
-      <span class="flex items-center justify-center text-icon-weak-base">
-        <Icon name={props.icon} size="small" />
-      </span>
-      {/*
-        Sentence case, not tracked micro-caps. At 10px with 0.08em tracking
-        "WORKSPACE" only just cleared its 76px column — one longer word, or any
-        of the other fifteen locales, and it truncated. Sentence case at 11px is
-        narrower, quieter, and leaves the value as the thing being read.
-      */}
-      <span class="text-xs text-text-weaker">{props.label}</span>
-      <span
-        class="min-w-0 truncate text-sm"
-        classList={{
-          "text-text-base": !!value(),
-          // Absence is not a value. An em dash says "nothing here" without
-          // spending a full phrase on it, twice, in a five-row card.
-          "text-text-weaker": !value(),
-        }}
-        title={value() || undefined}
-      >
-        {value() || "—"}
-      </span>
-    </div>
+    <Show when={value()}>
+      {(text) => (
+        <div data-slot="switcher-metadata-row" class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
+          {/*
+            No chip behind the glyph. Five filled squares stacked down a 320px card
+            were the loudest thing in it, and they encode what the label beside them
+            already says — the icon is here to help the eye find a row, not to be a
+            second label.
+          */}
+          <span class="flex items-center justify-center text-icon-weak-base">
+            <Icon name={props.icon} size="small" />
+          </span>
+          {/*
+            Sentence case, not tracked micro-caps. At 10px with 0.08em tracking
+            "WORKSPACE" only just cleared its 76px column — one longer word, or any
+            of the other fifteen locales, and it truncated. Sentence case at 11px is
+            narrower, quieter, and leaves the value as the thing being read.
+          */}
+          <span class="text-xs text-text-weaker">{props.label}</span>
+          <span
+            class="min-w-0 truncate text-sm"
+            classList={{
+              "text-text-base": !props.tone,
+              "text-icon-warning-base": props.tone === "warning",
+              "text-icon-critical-base": props.tone === "critical",
+            }}
+            title={props.detail ? `${text()} ${props.detail}` : text()}
+          >
+            {text()}
+            <Show when={props.detail}>
+              {(detail) => <span class="text-text-weaker"> {detail()}</span>}
+            </Show>
+          </span>
+        </div>
+      )}
+    </Show>
   )
 }
 
+function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`
+}
+
 function SwitcherMetadataCard(props: { item: SwitcherItem }) {
+  const details = props.item.details?.()
+  const session = () => props.item.kind === "session"
+  const todo = () => {
+    const current = details?.todo()
+    if (!current) return undefined
+    const count = `${current.done}/${current.total}`
+    return current.text ? { value: current.text, detail: count } : { value: `${count} done` }
+  }
+  const changes = () => {
+    const current = details?.changes()
+    if (!current) return undefined
+    return { value: plural(current.files, "file", "files"), detail: `+${current.added} −${current.removed}` }
+  }
+  const worktree = () => props.item.workspaceDir ?? props.item.projectWorktree
+  const hasLiveRows = () => !!(details?.status() || todo() || changes())
+  const hasPlaceRows = () => !!(props.item.gitRepo || details?.gitBranch() || worktree())
   return (
     <div
       data-slot="switcher-metadata-card"
@@ -139,13 +173,56 @@ function SwitcherMetadataCard(props: { item: SwitcherItem }) {
         so an even, tight rhythm reads as one block; 8px gaps made five short
         rows look like five separate things.
       */}
-      <div class="grid gap-y-0.5">
-        <MetadataRow icon="folder" label="Project" value={fallback(props.item.projectLabel, "Global")} />
-        <MetadataRow icon="link" label="Git repo" value={props.item.gitRepo} />
-        <MetadataRow icon="branch" label="Branch" value={props.item.gitBranch} />
-        <MetadataRow icon="worktree" label="Worktree" value={props.item.workspaceDir ?? props.item.projectWorktree} />
-        <MetadataRow icon="monitor" label="Workspace" value={fallback(props.item.workspaceLabel, "Global")} />
-      </div>
+      <Show
+        when={session()}
+        fallback={
+          <div class="grid gap-y-0.5">
+            <MetadataRow icon="folder" label="Project" value={props.item.projectLabel} />
+            <MetadataRow icon="link" label="Git repo" value={props.item.gitRepo} />
+            <MetadataRow icon="branch" label="Branch" value={details?.gitBranch()} />
+            <MetadataRow icon="worktree" label="Worktree" value={worktree()} />
+            <MetadataRow icon="monitor" label="Workspace" value={props.item.workspaceLabel} />
+          </div>
+        }
+      >
+        <Show when={hasLiveRows()}>
+          <div class="grid gap-y-0.5">
+            <MetadataRow
+              icon="circle-half"
+              label="Status"
+              value={details?.status()?.text}
+              tone={details?.status()?.tone}
+            />
+            <Show when={details?.question()}>
+              {(question) => (
+                <p data-slot="switcher-metadata-question" class="mb-1 mt-0.5 line-clamp-3 text-xs leading-snug text-text-base">
+                  {question()}
+                </p>
+              )}
+            </Show>
+            <MetadataRow
+              icon="checklist"
+              label="Todo"
+              value={todo()?.value}
+              detail={todo()?.detail}
+            />
+            <MetadataRow
+              icon="changes"
+              label="Changes"
+              value={changes()?.value}
+              detail={changes()?.detail}
+            />
+          </div>
+        </Show>
+        <Show when={hasLiveRows() && hasPlaceRows()}>
+          <div aria-hidden="true" class="my-2 h-px bg-border-weak-base" />
+        </Show>
+        <div class="grid gap-y-0.5">
+          <MetadataRow icon="link" label="Git repo" value={props.item.gitRepo} />
+          <MetadataRow icon="branch" label="Branch" value={details?.gitBranch()} />
+          <MetadataRow icon="worktree" label="Worktree" value={worktree()} />
+        </div>
+      </Show>
     </div>
   )
 }

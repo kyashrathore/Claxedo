@@ -19,6 +19,8 @@ import type { SessionRequestsQueryData } from "../../../features/session/data/sy
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { RailWorktreeInfo } from "./rail-project-session-info"
+import type { ProjectItem } from "./domain-types"
+import { useSwitcherCardDetails } from "./rail-switcher-card-details"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { sessionTurnFailed, subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
 
@@ -26,6 +28,7 @@ export function useRailHeaderSurfaces(input: {
   state: ClaxedoStateApi
   canUseDocuments: Accessor<boolean>
   worktreeInfo: (workspaceDir: string) => RailWorktreeInfo | undefined
+  projects: Accessor<readonly ProjectItem[]>
   autoResponds: (request: NonNullable<SurfaceSessionRequests["permissions"]>[number], workspaceDir: string) => boolean
   closeTerminal?: (terminalId: string) => void | Promise<unknown>
   onTabSelect?: (meta: ContentMeta) => void
@@ -147,8 +150,10 @@ export function useRailHeaderSurfaces(input: {
       projectLabel: { enumerable: true, get: () => info()?.projectName },
       projectWorktree: { enumerable: true, get: () => info()?.projectWorktree },
       gitRepo: { enumerable: true, get: () => info()?.gitRepo },
-      gitBranch: { enumerable: true, get: () => info()?.gitBranch },
-      gitRemote: { enumerable: true, get: () => info()?.gitRemote },
+      details: {
+        enumerable: false,
+        value: () => useSwitcherCardDetails({ meta: meta(), status, projects: input.projects }),
+      },
       workspaceLabel: {
         enumerable: true,
         get: () => {

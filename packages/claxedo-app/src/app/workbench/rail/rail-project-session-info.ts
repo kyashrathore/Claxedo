@@ -44,8 +44,6 @@ export type RailWorktreeInfo = {
   projectName: string
   projectWorktree: string
   gitRepo?: string
-  gitBranch?: string
-  gitRemote?: string
   isMain: boolean
   tooltip: string
 }
@@ -244,28 +242,21 @@ export function railWorktreeInfo(input: {
   if (!project) return undefined
   const workspace = railProjectWorkspaces(project, input.isCloud).find((item) => item.id === input.dir || item.directory === input.dir)
   const name = workspace?.name || getFilename(input.dir)
-  const cachedSessions = cachedDirectorySessions(input.dir)
-  const inventorySessions = railProjectGitSessions({ project, inventory: input.inventory })
-  const sessions: RailSessionGitSource[] = [
-    ...cachedSessions,
-    ...inventorySessions.filter((session) => session.directory === input.dir || session.workspaceId === input.dir),
-    ...inventorySessions,
-    ...cachedProjectSessions(project),
-  ]
-  const git = sessions
-    .map((session) => session.git)
-    .find((item) => item?.repo || item?.remote || item?.branch)
-  const repo = git?.repo ?? parseOwnerRepo(git?.remote) ?? railProjectRepoName({ project, inventory: input.inventory })
   return {
     name,
     projectName: railProjectDisplayName(project, railProjectRepoName({ project, inventory: input.inventory })),
     projectWorktree: project.worktree,
-    gitRepo: repo,
-    gitBranch: git?.branch,
-    gitRemote: git?.remote,
+    gitRepo: railWorktreeRepo(project, input.dir),
     isMain: !!workspace?.isMain,
     tooltip: `🌳 ${name}`,
   }
+}
+
+/** "owner/repo" from the directory's own workspace remote, else any remote the project carries. */
+function railWorktreeRepo(project: ProjectItem, dir: string) {
+  const own = projectWorkspaceInfo(project, dir)?.repo_url
+  const any = Object.values(project.workspaces ?? {}).find((workspace) => workspace.repo_url)?.repo_url
+  return parseOwnerRepo(own ?? any)
 }
 
 function cachedDirectorySessions(directory: string) {

@@ -34,6 +34,7 @@ describe("createRailProjectSessionLookups", () => {
           workspaceId: "runtime_feature",
           directory: "/repo/feature",
           kind: "cloud",
+          repo_url: "git@github.com:owner/feature.git",
         },
       },
     })
@@ -48,13 +49,6 @@ describe("createRailProjectSessionLookups", () => {
             updated: 4,
             remote: "git@github.com:owner/live.git",
           }),
-          {
-            ...session("feature-session", {
-              directory: "/repo/feature",
-              updated: 5,
-            }),
-            git: { repo: "owner/feature", branch: "feature-branch" },
-          },
         ],
       }),
     })
@@ -62,7 +56,6 @@ describe("createRailProjectSessionLookups", () => {
     expect(lookup.projectRepoName(project)).toBe("owner/live")
     expect(lookup.projectCaption(project)).toBe("owner/live · main")
     expect(lookup.worktreeInfo("/repo/feature")).toMatchObject({
-      gitBranch: "feature-branch",
       gitRepo: "owner/feature",
       isMain: false,
       name: "feature",
@@ -193,7 +186,10 @@ describe("railProjectWorkspaces", () => {
 })
 
 describe("railWorktreeInfo", () => {
-  test("prefers exact cached git metadata and preserves project display from project sessions", () => {
+  const info = (project: ProjectItem, dir: string) =>
+    railWorktreeInfo({ dir, projects: [project], inventory: emptyInventory, isCloud: true })
+
+  test("names the repo from the workspace's own remote, with no session metadata at all", () => {
     const project = projectItem({
       workspaces: {
         "/repo/feature": {
@@ -201,40 +197,34 @@ describe("railWorktreeInfo", () => {
           workspaceId: "runtime_ws",
           directory: "/repo/feature",
           kind: "cloud",
+          repo_url: "https://github.com/owner/feature.git",
         },
       },
     })
-    cacheSession("/repo/feature", {
-      id: "cached-feature",
-      directory: "/repo/feature",
-      time: { updated: 5 },
-      git: { repo: "cached/repo", branch: "cached-branch" },
-    })
 
-    expect(railWorktreeInfo({
-      dir: "/repo/feature",
-      projects: [project],
-      inventory: {
-        ...emptyInventory,
-        sessions: [
-          session("project-remote", {
-            projectID: project.id,
-            updated: 10,
-            remote: "git@github.com:owner/project.git",
-          }),
-        ],
-      },
-      isCloud: true,
-    })).toEqual({
+    expect(info(project, "/repo/feature")).toEqual({
       name: "feature",
-      projectName: "owner/project",
+      projectName: "main",
       projectWorktree: "/repo/main",
-      gitRepo: "cached/repo",
-      gitBranch: "cached-branch",
-      gitRemote: undefined,
+      gitRepo: "owner/feature",
       isMain: false,
       tooltip: "🌳 feature",
     })
+  })
+
+  test("falls back to a remote another workspace of the project carries", () => {
+    const project = projectItem({
+      workspaces: {
+        "/repo/main": { id: "main", directory: "/repo/main", repo_url: "git@github.com:owner/project.git" },
+        "/repo/feature": { id: "feature", directory: "/repo/feature" },
+      },
+    })
+
+    expect(info(project, "/repo/feature")?.gitRepo).toBe("owner/project")
+  })
+
+  test("leaves the repo unset when no workspace carries a remote", () => {
+    expect(info(projectItem(), "/repo/meta")?.gitRepo).toBeUndefined()
   })
 })
 

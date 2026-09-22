@@ -564,7 +564,14 @@ export const appLocal: Policy = {
   // beside the other state slices and reaches only solid-js/store, which this
   // entry already carries. Owner: `app/workbench/state`. No new package edge.
   // Exact measured 1132 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1132, packages: 58 },
+  // +1 module (2026-09-23): `app/workbench/rail/rail-switcher-card-details.ts`
+  // — the compact tab hover card's status, todo, changes and branch reads,
+  // which run only while the card is open. It sits beside the header surfaces
+  // that attach it to each tab and reaches the session caches, the vcs query
+  // and the global SDK this entry already carries. Owner:
+  // `app/workbench/rail`. No new package edge. Exact measured 1133 modules /
+  // 58 packages, with no headroom.
+  ceilings: { modules: 1133, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

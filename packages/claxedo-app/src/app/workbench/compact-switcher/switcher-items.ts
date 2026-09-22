@@ -14,12 +14,24 @@ export type SwitcherItem = {
   projectLabel?: string
   projectWorktree?: string
   gitRepo?: string
-  gitBranch?: string
-  gitRemote?: string
   workspaceLabel?: string
   active: boolean
   closable?: boolean
   status?: SwitcherStatus
+  /**
+   * The hover card's live rows. A hook: call it only from the card's body, so
+   * its reads start when the card opens and stop when it closes.
+   */
+  details?: () => SwitcherCardDetails
+}
+
+export type SwitcherCardDetails = {
+  status: () => { text: string; tone?: "warning" | "critical" } | undefined
+  /** The question a session is waiting on, when it is waiting on one. */
+  question: () => string | undefined
+  todo: () => { text?: string; done: number; total: number } | undefined
+  changes: () => { files: number; added: number; removed: number } | undefined
+  gitBranch: () => string | undefined
 }
 
 export type SwitcherItemOptions = {
