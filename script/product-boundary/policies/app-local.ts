@@ -553,7 +553,12 @@ export const appLocal: Policy = {
   // Both ledgers above landed in one merge on 2026-09-22; the closure was
   // re-measured over the merged tree rather than added up. Exact measured
   // 1130 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1130, packages: 58 },
+  // +1 module (2026-09-22): `app/workbench/workbench/drop-target.ts` — the
+  // workbench's own drop zone, split out of `workbench.tsx` to keep that file
+  // under the 800-line budget when the pane hit test was bounded to the
+  // workbench root. It sits beside the drag helpers it already used and
+  // reaches nothing new. Owner: `app/workbench/workbench`. No new package edge.
+  ceilings: { modules: 1131, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
