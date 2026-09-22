@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "Modifications comparées",
   "navigator.sourceControl.compare.search.placeholder": "Rechercher branches, tags, commits",
   "navigator.sourceControl.compare.noMatches": "Aucune référence correspondante",
+  "navigator.sourceControl.compare.workingTree": "arbre de travail",
   "navigator.sourceControl.stage": "Indexer",
   "navigator.sourceControl.unstage": "Désindexer",
   "navigator.sourceControl.stageAll": "Tout indexer",

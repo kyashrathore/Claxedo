@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "การเปลี่ยนแปลงที่เปรียบเทียบ",
   "navigator.sourceControl.compare.search.placeholder": "ค้นหาสาขา แท็ก คอมมิต",
   "navigator.sourceControl.compare.noMatches": "ไม่มีการอ้างอิงที่ตรงกัน",
+  "navigator.sourceControl.compare.workingTree": "เวิร์กทรี",
   "navigator.sourceControl.stage": "จัดเตรียม",
   "navigator.sourceControl.unstage": "ยกเลิกการจัดเตรียม",
   "navigator.sourceControl.stageAll": "จัดเตรียมทั้งหมด",

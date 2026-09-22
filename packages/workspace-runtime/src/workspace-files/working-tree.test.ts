@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
-import { createDiffRuntime, filePatchDiff, uncommittedDiff, unstagedDiff } from "./diff"
+import { createDiffRuntime, filePatchDiff, unstagedDiff, worktreeDiff } from "./diff"
 import { workspaceFileStatus } from "./file"
 import { gitWorktreeStatus } from "./git-worktree"
 import { dosPathFromFinalPath, readWorkingTreeText, workspaceRelativeFile } from "./working-tree"
@@ -160,7 +160,7 @@ describe("working-tree reads", () => {
       expect(diff.after).not.toContain(SECRET.trim())
       expect(diff.additions).toBe(1)
 
-      const patch = await filePatchDiff({ runtime, directory, mode: "unstaged", file: "escape.txt" })
+      const patch = await filePatchDiff({ runtime, directory, target: { kind: "unstaged" }, file: "escape.txt" })
       expect(patch.after).toBe(secret)
       expect(patch.after).not.toContain(SECRET.trim())
 
@@ -193,7 +193,7 @@ describe("working-tree reads", () => {
       await unlink(pointer)
       await symlink(secret, pointer)
 
-      const diff = entry(await uncommittedDiff(createDiffRuntime(), directory), "pointer.txt")
+      const diff = entry(await worktreeDiff(createDiffRuntime(), directory, "HEAD"), "pointer.txt")
       expect(diff.before).toBe("tracked.txt")
       expect(diff.after).toBe(secret)
       expect(diff.after).not.toContain(SECRET.trim())
@@ -465,7 +465,7 @@ describe("working-tree reads", () => {
     await withWorkspace(async ({ directory }) => {
       await unlink(path.join(directory, "tracked.txt"))
 
-      const diff = entry(await uncommittedDiff(createDiffRuntime(), directory), "tracked.txt")
+      const diff = entry(await worktreeDiff(createDiffRuntime(), directory, "HEAD"), "tracked.txt")
       expect(diff.status).toBe("deleted")
       expect(diff.before).toBe("before\n")
       expect(diff.after).toBe("")

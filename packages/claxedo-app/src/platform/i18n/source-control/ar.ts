@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "التغييرات المقارنة",
   "navigator.sourceControl.compare.search.placeholder": "ابحث في الفروع والوسوم والإيداعات",
   "navigator.sourceControl.compare.noMatches": "لا توجد مراجع مطابقة",
+  "navigator.sourceControl.compare.workingTree": "شجرة العمل",
   "navigator.sourceControl.stage": "تجهيز",
   "navigator.sourceControl.unstage": "إلغاء التجهيز",
   "navigator.sourceControl.stageAll": "تجهيز الكل",

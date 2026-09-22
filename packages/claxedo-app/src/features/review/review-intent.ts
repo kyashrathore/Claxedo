@@ -3,11 +3,18 @@ import type { ReviewMode, ReviewSelection } from "@/features/session/preferences
 
 export type { ReviewMode, ReviewSelection }
 
+/** The modes measured from where HEAD left a base, which they carry as `fromRef`. */
+export function isBaseReviewMode(mode: ReviewMode): mode is "branch" | "branch-worktree" {
+  return mode === "branch" || mode === "branch-worktree"
+}
+
 export const reviewModeLabel: Record<ReviewMode, string> = {
   uncommitted: "Uncommitted",
   unstaged: "Unstaged",
   staged: "Staged",
   "to-from": "to / from",
+  branch: "Branch changes",
+  "branch-worktree": "Everything since base",
 }
 
 /** git's hash of the empty tree: the base a root commit is compared against. */
@@ -43,18 +50,22 @@ export function createReviewSelection(input: {
 }
 
 /**
- * The selection as stored: trimmed refs, and refs only in `to-from`. A
- * worktree mode carries whatever refs the pill last showed, and persisting
- * those would pin a placeholder like `HEAD~1` over the default branch the
- * next comparison should start from.
+ * The refs a selection's diff is asked for: both in `to-from`, the base in a
+ * branch mode, none in a worktree mode. A worktree mode carries whatever refs
+ * the pill last showed, and sending or persisting those would pin a
+ * placeholder like `HEAD~1` over the default branch the next comparison
+ * should start from.
  */
-export function persistedReviewSelection(selection: ReviewSelection): ReviewSelection {
-  if (selection.mode !== "to-from") return { mode: selection.mode }
+export function reviewDiffRefs(selection: ReviewSelection): { fromRef?: string; toRef?: string } {
   const fromRef = selection.fromRef?.trim() || undefined
   const toRef = selection.toRef?.trim() || undefined
-  return {
-    mode: selection.mode,
-    ...(fromRef === undefined ? {} : { fromRef }),
-    ...(toRef === undefined ? {} : { toRef }),
+  if (selection.mode === "to-from") {
+    return { ...(fromRef === undefined ? {} : { fromRef }), ...(toRef === undefined ? {} : { toRef }) }
   }
+  if (isBaseReviewMode(selection.mode) && fromRef !== undefined) return { fromRef }
+  return {}
+}
+
+export function persistedReviewSelection(selection: ReviewSelection): ReviewSelection {
+  return { mode: selection.mode, ...reviewDiffRefs(selection) }
 }

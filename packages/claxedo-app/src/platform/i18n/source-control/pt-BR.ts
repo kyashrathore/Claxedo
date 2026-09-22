@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "Alterações comparadas",
   "navigator.sourceControl.compare.search.placeholder": "Buscar branches, tags, commits",
   "navigator.sourceControl.compare.noMatches": "Nenhuma referência correspondente",
+  "navigator.sourceControl.compare.workingTree": "árvore de trabalho",
   "navigator.sourceControl.stage": "Preparar",
   "navigator.sourceControl.unstage": "Despreparar",
   "navigator.sourceControl.stageAll": "Preparar tudo",

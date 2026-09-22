@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "Сравниваемые изменения",
   "navigator.sourceControl.compare.search.placeholder": "Поиск веток, тегов, коммитов",
   "navigator.sourceControl.compare.noMatches": "Нет подходящих ссылок",
+  "navigator.sourceControl.compare.workingTree": "рабочее дерево",
   "navigator.sourceControl.stage": "Добавить в индекс",
   "navigator.sourceControl.unstage": "Убрать из индекса",
   "navigator.sourceControl.stageAll": "Добавить всё в индекс",

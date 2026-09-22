@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "Upoređene izmjene",
   "navigator.sourceControl.compare.search.placeholder": "Pretraži grane, tagove, commitove",
   "navigator.sourceControl.compare.noMatches": "Nema odgovarajućih referenci",
+  "navigator.sourceControl.compare.workingTree": "radno stablo",
   "navigator.sourceControl.stage": "Pripremi",
   "navigator.sourceControl.unstage": "Ukloni iz pripreme",
   "navigator.sourceControl.stageAll": "Pripremi sve",

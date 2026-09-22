@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "对比的更改",
   "navigator.sourceControl.compare.search.placeholder": "搜索分支、标签、提交",
   "navigator.sourceControl.compare.noMatches": "没有匹配的引用",
+  "navigator.sourceControl.compare.workingTree": "工作区",
   "navigator.sourceControl.stage": "暂存",
   "navigator.sourceControl.unstage": "取消暂存",
   "navigator.sourceControl.stageAll": "全部暂存",

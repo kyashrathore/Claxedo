@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "比較した変更",
   "navigator.sourceControl.compare.search.placeholder": "ブランチ、タグ、コミットを検索",
   "navigator.sourceControl.compare.noMatches": "一致する参照はありません",
+  "navigator.sourceControl.compare.workingTree": "作業ツリー",
   "navigator.sourceControl.stage": "ステージ",
   "navigator.sourceControl.unstage": "ステージ解除",
   "navigator.sourceControl.stageAll": "すべてステージ",

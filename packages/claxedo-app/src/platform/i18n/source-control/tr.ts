@@ -14,6 +14,7 @@ export const dict = {
   "navigator.sourceControl.group.compare": "Karşılaştırılan değişiklikler",
   "navigator.sourceControl.compare.search.placeholder": "Dal, etiket, commit ara",
   "navigator.sourceControl.compare.noMatches": "Eşleşen referans yok",
+  "navigator.sourceControl.compare.workingTree": "çalışma ağacı",
   "navigator.sourceControl.stage": "Hazırla",
   "navigator.sourceControl.unstage": "Hazırlıktan çıkar",
   "navigator.sourceControl.stageAll": "Tümünü hazırla",

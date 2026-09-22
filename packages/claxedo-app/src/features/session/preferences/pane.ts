@@ -1,10 +1,14 @@
 import { createSignal } from "solid-js"
 import { isRecord } from "@claxedo/helpers/guards"
 
-/** What a pane's Review compares: the worktree against the index or HEAD, or two refs. */
-export type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
+/**
+ * What a pane's Review compares: the worktree against the index or HEAD, two
+ * refs, or the commit where HEAD left a base (`branch` up to HEAD,
+ * `branch-worktree` up to the files on disk).
+ */
+export type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from" | "branch" | "branch-worktree"
 
-/** What a pane reviews: the diff mode and, in `to-from`, the two refs it compares. */
+/** What a pane reviews: the diff mode, the two refs in `to-from`, and the base as `fromRef` in the branch modes. */
 export type ReviewSelection = { mode: ReviewMode; fromRef?: string; toRef?: string }
 
 export type PanePreferenceKind = "reviewMode"
@@ -33,6 +37,7 @@ type PanePreferenceMaps = { [K in PanePreferenceKind]: Record<string, PanePrefer
 
 function isReviewMode(value: unknown): value is ReviewMode {
   return value === "uncommitted" || value === "unstaged" || value === "staged" || value === "to-from"
+    || value === "branch" || value === "branch-worktree"
 }
 
 function optionalRef(value: unknown) {

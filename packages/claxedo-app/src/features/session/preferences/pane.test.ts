@@ -61,7 +61,7 @@ describe("pane preferences", () => {
     expect(prefs.reviewSelection({ directory: "/tmp/proj", sessionId: "ses_1" })).toEqual({ mode: "staged" })
   })
 
-  test("drops malformed entries, unknown modes, and empty refs", () => {
+  test("drops malformed entries, unknown modes, and empty refs, and reads a branch mode with its base", () => {
     const { storage } = memoryStorage({
       [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({
         "draft:one": "staged",
@@ -70,6 +70,7 @@ describe("pane preferences", () => {
         "draft:four": { mode: "to-from", fromRef: "", toRef: 7 },
         "draft:five": { mode: "sideways" },
         "draft:six": ["to-from"],
+        "draft:eight": { mode: "branch-worktree", fromRef: "main", toRef: "HEAD" },
       }),
     })
     const prefs = createPanePreferences(storage)
@@ -80,6 +81,7 @@ describe("pane preferences", () => {
     expect(prefs.get("reviewMode", "draft:four")).toEqual({ mode: "to-from" })
     expect(prefs.get("reviewMode", "draft:five")).toBeUndefined()
     expect(prefs.get("reviewMode", "draft:six")).toBeUndefined()
+    expect(prefs.get("reviewMode", "draft:eight")).toEqual({ mode: "branch-worktree", fromRef: "main", toRef: "HEAD" })
   })
 
   test("promotes draft review preferences into a session scope", () => {
