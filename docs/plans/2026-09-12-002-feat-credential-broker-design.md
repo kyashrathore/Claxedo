@@ -95,7 +95,7 @@ Each harness consumes auth differently:
 | Harness | Current credential handoff |
 | --- | --- |
 | [Claude](../../packages/agent-sdk-runtime/src/harnesses/claude/auth.ts) | API key or subscription token in its process environment |
-| [Codex](../../packages/agent-sdk-runtime/src/harnesses/codex/process-auth.ts) | Login RPC to the app-server, which maintains its own login state |
+| [Codex](../../packages/agent-sdk-runtime/src/harnesses/codex/operator-login.ts) | Login RPC to the app-server, which maintains its own login state |
 | [Pi](../../packages/agent-sdk-runtime/src/harnesses/pi/driver.ts) | Environment variables and an auth profile on disk |
 | [Cursor](../../packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts) | API key passed to SDK Agent.create |
 | [OpenCode](../../packages/claxedo-server-core/src/opencode/sdk-credential-bridge.ts) | Separate bridge writes registry credentials into the engine’s configuration |
