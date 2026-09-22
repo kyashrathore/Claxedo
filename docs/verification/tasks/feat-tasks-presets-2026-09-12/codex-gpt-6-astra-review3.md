@@ -26,7 +26,7 @@ Ran `git diff dev...HEAD --stat` and `git log dev..HEAD --oneline`, read the pri
 
 1. **R1 — High: A committed link can strand an unsubmitted task after reload.**
 
-   **Location:** [tasks/service.ts:536](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/tasks/service.ts:536), [task-detail.tsx:134](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/solid/task-detail.tsx:134), [task-detail-panel.tsx:95](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-app/src/features/tasks/ui/task-detail-panel.tsx:95).
+   **Location:** [tasks/service.ts:536](packages/claxedo-tasks/src/tasks/service.ts:536), packages/claxedo-tasks/src/solid/task-detail.tsx:134, packages/claxedo-app/src/features/tasks/ui/task-detail-panel.tsx:95.
 
    **Failure scenario:** The link commits, then the process stops or handoff fails before submission. After reload, the session is live, so the detail view offers **Open**; Start requires no current link, and Start again requires non-live liveness. Open only navigates—it does not retry handoff. No background recovery owns the missing message.
 
@@ -36,7 +36,7 @@ Ran `git diff dev...HEAD --stat` and `git log dev..HEAD --oneline`, read the pri
 
 2. **R2 — High: Preset-change refusal leaves the attempt occupied but unlinked.**
 
-   **Location:** [tasks/service.ts:505](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/tasks/service.ts:505), [session-bridge-core.ts:582](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:582), [tasks/service.ts:200](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/tasks/service.ts:200).
+   **Location:** [tasks/service.ts:505](packages/claxedo-tasks/src/tasks/service.ts:505), [session-bridge-core.ts:582](packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:582), [tasks/service.ts:200](packages/claxedo-tasks/src/tasks/service.ts:200).
 
    **Failure scenario:** Start creates the session using preset A. The preset’s instructions change before settlement, so the new check rejects the link. Retrying with the current preset cannot adopt the old configuration; requesting attempt 2 fails because no attempt-1 link exists.
 

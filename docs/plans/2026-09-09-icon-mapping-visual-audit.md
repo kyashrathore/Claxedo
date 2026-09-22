@@ -6,7 +6,7 @@
 
 - `three-dots` is the single overflow icon API. `kebab`, `more-horizontal` and the app-only `outline-dots` alias are removed. The browser rotates it 90 degrees; sidebar overflow stays horizontal.
 - `folders` is the single folder-stack identity. `file-tree` and `file-tree-active` app names are removed. OpenCode `folder-open` also uses `folders`; Codex retains its open-folder drawing.
-- Both themes use Codex artwork for globe, cloud, gauge, reload, reset and worktree. Both use OpenCode’s Discord brand mark. [Authoritative artwork policy](/Users/yashvardhansingh/test/opencode/packages/ui/src/components/icon-artwork-policy.tsx).
+- Both themes use Codex artwork for globe, cloud, gauge, reload, reset and worktree. Both use OpenCode’s Discord brand mark. [Authoritative artwork policy](packages/ui/src/components/icon-artwork-policy.tsx).
 - Accepted as-is for now, with comments in the mapping source: layout-right-full, layout-right-partial, monitor, new-session-active, review-active, server, arrow-down-to-line, chevron-double-left, chevron-double-right, circle-ban-sign and code-lines.
 - Processes and terminals use Codex’s terminal outline in Codex and the bare OpenCode >_ console prompt in other themes; active state only changes foreground emphasis. Raw-message and edit/write/patch file accordions use down/up carets from the trigger’s expanded state.
 - Raw upstream inventories retain their upstream names; the app vocabulary is separate from the extracted source inventory.
@@ -15,10 +15,10 @@
 
 `glasses`: Codex artwork still needs review. It appears in file-read tool headers and the shared BasicTool read-intent icon. [Open usage table](http://localhost:6006/iframe.html?id=reference-codex-icon-system--complete-reference&viewMode=story#usage).
 
-- [packages/session-ui/src/components/basic-tool.tsx:408](/Users/yashvardhansingh/test/opencode/packages/session-ui/src/components/basic-tool.tsx:408)
-- [packages/session-ui/src/components/basic-tool.tsx:425](/Users/yashvardhansingh/test/opencode/packages/session-ui/src/components/basic-tool.tsx:425)
-- [packages/session-ui/src/components/message-part.tsx:519](/Users/yashvardhansingh/test/opencode/packages/session-ui/src/components/message-part.tsx:519)
-- [packages/session-ui/src/components/message-part.tsx:2213](/Users/yashvardhansingh/test/opencode/packages/session-ui/src/components/message-part.tsx:2213)
+- [packages/session-ui/src/components/basic-tool.tsx:408](packages/session-ui/src/components/basic-tool.tsx:408)
+- [packages/session-ui/src/components/basic-tool.tsx:425](packages/session-ui/src/components/basic-tool.tsx:425)
+- [packages/session-ui/src/components/message-part.tsx:519](packages/session-ui/src/components/message-part.tsx:519)
+- [packages/session-ui/src/components/message-part.tsx:2213](packages/session-ui/src/components/message-part.tsx:2213)
 
 ## Effective mappings
 

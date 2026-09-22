@@ -7,7 +7,7 @@ Orchestrator verification: findings 1–8, 10–12, 14 and the host-ports commen
 Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/opencode-tasks`. No files were modified. `bun test src` in `packages/claxedo-tasks` passed: **151 tests, 0 failures**. Additional inline probes reproduced findings 1, 2, 4 and 6. The D1 probe ran the actual adapter and migration against in-memory SQLite; deployed D1 and native-harness resume remain unverified.
 
 1. **High — Start bypasses session authorization.**  
-   [tasks/service.ts:377](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/tasks/service.ts:377)
+   [tasks/service.ts:377](packages/claxedo-tasks/src/tasks/service.ts:377)
 
    Detail filters links through `authorizeSessionOpen`, but Start returns an existing live link without that check. Continue also passes the previous session to the privileged bridge without authorization; `readHandoff` reads its messages using the host runtime client.
 
@@ -16,7 +16,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Authorize session access before returning a link, probing transcript readability, or reading the previous transcript. Recheck before copying it into the new session.
 
 2. **High — An origin does not reserve immutable configuration.**  
-   [session-bridge-core.ts:367](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:367)
+   [session-bridge-core.ts:367](packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:367)
 
    The deterministic ID binds scope/task/slot/attempt, but neither the reservation nor existing-session lookup compares the resolved configuration digest. A successful GET skips creation regardless of which preset created that session.
 
@@ -25,7 +25,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Atomically reserve origin plus resolved configuration hash in the session owner before creation. Recover matching reservations and reject competing settings.
 
 3. **High — Link insertion does not enforce the state that authorized Start.**  
-   [tasks/service.ts:412](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/tasks/service.ts:412)
+   [tasks/service.ts:412](packages/claxedo-tasks/src/tasks/service.ts:412)
 
    Settlement checks only task existence, archival and project. It does not compare the original revision or workspace, revalidate the preset, or guard the current attempt. In D1, the task reread itself adds no commit-time predicate.
 
@@ -34,7 +34,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Make link insertion conditional on the expected task revision, target and current attempt within the same commit. Retain and compare the preset/configuration reservation. Advance the task revision so concurrent edits cannot miss a newly inserted link.
 
 4. **High — D1 can commit an unfinished child under a Done parent.**  
-   [tasks/service.ts:100](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/tasks/service.ts:100)
+   [tasks/service.ts:100](packages/claxedo-tasks/src/tasks/service.ts:100)
 
    `requireOpenParent` validates one parent revision, but `touchParent` rereads the parent and uses its newer revision for CAS. D1 reads are not a transaction snapshot, so the second read can discard the evidence underlying the first check.
 
@@ -43,7 +43,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Carry the validated parent snapshot through the mutation and guard that revision at commit. Apply the same rule to restore, reopening children and reparenting.
 
 5. **High — SQLite holds a transaction open across awaits on the shared database connection.**  
-   [sqlite-store.ts:308](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/sqlite-store.ts:308)
+   [sqlite-store.ts:308](packages/claxedo-server-core/src/tasks-host/sqlite-store.ts:308)
 
    `BEGIN IMMEDIATE` wraps asynchronous work on `ClaxedoDB.raw()`. The queue protects only transactions through this particular adapter instance. Other `ClaxedoDB.use` callers and other adapter instances use the same connection outside that queue.
 
@@ -52,7 +52,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Put transaction ownership at the database owner: use an isolated connection or prepare asynchronous decisions before a synchronous, guarded commit. An adapter-local queue cannot isolate the shared connection.
 
 6. **Medium — Memory rollback erases other committed transactions.**  
-   [memory.ts:172](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/stores/memory.ts:172)
+   [memory.ts:172](packages/claxedo-tasks/src/stores/memory.ts:172)
 
    Transactions mutate shared state directly and restore a whole-store snapshot on failure.
 
@@ -61,7 +61,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Serialize all participating operations or use isolated transaction state with conflict detection. Add overlapping success/rollback cases to shared conformance; its current manifest explicitly leaves concurrent arbitration untested.
 
 7. **High — Recovery treats an unreadable message history as permission to resend.**  
-   [session-bridge-core.ts:432](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:432)
+   [session-bridge-core.ts:432](packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:432)
 
    `readMessages` returns `null` for request failures, and `alreadySent` converts that uncertainty into `false`. The bridge then submits the first message again. The runtime’s admission map protects retries within one process, but it is not durable across restart.
 
@@ -70,7 +70,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Use durable first-message admission/replay in the runtime owner. Treat failed readback as uncertainty, not absence. Persist the link before submission, with submission recovery owned by the runtime.
 
 8. **Medium — Recovery never repairs missing session metadata.**  
-   [session-bridge-core.ts:398](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:398)
+   [session-bridge-core.ts:398](packages/claxedo-server-core/src/tasks-host/session-bridge-core.ts:398)
 
    `projectSessionMeta` runs only when this request creates the runtime session.
 
@@ -79,7 +79,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Reconcile the canonical projection when recovering an existing reserved session, before reporting success or calculating liveness.
 
 9. **Medium — D1 commit conflicts bypass command replay and typed refusals.**  
-   [d1-store.ts:471](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/tasks/d1-store.ts:471)
+   [d1-store.ts:471](packages/claxedo-server/src/tasks/d1-store.ts:471)
 
    Receipt/link collisions and revision guards can fail during `database.batch`, after operations have already returned success. `commands.execute` recognizes a duplicate only when `receipts.put` returns `false`; its `raced` flag remains false for batch failures.
 
@@ -88,7 +88,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
    **Fix:** Classify commit-time conflicts at the adapter boundary. Recover and reauthorize matching receipts; return typed stale/conflict errors for genuine competing writes.
 
 10. **Medium — Continue is unreachable through the real dialog.**  
-    [start-task-dialog.tsx:107](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/solid/start-task-dialog.tsx:107)
+    packages/claxedo-tasks/src/solid/start-task-dialog.tsx:107
 
     The checkbox appears only when `previousTranscriptReadable` is true. The real bridge sets that from a handoff it reads only when `continueFromPrevious` is already true. The initial draft sets it false.
 
@@ -97,7 +97,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
     **Fix:** Probe authorized transcript availability independently of the selected checkbox; include transcript content only after explicit selection. Test the complete flow against the real preview producer.
 
 11. **Medium — The Solid surface silently discards pagination.**  
-    [queries.ts:34](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-app/src/features/tasks/data/queries.ts:34)
+    [queries.ts:34](packages/claxedo-app/src/features/tasks/data/queries.ts:34)
 
     Preset, task and child queries return only `page.items`, discarding `nextCursor`, with no pagination control or subsequent fetch.
 
@@ -106,7 +106,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
     **Fix:** Preserve cursors and provide pagination or fetch subsequent pages through the existing query owner.
 
 12. **Medium — Signed self-hosting mounts unsigned-local Tasks composition.**  
-    [start.ts:78](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/deployments/self-hosted-node/start.ts:78)
+    [start.ts:78](packages/claxedo-server/src/deployments/self-hosted-node/start.ts:78)
 
     Self-hosting supports embedded multi-user authentication, but always mounts `local-composition`, which uses loopback authentication, a single local owner and unconditional project/session authorization.
 
@@ -115,7 +115,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
     **Fix:** Compose signed authentication and authority with SQLite for signed self-hosting. Restrict the local composition to the unsigned single-user posture.
 
 13. **Medium — Required build-time optionality is absent.**  
-    [secondary-feature-ports.ts:141](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-app/src/app/integrations/secondary-feature-ports.ts:141)
+    [secondary-feature-ports.ts:141](packages/claxedo-app/src/app/integrations/secondary-feature-ports.ts:141)
 
     Tasks registers unconditionally in the renderer and is imported unconditionally by desktop/self-hosted entries. The design’s `CLAXEDO_BUILD_TASKS` exclusion path is not wired.
 
@@ -124,7 +124,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
     **Fix:** Carry the build selection through renderer registration, host composition and migration staging. Verify enabled and disabled emitted artifacts, including reused staging directories.
 
 14. **Medium — Standing instructions fail open when configuration cannot be read.**  
-    [service.ts:269](/Users/yashvardhansingh/test/opencode-tasks/packages/workspace-runtime/src/session/service.ts:269)
+    [service.ts:269](packages/workspace-runtime/src/session/service.ts:269)
 
     Removing the prompt short-circuit is necessary, but the newly essential configuration read still catches every error and substitutes `undefined`.
 
@@ -133,7 +133,7 @@ Reviewed `feat/tasks-presets` against `dev` in `/Users/yashvardhansingh/test/ope
     **Fix:** Propagate configuration-read failures and refuse admission until authoritative configuration is available. Test failure and recovery, not only successful persistence and prompt serialization.
 
 15. **Low — Comments claim guarantees the implementation does not provide.**  
-    [host-ports.ts:22](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/host-ports.ts:22)
+    [host-ports.ts:22](packages/claxedo-server-core/src/tasks-host/host-ports.ts:22)
 
     This comment says preview validates model-specific effort, but `configurationBlocker` checks only model availability. The hosted composition also claims selected-only cloud capability support while `resolveStart` unconditionally blocks cloud placement.
 

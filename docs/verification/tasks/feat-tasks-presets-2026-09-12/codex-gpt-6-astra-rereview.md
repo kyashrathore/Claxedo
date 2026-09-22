@@ -28,7 +28,7 @@ Reviewed `dev...HEAD` and the fix commits in `/Users/yashvardhansingh/test/openc
 
 1. **High — Configuration-read refusal permanently suppresses same-ID retries in `prompt_async`.**
 
-   **Location:** [session-core.ts:2062](/Users/yashvardhansingh/test/opencode-tasks/packages/workspace-runtime/src/routes/session-core.ts:2062), [service.ts:458](/Users/yashvardhansingh/test/opencode-tasks/packages/workspace-runtime/src/session/service.ts:458).
+   **Location:** [session-core.ts:2062](packages/workspace-runtime/src/routes/session-core.ts:2062), [service.ts:458](packages/workspace-runtime/src/session/service.ts:458).
 
    **Failure scenario:** On the adapter-backed path, `prompt_async` adds the message ID to `promptAdmissions`, then the new configuration read throws before execution. The asynchronous catch publishes an error but leaves the admission marker; the route returns 204. After configuration access recovers, retrying that message ID immediately returns 204 without executing. A Tasks Start can consequently link a session whose first task message never ran.
 
@@ -38,9 +38,9 @@ Reviewed `dev...HEAD` and the fix commits in `/Users/yashvardhansingh/test/openc
 
 2. **Medium — Signed users cannot Start again after deleting the previous session.**
 
-   **Location:** [tasks/service.ts:171](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/tasks/service.ts:171).
+   **Location:** [tasks/service.ts:171](packages/claxedo-tasks/src/tasks/service.ts:171).
 
-   **Failure scenario:** A signed user starts a task, deletes its session, then requests the next attempt. The new unconditional session-open check runs before liveness classification. Signed session authority rejects deleted rows at [private-session-authority.ts:172](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts:172), so the request receives `forbidden` and never reaches the deleted-session attempt rule.
+   **Failure scenario:** A signed user starts a task, deletes its session, then requests the next attempt. The new unconditional session-open check runs before liveness classification. Signed session authority rejects deleted rows at [private-session-authority.ts:172](packages/claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts:172), so the request receives `forbidden` and never reaches the deleted-session attempt rule.
 
    The new denial test uses a Boolean authorization fake; it does not distinguish inaccessible live sessions from an authorized user’s deleted session.
 
@@ -48,7 +48,7 @@ Reviewed `dev...HEAD` and the fix commits in `/Users/yashvardhansingh/test/openc
 
 3. **Medium — Transaction serialization breaks duplicate edit replay.**
 
-   **Location:** [commands.ts:131](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/commands.ts:131).
+   **Location:** [commands.ts:131](packages/claxedo-tasks/src/commands.ts:131).
 
    **Failure scenario:** Two identical edit requests both pass the receipt check outside the transaction. Memory/SQLite serialization lets the first commit before the second starts. The second runs the command against the old requested revision and throws `stale_revision` **before** reaching `receipts.put`. Neither `raced` nor duplicate-receipt classification applies, so an identical committed request receives an error instead of replay.
 
@@ -58,7 +58,7 @@ Reviewed `dev...HEAD` and the fix commits in `/Users/yashvardhansingh/test/openc
 
 4. **Medium — Failed automatic pagination retries indefinitely.**
 
-   **Location:** [queries.ts:72](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-app/src/features/tasks/data/queries.ts:72).
+   **Location:** [queries.ts:72](packages/claxedo-app/src/features/tasks/data/queries.ts:72).
 
    **Failure scenario:** The first preset or children page succeeds with a cursor; the next page repeatedly fails. After each exhausted fetch, `isFetchingNextPage` becomes false while `hasNextPage` remains true. The effect starts another fetch cycle, bypassing the intended retry limit and continuing requests while the view remains mounted.
 
@@ -68,7 +68,7 @@ Reviewed `dev...HEAD` and the fix commits in `/Users/yashvardhansingh/test/openc
 
 5. **Low — New principal documentation describes a fallback that is explicitly refused.**
 
-   **Location:** [authorization.ts:53](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/authorization.ts:53).
+   **Location:** [authorization.ts:53](packages/claxedo-server-core/src/tasks-host/authorization.ts:53).
 
    **Failure scenario:** The comment says a non-human principal reserves as its own service actor. The resolver returns `undefined`, and `createTasksSessionReserve` explicitly refuses when a supplied resolver cannot answer. A maintainer following the comment would expect support that does not exist.
 

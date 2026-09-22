@@ -4,7 +4,7 @@
 
 ### P1 — A capability can direct Start into another project’s workspace
 
-**Location:** [capability.ts:69](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/capability.ts:69), [authorization.ts:187](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/authorization.ts:187)
+**Location:** [capability.ts:69](packages/claxedo-server-core/src/tasks-host/capability.ts:69), [authorization.ts:187](packages/claxedo-server-core/src/tasks-host/authorization.ts:187)
 
 The capability checks the task’s `projectId`, but accepts its independently supplied `workspaceId`. Start subsequently resolves that workspace directly in `session-bridge-core.ts:409`. Reservation checks the owner’s workspace access, without preserving the capability’s project restriction.
 
@@ -14,7 +14,7 @@ The capability checks the task’s `projectId`, but accepts its independently su
 
 ### P1 — Capability callers bypass private-session authorization
 
-**Location:** [authorization.ts:203](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/authorization.ts:203)
+**Location:** [authorization.ts:203](packages/claxedo-server-core/src/tasks-host/authorization.ts:203)
 
 For capability actors, `authorizeSessionOpen` returns true whenever `workspaceId` is non-null. Project membership does not establish access to every private session linked to a shared task.
 
@@ -24,7 +24,7 @@ For capability actors, `authorizeSessionOpen` returns true whenever `workspaceId
 
 ### P1 — The node/hosted MCP contribution drops `enabledToolGroups`
 
-**Location:** [first-party-mcp.ts:93](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/mcp/first-party-mcp.ts:93)
+**Location:** [first-party-mcp.ts:93](packages/claxedo-server/src/mcp/first-party-mcp.ts:93)
 
 `FirstPartyMcpOptions.enabledToolGroups` is accepted upstream but never passed to `createClaxedoMcpRoutes`.
 
@@ -36,7 +36,7 @@ For capability actors, `authorizeSessionOpen` returns true whenever `workspaceId
 
 ### P1 — Ordinary cloud workspaces lose the first-party tools
 
-**Location:** [runtime-boot.ts:147](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/hosts/workspace-runtime/runtime-boot.ts:147)
+**Location:** [runtime-boot.ts:147](packages/claxedo-server/src/hosts/workspace-runtime/runtime-boot.ts:147)
 
 An absent `WORKSPACE_RUNTIME_MCP_TOOL_GROUPS` becomes `[]`. Its only production producer is `createTasksRootCapability`, reached through task-created cloud roots. Ordinary cloud provisioning passes project environment without resolving built-in activation.
 
@@ -46,7 +46,7 @@ An absent `WORKSPACE_RUNTIME_MCP_TOOL_GROUPS` becomes `[]`. Its only production 
 
 ### P1 — A project-specific switch grants Tasks across all listed projects
 
-**Location:** [directory.tsx:157](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-app/src/features/agent-plugins/directory/directory.tsx:157), [directory.tsx:263](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-app/src/features/agent-plugins/directory/directory.tsx:263)
+**Location:** [directory.tsx:157](packages/claxedo-app/src/features/agent-plugins/directory/directory.tsx:157), [directory.tsx:263](packages/claxedo-app/src/features/agent-plugins/directory/directory.tsx:263)
 
 The catalog read uses the selected project, but `activationTarget` writes every project in `catalog.projects`. The server returns that complete project list even for project-specific catalog reads.
 
@@ -56,7 +56,7 @@ The catalog read uses the selected project, but `activationTarget` writes every 
 
 ### P2 — A granted hosted cloud Start still lacks the identity required downstream
 
-**Location:** [hosted-composition.ts:109](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/tasks/hosted-composition.ts:109), [session-bridge.ts:153](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/tasks/session-bridge.ts:153)
+**Location:** [hosted-composition.ts:109](packages/claxedo-server/src/tasks/hosted-composition.ts:109), [session-bridge.ts:153](packages/claxedo-server/src/tasks/session-bridge.ts:153)
 
 Capability actors live in the grant registry, so `principals.authOf(actor)` returns undefined. Cloud allocation nevertheless requires that signed auth and refuses the request.
 
@@ -68,7 +68,7 @@ Additionally, the production composition supplies no `crossMachineWrites` reader
 
 ### P2 — Hosted Tasks stops working after the boot token expires
 
-**Location:** [tasks-grant.ts:40](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/hosts/workspace-runtime/tasks-grant.ts:40), [capability.ts:17](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/tasks/capability.ts:17)
+**Location:** [tasks-grant.ts:40](packages/claxedo-server/src/hosts/workspace-runtime/tasks-grant.ts:40), [capability.ts:17](packages/claxedo-server/src/tasks/capability.ts:17)
 
 The capability defaults to 30 minutes. The runtime captures its token at boot, with no renewal or replacement path.
 
@@ -78,7 +78,7 @@ The capability defaults to 30 minutes. The runtime captures its token at boot, w
 
 ### P2 — Capability callers can forge task provenance
 
-**Location:** [authorization.ts:150](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server-core/src/tasks-host/authorization.ts:150), [tasks/service.ts:326](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/tasks/service.ts:326)
+**Location:** [authorization.ts:150](packages/claxedo-server-core/src/tasks-host/authorization.ts:150), [tasks/service.ts:326](packages/claxedo-tasks/src/tasks/service.ts:326)
 
 The MCP handler constructs provenance correctly, but a sandbox can call the control-plane route directly. Admission never compares `createdFrom` with the verified capability.
 
@@ -88,7 +88,7 @@ The MCP handler constructs provenance correctly, but a sandbox can call the cont
 
 ### P2 — Preset-name resolution searches only the first page
 
-**Location:** [tasks.ts:246](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-mcp/src/tools/tasks.ts:246)
+**Location:** [tasks.ts:246](packages/claxedo-mcp/src/tools/tasks.ts:246)
 
 `presetFor` ignores `nextCursor` when resolving a name.
 
@@ -98,7 +98,7 @@ The MCP handler constructs provenance correctly, but a sandbox can call the cont
 
 ### P2 — The sandbox invariant guard can pass with credential admission broken
 
-**Location:** [app.sandbox-credential-scope.test.ts:174](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/deployments/hosted-shared/app.sandbox-credential-scope.test.ts:174), [app.sandbox-credential-scope.test.ts:445](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/deployments/hosted-shared/app.sandbox-credential-scope.test.ts:445)
+**Location:** [app.sandbox-credential-scope.test.ts:174](packages/claxedo-server/src/deployments/hosted-shared/app.sandbox-credential-scope.test.ts:174), [app.sandbox-credential-scope.test.ts:445](packages/claxedo-server/src/deployments/hosted-shared/app.sandbox-credential-scope.test.ts:445)
 
 The guard uses `testRequestAuthenticationAdapter`, which authenticates **any bearer** as a user. Its assertions detect differing successful responses to foreign names, rather than enforcing the intended credential-to-route admission matrix. Constant successful responses escape detection; 5xx routes are collected as unprobed without failing.
 
@@ -110,7 +110,7 @@ The generic request also places `workspaceId: null` inside `task.create`, so it 
 
 ### P3 — Comments contradict implementation and defend duplicated contracts
 
-**Location:** [tasks.ts:36](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-mcp/src/tools/tasks.ts:36), [session-grants.ts:30](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-server/src/tasks/session-grants.ts:30), [start.ts:27](/Users/yashvardhansingh/test/opencode-tasks/packages/claxedo-tasks/src/start.ts:27)
+**Location:** [tasks.ts:36](packages/claxedo-mcp/src/tools/tasks.ts:36), [session-grants.ts:30](packages/claxedo-server/src/tasks/session-grants.ts:30), [start.ts:27](packages/claxedo-tasks/src/start.ts:27)
 
 Concrete examples:
 
