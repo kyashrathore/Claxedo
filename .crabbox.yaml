@@ -290,13 +290,13 @@ jobs:
     command: bash script/cbx-ci-remote.sh e2e-tier-real
   focus-e2e-tier-real-claude-native-linux-aws:
     <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 3,6,8,9"
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "claude native SDK harness completes exact turns"
   focus-e2e-tier-real-codex-native-linux-aws:
     <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 5,6,8,9"
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "codex native SDK harness completes exact turns"
   focus-e2e-tier-real-cursor-linux-aws:
     <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behavior 7"
+    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "cursor harness materializes without silently routing"
   focus-e2e-tier-real-web-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-tier-real-web

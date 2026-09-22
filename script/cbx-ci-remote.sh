@@ -407,6 +407,7 @@ run_e2e_tier_real_web() {
         --config playwright.config.ts \
         e2e/playwright/web-signed-cloud.spec.ts \
         e2e/playwright/web-signed-host-tunnel.spec.ts \
+        e2e/playwright/web-signed-org-team-multiplayer.spec.ts \
         --workers=1
   )
 }
@@ -439,12 +440,10 @@ run_e2e_tier_real() {
     cd packages/claxedo-app
     VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:4317 bun run build:e2e
     for scenario in \
-      "behaviors 1,6,9" \
-      "behaviors 2,6,8,9" \
-      "behaviors 3,6,8,9" \
-      "behaviors 4,6,8,9" \
-      "behaviors 5,6,8,9" \
-      "behavior 7"; do
+      "pi-workspace harness completes exact turns|local new-worktree session receives its first reply" \
+      "claude native SDK harness completes exact turns" \
+      "codex native SDK harness completes exact turns" \
+      "cursor harness materializes without silently routing"; do
       CLAXEDO_E2E_SERVE_MODE=preview PLAYWRIGHT_VIDEO=0 \
         bun run test:e2e:real -- --grep "$scenario"
     done
@@ -456,6 +455,7 @@ run_e2e_tier_real() {
         --config playwright.config.ts \
         e2e/playwright/web-signed-cloud.spec.ts \
         e2e/playwright/web-signed-host-tunnel.spec.ts \
+        e2e/playwright/web-signed-org-team-multiplayer.spec.ts \
         --workers=1
   )
 }
