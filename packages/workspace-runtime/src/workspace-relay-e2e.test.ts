@@ -207,8 +207,10 @@ async function relayHarness() {
   const relayHost = await generateKeyPair("EdDSA", { extractable: true })
   const revokedJti = "revoked_1"
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-relay-e2e-"))
+  const workspacesDir = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-relay-e2e-store-"))
   const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
   const previousWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+  const previousWorkspacesDir = process.env.WORKSPACE_RUNTIME_WORKSPACES_DIR
   const previousAuthorityUrl = process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]
   const authority = sessionAuthorityStub({
     sessionId: PTY_SESSION_ID,
@@ -219,6 +221,10 @@ async function relayHarness() {
   })
   process.env.WORKSPACE_RUNTIME_DIRECTORY = workspaceDir
   process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_1"
+  // `ws_1` names a real row under the machine-wide store this defaults to, so
+  // without a root of its own the runtime reconciles another process's launches
+  // and refuses every write with 503 `workspace_launch_unreconciled`.
+  process.env.WORKSPACE_RUNTIME_WORKSPACES_DIR = workspacesDir
   process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL] = authority.url
   const relayHostAudits: RelayHostAuthAuditEvent[] = []
   const relayAudits: WorkspaceRelayAuditEvent[] = []
@@ -331,7 +337,13 @@ async function relayHarness() {
       } else {
         process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = previousWorkspaceId
       }
+      if (previousWorkspacesDir === undefined) {
+        delete process.env.WORKSPACE_RUNTIME_WORKSPACES_DIR
+      } else {
+        process.env.WORKSPACE_RUNTIME_WORKSPACES_DIR = previousWorkspacesDir
+      }
       await fs.rm(workspaceDir, { recursive: true, force: true })
+      await fs.rm(workspacesDir, { recursive: true, force: true })
     },
   }
 }
@@ -340,6 +352,7 @@ async function processSeparatedRelayHarness() {
   const runtime = await generateKeyPair("EdDSA", { extractable: true })
   const relayHost = await generateKeyPair("EdDSA", { extractable: true })
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-relay-process-e2e-"))
+  const workspacesDir = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-relay-process-e2e-store-"))
   const authority = sessionAuthorityStub({
     sessionId: PTY_SESSION_ID,
     actorId: "actor_1",
@@ -373,6 +386,7 @@ async function processSeparatedRelayHarness() {
       WORKSPACE_RUNTIME_PORT: "0",
       WORKSPACE_RUNTIME_DIRECTORY: workspaceDir,
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
+      WORKSPACE_RUNTIME_WORKSPACES_DIR: workspacesDir,
       WORKSPACE_RUNTIME_HOST_ID: "host_1",
       WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(relayHost.publicKey),
       [WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]: authority.url,
@@ -401,6 +415,7 @@ async function processSeparatedRelayHarness() {
     await stopChild(child)
     await authority.stop()
     await fs.rm(workspaceDir, { recursive: true, force: true })
+    await fs.rm(workspacesDir, { recursive: true, force: true })
     throw new Error(`${err instanceof Error ? err.message : String(err)}\n${logs.join("")}`, { cause: err })
   }
 
@@ -446,6 +461,7 @@ async function processSeparatedRelayHarness() {
       await stopChild(child)
       await authority.stop()
       await fs.rm(workspaceDir, { recursive: true, force: true })
+      await fs.rm(workspacesDir, { recursive: true, force: true })
     },
   }
 }
@@ -648,8 +664,11 @@ describe("workspace relay composed runtime path", () => {
         status: "ready",
         service: "workspace-runtime",
         routeAuthBoundary: "relay-host-auth",
+        // Echoed back, not disclosed: the caller named `ws_1` in the relay path
+        // and in its token's `workspace_id` claim, and the verify-then-read
+        // flow requires the answer to confirm which workspace it reached.
+        workspaceId: "ws_1",
       })
-      expect(healthBody).not.toHaveProperty("workspaceId")
       expect(healthBody).not.toHaveProperty("directory")
       expect(healthBody).not.toHaveProperty("capabilities")
 

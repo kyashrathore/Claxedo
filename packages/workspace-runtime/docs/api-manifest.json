@@ -69,6 +69,7 @@
     "ownerGrantIdentityFromEnv",
     "createIdentityAwareEventSource",
     "isRetainedWorkspaceEventFrame",
+    "malformedEventStreamCursor",
     "streamWorkspaceEventFrames"
   ],
   "routePrefixes": [

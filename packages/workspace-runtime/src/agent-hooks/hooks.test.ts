@@ -1,5 +1,6 @@
 import { describe, expect, it, spyOn } from "bun:test"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import http from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -21,6 +22,41 @@ const liveTerminal = (terminalId: string) =>
     ? { id, title: id, command: "/bin/sh", args: [], cwd: "/tmp", status: "running" as const, pid: 1 }
     : undefined)
 
+/**
+ * The hook endpoint these tests stand in for is served by `@hono/node-server`,
+ * which swaps `globalThis.Response` for its own class the first time any test
+ * in the process creates a listener. `Bun.serve` then refuses every response
+ * the handler builds and the connection hangs until the notify script's
+ * `--max-time` elapses, so the fake answers over `node:http` instead.
+ */
+async function serveHookFake(handler: (request: Request) => Response | Promise<Response>) {
+  const server = http.createServer((incoming, outgoing) => {
+    void (async () => {
+      const chunks: Buffer[] = []
+      for await (const chunk of incoming) chunks.push(chunk as Buffer)
+      const body = Buffer.concat(chunks)
+      const answer = await handler(new Request(new URL(incoming.url ?? "/", `http://${incoming.headers.host}`), {
+        method: incoming.method ?? "GET",
+        headers: Object.entries(incoming.headers).flatMap(([key, value]) =>
+          typeof value === "string" ? [[key, value] as [string, string]] : []),
+        ...(body.length > 0 ? { body } : {}),
+      }))
+      outgoing.writeHead(answer.status, Object.fromEntries(answer.headers.entries()))
+      outgoing.end(Buffer.from(await answer.arrayBuffer()))
+    })()
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("hook fake did not bind a port")
+  return {
+    port: address.port,
+    stop: () => new Promise<void>((resolve) => {
+      server.closeAllConnections()
+      server.close(() => resolve())
+    }),
+  }
+}
+
 it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle bus", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "agy-native-hook-"))
   const terminalId = path.basename(root)
@@ -30,15 +66,15 @@ it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle 
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
   })
   const app = AgentHookRoutes()
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+  const server = await serveHookFake((request) => {
     const url = new URL(request.url)
     url.pathname = "/agent-lifecycle"
     return app.fetch(new Request(url, request))
-  } })
+  })
   try {
     const notify = path.join(root, "notify.sh")
     const hook = path.join(root, "antigravity-hook.sh")
-    await writeFile(notify, generateNotifyScript(server.port!))
+    await writeFile(notify, generateNotifyScript(server.port))
     await writeFile(hook, generateAntigravityHook(notify))
     for (const [name, fields] of [
       ["PreInvocation", {}],
@@ -60,7 +96,7 @@ it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle 
   } finally {
     unsubscribe()
     get.mockRestore()
-    await server.stop(true)
+    await server.stop()
     await rm(root, { recursive: true, force: true })
   }
 })
@@ -74,14 +110,14 @@ it("Amp plugin delivers awaited native events through the real notification tran
     if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
   })
   const app = AgentHookRoutes()
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+  const server = await serveHookFake((request) => {
     const url = new URL(request.url)
     url.pathname = "/agent-lifecycle"
     return app.fetch(new Request(url, request))
-  } })
+  })
   try {
     await mkdir(path.join(root, "hooks"))
-    await writeFile(path.join(root, "hooks", "notify.sh"), generateNotifyScript(server.port!))
+    await writeFile(path.join(root, "hooks", "notify.sh"), generateNotifyScript(server.port))
     await writeFile(path.join(root, "plugin.ts"), generateAmpPlugin())
     await writeFile(path.join(root, "run.ts"), `
       import plugin from "./plugin"
@@ -106,7 +142,7 @@ it("Amp plugin delivers awaited native events through the real notification tran
   } finally {
     unsubscribe()
     get.mockRestore()
-    await server.stop(true)
+    await server.stop()
     await rm(root, { recursive: true, force: true })
   }
 })
@@ -117,21 +153,17 @@ describe("generateNotifyScript", () => {
   it("delivers a real shell hook with workspace routing identity outside the form body", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-notify-test-"))
     let delivered: { workspace: string | null; terminal: string | null; event: string | null } | undefined
-    const server = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      async fetch(request) {
-        // The dispatcher selects a workspace before its runtime parses the form.
-        const workspace = request.headers.get("x-workspace-id")
-        if (!workspace) return new Response("Workspace not routed", { status: 404 })
-        const form = new URLSearchParams(await request.text())
-        delivered = { workspace, terminal: form.get("terminalId"), event: JSON.parse(form.get("providerEvent")!).type }
-        return Response.json({ success: true })
-      },
+    const server = await serveHookFake(async (request) => {
+      // The dispatcher selects a workspace before its runtime parses the form.
+      const workspace = request.headers.get("x-workspace-id")
+      if (!workspace) return new Response("Workspace not routed", { status: 404 })
+      const form = new URLSearchParams(await request.text())
+      delivered = { workspace, terminal: form.get("terminalId"), event: JSON.parse(form.get("providerEvent")!).type }
+      return Response.json({ success: true })
     })
     try {
       const script = path.join(root, "notify.sh")
-      await writeFile(script, generateNotifyScript(server.port!))
+      await writeFile(script, generateNotifyScript(server.port))
       const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ type: "agent-turn-complete" })], {
         env: {
           ...process.env,
@@ -149,7 +181,7 @@ describe("generateNotifyScript", () => {
       while (!settled() && Date.now() < deadline) await Bun.sleep(20)
       expect(delivered).toEqual({ workspace: "ws_notify_test", terminal: "pty_notify_test", event: "agent-turn-complete" })
     } finally {
-      await server.stop(true)
+      await server.stop()
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -158,17 +190,14 @@ describe("generateNotifyScript", () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-child-hook-"))
     const get = liveTerminal("parent")
     const app = AgentHookRoutes()
-    const server = Bun.serve({
-      hostname: "127.0.0.1", port: 0,
-      fetch(request) {
-        const url = new URL(request.url)
-        url.pathname = "/agent-lifecycle"
-        return app.fetch(new Request(url, request))
-      },
+    const server = await serveHookFake((request) => {
+      const url = new URL(request.url)
+      url.pathname = "/agent-lifecycle"
+      return app.fetch(new Request(url, request))
     })
     try {
       const script = path.join(root, "notify.sh")
-      await writeFile(script, generateNotifyScript(server.port!))
+      await writeFile(script, generateNotifyScript(server.port))
       const invoke = async (hook_event_name: string) => {
         const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name, session_id: "parent", agent_id: "child" })], {
           env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "parent", WORKSPACE_RUNTIME_STATE_DIR: root },
@@ -185,7 +214,7 @@ describe("generateNotifyScript", () => {
       expect(await state()).toBe("Idle")
     } finally {
       get.mockRestore()
-      await server.stop(true)
+      await server.stop()
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -193,17 +222,14 @@ describe("generateNotifyScript", () => {
   it("delivers only the config owned by the terminal's agent and labels an unwrapped launch", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-harness-gate-"))
     const delivered: { provider: string | null; event: string | null }[] = []
-    const server = Bun.serve({
-      hostname: "127.0.0.1", port: 0,
-      async fetch(request) {
-        const form = new URLSearchParams(await request.text())
-        delivered.push({ provider: form.get("provider"), event: JSON.parse(form.get("providerEvent")!).hook_event_name })
-        return Response.json({ success: true })
-      },
+    const server = await serveHookFake(async (request) => {
+      const form = new URLSearchParams(await request.text())
+      delivered.push({ provider: form.get("provider"), event: JSON.parse(form.get("providerEvent")!).hook_event_name })
+      return Response.json({ success: true })
     })
     try {
       const script = path.join(root, "notify.sh")
-      await writeFile(script, generateNotifyScript(server.port!))
+      await writeFile(script, generateNotifyScript(server.port))
       const invoke = async (args: string[], env: Record<string, string>) => {
         const child = Bun.spawn(["/bin/bash", script, ...args], {
           env: { ...process.env, CLAXEDO_AGENT: "", CURSOR_VERSION: "", CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "pty", WORKSPACE_RUNTIME_STATE_DIR: root, ...env },
@@ -233,7 +259,7 @@ describe("generateNotifyScript", () => {
         { provider: "gemini", event: "Stop" },
       ])
     } finally {
-      await server.stop(true)
+      await server.stop()
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -247,13 +273,10 @@ describe("generateNotifyScript", () => {
   it("reports failed delivery and sends a later completion again", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-hook-retry-"))
     let requests = 0
-    const server = Bun.serve({
-      hostname: "127.0.0.1", port: 0,
-      fetch() { return new Response("", { status: ++requests === 1 ? 503 : 200 }) },
-    })
+    const server = await serveHookFake(() => new Response("", { status: ++requests === 1 ? 503 : 200 }))
     try {
       const script = path.join(root, "notify.sh")
-      await writeFile(script, generateNotifyScript(server.port!))
+      await writeFile(script, generateNotifyScript(server.port))
       const invoke = () => Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name: "Stop" })], {
         env: { ...process.env, CLAXEDO_TAB_ID: "retry-tab", CLAXEDO_SERVER_PORT: String(server.port), WORKSPACE_RUNTIME_STATE_DIR: root },
         stdout: "ignore", stderr: "ignore",
@@ -262,7 +285,7 @@ describe("generateNotifyScript", () => {
       expect(await invoke()).toBe(0)
       expect(requests).toBe(2)
     } finally {
-      await server.stop(true)
+      await server.stop()
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -296,15 +319,15 @@ describe("generateCursorHook", () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-cursor-hook-"))
     const get = liveTerminal(path.basename(root))
     const app = AgentHookRoutes()
-    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+    const server = await serveHookFake((request) => {
       const url = new URL(request.url)
       url.pathname = "/agent-lifecycle"
       return app.fetch(new Request(url, request))
-    } })
+    })
     try {
       const notify = path.join(root, "notify.sh")
       const hook = path.join(root, "cursor-hook.sh")
-      await writeFile(notify, generateNotifyScript(server.port!))
+      await writeFile(notify, generateNotifyScript(server.port))
       await writeFile(hook, generateCursorHook(notify))
       const terminalId = path.basename(root)
       const run = async (arg: string, payload: Record<string, unknown>) => {
@@ -327,7 +350,7 @@ describe("generateCursorHook", () => {
       expect(await state()).toBe("Idle")
     } finally {
       get.mockRestore()
-      await server.stop(true)
+      await server.stop()
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -369,19 +392,16 @@ for (const [provider, generate, event, argument] of [
     let received: string | null = null
     let acknowledged = false
     const payload = JSON.stringify({ hook_event_name: event, conversation_id: "conversation", session_id: "provider-session", prompt: 'Keep "quotes" and\nnewlines', transcript_path: "/tmp/provider-session.jsonl" }, null, 2)
-    const server = Bun.serve({
-      hostname: "127.0.0.1", port: 0,
-      async fetch(request) {
-        received = new URLSearchParams(await request.text()).get("providerEvent")
-        await Bun.sleep(100)
-        acknowledged = true
-        return Response.json({ success: true })
-      },
+    const server = await serveHookFake(async (request) => {
+      received = new URLSearchParams(await request.text()).get("providerEvent")
+      await Bun.sleep(100)
+      acknowledged = true
+      return Response.json({ success: true })
     })
     try {
       const notify = path.join(root, "notify.sh")
       const script = path.join(root, "hook.sh")
-      await writeFile(notify, generateNotifyScript(server.port!), { mode: 0o700 })
+      await writeFile(notify, generateNotifyScript(server.port), { mode: 0o700 })
       await writeFile(script, generate(notify))
       const child = Bun.spawn(["/bin/bash", script, argument], {
         stdin: new Blob([payload]), stdout: "pipe", stderr: "pipe",
@@ -392,7 +412,7 @@ for (const [provider, generate, event, argument] of [
       expect<string | null>(received).toBe(payload)
       expect(JSON.parse(await new Response(child.stdout).text())).toEqual({})
     } finally {
-      await server.stop(true)
+      await server.stop()
       await rm(root, { recursive: true, force: true })
     }
   })

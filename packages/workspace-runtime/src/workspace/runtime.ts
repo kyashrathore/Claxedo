@@ -1249,20 +1249,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   /**
    * A launch this workspace could not account for keeps its writes out.
    *
-   * The row says a previous owner's process may still be running and its
-   * identity could not be verified; admitting a writer beside it is what the
-   * reconciliation exists to prevent, and there is nothing this process can
-   * check that would change the answer — an operator is the resolution.
-   */
-  /**
-   * A launch this workspace could not account for keeps its writes out.
-   *
    * The wait is the point: until reconciliation has settled, a previous
    * owner's process may still hold this workspace's ports, working directories
    * and session storage, and admitting a writer beside it is what the
    * reconciliation exists to prevent. Rows from this mount's own generation are
    * skipped by the reconciler, so waiting here cannot deadlock on a launch this
-   * runtime is making.
+   * runtime is making. An unresolved row has no check left that would change
+   * the answer; an operator is the resolution.
    */
   async function assertLaunchAdmission() {
     store()
