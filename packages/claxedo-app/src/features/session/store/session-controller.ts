@@ -9,7 +9,7 @@ import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
 import { idleSessionStatus, isSessionTurnActive } from "./session-store"
 import {  dispatchSessionTodoEvent } from "./session-status-dispatcher"
-import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
+import { hydrateConversationPage, pageContinuesConversation, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
 import { createActiveConversationSnapshot, registeredConversationSnapshot, registeredConversationUserMessages } from "../conversation/conversation-registry"
 import { observeSessionStatusPoll } from "./session-status-telemetry"
 import { createTurnCoverageOwner } from "./session-coverage-obligations"
@@ -672,11 +672,13 @@ export function createSessionController(input: {
         if (!opts?.silent && result.session?.data) {
           if (directorySessionCacheOwnsSession(input.sessionRef?.())) upsertDirectorySession(directory, result.session.data)
         }
+        const rows = result.messages.data ?? []
+        const continues = !opts?.mode && !opts?.before && !!cachedCount && pageContinuesConversation({ directory, sessionID, rows })
         const messageCount = hydrateConversationPage({
           directory,
           sessionID,
-          rows: result.messages.data ?? [],
-          mode: opts?.mode,
+          rows,
+          mode: continues ? "replace-window" : opts?.mode,
           messageCompleteness: pageRequest.view === "latest-surface" ? "fragment" : "canonical",
           partCompleteness: pageRequest.view === "latest-surface" ? "fragment" : "canonical",
         })
@@ -685,12 +687,12 @@ export function createSessionController(input: {
         // pane published, not this.
         if (!opts?.silent) globalSDK.event.setLiveSession(sessionID, { directory, workspaceId, host: input.sessionRef?.()?.host, sessionRef: input.sessionRef?.() })
         const cursor = result.messages.response.headers.get("x-next-cursor") ?? undefined
-        if (!opts?.silent) {
+        if (!opts?.silent && !continues) {
           setHistoryMetaValue("cursor", key, cursor)
           setHistoryMetaValue("failedCursor", key, undefined)
           setHistoryMetaValue("complete", key, !cursor)
-          setHistoryMetaValue("limit", key, messageCount)
         }
+        if (!opts?.silent) setHistoryMetaValue("limit", key, messageCount)
         return true
       })
       .catch((error) => {

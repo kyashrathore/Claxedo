@@ -149,6 +149,17 @@ export function canonicalPartMessageIds(input: { rows?: unknown; partCompletenes
   return settled
 }
 
+/**
+ * Whether a newest-page read overlaps the history this client already holds.
+ * Only then can the page replace its own span and keep the older pages the
+ * reader scrolled in; a page with nothing in common leaves a gap the paging
+ * cursor cannot reach, so it has to replace the whole conversation.
+ */
+export function pageContinuesConversation(input: { directory: ConversationDirectory; sessionID: string; rows: unknown }) {
+  const held = new Set(registeredConversationSnapshot(input.directory, input.sessionID).messages.map((message) => message.id))
+  return normalizeMessageRows(input.rows).messages.some((message) => held.has(message.id))
+}
+
 export function hydrateConversationPage(input: {
   directory: ConversationDirectory
   sessionID: string
