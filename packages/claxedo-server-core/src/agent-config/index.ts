@@ -10,6 +10,7 @@
  */
 
 import { asRecord } from "@claxedo/helpers/guards"
+import { watchRealDirectory } from "@claxedo/helpers/real-path"
 import { createHash } from "crypto"
 import * as fs from "fs"
 import * as path from "path"
@@ -336,7 +337,7 @@ export function watchUserConfigFile(onExternalChange: () => void): () => void {
     log.info("User agent config changed on disk outside the API")
     onExternalChange()
   }
-  const watcher = fs.watch(dir, (_event, filename) => {
+  const watcher = watchRealDirectory(dir, undefined, (_event, filename) => {
     if (filename !== null && filename !== name) return
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => void check(), 200)

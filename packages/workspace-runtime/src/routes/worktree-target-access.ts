@@ -23,7 +23,7 @@
 import path from "node:path"
 import type { Context } from "hono"
 import { gitTopLevel } from "../git"
-import { realDirectoryPath, realPathAllowingMissing } from "../real-directory"
+import { realDirectoryPath, realPathAllowingMissing } from "@claxedo/helpers/real-path"
 import {
   hasRegisteredWorkspaceDirectories,
   registeredWorkspaceDirectoriesUnder,

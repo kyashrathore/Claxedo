@@ -67,6 +67,13 @@
       "import": "./dist/fs.mjs",
       "default": "./dist/fs.mjs"
     },
+    "./real-path": {
+      "development": "./src/real-path.ts",
+      "bun": "./src/real-path.ts",
+      "types": "./dist/real-path.d.ts",
+      "import": "./dist/real-path.mjs",
+      "default": "./dist/real-path.mjs"
+    },
     "./path": {
       "development": "./src/path.ts",
       "bun": "./src/path.ts",

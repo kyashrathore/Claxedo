@@ -26,6 +26,7 @@ const ENTRIES: readonly { readonly entry: string; readonly target: "browser" | "
   { entry: "claxedo-document", target: "browser" },
   { entry: "fs", target: "node" },
   { entry: "path", target: "node" },
+  { entry: "real-path", target: "node" },
   { entry: "process", target: "node" },
   { entry: "net", target: "node" },
   { entry: "machine-name", target: "node" },

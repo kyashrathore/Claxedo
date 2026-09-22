@@ -7,7 +7,7 @@ import type { AgentEventEnvelope, AgentSessionStarts } from "@claxedo/agent-runt
 import type { Context } from "hono"
 import { sep } from "node:path"
 import { errorBody } from "./error-body"
-import { realDirectoryPath } from "../real-directory"
+import { realDirectoryPath } from "@claxedo/helpers/real-path"
 import { registeredWorkspaceDirectories } from "../target"
 import type { RuntimeEventHub } from "../runtime-event-hub"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
