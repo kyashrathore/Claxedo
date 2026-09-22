@@ -433,7 +433,7 @@ describe("Claxedo public driver", () => {
       const { driver, panelExecutions, navigationExecutions } = harness(ids)
       expect((await driver.hello()).scenarios).toEqual([...PUBLIC_SCENARIO_IDS])
       await prepare(driver, scenarioId, scenario)
-      if (scenarioId !== "app-start-v1") {
+      if (scenario.kind !== "app-start") {
         await driver.launch({ scenarioId, stateHandle: "sealed-p1", initialSessionId: "control", groupId: "group" })
       }
       for (const benchmarkCase of cases) {
@@ -444,7 +444,7 @@ describe("Claxedo public driver", () => {
         const result = await driver.execute({ scenarioId, stateHandle, case: benchmarkCase })
         expect(result.caseId).toBe(benchmarkCase.caseId)
         expect(result.durationMs).toBeGreaterThan(0)
-        if (scenarioId === "app-start-v1") await driver.shutdown()
+        if (scenario.kind === "app-start") await driver.shutdown()
       }
       if (scenarioId === "workspace-panel-v1") {
         expect(scenario.cases.actions).toEqual([...WORKSPACE_PANEL_ACTIONS])

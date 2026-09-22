@@ -427,6 +427,7 @@ export type ActivationHooks = {
   onArmed?: () => Promise<void>
   /** As soon as the stable painted frame is observed. */
   onPainted?: () => Promise<void>
+  readinessTimeoutMs?: number
 }
 
 export async function measureSessionActivation(
@@ -451,10 +452,12 @@ export async function measureSessionActivation(
     ({
       id,
       expectedMessageIds,
+      readinessTimeoutMs,
     }: {
       id: string;
       expectedMessageIds: string[];
       expectedContentSha256: Record<string, string>;
+      readinessTimeoutMs: number;
     }) =>
       new Promise<{
         paintedAtMs: number;
@@ -464,7 +467,7 @@ export async function measureSessionActivation(
       }>(
         (resolve, reject) => {
           const expected = new Set(expectedMessageIds);
-          const deadline = performance.now() + 30_000;
+          const deadline = performance.now() + readinessTimeoutMs;
           let previousSignature: string | undefined;
           const frames: PaintStabilityFrame[] = [];
           const hashText = (value: string) => {
@@ -843,6 +846,7 @@ export async function measureSessionActivation(
       id: target.sessionId,
       expectedMessageIds: [...target.expectedMessageIds],
       expectedContentSha256: { ...target.expectedContentSha256 },
+      readinessTimeoutMs: hooks?.readinessTimeoutMs ?? 30_000,
     },
   );
   await clickVisibleSessionActivation(page, target.sessionId);
