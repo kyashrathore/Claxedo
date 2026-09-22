@@ -265,11 +265,18 @@ export function createRuntimeRecovery(input: RuntimeRecoveryInput) {
    * cancellation is not termination: releasing the session on one admits the
    * next turn over a provider that is still running the last one.
    */
-  const finalizeCancelled = (capture: AdmittedTurnCapture, execution: ExecutionFact) => {
+  const finalizeCancelled = (capture: AdmittedTurnCapture, execution: ExecutionFact): TurnFinalization | undefined => {
     if (execution !== "terminal") return undefined
     const outcome: AgentTurnOutcome = { status: "cancelled", completedAt: now(), reason: "abort" }
     const result = finalizeTurn(capture, outcome, { announceIdle: true })
     record.retainFailure(capture, outcome, result)
+    // A harness that honours the cancellation by ending its stream lets the
+    // turn's own producer finalize before `cancelTurn` resolves, so this write
+    // finds its admission gone. The store, not this call, says whether the
+    // turn's end is recorded.
+    if (!result.ok && result.reason === "superseded" && store.turnEvidence(capture.sessionId, capture.turnId).finished) {
+      return { ok: true, wrote: true }
+    }
     return result
   }
 

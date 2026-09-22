@@ -1525,7 +1525,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   function recoveryOwner(sessionId: string) {
     const active = activeSessionOwners.get(sessionId)?.runtime
     if (active) return active.recovery
-    const key = adapter ? adapterRuntimeKeys.get(adapter) : undefined
+    const owner = observedSessionAdapter({ sessionId }).target
+    const key = owner ? adapterRuntimeKeys.get(owner) : undefined
     return key ? sessionRuntimes.get(key)?.recovery : undefined
   }
 
