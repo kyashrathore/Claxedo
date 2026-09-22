@@ -86,6 +86,11 @@ jobs:
       - name: Verify the operator-provisioned Documents bucket
         run: bun x wrangler r2 bucket info "$CLAXEDO_DOCUMENTS_BUCKET_NAME"
 
+      # The worker imports @claxedo/helpers and @claxedo/service-contract,
+      # which wrangler bundles through their published dist.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
       - name: Apply Documents-owned D1 migrations
         run: bun x wrangler d1 migrations apply DOCUMENTS_DB --remote --config .wrangler.deploy.toml
 

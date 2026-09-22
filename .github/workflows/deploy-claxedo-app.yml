@@ -46,6 +46,12 @@ jobs:
             "$BASE/api/claxedo/auth/profile")
           [ "$code" = "401" ] || { echo "::error::target auth probe returned $code, expected 401"; exit 1; }
 
+      # vite resolves @claxedo/* through their published dist, which a fresh
+      # checkout does not have; the staging control plane builds them for the
+      # same build.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
       - name: Build app for the verified control plane
         working-directory: packages/claxedo-app
         env:
