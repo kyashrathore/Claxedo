@@ -294,7 +294,7 @@ run_unit() {
   bun run --cwd packages/claxedo-host-connector verify:closure
   bun run --cwd packages/claxedo-server verify:closure
   bun run --cwd packages/claxedo-desktop verify:closure
-  OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=false bun turbo test --concurrency=2
+  bun turbo test --concurrency=2
 }
 
 # Native descriptor and symlink semantics; diagnostic subset of unit-linux.

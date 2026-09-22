@@ -228,7 +228,6 @@ jobs:
             bun turbo test --affected --concurrency="$concurrency"
           fi
         env:
-          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
 
