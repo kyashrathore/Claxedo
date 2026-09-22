@@ -149,6 +149,30 @@ describe("a tool row shows the images its call produced", () => {
     expect(view.container.querySelector('[data-slot="tool-image-thumbnail"]')).toBeNull()
   })
 
+  test("expands an unretained attachment inline to say why no image is shown", () => {
+    const view = mount(toolPart({
+      tool: "read",
+      attachments: [filePart({
+        mime: "image/png",
+        url: "file:///tmp/ct-3.png",
+        filename: "ct-3.png",
+        location: { kind: "unretained", bytes: 105_308 },
+      })],
+    }))
+
+    const toggle = view.container.querySelector<HTMLButtonElement>('button[data-slot="tool-image-unavailable-row"]')
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false")
+    expect(view.container.querySelector('[data-slot="tool-image-unavailable-note"]')).toBeNull()
+
+    fireEvent.click(toggle!)
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true")
+    expect(view.container.querySelector('[data-slot="tool-image-unavailable-note"]')?.textContent)
+      .toContain("This image (103 KB) is too large to keep in the transcript")
+
+    fireEvent.click(toggle!)
+    expect(view.container.querySelector('[data-slot="tool-image-unavailable-note"]')).toBeNull()
+  })
+
   test("shows every image of a multi-image result", () => {
     const second = `${PNG_URL}AA`
     const view = mount(toolPart({

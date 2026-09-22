@@ -1955,15 +1955,50 @@ export function ToolAttachments(props: { attachments?: AgentFilePart[] }) {
 
 function ToolImageUnavailable(props: { name: string; location?: AgentFileLocation; onRetry?: () => void }) {
   const i18n = useI18n()
-  return (
-    <div data-slot="tool-image-unavailable" class="ui-tool-image-unavailable">
+  const [expanded, setExpanded] = createSignal(false)
+  const unretained = () => (props.location?.kind === "unretained" ? props.location : undefined)
+  const label = () => (
+    <>
       <Icon name="photo" size="small" />
       <span>{props.name}</span>
-      <Show when={props.onRetry}>
-        <button type="button" onClick={props.onRetry}>{i18n.t("ui.message.queued.retry")}</button>
-      </Show>
-      <Show when={props.location?.kind === "unretained" ? props.location : undefined}>
-        {(location) => <span data-slot="tool-image-size">{`${Math.round(location().bytes / 1024)} KB`}</span>}
+    </>
+  )
+  return (
+    <div data-slot="tool-image-unavailable" class="ui-tool-image-unavailable">
+      <Show
+        when={unretained()}
+        fallback={
+          <div data-slot="tool-image-unavailable-row">
+            {label()}
+            <Show when={props.onRetry}>
+              <button type="button" onClick={props.onRetry}>{i18n.t("ui.message.queued.retry")}</button>
+            </Show>
+          </div>
+        }
+      >
+        {(location) => {
+          const size = () => `${Math.round(location().bytes / 1024)} KB`
+          return (
+            <>
+              <button
+                type="button"
+                data-slot="tool-image-unavailable-row"
+                aria-expanded={expanded()}
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {label()}
+                <span data-slot="tool-image-size">{size()}</span>
+                <Icon name={expanded() ? "chevron-down" : "chevron-right"} size="small" />
+              </button>
+              <Show when={expanded()}>
+                <div data-slot="tool-image-unavailable-note">
+                  <Icon name="photo" size="large" />
+                  <span>{i18n.t("ui.tool.image.tooLarge", { size: size() })}</span>
+                </div>
+              </Show>
+            </>
+          )
+        }}
       </Show>
     </div>
   )

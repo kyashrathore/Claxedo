@@ -133,6 +133,7 @@ export const dict: Record<string, string> = {
 
   "ui.tool.read": "Read",
   "ui.tool.loaded": "Loaded",
+  "ui.tool.image.tooLarge": "This image ({{size}}) is too large to keep in the transcript. The agent received it, but no copy was saved to show here.",
   "ui.tool.list": "List",
   "ui.tool.glob": "Glob",
   "ui.tool.grep": "Grep",
