@@ -54,7 +54,7 @@ describe("review comment owners follow the engine's rendered items", () => {
     owner.onLineSelectionEnd({ start: 2, end: 2, side: "additions" })
     const drafting = registry.annotations("a.ts")
     expect(drafting.map((annotation) => annotation.metadata.kind)).toEqual(["draft"])
-    const host = owner.renderAnnotation(drafting[0]!)
+    const host = owner.renderAnnotation(drafting[0])
     if (!(host instanceof HTMLElement)) throw new Error("the draft annotation rendered no host")
 
     const textarea = textareaIn(host)
@@ -73,7 +73,7 @@ describe("review comment owners follow the engine's rendered items", () => {
     expect(restored.map((annotation) => annotation.metadata.kind)).toEqual(["draft"])
     const rebuilt = registry.owner("a.ts")
     expect(rebuilt === owner).toBe(false)
-    const rebuiltHost = rebuilt.renderAnnotation(restored[0]!)
+    const rebuiltHost = rebuilt.renderAnnotation(restored[0])
     if (!(rebuiltHost instanceof HTMLElement)) throw new Error("the rebuilt draft rendered no host")
     expect(rebuiltHost === host).toBe(false)
     expect(textareaIn(rebuiltHost).value).toBe("half a thought")

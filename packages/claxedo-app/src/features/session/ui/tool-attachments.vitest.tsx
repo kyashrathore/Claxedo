@@ -189,7 +189,7 @@ test("loads a recorded reference separately, opens its blob and releases it with
   await vi.waitFor(() => expect(document.querySelector('[data-slot="image-preview-image"]')).toBeNull())
   view.unmount()
   expect(revoke).toHaveBeenCalledWith("blob:tool-image")
-  expect(read.mock.calls[0]![1].aborted).toBe(true)
+  expect(read.mock.calls[0][1].aborted).toBe(true)
   create.mockRestore()
   revoke.mockRestore()
 })

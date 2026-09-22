@@ -100,7 +100,7 @@ function sameAnnotation(left: ReviewAnnotation, right: ReviewAnnotation) {
  * file.
  */
 function sameAnnotations(a: ReviewAnnotation[], b: ReviewAnnotation[]) {
-  return a.length === b.length && a.every((left, index) => sameAnnotation(left, b[index]!))
+  return a.length === b.length && a.every((left, index) => sameAnnotation(left, b[index]))
 }
 
 /**

@@ -101,7 +101,7 @@ describe("ReviewCodeView rendered item ownership", () => {
 
   it("pending UI is released on scroll and when the same item receives content", () => {
     const pending = diffs.map(({ file }) => ({ file }))
-    const [items, setItems] = createSignal<typeof pending | typeof diffs>(pending)
+    const [items, setItems] = createSignal(pending)
     const live = new Set<string>()
     const Pending = (props: { file: string }) => {
       live.add(props.file)

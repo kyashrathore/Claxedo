@@ -157,7 +157,7 @@ function createHarness(items: CodeViewItem<undefined>[], height = VIEWPORT): Har
   const root = mountRoot(height)
   const bodies = new Map<string, HTMLElement>()
   const renders: string[] = []
-  const view = new CodeView<undefined, undefined>({
+  const view = new CodeView({
     theme: "github-light",
     stickyHeaders: true,
     disableErrorHandling: true,
@@ -223,7 +223,7 @@ describe("CodeView custom items", () => {
 
     expect(view.getRenderedItemIds()).not.toContain("f0.ts")
     expect(first.isConnected).toBe(false)
-    expect(bodies.get(view.getRenderedItemIds()[0]!)!.isConnected).toBe(true)
+    expect(bodies.get(view.getRenderedItemIds()[0])!.isConnected).toBe(true)
 
     root.scrollTop = 0
     root.dispatchEvent(new Event("scroll"))
@@ -290,7 +290,7 @@ describe("CodeView custom items", () => {
 
     expect(view.getTopForItem(anchorId)! - view.getScrollTop()).toBe(offsetBefore)
     // The replacement is a real diff, not a row still reserving header height.
-    expect(view.getTopForItem(items[anchorIndex + 1]!.id)! - view.getTopForItem(anchorId)!).toBeGreaterThan(HEADER)
+    expect(view.getTopForItem(items[anchorIndex + 1].id)! - view.getTopForItem(anchorId)!).toBeGreaterThan(HEADER)
   })
 
   /**
@@ -321,9 +321,9 @@ describe("CodeView custom items", () => {
     // top; the rows before it are the overscan band above the viewport.
     const anchorIndex = rendered.findIndex((id) => view.getTopForItem(id)! >= scrollTop)
     expect(anchorIndex).toBeGreaterThan(0)
-    const anchorId = rendered[anchorIndex]!
+    const anchorId = rendered[anchorIndex]
     const anchorOffset = view.getTopForItem(anchorId)! - scrollTop
-    const growingId = rendered[0]!
+    const growingId = rendered[0]
 
     // The reflow: one row above the viewport is now twice as tall. Nothing
     // re-renders it — a width change never does — so the engine learns about it
@@ -332,7 +332,7 @@ describe("CodeView custom items", () => {
     reportResize(stickyContainerOf(view))
 
     // It re-measured the row it never re-rendered...
-    expect(view.getTopForItem(rendered[1]!)! - view.getTopForItem(growingId)!).toBe(ROW * 2)
+    expect(view.getTopForItem(rendered[1])! - view.getTopForItem(growingId)!).toBe(ROW * 2)
     // ...and corrected the scroll position, so the anchored row is still
     // exactly where the reader left it rather than pushed down by the growth.
     expect(view.getScrollTop()).toBeGreaterThan(scrollTop)

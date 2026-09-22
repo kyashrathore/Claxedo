@@ -68,7 +68,7 @@ describe("a first-party Claxedo tool renders as its own card", () => {
     ["mcp__claxedo-mcp__process", { process: "web" }],
     ["claxedo-mcp_process", { process: "web" }],
   ])("%s gets branding and a destination link", (tool, input) => {
-    const view = mount(toolPart(tool as string, completed(input as Record<string, unknown>, "running")), () => "/workspace/session?panel=processes")
+    const view = mount(toolPart(tool, completed(input as Record<string, unknown>, "running")), () => "/workspace/session?panel=processes")
     expect(view.container.querySelector('[data-component="claxedo-tool"]')).not.toBeNull()
     expect(view.container.querySelector('.ui-icon[data-icon="claxedo"], use[href="#opencode-icon-claxedo"]')).not.toBeNull()
     const link = view.container.querySelector<HTMLAnchorElement>('a[data-link-kind="claxedo-tool"]')!

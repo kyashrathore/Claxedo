@@ -190,7 +190,7 @@ describe("timeline resize anchor — in-view insert hold", () => {
     const recorded = { scrollToEnd: 0, inserts: 0 }
     const virtualizer = new Virtualizer<HTMLDivElement, HTMLDivElement>({
       get count() { return keys.length },
-      getItemKey: (index) => keys[index]!,
+      getItemKey: (index) => keys[index],
       estimateSize: () => 180,
       initialRect: { width: 800, height: 800 },
       paddingEnd,
