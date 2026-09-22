@@ -128,7 +128,6 @@ if (typeof window !== "undefined") {
     ...(import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1"
       ? {
           markReconnecting: markWorkspaceReconnecting,
-          markReconnected: markWorkspaceReconnected,
           // Drives the role-placement transition a live token refresh would apply
           // (`{type:"role"}`, the same event `applyWorkspaceConnectionInfo` feeds on a
           // real connect/refresh). Exposed for e2e because the production refresh that

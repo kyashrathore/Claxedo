@@ -36,13 +36,14 @@ const UH_DIR = UH_WORKSPACE_ID
 const PROJECT_ID = "proj_core13"
 
 // Contention-tolerant ceiling for the reactive (re)connect state transitions —
-// composer-ready, the startup overlay, and `data-review-workspace-ready`. These
-// are driven synchronously by the `__claxedoConnections` escape hatch (no real
-// reconnect backoff is waited on), so the ceiling never gates the happy path; it
-// only absorbs reactive-update lag on a starved runner. Each assertion still
-// awaits the actual state transition, so a genuinely broken transition still
-// fails — the wider ceiling just outlasts the 10s expect default that a loaded
-// box was blowing under runner contention.
+// composer-ready, the startup overlay, and `data-review-workspace-ready`. The drop
+// is driven synchronously by the `__claxedoConnections` escape hatch and the
+// recovery by releasing the held event stream (no real reconnect backoff is waited
+// on), so the ceiling never gates the happy path; it only absorbs reactive-update
+// lag on a starved runner. Each assertion still awaits the actual state
+// transition, so a genuinely broken transition still fails — the wider ceiling
+// just outlasts the 10s expect default that a loaded box was blowing under runner
+// contention.
 const RECONNECT_STATE_TIMEOUT = 30_000
 
 type RelayRole = "owner" | "admin" | "editor" | "viewer"
@@ -54,6 +55,15 @@ type HarnessState = {
   uhMint: MintResponse
   uhHealth: { status: number; body?: unknown }
   cloudRefreshRole?: RelayRole
+  /**
+   * The cloud workspace's event stream. This harness answers a stream with one
+   * heartbeat and ends it, so the app reopens it every reconnect tick, and every
+   * successful open is what moves the connection authority `reconnecting -> ready`.
+   * A test that asserts on `reconnecting` therefore holds the stream (opens stay
+   * pending in `heldStreams`) for as long as that state must last.
+   */
+  workspaceStream: "open" | "held"
+  heldStreams: Route[]
   mintHits: string[]
   refreshHits: string[]
   promptAsyncHits: string[]
@@ -82,6 +92,16 @@ function sseEvent(input: unknown) {
   return `data: ${JSON.stringify(input)}\n\n`
 }
 
+/** One heartbeat, then the stream ends; the app reopens it on its reconnect tick. */
+function heartbeatStream(route: Route) {
+  return route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    headers: corsHeaders(),
+    body: sseEvent({ type: "heartbeat" }),
+  })
+}
+
 function api(route: Route) {
   const type = route.request().resourceType()
   return type === "fetch" || type === "xhr" || type === "eventsource" || route.request().method() === "OPTIONS"
@@ -92,6 +112,8 @@ function defaultHarnessState(): HarnessState {
     cloudMint: { status: 200, role: "owner" },
     uhMint: { status: 200, role: "owner" },
     uhHealth: { status: 200 },
+    workspaceStream: "open",
+    heldStreams: [],
     mintHits: [],
     refreshHits: [],
     promptAsyncHits: [],
@@ -314,14 +336,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       return json(route, [{ id: "build", name: "build", mode: "primary" }])
     if (url.pathname === "/api/claxedo/agent-config/commands") return json(route, [])
     // The control plane's notice stream, opened on every signed page.
-    if (url.pathname === "/api/cp/events") {
-      return route.fulfill({
-        status: 200,
-        contentType: "text/event-stream",
-        headers: corsHeaders(),
-        body: sseEvent({ type: "heartbeat" }),
-      })
-    }
+    if (url.pathname === "/api/cp/events") return heartbeatStream(route)
 
     if (url.pathname === `/api/workspace/${WORKSPACE_ID}/connection`) {
       state.mintHits.push(WORKSPACE_ID)
@@ -366,14 +381,7 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // the error boundary ("Something went wrong") before any assertion runs.
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
     if (url.pathname === "/provider") return json(route, providerCatalog())
-    if (url.pathname === "/api/wr/events") {
-      return route.fulfill({
-        status: 200,
-        contentType: "text/event-stream",
-        headers: corsHeaders(),
-        body: sseEvent({ type: "heartbeat" }),
-      })
-    }
+    if (url.pathname === "/api/wr/events") return heartbeatStream(route)
     // The workspace panel's lifecycle summary fetches its checkpoint snapshot via
     // `getDefaultBaseUrl()` (the window origin in this harness), not the relay.
     if (
@@ -453,12 +461,11 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
         })
       }
       if (runtimePath === "/api/wr/events") {
-        return route.fulfill({
-          status: 200,
-          contentType: "text/event-stream",
-          headers: corsHeaders(),
-          body: sseEvent({ type: "heartbeat" }),
-        })
+        if (workspaceId === WORKSPACE_ID && state.workspaceStream === "held") {
+          state.heldStreams.push(route)
+          return
+        }
+        return heartbeatStream(route)
       }
       if (runtimePath === "/api/wr/diff/refs" || runtimePath === "/api/claxedo/diff/refs")
         return json(route, { branches: ["main"], tags: [], recent: [] })
@@ -503,6 +510,46 @@ function composerEditor(page: Page) {
 
 async function waitForComposerReady(page: Page, state: HarnessState) {
   await expect(composerEditor(page), debugSuffix(state)).toBeVisible({ timeout: RECONNECT_STATE_TIMEOUT })
+}
+
+/**
+ * Holds the cloud workspace's event stream, and returns once an open is actually
+ * pending: the open that was answered just before the hold has been received
+ * and closed by then, so no stream can move the authority to `ready` until the
+ * hold is released.
+ */
+async function holdWorkspaceStream(state: HarnessState) {
+  state.workspaceStream = "held"
+  await expect.poll(() => state.heldStreams.length, { timeout: RECONNECT_STATE_TIMEOUT }).toBeGreaterThan(0)
+}
+
+/** Answers the held opens; the app's stream-open path moves the authority back to `ready`. */
+async function releaseWorkspaceStream(state: HarnessState) {
+  state.workspaceStream = "open"
+  for (const route of state.heldStreams.splice(0)) await heartbeatStream(route)
+}
+
+async function markWorkspaceReconnecting(page: Page, workspaceId: string) {
+  // `markWorkspaceReconnecting` no-ops unless the store status is "ready", and the
+  // DOM attribute can lead the store write, so drive until the snapshot agrees.
+  await expect
+    .poll(
+      () =>
+        page.evaluate((id) => {
+          const seam = (
+            window as typeof window & {
+              __claxedoConnections?: {
+                markReconnecting?: (id: string) => void
+                snapshot?: () => Record<string, { status?: string }>
+              }
+            }
+          ).__claxedoConnections
+          seam?.markReconnecting?.(id)
+          return seam?.snapshot?.()[id]?.status
+        }, workspaceId),
+      { timeout: RECONNECT_STATE_TIMEOUT },
+    )
+    .toBe("reconnecting")
 }
 
 async function expectWorkspaceRole(page: Page, workspaceId: string, role: RelayRole) {
@@ -634,11 +681,8 @@ test.describe("core cloud offline & roles @core", () => {
 
     // The same transition a sustained event-stream drop causes, without starving the
     // SSE stream for the real cooldown.
-    await page.evaluate((id) => {
-      ;(
-        window as typeof window & { __claxedoConnections?: { markReconnecting?: (id: string) => void } }
-      ).__claxedoConnections?.markReconnecting?.(id)
-    }, WORKSPACE_ID)
+    await holdWorkspaceStream(state)
+    await markWorkspaceReconnecting(page, WORKSPACE_ID)
 
     // The overlay's arrival is also the settle window for any toast.
     await expect(page.locator('[data-component="cloud-startup-view"]'), debugSuffix(state)).toBeVisible({
@@ -646,11 +690,7 @@ test.describe("core cloud offline & roles @core", () => {
     })
     await expect(toasts(page)).toHaveCount(0)
 
-    await page.evaluate((id) => {
-      ;(
-        window as typeof window & { __claxedoConnections?: { markReconnected?: (id: string) => void } }
-      ).__claxedoConnections?.markReconnected?.(id)
-    }, WORKSPACE_ID)
+    await releaseWorkspaceStream(state)
 
     await waitForComposerReady(page, state)
     await expect(toasts(page), debugSuffix(state)).toHaveCount(0)
@@ -700,26 +740,8 @@ test.describe("core cloud offline & roles @core", () => {
     await expect(reviewPaneRoot, debugSuffix(state)).toHaveCount(1)
     await expect(page.locator('[data-testid="workspace-review-pending"]')).toHaveCount(0)
 
-    // `markWorkspaceReconnecting` no-ops unless the store status is "ready", and the
-    // DOM attribute can lead the store write, so drive until the snapshot agrees.
-    await expect
-      .poll(
-        () =>
-          page.evaluate((id) => {
-            const seam = (
-              window as typeof window & {
-                __claxedoConnections?: {
-                  markReconnecting?: (id: string) => void
-                  snapshot?: () => Record<string, { status?: string }>
-                }
-              }
-            ).__claxedoConnections
-            seam?.markReconnecting?.(id)
-            return seam?.snapshot?.()[id]?.status
-          }, WORKSPACE_ID),
-        { timeout: RECONNECT_STATE_TIMEOUT },
-      )
-      .toBe("reconnecting")
+    await holdWorkspaceStream(state)
+    await markWorkspaceReconnecting(page, WORKSPACE_ID)
 
     await expect(reviewRegion, debugSuffix(state)).toHaveCount(1)
     await expect(reviewPaneRoot, debugSuffix(state)).toHaveCount(1)
@@ -730,11 +752,7 @@ test.describe("core cloud offline & roles @core", () => {
       timeout: RECONNECT_STATE_TIMEOUT,
     })
 
-    await page.evaluate((id) => {
-      ;(
-        window as typeof window & { __claxedoConnections?: { markReconnected?: (id: string) => void } }
-      ).__claxedoConnections?.markReconnected?.(id)
-    }, WORKSPACE_ID)
+    await releaseWorkspaceStream(state)
 
     await expect(page.locator('[data-testid="workspace-review-pending"]')).toHaveCount(0, {
       timeout: RECONNECT_STATE_TIMEOUT,
