@@ -8,6 +8,8 @@ import {
   projectionRenewalDueAt,
   providerProjectionRecord,
 } from "@claxedo/agent-sdk-runtime"
+import { vendorCredentialProviderIds } from "@claxedo/agent-runtime-contract"
+import { hasProviderDestination } from "../credentials/destinations"
 import { jsonRecord } from "../platform/runtime/lib/json"
 import { projectRuntimeAuth } from "../agent-config/index"
 import { SINGLE_TENANT_ORG, type CredentialOrgScope } from "../credentials/registry"
@@ -24,26 +26,25 @@ const log = Log.create({ service: "credentials-opencode-sdk-bridge" })
  */
 const ENGINE_RUNTIME = "opencode-engine"
 
+/** The vendors the engine defines a provider for, by the engine's own id. */
+const ENGINE_VENDORS = ["anthropic", "openai", "openrouter", "google", "groq", "xai"] as const
+
 /**
  * Registry provider → the engine's own provider id. The engine's Anthropic and
  * OpenAI providers are both configured with a base URL that already reaches the
  * vendor's API root, so a binding's API path belongs in it.
  *
- * A provider the credential broker has no destination for is absent from this
- * table, and its accounts reach the engine not at all — which is the intended
- * answer, because the only other way to hand it one is a plaintext copy of the
- * operator's stored key.
+ * Derived rather than listed, so a harness login that can stand in for a vendor
+ * reaches the engine by being in `HARNESS_TABLE` and nowhere else. A provider
+ * the credential broker has no destination for drops out here and reaches the
+ * engine not at all — which is the intended answer, because the only other way
+ * to hand it one is a plaintext copy of the operator's stored key.
  */
-const PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = {
-  anthropic: "anthropic",
-  "claude-sdk": "anthropic",
-  openai: "openai",
-  "codex-app-server": "openai",
-  openrouter: "openrouter",
-  google: "google",
-  groq: "groq",
-  xai: "xai",
-}
+const PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = Object.fromEntries(
+  ENGINE_VENDORS.flatMap((vendor) =>
+    vendorCredentialProviderIds(vendor)
+      .filter(hasProviderDestination)
+      .map((registryId) => [registryId, vendor])))
 
 /**
  * The process environment variables the engine reads a credential for each

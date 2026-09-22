@@ -1,32 +1,52 @@
-import type { CredentialMetadata } from "./types"
+import {
+  isPiLaunchProvider,
+  PI_LAUNCH_PROVIDERS,
+  piCredentialProviderIDs,
+  type PiLaunchProvider,
+} from "@claxedo/agent-runtime-contract"
+import type { CredentialKind, CredentialMetadata } from "./types"
 
-export const PI_LAUNCH_PROVIDERS = ["openai-codex", "anthropic", "openai"] as const
+export { isPiLaunchProvider, PI_LAUNCH_PROVIDERS, piCredentialProviderIDs, type PiLaunchProvider }
 
-export type PiLaunchProvider = (typeof PI_LAUNCH_PROVIDERS)[number]
-
-/** Narrow an arbitrary provider id to one Pi can launch. */
-export function isPiLaunchProvider(providerID: string): providerID is PiLaunchProvider {
-  return PI_LAUNCH_PROVIDERS.some((provider) => provider === providerID)
+/**
+ * The forms each provider's binding can spend.
+ *
+ * A plan and a key are different requests, not the same request authenticated
+ * twice: the broker sends an OpenAI plan to the Codex backend and an OpenAI
+ * key to the v1 API, while Anthropic's destination serves both on one path and
+ * only changes the header it rides in.
+ */
+const acceptedKinds: Record<PiLaunchProvider, readonly CredentialKind[]> = {
+  "openai-codex": ["oauth_token"],
+  anthropic: ["api_key", "oauth_token", "subscription_session"],
+  openai: ["api_key"],
+  openrouter: ["api_key"],
+  google: ["api_key"],
+  groq: ["api_key"],
+  xai: ["api_key"],
 }
 
-const credentialProviders: Record<PiLaunchProvider, readonly string[]> = {
-  "openai-codex": ["codex-app-server"],
-  anthropic: ["anthropic"],
-  openai: ["openai"],
-}
-
-export function piCredentialProviderIDs(providerID: string): readonly string[] {
-  return isPiLaunchProvider(providerID) ? credentialProviders[providerID] : []
+/** Pi providers whose account is pasted rather than signed in to. */
+export function piProviderTakesApiKey(providerID: string) {
+  return isPiLaunchProvider(providerID) && acceptedKinds[providerID].includes("api_key")
 }
 
 export function piCredentialConnected(providerID: string, credential: CredentialMetadata | undefined) {
   return !!credential && credential.status === "available"
     && credential.health !== "expired"
     && (credential.expires_at == null || credential.expires_at > Date.now())
-    && (providerID === "openai-codex" ? credential.kind === "oauth_token" : credential.kind === "api_key")
+    && isPiLaunchProvider(providerID) && acceptedKinds[providerID].includes(credential.kind)
 }
 
-const providerNames = { "openai-codex": "OpenAI Codex", anthropic: "Anthropic", openai: "OpenAI" }
+const providerNames: Record<PiLaunchProvider, string> = {
+  "openai-codex": "OpenAI Codex",
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  google: "Google",
+  groq: "Groq",
+  xai: "xAI",
+}
 
 /** Registry connection metadata. Models come from the selected machine runtime. */
 export function projectPiProviderCatalog(connected: ReadonlySet<string>) {
