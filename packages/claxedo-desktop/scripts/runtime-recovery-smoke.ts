@@ -14,6 +14,7 @@ import { createDaemonFetch, type DaemonFetch } from "../src/main/daemon-request"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER, type ClaxedoDaemonDiscovery } from "../src/main/server-daemon-discovery"
 import { recoverPublishedDaemon } from "../src/main/daemon-recovery"
 import { localServerBundleEntry } from "./local-server"
+import { parseClaxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
 export const RUNTIME_RECOVERY_SMOKE_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
@@ -94,7 +95,7 @@ export async function runRuntimeRecoverySmoke(): Promise<RuntimeRecoverySmokeRep
   const directory = encodeURIComponent(workspaceDirectory)
 
   try {
-    await waitForHealth(base, child, () => stderr)
+    await waitForReady(child, port, () => stderr)
 
     // Held first: nothing else pins the daemon yet, and the idle grace above
     // is short enough to end it before the terminal exists.
@@ -324,17 +325,23 @@ async function freePort() {
   return port
 }
 
-async function waitForHealth(base: string, child: ChildProcess, stderr: () => string) {
-  const deadline = Date.now() + 60_000
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null) {
-      throw new Error(`claxedo-server exited before becoming healthy:\n${stderr().slice(-2000)}`)
-    }
-    await Bun.sleep(100)
-    const res = await fetch(`${base}/api/claxedo/health`, { signal: AbortSignal.timeout(1_000) }).catch(() => undefined)
-    if (res?.ok) return
-  }
-  throw new Error("claxedo-server did not become healthy in time")
+// The daemon writes its discovery record after the listener is up and only
+// then sends ready, so a health poll can win the race that main never runs.
+async function waitForReady(child: ChildProcess, port: number, stderr: () => string) {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("claxedo-server did not report ready in time")), 60_000)
+    child.on("message", (input) => {
+      const ready = parseClaxedoServerReadyMessage(input)
+      if (!ready) return
+      clearTimeout(timer)
+      if (ready.port !== port) reject(new Error(`claxedo-server reported port ${String(ready.port)}, expected ${String(port)}`))
+      else resolve()
+    })
+    child.once("exit", () => {
+      clearTimeout(timer)
+      reject(new Error(`claxedo-server exited before reporting ready:\n${stderr().slice(-2000)}`))
+    })
+  })
 }
 
 if (import.meta.main) {
