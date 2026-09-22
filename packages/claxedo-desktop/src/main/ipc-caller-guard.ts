@@ -20,7 +20,7 @@
  * chosen by page content.
  *
  * Kept free of electron VALUE imports so the policy is directly testable, same
- * split as `navigation-guard.ts` and `renderer-origin.ts`.
+ * split as `navigation-guard.ts` and `renderer-url-trust.ts`.
  */
 
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
@@ -85,7 +85,7 @@ export type IpcCallerGuard = ReturnType<typeof createIpcCallerGuard>
  * replacing, while staying structural enough for a fake. The import is
  * TYPE-ONLY and erases,
  * which keeps this module loadable outside an Electron process — the same
- * property `navigation-guard.ts` and `renderer-origin.ts` rely on to stay
+ * property `navigation-guard.ts` and `renderer-url-trust.ts` rely on to stay
  * directly testable.
  */
 export type GuardableIpcMain = {
