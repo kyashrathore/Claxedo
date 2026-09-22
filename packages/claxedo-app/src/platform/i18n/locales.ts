@@ -14,6 +14,12 @@
  * reflects its actual content and IETF tag (`pt-BR`).
  */
 
+import { dict as en } from "./en"
+import { dict as sourceControlEn } from "./source-control/en"
+import { dict as machinesEn } from "./machines/en"
+import { dict as sessionRecoveryEn } from "./session-recovery/en"
+import { dict as uiEn } from "@opencode-ai/ui/i18n/en"
+
 export type LocaleCode =
   "en" | "zh" | "zht" | "ko" | "de" | "es" | "fr" | "da" | "ja" | "pl" | "ru" | "bs" | "ar" | "no" | "br" | "th" | "tr"
 
@@ -58,14 +64,10 @@ function isTraditionalChinese(language: string): boolean {
 export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
   {
     code: "en",
-    loader: () =>
-      loadMerged(
-        import("./en").then((m) => ({ dict: m.dict })),
-        import("./source-control/en"),
-        import("./machines/en"),
-        import("./session-recovery/en"),
-        import("@opencode-ai/ui/i18n/en"),
-      ),
+    // English is the synchronous base provider.tsx already holds, so nothing
+    // is deferred here: a dynamic import of a module the boot graph carries
+    // would resolve to the same chunk.
+    loader: async () => ({ dict: { ...en, ...sourceControlEn, ...machinesEn, ...sessionRecoveryEn, ...uiEn } }),
     intlTag: "en",
     labelKey: "language.en",
     matches: (language) => language.startsWith("en"),
