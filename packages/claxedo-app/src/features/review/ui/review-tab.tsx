@@ -38,13 +38,10 @@ import { ReviewCodeViewFileHeader, ReviewRowBody } from "./review-file-row"
 import { diffTriggerTestId, exceedsDiffLimit } from "./review-session-logic"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoLogo as Mark } from "@/ui/controls/claxedo-logo"
-import type {
-  AgentFileContent as FileContent,
-  AgentVcsFileDiff as VcsFileDiff,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentVcsFileDiff as VcsFileDiff } from "@claxedo/agent-runtime-contract"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import { createReviewDiffClient, normalizeVcsStatus, reviewVcsDiffSummaryQueryOptions, type RawVcsFileDiff } from "./review-vcs-load"
+import { createReviewDiffClient, normalizeVcsStatus, reviewVcsDiffSummaryQueryOptions } from "./review-vcs-load"
 import { createReviewSelection, type ReviewMode } from "@/features/review/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
 import { reviewToggleAllAction } from "./review-toggle-all"
@@ -99,8 +96,13 @@ function vcsDiffCacheKey(directory: string, mode: string, fromRef?: string, toRe
   return [directory, mode, fromRef ?? "", toRef ?? ""].join("\0")
 }
 
-function hasDiffContent(diff: RawVcsFileDiff) {
-  return typeof diff.patch === "string" || typeof diff.before === "string" || typeof diff.after === "string"
+/**
+  * Structural rather than `RawVcsFileDiff`: the callers hold the row as the
+  * summary type, as a partial fetch result, and as a cache miss, and the answer
+  * reads the same three fields out of all three.
+  */
+function hasDiffContent(diff: { patch?: unknown; before?: unknown; after?: unknown } | undefined) {
+  return typeof diff?.patch === "string" || typeof diff?.before === "string" || typeof diff?.after === "string"
 }
 
 function initialDiffStyle(): "unified" | "split" {
@@ -302,7 +304,7 @@ export function ReviewTab(props: ReviewTabProps) {
       isMedia: isReviewMediaFile,
       isDeleted: (path) => corpus.get(path)?.status === "deleted",
       isKnown: (path) => corpus.has(path),
-      hasDiff: (path) => hasDiffContent(corpus.get(path) as RawVcsFileDiff),
+      hasDiff: (path) => hasDiffContent(corpus.get(path)),
       hasMedia: (path) => mediaContent(path) !== undefined,
       hasError: (path) => !!contentErrors[contentKey(target, path)],
     })
@@ -324,7 +326,7 @@ export function ReviewTab(props: ReviewTabProps) {
       return { key, load: async () => {
         const force = retryContent.delete(key)
         const next = await fetchVcsFileDiff(path, target, client, force)
-        if (!next || !hasDiffContent(next as RawVcsFileDiff)) throw new Error("Diff content is unavailable")
+        if (!next || !hasDiffContent(next)) throw new Error("Diff content is unavailable")
         mergeVcsFileDiff(targetKey, path, next)
       } }
     })
@@ -426,10 +428,6 @@ export function ReviewTab(props: ReviewTabProps) {
     })
   })
 
-  const readFile = async (path: string): Promise<FileContent | undefined> => {
-    await file.load(path)
-    return file.get(path)?.content
-  }
   /** A media row's bytes, once the review's own scheduler has fetched them. */
   const mediaContent = (path: string) => file.get(path)?.content
 
@@ -534,7 +532,7 @@ export function ReviewTab(props: ReviewTabProps) {
       mounted: true,
       commentExists: !!comment,
       renderable: !!diff
-        && hasDiffContent(diff as RawVcsFileDiff)
+        && hasDiffContent(diff)
         && !guardedCodeViewFiles().has(focus.file)
         && openDiffs().includes(focus.file),
     })

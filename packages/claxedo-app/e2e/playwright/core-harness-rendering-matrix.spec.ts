@@ -908,7 +908,7 @@ test.describe("core harness rendering matrix @core", () => {
     ] as unknown as MockMessageRow[]
     const scenario = subagentScenario(subagentHarnessCases.find(item => item.name === "Codex native")!)
     const task = subagentTaskEnvelope({ sessionId, assistantId, toolCallId: scenario.toolCallId, description: scenario.description })
-    messages[1]!.parts.push(task.payload.properties.part as never)
+    messages[1].parts.push(task.payload.properties.part as never)
     const mock = await installMockRuntime(page, {
       dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
       existingSession: { messages },
@@ -996,7 +996,7 @@ test.describe("core harness rendering matrix @core", () => {
       },
     ] as unknown as MockMessageRow[]
     const task = subagentTaskEnvelope({ sessionId, assistantId, toolCallId: scenario.toolCallId, description: scenario.description, partId: taskPartId })
-    messages[1]!.parts.push(task.payload.properties.part as never)
+    messages[1].parts.push(task.payload.properties.part as never)
     const mock = await installMockRuntime(page, {
       dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
       existingSession: { messages },

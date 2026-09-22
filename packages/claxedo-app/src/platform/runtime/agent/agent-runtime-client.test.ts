@@ -20,7 +20,10 @@ describe("AgentRuntimeClient", () => {
   it("omits an agent-managed model from actual create and prompt wire bodies", async () => {
     const bodies: Record<string, unknown>[] = []
     const client = createAgentRuntimeClient({ serverUrl: "http://127.0.0.1:3001", request: async (_request, init) => {
-      bodies.push(JSON.parse(String(init?.body)))
+      // A `BodyInit` that is not already serialized would stringify to
+      // "[object Object]" and the wire assertion below would read an empty body.
+      if (typeof init?.body !== "string") throw new Error("the client must send a serialized JSON body")
+      bodies.push(JSON.parse(init.body) as Record<string, unknown>)
       return ok({ id: "session-1" })
     } })
     await client.createSession({ directory: "/repo", harness: { kind: "connection", connectionId: "agent" }, agent: "build" })

@@ -17,18 +17,18 @@ describe("pre-push architecture ratchet", () => {
       "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts ./script/bun-build.test.ts && bun ./script/product-boundary/verify.ts --all --source-only && bun ./script/helpers/verify.ts",
     )
     expect(manifest.scripts.prepush).toBe(
-      "bun run lint && bun run typecheck && bun run test:architecture-ratchets",
+      "bun run lint && bun run typecheck && bun run test:ci-policy && bun run test:architecture-ratchets",
     )
     expect(await Bun.file(new URL(".husky/pre-push", root)).text()).toContain("bun run prepush")
   })
 
-  test("CI runs the same three gates the hook does, so a bypassed push still fails", async () => {
+  test("CI runs the same gates the hook does, so a bypassed push still fails", async () => {
     // The hook is the only thing that ran the ratchets until this workflow
     // picked them up; `git push --no-verify` skipped them entirely. Pinning the
-    // three commands here means deleting a step reddens a test rather than
+    // commands here means deleting a step reddens a test rather than
     // silently widening what reaches `dev`.
     const workflow = await Bun.file(new URL(".github/workflows/typecheck.yml", root)).text()
-    for (const command of ["bun run lint", "bun run test:architecture-ratchets"]) {
+    for (const command of ["bun run lint", "bun run test:ci-policy", "bun run test:architecture-ratchets"]) {
       expect(workflow).toContain(`run: ${command}`)
     }
     expect(workflow).toContain("bun turbo typecheck --affected")

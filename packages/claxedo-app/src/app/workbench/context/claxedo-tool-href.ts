@@ -1,11 +1,12 @@
 import { sessionRoute, tasksRoute, workspacePageRoute, workspaceRoute } from "@/platform/identity/route"
 import { opaqueWorkspaceRouteId } from "@/platform/identity/workspace-route"
+import { recordOrEmpty } from "@/lib/record"
 
 function toolResourceRecord(value: unknown): Record<string, unknown> {
   if (typeof value === "string") {
     try { return toolResourceRecord(JSON.parse(value)) } catch { return {} }
   }
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+  return recordOrEmpty(value)
 }
 
 function nonblankToolResourceString(value: unknown) {

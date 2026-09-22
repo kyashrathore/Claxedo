@@ -30,7 +30,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test"
 import { readFile, writeFile } from "node:fs/promises"
 import { installMockRuntime, type MockRuntimeOptions, type MockMessageRow } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
-import { readTextRangeGeometry, readScrollPosition, sampleElementDuringAction, sampleTranscriptGeometry, timelineScroller, scrollTimelineToTop } from "../helpers/geometry-oracle"
+import { readTextRangeGeometry, readScrollPosition, sampleTranscriptGeometry, timelineScroller, scrollTimelineToTop } from "../helpers/geometry-oracle"
 
 import { expectRailRowVisible } from "../helpers/rail-oracle"
 
@@ -45,6 +45,13 @@ const HARNESS_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 
 type AnyPart = Record<string, unknown>
 type AnyInfo = Record<string, unknown>
+
+/** The message id the server answered with, refused rather than coerced. */
+function infoId(info: AnyInfo) {
+  const id = info.id
+  if (typeof id !== "string") throw new Error("message info carries no string id")
+  return id
+}
 
 function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
@@ -1091,7 +1098,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     if (mode !== "idle") {
       const assistant = runningAssistant
       mock.emit({ type: "message.part.updated", properties: { part: {
-        id: `${assistant.id}_text`, messageID: assistant.id, sessionID: SESSION_ID,
+        id: `${infoId(assistant)}_text`, messageID: infoId(assistant), sessionID: SESSION_ID,
         type: "text", text: "Output that arrived while you read another session.\n\n".repeat(50),
       } } } as never, DIR)
       if (mode === "finishes-hidden") {
@@ -1458,7 +1465,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await composer(page).fill("Review interleaved rendering")
     await submitControl(page).click()
     await expect.poll(() => mock.requests.promptBodies[0]?.assistantID).toBeTruthy()
-    const messageID = mock.requests.promptBodies[0]!.assistantID
+    const messageID = mock.requests.promptBodies[0].assistantID
     const emit = (part: AnyPart) => mock.emit({ type: "message.part.updated", properties: { part: { sessionID: SESSION_ID, messageID, ...part } } } as never, DIR)
     for (let i = 0; i < 5; i++) {
       emit({ id: `unique-text-${i}`, type: "text", text: `Unique paragraph ${i}`, time: { start: 1, end: 2 } })

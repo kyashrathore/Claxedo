@@ -54,7 +54,8 @@ export function createDraftSessionStart(input: {
       enabled: !!owner,
       queryFn: owner ? async ({ signal }) => {
         const result = (await client(owner).getSessionStart({ directory: owner.directory, sessionID: owner.sessionId, signal })).data
-        if (Object.entries(owner).some(([key, value]) => result.binding[key as keyof AgentSessionStartBinding] !== value)) {
+        const binding: Record<string, unknown> = result.binding
+        if (Object.entries(owner).some(([key, value]) => binding[key] !== value)) {
           throw new Error("Session start response does not match this draft's creation owner")
         }
         const current = () => !disposed && !signal.aborted && draftId() === currentDraftId

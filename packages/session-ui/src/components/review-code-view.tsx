@@ -15,6 +15,7 @@
  */
 import {
   CodeView,
+  isDiffAnnotation,
   type CodeViewOptions,
   type DiffLineAnnotation,
   type GetHoveredLineResult,
@@ -172,7 +173,7 @@ function isDivScrollEvent(event: Event): event is DivScrollEvent {
 
 export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewProps<LAnnotation>) {
   let root: HTMLDivElement | undefined
-  let view: CodeView<LAnnotation, undefined> | undefined
+  let view: CodeView<LAnnotation> | undefined
   let optionsForView: CodeViewOptions<LAnnotation, undefined> | undefined
   let stampFrame: number | undefined
 
@@ -361,13 +362,18 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
             renderAnnotation: (
               annotation: DiffLineAnnotation<LAnnotation> | LineAnnotation<LAnnotation>,
               context: { item: { id: string } },
-            ) => comments.owner(context.item.id).renderAnnotation(annotation as DiffLineAnnotation<LAnnotation>),
+            ) => isDiffAnnotation(annotation)
+              ? comments.owner(context.item.id).renderAnnotation(annotation)
+              : undefined,
             renderGutterUtility: (
               getHoveredRow: () => GetHoveredLineResult<"diff"> | GetHoveredLineResult<"file"> | undefined,
               context: { item: { id: string } },
-            ) => comments.owner(context.item.id).renderGutterUtility(
-              getHoveredRow as () => GetHoveredLineResult<"diff"> | undefined,
-            ),
+            ) => comments.owner(context.item.id).renderGutterUtility(() => {
+              // The engine types the hovered row by its own mode; only the
+              // side-tagged one addresses a diff line a comment can hang on.
+              const row = getHoveredRow()
+              return row && "side" in row ? row : undefined
+            }),
             onLineSelected: (range: SelectedLineRange | null, context: { item: { id: string } }) =>
               comments.owner(context.item.id).onLineSelected(range),
             onLineSelectionEnd: (range: SelectedLineRange | null, context: { item: { id: string } }) =>
@@ -387,7 +393,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     // the pool built with `lineDiffType: "none"`, which is what the options
     // above ask for in either style. It also survives the style toggle, which
     // replaces options but never the instance's pool.
-    const instance = new CodeView<LAnnotation, undefined>(options, getWorkerPool("unified"))
+    const instance = new CodeView<LAnnotation>(options, getWorkerPool("unified"))
     view = instance
     instance.setSlotCoordinator({
       hasHeaderRenderers: true,

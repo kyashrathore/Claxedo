@@ -162,7 +162,7 @@ test("@core queued bubbles leave the virtual rows alone, do not move a reader wh
   // Admission: the runtime starts the queued prompt and its user message lands
   // over events before the queue poll drops the record. The bubble must yield
   // in the same step, with the record still listed by the server.
-  const messageId = rows[0]!.messageId
+  const messageId = rows[0].messageId
   mock.emit({ type: "message.updated", properties: { sessionID: SESSION, info: {
     id: messageId, sessionID: SESSION, role: "user", time: { created: Date.now() }, agent: "build",
     model: { providerID: "opencode", modelID: "gpt-5" },

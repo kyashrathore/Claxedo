@@ -4,11 +4,12 @@ import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@/ui/session-kit"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useLanguage } from "@/platform/i18n/provider"
+import { isRecord } from "@/lib/record"
 
 type DictionaryKey = Parameters<ReturnType<typeof useLanguage>["t"]>[0]
 
 function permissionRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+  return isRecord(value) ? value : undefined
 }
 
 /**

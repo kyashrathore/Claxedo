@@ -55,7 +55,7 @@ export function createDisplayedFrameLoop(input: {
 
   return {
     /** Replace any running loop with `next`, which returns false when done. */
-    start(next: () => boolean) {
+    start: (next: () => boolean) => {
       if (frame !== undefined) {
         cancelFrame(frame)
         frame = undefined
@@ -64,11 +64,11 @@ export function createDisplayedFrameLoop(input: {
       arm()
     },
     /** Spend frames again on a parked step. No-op unless parked and displayed. */
-    resume() {
+    resume: () => {
       arm()
     },
     /** Drop the loop entirely — the work is no longer wanted. */
-    stop() {
+    stop: () => {
       step = undefined
       if (frame === undefined) return
       cancelFrame(frame)
