@@ -1,8 +1,10 @@
 name: deploy-staging
 
 # Everything merged to `staging` ships from here: control plane, relay, sandbox
-# image, app. The desktop app is NOT part of this run — it is tag-driven
-# (`claxedo-v*` -> release-claxedo.yml). See docs/deploy/staging-branch.md.
+# image. The browser app is not a job — the control-plane release publishes it
+# (release-better-auth-d1.ts `publishBrowser`). The desktop app is not either —
+# it is tag-driven (`claxedo-v*` -> release-claxedo.yml).
+# See docs/deploy/staging-branch.md.
 
 on:
   push:
@@ -19,7 +21,6 @@ on:
           - control-plane
           - relay
           - sandbox-image
-          - app
 
 # Shared with deploy-claxedo-app-staging.yml: one Claxedo cloud deploy at a
 # time, and a queued run waits rather than being cancelled mid-release — a
@@ -41,42 +42,41 @@ jobs:
       control_plane: ${{ steps.select.outputs.control_plane }}
       relay: ${{ steps.select.outputs.relay }}
       sandbox_image: ${{ steps.select.outputs.sandbox_image }}
-      app: ${{ steps.select.outputs.app }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
 
+      # The repository's changed-file policy owns which surfaces a diff reaches;
+      # `sandbox_image` is one of its outputs. A dispatch has no base commit, so
+      # it selects the ~4.5 GB image build — pick one component by name to avoid
+      # that.
+      - name: Select affected surfaces
+        id: changed
+        uses: ./.github/actions/detect-ci-changes
+        with:
+          base: ${{ github.event.before }}
+          head: ${{ github.sha }}
+          force-full: ${{ github.event_name == 'workflow_dispatch' }}
+
       - name: Select components
         id: select
         env:
           REQUESTED: ${{ inputs.components || 'all' }}
-          BEFORE: ${{ github.event.before }}
-          HEAD: ${{ github.sha }}
+          SANDBOX_CHANGED: ${{ steps.changed.outputs.sandbox_image }}
         run: |
           set -euo pipefail
           selected() { [ "$REQUESTED" = "all" ] || [ "$REQUESTED" = "$1" ]; }
 
-          # The sandbox image is a ~4.5 GB container build; it only earns a run
-          # when the Worker, its build script, or a package the image bundles
-          # changed. A dispatch that names it runs it unconditionally.
-          sandbox_changed=false
-          if [ "$REQUESTED" = "sandbox-image" ]; then
-            sandbox_changed=true
-          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-            if git diff --name-only "$BEFORE" "$HEAD" | grep -Eq '^(packages/claxedo-server/scripts/sandbox/|packages/sandbox-contract/|packages/sandbox-manager/|packages/workspace-runtime/|packages/agent-sdk-runtime/|packages/agent-runtime-contract/|packages/agent-event-runtime/|\.github/workflows/deploy-cloudflare-sandbox-worker\.yml$)'; then
-              sandbox_changed=true
-            fi
-          else
-            echo "no usable base commit; treating the sandbox image as changed"
-            sandbox_changed=true
-          fi
+          # Naming the image on a dispatch builds it whether or not the policy
+          # saw a change; `all` still defers to the policy.
+          sandbox=$SANDBOX_CHANGED
+          [ "$REQUESTED" = "sandbox-image" ] && sandbox=true
 
           {
             selected control-plane && echo "control_plane=true" || echo "control_plane=false"
             selected relay && echo "relay=true" || echo "relay=false"
-            { selected sandbox-image && [ "$sandbox_changed" = true ]; } && echo "sandbox_image=true" || echo "sandbox_image=false"
-            selected app && echo "app=true" || echo "app=false"
+            { selected sandbox-image && [ "$sandbox" = true ]; } && echo "sandbox_image=true" || echo "sandbox_image=false"
           } >> "$GITHUB_OUTPUT"
 
           cat "$GITHUB_OUTPUT"
@@ -182,14 +182,40 @@ jobs:
         working-directory: packages/claxedo-server
         run: bun scripts/deploy/staging-release.ts --staging
 
+  # Staging's relay is the Worker-safe Durable Object relay
+  # (packages/workspace-relay/src/worker.ts), which is what the control plane's
+  # CLAXEDO_WORKSPACE_RELAY_URL names. deploy-relay.yml deploys the Fly process
+  # relay and stays a production dispatch.
   relay:
-    name: workspace relay
+    name: workspace relay (Cloudflare Durable Object)
     needs: [plan, gate, unit, control-plane]
     if: ${{ !cancelled() && needs.plan.outputs.relay == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' && needs.control-plane.result != 'failure' }}
-    uses: ./.github/workflows/deploy-relay.yml
-    with:
-      environment: staging
-    secrets: inherit
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLAXEDO_RELAY_WORKER_NAME: ${{ vars.CLAXEDO_STAGING_RELAY_WORKER_NAME }}
+      CLAXEDO_RELAY_URL: ${{ vars.CLAXEDO_STAGING_WORKSPACE_RELAY_URL }}
+      CLAXEDO_RELAY_CENTRAL_URL: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+      CLAXEDO_RELAY_APP_ORIGINS: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Verify the relay inputs are configured
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLAXEDO_RELAY_WORKER_NAME \
+            CLAXEDO_RELAY_URL CLAXEDO_RELAY_CENTRAL_URL CLAXEDO_RELAY_APP_ORIGINS; do
+            [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
+          done
+
+      - name: Deploy the relay Worker
+        working-directory: packages/workspace-relay
+        run: ./node_modules/.bin/tsx scripts/deploy-cloudflare.ts
 
   sandbox-image:
     name: cloudflare sandbox worker
@@ -201,19 +227,10 @@ jobs:
       agent_plugins: true
     secrets: inherit
 
-  app:
-    name: browser app
-    needs: [plan, gate, unit, control-plane, relay, sandbox-image]
-    if: ${{ !cancelled() && needs.plan.outputs.app == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' && needs.control-plane.result != 'failure' && needs.relay.result != 'failure' && needs.sandbox-image.result != 'failure' }}
-    uses: ./.github/workflows/deploy-claxedo-app.yml
-    with:
-      target_environment: staging
-    secrets: inherit
-
   result:
     name: staging deploy result
     if: always()
-    needs: [plan, gate, unit, control-plane, relay, sandbox-image, app]
+    needs: [plan, gate, unit, control-plane, relay, sandbox-image]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected component to have deployed
@@ -227,8 +244,6 @@ jobs:
           RELAY_RESULT: ${{ needs.relay.result }}
           SANDBOX_SELECTED: ${{ needs.plan.outputs.sandbox_image }}
           SANDBOX_RESULT: ${{ needs.sandbox-image.result }}
-          APP_SELECTED: ${{ needs.plan.outputs.app }}
-          APP_RESULT: ${{ needs.app.result }}
         run: |
           set -uo pipefail
           failed=0
@@ -244,5 +259,4 @@ jobs:
           [ "$CONTROL_PLANE_SELECTED" = "true" ] && require "Control plane" "$CONTROL_PLANE_RESULT"
           [ "$RELAY_SELECTED" = "true" ] && require "Relay" "$RELAY_RESULT"
           [ "$SANDBOX_SELECTED" = "true" ] && require "Sandbox image" "$SANDBOX_RESULT"
-          [ "$APP_SELECTED" = "true" ] && require "App" "$APP_RESULT"
           exit "$failed"

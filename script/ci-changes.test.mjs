@@ -110,3 +110,39 @@ await test("an empty or unavailable comparison fails open", () => {
   assert.equal(result.unit, true)
   assert.equal(result.windows, true)
 })
+
+await test("the sandbox image is selected by the Worker and every package baked into it", () => {
+  for (const file of [
+    "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/index.ts",
+    "packages/claxedo-server/scripts/sandbox/build-sandbox-image.ts",
+    "packages/sandbox-contract/src/index.ts",
+    "packages/sandbox-manager/src/daytona.ts",
+    "packages/workspace-runtime/src/workspace/runtime.ts",
+    "packages/agent-sdk-runtime/src/harnesses/pi/index.ts",
+    "packages/agent-runtime-contract/src/elicitation.ts",
+    "packages/agent-event-runtime/src/index.ts",
+    ".github/workflows/deploy-cloudflare-sandbox-worker.yml",
+  ]) {
+    assert.equal(classifyChangedFiles([file]).sandbox_image, true, file)
+  }
+})
+
+await test("the sandbox image is not rebuilt for changes that cannot reach it", () => {
+  for (const file of [
+    "packages/claxedo-app/src/app/workbench/rail/workspace-tab.tsx",
+    "packages/claxedo-server/src/platform/auth/better-auth-configuration.ts",
+    "packages/claxedo-desktop/src/main/index.ts",
+    "packages/workspace-relay/src/cloudflare.ts",
+    ".github/workflows/deploy-staging.yml",
+  ]) {
+    assert.equal(classifyChangedFiles([file]).sandbox_image, false, file)
+  }
+})
+
+await test("a documentation change inside a baked package does not rebuild the sandbox image", () => {
+  assert.equal(classifyChangedFiles(["packages/workspace-runtime/README.md"]).sandbox_image, false)
+})
+
+await test("an unavailable comparison rebuilds the sandbox image rather than assuming it is current", () => {
+  assert.equal(classifyChangedFiles([]).sandbox_image, true)
+})

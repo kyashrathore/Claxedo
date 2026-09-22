@@ -75,6 +75,20 @@ const SERVER_DEPENDENCY_PREFIXES = [
   "packages/workspace-runtime/",
 ]
 
+// The Cloudflare sandbox image is a ~4.5 GB container build, so it is selected
+// rather than run on every push: the Worker and its build script, plus every
+// package `build-sandbox-image.ts` bundles into the host it ships.
+const SANDBOX_IMAGE_PREFIXES = [
+  "packages/agent-event-runtime/",
+  "packages/agent-runtime-contract/",
+  "packages/agent-sdk-runtime/",
+  "packages/claxedo-server/scripts/sandbox/",
+  "packages/sandbox-contract/",
+  "packages/sandbox-manager/",
+  "packages/workspace-runtime/",
+]
+const SANDBOX_IMAGE_WORKFLOWS = [".github/workflows/deploy-cloudflare-sandbox-worker.yml"]
+
 const TIER_REAL_APP_PREFIXES = [
   "packages/claxedo-app/e2e/helpers/",
   "packages/claxedo-app/e2e/playwright/real-",
@@ -134,6 +148,11 @@ function isProductBoundaryInfrastructure(file) {
   return file.startsWith("script/product-boundary/")
 }
 
+function isSandboxImageRelevant(file) {
+  if (isDocumentation(file)) return false
+  return startsWithAny(file, SANDBOX_IMAGE_PREFIXES) || equalsAny(file, SANDBOX_IMAGE_WORKFLOWS)
+}
+
 function resultFor(files, forceFull, reason) {
   const full =
     forceFull ||
@@ -183,6 +202,7 @@ function resultFor(files, forceFull, reason) {
     core_e2e: full || codeFiles.some(isCoreE2ERelevant),
     onboarding: full || codeFiles.some(isOnboardingRelevant),
     tier_real: full || codeFiles.some(isTierRealRelevant),
+    sandbox_image: full || codeFiles.some(isSandboxImageRelevant),
     reason,
     files,
   }
@@ -223,6 +243,7 @@ function writeGitHubOutputs(result, outputFile) {
     "core_e2e",
     "onboarding",
     "tier_real",
+    "sandbox_image",
   ]
   const lines = scalarKeys.map((key) => `${key}=${result[key]}`)
   // Keep the matrix structurally valid even when the job-level `if` skips the

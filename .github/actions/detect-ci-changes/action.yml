@@ -42,6 +42,8 @@ outputs:
     value: ${{ steps.detect.outputs.onboarding }}
   tier_real:
     value: ${{ steps.detect.outputs.tier_real }}
+  sandbox_image:
+    value: ${{ steps.detect.outputs.sandbox_image }}
   reason:
     value: ${{ steps.detect.outputs.reason }}
 
