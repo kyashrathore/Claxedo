@@ -20,6 +20,7 @@ import {
   daemonOwnershipSnapshotPath,
   isDaemonOwnershipSnapshot,
 } from "@claxedo/agent-runtime-contract"
+import { errorCode } from "@claxedo/server-core/platform/errors/index"
 import type { LocalDaemonOwner, MachineRecoveryGate, MachineRecoveryInspection } from "./local-daemon-lifecycle"
 
 const PUBLISH_INTERVAL_MS = 5_000
@@ -84,7 +85,7 @@ export function clearDaemonOwnershipSnapshot(file: string, owner: { pid: number;
   try {
     fs.unlinkSync(file)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    if (errorCode(error) !== "ENOENT") throw error
   }
 }
 
@@ -93,10 +94,26 @@ export function readDaemonOwnershipSnapshot(file: string): DaemonOwnershipSnapsh
   try {
     parsed = JSON.parse(fs.readFileSync(file, "utf8"))
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT" || error instanceof SyntaxError) return undefined
+    if (errorCode(error) === "ENOENT" || error instanceof SyntaxError) return undefined
     throw error
   }
-  return isDaemonOwnershipSnapshot(parsed) ? parsed as DaemonOwnershipSnapshot : undefined
+  return isLocalDaemonOwnershipSnapshot(parsed) ? parsed : undefined
+}
+
+const DAEMON_OWNER_KINDS: readonly LocalDaemonOwner["kind"][] = [
+  "managed_process", "terminal", "turn", "workspace_runtime",
+]
+
+/**
+ * The contract guard accepts any non-empty owner `kind`. This reader hands the
+ * rows to code that decides per kind, so a snapshot naming one it has never
+ * heard of is a snapshot this process cannot describe and is dropped whole
+ * rather than typed into one of the four. `gate` stays unchecked: it is
+ * optional, and a reader that finds nothing in it is already correct.
+ */
+function isLocalDaemonOwnershipSnapshot(value: unknown): value is DaemonOwnershipSnapshot {
+  return isDaemonOwnershipSnapshot(value)
+    && value.owners.every((owner) => DAEMON_OWNER_KINDS.some((kind) => kind === owner.kind))
 }
 
 export function daemonOwnershipSnapshotIsStale(snapshot: DaemonOwnershipSnapshot, at: number) {
@@ -150,4 +167,3 @@ export function createDaemonOwnershipPublisher(options: {
     },
   }
 }
-

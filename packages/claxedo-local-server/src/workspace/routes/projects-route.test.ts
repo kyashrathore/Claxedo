@@ -514,7 +514,7 @@ describe("the clone this server really runs", () => {
     const app = LocalProjectRoutes({}, {})
     const failed = await app.request("http://localhost/", json({
       name: "Served Missing",
-      source: { kind: "repository", repoUrl: `${origin.replace("/served.git", "/absent.git")}` },
+      source: { kind: "repository", repoUrl: origin.replace("/served.git", "/absent.git") },
     }))
     expect(failed.status).toBe(502)
     expect(((await failed.json()) as { error: { message: string } }).error.message).toContain("absent.git")

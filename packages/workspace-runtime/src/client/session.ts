@@ -190,6 +190,30 @@ function decodeRecoveryOutcome(body: unknown, status: number): RecoveryOutcome {
   return { kind: "refused", refusal: { kind: "unavailable", message: `${envelope.code}: ${envelope.message}` } }
 }
 
+/**
+ * The one body that is neither an outcome nor an error envelope. Checked before
+ * it is handed on: a caller that reads `facts` or `operations` off a malformed
+ * answer reports "no operations" for a session the owner never described, and
+ * the request that asked for it is gone by then.
+ */
+function recoveryInspection(body: unknown): AgentRuntimeRecoveryInspection {
+  if (!isRecoveryInspection(body)) {
+    throw new Error("recovery answer is neither an outcome nor a session inspection")
+  }
+  return body
+}
+
+function isRecoveryInspection(body: unknown): body is AgentRuntimeRecoveryInspection {
+  if (typeof body !== "object" || body === null) return false
+  const fields = body as Partial<Record<keyof AgentRuntimeRecoveryInspection, unknown>>
+  return typeof fields.sessionId === "string"
+    && typeof fields.queued === "number"
+    && typeof fields.facts === "object" && fields.facts !== null
+    && typeof fields.health === "object" && fields.health !== null
+    && Array.isArray(fields.failures)
+    && Array.isArray(fields.operations)
+}
+
 const sessionPath = (input: SessionInput, suffix = "") => `/session/${encodeURIComponent(input.sessionID)}${suffix}`
 
 export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionClient {
@@ -234,7 +258,7 @@ export function sessionClient(caller: WorkspaceRuntimeCaller): WorkspaceSessionC
         // error envelope, so it is the only body that is not an outcome.
         decode: (body, status) => isRecoveryOutcome(body) || claxedoErrorEnvelope(body)
           ? decodeRecoveryOutcome(body, status)
-          : (body as AgentRuntimeRecoveryInspection),
+          : recoveryInspection(body),
       }),
       submit: (input, options) => caller.decoded({
         operation: "session.recovery.submit",

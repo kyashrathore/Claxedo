@@ -86,11 +86,10 @@ export type CloneOptions = {
 async function cloneRepository(repoUrl: string, directory: string, options: CloneOptions = {}) {
   const parent = path.dirname(directory)
   await fs.mkdir(parent, { recursive: true })
-  await cloneGit(["clone", "--", repoUrl, directory], parent, {
-    ...(options.authorization && options.host
+  await cloneGit(["clone", "--", repoUrl, directory], parent,
+    options.authorization && options.host
       ? { credential: { host: options.host, authorization: options.authorization } }
-      : {}),
-  })
+      : {})
 }
 
 /** GitHub's token-in-basic-auth form for `x-access-token`, as the cloud clone path uses. */

@@ -24,6 +24,7 @@ import {
   isDaemonOwnershipSnapshot,
   DEFAULT_RECOVERY_BUDGETS,
   RecoveryContractError,
+  parseRecoveryOperation,
   parseRecoveryOutcome,
   parseRecoveryRequest,
   recoveryTargetsMatch,
@@ -43,6 +44,7 @@ import {
   type RetirementResult,
 } from "@claxedo/agent-sdk-runtime/launch"
 
+import { readArray, readNumber, readRecord, readString, readUnknown } from "../shared/json-read"
 import { nodeErrorCode } from "../shared/node-error"
 import { CLAXEDO_DAEMON_PROTOCOL, DAEMON_PROTOCOL_HEADER, type ClaxedoDaemonDiscovery } from "./server-daemon-discovery"
 import type { DaemonFetch } from "./daemon-request"
@@ -327,6 +329,56 @@ export const DAEMON_RECOVERY_CHANNELS = {
  * daemon to forward to, the held launch result is what it answers with, and an
  * authorized stop runs the external retirement instead.
  */
+/**
+ * The daemon's own inspection, read rather than assumed.
+ *
+ * This answer decides what the recovery UI offers and what a submitted
+ * operation is scoped to, so a body missing the scope revision or the target
+ * would put a stale revision on the wire and read as a generation conflict the
+ * user cannot act on. Owners and preview are shape-checked only: they are
+ * displayed, never compared.
+ */
+function daemonRecoveryInspection(body: unknown): DaemonRecoveryInspection {
+  const machineId = readString(body, "machineId")
+  const generation = readString(body, "generation")
+  const scopeRevision = readString(body, "scopeRevision")
+  const target = readRecord(body, "target")
+  const preview = readRecord(body, "preview")
+  const owners = readArray(body, "owners")
+  const operations = readArray(body, "operations")
+  const residencyPins = readNumber(body, "residencyPins")
+  const receipt = readString(body, "receipt")
+  if (machineId === undefined || generation === undefined || scopeRevision === undefined || !target || !preview
+    || !owners || !operations || residencyPins === undefined || (receipt !== "durable" && receipt !== "volatile")) {
+    throw new Error("the daemon answered a recovery inspection this build cannot read")
+  }
+  return {
+    machineId,
+    generation,
+    scopeRevision,
+    target: { scope: "machine", machineId, ownerGeneration: generation },
+    preview: {
+      sessions: (readArray(preview, "sessions") ?? []).map(String),
+      resources: (readArray(preview, "resources") ?? []).map(String),
+      summary: readString(preview, "summary") ?? "",
+    },
+    owners: owners.flatMap((owner) => {
+      const id = readString(owner, "id")
+      const kind = readString(owner, "kind")
+      const ownerGeneration = readString(owner, "generation")
+      const state = readString(owner, "state")
+      const detail = readString(owner, "detail")
+      return id !== undefined && kind !== undefined && ownerGeneration !== undefined && state !== undefined
+        ? [{ id, kind, generation: ownerGeneration, state, pins: readUnknown(owner, "pins") === true,
+            ...(detail === undefined ? {} : { detail }) }]
+        : []
+    }),
+    operations: operations.map((operation) => parseRecoveryOperation(operation)),
+    residencyPins,
+    receipt,
+  }
+}
+
 export function daemonRecoveryBridge(input: {
   daemon: () => DaemonFetch | undefined
   unresolved: () => { discovery: ClaxedoDaemonDiscovery; result: DaemonRecoveryResult } | undefined
@@ -339,7 +391,7 @@ export function daemonRecoveryBridge(input: {
       const daemon = input.daemon()
       if (daemon) {
         const response = await daemon("/api/claxedo/daemon/recovery", { headers: protocol })
-        return await response.json() as DaemonRecoveryInspection
+        return daemonRecoveryInspection(await response.json())
       }
       const held = input.unresolved()
       if (!held) {

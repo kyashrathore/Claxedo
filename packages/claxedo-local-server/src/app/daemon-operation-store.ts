@@ -16,6 +16,8 @@
 import {
   normalizeRecoveryIntent,
   parseRecoveryOperation,
+  parseRecoveryTarget,
+  RECOVERY_ACTIONS,
   type RecoveryIntent,
   type RecoveryOperation,
   type RecoveryRequest,
@@ -231,7 +233,27 @@ function operationRow(row: unknown): { operationId: string; operation: RecoveryO
   return {
     operationId: row.operation_id,
     operation: parseRecoveryOperation(JSON.parse(row.data_json)),
-    intent: JSON.parse(row.intent_json) as RecoveryIntent,
+    intent: recoveryIntent(JSON.parse(row.intent_json)),
+  }
+}
+
+/**
+ * The stored intent is what a second delivery of the same request id is
+ * compared against, so a row this process cannot read as one is worse than no
+ * row: the comparison would silently pass and a different command would be
+ * served the first one's receipt.
+ */
+function recoveryIntent(value: unknown): RecoveryIntent {
+  const action = isRecord(value) ? RECOVERY_ACTIONS.find((candidate) => candidate === value.action) : undefined
+  if (!isRecord(value) || !action || typeof value.scopeRevision !== "string"
+    || (value.linkedOperationId !== undefined && typeof value.linkedOperationId !== "string")) {
+    throw new Error("SQLite returned a machine recovery intent this build cannot read")
+  }
+  return {
+    action,
+    scopeRevision: value.scopeRevision,
+    target: parseRecoveryTarget(value.target),
+    ...(value.linkedOperationId === undefined ? {} : { linkedOperationId: value.linkedOperationId }),
   }
 }
 

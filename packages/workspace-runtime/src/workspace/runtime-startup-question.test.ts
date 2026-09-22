@@ -62,21 +62,21 @@ test("public workspace creation answers an actual ACP startup RPC before provide
       if (!questions.length) await Bun.sleep(5)
     }
     expect(questions).toHaveLength(1)
-    expect(questions[0]!.sessionID).toBe("local-start")
+    expect(questions[0].sessionID).toBe("local-start")
     expect(await (await request("/session")).json()).toEqual([])
     expect(await (await request("/session-start/local-start")).json()).toMatchObject({ status: "starting", binding: { sessionId: "local-start", connectionId: "connection:startup-agent" } })
-    const rejected = await request(`/question/${questions[0]!.id}/reply`, "POST", { answers: [[JSON.stringify({ name: "invalid-123" })]] })
+    const rejected = await request(`/question/${questions[0].id}/reply`, "POST", { answers: [[JSON.stringify({ name: "invalid-123" })]] })
     expect(rejected.status).toBe(400)
     expect(await rejected.json()).toMatchObject({ error: { code: "elicitation_invalid_answer" } })
     expect(response).toBeUndefined()
-    expect(await (await request("/question?sessionId=local-start")).json()).toMatchObject([{ id: questions[0]!.id }])
+    expect(await (await request("/question?sessionId=local-start")).json()).toMatchObject([{ id: questions[0].id }])
     // A worker timeout must not consume the agent RPC or durable question.
-    const timedOut = await request(`/question/${questions[0]!.id}/reply`, "POST", { answers: [[JSON.stringify({ name: "Chosen", bounded: "a".repeat(100) + "!" })]] })
+    const timedOut = await request(`/question/${questions[0].id}/reply`, "POST", { answers: [[JSON.stringify({ name: "Chosen", bounded: "a".repeat(100) + "!" })]] })
     expect(timedOut.status).toBe(422)
     expect(await timedOut.json()).toMatchObject({ error: { code: "elicitation_validation_timeout" } })
     expect(response).toBeUndefined()
-    expect(await (await request("/question?sessionId=local-start")).json()).toMatchObject([{ id: questions[0]!.id }])
-    const answered = await request(`/question/${questions[0]!.id}/reply`, "POST", { answers: [[JSON.stringify({ name: "Chosen" })]] })
+    expect(await (await request("/question?sessionId=local-start")).json()).toMatchObject([{ id: questions[0].id }])
+    const answered = await request(`/question/${questions[0].id}/reply`, "POST", { answers: [[JSON.stringify({ name: "Chosen" })]] })
     expect(answered.status).toBe(200)
     expect(response).toMatchObject({ result: { action: "accept", content: { name: "Chosen" } } })
     expect((await creating).status).toBe(201)
@@ -111,7 +111,7 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
         if (!questions.length) await Bun.sleep(5)
       }
       expect(questions).toHaveLength(1)
-      expect((await request(`/question/${questions[0]!.id}/reply`, "POST", { answers: [[JSON.stringify({ label })]] })).status).toBe(200)
+      expect((await request(`/question/${questions[0].id}/reply`, "POST", { answers: [[JSON.stringify({ label })]] })).status).toBe(200)
       expect((await creating).status).toBe(label === "fail" ? 500 : 201)
       const state = await (await request(`/session-start/${id}`)).json()
       expect(state.status).toBe(label === "fail" ? "failed" : "created")
@@ -134,7 +134,7 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
     expect((await interrupted).status).toBe(500)
     expect(await (await request("/session-start/interrupted")).json()).toMatchObject({ status: "failed" })
     expect(await (await request("/question?sessionId=interrupted")).json()).toEqual([])
-    expect((await request(`/question/${pending[0]!.id}/reply`, "POST", { answers: [[JSON.stringify({ label: "too-late" })]] })).status).toBe(404)
+    expect((await request(`/question/${pending[0].id}/reply`, "POST", { answers: [[JSON.stringify({ label: "too-late" })]] })).status).toBe(404)
     expect((await request("/session/interrupted")).status).toBe(404)
 
     const restarted = request("/session", "POST", { id: "after-crash" })
@@ -144,7 +144,7 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
       if (!pending.length) await Bun.sleep(5)
     }
     expect(pending).toHaveLength(1)
-    expect((await request(`/question/${pending[0]!.id}/reply`, "POST", { answers: [[JSON.stringify({ label: "recovered" })]] })).status).toBe(200)
+    expect((await request(`/question/${pending[0].id}/reply`, "POST", { answers: [[JSON.stringify({ label: "recovered" })]] })).status).toBe(200)
     expect((await restarted).status).toBe(201)
     const recoveredLog = (await readFile(logPath, "utf8")).trim().split("\n").map(line => JSON.parse(line))
     expect(new Set(recoveredLog.map(row => row.pid)).size).toBe(2)
@@ -152,16 +152,17 @@ test("external stdio startup isolates refusal, retires crashed questions, and pe
     pid = recoveredLog.at(-1).pid
   } finally {
     await host.dispose()
-    if (pid) {
-      let exited = false
-      for (let n = 0; n < 200 && !exited; n++) {
-        try { process.kill(pid, 0); await Bun.sleep(5) } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
-          exited = true
-        }
-      }
-      expect(exited).toBe(true)
-    }
     await rm(directory, { recursive: true, force: true })
+  }
+  // After the finally, not inside it: a claim about the peer's exit made while
+  // the body is unwinding replaces the failure the body was reporting.
+  if (pid) {
+    let exit: NodeJS.ErrnoException["code"]
+    for (let n = 0; n < 200 && exit === undefined; n++) {
+      try { process.kill(pid, 0); await Bun.sleep(5) } catch (error) {
+        exit = (error as NodeJS.ErrnoException).code
+      }
+    }
+    expect(exit).toBe("ESRCH")
   }
 })

@@ -1,7 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 
-import { sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
+import { isCreationIdentity, sameCreationIdentity, type CreationIdentity } from "@claxedo/agent-sdk-runtime/launch"
 
 import { asRecord, isNonEmptyString, readUnknown } from "../shared/json-read"
 import { createDaemonFetch } from "./daemon-request"
@@ -140,19 +140,5 @@ function isClaxedoDaemonDiscovery(value: unknown): value is ClaxedoDaemonDiscove
     record.port > 0 && record.port <= 65535 &&
     isNonEmptyString(record.startedAt) &&
     (record.identity === undefined || isCreationIdentity(record.identity))
-  )
-}
-
-function isCreationIdentity(value: unknown): value is CreationIdentity {
-  const record = asRecord(value)
-  return (
-    !!record &&
-    typeof record.pid === "number" && Number.isSafeInteger(record.pid) && record.pid > 0 &&
-    typeof record.processGroupId === "number" && Number.isSafeInteger(record.processGroupId) &&
-    typeof record.parentPid === "number" && Number.isSafeInteger(record.parentPid) &&
-    typeof record.startedAtMs === "number" && Number.isFinite(record.startedAtMs) &&
-    isNonEmptyString(record.startSecond) &&
-    isNonEmptyString(record.bootTime) &&
-    isNonEmptyString(record.source)
   )
 }

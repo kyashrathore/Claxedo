@@ -52,11 +52,11 @@ test("requires matching session, message, attachment and an assistant completed 
   for (const mismatch of [{ sessionId: "other" }, { messageId: "other" }, { attachmentId: "other" }]) {
     expect((await toolImageResponse({ ...input, ...mismatch })).status).toBe(404)
   }
-  const message = input.messages[0]!
+  const message = input.messages[0]
   message.info.role = "user"
   expect((await toolImageResponse(input)).status).toBe(404)
   message.info.role = "assistant"
-  const part = message.parts[0]!
+  const part = message.parts[0]
   if (part.type !== "tool") throw new Error("Expected tool")
   part.state.status = "running"
   expect((await toolImageResponse(input)).status).toBe(404)

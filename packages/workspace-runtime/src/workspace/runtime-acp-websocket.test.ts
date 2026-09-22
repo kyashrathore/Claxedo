@@ -15,7 +15,7 @@ test("public remote ACP disconnect preserves received output and never replays t
   let prompts = 0
   const server = Bun.serve({
     hostname: "127.0.0.1", port: 0,
-    fetch(request, server) { if (server.upgrade(request)) return; return new Response("WebSocket required", { status: 426 }) },
+    fetch(request, server) { return server.upgrade(request) ? undefined : new Response("WebSocket required", { status: 426 }) },
     websocket: {
       open() { connections++ },
       message(ws, data) {
@@ -71,7 +71,13 @@ test("public remote ACP disconnect preserves received output and never replays t
     const restored = JSON.stringify(messages)
     expect(restored).toContain("Output received before connection loss.")
     expect(restored).toContain("Explicit continuation completed.")
-  } finally { await host.dispose(); server.stop(true); await rm(directory, { recursive: true, force: true }) }
+  } finally {
+    await host.dispose()
+    // `server.stop(true)` resolves only once every socket is gone, and the
+    // disconnect this test stages leaves one the peer never closes.
+    void server.stop(true)
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 for (const imageSupport of [true, false]) test(`public remote ACP image delivery honors negotiated capability (${imageSupport})`, async () => {
@@ -81,7 +87,7 @@ for (const imageSupport of [true, false]) test(`public remote ACP image delivery
   const submitted: Array<{ sessionId: string; prompt: unknown[] }> = []
   const server = Bun.serve({
     hostname: "127.0.0.1", port: 0,
-    fetch(request, server) { if (server.upgrade(request)) return; return new Response("WebSocket required", { status: 426 }) },
+    fetch(request, server) { return server.upgrade(request) ? undefined : new Response("WebSocket required", { status: 426 }) },
     websocket: { message(ws, data) {
       const message = JSON.parse(String(data))
       const send = (body: object) => ws.send(JSON.stringify({ jsonrpc: "2.0", ...body }))
@@ -112,7 +118,7 @@ for (const imageSupport of [true, false]) test(`public remote ACP image delivery
     const history = JSON.stringify(await (await request("/session/image-local/message")).json())
     if (imageSupport) {
       expect(submitted).toHaveLength(1)
-      expect(submitted[0]!.prompt).toContainEqual({ type: "image", mimeType: "image/png", data: png })
+      expect(submitted[0].prompt).toContainEqual({ type: "image", mimeType: "image/png", data: png })
       expect(JSON.stringify(submitted)).not.toContain(directory)
       expect(JSON.stringify(submitted)).not.toContain("file:")
       expect(history).toContain("Image received.")
@@ -121,5 +127,11 @@ for (const imageSupport of [true, false]) test(`public remote ACP image delivery
       expect(history).toContain("image/png")
       expect(history).not.toContain("Image received.")
     }
-  } finally { await host.dispose(); server.stop(true); await rm(directory, { recursive: true, force: true }) }
+  } finally {
+    await host.dispose()
+    // `server.stop(true)` resolves only once every socket is gone, and the
+    // disconnect this test stages leaves one the peer never closes.
+    void server.stop(true)
+    await rm(directory, { recursive: true, force: true })
+  }
 })

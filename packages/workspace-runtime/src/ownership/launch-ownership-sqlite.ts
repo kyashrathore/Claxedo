@@ -4,11 +4,14 @@ import type {
   LaunchOwnershipRecord,
   LaunchOwnershipStore,
   LaunchOwnershipOwner,
+  LaunchProtocol,
+  LaunchRole,
   LaunchScope,
   PrepareLaunchInput,
   RetirementResult,
 } from "@claxedo/agent-sdk-runtime/launch"
-import { retirementSettled } from "@claxedo/agent-sdk-runtime/launch"
+import { isCreationIdentity, retirementSettled } from "@claxedo/agent-sdk-runtime/launch"
+import { isRecord } from "@claxedo/helpers/guards"
 import { Log } from "../log"
 
 const log = Log.create({ service: "launch-ownership" })
@@ -92,13 +95,13 @@ type LaunchOwnershipRow = {
 export function sqliteLaunchOwnership(db: SqliteDatabase, owner: LaunchOwnershipOwner): LaunchOwnershipStore {
   // Both drivers report a change count; without one, a write against a launch
   // id nothing prepared would look like a success.
-  const probe = db.prepare("UPDATE launch_ownership SET retired_at = retired_at WHERE launch_id = ?").run("")
-  if (typeof (probe as { changes?: unknown } | undefined)?.changes !== "number") {
+  if (changeCount(db.prepare("UPDATE launch_ownership SET retired_at = retired_at WHERE launch_id = ?").run("")) === undefined) {
     throw new Error("This SQLite driver does not report a change count, so launch-ownership writes cannot be verified")
   }
   const write = (sql: string, params: unknown[]) => {
-    const { changes } = db.prepare(sql).run(...params) as { changes: number }
-    if (changes === 0) throw new Error(`No prepared launch matched ${String(params.at(-1))}`)
+    if (changeCount(db.prepare(sql).run(...params)) === 0) {
+      throw new Error(`No prepared launch matched ${String(params.at(-1))}`)
+    }
   }
   return {
     ownerGeneration: owner.ownerGeneration,
@@ -191,8 +194,8 @@ function launchOwnershipFromRow(row: LaunchOwnershipRow): LaunchOwnershipRecord 
   return {
     launchId: row.launch_id,
     ownerGeneration: row.owner_generation,
-    role: row.role as LaunchOwnershipRecord["role"],
-    protocol: row.protocol as LaunchOwnershipRecord["protocol"],
+    role: launchRole(row),
+    protocol: launchProtocol(row),
     ...(row.parent_owner_id ? { parentOwnerId: row.parent_owner_id } : {}),
     scope: {
       ...(row.workspace_id ? { kind: "workspace" as const, workspaceId: row.workspace_id } : { kind: "standalone" as const }),
@@ -225,11 +228,49 @@ function readOwnershipColumn(launchId: string, field: string, raw: string | null
   }
 }
 
-/** Each caller names the one shape its column holds, in the one place it is known. */
-function identityOf(value: unknown) {
-  return value === undefined ? {} : { identity: value as CreationIdentity }
+function changeCount(result: unknown): number | undefined {
+  if (!isRecord(result)) return undefined
+  return typeof result.changes === "number" ? result.changes : undefined
 }
 
-function cleanupOf(value: unknown) {
-  return value === undefined ? {} : { cleanup: value as RetirementResult }
+const LAUNCH_ROLES = ["turn", "harness", "managed-process", "terminal"] as const
+const LAUNCH_PROTOCOLS = ["gate", "direct"] as const
+
+/**
+ * These two columns carry no default a record could fall back to: the reconciler
+ * treats a gate row and a direct row as different evidence, and a turn and a
+ * terminal as different owners. Only this module writes them, and only from the
+ * unions below, so a value outside them means the table was not written by this
+ * store — which is a fault to report, not a value to guess.
+ */
+function launchRole(row: LaunchOwnershipRow): LaunchRole {
+  const role = LAUNCH_ROLES.find((candidate) => candidate === row.role)
+  if (!role) throw new Error(`Launch ${row.launch_id} carries an unrecognized role ${JSON.stringify(row.role)}`)
+  return role
+}
+
+function launchProtocol(row: LaunchOwnershipRow): LaunchProtocol {
+  const protocol = LAUNCH_PROTOCOLS.find((candidate) => candidate === row.protocol)
+  if (!protocol) throw new Error(`Launch ${row.launch_id} carries an unrecognized protocol ${JSON.stringify(row.protocol)}`)
+  return protocol
+}
+
+/**
+ * A column whose JSON parsed but holds something else is the same loss as one
+ * that did not parse: the field is dropped, so the record reconciles as unknown
+ * rather than carrying a shape its reader will destructure into nothing.
+ */
+function identityOf(value: unknown): { identity?: CreationIdentity } {
+  return isCreationIdentity(value) ? { identity: value } : {}
+}
+
+function cleanupOf(value: unknown): { cleanup?: RetirementResult } {
+  return isRetirementResult(value) ? { cleanup: value } : {}
+}
+
+function isRetirementResult(value: unknown): value is RetirementResult {
+  return isRecord(value)
+    && typeof value.leader === "string"
+    && typeof value.descendants === "string"
+    && Array.isArray(value.signals)
 }

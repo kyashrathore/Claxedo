@@ -22,6 +22,8 @@ import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree 
 import { sandboxFetchOptionsForRequest } from "../workspace/sandbox-fetch-options"
 import { projectRoutes } from "./project-routes"
 
+const WORKSPACE_ROLES: readonly WorkspaceRole[] = ["viewer", "editor", "admin", "owner"]
+
 export type ShellRouteOptions = {
   upgradeWebSocket?: UpgradeWebSocket
   env?: NodeJS.ProcessEnv
@@ -88,7 +90,11 @@ function shellWorkspaceGate(options: ShellRouteOptions): MiddlewareHandler {
       return c.json({ error: { code: "workspace_forbidden", message: "Workspace access denied" } }, 403)
     }
     const method = c.req.method.toUpperCase()
-    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && !roleAtLeast(opened.role as WorkspaceRole, "admin")) {
+    // A role outside the four this deployment ranks is refused rather than
+    // ranked: `roleAtLeast` indexes a table, and a name it has no row for
+    // compares as less than everything, which reads like a deliberate viewer.
+    const role = WORKSPACE_ROLES.find((candidate) => candidate === opened.role)
+    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && !(role && roleAtLeast(role, "admin"))) {
       return c.json({ error: { code: "workspace_forbidden", message: "Workspace mutations require an admin role" } }, 403)
     }
     await next()
