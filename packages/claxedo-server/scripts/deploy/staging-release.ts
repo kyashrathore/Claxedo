@@ -361,6 +361,8 @@ async function main() {
         CLAXEDO_DEPLOYMENT_ID: deploymentId,
         CLAXEDO_RELEASE_ID: ledger.activeReleaseId,
         CLAXEDO_RELEASE_SEQUENCE: String(ledger.activeReleaseSequence),
+        BETTER_AUTH_URL: apiOrigin,
+        CLAXEDO_WRANGLER_CONFIG: config,
       })
       ledger = await readLedger()
     }
