@@ -116,6 +116,15 @@ afterEach(() => {
 })
 
 describe("session selection hydration scheduling", () => {
+  test("keeps mention candidates in the full inventory without offering subagents as primary agents", () => {
+    let local!: ReturnType<typeof useLocal>
+    const agents = [{ name: "build", mode: "primary" as const }, { name: "reviewer", mode: "subagent" as const }]
+    function Probe() { local = useLocal(); return null }
+    render(() => <QueryClientProvider client={queryClient}><LocalProvider agents={() => agents}><Probe /></LocalProvider></QueryClientProvider>)
+    expect(local.agent.catalog().map(agent => agent.name)).toEqual(["build", "reviewer"])
+    expect(local.agent.list().map(agent => agent.name)).toEqual(["build"])
+  })
+
   test("keeps config off the first fold and restores the composer after quiet", async () => {
     vi.useFakeTimers()
     harness.quietDelayMs = 2_000

@@ -37,11 +37,12 @@ const [sessionId, setSessionId] = createSignal<string | undefined>(undefined)
 
 let prompt: ReturnType<typeof usePrompt>
 let attachments: ReturnType<typeof createPromptAttachments>
+let readClipboardImage: (() => Promise<File | null>) | undefined
 
 const localClaude: AttachmentTarget = { harness: { kind: "native", harnessId: "claude" }, workspace: true }
 const hostedClaude: AttachmentTarget = { harness: { kind: "native", harnessId: "claude" }, workspace: false }
 
-function Probe(props: { target: AttachmentTarget }) {
+function Probe(props: { target: AttachmentTarget; active?: boolean }) {
   prompt = usePrompt()
   const editor = document.createElement("div")
   let root: HTMLDivElement | undefined
@@ -49,10 +50,12 @@ function Probe(props: { target: AttachmentTarget }) {
     editor: () => editor,
     root: () => root,
     isDialogActive: () => false,
+    active: () => props.active !== false,
     setDraggingType: () => {},
     focusEditor: () => {},
     addPart: () => false,
     target: () => props.target,
+    readClipboardImage,
   })
   return <div ref={root} data-testid="probe">{prompt.current().filter((part) => part.type === "image").length}</div>
 }
@@ -136,9 +139,62 @@ afterEach(() => {
   cleanup()
   setSessionId(undefined)
   vi.mocked(showToast).mockClear()
+  readClipboardImage = undefined
 })
 
 describe("prompt attachments", () => {
+  // The listener is bound to the composer's own surface, so a retained pane
+  // that is not the active one still has a zone a file can land on.
+  test("a drop on an inactive retained composer's own surface is refused", async () => {
+    const view = render(() => (
+      <PromptProvider directory="/repo" sessionId={() => "inactive"}>
+        <Probe target={localClaude} active={false} />
+      </PromptProvider>
+    ))
+    const inactivePrompt = prompt
+    const event = new Event("drop", { bubbles: true, cancelable: true })
+    Object.defineProperty(event, "dataTransfer", { value: { files: [pngFile("dropped.png")], getData: () => "" } })
+    view.getByTestId("probe").dispatchEvent(event)
+    await Promise.resolve()
+    expect(inactivePrompt.current().filter(part => part.type === "image")).toHaveLength(0)
+  })
+
+  test("a native paste finishing after submit reset cannot resurrect the cleared draft", async () => {
+    let resolve!: (file: File) => void
+    readClipboardImage = () => new Promise<File>(done => { resolve = done })
+    setSessionId("submitted-paste")
+    mount(localClaude)
+    const pending = paste([])
+    prompt.reset()
+    resolve(pngFile("too-late.png"))
+    await pending
+    expect(prompt.current().filter(part => part.type === "image")).toHaveLength(0)
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  test("native clipboard completion stays with the session that received paste", async () => {
+    let resolve!: (file: File) => void
+    readClipboardImage = () => new Promise<File>((done) => { resolve = done })
+    setSessionId("native-paste-origin")
+    mount(localClaude)
+    const pending = paste([])
+    setSessionId("native-paste-next")
+    resolve(pngFile("native.png"))
+    await pending
+    expect(attachmentsIn({ dir: "/repo", id: "native-paste-origin" })).toHaveLength(1)
+    expect(attachmentsIn({ dir: "/repo", id: "native-paste-next" })).toHaveLength(0)
+  })
+
+  test("all files in one paste belong to the original session", async () => {
+    setSessionId("multi-paste-origin")
+    mount(localClaude)
+    const pending = paste([pngFile("first.png"), pngFile("second.png")])
+    setSessionId("multi-paste-next")
+    await pending
+    expect(attachmentsIn({ dir: "/repo", id: "multi-paste-origin" })).toHaveLength(2)
+    expect(attachmentsIn({ dir: "/repo", id: "multi-paste-next" })).toHaveLength(0)
+  })
+
   test("attaches to the thread the composer was on, not the one it lands in", async () => {
     setSessionId("ses-a")
     mount(localClaude)

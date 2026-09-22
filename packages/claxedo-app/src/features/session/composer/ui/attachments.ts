@@ -40,6 +40,7 @@ export type PromptPasteEvent = {
 }
 
 type PromptAttachmentsInput = {
+  active: () => boolean
   editor: () => HTMLDivElement | undefined
   /** The composer's own element; the drop zone when the composer is not in a workbench slot. */
   root: () => HTMLElement | undefined
@@ -73,22 +74,18 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     })
   }
 
-  const add = async (file: File): Promise<AttachmentRefusal | boolean> => {
-    // The draft the user attached to, resolved before the file is read: the pane
-    // can resolve a different one while the read is in flight, and the file
-    // belongs to the composer it was dropped into rather than to whichever
-    // thread is on screen when the bytes arrive.
-    const scope = prompt.scope()
-
+  const capture = () => ({ scope: prompt.scope(), signal: prompt.signal(), target: input.target(), editor: input.editor() })
+  const add = async (file: File, destination: ReturnType<typeof capture>): Promise<AttachmentRefusal | boolean> => {
+    const { scope, signal, target, editor } = destination
+    if (signal.aborted) return false
     const mime = await attachmentMime(file)
-    const refusal = attachmentRefusal(mime, input.target())
+    const refusal = attachmentRefusal(mime, target)
     if (refusal) return refusal
 
-    const editor = input.editor()
     if (!editor) return false
 
     const url = await dataUrl(file, mime)
-    if (!url) return false
+    if (!url || signal.aborted) return false
 
     const attachment: ImageAttachmentPart = {
       type: "image",
@@ -102,9 +99,10 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     return true
   }
 
-  const addAttachment = async (file: File) => {
-    const result = await add(file)
+  const addAttachment = async (file: File, destination = capture()) => {
+    const result = await add(file, destination)
     if (result === true) return true
+    if (destination.signal.aborted) return false
     if (result === false) unreadable(file.name)
     else refuse(result)
     return false
@@ -115,19 +113,19 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
    * multi-file drop onto a session that takes none of them would otherwise
    * stack a toast per file.
    */
-  const addAttachments = async (files: File[], toast = true) => {
+  const addAttachments = async (files: File[], toast = true, destination = capture()) => {
     let found = false
     let refusal: AttachmentRefusal | undefined
     let unread: string | undefined
 
     for (const file of files) {
-      const result = await add(file)
+      const result = await add(file, destination)
       if (result === true) found = true
       else if (result === false) unread ??= file.name
       else refusal ??= result
     }
 
-    if (!found && files.length > 0 && toast) {
+    if (!found && files.length > 0 && toast && !destination.signal.aborted) {
       if (refusal) refuse(refusal)
       else if (unread) unreadable(unread)
     }
@@ -143,6 +141,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   const handlePaste = async (event: PromptPasteEvent) => {
     const clipboardData = event.clipboardData
     if (!clipboardData) return
+    const destination = capture()
 
     event.preventDefault()
     event.stopPropagation()
@@ -154,7 +153,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     })
 
     if (files.length > 0) {
-      await addAttachments(files)
+      await addAttachments(files, true, destination)
       return
     }
 
@@ -164,7 +163,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     if (input.readClipboardImage && !plainText) {
       const file = await input.readClipboardImage()
       if (file) {
-        await addAttachment(file)
+        await addAttachment(file, destination)
         return
       }
     }
@@ -191,7 +190,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   }
 
   const handleDragOver = (event: DragEvent) => {
-    if (input.isDialogActive()) return
+    if (!input.active() || input.isDialogActive()) return
 
     event.preventDefault()
     const hasFiles = event.dataTransfer?.types.includes("Files")
@@ -204,7 +203,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   }
 
   const handleDragLeave = (event: DragEvent) => {
-    if (input.isDialogActive()) return
+    if (!input.active() || input.isDialogActive()) return
     const zone = event.currentTarget
     const next = event.relatedTarget
     if (!(zone instanceof Node) || !(next instanceof Node) || !zone.contains(next)) {
@@ -213,7 +212,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   }
 
   const handleDrop = async (event: DragEvent) => {
-    if (input.isDialogActive()) return
+    if (!input.active() || input.isDialogActive()) return
 
     event.preventDefault()
     input.setDraggingType(null)

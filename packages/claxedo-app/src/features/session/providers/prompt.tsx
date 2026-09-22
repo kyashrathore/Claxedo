@@ -368,11 +368,14 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
   // identity is stable for the life of this session. Additive: nothing that
   // already reads this session goes through it.
   const draftStore: PromptDraftStoreTuple = [() => store, setStore]
+  let pending = new AbortController()
+  onCleanup(() => pending.abort())
 
   return {
     ready,
     hydrated: Promise.resolve(hydration),
     store: draftStore,
+    signal: () => pending.signal,
     current: createMemo(() => store.prompt),
     cursor: createMemo(() => store.cursor),
     dirty: createMemo(() => !isPromptEqual(store.prompt, DEFAULT_PROMPT)),
@@ -431,6 +434,8 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
       })
     },
     reset() {
+      pending.abort()
+      pending = new AbortController()
       batch(() => {
         setStore("prompt", clonePrompt(DEFAULT_PROMPT))
         setStore("cursor", 0)
@@ -557,6 +562,7 @@ const promptContextInput = {
           target.release()
         }
       },
+      signal: (scope?: Scope) => withScope(scope, (target) => target.signal()),
       current: (scope?: Scope) => withScope(scope, (target) => target.current()),
       cursor: (scope?: Scope) => withScope(scope, (target) => target.cursor()),
       dirty: () => session().dirty(),

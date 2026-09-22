@@ -80,6 +80,22 @@ afterEach(() => {
 })
 
 describe("PromptProvider", () => {
+  test("reset cancels pending work only for its captured draft, then accepts new work", () => {
+    setSessionId("new")
+    setDraftId("cancel-origin")
+    render(() => <PromptProvider directory="/cancel-repo" sessionId={sessionId} draftId={draftId}><Probe /></PromptProvider>)
+    const origin = latest.scope()
+    const pending = latest.signal()
+    setDraftId("cancel-other")
+    const otherPending = latest.signal()
+    expect(pending.aborted).toBe(false)
+    latest.reset(origin)
+    expect(pending.aborted).toBe(true)
+    expect(otherPending.aborted).toBe(false)
+    expect(latest.signal(origin).aborted).toBe(false)
+    expect(latest.signal(origin)).not.toBe(pending)
+  })
+
   test("keeps armed Goal intent with its draft across composer remounts", async () => {
     setSessionId("goal-draft")
     const first = render(() => (
