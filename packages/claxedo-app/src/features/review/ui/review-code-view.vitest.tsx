@@ -21,7 +21,7 @@ const engine = vi.hoisted(() => {
     enableLineSelection?: boolean
     enableGutterUtility?: boolean
     controlledSelection?: boolean
-    renderCustomHeader?: (diff: { name: string }) => HTMLElement
+    renderCustomHeader?: (diff: { name: string }, context: { item: Item }) => HTMLElement
     renderCustomItem?: (item: Item) => HTMLElement
     onPostRender?: () => void
   }
@@ -60,7 +60,7 @@ const engine = vi.hoisted(() => {
           const shadow = record.element.attachShadow({ mode: "open" })
           shadow.append(document.createElement("style"), document.createElement("slot"))
         }
-        const header = item.type === "custom" ? this.options.renderCustomItem?.(item) : this.options.renderCustomHeader?.(item.fileDiff!)
+        const header = item.type === "custom" ? this.options.renderCustomItem?.(item) : this.options.renderCustomHeader?.(item.fileDiff!, { item })
         if (header) record.element.append(header)
         this.root.append(record.element)
         retained.delete(item.id)
@@ -140,6 +140,29 @@ describe("ReviewCodeView rendered item ownership", () => {
     }
     cleanup()
     expect(live.size).toBe(0)
+  })
+
+  it("a header is keyed by the review file even when the parsed patch names it differently", () => {
+    const bare = { file: "src/index.ts", patch: "--- a/src/index.ts\n+++ b/src/index.ts\n@@ -1 +1 @@\n-a\n+b\n" }
+    const seen: string[] = []
+    const screen = render(() => (
+      <ReviewCodeView
+        diffs={[bare]}
+        open={[bare.file]}
+        diffStyle="unified"
+        focusedFile={bare.file}
+        renderHeader={(file) => {
+          seen.push(file)
+          return <span>{file}</span>
+        }}
+      />
+    ))
+    expect(engine.Viewer.current.items[0]).toMatchObject({ id: "src/index.ts", type: "diff", fileDiff: { name: "b/src/index.ts" } })
+    expect(seen).toEqual(["src/index.ts"])
+    const header = screen.container.querySelector('[data-slot="accordion-item"][data-review-file="src/index.ts"]')
+    expect(header?.getAttribute("data-selected")).toBe("")
+    expect(header?.getAttribute("data-expanded")).toBe("")
+    expect(screen.container.querySelector('[data-review-file="b/src/index.ts"]')).toBeNull()
   })
 
   it("mode switches retain header and post-render callbacks", () => {

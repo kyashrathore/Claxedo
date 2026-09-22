@@ -779,14 +779,23 @@ async function expectPanelInReviewForChanges(page: Page) {
   await expect(panel).toHaveAttribute("data-state-workspace-dir", DIR)
 }
 
+/** The Review tab's rendered item for `path`: CodeView's container, stamped with the review file. */
+function reviewDiff(page: Page, path: string) {
+  return panelShell(page).locator(`[data-component="session-review"] [data-slot="session-review-diff-wrapper"][data-review-file="${path}"]`)
+}
+
+/** The header row portalled into that item; it is where the focused-file mark lands. */
+function reviewHeader(page: Page, path: string) {
+  return panelShell(page).locator(`[data-component="session-review"] [data-slot="accordion-item"][data-review-file="${path}"]`)
+}
+
 /** The Review tab is the selected workspace tab and `path` is the focused diff in it. */
 async function expectReviewFocused(page: Page, path: string) {
   const panel = panelShell(page)
   await expect(panel.locator('[data-slot="workspace-tab"][data-workspace-tab-id="review"]')).toHaveAttribute("data-selected", "true", { timeout: 15_000 })
   await expect(panel.locator('[data-testid="review-pane-root"]')).toBeVisible({ timeout: 15_000 })
-  const file = panel.locator(`[data-component="session-review"] [data-review-file="${path}"]`)
-  await expect(file).toBeVisible({ timeout: 15_000 })
-  await expect(file, `${path} is listed but not the focused (selected) diff`).toHaveAttribute("data-selected", "", { timeout: 15_000 })
+  await expect(reviewDiff(page, path)).toBeVisible({ timeout: 15_000 })
+  await expect(reviewHeader(page, path), `${path} is listed but not the focused (selected) diff`).toHaveAttribute("data-selected", "", { timeout: 15_000 })
 }
 
 async function expectSessionFloating(page: Page) {
@@ -1119,7 +1128,7 @@ test.describe("core source control @core", () => {
     await expect(group).toContainText(`${first.shortHash} → ${second.shortHash}`)
     await expectRow(page, SECOND_COMMIT_FILE, "compare", "added", "A")
     await expect(changeRow(page, FIRST_COMMIT_FILE)).toHaveCount(0)
-    await expect(panelShell(page).locator(`[data-component="session-review"] [data-review-file="${SECOND_COMMIT_FILE}"]`)).toBeVisible({ timeout: 15_000 })
+    await expect(reviewDiff(page, SECOND_COMMIT_FILE)).toBeVisible({ timeout: 15_000 })
     await captureEvidence({ page, spec: SPEC, scenario: "compare-graph-commit" })
 
     // The root commit compares against the empty tree.
@@ -1134,7 +1143,7 @@ test.describe("core source control @core", () => {
     await commitRows(page).nth(1).click()
     await expect(commitRows(page).nth(1)).toHaveAttribute("aria-selected", "false", { timeout: 15_000 })
     await expectUncommittedReview(page)
-    await expect(panelShell(page).locator(`[data-component="session-review"] [data-review-file="${FOCUS_FILE}"]`)).toBeVisible({ timeout: 15_000 })
+    await expect(reviewDiff(page, FOCUS_FILE)).toBeVisible({ timeout: 15_000 })
     await captureEvidence({ page, spec: SPEC, scenario: "compare-graph-deselected" })
   })
 
