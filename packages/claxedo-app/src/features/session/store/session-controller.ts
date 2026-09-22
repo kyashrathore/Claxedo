@@ -182,6 +182,42 @@ export function activeTurnTransition(input: {
   }
 }
 
+export type LatestTurnRead = { view: "latest-turn" } | { tail: true }
+
+/** The canonical read of the latest turn, widened to the tail page when its window cannot prove the turn. */
+export async function syncLatestTurnHistory(input: {
+  directory: string
+  sessionID: string
+  read: (request: LatestTurnRead) => Promise<boolean>
+}) {
+  if (!await input.read({ view: "latest-turn" })) return false
+  if (!latestTurnWindowNeedsTailSync(registeredConversationSnapshot(input.directory, input.sessionID).messages)) return true
+  return input.read({ tail: true })
+}
+
+/**
+ * A `latest-surface` page marks each assistant message it introduces as holding
+ * fragment parts, and the timeline holds that turn behind a loader until a
+ * canonical read lifts the mark. The activation's one canonical read has run
+ * before any turn settles, so a reply this page is first to deliver (its live
+ * `message.updated` never arrived) needs the latest-turn read here.
+ */
+export async function syncSettledTurnHistory(input: {
+  directory: string
+  sessionID: string
+  readSurface: () => Promise<boolean>
+  readLatestTurn: (request: LatestTurnRead) => Promise<boolean>
+}) {
+  if (!await input.readSurface()) return false
+  if (!latestTurnHoldsFragmentParts(registeredConversationSnapshot(input.directory, input.sessionID))) return true
+  return syncLatestTurnHistory({ directory: input.directory, sessionID: input.sessionID, read: input.readLatestTurn })
+}
+
+function latestTurnHoldsFragmentParts(conversation: { messages: readonly { id: string; role: string }[]; fragmentParts: ReadonlySet<string> }) {
+  const owningUser = conversation.messages.findLastIndex((message) => message.role === "user")
+  return conversation.messages.slice(owningUser + 1).some((message) => conversation.fragmentParts.has(message.id))
+}
+
 export async function syncSessionMeta(input: {
   directory?: string
   sessionID: string
@@ -679,6 +715,9 @@ export function createSessionController(input: {
       })
   }
 
+  const readLatestTurnWindow = (sessionID: string, request: LatestTurnRead, opts?: { activationEpoch?: number; signal?: AbortSignal }) =>
+    syncSessionHistory(sessionID, { ...request, force: true, mode: "replace-window", bypassQuiet: true, silent: true, ...opts })
+
   /**
    * Drop a session the pane can no longer read from every cache that would
    * re-offer it, and settle the pane on its "session unavailable" surface.
@@ -929,12 +968,11 @@ export function createSessionController(input: {
         const latestTurnCompletion = createLatestTurnCompletion({
           activationAt,
           active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
-          complete: async () => {
-            const synced = await syncSessionHistory(id, { force: true, view: "latest-turn", mode: "replace-window", bypassQuiet: true, silent: true, activationEpoch, signal: readEpoch.signal })
-            if (!synced) return
-            if (!latestTurnWindowNeedsTailSync(registeredConversationSnapshot(directory, id)?.messages)) return
-            await syncSessionHistory(id, { force: true, tail: true, mode: "replace-window", bypassQuiet: true, silent: true, activationEpoch, signal: readEpoch.signal })
-          },
+          complete: () => syncLatestTurnHistory({
+            directory,
+            sessionID: id,
+            read: (request) => readLatestTurnWindow(id, request, { activationEpoch, signal: readEpoch.signal }),
+          }),
           onError: (error) => sessionHydrationDebug("latest-turn-error", {
             directory,
             sessionID: id,
@@ -1051,7 +1089,12 @@ export function createSessionController(input: {
               idempotencyKey: `active-turn-settled:${workspace.workspaceId}:${sessionID}:${Date.now()}`,
             })
           }
-          void syncSessionHistory(sessionID, { force: true })
+          void syncSettledTurnHistory({
+            directory,
+            sessionID,
+            readSurface: () => syncSessionHistory(sessionID, { force: true }),
+            readLatestTurn: (request) => readLatestTurnWindow(sessionID, request),
+          })
           void syncSessionTodo(sessionID, { force: true })
           void directorySessionCacheActions.refresh({ directory, ...(workspace ? { workspace } : {}) })
         }
