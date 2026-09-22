@@ -66,6 +66,13 @@ describe("quota limits view", () => {
     ])
   })
 
+  test("a harness holding one account takes a column, one holding more takes the row", async () => {
+    const { container } = await renderView({ snapshot })
+    expect([...container.querySelectorAll(".usage-quota-harness")]
+      .map((section) => [section.getAttribute("aria-label"), section.getAttribute("data-wide")]))
+      .toEqual([["Claude Code", "true"], ["Codex", null]])
+  })
+
   test("passes a window the vendor added since through under its own name", () => {
     const groups = accountCards({
       accounts: [{
