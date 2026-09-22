@@ -187,10 +187,9 @@ jobs:
       # other through their dist exports, so the suites that import them need
       # these built first. turbo.json's generic `test` task deliberately does
       # NOT use `dependsOn: ["^build"]` to get this (see the comment in
-      # turbo.json), so the build is scoped explicitly here instead. Same list the e2e jobs
-      # below use, plus typecheck.yml and release-claxedo.yml --
-      # `grep -rn 'filter=@claxedo/agent-event-runtime' .github/workflows/`
-      # finds every copy; keep them in sync.
+      # turbo.json), so the build is scoped explicitly here instead. The root
+      # package.json `build:packages` script is the one list of dist-resolved
+      # packages; every workflow that needs them runs it.
       - name: Build dist-resolved workspace packages
         run: bun run build:packages
 
@@ -302,8 +301,8 @@ jobs:
     name: e2e reusable builds
     needs: changes
     # Serves every e2e lane: the core shards, onboarding and tier-real all
-    # consume the workspace dist artifact this job uploads, so they build the
-    # eleven dist-resolved packages once per run instead of once per job.
+    # consume the workspace dist artifact this job uploads, so the dist-resolved
+    # packages build once per run instead of once per job.
     if: needs.changes.outputs.core_e2e == 'true' || needs.changes.outputs.onboarding == 'true' || needs.changes.outputs.tier_real == 'true'
     runs-on: ubuntu-latest
     defaults:
@@ -323,22 +322,14 @@ jobs:
       - name: Build dist-resolved workspace packages
         run: bun run build:packages
 
+      # `build:packages` owns which packages resolve through dist/. A list of
+      # paths here would have to mirror its filter set by hand, and every
+      # shard fails at test discovery on any package the list misses.
       - name: Upload reusable workspace dist
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
-          path: |
-            packages/agent-event-runtime/dist
-            packages/agent-sdk-runtime/dist
-            packages/claxedo-channels/dist
-            packages/claxedo-connections/dist
-            packages/claxedo-mcp/dist
-            packages/sandbox-contract/dist
-            packages/sandbox-manager/dist
-            packages/wakes/dist
-            packages/workspace-relay-protocol/dist
-            packages/workspace-relay/dist
-            packages/workspace-runtime/dist
+          path: packages/*/dist
           if-no-files-found: error
           retention-days: 1
 
