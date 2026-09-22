@@ -1,7 +1,8 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
-import { constants, watch, type FSWatcher } from "node:fs"
+import { watchRealDirectory } from "@claxedo/helpers/real-path"
+import { constants, type FSWatcher } from "node:fs"
 import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
 import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
 import { contentHash } from "@claxedo/server-core/documents/version"
@@ -157,7 +158,7 @@ async function hydrateSessionDocumentNow(input: HydrateSessionDocumentInput) {
     })
     return tail
   }
-  const watcher = watch(hydrated.directory, { persistent: false }, () => {
+  const watcher = watchRealDirectory(hydrated.directory, { persistent: false }, () => {
     if (!isCurrent(document)) return
     if (document.timer) clearTimeout(document.timer)
     document.timer = setTimeout(() => {

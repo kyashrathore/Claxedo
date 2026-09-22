@@ -1,7 +1,8 @@
-import { constants, watch, type FSWatcher } from "node:fs"
+import { constants, type FSWatcher } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
+import { watchRealDirectory } from "@claxedo/helpers/real-path"
 import { createHash } from "node:crypto"
 import { verifyDocumentJobCapability } from "../document-job-capability"
 import { Hono } from "hono"
@@ -587,7 +588,7 @@ function close(document?: RuntimeDocument) {
 
 function installWatcher(document: RuntimeDocument, afterCreated?: (watcher: FSWatcher) => void) {
   if (document.watcher) return
-  const watcher = watch(path.dirname(document.path), { persistent: false }, () => {
+  const watcher = watchRealDirectory(path.dirname(document.path), { persistent: false }, () => {
     if (!isCurrent(document) || document.state !== "active") return
     if (document.timer) clearTimeout(document.timer)
     document.timer = setTimeout(() => {

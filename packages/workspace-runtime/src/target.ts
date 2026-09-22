@@ -3,7 +3,7 @@ import { inside } from "@claxedo/helpers/path"
 import fs from "node:fs/promises"
 import { AsyncLocalStorage } from "async_hooks"
 import { runtimeEnvText } from "./env"
-import { realDirectoryPath, realPathAllowingMissing } from "./real-directory"
+import { realDirectoryPath, realPathAllowingMissing } from "@claxedo/helpers/real-path"
 
 let id: string | undefined
 
