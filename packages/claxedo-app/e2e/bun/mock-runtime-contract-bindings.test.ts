@@ -114,10 +114,14 @@ describe("mock-runtime canonical route bindings", () => {
         access: "driver-authenticated",
       },
       exposure: { kind: "relay" },
+      workspaceId: "ws_e2e",
       harness: { kind: "native", harnessId: "codex" },
       activeHarness: { kind: "native", harnessId: "codex" },
       error: null,
       harnessHealth: { status: "ok" },
+      ptyCount: 0,
+      processCount: 0,
+      activeProcessCount: 0,
     })
   })
 

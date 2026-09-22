@@ -2,6 +2,7 @@ import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/d
 import { readMachineLogins } from "@claxedo/server-core/credentials/machine-login"
 import { clearActiveCredentials } from "@claxedo/server-core/credentials/registry"
 import { syncCredentialsToSdk } from "@claxedo/server-core/opencode/sdk-credential-bridge"
+import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 
 /**
@@ -22,8 +23,12 @@ export function localControlPlaneCredentials(): ControlPlaneCredentials {
       const result = clearActiveCredentials(providerIds, org)
       // The engine resolves auth from a store Claxedo does not otherwise write:
       // without this the next embedded turn still runs on the account just
-      // withdrawn.
-      if (result.cleared.length > 0) await syncCredentialsToSdk(org, providerIds)
+      // withdrawn. Running sandboxes hold the same accounts at their provider
+      // edge, which only the supervisor's reconcile withdraws.
+      if (result.cleared.length > 0) {
+        await syncCredentialsToSdk(org, providerIds)
+        await workspaceSupervisor().reconcileCredentialDelivery()
+      }
       return result
     },
   }

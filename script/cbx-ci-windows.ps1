@@ -46,19 +46,8 @@ if ($Lane -eq "package" -or $Lane -eq "package-test") {
   exit 0
 }
 
-bun turbo build `
-  --filter=@claxedo/agent-event-runtime `
-  --filter=@claxedo/agent-sdk-runtime `
-  --filter=@claxedo/channels `
-  --filter=@claxedo/connections `
-  --filter=@claxedo/mcp `
-  --filter=@claxedo/sandbox-contract `
-  --filter=@claxedo/sandbox-manager `
-  --filter=@claxedo/wakes `
-  --filter=@claxedo/workspace-relay-protocol `
-  --filter=@claxedo/workspace-relay `
-  --filter=@claxedo/workspace-runtime
-Assert-LastExitCode "bun turbo build"
+bun run build:packages
+Assert-LastExitCode "bun run build:packages"
 
 bun turbo test --concurrency=2
 Assert-LastExitCode "bun turbo test --concurrency=2"

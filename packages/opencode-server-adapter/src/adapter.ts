@@ -19,6 +19,15 @@ const ERROR_BODY_BYTES = 4_096
 const JSON_BODY_BYTES = 16 * 1024 * 1024
 const SSE_FRAME_BYTES = 1024 * 1024
 
+// encodeURIComponent leaves "." and ".." untouched, so an upstream session id
+// must be a single opaque URL segment in its own right: unreserved characters
+// only, and never a dot segment that URL normalization would collapse.
+const OPAQUE_UPSTREAM_ID = /^[A-Za-z0-9._~-]{1,256}$/
+
+function isOpaqueUpstreamId(value: string) {
+  return value !== "." && value !== ".." && OPAQUE_UPSTREAM_ID.test(value)
+}
+
 type OpenCodeServerRequest = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 /** An upstream message proven to belong to the bound session. */
@@ -31,13 +40,19 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
   readonly sessionConfigOwner = "runtime" as const
   readonly instructionChannel = "none" as const
   private readonly streams = new Map<string, AbortController>()
+  private readonly baseOrigin: string
+  private readonly basePath: string
   private compatibility: Promise<void> | undefined
   private disposed = false
 
   constructor(
     private readonly config: ResolvedOpenCodeServerConnection,
     private readonly requestFn: OpenCodeServerRequest = fetch,
-  ) {}
+  ) {
+    const base = new URL(config.baseUrl)
+    this.baseOrigin = base.origin
+    this.basePath = base.pathname.replace(/\/+$/, "")
+  }
 
   readHarnessCapabilities(directory?: string): HarnessCapabilities {
     this.assertSourceDirectory(directory)
@@ -183,7 +198,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
           } else {
             // Subscribe before the snapshot so completion cannot fall between them.
             const reconciliation = await this.reconcile(binding, turn)
-            for (const value of reconciliation.events) yield value
+            for (const value of reconciliation.events) yield this.redactDiagnostics(value)
             if (reconciliation.terminal) return
           }
           let reconcileAt = performance.now() + this.config.deadlines.streamIdleMs
@@ -197,7 +212,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
             // authoritative completion checks for this bound session forever.
             if (event?.type === "session.idle" || performance.now() >= reconcileAt) {
               const reconciliation = await this.reconcile(binding, turn, event?.type === "session.idle" ? "recover" : "completion")
-              for (const value of reconciliation.events) yield value
+              for (const value of reconciliation.events) yield this.redactDiagnostics(value)
               if (reconciliation.terminal) return
               reconcileAt = performance.now() + this.config.deadlines.streamIdleMs
               if (event?.type === "session.idle") continue
@@ -205,11 +220,10 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
             if (!event) continue
             if (isUnsupportedInteractiveEvent(event)) {
               await this.abortUpstream(binding, controller.signal).catch(() => undefined)
-              throw this.error("unsupported_interaction", `OpenCode emitted unsupported ${event.type}`, "events.read")
+              throw this.error("unsupported_interaction", `OpenCode emitted unsupported ${this.redact(event.type.slice(0, 80))}`, "events.read")
             }
             for (const value of turn.translate(event)) {
-              const translated = this.projectEvent(value, binding)
-              if (translated.type === "error") translated.error = this.redact(translated.error)
+              const translated = this.redactDiagnostics(this.projectEvent(value, binding))
               yield translated
               if (translated.type === "finish" || translated.type === "error") return
             }
@@ -229,7 +243,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
         if (reconnects >= this.config.reconnect.maxAttempts) {
           const reconciliation = await this.reconcile(binding, turn)
-          for (const event of reconciliation.events) yield event
+          for (const event of reconciliation.events) yield this.redactDiagnostics(event)
           if (reconciliation.terminal) return
           throw this.error("reconciliation_gap", "OpenCode stream disconnected while the bound session remained active", "events.reconcile")
         }
@@ -396,7 +410,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   private session(operation: string, data: unknown, expectedId?: string) {
     const row = asRecord(data)
-    if (!row || typeof row.id !== "string" || !row.id || row.directory !== this.config.targetDirectory || (expectedId && row.id !== expectedId)) {
+    if (!row || typeof row.id !== "string" || !isOpaqueUpstreamId(row.id) || row.directory !== this.config.targetDirectory || (expectedId && row.id !== expectedId)) {
       throw this.error("invalid_response", `OpenCode ${operation} response crossed its bound session or workspace`, operation)
     }
     return { ...row, id: row.id }
@@ -442,8 +456,15 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     const signal = init.signal ? AbortSignal.any([init.signal, timeout.signal]) : timeout.signal
     const headers = this.headers(init.headers)
     if (init.body !== undefined && !headers.has("content-type")) headers.set("Content-Type", "application/json")
+    const url = new URL(`${this.config.baseUrl}${path}`)
+    // Credentials ride on every request, so the resolved target must be exactly
+    // base + path: any dot-segment normalization, host change, query or
+    // fragment means the path was not the single intended endpoint.
+    if (url.origin !== this.baseOrigin || url.pathname !== `${this.basePath}${path}` || url.search || url.hash) {
+      throw this.error("transport_error", `OpenCode ${operation} request target escaped the configured server`, operation)
+    }
     try {
-      return await this.requestFn(new URL(`${this.config.baseUrl}${path}`), { ...init, signal, headers, redirect: "error" })
+      return await this.requestFn(url, { ...init, signal, headers, redirect: "error", credentials: "omit" })
     } catch (error) {
       if (init.signal?.aborted) throw init.signal.reason ?? error
       if (timeout.signal.aborted) throw this.error("deadline_exceeded", `OpenCode ${operation} request deadline exceeded`, operation)
@@ -480,6 +501,42 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     return value
   }
 
+  private redactDiagnostics(event: AgentRuntimeEvent): AgentRuntimeEvent {
+    if (event.type === "error" || event.type === "tool-error") return { ...event, error: this.redact(event.error) }
+    if (event.type === "tool-output") return { ...event, output: this.redactOutput(event.output) }
+    return event
+  }
+
+  /**
+   * Tool output is whatever the upstream tool printed — a shell transcript that
+   * echoed a request header, a structured result holding a URL — so a string
+   * anywhere inside it can carry this connection's credential. The walk is
+   * iterative and rewrites in place: the value was parsed by this adapter for
+   * this one event, and nesting is bounded only by the body limit, so a
+   * recursive walk would exhaust the stack on hostile JSON.
+   */
+  private redactOutput(value: unknown): unknown {
+    if (typeof value === "string") return this.redact(value)
+    const pending: unknown[] = [value]
+    while (pending.length > 0) {
+      const node = pending.pop()
+      if (Array.isArray(node)) {
+        for (const [index, item] of node.entries()) {
+          if (typeof item === "string") node[index] = this.redact(item)
+          else if (item !== null && typeof item === "object") pending.push(item)
+        }
+        continue
+      }
+      const record = asRecord(node)
+      if (!record) continue
+      for (const [key, item] of Object.entries(record)) {
+        if (typeof item === "string") record[key] = this.redact(item)
+        else if (item !== null && typeof item === "object") pending.push(item)
+      }
+    }
+    return value
+  }
+
   private error(code: ConstructorParameters<typeof OpenCodeServerAdapterError>[0], message: string, operation?: string, status?: number, body?: unknown) {
     return new OpenCodeServerAdapterError(code, message, { ...(operation ? { operation } : {}), ...(status === undefined ? {} : { status }), ...(body === undefined ? {} : { body }) })
   }
@@ -487,6 +544,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
   private assertBinding(binding: AgentExecutionBinding) {
     try { requireAgentExecutionBinding(binding) } catch { throw this.error("invalid_binding", "OpenCode operation requires a complete execution binding") }
     if (binding.connectionId !== `connection:${this.config.connectionId}`) throw this.error("invalid_binding", "Execution binding belongs to a different connection")
+    if (!isOpaqueUpstreamId(binding.upstreamSessionId)) throw this.error("invalid_binding", "OpenCode upstream session id is not a single opaque identifier")
     this.assertSourceDirectory(binding.directory)
   }
 

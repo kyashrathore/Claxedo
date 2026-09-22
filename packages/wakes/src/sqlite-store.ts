@@ -1,6 +1,6 @@
 import Database from "better-sqlite3"
 import type { SessionId, Token, TriggerType, Wake, WakeId, WakeState, WorkspaceId } from "./types"
-import type { WakeStore } from "./store"
+import type { ReceiptClaim, WakeStore } from "./store"
 
 /** A result row as better-sqlite3 hands it back: column name -> SQLite value. */
 type Row = Record<string, unknown>
@@ -179,7 +179,8 @@ CREATE INDEX IF NOT EXISTS wakes_expiry ON wakes(state, expires_at);
 CREATE INDEX IF NOT EXISTS wakes_lane ON wakes(serial_key, state) WHERE serial_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS effect_receipts (
   key TEXT PRIMARY KEY,
-  result_json TEXT NOT NULL,
+  -- NULL while a claim is in flight; the winner's result once completed.
+  result_json TEXT,
   created_at INTEGER NOT NULL
 );
 `
@@ -374,15 +375,33 @@ export class SqliteWakeStore implements WakeStore {
     return integer(rowOf(r, "wakes count"), "n")
   }
 
-  async getReceipt(key: string): Promise<string | null> {
+  async claimReceipt(key: string, nowMs: number, leaseMs: number): Promise<ReceiptClaim> {
+    // One statement decides the claim: insert wins an empty key, and the
+    // guarded UPDATE takes over a claim whose lease has lapsed. A completed
+    // receipt (result_json NOT NULL) and a live claim both fail the WHERE,
+    // leaving the row — and the decision — to the read below.
+    const res = this.db
+      .prepare(
+        `INSERT INTO effect_receipts (key, result_json, created_at) VALUES (?, NULL, ?)
+         ON CONFLICT(key) DO UPDATE SET created_at = excluded.created_at
+         WHERE result_json IS NULL AND created_at <= ?`,
+      )
+      .run(key, nowMs, nowMs - leaseMs)
+    if (res.changes > 0) return { status: "claimed", claimedAtMs: nowMs }
     const r = this.db.prepare("SELECT result_json FROM effect_receipts WHERE key = ?").get(key)
-    return r === undefined ? null : text(rowOf(r, "effect_receipts"), "result_json")
+    const resultJson = r === undefined ? null : textOrNull(rowOf(r, "effect_receipts"), "result_json")
+    return resultJson === null ? { status: "running" } : { status: "completed", resultJson }
   }
 
-  async putReceipt(key: string, resultJson: string): Promise<void> {
+  async completeReceipt(key: string, claimedAtMs: number, resultJson: string): Promise<void> {
+    // Bound to the exact claim epoch: a claimant whose lease lapsed and lost
+    // the key to a re-claim (created_at changed) writes nothing, and an
+    // already-recorded result is immutable.
     this.db
-      .prepare("INSERT OR IGNORE INTO effect_receipts (key, result_json, created_at) VALUES (?, ?, ?)")
-      .run(key, resultJson, Date.now())
+      .prepare(
+        "UPDATE effect_receipts SET result_json = ? WHERE key = ? AND result_json IS NULL AND created_at = ?",
+      )
+      .run(resultJson, key, claimedAtMs)
   }
 
   async gc(beforeMs: number): Promise<number> {

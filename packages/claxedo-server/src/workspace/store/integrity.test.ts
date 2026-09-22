@@ -544,7 +544,7 @@ describe("workspace store integrity", () => {
 
     test("reproduces the __pages__ leak through ensureProject → resolveWorkspace", async () => {
       // The frontend calls ensureProject("__pages__") which calls
-      // GET /api/workspace/resolve?directory=__pages__&create=true
+      // POST /api/workspace/resolve?directory=__pages__
       // This must not create a workspace.
 
       const before = (await mod.listWorkspaces()).length

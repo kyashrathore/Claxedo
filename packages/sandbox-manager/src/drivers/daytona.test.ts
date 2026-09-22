@@ -37,6 +37,12 @@ function sandbox(input: Partial<DaytonaSandboxLike> & { id?: string } = {}) {
       }),
     updateNetworkSettings: input.updateNetworkSettings ?? vi.fn(async () => {}),
     updateSecrets: input.updateSecrets ?? vi.fn(async () => {}),
+    setLabels:
+      input.setLabels ??
+      vi.fn(async (labels: Record<string, string>) => {
+        item.labels = { ...labels }
+        return item.labels
+      }),
   }
   return item
 }
@@ -542,6 +548,21 @@ describe("DaytonaSandboxDriver", () => {
     expect(startedEnv.WORKSPACE_RUNTIME_LEASE_ID).toBe("lease-sb_provider_uuid")
   })
 
+  test("caller env that restates the runtime identity is refused rather than overriding it", async () => {
+    const created = sandbox({ id: "sb_provider_uuid" })
+    const daytona = client({ create: vi.fn(async () => created) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    // The env a caller supplies is spread over the driver's boot env, so a
+    // WORKSPACE_RUNTIME_HOST_ID here would boot a runtime that registers with
+    // the relay under an identity the lease never recorded.
+    await expect(
+      driver.ensureHost({ ...input, env: { WORKSPACE_RUNTIME_HOST_ID: "other-host" } }),
+    ).rejects.toThrow("WORKSPACE_RUNTIME_HOST_ID")
+    expect(daytona.create).not.toHaveBeenCalled()
+    expect(created.process.executeCommand).not.toHaveBeenCalled()
+  })
+
   test("restricted network policy maps to Daytona's domain allowlist, CIDR allowlist and full block", async () => {
     const daytona = client()
     const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
@@ -744,6 +765,104 @@ describe("DaytonaSandboxDriver", () => {
     expect(flaky.process.executeCommand).not.toHaveBeenCalled()
   })
 
+  test("reusing a sandbox across an epoch bump rewrites its creation-time labels", async () => {
+    // Daytona stamps `labels` only at create, so the sandbox a restore reuses
+    // still claims the epoch it was created under — and GC reads that label.
+    const existing = sandbox({
+      id: "sb_stale",
+      labels: { app: "claxedo", workspaceId: "ws_1", epoch: "1", "claxedo.workspaceId": "ws_1" },
+    })
+    const daytona = client({ list: vi.fn(async () => ({ items: [existing] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    const result = await driver.ensureHost({ ...input, epoch: 2, labels: { ...input.labels, epoch: "2" } })
+    if ("provisioning" in result) throw new Error("expected ready")
+
+    expect(existing.setLabels).toHaveBeenCalledWith({
+      app: "claxedo",
+      workspaceId: "ws_1",
+      epoch: "2",
+      "claxedo.workspaceId": "ws_1",
+    })
+    expect(daytona.create).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ sandboxId: "sb_stale" })
+  })
+
+  test("reuse with labels already current does not rewrite them", async () => {
+    // Exactly the set a create would stamp for this input — nothing to rewrite.
+    const labels = { app: "claxedo", workspaceId: "ws_1", "claxedo.workspaceId": "ws_1" }
+    const existing = sandbox({ id: "sb_current", labels })
+    const daytona = client({ list: vi.fn(async () => ({ items: [existing] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.ensureHost(input)
+
+    expect(existing.setLabels).not.toHaveBeenCalled()
+  })
+
+  test("a transient failure rewriting labels is provisioning, never a target", async () => {
+    const flaky = sandbox({
+      id: "sb_flaky_labels",
+      labels: { app: "claxedo", workspaceId: "ws_1", epoch: "1", "claxedo.workspaceId": "ws_1" },
+      setLabels: vi.fn(async () => {
+        throw { statusCode: 503, message: "upstream error" }
+      }),
+    })
+    const daytona = client({ list: vi.fn(async () => ({ items: [flaky] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    expect(
+      await driver.ensureHost({ ...input, epoch: 2, labels: { ...input.labels, epoch: "2" } }),
+    ).toEqual({ provisioning: true, retryAfterMs: 2_000 })
+    expect(flaky.process.executeCommand).not.toHaveBeenCalled()
+  })
+
+  test("reuse proceeds without setLabels but reports the stale labels", async () => {
+    const warn = vi.fn()
+    const legacy = sandbox({
+      id: "sb_legacy_labels",
+      labels: { app: "claxedo", workspaceId: "ws_1", epoch: "1", "claxedo.workspaceId": "ws_1" },
+    })
+    delete legacy.setLabels
+    const daytona = client({ list: vi.fn(async () => ({ items: [legacy] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona, warn })
+
+    const result = await driver.ensureHost({ ...input, epoch: 2, labels: { ...input.labels, epoch: "2" } })
+    if ("provisioning" in result) throw new Error("expected ready")
+
+    expect(result).toMatchObject({ sandboxId: "sb_legacy_labels" })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("stale labels"))
+  })
+
+  test("resume rewrites the sandbox's labels to the new epoch", async () => {
+    const existing = sandbox({
+      id: "sb_resumed",
+      state: "stopped",
+      labels: { app: "claxedo", workspaceId: "ws_1", epoch: "1", "claxedo.workspaceId": "ws_1" },
+    })
+    const daytona = client({ get: vi.fn(async () => existing) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    const result = await driver.resumeHost!({
+      lease: {
+        workspaceId: "ws_1",
+        homeRegion: "us-east",
+        driver: "daytona",
+        epoch: 2,
+        status: "stopped",
+        retryCount: 0,
+        updatedAt: 1,
+        createdAt: 1,
+        sandboxId: "sb_resumed",
+      },
+      ensure: { ...input, epoch: 2, labels: { ...input.labels, epoch: "2" } },
+    })
+    if ("provisioning" in result) throw new Error("expected ready")
+
+    expect(existing.setLabels).toHaveBeenCalledWith(expect.objectContaining({ epoch: "2" }))
+    expect(result).toMatchObject({ sandboxId: "sb_resumed" })
+  })
+
   test("a stopped sandbox is started before returning a target", async () => {
     const stopped = sandbox({ state: "stopped" })
     const daytona = client({ list: vi.fn(async () => ({ items: [stopped] })) })
@@ -781,6 +900,28 @@ describe("DaytonaSandboxDriver", () => {
 
     expect(item.delete).toHaveBeenCalledWith(60)
     expect(item.stop).toHaveBeenCalledWith(60)
+  })
+
+  test("destroy tolerates a racing delete: the SDK's 409 state-change conflict", async () => {
+    // A GC sweep or a second destroy can already hold the sandbox's state lock;
+    // Daytona answers DaytonaConflictError ("Sandbox state change in
+    // progress"), which is the delete equivalent of the 404 above.
+    const item = sandbox({
+      delete: vi.fn(async () => {
+        throw {
+          statusCode: 409,
+          name: "DaytonaConflictError",
+          message: "Sandbox state change in progress",
+        }
+      }),
+    })
+    const daytona = client({ get: vi.fn(async () => item) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await expect(
+      driver.destroy!({ workspaceId: "ws_1", sandboxId: "sb_1", url: "sb_1", hostId: "claxedo-ws_1" }),
+    ).resolves.toBeUndefined()
+    expect(item.delete).toHaveBeenCalledWith(60)
   })
 
   test("metadata: can pause and resume the same resource", () => {
@@ -961,6 +1102,39 @@ describe("Daytona sandbox GC end-to-end (W1 positive control)", () => {
     expect(result.kept.map((target) => target.sandboxId)).toEqual(["sb_live"])
     expect(result.destroyed).toEqual([])
     expect(live.delete).not.toHaveBeenCalled()
+  })
+
+  test("a reused sandbox whose labels still claim the previous epoch survives the sweep", async () => {
+    // The live-Daytona defect: restore bumped the lease to epoch 2 but reused
+    // the same sandbox, which Daytona keeps labeled epoch "1" until the driver
+    // rewrites it — a sweep landing in that window must read the LEASE's
+    // recorded identity, not the stale label.
+    const reused = sandbox({
+      id: "sb_reused",
+      labels: { app: "claxedo", workspaceId: "ws_restored", epoch: "1", "claxedo.workspaceId": "ws_restored" },
+    })
+    const driver = createDaytonaSandboxDriver({
+      ...baseOptions,
+      client: client({ list: vi.fn(async () => ({ items: [reused] })), get: vi.fn(async () => reused) }),
+    })
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore([sandboxLease({
+        workspaceId: "ws_restored",
+        epoch: 2,
+        status: "ready",
+        sandboxId: "sb_reused",
+        url: "https://preview.daytona.app/restored",
+        hostId: "claxedo-ws_restored",
+        driverResourceId: "sb_reused",
+      })]),
+      driver,
+    })
+
+    const result = await manager.garbageCollect()
+
+    expect(result.kept.map((target) => target.sandboxId)).toEqual(["sb_reused"])
+    expect(result.destroyed).toEqual([])
+    expect(reused.delete).not.toHaveBeenCalled()
   })
 })
 

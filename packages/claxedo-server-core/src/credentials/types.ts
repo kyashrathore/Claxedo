@@ -45,16 +45,12 @@ export type CredentialConsent = {
 /** Metadata stored in claxedo.db — never contains raw secret material. */
 export interface CredentialMetadata {
   id: string
-  /**
-   * Owning tenant. Optional on the type because the hosted Worker store is
-   * partitioned by its KV key rather than by a column; the local SQLite
-   * registry always populates it (`__local__` for single-tenant self-host).
-   */
+  /** Owning tenant; `__local__` for the single-tenant self-host partition. */
   org_id?: string
   /**
    * The user whose account this is; null is the team/operator row. Optional
-   * for the same reason as `org_id`: the hosted Worker store holds one record
-   * per provider and has no owner dimension.
+   * because the hosted store holds one record per provider and has no owner
+   * dimension.
    */
   owner?: string | null
   /**
@@ -70,7 +66,7 @@ export interface CredentialMetadata {
   source: CredentialSource
   label?: string | null
   account_id?: string | null
-  /** Opaque backend reference (e.g. "local:<hash>" or "cf:<key-id>") */
+  /** Opaque backend reference (`local:<id>`); absent where the secret lives in the row itself. */
   secure_ref?: string | null
   status: CredentialStatus
   health?: CredentialHealth | null

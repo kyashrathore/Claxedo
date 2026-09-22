@@ -389,7 +389,7 @@ async function resolveWorkspace() {
   const directory = path.join(dataDir, "project")
   mkdirSync(directory)
   execFileSync("git", ["init", directory])
-  const response = await identity.call(`${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
+  const response = await identity.call(`${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
   expect(response.status).toBe(200)
   return (await response.json() as { workspaceId: string }).workspaceId
 }

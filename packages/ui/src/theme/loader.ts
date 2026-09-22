@@ -27,6 +27,8 @@ function buildThemeCss(
   darkV2: ResolvedV2Theme,
   themeId: string,
 ): string {
+  // Interpolated into `html[data-theme="…"]` below; a non-slug would write CSS.
+  if (!/^[a-z0-9-]+$/.test(themeId)) throw new Error(`invalid theme id ${JSON.stringify(themeId)}`)
   const isDefaultTheme = themeId === "oc-2"
   const lightCss = `${themeToCss(light)}\n  ${themeV2ToCss(lightV2)}`
   const darkCss = `${themeToCss(dark)}\n  ${themeV2ToCss(darkV2)}`

@@ -20,7 +20,9 @@ export function driverErrorSignals(err: unknown): { status: number | undefined; 
   const shaped = isRecord(err) ? err : {}
   const nested = isRecord(shaped.response) ? shaped.response : {}
   return {
-    status: num(nested.status) ?? num(shaped.status),
+    // `response.status` is the axios shape; `statusCode` is what SDK-native
+    // error classes expose instead (@daytona/sdk's `DaytonaError`).
+    status: num(nested.status) ?? num(shaped.status) ?? num(shaped.statusCode),
     text: `${textOf(shaped.code)} ${textOf(shaped.name)} ${textOf(shaped.message)}`.toLowerCase(),
   }
 }

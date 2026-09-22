@@ -1,105 +1,84 @@
 /**
- * Worker-safe credentials.
+ * Hosted provider credentials over D1 (`hosted_provider_credentials`,
+ * migration 0039).
  *
- * The hosted Worker control plane's first surface (health, JWKS, status,
- * device-login, workspace connection/register/heartbeat/pause,
- * relay resolver) does NOT manage provider credentials, so this stays
- * fail-closed by default. It exists to satisfy the `ControlPlaneServices`
- * shape without importing `credentials/backend-registry.ts` or `credentials/registry.ts`,
- * which statically pull in the local encrypted file backend (`fs`).
+ * `hostedOrgCredentials(orgId, { database, env })` is the per-org
+ * `ControlPlaneCredentials`; it exists only for a request whose org
+ * resolution succeeded, and every statement it issues is scoped by `org_id`.
+ * The org-agnostic `workerCredentials(env)` that satisfies the
+ * `ControlPlaneServices` shape stays fail-closed forever, because a
+ * credential without a tenant is exactly the bug org partitioning eliminates.
  *
- * The hosted credential byte path is envelope-encrypted Cloudflare KV —
- * `createHostedOrgSecretBackend(orgId)` composes the mandatory encryption
- * wrapper (per-org HKDF subkeys, key-id-prefixed AES-256-GCM, Web Crypto
- * only) over the KV byte store. The raw KV backend is not exported anywhere,
- * so no future call site can reach KV unencrypted.
+ * The secret column holds the `cenc1` envelope from
+ * `@claxedo/server-core/credentials/envelope` (per-org HKDF subkey, AES-256-GCM
+ * bound to the provider id), so the database holds ciphertext only and no
+ * path here can write a secret unsealed. Construction requires the KEK: a
+ * hosted deployment that cannot encrypt is down, not open.
  *
- * Enabling is gated behind CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1 (default
- * OFF). With the flag on, composition FAILS CLOSED AT CONSTRUCTION TIME
- * unless the envelope KEK (CLAXEDO_CREDENTIALS_KEK, optional
- * CLAXEDO_CREDENTIALS_KEK_NEXT rotation slot) and the KV config
- * plus either the Worker's native CLAXEDO_CREDENTIALS KV binding or the
- * non-Worker REST KV config are present — a hosted deployment that cannot
- * encrypt must be down, not open.
+ * `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1` turns the surface on. With the flag
+ * on, composition fails at construction unless `CLAXEDO_CREDENTIALS_KEK`
+ * (optionally `CLAXEDO_CREDENTIALS_KEK_NEXT`) is present and well formed; with
+ * it off, every per-org constructor throws and the org-agnostic surface
+ * refuses writes.
  *
- * The org-partitioned credential surface is
- * `hostedOrgCredentials(orgId, env)` — a per-org `ControlPlaneCredentials`
- * composed over `createHostedOrgSecretBackend(orgId)`. It exists ONLY for a
- * request whose org resolution succeeded (the caller passes the verified
- * orgId); the org-AGNOSTIC `workerCredentials` surface stays fail-closed
- * forever, because a credential without a tenant is exactly the bug org
- * partitioning eliminates.
+ * Status transitions are written inside the statements: a health or secret
+ * write sets `case when status = 'revoked' then 'revoked' else <verdict> end`,
+ * so two workers racing a verification against a revocation cannot reactivate
+ * the credential; `updateCredentialStatus` is the only unconditional status
+ * write.
  */
 
 import type { ControlPlaneCredentials } from "../../authority/services"
-import type { CredentialMetadata, CredentialStatus, CredentialWrite, SecretBackend } from "@claxedo/server-core/credentials/types"
 import {
-  createEncryptedCloudflareBackend,
-  createEncryptedCloudflareBindingBackend,
-  type CloudflareKvNamespaceBinding,
-} from "@claxedo/server-core/credentials/backends/cloudflare"
-import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "@claxedo/server-core/credentials/envelope"
-import { asRecord, isRecord } from "@claxedo/server-core/platform/json/index"
-import { isFiniteNumber } from "@claxedo/helpers/guards"
+  CREDENTIAL_HEALTHS,
+  CREDENTIAL_KINDS,
+  CREDENTIAL_SOURCES,
+  CREDENTIAL_STATUSES,
+  type CredentialKind,
+  type CredentialMetadata,
+  type CredentialStatus,
+  type CredentialWrite,
+  type SecretBackend,
+} from "@claxedo/server-core/credentials/types"
+import {
+  encryptedSecretBackend,
+  envelopeCipher,
+  envelopeKeyProviderFromEnv,
+  type EnvelopeAdmin,
+} from "@claxedo/server-core/credentials/envelope"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
-type WorkerCredentialEnv = Record<string, unknown> & {
-  CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
-}
-type StoredCredential = { meta: CredentialMetadata; secret: string }
+type WorkerCredentialEnv = Record<string, string | undefined>
 
-export class HostedCredentialRecordError extends Error {
-  readonly code = "hosted_credential_record_invalid"
-
-  constructor(providerId: string, reason: string) {
-    super(`Hosted credential record for "${providerId}" is invalid: ${reason}`)
-  }
+/**
+ * The D1 surface the store issues statements through. `D1Database` satisfies
+ * it inside the Worker; the KEK rotation script satisfies it over Cloudflare's
+ * D1 HTTP API from an operator's machine.
+ */
+export type HostedCredentialDatabase = {
+  prepare(query: string): HostedCredentialStatement
 }
+
+export type HostedCredentialStatement = {
+  bind(...values: unknown[]): HostedCredentialStatement
+  first(): Promise<Record<string, unknown> | null>
+  all(): Promise<{ results: Record<string, unknown>[] }>
+  run(): Promise<{ meta: { changes?: number } }>
+}
+
+export type HostedCredentialStoreInput = {
+  database: HostedCredentialDatabase
+  env: WorkerCredentialEnv
+}
+
+const METADATA_COLUMNS =
+  "org_id, provider_id, kind, source, label, account_id, status, health, expires_at, last_validated_at, last_error, revision, created_at, updated_at"
 
 /** Default-off feature flag for the hosted credential surface. */
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
 
 export function hostedCredentialsEnabled(env: WorkerCredentialEnv = process.env): boolean {
   return trimToUndefined(env[HOSTED_CREDENTIALS_FLAG]) === "1"
-}
-
-/**
- * The only path to hosted credential bytes: envelope-encrypted Cloudflare KV,
- * partitioned to one org. Throws when the KEK or KV configuration is missing.
- *
- * Carries `EnvelopeAdmin` so a KEK rotation drain (`credentials/rotate.ts`)
- * can classify each slot's key-id without rebuilding the backend a second way.
- */
-export function createHostedOrgSecretBackend(
-  orgId: string,
-  env: WorkerCredentialEnv = process.env,
-): SecretBackend & EnvelopeAdmin {
-  const strings = stringEnvironment(env)
-  return env.CLAXEDO_CREDENTIALS
-    ? createEncryptedCloudflareBindingBackend({ orgId, binding: env.CLAXEDO_CREDENTIALS, env: strings })
-    : createEncryptedCloudflareBackend({ orgId, env: strings })
-}
-
-/**
- * Asserts the hosted credential configuration is complete. Throws with the
- * missing piece named. Used at composition time when the feature flag is on.
- */
-function assertHostedCredentialConfig(env: WorkerCredentialEnv) {
-  if (!env.CLAXEDO_CREDENTIALS) {
-    for (const name of ["CLAXEDO_CF_KV_URL", "CLAXEDO_CF_KV_TOKEN"] as const) {
-      if (!trimToUndefined(env[name])) {
-        throw new Error(`${HOSTED_CREDENTIALS_FLAG}=1 but ${name} is not configured — refusing to start`)
-      }
-    }
-  }
-  // Throws naming CLAXEDO_CREDENTIALS_KEK when absent or malformed.
-  envelopeKeyProviderFromEnv(stringEnvironment(env))
-}
-
-function stringEnvironment(env: WorkerCredentialEnv): Record<string, string | undefined> {
-  return Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  )
 }
 
 export function workerCredentials(env: WorkerCredentialEnv = process.env): ControlPlaneCredentials {
@@ -119,11 +98,9 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
     }
   }
 
-  // Flag on: prove the encrypted store CAN be composed, at boot, or refuse to
-  // start. The org-AGNOSTIC CRUD surface below stays fail-closed by design —
-  // hosted credential access happens exclusively through the per-org
-  // `hostedOrgCredentials(orgId)` surface, after org resolution succeeded.
-  assertHostedCredentialConfig(env)
+  // Flag on: prove the KEK is usable at boot, or refuse to start. Throws
+  // naming CLAXEDO_CREDENTIALS_KEK when absent or malformed.
+  envelopeKeyProviderFromEnv(env)
 
   const gated = (): never => {
     throw new Error(
@@ -145,304 +122,287 @@ export function workerCredentials(env: WorkerCredentialEnv = process.env): Contr
 
 /**
  * The org-partitioned hosted credential surface. One instance serves ONE
- * org; construct it per request (or cache per org) only after the caller's
- * org resolution succeeded — the verified `org_id` claim, never a
- * client-supplied value.
+ * org; construct it only after the caller's org resolution succeeded, from the
+ * verified `org_id` claim, never a client-supplied value.
  *
- * Fail-closed properties:
- * - throws unless CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1 (the default-off flag
- *   stays the rollout gate);
- * - throws on a blank orgId (org resolution must have succeeded);
- * - throws when the KEK or KV config is missing (same boot posture as
- *   `workerCredentials`);
- * - every byte goes through `createHostedOrgSecretBackend` — envelope
- *   encryption with a per-org HKDF subkey, so org A ciphertext never decrypts
- *   under org B even if a key were somehow shared.
- *
- * Storage shape: one encrypted KV value per provider id, holding
- * `{ meta, secret }`. Backend ids are org-prefixed
- * (`org/{orgId}/credential/{providerId}`) so two orgs writing the same
- * provider id can never collide on the underlying KV key — the HKDF
- * partition makes cross-org DECRYPTION impossible; the prefix makes
- * cross-org OVERWRITES impossible too. `listCredentials` intentionally
- * returns [] (KV has no sanctioned enumeration; the connections kit reads by
- * provider id only), and metadata ids equal provider ids (one auth
- * credential per provider, the host-store invariant).
+ * One credential per provider: the metadata id IS the provider id, and
+ * `updateCredentialStatus` receives it back.
  */
 export function hostedOrgCredentials(
   orgId: string,
-  env: WorkerCredentialEnv = process.env,
+  input: HostedCredentialStoreInput,
   opts: { now?: () => number } = {},
 ): ControlPlaneCredentials {
-  if (!hostedCredentialsEnabled(env)) {
+  if (!hostedCredentialsEnabled(input.env)) {
     throw new Error(`${HOSTED_CREDENTIALS_FLAG} is not enabled — hosted credential access stays fail-closed`)
   }
   const org = orgId?.trim()
   if (!org) {
     throw new Error("hostedOrgCredentials requires a non-empty orgId — org resolution must succeed before any credential access")
   }
-  assertHostedCredentialConfig(env)
-  const backend = createHostedOrgSecretBackend(org, env)
+  const cipher = envelopeCipher(envelopeKeyProviderFromEnv(input.env), { orgId: org })
+  const { database } = input
   const now = opts.now ?? Date.now
 
-  const idFor = (providerId: string) => `org/${org}/credential/${providerId}`
-  // The KV byte store's ref scheme is deterministic (`cf:{id}`, see
-  // credentials/cloudflare.ts) — a metadata-keyed read needs get-by-provider,
-  // so the ref is reconstructed here. The write path asserts the scheme on
-  // every put, so drift fails loudly instead of silently missing reads.
-  const refFor = (providerId: string) => `cf:${idFor(providerId)}`
+  const metadataByProvider = async (providerId: string, kind?: CredentialKind) => {
+    const row = await database
+      .prepare(
+        `select ${METADATA_COLUMNS} from hosted_provider_credentials
+         where org_id = ? and provider_id = ?${kind ? " and kind = ?" : ""}`,
+      )
+      .bind(org, providerId, ...(kind ? [kind] : []))
+      .first()
+    return row ? credentialMetadataRow(row) : undefined
+  }
 
-  const read = async (providerId: string): Promise<StoredCredential | undefined> => {
-    const raw = await backend.get(refFor(providerId))
-    if (raw === null) return undefined
-    return parseStoredCredential(raw, {
-      orgId: org,
-      providerId,
-      secureRef: refFor(providerId),
-    })
+  const openSecret = async (providerId: string, statusScope: string) => {
+    const row = await database
+      .prepare(`select secret_envelope from hosted_provider_credentials where org_id = ? and provider_id = ?${statusScope}`)
+      .bind(org, providerId)
+      .first()
+    return row ? cipher.open(providerId, requiredTextColumn(row, "secret_envelope")) : null
   }
-  const write = async (record: StoredCredential): Promise<void> => {
-    const ref = await backend.put(idFor(record.meta.provider_id), JSON.stringify(record))
-    if (ref !== refFor(record.meta.provider_id)) {
-      throw new Error("hosted credential backend ref scheme drifted — the read path would miss this write; refusing")
-    }
-  }
+
+  const changed = async (statement: HostedCredentialStatement) => ((await statement.run()).meta.changes ?? 0) > 0
 
   return {
-    // No KV enumeration by design: empty, never another org's rows.
-    listCredentials: async () => [],
-    getCredentialByProvider: async (providerId) => (await read(providerId))?.meta,
-    getCredential: async (id) => (await read(id))?.meta,
-    // Available-status-only, mirroring credentials/registry.ts resolveSecret.
-    resolveCredentialSecret: async (providerId) => {
-      const record = await read(providerId)
-      if (!record || record.meta.status !== "available") return null
-      return record.secret
+    listCredentials: async () => {
+      const rows = await database
+        .prepare(`select ${METADATA_COLUMNS} from hosted_provider_credentials where org_id = ? order by provider_id`)
+        .bind(org)
+        .all()
+      return rows.results.map(credentialMetadataRow)
     },
+    getCredentialByProvider: (providerId, kind) => metadataByProvider(providerId, kind),
+    getCredential: (id) => metadataByProvider(id),
+    // Available-status-only, mirroring credentials/registry.ts resolveSecret;
+    // the gate is in the same statement as the read, so a revocation landing
+    // between two reads cannot hand out the secret.
+    resolveCredentialSecret: (providerId) => openSecret(providerId, " and status = 'available'"),
     // Verification retries must be able to re-check a prior failed result.
-    resolveCredentialSecretById: async (id) => (await read(id))?.secret ?? null,
+    resolveCredentialSecretById: (id) => openSecret(id, ""),
     putCredential: async (input: CredentialWrite) => {
-      const existing = await read(input.provider_id)
       const timestamp = now()
-      const meta: CredentialMetadata = {
-        // One credential per provider in this per-org store: the metadata id
-        // IS the provider id (updateCredentialStatus receives it back).
-        id: input.provider_id,
-        provider_id: input.provider_id,
-        kind: input.kind,
-        source: input.source,
-        label: input.label ?? null,
-        account_id: input.account_id ?? null,
-        secure_ref: refFor(input.provider_id),
-        status: "available",
-        health: null,
-        expires_at: input.expires_at ?? null,
-        last_validated_at: null,
-        last_error: null,
-        created_at: existing?.meta.created_at ?? timestamp,
-        updated_at: timestamp,
-        revision: (existing?.meta.revision ?? 0) + 1,
-      }
-      await write({ meta, secret: input.secret })
-      return meta
+      const row = await database
+        .prepare(
+          `insert into hosted_provider_credentials (
+             org_id, provider_id, kind, source, label, account_id, status, health,
+             expires_at, last_validated_at, last_error, secret_envelope, revision, created_at, updated_at
+           ) values (?, ?, ?, ?, ?, ?, 'available', null, ?, null, null, ?, 1, ?, ?)
+           on conflict (org_id, provider_id) do update set
+             kind = excluded.kind,
+             source = excluded.source,
+             label = excluded.label,
+             account_id = excluded.account_id,
+             status = 'available',
+             health = null,
+             expires_at = excluded.expires_at,
+             last_validated_at = null,
+             last_error = null,
+             secret_envelope = excluded.secret_envelope,
+             revision = hosted_provider_credentials.revision + 1,
+             updated_at = excluded.updated_at
+           returning ${METADATA_COLUMNS}`,
+        )
+        .bind(
+          org,
+          input.provider_id,
+          input.kind,
+          input.source,
+          input.label ?? null,
+          input.account_id ?? null,
+          input.expires_at ?? null,
+          await cipher.seal(input.provider_id, input.secret),
+          timestamp,
+          timestamp,
+        )
+        .first()
+      if (!row) throw new Error(`hosted credential upsert for "${input.provider_id}" returned no row`)
+      return credentialMetadataRow(row)
     },
-    deleteCredential: async (id) => {
-      const record = await read(id)
-      if (!record) return false
-      await backend.delete(refFor(id))
-      return true
-    },
-    // NOTE: the hosted KV layout keys one record per `providerId` with no
-    // `kind` dimension, so the `kind` argument the local registry honours
-    // cannot be applied here. That is safe today only because sandbox driver
-    // configuration is 403'd in signed/hosted mode
-    // (`local_only_sandbox_driver`), so sandbox credentials never reach this
-    // adapter. Adding a kind to the KV key is required before that changes.
-    deleteCredentialsByProvider: async (providerId) => {
-      const record = await read(providerId)
-      if (!record) return 0
-      await backend.delete(refFor(providerId))
-      return 1
+    deleteCredential: (id) =>
+      changed(database.prepare("delete from hosted_provider_credentials where org_id = ? and provider_id = ?").bind(org, id)),
+    deleteCredentialsByProvider: async (providerId, kind) => {
+      const result = await database
+        .prepare(
+          `delete from hosted_provider_credentials where org_id = ? and provider_id = ?${kind ? " and kind = ?" : ""}`,
+        )
+        .bind(org, providerId, ...(kind ? [kind] : []))
+        .run()
+      return result.meta.changes ?? 0
     },
     updateCredentialStatus: async (id, status, error) => {
-      const record = await read(id)
-      if (!record) return
-      record.meta.status = status
-      record.meta.health = status === "expired" ? "expired" : null
-      record.meta.last_error = error ?? null
-      record.meta.updated_at = now()
-      await write(record)
+      await database
+        .prepare(
+          `update hosted_provider_credentials
+           set status = ?, health = ?, last_error = ?, updated_at = ?
+           where org_id = ? and provider_id = ?`,
+        )
+        .bind(status, status === "expired" ? "expired" : null, error ?? null, now(), org, id)
+        .run()
     },
     updateCredentialHealth: async (id, health, validatedAt) => {
-      const record = await read(id)
-      if (!record) return
-      record.meta.health = health
-      record.meta.status = revocationPreservingStatus(
-        record.meta.status,
-        health === "ok" ? "available" : health === "expired" ? "expired" : "error",
-      )
-      record.meta.last_validated_at = validatedAt
-      record.meta.last_error = health === "ok" ? null : health
-      record.meta.updated_at = now()
-      await write(record)
+      const verdict: CredentialStatus = health === "ok" ? "available" : health === "expired" ? "expired" : "error"
+      await database
+        .prepare(
+          `update hosted_provider_credentials
+           set health = ?,
+               status = case when status = 'revoked' then 'revoked' else ? end,
+               last_validated_at = ?,
+               last_error = ?,
+               updated_at = ?
+           where org_id = ? and provider_id = ?`,
+        )
+        .bind(health, verdict, validatedAt, health === "ok" ? null : health, now(), org, id)
+        .run()
     },
     updateCredentialSecret: async (id, secret, expiresAt) => {
-      const record = await read(id)
-      if (!record) return false
-      record.secret = secret
       // `undefined` means the caller does not know the replacement's expiry;
       // `null` means it has none. The stored expiry described the material
       // being replaced, so only the first may carry it over.
-      record.meta.expires_at = expiresAt === undefined ? record.meta.expires_at ?? null : expiresAt
-      record.meta.health = null
-      record.meta.last_validated_at = null
-      record.meta.last_error = null
-      record.meta.status = revocationPreservingStatus(record.meta.status, "available")
-      record.meta.revision = record.meta.revision + 1
-      record.meta.updated_at = now()
-      await write(record)
-      return true
+      const replaceExpiry = expiresAt === undefined ? 0 : 1
+      return changed(
+        database
+          .prepare(
+            `update hosted_provider_credentials
+             set secret_envelope = ?,
+                 expires_at = case when ? = 1 then ? else expires_at end,
+                 health = null,
+                 last_validated_at = null,
+                 last_error = null,
+                 status = case when status = 'revoked' then 'revoked' else 'available' end,
+                 revision = revision + 1,
+                 updated_at = ?
+             where org_id = ? and provider_id = ?`,
+          )
+          .bind(await cipher.seal(id, secret), replaceExpiry, expiresAt ?? null, now(), org, id),
+      )
     },
     // No local credential stores exist on a hosted worker.
     syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
   }
 }
 
-/** Provider health and token rotation cannot undo the operator's revocation. */
-function revocationPreservingStatus(stored: CredentialStatus, verdict: CredentialStatus): CredentialStatus {
-  return stored === "revoked" ? "revoked" : verdict
-}
-
-// Literal tuples rather than `Set<string>`: `enumValue` is a type predicate, so
-// each check below narrows the field it validates and the metadata can be BUILT
-// from the narrowed values instead of the whole payload being asserted into
-// shape at the end.
-const CREDENTIAL_KINDS = ["api_key", "oauth_token", "subscription_session", "sandbox_driver"] as const
-const CREDENTIAL_SOURCES = ["managed", "local_only", "env", "upstream_sync"] as const
-const CREDENTIAL_SCOPES = ["local", "shared"] as const
-const CREDENTIAL_STATUSES = ["available", "expired", "revoked", "error"] as const
-const CREDENTIAL_HEALTH = ["ok", "auth_failed", "no_billing", "rate_capped", "expired"] as const
-const CREDENTIAL_CONSENT_SURFACES = ["desktop_discovery", "api_key", "scope_change", "cli", "migration"] as const
-
-function parseStoredCredential(
-  raw: string,
-  expected: { orgId: string; providerId: string; secureRef: string },
-): StoredCredential {
-  let value: unknown
-  try {
-    value = JSON.parse(raw)
-  } catch {
-    throw new HostedCredentialRecordError(expected.providerId, "payload is not valid JSON")
-  }
-  if (!isRecord(value)) invalidStoredCredential(expected.providerId, "payload must be an object")
-  if (!isRecord(value.meta)) invalidStoredCredential(expected.providerId, "meta must be an object")
-  if (typeof value.secret !== "string") invalidStoredCredential(expected.providerId, "secret must be a string")
-
-  const meta = value.meta
-  if (meta.id !== expected.providerId) {
-    invalidStoredCredential(expected.providerId, "meta.id must equal the requested provider id")
-  }
-  if (meta.provider_id !== expected.providerId) {
-    invalidStoredCredential(expected.providerId, "meta.provider_id must equal the requested provider id")
-  }
-  if (!enumValue(meta.kind, CREDENTIAL_KINDS)) {
-    invalidStoredCredential(expected.providerId, "meta.kind is unsupported")
-  }
-  if (!enumValue(meta.source, CREDENTIAL_SOURCES)) {
-    invalidStoredCredential(expected.providerId, "meta.source is unsupported")
-  }
-  if (!enumValue(meta.status, CREDENTIAL_STATUSES)) {
-    invalidStoredCredential(expected.providerId, "meta.status is unsupported")
-  }
-  if (meta.scope !== undefined && !enumValue(meta.scope, CREDENTIAL_SCOPES)) {
-    invalidStoredCredential(expected.providerId, "meta.scope is unsupported")
-  }
-  if (meta.org_id !== undefined && meta.org_id !== expected.orgId) {
-    invalidStoredCredential(expected.providerId, "meta.org_id does not match the credential partition")
-  }
-  if (meta.secure_ref !== undefined && meta.secure_ref !== expected.secureRef) {
-    invalidStoredCredential(expected.providerId, "meta.secure_ref does not match the credential storage key")
-  }
-  if (!nullableString(meta.label) || !nullableString(meta.account_id) || !nullableString(meta.last_error)) {
-    invalidStoredCredential(expected.providerId, "nullable metadata text fields must be strings or null")
-  }
-  if (meta.health !== undefined && meta.health !== null && !enumValue(meta.health, CREDENTIAL_HEALTH)) {
-    invalidStoredCredential(expected.providerId, "meta.health is unsupported")
-  }
-  if (meta.revision !== undefined && !isFiniteNumber(meta.revision)) {
-    invalidStoredCredential(expected.providerId, "meta.revision must be a finite number")
-  }
-  if (
-    !isFiniteNumber(meta.created_at) ||
-    !isFiniteNumber(meta.updated_at) ||
-    !nullableFiniteNumber(meta.expires_at) ||
-    !nullableFiniteNumber(meta.last_validated_at) ||
-    !nullableFiniteNumber(meta.last_used_at)
-  ) {
-    invalidStoredCredential(expected.providerId, "metadata timestamps must be finite numbers or null")
-  }
-  const consentRecord = asRecord(meta.consent)
-  const consentAt = consentRecord?.at
-  const consentSurface = consentRecord?.surface
-  if (meta.consent !== undefined && meta.consent !== null) {
-    if (
-      !consentRecord ||
-      !finiteNumber(consentAt) ||
-      !enumValue(consentSurface, CREDENTIAL_CONSENT_SURFACES)
-    ) {
-      invalidStoredCredential(expected.providerId, "meta.consent is invalid")
-    }
-  }
-  // Built from the fields that were just checked, one at a time; the previous
-  // `value as StoredCredential` asserted the whole payload into shape and
-  // carried any extra keys straight into the store's own record.
-  return {
-    secret: value.secret,
-    meta: {
-      id: expected.providerId,
-      provider_id: expected.providerId,
-      kind: meta.kind,
-      source: meta.source,
-      status: meta.status,
-      created_at: meta.created_at,
-      updated_at: meta.updated_at,
-      // A record written before secret writes were counted holds the same
-      // revision the local registry's migration gives its existing rows: no
-      // placeholder that predates the field names a revision at all.
-      revision: isFiniteNumber(meta.revision) ? meta.revision : 1,
-      ...(meta.org_id === undefined ? {} : { org_id: meta.org_id }),
-      ...(meta.secure_ref === undefined ? {} : { secure_ref: meta.secure_ref }),
-      ...(meta.scope === undefined ? {} : { scope: meta.scope }),
-      ...(meta.label === undefined ? {} : { label: meta.label }),
-      ...(meta.account_id === undefined ? {} : { account_id: meta.account_id }),
-      ...(meta.last_error === undefined ? {} : { last_error: meta.last_error }),
-      ...(meta.health === undefined ? {} : { health: meta.health }),
-      ...(meta.expires_at === undefined ? {} : { expires_at: meta.expires_at }),
-      ...(meta.last_validated_at === undefined ? {} : { last_validated_at: meta.last_validated_at }),
-      ...(meta.last_used_at === undefined ? {} : { last_used_at: meta.last_used_at }),
-      ...(finiteNumber(consentAt) && enumValue(consentSurface, CREDENTIAL_CONSENT_SURFACES)
-        ? { consent: { at: consentAt, surface: consentSurface } }
-        : { consent: meta.consent === undefined ? undefined : null }),
+/**
+ * One org's secret column as a `SecretBackend`, for the KEK rotation sweep
+ * (`credentials/operations/rotate.ts`). Refs are `d1:<providerId>`. `put`
+ * only ever updates an existing row, so the sweep can re-seal a secret but
+ * never mint a credential; `delete` removes the whole row, since the secret has
+ * no existence apart from it.
+ */
+export function hostedCredentialSecretSlots(
+  orgId: string,
+  input: HostedCredentialStoreInput,
+): SecretBackend & EnvelopeAdmin {
+  const org = orgId?.trim()
+  if (!org) throw new Error("hostedCredentialSecretSlots requires a non-empty orgId")
+  const { database } = input
+  const column: SecretBackend = {
+    async put(id, envelope) {
+      await database
+        .prepare("update hosted_provider_credentials set secret_envelope = ? where org_id = ? and provider_id = ?")
+        .bind(envelope, org, id)
+        .run()
+      return `d1:${id}`
+    },
+    async get(ref) {
+      const row = await database
+        .prepare("select secret_envelope from hosted_provider_credentials where org_id = ? and provider_id = ?")
+        .bind(org, providerIdFromSlotRef(ref))
+        .first()
+      return row ? requiredTextColumn(row, "secret_envelope") : null
+    },
+    async delete(ref) {
+      await database
+        .prepare("delete from hosted_provider_credentials where org_id = ? and provider_id = ?")
+        .bind(org, providerIdFromSlotRef(ref))
+        .run()
+    },
+    async probe() {
+      try {
+        await database.prepare("select 1 from hosted_provider_credentials limit 1").all()
+        return true
+      } catch {
+        return false
+      }
     },
   }
+  return encryptedSecretBackend(column, envelopeKeyProviderFromEnv(input.env), { orgId: org })
 }
 
-function invalidStoredCredential(providerId: string, reason: string): never {
-  throw new HostedCredentialRecordError(providerId, reason)
+/** Every slot in the store, across orgs, in the order a rotation sweeps them. */
+export async function listHostedCredentialSlots(
+  database: HostedCredentialDatabase,
+): Promise<Array<{ orgId: string; ref: string }>> {
+  const rows = await database
+    .prepare("select org_id, provider_id from hosted_provider_credentials order by org_id, provider_id")
+    .all()
+  return rows.results.map((row) => ({ orgId: requiredTextColumn(row, "org_id"), ref: hostedCredentialSlotRef(requiredTextColumn(row, "provider_id")) }))
+}
+
+export function hostedCredentialSlotRef(providerId: string): string {
+  return `d1:${providerId}`
+}
+
+function providerIdFromSlotRef(ref: string): string {
+  if (!ref.startsWith("d1:")) throw new Error(`"${ref}" is not a hosted credential slot ref`)
+  return ref.slice("d1:".length)
+}
+
+function credentialMetadataRow(row: Record<string, unknown>): CredentialMetadata {
+  const providerId = requiredTextColumn(row, "provider_id")
+  return {
+    id: providerId,
+    org_id: requiredTextColumn(row, "org_id"),
+    provider_id: providerId,
+    kind: enumColumn(row, "kind", CREDENTIAL_KINDS),
+    source: enumColumn(row, "source", CREDENTIAL_SOURCES),
+    label: nullableTextColumn(row, "label"),
+    account_id: nullableTextColumn(row, "account_id"),
+    status: enumColumn(row, "status", CREDENTIAL_STATUSES),
+    health: column(row, "health") === null ? null : enumColumn(row, "health", CREDENTIAL_HEALTHS),
+    expires_at: nullableIntegerColumn(row, "expires_at"),
+    last_validated_at: nullableIntegerColumn(row, "last_validated_at"),
+    last_error: nullableTextColumn(row, "last_error"),
+    created_at: requiredIntegerColumn(row, "created_at"),
+    updated_at: requiredIntegerColumn(row, "updated_at"),
+    revision: requiredIntegerColumn(row, "revision"),
+  }
+}
+
+function column(row: Record<string, unknown>, name: string): unknown {
+  if (!(name in row)) throw new Error(`hosted credential row has no "${name}" column`)
+  return row[name]
+}
+
+function requiredTextColumn(row: Record<string, unknown>, name: string): string {
+  const value = column(row, name)
+  if (typeof value !== "string") throw new Error(`hosted credential column "${name}" is not text`)
+  return value
+}
+
+function nullableTextColumn(row: Record<string, unknown>, name: string): string | null {
+  return column(row, name) === null ? null : requiredTextColumn(row, name)
+}
+
+function requiredIntegerColumn(row: Record<string, unknown>, name: string): number {
+  const value = column(row, name)
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new Error(`hosted credential column "${name}" is not an integer`)
+  }
+  return value
+}
+
+function nullableIntegerColumn(row: Record<string, unknown>, name: string): number | null {
+  return column(row, name) === null ? null : requiredIntegerColumn(row, name)
+}
+
+function enumColumn<T extends string>(row: Record<string, unknown>, name: string, values: readonly T[]): T {
+  const value = requiredTextColumn(row, name)
+  if (!enumValue(value, values)) throw new Error(`hosted credential column "${name}" holds a value outside its enum`)
+  return value
 }
 
 function enumValue<T extends string>(value: unknown, values: readonly T[]): value is T {
   return values.some((candidate) => candidate === value)
-}
-
-function nullableString(value: unknown): value is string | null | undefined {
-  return value === undefined || value === null || typeof value === "string"
-}
-
-function finiteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value)
-}
-
-function nullableFiniteNumber(value: unknown): value is number | null | undefined {
-  return value === undefined || value === null || finiteNumber(value)
 }

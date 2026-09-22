@@ -646,18 +646,22 @@ export function setupHostConnectorChild(input: {
       if (!target || status.status !== "enrolled") {
         throw new Error("Remote access is not running on this machine — enable it in Settings first")
       }
+      // The withdrawal is recorded before it takes effect, the opposite order
+      // to `shareWorkspace`: the share list is this machine's consent and the
+      // child re-consents on the next start to everything the list still
+      // names, so a withdrawal this file never receives lasts only until the
+      // next launch. A store that refuses stops the withdrawal here, with the
+      // workspace still shared and the user told, rather than one that
+      // quietly undoes itself.
+      const remaining = sharedWorkspaces.filter((existing) => existing.workspaceId !== workspaceId)
+      input.storeSharedWorkspaces?.(remaining)
+      sharedWorkspaces = remaining
       await input.runAccountOperation("workspace.unassignHost", { id: workspaceId })
       const settled = await bounded(
         request(target, { type: "unshare-workspace", requestId: crypto.randomUUID(), workspaceId }),
         SHARE_ROUND_TRIP_TIMEOUT_MS,
         "Host Connector workspace unshare",
       )
-      sharedWorkspaces = sharedWorkspaces.filter((existing) => existing.workspaceId !== workspaceId)
-      try {
-        input.storeSharedWorkspaces?.(sharedWorkspaces)
-      } catch (error) {
-        input.onError?.("share-store", error)
-      }
       return settle(settled)
     },
 

@@ -31,6 +31,7 @@ beforeEach(() => {
     markUse() {},
     touch() {},
     broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
+    reconcileCredentialDelivery: vi.fn(async () => {}),
   })
   mocks.broadcastRuntimeConfig.mockResolvedValue(undefined)
   mocks.syncEmbeddedWorkspaceRuntimes.mockResolvedValue(undefined)

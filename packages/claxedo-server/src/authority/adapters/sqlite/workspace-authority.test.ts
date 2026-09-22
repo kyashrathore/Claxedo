@@ -533,6 +533,39 @@ describe("sqlite workspace authority", () => {
     })).resolves.toMatchObject({ messages })
   })
 
+  test("usage ownership answers the admitted turn producer, else the session creator", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_usage", displayName: "Usage" })
+    await authority.usersMe(other)
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_usage", sessionId: "ses_usage" })
+    const workspaceOrg = (
+      database().prepare(`SELECT org_id FROM workspaces WHERE workspace_id = 'ws_usage'`).get() as { org_id: string }
+    ).org_id
+
+    // No turn has been admitted yet: the session's registered creator is the
+    // producing account. An unknown session has no owner rather than a guess.
+    expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_usage" }))
+      .toEqual({ org_id: workspaceOrg, user_id: "user_owner" })
+    expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_unknown" })).toBeUndefined()
+
+    // A member holding a send-level share drives a turn and is the producer:
+    // usage from that turn belongs to their account, not to the creator's.
+    database().prepare(`
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'member', 1, 1)
+    `).run(workspaceOrg, other.user.tokenIdentifier)
+    database().prepare(`
+      INSERT INTO session_share_grants
+        (grant_id, session_id, workspace_id, granted_to_user_token_identifier, created_by_token_identifier, created_at, level)
+      VALUES ('grant_other', 'ses_usage', 'ws_usage', ?, ?, 1, 'send')
+    `).run(other.user.tokenIdentifier, owner.user.tokenIdentifier)
+    await recordUserTurns({ authority, auth: other, workspaceId: "ws_usage", sessionId: "ses_usage", turnIds: ["msg_other"] })
+    expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_usage" }))
+      .toEqual({ org_id: workspaceOrg, user_id: "user_other" })
+    authority.close()
+    database.close()
+  })
+
   test("session message sync atomically rejects an older event ordinal", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_ordinal", displayName: "Ordinal" })

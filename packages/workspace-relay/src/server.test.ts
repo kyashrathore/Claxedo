@@ -2,13 +2,17 @@ import { describe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { decodeJwt, decodeProtectedHeader, exportJWK, generateKeyPair } from "jose"
 import { mintRelayHostToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 import { createWorkspaceRelayDirectory } from "./directory"
 import type { RuntimeAccessVerifierClaims } from "@claxedo/workspace-relay-protocol"
 import {
+  createCachedRevocationClient,
   createWorkspaceRelay,
   parseWorkspaceRelayTarget,
+  runtimeAccessTokenRevocationDelayMs,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
+  workspaceRelayTargetUrl,
   type WorkspaceRelayAuditEvent,
   type WorkspaceRelayOptions,
 } from "./server"
@@ -89,6 +93,43 @@ async function harness(
 }
 
 describe("workspace relay server", () => {
+  test("a channel actor's provenance reaches the host on the Relay Host Token", async () => {
+    const relay = await harness()
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = ((url, init) => {
+      relay.forwarded.push({ url: fetchUrl(url), request: new Request(url, init) })
+      return Promise.resolve(new Response("ok"))
+    }) as typeof fetch
+
+    try {
+      const runtimeAccessToken = await mintRuntimeAccessToken({
+        principalKind: "user",
+        actorId: "actor_1",
+        actorKind: "human",
+        orgId: "org_1",
+        workspaceId: "ws_1",
+        hostId: "host_1",
+        role: "editor",
+        channelIdentity: { channel: "telegram", externalUserId: "123456789", identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION },
+      }, relay.runtime.privateKey, "EdDSA")
+      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: { authorization: `Bearer ${runtimeAccessToken}` },
+      })
+
+      expect(res.status).toBe(200)
+      const auth = relay.forwarded[0]?.request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+      await expect(verifyRelayHostToken(auth!, relay.relayHost.publicKey, {
+        workspaceId: "ws_1",
+        hostId: "host_1",
+      })).resolves.toMatchObject({
+        parent_jti: decodeJwt(runtimeAccessToken).jti,
+        channel_identity: { channel: "telegram", external_user_id: "123456789", identity_version: CURRENT_CHANNEL_IDENTITY_VERSION },
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   test("forwards HTTP requests with a Relay Host Token", async () => {
     const relay = await harness()
     const originalFetch = globalThis.fetch
@@ -369,6 +410,76 @@ describe("workspace relay server", () => {
     })
   })
 
+  test("bounds revocation of cached HTTP requests by the revocation cache TTL", async () => {
+    const revocationCacheTtlMs = 10_000
+    let clockNow = 1_000_000
+    let active = true
+    const revocation = createCachedRevocationClient(async () =>
+      active
+        ? { active: true as const }
+        : { active: false as const, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" },
+    { ttlMs: revocationCacheTtlMs, now: () => clockNow })
+    const relay = await harness({
+      // The claims and Relay Host Token caches stay warm for the whole test:
+      // the delay bound must come from the revocation cache alone.
+      runtimeAccessTokenCacheTtlMs: 60_000,
+      relayHostTokenCacheTtlMs: 60_000,
+      isRuntimeAccessTokenActive: (claims) => revocation({
+        jti: claims.jti,
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+      }),
+      fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
+    })
+    const token = await relay.token()
+    const request = () => relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect((await request()).status).toBe(200)
+    active = false
+
+    // Inside the TTL the cached positive answer still stands: this is the
+    // bounded consistency window, not unlimited access.
+    clockNow += revocationCacheTtlMs - 1
+    expect((await request()).status).toBe(200)
+
+    // Past runtimeAccessTokenRevocationDelayMs for the HTTP path, the stale
+    // positive cannot be served again.
+    clockNow += 2
+    const denied = await request()
+    expect(denied.status).toBe(401)
+    await expect(denied.json()).resolves.toEqual({
+      error: {
+        code: "runtime_access_token_revoked",
+        message: "Runtime Access Token has been revoked",
+      },
+    })
+    expect(runtimeAccessTokenRevocationDelayMs({ revocationCacheTtlMs })).toBe(revocationCacheTtlMs)
+  })
+
+  test("fails closed when the revocation authority is unreachable", async () => {
+    const relay = await harness({
+      isRuntimeAccessTokenActive: () => {
+        throw new Error("revocation resolver unreachable")
+      },
+      fetch: (() => Promise.resolve(new Response("ok"))) as unknown as typeof fetch,
+    })
+    const token = await relay.token()
+
+    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "relay_request_failed",
+        message: "Workspace relay request was denied",
+      },
+    })
+  })
+
   test("does not reuse cached Runtime Access Token claims across workspace ids", async () => {
     let verifyCalls = 0
     const relay = await harness({
@@ -488,6 +599,34 @@ describe("workspace relay server", () => {
     expect(res.headers.get("access-control-allow-headers")).toContain("X-Claxedo-Runner")
     expect(res.headers.get("access-control-allow-headers")).toContain("Last-Event-ID")
     expect(res.headers.get("access-control-allow-headers")).toContain("X-Fetch-Bypass-Throttle")
+    await expect(res.text()).resolves.toBe("ok")
+  })
+
+  test("strips an upstream Set-Cookie while emitting only relay-owned CORS", async () => {
+    const relay = await harness({
+      fetch: (() => Promise.resolve(new Response("ok", {
+        headers: {
+          // Every workspace shares this relay's origin: an upstream cookie
+          // would be replayed to other workspaces' requests through it.
+          "set-cookie": "session=upstream; Path=/",
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true",
+          "content-type": "text/plain",
+        },
+      }))) as unknown as typeof fetch,
+    })
+
+    const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        authorization: `Bearer ${await relay.token()}`,
+        origin: "http://localhost:4482",
+      },
+    })
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get("set-cookie")).toBeNull()
+    expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:4482")
+    expect(res.headers.get("access-control-allow-credentials")).toBeNull()
     await expect(res.text()).resolves.toBe("ok")
   })
 
@@ -877,6 +1016,83 @@ describe("workspace relay server", () => {
       method: "GET",
       path: "/workspaces/ws_1/api/wr/health",
     })
+  })
+
+  test("strips the request Cookie for a local-worktree target at the shared forwarder", async () => {
+    const directory = createWorkspaceRelayDirectory({ sweepIntervalMs: 0 })
+    directory.registerHostTunnel({ hostId: "host_1", workspaceIds: ["ws_1"] })
+    let forwardedCookie: string | null = "unset"
+    const relay = await harness({
+      backing: "local-worktree",
+      directory,
+      fetch: ((_url: string | URL | Request, init?: RequestInit) => {
+        forwardedCookie = new Request("http://relay.test/", init).headers.get("cookie")
+        return Promise.resolve(new Response("ok"))
+      }) as unknown as typeof fetch,
+    })
+
+    try {
+      const res = await relay.app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+        headers: {
+          authorization: `Bearer ${await relay.token()}`,
+          cookie: "session=relay",
+        },
+      })
+
+      expect(res.status).toBe(200)
+      // The tunnel contract is keyed on the target's backing, not on which
+      // adapter reached the forwarder: the host machine's cookie jar may be
+      // shared with the browser, so the relay never replays cookies to it.
+      expect(forwardedCookie).toBeNull()
+    } finally {
+      directory.dispose()
+    }
+  })
+
+  test("denies a resolved target outside the allowed destinations without fetching it", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    let fetched = false
+    // A programmatic resolveTarget never passed through the resolver wire
+    // parse, so the destination rule is re-applied at authorize time.
+    const app = createWorkspaceRelay({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://metadata.internal.test",
+        backing: "cloud-vm",
+      }),
+      fetch: (() => {
+        fetched = true
+        return Promise.resolve(new Response("ok"))
+      }) as unknown as typeof fetch,
+    })
+
+    const res = await app.request("http://relay.test/workspaces/ws_1/api/wr/health", {
+      headers: {
+        authorization: `Bearer ${await mintRuntimeAccessToken({
+          principalKind: "user",
+          actorId: "actor_1",
+          actorKind: "human",
+          orgId: "org_1",
+          workspaceId: "ws_1",
+          hostId: "host_1",
+          role: "editor",
+        }, runtime.privateKey, "EdDSA")}`,
+      },
+    })
+
+    expect(res.status).toBe(403)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "relay_target_unavailable",
+        message: "Workspace relay target is unavailable",
+      },
+    })
+    expect(fetched).toBe(false)
   })
 
   describe("/.well-known/jwks.json", () => {
@@ -2159,6 +2375,69 @@ describe("parseWorkspaceRelayTarget", () => {
   test("refuses a backing that names no placement", () => {
     expect(parseWorkspaceRelayTarget({ ...row, backing: "user-hosted" })).toBeUndefined()
     expect(parseWorkspaceRelayTarget(row)).toBeUndefined()
+  })
+
+  test("refuses a cloud-vm baseUrl that is not HTTPS or loopback HTTP", () => {
+    // The relay fetches this URL with the Relay Host Token attached; any
+    // other scheme or a plaintext remote destination would carry it away.
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "ftp://host.example.test" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "file:///etc/passwd" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "ws://host.example.test" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "not a url" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "http://internal.example.test" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl: "http://169.254.169.254" })).toBeUndefined()
+  })
+
+  test("admits HTTPS and loopback HTTP cloud-vm baseUrls", () => {
+    for (const baseUrl of [
+      "https://host.example.test",
+      "http://127.0.0.1:8787",
+      "http://localhost:8787",
+      "http://[::1]:8787",
+      // WHATWG parsing canonicalises every 127.0.0.0/8 spelling before the check.
+      "http://0x7f.1:8787",
+    ]) {
+      expect(parseWorkspaceRelayTarget({ ...row, backing: "cloud-vm", baseUrl })).toMatchObject({ baseUrl })
+    }
+  })
+
+  test("admits the local-worktree wire value but refuses other schemes", () => {
+    // The tunnel adapters never fetch a local-worktree baseUrl — the control
+    // plane sends "" — but embedded forwarders do, so only the placeholder
+    // or a well-formed HTTP(S) URL may pass.
+    expect(parseWorkspaceRelayTarget({ ...row, baseUrl: "", backing: "local-worktree" })).toEqual({
+      ...row,
+      baseUrl: "",
+      backing: "local-worktree",
+    })
+    expect(parseWorkspaceRelayTarget({ ...row, baseUrl: "http://127.0.0.1:4000", backing: "local-worktree" })).toBeTruthy()
+    expect(parseWorkspaceRelayTarget({ ...row, baseUrl: "ftp://host.example.test", backing: "local-worktree" })).toBeUndefined()
+    expect(parseWorkspaceRelayTarget({ ...row, baseUrl: "javascript:alert(1)", backing: "local-worktree" })).toBeUndefined()
+  })
+})
+
+describe("workspaceRelayTargetUrl", () => {
+  const target = {
+    workspaceId: "ws_1",
+    hostId: "host_1",
+    baseUrl: "https://host.example.test/base",
+    backing: "cloud-vm" as const,
+  }
+
+  test("joins request paths under the target's base path", () => {
+    expect(workspaceRelayTargetUrl(target, "/api/wr/health", "?v=1").href)
+      .toBe("https://host.example.test/base/api/wr/health?v=1")
+  })
+
+  test("keeps a path carrying a scheme or authority on the target origin", () => {
+    // `new URL(path, base)` would resolve "http:evil.example/x" absolute and
+    // send the fetch — Relay Host Token included — to that origin.
+    for (const path of ["/http:evil.example/x", "//evil.example/x", "/https:evil.example/x"]) {
+      const url = workspaceRelayTargetUrl(target, path, "")
+      expect(url.origin).toBe("https://host.example.test")
+    }
+    expect(workspaceRelayTargetUrl(target, "/http:evil.example/x", "").pathname)
+      .toBe("/base/http:evil.example/x")
   })
 })
 

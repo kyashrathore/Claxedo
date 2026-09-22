@@ -135,7 +135,7 @@ describe("workspace diff client relay transport", () => {
     expect(await client.targets("/workspace")).toEqual({ defaultRef: "origin/dev", candidates: ["origin/dev"] })
 
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
-      "GET http://server.test/api/workspace/ws_1/connection",
+      "POST http://server.test/api/workspace/ws_1/connection",
       "GET https://relay.example.test/workspaces/ws_1/api/wr/diff/vcs?mode=uncommitted&content=summary",
       "GET https://relay.example.test/workspaces/ws_1/api/wr/diff/vcs/file?mode=uncommitted&file=README.md",
       "GET https://relay.example.test/workspaces/ws_1/api/wr/diff/refs",

@@ -38,7 +38,7 @@ export type GlobalBootstrapSdk = {
 }
 
 export type DirectoryBootstrapSdk = {
-  project: { current(): DataResponse<Project> }
+  project: { ensure(): DataResponse<Project> }
   path: { get(): DataResponse<Path> }
   command: { list(): DataResponse<AgentCommand[]> }
   vcs: { get(): DataResponse<WorkspaceVcsInfo> }
@@ -403,8 +403,9 @@ export async function bootstrapDirectory(input: {
           })),
         ).then(async () => {
           // `projectCurrentQuery` is the request that registers this workspace
-          // in the claxedo store, so until it resolves the catalog seeded by
-          // global bootstrap can legitimately be missing it (see
+          // in the claxedo store (its queryFn POSTs `/project/current`), so
+          // until it resolves, the catalog seeded by global bootstrap can
+          // legitimately be missing it (see
           // `projectCatalogMissingWorkspace`). The catalog is cached with a
           // five-minute `staleTime` and nothing else refetches it, so without
           // this the rail stays on the engine-shaped payload — worktree

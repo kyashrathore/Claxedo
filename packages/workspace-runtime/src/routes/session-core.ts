@@ -80,7 +80,7 @@ import {
   sessionCreateGroup,
 } from "../session-config"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT, type ChildSessionHost } from "./session-children"
-import type { SessionDeliveryOwner, QueuedPromptAction } from "../session/delivery-owner"
+import type { SessionDeliveryOwner, QueuedPromptAction, QueuedPromptRequester } from "../session/delivery-owner"
 import {
   narrowerPermissionLevel,
   permissionCeilingAdmits,
@@ -103,6 +103,7 @@ import {
   type SessionAccessDecision,
   type SessionAccessOperation,
   type SessionAccessPolicy,
+  type SessionTurnGrantDecision,
 } from "../session-access-policy"
 import {
   acquireSessionTurnLease,
@@ -1314,6 +1315,71 @@ async function registerCreatedSession(
   return { kind: "denied", response: sessionAccessDenied(decision) }
 }
 
+type DeferredTurnGrantRequest = { sessionId: string } & (
+  | { intent: "child_completion"; subjectSessionId: string; registrationOperationId?: string }
+  | { intent: "queued_prompt"; turnId: string }
+)
+
+/**
+ * Mints the proof a turn the runtime later starts for itself will present:
+ * a completion wake on `sessionId`, or a queued prompt on it. The plane
+ * proves `agent_turn` for this request's actor now; the turn has no
+ * credential of its own later, and the actor it was recorded under is a claim
+ * the plane refuses as proof.
+ *
+ * Nothing is minted for a loopback request — the machine's own user takes no
+ * lease — or on a policy that mints none, where the turn re-authorizes the
+ * stored origin instead. A mint the plane refuses or that throws is one
+ * outcome: this request could have proven the turn and the turn will not be
+ * able to, so the caller writes nothing durable for it.
+ */
+async function deferredTurnGrant(opts: Opts, c: Ctx, request: DeferredTurnGrantRequest): Promise<{ grant?: string } | { refused: string }> {
+  const policy = opts.sessionAccessPolicy
+  if (sessionRequestProvenance(c) !== "relay-replayed" || !policy?.grantTurn) return {}
+  let decision: SessionTurnGrantDecision
+  try {
+    decision = await policy.grantTurn({
+      ...sessionAccessContext(c),
+      operation: "prompt",
+      ...request,
+      method: c.req.method,
+      path: c.req.path,
+    })
+  } catch (error) {
+    return { refused: errorMessage(error) }
+  }
+  return decision.allowed ? { grant: decision.grant } : { refused: decision.message }
+}
+
+/** A refused mint answers 503 whatever the plane's own status: the create or the queue is what could not be completed. */
+function deferredTurnGrantRefused(code: string, message: string) {
+  return new HTTPException(503, { message, res: Response.json(errorBody(code, message), { status: 503 }) })
+}
+
+/**
+ * What the durable queue records about the requester, the grant included when
+ * the plane mints one for the message id the row is queued under.
+ */
+async function queuedPromptRequester(
+  opts: Opts,
+  c: Ctx,
+  sessionId: string,
+  messageID: string,
+): Promise<QueuedPromptRequester | { refused: Response }> {
+  const access = sessionAccessContext(c)
+  const granted = await deferredTurnGrant(opts, c, { sessionId, intent: "queued_prompt", turnId: messageID })
+  if ("refused" in granted) {
+    return { refused: c.json(errorBody("queued_prompt_grant_refused", `Session ${sessionId} did not grant the queued turn ${messageID}: ${granted.refused}`), 503) }
+  }
+  return {
+    actor: access.actor,
+    author: access.author,
+    authority: access.authority,
+    provenance: sessionRequestProvenance(c),
+    ...(granted.grant ? { grant: granted.grant } : {}),
+  }
+}
+
 async function rollbackCreatedSession(
   opts: Opts,
   c: Ctx,
@@ -1828,7 +1894,23 @@ export function createSessionRoutes(opts: Opts) {
               const harness = requestedHarness ?? config.harness ?? (opts.getSessionConfig
                 ? (await opts.getSessionConfig(c, directory, session.id, adapter)).harness
                 : (await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter))).harness)
+              // Minted before the subagent row exists: the origin is written
+              // once, and a wake with no grant on a plane that mints them is
+              // never admitted, so a refused mint must fail the create.
+              const granted = await deferredTurnGrant(opts, c, {
+                sessionId: body.parentID,
+                intent: "child_completion",
+                subjectSessionId: session.id,
+                ...(operationId ? { registrationOperationId: operationId } : {}),
+              })
+              if ("refused" in granted) {
+                throw deferredTurnGrantRefused(
+                  "child_wake_grant_refused",
+                  `Session ${body.parentID} did not grant a completion wake for ${session.id}: ${granted.refused}`,
+                )
+              }
               const origin = sessionTurnOrigin(c)
+              const wakeOrigin = origin?.provenance === "relay-replayed" && granted.grant ? { ...origin, grant: granted.grant } : origin
               subagentKey = (await children.admitCreated({
                 parentSessionId: body.parentID,
                 childSessionId: session.id,
@@ -1836,7 +1918,7 @@ export function createSessionRoutes(opts: Opts) {
                 harness: harness.id,
                 ...(body.role ? { role: body.role } : {}),
                 ...(body.title ? { title: body.title } : {}),
-                ...(origin ? { origin } : {}),
+                ...(wakeOrigin ? { origin: wakeOrigin } : {}),
               })).subagentKey
             }
           } catch (error) {
@@ -2145,7 +2227,9 @@ export function createSessionRoutes(opts: Opts) {
       if (body.delivery) {
         if (!runtime || !opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
         body.messageID ??= `msg_${randomUUID()}`
-        const submission = { sessionId: id, body, actor: access.actor, author: access.author, authority: access.authority, provenance: sessionRequestProvenance(c) }
+        const requester = await queuedPromptRequester(opts, c, id, body.messageID)
+        if ("refused" in requester) return requester.refused
+        const submission = { sessionId: id, body, ...requester }
         if (body.delivery === "queue") {
           opts.queuedPrompts.queue(submission)
           return c.json({ delivery: "queue", messageID: body.messageID }, 202)
@@ -2615,7 +2699,9 @@ export function createSessionRoutes(opts: Opts) {
         const access = sessionAccessContext(c)
         if (body.delivery) {
           if (!opts.queuedPrompts) return c.json({ error: "Queued delivery requires a durable runtime owner" }, 409)
-          const submission = { sessionId: id, body, actor: access.actor, author: access.author, authority: access.authority, provenance: sessionRequestProvenance(c) }
+          const requester = await queuedPromptRequester(opts, c, id, body.messageID)
+          if ("refused" in requester) return requester.refused
+          const submission = { sessionId: id, body, ...requester }
           if (body.delivery === "queue") {
             try { opts.queuedPrompts.queue(submission) }
             catch (error) { return c.json({ error: streamTurnErrorMessage(error) }, 503) }

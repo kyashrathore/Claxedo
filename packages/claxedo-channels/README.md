@@ -40,7 +40,7 @@ calling the shared channel core.
 | `createChannelsIngress`, `ChannelWebhookBot`, `ChannelWebhookHandler` | Hono ingress mounting for configured channel webhooks. |
 | `createChannelRegistry`, `ChannelRegistration`, `ChannelTransportKind` | Environment-driven channel registration. |
 | `createChatSdkBot`, `createChatSdkChannelBot` | Chat SDK bot wiring. |
-| `chatSdkApprovalDecision` | Chat SDK action payload to approval decision conversion. |
+| `chatSdkApprovalPress`, `APPROVAL_ACTION_ID` | Chat SDK `ActionEvent` to approval decision conversion; the exact action id decides the verdict and `value` carries the token verbatim. |
 | `channelRetryDelayMs`, `RetryAfterMs` | Retry/backpressure helper. |
 | `createChatSdkBridge`, `chatSdkEnvelope`, `ChatSdkBot`, `ChatSdkBridgeThread`, `ChatSdkMessage` | Chat SDK bridge helpers. |
 | `createChatSdkRenderer`, `ChatSdkMessageHandle`, `ChatSdkThread` | Chat SDK reply rendering. |
@@ -81,8 +81,9 @@ policy should provide a durable `ApprovalBridge`.
 There are exactly two paths, and neither parses prose for keywords:
 
 1. **Button press.** Channels with interactive cards render Approve/Deny
-   buttons carrying the token. The press arrives via `chatSdkApprovalDecision`
-   as a structured `approval_reply` — nothing is interpreted. If the card fails
+   buttons carrying the token. The press arrives via `chatSdkApprovalPress` —
+   an exact `actionId` match decides the verdict and the button `value` is the
+   token verbatim, so nothing is interpreted. If the card fails
    to post, it retries and then throws; it does **not** degrade to a text
    prompt, because that would silently reintroduce the parsed-text path.
 2. **Judge.** Supply a `judge` to `createChannelCore` and a free-text reply

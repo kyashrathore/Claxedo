@@ -243,7 +243,8 @@ function hostedCluster() {
       lane: new WakeLane({ storage }, {}, {
         now: () => clock.t,
         reportError: ((error: unknown) => void reported.push(error)) as never,
-        createWakes: (_env, inDoDriver) => createWakes({ store, sinks, driver: inDoDriver, now: () => clock.t }),
+        createWakes: (_env, inDoDriver) =>
+          createWakes({ store, sinks, authorize: () => false, driver: inDoDriver, now: () => clock.t }),
       }),
     }
     objects.set(name, made)
@@ -260,6 +261,7 @@ function hostedCluster() {
   const worker = createWakes({
     store,
     sinks,
+    authorize: () => false,
     now: () => clock.t,
     driver: { nudge: (hint) => void inFlight.push(dispatchWakeLaneNudge(namespace, hint)) },
   })

@@ -37,9 +37,11 @@ export function own<V>(record: Record<string, V>, key: string): V | undefined {
 
 /** The record with its oldest entries dropped until at most `max` remain. */
 export function boundKeyedRecord<V>(record: Record<string, V>, max: number): Record<string, V> {
-  const keys = Object.keys(record)
-  if (keys.length <= max) return record
-  return Object.fromEntries(keys.slice(keys.length - max).map((key) => [key, record[key]]))
+  const entries = Object.entries(record)
+  if (entries.length <= max) return record
+  const bounded: Record<string, V> = {}
+  for (const [key, value] of entries.slice(entries.length - max)) bounded[key] = value
+  return bounded
 }
 
 /** Evicts the oldest entries until `list` holds at most `max`. */

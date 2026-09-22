@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto"
 import type {
+  RuntimeDiagnostic,
   SubagentMode,
   SubagentStatus,
   SubagentToolCallRole,
@@ -92,6 +93,39 @@ export function createSubagentAdmissionBoundary(input: {
  * would parent whichever session that text named. Thrown rather than
  * returned because every `admit` result is persisted by the durable stores.
  */
+/**
+ * Admits through the boundary, or publishes why a claxedo tool edge was set
+ * aside. Tool output naming a child row the host never minted is not a fault
+ * of the turn: the diagnostic takes the binding's place and the turn goes on.
+ */
+export async function admitSubagentObservation(
+  boundary: SubagentAdmissionBoundary,
+  publishDiagnostic: (event: { type: "diagnostic"; diagnostic: RuntimeDiagnostic }) => Promise<void> | void,
+  ...args: Parameters<SubagentAdmissionBoundary["admit"]>
+): Promise<SubagentUpdatedEvent | undefined> {
+  try {
+    return await boundary.admit(...args)
+  } catch (error) {
+    if (!(error instanceof UnknownHostSubagentKeyError)) throw error
+    const observation = args[1]
+    await publishDiagnostic({
+      type: "diagnostic",
+      diagnostic: {
+        code: "subagent-binding-unknown",
+        message: error.message,
+        severity: "warn",
+        source: "subagent-admission",
+        details: {
+          observationId: error.observationId,
+          ...(error.subagentKey ? { subagentKey: error.subagentKey } : {}),
+          ...(observation.toolCallId ? { toolCallId: observation.toolCallId } : {}),
+        },
+      },
+    })
+    return undefined
+  }
+}
+
 export class UnknownHostSubagentKeyError extends Error {
   constructor(
     readonly parentSessionId: string,

@@ -4,8 +4,11 @@ import type {
   Actor,
   Authorize,
   Budgets,
+  CancelCaller,
+  CancelOutcome,
   ComputeNextRun,
   Json,
+  ListedWake,
   ResolveOutcome,
   SessionId,
   SpawnTurn,
@@ -38,7 +41,12 @@ export interface CreateWakesOptions {
    * exactly the polled `runDue()` loop.
    */
   driver?: WakeDriver
-  authorize?: Authorize
+  /**
+   * The approval-resolution policy. Required so a host states it deliberately
+   * rather than silently allowing every resolver — pass `() => false` when
+   * this deployment never resolves approvals.
+   */
+  authorize: Authorize
   budgets?: Budgets
   /** Injectable clock (epoch ms). Default `Date.now`. */
   now?: () => number
@@ -113,7 +121,13 @@ export interface Wakes {
     token: Token
     wakeId: WakeId
   }>
-  cancel(wakeIdOrToken: string): Promise<void>
+  /**
+   * Cancel a pending wake by id or approval token. Possession alone is never
+   * sufficient: `caller.sessionId` must be the wake's own session, or
+   * `caller.actor` must pass the workspace `authorize` policy. Losing the
+   * `pending` CAS to a concurrent fire reports `not_pending`.
+   */
+  cancel(wakeIdOrToken: string, caller: CancelCaller): Promise<CancelOutcome>
   resolve(token: Token, answer: string, resolver: Actor): Promise<ResolveOutcome>
   /**
    * Fire pending `on_event` watches for the addressed workspace. Tenant
@@ -137,8 +151,16 @@ export interface Wakes {
   runDue(serialKey?: string | null): Promise<{ fired: number; nextAt?: number }>
   /** Boot sweep: re-drive `firing` rows whose leases have already lapsed. */
   recover(): Promise<{ recovered: number }>
+  /**
+   * Run `fn` at most once per (sessionId, effectKey): the receipt is claimed
+   * atomically before the effect runs, so racing callers converge on one
+   * producer — losers wait out the claim and then share the recorded result.
+   * A claim lapses with `leaseMs`, so a producer that crashed mid-effect frees
+   * the key for a retry instead of wedging it.
+   */
   once<T>(sessionId: SessionId, effectKey: string, fn: () => Promise<T> | T): Promise<T>
-  listForSession(sessionId: SessionId): Promise<Wake[]>
+  /** Session-scoped list view. Approval tokens are always redacted. */
+  listForSession(sessionId: SessionId): Promise<ListedWake[]>
   gc(olderThanMs: number): Promise<number>
 }
 
@@ -155,8 +177,11 @@ function resolveExpiry(input: Pick<CommonCreate, "expiresAt" | "expiresIn">, now
 
 export function createWakes(opts: CreateWakesOptions): Wakes {
   const { store, spawnTurn, computeNextRun, driver } = opts
-  const authorize = opts.authorize ?? (() => true)
   const now = opts.now ?? Date.now
+  const authorize = opts.authorize
+  if (typeof authorize !== "function") {
+    throw new Error("createWakes requires an explicit authorize policy (use () => false to disable approvals)")
+  }
   const limits = resolveBudgets(opts.budgets)
   const leaseMs = opts.leaseMs ?? 30_000
   const batchLimit = opts.batchLimit ?? 100
@@ -236,6 +261,15 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
     fields: Partial<Wake> & { workspaceId: WorkspaceId; triggerType: Wake["triggerType"] },
     o?: { skipBudget?: boolean },
   ): Promise<{ wakeId: WakeId }> {
+    // The single funnel every create path (and the recurring re-insert) flows
+    // through: a nonfinite time must die here, before the budget read would
+    // quietly admit it (NaN comparisons are all false).
+    for (const field of ["fireAt", "expiresAt"] as const) {
+      const value = fields[field]
+      if (value != null && !Number.isFinite(value)) {
+        throw new Error(`wake ${field} must be a finite epoch-ms time, got ${value}`)
+      }
+    }
     const t = now()
     if (!o?.skipBudget) {
       await enforceBudgets(store, limits, {
@@ -365,10 +399,16 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
       return { token: (await store.get(wakeId))!.token!, wakeId }
     },
 
-    async cancel(wakeIdOrToken) {
+    async cancel(wakeIdOrToken, caller) {
       const wake = (await store.get(wakeIdOrToken)) ?? (await store.getByToken(wakeIdOrToken))
+      if (!wake) return { ok: false, reason: "not_found" }
+      const ownsSession = caller.sessionId != null && wake.sessionId === caller.sessionId
+      const allowed =
+        ownsSession || (caller.actor !== undefined && (await authorize(caller.actor, wake.workspaceId)))
+      if (!allowed) return { ok: false, reason: "unauthorized" }
       const cancelledAt = now()
-      if (wake) await store.cas(wake.id, "pending", "cancelled", cancelledAt, { firedAt: cancelledAt })
+      const applied = await store.cas(wake.id, "pending", "cancelled", cancelledAt, { firedAt: cancelledAt })
+      return applied ? { ok: true } : { ok: false, reason: "not_pending" }
     },
 
     async resolve(token, answer, resolver) {
@@ -447,15 +487,26 @@ export function createWakes(opts: CreateWakesOptions): Wakes {
 
     async once(sessionId, effectKey, fn) {
       const key = `${sessionId}::${effectKey}`
-      const cached = await store.getReceipt(key)
-      if (cached !== null) return JSON.parse(cached)
-      const result = await fn()
-      await store.putReceipt(key, JSON.stringify(result ?? null))
-      return result
+      let waitMs = 25
+      for (;;) {
+        const claim = await store.claimReceipt(key, now(), leaseMs)
+        if (claim.status === "claimed") {
+          const result = await fn()
+          await store.completeReceipt(key, claim.claimedAtMs, JSON.stringify(result ?? null))
+          return result
+        }
+        if (claim.status === "completed") return JSON.parse(claim.resultJson)
+        // A live claim is in flight: its holder either records the shared
+        // result or crashes and lets the lease lapse, freeing the key here.
+        await new Promise((resolve) => setTimeout(resolve, waitMs))
+        waitMs = Math.min(waitMs * 2, 1_000)
+      }
     },
 
     async listForSession(sessionId) {
-      return store.listForSession(sessionId)
+      // The token resolves the wake — the list view must not hand out a
+      // resolve capability to every reader of the session's wake list.
+      return (await store.listForSession(sessionId)).map((wake) => ({ ...wake, token: null }))
     },
 
     async gc(olderThanMs) {

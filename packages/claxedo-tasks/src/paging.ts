@@ -1,3 +1,4 @@
+import { utf8ByteLength } from "@claxedo/helpers/string"
 import { TASKS_BOUNDS, type ListQuery, type Page } from "./contracts"
 
 /**
@@ -16,6 +17,7 @@ export function encodePageCursor(key: PageKey): string {
 
 /** Undefined for a value this module did not write, which pages from the start rather than refusing. */
 export function decodePageCursor(value: string): PageKey | undefined {
+  if (utf8ByteLength(value) > TASKS_BOUNDS.cursorMaxBytes) return undefined
   const separator = value.indexOf(":")
   if (separator <= 0) return undefined
   const createdAt = Number(value.slice(0, separator))

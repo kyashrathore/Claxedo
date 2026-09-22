@@ -174,6 +174,8 @@ describe("local project routes on a signed server", () => {
     clone: fakeClone,
     authority: owners.authority,
     authorizeLocalDirectoryImport: operatorOnly(["usr_1"]),
+    // No real DNS in tests: clone admission resolves through this stub.
+    resolveRepoAddresses: async () => ["140.82.112.3"],
   }
   const claiming = async (auth: SignedControlPlaneAuth, workspace: { projectId: string }) => {
     owners.claim(workspace.projectId, auth.user.subject)
@@ -249,6 +251,53 @@ describe("local project routes on a signed server", () => {
     expect(clones[1]).toEqual({ repoUrl: "https://gitlab.com/acme/public", options: {} })
   })
 
+  test("a signed caller cannot clone into the server's own addresses", async () => {
+    // S-12: remotely driven, `git clone` is a network reachability oracle into
+    // whatever this server can dial. Private and loopback spellings, and names
+    // whose DNS answers are private or absent, are refused before git runs.
+    const clone = vi.fn(fakeClone)
+    const resolveRepoAddresses = vi.fn(async (hostname: string) =>
+      hostname === "private.internal" ? ["10.0.0.5"] : hostname === "nowhere.internal" ? [] : ["140.82.112.3"])
+    const app = LocalProjectRoutes(options, { ...signedDeps, clone, resolveRepoAddresses, registerWorkspace: claiming })
+
+    for (const repoUrl of [
+      "http://169.254.169.254/latest/meta-data",
+      "https://10.0.0.5/acme/repo.git",
+      "http://127.0.0.1:8080/acme/repo.git",
+      "http://localhost:8080/acme/repo.git",
+      "ssh://git@[::1]/acme/repo.git",
+      "git@192.168.1.10:acme/repo.git",
+      "https://private.internal/acme/repo.git",
+      "https://nowhere.internal/acme/repo.git",
+    ]) {
+      const res = await app.request("http://localhost/", post({ name: `Refused ${repoUrl}`, source: { kind: "repository", repoUrl } }, bearer))
+      expect(res.status, repoUrl).toBe(400)
+      expect(await res.json()).toMatchObject({ error: { code: "project_repository_refused" } })
+    }
+    expect(clone).not.toHaveBeenCalled()
+    expect(resolveRepoAddresses).toHaveBeenCalledWith("private.internal")
+  })
+
+  test("a signed caller may clone a private host the operator explicitly approved", async () => {
+    const clone = vi.fn(fakeClone)
+    const resolveRepoAddresses = vi.fn(async () => ["10.0.0.5"])
+    const app = LocalProjectRoutes(options, {
+      ...signedDeps,
+      clone,
+      resolveRepoAddresses,
+      privateRepoHosts: ["git.corp.internal"],
+      registerWorkspace: claiming,
+    })
+    const approved = await app.request("http://localhost/", post({
+      name: "Corp Clone",
+      source: { kind: "repository", repoUrl: "https://git.corp.internal/acme/repo.git" },
+    }, bearer))
+    expect(approved.status).toBe(201)
+    expect(clone).toHaveBeenCalledTimes(1)
+    // Approval is an exact-name policy, not a lookup.
+    expect(resolveRepoAddresses).not.toHaveBeenCalled()
+  })
+
   test("the unsigned local product never registers", async () => {
     const registerWorkspace = vi.fn(async () => undefined)
     const app = LocalProjectRoutes({}, { clone: fakeClone, registerWorkspace })
@@ -286,6 +335,7 @@ describe("project authorization between two unrelated signed accounts", () => {
     clone: fakeClone,
     authority: owners.authority,
     authorizeLocalDirectoryImport: operatorOnly(["usr_operator"]),
+    resolveRepoAddresses: async () => ["140.82.112.3"],
     registerWorkspace: async (auth, workspace) => {
       owners.claim(workspace.projectId, auth.user.subject)
     },

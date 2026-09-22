@@ -84,6 +84,16 @@ describe("SdkRuntimeAdapter", () => {
     })
     try {
       await adapter.createSession(directory, "parent", "parent")
+      // The host mints every claxedo row before create_subagent answers; a
+      // tool edge for a row the host never created is not a binding.
+      await store.admit!({
+        parentSessionId: "parent",
+        observation: {
+          observationId: "host:create:child", subagentKey: "host-child", mode: "background", status: "pending",
+          label: "claude subagent", providerKind: "claxedo", providerId: "child", childSessionId: "child", transcript: { kind: "live" },
+        },
+        allocateKey: () => "host-child",
+      })
       store.bindSession({ sessionId: "child", parentSessionId: "parent", directory, agentSessionId: "claude-child-thread" })
       store.updateSessionConfig("child", childConfig)
       for await (const _event of executeTestTurn(adapter, "parent", {

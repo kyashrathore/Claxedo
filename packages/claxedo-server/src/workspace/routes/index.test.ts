@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { Hono } from "hono"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
@@ -147,6 +148,7 @@ configureWorkspaceSupervisorPort({
   markUse() {},
   touch() {},
   async broadcastRuntimeConfig() {},
+  async reconcileCredentialDelivery() {},
 })
 
 vi.mock("../../workspace/supervisor", () => ({
@@ -178,6 +180,7 @@ const { SqliteProjectConflictError } = await import("@claxedo/server-core/author
 // This deployment's own operator policy, not a second copy of it.
 const { selfHostedOperatorAuthorizer } = await import("../../deployments/self-hosted-node/operator")
 const { WorkspaceRoutes } = await import("./index")
+const { hostAssignmentHandlers } = await import("../host-assignment-handlers")
 const { createFixedWindowConnectionRateLimiter } = await import("../../platform/auth/rate-limit")
 
 const acceptedSandboxProbe = (async () =>
@@ -310,7 +313,7 @@ function services(): ControlPlaneServices {
 }
 
 function readySandboxManager(hostId = "ws_1") {
-  const ensure = vi.fn(async (workspaceId: string) => ({
+  const ready = (workspaceId: string) => ({
     status: "ready" as const,
     workspaceId,
     sandboxId: hostId,
@@ -318,10 +321,13 @@ function readySandboxManager(hostId = "ws_1") {
     hostId,
     epoch: 1,
     homeRegion: "us-east" as const,
-  }))
+  })
+  const ensure = vi.fn(async (workspaceId: string) => ready(workspaceId))
+  const target = vi.fn(async (workspaceId: string) => ready(workspaceId))
   return {
-    manager: { ensure } as never,
+    manager: { ensure, target } as never,
     ensure,
+    target,
   }
 }
 
@@ -592,11 +598,13 @@ describe("workspace routes signed control plane authority", () => {
     })
     const app = WorkspaceRoutes(services(), { authConfig, verifier })
 
-    const res = await app.request("http://remote.attacker.example/resolve?workspaceId=ws_victim")
+    for (const method of ["GET", "POST"]) {
+      const res = await app.request("http://remote.attacker.example/resolve?workspaceId=ws_victim", { method })
 
-    expect(res.status).toBe(401)
-    // The row must not be materialized by an unauthenticated caller either
-    // (create=true side effect).
+      expect(res.status).toBe(401)
+    }
+    // The row must not be materialized by an unauthenticated caller on either
+    // verb — POST is the ensure form.
     expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
   })
 
@@ -1381,27 +1389,30 @@ describe("workspace routes signed control plane authority", () => {
   test("signed directory resolve cannot create a local alias when authority has no match", async () => {
     const svc = services()
     svc.authority!.listWorkspaces = vi.fn(async () => [])
-    mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
+    mocks.resolveWorkspace.mockResolvedValue(undefined)
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
-    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fmissing&create=true", {
-      headers: { Authorization: "Bearer user_1" },
-    })
+    for (const method of ["GET", "POST"]) {
+      const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fmissing&create=true", {
+        method,
+        headers: { Authorization: "Bearer user_1" },
+      })
 
-    expect(res.status).toBe(404)
-    await expect(res.json()).resolves.toEqual({
-      error: { code: "workspace_not_found", message: "Workspace not found" },
-    })
-    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
-      workspaceId: undefined,
-      directory: "/workspace/missing",
-      create: false,
-    })
+      expect(res.status).toBe(404)
+      await expect(res.json()).resolves.toEqual({
+        error: { code: "workspace_not_found", message: "Workspace not found" },
+      })
+      expect(mocks.resolveWorkspace).toHaveBeenLastCalledWith({
+        workspaceId: undefined,
+        directory: "/workspace/missing",
+        create: false,
+      })
+    }
     expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
   })
 
-  test("unsigned directory resolve preserves local create semantics", async () => {
-    mocks.resolveWorkspace.mockImplementationOnce(async (input: { directory?: string; create?: boolean }) =>
+  test("unsigned directory resolve creates only through the POST verb", async () => {
+    mocks.resolveWorkspace.mockImplementation(async (input: { directory?: string; create?: boolean }) =>
       input.create
         ? {
             id: "ws_local_created",
@@ -1417,7 +1428,21 @@ describe("workspace routes signed control plane authority", () => {
       authConfig: { enabled: false, mode: "local-only", reason: "local" },
     })
 
-    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fcreated&create=true")
+    // Repeated reads — with or without the retired `create=true` — leave the
+    // store untouched.
+    for (const suffix of ["", "&create=true"]) {
+      const read = await app.request(`http://localhost/resolve?directory=%2Fworkspace%2Fcreated${suffix}`)
+      expect(read.status).toBe(404)
+      expect(mocks.resolveWorkspace).toHaveBeenLastCalledWith({
+        workspaceId: undefined,
+        directory: "/workspace/created",
+        create: false,
+      })
+    }
+
+    const res = await app.request("http://localhost/resolve?directory=%2Fworkspace%2Fcreated", {
+      method: "POST",
+    })
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
@@ -1425,7 +1450,7 @@ describe("workspace routes signed control plane authority", () => {
       directory: "/workspace/created",
       kind: "local",
     })
-    expect(mocks.resolveWorkspace).toHaveBeenCalledWith({
+    expect(mocks.resolveWorkspace).toHaveBeenLastCalledWith({
       workspaceId: undefined,
       directory: "/workspace/created",
       create: true,
@@ -1877,7 +1902,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.listProjects).not.toHaveBeenCalled()
   })
 
-  test("signed cloud connection mints and records a Runtime Access Token lazily", async () => {
+  test("signed cloud connection read mints and records a Runtime Access Token off the running lease", async () => {
     const svc = services()
     const sandbox = readySandboxManager()
     svc.sandbox.sandboxManager = sandbox.manager
@@ -1920,7 +1945,9 @@ describe("workspace routes signed control plane authority", () => {
       { workspaceId: "ws_1" },
     )
     expect(svc.authority?.authorizeWorkspaceOpen).not.toHaveBeenCalled()
-    expect(sandbox.ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
+    // The read resolves the lease row only — a GET can never start compute.
+    expect(sandbox.target).toHaveBeenCalledWith("ws_1")
+    expect(sandbox.ensure).not.toHaveBeenCalled()
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
@@ -1970,9 +1997,11 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
-  test("signed cloud connection uses SandboxManager sandbox target when composed", async () => {
+  test("signed cloud connection read uses the SandboxManager lease target when composed", async () => {
     const svc = services()
-    const ensure = vi.fn(async () => ({
+    // No `ensure` on this fake: a read must resolve the lease row through
+    // `target` and never reach the provisioning call.
+    const target = vi.fn(async () => ({
       status: "ready" as const,
       workspaceId: "ws_1",
       sandboxId: "sandbox_manager",
@@ -1981,7 +2010,7 @@ describe("workspace routes signed control plane authority", () => {
       epoch: 4,
       homeRegion: "us-east" as const,
     }))
-    svc.sandbox.sandboxManager = { ensure } as never
+    svc.sandbox.sandboxManager = { target } as never
     const signer = vi.fn(async () => ({
       runtimeAccessToken: "rat_manager",
       tokenExpiresAt: 123_000,
@@ -2005,7 +2034,7 @@ describe("workspace routes signed control plane authority", () => {
       workspaceId: "ws_1",
       hostId: "host_manager",
     })
-    expect(ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
+    expect(target).toHaveBeenCalledWith("ws_1")
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
       principalKind: "user",
@@ -2032,15 +2061,15 @@ describe("workspace routes signed control plane authority", () => {
     )
   })
 
-  test("signed cloud connection waits when SandboxManager is still provisioning", async () => {
+  test("signed cloud connection read reports a lease already acquiring as provisioning", async () => {
     const svc = services()
-    const ensure = vi.fn(async () => ({
-      status: "provisioning" as const,
+    const target = vi.fn(async () => ({
+      status: "unavailable" as const,
+      reason: "runtime_lease_not_ready",
+      leaseStatus: "acquiring" as const,
       retryAfterMs: 2_000,
-      epoch: 2,
-      homeRegion: "us-east" as const,
     }))
-    svc.sandbox.sandboxManager = { ensure } as never
+    svc.sandbox.sandboxManager = { target } as never
     const signer = vi.fn()
     const app = WorkspaceRoutes(svc, {
       authConfig,
@@ -2063,6 +2092,106 @@ describe("workspace routes signed control plane authority", () => {
     })
     expect(signer).not.toHaveBeenCalled()
     expect(svc.authority?.recordRuntimeAccessToken).not.toHaveBeenCalled()
+  })
+
+  test("signed cloud connection read reports a stopped lease without provisioning it", async () => {
+    const svc = services()
+    const target = vi.fn(async () => ({
+      status: "unavailable" as const,
+      reason: "runtime_lease_not_ready",
+      leaseStatus: "stopped" as const,
+    }))
+    const ensure = vi.fn()
+    svc.sandbox.sandboxManager = { target, ensure } as never
+    const signer = vi.fn()
+    const app = WorkspaceRoutes(svc, {
+      authConfig,
+      verifier,
+      relayUrl: "https://relay.example.test",
+      runtimeAccessTokenSigner: signer,
+    })
+
+    const res = await app.request("http://localhost/ws_1/connection", {
+      headers: {
+        Authorization: "Bearer user_1",
+      },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({
+      status: "stopped",
+      workspaceId: "ws_1",
+    })
+    expect(target).toHaveBeenCalledWith("ws_1")
+    // The read must not start compute: no ensure, no mint.
+    expect(ensure).not.toHaveBeenCalled()
+    expect(signer).not.toHaveBeenCalled()
+    expect(svc.authority?.recordRuntimeAccessToken).not.toHaveBeenCalled()
+  })
+
+  test("signed cloud connection read reports a workspace with no lease as stopped", async () => {
+    const svc = services()
+    const target = vi.fn(async () => ({
+      status: "unavailable" as const,
+      reason: "runtime_lease_missing",
+    }))
+    const ensure = vi.fn()
+    svc.sandbox.sandboxManager = { target, ensure } as never
+    const app = WorkspaceRoutes(svc, {
+      authConfig,
+      verifier,
+      relayUrl: "https://relay.example.test",
+      runtimeAccessTokenSigner: vi.fn(),
+    })
+
+    const res = await app.request("http://localhost/ws_1/connection", {
+      headers: {
+        Authorization: "Bearer user_1",
+      },
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({
+      status: "stopped",
+      workspaceId: "ws_1",
+    })
+    expect(ensure).not.toHaveBeenCalled()
+  })
+
+  test("the explicit POST connect still provisions the sandbox", async () => {
+    const svc = services()
+    const ensure = vi.fn(async () => ({
+      status: "provisioning" as const,
+      retryAfterMs: 2_000,
+      epoch: 2,
+      homeRegion: "us-east" as const,
+    }))
+    svc.sandbox.sandboxManager = { ensure } as never
+    const signer = vi.fn()
+    const app = WorkspaceRoutes(svc, {
+      authConfig,
+      verifier,
+      relayUrl: "https://relay.example.test",
+      runtimeAccessTokenSigner: signer,
+    })
+
+    const res = await app.request("http://localhost/ws_1/connection", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer user_1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({
+      status: "provisioning",
+      workspaceId: "ws_1",
+      retryAfterMs: 2_000,
+    })
+    expect(ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
+    expect(signer).not.toHaveBeenCalled()
   })
 
   test("signed cloud connection requires bearer auth outside loopback", async () => {
@@ -2108,7 +2237,8 @@ describe("workspace routes signed control plane authority", () => {
       runtimeAccessToken: "local-loopback-ws_1",
       role: "owner",
     })
-    expect(sandbox.ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
+    expect(sandbox.target).toHaveBeenCalledWith("ws_1")
+    expect(sandbox.ensure).not.toHaveBeenCalled()
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(svc.authority?.usersMe).not.toHaveBeenCalled()
     expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
@@ -2117,7 +2247,7 @@ describe("workspace routes signed control plane authority", () => {
 
   test("loopback cloud connection uses SandboxManager host identity when composed", async () => {
     const svc = services()
-    const ensure = vi.fn(async () => ({
+    const target = vi.fn(async () => ({
       status: "ready" as const,
       workspaceId: "ws_1",
       sandboxId: "sandbox_manager",
@@ -2126,7 +2256,7 @@ describe("workspace routes signed control plane authority", () => {
       epoch: 4,
       homeRegion: "us-east" as const,
     }))
-    svc.sandbox.sandboxManager = { ensure } as never
+    svc.sandbox.sandboxManager = { target } as never
     const signer = vi.fn(async () => ({
       runtimeAccessToken: "rat_loopback_manager",
       tokenExpiresAt: 123_000,
@@ -2150,7 +2280,7 @@ describe("workspace routes signed control plane authority", () => {
       runtimeAccessToken: "rat_loopback_manager",
       role: "owner",
     })
-    expect(ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
+    expect(target).toHaveBeenCalledWith("ws_1")
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
       principalKind: "service",
@@ -2232,11 +2362,40 @@ describe("workspace routes signed control plane authority", () => {
       runtimeAccessToken: "local-loopback-ws_1",
       role: "owner",
     })
-    expect(sandbox.ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
+    expect(sandbox.target).toHaveBeenCalledWith("ws_1")
+    expect(sandbox.ensure).not.toHaveBeenCalled()
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(svc.authority?.usersMe).not.toHaveBeenCalled()
     expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
     expect(svc.authority?.recordRuntimeAccessToken).not.toHaveBeenCalled()
+  })
+
+  test("loopback cloud connection read reports a stopped lease without provisioning it", async () => {
+    const svc = services()
+    const target = vi.fn(async () => ({
+      status: "unavailable" as const,
+      reason: "runtime_lease_not_ready",
+      leaseStatus: "stopped" as const,
+    }))
+    const ensure = vi.fn()
+    svc.sandbox.sandboxManager = { target, ensure } as never
+    const app = WorkspaceRoutes(svc, {
+      authConfig,
+      verifier,
+      relayUrl: "http://relay.test",
+    })
+
+    const res = await app.request("http://localhost/ws_1/connection")
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({
+      status: "stopped",
+      workspaceId: "ws_1",
+    })
+    expect(target).toHaveBeenCalledWith("ws_1")
+    expect(ensure).not.toHaveBeenCalled()
+    expect(svc.authority?.usersMe).not.toHaveBeenCalled()
+    expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
   })
 
   test("loopback cloud connection with bearer auth stays on signed control-plane path", async () => {
@@ -2262,7 +2421,8 @@ describe("workspace routes signed control plane authority", () => {
         message: "Runtime Access Token signer is not configured",
       },
     })
-    expect(sandbox.ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
+    expect(sandbox.target).toHaveBeenCalledWith("ws_1")
+    expect(sandbox.ensure).not.toHaveBeenCalled()
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(svc.authority?.usersMe).toHaveBeenCalled()
     expect(svc.authority?.openWorkspace).toHaveBeenCalled()
@@ -3834,4 +3994,122 @@ describe("workspace lifecycle authorization", () => {
   })
 
 
+})
+
+describe("workspace route body bound", () => {
+  const oversized = "x".repeat(17 * 1024)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkspaceStoreMocks()
+  })
+
+  test("an oversized create body is refused before admission or provisioning", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: oversized,
+    })
+
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(svc.authority?.authorizeWorkspaceCreate).not.toHaveBeenCalled()
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+  })
+
+  test("a chunked create body over the cap is refused without a declared length", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < 4; i += 1) controller.enqueue(new TextEncoder().encode("x".repeat(8192)))
+        controller.close()
+      },
+    })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit)
+
+    expect(res.status).toBe(413)
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("an oversized host-assignment body is refused before the share runs", async () => {
+    mocks.resolveWorkspace.mockResolvedValue({
+      id: "ws_local",
+      project_id: "project_1",
+      workspace_name: "Local Main",
+      directory: "/tmp/local",
+      kind: "local",
+      created_at: 1,
+      updated_at: 1,
+    })
+    const svc = services()
+    const assignments = {
+      hostId: vi.fn(async () => "host_machine"),
+      assignWorkspace: vi.fn(async () => ({ assignment: { assigned: true as const, workspace_id: "ws_local", host_id: "host_machine" } })),
+      unassignWorkspace: vi.fn(async () => ({ unassigned: true })),
+    }
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments as never })
+
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: oversized,
+    })
+
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(assignments.assignWorkspace).not.toHaveBeenCalled()
+    expect(svc.authority?.assignWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("the enrolled-host assignment handler keeps its bound mounted without a route cap", async () => {
+    // The handler is mounted by two routers; one mount is the hosted workerd
+    // spike, which composes no request guard, so the bound lives in the
+    // handler and not only in the wiring.
+    const svc = services()
+    const app = new Hono().post(
+      "/:id/host-assignment",
+      hostAssignmentHandlers(svc, { authConfig, verifier }, createFixedWindowConnectionRateLimiter()).assign,
+    )
+
+    const res = await app.request("http://localhost/ws_1/host-assignment", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: oversized,
+    })
+
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(svc.authority?.assignWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("an oversized connection body is refused before the workspace is resolved", async () => {
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+
+    const res = await app.request("http://localhost/ws_1/connection", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: oversized,
+    })
+
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+  })
 })

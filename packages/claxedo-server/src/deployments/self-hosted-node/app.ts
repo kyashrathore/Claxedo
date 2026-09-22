@@ -46,7 +46,7 @@ import { bearerToken } from "@claxedo/helpers/string"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { createConnectionsHost } from "../../connections"
-import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
+import { createConnectionTurnCredentials, type ConnectionTurnCredentials } from "../../connections/turn-credentials"
 import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { DocumentsRoutes } from "@claxedo/server-core/documents/routes/index"
 import { documentGit } from "@claxedo/local-server/self-hosted-execution"
@@ -134,9 +134,12 @@ import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-r
 import {
   SESSION_TURN_AUTHORITY_METHODS,
   SessionTurnConflictError,
+  SessionTurnGrantError,
   SessionTurnLeaseLostError,
   type SessionTurnAuthority,
+  type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import { deferredTurnGrantClaims, mintDeferredTurnGrant, verifyDeferredTurnGrant } from "../../session/deferred-turn-grant"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { relayRole } from "../../workspace/route-support"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
@@ -148,7 +151,7 @@ import {
 } from "@claxedo/server-core/workspace/store/index"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
-import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard } from "./operator"
+import { selfHostedOperatorAuthorizer, selfHostedOperatorGuard, selfHostedPrivateRepoHosts } from "./operator"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
@@ -271,7 +274,10 @@ function selfHostedPrivateSessionAuthority(
  * caller needs no cross-process proof to bind it to (the remote oracle mints
  * a signed lease for exactly that reason).
  */
-export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
+export function embeddedManagedPrivateSessionPolicy(
+  authority: WorkspaceAuthority,
+  turnCredentials?: ConnectionTurnCredentials,
+) {
   const runtimeAuthority = selfHostedRuntimeAuthority(authority)
   const turnAuthority = selfHostedTurnAuthority(authority)
   const principalOf = (input: SessionAuthorityInput) => input.actor.actorKind === "human"
@@ -362,7 +368,10 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
       return denied(error)
     }
   }
-  const turnDenied = (error: unknown) => {
+  const turnDenied = (error: unknown, grantRefused: 401 | 403 = 401) => {
+    if (error instanceof SessionTurnGrantError) {
+      return { allowed: false as const, status: grantRefused, code: error.code, message: error.message }
+    }
     if (error instanceof SessionTurnConflictError) {
       return { allowed: false as const, status: 409 as const, code: error.code, message: error.message }
     }
@@ -380,6 +389,32 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
     workspaceId: input.authority.workspaceId,
     turnId: input.turnId,
   })
+  // The turn's connection credential binds the session's personal partition:
+  // the actor's user-scoped id is the same key `createConnectionsHost` writes
+  // into `owner` for signed callers. A service principal has no user row, and
+  // an actor whose workspace access lapsed between admission and this read
+  // mints a session-bound credential without one rather than failing the turn.
+  const mintTurnCredential = async (input: SessionAuthorityInput, lease: SessionTurnLease) => {
+    if (!turnCredentials) return undefined
+    // The owner column a connections row names is the user's `subject`;
+    // `userId` is that column. An authority that cannot resolve it mints the
+    // turn's session-bound credential without a personal partition.
+    let subject: string | undefined
+    if (input.actor.actorKind === "human") {
+      try {
+        subject = (await authority.resolveRuntimeMachineAccess(input.actor.actorId, input.authority.workspaceId, "viewer")).userId
+      } catch {
+        subject = undefined
+      }
+    }
+    return turnCredentials.mint({
+      sessionId: lease.sessionId,
+      leaseId: lease.leaseId,
+      expiresAt: lease.expiresAt,
+      ...(subject ? { subject } : {}),
+      orgId: input.authority.orgId,
+    })
+  }
   const policy = managedWorkspaceSessionAccessPolicy({
     authority: {
       authorizeSessionStart: async (input) => {
@@ -406,32 +441,38 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
       registerSession: (input) => decide(input, "register"),
       acquireTurn: async (input) => {
         try {
-          return { allowed: true as const, ...await turnAuthority.acquireSessionTurn(turnInput(input)) }
+          const grantId = input.grant === undefined
+            ? undefined
+            : (await verifyDeferredTurnGrant(input.grant, process.env, { sessionId: input.sessionId })).grantId
+          const lease = await turnAuthority.acquireSessionTurn({ ...turnInput(input), ...(grantId === undefined ? {} : { grantId }) })
+          const connectionCredential = await mintTurnCredential(input, lease)
+          return { allowed: true as const, ...lease, ...(connectionCredential ? { connectionCredential } : {}) }
         } catch (error) {
           return turnDenied(error)
         }
       },
       renewTurn: async (input) => {
         try {
-          return {
-            allowed: true as const,
-            ...await turnAuthority.renewSessionTurn({
-              ...turnInput(input),
-              leaseId: input.leaseId,
-              fencingToken: input.fencingToken,
-            }),
-          }
+          const renewed = await turnAuthority.renewSessionTurn({
+            ...turnInput(input),
+            leaseId: input.leaseId,
+            fencingToken: input.fencingToken,
+          })
+          const connectionCredential = turnCredentials?.extendLease(input.leaseId, renewed)
+          return { allowed: true as const, ...renewed, ...(connectionCredential ? { connectionCredential } : {}) }
         } catch (error) {
           return turnDenied(error)
         }
       },
       releaseTurn: async (input) => {
         try {
-          return await turnAuthority.releaseSessionTurn({
+          const released = await turnAuthority.releaseSessionTurn({
             ...turnInput(input),
             leaseId: input.leaseId,
             fencingToken: input.fencingToken,
           })
+          turnCredentials?.revokeLease(input.leaseId)
+          return released
         } catch (error) {
           return turnDenied(error)
         }
@@ -450,6 +491,28 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
         : { allowed: true }
     } catch (error) {
       return denied(error)
+    }
+  }
+  policy.grantTurn = async (input) => {
+    const { actor, authority: workspace } = input
+    if (!actor || !workspace?.managed) {
+      return denied(new ControlPlaneAuthError(403, "workspace_authorization_denied", "Verified workspace actor is required"))
+    }
+    try {
+      const principal = principalOf({ ...input, actor, authority: workspace })
+      const granted = await turnAuthority.grantSessionTurn({
+        ...principal,
+        sessionId: input.sessionId,
+        workspaceId: workspace.workspaceId,
+        intent: input.intent,
+        ...(input.subjectSessionId ? { subjectSessionId: input.subjectSessionId } : {}),
+        ...(input.registrationOperationId ? { registrationOperationId: input.registrationOperationId } : {}),
+        ...(input.turnId ? { turnId: input.turnId } : {}),
+      })
+      const minted = await mintDeferredTurnGrant(deferredTurnGrantClaims(principal, workspace.orgId, granted), process.env)
+      return { allowed: true as const, grant: minted.grant, expiresAt: granted.expiresAt }
+    } catch (error) {
+      return turnDenied(error, 403)
     }
   }
   return policy
@@ -702,6 +765,38 @@ export function localSecurityHeaders(): MiddlewareHandler {
   }
 }
 
+/**
+ * The principal a session's in-process MCP calls act as on a signed node: the
+ * workspace's owner, minted fresh as a Runtime Access Token the dispatch's own
+ * `resolveRelayActor` verifies — no parallel trust, and the token never leaves
+ * the process. Ownerless workspaces and revoked access mint nothing, so the
+ * request keeps failing closed at the dispatcher.
+ */
+async function mcpLocalRuntimeBearer(
+  authority: WorkspaceAuthority,
+  signer: NonNullable<ControlPlaneServices["relay"]["runtimeAccessTokenSigner"]>,
+  workspaceId: string,
+) {
+  const owner = await authority.resolveWorkspaceOwner?.(workspaceId).catch(() => undefined)
+  if (!owner) return undefined
+  const access = await authority.resolveRuntimeMachineAccess(owner.actorId, workspaceId).catch(() => undefined)
+  if (!access) return undefined
+  const host = await localHostIdentity()
+  const minted = await signer({
+    orgId: access.orgId,
+    workspaceId,
+    hostId: host.hostId,
+    principalKind: "user",
+    actorId: access.actorId,
+    actorKind: "human",
+    actorPublicId: access.actorPublicId ?? access.actorId,
+    actorName: access.actorName ?? access.actorId,
+    ...(access.actorAvatarUrl ? { actorAvatarUrl: access.actorAvatarUrl } : {}),
+    role: relayRole(access.role),
+  }).catch(() => undefined)
+  return minted?.runtimeAccessToken
+}
+
 export function createSelfHostedApp(
   services: ControlPlaneServices,
   options: {
@@ -730,6 +825,12 @@ export function createSelfHostedApp(
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
     /** Composition seam for tests/load fixtures; production keeps the default limiter. */
     connectionRateLimiter?: ConnectionRateLimiter
+    /**
+     * The store the connections token routes resolve turn credentials from.
+     * The composition supplies the instance the embedded session policy also
+     * mints into, so a credential admitted with a turn resolves on this app.
+     */
+    connectionTurnCredentials?: ConnectionTurnCredentials
     /** Explicit build/composition contributions; absent in the disabled product. */
     routeContributions?: readonly ControlPlaneRouteContribution[]
     /**
@@ -883,7 +984,7 @@ export function createSelfHostedApp(
         }
       : {}),
   }
-  const turnCredentials = createConnectionTurnCredentials()
+  const turnCredentials = options.connectionTurnCredentials ?? createConnectionTurnCredentials()
   const usageOutbox = options.usageOutbox ?? (options.usageRevisionStore
       ? createUsageOutboxSync({
           local: options.usageRevisionStore,
@@ -1198,6 +1299,7 @@ export function createSelfHostedApp(
     "/api/claxedo/projects",
     LocalProjectRoutes(authRouteOptions(services), {
       authorizeLocalDirectoryImport: authorizeOperator,
+      privateRepoHosts: selfHostedPrivateRepoHosts(),
       ...(projectAuthority ? { authority: projectAuthority } : {}),
       cloneCredential: async (auth, repoUrl) => {
         if (!repoUrl.startsWith("https://github.com/")) return undefined
@@ -1244,6 +1346,7 @@ export function createSelfHostedApp(
   app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
     authority: selfHostedRuntimeAuthority(services.authority),
     turnAuthority: selfHostedTurnAuthority(services.authority),
+    turnCredentials,
   }))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
@@ -1300,6 +1403,20 @@ export function createSelfHostedApp(
         return auth.mode === "signed" && auth.user.orgId
           ? { org_id: auth.user.orgId, user_id: auth.user.subject }
           : undefined
+      },
+      // Unsigned-local callers are the operator only on their own loopback;
+      // signed callers only when the deployment names them. A member's token
+      // is not a machine claim, so their flushes never adopt unowned facts.
+      machineOperator: async (request) => {
+        const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
+        if (auth.mode === "unsigned-local") return isLoopbackLocalRequest(request)
+        try {
+          authorizeOperator(auth)
+          return true
+        } catch (error) {
+          if (error instanceof ControlPlaneAuthError && error.code === "operator_required") return false
+          throw error
+        }
       },
       quota: async ({ request, refresh }) => await readQuota({ org: await requestOrg(request, {}), refresh }),
       history: async ({ since, until, refresh }) => {
@@ -1386,13 +1503,40 @@ export function createSelfHostedApp(
         // This box runs its own workspaces behind the runtime proxy, which
         // picks the workspace from `x-workspace-id`: stamped for a runtime
         // credential, named per call by the client for an account.
-        local: (credential) =>
-          credential.kind === "runtime"
-            ? {
-                fetch: inProcessFetch((call) => app.request(call), { "x-workspace-id": credential.workspaceId }),
-                workspace: { workspaceId: credential.workspaceId },
-              }
-            : { fetch: inProcessFetch((call) => app.request(call)), workspace: {} },
+        local: async (credential, request) => {
+          if (credential.kind === "runtime") {
+            const workspace = { workspaceId: credential.workspaceId }
+            const headers = { "x-workspace-id": credential.workspaceId }
+            // A signed node's dispatcher admits a relay actor only; the hop
+            // carries a token minted for the workspace owner, resolved and
+            // signed per call so ownership changes stop granting immediately.
+            const signer = services.relay.runtimeAccessTokenSigner
+            if (!services.auth.config.enabled || !services.authority || !signer) {
+              return { fetch: inProcessFetch((call) => app.request(call), headers), workspace }
+            }
+            const authority = services.authority
+            return {
+              fetch: inProcessFetch(async (call) => {
+                const bearer = await mcpLocalRuntimeBearer(authority, signer, credential.workspaceId)
+                if (bearer) call.headers.set("authorization", `Bearer ${bearer}`)
+                return app.request(call)
+              }, headers),
+              workspace,
+            }
+          }
+          // An account's in-process calls carry its own bearer: the signed
+          // dispatcher verifies it as the relay actor it resolved at the
+          // outer request, and an unsigned hop stays the unsigned loopback it
+          // always was.
+          const authorization = request.headers.get("authorization")
+          return {
+            fetch: inProcessFetch(
+              (call) => app.request(call),
+              authorization ? { authorization } : {},
+            ),
+            workspace: {},
+          }
+        },
         auditFallback: (record) => Log.create({ service: "claxedo-mcp" }).info("mcp.audit", record),
       })
     : undefined
@@ -1656,9 +1800,13 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     currentFilter: (fact) => usageLocation(fact.location) === "local",
     reconcileProvisionalOnStart: true,
     resolveContext: async ({ sessionId }) => {
-      const [meta, host] = await Promise.all([
+      const [meta, host, owner] = await Promise.all([
         sessionMeta(sessionId),
         localUsageHost,
+        // The session's producing account, recorded by the authority at turn
+        // admission — a fact written without it belongs to the machine, not
+        // to whichever account next asks for a sync.
+        services.authority?.resolveSessionUsageOwner?.({ sessionId }).catch(() => undefined),
       ])
       if (!meta?.sessionRef || !meta.workspaceID) {
         throw new Error(`usage metering requires canonical workspace session metadata for ${sessionId}`)
@@ -1672,6 +1820,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         harness: meteringHarnessId(config.harness),
         ...(config.model?.providerID ? { providerId: config.model.providerID } : {}),
         ...(config.model?.modelID ? { modelId: config.model.modelID } : {}),
+        ...(owner ? { owner } : {}),
       }
     },
     onTerminal: async () => { await usageOutbox.notify() },
@@ -1689,6 +1838,11 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // endpoint at all, and the mount decides which tools it serves, from the
   // same machine-wide activation rows this node's Marketplace writes.
   const builtinToolGroups = localBuiltinToolGroupsReader()
+  // One store, two roles: the embedded session policy mints a connection-turn
+  // credential at authorized turn admission, and the app's connections host
+  // resolves it — so the credential this box issues is the credential this box
+  // reads, and it dies with the lease that admitted it.
+  const connectionTurnCredentials = createConnectionTurnCredentials()
   configureEmbeddedWorkspaceRuntime({
     opencodeRuntime,
     connectionProviders,
@@ -1696,7 +1850,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     // `startServer` binds and every caller reads back as this node's address.
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, enabledToolGroups: builtinToolGroups },
     ...(services.auth.config.enabled && services.authority
-      ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority) }
+      ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority, connectionTurnCredentials) }
       : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
@@ -1774,6 +1928,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
     ...(options.tasksGrants ? { tasksGrants: options.tasksGrants } : {}),
+    connectionTurnCredentials,
     // This box runs the workspaces it serves, so it serves their sessions'
     // first-party MCP itself; the credential a runtime minted is verified by
     // the runtime that minted it.

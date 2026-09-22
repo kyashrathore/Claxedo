@@ -4,6 +4,8 @@ import {
   type SessionAccessPolicyInput,
   type SessionAuthorityInput,
   type SessionReservationDecision,
+  type SessionTurnGrantDecision,
+  type SessionTurnGrantIntent,
   type SessionTurnLeaseDecision,
   type SessionWriteClass,
   sessionAccessRequiresWrite,
@@ -25,6 +27,7 @@ type AuthorityAction =
   | "compensation_begin"
   | "compensation_complete"
   | "turn_acquire"
+  | "turn_grant"
   | "turn_renew"
   | "turn_release"
 type HostAuthorityAction = "host_read" | "host_admin"
@@ -86,7 +89,7 @@ export function remoteWorkspaceSessionAccessPolicy(
     requestOptions?: AuthorityRequestOptions,
   ): Promise<T | AuthorityDenial> => {
     const url = authorityUrl()
-    if (!url || (!input.credential && !requestOptions?.lease && !requestOptions?.leaseId)) {
+    if (!url || (!input.credential && !requestOptions?.lease && !requestOptions?.leaseId && !requestOptions?.grant)) {
       return denied(503, "session_authority_unavailable")
     }
     if (isRegistrationAction(action) && !input.registrationOperationId) {
@@ -143,7 +146,11 @@ export function remoteWorkspaceSessionAccessPolicy(
           ...(lease ? { lease } : {}),
         }),
       registerSession: (input) => request(input, "register", decodeAllowed),
-      acquireTurn: (input) => request(input, "turn_acquire", decodeTurnLease, { turnId: input.turnId }),
+      acquireTurn: (input) =>
+        request(input, "turn_acquire", decodeTurnLease, {
+          turnId: input.turnId,
+          ...(input.grant ? { grant: input.grant } : {}),
+        }),
       renewTurn: (input) =>
         request(input, "turn_renew", decodeTurnLease, {
           turnId: input.turnId,
@@ -194,6 +201,12 @@ export function remoteWorkspaceSessionAccessPolicy(
   }
   policy.reserveSession = (input) =>
     request(input, "reserve", decodeReservation, { parentSessionId: input.parentSessionId })
+  policy.grantTurn = (input) =>
+    request(input, "turn_grant", decodeTurnGrant, {
+      intent: input.intent,
+      ...(input.subjectSessionId ? { subjectSessionId: input.subjectSessionId } : {}),
+      ...(input.turnId ? { turnId: input.turnId } : {}),
+    })
   policy.markRegistrationAmbiguous = (input) =>
     request(input, "registration_ambiguous", decodeAllowed, { reason: input.reason })
   policy.beginRegistrationCompensation = (input) =>
@@ -220,6 +233,10 @@ type AuthorityRequestOptions = {
   turnId?: string
   leaseId?: string
   fencingToken?: number
+  /** Set only by `acquireTurn`: the one action a stored grant may prove. */
+  grant?: string
+  intent?: SessionTurnGrantIntent
+  subjectSessionId?: string
 }
 
 /**
@@ -265,7 +282,17 @@ function decodeTurnLease(
     turnId === undefined || leaseId === undefined || !positiveInteger(fencingToken)
     || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
   ) return denied(503, "session_authority_invalid_response")
-  return { allowed: true, turnId, leaseId, fencingToken, acquiredAt, expiresAt }
+  const connectionCredential = str(body?.connectionCredential)
+  return { allowed: true, turnId, leaseId, fencingToken, acquiredAt, expiresAt, ...(connectionCredential ? { connectionCredential } : {}) }
+}
+
+function decodeTurnGrant(
+  body: Record<string, unknown> | undefined,
+): Exclude<SessionTurnGrantDecision, AuthorityDenial> | AuthorityDenial {
+  const grant = str(body?.grant)
+  const expiresAt = num(body?.expiresAt)
+  if (grant === undefined || expiresAt === undefined) return denied(503, "session_authority_invalid_response")
+  return { allowed: true, grant, expiresAt }
 }
 
 function decodeTurnRelease(body: Record<string, unknown> | undefined): { released: boolean } | AuthorityDenial {
@@ -314,9 +341,17 @@ function authorityRequestBody(
     ...((action === "register" || action === "reserve" || action === "adopt") && input.sessionTitle
       ? { title: input.sessionTitle }
       : {}),
+    ...(action === "turn_grant"
+      ? {
+          intent: requestOptions?.intent,
+          ...(requestOptions?.subjectSessionId ? { subjectSessionId: requestOptions.subjectSessionId } : {}),
+          ...(input.registrationOperationId ? { registrationOperationId: input.registrationOperationId } : {}),
+        }
+      : {}),
     ...(requestOptions?.turnId ? { turnId: requestOptions.turnId } : {}),
     ...(requestOptions?.leaseId ? { leaseId: requestOptions.leaseId } : {}),
     ...(requestOptions?.fencingToken !== undefined ? { fencingToken: requestOptions.fencingToken } : {}),
+    ...(requestOptions?.grant ? { grant: requestOptions.grant } : {}),
   }
 }
 

@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { SignJWT, createLocalJWKSet, decodeProtectedHeader, errors, exportJWK, generateKeyPair, importPKCS8 } from "jose"
+import { SignJWT, createLocalJWKSet, decodeJwt, decodeProtectedHeader, errors, exportJWK, generateKeyPair, importPKCS8 } from "jose"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 import {
+  RUNTIME_ACCESS_TOKEN_ISSUED_AT_FLOOR_SECONDS,
   WorkspaceRelayAuthError,
   relayHostTokenAudience,
   mintHostTunnelToken,
@@ -11,12 +13,22 @@ import {
   verifyHostTunnelToken,
   verifyRelayHostToken,
   verifyRuntimeAccessToken,
+  validateRuntimeAccessTokenClaims,
   deriveRelayHostKid,
   deriveRelayHostPublicKey,
 } from "./auth"
 
 async function keys() {
   return await generateKeyPair("EdDSA", { extractable: true })
+}
+
+function caught(run: () => unknown) {
+  try {
+    run()
+  } catch (error) {
+    return error
+  }
+  throw new Error("expected the call to throw")
 }
 
 const base = {
@@ -198,6 +210,124 @@ describe("workspace relay auth", () => {
     })).rejects.toMatchObject({
       code: "invalid_relay_token",
     } satisfies Partial<WorkspaceRelayAuthError>)
+  })
+
+  test("refuses a Runtime Access Token issued before the provenance floor on both verification paths", async () => {
+    const key = await keys()
+    const token = await new SignJWT({
+      principal_kind: base.principalKind,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
+      org_id: base.orgId,
+      workspace_id: base.workspaceId,
+      host_id: base.hostId,
+      role: base.role,
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(runtimeAccessTokenIssuer)
+      .setAudience(runtimeAccessTokenAudience)
+      .setIssuedAt(RUNTIME_ACCESS_TOKEN_ISSUED_AT_FLOOR_SECONDS - 1)
+      .setExpirationTime("30m")
+      .setJti("pre_floor")
+      .sign(key.privateKey)
+
+    await expect(verifyRuntimeAccessToken(token, key.publicKey, { workspaceId: "ws_1" }))
+      .rejects.toMatchObject({ code: "relay_token_claims_invalid", message: expect.stringContaining("floor") })
+    expect(caught(() => validateRuntimeAccessTokenClaims(decodeJwt(token), { workspaceId: "ws_1" })))
+      .toMatchObject({ code: "relay_token_claims_invalid", message: expect.stringContaining("floor") })
+  })
+
+  const channelIdentity = {
+    channel: "telegram",
+    externalUserId: "123456789",
+    identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION,
+  }
+  const channelClaim = {
+    channel: "telegram",
+    external_user_id: "123456789",
+    identity_version: CURRENT_CHANNEL_IDENTITY_VERSION,
+  }
+
+  test("carries channel provenance at the current identity version through both verification paths", async () => {
+    const key = await keys()
+    const token = await mintRuntimeAccessToken({ ...base, channelIdentity }, key.privateKey, "EdDSA")
+
+    await expect(verifyRuntimeAccessToken(token, key.publicKey, { workspaceId: "ws_1", hostId: "host_1" }))
+      .resolves.toMatchObject({ actor_id: "actor_1", channel_identity: channelClaim })
+    expect(validateRuntimeAccessTokenClaims(decodeJwt(token), { workspaceId: "ws_1" }))
+      .toMatchObject({ channel_identity: channelClaim })
+  })
+
+  test("refuses a channel token whose identity version predates the boundary", async () => {
+    const key = await keys()
+    const token = await mintRuntimeAccessToken({
+      ...base,
+      channelIdentity: { ...channelIdentity, identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION - 1 },
+    }, key.privateKey, "EdDSA")
+
+    await expect(verifyRuntimeAccessToken(token, key.publicKey, { workspaceId: "ws_1" }))
+      .rejects.toMatchObject({ code: "relay_token_claims_invalid", message: expect.stringContaining("identity version") })
+    expect(caught(() => validateRuntimeAccessTokenClaims(decodeJwt(token), { workspaceId: "ws_1" })))
+      .toMatchObject({ code: "relay_token_claims_invalid", message: expect.stringContaining("identity version") })
+  })
+
+  test("refuses a channel provenance claim that is malformed", async () => {
+    const key = await keys()
+    const malformed: unknown[] = [
+      { channel: "telegram", identity_version: CURRENT_CHANNEL_IDENTITY_VERSION },
+      { external_user_id: "123456789", identity_version: CURRENT_CHANNEL_IDENTITY_VERSION },
+      { channel: "telegram", external_user_id: "123456789" },
+      { channel: "telegram", external_user_id: "123456789", identity_version: String(CURRENT_CHANNEL_IDENTITY_VERSION) },
+      { channel: "telegram", external_user_id: "123456789", identity_version: 1.5 },
+      { channel: "telegram", external_user_id: " ", identity_version: CURRENT_CHANNEL_IDENTITY_VERSION },
+      "telegram",
+      null,
+    ]
+    for (const channel_identity of malformed) {
+      const token = await new SignJWT({
+        principal_kind: base.principalKind,
+        actor_id: base.actorId,
+        actor_kind: base.actorKind,
+        org_id: base.orgId,
+        workspace_id: base.workspaceId,
+        host_id: base.hostId,
+        role: base.role,
+        channel_identity,
+      })
+        .setProtectedHeader({ alg: "EdDSA" })
+        .setIssuer(runtimeAccessTokenIssuer)
+        .setAudience(runtimeAccessTokenAudience)
+        .setIssuedAt()
+        .setExpirationTime("30m")
+        .setJti("malformed_channel")
+        .sign(key.privateKey)
+
+      await expect(verifyRuntimeAccessToken(token, key.publicKey, { workspaceId: "ws_1" }))
+        .rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+    }
+  })
+
+  test("a token minted now without channel provenance verifies with no provenance attached", async () => {
+    const key = await keys()
+    const token = await mintRuntimeAccessToken(base, key.privateKey, "EdDSA")
+
+    expect(decodeJwt(token)).not.toHaveProperty("channel_identity")
+    const claims = await verifyRuntimeAccessToken(token, key.publicKey, { workspaceId: "ws_1" })
+    expect(claims).not.toHaveProperty("channel_identity")
+    expect(validateRuntimeAccessTokenClaims(decodeJwt(token), { workspaceId: "ws_1" })).not.toHaveProperty("channel_identity")
+  })
+
+  test("a Relay Host Token minted for a channel actor carries its provenance", async () => {
+    const key = await keys()
+    const token = await mintRelayHostToken({
+      ...base,
+      channelIdentity,
+      backing: "cloud-vm",
+      parentJti: "parent_jti",
+    }, key.privateKey, "EdDSA")
+
+    await expect(verifyRelayHostToken(token, key.publicKey, { workspaceId: "ws_1" }))
+      .resolves.toMatchObject({ parent_jti: "parent_jti", channel_identity: channelClaim })
   })
 
   test("preserves remote JWKS timeouts as verifier unavailability", async () => {

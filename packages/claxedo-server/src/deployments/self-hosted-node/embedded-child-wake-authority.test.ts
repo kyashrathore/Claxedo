@@ -2,12 +2,15 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import type Database from "better-sqlite3"
-import { afterEach, expect, test } from "vitest"
+import { afterAll, afterEach, beforeAll, expect, test } from "vitest"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { RuntimeStore } from "../../../../workspace-runtime/src/store"
 import { SessionRoutes } from "../../../../workspace-runtime/src/routes/session"
+import { deferredTurnGrantClaims, mintDeferredTurnGrant } from "../../session/deferred-turn-grant"
 import { embeddedManagedPrivateSessionPolicy } from "./app"
 
 /**
@@ -15,10 +18,12 @@ import { embeddedManagedPrivateSessionPolicy } from "./app"
  *
  * The wake is a turn on the parent, started by the runtime long after the
  * request that created the child returned, and after a restart with nothing
- * left in memory. What it runs as comes back out of the runtime store, and the
- * authority re-decides it then: a grant revoked in between is what stops the
- * child's text from reaching the parent, and the turn the authority does admit
- * is the producer row the parent's transcript is resolved against.
+ * left in memory. What it runs as comes back out of the runtime store — the
+ * actor and the deferred grant the create minted while that request could
+ * still prove the parent turn — and the authority re-decides it then: a share
+ * revoked in between is what stops the child's text from reaching the parent,
+ * and the turn the authority does admit is the producer row the parent's
+ * transcript is resolved against.
  */
 
 const DIRECTORY = "/workspace"
@@ -27,6 +32,27 @@ const PARENT = "ses_wake_parent"
 const CHILD = "ses_wake_child"
 const REPLY = "msg_child_reply"
 const WAKE_TURN = `msg_wake_${CHILD}_${REPLY}`
+
+const previousKeys = {
+  privateKey: process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
+  publicKey: process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
+}
+
+beforeAll(async () => {
+  const key = await generateKeyPair("EdDSA", { extractable: true })
+  process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = await exportPKCS8(key.privateKey)
+  process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(key.publicKey)
+})
+
+afterAll(() => {
+  for (const [name, value] of [
+    ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", previousKeys.privateKey],
+    ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM", previousKeys.publicKey],
+  ] as const) {
+    if (value === undefined) delete process.env[name]
+    else process.env[name] = value
+  }
+})
 
 /**
  * Shutdown order is the test's own correctness: a host disposed after its
@@ -81,7 +107,28 @@ async function seed(parentShare: "follow" | "send") {
     operationId: "op_child", sessionId: CHILD, workspaceId: WORKSPACE, kind: "fork", parentSessionId: PARENT,
   })
   await authority.registerRuntimeSession({ ...bobRuntime, operationId: "op_child", sessionId: CHILD, workspaceId: WORKSPACE })
-  return { root, authority, seeded, alice, bob, orgId }
+  return { root, authority, seeded, alice, bob, bobRuntime, orgId }
+}
+
+/**
+ * The grant the create route minted for Bob's child while his request could
+ * still prove `agent_turn` on the parent — the same row and token the embedded
+ * policy's `grantTurn` produces.
+ */
+async function childWakeGrant(
+  authority: Awaited<ReturnType<typeof createSqliteWorkspaceAuthority>>,
+  bobRuntime: PrivateSessionRuntimePrincipal,
+  orgId: string,
+) {
+  const granted = await authority.grantSessionTurn({
+    ...bobRuntime,
+    sessionId: PARENT,
+    workspaceId: WORKSPACE,
+    intent: "child_completion",
+    subjectSessionId: CHILD,
+    registrationOperationId: "op_child",
+  })
+  return (await mintDeferredTurnGrant(deferredTurnGrantClaims(bobRuntime, orgId, granted), process.env)).grant
 }
 
 function member(seeded: () => Database.Database, orgId: string, projectId: string, tokenIdentifier: string) {
@@ -106,9 +153,9 @@ async function setShare(
 /**
  * The runtime store as the create route leaves it: both sessions bound, the
  * child admitted under the parent, finished, its wake pending, and Bob
- * recorded as the identity the wake is to run as.
+ * recorded as the identity the wake is to run as, with the grant it presents.
  */
-function runtimeStore(root: string, origin?: { actorId: string; orgId: string }) {
+function runtimeStore(root: string, origin?: { actorId: string; orgId: string; grant?: string }) {
   const store = new RuntimeStore(path.join(root, "runtime"))
   store.bindSession({ sessionId: PARENT, directory: DIRECTORY, agentSessionId: PARENT })
   store.bindSession({ sessionId: CHILD, directory: DIRECTORY, agentSessionId: CHILD, parentSessionId: PARENT })
@@ -124,6 +171,7 @@ function runtimeStore(root: string, origin?: { actorId: string; orgId: string })
       provenance: "relay-replayed",
       actor: { actorId: origin.actorId, actorKind: "human" },
       authority: { managed: true, workspaceId: WORKSPACE, orgId: origin.orgId, role: "editor" },
+      ...(origin.grant ? { grant: origin.grant } : {}),
     })
   }
   store.close()
@@ -195,11 +243,12 @@ function producers(seeded: () => Database.Database) {
     .all() as Array<{ session_id: string; turn_id: string; actor_id: string; fencing_token: number }>
 }
 
-test("a wake recovered after restart is admitted as the actor that created the child, and its transcript resolves to that actor", async () => {
-  const { root, authority, seeded, alice, bob, orgId } = await seed("send")
-  const storeRoot = runtimeStore(root, { actorId: bob.user.tokenIdentifier, orgId })
+test("a wake recovered after restart redeems the grant its create minted, runs as that actor, and its transcript resolves to that actor", async () => {
+  const { root, authority, seeded, alice, bob, bobRuntime, orgId } = await seed("send")
+  const grant = await childWakeGrant(authority, bobRuntime, orgId)
+  const storeRoot = runtimeStore(root, { actorId: bob.user.tokenIdentifier, orgId, grant })
   const store = reopened(storeRoot)
-  expect(store.subagentOrigin(PARENT, "subagent_wake")).toMatchObject({ actor: { actorId: bob.user.tokenIdentifier } })
+  expect(store.subagentOrigin(PARENT, "subagent_wake")).toMatchObject({ actor: { actorId: bob.user.tokenIdentifier }, grant })
   const { host, prompts } = restartedHost(store, authority)
 
   await wake(host)
@@ -207,6 +256,7 @@ test("a wake recovered after restart is admitted as the actor that created the c
   expect(prompts).toEqual([{ sessionId: PARENT, messageId: WAKE_TURN }])
   const admitted = producers(seeded)
   expect(admitted).toMatchObject([{ session_id: PARENT, turn_id: WAKE_TURN, actor_id: bob.user.tokenIdentifier }])
+  expect(seeded().prepare(`SELECT redeemed_turn_id FROM session_turn_grants`).all()).toEqual([{ redeemed_turn_id: WAKE_TURN }])
   expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "delivered" }])
 
   // The durable transcript only accepts a user message the authority admitted
@@ -223,11 +273,26 @@ test("a wake recovered after restart is admitted as the actor that created the c
     .toEqual({ author_actor_id: bob.user.tokenIdentifier })
 })
 
-test("a wake whose actor lost the parent grant before it ran is refused, leaving no prompt and no producer", async () => {
-  const { root, authority, seeded, alice, bob, orgId } = await seed("send")
-  const storeRoot = runtimeStore(root, { actorId: bob.user.tokenIdentifier, orgId })
+test("a wake whose actor lost the parent share after the grant was minted is refused, leaving no prompt and no producer", async () => {
+  const { root, authority, seeded, alice, bob, bobRuntime, orgId } = await seed("send")
+  const grant = await childWakeGrant(authority, bobRuntime, orgId)
+  const storeRoot = runtimeStore(root, { actorId: bob.user.tokenIdentifier, orgId, grant })
   await setShare(authority, alice, bob, null)
   const store = reopened(storeRoot)
+  const { host, prompts } = restartedHost(store, authority)
+
+  await wake(host)
+
+  expect(prompts).toEqual([])
+  expect(producers(seeded)).toEqual([])
+  expect(seeded().prepare(`SELECT redeemed_turn_id FROM session_turn_grants`).all()).toEqual([{ redeemed_turn_id: null }])
+  expect(store.listSubagents(PARENT)).toMatchObject([{ wake: "pending" }])
+})
+
+test("a recorded origin without a grant is refused rather than re-authorized from the stored actor, and stays pending", async () => {
+  const { root, authority, seeded, bob, orgId } = await seed("send")
+  const store = reopened(runtimeStore(root, { actorId: bob.user.tokenIdentifier, orgId }))
+  expect(store.subagentOrigin(PARENT, "subagent_wake")).not.toHaveProperty("grant")
   const { host, prompts } = restartedHost(store, authority)
 
   await wake(host)

@@ -62,7 +62,7 @@ export type StartPreviewCommand = {
   currentLink: TaskSessionLink | null
   currentState: SessionLiveness | null
   authorizeTranscript: TranscriptGrant
-  /** The session the request says it is asked from, as the route parsed it; the host decides whether to believe it. */
+  /** The session the caller's credential was authenticated as acting from; absent for a person. */
   startedFrom?: SessionReference
 }
 
@@ -80,7 +80,7 @@ export type StartCommand = {
   /** The slot's previous session, when Continue was chosen; null starts from task text alone. */
   previousSession: SessionReference | null
   authorizeTranscript: TranscriptGrant
-  /** The session the request says it is asked from, as the route parsed it; the host decides whether to believe it. */
+  /** The session the caller's credential was authenticated as acting from; absent for a person. */
   startedFrom?: SessionReference
 }
 

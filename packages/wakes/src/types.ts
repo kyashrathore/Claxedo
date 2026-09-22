@@ -82,9 +82,33 @@ export interface Wake {
   attempts: number
 }
 
+/**
+ * A wake row as `listForSession` returns it. The approval `token` is the
+ * capability that resolves the wake, so the list view redacts it — possession
+ * flows only through the `requestApproval` return value.
+ */
+export type ListedWake = Omit<Wake, "token"> & { token: null }
+
 export type ResolveOutcome =
   | { ok: true }
   | { ok: false; reason: "too_late" | "already_resolved" | "unauthorized" | "not_found" }
+
+/**
+ * Who a `cancel` call acts for. `sessionId` is host-attested — the same trust
+ * `listForSession` already places in its caller — and may cancel only a wake
+ * that session owns. `actor` is an out-of-session caller (e.g. an admin
+ * cancelling by approval token) and must pass the workspace `authorize`
+ * policy. A caller carrying neither is denied: bare possession of a wake id
+ * or token never cancels.
+ */
+export interface CancelCaller {
+  sessionId?: SessionId | null
+  actor?: Actor
+}
+
+export type CancelOutcome =
+  | { ok: true }
+  | { ok: false; reason: "not_found" | "unauthorized" | "not_pending" }
 
 /** Resume (or start, when sessionId is null) a turn against a session. At-least-once. */
 export type SpawnTurn = (sessionId: SessionId | null, result: WakeResult) => Promise<void>
@@ -109,7 +133,13 @@ export interface WakeDriver {
   nudge(hint: { serialKey: string | null; fireAt: number }): void
 }
 
-/** Host authz: may this actor resolve an approval for this workspace? */
+/**
+ * Host authz: may this actor act on this workspace's wakes — resolving an
+ * approval (`resolve`) or cancelling a wake it does not own (`cancel`)?
+ * Required at engine construction — there is no implicit allow. A host that
+ * never resolves approvals passes `() => false`; sessions still cancel their
+ * own wakes, but no out-of-session caller can.
+ */
 export type Authorize = (actor: Actor, workspaceId: WorkspaceId) => Promise<boolean> | boolean
 
 /** Per-workspace limits on agent-authored wakes. */

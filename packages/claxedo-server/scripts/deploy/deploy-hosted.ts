@@ -58,7 +58,7 @@ export function hostedDeployCommands(input: {
       })
       return [
         // The Agent Plugins product is one build profile, not a runtime flag:
-        // the certified Worker artifact, its R2/KV bindings, its feature
+        // the certified Worker artifact, its R2 binding, its feature
         // variables and secrets, and the browser build all follow the same
         // `--agent-plugins` selection inside the release script.
         {

@@ -41,7 +41,6 @@ export async function runLaunchGateChild(): Promise<never> {
 
   const child = spawn(activation.payload.command, activation.payload.args, {
     stdio: ["inherit", "inherit", "inherit"],
-    ...(activation.payload.shell ? { shell: true } : {}),
   })
 
   const trySend = (frame: Record<string, unknown>) => {

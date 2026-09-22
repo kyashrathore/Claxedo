@@ -31,7 +31,7 @@ async function configureScriptedOpenCode(server: RealLocalServer, directory: str
     env: { ...process.env, GIT_INDEX_FILE: undefined, GIT_AUTHOR_DATE: undefined },
     stdio: "ignore",
   })
-  const register = await request.get(`${server.url}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
+  const register = await request.post(`${server.url}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`)
   expect(register.ok(), await register.text()).toBe(true)
   const configure = await request.post(`${server.url}/api/claxedo/agent-config/harness?directory=${encodeURIComponent(directory)}`, {
     data: { harness: { kind: "native", harnessId: "opencode" } },

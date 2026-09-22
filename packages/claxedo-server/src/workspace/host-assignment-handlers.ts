@@ -1,4 +1,5 @@
 import type { Context } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
 import {
@@ -44,6 +45,23 @@ import { controlPlaneRateLimitError } from "./runtime-token-guards"
  * `HostedWorkspaceRoutes`; the self-hosted node answers its own machine's
  * shares itself and dispatches a `hostId` body here.
  */
+
+/** Names, ids and a repository URL — the control-plane JSON bound. */
+const ASSIGN_BODY_LIMIT_BYTES = 16 * 1024
+
+/**
+ * This handler is mounted from two routers (`workspace/routes/index.ts`,
+ * `routes/hosted/workspace.ts`) and a mount may add its own cap — running the
+ * middleware inside keeps the bound on the read rather than on the wiring.
+ */
+const assignBodyLimit = bodyLimit({
+  maxSize: ASSIGN_BODY_LIMIT_BYTES,
+  onError: (c) =>
+    c.json(
+      { error: apiError("request_body_too_large", `Request body exceeds the ${ASSIGN_BODY_LIMIT_BYTES}-byte limit`) },
+      413,
+    ),
+})
 
 const assignBody = z
   .object({
@@ -112,6 +130,11 @@ export function hostAssignmentHandlers(
       if ("error" in authResult) return c.json(authResult.error, authResult.status)
       const auth = authResult.auth
       if (!auth) return c.json(missingBearerBody(), 401)
+      // `bodyUsed` means the mounting router already ran the body through its
+      // own bound (`workspace/routes/index.ts` reads `hostId` before dispatch);
+      // re-reading a consumed stream is an error, not a second parse.
+      const tooLarge = c.req.raw.bodyUsed ? undefined : await assignBodyLimit(c, async () => {})
+      if (tooLarge) return tooLarge
       const parsed = parsedBody(assignBody, await c.req.json().catch(() => ({})))
       if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
       const body = parsed.body

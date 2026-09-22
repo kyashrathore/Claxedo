@@ -493,13 +493,21 @@ export const appLocal: Policy = {
   // references and reads canonical session lifecycle status. ACP questions use
   // the unchanged question dock; its separate UI, worker, query and action
   // modules have been removed.
+  // +1 module (2026-09-21): `lib/open-link.ts` is the web document's one
+  // scheme-gated link opener — `platform.openLink` in both web entries, the
+  // connect-integration dialog's default `openUrl`, and the terminal link
+  // fallback all bind it. It imports nothing; no new package edge.
+  // +1 module (2026-09-21): `ui/mermaid.ts` is the renderer's one mermaid
+  // loader — the strict `initialize` config plus `sanitizeSvg`, shared by the
+  // session timeline and the documents editor, replacing a copy inlined in
+  // each. Its session-ui edge enters through session-kit-loaders; no new
+  // package edge.
   // +2 modules (2026-09-21): `features/session/ui/recovery-outcome-copy.ts` is
   // the one owner of how a cancellation's three facts read, and
   // `features/session/ui/session-recovery.tsx` is the panel the composer region
   // shows while a recovery command is unresolved. Both live under the session
   // feature that already owns the composer and its docks, and both reach only
-  // `@claxedo/agent-runtime-contract`, which this entry already carries; the
-  // package closure is unchanged at 58.
+  // `@claxedo/agent-runtime-contract`, which this entry already carries.
   // +19 modules (2026-09-22): splitting what recovery grew past the 800-line
   // size budget. `platform/i18n/session-recovery/<locale>.ts` is 17 of them, a
   // themed dictionary the i18n manifest imports exactly as it already imports
@@ -508,9 +516,9 @@ export const appLocal: Policy = {
   // `features/session/store/session-coverage-obligations.ts`, extracted from
   // the dialog and the controller that were over budget. The size guard
   // forbids raising a file's line ceiling, so this count is that rule's
-  // consequence. No new package edge. Exact measured 1120 modules /
+  // consequence. No new package edge. Exact measured 1122 modules /
   // 58 packages, with no headroom.
-  ceilings: { modules: 1120, packages: 58 },
+  ceilings: { modules: 1122, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

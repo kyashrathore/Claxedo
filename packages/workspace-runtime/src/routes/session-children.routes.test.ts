@@ -11,6 +11,7 @@ import {
   type SessionAccessPolicy,
   type SessionAccessPolicyInput,
   type SessionReservationDecision,
+  type SessionTurnGrantDecision,
   type SessionTurnOrigin,
 } from "../session-access-policy"
 import type { EmbeddedRelayHostIdentity } from "../workspace-host-service-auth"
@@ -577,6 +578,8 @@ function managedPolicy(input: {
   turnAllowed?: (input: { sessionId: string; actorId: string }) => boolean
   /** Off for the desktop daemon shape, where an unstamped request is the machine's own user. */
   requireActor?: boolean
+  /** A plane that mints deferred turn grants; absent means the policy has no `grantTurn` at all. */
+  grant?: (input: Parameters<NonNullable<SessionAccessPolicy["grantTurn"]>>[0]) => SessionTurnGrantDecision
 } = {}) {
   const held = new Map(Object.entries(input.held ?? {}))
   /** Who the plane recorded as the creator; a session it never registered is nobody's. */
@@ -586,6 +589,8 @@ function managedPolicy(input: {
     registered: [] as Array<{ sessionId: string; registrationOperationId: string; actorId?: string }>,
     /** Stands for the plane's producer row: one per admitted turn, carrying who it was admitted for. */
     producers: [] as Array<{ sessionId: string; turnId: string; actorId: string; fencingToken: number }>,
+    granted: [] as Array<Parameters<NonNullable<SessionAccessPolicy["grantTurn"]>>[0]>,
+    acquired: [] as Array<Parameters<NonNullable<SessionAccessPolicy["acquireTurn"]>>[0]>,
   }
   const policy = managedWorkspaceSessionAccessPolicy({
     requireActor: input.requireActor ?? true,
@@ -602,6 +607,7 @@ function managedPolicy(input: {
         return true
       },
       acquireTurn: async (request) => {
+        calls.acquired.push(request)
         if (!input.turnAllowed?.({ sessionId: request.sessionId, actorId: request.actor.actorId })) {
           return { allowed: false, status: 403, code: "session_private", message: "Turn authority was revoked" }
         }
@@ -635,8 +641,17 @@ function managedPolicy(input: {
     if (decision.allowed) held.set(decision.operationId, request.sessionId)
     return decision
   }
+  const grant = input.grant
+  if (grant) {
+    policy.grantTurn = (request) => {
+      calls.granted.push(request)
+      return grant(request)
+    }
+  }
   return { policy, calls }
 }
+
+const CHILD_GRANT = "eyJ.child-completion-grant.sig"
 
 describe("a child created in-process under managed registration", () => {
   test("a readable parent cannot create a completion wake without current turn authority", async () => {
@@ -715,15 +730,97 @@ describe("a child created in-process under managed registration", () => {
     expect(item.store.listSubagents("parent")).toMatchObject([{ subagentKey: child.subagentKey, status: "completed", wake: "pending" }])
   })
 
+  test("a relayed create on a plane that mints grants takes a child-completion grant with the live credential, before the child has a row", async () => {
+    let subagentsAtMint: unknown[] | undefined
+    const { policy, calls } = managedPolicy({
+      turnAllowed: () => true,
+      grant: () => {
+        subagentsAtMint = item.store.listSubagents("parent")
+        return { allowed: true, grant: CHILD_GRANT, expiresAt: Date.now() + 60_000 }
+      },
+    })
+    const item = fixture({ policy, identity: OWNER, withRuntime: true })
+    item.seedParent("parent")
+
+    const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string; subagentKey: string }
+    expect(calls.granted).toEqual([expect.objectContaining({
+      operation: "prompt",
+      sessionId: "parent",
+      intent: "child_completion",
+      subjectSessionId: child.id,
+      registrationOperationId: `session_registration_${child.id}`,
+      credential: "Bearer owner-grant",
+      actor: { actorId: "actor_owner", actorKind: "human" },
+      authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" },
+    })])
+    expect(subagentsAtMint).toEqual([])
+    expect(item.origins.get(`parent\0${child.subagentKey}`)).toEqual({
+      provenance: "relay-replayed",
+      actor: { actorId: "actor_owner", actorKind: "human" },
+      authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" },
+      grant: CHILD_GRANT,
+    })
+    expect(JSON.stringify(item.store.listSubagents("parent"))).not.toContain(CHILD_GRANT)
+
+    item.messages.set(child.id, [{
+      info: { id: "child-reply", role: "assistant", sessionID: child.id },
+      parts: [{ id: "p1", sessionID: child.id, messageID: "child-reply", type: "text", text: "Ship it." }],
+    }])
+    expect((await item.app.request(`http://localhost/session/${child.id}/message?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer owner-grant" },
+      body: JSON.stringify({ messageID: "child-turn", parts: [{ type: "text", text: "Review the plan" }] }),
+    })).status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const wakeTurnId = `msg_wake_${child.id}_child-reply`
+    const wake = calls.acquired.find((turn) => turn.turnId === wakeTurnId)
+    expect(wake).toMatchObject({ sessionId: "parent", grant: CHILD_GRANT, actor: { actorId: "actor_owner", actorKind: "human" } })
+    expect(wake).not.toHaveProperty("credential")
+    expect(calls.acquired.find((turn) => turn.turnId === "child-turn")).not.toHaveProperty("grant")
+    expect(calls.granted).toHaveLength(1)
+    expect(item.store.listSubagents("parent")).toMatchObject([{ subagentKey: child.subagentKey, wake: "delivered" }])
+  })
+
+  test("a refused or failed grant answers 503 and rolls the child back, leaving no session and no subagent row", async () => {
+    const refusals: Array<() => SessionTurnGrantDecision> = [
+      () => ({ allowed: false, status: 403, code: "session_private", message: "The parent no longer admits this actor's turn" }),
+      () => { throw new Error("grant signer unavailable") },
+    ]
+    for (const grant of refusals) {
+      const { policy, calls } = managedPolicy({ turnAllowed: () => true, grant })
+      const item = fixture({ policy, identity: OWNER, withRuntime: true })
+      item.seedParent("parent")
+
+      const response = await item.create({ parentID: "parent", title: "Consult" })
+      expect(response.status).toBe(503)
+      expect(await response.json()).toMatchObject({ error: { code: "child_wake_grant_refused" } })
+      expect(calls.granted).toHaveLength(1)
+      const childId = item.calls.created[0]
+      expect(childId).toBeDefined()
+      expect(item.calls.deleted).toEqual([childId])
+      expect(item.store.getSession(childId)).toBeFalsy()
+      expect(item.store.listSubagents("parent")).toEqual([])
+      expect(item.origins.size).toBe(0)
+      expect(calls.registered).toEqual([])
+      expect(calls.producers).toEqual([])
+    }
+  })
+
   test("the machine's own user creates a child over loopback and its wake runs as that, unleased", async () => {
     // The daemon shape: managed composition, `requireActor` off, and a request
     // the relay never stamped. The same runtime answers both arms, so the row
     // has to remember which one asked rather than what the host was built as.
-    const { policy, calls } = managedPolicy({ turnAllowed: () => true, requireActor: false })
+    const { policy, calls } = managedPolicy({
+      turnAllowed: () => true,
+      requireActor: false,
+      grant: () => { throw new Error("a loopback create has no actor to mint for") },
+    })
     const item = fixture({ policy, withRuntime: true })
     item.seedParent("parent")
     const child = await (await item.create({ parentID: "parent", title: "Consult" })).json() as { id: string; subagentKey: string }
     expect(item.origins.get(`parent\0${child.subagentKey}`)).toEqual({ provenance: "loopback-direct" })
+    expect(calls.granted).toEqual([])
     item.messages.set(child.id, [{
       info: { id: "child-reply", role: "assistant", sessionID: child.id },
       parts: [{ id: "p1", sessionID: child.id, messageID: "child-reply", type: "text", text: "Ship it." }],
@@ -915,6 +1012,8 @@ describe("a background turn a managed host refuses", () => {
     runtime?: unknown
     failResolution?: "adapter" | "runtime"
     requireActor?: boolean
+    /** A policy that mints deferred grants, so a relayed wake is expected to carry one. */
+    grantCapable?: boolean
     /** Holds the offer inside its origin read, where disposal would land. */
     beforeOrigin?: () => Promise<void>
     beforeAcquire?: () => Promise<void>
@@ -928,7 +1027,11 @@ describe("a background turn a managed host refuses", () => {
       store.admit({ parentSessionId: "parent", observation: { observationId, subagentKey: "subagent_wake", ...observation }, allocateKey: () => "unused" })
       store.markPublished("parent", observationId)
     }
-    const { policy, calls } = managedPolicy({ turnAllowed: () => true, ...(input.requireActor === false ? { requireActor: false } : {}) })
+    const { policy, calls } = managedPolicy({
+      turnAllowed: () => true,
+      ...(input.requireActor === false ? { requireActor: false } : {}),
+      ...(input.grantCapable ? { grant: () => { throw new Error("a wake redeems a grant; it never mints one") } } : {}),
+    })
     const resolved = { adapters: 0, runtimes: 0 }
     const released: boolean[] = []
     const host = SessionRoutes(
@@ -1067,6 +1170,42 @@ describe("a background turn a managed host refuses", () => {
     expect(daemon.resolved.runtimes).toBeGreaterThan(0)
     expect(daemon.calls.producers).toEqual([])
     await daemon.host.dispose()
+  })
+
+  test("a relayed origin recorded without a grant is declined on a policy that mints them, and the wake stays pending", async () => {
+    // A row from before grants were recorded, or one whose mint was skipped.
+    // The stored actor string is not proof; on a plane that hands out grants,
+    // the grant is the only thing a background turn may present.
+    const item = wakeOnlyHost({
+      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" } },
+      runtime: { turns: {} },
+      grantCapable: true,
+    })
+
+    await item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(item.calls.acquired).toEqual([])
+    expect(item.calls.producers).toEqual([])
+    expect(item.resolved).toEqual({ adapters: 0, runtimes: 0 })
+    expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "pending" }])
+    await item.host.dispose()
+  })
+
+  test("a relayed origin that carries a grant presents it to the authority in place of the credential it no longer has", async () => {
+    const item = wakeOnlyHost({
+      origin: { provenance: "relay-replayed", actor: { actorId: "actor_owner", actorKind: "human" }, authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "owner" }, grant: CHILD_GRANT },
+      runtime: undefined,
+      grantCapable: true,
+    })
+
+    await item.host.routes.request(`http://localhost/session/parent?directory=${encodeURIComponent(DIRECTORY)}`)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(item.calls.acquired).toEqual([expect.objectContaining({ sessionId: "parent", turnId: "msg_wake_child_child-reply", grant: CHILD_GRANT })])
+    expect(item.calls.acquired[0]).not.toHaveProperty("credential")
+    expect(item.calls.producers).toMatchObject([{ sessionId: "parent", actorId: "actor_owner" }])
+    await item.host.dispose()
   })
 
   test("an identified wake on a host with no runtime releases its lease instead of running unfenced", async () => {

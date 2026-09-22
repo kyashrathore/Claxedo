@@ -786,6 +786,43 @@ describe("claxedo connect", () => {
     expect(await rescoped).toBe(0)
   })
 
+  test("a scope replayed from before a restart does not re-widen the roots", async () => {
+    const narrowed = path.join(h.root, "narrowed")
+    await fs.mkdir(narrowed)
+    const { file } = await invitationFile(h, [h.root])
+    const running = connect(["--token-file", file], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    const hostId = (await h.deps.store.load())!.host_id
+
+    h.cp.setScope(enrollmentIdOf(h), { allowed_roots: [narrowed], visibility: "owner" })
+    h.tick()
+    await until(async () => (await h.deps.store.load())?.scope?.revision === 2, "the narrowed scope to be stored")
+    h.stop()
+    expect(await running).toBe(0)
+
+    // What a replayed pre-restart answer carries: the invitation's original,
+    // wider scope at a revision the host has already passed.
+    h.cp.enrollments.get(enrollmentIdOf(h))!.scope = { revision: 1, allowed_roots: [h.root], visibility: "owner" }
+
+    const rebooted = connect([], h.deps)
+    let beats = h.cp.beats().length
+    await until(() => h.cp.beats().length > beats, "the beat after the restart")
+    expect((await h.deps.store.load())?.scope?.revision, "the replayed scope is refused").toBe(2)
+
+    const outside = path.join(h.root, "outside-narrowed")
+    await fs.mkdir(outside)
+    h.cp.assign({ hostId, workspaceId: "ws_wide", remoteDirectory: outside })
+    h.tick()
+    await until(
+      () => h.lines.some((line) => line.startsWith("workspace ws_wide: refused: ") && line.includes("outside this host's roots")),
+      "the refusal under the recorded scope",
+    )
+    expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
+
+    h.stop()
+    expect(await rebooted).toBe(0)
+  })
+
   test("--reset-roots with nothing recorded says so", async () => {
     expect(await connect(["--reset-roots"], h.deps)).toBe(0)
     expect(h.lines.at(-1)).toContain("nothing to reset")

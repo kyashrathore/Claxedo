@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest"
 import {
+  createChannelAccess,
   createChannelCore,
   createMemoryApprovalBridge,
+  createMemoryChannelAccessStore,
   createMemoryDedupStore,
   createMemorySessionResolver,
+  createSlidingWindowRateLimiter,
   ChannelSessionResolutionError,
   parseChannelCommand,
   APPROVAL_UNCLEAR_REPLY,
@@ -321,6 +324,24 @@ describe("channels core", () => {
     expect(parseChannelCommand("/stop please")).toEqual({ kind: "cancel" })
   })
 
+  test("pairing approval is the whole message: the keyword and the code, nothing around them", () => {
+    expect(parseChannelCommand("/pairing approve ABCD2345")).toEqual({ kind: "pairing_approve", code: "ABCD2345" })
+    expect(parseChannelCommand("  /pairing approve abcd2345  ")).toEqual({ kind: "pairing_approve", code: "ABCD2345" })
+    expect(parseChannelCommand("@claxedo /pairing approve ABCD2345", { mentions: ["@claxedo"] }))
+      .toEqual({ kind: "pairing_approve", code: "ABCD2345" })
+
+    for (const text of [
+      "I do not approve this",
+      "approve ABCD2345",
+      "please /pairing approve ABCD2345",
+      "/pairing approve ABCD2345 now",
+      "/pairing approve ABCD2345 and /pairing approve WXYZ6789",
+      "/pairing approve",
+    ]) {
+      expect(parseChannelCommand(text)).toEqual({ kind: "message" })
+    }
+  })
+
   test("authorization rejection does not claim idempotency or create a session", async () => {
     const rt = runtime()
     const chunks: OutboundChunk[] = []
@@ -527,6 +548,7 @@ describe("channels core", () => {
     // The actor is the sender the prompt was issued to; a different actor is
     // covered by the requestee tests below.
     await expect(core.onApproval({
+      channel: "telegram",
       token: approval!.request.token,
       approved: false,
       actorExternalUserId: "owner",
@@ -638,6 +660,181 @@ describe("requestee-only button approvals", () => {
     expect(decisions).toEqual([])
   })
 
+})
+
+describe("approval action admission", () => {
+  // A button press is a webhook delivery like any inbound message, so
+  // `onApproval` runs the same sender-scoped gates in the same order —
+  // access, rate limit, dedup — before it may touch a pending prompt.
+  async function gatedPrompt(input: {
+    access?: Parameters<typeof createChannelCore>[0]["access"]
+    rateLimiter?: Parameters<typeof createChannelCore>[0]["rateLimiter"]
+  } = {}) {
+    const rt = runtime()
+    const decisions: string[] = []
+    const denials: string[] = []
+    const approvals = createMemoryApprovalBridge({
+      async onDecision(_request, decision) {
+        decisions.push(`${decision.callId}:${decision.approved}:${decision.actorExternalUserId}`)
+        return { ok: true }
+      },
+    })
+    const core = createChannelCore({
+      runtime: rt,
+      dedup: createMemoryDedupStore({ initializedAt: 0 }),
+      sessions: createMemorySessionResolver(rt),
+      approvals,
+      ...(input.access ? { access: input.access } : {}),
+      ...(input.rateLimiter ? { rateLimiter: input.rateLimiter } : {}),
+      onDenial: (_envelope, reason) => denials.push(reason),
+    })
+    await core.handleInbound(envelope({ text: "needs approval" }), { reply: () => {} })
+    const [request] = await approvals.pendingForThread("telegram:install:chat:thread")
+    return { approvals, core, decisions, denials, request }
+  }
+
+  test("a press from a sender the access gate refuses never reaches the prompt", async () => {
+    const store = createMemoryChannelAccessStore()
+    await store.allow("telegram", "owner", "seed")
+    const { core, decisions, denials, request } = await gatedPrompt({
+      access: createChannelAccess({ dmPolicy: "allowlist", store }),
+    })
+
+    await expect(core.onApproval({
+      channel: "telegram",
+      messageId: "card-1",
+      token: request.token,
+      approved: true,
+      actorExternalUserId: "stranger",
+      threadKey: request.threadKey,
+    })).resolves.toEqual({ ok: false, message: "This sender is not permitted to answer approvals." })
+
+    expect(decisions).toEqual([])
+    expect(denials).toEqual(["dm_not_allowlisted"])
+    // The prompt is still answerable by the admitted requestee.
+    await expect(core.onApproval({
+      channel: "telegram",
+      messageId: "card-1",
+      token: request.token,
+      approved: true,
+      actorExternalUserId: "owner",
+      threadKey: request.threadKey,
+    })).resolves.toEqual({ ok: true })
+    expect(decisions).toEqual(["ses_1:perm_1:true:owner"])
+  })
+
+  test("a rate-limited press is refused and audited without touching the prompt", async () => {
+    // limit 1: the inbound message that raised the prompt already spent the
+    // only hit, so the press lands over budget.
+    const { core, decisions, denials, request } = await gatedPrompt({
+      rateLimiter: createSlidingWindowRateLimiter({ limit: 1, windowMs: 60_000 }),
+    })
+
+    await expect(core.onApproval({
+      channel: "telegram",
+      messageId: "card-1",
+      token: request.token,
+      approved: true,
+      actorExternalUserId: "owner",
+      threadKey: request.threadKey,
+    })).resolves.toEqual({ ok: false, message: "Rate limit exceeded." })
+
+    expect(decisions).toEqual([])
+    expect(denials).toEqual(["rate_limited"])
+  })
+
+  test("a repeated press of the same card is processed once", async () => {
+    const { core, decisions, request } = await gatedPrompt()
+    const press = {
+      channel: "telegram" as const,
+      messageId: "card-1",
+      token: request.token,
+      approved: true,
+      actorExternalUserId: "owner",
+      threadKey: request.threadKey,
+    }
+
+    await expect(core.onApproval(press)).resolves.toEqual({ ok: true })
+    await expect(core.onApproval(press)).resolves.toEqual({
+      ok: false,
+      message: "This approval action was already processed.",
+    })
+    expect(decisions).toEqual(["ses_1:perm_1:true:owner"])
+  })
+
+  test("a refused approval releases its delivery claim on both the press and the reply path", async () => {
+    // Nothing was recorded, so the redelivery of that same card has to be able
+    // to land. The two paths share `recordApproval`, so they agree on it.
+    async function refusedOnce() {
+      const rt = runtime()
+      const decisions: string[] = []
+      let refuseNext = true
+      const approvals = createMemoryApprovalBridge({
+        async onDecision(_request, decision) {
+          if (refuseNext) {
+            refuseNext = false
+            return { ok: false, message: "Unable to record approval response." }
+          }
+          decisions.push(`${decision.callId}:${decision.approved}:${decision.actorExternalUserId}`)
+          return { ok: true }
+        },
+      })
+      const core = createChannelCore({
+        runtime: rt,
+        dedup: createMemoryDedupStore({ initializedAt: 0 }),
+        sessions: createMemorySessionResolver(rt),
+        approvals,
+      })
+      await core.handleInbound(envelope({ text: "needs approval" }), { reply: () => {} })
+      const [request] = await approvals.pendingForThread("telegram:install:chat:thread")
+      return { core, decisions, request }
+    }
+
+    const pressed = await refusedOnce()
+    const core = pressed.core
+    const decisions = pressed.decisions
+    const request = pressed.request
+    const press = {
+      channel: "telegram" as const,
+      messageId: "card-1",
+      token: request.token,
+      approved: true,
+      actorExternalUserId: "owner",
+      threadKey: request.threadKey,
+    }
+    await expect(core.onApproval(press)).resolves.toEqual({ ok: false, message: "Unable to record approval response." })
+    await expect(core.onApproval(press)).resolves.toEqual({ ok: true })
+    expect(decisions).toEqual(["ses_1:perm_1:true:owner"])
+
+    const replied = await refusedOnce()
+    const reply = envelope({
+      idempotencyKey: "card-2",
+      intent: { kind: "approval_reply", approved: false, token: replied.request.token },
+    })
+    const chunks: OutboundChunk[] = []
+    await replied.core.handleInbound(reply, { reply: (chunk) => chunks.push(chunk) })
+    await replied.core.handleInbound(reply, { reply: (chunk) => chunks.push(chunk) })
+
+    expect(chunks).toEqual([
+      { kind: "text", text: "Unable to record approval response.", final: true },
+      { kind: "text", text: "Approval recorded.", final: true },
+    ])
+    expect(replied.decisions).toEqual(["ses_1:perm_1:false:owner"])
+  })
+
+  test("a press that can name no channel is refused rather than ungated", async () => {
+    const { core, decisions, request } = await gatedPrompt()
+
+    await expect(core.onApproval({
+      token: request.token,
+      approved: true,
+      actorExternalUserId: "owner",
+    })).resolves.toEqual({
+      ok: false,
+      message: "Approval action could not be attributed to a channel.",
+    })
+    expect(decisions).toEqual([])
+  })
 })
 
 describe("judged approvals", () => {

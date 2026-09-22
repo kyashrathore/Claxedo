@@ -1,17 +1,23 @@
 #!/usr/bin/env bun
 
-// This finalizes electron-updater's generic feed (latest.yml / latest-mac.yml /
-// latest-linux*.yml). It does not speak Tauri's updater format (latest.json +
-// minisign .sig, as served by the retired claxedo-v0.0.59 release), and it does
-// not need to: that build predates launch and has no installed users to carry
-// forward, so no compat shim is required. The unused TAURI_SIGNING_* repo
-// secrets are leftovers from that era and can be removed.
+// This finalizes electron-updater's generic feed — latest.yml / latest-mac.yml /
+// latest-linux*.yml for stable, beta*.yml for beta (CLAXEDO_UPDATE_CHANNEL picks
+// the base name; each variant's feed must stay separate so a beta release can
+// never overwrite stable metadata or vice versa). It does not speak Tauri's
+// updater format (latest.json + minisign .sig, as served by the retired
+// claxedo-v0.0.59 release), and it does not need to: that build predates launch
+// and has no installed users to carry forward, so no compat shim is required.
+// The unused TAURI_SIGNING_* repo secrets are leftovers from that era and can
+// be removed.
 
 import { $ } from "bun"
 import path from "path"
 
 const dir = process.env.LATEST_YML_DIR!
 if (!dir) throw new Error("LATEST_YML_DIR is required")
+
+const feed = process.env.CLAXEDO_UPDATE_CHANNEL ?? "latest"
+if (!/^[a-z][a-z0-9-]*$/.test(feed)) throw new Error(`CLAXEDO_UPDATE_CHANNEL "${feed}" is not a feed name`)
 
 const repo = process.env.GH_REPO
 if (!repo) throw new Error("GH_REPO is required")
@@ -91,23 +97,23 @@ async function read(subdir: string, filename: string): Promise<LatestYml | undef
 const output: Record<string, string> = {}
 
 // Windows: single arch, pass through
-const win = await read("latest-yml-x86_64-pc-windows-msvc", "latest.yml")
-if (win) output["latest.yml"] = serialize(win)
+const win = await read("latest-yml-x86_64-pc-windows-msvc", `${feed}.yml`)
+if (win) output[`${feed}.yml`] = serialize(win)
 
 // Linux x64: pass through
-const linuxX64 = await read("latest-yml-x86_64-unknown-linux-gnu", "latest-linux.yml")
-if (linuxX64) output["latest-linux.yml"] = serialize(linuxX64)
+const linuxX64 = await read("latest-yml-x86_64-unknown-linux-gnu", `${feed}-linux.yml`)
+if (linuxX64) output[`${feed}-linux.yml`] = serialize(linuxX64)
 
 // Linux arm64: pass through
-const linuxArm64 = await read("latest-yml-aarch64-unknown-linux-gnu", "latest-linux-arm64.yml")
-if (linuxArm64) output["latest-linux-arm64.yml"] = serialize(linuxArm64)
+const linuxArm64 = await read("latest-yml-aarch64-unknown-linux-gnu", `${feed}-linux-arm64.yml`)
+if (linuxArm64) output[`${feed}-linux-arm64.yml`] = serialize(linuxArm64)
 
 // macOS: merge arm64 + x64 into single file
-const macX64 = await read("latest-yml-x86_64-apple-darwin", "latest-mac.yml")
-const macArm64 = await read("latest-yml-aarch64-apple-darwin", "latest-mac.yml")
+const macX64 = await read("latest-yml-x86_64-apple-darwin", `${feed}-mac.yml`)
+const macArm64 = await read("latest-yml-aarch64-apple-darwin", `${feed}-mac.yml`)
 if (macX64 || macArm64) {
   const base = macArm64 ?? macX64!
-  output["latest-mac.yml"] = serialize({
+  output[`${feed}-mac.yml`] = serialize({
     version: base.version,
     files: [...(macArm64?.files ?? []), ...(macX64?.files ?? [])],
     releaseDate: base.releaseDate,

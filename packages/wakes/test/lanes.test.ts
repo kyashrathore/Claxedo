@@ -14,6 +14,7 @@ function harness(sinkImpl?: (wake: Wake) => void | Promise<void>) {
   const wakes: Wakes = createWakes({
     store,
     now: () => clock.t,
+    authorize: () => false,
     sinks: {
       settle: async (wake) => {
         await sinkImpl?.(wake)
@@ -150,6 +151,7 @@ describe("serialization lanes (serialKey)", () => {
     const wakes = createWakes({
       store,
       now: () => clock.t,
+      authorize: () => false,
       computeNextRun: (_cron, after) => after + 60_000,
       sinks: { settle: () => {} },
     })

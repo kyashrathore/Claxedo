@@ -4,7 +4,7 @@ import { parseChannelCommand } from "../core/channel-command"
 import type { ApprovalDecision, ChannelChatType, ChannelId, InboundEnvelope } from "../envelope"
 import type { ChannelTextMinimizationOptions } from "../core/data-minimization"
 import type { ChannelWebhookHandler } from "../ingress"
-import { chatSdkApprovalDecision } from "./chat-sdk-actions"
+import { chatSdkApprovalPress } from "./chat-sdk-actions"
 import { createChatSdkRenderer, type ChatSdkThread } from "./chat-sdk-render"
 import { repoTargetFromText } from "./repo-target"
 import { telegramSenderId } from "./telegram"
@@ -228,6 +228,19 @@ function threadIdentity(row: Record<string, unknown>): ChatSdkThreadIdentity {
 }
 
 /**
+ * DM vs group for a button press. Unlike `chatType()` for messages, an
+ * unclassifiable press yields no answer rather than "group": the message rule
+ * guards a postable thread, while a press can only answer a prompt the bot
+ * already posted — the gate's own "dm" default applies instead of a guess.
+ */
+function actionChatType(row: Record<string, unknown>, source: ChatSdkThreadIdentity): ChannelChatType | undefined {
+  if (row.isDM === true) return "dm"
+  if (row.isDM === false) return "group"
+  if (trimToUndefined(source.guildId) || trimToUndefined(source.teamId) || trimToUndefined(source.channelId)) return "group"
+  return undefined
+}
+
+/**
  * The thread a button was pressed in, as the approval path needs it.
  *
  * The action carries the thread it was clicked in (`ActionEvent.thread`, or the
@@ -243,24 +256,33 @@ function threadIdentity(row: Record<string, unknown>): ChatSdkThreadIdentity {
  *
  * A payload carrying no thread identity at all yields no key rather than one
  * composed entirely from `threadKey()` defaults ("default:conversation:root"),
- * which would collide with any other equally-empty thread.
+ * which would collide with any other equally-empty thread. The channel is still
+ * reported when the adapter names a known platform — the sender-scoped gates in
+ * `onApproval` key on it even when no thread identity is present.
  */
-function actionThread(action: unknown): { threadKey?: string } | undefined {
+function actionThread(action: unknown): { channel?: ChannelId; chatType?: ChannelChatType; threadKey?: string } | undefined {
   const row = record(action)
   if (!row) return {}
-  const source = threadIdentity(record(row.thread) ?? row)
+  const sourceRow = record(row.thread) ?? row
+  const source = threadIdentity(sourceRow)
+  // `messageId` is deliberately absent here: every approval press carries one
+  // (the card's message), so it cannot witness a THREAD identity on its own —
+  // it remains a threadKey() ingredient for platforms that use it as a root.
   const hasIdentity = firstText(
     source.threadId,
     source.threadTs,
     source.id,
     source.channelId,
     source.conversationId,
-    source.messageId,
   )
-  if (!hasIdentity) return {}
   const nextChannel = threadChannel(source)
-  if (!nextChannel) return undefined
-  return { threadKey: threadKey({ channel: nextChannel, thread: source }) }
+  if (hasIdentity && !nextChannel) return undefined
+  const chatType = nextChannel ? actionChatType(sourceRow, source) : undefined
+  return {
+    ...(nextChannel ? { channel: nextChannel } : {}),
+    ...(chatType ? { chatType } : {}),
+    ...(hasIdentity && nextChannel ? { threadKey: threadKey({ channel: nextChannel, thread: source }) } : {}),
+  }
 }
 
 export function createChatSdkBridge(input: {
@@ -303,11 +325,13 @@ export function createChatSdkBridge(input: {
     // The thread the button lives in is the SAME identity the prompt was posted
     // to, so deriving the threadKey here is what lets the approval bridge check
     // that a decision came from the thread that was asked — without it the
-    // bridge's threadKey guard has nothing to compare and never fires.
+    // bridge's threadKey guard has nothing to compare and never fires. The
+    // channel and chat type ride along so `onApproval` can run the same
+    // access/rate/dedup gates an inbound message faces.
     const pressed = actionThread(action)
     if (!pressed) return
     const decision = input.toApprovalDecision?.(action)
-      ?? chatSdkApprovalDecision(action, pressed.threadKey ? { threadKey: pressed.threadKey } : {})
+      ?? chatSdkApprovalPress(action, pressed)
     if (decision) await input.core.onApproval(decision)
   })
   return {

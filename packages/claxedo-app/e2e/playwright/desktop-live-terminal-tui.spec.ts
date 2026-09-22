@@ -130,7 +130,7 @@ for (const { harness, child, pause } of [
       await exec("git", ["init"], { cwd: directory })
       packaged = await launch()
       const server = new URL(await expectServerReachable(packaged)).origin
-      const response = await fetch(`${server}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
+      const response = await fetch(`${server}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
       expect(response.ok).toBe(true)
       const { workspaceId } = await response.json() as { workspaceId: string }
       await packaged.page.evaluate(async (worktree) => {

@@ -839,6 +839,7 @@ describe("sandbox manager", () => {
     await expect(manager.target("ws_1")).resolves.toEqual({
       status: "unavailable",
       reason: "runtime_lease_not_ready",
+      leaseStatus: "acquiring",
     })
   })
 
@@ -1207,6 +1208,130 @@ describe("sandbox manager", () => {
       failed: [],
     })
     expect(driver.destroy).not.toHaveBeenCalledWith(provisioning)
+  })
+
+  test("garbage collection keeps a live lease's runtime even when its provider labels claim a stale epoch", async () => {
+    // Provider labels are create-time state: a driver that reuses a resource
+    // across an epoch bump (a restore onto the same sandbox, a resume after
+    // stop) cannot retag it atomically, so the epoch label can lag the lease.
+    // The lease store is authoritative — a resource the lease still names is
+    // in service.
+    const reused = {
+      sandboxId: "sandbox_reused",
+      url: "https://runtime.test/reused",
+      hostId: "host_reused",
+      labels: { app: "claxedo", workspaceId: "ws_reused", epoch: "1" },
+    }
+    const driver = fakeDriver({
+      list: vi.fn(async () => [reused]),
+      destroy: vi.fn(async () => {}),
+    })
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore([
+        sandboxLease({
+          workspaceId: "ws_reused",
+          epoch: 2,
+          status: "ready",
+          sandboxId: "sandbox_reused",
+          url: "https://runtime.test/reused",
+          hostId: "host_reused",
+        }),
+      ]),
+      driver,
+    })
+
+    await expect(manager.garbageCollect()).resolves.toMatchObject({
+      kept: [reused],
+      destroyed: [],
+    })
+    expect(driver.destroy).not.toHaveBeenCalled()
+  })
+
+  test("garbage collection keeps a resource a non-ready lease still names, and finishes one a destroyed lease left", async () => {
+    // "stopped" covers the restore staging window — restoreSandboxCheckpoint
+    // parks the lease there while it re-ensures the same resource — and a
+    // suspended host. "destroyed" disclaims the resource: a listed remnant is
+    // the sweep's job to finish.
+    const suspended = {
+      sandboxId: "sandbox_suspended",
+      url: "https://runtime.test/suspended",
+      hostId: "host_suspended",
+      labels: { app: "claxedo", workspaceId: "ws_suspended", epoch: "1" },
+    }
+    const remnant = {
+      sandboxId: "sandbox_remnant",
+      url: "https://runtime.test/remnant",
+      hostId: "host_remnant",
+      labels: { app: "claxedo", workspaceId: "ws_remnant", epoch: "1" },
+    }
+    const driver = fakeDriver({
+      list: vi.fn(async () => [suspended, remnant]),
+      destroy: vi.fn(async () => {}),
+    })
+    const manager = createSandboxManager({
+      leaseStore: createMemoryLeaseStore([
+        sandboxLease({
+          workspaceId: "ws_suspended",
+          epoch: 2,
+          status: "stopped",
+          sandboxId: "sandbox_suspended",
+          url: "https://runtime.test/suspended",
+          hostId: "host_suspended",
+        }),
+        sandboxLease({
+          workspaceId: "ws_remnant",
+          epoch: 2,
+          status: "destroyed",
+          sandboxId: "sandbox_remnant",
+          url: "https://runtime.test/remnant",
+          hostId: "host_remnant",
+        }),
+      ]),
+      driver,
+    })
+
+    await expect(manager.garbageCollect()).resolves.toMatchObject({
+      kept: [suspended],
+      destroyed: [remnant],
+    })
+  })
+
+  test.each([
+    "WORKSPACE_RUNTIME_HOST_ID",
+    "WORKSPACE_RUNTIME_WORKSPACE_ID",
+    "WORKSPACE_RUNTIME_RELAY_WORKSPACE_IDS",
+  ])("caller env restating runtime identity key %s is refused without touching the lease", async (key) => {
+    const store = createMemoryLeaseStore()
+    const driver = fakeDriver()
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    const result = await manager.ensure("ws_1", {
+      homeRegion: "us-east",
+      env: { [key]: "foreign-host" },
+    })
+
+    expect(result).toMatchObject({ status: "unavailable" })
+    expect((result as { error?: string }).error).toContain(key)
+    // Refused before acquire: the driver is never asked to boot a runtime
+    // whose registered identity would differ from the lease's, and no lease
+    // epoch is burned on a composition mistake.
+    expect(driver.ensureHost).not.toHaveBeenCalled()
+    expect(await store.get("ws_1")).toBeUndefined()
+  })
+
+  test("caller env beside the runtime identity keys proceeds to the driver", async () => {
+    const driver = fakeDriver()
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+
+    const result = await manager.ensure("ws_1", {
+      homeRegion: "us-east",
+      env: { MODEL_KEY: "sk-model" },
+    })
+
+    expect(result.status).toBe("ready")
+    expect(driver.ensureHost).toHaveBeenCalledWith(
+      expect.objectContaining({ env: { MODEL_KEY: "sk-model" } }),
+    )
   })
 
   test("brokered secrets fail closed on a driver that cannot broker (none)", async () => {

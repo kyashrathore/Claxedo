@@ -268,6 +268,71 @@ describe("local binding authority", () => {
     }
   })
 
+  test("Gemini's own query slot is refused; a vendor that reads none has it stripped instead", async () => {
+    await activeRow("AIza-stored-gemini", "google")
+    await activeRow("sk-ant-api03-query", "claude-sdk")
+    const local = broker()
+    const projections = await local.projectAuth({ workspaceId })
+    const gemini = bound(projections.google)
+    const anthropic = bound(projections["claude-sdk"])
+    const realFetch = globalThis.fetch
+    const upstream: Request[] = []
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      upstream.push(new Request(url, init))
+      return new Response("{}")
+    }) as typeof fetch
+    try {
+      const refused = await local.handler(new Request(
+        `${gemini.baseUrl}/v1beta/models/gemini-3-pro:generateContent?key=AIza-foreign`,
+        { method: "POST", headers: { "x-goog-api-key": gemini.placeholder } },
+      ))
+      const body = await refused.text()
+
+      expect([refused.status, JSON.parse(body).error.code]).toEqual([403, "request_outside_policy"])
+      expect(body).not.toContain("AIza-foreign")
+      expect(upstream).toHaveLength(0)
+
+      const forwarded = await local.handler(new Request(
+        `${anthropic.baseUrl}/v1/messages?key=sk-ant-foreign&model=claude`,
+        { method: "POST", headers: { "x-api-key": anthropic.placeholder } },
+      ))
+
+      expect(forwarded.status).toBe(200)
+      expect(upstream[0]?.url).toBe("https://api.anthropic.com/v1/messages?model=claude")
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("revoking the account refuses the very next brokered request on a placeholder still in its life", async () => {
+    const credential = await activeRow("sk-ant-api03-refused-next")
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const realFetch = globalThis.fetch
+    const upstream: Request[] = []
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      upstream.push(new Request(url, init))
+      return new Response("{}")
+    }) as typeof fetch
+    try {
+      const turn = () => local.handler(new Request(`${projection.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": projection.placeholder },
+      }))
+      expect((await turn()).status).toBe(200)
+
+      updateCredentialStatus(credential.id, "revoked")
+
+      const refused = await turn()
+      expect([refused.status, (await refused.json()).error.code]).toEqual([403, "binding_unavailable"])
+      // The placeholder itself is untouched: the account behind it is asked
+      // about on every request rather than trusted for the token's hour.
+      expect(upstream).toHaveLength(1)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
   test("an OpenAI API key binds to the API host, a ChatGPT login to the Codex backend", async () => {
     await activeRow("sk-proj-openai-key", "openai")
     const local = broker()

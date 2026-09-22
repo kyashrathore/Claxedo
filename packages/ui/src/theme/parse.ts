@@ -26,8 +26,23 @@ export class ThemeParseError extends Error {
   }
 }
 
+// Everything below lands in `themeStyleElement.textContent`: a token name
+// becomes `--${name}` and a token value the declaration text of the generated
+// stylesheet. Neither may carry what ends a declaration (`;`), opens a block
+// (`{}`), starts an at-rule (`@`), quotes a string, or fetches a remote
+// resource (`url(`), or a hostile theme file writes arbitrary page CSS.
+const tokenName = /^[a-zA-Z0-9_-]+$/
+const unsafeCssValue = /[;{}@'"`<>\\]|url\s*\(/i
+
+function tokenKey(key: string, path: string): string {
+  if (!tokenName.test(key)) throw new ThemeParseError(path, `invalid token name ${JSON.stringify(key)}`)
+  return key
+}
+
+// Full-match, mirroring the schema's ColorValue: a bare `var(--token)` and
+// nothing trailing behind it that could continue the declaration.
 function isCssVarRef(value: string): value is CssVarRef {
-  return value.startsWith("var(--")
+  return /^var\(--[a-z0-9-]+\)$/.test(value)
 }
 
 function record(value: unknown, path: string): Record<string, unknown> {
@@ -55,13 +70,21 @@ function colorValue(value: unknown, path: string): ColorValue {
 
 function colorMap(value: unknown, path: string): Record<string, ColorValue> {
   return Object.fromEntries(
-    Object.entries(record(value, path)).map(([key, entry]) => [key, colorValue(entry, `${path}.${key}`)]),
+    Object.entries(record(value, path)).map(([key, entry]) => [tokenKey(key, path), colorValue(entry, `${path}.${key}`)]),
   )
+}
+
+function cssDeclValue(value: unknown, path: string): V2ColorValue {
+  const text = str(value, path)
+  if (unsafeCssValue.test(text)) {
+    throw new ThemeParseError(path, `expected a plain CSS declaration value, got ${JSON.stringify(text)}`)
+  }
+  return text
 }
 
 function stringMap(value: unknown, path: string): Record<string, V2ColorValue> {
   return Object.fromEntries(
-    Object.entries(record(value, path)).map(([key, entry]) => [key, str(entry, `${path}.${key}`)]),
+    Object.entries(record(value, path)).map(([key, entry]) => [tokenKey(key, path), cssDeclValue(entry, `${path}.${key}`)]),
   )
 }
 
@@ -128,12 +151,20 @@ function themeTranscript(value: unknown, path: string): PairedTranscriptTypograp
   return { ...normalized, pairing: normalized.pairing }
 }
 
+// The id is interpolated into the generated sheet's `html[data-theme="…"]`
+// selector, so it is held to the schema's slug grammar.
+function themeId(value: unknown, path: string): string {
+  const text = str(value, path)
+  if (!/^[a-z0-9-]+$/.test(text)) throw new ThemeParseError(path, `expected a slug id, got ${JSON.stringify(text)}`)
+  return text
+}
+
 export function parseDesktopTheme(value: unknown, path = "theme"): DesktopTheme {
   const raw = record(value, path)
   return {
     $schema: raw.$schema === undefined ? undefined : str(raw.$schema, `${path}.$schema`),
     name: str(raw.name, `${path}.name`),
-    id: str(raw.id, `${path}.id`),
+    id: themeId(raw.id, `${path}.id`),
     light: variant(raw.light, `${path}.light`),
     dark: variant(raw.dark, `${path}.dark`),
     ...(raw.transcript === undefined ? {} : { transcript: themeTranscript(raw.transcript, `${path}.transcript`) }),

@@ -483,6 +483,57 @@ export const transcriptLinkPrefixes = [
   "mailto:",
 ] as const
 
+/** DOMPurify 3.3.1's `IS_ALLOWED_URI` scheme set, spelled out: it writes the first four as `(?:f|ht)tps?`. */
+const sanitizerDefaultSchemes: readonly string[] = [
+  "ftp",
+  "ftps",
+  "http",
+  "https",
+  "mailto",
+  "tel",
+  "callto",
+  "sms",
+  "cid",
+  "xmpp",
+  "matrix",
+]
+
+const uriSchemes = [
+  ...sanitizerDefaultSchemes,
+  ...transcriptLinkPrefixes
+    .map((prefix) => prefix.slice(0, prefix.indexOf(":")))
+    .filter((scheme) => !sanitizerDefaultSchemes.includes(scheme)),
+]
+
+/**
+ * The href policy for a sanitizer: DOMPurify's default widened by this app's
+ * own schemes, never narrowed, so no link that survives sanitization today
+ * loses its href. The two branches after the schemes are DOMPurify's own —
+ * anything opening with a non-letter (`#fragment`, `/absolute`, `./relative`)
+ * and anything whose leading run of scheme characters is not a scheme at all
+ * (`notes.md`, `docs/plan.md`). A bare `javascript:`, `data:` or `vbscript:`
+ * matches no branch.
+ */
+export const transcriptLinkUriPattern = new RegExp(
+  `^(?:(?:${uriSchemes.join("|")}):|[^a-z]|[a-z+.\\-]+(?:[^a-z+.\\-:]|$))`,
+  "i",
+)
+
+// Mirrors DOMPurify's own ATTR_WHITESPACE: the characters a browser discards
+// before resolving a URL. Without this `java\tscript:alert(1)` smuggles a
+// scheme past the pattern above and is then reassembled by the parser.
+const uriWhitespace = /[\u0000-\u0020\u00A0\u1680\u180E\u2000-\u2029\u205F\u3000]/g
+
+/**
+ * The href admission test shared by the markdown link renderer, the DOM
+ * sanitizer config and the transcript click handler — one predicate so a value
+ * cannot be emitted by the builder, kept by the sanitizer, yet refused (or
+ * silently navigated) at click time.
+ */
+export function transcriptLinkUriAllowed(href: string) {
+  return transcriptLinkUriPattern.test(href.replace(uriWhitespace, ""))
+}
+
 /**
  * How far a link runs once prose has started one. A closing paren, bracket or
  * quote ends the run because markdown and prose wrap URLs in those far more
@@ -588,8 +639,12 @@ export const transcriptMarkdownExtensions: MarkedExtension[] = [
       html: renderMarkdownHtml,
       link({ href, title, tokens }) {
         const text = this.parser.parseInline(tokens)
-        const titleAttr = title ? ` title="${title}"` : ""
-        return `<a href="${href}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
+        // A refused scheme never becomes an anchor — the label renders inert.
+        // href/title are attribute-escaped so a `"` in either cannot break out
+        // of its attribute into live markup before the sanitizer runs.
+        if (!href || !transcriptLinkUriAllowed(href)) return text
+        const titleAttr = title ? ` title="${escapeRawMarkdownHtml(title)}"` : ""
+        return `<a href="${escapeRawMarkdownHtml(href)}"${titleAttr} class="external-link" target="_blank" rel="noopener noreferrer">${text}</a>`
       },
     },
   },

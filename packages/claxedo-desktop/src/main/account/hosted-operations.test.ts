@@ -133,9 +133,9 @@ describe("resolveHostedOperation", () => {
       method: "GET",
       path: "/api/workspace/resolve?workspaceId=ws_1",
     })
-    expect(resolveHostedOperation("workspace.resolve", { directory: "/tmp/ws", create: true })).toEqual({
+    expect(resolveHostedOperation("workspace.resolve", { directory: "/tmp/ws" })).toEqual({
       method: "GET",
-      path: "/api/workspace/resolve?directory=%2Ftmp%2Fws&create=true",
+      path: "/api/workspace/resolve?directory=%2Ftmp%2Fws",
     })
     expect(resolveHostedOperation("workspace.resolve", {})).toEqual({
       method: "GET",

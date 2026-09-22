@@ -68,7 +68,7 @@ describe("recordRelayRuntimeToken", () => {
 
  test("channel token recording retains the channel binding and never uses the service path", async () => {
   const auth = authority()
-  const channelIdentity = { channel: "telegram", externalUserId: "external", threadKey: "telegram:thread" }
+  const channelIdentity = { channel: "telegram", externalUserId: "external", threadKey: "telegram:thread", identityVersion: 1 }
   await recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", channelIdentity })
   expect(auth.recordChannelRuntimeAccessToken).toHaveBeenCalledWith(channelIdentity, expect.objectContaining({ actorId: minted.actorId, workspaceId: minted.workspaceId }))
   expect(auth.recordRuntimeAccessTokenForService).not.toHaveBeenCalled()

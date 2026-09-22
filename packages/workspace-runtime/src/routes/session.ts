@@ -352,10 +352,17 @@ export function SessionRoutes(
     }
     if (relayed) {
       if (!options?.sessionAccessPolicy || !input.body.messageID) throw new Error("Managed queued input requires turn authority and a message identity")
+      // Where the plane mints deferred grants, the grant recorded at admission
+      // is the only proof this turn may present: the stored actor is a claim,
+      // and a row without a grant predates the grant or skipped it.
+      if (options.sessionAccessPolicy.grantTurn && !relayed.grant) {
+        return decline("Host-started relayed input carries no deferred turn grant to admit a turn under")
+      }
       const acquired = await acquireSessionTurnLease({
         policy: options.sessionAccessPolicy,
         access,
         turnId: input.body.messageID,
+        ...(relayed.grant ? { grant: relayed.grant } : {}),
         onLost: () => containLostTurn({
           runtime: runtime?.recovery,
           sessionId: input.sessionId,

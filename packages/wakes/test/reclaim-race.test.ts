@@ -30,6 +30,7 @@ describe("reclaim race", () => {
       createWakes({
         store,
         now: () => clock.t,
+        authorize: () => false,
         leaseMs,
         sinks: { session_turn: sink as never },
       })
@@ -70,8 +71,8 @@ describe("reclaim race", () => {
       entries++
       await gate
     }
-    const driverA = createWakes({ store, now: () => clock.t, leaseMs, sinks: { session_turn: sink } })
-    const driverB = createWakes({ store, now: () => clock.t, leaseMs, sinks: { session_turn: sink } })
+    const driverA = createWakes({ store, now: () => clock.t, authorize: () => false, leaseMs, sinks: { session_turn: sink } })
+    const driverB = createWakes({ store, now: () => clock.t, authorize: () => false, leaseMs, sinks: { session_turn: sink } })
 
     await driverA.schedule({ sessionId: "s1", workspaceId: WS, at: clock.t, intent: {} })
     const active = driverA.runDue()

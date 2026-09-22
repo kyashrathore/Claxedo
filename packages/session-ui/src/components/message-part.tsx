@@ -78,7 +78,7 @@ import { useLocation } from "@solidjs/router"
 import { attached, inline, kind, typeLabel } from "./message-file"
 import { readPartText } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
-import { handleTranscriptLinkClick, transcriptLinks } from "./transcript-link"
+import { handleTranscriptLinkClick, transcriptLinkHref, transcriptLinks } from "./transcript-link"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -1979,22 +1979,37 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
   const name = createMemo(() => part().filename ?? getFilename(part().url) ?? part().url)
   const isImage = createMemo(() => part().mime.startsWith("image/"))
   const isAudio = createMemo(() => part().mime.startsWith("audio/"))
+  // part.url is tool/agent output — a rejected scheme renders the label inert
+  // rather than binding a target the click handler would refuse anyway.
+  const href = createMemo(() => transcriptLinkHref(part().url))
 
   return (
     <div data-component="file-part" data-timeline-part-id={part().id}>
       <Switch
         fallback={
-          <a
-            data-slot="file-part-link"
-            href={part().url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={name()}
-            onClick={handleTranscriptLinkClick}
+          <Show
+            when={href()}
+            fallback={
+              <span data-slot="file-part-link">
+                <FileIcon node={{ path: name(), type: "file" }} />
+                <span data-slot="file-part-link-name">{name()}</span>
+              </span>
+            }
           >
-            <FileIcon node={{ path: name(), type: "file" }} />
-            <span data-slot="file-part-link-name">{name()}</span>
-          </a>
+            {(safe) => (
+              <a
+                data-slot="file-part-link"
+                href={safe()}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={name()}
+                onClick={handleTranscriptLinkClick}
+              >
+                <FileIcon node={{ path: name(), type: "file" }} />
+                <span data-slot="file-part-link-name">{name()}</span>
+              </a>
+            )}
+          </Show>
         }
       >
         <Match when={isImage()}>
@@ -2114,6 +2129,9 @@ ToolRegistry.register({
       if (typeof value !== "string") return ""
       return value
     })
+    // input.url is the tool call's argument — a rejected scheme renders the
+    // label inert rather than binding a target the click handler would refuse.
+    const href = createMemo(() => transcriptLinkHref(url()))
     return (
       <BasicTool
         {...props}
@@ -2126,22 +2144,31 @@ ToolRegistry.register({
                 <TextShimmer text={i18n.t("ui.tool.webfetch")} active={pending()} />
               </span>
               <Show when={!pending() && url()}>
-                <a
-                  data-slot="basic-tool-tool-subtitle"
-                  class="clickable subagent-link"
-                  href={url()}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    handleTranscriptLinkClick(event)
-                  }}
+                <Show
+                  when={href()}
+                  fallback={
+                    <span data-slot="basic-tool-tool-subtitle">{url()}</span>
+                  }
                 >
-                  {url()}
-                </a>
+                  {(safe) => (
+                    <a
+                      data-slot="basic-tool-tool-subtitle"
+                      class="clickable subagent-link"
+                      href={safe()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleTranscriptLinkClick(event)
+                      }}
+                    >
+                      {url()}
+                    </a>
+                  )}
+                </Show>
               </Show>
             </div>
-            <Show when={!pending() && url()}>
+            <Show when={!pending() && href()}>
               <div data-component="tool-action">
                 <Icon name="open-external" size="small" />
               </div>

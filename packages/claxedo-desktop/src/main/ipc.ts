@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { BrowserWindow, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
-import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
+import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron"
 
 import type {
   BrowserConsoleEntry,
@@ -15,11 +15,14 @@ import type { BrowserRegistry } from "./browser/registry"
 import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 import { IS_PACKAGED } from "./constants"
 import { isOpenableLinkUrl } from "./navigation-guard"
-import { openInVerdict } from "./open-in-guard"
+import { openIn } from "./open-in"
+import { persistedServerUrlVerdict } from "./server-url"
 import { runRestart } from "../shared/restart-policy"
+import { clampZoomFactor } from "../shared/zoom-factor"
 import { registerProcessDiagnosticsIpc } from "./diagnostics/ipc"
 import type { Profiler } from "./diagnostics/profiler"
 import { getStore } from "./store"
+import { assertStoreKey, assertStoreValue } from "./store-policy"
 
 type Deps = {
   awaitInitialization: (sendStep: (step: InitStep) => void) => Promise<ServerReadyData>
@@ -60,9 +63,14 @@ export function registerIpcHandlers(deps: Deps) {
     return deps.awaitInitialization(send)
   })
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
-  ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
-    deps.setDefaultServerUrl(url),
-  )
+  // `unknown`, then admitted: main dials this value before any window exists,
+  // so the renderer decides where the app's first request of the next launch
+  // goes. `server-url.ts` states what an origin has to be.
+  ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: unknown) => {
+    const verdict = persistedServerUrlVerdict(url)
+    if (!verdict.allowed) throw new Error(`ipc "set-default-server-url" rejected: ${verdict.reason}`)
+    return deps.setDefaultServerUrl(verdict.url)
+  })
   ipcMain.handle("get-wsl-config", () => deps.getWslConfig())
   ipcMain.handle("set-wsl-config", (_event: IpcMainInvokeEvent, config: WslConfig) => deps.setWslConfig(config))
   ipcMain.handle("get-display-backend", () => deps.getDisplayBackend())
@@ -97,15 +105,19 @@ export function registerIpcHandlers(deps: Deps) {
     ipcMain.handle("parse-markdown", (_event: IpcMainInvokeEvent, source: string) => parseMarkdown(source))
   }
   ipcMain.handle("store-get", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    assertStoreKey(key)
     const store = getStore(name)
     const value = store.get(key)
     if (value === undefined || value === null) return null
     return typeof value === "string" ? value : JSON.stringify(value)
   })
   ipcMain.handle("store-set", (_event: IpcMainInvokeEvent, name: string, key: string, value: string) => {
+    assertStoreKey(key)
+    assertStoreValue(value)
     getStore(name).set(key, value)
   })
   ipcMain.handle("store-delete", (_event: IpcMainInvokeEvent, name: string, key: string) => {
+    assertStoreKey(key)
     getStore(name).delete(key)
   })
   ipcMain.handle("store-clear", (_event: IpcMainInvokeEvent, name: string) => {
@@ -167,23 +179,29 @@ export function registerIpcHandlers(deps: Deps) {
     void shell.openExternal(url)
   })
 
-  ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
-    const verdict = await openInVerdict({ path, app }, { platform: process.platform, resolveAppPath: deps.resolveAppPath })
-    // Thrown rather than dropped, for the reason `installIpcCallerGuard` gives:
-    // a rejection reaches the renderer as a failed `invoke` with a stack.
-    if (!verdict.allowed) throw new Error(`ipc "open-path" rejected: ${verdict.reason}`)
-    // Answers nothing on either branch — `ElectronAPI.openPath` is
-    // `Promise<void>`, so `shell.openPath`'s error string was already dropped.
-    if (!app) {
-      await shell.openPath(path)
-      return
-    }
-    await new Promise<void>((resolve, reject) => {
-      const [cmd, args] =
-        process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)
-      execFile(cmd, args, (err) => (err ? reject(err) : resolve()))
-    })
-  })
+  // `open-in.ts` decides which of these four the request is; this only binds
+  // each to its electron call.
+  ipcMain.handle("open-path", (event: IpcMainInvokeEvent, path: string, app?: string) =>
+    openIn(
+      { path, app },
+      { platform: process.platform, resolveAppPath: deps.resolveAppPath },
+      {
+        reveal: (target) => shell.showItemInFolder(target),
+        // Answers nothing — `ElectronAPI.openPath` is `Promise<void>`, so
+        // `shell.openPath`'s error string has nowhere to go.
+        openWithOsHandler: async (target) => {
+          await shell.openPath(target)
+        },
+        confirmOpenExecutable: (target) => confirmOpenExecutable(event.sender, target),
+        launch: (name, target) =>
+          new Promise<void>((resolve, reject) => {
+            const [cmd, args] =
+              process.platform === "darwin" ? (["open", ["-a", name, target]] as const) : ([name, [target]] as const)
+            execFile(cmd, args, (err) => (err ? reject(err) : resolve()))
+          }),
+      },
+    ),
+  )
 
   ipcMain.handle("show-item-in-folder", async (_event: IpcMainInvokeEvent, path: string) => {
     shell.showItemInFolder(path)
@@ -240,7 +258,12 @@ export function registerIpcHandlers(deps: Deps) {
     app.quit()
   })
 
-  ipcMain.handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: number) => event.sender.setZoomFactor(factor))
+  ipcMain.handle("set-zoom-factor", (event: IpcMainInvokeEvent, factor: unknown) => {
+    if (typeof factor !== "number" || !Number.isFinite(factor)) {
+      throw new Error('ipc "set-zoom-factor" rejected: zoom factor must be a finite number')
+    }
+    event.sender.setZoomFactor(clampZoomFactor(factor))
+  })
 
   ipcMain.on("set-native-theme", (_event: IpcMainEvent, theme: "light" | "dark" | "system") => {
     nativeTheme.themeSource = theme
@@ -248,6 +271,26 @@ export function registerIpcHandlers(deps: Deps) {
 
   registerBrowserIpcHandlers(deps.browser)
   return registerProcessDiagnosticsIpc(ipcMain, deps.processDiagnostics)
+}
+
+/**
+ * Parented, because a `showMessageBox` without a parent window is not modal:
+ * it can drift behind the app and be answered later, against a request the
+ * user has stopped looking at.
+ */
+async function confirmOpenExecutable(sender: WebContents, target: string) {
+  const options = {
+    type: "warning" as const,
+    buttons: ["Cancel", "Open"],
+    defaultId: 0,
+    cancelId: 0,
+    title: "Open an executable?",
+    message: "Opening this will run it, not display it.",
+    detail: `${target}\n\nOpen it only if you know what it does.`,
+  }
+  const parent = BrowserWindow.fromWebContents(sender)
+  const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
+  return response === 1
 }
 
 function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {

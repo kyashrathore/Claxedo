@@ -19,14 +19,24 @@ import {
   type RelayHostPrivateSessionClaims,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
+  normalizeGrantSessionTurnInput,
   SessionTurnConflictError,
+  SessionTurnGrantError,
   SessionTurnLeaseLostError,
   type SessionTurnAuthority,
+  type SessionTurnGrantIntent,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
-import type { WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
+import type { WorkspaceAuthority, WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { ConnectionTurnCredentials } from "../connections/turn-credentials"
+import {
+  deferredTurnGrantClaims,
+  mintDeferredTurnGrant,
+  verifyDeferredTurnGrant,
+  type DeferredTurnGrantClaims,
+} from "../session/deferred-turn-grant"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const bodyLimitBytes = 16 * 1024
@@ -51,6 +61,8 @@ type RuntimeSessionAuthorityPort = Pick<
     hostId: string
     minimumRole?: "viewer" | "editor" | "admin" | "owner"
   }) => Promise<unknown>
+  /** Absent on a port that cannot resolve an actor's user-scoped partition; minted turn credentials then bind no personal rows. */
+  resolveRuntimeMachineAccess?: WorkspaceAuthority["resolveRuntimeMachineAccess"]
   /** Absent on a plane that cannot reserve for a runtime actor; the owner grant's `reserve` then answers 503. */
   reserveRuntimeSession?: PrivateSessionAuthority["reserveRuntimeSession"]
   /** Absent on a plane that records no host enrollments; `adopt` then answers 503. */
@@ -88,6 +100,24 @@ export type SessionStreamLeaseBinding =
   | { transport: "owner-grant" }
   | { transport: "embedded" }
 
+/**
+ * A background turn redeeming the grant minted for it while its actor's
+ * credential was live. It proves a turn and nothing else: the grant row is
+ * rechecked by the turn authority inside the acquire, and a lease minted
+ * from it renews on the authority's own share recheck, there being no
+ * parent token or owner row behind it to re-resolve.
+ */
+export type DeferredGrantBinding = { transport: "deferred-grant"; grantId: string }
+
+type SessionProofBinding = SessionStreamLeaseBinding | DeferredGrantBinding
+
+type SessionProofClaims = PrivateSessionRuntimePrincipal & SessionProofBinding & {
+  orgId: string
+  workspaceId: string
+  sessionId: string
+  action: "read" | "write"
+}
+
 export type SessionStreamLeaseClaims = PrivateSessionRuntimePrincipal & SessionStreamLeaseBinding & {
   orgId: string
   workspaceId: string
@@ -106,7 +136,9 @@ export type SessionStreamLeaseClaims = PrivateSessionRuntimePrincipal & SessionS
 export const WORKSPACE_STREAM_LEASE_SESSION = "*"
 
 /** Prompt admission is reached over a proof a runtime presents, never from inside the plane's own process. */
-type TurnLeaseClaims = Extract<SessionStreamLeaseClaims, { transport: "relay-host" | "owner-grant" }> & {
+type TurnLeaseBinding = Exclude<SessionProofBinding, { transport: "embedded" }>
+
+type TurnLeaseClaims = Extract<SessionProofClaims, TurnLeaseBinding> & {
   turnId: string
   authorityLeaseId: string
   fencingToken: number
@@ -165,7 +197,7 @@ export function sessionStreamLeaseMinter(env: Record<string, string | undefined>
   return streamLeaseMinter(env)
 }
 
-function sessionLeasePrincipal(claims: SessionStreamLeaseClaims): PrivateSessionRuntimePrincipal {
+function sessionLeasePrincipal(claims: PrivateSessionRuntimePrincipal): PrivateSessionRuntimePrincipal {
   return claims.principalKind === "user"
     ? { principalKind: "user", actorId: claims.actorId, actorKind: "human" }
     : { principalKind: "service", actorId: claims.actorId, actorKind: "agent" }
@@ -173,9 +205,8 @@ function sessionLeasePrincipal(claims: SessionStreamLeaseClaims): PrivateSession
 
 async function runtimeAccessTokenDenial(
   authority: Pick<RuntimeSessionAuthorityPort, "runtimeAccessTokenActive">,
-  claims: SessionStreamLeaseClaims,
+  claims: Extract<SessionProofClaims, { transport: "relay-host" }>,
 ) {
-  if (claims.transport !== "relay-host") return undefined
   const active = asRecord(await authority.runtimeAccessTokenActive({
     jti: claims.parentRuntimeAccessTokenJti,
     workspaceId: claims.workspaceId,
@@ -209,16 +240,23 @@ async function ownerGrantDenial(
 
 async function proofDenial(
   options: Pick<RuntimeSessionStreamOptions, "authority" | "resolveWorkspaceOwner">,
-  claims: SessionStreamLeaseClaims,
+  claims: SessionProofClaims,
 ) {
+  if (claims.transport === "relay-host") return runtimeAccessTokenDenial(options.authority, claims)
   if (claims.transport === "owner-grant") return ownerGrantDenial(options.resolveWorkspaceOwner, claims)
-  return runtimeAccessTokenDenial(options.authority, claims)
+  return undefined
 }
 
 export type RuntimeSessionAuthorityOptions = {
   authority: RuntimeSessionAuthorityPort
   /** Durable prompt admission is selected independently from session visibility. */
   turnAuthority?: SessionTurnAuthority
+  /**
+   * The connections turn credentials this admission mints into: a runtime that
+   * holds an admitted turn receives a credential bound to the session and the
+   * turn's subject, dead when the lease ends.
+   */
+  turnCredentials?: ConnectionTurnCredentials
   env?: Record<string, string | undefined>
   ownerGrants?: OwnerGrantProof
   verifyRelayProof?: (token: string) => Promise<RelayHostPrivateSessionClaims>
@@ -335,7 +373,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     if (action !== "host_read") return context.json({ allowed: true })
     const minter = options.mintStreamLease ?? streamLeaseMinter(env)
     const minted = await minter({
-      ...sessionLeasePrincipal({ ...proof, transport: "relay-host", sessionId: WORKSPACE_STREAM_LEASE_SESSION, action: "read" }),
+      ...sessionLeasePrincipal(proof),
       transport: "relay-host",
       hostId: proof.hostId,
       parentRuntimeAccessTokenJti: proof.parentRuntimeAccessTokenJti,
@@ -353,13 +391,53 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
 
   const resolveWorkspaceOwner = options.ownerGrants?.resolveWorkspaceOwner
 
-  async function verifySessionProof(context: Context, request: SessionAuthorityRequest) {
+  /**
+   * A proof that only ever admits a turn — a lease over an owned turn, or a
+   * deferred grant — is answered apart from one that also opens streams and
+   * plain reads, so nothing downstream can mint a stream lease from it.
+   */
+  type SessionProof =
+    | {
+        claims: SessionStreamLeaseClaims
+        /** The workspace role the relay asserted on THIS request; a lease carries none. */
+        relayRole: RelayHostPrivateSessionClaims["role"] | undefined
+        rechecked: boolean
+      }
+    | { turn: { claims: SessionProofClaims; ownedTurn: TurnLeaseClaims | undefined; rechecked: boolean } }
+
+  async function verifySessionProof(context: Context, request: SessionAuthorityRequest): Promise<Response | SessionProof> {
     const { sessionId, action, lease, turnId, turnLeaseId, fencingToken } = request
     let claims: SessionStreamLeaseClaims
-    let ownedTurn: TurnLeaseClaims | undefined
-    /** The workspace role the relay asserted on THIS request; a lease carries none. */
     let relayRole: RelayHostPrivateSessionClaims["role"]
     const bearer = bearerToken(context.req.header("authorization") ?? null)
+    if (request.action === "turn_acquire" && request.grant) {
+      if (bearer) {
+        return context.json(
+          { error: { code: "session_turn_grant_invalid", message: "A deferred turn grant stands in for a bearer, never beside one" } },
+          400,
+        )
+      }
+      let verified: DeferredTurnGrantClaims
+      try {
+        verified = await verifyDeferredTurnGrant(request.grant, env, { sessionId })
+      } catch (error) {
+        if (error instanceof SessionTurnGrantError) return context.json({ error: { code: error.code, message: error.message } }, 401)
+        return context.json(
+          { error: { code: "session_authority_unavailable", message: "Deferred turn grant could not be verified" } },
+          503,
+        )
+      }
+      const binding: DeferredGrantBinding = { transport: "deferred-grant", grantId: verified.grantId }
+      const claims: SessionProofClaims = {
+        ...sessionLeasePrincipal(verified),
+        ...binding,
+        orgId: verified.orgId,
+        workspaceId: verified.workspaceId,
+        sessionId,
+        action: "write",
+      }
+      return { turn: { claims, ownedTurn: undefined, rechecked: true } }
+    }
     if (bearer && options.ownerGrants?.names(bearer) && !lease && !turnLeaseId) {
       const grant = await options.ownerGrants.verify(bearer).catch(() => undefined)
       if (!grant || (await ownerGrantDenial(resolveWorkspaceOwner, grant))) {
@@ -375,7 +453,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         sessionId,
         action: action === "write" ? "write" : "read",
       }
-      return { claims, ownedTurn, relayRole, rechecked: true }
+      return { claims, relayRole, rechecked: true }
     }
     if ((action === "turn_renew" || action === "turn_release") && turnLeaseId) {
       const verified = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(turnLeaseId).catch(() => undefined)
@@ -392,8 +470,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           401,
         )
       }
-      ownedTurn = verified
-      claims = verified
+      return { turn: { claims: verified, ownedTurn: verified, rechecked: false } }
     } else if (lease) {
       const verified = await (options.verifyStreamLease ?? streamLeaseVerifier(env))(lease).catch(() => undefined)
       // A workspace lease stands for the reader on every session of its
@@ -452,13 +529,45 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       }
     }
 
-    return { claims, ownedTurn, relayRole, rechecked: false }
+    return { claims, relayRole, rechecked: false }
+  }
+
+  /**
+   * The admitted turn's connection credential, bound to the authority lease.
+   * `subject` is the actor's user-scoped partition key — resolved through the
+   * authority, not read from the token — so a service principal or an actor
+   * with no user row mints a session-bound credential without one rather than
+   * being refused on the credential's account.
+   */
+  async function mintConnectionTurn(
+    principal: PrivateSessionRuntimePrincipal,
+    claims: Pick<SessionProofClaims, "orgId" | "workspaceId">,
+    sessionId: string,
+    lease: { leaseId: string; expiresAt: number },
+  ) {
+    const turnCredentials = options.turnCredentials
+    if (!turnCredentials) return undefined
+    let subject: string | undefined
+    if (principal.principalKind === "user") {
+      try {
+        subject = (await options.authority.resolveRuntimeMachineAccess?.(principal.actorId, claims.workspaceId, "viewer"))?.userId
+      } catch {
+        subject = undefined
+      }
+    }
+    return turnCredentials.mint({
+      sessionId,
+      leaseId: lease.leaseId,
+      expiresAt: lease.expiresAt,
+      ...(subject ? { subject } : {}),
+      orgId: claims.orgId,
+    })
   }
 
   async function applyTurnAction(
     context: Context,
     request: SessionAuthorityRequest,
-    claims: SessionStreamLeaseClaims,
+    claims: SessionProofClaims,
     ownedTurn: TurnLeaseClaims | undefined,
     rechecked: boolean,
   ) {
@@ -491,6 +600,19 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         503,
       )
     }
+    if (request.action === "turn_grant") {
+      const granted = await options.turnAuthority.grantSessionTurn({
+        ...principal,
+        sessionId,
+        workspaceId: claims.workspaceId,
+        intent: request.intent,
+        ...(request.subjectSessionId ? { subjectSessionId: request.subjectSessionId } : {}),
+        ...(request.registrationOperationId ? { registrationOperationId: request.registrationOperationId } : {}),
+        ...(turnId ? { turnId } : {}),
+      })
+      const minted = await mintDeferredTurnGrant(deferredTurnGrantClaims(principal, claims.orgId, granted), env)
+      return context.json({ allowed: true, grant: minted.grant, expiresAt: granted.expiresAt })
+    }
     const turn = {
       ...principal,
       sessionId,
@@ -498,7 +620,10 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       turnId: turnId!,
     }
     if (action === "turn_acquire") {
-      const acquired = await options.turnAuthority.acquireSessionTurn(turn)
+      const acquired = await options.turnAuthority.acquireSessionTurn({
+        ...turn,
+        ...(claims.transport === "deferred-grant" ? { grantId: claims.grantId } : {}),
+      })
       const proof = await (options.mintTurnLease ?? turnLeaseMinter(env))({
         ...claims,
         action: "write",
@@ -508,7 +633,16 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         acquiredAt: acquired.acquiredAt,
         expiresAt: acquired.expiresAt,
       })
-      return context.json({ ...acquired, leaseId: proof.lease, expiresAt: proof.expiresAt })
+      const connectionCredential = await mintConnectionTurn(principal, claims, acquired.sessionId, {
+        leaseId: acquired.leaseId,
+        expiresAt: acquired.expiresAt,
+      })
+      return context.json({
+        ...acquired,
+        leaseId: proof.lease,
+        expiresAt: proof.expiresAt,
+        ...(connectionCredential ? { connectionCredential } : {}),
+      })
     }
     const owned = {
       ...turn,
@@ -524,9 +658,20 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         acquiredAt: renewed.acquiredAt,
         expiresAt: renewed.expiresAt,
       })
-      return context.json({ ...renewed, leaseId: proof.lease, expiresAt: proof.expiresAt })
+      const connectionCredential = options.turnCredentials?.extendLease(ownedTurn!.authorityLeaseId, {
+        leaseId: renewed.leaseId,
+        expiresAt: renewed.expiresAt,
+      })
+      return context.json({
+        ...renewed,
+        leaseId: proof.lease,
+        expiresAt: proof.expiresAt,
+        ...(connectionCredential ? { connectionCredential } : {}),
+      })
     }
-    return context.json(await options.turnAuthority.releaseSessionTurn(owned))
+    const released = await options.turnAuthority.releaseSessionTurn(owned)
+    options.turnCredentials?.revokeLease(ownedTurn!.authorityLeaseId)
+    return context.json(released)
   }
 
   return new Hono().post("/session-authorize", limitedBody, async (context) => {
@@ -547,9 +692,12 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     const { sessionId, action, operationId, reason, title, stream, parentSessionId } = request
     const verified = await verifySessionProof(context, request)
     if (verified instanceof Response) return verified
-    const { claims, ownedTurn, relayRole, rechecked } = verified
 
     try {
+      if ("turn" in verified) {
+        return await applyTurnAction(context, request, verified.turn.claims, verified.turn.ownedTurn, verified.turn.rechecked)
+      }
+      const { claims, relayRole, rechecked } = verified
       const principal = sessionLeasePrincipal(claims)
       if (action === "reserve") {
         // A reservation names the creator, and the only creator a runtime may
@@ -654,7 +802,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         return context.json({ allowed: true })
       }
 
-      if (isTurnAction(action)) return await applyTurnAction(context, request, claims, ownedTurn, rechecked)
+      if (isTurnAction(action)) return await applyTurnAction(context, request, claims, undefined, rechecked)
 
       if (stream) {
         const decision = await authorizeRuntimeSessionStream(
@@ -681,6 +829,9 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       })
       return context.json({ allowed: true })
     } catch (error) {
+      if (error instanceof SessionTurnGrantError) {
+        return context.json({ error: { code: error.code, message: error.message } }, action === "turn_grant" ? 403 : 401)
+      }
       if (error instanceof SessionTurnConflictError || error instanceof SessionTurnLeaseLostError) {
         return context.json(
           {
@@ -721,6 +872,7 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
   const turnId = trimToUndefined(body?.turnId)
   const turnLeaseId = trimToUndefined(body?.leaseId)
   const fencingToken = positiveInteger(body?.fencingToken)
+  const grant = trimToUndefined(body?.grant)
   if (!sessionId || !isAuthorityAction(action)) return undefined
   if (
     (writeClass !== undefined && !isSessionWriteClass(writeClass))
@@ -731,6 +883,7 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
     || (body?.lease !== undefined && !lease)
     || (!!lease && !stream)
     || (stream && action !== "read" && action !== "write")
+    || (body?.grant !== undefined && (!grant || action !== "turn_acquire"))
   ) return undefined
   const fields = {
     sessionId,
@@ -761,7 +914,25 @@ function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined)
       return { ...fields, action, operationId, reason }
     case "turn_acquire":
       if (!turnId || body?.leaseId !== undefined || body?.fencingToken !== undefined) return undefined
-      return { ...fields, action, turnId }
+      return { ...fields, action, turnId, ...(grant ? { grant } : {}) }
+    case "turn_grant": {
+      const intent = body?.intent
+      const subjectSessionId = trimToUndefined(body?.subjectSessionId)
+      const registrationOperationId = trimToUndefined(body?.registrationOperationId)
+      if (
+        !isSessionTurnGrantIntent(intent)
+        || body?.leaseId !== undefined || body?.fencingToken !== undefined
+        || (body?.subjectSessionId !== undefined && !subjectSessionId)
+        || (body?.registrationOperationId !== undefined && !registrationOperationId)
+      ) return undefined
+      try {
+        normalizeGrantSessionTurnInput({ intent, subjectSessionId, registrationOperationId, turnId })
+      } catch (error) {
+        if (error instanceof SessionTurnGrantError) return undefined
+        throw error
+      }
+      return { ...fields, action, intent, subjectSessionId, registrationOperationId }
+    }
     case "turn_renew":
     case "turn_release":
       if (!turnId || !turnLeaseId || !fencingToken) return undefined
@@ -787,6 +958,7 @@ type AuthorityAction =
   | "turn_acquire"
   | "turn_renew"
   | "turn_release"
+  | "turn_grant"
 
 type HostAuthorityAction = "host_read" | "host_admin"
 
@@ -808,14 +980,19 @@ function isAuthorityAction(value: unknown): value is AuthorityAction {
     || value === "turn_acquire"
     || value === "turn_renew"
     || value === "turn_release"
+    || value === "turn_grant"
+}
+
+function isSessionTurnGrantIntent(value: unknown): value is SessionTurnGrantIntent {
+  return value === "child_completion" || value === "queued_prompt"
 }
 
 function isSessionWriteClass(value: unknown): value is SessionWriteClass {
   return value === "agent_turn" || value === "session_control"
 }
 
-function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_renew" | "turn_release" {
-  return value === "turn_acquire" || value === "turn_renew" || value === "turn_release"
+function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_renew" | "turn_release" | "turn_grant" {
+  return value === "turn_acquire" || value === "turn_renew" || value === "turn_release" || value === "turn_grant"
 }
 
 function streamLeaseMinter(env: Record<string, string | undefined>) {
@@ -913,7 +1090,9 @@ function turnLeaseMinter(env: Record<string, string | undefined>) {
       transport: claims.transport,
       ...(claims.transport === "relay-host"
         ? { host_id: claims.hostId, parent_jti: claims.parentRuntimeAccessTokenJti }
-        : {}),
+        : claims.transport === "deferred-grant"
+          ? { grant_id: claims.grantId }
+          : {}),
       session_id: claims.sessionId,
       action: "write",
       turn_id: claims.turnId,
@@ -961,17 +1140,20 @@ function turnLeaseVerifier(env: Record<string, string | undefined>) {
     const fencingToken = positiveInteger(payload.fencing_token)
     const acquiredAt = finiteTimestamp(payload.acquired_at)
     const expiresAt = finiteTimestamp(payload.authority_expires_at)
+    const grantId = trimToUndefined(payload.grant_id)
     const transport = payload.transport
     if (
       !actorId || !orgId || !workspaceId
       || !sessionId || !turnId || !authorityLeaseId || !fencingToken
       || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
     ) throw new Error("Turn lease claims are invalid")
-    const binding: Extract<SessionStreamLeaseBinding, { transport: "relay-host" | "owner-grant" }> = transport === "owner-grant"
+    const binding: TurnLeaseBinding = transport === "owner-grant"
       ? { transport: "owner-grant" }
-      : hostId && parentRuntimeAccessTokenJti
+      : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
         ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
-        : (() => { throw new Error("Turn lease binding is invalid") })()
+        : transport === "deferred-grant" && grantId
+          ? { transport: "deferred-grant", grantId }
+          : (() => { throw new Error("Turn lease binding is invalid") })()
     const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
       ? { principalKind: "user", actorId, actorKind: "human" }
       : { principalKind: "service", actorId, actorKind: "agent" }

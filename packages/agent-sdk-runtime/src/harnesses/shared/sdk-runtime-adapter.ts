@@ -4,7 +4,7 @@ import {
   type AgentExecutionBinding,
   type HarnessInstructionChannel,
 } from "@claxedo/agent-runtime-contract"
-import { type RawHarnessEvent, type SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import { type RawHarnessEvent } from "@claxedo/agent-event-runtime"
 import { createAgentSessionIndex } from "./agent-session-index"
 import { createSdkRuntimeGoals, type SdkRuntimeGoals } from "./sdk-runtime-goals"
 import {
@@ -60,9 +60,9 @@ import { createSdkRuntimeProducers } from "./sdk-runtime-producers"
 import { requireWorkspaceDirectory } from "../../target"
 import { firstTurnErrorData } from "../../first-turn-error"
 import {
+  admitSubagentObservation,
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
-  UnknownHostSubagentKeyError,
 } from "../../subagent-admission"
 import type { AgentRuntimeSessionBinding } from "./runtime-store"
 import type {
@@ -527,33 +527,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       // row's child stamped toward another crashes the unique child index.
       const transcriptKind = observation.transcript?.kind
       const openable = transcriptKind === "live" || transcriptKind === "messages" || transcriptKind === "file"
-      const boundary = createSubagentAdmissionBoundary({
-        store: admissionStore,
-        publish: (_parentSessionId, payload) => router.project(payload, source),
-      })
-      let event: SubagentUpdatedEvent
-      try {
-        event = await boundary.admit(id, observation, openable ? { allocateChildSessionId: () => randomUUID() } : undefined)
-      } catch (error) {
-        if (!(error instanceof UnknownHostSubagentKeyError)) throw error
-        // Tool output that names a child row the host never minted is not a
-        // fault of the turn: it is recorded and the turn goes on without it.
-        router.project({
-          type: "diagnostic",
-          diagnostic: {
-            code: "subagent-binding-unknown",
-            message: error.message,
-            severity: "warn",
-            source: "subagent-admission",
-            details: {
-              observationId: error.observationId,
-              ...(error.subagentKey ? { subagentKey: error.subagentKey } : {}),
-              ...(observation.toolCallId ? { toolCallId: observation.toolCallId } : {}),
-            },
-          },
-        }, source)
-        return undefined
-      }
+      const event = await admitSubagentObservation(
+        createSubagentAdmissionBoundary({ store: admissionStore, publish: (_parentSessionId, payload) => router.project(payload, source) }),
+        (diagnostic) => router.project(diagnostic, source),
+        id, observation, openable ? { allocateChildSessionId: () => randomUUID() } : undefined,
+      )
+      if (!event) return undefined
       subagentChildren.track(observation, event)
 
       const childSessionId = event.childSessionId

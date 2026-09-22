@@ -7,7 +7,7 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useLanguage } from "@/platform/i18n/provider"
 import { withCurrentRevision, type AgentPluginApi, type PluginCandidate, type PluginCatalog } from "@/features/agent-plugins/api"
 import { oauthServers } from "@/features/agent-plugins/connections"
-import { requestConfirm } from "@/features/agent-plugins/directory/confirm"
+import { requestConfirm } from "@/app/dialogs/confirm"
 import { installedHarnesses, isInstalled, matchesQuery, pluginLabel } from "@/features/agent-plugins/directory/view"
 
 /** The MCP servers a plugin ships are the catalog's own account of what it serves. */

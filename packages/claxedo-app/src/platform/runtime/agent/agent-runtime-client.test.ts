@@ -525,7 +525,7 @@ describe("AgentRuntimeClient", () => {
     })
 
     expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/api/workspace/ws_1/connection",
+      "POST http://127.0.0.1:3001/api/workspace/ws_1/connection",
       "POST https://relay.example/workspaces/ws_1/session/runtime-session-1/prompt_async Bearer runtime-token",
     ])
   })
@@ -586,7 +586,7 @@ describe("AgentRuntimeClient", () => {
     })
 
     expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/api/workspace/ws_1/connection",
+      "POST http://127.0.0.1:3001/api/workspace/ws_1/connection",
       "POST https://relay.example/workspaces/ws_1/session/runtime-session-1/prompt_async Bearer runtime-token",
     ])
   })
@@ -809,7 +809,7 @@ describe("AgentRuntimeClient", () => {
     })
 
     expect(calls).toEqual([
-      "GET https://control.example/api/workspace/ws_cleantest1/connection",
+      "POST https://control.example/api/workspace/ws_cleantest1/connection",
       "POST https://relay.example/workspaces/ws_cleantest1/session/runtime-session-1/prompt_async",
     ])
   })
@@ -936,7 +936,7 @@ describe("AgentRuntimeClient", () => {
 
     expect(calls).toEqual([
       "GET https://control.example/api/workspace/resolve?directory=%2Frepo%2Freal",
-      "GET https://control.example/api/workspace/ws_real/connection",
+      "POST https://control.example/api/workspace/ws_real/connection",
       "POST https://control.example/workspaces/ws_real/session/runtime-session-1/prompt_async",
       "POST https://control.example/workspaces/ws_real/session/runtime-session-1/prompt_async",
     ])
@@ -990,7 +990,7 @@ describe("AgentRuntimeClient", () => {
 
     expect(calls).toEqual([
       "GET https://control.example/api/workspace/resolve?directory=%2Frepo%2Freal",
-      "GET https://control.example/api/workspace/ws_real/connection",
+      "POST https://control.example/api/workspace/ws_real/connection",
       "POST https://relay.example/workspaces/ws_real/session/runtime-session-1/prompt_async",
     ])
   })

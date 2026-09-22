@@ -1,3 +1,4 @@
+import { channelFromThreadKey } from "../envelope"
 import type { ApprovalDecision, ApprovalRequest, ChannelSink, InboundEnvelope, OutboundChunk } from "../envelope"
 import type { DedupStore } from "./dedup"
 import type { ApprovalBridge } from "./approval-bridge"
@@ -109,44 +110,96 @@ export function createChannelCore(input: {
 }): ChannelCore {
   const approvals = input.approvals
 
-  async function admitSender(envelope: InboundEnvelope, handlers: Parameters<ChannelCore["handleInbound"]>[1]) {
-    // 1. ACCESS GATE — before any other work (dedup/session/LLM). A refused
-    //    stranger costs at most one throttled pairing reply; denials go to
-    //    the owner audit, not back to the sender (anti-amplification).
-    //    Trusted local injection (loopback fake transport) bypasses it.
+  /**
+   * The sender gate every turn clears — an inbound message and a button press
+   * alike — returning the refusal reason, or undefined once the sender is
+   * admitted. Both callers run it: a gate written out a second time for the
+   * press path is a gate that can drift out from under it.
+   *
+   * Access runs before any other work (dedup/session/LLM): forwarding to the
+   * agent first leaks private content however correct the policy is. A refused
+   * stranger costs at most one throttled pairing reply; every other denial goes
+   * to the owner audit rather than back to the sender, so neither gate can be
+   * turned into an outbound amplifier. Trusted local injection (the loopback
+   * fake transport) bypasses both.
+   */
+  async function admitSender(
+    envelope: InboundEnvelope,
+    handlers: Parameters<ChannelCore["handleInbound"]>[1],
+  ): Promise<ChannelDenialReason | "rate_limited" | undefined> {
     if (input.access && !envelope.trustedSource) {
       const decision = await input.access.gate(envelope)
       if (decision.admission === "drop") {
         await input.onDenial?.(envelope, decision.reason)
         if (decision.reply) await handlers.reply({ kind: "text", text: decision.reply, final: true })
-        return false
+        return decision.reason
       }
     }
 
-    // 2. PER-SENDER RATE LIMIT — an allowed-but-abusive sender is still
-    //    bounded before reaching a session/turn. Silent drop (no reply) so
-    //    the limiter itself can't be turned into an outbound amplifier.
-    //    Deliberately NOT passed `envelope.receivedAt`: that is the sender's
-    //    CLAIMED time, copied straight out of the provider webhook payload,
-    //    and the sliding window ages hits out relative to whatever it is
-    //    given — so one forged future timestamp would empty the bucket and
-    //    hand the flooder a fresh budget. The window must advance on the
-    //    server clock only.
+    // The limiter is deliberately NOT passed `envelope.receivedAt`: that is the
+    // sender's CLAIMED time, copied straight out of the provider webhook
+    // payload, and the sliding window ages hits out relative to whatever it is
+    // given — so one forged future timestamp would empty the bucket and hand
+    // the flooder a fresh budget. The window must advance on the server clock
+    // only.
     if (input.rateLimiter && !envelope.trustedSource) {
       const rl = input.rateLimiter.check(rateLimitKey(envelope.channel, envelope.externalUserId))
       if (!rl.allowed) {
         await input.onDenial?.(envelope, "rate_limited")
-        return false
+        return "rate_limited"
       }
     }
-    return true
+    return undefined
+  }
+
+  /**
+   * Resolve an approval to the prompt it answers and record it.
+   *
+   * A refusal releases the dedup claim so the same delivery can be answered
+   * again once whatever refused it is corrected; a recorded decision keeps the
+   * claim, which is what makes a redelivery inert. Both approval paths run
+   * through here, so a press and a structured reply cannot diverge on which of
+   * the two a given outcome gets.
+   */
+  async function recordApproval(envelope: InboundEnvelope, decision: {
+    callId?: string
+    token?: string
+    approved: boolean
+    actorExternalUserId: string
+    threadKey?: string
+  }): Promise<{ ok: true } | { ok: false; message: string }> {
+    if (!approvals) return { ok: false, message: "Approval replies are not enabled for this channel." }
+    // The thread the answer came from rides all the way through to
+    // `resolveToken` and `decide`, which is what makes their thread checks
+    // real. Drop it and those guards compare against undefined, letting an
+    // answer from any thread resolve any pending prompt.
+    const thread = decision.threadKey ? { threadKey: decision.threadKey } : {}
+    try {
+      const resolved = decision.callId
+        ? { ok: true as const, callId: decision.callId }
+        : decision.token
+          ? await approvals.resolveToken({ token: decision.token, ...thread })
+          : { ok: false as const, message: "Approval reply is missing a prompt token." }
+      const result = resolved.ok
+        ? await approvals.decide({
+          callId: resolved.callId,
+          approved: decision.approved,
+          actorExternalUserId: decision.actorExternalUserId,
+          ...thread,
+        })
+        : resolved
+      if (!result.ok) await input.dedup.release(envelope).catch(() => {})
+      return result
+    } catch (error) {
+      await input.dedup.release(envelope).catch(() => {})
+      throw error
+    }
   }
 
   async function handleSessionlessCommand(
     envelope: InboundEnvelope,
     handlers: Parameters<ChannelCore["handleInbound"]>[1],
   ) {
-    // 3. IDENTITY / LIFECYCLE COMMANDS that need no session.
     const intent = envelope.intent
     if (intent?.kind === "whoami") {
       await handlers.reply({
@@ -250,36 +303,23 @@ export function createChannelCore(input: {
     envelope: InboundEnvelope,
     handlers: Parameters<ChannelCore["handleInbound"]>[1],
   ) {
-    // STRUCTURED approval — a button press, carrying the token or call id it
+    // STRUCTURED approval — a reply carrying the token or call id the prompt
     // was rendered with. No interpretation needed.
-    if (envelope.intent?.kind === "approval_reply") {
-      if (!approvals) {
-        await handlers.reply({ kind: "text", text: "Approval replies are not enabled for this channel.", final: true })
-        return true
-      }
-      const resolved = envelope.intent.callId
-        ? { ok: true as const, callId: envelope.intent.callId }
-        : envelope.intent.token
-          ? await approvals.resolveToken({ token: envelope.intent.token, threadKey: envelope.threadKey })
-          : { ok: false as const, message: "Approval reply is missing a prompt token." }
-      if (!resolved.ok) {
-        await handlers.reply({ kind: "text", text: resolved.message, final: true })
-        return true
-      }
-      const decision = await approvals.decide({
-        callId: resolved.callId,
-        approved: envelope.intent.approved,
-        actorExternalUserId: envelope.externalUserId,
-        threadKey: envelope.threadKey,
-      })
-      await handlers.reply({
-        kind: "text",
-        text:  decision.ok ? "Approval recorded." : decision.message,
-        final: true,
-      })
-      return true
-    }
-    return false
+    const intent = envelope.intent
+    if (intent?.kind !== "approval_reply") return false
+    const result = await recordApproval(envelope, {
+      ...(intent.callId ? { callId: intent.callId } : {}),
+      ...(intent.token ? { token: intent.token } : {}),
+      approved: intent.approved,
+      actorExternalUserId: envelope.externalUserId,
+      threadKey: envelope.threadKey,
+    })
+    await handlers.reply({
+      kind: "text",
+      text: result.ok ? "Approval recorded." : result.message,
+      final: true,
+    })
+    return true
   }
 
   async function handleJudgedApproval(
@@ -407,7 +447,7 @@ export function createChannelCore(input: {
 
   return {
     async handleInbound(envelope, handlers) {
-      if (!(await admitSender(envelope, handlers))) return
+      if (await admitSender(envelope, handlers)) return
 
       if (await handleSessionlessCommand(envelope, handlers)) return
 
@@ -473,20 +513,61 @@ export function createChannelCore(input: {
       await dispatchMessage(envelope, handlers)
     },
     async onApproval(decision) {
-      if (!approvals) return { ok: false, message: "Approval bridge is not configured" }
-      // The decision's threadKey (set by the transport from the thread the
-      // button was clicked in) rides all the way through to `decide` and
-      // `resolveToken`, which is what makes their thread checks real. Drop it
-      // here and those guards compare against undefined, letting a press from
-      // any thread resolve any pending prompt.
-      if (decision.callId) return approvals.decide({ ...decision, callId: decision.callId })
-      if (!decision.token) return { ok: false, message: "Approval response is missing a prompt token." }
-      const resolved = await approvals.resolveToken({
-        token: decision.token,
+      // A button press is a webhook delivery like any inbound message, so it
+      // clears the same gates through the same code: `admitSender`, then
+      // authorization, dedup and `recordApproval`. A decision that can name no
+      // channel cannot be attributed to any of those gates, so it is refused
+      // rather than let through unchecked.
+      const channel = decision.channel ?? channelFromThreadKey(decision.threadKey)
+      if (!channel) {
+        return { ok: false, message: "Approval action could not be attributed to a channel." }
+      }
+      const envelope: InboundEnvelope = {
+        channel,
+        externalUserId: decision.actorExternalUserId,
+        threadKey: decision.threadKey ?? `${channel}:unknown`,
+        idempotencyKey: `approval:${decision.actorExternalUserId}:${decision.messageId ?? decision.callId ?? decision.token ?? "unknown"}`,
+        text: "",
+        chatType: decision.chatType ?? "dm",
+        // Pressing a button on the bot's own card IS addressing the bot —
+        // without the marker a "mention"-mode group would read the press as
+        // unaddressed chatter and drop it.
+        mentions: ["@bot"],
+        intent: {
+          kind: "approval_reply",
+          approved: decision.approved,
+          ...(decision.callId ? { callId: decision.callId } : {}),
+          ...(decision.token ? { token: decision.token } : {}),
+        },
+        raw: decision,
+      }
+      // A press arrives with no reply sink, so the throttled pairing offer the
+      // gate hands an inbound message is discarded rather than posted.
+      const refused = await admitSender(envelope, { reply: async () => {} })
+      if (refused) {
+        return {
+          ok: false,
+          message: refused === "rate_limited"
+            ? "Rate limit exceeded."
+            : "This sender is not permitted to answer approvals.",
+        }
+      }
+      const existingRef = decision.threadKey ? await input.sessions.get(decision.threadKey) : undefined
+      const auth = await input.authorize?.(envelope, {
+        ...(existingRef ? { existingSession: existingRef } : {}),
+        action: "approval",
+      })
+      if (auth?.ok === false) return { ok: false, message: auth.message }
+      const claim = await input.dedup.claim(envelope)
+      if (!claim.ok) return { ok: false, message: claim.message }
+      if (claim.duplicate) return { ok: false, message: "This approval action was already processed." }
+      return recordApproval(envelope, {
+        ...(decision.callId ? { callId: decision.callId } : {}),
+        ...(decision.token ? { token: decision.token } : {}),
+        approved: decision.approved,
+        actorExternalUserId: decision.actorExternalUserId,
         ...(decision.threadKey ? { threadKey: decision.threadKey } : {}),
       })
-      if (!resolved.ok) return resolved
-      return approvals.decide({ ...decision, callId: resolved.callId })
     },
   }
 }

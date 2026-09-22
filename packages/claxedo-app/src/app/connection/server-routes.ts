@@ -23,6 +23,12 @@ export type ServerRoutesClient = {
   project: {
     list(input?: WorkspaceScope, options?: Options): Reply<ClaxedoProject[]>
     current(input?: WorkspaceScope, options?: Options): Reply<ClaxedoProject>
+    /**
+     * The write form of `current`: registers the scoped directory's workspace
+     * when it has none, then answers the same project. Reads must use
+     * `current` — `ensure` is the only member of this client that may create.
+     */
+    ensure(input?: WorkspaceScope, options?: Options): Reply<ClaxedoProject>
     update(input: WorkspaceScope & { projectID: string; name?: string; icon?: ClaxedoProject["icon"]; commands?: ClaxedoProject["commands"] }, options?: Options): Reply<ClaxedoProject>
   }
   path: { get(input?: WorkspaceScope, options?: Options): Reply<ClaxedoPath> }
@@ -45,6 +51,7 @@ export function createServerRoutesClient(options: WorkspaceRuntimeClientOptions)
     project: {
       list: (input = {}, opts) => caller.call({ operation: "project.list", path: "/project", scope: input, options: opts }),
       current: (input = {}, opts) => caller.call({ operation: "project.current", path: "/project/current", scope: input, options: opts }),
+      ensure: (input = {}, opts) => caller.call({ operation: "project.ensure", method: "POST", path: "/project/current", scope: input, options: opts }),
       update: (input, opts) => caller.call({
         operation: "project.update",
         method: "PATCH",

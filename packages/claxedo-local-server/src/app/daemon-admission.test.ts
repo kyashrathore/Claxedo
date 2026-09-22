@@ -125,7 +125,8 @@ async function registeredWorkspace() {
   mkdirSync(directory)
   execFileSync("git", ["init", directory])
   const resolved = await identity.call(
-    `${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+    `${origin}/api/workspace/resolve?directory=${encodeURIComponent(directory)}`,
+    { method: "POST" },
   )
   expect(resolved.status).toBe(200)
   return ((await resolved.json()) as { workspaceId: string }).workspaceId
@@ -141,10 +142,25 @@ describe("a hostile page on this machine's loopback", () => {
       hostile(`/workspaces/${workspace}/api/wr/health`),
       hostile("/api/claxedo/agent-config"),
       hostile("/api/claxedo/credentials"),
+      hostile("/api/claxedo/bootstrap"),
     ])
 
-    expect(answers.map((answer) => answer.status)).toEqual([401, 401, 401, 401, 401])
+    expect(answers.map((answer) => answer.status)).toEqual([401, 401, 401, 401, 401, 401])
     expect(await code(answers[0])).toBe("daemon_capability_required")
+  })
+
+  test("cannot read the bootstrap's machine paths and project list, with or without a forged capability or bearer", async () => {
+    const forged = await hostile("/api/claxedo/bootstrap", {
+      headers: { [DAEMON_CAPABILITY_HEADER]: "not-the-token" },
+    })
+    // A bearer is not the capability: on a signed box the loopback branch used
+    // to answer the rich local body to anything carrying one.
+    const bearer = await hostile("/api/claxedo/bootstrap", {
+      headers: { authorization: "Bearer spoofed" },
+    })
+
+    expect([forged.status, bearer.status]).toEqual([401, 401])
+    expect(await code(bearer)).toBe("daemon_capability_required")
   })
 
   test("is refused a forged capability, and the daemon's own origin buys it nothing", async () => {
@@ -206,6 +222,15 @@ describe("the application that owns this daemon", () => {
     const projects = await identity.call(`${origin}/api/claxedo/projects`)
 
     expect(projects.status).toBe(200)
+  })
+
+  test("reads the rich local bootstrap the hostile page was refused", async () => {
+    const answer = await identity.call(`${origin}/api/claxedo/bootstrap`)
+
+    expect(answer.status).toBe(200)
+    const body = await answer.json() as { path?: { home?: string }; project?: unknown[] }
+    expect(body.path?.home).toBeTruthy()
+    expect(body.project).toBeDefined()
   })
 })
 

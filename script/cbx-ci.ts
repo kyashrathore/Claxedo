@@ -42,6 +42,7 @@ const focusedJobs = [
   "focus-agent-sdk-runtime-windows",
   "focus-server-core-windows",
   "focus-helpers-windows",
+  "focus-native-acceptance-windows",
   "focus-e2e-tier-real-claude-native-linux-aws",
   "focus-e2e-tier-real-codex-native-linux-aws",
   "focus-e2e-tier-real-cursor-linux-aws",

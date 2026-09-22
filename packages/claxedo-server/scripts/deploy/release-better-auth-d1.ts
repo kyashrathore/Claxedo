@@ -149,10 +149,6 @@ export function betterAuthD1DeploymentManifest(input: {
       ? {
           agentPlugins: Object.freeze({
             artifactBucket: Object.freeze({ binding: "CLAXEDO_AGENT_PLUGINS" as const, bucketName: input.release.agentPlugins.bucketName }),
-            credentialsNamespace: Object.freeze({
-              binding: "CLAXEDO_CREDENTIALS" as const,
-              namespaceId: input.release.agentPlugins.credentialsNamespaceId,
-            }),
           }),
         }
       : {}),
@@ -345,20 +341,13 @@ export function betterAuthD1ReleaseInputs(
   ) {
     throw new Error("CLAXEDO_PREVIOUS_STATE_REVISION must be a non-negative integer")
   }
-  // The Agent Plugins build binds the immutable artifact bucket and the
-  // org-partitioned credential namespace, turns the hosted credential surface
-  // on, and names the public origin the OAuth client identity document and the
-  // MCP gateway are served from. All of it is release input, none of it is a
-  // runtime discovery.
+  // The Agent Plugins build binds the immutable artifact bucket, turns the
+  // hosted credential surface on (its rows live in CONTROL_PLANE_DB), and names
+  // the public origin the OAuth client identity document and the MCP gateway
+  // are served from. All of it is release input, none of it is a runtime
+  // discovery.
   const agentPlugins = options.agentPlugins
     ? {
-        credentialsNamespaceId: (() => {
-          const value = environmentValue(env, environment, "CREDENTIALS_KV_NAMESPACE_ID")
-          if (!/^[0-9a-f]{32}$/i.test(value)) {
-            throw new Error(`CLAXEDO_${environment.toUpperCase()}_CREDENTIALS_KV_NAMESPACE_ID must be a real KV namespace ID`)
-          }
-          return value
-        })(),
         bucketName:
           env[`CLAXEDO_${environment.toUpperCase()}_AGENT_PLUGINS_BUCKET`]?.trim() ||
           (environment === "staging" ? "claxedo-agent-plugins-staging" : "claxedo-agent-plugins"),
@@ -462,7 +451,7 @@ export function betterAuthD1ReleaseInputs(
 type BetterAuthD1WranglerConfigInput = {
   staging: boolean
   mode?: BetterAuthD1ReleaseMode
-  agentPlugins?: { credentialsNamespaceId: string; bucketName: string }
+  agentPlugins?: { bucketName: string }
   sandbox?: { driver: BetterAuthD1SandboxDriver }
   authDatabaseId: string
   authDatabaseName: string
@@ -508,10 +497,6 @@ new_sqlite_classes = ["LiveSyncRoom"]
 [[r2_buckets]]
 binding = "CLAXEDO_AGENT_PLUGINS"
 bucket_name = ${quote(input.agentPlugins.bucketName)}
-
-[[kv_namespaces]]
-binding = "CLAXEDO_CREDENTIALS"
-id = ${quote(input.agentPlugins.credentialsNamespaceId)}
 `
     : ""
   return `name = ${quote(releaseTrain.workerName)}

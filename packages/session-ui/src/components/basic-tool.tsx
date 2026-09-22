@@ -22,6 +22,7 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { formatDuration } from "./format-duration"
+import { safeLinkHref } from "./safe-link"
 import { ScrollableOutput } from "./scrollable-output"
 
 export type TriggerTitle = {
@@ -259,6 +260,9 @@ export function BasicTool(props: BasicToolProps) {
     setOpen(value)
   }
 
+  /** Caller-supplied trigger link, dropped unless it survives the scheme policy. */
+  const triggerHref = () => safeLinkHref(props.triggerHref)
+
   const trigger = () => (
     <div
       data-component="tool-trigger"
@@ -346,7 +350,7 @@ export function BasicTool(props: BasicToolProps) {
   return (
     <Collapsible open={open()} onOpenChange={handleOpenChange} class="tool-collapsible">
       <Show
-        when={props.triggerAsLink || props.triggerHref}
+        when={props.triggerAsLink || triggerHref()}
         fallback={
           <Collapsible.Trigger
             data-hide-details={props.hideDetails ? "true" : undefined}
@@ -358,9 +362,9 @@ export function BasicTool(props: BasicToolProps) {
       >
         <Collapsible.Trigger
           as="a"
-          href={props.triggerHref}
-          role={!props.triggerHref && props.clickable ? "button" : undefined}
-          tabIndex={!props.triggerHref && props.clickable ? 0 : undefined}
+          href={triggerHref()}
+          role={!triggerHref() && props.clickable ? "button" : undefined}
+          tabIndex={!triggerHref() && props.clickable ? 0 : undefined}
           data-hide-details={props.hideDetails ? "true" : undefined}
           onClick={props.onTriggerClick}
           onKeyDown={props.onTriggerKeyDown}

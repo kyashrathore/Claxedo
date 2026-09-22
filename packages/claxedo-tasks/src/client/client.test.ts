@@ -106,7 +106,7 @@ describe("tasks client over the real routes", () => {
   })
 
   test("an image sent with a create is listed by detail and read back as a blob of its type", async () => {
-    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+    const bytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
     const created = await client.command({
       clientRequestId: "request-with-image",
       command: {
@@ -124,7 +124,7 @@ describe("tasks client over the real routes", () => {
     if (created.result.type !== "task.create") throw new Error("unexpected result")
 
     const detail = await client.getTask(created.result.task.id)
-    expect(detail.attachments).toMatchObject([{ id: "attachment-1", filename: "mock.png", mime: "image/png", size: 4 }])
+    expect(detail.attachments).toMatchObject([{ id: "attachment-1", filename: "mock.png", mime: "image/png", size: 8 }])
 
     const blob = await client.readAttachment(created.result.task.id, "attachment-1")
     expect(blob.type).toBe("image/png")

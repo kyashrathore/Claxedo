@@ -63,6 +63,7 @@ export function parseWorkspaceRelayTarget(input: unknown): WorkspaceRelayTarget 
   // `backing` may disagree with it; drop the target rather than pick one.
   if (row.access !== undefined) return undefined
   if (!isRelayBacking(row.backing)) return undefined
+  if (!isAllowedRelayTargetBaseUrl({ baseUrl, backing: row.backing })) return undefined
   return {
     workspaceId,
     hostId,
@@ -156,11 +157,57 @@ function isStringRecord(input: unknown): input is Record<string, string> {
   return isRecord(input) && Object.values(input).every((value) => typeof value === "string")
 }
 
+function parseAbsoluteHttpUrl(baseUrl: string): URL | undefined {
+  let url: URL
+  try {
+    url = new URL(baseUrl)
+  } catch {
+    return undefined
+  }
+  return url.protocol === "http:" || url.protocol === "https:" ? url : undefined
+}
+
+/**
+ * The only destinations a `cloud-vm` target may reach over plaintext HTTP:
+ * loopback, where the Relay Host Token on the request cannot leave the
+ * machine. `127.0.0.0/8` is matched on the URL-normalised hostname — WHATWG
+ * parsing already canonicalises `127.1`/`0177.0.0.1` forms — and each octet
+ * is range-checked so a literal `127.999.1.1` hostname stays untrusted.
+ */
+function isLoopbackTargetHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  if (host === "localhost" || host === "[::1]" || host.endsWith(".localhost")) return true
+  const ipv4 = /^127\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host)
+  return !!ipv4 && ipv4.slice(1).every((octet) => Number(octet) <= 255)
+}
+
+/**
+ * Whether a resolved target's `baseUrl` names a destination the relay may
+ * forward to.
+ *
+ * A `cloud-vm` target is fetched over the network with the Relay Host Token
+ * attached, so it must be HTTPS — or HTTP to a loopback host, the only
+ * plaintext transport that cannot put the token on a network. The socket
+ * adapters route a `local-worktree` target over the host tunnel and never
+ * fetch its `baseUrl` — the control plane sends the empty string — but
+ * embedded compositions do hand it to the shared fetch forwarder, so a
+ * non-empty value is admitted only as a well-formed HTTP(S) URL.
+ */
+function isAllowedRelayTargetBaseUrl(target: { baseUrl: string; backing: RelayBacking }): boolean {
+  if (isHostTunnelTarget(target)) {
+    if (target.baseUrl === "") return true
+    return parseAbsoluteHttpUrl(target.baseUrl) !== undefined
+  }
+  const url = parseAbsoluteHttpUrl(target.baseUrl)
+  if (!url) return false
+  return url.protocol === "https:" || isLoopbackTargetHostname(url.hostname)
+}
+
 export type RevocationLookupArgs = { jti: string; workspaceId: string; hostId: string }
 export type RevocationLookup = (args: RevocationLookupArgs) => Promise<RuntimeAccessTokenActiveResult>
 
 export type CachedRevocationOptions = {
-  /** TTL in milliseconds for cached revocation responses. Defaults to 10_000. */
+  /** TTL in milliseconds for cached revocation responses. Defaults to `REVOCATION_CACHE_TTL_MS_DEFAULT`. */
   ttlMs?: number
   /** Clock injection for tests. Defaults to `Date.now`. */
   now?: () => number
@@ -412,6 +459,13 @@ const RELAY_HOST_TOKEN_CACHE_MAX_ENTRIES = 4096
 const RUNTIME_ACCESS_TOKEN_CACHE_MAX_ENTRIES = 8192
 const RESOLVER_CACHE_MAX_ENTRIES = 8192
 const RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
+export const REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
+/**
+ * Default for the adapters' `runtimeAccessTokenActiveCheckIntervalMs`: how
+ * often an established WebSocket re-runs the revocation check. Shared so the
+ * Bun and Durable Object adapters cannot drift apart on the same bound.
+ */
+export const RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT = 30_000
 const relayHostTokenCaches = new WeakMap<WorkspaceRelayOptions, Map<string, RelayHostTokenCacheEntry>>()
 const runtimeAccessTokenCaches = new WeakMap<WorkspaceRelayOptions, Map<string, {
   claims?: RuntimeAccessTokenClaims
@@ -439,7 +493,7 @@ export function createCachedRevocationClient(
   inner: RevocationLookup,
   options: CachedRevocationOptions = {},
 ): RevocationLookup {
-  const ttlMs = options.ttlMs ?? 10_000
+  const ttlMs = options.ttlMs ?? REVOCATION_CACHE_TTL_MS_DEFAULT
   const now = options.now ?? Date.now
   const cache = new Map<string, {
     expiresAt: number
@@ -468,6 +522,35 @@ export function createCachedRevocationClient(
     cache.set(args.jti, { promise, expiresAt: at + ttlMs })
     return await promise
   }
+}
+
+/**
+ * The longest a revoked Runtime Access Token can keep working after the
+ * authority records the revocation, derived from the configured TTLs rather
+ * than measured timing.
+ *
+ * Every relayed HTTP request re-runs the active check, so a cached `active`
+ * answer delays denial by at most `revocationCacheTtlMs`. An established
+ * socket adds at most one re-check interval — its watcher can tick just
+ * before the stale entry expires — so pass the adapter's
+ * `runtimeAccessTokenActiveCheckIntervalMs` as `activeCheckIntervalMs`;
+ * omit it for the per-request path. A non-positive interval means the socket
+ * has no revocation watcher at all and the function reports no bound: the
+ * token's `exp`, enforced locally by the socket expiry timer, is then the
+ * only deadline, and it caps every path even while the revocation authority
+ * is unreachable.
+ */
+export function runtimeAccessTokenRevocationDelayMs(input: {
+  revocationCacheTtlMs?: number
+  activeCheckIntervalMs?: number
+} = {}): number {
+  const configuredTtl = input.revocationCacheTtlMs ?? REVOCATION_CACHE_TTL_MS_DEFAULT
+  const ttlMs = Number.isFinite(configuredTtl) && configuredTtl > 0 ? configuredTtl : 0
+  if (input.activeCheckIntervalMs === undefined) return ttlMs
+  if (!Number.isFinite(input.activeCheckIntervalMs) || input.activeCheckIntervalMs <= 0) {
+    return Number.POSITIVE_INFINITY
+  }
+  return ttlMs + input.activeCheckIntervalMs
 }
 
 /**
@@ -774,8 +857,16 @@ function forwardHeaders(
 }
 
 function targetUrl(target: WorkspaceRelayTarget, path: string, search: string) {
-  const url = new URL(path.replace(/^\/+/, ""), target.baseUrl.endsWith("/") ? target.baseUrl : `${target.baseUrl}/`)
+  const base = new URL(target.baseUrl.endsWith("/") ? target.baseUrl : `${target.baseUrl}/`)
+  // `path` is request text, but `new URL(path, base)` honours a scheme or
+  // `//host` inside it — "http:other.example/x" resolves absolute and the
+  // fetch would carry the Relay Host Token to that origin. The pathname
+  // setter treats the whole string as path text and keeps it on the
+  // validated target's origin.
+  const url = new URL(base)
+  url.pathname = `${base.pathname}${path.replace(/^\/+/, "")}`
   url.search = search
+  url.hash = ""
   return url
 }
 
@@ -928,6 +1019,39 @@ function pruneRelayHostTokenCache(cache: Map<string, RelayHostTokenCacheEntry>, 
   }
 }
 
+function relayHostMintInput(
+  options: WorkspaceRelayOptions,
+  claims: RuntimeAccessTokenClaims,
+  target: WorkspaceRelayTarget,
+) {
+  return {
+    principalKind: claims.principal_kind,
+    actorId: claims.actor_id,
+    actorKind: claims.actor_kind,
+    parentJti: claims.jti,
+    ...(claims.actor_public_id && claims.actor_name
+      ? {
+          actorPublicId: claims.actor_public_id,
+          actorName: claims.actor_name,
+          ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+        }
+      : {}),
+    ...(claims.channel_identity
+      ? {
+          channelIdentity: {
+            channel: claims.channel_identity.channel,
+            externalUserId: claims.channel_identity.external_user_id,
+            identityVersion: claims.channel_identity.identity_version,
+          },
+        }
+      : {}),
+    orgId: claims.org_id,
+    role: claims.role,
+    ...target,
+    ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
+  }
+}
+
 async function relayHostTokenFor(
   options: WorkspaceRelayOptions,
   claims: RuntimeAccessTokenClaims,
@@ -952,23 +1076,11 @@ async function relayHostTokenFor(
   let promise: Promise<string> | undefined
   try {
     const token = await trace.span("rht-mint", async () => {
-      promise = mintRelayHostToken({
-        principalKind: claims.principal_kind,
-        actorId: claims.actor_id,
-        actorKind: claims.actor_kind,
-        parentJti: claims.jti,
-        ...(claims.actor_public_id && claims.actor_name
-          ? {
-              actorPublicId: claims.actor_public_id,
-              actorName: claims.actor_name,
-              ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-            }
-          : {}),
-        orgId: claims.org_id,
-        role: claims.role,
-        ...target,
-        ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
-      }, options.relayHostSigningKey, options.relayHostAlgorithm)
+      promise = mintRelayHostToken(
+        relayHostMintInput(options, claims, target),
+        options.relayHostSigningKey,
+        options.relayHostAlgorithm,
+      )
       pruneRelayHostTokenCache(cache, now)
       cache.set(key, { promise, expiresAt: now + ttlMs })
       return await promise
@@ -991,23 +1103,11 @@ async function uncachedRelayHostTokenFor(
   trace: WorkspaceRelayAuthorizeTrace,
 ) {
   return await trace.span("rht-mint", async () =>
-    await mintRelayHostToken({
-      principalKind: claims.principal_kind,
-      actorId: claims.actor_id,
-      actorKind: claims.actor_kind,
-      parentJti: claims.jti,
-      ...(claims.actor_public_id && claims.actor_name
-        ? {
-            actorPublicId: claims.actor_public_id,
-            actorName: claims.actor_name,
-            ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-          }
-        : {}),
-      orgId: claims.org_id,
-      role: claims.role,
-      ...target,
-      ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
-    }, options.relayHostSigningKey, options.relayHostAlgorithm)
+    await mintRelayHostToken(
+      relayHostMintInput(options, claims, target),
+      options.relayHostSigningKey,
+      options.relayHostAlgorithm,
+    )
   )
 }
 
@@ -1334,7 +1434,15 @@ export async function authorizeWorkspaceRelayRequest(
       }
     }
     const target = await span("target-resolve", async () => await options.resolveTarget(claims))
-    if (!target || target.workspaceId !== claims.workspace_id || target.hostId !== claims.host_id) {
+    if (
+      !target
+      || target.workspaceId !== claims.workspace_id
+      || target.hostId !== claims.host_id
+      // A programmatic resolveTarget never passed through the resolver wire
+      // parse, so the same destination rule is applied again here — the last
+      // point shared by every adapter before forwarding.
+      || !isAllowedRelayTargetBaseUrl(target)
+    ) {
       return {
         ok: false,
         code: "relay_target_unavailable",
@@ -1417,6 +1525,10 @@ export async function forwardWorkspaceRelayRequest(
     const upstream = await span("upstream-fetch", async () => await requestFetch(
       targetUrl(target, path, new URL(request.url).search),
       workspaceRelayForwardRequestInit(request, relayHostToken, target.workspaceId, {
+        // Cookie forwarding follows the target type, not the transport this
+        // process happens to use: a local-worktree baseUrl must not receive
+        // the browser's relay cookies however it is reached.
+        hostTunnel: isHostTunnelTarget(target),
         signal: controller.signal,
         upstreamHeaders: target.upstreamHeaders,
       }),
@@ -1428,6 +1540,9 @@ export async function forwardWorkspaceRelayRequest(
     headers.delete("access-control-allow-methods")
     headers.delete("access-control-expose-headers")
     headers.delete("access-control-max-age")
+    // Every workspace shares this relay's origin: an upstream Set-Cookie
+    // would be replayed to other workspaces' requests through the relay.
+    headers.delete("set-cookie")
     for (const [key, value] of Object.entries(denyCorsHeaders(request, originAllowed) ?? {})) {
       headers.set(key, value)
     }

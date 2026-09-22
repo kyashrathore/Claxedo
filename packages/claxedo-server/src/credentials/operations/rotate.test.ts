@@ -1,15 +1,15 @@
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import type { SecretBackend } from "@claxedo/server-core/credentials/types"
 import { createStaticKeyProvider, encryptedSecretBackend, envelopeKeyId } from "@claxedo/server-core/credentials/envelope"
 import {
   auditEnvelopeKeys,
-  hostedCredentialOrgFromRef,
   rotateEnvelopeKeys,
   rotateHostedCredentialKeys,
   type RotatableBackend,
 } from "./rotate"
 import { CREDENTIALS_KEK_ENV, CREDENTIALS_KEK_NEXT_ENV } from "@claxedo/server-core/credentials/envelope"
-import { fetchBodyText } from "../../test-support/fetch-calls"
+import { HOSTED_CREDENTIALS_FLAG, hostedOrgCredentials } from "../worker/index"
+import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 
 function memoryBackend(): SecretBackend & { values: Map<string, string> } {
   const values = new Map<string, string>()
@@ -330,141 +330,120 @@ describe("KEK rotation re-encrypts stored ciphertext", () => {
   })
 })
 
-describe("hosted (Cloudflare KV) rotation", () => {
-  const KV_URL = "https://kv.example.test/ns"
+describe("hosted (D1) rotation", () => {
+  let controlPlane: ControlPlaneDatabase
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
+  beforeAll(async () => {
+    controlPlane = await miniflareControlPlaneDatabase(["0039_hosted_provider_credentials.sql"])
   })
 
-  /** Stubs the GLOBAL fetch — the KV byte store and the key lister both use it. */
-  function stubKv(seed: Map<string, string>, opts: { pageSize?: number } = {}) {
-    const calls: string[] = []
-    const impl = (async (input: string | URL, init?: RequestInit) => {
-      const url = new URL(String(input))
-      calls.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`)
-      if (url.pathname.endsWith("/keys")) {
-        const names = [...seed.keys()].sort()
-        const size = opts.pageSize ?? names.length
-        const cursor = url.searchParams.get("cursor")
-        const start = cursor ? Number(cursor) : 0
-        const page = names.slice(start, start + size)
-        const next = start + size < names.length ? String(start + size) : ""
-        return new Response(
-          JSON.stringify({ result: page.map((name) => ({ name })), result_info: { cursor: next } }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        )
-      }
-      const key = decodeURIComponent(url.pathname.split("/values/")[1] ?? "")
-      if (init?.method === "PUT") {
-        seed.set(key, fetchBodyText(init.body))
-        return new Response("ok", { status: 200 })
-      }
-      const value = seed.get(key)
-      if (value === undefined) return new Response("not found", { status: 404 })
-      return new Response(value, { status: 200 })
-    }) as typeof fetch
-    vi.stubGlobal("fetch", impl)
-    return { calls }
-  }
-
-  /** Seed KV the way `hostedOrgCredentials` writes it, under the retired KEK. */
-  async function seedHostedKv(orgs: Array<{ orgId: string; providerId: string; secret: string }>) {
-    const kv = new Map<string, string>()
-    const store: SecretBackend = {
-      async put(id, secret) {
-        kv.set(`cf:${id}`, secret)
-        return `cf:${id}`
-      },
-      async get(ref) {
-        return kv.get(ref) ?? null
-      },
-      async delete(ref) {
-        kv.delete(ref)
-      },
-      async probe() {
-        return true
-      },
-    }
-    for (const org of orgs) {
-      const backend = encryptedSecretBackend(store, createStaticKeyProvider({ current: kek(1) }), {
-        orgId: org.orgId,
-      })
-      await backend.put(`org/${org.orgId}/credential/${org.providerId}`, org.secret)
-    }
-    return kv
-  }
-
-  const rotatedEnv = {
-    CLAXEDO_CF_KV_URL: KV_URL,
-    CLAXEDO_CF_KV_TOKEN: "kv-token",
-    [CREDENTIALS_KEK_ENV]: kekBase64(2),
-    [CREDENTIALS_KEK_NEXT_ENV]: kekBase64(1),
-  }
-
-  test("parses the org partition out of the hosted key layout", () => {
-    expect(hostedCredentialOrgFromRef("cf:org/org_123/credential/openai")).toBe("org_123")
-    expect(hostedCredentialOrgFromRef("cf:some-uuid")).toBeUndefined()
+  afterAll(async () => {
+    await controlPlane.dispose()
   })
 
-  test("enumerates every KV key across pages and drains each org under its own subkey", async () => {
-    const kv = await seedHostedKv([
-      { orgId: "org-a", providerId: "openai", secret: "a-token" },
-      { orgId: "org-b", providerId: "openai", secret: "b-token" },
-      { orgId: "org-b", providerId: "codex-acp", secret: "b-codex" },
-    ])
-    const { calls } = stubKv(kv, { pageSize: 2 })
+  const write = { kind: "api_key" as const, source: "managed" as const }
 
-    const audit = await rotateHostedCredentialKeys({ env: rotatedEnv, dryRun: true })
+  /** Epoch 1: only the key being retired exists. */
+  const retiredEnv = { [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: kekBase64(1) }
+  /** Epoch 2: the new key is current, the retired key is still accepted for reads. */
+  const rotatedEnv = { ...retiredEnv, [CREDENTIALS_KEK_ENV]: kekBase64(2), [CREDENTIALS_KEK_NEXT_ENV]: kekBase64(1) }
+  /** Epoch 3: the retired key has left configuration. */
+  const newKeyOnlyEnv = { [HOSTED_CREDENTIALS_FLAG]: "1", [CREDENTIALS_KEK_ENV]: kekBase64(2) }
+
+  const keyIds = async () =>
+    (
+      await controlPlane.database
+        .prepare("select org_id, provider_id, secret_envelope from hosted_provider_credentials order by org_id, provider_id")
+        .all<{ org_id: string; provider_id: string; secret_envelope: string }>()
+    ).results.map((row) => [row.org_id, row.provider_id, row.secret_envelope.split(":")[1]])
+
+  test("enumerates every row and drains each org under its own subkey", async () => {
+    const database = controlPlane.database
+    for (const [orgId, providerId, secret] of [
+      ["org-a", "openai", "a-token"],
+      ["org-b", "openai", "b-token"],
+      ["org-b", "codex-acp", "b-codex"],
+    ]) {
+      await hostedOrgCredentials(orgId, { database, env: retiredEnv }).putCredential({ ...write, provider_id: providerId, secret })
+    }
+    const retired = await envelopeKeyId(kek(1))
+    const active = await envelopeKeyId(kek(2))
+    expect((await keyIds()).map((row) => row[2])).toEqual([retired, retired, retired])
+
+    const audit = await rotateHostedCredentialKeys({ database, env: rotatedEnv, dryRun: true })
     expect(audit.scanned).toBe(3)
     expect(audit.pending).toBe(3)
-    expect(audit.staleKeyIds).toEqual([await envelopeKeyId(kek(1))])
+    expect(audit.staleKeyIds).toEqual([retired])
     expect(audit.complete).toBe(false)
+    expect((await keyIds()).map((row) => row[2])).toEqual([retired, retired, retired])
 
-    const report = await rotateHostedCredentialKeys({ env: rotatedEnv })
+    const report = await rotateHostedCredentialKeys({ database, env: rotatedEnv })
     expect(report.rewritten).toBe(3)
+    expect(report.failures).toEqual([])
     expect(report.complete).toBe(true)
-    // Pagination actually happened (2 page requests per pass, 2 passes so far).
-    expect(calls.filter((call) => call.includes("/keys")).length).toBeGreaterThan(2)
+    expect(report.entries.map((entry) => [entry.orgId, entry.ref])).toEqual([
+      ["org-a", "d1:openai"],
+      ["org-b", "d1:codex-acp"],
+      ["org-b", "d1:openai"],
+    ])
+    expect((await keyIds()).map((row) => row[2])).toEqual([active, active, active])
 
-    const after = await rotateHostedCredentialKeys({ env: rotatedEnv, dryRun: true })
+    const after = await rotateHostedCredentialKeys({ database, env: rotatedEnv, dryRun: true })
     expect(after.alreadyCurrent).toBe(3)
     expect(after.staleKeyIds).toEqual([])
     expect(after.complete).toBe(true)
 
-    // With ONLY the new KEK configured, every org still reads its own secret.
-    const readable = async (orgId: string, providerId: string) => {
-      const store: SecretBackend = {
-        async put(id, secret) {
-          kv.set(`cf:${id}`, secret)
-          return `cf:${id}`
-        },
-        async get(ref) {
-          return kv.get(ref) ?? null
-        },
-        async delete() {},
-        async probe() {
-          return true
-        },
-      }
-      return encryptedSecretBackend(store, createStaticKeyProvider({ current: kek(2) }), { orgId }).get(
-        `cf:org/${orgId}/credential/${providerId}`,
-      )
-    }
-    expect(await readable("org-a", "openai")).toBe("a-token")
-    expect(await readable("org-b", "codex-acp")).toBe("b-codex")
+    // With ONLY the new KEK configured, every org still reads its own secret,
+    // and each org's ciphertext is still sealed to that org.
+    const orgA = hostedOrgCredentials("org-a", { database, env: newKeyOnlyEnv })
+    const orgB = hostedOrgCredentials("org-b", { database, env: newKeyOnlyEnv })
+    expect(await orgA.resolveCredentialSecret?.("openai")).toBe("a-token")
+    expect(await orgB.resolveCredentialSecret?.("openai")).toBe("b-token")
+    expect(await orgB.resolveCredentialSecret?.("codex-acp")).toBe("b-codex")
+    expect(await orgA.resolveCredentialSecret?.("codex-acp")).toBeNull()
   })
 
-  test("a KV key with no org segment is reported, not swept under a guessed partition", async () => {
-    const kv = await seedHostedKv([{ orgId: "org-a", providerId: "openai", secret: "a-token" }])
-    kv.set("cf:legacy-uuid", "cenc1:00000000000000ff:AAAA")
-    stubKv(kv)
+  test("a row deleted between enumeration and sweep is absent, not a failure, and the sweep mints nothing", async () => {
+    const database = controlPlane.database
+    const store = hostedOrgCredentials("org-c", { database, env: retiredEnv })
+    await store.putCredential({ ...write, provider_id: "openai", secret: "c-token" })
+    const rowsBefore = (await keyIds()).length
 
-    const report = await rotateHostedCredentialKeys({ env: rotatedEnv })
-    expect(report.rewritten).toBe(1)
-    expect(report.failures).toHaveLength(1)
-    expect(report.failures[0].ref).toBe("cf:legacy-uuid")
-    expect(report.failures[0].error).toMatch(/no envelope partition/)
-    expect(report.complete).toBe(false)
+    const report = await rotateHostedCredentialKeys({
+      database,
+      env: rotatedEnv,
+      onEntry: vi.fn(),
+    })
+    expect(report.entries.find((entry) => entry.orgId === "org-c")?.outcome).toBe("rewritten")
+
+    await store.deleteCredential("openai")
+    const deleting = await rotateHostedCredentialKeys({
+      database: {
+        prepare: (sql) => {
+          const statement = database.prepare(sql)
+          return sql.startsWith("select org_id, provider_id from hosted_provider_credentials")
+            ? {
+                bind: () => statement,
+                first: () => statement.first(),
+                run: () => statement.run(),
+                all: async () => ({
+                  results: [...(await statement.all()).results, { org_id: "org-c", provider_id: "openai" }],
+                }),
+              }
+            : statement
+        },
+      },
+      env: rotatedEnv,
+    })
+    expect(deleting.absent).toBe(1)
+    expect(deleting.failures).toEqual([])
+    expect(deleting.complete).toBe(true)
+    expect((await keyIds()).length).toBe(rowsBefore - 1)
+  })
+
+  test("refuses to run without a KEK", async () => {
+    await expect(
+      rotateHostedCredentialKeys({ database: controlPlane.database, env: { [HOSTED_CREDENTIALS_FLAG]: "1" } }),
+    ).rejects.toThrow(new RegExp(CREDENTIALS_KEK_ENV))
   })
 })

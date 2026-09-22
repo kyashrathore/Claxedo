@@ -170,10 +170,15 @@ export const localServer: Policy = {
   //    scope-key owner in `@claxedo/agent-sdk-runtime/adapters`, all already
   //    here.
   //  - `app/daemon-admission.ts` now actually reachable: the composition mounts
-  //    its machine-recovery fence, so the module this comment already claimed
-  //    was in the closure is in it.
-  //    69/28, no headroom.
-  ceilings: { modules: 69, packages: 28 },
+  //    its capability admission and its machine-recovery fence, so the module
+  //    this comment already claimed was in the closure is in it.
+  //  - `node:dns` via `workspace/routes/projects-route.ts` (owner: clone
+  //    destination admission): a signed caller's repoUrl is held to public
+  //    destinations through the system resolver, because getaddrinfo honours
+  //    /etc/hosts, mDNS and split-horizon DNS — the answers `git` will dial —
+  //    and only a Node runtime has it (the hosted Worker resolves over DoH).
+  //    70/29, no headroom.
+  ceilings: { modules: 70, packages: 29 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

@@ -148,13 +148,21 @@ export function pathMatchesPrefix(path: string, prefix: string) {
  * client on the Worker path; `x-forwarded-for`'s first entry is the fallback for
  * the Node container behind a proxy. Same derivation as
  * `routes/hosted/device-auth.ts` `rateLimitClientKey`.
+ *
+ * The header-level form is exported for entrypoints that hold a raw `Request`
+ * rather than a Hono context — the candidate Worker's public-auth budget runs
+ * before any Hono app exists.
  */
-export function requestClientKey(c: Context) {
-  const direct = c.req.header("cf-connecting-ip")?.trim()
+export function requestClientKeyFromHeaders(headers: Headers) {
+  const direct = headers.get("cf-connecting-ip")?.trim()
   if (direct) return direct
-  const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim()
+  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim()
   if (forwarded) return forwarded
   return "anonymous"
+}
+
+export function requestClientKey(c: Context) {
+  return requestClientKeyFromHeaders(c.req.raw.headers)
 }
 
 export type RequestGuardOptions = {

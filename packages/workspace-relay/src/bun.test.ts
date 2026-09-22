@@ -1,8 +1,15 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import { generateKeyPair } from "jose"
-import { mintHostTunnelToken, mintRuntimeAccessToken, verifyRelayHostToken } from "./auth"
+import {
+  hostTunnelTokenAudience,
+  mintHostTunnelToken,
+  mintRuntimeAccessToken,
+  runtimeAccessTokenIssuer,
+  verifyRelayHostToken,
+} from "./auth"
 import { createWorkspaceRelayDirectory, type WorkspaceRelayDirectory } from "./directory"
 import {
+  __directHttpInternalsForTest,
   __slowConsumerInternalsForTest,
   createWorkspaceRelayBun,
   relayBufferedBytes,
@@ -11,7 +18,14 @@ import {
   type WorkspaceRelayBunOptions,
 } from "./bun"
 import { TUNNEL_PROTOCOL_VERSION, type TunnelPong } from "@claxedo/workspace-relay-protocol"
-import { createCachedHostGenerationClient, type HostGenerationLookup, type HostGenerationResult, type WorkspaceRelayAuditEvent } from "./server"
+import {
+  createCachedHostGenerationClient,
+  createCachedRevocationClient,
+  runtimeAccessTokenRevocationDelayMs,
+  type HostGenerationLookup,
+  type HostGenerationResult,
+  type WorkspaceRelayAuditEvent,
+} from "./server"
 
 type DirectoryObserver = {
   waitForPresence(): Promise<NonNullable<ReturnType<WorkspaceRelayDirectory["activeHost"]>>>
@@ -166,6 +180,26 @@ function hostTunnelSocket(url: string, token: string) {
 }
 
 /**
+ * `authorizeHostTunnel` grants by returning the claims its policy verified;
+ * the relay re-validates host/workspace binding on them. This stand-in binds
+ * whatever the request asks for — the test-seam equivalent of a Host Tunnel
+ * Token minted for exactly this host and workspace set.
+ */
+const allowHostTunnel: NonNullable<WorkspaceRelayBunOptions["authorizeHostTunnel"]> = (_request, input) => ({
+  authorized: true,
+  claims: {
+    iss: runtimeAccessTokenIssuer,
+    aud: hostTunnelTokenAudience,
+    sub: "host-client-test",
+    host_id: input.hostId,
+    workspace_ids: input.workspaceIds,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 300,
+    jti: crypto.randomUUID(),
+  },
+})
+
+/**
  * An accepted client socket whose upstream never finishes connecting, so every
  * frame the test sends lands in the pre-open queue and each bound can be
  * exercised on its own. The open watchdog is set far past the assertions so a
@@ -198,7 +232,7 @@ async function preOpenQueueHarness(bounds: {
     resolveTarget: (claims) => ({
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
-      baseUrl: "http://cloud.example.test",
+      baseUrl: "https://cloud.example.test",
       backing: "cloud-vm",
     }),
   }, {
@@ -401,7 +435,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://cloud.example.test",
+        baseUrl: "https://cloud.example.test",
         backing: "cloud-vm",
       }),
     }, {
@@ -546,7 +580,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://cloud.example.test",
+        baseUrl: "https://cloud.example.test",
         backing: "cloud-vm",
       }),
     }, {
@@ -644,7 +678,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://cloud.example.test",
+        baseUrl: "https://cloud.example.test",
         backing: "cloud-vm",
       }),
     }, {
@@ -716,7 +750,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://cloud.example.test",
+        baseUrl: "https://cloud.example.test",
         backing: "cloud-vm",
       }),
     }, {
@@ -1169,6 +1203,318 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  test("rejects concurrent oversized direct-cloud bodies without reaching upstream", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    let upstreamRequests = 0
+    const host = Bun.serve({
+      port: 0,
+      fetch() {
+        upstreamRequests++
+        return new Response("cloud-ok")
+      },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    }, {
+      directHttpRequestBodyMaxBytes: 8,
+    })
+    const relay = Bun.serve({
+      port: 0,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      const post = (i: number) =>
+        fetch(new URL(`/workspaces/ws_1/api/wr/upload?i=${i}`, relay.url), {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+          body: "x".repeat(64),
+        })
+      const results = await Promise.all([post(1), post(2), post(3)])
+
+      for (const res of results) {
+        expect(res.status).toBe(413)
+        expect(((await res.json()) as { error: { code: string } }).error.code).toBe("request_body_too_large")
+      }
+      expect(upstreamRequests).toBe(0)
+    } finally {
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
+  test("streams an ordinary direct-cloud response before the upstream body finishes", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const encoder = new TextEncoder()
+    const host = Bun.serve({
+      port: 0,
+      fetch() {
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode("chunk-1"))
+            // The body never ends: if the relay buffered it whole, neither
+            // the response nor this chunk could ever reach the client.
+          },
+        }), {
+          headers: { "content-type": "text/plain" },
+        })
+      },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    })
+    const relay = Bun.serve({
+      port: 0,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      const res = await fetch(new URL("/workspaces/ws_1/api/wr/download", relay.url), {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      expect(res.status).toBe(200)
+      const reader = res.body!.getReader()
+      const first = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("streamed chunk did not arrive")), 5_000)),
+      ])
+      expect(first.done).toBe(false)
+      expect(new TextDecoder().decode(first.value)).toBe("chunk-1")
+      await reader.cancel()
+    } finally {
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
+  test("refuses direct-cloud requests once the concurrency queue is full", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    let releaseFirst: () => void
+    let firstArrived: () => void
+    const firstHeld = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const firstReachedUpstream = new Promise<void>((resolve) => { firstArrived = resolve })
+    let upstreamRequests = 0
+    const host = Bun.serve({
+      port: 0,
+      async fetch() {
+        upstreamRequests++
+        if (upstreamRequests === 1) {
+          firstArrived()
+          await firstHeld
+        }
+        return new Response("cloud-ok")
+      },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    }, {
+      // One slot held upstream, one waiter in the queue: a third concurrent
+      // request must be refused rather than pinned in memory.
+      directHttpConcurrency: 1,
+      directHttpQueueMax: 1,
+    })
+    const relay = Bun.serve({
+      port: 0,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      const headers = { authorization: `Bearer ${token}` }
+      const first = fetch(new URL("/workspaces/ws_1/api/wr/health?i=1", relay.url), { headers })
+      await firstReachedUpstream
+      const rest = [
+        fetch(new URL("/workspaces/ws_1/api/wr/health?i=2", relay.url), { headers }),
+        fetch(new URL("/workspaces/ws_1/api/wr/health?i=3", relay.url), { headers }),
+      ]
+
+      // Whichever arrived second sits in the queue until the slot frees; only
+      // the refused one settles first.
+      const refused = await Promise.race(rest)
+      expect(refused.status).toBe(429)
+      expect(((await refused.json()) as { error: { code: string } }).error.code).toBe("too_many_in_flight")
+
+      releaseFirst!()
+      const restStatuses = (await Promise.all(rest)).map((res) => res.status).sort((a, b) => a - b)
+      expect(restStatuses).toEqual([200, 429])
+      expect((await first).status).toBe(200)
+      // The refused request never reached upstream; the held and queued ones did.
+      expect(upstreamRequests).toBe(2)
+    } finally {
+      releaseFirst!()
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
+  test("denies a cloud-vm target resolved to plaintext HTTP on a remote host", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        // Plaintext HTTP to a non-loopback host would carry the Relay Host
+        // Token off the machine.
+        baseUrl: "http://metadata.internal.test",
+        backing: "cloud-vm",
+      }),
+    })
+    const relay = Bun.serve({
+      port: 0,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      const res = await fetch(new URL("/workspaces/ws_1/api/wr/health", relay.url), {
+        headers: { authorization: `Bearer ${token}` },
+      })
+
+      expect(res.status).toBe(403)
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("relay_target_unavailable")
+    } finally {
+      await stopServer(relay)
+    }
+  })
+
+  test("passes the request cookie to a cloud upstream but strips its Set-Cookie and CORS grants", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const upstreamSeen: { cookie: string | null } = { cookie: null }
+    const host = Bun.serve({
+      port: 0,
+      fetch(request) {
+        upstreamSeen.cookie = request.headers.get("cookie")
+        return new Response("cloud-ok", {
+          headers: {
+            // Every workspace shares this relay's origin: an upstream cookie
+            // or CORS grant forwarded verbatim would leak across workspaces.
+            "set-cookie": "upstream=1; Path=/",
+            "access-control-allow-origin": "*",
+            "access-control-allow-credentials": "true",
+            "content-type": "text/plain",
+          },
+        })
+      },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    })
+    const relay = Bun.serve({
+      port: 0,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      const res = await fetch(new URL("/workspaces/ws_1/api/wr/health", relay.url), {
+        headers: {
+          authorization: `Bearer ${token}`,
+          origin: "http://localhost:4482",
+          cookie: "session=abc",
+        },
+      })
+
+      expect(res.status).toBe(200)
+      // cloud-vm contract: the workspace may legitimately need session cookies.
+      expect(upstreamSeen.cookie).toBe("session=abc")
+      // ...but its response headers are the relay's, not the workspace's.
+      expect(res.headers.get("set-cookie")).toBeNull()
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:4482")
+      expect(res.headers.get("access-control-allow-credentials")).toBeNull()
+      await expect(res.text()).resolves.toBe("cloud-ok")
+    } finally {
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
   test("registers host tunnel presence and responds to heartbeat pings", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
@@ -1301,7 +1647,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       hostTunnelPingIntervalMs: 1,
     })
     const relay = Bun.serve({
@@ -1351,7 +1697,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       hostTunnelPingIntervalMs: 10,
       hostTunnelMaxMissedPongs: 1,
     })
@@ -1397,7 +1743,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -1470,6 +1816,94 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  test("strips the request Cookie and upstream response grants on tunnelled HTTP", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const directory = createWorkspaceRelayDirectory()
+    const observer = observeDirectory(directory)
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      directory,
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://host-tunnel.invalid",
+        backing: "local-worktree",
+      }),
+    }, {
+      authorizeHostTunnel: allowHostTunnel,
+    })
+    const relay = Bun.serve({
+      port: 0,
+      fetch: relayHandler.fetch,
+      websocket: relayHandler.websocket,
+    })
+    const host = new WebSocket(
+      new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
+    )
+    host.onmessage = (event) => {
+      const message = JSON.parse(String(event.data)) as {
+        type: string
+        request_id: string
+        headers: Record<string, string>
+      }
+      if (message.type !== "http.request") return
+      // The tunnel ends on a machine somebody uses, whose cookie jar the
+      // browser may share — the relay never replays cookies to it.
+      expect(message.headers.cookie).toBeUndefined()
+      host.send(JSON.stringify({
+        type: "http.response.start",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        request_id: message.request_id,
+        status: 200,
+        headers: {
+          "content-type": "text/plain",
+          "set-cookie": "host=1; Path=/",
+          "access-control-allow-origin": "https://evil.example.test",
+          "access-control-allow-credentials": "true",
+        },
+      }))
+      host.send(JSON.stringify({
+        type: "http.response.end",
+        protocol: TUNNEL_PROTOCOL_VERSION,
+        request_id: message.request_id,
+      }))
+    }
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      await waitForOpen(host)
+      await observer.waitForPresence()
+      const res = await fetch(new URL("/workspaces/ws_1/api/wr/health", relay.url), {
+        headers: {
+          authorization: `Bearer ${token}`,
+          origin: "http://localhost:4482",
+          cookie: "session=abc",
+        },
+      })
+
+      expect(res.status).toBe(200)
+      // The browser talks to the relay, so only relay-owned CORS applies —
+      // and an upstream Set-Cookie never reaches the shared relay origin.
+      expect(res.headers.get("set-cookie")).toBeNull()
+      expect(res.headers.get("access-control-allow-origin")).toBe("http://localhost:4482")
+      expect(res.headers.get("access-control-allow-credentials")).toBeNull()
+    } finally {
+      host.close()
+      await stopServer(relay)
+    }
+  })
+
   test("rejects tunnelled HTTP request bodies over the configured cap", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
@@ -1487,7 +1921,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       tunnelRequestBodyMaxBytes: 8,
     })
     const relay = Bun.serve({
@@ -1557,7 +1991,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -1619,7 +2053,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -1723,7 +2157,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -1791,7 +2225,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       tunnelHttpResponseTimeoutMs: 50,
     })
     const relay = Bun.serve({
@@ -1881,7 +2315,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       // Wide enough that http.response.start reliably lands INSIDE the window
       // even on a starved 2-core CI runner — a start that misses the window
       // times out a never-started request and the fetch below hangs forever.
@@ -2049,7 +2483,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2146,7 +2580,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       runtimeAccessTokenActiveCheckIntervalMs: 5,
     })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
@@ -2210,7 +2644,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2296,7 +2730,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2370,7 +2804,7 @@ describe("workspace relay Bun adapter", () => {
       directory: createWorkspaceRelayDirectory(),
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => false,
+      authorizeHostTunnel: () => ({ authorized: false }),
     })
     const relay = Bun.serve({
       port: 0,
@@ -2439,7 +2873,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2563,7 +2997,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2657,7 +3091,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -2840,7 +3274,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://upstream.invalid",
+        baseUrl: "https://upstream.invalid",
         backing: "cloud-vm",
       }),
     })
@@ -3091,6 +3525,147 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  test("closes an idle Bun WebSocket within the specified revocation delay", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const host = Bun.serve<{ ok: true }>({
+      port: 0,
+      fetch(request, server) {
+        if (server.upgrade(request, { data: { ok: true } })) return undefined
+        return new Response("upgrade failed", { status: 400 })
+      },
+      websocket: { message() {} },
+    })
+    // A cached positive answer from admission is still fresh when the token is
+    // revoked, so the close must wait out the cache TTL plus one watcher tick.
+    const revocationCacheTtlMs = 200
+    const activeCheckIntervalMs = 5
+    let active = true
+    const revocation = createCachedRevocationClient(async () =>
+      active
+        ? { active: true as const }
+        : { active: false as const, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" },
+    { ttlMs: revocationCacheTtlMs })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      isRuntimeAccessTokenActive: (claims) => revocation({
+        jti: claims.jti,
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+      }),
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    }, { runtimeAccessTokenActiveCheckIntervalMs: activeCheckIntervalMs })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+    const client = new (WebSocket as unknown as {
+      new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+    })(new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"), {
+      headers: { origin: "http://localhost:3000" },
+      protocols: [`claxedo-rat.${token}`],
+    })
+
+    try {
+      await waitForOpen(client)
+      const closed = waitForClose(client)
+      const revokedAt = Date.now()
+      active = false
+      await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token has been revoked" })
+      const boundMs = runtimeAccessTokenRevocationDelayMs({ revocationCacheTtlMs, activeCheckIntervalMs })
+      // Generous slack over the specified bound for scheduler jitter; the
+      // deterministic bound itself is covered by the fake-clock cache tests.
+      expect(Date.now() - revokedAt).toBeLessThan(boundMs + 1_000)
+    } finally {
+      client.close()
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
+  test("survives a revocation authority outage but still closes at token expiry", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const host = Bun.serve<{ ok: true }>({
+      port: 0,
+      fetch(request, server) {
+        if (server.upgrade(request, { data: { ok: true } })) return undefined
+        return new Response("upgrade failed", { status: 400 })
+      },
+      websocket: { message() {} },
+    })
+    // The admission check answers once; every watcher tick after that throws,
+    // simulating a resolver outage on an established socket.
+    let admitted = false
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      isRuntimeAccessTokenActive: () => {
+        if (!admitted) {
+          admitted = true
+          return { active: true as const }
+        }
+        throw new Error("revocation resolver unreachable")
+      },
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        backing: "cloud-vm",
+      }),
+    }, { runtimeAccessTokenActiveCheckIntervalMs: 5 })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+      ttlSeconds: 2,
+    }, runtime.privateKey, "EdDSA")
+    const client = new (WebSocket as unknown as {
+      new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+    })(new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"), {
+      headers: { origin: "http://localhost:3000" },
+      protocols: [`claxedo-rat.${token}`],
+    })
+
+    try {
+      await waitForOpen(client)
+      const closed = waitForClose(client)
+      // ~50 watcher ticks throw and are swallowed; the socket must stay open —
+      // an outage is not a revocation.
+      const state = await Promise.race([
+        closed.then(() => "closed" as const),
+        new Promise<"open">((resolve) => setTimeout(() => resolve("open"), 250)),
+      ])
+      expect(state).toBe("open")
+      // The local expiry timer is the hard bound: even with the authority
+      // unreachable the socket cannot outlive the token's exp.
+      await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token expired" })
+    } finally {
+      client.close()
+      await stopServer(relay)
+      await stopServer(host)
+    }
+  })
+
   test("long token expiry re-arms within the timer range and closes only at the signed deadline", async () => {
     const runtime = await generateKeyPair("EdDSA")
     const relayHost = await generateKeyPair("EdDSA")
@@ -3178,7 +3753,7 @@ describe("workspace relay Bun adapter", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://upstream.invalid",
+        baseUrl: "https://upstream.invalid",
         backing: "cloud-vm",
       }),
     })
@@ -3354,7 +3929,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3409,7 +3984,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3450,7 +4025,7 @@ describe("workspace relay Bun adapter", () => {
         auditEvents.push(event)
       },
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3513,7 +4088,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3584,7 +4159,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3641,7 +4216,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3723,7 +4298,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3800,7 +4375,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const relay = Bun.serve({
       port: 0,
@@ -3856,7 +4431,7 @@ describe("workspace relay Bun adapter", () => {
       directory,
       resolveTarget: async () => undefined,
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
     })
     const before = relayHandler.telemetry.getFragmentationStats()
     expect(before.fragmentsBuffered).toBe(0)
@@ -3914,7 +4489,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       // Keep defaults for HWM (8 MB) and slow-consumer timeout (30 s);
       // total payload is well under the HWM in this test.
     })
@@ -4002,7 +4577,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       // Lower the HWM so the test doesn't have to push 8 MB across the WS.
       slowConsumerHighWaterMarkBytes: 256 * 1024,
       // Keep the slow-consumer timeout long so the test only verifies pause/resume.
@@ -4252,7 +4827,7 @@ describe("workspace relay Bun adapter", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       slowConsumerHighWaterMarkBytes: 64 * 1024,
       slowConsumerTimeoutMs: 150,
     })
@@ -4453,7 +5028,7 @@ describe("workspace relay Bun adapter", () => {
         resolveTarget: (claims) => ({
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
-          baseUrl: "http://example.test",
+          baseUrl: "https://example.test",
           backing: "cloud-vm",
         }),
       })
@@ -4474,7 +5049,7 @@ describe("workspace relay Bun adapter", () => {
         resolveTarget: (claims) => ({
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
-          baseUrl: "http://example.test",
+          baseUrl: "https://example.test",
           backing: "cloud-vm",
         }),
       })
@@ -4496,7 +5071,7 @@ describe("workspace relay Bun adapter", () => {
         resolveTarget: (claims) => ({
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
-          baseUrl: "http://example.test",
+          baseUrl: "https://example.test",
           backing: "cloud-vm",
         }),
       })
@@ -4762,7 +5337,7 @@ describe("workspace relay Bun adapter", () => {
         resolveTarget: (claims) => ({
           workspaceId: claims.workspace_id,
           hostId: claims.host_id,
-          baseUrl: "http://cloud.example.test",
+          baseUrl: "https://cloud.example.test",
           backing: "cloud-vm",
         }),
       }, {
@@ -4887,7 +5462,7 @@ describe("workspace relay Bun adapter", () => {
           }
         },
       }, {
-        authorizeHostTunnel: () => true,
+        authorizeHostTunnel: allowHostTunnel,
         hostTunnelStateDebounceMs: debounceMs,
       })
       const relay = Bun.serve({
@@ -5817,7 +6392,7 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       webSocketBufferedAmountMaxBytes,
     })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
@@ -5980,7 +6555,7 @@ describe("host tunnel stream budgets", () => {
         backing: "local-worktree",
       }),
     }, {
-      authorizeHostTunnel: () => true,
+      authorizeHostTunnel: allowHostTunnel,
       // 心跳的 ping 也过背压守卫；拉长间隔把它移出测试窗口，
       // 让 -1 阈值的用例只断言请求路径而不是心跳副作用。
       hostTunnelPingIntervalMs: 300_000,
@@ -6270,7 +6845,7 @@ describe("cloud WebSocket send backpressure wiring", () => {
       resolveTarget: (claims) => ({
         workspaceId: claims.workspace_id,
         hostId: claims.host_id,
-        baseUrl: "http://cloud.example.test",
+        baseUrl: "https://cloud.example.test",
         backing: "cloud-vm",
       }),
     }, {
@@ -6338,4 +6913,54 @@ describe("cloud WebSocket send backpressure wiring", () => {
       await stopServer(relay)
     }
   }, 30_000)
+})
+
+describe("direct HTTP concurrency limiter", () => {
+  const { createDirectHttpLimiter } = __directHttpInternalsForTest
+
+  test("a waiter whose request aborted while queued frees its queue slot", async () => {
+    const limiter = createDirectHttpLimiter(1, 1)!
+    const release = await limiter.acquire()
+    expect(release).toBeTypeOf("function")
+
+    const controller = new AbortController()
+    const queued = limiter.acquire(controller.signal)
+    // Queue now full: a further waiter is refused outright.
+    await expect(limiter.acquire()).resolves.toBeUndefined()
+
+    controller.abort()
+    await expect(queued).resolves.toBeUndefined()
+
+    // The aborted waiter must not hold its queue slot: the next waiter
+    // queues and is granted once the active slot is released.
+    const next = limiter.acquire()
+    release!()
+    await expect(next).resolves.toBeTypeOf("function")
+  })
+
+  test("waiters are granted in order and releases are idempotent", async () => {
+    const limiter = createDirectHttpLimiter(1, 4)!
+    const first = await limiter.acquire()
+    const order: string[] = []
+    const second = limiter.acquire().then((release) => { order.push("second"); return release })
+    const third = limiter.acquire().then((release) => { order.push("third"); return release })
+
+    first!()
+    first!()
+    await expect(second).resolves.toBeTypeOf("function")
+    expect(order).toEqual(["second"])
+    const secondRelease = await second
+    secondRelease!()
+    await expect(third).resolves.toBeTypeOf("function")
+    expect(order).toEqual(["second", "third"])
+  })
+
+  test("an already-aborted request never takes a slot", async () => {
+    const limiter = createDirectHttpLimiter(1, 1)!
+    const controller = new AbortController()
+    controller.abort()
+    await expect(limiter.acquire(controller.signal)).resolves.toBeUndefined()
+    // The slot stays free for a live caller.
+    await expect(limiter.acquire()).resolves.toBeTypeOf("function")
+  })
 })

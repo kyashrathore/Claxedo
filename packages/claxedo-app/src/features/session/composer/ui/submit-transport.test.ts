@@ -417,7 +417,7 @@ describe("submit transport adapter", () => {
     await adapter.sessionClient("/repo/main", EXTERNAL_OPENCODE).session.status()
 
     expect(runtimeCalls).toEqual([
-      "GET http://127.0.0.1:4527/api/workspace/ws_signed/connection",
+      "POST http://127.0.0.1:4527/api/workspace/ws_signed/connection",
       "GET https://relay.test/workspaces/ws_signed/session/session-signed/config",
       "POST https://relay.test/workspaces/ws_signed/session/session-signed/prompt_async",
       "GET https://relay.test/workspaces/ws_signed/session/status?connectionId=external-opencode",

@@ -192,7 +192,7 @@ describe("workspace runtime request", () => {
       body: "{}",
     }).then((res) => res.json())).resolves.toEqual({ ok: true })
     expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/api/workspace/ws_signed_loopback/connection Bearer signed-browser-token",
+      "POST http://127.0.0.1:3001/api/workspace/ws_signed_loopback/connection Bearer signed-browser-token",
       "POST https://relay.loopback.test/workspaces/ws_signed_loopback/session/ses_1/prompt_async Bearer rat_signed_loopback",
     ])
   })
@@ -245,7 +245,7 @@ describe("workspace runtime request", () => {
       second.fetch("/vcs?directory=workspace%3Aws_shared"),
     ]).then((responses) => Promise.all(responses.map((res) => res.json()))))
       .resolves.toEqual([{ ok: true }, { ok: true }])
-    expect(calls.filter((call) => call === "GET http://server.shared.test/api/workspace/ws_shared/connection"))
+    expect(calls.filter((call) => call === "POST http://server.shared.test/api/workspace/ws_shared/connection"))
       .toHaveLength(1)
   })
 

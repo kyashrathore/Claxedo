@@ -14,9 +14,10 @@ import {
   type TasksCommand,
   type TasksCommandRequest,
 } from "../contracts"
+import { utf8ByteLength } from "@claxedo/helpers/string"
 import { decodeConfigurations, decodeExecution, decodeSessionReference, decodeSlot } from "../decode"
 import { clampLimit } from "../paging"
-import { decodeContext, finishDecode, parsedInvalid, type DecodeContext, type Parsed } from "../validation"
+import { decodeContext, finishDecode, idWithinBound, parsedInvalid, type DecodeContext, type Parsed } from "../validation"
 
 /**
  * Untrusted JSON in, contract types out. Shape only: a missing key, a wrong
@@ -52,8 +53,8 @@ function attachmentDrafts(ctx: DecodeContext, value: unknown, path: string): rea
 function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unknown): TasksCommand {
   const row = ctx.read.record(value, "command.input")
   const path = "command.input."
-  const presetId = () => ctx.read.nonEmptyString(row?.presetId, `${path}presetId`) ?? ""
-  const taskId = () => ctx.read.nonEmptyString(row?.taskId, `${path}taskId`) ?? ""
+  const presetId = () => ctx.read.id(row?.presetId, `${path}presetId`) ?? ""
+  const taskId = () => ctx.read.id(row?.taskId, `${path}taskId`) ?? ""
   const revision = () => ctx.read.integer(row?.revision, `${path}revision`) ?? 0
 
   switch (name) {
@@ -75,11 +76,11 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
       return {
         type: name,
         input: {
-          projectId: ctx.read.nonEmptyString(row?.projectId, `${path}projectId`) ?? "",
+          projectId: ctx.read.id(row?.projectId, `${path}projectId`) ?? "",
           title: ctx.read.string(row?.title, `${path}title`) ?? "",
           description: ctx.read.string(row?.description, `${path}description`) ?? "",
-          workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}workspaceId`) ?? null,
-          parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}parentTaskId`) ?? null,
+          workspaceId: ctx.read.nullableId(row?.workspaceId, `${path}workspaceId`) ?? null,
+          parentTaskId: ctx.read.nullableId(row?.parentTaskId, `${path}parentTaskId`) ?? null,
           ...(isTaskCreateStatus(created) ? { status: created } : {}),
           ...(from === undefined ? {} : { createdFrom: decodeSessionReference(ctx, from, `${path}createdFrom`) }),
           ...(attachments === undefined
@@ -96,7 +97,7 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
           revision: revision(),
           title: ctx.read.string(row?.title, `${path}title`) ?? "",
           description: ctx.read.string(row?.description, `${path}description`) ?? "",
-          workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}workspaceId`) ?? null,
+          workspaceId: ctx.read.nullableId(row?.workspaceId, `${path}workspaceId`) ?? null,
         },
       }
     case "task.set_status": {
@@ -113,8 +114,8 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
         input: {
           taskId: taskId(),
           revision: revision(),
-          parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}parentTaskId`) ?? null,
-          projectId: ctx.read.nonEmptyString(row?.projectId, `${path}projectId`) ?? "",
+          parentTaskId: ctx.read.nullableId(row?.parentTaskId, `${path}parentTaskId`) ?? null,
+          projectId: ctx.read.id(row?.projectId, `${path}projectId`) ?? "",
         },
       }
     case "task.archive":
@@ -130,7 +131,7 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
 export function parseCommandRequest(body: unknown): Parsed<TasksCommandRequest> {
   const ctx = decodeContext()
   const row = ctx.read.record(body, "body")
-  const clientRequestId = ctx.read.nonEmptyString(row?.clientRequestId, "clientRequestId") ?? ""
+  const clientRequestId = ctx.read.id(row?.clientRequestId, "clientRequestId") ?? ""
   const command = ctx.read.record(row?.command, "command")
   const name = ctx.read.string(command?.type, "command.type")
   if (!isTasksCommandName(name)) {
@@ -150,7 +151,7 @@ export function parseStartPreviewRequest(body: unknown): Parsed<StartPreviewRequ
   const row = ctx.read.record(body, "body")
   return finishDecode(ctx, () => ({
     taskRevision: ctx.read.integer(row?.taskRevision, "taskRevision") ?? 0,
-    presetId: ctx.read.nonEmptyString(row?.presetId, "presetId") ?? "",
+    presetId: ctx.read.id(row?.presetId, "presetId") ?? "",
     presetRevision: ctx.read.integer(row?.presetRevision, "presetRevision") ?? 0,
     slot: decodeSlot(ctx, row?.slot, "slot"),
     attempt: ctx.read.integer(row?.attempt, "attempt") ?? 0,
@@ -164,13 +165,13 @@ export function parseStartRequest(body: unknown): Parsed<StartRequest> {
   const row = ctx.read.record(body, "body")
   const handoff = row?.handoffText
   return finishDecode(ctx, () => ({
-    clientRequestId: ctx.read.nonEmptyString(row?.clientRequestId, "clientRequestId") ?? "",
+    clientRequestId: ctx.read.id(row?.clientRequestId, "clientRequestId") ?? "",
     taskRevision: ctx.read.integer(row?.taskRevision, "taskRevision") ?? 0,
-    presetId: ctx.read.nonEmptyString(row?.presetId, "presetId") ?? "",
+    presetId: ctx.read.id(row?.presetId, "presetId") ?? "",
     presetRevision: ctx.read.integer(row?.presetRevision, "presetRevision") ?? 0,
     slot: decodeSlot(ctx, row?.slot, "slot"),
     attempt: ctx.read.integer(row?.attempt, "attempt") ?? 0,
-    previewDigest: ctx.read.nonEmptyString(row?.previewDigest, "previewDigest") ?? "",
+    previewDigest: ctx.read.id(row?.previewDigest, "previewDigest") ?? "",
     handoffText:
       handoff === null
         ? null
@@ -212,10 +213,19 @@ function queryLimit(ctx: DecodeContext, params: URLSearchParams): number {
   return limit
 }
 
+function queryCursor(ctx: DecodeContext, params: URLSearchParams): string | null {
+  const cursor = params.get("cursor")
+  if (cursor !== null && utf8ByteLength(cursor) > TASKS_BOUNDS.cursorMaxBytes) {
+    ctx.fields.add("cursor", "too_long")
+    return null
+  }
+  return cursor
+}
+
 export function parsePresetListQuery(params: URLSearchParams): Parsed<PresetListQuery> {
   const ctx = decodeContext()
   return finishDecode(ctx, () => ({
-    cursor: params.get("cursor"),
+    cursor: queryCursor(ctx, params),
     limit: queryLimit(ctx, params),
     includeArchived: queryBoolean(ctx, params, "includeArchived"),
   }))
@@ -225,6 +235,7 @@ export function parseTaskListQuery(params: URLSearchParams): Parsed<TaskListQuer
   const ctx = decodeContext()
   const projectId = params.get("projectId")
   if (projectId === null || projectId.length === 0) ctx.fields.add("projectId", "required")
+  else if (!idWithinBound(projectId)) ctx.fields.add("projectId", "too_long")
   const status = params.get("status")
   if (status !== null && !isTaskStatus(status)) ctx.fields.add("status", "unknown_value")
   const parent = params.get("parent")
@@ -233,7 +244,7 @@ export function parseTaskListQuery(params: URLSearchParams): Parsed<TaskListQuer
     projectId: projectId ?? "",
     status: isTaskStatus(status) ? status : null,
     parent: parent === "root" ? "root" : "any",
-    cursor: params.get("cursor"),
+    cursor: queryCursor(ctx, params),
     limit: queryLimit(ctx, params),
     includeArchived: queryBoolean(ctx, params, "includeArchived"),
   }))
@@ -242,7 +253,7 @@ export function parseTaskListQuery(params: URLSearchParams): Parsed<TaskListQuer
 export function parseChildListQuery(params: URLSearchParams): Parsed<ChildListQuery> {
   const ctx = decodeContext()
   return finishDecode(ctx, () => ({
-    cursor: params.get("cursor"),
+    cursor: queryCursor(ctx, params),
     limit: queryLimit(ctx, params),
     includeArchived: queryBoolean(ctx, params, "includeArchived"),
   }))

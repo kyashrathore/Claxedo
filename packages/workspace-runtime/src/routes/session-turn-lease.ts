@@ -30,6 +30,7 @@ export type ActiveSessionTurnLease = {
   lost(): boolean
   fencingToken(): number
   lossResult(): SessionTurnLeaseLossResult | undefined
+  connectionCredential(): string | undefined
   release(): Promise<SessionTurnReleaseDecision>
 }
 
@@ -56,6 +57,8 @@ export async function acquireSessionTurnLease(input: {
   policy: SessionAccessPolicy
   access: SessionAccessPolicyInput & { sessionId: string }
   turnId: string
+  /** Proof for acquisition only; the lease itself is what renews and releases. */
+  grant?: string
   onLost: () => Promise<RecoveryOutcome> | RecoveryOutcome
   now?: () => number
 }): Promise<SessionTurnLeaseAcquisition> {
@@ -66,7 +69,7 @@ export async function acquireSessionTurnLease(input: {
       decision: denied("session_turn_authority_unavailable", "Durable session turn authority is unavailable"),
     }
   }
-  const acquired = await policy.acquireTurn({ ...input.access, turnId: input.turnId })
+  const acquired = await policy.acquireTurn({ ...input.access, turnId: input.turnId, ...(input.grant ? { grant: input.grant } : {}) })
   if (!acquired.allowed) return { acquired: false, decision: acquired }
   if (!validLease(acquired, input.turnId, (input.now ?? Date.now)())) {
     return {
@@ -180,6 +183,7 @@ export async function acquireSessionTurnLease(input: {
       lost: () => leaseLost,
       fencingToken: () => current.fencingToken,
       lossResult: () => lossResult,
+      connectionCredential: () => current.connectionCredential,
       async release() {
         if (closed) return { released: false }
         closed = true

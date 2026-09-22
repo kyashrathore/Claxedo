@@ -137,8 +137,26 @@ export const desktopMainComposition: Policy = {
   // process that may hold the token — the renderer must not, which is why the
   // stamping is here rather than a value handed over IPC. Electron-free by the
   // same seam split the navigation and IPC guards use, so no package edge.
+  // 93/24, no headroom.
+  // +1 module (2026-09-21): `main/store-policy.ts`, the one owner of the
+  // settings-store boundary grammar — the basename check `getStore` applies to
+  // renderer-supplied store names before `conf` resolves them to a path, and
+  // the key/value bounds the store-* IPC handlers enforce. Electron-free so
+  // `bun test` can exercise it (store.ts constructs electron-store at import),
+  // reached from `main/ipc.ts` and `main/store.ts`; no package edge.
+  // +4 modules (2026-09-21): the four decisions `main/ipc.ts` and
+  // `main/windows.ts` used to make inline, each now an Electron-free owner so
+  // `bun test` can exercise it. `main/open-in.ts` chooses which of reveal,
+  // OS-handler open, confirmed-executable open or tool launch an `open-path`
+  // request is; `main/renderer-permissions.ts` is what the app document may
+  // ask the browser for; `main/server-url.ts` is what the renderer may persist
+  // as the server main dials at next launch; `shared/zoom-factor.ts` is the
+  // one zoom range, shared with the renderer that reports it. Reviewed owner:
+  // Electron main, the only process that holds these OS and session
+  // capabilities. Node builtins and type-only electron imports, so no package
+  // edge.
   //
-  // `main/daemon-recovery.ts` adds the module and both packages. It is the
+  // +1 module, +2 packages (2026-09-21): `main/daemon-recovery.ts`. It is the
   // external owner of a daemon that stopped answering HTTP, so it needs the two
   // things only those packages hold: `@claxedo/agent-sdk-runtime/launch` for
   // creation identity and identity-checked retirement, and
@@ -148,8 +166,8 @@ export const desktopMainComposition: Policy = {
   // would be a second answer to "is this pid still that launch", and a guessed
   // one is what R8 was. Both packages are dependency-free data and OS reads,
   // with no server, runtime or store closure behind them.
-  // 94/26, no headroom.
-  ceilings: { modules: 94, packages: 26 },
+  // 99/26, no headroom.
+  ceilings: { modules: 99, packages: 26 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -559,16 +577,27 @@ export const desktopRendererUnsigned: Policy = {
   // references and reads canonical session lifecycle status. ACP questions use
   // the unchanged question dock; its separate UI, worker, query and action
   // modules have been removed.
+  // +1 module (2026-09-21): `lib/open-link.ts` — see the app-local ledger.
+  // The terminal link fallback reaches it in the shared renderer bundle; the
+  // desktop's own openLink still goes through the scheme-gated `open-link`
+  // IPC in main.
+  // +1 module (2026-09-21): `ui/mermaid.ts` — see the app-local ledger. The
+  // shared renderer bundle carries it for the session timeline and the
+  // documents editor.
+  // +1 module (2026-09-21): `shared/zoom-factor.ts` — the one zoom range,
+  // reached from `renderer/webview-zoom.ts`. The renderer keeps its own record
+  // of the zoom it asked for, and main clamps the IPC argument with the same
+  // constants, so a second range here would let the two disagree. Constants
+  // and `Math`, no dependency edges.
   // +2 modules (2026-09-21): `features/session/ui/recovery-outcome-copy.ts` and
   // `features/session/ui/session-recovery.tsx` — see the app-local ledger. The
   // renderer shares the session feature's composer region, which is what mounts
   // the panel, so both ride in here too; no new package edge.
-  //
   // +19 modules (2026-09-22): the recovery size split — see the app-local
   // ledger. The renderer shares the i18n manifest and the session feature, so
   // the themed dictionary and both extracted owners ride in here too; no new
-  // package edge. Exact measured 1163 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1163, packages: 58 },
+  // package edge. Exact measured 1166 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1166, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

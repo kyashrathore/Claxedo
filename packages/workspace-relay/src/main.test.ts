@@ -16,12 +16,15 @@ import {
 } from "./main"
 import { createWorkspaceRelayDirectory } from "./directory"
 import {
+  REVOCATION_CACHE_TTL_MS_DEFAULT,
+  RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT,
   checkHostTunnelGeneration,
   createCachedHostGenerationClient,
   createCachedTargetClient,
   createHostGenerationResolverLookup,
   hostTunnelIncumbentOutranks,
   parseHostGenerationResult,
+  runtimeAccessTokenRevocationDelayMs,
   type HostGenerationResult,
   type RuntimeAccessTokenActiveResult,
   type WorkspaceRelayTarget,
@@ -172,6 +175,31 @@ describe("createCachedRevocationClient", () => {
     expect(calls).toBe(1)
   })
 
+  test("a cached active answer cannot outlive the revocation TTL", async () => {
+    let active = true
+    const clock = makeFakeNow(1_000_000)
+    const inner = async (): Promise<RuntimeAccessTokenActiveResult> =>
+      active
+        ? { active: true }
+        : { active: false, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" }
+    const cached = createCachedRevocationClient(inner, { ttlMs: 10_000, now: clock.now })
+
+    await cached({ jti: "jti_1", workspaceId: "ws_1", hostId: "host_1" })
+    active = false
+
+    clock.advance(9_999)
+    await expect(cached({ jti: "jti_1", workspaceId: "ws_1", hostId: "host_1" }))
+      .resolves.toEqual({ active: true })
+
+    clock.advance(2)
+    await expect(cached({ jti: "jti_1", workspaceId: "ws_1", hostId: "host_1" }))
+      .resolves.toEqual({
+        active: false,
+        code: "runtime_access_token_revoked",
+        reason: "Runtime Access Token has been revoked",
+      })
+  })
+
   test("evicts old revocation entries when the cache reaches its size bound", async () => {
     let calls = 0
     const clock = makeFakeNow(1_000_000)
@@ -186,6 +214,38 @@ describe("createCachedRevocationClient", () => {
     await cached({ jti: "jti_0", workspaceId: "ws_1", hostId: "host_1" })
 
     expect(calls).toBe(8_194)
+  })
+})
+
+describe("runtimeAccessTokenRevocationDelayMs", () => {
+  test("bounds the per-request HTTP path by the revocation cache TTL", () => {
+    expect(runtimeAccessTokenRevocationDelayMs({ revocationCacheTtlMs: 5_000 })).toBe(5_000)
+    expect(runtimeAccessTokenRevocationDelayMs()).toBe(REVOCATION_CACHE_TTL_MS_DEFAULT)
+  })
+
+  test("bounds an established socket by one re-check interval plus the cache TTL", () => {
+    expect(runtimeAccessTokenRevocationDelayMs({
+      revocationCacheTtlMs: 10_000,
+      activeCheckIntervalMs: 5_000,
+    })).toBe(15_000)
+    expect(runtimeAccessTokenRevocationDelayMs({
+      activeCheckIntervalMs: RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT,
+    })).toBe(REVOCATION_CACHE_TTL_MS_DEFAULT + RUNTIME_ACCESS_TOKEN_ACTIVE_CHECK_INTERVAL_MS_DEFAULT)
+  })
+
+  test("a disabled socket watcher leaves revocation unbounded; token exp is the only deadline", () => {
+    expect(runtimeAccessTokenRevocationDelayMs({
+      revocationCacheTtlMs: 10_000,
+      activeCheckIntervalMs: 0,
+    })).toBe(Number.POSITIVE_INFINITY)
+  })
+
+  test("a non-positive cache TTL contributes no delay", () => {
+    expect(runtimeAccessTokenRevocationDelayMs({
+      revocationCacheTtlMs: 0,
+      activeCheckIntervalMs: 30_000,
+    })).toBe(30_000)
+    expect(runtimeAccessTokenRevocationDelayMs({ revocationCacheTtlMs: Number.NaN })).toBe(0)
   })
 })
 

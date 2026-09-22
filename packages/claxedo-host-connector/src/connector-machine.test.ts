@@ -34,6 +34,10 @@ async function machineHost(
     onAssignments?: (descriptions: AssignmentDescription[], ack: (d: AssignmentDescription) => Promise<void>) => Promise<void>
     wrap?: (transport: MachineTransport) => MachineTransport
     sealingPublicKey?: string
+    /** The scope revision the caller's store already holds, as a restart would seed it. */
+    scopeRevision?: number
+    /** Runs inside `onScope` before the scope is recorded; a throw is a caller that failed to store it. */
+    onScope?: (scope: HostScope) => void
     /** Stands in for the caller's store; a rejection is a host that could not write the blob. */
     onProviderConfig?: (config: ProviderConfigRevision) => Promise<void>
   } = {},
@@ -70,7 +74,9 @@ async function machineHost(
       tick = fn
       return { cancel: () => undefined }
     },
+    ...(input.scopeRevision === undefined ? {} : { scopeRevision: input.scopeRevision }),
     onScope: (scope) => {
+      input.onScope?.(scope)
       scopes.push(scope)
       state = { ...state, scope }
     },
@@ -369,6 +375,47 @@ describe("assignment discovery", () => {
     expect(h.state().scope?.revision).toBe(2)
     expect(String(h.ackFailures[0])).toContain("outside this host's roots")
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
+  })
+
+  test("a restarted host refuses a scope at or below the revision it stored", async () => {
+    const cp = createFakeControlPlane()
+    // The store this connector is seeded from already holds revision 2; the
+    // answer a replayed pre-restart response carries still says revision 1 —
+    // wider roots the owner has since removed.
+    const h = await machineHost(cp, { scopeRevision: 2 })
+    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 1, allowed_roots: ["/"], visibility: "owner" }
+
+    await h.connector.start()
+
+    expect(h.scopes, "the replayed scope is not delivered").toEqual([])
+    expect(h.state().scope?.revision, "the stored scope is untouched").toBe(1)
+
+    // A genuinely newer revision is still the owner's word and lands.
+    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 3, allowed_roots: ["/srv/only"], visibility: "owner" }
+    await h.connector.beat()
+    expect(h.scopes).toEqual([{ revision: 3, allowed_roots: ["/srv/only"], visibility: "owner" }])
+  })
+
+  test("a scope the caller could not store is delivered again on the next beat", async () => {
+    const cp = createFakeControlPlane()
+    let attempts = 0
+    const h = await machineHost(cp, {
+      onScope: () => {
+        attempts++
+        if (attempts === 1) throw new Error("disk full")
+      },
+    })
+
+    await h.connector.start()
+
+    expect(h.scopes, "the failed store does not count as accepted").toEqual([])
+    expect(h.errors.map((entry) => entry.stage)).toEqual(["reconcile"])
+
+    await h.connector.beat()
+
+    expect(attempts).toBe(2)
+    expect(h.scopes).toEqual([{ revision: 1, allowed_roots: ["/srv"], visibility: "owner" }])
+    expect(h.state().scope?.revision).toBe(1)
   })
 
   test("an out-of-order response cannot reinstate an older description", async () => {
@@ -765,6 +812,60 @@ describe("consent, withdrawal and drain", () => {
 
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
     expect(h.beats().at(-1)?.body).toMatchObject({ acks: [] })
+  })
+
+  test("a redelivery of the refused revision is not offered again; a newer revision is a new question", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    await h.connector.start()
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+
+    await h.connector.unack("ws_1")
+    expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
+
+    // The assignment is still listed — a stale answer, or an unassign that
+    // has not propagated. Another workspace's change forces the whole list
+    // through `onAssignments`; the refused one must not be offered again to
+    // a caller that acks what it is shown.
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_2", remoteDirectory: "/srv/web" })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_2"]))
+
+    expect(h.seen.at(-1)?.map((d) => d.workspaceId)).toEqual(["ws_2"])
+    expect(h.connector.assignments().map((d) => d.workspaceId)).toEqual(["ws_2"])
+    expect(h.connector.acked()).toEqual([{ workspaceId: "ws_2", revision: 1 }])
+    await h.connector.beat()
+    expect(h.connector.acked(), "a quiet beat does not resurrect it").toEqual([{ workspaceId: "ws_2", revision: 1 }])
+
+    // A newer revision is the owner's new statement, not a replay: consent is
+    // asked again and the auto-acking caller serves it.
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api-v2" })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId).sort()).toEqual(["ws_1", "ws_2"]))
+    expect(h.connector.acked()).toContainEqual({ workspaceId: "ws_1", revision: 2 })
+  })
+
+  test("a refusal ends when the assignment leaves the control plane's list", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    await h.connector.start()
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+
+    await h.connector.unack("ws_1")
+    cp.unassign("ws_1")
+    // The beat that observes the absence closes the refusal out; without it a
+    // re-created row could not be told from a replay of the refused one.
+    await h.connector.beat()
+
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    await h.connector.beat()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+
+    expect(h.connector.acked()).toEqual([{ workspaceId: "ws_1", revision: 1 }])
   })
 })
 

@@ -79,7 +79,12 @@ export type ChannelAccessStore = {
   findPending(code: string): Promise<PairingRequest | undefined>
   findPendingBySender(channel: ChannelId, externalUserId: string): Promise<PairingRequest | undefined>
   putPending(request: PairingRequest): Promise<void>
-  deletePending(code: string): Promise<void>
+  /**
+   * Atomically consume a pending code: `true` only when THIS call deleted a
+   * live (unexpired) row. That return is what makes `approve` exactly-once —
+   * two racing approvals cannot both consume the same code.
+   */
+  deletePending(code: string): Promise<boolean>
 }
 
 /** Persistence port for channel→account bindings. */
@@ -186,7 +191,7 @@ export function parseGroupEngagement(
   return fallback
 }
 
-export function createMemoryChannelAccessStore(): ChannelAccessStore {
+export function createMemoryChannelAccessStore(now: () => number = Date.now): ChannelAccessStore {
   const allowed = new Set<string>()
   const pending = new Map<string, PairingRequest>()
   return {
@@ -212,7 +217,9 @@ export function createMemoryChannelAccessStore(): ChannelAccessStore {
       pending.set(request.code, request)
     },
     async deletePending(code) {
+      const request = pending.get(code)
       pending.delete(code)
+      return !!request && request.expiresAt > now()
     },
   }
 }
@@ -341,22 +348,36 @@ export function createChannelAccess(input: {
         return { ok: false, message: "Unknown or expired pairing code." }
       }
       // The authenticated account binding is the authoritative producer. It
-      // runs before the local allow/delete projection so a failed canonical
-      // write never consumes the one-time pairing code. A retry safely repairs
-      // a later local projection failure because canonical binds are idempotent.
+      // runs before the code is consumed so a failed canonical write never
+      // burns the one-time pairing code.
       const linked = await bind?.({ channel: hit.channel, externalUserId: hit.externalUserId })
-      await input.store.allow(hit.channel, hit.externalUserId, approvedBy)
-      await input.store.deletePending(hit.code)
-      // Legacy operator approval may admit the sender, but only an
-      // authenticated claim can turn it into an account binding.
-      await input.bindings?.put({
-        channel: hit.channel,
-        externalUserId: hit.externalUserId,
-        accountId: linked?.accountId ?? null,
-        status: linked ? "bound" : "pending",
-        boundAt: at,
-        boundBy: linked?.boundBy ?? approvedBy,
-      })
+      // Atomic consume: only the approval that deletes the live row proceeds.
+      // A concurrent or replayed approval — including one whose bind ran while
+      // the winner was still writing — loses here instead of establishing a
+      // second binding.
+      if (!(await input.store.deletePending(hit.code))) {
+        return { ok: false, message: "Pairing code was already approved." }
+      }
+      // The binding row lands BEFORE the allow flag, so no snapshot ever shows
+      // an admitted sender with no binding. If either projection write fails,
+      // the consumed code is restored so the approval stays retryable — every
+      // write above is idempotent under the same (channel, sender, code).
+      try {
+        // Legacy operator approval may admit the sender, but only an
+        // authenticated claim can turn it into an account binding.
+        await input.bindings?.put({
+          channel: hit.channel,
+          externalUserId: hit.externalUserId,
+          accountId: linked?.accountId ?? null,
+          status: linked ? "bound" : "pending",
+          boundAt: at,
+          boundBy: linked?.boundBy ?? approvedBy,
+        })
+        await input.store.allow(hit.channel, hit.externalUserId, approvedBy)
+      } catch (error) {
+        await input.store.putPending(hit).catch(() => {})
+        throw error
+      }
       return { ok: true, channel: hit.channel, externalUserId: hit.externalUserId }
     },
     async revoke(channel, externalUserId) {

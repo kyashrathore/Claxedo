@@ -127,6 +127,12 @@ describe("unsignedLocalRequestGuard (the ONE global unsigned-local gate)", () =>
       ["DELETE", "http://cp.example.test/api/channels/identity"],
       ["POST", "http://cp.example.test/api/channels/fake"],
       ["POST", "http://cp.example.test/api/channels/telegramfoo"],
+      // Webhook ingress is POST-only (WhatsApp verification is the lone GET) —
+      // any other verb under a provider prefix has no legitimate caller.
+      ["GET", "http://cp.example.test/api/channels/telegram"],
+      ["GET", "http://cp.example.test/api/channels/slack/events"],
+      ["DELETE", "http://cp.example.test/api/channels/discord/interactions"],
+      ["PUT", "http://cp.example.test/api/channels/whatsapp"],
     ] as const) {
       const res = await app.request(url, { method })
       expect(res.status, `${method} ${url}`).toBe(403)

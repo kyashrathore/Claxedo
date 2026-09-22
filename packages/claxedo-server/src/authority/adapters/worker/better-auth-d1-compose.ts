@@ -1,4 +1,3 @@
-import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import type { SandboxDriver, SandboxLeaseStore } from "@claxedo/sandbox-manager"
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
@@ -11,6 +10,7 @@ import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/brow
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
 import { createD1HostTunnelTargetResolver } from "../d1/host-tunnel-relay-target"
+import { hostedCredentialsEnabled, hostedOrgCredentials } from "../../../credentials/worker/index"
 import { HostedWorkerCompositionError } from "../../composition-error"
 import {
   composeProviderNeutralHostedControlPlane,
@@ -90,8 +90,6 @@ export type BetterAuthD1UserDeployedCompositionInput = {
   product: Extract<D1AuthorityProductPolicy, { kind: "user-deployed" }>
   emailSender?: AuthEmailSender
   now?: () => number
-  /** Bound by feature entries that enable the hosted credential store (Agent Plugins). */
-  credentialsNamespace?: CloudflareKvNamespaceBinding
   /**
    * The full-hosted entry's sandbox driver and durable lease store. Present
    * exactly when `CLAXEDO_SANDBOX_POSTURE=full-hosted`; the composition refuses
@@ -217,7 +215,12 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     runtimeSessionAuthority: authority,
     privateSessionAuthority: authority,
     turnAuthority: authority,
-    ...(input.credentialsNamespace ? { credentialsNamespace: input.credentialsNamespace } : {}),
+    ...(hostedCredentialsEnabled(input.env)
+      ? {
+          orgCredentials: (orgId: string) =>
+            hostedOrgCredentials(orgId, { database: input.controlPlaneDatabase, env: input.env }),
+        }
+      : {}),
     ...(input.sandbox ? { sandbox: input.sandbox } : {}),
     hostTunnelResolver: createD1HostTunnelTargetResolver(input.controlPlaneDatabase, {
       ...(input.now ? { now: input.now } : {}),

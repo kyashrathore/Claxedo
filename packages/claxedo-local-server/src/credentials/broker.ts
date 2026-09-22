@@ -277,6 +277,7 @@ export function createLocalCredentialBroker(input: {
         origin: destination.origin,
         methods: destination.methods,
         pathPrefixes: destination.pathPrefixes,
+        ...(destination.credentialQuerySlots ? { credentialQuerySlots: destination.credentialQuerySlots } : {}),
       },
       injection: destination.injection,
     }

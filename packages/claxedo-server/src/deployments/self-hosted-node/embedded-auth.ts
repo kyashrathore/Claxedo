@@ -19,6 +19,7 @@ import {
   BETTER_AUTH_INTROSPECTION_CLIENT_ID,
 } from "../../platform/auth/better-auth-native-clients"
 import { CLAXEDO_MCP_RESOURCE_SCOPES, claxedoMcpResource } from "../../platform/auth/mcp-oauth-scopes"
+import { deviceApprovalTransaction } from "../../platform/auth/device-approval-transaction"
 import { oauthConsentRevocation } from "../../platform/auth/oauth-consent-revocation"
 
 /**
@@ -257,6 +258,7 @@ export function createEmbeddedAuth(
         expiresIn: "10m",
         interval: "5s",
       }),
+      deviceApprovalTransaction(),
     ],
     // Self-host boxes must not phone home.
     telemetry: { enabled: false },

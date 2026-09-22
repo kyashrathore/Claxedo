@@ -12,13 +12,34 @@ shift
 export CI=true
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/claxedo-playwright}"
 
+# Digest verification uses constants pinned in this file. A sums file fetched
+# from the same host as the archive would share the archive's trust domain, so
+# a compromised mirror could ship a forged artifact plus a forged checksum.
+verify_sha256() {
+  local path=${1:?verify_sha256 requires a path}
+  local expected=${2:?verify_sha256 requires a digest}
+  local actual
+  actual="$(sha256sum "$path" | awk '{print $1}')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "SHA-256 mismatch for $path: expected $expected, got $actual" >&2
+    return 1
+  fi
+}
+
 ensure_node_version() {
   local version=${1:?ensure_node_version requires a version}
-  local machine
+  local machine expected
   case "$(uname -m)" in
     x86_64) machine=x64 ;;
     aarch64 | arm64) machine=arm64 ;;
     *) echo "unsupported Node.js architecture: $(uname -m)" >&2; return 2 ;;
+  esac
+  case "$version/$machine" in
+    v24.15.0/x64) expected=472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6 ;;
+    v24.15.0/arm64) expected=f3d5a797b5d210ce8e2cb265544c8e482eaedcb8aa409a8b46da7e8595d0dda0 ;;
+    v22.23.2/x64) expected=d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307 ;;
+    v22.23.2/arm64) expected=fff4078c5def658577f92c88db7db3bc0072924bfb93fe52c1e744a54e94abb8 ;;
+    *) echo "no pinned SHA-256 for Node.js $version linux-$machine" >&2; return 2 ;;
   esac
   local archive="node-$version-linux-$machine.tar.xz"
   local cache="$HOME/.cache/claxedo-ci/node-$version-linux-$machine"
@@ -27,12 +48,7 @@ ensure_node_version() {
     mkdir -p "$download_dir" "$cache"
     curl --fail --location --silent --show-error \
       "https://nodejs.org/dist/$version/$archive" -o "$download_dir/$archive"
-    curl --fail --location --silent --show-error \
-      "https://nodejs.org/dist/$version/SHASUMS256.txt" -o "$download_dir/SHASUMS256.txt"
-    (
-      cd "$download_dir"
-      grep "  $archive\$" SHASUMS256.txt | sha256sum --check -
-    )
+    verify_sha256 "$download_dir/$archive" "$expected"
     tar -xJf "$download_dir/$archive" --strip-components=1 -C "$cache"
   fi
   export PATH="$cache/bin:$PATH"
@@ -53,13 +69,18 @@ ensure_bun_1_3_14() {
     return
   fi
 
-  local release_arch archive directory
+  # The release zip has no second trust domain to fetch a checksum from, so the
+  # pinned digest covers the extracted binary. The values were cross-checked
+  # against the integrity-verified @oven/bun-linux-* npm artifacts.
+  local release_arch archive directory expected
   case "$(uname -m)" in
     x86_64)
       release_arch=x64-baseline
+      expected=a8f9ebd1770ddc8e55dab7a68d4ec1ec1eebf374bb97cc65cf2c3cb373fc6791
       ;;
     aarch64 | arm64)
       release_arch=aarch64
+      expected=37141662ebed915a2ab89313156e455e2a1374395f5f6760d06407f49406f086
       ;;
     *) echo "unsupported Bun architecture: $(uname -m)" >&2; return 2 ;;
   esac
@@ -73,6 +94,10 @@ ensure_bun_1_3_14() {
       "https://github.com/oven-sh/bun/releases/download/bun-v$version/$archive" \
       -o "$download_dir/$archive"
     python3 -m zipfile -e "$download_dir/$archive" "$cache"
+    if ! verify_sha256 "$cache/$directory/bun" "$expected"; then
+      rm -rf "$cache"
+      return 1
+    fi
     chmod 0755 "$cache/$directory/bun"
   fi
   export PATH="$cache/$directory:$PATH"
@@ -97,10 +122,20 @@ ensure_synced_source_repository() {
 
 ensure_rust_target() {
   local target=${1:?ensure_rust_target requires a target triple}
-  local host
+  # rustup-init comes from the versioned archive tree: the unversioned dist/
+  # path is replaced on every rustup release, which would orphan a pinned
+  # digest and silently change what CI executes.
+  local rustup_version=1.28.2
+  local host expected
   case "$(uname -m)" in
-    x86_64) host=x86_64-unknown-linux-gnu ;;
-    aarch64 | arm64) host=aarch64-unknown-linux-gnu ;;
+    x86_64)
+      host=x86_64-unknown-linux-gnu
+      expected=20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c
+      ;;
+    aarch64 | arm64)
+      host=aarch64-unknown-linux-gnu
+      expected=e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c
+      ;;
     *) echo "unsupported Rust architecture: $(uname -m)" >&2; return 2 ;;
   esac
 
@@ -108,10 +143,11 @@ ensure_rust_target() {
   export CARGO_HOME="$HOME/.cache/claxedo-ci/cargo"
   export PATH="$CARGO_HOME/bin:$PATH"
   if [[ ! -x "$CARGO_HOME/bin/rustup" ]]; then
-    local installer="$HOME/.cache/claxedo-ci/downloads/rustup-init-$host"
+    local installer="$HOME/.cache/claxedo-ci/downloads/rustup-init-$rustup_version-$host"
     mkdir -p "$(dirname "$installer")" "$RUSTUP_HOME" "$CARGO_HOME"
     curl --fail --location --silent --show-error \
-      "https://static.rust-lang.org/rustup/dist/$host/rustup-init" -o "$installer"
+      "https://static.rust-lang.org/rustup/archive/$rustup_version/$host/rustup-init" -o "$installer"
+    verify_sha256 "$installer" "$expected"
     chmod 0755 "$installer"
     "$installer" -y --no-modify-path --profile minimal --default-toolchain stable
   fi
@@ -158,10 +194,17 @@ install_linux_native_build_dependencies() {
 }
 
 install_harness_clis() {
+  # Exact pins keep lanes off a moving @latest target. npm still verifies the
+  # tarball against registry integrity, and env -i keeps freshly downloaded
+  # package lifecycle scripts (claude-code's postinstall materializes the
+  # native binary) away from lane credentials.
+  local claude_code_version=2.1.278
+  local codex_version=0.155.1
   local prefix="$HOME/.cache/claxedo-ci/harness-clis"
   mkdir -p "$prefix"
-  npm install --prefix "$prefix" --no-fund --no-audit \
-    @anthropic-ai/claude-code @openai/codex
+  env -i HOME="$HOME" PATH="$PATH" \
+    npm install --prefix "$prefix" --no-fund --no-audit \
+    "@anthropic-ai/claude-code@$claude_code_version" "@openai/codex@$codex_version"
   export PATH="$prefix/node_modules/.bin:$PATH"
 }
 
@@ -297,6 +340,10 @@ install_app_server_native_dependencies() {
 run_e2e_core() {
   local shard=${1:?e2e-core requires a shard number}
   local total=${2:?e2e-core requires a shard count}
+  if [[ ! "$shard" =~ ^[0-9]+$ || ! "$total" =~ ^[0-9]+$ || shard -lt 1 || shard -gt total ]]; then
+    echo "e2e-core requires numeric shard index/count within 1..N (got '$shard/$total')" >&2
+    return 2
+  fi
   prepare_e2e
   # Core discovery imports server-side harness modules even when their tagged
   # tests are excluded. Materialize the app/server native dependency graph
@@ -364,6 +411,10 @@ run_e2e_tier_real_web() {
 run_e2e_tier_real_web_target() {
   local spec=${1:?signed web spec is required}
   local scenario=${2:?signed web scenario grep is required}
+  if [[ "$spec" != e2e/playwright/*.spec.ts || "$spec" == *..* ]]; then
+    echo "e2e-tier-real-web-target spec must be e2e/playwright/*.spec.ts (got '$spec')" >&2
+    return 2
+  fi
   prepare_e2e_tier_real
   (
     cd packages/claxedo-app

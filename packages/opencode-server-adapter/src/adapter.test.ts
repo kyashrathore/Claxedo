@@ -187,6 +187,65 @@ describe("OpenCode server provider trust boundary", () => {
       secrets: {},
     })).toThrow(expect.objectContaining({ code: "invalid_directory" }))
   })
+
+  test.each([".", "..", "../", "%2e%2e", "a/b", "a b", "a?b", "a#b", "a\\b", "ses\tid", "ses\0id", "", "x".repeat(257)])(
+    "rejects upstream session id %j before any request leaves",
+    async (upstreamSessionId) => {
+      let requests = 0
+      const baseUrl = serve(() => {
+        requests += 1
+        return Response.json({ id: "ses_upstream", directory: TARGET })
+      })
+      const adapter = await connect({ descriptor: descriptor(baseUrl) })
+      await expect(adapter.getSession(binding({ upstreamSessionId }))).rejects.toMatchObject({ code: "invalid_binding" })
+      expect(requests).toBe(0)
+    },
+  )
+
+  test("refuses a cleartext base URL that is not this machine's own loopback", () => {
+    expect(() => descriptor("http://opencode.example.test")).toThrow(expect.objectContaining({ code: "invalid_config" }))
+    expect(() => descriptor("http://127.0.0.1.opencode.example.test")).toThrow(expect.objectContaining({ code: "invalid_config" }))
+    expect(() => descriptor("http://localhost.example.test")).toThrow(expect.objectContaining({ code: "invalid_config" }))
+    expect(descriptor("https://opencode.example.test").config.baseUrl).toBe("https://opencode.example.test")
+    expect(descriptor("http://localhost:4096").config.baseUrl).toBe("http://localhost:4096")
+    expect(descriptor("http://[::1]:4096").config.baseUrl).toBe("http://[::1]:4096")
+  })
+
+  test.each(["Accept", "Content-Type", "Connection", "Keep-Alive", "TE", "Trailer", "Transfer-Encoding", "Upgrade"])(
+    "refuses configured header %s, which belongs to the request this adapter builds",
+    (name) => {
+      expect(() => descriptor("https://opencode.example.test", { trustedHeaders: { [name]: "secretName" } }))
+        .toThrow(expect.objectContaining({ code: "invalid_config" }))
+      expect(() => descriptor("https://opencode.example.test", { tenant: { header: name, value: "acme" } }))
+        .toThrow(expect.objectContaining({ code: "invalid_config" }))
+    },
+  )
+
+  test("rejects header configuration that is not a valid HTTP header at decode or resolve", async () => {
+    let requests = 0
+    const baseUrl = serve(() => {
+      requests += 1
+      return Response.json({ healthy: true, version: "1.2.3" })
+    })
+    const provider = createOpenCodeServerConnectionProvider()
+    expect(() => descriptor(baseUrl, { trustedHeaders: { "X-Bad\r\nName": "s" } })).toThrow(
+      expect.objectContaining({ code: "invalid_config" }),
+    )
+    expect(() => descriptor(baseUrl, { tenant: { header: "X-Tenant", value: "a\r\nb" } })).toThrow(
+      expect.objectContaining({ code: "invalid_config" }),
+    )
+    const item = descriptor(baseUrl, {
+      auth: { type: "header", name: "X-API-Key", valueSecret: "apiKey" },
+      trustedHeaders: { "X-Trusted": "trusted" },
+    })
+    item.secretRefs = { apiKey: "vault://a", trusted: "vault://b" }
+    expect(() => provider.resolve({
+      descriptor: item,
+      directory: SOURCE,
+      secrets: { apiKey: "ok", trusted: "bad\r\nvalue" },
+    })).toThrow(expect.objectContaining({ code: "invalid_config" }))
+    expect(requests).toBe(0)
+  })
 })
 
 describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
@@ -516,5 +575,162 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     expect(adapter).not.toHaveProperty("discoverSessions")
     await expect((adapter.cancelTurn as unknown as (value: string) => Promise<unknown>)("ses_upstream")).rejects.toMatchObject({ code: "invalid_binding" })
     await expect((adapter.getTodos as unknown as (value: string) => Promise<unknown>)("ses_upstream")).rejects.toMatchObject({ code: "invalid_binding" })
+  })
+
+  test("passes a dotted-but-segment-safe upstream id through unchanged", async () => {
+    const seen: string[] = []
+    const baseUrl = serve((request) => {
+      seen.push(new URL(request.url).pathname)
+      return Response.json({ id: "ses_a.b-c~d", directory: TARGET })
+    })
+    const adapter = await connect({ descriptor: descriptor(baseUrl) })
+    await adapter.getSession(binding({ upstreamSessionId: "ses_a.b-c~d" }))
+    expect(seen).toEqual(["/session/ses_a.b-c~d"])
+  })
+
+  test("refuses to adopt an upstream session id that cannot stay inside its URL segment", async () => {
+    const baseUrl = serve((request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
+      if (url.pathname === "/session") return Response.json({ id: "..", directory: TARGET })
+      return new Response("missing", { status: 404 })
+    })
+    const adapter = await connect({ descriptor: descriptor(baseUrl) })
+    await expect(adapter.createSession(SOURCE)).rejects.toMatchObject({ code: "invalid_response" })
+  })
+
+  test("scopes credentialed requests to the configured base URL path", async () => {
+    const seen: Array<[string, string | null]> = []
+    const origin = serve((request) => {
+      const url = new URL(request.url)
+      seen.push([url.pathname, request.headers.get("x-api-key")])
+      if (url.pathname === "/api/global/health") return Response.json({ healthy: true, version: "1.2.3" })
+      return Response.json({ id: "ses_upstream", directory: TARGET })
+    })
+    const item = descriptor(`${origin}/api`, {
+      auth: { type: "header", name: "X-API-Key", valueSecret: "apiKey" },
+    })
+    item.secretRefs = { apiKey: "vault://key" }
+    const adapter = await connect({ descriptor: item, secrets: { apiKey: "key-1" } })
+    await adapter.getSession(binding())
+    expect(seen).toEqual([["/api/session/ses_upstream", "key-1"]])
+  })
+
+  test("redacts raw and encoded credential material from error diagnostics", async () => {
+    const secret = "s3cret/value with space"
+    const baseUrl = serve((request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/session/ses_upstream") {
+        return new Response(`failed: ${secret} then ${encodeURIComponent(secret)}`, { status: 500 })
+      }
+      return new Response("missing", { status: 404 })
+    })
+    const item = descriptor(baseUrl, { auth: { type: "header", name: "X-API-Key", valueSecret: "apiKey" } })
+    item.secretRefs = { apiKey: "vault://key" }
+    const adapter = await connect({ descriptor: item, secrets: { apiKey: secret } })
+
+    let error: unknown
+    try { await adapter.getSession(binding()) } catch (value) { error = value }
+    expect(error).toMatchObject({ code: "http_error" })
+    const serialized = JSON.stringify(error)
+    expect(serialized).not.toContain(secret)
+    expect(serialized).not.toContain(encodeURIComponent(secret))
+    expect(serialized).toContain("[REDACTED]")
+  })
+
+  test("redacts credentials from reconciled tool error diagnostics", async () => {
+    const secret = "s3cret-diagnostic"
+    let userMessageId = ""
+    const baseUrl = serve(async (request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
+      if (url.pathname === "/global/event") {
+        return new Response(
+          envelope(TARGET, { type: "session.idle", properties: { sessionID: "ses_upstream" } }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        )
+      }
+      if (url.pathname === "/session/ses_upstream/prompt_async") {
+        userMessageId = (await request.json() as { messageID: string }).messageID
+        return new Response(null, { status: 204 })
+      }
+      if (url.pathname === "/session/ses_upstream/message") {
+        if (!userMessageId) return Response.json([])
+        return Response.json([{
+          info: { id: "msg_assistant", sessionID: "ses_upstream", role: "assistant", parentID: userMessageId, finish: "stop", time: { completed: 1 } },
+          parts: [{
+            id: "part_1", messageID: "msg_assistant", sessionID: "ses_upstream", type: "tool", tool: "read", callID: "call_1",
+            metadata: { providerExecuted: true }, state: { status: "error", error: `upstream ${secret} failure` },
+          }],
+        }])
+      }
+      if (url.pathname === "/session/status") return Response.json({})
+      if (url.pathname === "/session/ses_upstream") return Response.json({ id: "ses_upstream", directory: TARGET })
+      return new Response("missing", { status: 404 })
+    })
+    const item = descriptor(baseUrl, { auth: { type: "header", name: "X-API-Key", valueSecret: "apiKey" } })
+    item.secretRefs = { apiKey: "vault://key" }
+    const adapter = await connect({ descriptor: item, secrets: { apiKey: secret } })
+
+    const events = await collect(adapter.executeTurn(binding(), prompt()))
+    expect(events.find((event) => event.type === "tool-error")).toMatchObject({
+      toolCallId: "call_1",
+      error: "upstream [REDACTED] failure",
+    })
+    expect(JSON.stringify(events)).not.toContain(secret)
+    expect(events.at(-1)).toEqual({ type: "finish", sessionId: "claxedo_ses_1" })
+  })
+
+  test("redacts credentials a tool echoed back through its output", async () => {
+    const secret = "s3cret-tool-output"
+    let userMessageId = ""
+    const baseUrl = serve(async (request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
+      if (url.pathname === "/global/event") {
+        return new Response(
+          envelope(TARGET, { type: "session.idle", properties: { sessionID: "ses_upstream" } }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        )
+      }
+      if (url.pathname === "/session/ses_upstream/prompt_async") {
+        userMessageId = (await request.json() as { messageID: string }).messageID
+        return new Response(null, { status: 204 })
+      }
+      if (url.pathname === "/session/ses_upstream/message") {
+        if (!userMessageId) return Response.json([])
+        return Response.json([{
+          info: { id: "msg_assistant", sessionID: "ses_upstream", role: "assistant", parentID: userMessageId, finish: "stop", time: { completed: 1 } },
+          parts: [
+            {
+              id: "part_1", messageID: "msg_assistant", sessionID: "ses_upstream", type: "tool", tool: "bash", callID: "call_1",
+              metadata: { providerExecuted: true },
+              state: { status: "completed", output: `curl -H 'Authorization: Bearer ${secret}' https://upstream.test/v1?token=${encodeURIComponent(secret)}` },
+            },
+            {
+              id: "part_2", messageID: "msg_assistant", sessionID: "ses_upstream", type: "tool", tool: "bash", callID: "call_2",
+              metadata: { providerExecuted: true },
+              state: { status: "completed", output: { stdout: `Authorization: Bearer ${secret}`, frames: [{ url: `https://upstream.test/v1?token=${secret}` }] } },
+            },
+          ],
+        }])
+      }
+      if (url.pathname === "/session/status") return Response.json({})
+      if (url.pathname === "/session/ses_upstream") return Response.json({ id: "ses_upstream", directory: TARGET })
+      return new Response("missing", { status: 404 })
+    })
+    const item = descriptor(baseUrl, { auth: { type: "header", name: "X-API-Key", valueSecret: "apiKey" } })
+    item.secretRefs = { apiKey: "vault://key" }
+    const adapter = await connect({ descriptor: item, secrets: { apiKey: secret } })
+
+    const events = await collect(adapter.executeTurn(binding(), prompt()))
+    expect(events.find((event) => event.type === "tool-output" && event.toolCallId === "call_1")).toMatchObject({
+      output: "curl -H 'Authorization: Bearer [REDACTED]' https://upstream.test/v1?token=[REDACTED]",
+    })
+    expect(events.find((event) => event.type === "tool-output" && event.toolCallId === "call_2")).toMatchObject({
+      output: { stdout: "Authorization: Bearer [REDACTED]", frames: [{ url: "https://upstream.test/v1?token=[REDACTED]" }] },
+    })
+    expect(JSON.stringify(events)).not.toContain(secret)
+    expect(events.at(-1)).toEqual({ type: "finish", sessionId: "claxedo_ses_1" })
   })
 })

@@ -54,6 +54,8 @@ import { hostServingEnrollmentId } from "@claxedo/host-serving/serving"
 import { HostServingRoutes } from "../workspace/host-serving-routes"
 import { HostProviderConfigRoutes } from "../workspace/host-provider-config-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
+import { daemonAdmission, machineRecoveryFence, markInProcessDaemonRequest } from "./daemon-admission"
+import { relayReplayAdmission } from "../workspace/runtime-dispatch/relay-admission"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import {
@@ -64,6 +66,8 @@ import {
   type LoopbackFirstPartyMcpOptions,
 } from "@claxedo/mcp"
 import { TASKS_OPERATIONS } from "@claxedo/server-core/tasks-host/capability"
+import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import type { TasksSessionGrants } from "@claxedo/server-core/tasks-host/session-grants"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import { BROKER_ROUTE_PATTERN, isBrokerPath, loopbackBrokerRoutes } from "@claxedo/egress-broker"
 import type { LocalDaemonLifecycle, MachineRecoveryCaller } from "./local-daemon-lifecycle"
@@ -75,7 +79,6 @@ import {
   type RecoveryRefusal,
   type RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
-import { machineRecoveryFence } from "./daemon-admission"
 import { localDocumentsRoutes } from "./local-documents"
 
 /**
@@ -93,9 +96,23 @@ export function isLocalCredentialPath(path: string): boolean {
 /**
  * Which origins the desktop-local server answers.
  *
- * Loopback plus the product's own web origin. Deliberately not paired with
- * `credentials: true` — see the cors mount below.
+ * Its own — the only origin a page this daemon served can present — plus the
+ * browser origins the composition explicitly declared, which today is the
+ * development renderer the launcher names. Every other origin that can reach
+ * the port is a caller, not a reader: a `localhost:*` page the user happens
+ * to have open shares the loopback but holds nothing that proves it is the
+ * application. Deliberately not paired with `credentials: true` — see the
+ * cors mount below.
  */
+export function localCorsOrigin(
+  origin: string,
+  ownOrigin: string,
+  browserOrigins: readonly string[] = [],
+): string | undefined {
+  if (origin === ownOrigin) return origin
+  return browserOrigins.includes(origin) ? origin : undefined
+}
+
 /**
  * The management protocol the caller declares. Both halves of this protocol
  * are literals in two packages, so a client that does not send it is one built
@@ -128,16 +145,17 @@ function daemonCaller(c: Context): MachineRecoveryCaller {
   return { callerId: `daemon-capability:${client || "unnamed"}`, authority: "machine" }
 }
 
-export function localCorsOrigin(origin: string): string | undefined {
-  if (origin.startsWith("http://localhost:")) return origin
-  if (origin.startsWith("http://127.0.0.1:")) return origin
-  return undefined
-}
-
 export type LocalAppOptions = {
   egressBroker?: (request: Request) => Promise<Response>
   services: ControlPlaneServicesContract
   corsOrigin?: (origin: string, path: string) => string | undefined
+  /**
+   * Browser origins beyond the daemon's own that may read its answers — the
+   * development renderer the launcher declares. The default CORS policy
+   * reflects exactly this set and the request's own origin; a `corsOrigin`
+   * override owns the question entirely.
+   */
+  browserOrigins?: readonly string[]
   runtimeProxyOptions?: RuntimeProxyOptions
   /** Answers `/workspaces/:workspaceId`; registered ahead of the runtime proxy. */
   workspaceRelayProxy?: MiddlewareHandler
@@ -153,6 +171,15 @@ export type LocalAppOptions = {
    * handed this app's in-process fetch for the credential's workspace.
    */
   firstPartyMcp?: LoopbackFirstPartyMcpOptions
+  /**
+   * The Tasks grants this machine's own sessions present. The MCP mount
+   * issues one per session and the Tasks routes — mounted by the caller as
+   * route contributions — verify it, so the two are handed to this
+   * composition together. Absent, a session's task call is answered as the
+   * person at this machine: no project confinement, no agent-start gates,
+   * and a link recorded as a person's (security review P105).
+   */
+  tasksGrants?: TasksSessionGrants
   /** Machine-local daemon control surface. Never exposed to the renderer. */
   daemon?: {
     identity: {
@@ -236,7 +263,8 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         // The MCP route is reached by harness processes, never by a page; a
         // loopback page granted an ACAO here could drive it from a browser.
         if (c.req.path === CLAXEDO_MCP_PATH) return undefined
-        return (options.corsOrigin ?? localCorsOrigin)(origin, c.req.path)
+        if (options.corsOrigin) return options.corsOrigin(origin, c.req.path)
+        return localCorsOrigin(origin, new URL(c.req.url).origin, options.browserOrigins ?? [])
       },
       maxAge: 86400,
       // `credentials: true` is deliberately not set, matching the self-hosted
@@ -247,13 +275,37 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
 
   app.use(unsignedLocalRequestGuard({ mode: deploymentMode(env), authConfig: services.auth.config }))
 
-  // Ahead of every route family, the broker and telemetry included: a machine
-  // that has not established what it owns must not spend a stored key at a
-  // vendor, and the fence is a property of the composition rather than a review
-  // item on each mount.
+  // Both are properties of the composition, mounted once here rather than
+  // reviewed on each family below, and both sit ahead of every route family —
+  // the broker and telemetry included — because a machine that has not
+  // established what it owns must not spend a stored key at a vendor.
+  //
+  // The fence runs first: a held machine refuses work before admission decides
+  // who the caller is. Admission's exemptions are exactly the callers that
+  // prove themselves another way: readiness probes, mounts that verify a scoped
+  // credential of their own (the broker's runtime token, the first-party MCP's
+  // runtime credential, the agent-hook token, and the daemon lifecycle routes'
+  // bearer — the same secret under its own header), and requests the relay
+  // dispatcher verifies for the workspace they name. A composition with no
+  // daemon identity mints no capability and keeps the unsigned local posture
+  // instead.
   if (options.daemon) {
-    const { lifecycle } = options.daemon
+    const { identity, lifecycle } = options.daemon
     app.use(machineRecoveryFence(() => lifecycle.recovery.ingressClosed()))
+    app.use(daemonAdmission({
+      capability: identity.token,
+      isPublicProbe: (method, pathname) =>
+        method === "GET" && (pathname === "/api/claxedo/health" || pathname === "/global/health"),
+      hasOwnCredentialAuthority: (pathname) =>
+        pathname === CLAXEDO_MCP_PATH ||
+        pathname.startsWith(`${CLAXEDO_MCP_PATH}/`) ||
+        isBrokerPath(pathname) ||
+        pathname === "/api/wr/hook" ||
+        pathname.startsWith("/api/wr/hook/") ||
+        pathname === "/api/claxedo/daemon" ||
+        pathname.startsWith("/api/claxedo/daemon/"),
+      relayReplay: (request) => relayReplayAdmission(request, runtimeProxy),
+    }))
   }
 
   if (options.egressBroker) {
@@ -471,17 +523,31 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         if (credential.kind !== "runtime") throw new Error("A local MCP client requires a runtime credential")
         const workspace = await resolveWorkspace({ workspaceId: credential.workspaceId })
         if (!workspace || workspace.kind !== "local") throw new Error("The runtime workspace is unavailable")
-        const localFetch = inProcessFetch((runtimeRequest) => app.fetch(runtimeRequest), { "x-workspace-id": credential.workspaceId })
+        const inProcess = (runtimeRequest: Request) => app.fetch(markInProcessDaemonRequest(runtimeRequest))
+        const localFetch = inProcessFetch(inProcess, { "x-workspace-id": credential.workspaceId })
+        // A session reaches the Tasks routes as itself: the registry issues a
+        // handle for its workspace and session, and the capability branch of
+        // the Tasks door resolves it to the workspace's owner, its project and
+        // the start gates. The consent read that lists the tools is the same
+        // one that withholds the handle — a session whose Tasks group is off,
+        // or a composition with no registry, keeps the bare loopback fetch
+        // that reads as the person at this machine.
+        const enabled = await firstPartyMcp.enabledToolGroups?.(credential)
+        const grant = enabled?.includes(BUILTIN_TASKS_TOOL_GROUP)
+          ? await options.tasksGrants?.issue({
+              workspaceId: credential.workspaceId,
+              ...(credential.sessionId ? { sessionId: credential.sessionId } : {}),
+            })
+          : undefined
         return firstPartyMcp.createClient({
           deployment: "loopback",
           credential,
           request,
           documents: { fetch: localFetch },
-          // Every operation, and no capability: this server is both the
-          // runtime host and the control plane, so the grant a hosted root
-          // carries has nothing to say here — the loopback fetch already
-          // reaches the one machine whose tasks these are.
-          tasks: { fetch: localFetch, operations: TASKS_OPERATIONS },
+          tasks: {
+            fetch: grant ? inProcessFetch(inProcess, { authorization: `Bearer ${grant}` }) : localFetch,
+            operations: TASKS_OPERATIONS,
+          },
           local: {
             fetch: localFetch,
             workspace: { workspaceId: credential.workspaceId, directory: workspace.directory },

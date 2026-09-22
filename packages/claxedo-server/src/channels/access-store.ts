@@ -24,12 +24,8 @@ import type {
 } from "@claxedo/channels"
 import { ClaxedoDB } from "../platform/db"
 import { channelId } from "./channel-id"
-import {
-  ClaxedoChannelAllowTable,
-  ClaxedoChannelIdentityTable,
-  ClaxedoChannelPairingTable,
-  CURRENT_CHANNEL_IDENTITY_VERSION,
-} from "./access.sql"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
+import { ClaxedoChannelAllowTable, ClaxedoChannelIdentityTable, ClaxedoChannelPairingTable } from "./access.sql"
 
 /** A row whose channel is no longer a supported one reads as absent, exactly as `identity` treats an unknown status. */
 function pairing(row: typeof ClaxedoChannelPairingTable.$inferSelect): PairingRequest | undefined {
@@ -149,9 +145,15 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
       }).run())
     },
     async deletePending(code) {
-      ClaxedoDB.use((db) => db.delete(ClaxedoChannelPairingTable)
-        .where(eq(ClaxedoChannelPairingTable.code, code))
+      // Prune first so the conditional delete only ever sees live rows; the
+      // version predicate keeps legacy rows out of the consume count (they are
+      // history, not approvable codes). `changes` is what makes the consume
+      // atomic — two racing deletes cannot both report a removal.
+      pruneExpired(now())
+      const result = ClaxedoDB.use((db) => db.delete(ClaxedoChannelPairingTable)
+        .where(and(eq(ClaxedoChannelPairingTable.code, code), current))
         .run())
+      return result.changes > 0
     },
   }
 }

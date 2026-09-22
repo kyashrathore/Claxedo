@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test, vi } from "vitest"
+import { execFileSync } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -85,6 +86,27 @@ describe("Claxedo project metadata public routes", () => {
     expect(await fs.readFile(path.join(process.env.CLAXEDO_DATA_DIR!, "workspaces.json"), "utf8")).toBe(before)
   })
 
+  test("GET /project/current resolves without registering; POST registers for the local product", async () => {
+    const directory = path.join(root, "current-ensure")
+    await fs.mkdir(directory)
+    execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
+    const query = `directory=${encodeURIComponent(directory)}`
+
+    // The read verb never writes, however often it runs.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const missing = await app.request(`/project/current?${query}`)
+      expect(missing.status).toBe(404)
+    }
+    expect(await workspaceStore.resolveWorkspace({ directory })).toBeUndefined()
+
+    const ensured = await app.request(`/project/current?${query}`, { method: "POST" })
+    expect(ensured.status).toBe(200)
+    const project = await ensured.json()
+    expect(await workspaceStore.resolveWorkspace({ directory })).toMatchObject({ project_id: project.id })
+    // The read now answers what the write registered.
+    expect((await app.request(`/project/current?${query}`)).status).toBe(200)
+  })
+
   test("rejects missing projects and never adopts a child workspace ID as project identity", async () => {
     for (const id of ["missing", "ws_child"]) expect((await app.request(`/project/${id}`, patch({ name: "wrong" }))).status).toBe(404)
     expect((await workspaceStore.listProjects()).map((project) => project.id).sort()).toEqual(["project_a", "project_b"])
@@ -108,6 +130,14 @@ describe("Claxedo project metadata public routes", () => {
     const headers = { authorization: "Bearer viewer" }
     expect((await (await signed.request("/project", { headers })).json()).map((project: { id: string }) => project.id)).toEqual(["project_a"])
     expect((await signed.request("/project/current?workspaceId=ws_other", { headers })).status).toBe(404)
+    // The ensure verb is a read for a signed caller too: registering a
+    // directory goes through POST /api/claxedo/projects under the authority.
+    const foreign = path.join(root, "foreign")
+    await fs.mkdir(foreign)
+    execFileSync("git", ["init", "-b", "main"], { cwd: foreign, stdio: "ignore" })
+    const before = (await workspaceStore.listWorkspaces()).length
+    expect((await signed.request(`/project/current?directory=${encodeURIComponent(foreign)}`, { method: "POST", headers })).status).toBe(404)
+    expect((await workspaceStore.listWorkspaces()).length).toBe(before)
     expect((await signed.request("/project/project_a", patch({ name: "Allowed" }, "owner"))).status).toBe(200)
     expect((await workspaceStore.listProjects()).find((project) => project.id === "project_a")?.name).toBe("Allowed")
     expect(authorizeProject).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ subject: "other" }) }), { projectId: "project_a", action: "write" })

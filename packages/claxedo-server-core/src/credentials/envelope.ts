@@ -1,9 +1,9 @@
 /**
- * Envelope encryption above the `SecretBackend` seam.
+ * Envelope encryption for hosted credential secrets.
  *
- * The Cloudflare KV byte store (and any future hosted byte store) holds
- * opaque ciphertext only. This module supplies the mandatory wrapper that
- * turns any `SecretBackend` into an encrypting one:
+ * `envelopeCipher` seals a secret for one storage slot and opens it again;
+ * `encryptedSecretBackend` composes that cipher over a `SecretBackend` so the
+ * inner store only ever holds ciphertext.
  *
  *   - Per-org subkeys: HKDF-SHA-256(KEK, salt = fixed domain string,
  *     info = "org:<orgId>") -> AES-256-GCM key. No single decryption context
@@ -11,9 +11,8 @@
  *     can become a key-destruction operation.
  *   - Key-id-prefixed ciphertext so KEK rotation is "add new KEK, new writes
  *     use it, reads accept any known key-id" instead of a migration event.
- *   - Web Crypto only (global `crypto.subtle`) — this module must run inside
- *     the Cloudflare Worker bundle; `node:crypto` is forbidden there
- *     (enforced by src/worker.import-graph.test.ts).
+ *   - Web Crypto only (global `crypto.subtle`): this module runs inside the
+ *     Cloudflare Worker bundle, where `node:crypto` is unavailable.
  *
  * Stored value layout (string, versioned):
  *
@@ -24,40 +23,35 @@
  *   - iv        12 random bytes
  *   - tag       16 bytes, appended to the ciphertext by AES-GCM
  *
- * The GCM tag also covers `<key-id>:<credential-id>` — the credential's
- * storage identity — as AAD (not stored in the value; re-derived on read).
- * The credential-id is the segment of the backend ref after its `<scheme>:`
- * prefix (backends store under `cf:<id>` / `local:<id>` / …; `put` is given
- * the raw `<id>` and `get` the full ref). This binds each ciphertext to its
- * slot: a within-org relocation or rollback of a blob to a different
- * credential id fails GCM authentication even though it decrypts under the
- * same per-org key — closing the "leaked KV token can shuffle blobs between
- * slots" gap.
+ * The GCM tag also covers `<key-id>:<credential-id>`, the slot the value was
+ * sealed for, as AAD (not stored in the value; re-derived on read). For a
+ * `SecretBackend` the credential id is the segment of the ref after its
+ * `<scheme>:` prefix (`put` is given the raw `<id>`, `get` the full ref); a
+ * row store passes the same id to `seal` and `open`. A blob moved to another
+ * slot fails authentication even though it decrypts under the same per-org key.
  *
  * Reads fail closed: a stored value that is not a well-formed envelope, uses
  * an unknown key-id, or fails GCM authentication (tamper, wrong org
- * partition, wrong KEK, or a relocated/rolled-back slot) throws — it is never
- * returned as a secret.
+ * partition, wrong KEK, or a relocated slot) throws and is never returned as
+ * a secret.
  *
- * KEK sourcing (hosted): `CLAXEDO_CREDENTIALS_KEK` is the active write key;
+ * KEK sourcing: `CLAXEDO_CREDENTIALS_KEK` is the active write key;
  * `CLAXEDO_CREDENTIALS_KEK_NEXT` is an optional second accepted decrypt key
- * used to stage/drain a rotation, mirroring the
+ * used to stage a rotation, mirroring the
  * CLAXEDO_RUNTIME_ACCESS_TOKEN_*_NEXT_* signing-key convention. Both are
  * base64 (standard or url-safe) and must decode to at least 32 bytes
  * (generate with `openssl rand -base64 32`). A missing or malformed KEK
- * throws at construction time — absent KEK in a hosted context means the
- * credential store refuses to exist.
+ * throws at construction time: without a KEK the hosted credential store
+ * refuses to exist.
  *
- * Rotation is a drain, not a swap: "new writes use the new key-id" alone never
- * retires anything, since every value written before the rotation stays
- * readable only under the old KEK, so the old KEK must stay configured
- * forever and a suspected-compromised key can never actually be taken out of
- * service. The `EnvelopeAdmin` surface below is what closes that: it exposes
- * the key-id a stored value carries without decrypting it, so
- * `credentials/rotate.ts` can
- * sweep every stored ciphertext, re-encrypt it under the current KEK, and then
- * answer the only question that gates removing the old key from configuration —
- * "is any ciphertext still under the retired key-id?".
+ * Rotation is a drain, not a swap: every value written before the rotation
+ * stays readable only under the old KEK until it is re-sealed, so the old KEK
+ * cannot leave configuration on the strength of "new writes use the new
+ * key-id". `EnvelopeAdmin` exposes the key-id a stored value carries without
+ * decrypting it, which is what lets `credentials/operations/rotate.ts` sweep
+ * every ciphertext onto the current KEK and then answer the one question that
+ * gates removing the old key: "is any ciphertext still under the retired
+ * key-id?".
  */
 
 import type { SecretBackend } from "./types"
@@ -115,7 +109,7 @@ export type StoredEnvelopeState =
  * metadata that is already the ciphertext's plaintext prefix) and nothing else.
  * It does not expose the raw byte store, the ciphertext, or the KEK, so it
  * cannot be used to reopen the "reach the bytes unencrypted" hole this
- * module closes — `credentials/rotate.ts` re-encrypts through the ordinary
+ * module closes: `credentials/operations/rotate.ts` re-encrypts through the ordinary
  * `get`/`put` pair, which never lets plaintext touch the inner store.
  */
 export interface EnvelopeAdmin {
@@ -123,16 +117,6 @@ export interface EnvelopeAdmin {
   currentKeyId(): Promise<string>
   /** What `ref` holds, without decrypting or authenticating it. */
   inspect(ref: string): Promise<StoredEnvelopeState>
-}
-
-/** Narrows a `SecretBackend` to one that can be swept by a KEK rotation. */
-export function isEnvelopeBackend(backend: SecretBackend): backend is SecretBackend & EnvelopeAdmin {
-  return (
-    "currentKeyId" in backend &&
-    typeof backend.currentKeyId === "function" &&
-    "inspect" in backend &&
-    typeof backend.inspect === "function"
-  )
 }
 
 /**
@@ -300,19 +284,21 @@ export function envelopeKeyIdOf(stored: string): string | undefined {
   return ENVELOPE_RE.exec(stored)?.[1]
 }
 
-/**
- * Wrap a `SecretBackend` so every value it stores is an AES-256-GCM envelope
- * under a per-org HKDF subkey. The inner backend only ever sees ciphertext.
- */
-export function encryptedSecretBackend(
-  inner: SecretBackend,
-  keys: EnvelopeKeyProvider,
-  opts: { orgId: string },
-): SecretBackend & EnvelopeAdmin {
-  const orgId = opts.orgId?.trim()
-  if (!orgId) throw new Error("encryptedSecretBackend requires a non-empty orgId partition")
+/** Seals and opens envelopes for one org partition. */
+export interface EnvelopeCipher {
+  /** The `cenc1` envelope of `plaintext`, bound to `credentialId`, under the current KEK. */
+  seal(credentialId: string, plaintext: string): Promise<string>
+  /** The plaintext of `stored`, which must be an envelope sealed for `credentialId` under a known key-id. */
+  open(credentialId: string, stored: string): Promise<string>
+  /** The key-id new writes encrypt under. */
+  currentKeyId(): Promise<string>
+}
 
-  // keyId -> derived per-org AES key (orgId is fixed per wrapper instance).
+export function envelopeCipher(keys: EnvelopeKeyProvider, opts: { orgId: string }): EnvelopeCipher {
+  const orgId = opts.orgId?.trim()
+  if (!orgId) throw new Error("envelopeCipher requires a non-empty orgId partition")
+
+  // keyId -> derived per-org AES key (orgId is fixed per cipher instance).
   const derived = new Map<string, Promise<CryptoKey>>()
 
   function orgKey(keyId: string, kek: EnvelopeBytes): Promise<CryptoKey> {
@@ -338,26 +324,24 @@ export function encryptedSecretBackend(
   }
 
   return {
-    async put(id, secret) {
+    async seal(credentialId, plaintext) {
       const { keyId, kek } = await keys.current()
       const key = await orgKey(keyId, kek)
       const iv = crypto.getRandomValues(new Uint8Array(IV_LEN))
       const ciphertext = new Uint8Array(
         await crypto.subtle.encrypt(
-          { name: "AES-GCM", iv, additionalData: credentialAad(keyId, id) },
+          { name: "AES-GCM", iv, additionalData: credentialAad(keyId, credentialId) },
           key,
-          encoder.encode(secret),
+          encoder.encode(plaintext),
         ),
       )
       const packed = new Uint8Array(iv.length + ciphertext.length)
       packed.set(iv, 0)
       packed.set(ciphertext, iv.length)
-      return inner.put(id, `${FORMAT_TAG}:${keyId}:${toBase64(packed)}`)
+      return `${FORMAT_TAG}:${keyId}:${toBase64(packed)}`
     },
 
-    async get(ref) {
-      const stored = await inner.get(ref)
-      if (stored === null) return null
+    async open(credentialId, stored) {
       const parsed = parseEnvelope(stored)
       const kek = await keys.lookup(parsed.keyId)
       if (!kek) {
@@ -372,7 +356,7 @@ export function encryptedSecretBackend(
           {
             name: "AES-GCM",
             iv: parsed.iv,
-            additionalData: credentialAad(parsed.keyId, credentialIdFromRef(ref)),
+            additionalData: credentialAad(parsed.keyId, credentialId),
           },
           key,
           parsed.ciphertext,
@@ -385,6 +369,34 @@ export function encryptedSecretBackend(
       return decoder.decode(plaintext)
     },
 
+    async currentKeyId() {
+      return (await keys.current()).keyId
+    },
+  }
+}
+
+/**
+ * Wrap a `SecretBackend` so every value it stores is an AES-256-GCM envelope
+ * under a per-org HKDF subkey. The inner backend only ever sees ciphertext.
+ */
+export function encryptedSecretBackend(
+  inner: SecretBackend,
+  keys: EnvelopeKeyProvider,
+  opts: { orgId: string },
+): SecretBackend & EnvelopeAdmin {
+  const cipher = envelopeCipher(keys, opts)
+
+  return {
+    async put(id, secret) {
+      return inner.put(id, await cipher.seal(id, secret))
+    },
+
+    async get(ref) {
+      const stored = await inner.get(ref)
+      if (stored === null) return null
+      return cipher.open(credentialIdFromRef(ref), stored)
+    },
+
     async delete(ref) {
       return inner.delete(ref)
     },
@@ -393,9 +405,7 @@ export function encryptedSecretBackend(
       return inner.probe()
     },
 
-    async currentKeyId() {
-      return (await keys.current()).keyId
-    },
+    currentKeyId: () => cipher.currentKeyId(),
 
     async inspect(ref) {
       const stored = await inner.get(ref)

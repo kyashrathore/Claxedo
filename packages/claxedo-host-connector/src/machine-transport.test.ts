@@ -121,6 +121,27 @@ describe("a redirected machine request", () => {
     await expect(transport.heartbeat({ generation: 1, acks: [] })).rejects.toBeInstanceOf(HostedRedirectError)
   })
 
+  test("a same-origin location carrying a credential is refused before anything is sent to it", async () => {
+    // Same origin, so nothing about the address is suspect — what makes this
+    // one a refusal is that following it would put a code and a token in a
+    // request line, where they reach logs and referrers. The stub records
+    // every call, so the second request is absent rather than merely unread.
+    const seen: URL[] = []
+    const cp = createFakeControlPlane()
+    const { transport } = await host(cp, {
+      fetch: async (url) => {
+        seen.push(url)
+        return new Response(null, {
+          status: 302,
+          headers: { location: `${url.origin}${url.pathname}?code=abc&access_token=ghu_secret` },
+        })
+      },
+    })
+
+    await expect(transport.acquire()).rejects.toBeInstanceOf(HostedRedirectError)
+    expect(seen.map((url) => url.href)).toEqual([`${cp.url}/api/claxedo/host/enrollments/acquire`])
+  })
+
   test("a fetch that ignored the option and followed anyway is denied on the answer", async () => {
     // The attacker's 200, indistinguishable from the control plane's but for
     // having been redirected to. A transport that trusted it would apply the

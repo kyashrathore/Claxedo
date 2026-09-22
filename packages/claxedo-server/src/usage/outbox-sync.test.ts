@@ -137,6 +137,40 @@ describe("usage outbox sync", () => {
     })
   })
 
+  test("a member flush never adopts unowned facts; the operator's flush may", async () => {
+    const claimPending = vi.fn(async (identity: { org_id: string; user_id: string }, options?: { limit?: number; claimUnowned?: boolean }) =>
+      options?.claimUnowned ? [revision] : [],
+    )
+    const recordTurnUsageBatch = vi.fn(async () => [{ status: "accepted" as const, activated: false }])
+    const sync = createUsageOutboxSync({
+      local: { pendingOutbox: async () => [revision], claimPending, markDelivered: vi.fn(), markConflict: vi.fn() } as never,
+      central: { recordLlmTurn: async () => ({ activated: false }), recordTurnUsageBatch },
+    })
+    const member = { org_id: "org-b", user_id: "user-b" }
+
+    await expect(sync.flush(member)).resolves.toEqual({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+    expect(claimPending).toHaveBeenCalledWith(member, { limit: 100, claimUnowned: false })
+    expect(recordTurnUsageBatch).not.toHaveBeenCalled()
+
+    const operator = { org_id: "org-o", user_id: "user-o" }
+    await expect(sync.flush(operator, { claimUnowned: true })).resolves.toMatchObject({ attempted: 1, delivered: 1 })
+    expect(claimPending).toHaveBeenLastCalledWith(operator, { limit: 100, claimUnowned: true })
+    expect(recordTurnUsageBatch).toHaveBeenCalledWith({ ...operator, revisions: [revision] })
+  })
+
+  test("notifications keep the operator claim flag from the last verified flush", async () => {
+    const claimPending = vi.fn(async () => [revision])
+    const recordTurnUsageBatch = vi.fn(async () => [{ status: "accepted" as const, activated: false }])
+    const sync = createUsageOutboxSync({
+      local: { pendingOutbox: async () => [revision], claimPending, markDelivered: vi.fn(), markConflict: vi.fn() } as never,
+      central: { recordLlmTurn: async () => ({ activated: false }), recordTurnUsageBatch },
+    })
+    const operator = { org_id: "org-o", user_id: "user-o" }
+    await sync.flush(operator, { claimUnowned: true })
+    await sync.notify()
+    expect(claimPending).toHaveBeenLastCalledWith(operator, { limit: 100, claimUnowned: true })
+  })
+
   test("remembers verified identity so terminal and reconnect notifications can wake sync", async () => {
     const pendingOutbox = vi.fn()
       .mockResolvedValueOnce([])

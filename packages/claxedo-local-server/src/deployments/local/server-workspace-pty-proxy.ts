@@ -1,8 +1,8 @@
 import type { createNodeWebSocket } from "@hono/node-ws"
 import type { Context, Hono as HonoType, Next } from "hono"
-import { connectEmbeddedWorkspacePty } from "../../deployments/local/embedded-workspace-runtime"
+import { isPtyStreamSocket, type AuthorizedPtyConnection } from "@claxedo/workspace-runtime"
+import { attachEmbeddedWorkspacePty } from "../../deployments/local/embedded-workspace-runtime"
 import {
-  embedded,
   resolveWorkspaceRuntimeHit,
   resolveWorkspaceRuntimeHitForWorkspaceId,
   type RuntimeProxyOptions,
@@ -10,8 +10,6 @@ import {
 import { resolveIngressProvenance } from "../../workspace/runtime-dispatch/ingress-provenance"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
-
-const PTY_ROUTE_PREFIX = "/api/wr/pty"
 
 type IngressOptions = Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor" | "verifyRelayIngress">
 
@@ -25,21 +23,8 @@ function ingressOptions(options: RuntimeProxyOptions): IngressOptions {
 
 type UpgradeWebSocket = ReturnType<typeof createNodeWebSocket>["upgradeWebSocket"]
 
-type PtySocket = {
-  readyState: number
-  send: (data: string | Uint8Array | ArrayBuffer) => void
-  close: (code?: number, reason?: string) => void
-}
-
 function errorBody(code: string, message: string) {
   return { error: { code, message } }
-}
-
-function isPtySocket(value: unknown): value is PtySocket {
-  if (!value || typeof value !== "object") return false
-  if (!("readyState" in value) || typeof (value as { readyState?: unknown }).readyState !== "number") return false
-  if (!("send" in value) || typeof (value as { send?: unknown }).send !== "function") return false
-  return "close" in value && typeof (value as { close?: unknown }).close === "function"
 }
 
 function cursor(c: Context): number | undefined {
@@ -76,95 +61,80 @@ function requestWorkspace(c: Context) {
 }
 
 /**
- * Whether this caller may attach to an in-process terminal, answered before the
- * upgrade and answered by the runtime that owns the terminal.
+ * Admits this caller to an in-process terminal, before the upgrade, through
+ * the runtime's own authorized terminal lifetime.
  *
- * The socket itself cannot ask: the runtime's own `/:ptyID/connect` upgrade is
- * bound to the `@hono/node-ws` instance `createWorkspaceRuntimeApp` builds for
- * its own app, nothing ever attaches that instance to a listener, and a
- * replayed `app.fetch` therefore reaches the handler and dies writing the
- * connection symbol onto an absent `env`. So the same decision is taken over a
- * plain in-process fetch: `GET /api/wr/pty/:ptyID` resolves ingress provenance,
- * denies a workspace viewer, and runs the session policy's `pty_read` for the
- * session this terminal is bound to. Anything but 200 is the answer the
- * upgrade gets.
+ * The runtime's `/:ptyID/connect` route cannot be replayed for it: that
+ * upgrade is bound to the `@hono/node-ws` instance `createWorkspaceRuntimeApp`
+ * builds for its own app, nothing ever attaches that instance to a listener,
+ * and an `app.fetch` therefore reaches the handler and dies writing the
+ * connection symbol onto an absent `env`. So this hop takes the SAME policy
+ * decision the route would have taken — admission now, renewed reads and
+ * per-keystroke writes for as long as the socket lives — by handing the
+ * identity its ingress verified to `attachEmbeddedWorkspacePty`.
  *
- * A loopback-direct caller is not asked at all: no stamp reaches the runtime,
- * so the only refusal it could return is a terminal that is already gone —
- * which the connect below answers with the close code its client reads.
+ * A loopback-direct caller carries no identity into that policy, which is what
+ * makes it this machine's own user; nothing here mints one.
  */
-async function localWorkspacePtyRefusal(
+async function attachLocalWorkspacePty(
   c: Context,
   ws: Workspace,
   ptyId: string,
   options: RuntimeProxyOptions,
-): Promise<Response | undefined> {
-  const ingress = ingressOptions(options)
-  const provenance = await resolveIngressProvenance(c.req.raw, ws.id, ingress)
-  if (provenance.kind === "rejected") return provenance.response
-  if (provenance.kind === "loopback-direct") return undefined
-  const decision = await embedded(c, ws, `${PTY_ROUTE_PREFIX}/${encodeURIComponent(ptyId)}`, ingress)
-  if (!decision.ok) return decision
-  await decision.body?.cancel()
-  return undefined
+): Promise<{ ok: true; connection: AuthorizedPtyConnection } | { ok: false; response: Response }> {
+  const provenance = await resolveIngressProvenance(c.req.raw, ws.id, ingressOptions(options))
+  if (provenance.kind === "rejected") return { ok: false, response: provenance.response }
+  const position = cursor(c)
+  return await attachEmbeddedWorkspacePty({
+    workspace: ws,
+    ptyId,
+    // The relay's own bearer is the proof the session authority checks, and it
+    // travels only with the identity it was verified as.
+    ...(provenance.kind === "relay-replayed"
+      ? {
+          identity: provenance.stamp,
+          ...(c.req.header("authorization") ? { authorization: c.req.header("authorization")! } : {}),
+        }
+      : {}),
+    method: c.req.method,
+    path: c.req.path,
+    ...(position === undefined ? {} : { cursor: position }),
+  })
 }
 
 function connectLocalWorkspacePty(
   upgradeWebSocket: UpgradeWebSocket,
   c: Context,
   next: Next,
-  ws: Workspace,
-  ptyId: string,
+  connection: AuthorizedPtyConnection,
 ) {
-  return upgradeWebSocket(() => {
-    let handler: Awaited<ReturnType<typeof connectEmbeddedWorkspacePty>>
-    let closed = false
-    const pending: unknown[] = []
-
-    const sendLocal = (data: unknown) => {
-      if (!handler) {
-        pending.push(data)
+  return upgradeWebSocket(() => ({
+    onOpen(_event, socket) {
+      const raw = socket.raw
+      if (!isPtyStreamSocket(raw)) {
+        socket.close()
         return
       }
-      handler.onMessage(data)
-    }
-
-    return {
-      onOpen(_event, socket) {
-        const raw = socket.raw
-        if (!isPtySocket(raw)) {
-          socket.close()
-          return
-        }
-        void connectEmbeddedWorkspacePty(ws, ptyId, raw, cursor(c)).then((nextHandler) => {
-          handler = nextHandler
-          if (closed) {
-            handler?.onClose()
-            return
-          }
-          for (const item of pending.splice(0)) handler?.onMessage(item)
-        }).catch(() => {
-          socket.close(1011, "Workspace terminal proxy failed")
-        })
-      },
-      onMessage(event) {
-        const data = messageData(event)
-        if (data instanceof Blob) {
-          void data.arrayBuffer().then(sendLocal)
-          return
-        }
-        sendLocal(data)
-      },
-      onClose() {
-        closed = true
-        handler?.onClose()
-      },
-      onError() {
-        closed = true
-        handler?.onClose()
-      },
-    }
-  })(c, next)
+      connection.onOpen(raw)
+    },
+    onMessage(event) {
+      const data = messageData(event)
+      if (data instanceof Blob) {
+        // The connection processes messages in arrival order; a Blob resolved
+        // here would jump the frames behind it, so the whole frame is handed
+        // over as one already-ordered unit.
+        connection.onMessage(data.arrayBuffer())
+        return
+      }
+      connection.onMessage(data)
+    },
+    onClose() {
+      connection.onClose()
+    },
+    onError() {
+      connection.onClose()
+    },
+  }))(c, next)
 }
 
 function connectRemoteWorkspacePty(
@@ -277,10 +247,9 @@ export function mountWorkspaceRuntimePtyWebSocketProxy(
 
     const workspace = await requestWorkspace(c).catch(() => undefined)
     if (workspace && workspace.kind !== "cloud") {
-      const ptyId = c.req.param("ptyID")
-      const refusal = await localWorkspacePtyRefusal(c, workspace, ptyId, options)
-      if (refusal) return refusal
-      return connectLocalWorkspacePty(upgradeWebSocket, c, next, workspace, ptyId)
+      const attach = await attachLocalWorkspacePty(c, workspace, c.req.param("ptyID"), options)
+      if (!attach.ok) return attach.response
+      return connectLocalWorkspacePty(upgradeWebSocket, c, next, attach.connection)
     }
 
     const hit = await resolveWorkspaceRuntimeHit(c, options).catch(() => undefined)
@@ -304,10 +273,9 @@ export function mountWorkspaceRuntimePtyWebSocketProxy(
     if (!workspaceId) return next()
     const workspace = await resolveWorkspace({ workspaceId }).catch(() => undefined)
     if (workspace && workspace.kind !== "cloud") {
-      const ptyId = c.req.param("ptyID")
-      const refusal = await localWorkspacePtyRefusal(c, workspace, ptyId, options)
-      if (refusal) return refusal
-      return connectLocalWorkspacePty(upgradeWebSocket, c, next, workspace, ptyId)
+      const attach = await attachLocalWorkspacePty(c, workspace, c.req.param("ptyID"), options)
+      if (!attach.ok) return attach.response
+      return connectLocalWorkspacePty(upgradeWebSocket, c, next, attach.connection)
     }
     const hit = await resolveWorkspaceRuntimeHitForWorkspaceId(workspaceId, options).catch(() => undefined)
     if (!hit) return next()

@@ -28,6 +28,7 @@ import {
 } from "@/platform/telemetry/analytics"
 import { isEmbedMode } from "@/platform/api/api"
 import { writeBrowserRoute } from "@/lib/browser-history"
+import { openLink } from "@/lib/open-link"
 import { ConfigProvider } from "../providers/config"
 import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
@@ -153,9 +154,7 @@ const platform: Platform = {
   version: "cloud",
   fetch: authFetch,
   getAuthToken: browserAuthAdapter.getToken,
-  openLink(url: string) {
-    window.open(url, "_blank")
-  },
+  openLink,
   restart: async () => {
     window.location.reload()
   },

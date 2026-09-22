@@ -816,7 +816,8 @@ async function createHarnessSession(
 
 async function createPiSession(dir: string) {
   const workspaceResponse = await fetch(
-    `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`,
+    `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}`,
+    { method: "POST" },
   )
   if (!workspaceResponse.ok)
     throw new Error(`GATING: failed to resolve Pi workspace: ${await workspaceResponse.text()}`)

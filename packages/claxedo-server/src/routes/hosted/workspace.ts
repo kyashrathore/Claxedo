@@ -15,7 +15,8 @@ import { Hono, type Context } from "hono"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { z } from "zod"
 import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
-import { safeRepoUrl } from "@claxedo/sandbox-contract"
+import { admittedRepoUrl, type RepoAddressResolver } from "@claxedo/sandbox-contract"
+import { dohAddressResolver } from "@claxedo/server-core/agent-plugins/mcp/dns-resolver"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
@@ -25,17 +26,17 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
-import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
+import { hostedConnectionInfo, hostedConnectionStatus } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, missingBearerBody, parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
 import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { contentfulStatus } from "../../platform/http/status"
 import { hostAssignmentHandlers } from "../../workspace/host-assignment-handlers"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
-import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
+import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
+import { createCloudCreateAdmission, type CloudCreateUsage } from "../../workspace/cloud-create-admission"
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
 // `requireCloudWorkspaceEntitlement` (the paid-capability gate for both
 // create and wake) now lives on the shared WorkspaceRouteOptions so the wake
@@ -59,19 +60,7 @@ export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
   /** Injection seam for the cap's the authority read (tests, alternative authorities). */
   countActiveOrgSandboxLeases?: ActiveSandboxLeaseCounter
   /** Product-owned usage side effects; absent in user-deployed core. */
-  sandboxUsage?: {
-    leaseOpened(input: {
-      auth: SignedControlPlaneAuth
-      workspaceId: string
-      driver: string
-      startedAt: number
-      services?: ControlPlaneServices
-    }): void
-    recordLeaseTenant(input: {
-      auth: SignedControlPlaneAuth
-      workspaceId: string
-    }): Promise<void>
-  }
+  sandboxUsage?: CloudCreateUsage
   /**
    * Extra hostnames appended to the hosted sandbox egress allowlist.
    *
@@ -83,41 +72,23 @@ export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
    * default nobody chose.
    */
   sandboxEgressExtraHosts?: string[]
+  /**
+   * DNS answers behind a clone hostname, for the admission check a
+   * caller-selected `repoUrl` is held to before it is cloned or allowed into
+   * the sandbox's egress allowlist. workerd has no `node:dns`, so the default
+   * resolves over DNS-over-HTTPS — the same port MCP discovery fills. A name
+   * that does not resolve is refused: clone admission fails closed, not open.
+   * Tests and compositions without resolver egress supply their own.
+   */
+  resolveRepoAddresses?: RepoAddressResolver
+  /**
+   * Non-public clone destinations the operator explicitly permits — a private
+   * Git server, named by exact hostname. Pair each entry with
+   * `sandboxEgressExtraHosts`: the admission lets the create through, and the
+   * egress entry lets the provisioned sandbox actually reach the host.
+   */
+  privateRepoHosts?: readonly string[]
 }
-
-/**
- * `POST /create` requests per minute, per caller.
- *
- * Sized against what the operation COSTS, not against what the transport can
- * take. Every accepted create clones a repo into a freshly provisioned sandbox
- * VM — seconds to minutes of cold start, billed. Nothing legitimate approaches
- * this: the app creates one workspace per explicit user action, and even an
- * impatient human retrying a failed create stays in low single digits per
- * minute. Five leaves room for retries and double-submits while cutting the
- * worst case a single isolate can provision from the 120/min control-plane
- * class to 5/min — a 24x reduction in the cost of a create flood.
- */
-const DEFAULT_CREATE_LIMIT = 5
-const DEFAULT_CREATE_WINDOW_MS = 60_000
-
-/**
- * Concurrently-live sandbox leases per tenant.
- *
- * This is a blast-radius bound, not a business quota — the billing entitlement
- * gate is what expresses "what did you pay for". At roughly one live sandbox
- * per actively-working seat plus headroom for background/agent workspaces, 25
- * comfortably covers a ~10-seat team without ever being reached in normal use,
- * while capping what a compromised token or a runaway client can leave running
- * at 25 VMs instead of "as many as it can ask for". Deployments that need a
- * different number set `sandboxLeaseCap`.
- *
- * The same number bounds a personal account, where the tenant is the single
- * signing subject rather than an org — generous for one human, and still a
- * bound, which is what a stolen personal token had none of before.
- */
-const DEFAULT_SANDBOX_LEASE_CAP = 25
-
-const unavailableActiveLeaseCounter: ActiveSandboxLeaseCounter = async () => undefined
 
 const refreshConnectionBody = z
   .object({
@@ -159,24 +130,34 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       limit: 120,
       windowMs: 60_000,
     })
-  // Its OWN bucket, not a slice of the 120/min one: creates must not be able to
-  // consume the budget every other control-plane call shares, and the shared
-  // budget must not be able to hide a create flood.
-  const createWorkspaceRateLimiter =
-    options.createWorkspaceRateLimiter ??
-    createFixedWindowConnectionRateLimiter({
-      limit: DEFAULT_CREATE_LIMIT,
-      windowMs: DEFAULT_CREATE_WINDOW_MS,
-    })
-  const sandboxLeaseCap = options.sandboxLeaseCap ?? DEFAULT_SANDBOX_LEASE_CAP
-  const countActiveOrgSandboxLeases = options.countActiveOrgSandboxLeases ?? unavailableActiveLeaseCounter
+  // The one create admission — the same object the Tasks cloud-root allocation
+  // is handed, so no create path can reach provisioning without it. Its create
+  // budget is its own bucket, not a slice of the 120/min one: creates must not
+  // be able to consume the budget every other control-plane call shares, and
+  // the shared budget must not be able to hide a create flood.
+  const createAdmission = createCloudCreateAdmission({
+    services,
+    rateLimiter: options.createWorkspaceRateLimiter,
+    entitlement: options.requireCloudWorkspaceEntitlement,
+    leaseCap: options.sandboxLeaseCap,
+    countActiveLeases: options.countActiveOrgSandboxLeases,
+  })
+  // One canonical admission for every repository this route will have a
+  // sandbox clone: the `safeRepoUrl` forms, then a destination that is public
+  // (or operator-approved) once the name is resolved. Every caller here is
+  // signed, so a private answer is reachability into the deployment's network
+  // granted by a remote tenant — refused.
+  const repoAdmission = {
+    resolve: options.resolveRepoAddresses ?? dohAddressResolver((url, init) => fetch(url, init)),
+    ...(options.privateRepoHosts ? { privateHosts: options.privateRepoHosts } : {}),
+  }
   const hostAssignment = hostAssignmentHandlers(services, options, controlPlaneRateLimiter)
 
   const authOptions = () => ({
     ...options,
     requireSigned: true as const,
   })
-  const connectionResponse = async (c: Context, previousJti?: string) => {
+  const connectionResponse = async (c: Context, input: { previousJti?: string; readOnly?: boolean } = {}) => {
     const workspaceId = routeParam(c, "id")
     const authResult = await signedOrError(c.req.raw, authOptions(), services)
     if ("error" in authResult) return c.json(authResult.error, authResult.status)
@@ -197,10 +178,18 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       if (controlPlaneLimit) return c.json(controlPlaneLimit.body, controlPlaneLimit.status)
       const rateLimit = await connectionRateLimitError(services, connectionRateLimiter, auth, workspaceId)
       if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-      const result = await hostedConnectionInfo(services, options, auth, workspaceId, new URL(c.req.url).origin, previousJti)
+      // GET is the read: it reports the lease's current state and may mint only
+      // off an already-running sandbox. POST is the explicit connect: the only
+      // path that runs `sandboxManager.ensure` and so the only one that can
+      // start billable compute (P-118).
+      const result = input.readOnly
+        ? await hostedConnectionStatus(services, options, auth, workspaceId)
+        : await hostedConnectionInfo(services, options, auth, workspaceId, new URL(c.req.url).origin, input.previousJti)
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
-      if ("status" in result.connection && result.connection.status === "provisioning") {
+      // Any status-bearing body (`provisioning`, `stopped`) minted nothing, so
+      // the mint budget it consumed goes back.
+      if ("status" in result.connection) {
         connectionRateLimiter.refund?.({ userId: auth.user.subject, workspaceId })
       }
       return c.json(result.connection)
@@ -288,36 +277,24 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // `sandboxManager.ensure`: a flood must be rejected while it is still
         // cheap to reject. Keyed on the caller alone (`workspaces.create`)
         // because no workspace exists yet.
-        const createLimit = await controlPlaneRateLimitError(services, createWorkspaceRateLimiter, auth, {
-          key: "workspaces.create",
-          action: "workspace.create.denied",
-        })
+        const createLimit = await createAdmission.preflight({ kind: "signed", auth })
         if (createLimit) return c.json(createLimit.body, createLimit.status)
 
         const parsed = parsedBody(createCloudBody, await c.req.json().catch(() => ({})))
         if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
         const body = parsed.body
 
-        // Admission for every create, not only one that names a tenant: the
-        // authority resolves the organization this workspace would land in —
-        // from the project when the caller named one, otherwise their single
-        // membership — and admits against that. Both selectors go with it so
-        // the organization it admits is the one `createCloudWorkspace` below
-        // will resolve. An authority that cannot answer refuses the create
-        // rather than letting it reach a billable sandbox.
-        try {
-          const authority = requireAuthority(services)
-          if (!authority.authorizeWorkspaceCreate) {
-            throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace creation authorization is unavailable")
-          }
-          await authority.authorizeWorkspaceCreate(auth, {
-            ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
-            ...(body.projectId?.trim() ? { projectId: body.projectId.trim() } : {}),
-          })
-        } catch (err) {
-          if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-          throw err
-        }
+        // Admission for every create, not only one that names a tenant:
+        // the authority's own create admission against the organization the
+        // workspace would land in, the paid-capability entitlement, and the
+        // concurrent-lease cap — the same object the Tasks cloud-root
+        // allocation is subject to, so no door reaches a billable sandbox
+        // around it.
+        const createDenied = await createAdmission.admit(
+          { kind: "signed", auth },
+          { orgId: body.orgId, projectId: body.projectId },
+        )
+        if (createDenied) return c.json(createDenied.body, createDenied.status)
 
         const sandboxManager = services?.sandbox.sandboxManager
         if (!sandboxManager) {
@@ -336,7 +313,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           )
         }
         let repoUrl = body.repoUrl?.trim()
-        if (repoUrl && !safeRepoUrl(repoUrl)) {
+        if (repoUrl && !(await admittedRepoUrl(repoUrl, repoAdmission))) {
           return c.json(
             { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
             400,
@@ -358,6 +335,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           const access = await options.connections.repositoryForAuth(auth, body.connectionId, body.repo.fullName)
           if (!access.ok) return c.json({ error: apiError(access.code, "Repository connection is not available") }, access.status)
           repoUrl = access.repository.cloneUrl
+          if (!(await admittedRepoUrl(repoUrl, repoAdmission))) {
+            return c.json(
+              { error: apiError("repo_url_invalid", "That is not a repository URL this server can clone") },
+              400,
+            )
+          }
           const source = authenticatedGitHubCloneSource(access.repository.cloneUrl, access.token)
           provisionRepoUrl = source.repoUrl
           provisionSecrets = [source.secret]
@@ -367,14 +350,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             { error: apiError("cloud_workspace_source_required", "repoUrl is required for hosted cloud workspaces") },
             400,
           )
-        }
-
-        // Entitlement gate — BEFORE any workspace doc exists. Fail-closed:
-        // free tier → 402 (typed billing_entitlement_required), billing mirror
-        // unreadable → 503; either way nothing is created.
-        if (options.requireCloudWorkspaceEntitlement) {
-          const denied = await options.requireCloudWorkspaceEntitlement(auth)
-          if (denied) return c.json(denied.body, denied.status)
         }
 
         // A bare timestamp id is guessable inside any plausible creation window
@@ -389,32 +364,6 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         try {
           const authority = requireAuthority(services)
-          // Per-tenant CONCURRENT sandbox cap, read from durable the authority state.
-          // The rate limiter above bounds requests per minute inside ONE
-          // isolate; this bounds how many sandboxes the caller can have running
-          // at once, and it is the only one of the two that survives an isolate
-          // boundary (the limiters are per-isolate in-memory Maps). A
-          // slow drip that never trips a rate limit still stops here.
-          //
-          // Keyed on `auth.user.orgId` — the issuer org claim — because that is
-          // the id space `sandboxLeases.recordTenant` stamps onto the lease row
-          // below (and the same one the metering events key on). Using the
-          // authority's internally-resolved org id here would compare two
-          // different id spaces and count zero forever.
-          //
-          // The org claim is the OPTIONAL half of the scope. The other half,
-          // the caller's subject, is not passed: `sandboxLeaseCapError` reads
-          // it off this same verified `auth`, so it cannot be forgotten here
-          // and the cap binds for a personal account exactly as it does for an
-          // org — see the stamping call below, which writes the matching
-          // `owner_subject`.
-          const leaseCapped = await sandboxLeaseCapError(services, auth, {
-            orgId: auth.user.orgId,
-            cap: sandboxLeaseCap,
-            action: "workspace.create.denied",
-            countActiveLeases: countActiveOrgSandboxLeases,
-          })
-          if (leaseCapped) return c.json(leaseCapped.body, leaseCapped.status)
           await authority.usersMe(auth)
           // Only a project the caller named is handed to the authority. Without
           // one the authority derives the project from the repository (reusing
@@ -449,7 +398,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // and falls through to the ops plane rather than inventing an org id.
         const leaseStartedAt = Date.now()
         options.sandboxUsage?.leaseOpened({
-          auth,
+          caller: { kind: "signed", auth },
           workspaceId,
           driver: services?.sandbox.defaultDriver ?? "unknown",
           startedAt: leaseStartedAt,
@@ -567,22 +516,22 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             //    `personal:<subject>`) would corrupt every per-org aggregate
             //    downstream, which is why the owner is a separate column rather
             //    than an org id we invent to make the count work.
-            await Promise.resolve(options.sandboxUsage?.recordLeaseTenant({ auth, workspaceId })).catch(() => undefined)
+            await Promise.resolve(options.sandboxUsage?.recordLeaseTenant({ caller: { kind: "signed", auth }, workspaceId })).catch(() => undefined)
           })
           .catch(() => undefined))
 
         return c.json({ workspaceId, directory })
       })
-      .get("/:id/connection", (c) => connectionResponse(c))
+      .get("/:id/connection", (c) => connectionResponse(c, { readOnly: true }))
       .post("/:id/connection", async (c) => {
         const body = parsedBody(refreshConnectionBody, await c.req.json().catch(() => ({})))
         if (!body.ok) return c.json({ error: body.error }, body.status)
-        return connectionResponse(c, body.body.previousJti)
+        return connectionResponse(c, { previousJti: body.body.previousJti })
       })
       .post("/:id/connection/refresh", async (c) => {
         const body = parsedBody(refreshConnectionBody, await c.req.json().catch(() => ({})))
         if (!body.ok) return c.json({ error: body.error }, body.status)
-        return connectionResponse(c, body.body.previousJti)
+        return connectionResponse(c, { previousJti: body.body.previousJti })
       })
       .post("/:id/host-assignment", hostAssignment.assign)
       .delete("/:id/host-assignment", hostAssignment.unassign)

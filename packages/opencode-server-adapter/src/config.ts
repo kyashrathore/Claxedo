@@ -1,5 +1,5 @@
 import type { HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
-import { isRecord } from "@claxedo/helpers/guards"
+import { isLoopbackHostname, isRecord } from "@claxedo/helpers"
 import { OpenCodeServerAdapterError } from "./errors"
 
 export type OpenCodeServerAuthRef =
@@ -55,7 +55,23 @@ export function validateOpenCodeServerConnectionConfig(input: unknown): OpenCode
   const deadlines = config.deadlines === undefined
     ? { requestMs: 15_000, streamIdleMs: 30_000 }
     : parseDeadlines(config.deadlines)
-  const reserved = new Set(["x-opencode-directory", "content-length", "host"])
+  // Content negotiation, body framing and the workspace stamp are decided per
+  // request by the adapter, and the hop-by-hop names belong to whichever
+  // transport or intermediary carries it. A configured value on any of them
+  // redirects a credentialed request instead of authenticating it.
+  const reserved = new Set([
+    "accept",
+    "connection",
+    "content-length",
+    "content-type",
+    "host",
+    "keep-alive",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "x-opencode-directory",
+  ])
   for (const name of Object.keys(trustedHeaders ?? {})) {
     if (reserved.has(name.toLowerCase())) throw invalid(`trustedHeaders cannot set reserved header ${name}`)
   }
@@ -113,10 +129,12 @@ export function resolveOpenCodeServerConnection(input: {
   const auth = input.config.auth?.type === "basic"
     ? { type: "basic" as const, username: input.config.auth.username ?? "opencode", password: input.secrets[input.config.auth.passwordSecret]! }
     : input.config.auth
-      ? { type: "header" as const, name: input.config.auth.name, value: input.secrets[input.config.auth.valueSecret]! }
+      ? { type: "header" as const, name: input.config.auth.name, value: resolvedHeaderValue(input.secrets[input.config.auth.valueSecret]!, "auth.valueSecret") }
       : undefined
   const trustedHeaders: Record<string, string> = {}
-  for (const [name, secret] of Object.entries(input.config.trustedHeaders ?? {})) trustedHeaders[name] = input.secrets[secret]!
+  for (const [name, secret] of Object.entries(input.config.trustedHeaders ?? {})) {
+    trustedHeaders[name] = resolvedHeaderValue(input.secrets[secret]!, `trustedHeaders.${name}`)
+  }
   const { auth: _auth, trustedHeaders: _trustedHeaders, ...publicConfig } = input.config
   const basicAuthorization = auth?.type === "basic"
     ? `Basic ${Buffer.from(`${auth.username}:${auth.password}`, "utf8").toString("base64")}`
@@ -129,8 +147,10 @@ export function resolveOpenCodeServerConnection(input: {
     ...(auth ? { auth } : {}),
     trustedHeaders,
     redactions: [...new Set([
-      ...Object.values(input.secrets),
-      ...(basicAuthorization ? [basicAuthorization, basicAuthorization.slice("Basic ".length)] : []),
+      ...Object.values(input.secrets).flatMap((secret) => [secret, encodeURIComponent(secret)]),
+      ...(basicAuthorization
+        ? [basicAuthorization, basicAuthorization.slice("Basic ".length), encodeURIComponent(basicAuthorization)]
+        : []),
     ])],
   }
 }
@@ -139,6 +159,11 @@ function parseServerUrl(value: string) {
   let url: URL
   try { url = new URL(value) } catch { throw invalid("baseUrl must be a valid URL") }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw invalid("baseUrl must use http or https")
+  // Connection credentials ride on every request to this base URL, so cleartext
+  // is only survivable when the bytes never leave the machine.
+  if (url.protocol === "http:" && !isLoopbackHostname(url.hostname)) {
+    throw invalid("baseUrl must use https unless the OpenCode server is on this machine's loopback interface")
+  }
   if (url.username || url.password) throw invalid("baseUrl must not contain credentials")
   if (url.search || url.hash) throw invalid("baseUrl must not contain a query or fragment")
   return url
@@ -186,7 +211,7 @@ function parseSecretHeaders(input: unknown) {
 
 function parseTenant(input: unknown) {
   const tenant = object(input, "tenant")
-  return { header: headerName(tenant.header, "tenant.header"), value: text(tenant.value, "tenant.value") }
+  return { header: headerName(tenant.header, "tenant.header"), value: headerValue(tenant.value, "tenant.value") }
 }
 
 function parseReconnect(input: unknown) {
@@ -224,6 +249,19 @@ function opaque(input: unknown, field: string) {
 function headerName(input: unknown, field: string) {
   const value = text(input, field)
   try { new Headers({ [value]: "valid" }) } catch { throw invalid(`${field} must be a valid header name`) }
+  return value
+}
+
+function headerValue(input: unknown, field: string) {
+  const value = text(input, field)
+  try { new Headers({ "x-claxedo-check": value }) } catch { throw invalid(`${field} must be a valid header value`) }
+  return value
+}
+
+// Resolved secret material is validated without trimming so the header sent
+// matches the vault value byte for byte; the value itself never enters errors.
+function resolvedHeaderValue(value: string, field: string) {
+  try { new Headers({ "x-claxedo-check": value }) } catch { throw invalid(`${field} resolved to an invalid header value`) }
   return value
 }
 

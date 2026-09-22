@@ -44,13 +44,11 @@ describe("workspace control routes", () => {
     expect(workspaceResolveUrl({
       baseUrl: "https://control.example.test/",
       scope: "workspace:ws_123",
-      create: true,
-    })).toBe("https://control.example.test/api/workspace/resolve?workspaceId=ws_123&create=true")
+    })).toBe("https://control.example.test/api/workspace/resolve?workspaceId=ws_123")
     expect(workspaceResolveUrl({
       baseUrl: "http://127.0.0.1:4096/",
       scope: "/tmp/local workspace",
-      create: true,
-    })).toBe("http://127.0.0.1:4096/api/claxedo/workspace/resolve?directory=%2Ftmp%2Flocal+workspace&create=true")
+    })).toBe("http://127.0.0.1:4096/api/claxedo/workspace/resolve?directory=%2Ftmp%2Flocal+workspace")
     expect(controlWorkspaceUrl({
       baseUrl: "https://control.example.test/",
       workspaceId: "daytona/custom",

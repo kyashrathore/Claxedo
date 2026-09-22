@@ -29,7 +29,7 @@ const ACME = {
   providerID: "acme",
   name: "Acme",
   baseURL: "https://api.acme.test/v1",
-  env: ["ACME_API_KEY"],
+  env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"],
   headers: { "X-Acme-Tenant": "prod" },
   models: { "acme-1": { name: "Acme One" } },
 }
@@ -182,6 +182,44 @@ describe("declaring a custom OpenAI-compatible provider", () => {
     expect(response.status).toBe(400)
     expect((await response.json()).error.code).toBe("custom_provider_invalid")
     expect(listCustomProviders("org_secret")).toEqual([])
+  })
+
+  test("refuses env names that would deliver a secret the provider does not own", async () => {
+    for (const env of [
+      ["CLAXEDO_CREDENTIALS_TOKEN"],
+      ["ANTHROPIC_API_KEY"],
+      ["ACME_API_KEY"],
+      ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY", "AWS_SECRET_ACCESS_KEY"],
+    ]) {
+      const response = await putCustom("org_secret", { ...ACME, env })
+      expect(response.status).toBe(400)
+      expect((await response.json()).error.code).toBe("custom_provider_invalid")
+    }
+    expect(listCustomProviders("org_secret")).toEqual([])
+  })
+
+  test("refuses cleartext base URLs, including loopback, for a signed tenant", async () => {
+    for (const baseURL of ["http://api.acme.test/v1", "http://127.0.0.1:11434/v1", "https://key@api.acme.test/v1"]) {
+      const response = await putCustom("org_secret", { ...ACME, baseURL })
+      expect(response.status).toBe(400)
+      expect((await response.json()).error.code).toBe("custom_provider_invalid")
+    }
+    expect(listCustomProviders("org_secret")).toEqual([])
+  })
+
+  test("admits a loopback HTTP base URL on the local single-tenant host only", async () => {
+    const localApp = agentConfigProviderRoutes({
+      authConfig: { enabled: false, mode: "local-only", reason: "test" },
+    })
+    const response = await localApp.request("/providers/custom?nativeHarness=opencode", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...ACME, providerID: "ollama", baseURL: "http://127.0.0.1:11434/v1", env: [] }),
+    })
+    expect(response.status).toBe(200)
+    expect(listCustomProviders()).toEqual([
+      { ...ACME, providerID: "ollama", baseURL: "http://127.0.0.1:11434/v1", env: [] },
+    ])
   })
 
   test("requires authentication and the OpenCode harness", async () => {

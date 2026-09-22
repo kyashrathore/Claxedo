@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import { desktopApi } from "./api"
+import { clampZoomFactor } from "../shared/zoom-factor"
 
 const OS_NAME = (() => {
   if (navigator.userAgent.includes("Mac")) return "macos"
@@ -9,11 +10,6 @@ const OS_NAME = (() => {
 })()
 
 const [webviewZoom, setWebviewZoom] = createSignal(1)
-
-const MAX_ZOOM_LEVEL = 10
-const MIN_ZOOM_LEVEL = 0.2
-
-const clamp = (value: number) => Math.min(Math.max(value, MIN_ZOOM_LEVEL), MAX_ZOOM_LEVEL)
 
 const applyZoom = (next: number) => {
   setWebviewZoom(next)
@@ -28,7 +24,7 @@ window.addEventListener("keydown", (event) => {
   if (event.key === "=" || event.key === "+") next += 0.2
   if (event.key === "0") next = 1
 
-  applyZoom(clamp(next))
+  applyZoom(clampZoomFactor(next))
 })
 
 export { webviewZoom }

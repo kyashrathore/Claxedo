@@ -63,7 +63,7 @@ export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) 
   // module that reads local workspace inventory. A composition without a
   // supervisor has no cloud workspaces, so it needs no reader.
   configureWorkspaceStore({ sandboxLease: (workspaceId) => getSupervisorSandboxLease(workspaceId) })
-  // Local request paths speak to the supervisor through a six-method port so
+  // Local request paths speak to the supervisor through a seven-method port so
   // they do not import the cloud provisioning graph to say "still in use".
   configureWorkspaceSupervisorPort({
     hold: holdSupervisorSandbox,
@@ -71,6 +71,7 @@ export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) 
     markUse: markSupervisorSandboxUse,
     touch: touchSupervisorSandbox,
     broadcastRuntimeConfig,
+    reconcileCredentialDelivery,
   })
 }
 
@@ -120,6 +121,60 @@ export async function broadcastRuntimeConfig() {
       .filter((item) => item.status === "ready" && item.url)
       .map((item) => pushRuntimeConfig(item)),
   )
+}
+
+/**
+ * The credential authority's delivered set changed — an account was revoked,
+ * removed, rotated, re-scoped or re-selected. Every sandbox this supervisor
+ * keeps up is re-ensured through the same path a wake takes: a ready lease
+ * whose installed set no longer matches goes back through the driver, where a
+ * name absent from the set is withdrawn at the provider edge, and the fresh
+ * projection is pushed so the runtime stops offering the account.
+ */
+export async function reconcileCredentialDelivery() {
+  await Promise.allSettled(
+    [...runtimes.values()]
+      .filter((item) => (item.status === "ready" && item.url) || item.start)
+      .map((item) => reconcileRuntimeCredentialDelivery(item)),
+  )
+}
+
+async function reconcileRuntimeCredentialDelivery(state: WorkspaceRuntimeState) {
+  try {
+    if (state.ws.kind !== "cloud") {
+      // No provider edge holds a local runtime's credentials — the loopback
+      // broker refuses a revoked account on its next resolve — so the push is
+      // the whole reconcile here.
+      await pushRuntimeConfig(state)
+      return
+    }
+    // A start already in flight resolved its authority before this change and
+    // can settle having installed the stale set, so satisfaction is checked
+    // after each pass rather than assumed from one ensure.
+    let settled = false
+    for (let pass = 0; pass < 2 && !settled; pass++) {
+      await startRuntime(state)
+      settled = sandboxAuthoritySatisfied(state, await resolveSandboxBindings(state))
+    }
+    if (!settled) {
+      log.warn("sandbox still holds a superseded credential set after reconcile", {
+        workspaceId: state.ws.id,
+      })
+    }
+    state.used_at = now()
+    scheduleStop(state)
+    // The ensure's own push only runs when the digest moved; a revocation that
+    // changed only the projection — a reason string, an account that never
+    // delivered — still has to reach the runtime.
+    await pushRuntimeConfig(state)
+  } catch (error) {
+    // The mutation stands in the registry either way; this sandbox keeps its
+    // last installed set until the next mutation or ensure reconciles it.
+    log.warn("sandbox credential delivery reconcile failed", {
+      workspaceId: state.ws.id,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
 }
 
 export function listSupervisorSandboxs() {
@@ -391,7 +446,14 @@ function sandboxReadyResult(
 function sandboxTargetResultFromLease(lease: SandboxLeaseRow | undefined): SandboxTargetResult {
   const target = sandboxTargetFromLease(lease)
   if (!lease) return { status: "unavailable", reason: "runtime_lease_missing" }
-  if (!target || lease.status !== "ready") return { status: "unavailable", reason: "runtime_lease_not_ready" }
+  if (!target || lease.status !== "ready") {
+    return {
+      status: "unavailable",
+      reason: "runtime_lease_not_ready",
+      leaseStatus: sandboxLeaseStatus(lease.status),
+      ...(lease.next_retry_at != null ? { retryAfterMs: Math.max(0, lease.next_retry_at - Date.now()) } : {}),
+    }
+  }
   return sandboxReadyResult(target, lease, "us-east")
 }
 

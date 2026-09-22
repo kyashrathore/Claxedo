@@ -18,9 +18,10 @@ import {
 import { putCredential, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
 import { createLocalCredentialBroker } from "../credentials/broker"
 import { providerProjection } from "@claxedo/agent-sdk-runtime"
-import { createLocalApp, type LocalAppOptions } from "./local-app"
+import { createLocalApp, DAEMON_PROTOCOL_HEADER, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
-import { DAEMON_PROTOCOL_HEADER } from "./local-app"
+import { DAEMON_CAPABILITY_HEADER } from "./daemon-admission"
+import { testDaemon } from "./test-support/daemon"
 
 const emptyActivity = () => ({
   pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0, unrecorded: 0, unresolved: 0 },
@@ -452,7 +453,13 @@ describe("local composition — health and telemetry", () => {
     })
     lifecycle.start()
     const local = app({ daemon: { identity, lifecycle } })
-    const headers = { authorization: "Bearer installation-secret", [DAEMON_PROTOCOL_HEADER]: "1" }
+    // The daemon lifecycle routes take the bearer; the session Stop below is an
+    // ordinary route family, so it presents the capability the application holds.
+    const headers = {
+      authorization: "Bearer installation-secret",
+      [DAEMON_CAPABILITY_HEADER]: "installation-secret",
+      [DAEMON_PROTOCOL_HEADER]: "1",
+    }
 
     const inspected = await (await local.request("http://localhost/api/claxedo/daemon/recovery", { headers })).json() as {
       scopeRevision: string
@@ -750,6 +757,97 @@ describe("local composition — health and telemetry", () => {
   })
 })
 
+describe("local composition — bootstrap behind the daemon capability", () => {
+  test("a composition minting no daemon capability keeps the unsigned local posture", async () => {
+    // The self-hosted mount and a daemon-less dev server have no token to
+    // check against, so the machine's own body still answers a loopback
+    // caller — the loopback guard is their whole boundary.
+    const response = await app().request("http://localhost/api/claxedo/bootstrap")
+
+    expect(response.status).toBe(200)
+    const body = await response.json() as Record<string, unknown>
+    expect(body).toMatchObject({ healthy: true })
+    expect(body.path).toBeDefined()
+    expect(body.project).toBeDefined()
+  })
+
+  test("a daemon refuses the rich local body to a caller holding no capability", async () => {
+    const identity = testDaemon()
+    const local = app({ daemon: identity.daemon })
+
+    const anonymous = await local.request("http://localhost/api/claxedo/bootstrap")
+    const forged = await local.request("http://localhost/api/claxedo/bootstrap", {
+      headers: { "x-claxedo-daemon-capability": "not-the-token" },
+    })
+    // The bearer branch is no answer either: a loopback page can write one.
+    const bearer = await local.request("http://localhost/api/claxedo/bootstrap", {
+      headers: { authorization: "Bearer spoofed" },
+    })
+
+    expect([anonymous.status, forged.status, bearer.status]).toEqual([401, 401, 401])
+    expect(await anonymous.json()).toMatchObject({ error: { code: "daemon_capability_required" } })
+  })
+
+  test("the application holding the capability gets the machine's own body", async () => {
+    const identity = testDaemon()
+    const local = app({ daemon: identity.daemon })
+
+    const response = await local.request("http://localhost/api/claxedo/bootstrap", {
+      headers: identity.capability,
+    })
+
+    expect(response.status).toBe(200)
+    const body = await response.json() as Record<string, unknown>
+    expect(body).toMatchObject({ healthy: true })
+    expect(body.path).toBeDefined()
+    expect(body.project).toBeDefined()
+  })
+
+  test("on a signed box the capability opens the door and the body's own rules still apply", async () => {
+    process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
+    const identity = testDaemon()
+    const local = createLocalApp({
+      services: services({
+        auth: customVerifierAuthAdapter({
+          issuer: "https://idp.example.test",
+          verifier: async (token, config) => ({
+            mode: "signed" as const,
+            user: {
+              subject: token,
+              tokenIdentifier: `${config.issuer}|${token}`,
+              issuer: config.issuer,
+            },
+          }),
+        }),
+        authority: { listWorkspaces: async () => [] },
+      }),
+      daemon: identity.daemon,
+    }).app
+
+    // No capability: refused before posture is even declared.
+    expect((await local.request("http://control.example/api/claxedo/bootstrap")).status).toBe(401)
+
+    // Capable but anonymous: the minimal declaration, not the machine's body.
+    const anonymous = await local.request("http://control.example/api/claxedo/bootstrap", {
+      headers: identity.capability,
+    })
+    expect(anonymous.status).toBe(200)
+    const declaration = await anonymous.json() as Record<string, unknown>
+    expect(declaration).toMatchObject({ healthy: true, deployment: { issuesSessions: true } })
+    expect(declaration.path).toBeUndefined()
+    expect(declaration.project).toBeUndefined()
+
+    // Capable and signed: the verified body with its empty machine paths.
+    const signed = await local.request("http://control.example/api/claxedo/bootstrap", {
+      headers: { ...identity.capability, authorization: "Bearer owner" },
+    })
+    expect(signed.status).toBe(200)
+    const signedBody = await signed.json() as { path?: Record<string, string>; project?: unknown[] }
+    expect(signedBody.path).toMatchObject({ home: "", state: "", config: "" })
+    expect(signedBody.project).toEqual([])
+  })
+})
+
 describe("local composition — optional route contributions", () => {
   test("mounts no agent-plugin route unless the product explicitly contributes it", async () => {
     expect((await app().request("http://localhost/api/claxedo/agent-plugins")).status).toBe(404)
@@ -789,7 +887,8 @@ describe("local composition — workspace registration", () => {
     // way the product's resolution does; the JS realpath does not.
     const canonicalDirectory = realpathSync.native(directory)
     const response = await app().request(
-      `http://localhost/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+      `http://localhost/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}`,
+      { method: "POST" },
     )
 
     expect(response.status).toBe(200)

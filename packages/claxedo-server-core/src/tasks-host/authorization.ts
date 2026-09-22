@@ -18,6 +18,7 @@ import {
   type TasksCapabilityOwner,
   type TasksCapabilityPort,
   type TasksCapabilityScope,
+  type TasksRequestCost,
 } from "./capability"
 
 /** The scope an unsigned local daemon serves: the one machine. Its owner is `localControlPlaneAuth`'s subject. */
@@ -43,7 +44,12 @@ export type TasksPrincipals = {
   actorOf(auth: SignedControlPlaneAuth, scopeId: string): TasksActor
   /** The principal an actor was minted from, or undefined for an actor this host did not mint. */
   authOf(actor: TasksActor): SignedControlPlaneAuth | undefined
-  capabilityActorOf(grant: TasksCapabilityGrant): TasksActor
+  /**
+   * `session` is the one the kit may record as provenance: the grant's own
+   * when it was minted for a session, else the calling-session name the
+   * request carried and the verifier already admitted.
+   */
+  capabilityActorOf(grant: TasksCapabilityGrant, session?: SessionReference): TasksActor
   /** The grant an actor was minted from, or undefined for an actor carrying a signed principal instead. */
   capabilityOf(actor: TasksActor): TasksCapabilityGrant | undefined
 }
@@ -65,8 +71,12 @@ export function createTasksPrincipals(): TasksPrincipals {
     authOf(actor) {
       return principals.get(actor)
     },
-    capabilityActorOf(grant) {
-      const actor: TasksActor = { scopeId: grant.owner.orgId, ownerId: grant.owner.userId }
+    capabilityActorOf(grant, session) {
+      const actor: TasksActor = {
+        scopeId: grant.owner.orgId,
+        ownerId: grant.owner.userId,
+        ...(session ? { session } : {}),
+      }
       grants.set(actor, grant)
       return actor
     },
@@ -244,8 +254,24 @@ export function capabilityTasksAuthenticate(input: {
     }
     const refused = await capabilityScopeRefusal({ scope, owner }, input.capability, cost)
     if (refused) return capabilityRefusal(refused)
-    return { actor: input.principals.capabilityActorOf({ scope, owner }) }
+    return { actor: input.principals.capabilityActorOf({ scope, owner }, provenanceSession(scope, cost)) }
   }
+}
+
+/**
+ * The session this request's provenance fields may record. A grant minted for
+ * a session records exactly that one whether the request names it or not; a
+ * root's grant records the calling session the request named, which
+ * `capabilityScopeRefusal` has already held to the workspace, and nothing when
+ * it named none.
+ */
+function provenanceSession(scope: TasksCapabilityScope, cost: TasksRequestCost): SessionReference | undefined {
+  if (scope.sessionId) return { sessionId: scope.sessionId, workspaceId: scope.workspaceId }
+  const named = asRecord(cost.createdFrom ?? cost.startedFrom)
+  const sessionId = named?.sessionId
+  return typeof sessionId === "string" && sessionId.length > 0
+    ? { sessionId, workspaceId: scope.workspaceId }
+    : undefined
 }
 
 /**

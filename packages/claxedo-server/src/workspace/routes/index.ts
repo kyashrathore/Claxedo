@@ -1,4 +1,5 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import { globalWorkspace, isGlobalDirectory } from "../../session/global"
 import {
@@ -10,7 +11,7 @@ import { isSandboxDriverID, safeRepoUrl } from "@claxedo/sandbox-contract"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import { type ControlPlaneServices } from "../../authority/services"
-import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { ensureHostForRepo } from "@claxedo/server-core/sandbox/network/policy"
 import {
   deleteWorkspace,
@@ -31,7 +32,6 @@ import {
   ControlPlaneAuthError,
   bearerToken,
   controlPlaneAuthErrorBody,
-  type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
@@ -89,6 +89,23 @@ const hostAssignmentBody = z
   .strict()
 
 const log = Log.create({ service: "workspace-routes" })
+
+/**
+ * JSON control payloads — names, ids, repository URLs — measured in
+ * kilobytes; the same bound the other control-plane route modules apply.
+ */
+const WORKSPACE_BODY_LIMIT_BYTES = 16 * 1024
+
+function workspaceBodyLimit() {
+  return bodyLimit({
+    maxSize: WORKSPACE_BODY_LIMIT_BYTES,
+    onError: (c) =>
+      c.json(
+        { error: apiError("request_body_too_large", `Request body exceeds the ${WORKSPACE_BODY_LIMIT_BYTES}-byte limit`) },
+        413,
+      ),
+  })
+}
 
 function slug(input: string | undefined, alt: string) {
   const txt = (input ?? "")
@@ -155,6 +172,98 @@ async function unsignedWorkspaceList() {
   })
 }
 
+/**
+ * The `/resolve` handler behind both verbs. `create` is the caller's verb —
+ * GET passes false, POST true — and still binds only unsigned callers, so a
+ * signed request resolves but never materializes a row.
+ *
+ * Same exposure class as the list/delete/create verbs: a workspace row
+ * (absolute directory, git remote) is an inventory secret. Tokenless loopback
+ * keeps working.
+ */
+async function controlPlaneWorkspaceResolve(
+  c: Context,
+  services: ControlPlaneServices | undefined,
+  options: WorkspaceRouteOptions,
+  controlPlaneRateLimiter: ReturnType<typeof createFixedWindowConnectionRateLimiter>,
+  create: boolean,
+) {
+  const authResult = await signedOrError(c.req.raw, signedAccessOptions(c.req.raw, options), services)
+  if ("error" in authResult) return c.json(authResult.error, authResult.status)
+  const directory = c.req.query("directory")
+  if (isGlobalDirectory(directory)) return c.json(workspaceResponse(globalWorkspace(directory!)))
+  const explicitWorkspaceId = c.req.query("workspaceId") ?? c.req.query("workspace")
+  const directoryWorkspaceId = explicitWorkspaceId === undefined ? workspaceIdFromDirectoryRef(directory) : undefined
+  const authorityWorkspaceId = explicitWorkspaceId ?? directoryWorkspaceId
+  if (authResult.auth && authorityWorkspaceId === undefined) {
+    try {
+      const opened = await openSignedWorkspaceByDirectory({
+        services,
+        rateLimiter: controlPlaneRateLimiter,
+        auth: authResult.auth,
+        directory,
+      })
+      if (opened) return c.json(opened.body, opened.status)
+    } catch (err) {
+      if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+      throw err
+    }
+  }
+  const ws = await resolveWorkspace({
+    workspaceId: authorityWorkspaceId,
+    directory: directoryWorkspaceId ? undefined : directory,
+    create: create && !authResult.auth,
+  })
+  if (authResult.auth && authorityWorkspaceId && !ws) {
+    try {
+      const opened = await openSignedWorkspaceJson({
+        services,
+        rateLimiter: controlPlaneRateLimiter,
+        auth: authResult.auth,
+        workspaceId: authorityWorkspaceId,
+      })
+      return c.json(opened.body, opened.status)
+    } catch (err) {
+      if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+      throw err
+    }
+  }
+  if (authResult.auth && !authorityWorkspaceId && ws?.kind === "local") {
+    try {
+      const opened = await openSignedWorkspaceJson({
+        services,
+        rateLimiter: controlPlaneRateLimiter,
+        auth: authResult.auth,
+        workspaceId: ws.id,
+      })
+      return c.json(opened.body, opened.status)
+    } catch (err) {
+      if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+      throw err
+    }
+  }
+  if (!ws) return c.json({ error: apiError("workspace_not_found", "Workspace not found") }, 404)
+  if (authResult.auth && ws.kind === "cloud") {
+    try {
+      const authority = requireAuthority(services)
+      await authority.usersMe(authResult.auth)
+      const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, authResult.auth, {
+        key: `workspaces.open:${ws.id}`,
+        action: "workspaces.open.denied",
+        workspaceId: ws.id,
+      })
+      if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
+      await authority.authorizeWorkspaceOpen(authResult.auth, {
+        workspaceId: ws.id,
+      })
+    } catch (err) {
+      if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+      throw err
+    }
+  }
+  return c.json(workspaceResponse(ws))
+}
+
 export function WorkspaceRoutes(services?: ControlPlaneServices, options: WorkspaceRouteOptions = {}) {
   const controlPlaneRateLimiter =
     options.controlPlaneRateLimiter ??
@@ -166,86 +275,12 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
   return (
     new Hono()
       .route("/", sandboxDriverRoutes(services, options))
-      .get("/resolve", async (c) => {
-        // Same exposure class as the list/delete/create verbs: a workspace
-        // row (absolute directory, git remote) is an inventory secret, and
-        // create=true materializes rows. Tokenless loopback keeps working.
-        const authResult = await signedOrError(c.req.raw, signedAccessOptions(c.req.raw, options), services)
-        if ("error" in authResult) return c.json(authResult.error, authResult.status)
-        const directory = c.req.query("directory")
-        if (isGlobalDirectory(directory)) return c.json(workspaceResponse(globalWorkspace(directory!)))
-        const explicitWorkspaceId = c.req.query("workspaceId") ?? c.req.query("workspace")
-        const directoryWorkspaceId = explicitWorkspaceId === undefined ? workspaceIdFromDirectoryRef(directory) : undefined
-        const authorityWorkspaceId = explicitWorkspaceId ?? directoryWorkspaceId
-        const requestedCreate = c.req.query("create") === "true"
-        if (authResult.auth && authorityWorkspaceId === undefined) {
-          try {
-            const opened = await openSignedWorkspaceByDirectory({
-              services,
-              rateLimiter: controlPlaneRateLimiter,
-              auth: authResult.auth,
-              directory,
-            })
-            if (opened) return c.json(opened.body, opened.status)
-          } catch (err) {
-            if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-            throw err
-          }
-        }
-        const ws = await resolveWorkspace({
-          workspaceId: authorityWorkspaceId,
-          directory: directoryWorkspaceId ? undefined : directory,
-          create: requestedCreate && !authResult.auth,
-        })
-        if (authResult.auth && authorityWorkspaceId && !ws) {
-          try {
-            const opened = await openSignedWorkspaceJson({
-              services,
-              rateLimiter: controlPlaneRateLimiter,
-              auth: authResult.auth,
-              workspaceId: authorityWorkspaceId,
-            })
-            return c.json(opened.body, opened.status)
-          } catch (err) {
-            if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-            throw err
-          }
-        }
-        if (authResult.auth && !authorityWorkspaceId && ws?.kind === "local") {
-          try {
-            const opened = await openSignedWorkspaceJson({
-              services,
-              rateLimiter: controlPlaneRateLimiter,
-              auth: authResult.auth,
-              workspaceId: ws.id,
-            })
-            return c.json(opened.body, opened.status)
-          } catch (err) {
-            if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-            throw err
-          }
-        }
-        if (!ws) return c.json({ error: apiError("workspace_not_found", "Workspace not found") }, 404)
-        if (authResult.auth && ws.kind === "cloud") {
-          try {
-            const authority = requireAuthority(services)
-            await authority.usersMe(authResult.auth)
-            const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, authResult.auth, {
-              key: `workspaces.open:${ws.id}`,
-              action: "workspaces.open.denied",
-              workspaceId: ws.id,
-            })
-            if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-            await authority.authorizeWorkspaceOpen(authResult.auth, {
-              workspaceId: ws.id,
-            })
-          } catch (err) {
-            if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-            throw err
-          }
-        }
-        return c.json(workspaceResponse(ws))
-      })
+      .get("/resolve", (c) => controlPlaneWorkspaceResolve(c, services, options, controlPlaneRateLimiter, false))
+      // The ensure form of resolve, on the verb that may write. Creation stays
+      // unsigned-only, exactly as the retired `?create=true` was: a signed
+      // caller's workspaces are registered through the authority-bearing
+      // create routes, never materialized here.
+      .post("/resolve", workspaceBodyLimit(), (c) => controlPlaneWorkspaceResolve(c, services, options, controlPlaneRateLimiter, true))
       .get("/", async (c) => {
         const host = c.req.query("host")
         if (host !== undefined && host !== "machine" && host !== "provisioner") {
@@ -292,7 +327,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         return c.json(await listProjects())
       })
       .route("/", workspaceConnectionRoutes(services, options))
-      .post("/:id/host-assignment", async (c) => {
+      .post("/:id/host-assignment", workspaceBodyLimit(), async (c) => {
         // Two shares meet on this path. A `hostId` body is the owner assigning
         // a directory on one of their ENROLLED machines (a `claxedo connect`
         // host): the authority records it and that machine acks on its beat.
@@ -481,7 +516,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
       // NOTE: there is deliberately no `POST /ensure` route. It was an
       // unauthenticated endpoint that booted billable cloud runtimes; runtime
       // ensure now only happens behind the authenticated connection flow.
-      .post("/create", async (c) => {
+      .post("/create", workspaceBodyLimit(), async (c) => {
         // Provisioning is billable and widens the egress allowlist, so like
         // /ensure before it, this route must not be servable to anonymous
         // remote callers in signed mode. Loopback stays tokenless.

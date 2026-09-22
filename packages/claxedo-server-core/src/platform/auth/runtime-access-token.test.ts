@@ -16,7 +16,9 @@ import {
 import {
   runtimeAccessTokenAudience,
   runtimeAccessTokenIssuer,
+  verifyRuntimeAccessToken,
 } from "@claxedo/workspace-relay"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 
 const ENV_KEYS = [
   "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM",
@@ -86,6 +88,28 @@ describe("runtimeAccessTokenSigner", () => {
       actor_name: "Ada Lovelace",
       actor_avatar_url: "https://example.test/ada.png",
     })
+  })
+
+  test("stamps channel provenance on a channel actor's token and nothing on an app token", async () => {
+    const { privatePem, publicPem, publicKey } = await ed25519PrivateKeyPem()
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
+    process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = publicPem
+
+    const sign = runtimeAccessTokenSigner()
+    const scope = { ...HUMAN_ACTOR, orgId: "o", workspaceId: "w", hostId: "h", role: "editor" as const }
+    const channelClaim = { channel: "telegram", external_user_id: "123456789", identity_version: CURRENT_CHANNEL_IDENTITY_VERSION }
+    const channel = await sign({
+      ...scope,
+      channelIdentity: { channel: "telegram", externalUserId: "123456789", identityVersion: CURRENT_CHANNEL_IDENTITY_VERSION },
+    })
+    expect(decodeJwt(channel.runtimeAccessToken)).toMatchObject({ channel_identity: channelClaim })
+    await expect(verifyRuntimeAccessToken(channel.runtimeAccessToken, publicKey, { workspaceId: "w", hostId: "h" }))
+      .resolves.toMatchObject({ actor_id: "actor_1", channel_identity: channelClaim })
+
+    const app = await sign(scope)
+    expect(decodeJwt(app.runtimeAccessToken)).not.toHaveProperty("channel_identity")
+    await expect(verifyRuntimeAccessToken(app.runtimeAccessToken, publicKey, { workspaceId: "w", hostId: "h" }))
+      .resolves.toMatchObject({ actor_id: "actor_1" })
   })
 
   test("kid is stable across multiple mints with the same key", async () => {

@@ -16,6 +16,7 @@ import { parseAllowedOrigins } from "./cors-origins"
 import { createWorkspaceRelayDirectory, type WorkspaceRelayDirectory } from "./directory"
 import { startSyntheticProbe, type SyntheticProbe } from "./synthetic"
 import {
+  REVOCATION_CACHE_TTL_MS_DEFAULT,
   createCachedHostGenerationClient,
   createCachedRevocationClient,
   createCachedTargetClient,
@@ -37,7 +38,7 @@ import {
 export { createCachedRevocationClient, createCachedTargetClient } from "./server"
 
 const BUN_TARGET_CACHE_TTL_MS_DEFAULT = 30_000
-const BUN_REVOCATION_CACHE_TTL_MS_DEFAULT = 10_000
+const BUN_REVOCATION_CACHE_TTL_MS_DEFAULT = REVOCATION_CACHE_TTL_MS_DEFAULT
 const BUN_HOST_GENERATION_CACHE_TTL_MS_DEFAULT = 10_000
 const BUN_RUNTIME_ACCESS_TOKEN_CACHE_TTL_MS_DEFAULT = 10_000
 

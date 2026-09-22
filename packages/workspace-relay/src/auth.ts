@@ -1,5 +1,6 @@
 import { SignJWT, errors, exportJWK, importJWK, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose"
-import { numberClaim } from "@claxedo/helpers/guards"
+import { isRecord, numberClaim } from "@claxedo/helpers/guards"
+import { CURRENT_CHANNEL_IDENTITY_VERSION } from "@claxedo/workspace-relay-protocol"
 
 const algorithms = ["EdDSA", "ES256", "RS256"] as const
 
@@ -19,6 +20,38 @@ export type RelayJwtAlgorithm = (typeof algorithms)[number]
 export type RelayRole = "viewer" | "editor" | "admin" | "owner"
 export type ActorKind = "human" | "agent"
 
+/**
+ * Earliest `iat` a Runtime Access Token may carry (2026-09-21T00:00:00Z).
+ *
+ * Tokens minted before channel provenance existed carry no `channel_identity`,
+ * so a channel-issued one among them is indistinguishable from an app token
+ * and there is no binding generation to check it against. The whole vintage is
+ * refused rather than trusted until it expires.
+ */
+export const RUNTIME_ACCESS_TOKEN_ISSUED_AT_FLOOR_SECONDS = 1_789_948_800
+
+/** The channel binding that authorized a token, as the token carries it. */
+export type ChannelIdentityClaim = {
+  channel: string
+  external_user_id: string
+  identity_version: number
+}
+
+/** The same binding as a mint argument. */
+export type ChannelIdentityInput = {
+  channel: string
+  externalUserId: string
+  identityVersion: number
+}
+
+export function toChannelIdentityClaim(input: ChannelIdentityInput): ChannelIdentityClaim {
+  return {
+    channel: input.channel,
+    external_user_id: input.externalUserId,
+    identity_version: input.identityVersion,
+  }
+}
+
 export type RuntimeAccessTokenClaims = {
   iss: typeof runtimeAccessTokenIssuer
   aud: typeof runtimeAccessTokenAudience
@@ -32,6 +65,7 @@ export type RuntimeAccessTokenClaims = {
   workspace_id: string
   host_id: string
   role: RelayRole
+  channel_identity?: ChannelIdentityClaim
   exp: number
   iat: number
   jti: string
@@ -50,6 +84,7 @@ export type RelayHostTokenClaims = {
   workspace_id: string
   host_id: string
   role: RelayRole
+  channel_identity?: ChannelIdentityClaim
   exp: number
   iat: number
   jti: string
@@ -102,6 +137,7 @@ type RuntimeInput = {
   workspaceId: string
   hostId: string
   role: RelayRole
+  channelIdentity?: ChannelIdentityInput
   ttlSeconds?: number
   jti?: string
   now?: number
@@ -213,6 +249,47 @@ function actorProfilePayload(input: {
   }
 }
 
+function channelIdentityPayload(input: { channelIdentity?: ChannelIdentityInput }) {
+  return input.channelIdentity ? { channel_identity: toChannelIdentityClaim(input.channelIdentity) } : {}
+}
+
+/**
+ * A token with no `channel_identity` was minted for an app or CLI actor and
+ * carries no provenance to check. A malformed one, or one naming a binding
+ * generation the authority stores no longer admit, names an identity nobody
+ * can still speak for.
+ */
+function channelIdentityClaims(payload: JWTPayload): ChannelIdentityClaim | undefined {
+  const value = payload.channel_identity
+  if (value === undefined) return undefined
+  if (!isRecord(value)) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Channel provenance claim is not a claims object")
+  }
+  const claim = value as JWTPayload
+  const channel = stringClaim(claim, "channel")
+  const external_user_id = stringClaim(claim, "external_user_id")
+  const identity_version = numberClaim(claim, "identity_version")
+  if (!channel || !external_user_id || identity_version === undefined || !Number.isInteger(identity_version)) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Channel provenance claim is incomplete")
+  }
+  if (identity_version < CURRENT_CHANNEL_IDENTITY_VERSION) {
+    throw new WorkspaceRelayAuthError(
+      "relay_token_claims_invalid",
+      "Channel provenance claim predates the current channel identity version",
+    )
+  }
+  return { channel, external_user_id, identity_version }
+}
+
+function checkIssuedAtFloor(iat: number) {
+  if (iat < RUNTIME_ACCESS_TOKEN_ISSUED_AT_FLOOR_SECONDS) {
+    throw new WorkspaceRelayAuthError(
+      "relay_token_claims_invalid",
+      "Runtime Access Token was issued before the channel provenance floor",
+    )
+  }
+}
+
 export function isRelayBacking(input: unknown): input is RelayBacking {
   return input === "cloud-vm" || input === "local-worktree"
 }
@@ -318,6 +395,7 @@ export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySign
     actor_id: input.actorId,
     actor_kind: input.actorKind,
     ...actorProfilePayload(input),
+    ...channelIdentityPayload(input),
     org_id: input.orgId,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
@@ -342,34 +420,35 @@ export async function verifyRuntimeAccessToken(token: string, key: RelayKey, exp
   if (!claims) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token claims are incomplete")
   }
+  checkIssuedAtFloor(claims.iat)
   return claims
 }
 
 /**
- * Clock bounds applied to claims a custom `tokenVerifier` returns. The
- * built-in JWT path gets the same floor from jose inside `verifyJwt`; a
- * verifier result crosses this boundary instead, so the floor is re-stated
- * here where no verifier implementation can skip it: expired past a small
- * skew, `nbf` beyond that skew, or an exp so far out the token is
- * effectively immortal are all refused.
+ * Clock bounds applied to claims a custom verifier (`tokenVerifier`,
+ * `authorizeHostTunnel`) returns. The built-in JWT path gets the same floor
+ * from jose inside `verifyJwt`; a verifier result crosses this boundary
+ * instead, so the floor is re-stated here where no verifier implementation
+ * can skip it: expired past a small skew, `nbf` beyond that skew, or an exp
+ * so far out the token is effectively immortal are all refused.
  */
-const RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS = 60
-const RUNTIME_ACCESS_TOKEN_MAX_LIFETIME_SECONDS = 24 * 60 * 60
+const TOKEN_CLAIMS_CLOCK_SKEW_SECONDS = 60
+const TOKEN_CLAIMS_MAX_LIFETIME_SECONDS = 24 * 60 * 60
 
-function checkRuntimeAccessTokenTimeClaims(payload: JWTPayload, claims: RuntimeAccessTokenClaims) {
+function checkTokenTimeClaims(payload: JWTPayload, exp: number, tokenName: string) {
   const now = seconds()
-  if (claims.exp <= now - RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token is expired")
+  if (exp <= now - TOKEN_CLAIMS_CLOCK_SKEW_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", `${tokenName} is expired`)
   }
   const nbf = numberClaim(payload, "nbf")
   if (payload.nbf !== undefined && nbf === undefined) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token nbf claim is not a finite number")
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", `${tokenName} nbf claim is not a finite number`)
   }
-  if (nbf !== undefined && nbf > now + RUNTIME_ACCESS_TOKEN_CLOCK_SKEW_SECONDS) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token is not yet valid")
+  if (nbf !== undefined && nbf > now + TOKEN_CLAIMS_CLOCK_SKEW_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", `${tokenName} is not yet valid`)
   }
-  if (claims.exp > now + RUNTIME_ACCESS_TOKEN_MAX_LIFETIME_SECONDS) {
-    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token lifetime exceeds the relay maximum")
+  if (exp > now + TOKEN_CLAIMS_MAX_LIFETIME_SECONDS) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", `${tokenName} lifetime exceeds the relay maximum`)
   }
 }
 
@@ -383,7 +462,8 @@ export function validateRuntimeAccessTokenClaims(input: Record<string, unknown>,
   if (!claims) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Runtime Access Token claims are incomplete")
   }
-  checkRuntimeAccessTokenTimeClaims(payload, claims)
+  checkIssuedAtFloor(claims.iat)
+  checkTokenTimeClaims(payload, claims.exp, "Runtime Access Token")
   return claims
 }
 
@@ -421,6 +501,30 @@ export async function verifyHostTunnelToken(token: string, key: RelayKey, expect
   return claims
 }
 
+/**
+ * Validates a claims result a custom `authorizeHostTunnel` policy returns.
+ * The policy decides WHO the tunnel is; the binding is the relay's: the
+ * claims' `host_id` must equal the requested host and its `workspace_ids`
+ * must cover every requested workspace, so a permissive policy cannot widen
+ * the identity its own claims assert.
+ */
+export function validateHostTunnelTokenClaims(input: Record<string, unknown>, expected: ExpectedHostTunnel) {
+  if (!isRecord(input)) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are not a claims object")
+  }
+  const payload = input as JWTPayload
+  if (stringClaim(payload, "iss") !== runtimeAccessTokenIssuer || stringClaim(payload, "aud") !== hostTunnelTokenAudience) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token issuer or audience is invalid")
+  }
+  checkHostTunnelTarget(payload, expected)
+  const claims = hostTunnelClaims(payload)
+  if (!claims) {
+    throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Host Tunnel Token claims are incomplete")
+  }
+  checkTokenTimeClaims(payload, claims.exp, "Host Tunnel Token")
+  return claims
+}
+
 // RHT lifetime semantics:
 // The Relay Host Token (RHT) authenticates a SINGLE inbound HTTP request or
 // WebSocket upgrade from Workspace Relay to Workspace Host Service. TTL is
@@ -449,6 +553,7 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
     actor_id: input.actorId,
     actor_kind: input.actorKind,
     ...actorProfilePayload(input),
+    ...channelIdentityPayload(input),
     org_id: input.orgId,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
@@ -498,6 +603,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
   ) return undefined
   const actorProfile = actorProfileClaims(payload)
   if (!actorProfile) return undefined
+  const channel_identity = channelIdentityClaims(payload)
   return {
     iss: runtimeAccessTokenIssuer,
     aud: runtimeAccessTokenAudience,
@@ -505,6 +611,7 @@ function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefine
     actor_id,
     actor_kind,
     ...actorProfile,
+    ...(channel_identity ? { channel_identity } : {}),
     org_id,
     workspace_id,
     host_id,

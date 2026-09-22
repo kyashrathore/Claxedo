@@ -17,7 +17,6 @@
  */
 
 import type { ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   hostTunnelTokenSigner,
@@ -27,7 +26,7 @@ import {
 } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { workerTelemetry } from "../platform/auth/worker-telemetry"
 import { workerCredentials } from "../credentials/worker/index"
-import type { ControlPlaneServices, ControlPlaneTelemetry } from "./services"
+import type { ControlPlaneCredentials, ControlPlaneServices, ControlPlaneTelemetry } from "./services"
 import { UNUSED_DURABLE_SESSION_LOG, UNUSED_PROJECTION_STORE } from "./unavailable-session-stores"
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
@@ -240,6 +239,8 @@ export type HostedControlPlane = {
   privateSessionAuthority?: PrivateSessionAuthority
   /** Durable exactly-one prompt admission; never synthesized in process. */
   turnAuthority?: SessionTurnAuthority
+  /** The per-org credential store, carried straight from the adapter bindings. */
+  orgCredentials?: (orgId: string) => ControlPlaneCredentials
   env: HostedWorkerEnv
 }
 
@@ -263,12 +264,11 @@ export type HostedControlPlaneAdapterBindings = {
   /** Required by adapters that certify managed multiplayer prompt admission. */
   turnAuthority?: SessionTurnAuthority
   /**
-   * The org-partitioned credentials KV namespace, when the deployment binds
-   * one. `env` is strings only, so a binding object cannot ride in it; without
-   * this the credential store falls back to the REST KV configuration and a
-   * deployment with `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1` refuses to start.
+   * The per-org credential store, built by the persistence adapter over its
+   * own database once `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1`; absent, every
+   * hosted credential route answers 503.
    */
-  credentialsNamespace?: CloudflareKvNamespaceBinding
+  orgCredentials?: (orgId: string) => ControlPlaneCredentials
 }
 
 /**
@@ -355,9 +355,7 @@ export function composeProviderNeutralHostedControlPlane(
     projectionStore: UNUSED_PROJECTION_STORE,
     durableSessionLog: UNUSED_DURABLE_SESSION_LOG,
     auth: bindings.auth,
-    credentials: workerCredentials(
-      bindings.credentialsNamespace ? { ...env, CLAXEDO_CREDENTIALS: bindings.credentialsNamespace } : env,
-    ),
+    credentials: workerCredentials(env),
     relay: {
       relayUrl,
       relayUrls,
@@ -384,6 +382,7 @@ export function composeProviderNeutralHostedControlPlane(
     ...(bindings.runtimeSessionAuthority ? { runtimeSessionAuthority: bindings.runtimeSessionAuthority } : {}),
     ...(bindings.privateSessionAuthority ? { privateSessionAuthority: bindings.privateSessionAuthority } : {}),
     ...(bindings.turnAuthority ? { turnAuthority: bindings.turnAuthority } : {}),
+    ...(bindings.orgCredentials ? { orgCredentials: bindings.orgCredentials } : {}),
     env,
   }
 }

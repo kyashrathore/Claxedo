@@ -25,6 +25,13 @@ export type ExporterOptions = {
   /** Send once this many spans are queued. */
   maxBatchSize?: number
   /**
+   * Telemetry consent — checked before a span is queued and again before a
+   * batch is sent, so spans queued before consent was withdrawn never leave
+   * the process. Omitted, nothing is ever sent: an exporter without a consent
+   * answer is constructed but never enabled.
+   */
+  consent?: () => boolean
+  /**
    * Hand an in-flight send to the runtime so it is not cancelled.
    *
    * In a Worker this is `ctx.waitUntil`. Everywhere else the default is fine.
@@ -45,10 +52,19 @@ export function createOtlpExporter(options: ExporterOptions): SpanExporter {
   const maxBatchSize = options.maxBatchSize ?? 128
   const send = options.fetch ?? fetch
   const defer = options.defer ?? ((work: Promise<unknown>) => void work.catch(() => {}))
+  const consent = options.consent ?? (() => false)
+  // A throwing consent check must not take the traced program down — fail closed.
+  const consented = () => {
+    try {
+      return consent()
+    } catch {
+      return false
+    }
+  }
   let queued: FinishedSpan[] = []
 
   const post = async (batch: readonly FinishedSpan[]) => {
-    if (batch.length === 0) return
+    if (batch.length === 0 || !consented()) return
     try {
       await send(endpoint, {
         method: "POST",
@@ -66,6 +82,7 @@ export function createOtlpExporter(options: ExporterOptions): SpanExporter {
 
   return {
     accept(span) {
+      if (!consented()) return
       queued.push(span)
       if (queued.length < maxBatchSize) return
       const batch = queued

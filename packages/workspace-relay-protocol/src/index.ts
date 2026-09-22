@@ -4,6 +4,15 @@ export const TUNNEL_PROTOCOL_VERSION = 1
 export const SESSION_STREAM_LEASE_TTL_MS = 15_000
 export const SESSION_TURN_LEASE_TTL_MS = 60_000
 
+/**
+ * Which generation of the sender-identity contract authorizes. 0 is every
+ * binding row and every token written before the transports were proven to
+ * carry the platform's stable account id, whose key may be a handle that now
+ * belongs to somebody else. Authority stores write this number, the relay
+ * admits only this number, and a lower one is never promoted.
+ */
+export const CURRENT_CHANNEL_IDENTITY_VERSION = 1
+
 export {
   type TokenClaims,
   type TokenVerifierBaseClaims,

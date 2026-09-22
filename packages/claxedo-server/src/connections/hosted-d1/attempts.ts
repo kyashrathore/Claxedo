@@ -247,7 +247,7 @@ export function createD1ConnectionAttempts(input: D1ConnectionAttemptsInput): Ho
 
     async peek(state) {
       const row = await read(state)
-      if (!row || row.status !== "pending" || row.device_code === null) return undefined
+      if (!row || row.status !== "pending" || row.completing === 1 || row.device_code === null) return undefined
       const timestamp = now()
       if (row.expires_at <= timestamp) {
         await markExpired(state, timestamp)

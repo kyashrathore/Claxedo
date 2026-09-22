@@ -215,8 +215,9 @@ unmet for two of the three paths.
 
 ## C. Connecting: the mint
 
-`GET /api/workspace/:id/connection`
-(`packages/claxedo-server/src/connections/routes/connection-routes.ts`) →
+`POST /api/workspace/:id/connection` (and `/connection/refresh`; `GET` is the
+read-only status path — `hostedConnectionStatus` resolves the lease row through
+`sandboxManager.target` and can mint only off an already-running sandbox) →
 `hostedConnectionInfo` (`connections/hosted-connection-info.ts`) opens the
 workspace through the authority and branches on `backing`. `local-worktree`
 → `hostTunnelConnectionInfo` (`connections/host-tunnel-connection.ts`): the

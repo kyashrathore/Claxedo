@@ -58,7 +58,8 @@ describe("native provider delivery", () => {
     setBackendOverride(undefined)
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
-    process.env.CLAXEDO_DATA_DIR = previousDataDir
+    if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previousDataDir
   })
 
   test("an active API key becomes one secret for the vendor host and a projection naming its variable", async () => {

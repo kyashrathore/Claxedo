@@ -46,11 +46,25 @@ export function timeoutFetch(options: IntegrationFetchOptions = {}): Integration
   const fetchImpl = options.fetchImpl ?? fetch
   const timeoutMs = options.timeoutMs ?? DEFAULT_INTEGRATION_FETCH_TIMEOUT_MS
   return async (url, init) => {
+    // Whether a runtime strips `Authorization` on a cross-origin redirect is
+    // the runtime's policy, and not every runtime strips it. A credentialed
+    // request that did not explicitly choose a redirect mode gets "manual":
+    // a 3xx reaches the impl as an opaque response (which its closed
+    // classification already turns into a failure) rather than the
+    // credential being re-sent wherever Location points.
+    const credentialed = (() => {
+      const headers = new Headers(init?.headers)
+      return headers.has("authorization") || headers.has("proxy-authorization") || headers.has("cookie")
+    })()
     // A caller-supplied signal still cancels; the deadline only ever adds a
     // reason to abort, never removes one.
     const deadline = deadlineSignal(timeoutMs, init?.signal)
     try {
-      return await fetchImpl(url, { ...init, signal: deadline.signal })
+      return await fetchImpl(url, {
+        ...init,
+        ...(credentialed && init?.redirect === undefined ? { redirect: "manual" as const } : {}),
+        signal: deadline.signal,
+      })
     } finally {
       deadline.cleanup()
     }

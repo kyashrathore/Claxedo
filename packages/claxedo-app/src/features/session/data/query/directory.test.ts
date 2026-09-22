@@ -31,7 +31,7 @@ describe("directory query factories", () => {
       directory: "/tmp/ws",
       client: {
         project: {
-          current: async () => ({ data: project("project_1", "/tmp/ws") }),
+          ensure: async () => ({ data: project("project_1", "/tmp/ws") }),
         },
       },
     })

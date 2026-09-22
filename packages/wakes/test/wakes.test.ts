@@ -115,6 +115,35 @@ describe("on_approval trigger (authorized human)", () => {
     expect(await wakes.resolve(token, "yes", { userId: "priya" })).toEqual({ ok: true })
   })
 
+  it("two concurrent resolves elect exactly one winner", async () => {
+    let releaseGate!: () => void
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve
+    })
+    // Parking authorize lets both resolvers observe `pending` before either
+    // reaches the CAS — the window a double-fire would appear in.
+    const { wakes, spawned } = harness({
+      authorize: async () => {
+        await gate
+        return true
+      },
+    })
+    const { token } = await wakes.requestApproval({
+      sessionId: "s1",
+      workspaceId: WS,
+      prompt: "?",
+      expiresAt: 9e15,
+    })
+    const a = wakes.resolve(token, "yes", { userId: "a" })
+    const b = wakes.resolve(token, "yes", { userId: "b" })
+    await new Promise((r) => setTimeout(r, 25))
+    releaseGate()
+    const outcomes = await Promise.all([a, b])
+    expect(outcomes.filter((o) => o.ok)).toEqual([{ ok: true }])
+    expect(outcomes.filter((o) => !o.ok)).toEqual([{ ok: false, reason: "already_resolved" }])
+    expect(spawned).toHaveLength(1)
+  })
+
   it("reports not_found / already_resolved / too_late", async () => {
     const { clock, wakes } = harness()
     expect(await wakes.resolve("bogus", "x", { userId: "p" })).toEqual({ ok: false, reason: "not_found" })
@@ -210,10 +239,58 @@ describe("cancel + expiry", () => {
   it("cancel prevents a wake from firing", async () => {
     const { clock, wakes, spawned } = harness()
     const { wakeId } = await wakes.schedule({ sessionId: "s1", workspaceId: WS, at: clock.t + 1000, intent: {} })
-    await wakes.cancel(wakeId)
+    expect(await wakes.cancel(wakeId, { sessionId: "s1" })).toEqual({ ok: true })
     clock.t += 1000
     await wakes.runDue()
     expect(spawned).toHaveLength(0)
+  })
+
+  it("denies possession alone: a cross-session id needs an authorized actor", async () => {
+    const { clock, wakes, store } = harness({ authorize: (a) => a.userId === "admin" })
+    const { wakeId } = await wakes.schedule({ sessionId: "s1", workspaceId: WS, at: clock.t + 1000, intent: {} })
+    expect(await wakes.cancel(wakeId, { sessionId: "s2" })).toEqual({ ok: false, reason: "unauthorized" })
+    expect(await wakes.cancel(wakeId, {})).toEqual({ ok: false, reason: "unauthorized" })
+    expect(await wakes.cancel(wakeId, { actor: { userId: "mallory" } })).toEqual({
+      ok: false,
+      reason: "unauthorized",
+    })
+    expect((await store.get(wakeId))!.state).toBe("pending")
+    expect(await wakes.cancel(wakeId, { actor: { userId: "admin" } })).toEqual({ ok: true })
+    expect((await store.get(wakeId))!.state).toBe("cancelled")
+  })
+
+  it("a held approval token does not cancel without ownership or authorization", async () => {
+    const { clock, wakes, store } = harness({ authorize: (a) => a.userId === "admin" })
+    const { token, wakeId } = await wakes.requestApproval({
+      sessionId: "s1",
+      workspaceId: WS,
+      prompt: "?",
+      expiresAt: clock.t + 1000,
+    })
+    expect(await wakes.cancel(token, { sessionId: "s2" })).toEqual({ ok: false, reason: "unauthorized" })
+    expect(await wakes.cancel(token, { actor: { userId: "mallory" } })).toEqual({
+      ok: false,
+      reason: "unauthorized",
+    })
+    expect((await store.get(wakeId))!.state).toBe("pending")
+    expect(await wakes.cancel(token, { actor: { userId: "admin" } })).toEqual({ ok: true })
+    expect((await store.get(wakeId))!.state).toBe("cancelled")
+  })
+
+  it("a sessionless wake can only be cancelled through authorize", async () => {
+    const { clock, wakes, store } = harness({ authorize: (a) => a.userId === "admin" })
+    const { wakeId } = await wakes.schedule({ workspaceId: WS, at: clock.t + 1000, intent: {} })
+    expect(await wakes.cancel(wakeId, { sessionId: "s1" })).toEqual({ ok: false, reason: "unauthorized" })
+    expect(await wakes.cancel(wakeId, { actor: { userId: "admin" } })).toEqual({ ok: true })
+    expect((await store.get(wakeId))!.state).toBe("cancelled")
+  })
+
+  it("cancel reports not_found and not_pending distinctly", async () => {
+    const { clock, wakes } = harness()
+    expect(await wakes.cancel("wake_nope", { sessionId: "s1" })).toEqual({ ok: false, reason: "not_found" })
+    const { wakeId } = await wakes.schedule({ sessionId: "s1", workspaceId: WS, at: clock.t + 1000, intent: {} })
+    expect(await wakes.cancel(wakeId, { sessionId: "s1" })).toEqual({ ok: true })
+    expect(await wakes.cancel(wakeId, { sessionId: "s1" })).toEqual({ ok: false, reason: "not_pending" })
   })
 
   it("expiry fires a 'gave up' turn", async () => {
@@ -353,6 +430,106 @@ describe("idempotency + once", () => {
     expect(await run()).toEqual({ pr: 42 })
     expect(await run()).toEqual({ pr: 42 })
     expect(calls).toBe(1)
+  })
+
+  it("once claims the receipt atomically: concurrent callers run fn once and share its result", async () => {
+    const { wakes } = harness()
+    let calls = 0
+    let releaseGate!: () => void
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve
+    })
+    const run = () =>
+      wakes.once("s1", "open-pr:branch-x", async () => {
+        calls++
+        await gate // hold the claim so the loser has to wait on it
+        return { pr: calls }
+      })
+    const first = run()
+    await new Promise((r) => setTimeout(r, 25)) // first holds the claim
+    const second = run() // must wait, never re-run fn
+    await new Promise((r) => setTimeout(r, 25))
+    releaseGate()
+    const [a, b] = await Promise.all([first, second])
+    expect(calls).toBe(1)
+    expect(b).toEqual(a) // the loser reads back the winner's recorded result
+    expect(await run()).toEqual(a)
+    expect(calls).toBe(1)
+  })
+
+  it("once frees the key when the claim's lease lapses after a crashed effect", async () => {
+    const { clock, wakes } = harness()
+    await expect(
+      wakes.once("s1", "open-pr:branch-x", async () => {
+        throw new Error("effect died mid-run")
+      }),
+    ).rejects.toThrow("effect died mid-run")
+    // The abandoned claim still holds the key until its lease lapses.
+    clock.t += 30_000
+    expect(await wakes.once("s1", "open-pr:branch-x", async () => "retried")).toBe("retried")
+    expect(await wakes.once("s1", "open-pr:branch-x", async () => "ignored")).toBe("retried")
+  })
+})
+
+describe("input validation", () => {
+  it("rejects nonfinite fire and expiry times on every create path", async () => {
+    const { clock, wakes } = harness()
+    await expect(wakes.schedule({ workspaceId: WS, at: Number.NaN, intent: {} })).rejects.toThrow(/finite/)
+    await expect(wakes.schedule({ workspaceId: WS, at: Number.POSITIVE_INFINITY, intent: {} })).rejects.toThrow(
+      /finite/,
+    )
+    // An invalid Date's getTime() is NaN — caught at the same funnel.
+    await expect(wakes.schedule({ workspaceId: WS, at: new Date("not a date"), intent: {} })).rejects.toThrow(
+      /finite/,
+    )
+    await expect(
+      wakes.watch({ workspaceId: WS, eventKey: "e", intent: {}, expiresAt: Number.NEGATIVE_INFINITY }),
+    ).rejects.toThrow(/finite/)
+    await expect(
+      wakes.requestApproval({ workspaceId: WS, prompt: "?", expiresAt: Number.NaN }),
+    ).rejects.toThrow(/finite/)
+
+    // A cron parser that hands back garbage dies at the same funnel.
+    const bad = createWakes({
+      store: new SqliteWakeStore(),
+      now: () => clock.t,
+      authorize: () => true,
+      computeNextRun: () => Number.NaN,
+      spawnTurn: async () => {},
+    })
+    await expect(bad.schedule({ workspaceId: WS, cron: "* * * * *", intent: {} })).rejects.toThrow(/finite/)
+  })
+
+  it("createWakes requires an explicit authorize policy", () => {
+    expect(() =>
+      createWakes({ store: new SqliteWakeStore(), spawnTurn: async () => {} } as never),
+    ).toThrow(/authorize/)
+  })
+})
+
+describe("listForSession", () => {
+  it("scopes rows to the session and never exposes the approval token", async () => {
+    const { clock, wakes, store } = harness()
+    const approval = await wakes.requestApproval({
+      sessionId: "s1",
+      workspaceId: WS,
+      prompt: "?",
+      expiresAt: clock.t + 1000,
+    })
+    await wakes.schedule({ sessionId: "s2", workspaceId: WS, at: clock.t + 1000, intent: {} })
+
+    const s1 = await wakes.listForSession("s1")
+    expect(s1).toHaveLength(1)
+    expect(s1[0]!.triggerType).toBe("on_approval")
+    expect(s1[0]!.token).toBeNull()
+    // The stored row still holds the capability; only the list view redacts it.
+    expect((await store.getByToken(approval.token))!.id).toBe(s1[0]!.id)
+
+    // Another session's wakes are neither listed nor confirmable through it.
+    const s2 = await wakes.listForSession("s2")
+    expect(s2).toHaveLength(1)
+    expect(s2[0]!.sessionId).toBe("s2")
+    expect(await wakes.listForSession("nobody")).toHaveLength(0)
   })
 })
 

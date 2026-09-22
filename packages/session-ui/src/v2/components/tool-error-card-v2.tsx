@@ -1,5 +1,6 @@
 import { Collapsible } from "@kobalte/core/collapsible"
 import { type ComponentProps, type JSX, Show, createMemo, splitProps } from "solid-js"
+import { safeLinkHref } from "../../components/safe-link"
 import "./tool-error-card-v2.css"
 
 function BanIcon() {
@@ -102,6 +103,9 @@ export function ToolErrorCardV2(props: ToolErrorCardV2Props) {
     "classList",
   ])
 
+  /** The subtitle link a caller supplied, dropped unless it survives the scheme policy. */
+  const subtitleHref = createMemo(() => safeLinkHref(local.subtitleHref))
+
   const hasSuffix = createMemo(() => {
     const s = local.suffix
     if (s == null) return false
@@ -136,12 +140,12 @@ export function ToolErrorCardV2(props: ToolErrorCardV2Props) {
               ·
             </span>
             <Show
-              when={local.subtitleHref}
+              when={subtitleHref()}
               fallback={<span data-slot="tool-error-card-subtitle">{local.subtitle}</span>}
             >
               <a
                 data-slot="tool-error-card-subtitle"
-                href={local.subtitleHref}
+                href={subtitleHref()}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
               >

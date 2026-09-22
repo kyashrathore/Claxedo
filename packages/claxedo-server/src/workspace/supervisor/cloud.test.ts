@@ -304,6 +304,7 @@ const mockGetRuntimeConfigSnapshot = vi.fn(
     commands: [],
   }),
 )
+const mockProjectEnv = vi.fn(async (_projectId?: string) => undefined as Record<string, string> | undefined)
 
 const leases = new Map<string, SandboxLeaseRow>()
 const holds = new Map<string, SandboxHoldRow>()
@@ -354,7 +355,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   // The supervisor composition teaches the store to read sandbox leases.
   configureWorkspaceStore: vi.fn(),
   // Sandboxes start with the project's environment; these projects have none.
-  projectEnv: vi.fn(async () => undefined),
+  projectEnv: (...args: unknown[]) => (mockProjectEnv as any)(...args),
 }))
 
 vi.mock("@claxedo/server-core/sandbox/network/policy", () => ({
@@ -782,6 +783,8 @@ describe("workspace-supervisor", () => {
     mockCreateVercelSandboxDriver.mockClear()
     mockCreateDockerSandboxDriver.mockClear()
     mockCreateBoxSandboxDriver.mockClear()
+    mockProjectEnv.mockClear()
+    mockProjectEnv.mockImplementation(async () => undefined)
     mockGetRuntimeConfigSnapshot.mockClear()
     mockGetRuntimeConfigSnapshot.mockImplementation(
       async (): Promise<any> => ({
@@ -1930,6 +1933,27 @@ describe("workspace-supervisor", () => {
       expect(env.WORKSPACE_RUNTIME_EPOCH).toBe("1")
     })
 
+    test("a project env restating the runtime identity is refused instead of diverging from the lease", async () => {
+      store.set("ws-identity-override", {
+        ...workspace("ws-identity-override"),
+        remote_directory: "/remote/app",
+      })
+      // Once: the refusal fires on the first ensure, and the implementation
+      // must not leak into the sibling describe's beforeEach, which does not
+      // reset this mock.
+      mockProjectEnv.mockImplementationOnce(async () => ({
+        WORKSPACE_RUNTIME_HOST_ID: "foreign-host",
+      }))
+
+      // The project's env is spread over the driver's boot env; were the key
+      // honored, the runtime would register with the relay under a hostId the
+      // lease never recorded.
+      await expect(supervisor.ensureSupervisorSandbox("ws-identity-override")).rejects.toThrow(
+        "WORKSPACE_RUNTIME_HOST_ID",
+      )
+      expect(leases.get("ws-identity-override")?.status).not.toBe("ready")
+    })
+
     test("daytona runtime uses public PEM for local management verification", async () => {
       process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = runtimePublicKeyPem
       store.set("ws-local-control-plane", {
@@ -2014,6 +2038,136 @@ describe("workspace-supervisor", () => {
       await supervisor.ensureSupervisorSandbox("ws-time-1")
 
       expect(entry.used_at).toBeGreaterThanOrEqual(firstUsed)
+    })
+  })
+
+  // ── Credential delivery reconcile ─────────────────────────────────
+
+  describe("reconcileCredentialDelivery", () => {
+    const activeAccount = (id: string, providerId = "claude-sdk", revision = 1) => ({
+      credential: {
+        id,
+        provider_id: providerId,
+        kind: "api_key",
+        revision,
+        secure_ref: `ref-${id}`,
+        status: "available",
+      },
+    })
+
+    test("a revoked account is withdrawn from a running sandbox at the provider edge and in its pushed config", async () => {
+      credentials.active.push(activeAccount("cred-1"))
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      await supervisor.ensureSupervisorSandbox("ws-reconcile-revoke")
+      mockDaytonaLaunch.mockClear()
+      configPush.length = 0
+
+      credentials.active[0].unavailable = "revoked"
+      const { workspaceSupervisor } = await import("@claxedo/server-core/workspace/supervisor-port")
+      await workspaceSupervisor().reconcileCredentialDelivery()
+
+      // The running sandbox goes back through the driver on the same lease:
+      // an absent name is what withdraws the secret at the provider edge.
+      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+      // And the projection inside the runtime stops offering the account.
+      expect(configPush.some((push) => push.url.includes("daytona-sdk.example.com"))).toBe(true)
+    })
+
+    test("revoking the last account reaches the driver as an empty set, not silence", async () => {
+      credentials.active.push(activeAccount("cred-1"))
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      await supervisor.ensureSupervisorSandbox("ws-reconcile-last")
+      mockDaytonaLaunch.mockClear()
+
+      credentials.active.length = 0
+      await supervisor.reconcileCredentialDelivery()
+
+      // Once something of ours is installed, having no account left is a
+      // change — the empty set is how the last one reaches the provider edge.
+      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+    })
+
+    test("a backend outage during revocation still withdraws the revoked account", async () => {
+      credentials.active.push(activeAccount("cred-1"), activeAccount("cred-2", "openrouter"))
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      credentials.secrets.set("cred-2", "sk-or-fixture")
+      await supervisor.ensureSupervisorSandbox("ws-reconcile-outage")
+      mockDaytonaLaunch.mockClear()
+
+      // cred-1 is revoked while cred-2's backend read fails. The unreadable
+      // account loses its secret for a round rather than the revoked one
+      // keeping its own.
+      credentials.active[0].unavailable = "revoked"
+      credentials.locked.add("cred-2")
+      await supervisor.reconcileCredentialDelivery()
+
+      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+    })
+
+    test("an unchanged delivered set makes no driver call but still pushes the config", async () => {
+      credentials.active.push(activeAccount("cred-1"))
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      await supervisor.ensureSupervisorSandbox("ws-reconcile-same")
+      mockDaytonaLaunch.mockClear()
+      configPush.length = 0
+
+      await supervisor.reconcileCredentialDelivery()
+
+      // Nothing to withdraw: the digest still matches, so the reconcile is a
+      // projection push and no provider-edge call.
+      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(configPush.length).toBe(1)
+    })
+
+    test("a local runtime holds nothing at a provider edge, so its reconcile is the push alone", async () => {
+      const runtimes = (await import("./store")).runtimes
+      const local = { ...workspace("ws-reconcile-local"), kind: "local" as const, directory: "/tmp/ws-reconcile-local" }
+      store.set("ws-reconcile-local", local)
+      runtimes.set("ws-reconcile-local", {
+        ws: local as never,
+        status: "ready",
+        url: "http://127.0.0.1:2597",
+        used_at: Date.now(),
+        crashes: 0,
+        retry_at: 0,
+        active: 0,
+        holds: [],
+      })
+      mockDaytonaLaunch.mockClear()
+      configPush.length = 0
+
+      await supervisor.reconcileCredentialDelivery()
+
+      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+      expect(configPush.some((push) => push.url.includes("127.0.0.1:2597"))).toBe(true)
+    })
+
+    test("a sandbox whose driver is down keeps its recorded set so the next reconcile retries it", async () => {
+      credentials.active.push(activeAccount("cred-1"))
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      await supervisor.ensureSupervisorSandbox("ws-reconcile-down")
+      await supervisor.ensureSupervisorSandbox("ws-reconcile-up")
+      const runtimes = (await import("./store")).runtimes
+      const installedBefore = runtimes.get("ws-reconcile-down")!.installed_secrets
+      mockDaytonaLaunch.mockClear()
+      configPush.length = 0
+      const realLaunch = mockDaytonaLaunch.getMockImplementation()!
+      mockDaytonaLaunch.mockImplementation(async (input: any) => {
+        if (input.workspaceId === "ws-reconcile-down") throw new Error("provider is down")
+        return realLaunch(input)
+      })
+
+      credentials.active[0].unavailable = "revoked"
+      await expect(supervisor.reconcileCredentialDelivery()).resolves.toBeUndefined()
+      mockDaytonaLaunch.mockImplementation(realLaunch)
+
+      // The healthy sandbox withdrew on the same sweep. The failed one is
+      // still booked on the set it actually holds — the ensure returned the
+      // serving target rather than a withdrawn one — so the next mutation or
+      // ensure reconciles it instead of trusting a digest the driver never
+      // applied.
+      expect(runtimes.get("ws-reconcile-down")!.installed_secrets).toBe(installedBefore)
+      expect(runtimes.get("ws-reconcile-up")!.installed_secrets).not.toBe(installedBefore)
     })
   })
 

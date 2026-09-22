@@ -319,6 +319,33 @@ describe("workspace runtime record", () => {
     expect(run).not.toHaveBeenCalled()
   })
 
+  test("a create scope asks the resolve route on POST — a GET is read-only", async () => {
+    const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
+    const requests: string[] = []
+    const request: typeof fetch = mock(async (input, init) => {
+      const req = input instanceof Request ? input : new Request(input, init)
+      requests.push(`${req.method} ${req.url}`)
+      return new Response(JSON.stringify({
+        workspaceId: "ws_new",
+        directory: "/tmp/new",
+        kind: "local",
+      }), { status: 200 })
+    })
+
+    const created = await fetchWorkspaceRecord({
+      baseUrl: "http://runtime.test",
+      request,
+      directory: "/tmp/new",
+      create: true,
+    })
+    expect(created).toMatchObject({ workspaceId: "ws_new" })
+    expect(requests).toEqual(["POST http://runtime.test/api/workspace/resolve?directory=%2Ftmp%2Fnew"])
+
+    requests.length = 0
+    await fetchWorkspaceRecord({ baseUrl: "http://runtime.test", request, directory: "/tmp/new" })
+    expect(requests).toEqual(["GET http://runtime.test/api/workspace/resolve?directory=%2Ftmp%2Fnew"])
+  })
+
   test("a workspace id the server disowns resolves through AccountPort workspace.resolve", async () => {
     const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
     const run = mock(async (operation: string, input?: Record<string, unknown>) => {

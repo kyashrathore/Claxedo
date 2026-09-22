@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { encodeAttachmentData } from "../attachments"
 import { TASKS_BOUNDS, type TaskAttachmentDraft, type TaskDraft } from "../contracts"
 import { parsedReasons } from "../test-support/refusals"
-import { validateReparent, validateTaskDraft, validateTaskEdit } from "./model"
+import { validateReparent, validateStart, validateTaskDraft, validateTaskEdit } from "./model"
 
 function draft(overrides: Partial<TaskDraft> = {}): TaskDraft {
   return {
@@ -16,7 +16,8 @@ function draft(overrides: Partial<TaskDraft> = {}): TaskDraft {
   }
 }
 
-const PNG_HEADER = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+const PNG_HEADER = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+const WEBP_HEADER = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50])
 
 function image(overrides: Partial<TaskAttachmentDraft> = {}): TaskAttachmentDraft {
   return {
@@ -58,12 +59,17 @@ describe("validateTaskDraft", () => {
   })
 
   test("images are decoded in draft order with their names trimmed", () => {
-    const checked = validateTaskDraft(draft({ attachments: [image({ filename: "  a.png " }), image({ filename: "b.png", mime: "image/webp" })] }))
+    const checked = validateTaskDraft(draft({
+      attachments: [
+        image({ filename: "  a.png " }),
+        image({ filename: "b.webp", mime: "image/webp", data: encodeAttachmentData(WEBP_HEADER) }),
+      ],
+    }))
     expect(checked.ok).toBe(true)
     if (!checked.ok) return
     expect(checked.value.attachments).toEqual([
       { filename: "a.png", mime: "image/png", bytes: PNG_HEADER },
-      { filename: "b.png", mime: "image/webp", bytes: PNG_HEADER },
+      { filename: "b.webp", mime: "image/webp", bytes: WEBP_HEADER },
     ])
   })
 
@@ -89,8 +95,9 @@ describe("validateTaskDraft", () => {
   // before its bytes are allocated; a partial decode of bad base64 would
   // store a truncated image, so that is refused whole too.
   test("an image is bounded by its decoded bytes and refused when the data is not base64", () => {
-    const atCap = encodeAttachmentData(new Uint8Array(TASKS_BOUNDS.taskAttachmentMaxBytes))
-    expect(validateTaskDraft(draft({ attachments: [image({ data: atCap })] })).ok).toBe(true)
+    const atCapBytes = new Uint8Array(TASKS_BOUNDS.taskAttachmentMaxBytes)
+    atCapBytes.set(PNG_HEADER)
+    expect(validateTaskDraft(draft({ attachments: [image({ data: encodeAttachmentData(atCapBytes) })], })).ok).toBe(true)
     const over = encodeAttachmentData(new Uint8Array(TASKS_BOUNDS.taskAttachmentMaxBytes + 1))
     expect(parsedReasons(validateTaskDraft(draft({ attachments: [image({ data: over })] })))).toEqual({
       "attachments[0].data": "too_long",
@@ -101,6 +108,27 @@ describe("validateTaskDraft", () => {
     expect(parsedReasons(validateTaskDraft(draft({ attachments: [image({ data: "" })] })))).toEqual({
       "attachments[0].data": "type",
     })
+  })
+
+  // A declared mime is a claim: bytes that carry another image's signature,
+  // or no allowed signature at all, are refused rather than stored and served
+  // under the label.
+  test("bytes that are not the declared image are refused", () => {
+    expect(
+      parsedReasons(validateTaskDraft(draft({ attachments: [image({ data: encodeAttachmentData(WEBP_HEADER) })] }))),
+    ).toEqual({ "attachments[0].data": "not_allowed" })
+    expect(
+      parsedReasons(
+        validateTaskDraft(
+          draft({ attachments: [image({ data: encodeAttachmentData(Uint8Array.from([0x3c, 0x73, 0x76, 0x67])) })] }),
+        ),
+      ),
+    ).toEqual({ "attachments[0].data": "not_allowed" })
+    expect(
+      validateTaskDraft(
+        draft({ attachments: [image({ mime: "image/webp", data: encodeAttachmentData(WEBP_HEADER) })] }),
+      ).ok,
+    ).toBe(true)
   })
 
   test("the number of images is bounded, and nothing of an over-long list is decoded", () => {
@@ -115,6 +143,17 @@ describe("validateTaskDraft", () => {
       expect(checked.ok).toBe(true)
       if (checked.ok) expect(checked.value.attachments).toEqual([])
     }
+  })
+
+  test("every id the draft names is held to the id bound", () => {
+    const oversized = "i".repeat(TASKS_BOUNDS.idMaxBytes + 1)
+    expect(parsedReasons(validateTaskDraft(draft({ projectId: oversized })))).toEqual({ projectId: "too_long" })
+    expect(parsedReasons(validateTaskDraft(draft({ workspaceId: oversized })))).toEqual({ workspaceId: "too_long" })
+    expect(parsedReasons(validateTaskDraft(draft({ parentTaskId: oversized })))).toEqual({ parentTaskId: "too_long" })
+    expect(
+      parsedReasons(validateTaskDraft({ ...draft(), createdFrom: { sessionId: oversized, workspaceId: null } })),
+    ).toEqual({ "createdFrom.sessionId": "too_long" })
+    expect(validateTaskDraft(draft({ projectId: "i".repeat(TASKS_BOUNDS.idMaxBytes) })).ok).toBe(true)
   })
 })
 
@@ -140,5 +179,37 @@ describe("validateReparent", () => {
     expect(parsedReasons(validateReparent({ taskId: "task-1", revision: 1, parentTaskId: null, projectId: "" }))).toEqual({
       projectId: "required",
     })
+  })
+})
+
+describe("validateStart", () => {
+  const request = {
+    clientRequestId: "request-1",
+    taskRevision: 1,
+    presetId: "preset-1",
+    presetRevision: 1,
+    slot: "primary" as const,
+    attempt: 1,
+    previewDigest: "digest-1",
+    handoffText: null,
+    continueFromPrevious: false,
+  }
+
+  test("bounds the ids a start names and the handoff text", () => {
+    const oversized = "i".repeat(TASKS_BOUNDS.idMaxBytes + 1)
+    expect(parsedReasons(validateStart({ ...request, clientRequestId: oversized }))).toEqual({
+      clientRequestId: "too_long",
+    })
+    expect(parsedReasons(validateStart({ ...request, presetId: oversized }))).toEqual({ presetId: "too_long" })
+    expect(parsedReasons(validateStart({ ...request, previewDigest: oversized }))).toEqual({
+      previewDigest: "too_long",
+    })
+    expect(
+      parsedReasons(validateStart({ ...request, handoffText: "x".repeat(TASKS_BOUNDS.handoffTextMaxBytes + 1) })),
+    ).toEqual({ handoffText: "too_long" })
+    expect(
+      parsedReasons(validateStart({ ...request, startedFrom: { sessionId: oversized, workspaceId: null } })),
+    ).toEqual({ "startedFrom.sessionId": "too_long" })
+    expect(validateStart(request).ok).toBe(true)
   })
 })

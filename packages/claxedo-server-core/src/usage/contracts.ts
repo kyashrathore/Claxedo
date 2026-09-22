@@ -89,8 +89,17 @@ export type UsageRevisionWriteResult =
   | { status: "stale"; currentRevision: number }
   | { status: "conflict"; currentRevision: number }
 
+/**
+ * The account a fact is attributed to when it uploads. Ownership is outbox
+ * routing, not fact content: it is resolved by the composition from the
+ * session's producing identity, never from the request that later asks to
+ * sync, and it stays out of `TurnUsageRevision` so reattribution can never
+ * collide with the revision's payload hash.
+ */
+export type UsageOwner = { org_id: string; user_id: string }
+
 export type UsageRevisionWriter = {
-  writeRevision(fact: TurnUsageRevision): Promise<UsageRevisionWriteResult>
+  writeRevision(fact: TurnUsageRevision, options?: { owner?: UsageOwner }): Promise<UsageRevisionWriteResult>
 }
 
 export type UsageRevisionReader = {
@@ -103,7 +112,13 @@ export type UsageRevisionReader = {
     until?: number
     settlement?: TurnUsageSettlement
   }): Promise<TurnUsageRevision[]>
-  pendingOutbox(input?: { limit?: number; all?: boolean; since?: number; until?: number }): Promise<TurnUsageRevision[]>
+  pendingOutbox(input?: {
+    limit?: number
+    all?: boolean
+    since?: number
+    until?: number
+    owner?: UsageOwner
+  }): Promise<TurnUsageRevision[]>
 }
 
 export function knownTokenCategories(tokens: TurnUsageRevision["tokens"]): TurnUsageQuality["knownCategories"] {

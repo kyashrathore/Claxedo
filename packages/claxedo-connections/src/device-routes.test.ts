@@ -43,7 +43,9 @@ function harness(polls: DevicePoll[], options: { gateDenies?: boolean } = {}) {
     attempts: createAttempts({ sweepIntervalMs: 0 }),
     newId: () => "connection-1",
   })
-  const app = createIntegrationsRoutes(service, (options.gateDenies ? { gate: () => new Response("denied", { status: 401 }) } : {}))
+  const app = createIntegrationsRoutes(service, {
+    gate: () => (options.gateDenies ? new Response("denied", { status: 401 }) : null),
+  })
   const request = (path: string, init?: RequestInit) => app.fetch(new Request(`http://host${path}`, init))
   return { app, service, request }
 }

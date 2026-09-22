@@ -28,6 +28,7 @@ const actor = {
   actorName: "Test User",
   orgId: "org",
   role: "editor" as const,
+  identityVersion: 1,
 }
 function fixture() {
   const authority = {
@@ -68,7 +69,7 @@ describe("machine session dispatch", () => {
       f.authority.reserveRuntimeSession.mock.calls[0][1].operationId,
     )
     expect(mock.client.mock.calls[0][0].options).toMatchObject({
-      channelIdentity: identity,
+      channelIdentity: { ...identity, identityVersion: 1 },
       runtimeActor: { actorId: actor.actorId },
       role: "editor",
     })

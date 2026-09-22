@@ -1,11 +1,24 @@
 import { describe, expect, test } from "vitest"
 import { CREDENTIAL_BROKER_ERRORS } from "@claxedo/agent-runtime-contract"
-import { createEgressBroker, mintRuntimeToken, verifyRuntimeToken, type Binding, type BindingFailure } from "./index.js"
+import {
+  createEgressBroker,
+  mintRuntimeToken,
+  verifyRuntimeToken,
+  type Binding,
+  type BindingAuthority,
+  type BindingFailure,
+} from "./index.js"
 
 const key = new Uint8Array(32).fill(7)
 const identity = { userId: "user", orgId: "org", workspaceId: "workspace", leaseId: "lease", leaseGeneration: 1, runtimeId: "runtime" }
 
-async function fixture() {
+async function fixture(tuning: {
+  authorityTimeoutMs?: number
+  upstreamTimeoutMs?: number
+  maxConcurrentUpstream?: number
+  resolve?: BindingAuthority["resolve"]
+  fetch?: typeof fetch
+} = {}) {
   let binding: Binding = {
     ...identity, id: "binding", credentialId: "credential", revision: 1, status: "active",
     destination: { origin: "https://api.anthropic.com", methods: ["POST"], pathPrefixes: ["/v1/messages"] },
@@ -22,12 +35,15 @@ async function fixture() {
   const broker = createEgressBroker({
     verifyToken: (value) => verifyRuntimeToken(value, key),
     authority: {
-      resolve: async () => ({ binding, value }),
+      resolve: tuning.resolve ?? (async () => ({ binding, value })),
       currentRuntime: async () => current,
       markUsed: async (bindingId) => { used.push(bindingId) },
       reportFailure: async (failure) => { if (reportingUnavailable) throw Error("failure store unavailable"); failures.push(failure) },
     },
-    fetch: (async (url, init) => { upstream.push(new Request(url, init)); return respond() }) as typeof fetch,
+    fetch: tuning.fetch ?? (async (url, init) => { upstream.push(new Request(url, init)); return respond() }) as typeof fetch,
+    authorityTimeoutMs: tuning.authorityTimeoutMs,
+    upstreamTimeoutMs: tuning.upstreamTimeoutMs,
+    maxConcurrentUpstream: tuning.maxConcurrentUpstream,
   })
   const request = (pathname = "/v1/messages", init: RequestInit = {}) => broker(new Request(`http://broker.test/bindings/binding${pathname}`, {
     method: "POST", headers: { "x-api-key": token, cookie: "local=private" }, body: "prompt", ...init,
@@ -186,5 +202,148 @@ describe("binding broker HTTP entrypoint", () => {
     expect(response.status).toBe(502)
     expect(response.headers.get("location")).toBeNull()
     expect(f.upstream).toHaveLength(1)
+  })
+
+  test.each([
+    { authorization: "Basic dXNlcjpwYXNz", keyed: true },
+    { authorization: "Bearer", keyed: true },
+    { authorization: "Digest abc", keyed: false },
+  ])("refuses an Authorization scheme the broker does not serve %j", async ({ authorization, keyed }) => {
+    const f = await fixture()
+    const response = await f.request("/v1/messages", {
+      headers: { authorization, ...(keyed ? { "x-api-key": f.token } : {}) },
+    })
+    expect([response.status, (await response.json()).error.code]).toEqual([401, "runtime_token_required"])
+    expect(f.upstream).toHaveLength(0)
+  })
+
+  test("refuses a caller when the authority never answers", async () => {
+    const f = await fixture({ authorityTimeoutMs: 25, resolve: () => new Promise(() => {}) })
+    const response = await f.request()
+    expect([response.status, (await response.json()).error.code]).toEqual([503, "broker_authority_unavailable"])
+    expect(f.upstream).toHaveLength(0)
+  })
+
+  test("refuses an upstream that never reaches headers", async () => {
+    const f = await fixture({
+      upstreamTimeoutMs: 25,
+      fetch: ((_url: unknown, init: RequestInit) => new Promise<Response>((_, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
+      })) as typeof fetch,
+    })
+    const response = await f.request()
+    expect([response.status, (await response.json()).error.code]).toEqual([502, "upstream_unavailable"])
+  })
+
+  test("refuses a caller that cannot get a lane while one is held", async () => {
+    let upstreamCalls = 0
+    let reachedFetch!: () => void
+    let releaseFetch!: (response: Response) => void
+    const reached = new Promise<void>((resolve) => { reachedFetch = resolve })
+    const gate = new Promise<Response>((resolve) => { releaseFetch = resolve })
+    const f = await fixture({
+      maxConcurrentUpstream: 1,
+      upstreamTimeoutMs: 30,
+      fetch: (async () => { upstreamCalls += 1; reachedFetch(); return gate }) as typeof fetch,
+    })
+    const first = f.request()
+    await reached
+    const second = await f.request()
+    expect([second.status, (await second.json()).error.code]).toEqual([503, "broker_authority_unavailable"])
+    expect(upstreamCalls).toBe(1)
+    releaseFetch(new Response("done"))
+    const firstResponse = await first
+    expect(firstResponse.status).toBe(200)
+    await firstResponse.body?.cancel()
+  })
+
+  test("keeps the lane until the streamed answer is spent or abandoned", async () => {
+    const f = await fixture({ maxConcurrentUpstream: 1, upstreamTimeoutMs: 200 })
+    f.respond(async () => new Response(new ReadableStream({ start: () => {} })))
+    const first = await f.request()
+    expect(first.status).toBe(200)
+    const queued = f.request()
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(f.upstream).toHaveLength(1)
+    await first.body?.cancel()
+    const second = await queued
+    expect(second.status).toBe(200)
+    expect(f.upstream).toHaveLength(2)
+    await second.body?.cancel()
+  })
+
+  test("strips credential slots from the forwarded query of a vendor that reads none", async () => {
+    const f = await fixture()
+    const response = await f.request("/v1/messages?key=foreign&access_token=foreign&api_key=foreign&apikey=foreign&model=x")
+    expect(response.status).toBe(200)
+    expect(f.upstream[0].url).toBe("https://api.anthropic.com/v1/messages?model=x")
+  })
+
+  test("refuses a query credential slot the vendor does read, and echoes none of it", async () => {
+    const f = await fixture()
+    f.update({
+      destination: {
+        origin: "https://generativelanguage.googleapis.com",
+        methods: ["POST"],
+        pathPrefixes: ["/v1beta"],
+        credentialQuerySlots: ["key"],
+      },
+    })
+    const response = await f.request("/v1beta/models:generateContent?key=foreign-key&model=x")
+    const body = await response.text()
+    expect([response.status, JSON.parse(body).error.code]).toEqual([403, "request_outside_policy"])
+    expect(f.upstream).toHaveLength(0)
+    expect(body).not.toContain("foreign-key")
+    expect([...response.headers.values()].join(" ")).not.toContain("foreign-key")
+  })
+
+  test("forwards only the answer headers a harness reads", async () => {
+    const f = await fixture()
+    f.respond(async () => new Response("ok", {
+      headers: {
+        "content-type": "application/json",
+        "anthropic-ratelimit-requests-remaining": "42",
+        "x-ratelimit-limit-tokens": "100",
+        "retry-after": "30",
+        "request-id": "req_1",
+        "content-encoding": "gzip",
+        "www-authenticate": `Bearer realm="anthropic"`,
+        "set-cookie": "session=1",
+        authorization: "Bearer leaked",
+        "openai-organization": "org-of-the-operator",
+        "anthropic-organization-id": "org_secret",
+        "x-goog-api-key": "real-key",
+      },
+    }))
+    const response = await f.request()
+    expect(response.status).toBe(200)
+    expect(Object.fromEntries(response.headers)).toEqual({
+      "content-type": "application/json",
+      "anthropic-ratelimit-requests-remaining": "42",
+      "x-ratelimit-limit-tokens": "100",
+      "retry-after": "30",
+      "request-id": "req_1",
+    })
+  })
+
+  test("strips every credential slot the binding owns from the answer", async () => {
+    const f = await fixture()
+    f.update({ injection: { header: "x-goog-api-key", headers: { "ChatGPT-Account-Id": "acct" } } })
+    f.respond(async () => new Response("ok", { headers: { "x-goog-api-key": "real-key", "chatgpt-account-id": "other" } }))
+    const response = await f.request()
+    expect(response.status).toBe(200)
+    expect(f.upstream[0].headers.get("x-goog-api-key")).toBe("real-key")
+    expect(f.upstream[0].headers.get("chatgpt-account-id")).toBe("acct")
+    expect(response.headers.get("x-goog-api-key")).toBeNull()
+    expect(response.headers.get("chatgpt-account-id")).toBeNull()
+  })
+
+  test("an unexpired token dies with the runtime that minted it", async () => {
+    const f = await fixture()
+    f.stop()
+    const response = await f.request()
+    expect([response.status, (await response.json()).error.code]).toEqual([403, "binding_unavailable"])
+    expect(await verifyRuntimeToken(f.token, key)).toBeDefined()
+    expect(f.upstream).toHaveLength(0)
   })
 })

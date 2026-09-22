@@ -15,6 +15,7 @@ import {
   type NavigationDecision,
 } from "./navigation-guard"
 import { trustWindowWithBridge } from "./ipc-caller-guard"
+import { installRendererPermissionPolicy } from "./renderer-permissions"
 import { isTrustedRendererDocumentUrl } from "./renderer-url-trust"
 
 type Globals = {
@@ -110,6 +111,9 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
     webContentsId: win.webContents.id,
     onDestroyed: (listener) => win.webContents.once("destroyed", listener),
   })
+  // The default session, shared with the loading window; the agent-browser
+  // `<webview>` guests live in `persist:agent-browser` and keep their own.
+  installRendererPermissionPolicy(win.webContents.session, isTrustedMainRendererUrl)
   if (process.env.CLAXEDO_PERF_READY_SELECTOR) {
     log.info(`[startup-perf] browser-window ready elapsed=${String(Math.round(performance.now() - startedAt))}ms`)
   }

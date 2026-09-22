@@ -62,7 +62,12 @@ function parseDuration(s: string): number {
 
 /** Absolute epoch ms, a relative duration ("+3d"/"2h"), or an ISO/parseable date string. */
 function parseWhen(when: string | number, now: number): number {
-  if (typeof when === "number") return when
+  if (typeof when === "number") {
+    if (!Number.isFinite(when)) {
+      throw new Error(`invalid time ${when} (use "+3d", an ISO date, or finite epoch ms)`)
+    }
+    return when
+  }
   if (DURATION_RE.test(when)) return now + parseDuration(when)
   const t = Date.parse(when)
   if (Number.isNaN(t)) throw new Error(`invalid time "${when}" (use "+3d", an ISO date, or epoch ms)`)
@@ -125,9 +130,10 @@ export async function handleWakeToolCall(
       return { ok: true, text: `Scheduled a follow-up for ${new Date(at).toISOString()} (wake ${wakeId}).` }
     }
     case "cancel_wake": {
-      const owned = (await ctx.wakes.listForSession(ctx.sessionId)).some((w) => w.id === args.wake_id)
-      if (!owned) return { ok: false, text: `No pending wake "${args.wake_id}" for this session.` }
-      await ctx.wakes.cancel(args.wake_id)
+      // The engine enforces ownership: a session-scoped cancel only lands on
+      // a wake whose sessionId matches this host-injected context.
+      const outcome = await ctx.wakes.cancel(args.wake_id, { sessionId: ctx.sessionId })
+      if (!outcome.ok) return { ok: false, text: `No pending wake "${args.wake_id}" for this session.` }
       return { ok: true, text: `Cancelled wake ${args.wake_id}.` }
     }
     default:

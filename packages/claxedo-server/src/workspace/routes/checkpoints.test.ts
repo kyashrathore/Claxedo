@@ -178,6 +178,49 @@ describe("workspace checkpoint routes", () => {
     expect(await response.json()).toMatchObject({ worktrees: [], runtime: {} })
   })
 
+  test("an oversized body is refused on the write verbs before the runtime is asked", async () => {
+    const fixture = app()
+    const oversized = "x".repeat(17 * 1024)
+    const requests = [
+      "/api/workspace/ws_1/checkpoints",
+      "/api/workspace/ws_1/checkpoints/cp_1/restore",
+      "/api/workspace/ws_1/lifecycle/destroy",
+    ]
+
+    for (const path of requests) {
+      const response = await fixture.app.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: oversized,
+      })
+      expect(response.status).toBe(413)
+      expect(await response.json()).toMatchObject({
+        error: { code: "request_body_too_large" },
+      })
+    }
+    expect(fixture.sandboxManager.restore).not.toHaveBeenCalled()
+    expect(fixture.sandboxManager.destroy).not.toHaveBeenCalled()
+  })
+
+  test("a chunked body over the cap is refused without a declared length", async () => {
+    const fixture = app()
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < 4; i += 1) controller.enqueue(new TextEncoder().encode("x".repeat(8192)))
+        controller.close()
+      },
+    })
+
+    const response = await fixture.app.request("/api/workspace/ws_1/checkpoints", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit)
+
+    expect(response.status).toBe(413)
+  })
+
   test("restore, replacement, cleanup, and destruction require explicit approval", async () => {
     const fixture = app()
     const requests = [

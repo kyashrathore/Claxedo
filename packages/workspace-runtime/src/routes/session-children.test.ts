@@ -5,7 +5,7 @@ import type { RuntimeEventEnvelopeInput } from "../runtime-event-hub"
 import type { CompatEnvelope } from "../compat-events"
 import { permissionAsked, permissionReplied, questionAsked, questionRejected } from "../compat-events"
 import type { SessionTurnOrigin } from "../session-access-policy"
-import { childSummary, createChildSessionHost, wakeMessageId, type ChildSessionHostInput } from "./session-children"
+import { HOST_CHILD_PROVIDER_KIND, childSummary, createChildSessionHost, hostChildRow, wakeMessageId, type ChildSessionHostInput } from "./session-children"
 
 const DIRECTORY = "/workspace"
 
@@ -355,5 +355,35 @@ describe("host-owned child sessions", () => {
     })
     expect(childSummary([assistant("m1", "", { name: "MessageAbortedError", data: { message: "Aborted by user" } })])).toMatchObject({ status: "killed" })
     expect(childSummary([])).toEqual({ status: "completed", text: "" })
+  })
+})
+
+describe("hostChildRow", () => {
+  test("projects only the named public fields, so a stored grant or origin never reaches a reader", () => {
+    const grant = "eyJ.deferred-grant-token.sig"
+    const row = hostChildRow("parent", {
+      providerKind: HOST_CHILD_PROVIDER_KIND,
+      subagentKey: "subagent_1",
+      childSessionId: "child",
+      status: "completed",
+      label: "Reviewer",
+      subagentType: "review",
+      attention: 1,
+      wake: "pending",
+      wakeGrant: grant,
+      grant,
+      origin: { provenance: "relay-replayed", actor: { actorId: "bob", actorKind: "human" }, grant },
+    })
+    expect(row).toEqual({
+      parentSessionId: "parent",
+      subagentKey: "subagent_1",
+      childSessionId: "child",
+      status: "completed",
+      label: "Reviewer",
+      subagentType: "review",
+      attention: 1,
+      wake: "pending",
+    })
+    expect(JSON.stringify(row)).not.toContain(grant)
   })
 })

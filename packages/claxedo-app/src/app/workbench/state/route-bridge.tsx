@@ -4,6 +4,8 @@ import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLayout, type LocalProject } from "@/app/providers/layout"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useLanguage } from "@/platform/i18n/provider"
 import { useServer } from "@/app/connection/server"
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
@@ -21,13 +23,7 @@ import {
   type DirectorySessionCacheValue,
 } from "../../../features/session/data/sync/queries"
 import { useDirectorySessionCacheActions } from "../../../features/session/data/sync/directory-session-cache"
-import {
-  parseShellRoute,
-  sessionRoute,
-  shellRouteDirectory,
-  workspaceSessionRoute,
-  workspaceRoute,
-} from "@/platform/identity/route"
+import { parseShellRoute, shellRouteDirectory, workspaceRoute } from "@/platform/identity/route"
 import { opaqueWorkspaceRouteId, workspaceRouteId } from "@/platform/identity/workspace-route"
 import { hasBacking, sessionRefForWorkspaceSession, type HarnessRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { usePrincipal } from "@/platform/auth/identity-provider"
@@ -68,13 +64,12 @@ import {
 } from "./route-bridge-resolution"
 export { recoverWorkspaceRuntimeRoute } from "./route-runtime-recovery"
 import {
-  collectNewSessionDeepLinks,
-  collectOpenProjectDeepLinks,
-  collectSessionDeepLinks,
+  createDeepLinkProjectOpener,
+  deepLinkConfirmCopy,
   deepLinkEvent,
   drainPendingDeepLinks,
-  newSessionDeepLinkRoute,
 } from "./route-deep-links"
+import { requestConfirm } from "@/app/dialogs/confirm"
 import type { ProjectItem } from "../rail/domain-types"
 import { onlyStrings, readField } from "@/lib/record"
 
@@ -113,6 +108,8 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
+  const dialog = useDialog()
+  const language = useLanguage()
   const principal = usePrincipal()
   const canUseDocuments = () => documentsAccess({ principal: principal(), serverUrl: server.url })
 
@@ -203,47 +200,22 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     onCleanup(unsub)
   })
 
-  const openProjectFromDeepLink = async (
-    workspaceDirectory: string,
-    routeFor: (workspaceId: string) => string = workspaceRoute,
-  ) => {
-    let projects = projectsQuery.data ?? []
-    if (server.isLocal()) {
+  const handleDeepLinks = createDeepLinkProjectOpener({
+    local: () => server.isLocal(),
+    projects: () => projectsQuery.data ?? [],
+    confirm: (request) => requestConfirm(dialog, deepLinkConfirmCopy(request, language.t)),
+    ensure: async (directory) => {
       const ensured = await ensureLocalProject({
         baseUrl: globalSDK.url,
         request: platform.fetch,
-        directory: workspaceDirectory,
+        directory,
         projectsQuery: queryOptions.projects(),
       })
-      if (Array.isArray(ensured)) projects = ensured
-    }
-    const workspaceId = workspaceRouteId(projects, workspaceDirectory)
-    if (!workspaceId) return
-    layout.projects.open(workspaceDirectory)
-    navigate(routeFor(workspaceId))
-  }
-
-  const handleDeepLinks = (urls: string[]) => {
-    if (!server.isLocal()) return
-    for (const directory of collectOpenProjectDeepLinks(urls)) {
-      void openProjectFromDeepLink(directory)
-    }
-    for (const link of collectNewSessionDeepLinks(urls)) {
-      void openProjectFromDeepLink(
-        link.directory,
-        (workspaceId) => newSessionDeepLinkRoute(link, workspaceId, workspaceSessionRoute),
-      )
-    }
-    for (const link of collectSessionDeepLinks(urls)) {
-      // A local session's canonical route is `/s/<id>` regardless of how the
-      // workspace is addressed — the project open is sidebar context only.
-      if (!link.workspaceDirectory) {
-        navigate(sessionRoute(link.sessionId))
-        continue
-      }
-      void openProjectFromDeepLink(link.workspaceDirectory, () => sessionRoute(link.sessionId))
-    }
-  }
+      return Array.isArray(ensured) ? ensured : undefined
+    },
+    open: (directory) => layout.projects.open(directory),
+    navigate,
+  })
 
   createEffect(() => {
     if (typeof window === "undefined") return
@@ -253,10 +225,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     const handler = (event: Event) => {
       const urls = onlyStrings(readField(readField(event, "detail"), "urls"))
       if (urls.length === 0) return
-      handleDeepLinks(urls)
+      void handleDeepLinks(urls)
     }
 
-    handleDeepLinks(drainPendingDeepLinks(window))
+    void handleDeepLinks(drainPendingDeepLinks(window))
     window.addEventListener(deepLinkEvent, handler as EventListener)
     onCleanup(() => window.removeEventListener(deepLinkEvent, handler as EventListener))
   })

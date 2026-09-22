@@ -2,13 +2,15 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test } from "bun:test"
+import { Hono } from "hono"
 import { createSessionRoutes } from "./session-core"
 import { createSessionDeliveryOwner, type SessionDeliveryOwner } from "../session/delivery-owner"
 import type { AgentRuntime, AgentRuntimeTurnStartInput, PromptDelivery } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { runRuntimePromptTurn } from "../session/service"
 import { sessionIdle } from "../compat-events"
-import { RuntimeStore } from "../store"
+import type { SessionAccessPolicy, SessionTurnGrantDecision } from "../session-access-policy"
+import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { createRuntimeEventHub } from "@claxedo/agent-sdk-runtime/runtime-event-hub"
@@ -99,7 +101,7 @@ function runtimeDouble(input: {
   } as unknown as AgentRuntime
 }
 
-function routes(runtime: AgentRuntime, queuedPrompts = durableQueue().host, published: unknown[] = []) {
+function routes(runtime: AgentRuntime, queuedPrompts = durableQueue().host, published: unknown[] = [], policy?: SessionAccessPolicy) {
   runtimes.get(queuedPrompts)?.(runtime)
   return createSessionRoutes({
     resolveAdapter: () => adapter(),
@@ -107,7 +109,67 @@ function routes(runtime: AgentRuntime, queuedPrompts = durableQueue().host, publ
     resolveDirectory: () => undefined,
     publishGlobal: (event) => { published.push(event) },
     ...(queuedPrompts ? { queuedPrompts } : {}),
+    ...(policy ? { sessionAccessPolicy: policy } : {}),
   })
+}
+
+const RELAYED_ACTOR = { actorId: "actor_1", actorKind: "human" as const }
+const RELAYED_AUTHORITY = { managed: true as const, workspaceId: "ws_1", orgId: "org_1", role: "editor" as const }
+
+/**
+ * The routes behind a plane that mints deferred grants for queued input. With
+ * `relayed`, every request arrives as the relay stamps it; without, as the
+ * machine's own user over loopback.
+ */
+function grantingRoutes(runtime: AgentRuntime, queuedPrompts: SessionDeliveryOwner, input: {
+  relayed: boolean
+  grant: (request: Parameters<NonNullable<SessionAccessPolicy["grantTurn"]>>[0]) => SessionTurnGrantDecision
+}) {
+  const granted: Array<Parameters<NonNullable<SessionAccessPolicy["grantTurn"]>>[0]> = []
+  const notStarted = { allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }
+  const policy: SessionAccessPolicy = {
+    sessionAuthority: "managed-private",
+    authorize: () => ({ allowed: true }),
+    authorizePrefix: () => ({ allowed: true }),
+    filterSessions: (request) => request.sessionIds,
+    authorizeSessionStartStatus: () => notStarted,
+    authorizeSessionStart: () => notStarted,
+    grantTurn: (request) => {
+      granted.push(request)
+      return input.grant(request)
+    },
+  }
+  const app = new Hono()
+  if (input.relayed) {
+    app.use("*", async (c, next) => {
+      c.set("relayHostAuth" as never, {
+        workspace_id: RELAYED_AUTHORITY.workspaceId,
+        org_id: RELAYED_AUTHORITY.orgId,
+        role: RELAYED_AUTHORITY.role,
+        actor_id: RELAYED_ACTOR.actorId,
+        actor_kind: RELAYED_ACTOR.actorKind,
+      } as never)
+      await next()
+    })
+  }
+  app.route("/", routes(runtime, queuedPrompts, [], policy))
+  return { app, granted }
+}
+
+/** Every row the durable queue wrote, kept past the moment its turn starts and the row is dropped. */
+function persistedRows(queue: ReturnType<typeof durableQueue>) {
+  const rows: QueuedPromptRecord[] = []
+  const write = queue.store.queuePrompt.bind(queue.store)
+  queue.store.queuePrompt = (record) => {
+    const row = write(record)
+    rows.push(row)
+    return row
+  }
+  return rows
+}
+
+function relayedPrompt(body: Record<string, unknown>) {
+  return { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer signed-rht" }, body: JSON.stringify(body) }
 }
 
 /** The durable queue the host lends the routes, on a real store. */
@@ -504,6 +566,100 @@ describe("queued message controls", () => {
   })
 })
 
+
+describe("a relayed prompt queued on a plane that mints deferred grants", () => {
+  const QUEUED_GRANT = "eyJ.queued-prompt-grant.sig"
+
+  test("queue and steer each take a grant for the message id fixed at queue time and store it on the row", async () => {
+    const queue = durableQueue()
+    const rows = persistedRows(queue)
+    const starts: AgentRuntimeTurnStartInput[] = []
+    let release!: () => void
+    const idle = new Promise<void>((resolve) => { release = resolve })
+    const { app, granted } = grantingRoutes(runtimeDouble({ starts, deliveries: ["steer", "start"], idle: () => idle }), queue.host, {
+      relayed: true,
+      grant: (request) => ({ allowed: true, grant: `${QUEUED_GRANT}.${request.turnId}`, expiresAt: Date.now() + 60_000 }),
+    })
+
+    const steered = await app.request("http://localhost/session/session_1/message", relayedPrompt({
+      messageID: "msg_steer", parts: [{ type: "text", text: "also check the docs" }], delivery: "steer",
+    }))
+    expect(await steered.json()).toEqual({ delivery: "steer", messageID: "msg_steer" })
+    const queued = await app.request("http://localhost/session/session_1/prompt_async", relayedPrompt({
+      messageID: "msg_queue", parts: [{ type: "text", text: "then run the tests" }], delivery: "queue",
+    }))
+    expect(await queued.json()).toEqual({ delivery: "queue" })
+
+    const minted = (turnId: string) => expect.objectContaining({
+      operation: "prompt",
+      sessionId: "session_1",
+      intent: "queued_prompt",
+      turnId,
+      credential: "Bearer signed-rht",
+      actor: RELAYED_ACTOR,
+      authority: RELAYED_AUTHORITY,
+    })
+    expect(granted).toEqual([minted("msg_steer"), minted("msg_queue")])
+    expect(granted.every((request) => !("subjectSessionId" in request))).toBe(true)
+    expect(rows.map((row) => [row.messageId, row.provenance, row.grant])).toEqual([
+      ["msg_steer", "relay-replayed", `${QUEUED_GRANT}.msg_steer`],
+      ["msg_queue", "relay-replayed", `${QUEUED_GRANT}.msg_queue`],
+    ])
+    expect(queue.store.listQueuedPrompts().find((row) => row.messageId === "msg_queue")?.grant).toBe(`${QUEUED_GRANT}.msg_queue`)
+    expect(JSON.stringify(await (await app.request("http://localhost/session/session_1/queue")).json())).not.toContain(QUEUED_GRANT)
+    release()
+    for (let attempt = 0; attempt < 200 && queue.store.listQueuedPrompts().length > 0; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(starts.map((turn) => turn.messageId)).toEqual(["msg_steer", "msg_queue"])
+  })
+
+  test("a refused grant answers 503 on both routes and queues nothing", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    const { app, granted } = grantingRoutes(runtimeDouble({ starts, deliveries: ["steer", "start"] }), queue.host, {
+      relayed: true,
+      grant: () => ({ allowed: false, status: 403, code: "session_private", message: "The session no longer admits this actor's turn" }),
+    })
+
+    const steered = await app.request("http://localhost/session/session_1/message", relayedPrompt({
+      messageID: "msg_steer", parts: [{ type: "text", text: "also check the docs" }], delivery: "steer",
+    }))
+    expect(steered.status).toBe(503)
+    expect(await steered.json()).toMatchObject({ error: { code: "queued_prompt_grant_refused" } })
+    const queued = await app.request("http://localhost/session/session_1/prompt_async", relayedPrompt({
+      messageID: "msg_queue", parts: [{ type: "text", text: "then run the tests" }], delivery: "queue",
+    }))
+    expect(queued.status).toBe(503)
+    expect(await queued.json()).toMatchObject({ error: { code: "queued_prompt_grant_refused" } })
+
+    expect(granted.map((request) => request.turnId)).toEqual(["msg_steer", "msg_queue"])
+    expect(queue.store.listQueuedPrompts()).toEqual([])
+    expect(starts).toEqual([])
+  })
+
+  test("the machine's own user over loopback queues without a grant, whatever the plane could mint", async () => {
+    const queue = durableQueue()
+    const rows = persistedRows(queue)
+    const starts: AgentRuntimeTurnStartInput[] = []
+    const { app, granted } = grantingRoutes(runtimeDouble({ starts, deliveries: ["start"] }), queue.host, {
+      relayed: false,
+      grant: () => { throw new Error("a loopback request has no actor to mint for") },
+    })
+
+    const queued = await app.request("http://localhost/session/session_1/prompt_async", prompt({
+      messageID: "msg_local", parts: [{ type: "text", text: "then run the tests" }], delivery: "queue",
+    }))
+    expect(queued.status).toBe(200)
+    expect(granted).toEqual([])
+    expect(rows).toEqual([expect.objectContaining({ messageId: "msg_local", provenance: "loopback-direct" })])
+    expect(rows[0]).not.toHaveProperty("grant")
+    for (let attempt = 0; attempt < 200 && queue.store.listQueuedPrompts().length > 0; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(starts.map((turn) => turn.messageId)).toEqual(["msg_local"])
+  })
+})
 
 test("a queued request never republishes the runtime-owned event stream", async () => {
   const starts: AgentRuntimeTurnStartInput[] = []

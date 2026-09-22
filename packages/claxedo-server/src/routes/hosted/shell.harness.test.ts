@@ -203,7 +203,7 @@ describe("hostedHarnessRuntimeStatus — the production relay call", () => {
     { kind: "connection" as const, connectionId: "external-opencode" },
   ])("preserves canonical runtime selection $kind through the hosted route", async (harness) => {
     const services = fakeServices({ openWorkspace: vi.fn(async () => ({ role: "owner", workspace: { org_id: "org_1" } })) as never })
-    const health = workspaceRuntimeLivenessResponse({ state: "ready", harness, harnessHealth: { status: "ok" }, routeAuthBoundary: "loopback-only", serviceExposure: { source: "loopback", access: "private" } })
+    const health = workspaceRuntimeLivenessResponse({ state: "ready", harness, harnessHealth: { status: "ok" }, routeAuthBoundary: "loopback-only", serviceExposure: { source: "loopback", access: "private" }, workspaceId: "ws_1", ptyCount: 0, processCount: 0, activeProcessCount: 0 })
     const harnessStatus = hostedHarnessRuntimeStatus(services, { runtimeFetch: async ({ path }) => Response.json(path === "/global/health" ? { workspaceId: "ws_1" } : health) })
     const app = HostedShellRoutes({ authConfig: signedConfig, verifier, harnessStatus })
     const body = await (await get(app, "/api/claxedo/agent-config/harness?workspaceId=ws_1", "token-a")).json()

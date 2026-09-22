@@ -939,7 +939,10 @@ describe("local unified usage route", () => {
     })
     const response = await app.request("/sync", { method: "POST" })
     expect(response.status).toBe(200)
-    expect(flush).toHaveBeenCalledWith({ org_id: "org", user_id: "user" })
+    // No bearer and no machine-operator predicate: the unsigned-local posture
+    // treats the requester as the machine's one user, so unowned facts may be
+    // adopted under this identity.
+    expect(flush).toHaveBeenCalledWith({ org_id: "org", user_id: "user" }, { claimUnowned: true })
   })
 
   test("treats an anonymous sync wakeup as a local-only identity transition", async () => {
@@ -956,6 +959,73 @@ describe("local unified usage route", () => {
     await expect(response.json()).resolves.toEqual({ attempted: 0, delivered: 0, conflicts: 0, pending: 3 })
     expect(clearIdentity).toHaveBeenCalledOnce()
     expect(flush).not.toHaveBeenCalled()
+  })
+
+  test("denies machine history and quota to a signed caller who is not the machine operator", async () => {
+    const history = vi.fn(async () => ({ rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0 }))
+    const quota = vi.fn(async () => ({ status: "available" as const, snapshot: { accounts: [] } }))
+    const app = LocalUsageRoutes({
+      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      identity: async () => ({ org_id: "org", user_id: "member" }),
+      machineOperator: async () => false,
+      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+      history,
+      quota,
+    })
+    const headers = { authorization: "Bearer valid" }
+
+    for (const url of [
+      "/?since=0&until=20&timezone=UTC&view=total",
+      "/?since=0&until=20&timezone=UTC&view=quota",
+    ]) {
+      const response = await app.request(url, { headers })
+      expect(response.status).toBe(403)
+      await expect(response.json()).resolves.toEqual({
+        error: { code: "operator_required", message: "Machine operator access is required" },
+      })
+    }
+    expect(history).not.toHaveBeenCalled()
+    expect(quota).not.toHaveBeenCalled()
+  })
+
+  test("a non-operator flush delivers only facts that account produced", async () => {
+    const flush = vi.fn(async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 }))
+    const pendingOutbox = vi.fn(async () => [])
+    const app = LocalUsageRoutes({
+      local: { current: async () => [], pendingOutbox } as never,
+      identity: async () => ({ org_id: "org", user_id: "member" }),
+      machineOperator: async () => false,
+      outbox: { flush, clearIdentity: vi.fn() },
+    })
+
+    await app.request("/sync", { method: "POST", headers: { authorization: "Bearer valid" } })
+    expect(flush).toHaveBeenCalledWith({ org_id: "org", user_id: "member" }, { claimUnowned: false })
+
+    // The member's dashboard is scoped to facts the outbox stamped as theirs;
+    // the machine-wide current table is not theirs to read.
+    const response = await app.request("/?since=0&until=20&timezone=UTC&view=claxedo", {
+      headers: { authorization: "Bearer valid" },
+    })
+    expect(response.status).toBe(200)
+    expect(pendingOutbox).toHaveBeenCalledWith({
+      since: 0,
+      until: 20,
+      all: true,
+      owner: { org_id: "org", user_id: "member" },
+    })
+    expect(flush).toHaveBeenLastCalledWith({ org_id: "org", user_id: "member" }, { claimUnowned: false })
+  })
+
+  test("the operator's flush may adopt facts no producer account owns", async () => {
+    const flush = vi.fn(async () => ({ attempted: 1, delivered: 1, conflicts: 0, pending: 0 }))
+    const app = LocalUsageRoutes({
+      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      identity: async () => ({ org_id: "org", user_id: "operator" }),
+      machineOperator: async () => true,
+      outbox: { flush, clearIdentity: vi.fn() },
+    })
+    await app.request("/sync", { method: "POST", headers: { authorization: "Bearer valid" } })
+    expect(flush).toHaveBeenCalledWith({ org_id: "org", user_id: "operator" }, { claimUnowned: true })
   })
 
   test("preserves control-plane auth errors on local read and sync routes", async () => {

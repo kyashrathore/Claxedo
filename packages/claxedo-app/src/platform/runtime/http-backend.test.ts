@@ -207,7 +207,7 @@ describe("http backend ports", () => {
       })
     })
     expect(calls).toEqual([
-      "GET http://claxedo.test/api/workspace/ws_machine/connection",
+      "POST http://claxedo.test/api/workspace/ws_machine/connection",
       "GET https://relay.test/workspaces/ws_machine/mcp Bearer rat_machine",
     ])
   })
@@ -325,7 +325,7 @@ describe("http backend ports", () => {
 
     expect(messages.data?.map((row) => row.info.id)).toEqual(["msg_1"])
     expect(calls).toEqual([
-      "GET http://claxedo.test/api/workspace/ws_cloud/connection",
+      "POST http://claxedo.test/api/workspace/ws_cloud/connection",
       "GET https://relay.test/workspaces/ws_cloud/session/ses_cloud/message?limit=8 Bearer rat_cloud",
     ])
   })
@@ -380,7 +380,7 @@ describe("http backend ports", () => {
 
     expect(messages.data?.map((row) => row.info.id)).toEqual(["msg_1"])
     expect(calls).toEqual([
-      "GET http://claxedo.test/api/workspace/ws_explicit/connection",
+      "POST http://claxedo.test/api/workspace/ws_explicit/connection",
       "GET https://relay.test/workspaces/ws_explicit/session/ses_explicit/message?limit=8 Bearer rat_explicit",
     ])
   })

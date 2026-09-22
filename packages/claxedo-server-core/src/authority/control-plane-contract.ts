@@ -72,7 +72,7 @@ export type CredentialSyncResult = {
  *
  * It is optional on the type so that adapters which are ALREADY partitioned by
  * construction (`hostedOrgCredentials(orgId)` binds one org per instance, and
- * its KV keys are org-prefixed) satisfy the port without restating it. For the
+ * every statement it issues is scoped to it) satisfy the port without restating it. For the
  * local SQLite registry the argument is the isolation boundary: omitting it
  * selects the named single-tenant partition (`__local__`), never a wildcard, so
  * an un-threaded call site fails closed rather than reading across tenants.

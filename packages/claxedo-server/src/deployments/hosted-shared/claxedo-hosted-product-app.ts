@@ -38,7 +38,7 @@ export function createClaxedoHostedProductApp(
 ) {
   const { billingStore, entitlementGate: suppliedGate, billing, productWorkspace, ...core } = options
   const entitlementGate = suppliedGate ?? createEntitlementGate({ env: plane.env, store: billingStore })
-  const requireCloudWorkspaceEntitlement: HostedCoreAppOptions["cloudWorkspaceAdmission"] = async (auth) => {
+  const requireCloudWorkspaceEntitlement: HostedCoreAppOptions["cloudWorkspaceAdmission"] = async (tenant) => {
     const authority = plane.services.authority
     if (!authority) {
       return {
@@ -47,7 +47,19 @@ export function createClaxedoHostedProductApp(
       }
     }
     try {
-      return await entitlementGate({ orgId: await authority.resolveOrgId(auth) }, "cloud-workspace")
+      // A credential-initiated create (a Tasks cloud root) arrives with the
+      // authority's resolved organization already in hand; a signed caller's
+      // organization is resolved from its request. Neither present is no
+      // tenant to answer for, which `resolveOrgId`'s absence makes a
+      // fail-closed 503 rather than a grant.
+      const orgId = tenant.orgId ?? (tenant.auth ? await authority.resolveOrgId(tenant.auth) : undefined)
+      if (!orgId) {
+        return {
+          status: 503,
+          body: { error: { code: "workspace_authority_unavailable", message: "Workspace authority is not configured" } },
+        }
+      }
+      return await entitlementGate({ orgId }, "cloud-workspace")
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) {
         return { status: error.status, body: controlPlaneAuthErrorBody(error) }

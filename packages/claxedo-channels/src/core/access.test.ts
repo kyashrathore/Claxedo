@@ -8,6 +8,7 @@ import {
   parseGroupEngagement,
   parseGroupPolicy,
   seedAllows,
+  PAIRING_CODE_TTL_MS,
   PAIRING_MAX_PENDING_PER_CHANNEL,
   PAIRING_RESEND_INTERVAL_MS,
 } from "./access"
@@ -126,9 +127,9 @@ describe("DM pairing gate", () => {
   })
 
   test("approve allowlists the sender and records a pending identity binding", async () => {
-    const store = createMemoryChannelAccessStore()
-    const bindings = createMemoryChannelIdentityBindingStore()
     const clock = fixedClock()
+    const store = createMemoryChannelAccessStore(clock.now)
+    const bindings = createMemoryChannelIdentityBindingStore()
     const access = createChannelAccess({ dmPolicy: "pairing", store, bindings, now: clock.now, random: seq([0.1]) })
 
     await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })
@@ -143,9 +144,9 @@ describe("DM pairing gate", () => {
   })
 
   test("authenticated claim persists the canonical binding before consuming the pairing code", async () => {
-    const store = createMemoryChannelAccessStore()
-    const bindings = createMemoryChannelIdentityBindingStore()
     const clock = fixedClock()
+    const store = createMemoryChannelAccessStore(clock.now)
+    const bindings = createMemoryChannelIdentityBindingStore()
     const access = createChannelAccess({ dmPolicy: "pairing", store, bindings, now: clock.now, random: seq([0.1]) })
 
     await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })
@@ -180,6 +181,71 @@ describe("DM pairing gate", () => {
       admission: "drop",
       reason: "dm_pairing_required",
     })
+  })
+
+  test("deleting a pending code reports whether this call consumed a live row", async () => {
+    const clock = fixedClock()
+    const store = createMemoryChannelAccessStore(clock.now)
+    const request = {
+      code: "ABCD2345",
+      channel: "telegram" as const,
+      externalUserId: "42",
+      createdAt: clock.now(),
+      expiresAt: clock.now() + PAIRING_CODE_TTL_MS,
+      lastSentAt: clock.now(),
+    }
+    await store.putPending(request)
+    expect(await store.deletePending("ABCD2345")).toBe(true)
+    expect(await store.deletePending("ABCD2345")).toBe(false)
+
+    await store.putPending({ ...request, code: "EXPD2345", expiresAt: clock.now() + 10 })
+    clock.advance(11)
+    expect(await store.deletePending("EXPD2345")).toBe(false)
+    expect(await store.findPending("EXPD2345")).toBeUndefined()
+  })
+
+  test("two concurrent approvals of one code establish exactly one binding", async () => {
+    const clock = fixedClock()
+    const store = createMemoryChannelAccessStore(clock.now)
+    const bindings = createMemoryChannelIdentityBindingStore()
+    const put = vi.spyOn(bindings, "put")
+    const allow = vi.spyOn(store, "allow")
+    const access = createChannelAccess({ dmPolicy: "pairing", store, bindings, now: clock.now, random: seq([0.1]) })
+
+    await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })
+    const [pending] = await access.listPending("telegram")
+    const results = await Promise.all([
+      access.approve(pending.code, "owner:1"),
+      access.approve(pending.code, "owner:2"),
+    ])
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    expect(results.filter((result) => !result.ok)).toEqual([{ ok: false, message: "Pairing code was already approved." }])
+    expect(put).toHaveBeenCalledTimes(1)
+    expect(allow).toHaveBeenCalledTimes(1)
+    expect(await access.listPending("telegram")).toEqual([])
+  })
+
+  test("a code consumed between the read and the write is not approved again", async () => {
+    // The pending row is read, the canonical bind runs, and only then is the
+    // code consumed; another approval landing in that window must lose here.
+    const clock = fixedClock()
+    const store = createMemoryChannelAccessStore(clock.now)
+    const bindings = createMemoryChannelIdentityBindingStore()
+    const access = createChannelAccess({ dmPolicy: "pairing", store, bindings, now: clock.now, random: seq([0.1]) })
+    await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })
+    const [pending] = await access.listPending("telegram")
+
+    const bind = vi.fn(async () => {
+      await store.deletePending(pending.code)
+      return { accountId: "user_canonical", boundBy: "actor:actor_canonical" }
+    })
+    await expect(access.approve(pending.code, "authenticated-claim", bind)).resolves.toEqual({
+      ok: false,
+      message: "Pairing code was already approved.",
+    })
+    expect(await bindings.get("telegram", "42")).toBeUndefined()
+    expect(await store.isAllowed("telegram", "42")).toBe(false)
   })
 
   test("approve rejects unknown and expired codes", async () => {

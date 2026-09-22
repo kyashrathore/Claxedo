@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
+import { APPROVAL_ACTION_ID } from "./chat-sdk-actions"
 import {
   createChatSdkBridge,
   chatSdkEnvelope,
@@ -286,15 +287,22 @@ describe("chat sdk bridge", () => {
     createChatSdkBridge({ bot, core })
     await action({
       thread: { adapter: { name: "slack" }, teamId: "T123", channelId: "C456", threadTs: "1710000000.123" },
-      data: { token: "slack7", approved: true },
+      actionId: APPROVAL_ACTION_ID.approve,
+      value: "slack7",
+      messageId: "m-1",
       user: { userId: "U123", userName: "octocat" },
     })
 
     // Composed with the same threadKey() as inbound messages, so the two agree.
+    // The channel and chat type ride along so the core's sender gates apply.
     expect(core.onApproval).toHaveBeenCalledWith({
+      actionId: APPROVAL_ACTION_ID.approve,
+      messageId: "m-1",
       token: "slack7",
       approved: true,
       actorExternalUserId: "U123",
+      channel: "slack",
+      chatType: "group",
       threadKey: "slack:T123:C456:1710000000.123",
     })
   })
@@ -319,16 +327,21 @@ describe("chat sdk bridge", () => {
       guildId: "G123",
       channelId: "C456",
       threadId: "M789",
-      value: "approve",
-      payload: { callId: "ses_1:perm_1" },
+      actionId: APPROVAL_ACTION_ID.approve,
+      value: "a7f3",
+      messageId: "m-2",
       user: { userId: "D1" },
     })
 
     // Same composition as the inbound Discord envelope, so the keys match.
     expect(core.onApproval).toHaveBeenCalledWith({
-      callId: "ses_1:perm_1",
+      actionId: APPROVAL_ACTION_ID.approve,
+      messageId: "m-2",
+      token: "a7f3",
       approved: true,
       actorExternalUserId: "D1",
+      channel: "discord",
+      chatType: "group",
       threadKey: "discord:G123:C456:M789",
     })
   })
@@ -352,7 +365,9 @@ describe("chat sdk bridge", () => {
 
     await action({
       thread: { adapter: { name: "matrix" }, channelId: "C456", id: "room" },
-      data: { token: "slack7", approved: true },
+      actionId: APPROVAL_ACTION_ID.approve,
+      value: "slack7",
+      messageId: "m-3",
       user: { userId: "U123" },
     })
 
@@ -376,9 +391,11 @@ describe("chat sdk bridge", () => {
       core,
     })
 
-    await action({ data: { token: "tok", approved: true }, user: { userId: "U1" } })
+    await action({ actionId: APPROVAL_ACTION_ID.approve, value: "tok", messageId: "m-4", user: { userId: "U1" } })
 
     expect(core.onApproval).toHaveBeenCalledWith({
+      actionId: APPROVAL_ACTION_ID.approve,
+      messageId: "m-4",
       token: "tok",
       approved: true,
       actorExternalUserId: "U1",
@@ -484,13 +501,16 @@ describe("chat sdk bridge", () => {
 
     createChatSdkBridge({ bot, core })
     await action({
-      action_id: "deny_permission",
-      call_id: "ses_1:perm_1",
+      actionId: APPROVAL_ACTION_ID.deny,
+      value: "ses_1:perm_1",
+      messageId: "m-5",
       user: { userId: "U999" },
     })
 
     expect(core.onApproval).toHaveBeenCalledWith({
-      callId: "ses_1:perm_1",
+      actionId: APPROVAL_ACTION_ID.deny,
+      messageId: "m-5",
+      token: "ses_1:perm_1",
       approved: false,
       actorExternalUserId: "U999",
     })
@@ -511,25 +531,34 @@ describe("chat sdk bridge", () => {
     createChatSdkBridge({ bot, core })
     await action({
       adapter: { name: "slack" },
-      data: { token: "slack7", approved: true },
+      actionId: APPROVAL_ACTION_ID.approve,
+      value: "slack7",
+      messageId: "m-6",
       user: { userId: "U123" },
     })
     await action({
       adapter: { name: "discord" },
-      value: "deny",
-      payload: { callId: "ses_1:perm_3" },
+      actionId: APPROVAL_ACTION_ID.deny,
+      value: "ses_1:perm_3",
+      messageId: "m-7",
       user: { userId: "discord-user" },
     })
 
     expect(core.onApproval).toHaveBeenNthCalledWith(1, {
+      actionId: APPROVAL_ACTION_ID.approve,
+      messageId: "m-6",
       token: "slack7",
       approved: true,
       actorExternalUserId: "U123",
+      channel: "slack",
     })
     expect(core.onApproval).toHaveBeenNthCalledWith(2, {
-      callId: "ses_1:perm_3",
+      actionId: APPROVAL_ACTION_ID.deny,
+      messageId: "m-7",
+      token: "ses_1:perm_3",
       approved: false,
       actorExternalUserId: "discord-user",
+      channel: "discord",
     })
   })
 })

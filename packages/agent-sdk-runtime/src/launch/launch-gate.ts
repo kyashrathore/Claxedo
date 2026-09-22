@@ -31,7 +31,6 @@ export const GATE_EXIT = {
 export type GatePayload = {
   command: string
   args: string[]
-  shell?: boolean
 }
 
 export type LaunchGateHandle = {

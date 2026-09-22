@@ -37,17 +37,33 @@ function renderMathInText(text: string): string {
   return result
 }
 
-export function renderMathExpressions(html: string): string {
-  // Split on code/pre/kbd tags to avoid processing their contents
-  const codeBlockPattern = /(<(?:pre|code|kbd)[^>]*>[\s\S]*?<\/(?:pre|code|kbd)>)/gi
-  const parts = html.split(codeBlockPattern)
+// A tag is never math input: attribute values live inside it (`<a title="$$…">`),
+// and rewriting there corrupts the markup itself. The lookahead requires a real
+// tag start (`<em>`, `</em>`, `<!-- -->`); a literal `<` in text stays text.
+// The quoted-attribute alternatives keep a `>` inside quotes from ending the
+// tag early.
+const tagPattern = /(<(?=[a-zA-Z/!])(?:"[^"]*"|'[^']*'|[^'">])*>)/g
+const codeBoundary = /^<(\/)?(pre|code|kbd)(?=[\s/>])/i
 
-  return parts
-    .map((part, i) => {
-      // Odd indices are the captured code blocks - leave them alone
-      if (i % 2 === 1) return part
-      // Process math only in non-code parts
-      return renderMathInText(part)
-    })
-    .join("")
+export function renderMathExpressions(html: string): string {
+  // Alternating text/tag split: even indices are text between tags (where math
+  // belongs), odd indices are whole tags (passed through byte-for-byte).
+  const parts = html.split(tagPattern)
+  let codeDepth = 0
+  let result = ""
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]
+    if (i % 2 === 1) {
+      const boundary = codeBoundary.exec(part)
+      if (boundary && !part.endsWith("/>")) {
+        codeDepth = Math.max(0, codeDepth + (boundary[1] ? -1 : 1))
+      }
+      result += part
+      continue
+    }
+    result += codeDepth > 0 ? part : renderMathInText(part)
+  }
+
+  return result
 }

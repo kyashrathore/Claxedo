@@ -145,12 +145,25 @@ export function createConnectionsService(deps: {
     const decl = deps.registry.byId(input.integrationId)!.decl
     const existing = await deps.connections.get(input.integrationId, input.owner)
     const id = existing?.id ?? deps.newId()
+    const providerId = connectionProviderId(id)
     await deps.credentials.put({
-      providerId: connectionProviderId(id),
+      providerId,
       kind: input.kind,
       secret: input.secret,
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
     })
+    // The two ports share no transaction, so the order carries the pairing:
+    // the secret is durable before the row that names it, and the row is
+    // refused unless the store hands the credential back. A row whose
+    // credential is absent answers every token request with
+    // `connection_not_available` and no re-verify repairs it — deleting and
+    // reconnecting is the only way out, which is worse than a connect that
+    // failed outright. Nothing is undone on the way back: an interrupted
+    // write leaves at most a secret no route can address, because a provider
+    // id is reached only through a row.
+    if ((await deps.credentials.get(providerId)) === undefined) {
+      throw new Error(`connection credential ${providerId} was not stored`)
+    }
     await deps.connections.upsert({
       id,
       integrationId: input.integrationId,
@@ -233,7 +246,13 @@ export function createConnectionsService(deps: {
   async function reportAuthFailure(id: string, _reason: string): Promise<void> {
     const row = await deps.connections.getById(id)
     if (!row) return
-    await deps.credentials.setStatus(connectionProviderId(row.id), "error", "auth_failure_reported")
+    const providerId = connectionProviderId(row.id)
+    // A caller-asserted report may only take a credential OUT of service.
+    // Anything not currently serving — a missing credential, an earlier
+    // report, or a host-managed expired/revoked state — is either already
+    // refused or a deliberate lifecycle decision a report must not relabel.
+    if ((await deps.credentials.get(providerId))?.status !== "available") return
+    await deps.credentials.setStatus(providerId, "error", "auth_failure_reported")
   }
 
   // Resolution seam: `options.owner` here must come from a host-minted,
@@ -264,6 +283,49 @@ export function createConnectionsService(deps: {
       if (!current || personalOverTeam) selected.set(row.integrationId, row)
     }
     return [...selected.values()].map((row) => capabilityHandle(row, capability, options.teamOwner))
+  }
+
+  // In-flight device polls keyed by attempt state. Polling is what advances
+  // the grant, so callers for the same attempt queue here rather than racing
+  // `consume` or spending a second upstream request on a mid-consume grant.
+  const devicePolls = new Map<string, Promise<unknown>>()
+
+  async function advanceDeviceAttempt(state: string): Promise<{ status: AttemptStatus; integrationId: string; scope: ConnectionScope; message?: string; intervalMs?: number } | undefined> {
+    const pending = await attempts.peek(state)
+    if (!pending) return attempts.status(state)
+    const device = deps.registry.byId(pending.integrationId)?.impl.auth?.device
+    if (!device) return attempts.status(state)
+
+    let result
+    try {
+      result = await device.poll(pending.deviceCode)
+    } catch {
+      // A failed round-trip is not an answer about the user's choice, so the
+      // attempt stays pending and the next poll asks again.
+      return attempts.status(state)
+    }
+
+    if (result.status === "pending") {
+      const status = await attempts.status(state)
+      return status && result.intervalMs !== undefined ? { ...status, intervalMs: result.intervalMs } : status
+    }
+    if (result.status === "denied" || result.status === "expired") {
+      // consume() flips `completing` so a concurrent poll cannot settle the
+      // same attempt twice.
+      if (await attempts.consume(state)) {
+        if (result.status === "expired") await attempts.expire(state)
+        else await attempts.settle(state, false, "device_denied")
+      }
+      return attempts.status(state)
+    }
+    if (!await attempts.consume(state)) return attempts.status(state)
+    try {
+      await storeDeviceGrant(pending, result.tokens)
+      await attempts.settle(state, true)
+    } catch {
+      await attempts.settle(state, false, "device_store_failed")
+    }
+    return attempts.status(state)
   }
 
   return {
@@ -367,43 +429,21 @@ export function createConnectionsService(deps: {
      * already-settled attempt — `peek` returns nothing once the entry is
      * terminal, so a surface that keeps polling after completion re-reads the
      * stored status instead of spending another upstream request.
+     *
+     * Calls serialize per attempt: overlapped polls would each spend an
+     * upstream request and then race `consume` for the same grant. A queued
+     * call runs after the earlier one settles and re-reads the attempt, so
+     * it answers from the stored status rather than polling again.
      */
     async pollAttempt(state: string): Promise<{ status: AttemptStatus; integrationId: string; scope: ConnectionScope; message?: string; intervalMs?: number } | undefined> {
-      const pending = await attempts.peek(state)
-      if (!pending) return attempts.status(state)
-      const device = deps.registry.byId(pending.integrationId)?.impl.auth?.device
-      if (!device) return attempts.status(state)
-
-      let result
+      const run = (devicePolls.get(state) ?? Promise.resolve()).then(() => advanceDeviceAttempt(state))
+      const queued = run.then(() => undefined, () => undefined)
+      devicePolls.set(state, queued)
       try {
-        result = await device.poll(pending.deviceCode)
-      } catch {
-        // A failed round-trip is not an answer about the user's choice, so the
-        // attempt stays pending and the next poll asks again.
-        return attempts.status(state)
+        return await run
+      } finally {
+        if (devicePolls.get(state) === queued) devicePolls.delete(state)
       }
-
-      if (result.status === "pending") {
-        const status = await attempts.status(state)
-        return status && result.intervalMs !== undefined ? { ...status, intervalMs: result.intervalMs } : status
-      }
-      if (result.status === "denied" || result.status === "expired") {
-        // consume() flips `completing` so a concurrent poll cannot settle the
-        // same attempt twice.
-        if (await attempts.consume(state)) {
-          if (result.status === "expired") await attempts.expire(state)
-          else await attempts.settle(state, false, "device_denied")
-        }
-        return attempts.status(state)
-      }
-      if (!await attempts.consume(state)) return attempts.status(state)
-      try {
-        await storeDeviceGrant(pending, result.tokens)
-        await attempts.settle(state, true)
-      } catch {
-        await attempts.settle(state, false, "device_store_failed")
-      }
-      return attempts.status(state)
     },
 
     async handleCallback(state: string, code: string | undefined, response?: { issuer?: string }): Promise<{ ok: boolean }> {

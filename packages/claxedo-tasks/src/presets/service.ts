@@ -10,6 +10,7 @@ import type {
   TasksActor,
 } from "../contracts"
 import { refuse, refuseInvalid } from "../errors"
+import { idWithinBound } from "../validation"
 import type { HarnessDescriptor, TasksCapabilitiesPort } from "../ports/capabilities"
 import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
@@ -40,6 +41,11 @@ export function createPresetsService(deps: PresetsServiceDeps): PresetsService {
   // A preset belonging to another owner in the same scope is reported missing,
   // not forbidden: a personal catalog does not disclose that a name exists.
   const owned = async (actor: TasksActor, presetId: string): Promise<Preset> => {
+    if (presetId.trim().length === 0 || !idWithinBound(presetId)) {
+      refuseInvalid("The preset id is not valid", [
+        { path: "presetId", reason: presetId.trim().length === 0 ? "required" : "too_long" },
+      ])
+    }
     const preset = await deps.store.presets.get(actor.scopeId, presetId)
     if (!preset || preset.scopeId !== actor.scopeId || preset.ownerId !== actor.ownerId) {
       refuse("not_found", `Preset ${presetId} was not found`)

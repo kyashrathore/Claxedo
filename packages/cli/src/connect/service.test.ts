@@ -81,6 +81,18 @@ describe("service units", () => {
     expect(calls.slice(4)).toEqual(["systemctl --user disable --now claxedo-connect.service", "systemctl --user daemon-reload"])
   })
 
+  test("systemd quoting escapes its own % specifier and $ expansion inside quotes", () => {
+    const unit = systemdUnit(
+      {
+        command: ["/opt/100%$u/node", '/x"\\y'],
+        claxedoHome: "/var/lib/claxedo%h$HOME",
+      },
+      { alongsideDesktop: false },
+    )
+    expect(unit).toContain('ExecStart="/opt/100%%$$u/node" "/x\\"\\\\y" "connect" "--foreground"')
+    expect(unit).toContain('Environment=CLAXEDO_HOME="/var/lib/claxedo%%h$$HOME"')
+  })
+
   test("a degraded user manager still counts as reachable; a failed enable surfaces as an error", async () => {
     const { deps, calls } = fakeDeps("linux", undefined, { manager: { code: 1, stdout: "degraded\n" } })
     const service = await writeServiceUnit(deps, { alongsideDesktop: false })

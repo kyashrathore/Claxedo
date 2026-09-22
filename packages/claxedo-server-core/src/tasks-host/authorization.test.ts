@@ -188,6 +188,22 @@ describe("a Tasks grant creating a task", () => {
     )
     expect(composed.ownerMayReadSession).not.toHaveBeenCalled()
   })
+
+  test("mints the actor carrying the session it may record: the grant's own, the request's verified claim, or none", async () => {
+    expect((await actorOf(identity())).session).toEqual({ sessionId: "ses_1", workspaceId: "ws_root" })
+
+    const { sessionId: _sessionId, ...sessionless } = SCOPE
+    const rooted = identity({ scope: sessionless })
+    const claimed = await rooted.authenticate(
+      createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_1" } }),
+    )
+    if (!("actor" in claimed)) throw new Error("a verified claim was refused")
+    expect(claimed.actor.session).toEqual({ sessionId: "ses_1", workspaceId: "ws_root" })
+
+    const unnamed = await rooted.authenticate(createRequest({}))
+    if (!("actor" in unnamed)) throw new Error("a request naming no provenance was refused")
+    expect(unnamed.actor.session).toBeUndefined()
+  })
 })
 
 describe("a Tasks grant editing a task", () => {

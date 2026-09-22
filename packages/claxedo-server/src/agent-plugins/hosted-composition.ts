@@ -6,7 +6,6 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
-import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import { claxedoPublicGitHubCatalogSourceProvider } from "@claxedo/server-core/agent-plugins/sources/github-public"
 import {
@@ -15,7 +14,6 @@ import {
 } from "@claxedo/server-core/agent-plugins/sources/registry"
 import { AGENT_PLUGINS_ROUTE_PATH } from "@claxedo/server-core/agent-plugins/module"
 import type { HostedControlPlane } from "../authority/hosted-services"
-import { hostedOrgCredentials } from "../credentials/worker/index"
 import {
   createHostedCapabilityAuthFailureReporter,
   createHostedCapabilityConnectionResolver,
@@ -55,7 +53,7 @@ import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
 
 /**
  * The credential partition a deployment-wide secret belongs to. Not an org id:
- * `hostedOrgCredentials` partitions its KV keys and HKDF subkeys by this value,
+ * `hostedOrgCredentials` partitions its rows and HKDF subkeys by this value,
  * and a deployment-wide OAuth client is owned by the deployment, not by any one
  * tenant. Orgs are minted as `org_...`, so this value can never collide with
  * one.
@@ -64,7 +62,6 @@ const DEPLOYMENT_CREDENTIAL_PARTITION = "deployment"
 
 export type HostedAgentPluginsWorkerEnv = Record<string, unknown> & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
-  CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
 }
 
 /** What the feature entry hands the hosted core app. Nothing here is a runtime flag. */
@@ -160,11 +157,11 @@ function secretBrokering(plane: HostedControlPlane) {
  * Only the Agent Plugins Worker entry imports this file, so an ordinary hosted
  * build has no plugin routes, storage binding reads, activation store,
  * Connections family, catalog fetcher, or VM provisioner. Everything durable
- * lives in `CONTROL_PLANE_DB` (activations, Connections rows, attempts), the
- * `CLAXEDO_AGENT_PLUGINS` R2 bucket (immutable plugin artifacts), and the
- * org-partitioned `CLAXEDO_CREDENTIALS` KV namespace (envelope-encrypted
- * OAuth material). Identity and authorization come from the same D1 authority
- * every other hosted route uses.
+ * lives in `CONTROL_PLANE_DB` (activations, Connections rows, attempts, and
+ * the envelope-encrypted OAuth material in `hosted_provider_credentials`) and
+ * the `CLAXEDO_AGENT_PLUGINS` R2 bucket (immutable plugin artifacts). Identity
+ * and authorization come from the same D1 authority every other hosted route
+ * uses.
  */
 export function createHostedAgentPluginsComposition(input: {
   env: HostedAgentPluginsWorkerEnv
@@ -185,8 +182,9 @@ export function createHostedAgentPluginsComposition(input: {
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
-  if (!input.env.CLAXEDO_CREDENTIALS) {
-    throw new Error("Enabled Agent Plugins build requires CLAXEDO_CREDENTIALS KV")
+  const orgCredentials = input.plane.orgCredentials
+  if (!orgCredentials) {
+    throw new Error("Enabled Agent Plugins build requires the hosted credential store (CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1)")
   }
   const env = stringEnvironment(input.env)
   const services = input.plane.services
@@ -249,13 +247,10 @@ export function createHostedAgentPluginsComposition(input: {
         // under whichever org happened to connect first would make it
         // unreadable for every other org that shares the client. So the fixed
         // partition id "deployment" names the deployment itself, matching the
-        // row's scope exactly. It is constructed lazily because
-        // `hostedOrgCredentials` fails closed when the hosted credential flag
-        // or KEK is absent, and both live targets
-        // (`token_endpoint_auth_method: "none"`) never issue a secret at all.
+        // row's scope exactly.
         secrets: {
           put: async (providerId, secret) => {
-            await hostedOrgCredentials(DEPLOYMENT_CREDENTIAL_PARTITION, input.env).putCredential({
+            await orgCredentials(DEPLOYMENT_CREDENTIAL_PARTITION).putCredential({
               provider_id: providerId,
               kind: "oauth_token",
               source: "managed",
@@ -264,8 +259,7 @@ export function createHostedAgentPluginsComposition(input: {
             })
           },
           get: async (providerId) =>
-            (await hostedOrgCredentials(DEPLOYMENT_CREDENTIAL_PARTITION, input.env)
-              .resolveCredentialSecret?.(providerId)) ?? undefined,
+            (await orgCredentials(DEPLOYMENT_CREDENTIAL_PARTITION).resolveCredentialSecret?.(providerId)) ?? undefined,
         },
       }),
     },
@@ -277,7 +271,7 @@ export function createHostedAgentPluginsComposition(input: {
     services,
     authenticate: hostedConnectionsAuthenticate({ authentication: input.authentication, services }),
     dynamicIntegrations: hostedAgentPluginConnectionIntegrations({ activations, artifacts, oauth }),
-    credentials: (orgId: string) => hostedOrgCredentials(orgId, input.env),
+    credentials: orgCredentials,
   }
   const integrationRoutes = createHostedD1ConnectionsSetup(connectionsInput)
   const resolveConnection = createHostedCapabilityConnectionResolver(connectionsInput)

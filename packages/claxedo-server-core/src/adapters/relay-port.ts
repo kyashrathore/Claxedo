@@ -56,7 +56,7 @@ export type RelayTokenInput = {
   auth?: SignedControlPlaneAuth
   /** Internal dispatch for a persisted user-authored wake; never read from public request bodies. */
   delegatedActor?: boolean
-  channelIdentity?: import("../platform/auth/authority").ChannelMachineIdentity
+  channelIdentity?: import("../platform/auth/authority").AuthorizedChannelIdentity
 }
 
 export type RelayToken = {

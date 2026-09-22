@@ -87,7 +87,11 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
       try {
         const org = await requestOrg(c.req.raw, authOptions)
         const body = await c.req.json().catch(() => undefined)
-        return c.json(putCustomProvider(readCustomProvider(body), org))
+        // Plaintext loopback destinations are a local-only allowance: a signed
+        // tenant's base URL must be HTTPS, the same rule the catalog GET uses
+        // to decide whose environment it may consult.
+        const allowInsecureLoopback = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled
+        return c.json(putCustomProvider(readCustomProvider(body, { allowInsecureLoopback }), org))
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
         if (error instanceof CustomProviderInvalidError) {

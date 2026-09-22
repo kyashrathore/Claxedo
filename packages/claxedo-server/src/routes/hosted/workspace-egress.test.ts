@@ -105,6 +105,8 @@ function buildApp(egressControl: SandboxEgressControl, options: Partial<HostedWo
     verifier,
     relayUrl: RELAY_URL,
     countActiveOrgSandboxLeases: async () => 0,
+    // No real DNS in tests: clone admission resolves through this stub.
+    resolveRepoAddresses: async () => ["140.82.112.3"],
     ...options,
   })
   return { app, driver, seen, leaseStore, capture }

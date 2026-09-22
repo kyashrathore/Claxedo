@@ -123,6 +123,17 @@ export type ActiveSandboxLeaseCounter = (input: {
 }) => Promise<number | undefined>
 
 /**
+ * Who a sandbox lease is counted against: the tenant the cap binds. `orgId`
+ * and `ownerSubject` are the columns a lease's tenant stamp carries; a caller
+ * with a signed request reads them off it, a caller resolved from a minted
+ * credential names the owner's.
+ */
+export type SandboxLeaseTenant = {
+  orgId?: string
+  ownerSubject?: string
+}
+
+/**
  * Per-tenant CONCURRENT sandbox cap for routes that provision real
  * infrastructure.
  *
@@ -156,8 +167,10 @@ export type ActiveSandboxLeaseCounter = (input: {
  *  - The owner subject is `auth.user.subject` (`runtime_leases.owner_subject`),
  *    and is read off the verified auth HERE rather than accepted as an input.
  *    Every signed request carries a subject and there is exactly one correct
- *    value for it, so making it a parameter would only create the chance to
- *    omit it — which is precisely the bug this scope exists to fix. Before the
+ *    value for it — the bug this scope exists to fix is a call site omitting
+ *    it, which is why the signed door takes `auth` and derives it. A caller
+ *    resolved from a minted credential holds no request to read one off, so
+ *    `sandboxLeaseCapDenial` takes the tenant explicitly for it. Before the
  *    owner column existed, an org-less caller's leases were never attributed,
  *    there was nothing to count, and this guard returned early: the cap could
  *    not bind at all for personal accounts, leaving the rate limiter as their
@@ -179,9 +192,34 @@ export async function sandboxLeaseCapError(
     countActiveLeases: ActiveSandboxLeaseCounter
   },
 ) {
+  return await sandboxLeaseCapDenial(services, {
+    tenant: { orgId: input.orgId, ownerSubject: auth.user.subject },
+    audit: auth,
+    cap: input.cap,
+    action: input.action,
+    countActiveLeases: input.countActiveLeases,
+  })
+}
+
+/**
+ * The cap `sandboxLeaseCapError` enforces, for a caller that names its tenant
+ * directly rather than through a signed request — a minted credential's
+ * resolved owner. `audit` is the denial's signed context when one exists;
+ * `auditDeny` accepts its absence.
+ */
+export async function sandboxLeaseCapDenial(
+  services: ControlPlaneServices | undefined,
+  input: {
+    tenant: SandboxLeaseTenant
+    audit?: SignedControlPlaneAuth
+    cap: number
+    action: string
+    countActiveLeases: ActiveSandboxLeaseCounter
+  },
+) {
   if (!(input.cap > 0)) return undefined
-  const orgId = input.orgId?.trim()
-  const ownerSubject = auth.user.subject?.trim()
+  const orgId = input.tenant.orgId?.trim()
+  const ownerSubject = input.tenant.ownerSubject?.trim()
   if (!orgId && !ownerSubject) return undefined
   const scope = {
     ...(orgId ? { orgId } : {}),
@@ -189,7 +227,7 @@ export async function sandboxLeaseCapError(
   }
   const active = await input.countActiveLeases(scope)
   if (active === undefined || active < input.cap) return undefined
-  await requireAuthority(services).auditDeny(auth, {
+  await requireAuthority(services).auditDeny(input.audit, {
     action: input.action,
     reason: "sandbox_lease_limit_reached",
     metadata: {
@@ -225,13 +263,38 @@ export async function controlPlaneRateLimitError(
     workspaceId?: string
   },
 ) {
+  return await controlPlaneRateLimitDenial(services, rateLimiter, {
+    subject: auth.user.subject,
+    audit: auth,
+  }, input)
+}
+
+/**
+ * `controlPlaneRateLimitError` for a caller that names its account directly —
+ * a minted credential's resolved owner — instead of through a signed request.
+ * `subject` is the bucket key; `audit` is the denial's signed context when one
+ * exists.
+ */
+export async function controlPlaneRateLimitDenial(
+  services: ControlPlaneServices | undefined,
+  rateLimiter: ConnectionRateLimiter,
+  caller: {
+    subject?: string
+    audit?: SignedControlPlaneAuth
+  },
+  input: {
+    key: string
+    action: string
+    workspaceId?: string
+  },
+) {
   const rateLimit = rateLimiter.check({
-    userId: auth.user.subject,
+    userId: caller.subject ?? "",
     workspaceId: input.key,
   })
   if (rateLimit.allowed) return undefined
   if (input.workspaceId && (rateLimit.firstRejection ?? true)) {
-    await requireAuthority(services).auditDeny(auth, {
+    await requireAuthority(services).auditDeny(caller.audit, {
       action: input.action,
       reason: "control_plane_rate_limited",
       workspaceId: input.workspaceId,

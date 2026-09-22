@@ -32,7 +32,7 @@ export type FirstPartyMcpContributionInput = Readonly<{
   /** A consented OAuth access token, resolved by `resolveOAuthMcpCredential`. */
   oauthCredential?: (request: Request) => Promise<McpCredential | undefined>
   /** The runtimes this process serves, for a credential that may reach them; absent on the hosted worker. */
-  local?: (credential: McpCredential) => McpClientInputs["local"]
+  local?: (credential: McpCredential, request: Request) => Promise<McpClientInputs["local"]> | McpClientInputs["local"]
   /**
    * This deployment's Tasks routes, as this credential may reach them. Absent
    * on a deployment that serves no Tasks, and then the tools are not listed.
@@ -72,7 +72,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
               documents: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) },
             }
           : {}),
-        ...(input.local ? { local: input.local(credential) } : {}),
+        ...(input.local ? { local: await input.local(credential, request) } : {}),
         ...(tasks ? { tasks } : {}),
       })
     },

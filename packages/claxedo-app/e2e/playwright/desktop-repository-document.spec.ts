@@ -29,7 +29,7 @@ test("repository document survives desktop restart and protects competing disk e
     packaged.page.on("requestfailed", (request) => diagnostics.push(`${request.method()} ${new URL(request.url()).pathname}: ${request.failure()?.errorText}`))
     packaged.page.on("response", (response) => { if (response.status() >= 400) diagnostics.push(`${response.status()} ${new URL(response.url()).pathname}`) })
     const server = new URL(await expectServerReachable(packaged)).origin
-    const response = await fetch(`${server}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
+    const response = await fetch(`${server}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}`, { method: "POST" })
     expect(response.ok).toBe(true)
     const { workspaceId } = await response.json() as { workspaceId: string }
     await packaged.page.evaluate(async (worktree) => {

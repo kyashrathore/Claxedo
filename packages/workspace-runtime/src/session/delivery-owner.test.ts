@@ -268,6 +268,50 @@ test("managed recovery reacquires turn authority and keeps its fence until execu
   await recovered.dispose()
 })
 
+test("a recovered relayed row presents its stored grant in place of a credential; one without a grant is declined where grants are minted", async () => {
+  const runtimeStore = store(root())
+  const authority = { managed: true as const, workspaceId: "workspace", orgId: "org", role: "editor" as const }
+  const requester = submission()
+  const grant = "eyJ.queued-grant-token.sig"
+  runtimeStore.queuePrompt({ sessionId: "session_1", messageId: "granted", parts: [], delivery: "queue", actor: requester.actor, authority, provenance: "relay-replayed", grant })
+  runtimeStore.queuePrompt({ sessionId: "session_1", messageId: "ungranted", parts: [], delivery: "queue", actor: requester.actor, authority, provenance: "relay-replayed" })
+  const starts: AgentRuntimeTurnStartInput[] = []
+  const acquired: unknown[] = []
+  const policy: SessionAccessPolicy = {
+    sessionAuthority: "managed-private",
+    authorizeSessionStartStatus: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+    authorizeSessionStart: () => ({ allowed: false as const, status: 403 as const, code: "startup_not_tested", message: "Startup is not admitted by this fixture" }),
+    authorize: () => ({ allowed: true }), authorizePrefix: () => ({ allowed: true }), filterSessions: (input) => input.sessionIds,
+    grantTurn: () => { throw new Error("recovery redeems a grant; it never mints one") },
+    acquireTurn: (input) => {
+      acquired.push(input)
+      return { allowed: true, turnId: input.turnId, leaseId: "lease", fencingToken: 7, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000 }
+    },
+    renewTurn: (input) => ({ allowed: true, turnId: input.turnId, leaseId: input.leaseId, fencingToken: input.fencingToken, acquiredAt: Date.now(), expiresAt: Date.now() + 60_000 }),
+    releaseTurn: () => ({ released: true }),
+  }
+  const runtime = {
+    turns: { whenIdle: async () => ({ abandon() {} }), start: async (input: AgentRuntimeTurnStartInput) => {
+      starts.push(input)
+      input.onAdmitted?.()
+      return { sessionId: input.sessionId, userMessageId: input.messageId, assistantMessageId: "reply", delivery: "start",
+        prompt: { userMessageId: input.messageId, assistantMessageId: "reply", parts: input.parts, agent: "build", model: { providerID: "test", modelID: "fixture" } } }
+    } },
+    events: { list: async () => [], subscribe: () => (async function* () { yield { payload: sessionIdle("session_1") } })() },
+  } as unknown as AgentRuntime
+  const host = SessionRoutes(() => ({} as never), { queuedPrompts: () => port(runtimeStore, "/workspace"), resolveRuntime: () => runtime, sessionAccessPolicy: policy })
+  await host.recoverQueuedPrompts()
+  await until(() => runtimeStore.listQueuedPrompts().find((row) => row.messageId === "ungranted")?.steering?.state === "rejected")
+
+  expect(starts.map((start) => start.messageId)).toEqual(["granted"])
+  expect(acquired).toEqual([expect.objectContaining({ actor: requester.actor, authority, sessionId: "session_1", turnId: "granted", grant })])
+  expect(acquired[0]).not.toHaveProperty("credential")
+  const declined = runtimeStore.listQueuedPrompts().find((row) => row.messageId === "ungranted")
+  expect(declined?.steering?.message).toMatch(/deferred turn grant/)
+  expect(runtimeStore.listQueuedPrompts().map((row) => row.messageId)).toEqual(["ungranted"])
+  await host.dispose()
+})
+
 test("a local queue continues after restart on the daemon shape, unleased, while a row with no provenance does not", async () => {
   // The desktop daemon is a managed composition serving its own machine user.
   // A prompt they queued is theirs to continue; a row from before provenance
@@ -391,4 +435,35 @@ test("an unavailable handoff leaves the queue for the next owner instead of disp
   host.wake("session_1")
   await until(() => runtimeStore.listQueuedPrompts().length === 0)
   expect(calls).toEqual(["first", "second"])
+})
+
+test("a relayed row's deferred grant reaches the turn as its origin and never the queue listing", async () => {
+  const runtimeStore = store(root())
+  const grant = "eyJ.queued-grant-token.sig"
+  const requester = submission("granted")
+  const authority = { managed: true as const, workspaceId: "workspace", orgId: "org", role: "editor" as const }
+  const admitted = gate()
+  const starts: Array<Parameters<Parameters<typeof createSessionDeliveryOwner>[0]["startTurn"]>[0]> = []
+  const host = owner(runtimeStore, {
+    whenIdle: async () => { await admitted.promise; return { abandon() {} } },
+    startTurn: async (input) => { starts.push(input); input.onDelivery("start") },
+  })
+  const queued = host.queue({ ...requester, authority, provenance: "relay-replayed", grant })
+  expect(queued.grant).toBe(grant)
+  expect(JSON.stringify(host.list("session_1"))).not.toContain(grant)
+  expect(host.list("session_1")[0]).not.toHaveProperty("grant")
+  admitted.resolve()
+  await until(() => runtimeStore.listQueuedPrompts().length === 0)
+  expect(starts[0].origin).toEqual({ provenance: "relay-replayed", actor: requester.actor, authority, grant })
+})
+
+test("a relayed row queued without a grant carries an origin without one", async () => {
+  const runtimeStore = store(root())
+  const authority = { managed: true as const, workspaceId: "workspace", orgId: "org", role: "editor" as const }
+  const starts: Array<Parameters<Parameters<typeof createSessionDeliveryOwner>[0]["startTurn"]>[0]> = []
+  const host = owner(runtimeStore, { startTurn: async (input) => { starts.push(input); input.onDelivery("start") } })
+  host.queue({ ...submission("plain"), authority, provenance: "relay-replayed" })
+  await until(() => runtimeStore.listQueuedPrompts().length === 0)
+  expect(starts[0].origin).toEqual({ provenance: "relay-replayed", actor: submission().actor, authority })
+  expect(starts[0].origin).not.toHaveProperty("grant")
 })

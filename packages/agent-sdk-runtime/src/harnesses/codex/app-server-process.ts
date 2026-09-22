@@ -10,7 +10,7 @@ import {
 } from "../../process-observer"
 import { asRecord } from "@claxedo/helpers/guards"
 import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
-import { isWindowsShimBinary } from "../shared/windows-process"
+import { resolveHarnessCommand } from "../shared/windows-process"
 import {
   launchOwnedProcess,
   settleAtRequestDeadline,
@@ -165,16 +165,14 @@ export class CodexAppServerProcess {
     if (input.signal?.aborted) throw new Error("Codex app-server startup was cancelled")
     const budgets = { ...DEFAULT_RECOVERY_BUDGETS, ...input.budgets }
     const command = codexAppServerCommand(input.binary)
-    const windowsShim = isWindowsShimBinary(command.command)
+    // A .cmd/.bat binary is resolved to the executable it wraps rather than
+    // routed through cmd.exe, so the gate spawns a literal argv.
+    const payload = resolveHarnessCommand(command.command, command.args, input.env, input.directory)
     const launch = await launchOwnedProcess({
       ownership: input.ownership,
       role: "harness",
       scope: { workspaceId: input.workspaceId, directory: input.directory, ...(input.sessionId ? { sessionId: input.sessionId } : {}) },
-      payload: {
-        command: windowsShim ? `"${command.command}"` : command.command,
-        args: command.args,
-        ...(windowsShim ? { shell: true } : {}),
-      },
+      payload,
       cwd: input.directory,
       env: input.env,
     })

@@ -141,6 +141,7 @@ function harness(options?: {
   let shareLoads = 0
   let storedName: string | undefined
   const shareStores: Array<readonly HostConnectorSharedWorkspace[]> = []
+  let shareStoreFails = false
   const connector = setupHostConnectorChild({
     ...(options?.describeWorkspace ? { describeWorkspace: options.describeWorkspace } : {}),
     loadSharedWorkspaces: () => {
@@ -148,6 +149,7 @@ function harness(options?: {
       return options?.sharedWorkspaces ?? []
     },
     storeSharedWorkspaces: (next) => {
+      if (shareStoreFails) throw new Error("the share list could not be written")
       shareStores.push(next)
     },
     spawn: () => {
@@ -240,6 +242,9 @@ function harness(options?: {
     shareCounts: () => ({ loads: shareLoads, stores: shareStores.length }),
     storedName: () => storedName,
     shareStores,
+    failShareStore: () => {
+      shareStoreFails = true
+    },
     bootstrapOf: (index: number) =>
       children[index]?.parentMessages.find((message) => message.type === "bootstrap"),
   }
@@ -445,6 +450,40 @@ describe("Electron-main child lifecycle", () => {
 
     expect(settled).toMatchObject({ status: "enrolled", sharedWorkspaceIds: ["ws_1"] })
     await until(() => host.cp.routable(enrollmentId).length === 1, "the workspace becoming routable")
+  })
+
+  test("a withdrawal is recorded before it takes effect, so a refused write leaves the workspace shared", async () => {
+    // The share list is this machine's consent and the child re-consents to
+    // everything it still names, so a withdrawal that reached the control
+    // plane and the child but not the file would undo itself at the next
+    // launch. The write goes first and a refusal stops the withdrawal.
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    await host.connector.start()
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+    const enrollmentId = [...host.cp.enrollments.keys()][0]
+    await until(() => host.cp.routable(enrollmentId).length === 1, "the workspace becoming routable")
+
+    host.failShareStore()
+    await expect(host.connector.unshareWorkspace("ws_1")).rejects.toThrow(/share list could not be written/)
+
+    expect(host.operations.some((operation) => operation.name === "workspace.unassignHost")).toBe(false)
+    expect(host.cp.routable(enrollmentId)).toEqual(["ws_1"])
+    expect(host.connector.status()).toMatchObject({ sharedWorkspaceIds: ["ws_1"] })
+  })
+
+  test("a recorded withdrawal survives a relaunch", async () => {
+    const host = harness({
+      describeWorkspace: async () => ({ displayName: "Claxedo", directory: "/Users/me/test/opencode" }),
+    })
+    await host.connector.start()
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" })
+
+    await host.connector.unshareWorkspace("ws_1")
+
+    expect(host.shareStores.at(-1)).toEqual([])
+    expect(host.connector.status()).toMatchObject({ sharedWorkspaceIds: [] })
   })
 
   test("a share this machine could not describe is refused rather than reported as published", async () => {

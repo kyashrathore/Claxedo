@@ -33,10 +33,10 @@ export function convertWslPath(path: string, mode: "windows" | "linux" | null, r
   return run(["-e", "wslpath", flag, target]).trim()
 }
 
-export function wslPath(path: string, mode: "windows" | "linux" | null): string {
+export function wslPath(path: string, mode: "windows" | "linux" | null, executable = "wsl"): string {
   if (process.platform !== "win32") return path
   try {
-    return convertWslPath(path, mode, (args) => execFileSync("wsl", [...args]).toString())
+    return convertWslPath(path, mode, (args) => execFileSync(executable, [...args]).toString())
   } catch (error) {
     throw new Error(`Failed to run wslpath: ${String(error)}`, { cause: error })
   }

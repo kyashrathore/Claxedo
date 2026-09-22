@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { ControlPlaneTokenVerifier, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
@@ -19,10 +20,20 @@ type CheckpointRouteOptions = {
   verifier?: ControlPlaneTokenVerifier
 }
 
+/** Lifecycle payloads carry a policy word and at most a checkpoint id — the control-plane JSON bound. */
+const CHECKPOINT_BODY_LIMIT_BYTES = 16 * 1024
+
 export function WorkspaceCheckpointRoutes(
   services?: ControlPlaneServices,
   options: CheckpointRouteOptions = {},
 ) {
+  const limitedBody = bodyLimit({
+    maxSize: CHECKPOINT_BODY_LIMIT_BYTES,
+    onError: (c) => c.json(
+      { error: { code: "request_body_too_large", message: `Request body exceeds the ${CHECKPOINT_BODY_LIMIT_BYTES}-byte limit` } },
+      413,
+    ),
+  })
   return new Hono()
     .get("/:id/checkpoints", async (c) => {
       const access = await authorized(c.req.raw, c.req.param("id"), services, options)
@@ -33,7 +44,7 @@ export function WorkspaceCheckpointRoutes(
       const visible = await requireAuthority(services).listSessions(access.auth, { workspaceId })
       return c.json(filterCheckpointSessions(inspected, visible))
     })
-    .post("/:id/checkpoints", async (c) => {
+    .post("/:id/checkpoints", limitedBody, async (c) => {
       const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const body = (await readJsonRecord(c.req.raw)) ?? {}
@@ -53,7 +64,7 @@ export function WorkspaceCheckpointRoutes(
         return lifecycleError(c, error)
       }
     })
-    .post("/:id/checkpoints/:checkpointId/restore", async (c) => {
+    .post("/:id/checkpoints/:checkpointId/restore", limitedBody, async (c) => {
       const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const body = (await readJsonRecord(c.req.raw)) ?? {}
@@ -73,7 +84,7 @@ export function WorkspaceCheckpointRoutes(
         return lifecycleError(c, error)
       }
     })
-    .post("/:id/lifecycle/:operation", async (c) => {
+    .post("/:id/lifecycle/:operation", limitedBody, async (c) => {
       const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const operation = c.req.param("operation")

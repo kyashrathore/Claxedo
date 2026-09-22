@@ -58,9 +58,11 @@ export type OriginCloudWorkspaceInput = {
   /**
    * Records the allocation with the deployment's workspace authority, as the
    * caller. A deployment whose authority never learns of the workspace can
-   * neither reserve a session in it nor let the caller open one.
+   * neither reserve a session in it nor let the caller open one. `created`
+   * distinguishes a row this attempt filed from one it found, so
+   * once-per-create side effects (usage metering) do not re-fire on a retry.
    */
-  admit(workspace: Workspace): Promise<void>
+  admit(workspace: Workspace, context: { created: boolean }): Promise<void>
   /**
    * Undo of `admit`, for a workspace whose sandbox definitely failed. Left
    * behind, the authority's row outlives the store's and the next attempt at
@@ -119,7 +121,7 @@ export async function allocateOriginCloudWorkspace(
 
   const workspaceId = await originCloudWorkspaceId(input.originKey)
   const stored = await getWorkspace(workspaceId)
-  const workspace = stored ? await admit(stored, input) : await allocate(workspaceId, input)
+  const workspace = stored ? await admit(stored, input, { created: false }) : await allocate(workspaceId, input)
   if (!("id" in workspace)) return workspace
 
   const repoUrl = workspace.repo_url ?? workspace.git_remote
@@ -214,7 +216,7 @@ async function allocate(
   if (!workspace) {
     return { code: "source_unavailable", detail: "The cloud workspace for this attempt could not be stored" }
   }
-  return await admit(workspace, input)
+  return await admit(workspace, input, { created: true })
 }
 
 /**
@@ -230,9 +232,10 @@ async function allocate(
 async function admit(
   workspace: Workspace,
   input: OriginCloudWorkspaceInput,
+  context: { created: boolean },
 ): Promise<Workspace | OriginCloudWorkspaceRefusal> {
   try {
-    await input.admit(workspace)
+    await input.admit(workspace, context)
   } catch (error) {
     await deleteWorkspace(workspace.id).catch(() => undefined)
     return {

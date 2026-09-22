@@ -10,6 +10,7 @@ import {
   type SandboxCheckpointResult,
 } from "./checkpoint-manager"
 import { applySandboxRuntimeSnapshot } from "./runtime-snapshot"
+import { workspaceRuntimeIdentityEnvConflicts } from "./runtime-env"
 
 export { DEFAULT_WORKSPACE_RUNTIME_PORT }
 export * from "./checkpoint-manager"
@@ -650,13 +651,35 @@ export type SandboxRuntimeSnapshotInput = {
 export type SandboxBootMode = "restore" | "resume" | "cold-start"
 
 export type SandboxEnsureResult =
-  | ({ status: "ready" } & SandboxTarget & { epoch: number; homeRegion: SandboxRegion })
+  | ({ status: "ready" } & SandboxTarget & {
+      epoch: number
+      homeRegion: SandboxRegion
+      /**
+       * Set when the driver call for this ensure failed on a lease that was
+       * already serving: the returned target predates this ensure's inputs.
+       * A caller that handed new brokered secrets must not record them as
+       * delivered — the provider edge still holds the previous set.
+       */
+      stale?: true
+    })
   | { status: "provisioning"; retryAfterMs: number; epoch: number; homeRegion: SandboxRegion; bootMode?: SandboxBootMode }
   | { status: "unavailable"; retryAfterMs?: number; error?: string; epoch?: number; homeRegion: SandboxRegion }
 
 export type SandboxTargetResult =
   | ({ status: "ready" } & SandboxTarget & { epoch: number; homeRegion: SandboxRegion })
-  | { status: "unavailable"; reason: string }
+  | {
+      status: "unavailable"
+      reason: string
+      /**
+       * The lease's own lifecycle word when a lease exists (`"acquiring"`,
+       * `"stopped"`, `"unavailable"`, `"destroyed"`); absent when none does.
+       * `target()` deliberately does not collapse these — a read path needs to
+       * tell "a start is already in flight" apart from "nothing is running".
+       */
+      leaseStatus?: SandboxLeaseStatus
+      /** Delay until the lease's own next scheduled retry, when it carries one. */
+      retryAfterMs?: number
+    }
 
 export type SandboxTouchResult = { touched: boolean; status: SandboxLeaseStatus | "missing" }
 export type SandboxMutationResult = { ok: true; status: SandboxLeaseStatus } | { ok: false; reason: string }
@@ -886,7 +909,12 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
 
   async function leaseTarget(lease: SandboxLease): Promise<SandboxTargetResult> {
     if (lease.status !== "ready" || !lease.sandboxId || !lease.url || !lease.hostId) {
-      return { status: "unavailable", reason: "runtime_lease_not_ready" }
+      return {
+        status: "unavailable",
+        reason: "runtime_lease_not_ready",
+        leaseStatus: lease.status,
+        ...(lease.nextRetryAt !== undefined ? { retryAfterMs: Math.max(0, lease.nextRetryAt - now()) } : {}),
+      }
     }
     return {
       status: "ready",
@@ -1006,7 +1034,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         const updated = await options.leaseStore.update(workspaceId, lease.epoch, { lastError: error }, "ready")
         if (updated) {
           const resolved = await leaseTarget(updated)
-          if (resolved.status === "ready") return resolved
+          if (resolved.status === "ready") return { ...resolved, stale: true }
         }
       }
       const nextRetryCount = lease.retryCount + 1
@@ -1052,6 +1080,19 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         // either — a composition mistake must not burn a lease epoch or enter
         // retry backoff.
         return { status: "unavailable", error: egress.reason, homeRegion: input.homeRegion }
+      }
+      // Caller env restating the identity the driver's target reports — and
+      // `recordTarget` persists — is the same class of composition mistake as
+      // the egress refusal: the runtime would boot bound to a hostId the
+      // lease never authorized. Refused before a lease is touched; the driver
+      // rejects it again at compose time for callers that reach it directly.
+      const identityConflicts = workspaceRuntimeIdentityEnvConflicts(input.env)
+      if (identityConflicts.length) {
+        return {
+          status: "unavailable",
+          error: `sandbox env cannot set runtime identity: ${identityConflicts.join(", ")}`,
+          homeRegion: input.homeRegion,
+        }
       }
       const existing = await options.leaseStore.get(workspaceId)
       if (existing?.nextRetryAt && existing.nextRetryAt > now()) {
@@ -1245,12 +1286,21 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
           continue
         }
         const lease = leases.get(workspaceId)
-        if (
-          lease?.status === "ready" &&
-          String(lease.epoch) === epoch &&
-          lease.hostId === target.hostId &&
-          lease.sandboxId === target.sandboxId
-        ) {
+        // Provider labels are create-time state: a driver that reuses a
+        // resource across an epoch bump (a restore that keeps the same
+        // Daytona sandbox, a resume after stop) cannot retag it atomically
+        // with the reuse, so `labels.epoch` can lag the lease even after the
+        // driver rewrote it — the sweep can simply land first. The lease
+        // store is authoritative for which provider resource a workspace
+        // owns: a listed sandbox the lease still names is in service whatever
+        // its labels claim. Only a "destroyed" lease disclaims the resource —
+        // a remnant of it is exactly what this sweep exists to finish.
+        const leaseOwnsResource =
+          lease !== undefined && lease.status !== "destroyed" && (
+            lease.sandboxId === target.sandboxId ||
+            (lease.driverResourceId !== undefined && lease.driverResourceId === target.driverResourceId)
+          )
+        if (leaseOwnsResource) {
           result.kept.push(target)
           continue
         }

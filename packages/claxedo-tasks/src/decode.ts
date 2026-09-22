@@ -1,3 +1,4 @@
+import { utf8ByteLength } from "@claxedo/helpers/string"
 import {
   SESSION_HANDOFF_STATES,
   SESSION_LIVENESS,
@@ -42,16 +43,16 @@ import { decodeContext, finishDecode, type DecodeContext, type Parsed } from "./
 function decodePluginReference(ctx: DecodeContext, value: unknown, path: string): PluginReference {
   const row = ctx.read.record(value, path)
   return {
-    sourceId: ctx.read.nonEmptyString(row?.sourceId, `${path}.sourceId`) ?? "",
-    pluginName: ctx.read.nonEmptyString(row?.pluginName, `${path}.pluginName`) ?? "",
+    sourceId: ctx.read.id(row?.sourceId, `${path}.sourceId`) ?? "",
+    pluginName: ctx.read.id(row?.pluginName, `${path}.pluginName`) ?? "",
   }
 }
 
 function decodeSkillReference(ctx: DecodeContext, value: unknown, path: string): SkillReference {
   const row = ctx.read.record(value, path)
   return {
-    sourceId: ctx.read.nonEmptyString(row?.sourceId, `${path}.sourceId`) ?? "",
-    skillName: ctx.read.nonEmptyString(row?.skillName, `${path}.skillName`) ?? "",
+    sourceId: ctx.read.id(row?.sourceId, `${path}.sourceId`) ?? "",
+    skillName: ctx.read.id(row?.skillName, `${path}.skillName`) ?? "",
   }
 }
 
@@ -102,14 +103,14 @@ function decodeModelConfiguration(ctx: DecodeContext, value: unknown, path: stri
   const model = ctx.read.record(row?.model, `${path}.model`)
   return {
     harness: {
-      id: ctx.read.nonEmptyString(harness?.id, `${path}.harness.id`) ?? "",
+      id: ctx.read.id(harness?.id, `${path}.harness.id`) ?? "",
       access: access === "connection" ? "connection" : "native",
     },
     model: {
-      providerID: ctx.read.nonEmptyString(model?.providerID, `${path}.model.providerID`) ?? "",
-      modelID: ctx.read.nonEmptyString(model?.modelID, `${path}.model.modelID`) ?? "",
+      providerID: ctx.read.id(model?.providerID, `${path}.model.providerID`) ?? "",
+      modelID: ctx.read.id(model?.modelID, `${path}.model.modelID`) ?? "",
     },
-    effort: ctx.read.nullableString(row?.effort, `${path}.effort`) ?? null,
+    effort: ctx.read.nullableId(row?.effort, `${path}.effort`) ?? null,
   }
 }
 
@@ -157,8 +158,8 @@ function handoffState(ctx: DecodeContext, value: unknown, path: string): Session
 export function decodeSessionReference(ctx: DecodeContext, value: unknown, path: string): SessionReference {
   const row = ctx.read.record(value, path)
   return {
-    sessionId: ctx.read.nonEmptyString(row?.sessionId, `${path}.sessionId`) ?? "",
-    workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}.workspaceId`) ?? null,
+    sessionId: ctx.read.id(row?.sessionId, `${path}.sessionId`) ?? "",
+    workspaceId: ctx.read.nullableId(row?.workspaceId, `${path}.workspaceId`) ?? null,
   }
 }
 
@@ -175,10 +176,10 @@ function nullableInteger(ctx: DecodeContext, value: unknown, path: string): numb
 function presetOf(ctx: DecodeContext, value: unknown, path: string): Preset {
   const row = ctx.read.record(value, path)
   return {
-    id: ctx.read.nonEmptyString(row?.id, `${path}.id`) ?? "",
+    id: ctx.read.id(row?.id, `${path}.id`) ?? "",
     revision: ctx.read.integer(row?.revision, `${path}.revision`) ?? 0,
-    scopeId: ctx.read.nonEmptyString(row?.scopeId, `${path}.scopeId`) ?? "",
-    ownerId: ctx.read.nonEmptyString(row?.ownerId, `${path}.ownerId`) ?? "",
+    scopeId: ctx.read.id(row?.scopeId, `${path}.scopeId`) ?? "",
+    ownerId: ctx.read.id(row?.ownerId, `${path}.ownerId`) ?? "",
     name: ctx.read.string(row?.name, `${path}.name`) ?? "",
     instructions: ctx.read.string(row?.instructions, `${path}.instructions`) ?? "",
     execution: decodeExecution(ctx, row?.execution, `${path}.execution`),
@@ -193,14 +194,14 @@ function presetOf(ctx: DecodeContext, value: unknown, path: string): Preset {
 function taskOf(ctx: DecodeContext, value: unknown, path: string): Task {
   const row = ctx.read.record(value, path)
   return {
-    id: ctx.read.nonEmptyString(row?.id, `${path}.id`) ?? "",
+    id: ctx.read.id(row?.id, `${path}.id`) ?? "",
     revision: ctx.read.integer(row?.revision, `${path}.revision`) ?? 0,
-    scopeId: ctx.read.nonEmptyString(row?.scopeId, `${path}.scopeId`) ?? "",
-    projectId: ctx.read.nonEmptyString(row?.projectId, `${path}.projectId`) ?? "",
+    scopeId: ctx.read.id(row?.scopeId, `${path}.scopeId`) ?? "",
+    projectId: ctx.read.id(row?.projectId, `${path}.projectId`) ?? "",
     number: ctx.read.integer(row?.number, `${path}.number`) ?? 0,
     childNumber: nullableInteger(ctx, row?.childNumber, `${path}.childNumber`),
-    workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}.workspaceId`) ?? null,
-    parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}.parentTaskId`) ?? null,
+    workspaceId: ctx.read.nullableId(row?.workspaceId, `${path}.workspaceId`) ?? null,
+    parentTaskId: ctx.read.nullableId(row?.parentTaskId, `${path}.parentTaskId`) ?? null,
     createdFrom: nullableSessionReference(ctx, row?.createdFrom, `${path}.createdFrom`),
     title: ctx.read.string(row?.title, `${path}.title`) ?? "",
     description: ctx.read.string(row?.description, `${path}.description`) ?? "",
@@ -233,12 +234,12 @@ function taskSummaryOfValue(ctx: DecodeContext, value: unknown, path: string): T
 function linkViewOf(ctx: DecodeContext, value: unknown, path: string): TaskSessionLinkView {
   const row = ctx.read.record(value, path)
   return {
-    taskId: ctx.read.nonEmptyString(row?.taskId, `${path}.taskId`) ?? "",
+    taskId: ctx.read.id(row?.taskId, `${path}.taskId`) ?? "",
     slot: decodeSlot(ctx, row?.slot, `${path}.slot`),
     attempt: ctx.read.integer(row?.attempt, `${path}.attempt`) ?? 0,
     sessionRef: decodeSessionReference(ctx, row?.sessionRef, `${path}.sessionRef`),
     continuedFrom: nullableSessionReference(ctx, row?.continuedFrom, `${path}.continuedFrom`),
-    presetId: ctx.read.nonEmptyString(row?.presetId, `${path}.presetId`) ?? "",
+    presetId: ctx.read.id(row?.presetId, `${path}.presetId`) ?? "",
     presetRevision: ctx.read.integer(row?.presetRevision, `${path}.presetRevision`) ?? 0,
     presetNameAtStart: ctx.read.string(row?.presetNameAtStart, `${path}.presetNameAtStart`) ?? "",
     createdAt: ctx.read.integer(row?.createdAt, `${path}.createdAt`) ?? 0,
@@ -252,7 +253,7 @@ function attachmentOf(ctx: DecodeContext, value: unknown, path: string): TaskAtt
   const mime = ctx.read.string(row?.mime, `${path}.mime`)
   if (mime !== undefined && !isTaskAttachmentMime(mime)) ctx.fields.add(`${path}.mime`, "unknown_value")
   return {
-    id: ctx.read.nonEmptyString(row?.id, `${path}.id`) ?? "",
+    id: ctx.read.id(row?.id, `${path}.id`) ?? "",
     filename: ctx.read.nonEmptyString(row?.filename, `${path}.filename`) ?? "",
     mime: isTaskAttachmentMime(mime) ? mime : "image/png",
     size: ctx.read.integer(row?.size, `${path}.size`) ?? 0,
@@ -285,7 +286,7 @@ function startPreviewOf(ctx: DecodeContext, value: unknown, path: string): Start
   const currentRow = hasCurrent ? ctx.read.record(current, `${path}.currentSession`) : undefined
   const blockers = ctx.read.array(row?.blockers, `${path}.blockers`) ?? []
   return {
-    digest: ctx.read.nonEmptyString(row?.digest, `${path}.digest`) ?? "",
+    digest: ctx.read.id(row?.digest, `${path}.digest`) ?? "",
     expiresAt: ctx.read.integer(row?.expiresAt, `${path}.expiresAt`) ?? 0,
     placement: placement === "cloud" ? "cloud" : "local",
     slot: decodeSlot(ctx, row?.slot, `${path}.slot`),
@@ -314,9 +315,13 @@ function decodePage<T>(
 ): Page<T> {
   const row = ctx.read.record(value, path)
   const items = ctx.read.array(row?.items, `${path}.items`) ?? []
+  const nextCursor = ctx.read.nullableString(row?.nextCursor, `${path}.nextCursor`) ?? null
+  if (nextCursor !== null && utf8ByteLength(nextCursor) > TASKS_BOUNDS.cursorMaxBytes) {
+    ctx.fields.add(`${path}.nextCursor`, "too_long")
+  }
   return {
     items: items.map((entry, index) => item(entry, `${path}.items[${index}]`)),
-    nextCursor: ctx.read.nullableString(row?.nextCursor, `${path}.nextCursor`) ?? null,
+    nextCursor,
   }
 }
 
@@ -411,6 +416,8 @@ function boundsOf(ctx: DecodeContext, value: unknown): TasksBounds {
     taskAttachmentsMax: bound("taskAttachmentsMax"),
     taskAttachmentMaxBytes: bound("taskAttachmentMaxBytes"),
     taskAttachmentFilenameMax: bound("taskAttachmentFilenameMax"),
+    idMaxBytes: bound("idMaxBytes"),
+    cursorMaxBytes: bound("cursorMaxBytes"),
     listLimitDefault: bound("listLimitDefault"),
     listLimitMax: bound("listLimitMax"),
     commandRequestMaxBytes: bound("commandRequestMaxBytes"),

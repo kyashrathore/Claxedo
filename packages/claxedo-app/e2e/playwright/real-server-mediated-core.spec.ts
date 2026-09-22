@@ -115,7 +115,8 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
     expect((await fetch(`${real.url}/api/workspace/resolve?workspaceId=${encodeURIComponent(workspace.id)}`)).status).toBe(404)
 
     const recreated = await body(await fetch(
-      `${real.url}/api/workspace/resolve?directory=${encodeURIComponent(workspace.directory)}&create=true`,
+      `${real.url}/api/workspace/resolve?directory=${encodeURIComponent(workspace.directory)}`,
+      { method: "POST" },
     )) as { workspaceId: string; directory: string }
     expect(recreated.directory).toBe(workspace.directory)
     expect(recreated.workspaceId).toMatch(/\S/)

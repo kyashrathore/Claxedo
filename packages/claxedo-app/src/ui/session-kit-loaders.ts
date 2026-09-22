@@ -1,6 +1,6 @@
 import { ensureOpenCodeTheme } from "@opencode-ai/ui/context/marked"
 
-export { preloadMarkdown } from "@opencode-ai/session-ui/markdown-cache"
+export { preloadMarkdown, sanitizeSvg } from "@opencode-ai/session-ui/markdown-cache"
 
 export async function loadFileComponent() {
   const [module] = await Promise.all([import("@opencode-ai/session-ui/file"), ensureOpenCodeTheme()])

@@ -167,7 +167,7 @@ export async function fetchWorkspaceRecord(input: WorkspaceRecordScope): Promise
   try {
     return workspaceRuntimeSnapshotFromWire(decodeHostedResult(
       "workspace.resolve",
-      await run("workspace.resolve", { workspaceId, ...(input.create ? { create: true } : {}) }),
+      await run("workspace.resolve", { workspaceId }),
     )) ?? null
   } catch (err) {
     const message = errorMessage(err)
@@ -181,9 +181,11 @@ export async function fetchWorkspaceRecord(input: WorkspaceRecordScope): Promise
 async function fetchWorkspaceRecordHttp(input: WorkspaceRecordScope): Promise<WorkspaceRuntimeSnapshot | null> {
   const baseUrl = normalizeUrl(input.baseUrl) ?? getDefaultBaseUrl()
   const request = input.request ?? authFetch
+  // `create` is the POST form of the same route: a GET is always read-only,
+  // so materializing a workspace for a directory takes the write verb.
   const res = await request(
-    workspaceResolveUrl({ baseUrl, scope: input.directory, workspaceId: input.workspaceId, create: input.create }),
-    { headers: { Accept: "application/json" } },
+    workspaceResolveUrl({ baseUrl, scope: input.directory, workspaceId: input.workspaceId }),
+    { method: input.create ? "POST" : "GET", headers: { Accept: "application/json" } },
   )
   if (res.status === 404) return null
   if (!res.ok) throw new Error((await res.text()) || `Request failed: ${res.status}`)

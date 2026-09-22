@@ -7,32 +7,8 @@
  */
 
 import { CodeBlock } from "@tiptap/extension-code-block"
+import { renderSafeMermaidSvg } from "@/ui/mermaid"
 import { mermaidKeyAction } from "./mermaid-keyboard"
-
-// ── Lazy mermaid loader (matches pattern from @opencode-ai/ui) ──────
-
-let mermaidModule: Promise<typeof import("mermaid")> | null = null
-let mermaidId = 0
-
-function getMermaid() {
-  if (!mermaidModule) {
-    mermaidModule = import("mermaid")
-      .then((m) => {
-        m.default.initialize({ startOnLoad: false, securityLevel: "strict" })
-        return m
-      })
-      .catch((e) => {
-        mermaidModule = null
-        throw e
-      })
-  }
-  return mermaidModule
-}
-
-async function renderMermaid(source: string): Promise<string> {
-  const m = await getMermaid()
-  return (await m.default.render(`mermaid-pg-${++mermaidId}`, source)).svg
-}
 
 // ── SVG icon helpers ────────────────────────────────────────────────
 
@@ -346,7 +322,9 @@ export const MermaidCodeBlock = CodeBlock.extend({
         if (source === lastRenderedSource) return
 
         try {
-          const svg = await renderMermaid(source)
+          // `renderSafeMermaidSvg` throws when the sanitizer refuses the
+          // markup, so the raw mermaid output can never reach innerHTML.
+          const svg = await renderSafeMermaidSvg(source)
           if (run !== renderRun) return
           svgContainer.innerHTML = svg
           errorContainer.style.display = "none"
@@ -443,7 +421,7 @@ export const MermaidCodeBlock = CodeBlock.extend({
         overlay.focus()
 
         // Render into fullscreen
-        renderMermaid(source)
+        renderSafeMermaidSvg(source)
           .then((svg) => {
             if (closed) return
             fsContent.innerHTML = svg

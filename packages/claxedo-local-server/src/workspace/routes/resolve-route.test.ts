@@ -9,7 +9,7 @@ const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { LocalWorkspaceRoutes } = await import("./resolve-route")
-const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
+const { ensureWorkspace, resolveWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
@@ -22,7 +22,8 @@ describe("local workspace resolve route", () => {
     const directory = await fs.realpath(await fs.mkdtemp(path.join(root, "repo-")))
     execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
     const create = await LocalWorkspaceRoutes().request(
-      `http://localhost/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+      `http://localhost/resolve?directory=${encodeURIComponent(directory)}`,
+      { method: "POST" },
     )
 
     expect(create.status).toBe(200)
@@ -62,14 +63,27 @@ describe("local workspace resolve route", () => {
     })
   })
 
+  test("a GET never creates, however often it is repeated or asked", async () => {
+    const directory = await fs.realpath(await fs.mkdtemp(path.join(root, "read-only-")))
+    execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
+    for (const query of [`directory=${encodeURIComponent(directory)}`, `directory=${encodeURIComponent(directory)}&create=true`]) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await LocalWorkspaceRoutes().request(`http://localhost/resolve?${query}`)
+        expect(response.status).toBe(404)
+        expect(await response.json()).toMatchObject({ error: { code: "workspace_not_found" } })
+      }
+    }
+    expect(await resolveWorkspace({ directory })).toBeUndefined()
+  })
+
   test("an explicit missing id cannot select or create through a supplied directory", async () => {
     const directory = await fs.realpath(await fs.mkdtemp(path.join(root, "id-boundary-")))
     execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
     await ensureWorkspace({ workspaceId: "ws_boundary_actual", directory })
     for (const workspaceId of ["ws_boundary_missing", "", "   "]) {
-      for (const create of [false, true]) {
-        const query = new URLSearchParams({ workspaceId, directory, create: String(create) })
-        const response = await LocalWorkspaceRoutes().request(`http://localhost/resolve?${query}`)
+      for (const method of ["GET", "POST"]) {
+        const query = new URLSearchParams({ workspaceId, directory })
+        const response = await LocalWorkspaceRoutes().request(`http://localhost/resolve?${query}`, { method })
         expect(response.status).toBe(404)
         expect(await response.json()).toMatchObject({ error: { code: "workspace_not_found" } })
       }
@@ -122,7 +136,8 @@ describe("local workspace resolve route", () => {
     const directory = await fs.realpath(await fs.mkdtemp(path.join(root, "listed-")))
     execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
     await LocalWorkspaceRoutes().request(
-      `http://localhost/resolve?directory=${encodeURIComponent(directory)}&create=true`,
+      `http://localhost/resolve?directory=${encodeURIComponent(directory)}`,
+      { method: "POST" },
     )
 
     for (const scope of ["", "?host=machine", "?host=provisioner"]) {

@@ -33,6 +33,19 @@ export type DaytonaSandboxLike = {
   delete: (timeout?: number) => Promise<void>
   updateSecrets: (secrets: Record<string, string>) => Promise<void>
   /**
+   * Replace the sandbox's whole label set — the Daytona SDK's
+   * `Sandbox.setLabels`. Needed because `create`'s `labels` apply only at
+   * creation: a sandbox carried across a lease-epoch bump (a restore reusing
+   * it, a resume after stop) still claims the OLD epoch, and
+   * `garbageCollect()` reads that label to decide whether the lease owns it.
+   *
+   * Optional because a client injected by an embedder may predate it. When it
+   * is absent the reuse still proceeds — the manager's GC matches provider
+   * resources to leases by recorded identity, not by labels alone, so stale
+   * labels misdescribe the sandbox without endangering it.
+   */
+  setLabels?: (labels: Record<string, string>) => Promise<Record<string, string>>
+  /**
    * Replace the sandbox's outbound egress policy in place, without stopping it
    * — the Daytona SDK's `Sandbox.updateNetworkSettings`, which drives the same
    * runner-side iptables mechanism as `create`'s `networkBlockAll` /
@@ -265,8 +278,11 @@ async function withdrawSecret(
   if (options.delete) await secrets.delete(secret.id)
 }
 
-/** Markers this driver's SDK has been seen to use for a retryable failure. */
-const TRANSIENT_MARKERS = ["timeout", "pending", "starting"] as const
+// Markers this driver's SDK has been seen to use for a retryable failure.
+// "state change" covers Daytona's 409 `DaytonaConflictError` ("Sandbox state
+// change in progress"): the sandbox is mid-transition and the operation —
+// label rewrite included — succeeds once the transition settles.
+const TRANSIENT_MARKERS = ["timeout", "pending", "starting", "state change"] as const
 
 function transientDriverError(err: unknown) {
   return isTransientDriverError(err, TRANSIENT_MARKERS)
@@ -596,6 +612,49 @@ export function createDaytonaSandboxDriver(
     return "applied"
   }
 
+  function sandboxLabels(input: SandboxDriverEnsureInput) {
+    return { ...input.labels, "claxedo.workspaceId": input.workspaceId }
+  }
+
+  /**
+   * Bring a sandbox this call did NOT create up to the label set a fresh
+   * `create` would stamp. Daytona applies `labels` only at creation, so a
+   * sandbox reused across a lease-epoch bump still claims the previous epoch —
+   * and `garbageCollect()` treats an epoch the lease has moved past as an
+   * orphan. `setLabels` replaces the WHOLE map, so the argument is the full
+   * desired set rather than a diff.
+   *
+   * A transient provider error reports `"retry"` like `applyNetworkPolicy`:
+   * the relabel is a precondition of handing back a target whose provider
+   * state agrees with the lease, not a best-effort garnish.
+   */
+  async function relabelSandbox(
+    sandbox: DaytonaSandboxLike,
+    input: SandboxDriverEnsureInput,
+  ): Promise<"applied" | "retry"> {
+    const labels = sandboxLabels(input)
+    const current = sandbox.labels ?? {}
+    const stale =
+      Object.keys(current).length !== Object.keys(labels).length ||
+      Object.entries(labels).some(([key, value]) => current[key] !== value)
+    if (!stale) return "applied"
+    if (!sandbox.setLabels) {
+      warn(
+        `[sandbox-manager] daytona sandbox ${sandbox.id} (workspace ${input.workspaceId}) carries stale labels `
+        + "and the client cannot rewrite them: no setLabels. GC falls back to lease identity, but provider "
+        + "labels will keep claiming the creation-time epoch",
+      )
+      return "applied"
+    }
+    try {
+      sandbox.labels = await sandbox.setLabels(labels)
+    } catch (err) {
+      if (transientDriverError(err)) return "retry"
+      throw err
+    }
+    return "applied"
+  }
+
   async function ensureHost(input: SandboxDriverEnsureInput) {
     const hostId = labelName(input.workspaceId)
     const bootSource = input.bootSource?.kind === "image"
@@ -617,7 +676,7 @@ export function createDaytonaSandboxDriver(
       ...bootSource,
       envVars: staticBootEnv(input, hostId, workspaceDirectory(input)),
       ...(plan ? { secrets: plan.references } : {}),
-      labels: { ...input.labels, "claxedo.workspaceId": input.workspaceId },
+      labels: sandboxLabels(input),
       public: false,
       ...net,
       ...(options.autoStopMinutes !== undefined ? { autoStopInterval: options.autoStopMinutes } : {}),
@@ -627,6 +686,13 @@ export function createDaytonaSandboxDriver(
       throw err
     })
     if (!sandbox) return { provisioning: true as const, retryAfterMs: 2_000 }
+    // Reuse only: before anything else runs, the provider's label set must
+    // agree with the epoch this ensure is serving. Early, so a GC sweep that
+    // lands mid-ensure already sees the current epoch rather than the
+    // creation-time one.
+    if (existing && await relabelSandbox(existing, input) === "retry") {
+      return { provisioning: true as const, retryAfterMs: 2_000 }
+    }
     if (existing && plan) await applyBrokeredSecrets(existing, plan, input.workspaceId)
     if (!(await ensureStarted(sandbox))) return { provisioning: true as const, retryAfterMs: 2_000 }
     // Reuse only: a sandbox this call just created already carries the policy as
@@ -718,6 +784,12 @@ export function createDaytonaSandboxDriver(
 
     async resumeHost(input) {
       const sandbox = await sandboxById(input.lease.sandboxId!)
+      // Resume rides an epoch bump too (acquiring a stopped lease keeps its
+      // identity but advances the epoch), so the sandbox's creation-time
+      // labels are stale here exactly as they are on an ensure-time reuse.
+      if (await relabelSandbox(sandbox, input.ensure) === "retry") {
+        return { provisioning: true as const, retryAfterMs: 2_000 }
+      }
       if (input.ensure.secrets !== undefined) {
         const plan = await reconcileBrokeredSecrets(input.ensure, { withdraw: true, mountWithdrawn: true })
         await applyBrokeredSecrets(sandbox, plan, input.ensure.workspaceId)
@@ -753,7 +825,13 @@ export function createDaytonaSandboxDriver(
       await sandboxById(target.sandboxId)
         .then((sandbox) => sandbox.delete(operationTimeout))
         .catch((err) => {
-          if (driverErrorSignals(err).status !== 404) throw err
+          // 404: already gone. 409 (`DaytonaConflictError`, "state change in
+          // progress"): another transition — typically a racing delete —
+          // already holds the sandbox, so it is either leaving on its own or
+          // still listed for the next GC sweep to retry. Neither is a
+          // destroy failure.
+          const status = driverErrorSignals(err).status
+          if (status !== 404 && status !== 409) throw err
         })
       // Org secrets are org-scoped, not sandbox-scoped: deleting the sandbox
       // leaves every credential brokered to it spendable in the organization,

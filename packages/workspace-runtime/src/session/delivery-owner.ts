@@ -8,7 +8,7 @@ export type QueuedPromptAction = "cancel" | "steer" | "hold" | "release" | { rep
 
 type SteeringResult = NonNullable<Awaited<ReturnType<import("@claxedo/agent-sdk-runtime").AgentRuntime["turns"]["start"]>>["steering"]>
 export type QueuedControlResult = { ok: true } | { ok: false; status: "pending" | "rejected" | "unknown" | "conflict" | "provider_owned"; message: string; operationId?: string }
-export type QueuedPromptRequester = Pick<QueuedPromptRecord, "actor" | "author" | "authority" | "provenance">
+export type QueuedPromptRequester = Pick<QueuedPromptRecord, "actor" | "author" | "authority" | "provenance" | "grant">
 export type SessionDeliveryStore = {
   queuePrompt(input: Omit<QueuedPromptRecord, "seq" | "queuedAt" | "held" | "steering">): QueuedPromptRecord
   deleteQueuedPrompt(sessionId: string, seq: number): boolean
@@ -22,7 +22,8 @@ export type SessionDeliveryStore = {
 }
 type Submission = { sessionId: string; body: SessionPromptBody } & QueuedPromptRequester
 export type SessionDeliveryOwner = {
-  list(sessionId: string): Array<QueuedPromptRecord & { held: boolean }>
+  /** What a reader of the queue may see: the grant is the turn's proof, never a row field. */
+  list(sessionId: string): Array<Omit<QueuedPromptRecord, "grant"> & { held: boolean }>
   control(sessionId: string, seq: number, action: QueuedPromptAction): Promise<QueuedControlResult>
   queue(input: Submission): QueuedPromptRecord
   steer(input: Submission): Promise<QueuedControlResult>
@@ -64,11 +65,11 @@ export function createSessionDeliveryOwner(input: {
   const eligible = (item: QueuedPromptRecord) => !item.held && (!item.steering || item.steering.state === "rejected")
   const next = (sessionId: string) => store().listQueuedPrompts()
     .filter((item) => item.sessionId === sessionId && eligible(item)).sort((a, b) => a.seq - b.seq)[0]
-  const persist = ({ sessionId, body, actor, author, authority, provenance }: Submission) => {
+  const persist = ({ sessionId, body, actor, author, authority, provenance, grant }: Submission) => {
     if (disposed) throw new Error("Session delivery owner is disposed")
     return store().queuePrompt({
       sessionId, ...queuedPromptColumns(body), messageId: body.messageID ?? `msg_${randomUUID()}`,
-      actor, author, authority, provenance,
+      actor, author, authority, provenance, ...(grant ? { grant } : {}),
     })
   }
   function settle(record: QueuedPromptRecord, operationId: string, mode: "start" | "steer", result: SteeringResult): QueuedControlResult {
@@ -187,7 +188,8 @@ export function createSessionDeliveryOwner(input: {
     return { ok: true }
   }
   return {
-    list: (sessionId) => store().listQueuedPrompts().filter((item) => item.sessionId === sessionId).map((item) => ({ ...item, held: !!item.held })),
+    list: (sessionId) => store().listQueuedPrompts().filter((item) => item.sessionId === sessionId)
+      .map(({ grant: _grant, ...item }) => ({ ...item, held: !!item.held })),
     queue(submission) { const record = persist(submission); kick(record.sessionId); return record },
     steer(submission) { const record = persist(submission); return control(record.sessionId, record.seq, "steer") },
     control,
@@ -223,7 +225,7 @@ function queuedPromptColumns(body: SessionPromptBody): Omit<QueuedPromptRecord, 
 function queuedPromptOrigin(row: QueuedPromptRecord): SessionTurnOrigin | undefined {
   if (row.provenance === "loopback-direct") return { provenance: "loopback-direct" }
   if (row.provenance !== "relay-replayed" || !row.actor || !row.authority) return undefined
-  return { provenance: "relay-replayed", actor: row.actor, authority: row.authority }
+  return { provenance: "relay-replayed", actor: row.actor, authority: row.authority, ...(row.grant ? { grant: row.grant } : {}) }
 }
 
 function queuedPromptBody(row: QueuedPromptRecord): SessionPromptBody {

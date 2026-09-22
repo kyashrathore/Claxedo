@@ -5,6 +5,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11"
 import { TERMINAL_OPTIONS, getScreenReaderModePreference } from "../config"
 import { UrlLinkProvider, FilePathLinkProvider } from "../link-providers/index"
 import { dispatchTerminalFitEvent } from "../fit-event"
+import { openLink } from "@/lib/open-link"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import type { ITheme, ITerminalAddon } from "@xterm/xterm"
 
@@ -297,7 +298,7 @@ export function createTerminalInstance(
     if (options.onUrlClick) {
       options.onUrlClick(event, uri)
     } else {
-      window.open(uri, "_blank")
+      openLink(uri)
     }
   })
   xterm.registerLinkProvider(urlProvider)

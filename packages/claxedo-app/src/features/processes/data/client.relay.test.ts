@@ -98,7 +98,7 @@ describe("process client relay transport", () => {
     }
 
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
-      "GET http://server.test/api/workspace/ws_1/connection",
+      "POST http://server.test/api/workspace/ws_1/connection",
       "GET https://relay.example.test/workspaces/ws_1/api/wr/process",
       "POST https://relay.example.test/workspaces/ws_1/api/wr/process",
       "PUT https://relay.example.test/workspaces/ws_1/api/wr/process/proc_1",

@@ -1,5 +1,7 @@
-import { expect, test } from "bun:test"
-import { neverExecuted, retirementSettled, type RetirementResult } from "./retirement"
+import { expect, spyOn, test } from "bun:test"
+import { spawn } from "node:child_process"
+import { readCreationIdentity } from "./identity"
+import { neverExecuted, retire, retirementSettled, type RetirementResult } from "./retirement"
 import type { SignalOutcome } from "./retirement"
 
 const result = (over: Partial<RetirementResult> = {}): RetirementResult => ({
@@ -52,4 +54,61 @@ test("every combination of leader and descendants agrees with the rule it states
 test("a launch whose payload never ran owns nothing", () => {
   expect(neverExecuted()).toEqual({ leader: "exited", descendants: "verified_clear", signals: [] })
   expect(retirementSettled(neverExecuted())).toBe(true)
+})
+
+/**
+ * Darwin's `killpg` excludes zombies before counting permitted recipients, so
+ * an exiting group answers EPERM while it still has members. Both tests drive
+ * the real `retire` over a real detached group and inject that EPERM on the
+ * group probe alone; the leader is read through `/proc` or `ps`, which never
+ * goes through `process.kill`.
+ */
+const posix = process.platform !== "win32"
+const budgets = { termGraceMs: 400, killVerifyMs: 200 }
+
+async function detachedLeader() {
+  const child = spawn("/bin/sh", ["-c", "sleep 30"], { detached: true, stdio: "ignore" })
+  child.unref()
+  const identity = await readCreationIdentity(child.pid!)
+  if (!identity) throw new Error("the spawned leader was not readable")
+  return {
+    identity,
+    kill() {
+      try { process.kill(-identity.processGroupId, "SIGKILL") } catch {}
+    },
+  }
+}
+
+test.skipIf(!posix)("a transient group EPERM is not read as the group being gone", async () => {
+  const leader = await detachedLeader()
+  let probes = 0
+  const kill = spyOn(process, "kill").mockImplementation((_pid, signal) => {
+    if (signal !== 0) return true
+    if (++probes < 3) throw Object.assign(new Error("permission denied"), { code: "EPERM" })
+    throw Object.assign(new Error("no such group"), { code: "ESRCH" })
+  })
+  try {
+    await retire({ identity: leader.identity }, budgets)
+    expect(probes).toBeGreaterThanOrEqual(3)
+  } finally {
+    kill.mockRestore()
+    leader.kill()
+  }
+})
+
+test.skipIf(!posix)("a group that answers EPERM throughout never counts as retired", async () => {
+  const leader = await detachedLeader()
+  const kill = spyOn(process, "kill").mockImplementation((_pid, signal) => {
+    if (signal === 0) throw Object.assign(new Error("permission denied"), { code: "EPERM" })
+    return true
+  })
+  let outcome: RetirementResult
+  try {
+    outcome = await retire({ identity: leader.identity }, budgets)
+  } finally {
+    kill.mockRestore()
+    leader.kill()
+  }
+  expect(outcome.descendants).toBe("owned")
+  expect(retirementSettled(outcome)).toBe(false)
 })

@@ -73,10 +73,12 @@ allowed sender cannot cost more than the fixed, bounded work described in
 `access.ts` and `rate-limit.ts`.
 
 `onApproval` (used for out-of-band approval decisions, e.g. a button click
-routed outside the normal inbound flow) does not run this pipeline — it goes
-straight to the `approvals` bridge, since the access/rate-limit/dedup
-questions were already answered when the original message that produced the
-approval prompt was admitted.
+routed outside the normal inbound flow) runs the same gates against the
+press's own identity: the channel comes from the decision or its threadKey,
+the access gate and rate limiter key on the pressing sender, the authorizer
+sees an `approval` action, and dedup keys on the pressed card's `messageId` so
+a redelivered or repeated press is processed once. A press that can name no
+channel is refused — none of those gates could attribute it.
 
 ## How each transport normalizes into `InboundEnvelope`
 
@@ -169,7 +171,7 @@ envelope when the body mentions the bot, so every GitHub body starts with
 `@claxedo` and no `^`-anchored command would otherwise match.
 
 `parseChannelCommand` deliberately does NOT produce `approval_reply`. That
-intent is set only by a structured button press (`chatSdkApprovalDecision`).
+intent is set only by a structured button press (`chatSdkApprovalPress`).
 Free-text approvals are classified by the judge inside `ChannelCore`, which
 sees the pending prompt and the conversation; a regex over prose cannot tell
 "no thanks" (a message) from "no" (a denial).
