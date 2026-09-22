@@ -280,6 +280,70 @@ describe("state/orchestration", () => {
     expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
   })
 
+  test("openSession reuses a session tab whether or not the opener knows the workspace route id", () => {
+    const { layout, meta, getState } = makeFixture()
+    const fromScreen = layout.openSession("/work/foo", "ses_1", "Session 1")
+    const fromSidebar = layout.openSession("/work/foo", "ses_1", "Session 1", { workspaceRouteId: "ws_a" })
+    const fromTimeline = layout.openSession("/work/foo", "ses_1", "Session 1")
+
+    expect(fromSidebar).toBe(fromScreen)
+    expect(fromTimeline).toBe(fromScreen)
+    expect(meta.get(fromScreen)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(getState().contentIds.filter((id) => meta.get(id)?.sessionId === "ses_1")).toEqual([fromScreen])
+  })
+
+  test("openSession reuses one New Session tab across openers with and without a route id", () => {
+    const { layout, meta, getState } = makeFixture()
+    const fromAction = layout.openSession("/work/foo", "new", "New Session", { workspaceRouteId: "ws_a" })
+    const fromScreen = layout.openSession("/work/foo", "new", "New Session")
+
+    expect(fromScreen).toBe(fromAction)
+    expect(getState().contentIds.filter((id) => meta.get(id)?.sessionId === "new")).toEqual([fromAction])
+  })
+
+  test("openSession merges an existing route-less duplicate into the tab it reuses", () => {
+    const { layout, meta, wb, getState } = makeFixture()
+    for (const [id, workspaceRouteId] of [["with-route", "ws_a"], ["without-route", undefined]] as const) {
+      meta.upsert({
+        id,
+        type: "session",
+        scope: "directory",
+        directory: "/work/foo",
+        sessionId: "ses_1",
+        content: { type: "session", directory: "/work/foo", sessionId: "ses_1", ...(workspaceRouteId ? { workspaceRouteId } : {}) },
+      })
+      wb.contents.add(id)
+    }
+
+    const id = layout.openSession("/work/foo", "ses_1", "Session 1", { workspaceRouteId: "ws_a" })
+
+    expect(id).toBe("with-route")
+    expect(meta.get("without-route")).toBeUndefined()
+    expect(getState().contentIds).toEqual(["with-route"])
+  })
+
+  test("openSession without a route id never merges tabs from two named workspaces", () => {
+    const { layout, meta, getState } = makeFixture()
+    const a = layout.openSession("/workspace", "new", "New Session", { workspaceRouteId: "ws_a" })
+    const b = layout.openSession("/workspace", "new", "New Session", { workspaceRouteId: "ws_b" })
+
+    const reused = layout.openSession("/workspace", "new", "New Session")
+
+    expect([a, b]).toContain(reused)
+    expect(meta.get(a)).toBeDefined()
+    expect(meta.get(b)).toBeDefined()
+    expect(getState().contentIds).toEqual(expect.arrayContaining([a, b]))
+  })
+
+  test("openSession matches New Session tabs by normalised directory", () => {
+    const { layout } = makeFixture()
+    const relay = layout.openSession("ws_relay", "new", "New Session")
+    const local = layout.openSession("/private/tmp/project", "new", "New Session")
+
+    expect(layout.openSession("workspace:ws_relay", "new", "New Session")).toBe(relay)
+    expect(layout.openSession("/tmp/project", "new", "New Session")).toBe(local)
+  })
+
   test("openSessionById creates a global session surface without directory", () => {
     const { layout, meta, wb, getState } = makeFixture()
     const id = layout.openSessionById("ses_central", "Central")
