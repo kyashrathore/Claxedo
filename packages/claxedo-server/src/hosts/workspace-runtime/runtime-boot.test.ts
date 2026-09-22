@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest"
 import { execFileSync } from "node:child_process"
 import { mkdtemp, rm } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
@@ -15,7 +16,10 @@ import {
 
 describe("claxedo workspace-runtime boot policy", () => {
   test("installs the clone placeholder as a GitHub-only authorization header before boot returns", async () => {
-    const directory = await mkdtemp(path.join(process.cwd(), ".broker-git-test-"))
+    // Outside the repository: a checkout on CI carries its own
+    // http.https://github.com/.extraheader in the local config, which git
+    // reads ahead of the global file the boot writes.
+    const directory = await mkdtemp(path.join(os.tmpdir(), "broker-git-test-"))
     const env = {
       PATH: process.env.PATH,
       HOME: directory,
