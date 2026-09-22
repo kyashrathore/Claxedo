@@ -55,6 +55,8 @@ function stoppedText(operation: RecoveryOperation): string {
     case "unknown":
       return "Stopped — cleanup not verified. Execution ended and was recorded; whether the turn's resources were released is unknown."
   }
+  const unhandled: never = operation.facts.cleanup.value
+  throw new Error(`Unhandled cleanup fact: ${JSON.stringify(unhandled)}`)
 }
 
 function unfinishedText(operation: RecoveryOperation): string {
@@ -117,6 +119,8 @@ function refusalSummary(refusal: RecoveryRefusal): string {
     case "version_update_required":
       return `Refused: the owner speaks recovery contract version ${refusal.contractVersion} and this client is too old for it. ${refusal.message}`
   }
+  const unhandled: never = refusal
+  throw new Error(`Unhandled recovery refusal: ${JSON.stringify(unhandled)}`)
 }
 
 function namedOrNone(values: readonly string[]): string {

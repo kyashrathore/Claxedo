@@ -140,7 +140,7 @@ describe("resolveTarget", () => {
       headers: { Authorization: `Bearer ${jwt({ jti: "jti-1", ws: "ws a" })}` },
       expiresAt: 1_000_000 + 15 * 60_000,
     })
-    expect(fixture.controlPlane.calls.map((call) => [call.method, call.path])).toEqual([["GET", "/api/workspace/ws%20a/connection"]])
+    expect(fixture.controlPlane.calls.map((call) => [call.method, call.path])).toEqual([["POST", "/api/workspace/ws%20a/connection"]])
   })
 
   test("node serves its own workspace directly and relays the rest through its own connection route", async () => {
@@ -195,7 +195,7 @@ describe("hosted relay hop", () => {
     const recovered = await runtime("/session", { method: "GET" })
     expect(recovered.status).toBe(200)
     expect(fixture.controlPlane.calls.map((call) => [call.method, call.path, call.body])).toEqual([
-      ["GET", "/api/workspace/ws-1/connection", undefined],
+      ["POST", "/api/workspace/ws-1/connection", "{}"],
       ["POST", "/api/workspace/ws-1/connection/refresh", JSON.stringify({ previousJti: "jti-1" })],
     ])
     expect(fixture.relay.calls.map((call) => call.headers.get("authorization"))).toEqual([

@@ -52,4 +52,6 @@ function refusalReply(refusal: RecoveryRefusal): string {
     case "version_update_required":
       return "The machine running this session needs updating before it can stop a turn."
   }
+  const unhandled: never = refusal
+  throw new Error(`Unhandled recovery refusal: ${JSON.stringify(unhandled)}`)
 }
