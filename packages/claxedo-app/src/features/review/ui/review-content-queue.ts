@@ -28,9 +28,7 @@ export function createReviewContentQueue(input: {
       if (!next) return
       pending.delete(next.key)
       active.add(next.key)
-      void Promise.resolve().then(() => {
-        if (!disposed) return next.load()
-      }).catch((error: unknown) => {
+      void Promise.resolve().then(() => (disposed ? undefined : next.load())).catch((error: unknown) => {
         if (!disposed) input.onError(next, error)
       }).finally(() => {
         active.delete(next.key)

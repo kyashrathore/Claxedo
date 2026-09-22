@@ -124,7 +124,7 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
         const files = imageFiles(event.clipboardData)
         if (files.length === 0) return
         event.preventDefault()
-        void addImages(files)
+        addImages(files)
       }}
       onDragOver={(event) => {
         // `files` only materializes at drop time; all a dragover exposes is
@@ -135,7 +135,7 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
         const files = imageFiles(event.dataTransfer)
         if (files.length === 0) return
         event.preventDefault()
-        void addImages(files)
+        addImages(files)
       }}
     >
       <nav class="tsk-crumbs" aria-label="Breadcrumb">
@@ -195,7 +195,7 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
           hidden
           data-testid="task-create-image-picker"
           onChange={(event) => {
-            void addImages([...(event.currentTarget.files ?? [])])
+            addImages([...(event.currentTarget.files ?? [])])
             event.currentTarget.value = ""
           }}
         />

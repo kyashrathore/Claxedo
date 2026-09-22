@@ -26,7 +26,7 @@ import { loadTerminalSessionPreview } from "../../../features/terminal/lib/termi
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../../features/workspaces/data/workspace-connection"
-import { workingSetActiveFilePath, type ReviewWorkspaceWorkingSetSnapshot } from "../review/review-workspace-working-set"
+import { workingSetActiveFilePath } from "../review/review-workspace-working-set"
 import { createPathHelpers } from "@/platform/files/path"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"

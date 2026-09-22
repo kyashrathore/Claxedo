@@ -25,13 +25,13 @@ function eventInfo(properties: unknown) {
 /** A replacement command list belongs only to the session named by its agent. */
 export function sessionEventCommands(properties: unknown): { sessionID: string; commands: AgentSessionCommand[] } | undefined {
   const row = asRecord(properties)
-  if (typeof row?.sessionID !== "string" || !row.sessionID || !Array.isArray(row.commands)) return
+  if (typeof row?.sessionID !== "string" || !row.sessionID || !Array.isArray(row.commands)) return undefined
   const commands = row.commands
   if (!commands.every((item): item is AgentSessionCommand => {
     const command = asRecord(item)
     if (typeof command?.name !== "string" || typeof command.description !== "string") return false
     return command.input == null || typeof asRecord(command.input)?.hint === "string"
-  })) return
+  })) return undefined
   return { sessionID: row.sessionID, commands }
 }
 

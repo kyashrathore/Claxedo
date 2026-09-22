@@ -199,8 +199,9 @@ export function createTurnCoverageOwner(input: {
   )
 
   // Unmounting ends this owner's attempts and nothing more: the obligations
-  // stay, and the next mount of this session picks them up.
+  // stay, and the next mount of this session picks them up. Each `abandon`
+  // deletes only its own entry, which the live Map iterator tolerates.
   onCleanup(() => {
-    for (const abandon of [...attempts.values()]) abandon()
+    for (const abandon of attempts.values()) abandon()
   })
 }

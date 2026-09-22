@@ -197,7 +197,7 @@ function recordResolvedSessionRequests(input: {
     queryClient: input.queryClient,
     queryKey: resolvedSessionRequestsKey(input.sessionId),
     value: (current) => {
-      const markedAt = { ...(current?.markedAt ?? {}) }
+      const markedAt = { ...current?.markedAt }
       const recorded = {
         permissions: resolvedIdsAfterWrite(current?.permissions ?? [], input.previous?.permissions, input.next.permissions, markedAt),
         questions: resolvedIdsAfterWrite(current?.questions ?? [], input.previous?.questions, input.next.questions, markedAt),

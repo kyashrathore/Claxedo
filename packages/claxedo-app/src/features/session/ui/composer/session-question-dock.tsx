@@ -273,7 +273,7 @@ export const SessionQuestionDock: Component<{
     rejectMutation.mutate()
   }
 
-  const submit = () => void reply(questions().map((_, i) => store.answers[i] ?? []))
+  const submit = () => reply(questions().map((_, i) => store.answers[i] ?? []))
 
   const answered = (i: number) =>
     isAnswered({ answers: store.answers[i], customOn: store.customOn[i], custom: store.custom[i] })
@@ -345,7 +345,7 @@ export const SessionQuestionDock: Component<{
     switch (action.type) {
       case "reject":
         event.preventDefault()
-        void reject()
+        reject()
         return
       case "next":
         event.preventDefault()
