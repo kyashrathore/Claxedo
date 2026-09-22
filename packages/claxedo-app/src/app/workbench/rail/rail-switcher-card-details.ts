@@ -99,9 +99,9 @@ export function switcherCardStatus(input: {
   }
   if (input.status === "permission") {
     const age = since(input.waitingSince())
-    return { text: age ? `Waiting for you · ${age}` : "Waiting for you", tone: "warning" }
+    return { text: age ? `Waiting for you · ${age}` : "Waiting for you", tone: "attention" }
   }
-  if (input.status === "error") return { text: "Last turn failed", tone: "critical" }
+  if (input.status === "error") return { text: "Last turn failed", tone: "attention" }
   return undefined
 }
 

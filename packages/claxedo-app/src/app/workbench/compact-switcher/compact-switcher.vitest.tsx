@@ -81,25 +81,26 @@ describe("CompactSwitcher", () => {
     identity(index).querySelector<HTMLElement>("[data-switcher-status]")?.dataset.switcherStatus ?? "idle"
   const hasAvatar = (index: number) => !!identity(index).querySelector("[data-switcher-project-avatar]")
 
-  test("working, waiting and failed tabs show their status in place of the project avatar", () => {
+  test("a working tab shows the spinner in place of the avatar; other states dot the avatar", () => {
     render(() => (
       <CompactSwitcher
         items={[
           { ...items[0], contentId: "a", title: "A", status: "working" },
           { ...items[0], contentId: "b", title: "B", status: "permission" },
           { ...items[0], contentId: "c", title: "C", status: "error" },
+          { ...items[0], contentId: "d", title: "D", status: "done" },
         ]}
       />
     ))
 
-    expect([0, 1, 2].map(statusOf)).toEqual(["working", "permission", "error"])
-    expect([0, 1, 2].map(hasAvatar)).toEqual([false, false, false])
+    expect([0, 1, 2, 3].map(statusOf)).toEqual(["working", "permission", "error", "done"])
+    expect([0, 1, 2, 3].map(hasAvatar)).toEqual([false, true, true, true])
     // Status is a signal, not chrome: it is not dimmed on an inactive tab.
-    expect([0, 1, 2].map((index) => identity(index).classList.contains("opacity-55"))).toEqual([false, false, false])
+    expect([0, 1, 2, 3].map((index) => identity(index).classList.contains("opacity-55"))).toEqual([false, false, false, false])
     expect(screen.getByRole("button", { name: "A" }).querySelector("[data-switcher-status]")).toBeNull()
   })
 
-  test("a finished tab nobody has looked at keeps its avatar at full strength and brightens its title", () => {
+  test("a finished tab nobody has looked at brightens its title; an idle tab stays dimmed with no dot", () => {
     render(() => (
       <CompactSwitcher
         items={[
@@ -109,15 +110,9 @@ describe("CompactSwitcher", () => {
       />
     ))
 
-    expect(statusOf(0)).toBe("done")
-    expect(hasAvatar(0)).toBe(true)
-    expect(identity(0).classList.contains("opacity-55")).toBe(false)
     const title = (name: string) => screen.getByRole("button", { name }).querySelector("[data-testid='switcher-title']")
     expect(title("Done")?.classList.contains("font-medium")).toBe(true)
-    expect(title("Done")?.classList.contains("text-text-base")).toBe(true)
-
     expect(statusOf(1)).toBe("idle")
-    expect(hasAvatar(1)).toBe(true)
     expect(identity(1).classList.contains("opacity-55")).toBe(true)
     expect(title("Idle")?.classList.contains("font-medium")).toBe(false)
   })
@@ -132,9 +127,9 @@ describe("CompactSwitcher", () => {
     })
     expect(seen).toEqual([
       ["working", false],
-      ["permission", false],
+      ["permission", true],
       ["working", false],
-      ["error", false],
+      ["error", true],
       ["done", true],
       ["idle", true],
     ])
@@ -155,7 +150,7 @@ describe("CompactSwitcher", () => {
         [...row.children].slice(1).map((cell) => cell.textContent?.trim()).join(" "))
 
     const details = (overrides: Partial<SwitcherCardDetails> = {}): SwitcherCardDetails => ({
-      status: () => ({ text: "Waiting for you · 12m", tone: "warning" }),
+      status: () => ({ text: "Waiting for you · 12m", tone: "attention" }),
       question: () => "Reuse the dev server on the same port?",
       todo: () => ({ text: "Prune idle tabs on load", done: 3, total: 5 }),
       changes: () => ({ files: 3, added: 84, removed: 12 }),

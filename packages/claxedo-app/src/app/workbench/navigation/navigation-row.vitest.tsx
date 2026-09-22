@@ -159,29 +159,24 @@ describe("NavigationRow", () => {
 describe("NavigationStatusMark", () => {
   const mark = (container: HTMLElement) => container.querySelector<HTMLElement>("[data-sidebar-status]")
 
-  test("working shows the app spinner in place of a dot", () => {
+  test("working is a spinning ring, not a dot", () => {
     const view = render(() => <NavigationStatusMark status="working" />)
+    const ring = mark(view.container)?.firstElementChild
     expect(mark(view.container)?.dataset.sidebarStatus).toBe("working")
-    expect(mark(view.container)?.querySelector('[data-component="spinner"]')).not.toBeNull()
+    expect(ring?.classList.contains("animate-spin")).toBe(true)
+    expect(ring?.classList.contains("motion-reduce:animate-none")).toBe(true)
   })
 
-  test("needs-input and error share the tinted square and differ only in tone", () => {
-    const tone = (status: "permission" | "error") => {
+  test("needs-input and a failed turn are both a blue attention dot; finished is grey; idle is nothing", () => {
+    const tone = (status: SwitcherStatus) => {
       const view = render(() => <NavigationStatusMark status={status} />)
-      const square = mark(view.container)!
-      const dot = square.firstElementChild as HTMLElement
-      const result = { square: [...square.classList].filter((c) => c.startsWith("bg-")), dot: [...dot.classList].filter((c) => c.startsWith("bg-")) }
+      const classes = [...(mark(view.container)?.classList ?? [])].filter((c) => c.startsWith("bg-"))
       view.unmount()
-      return result
+      return classes
     }
-    expect(tone("permission")).toEqual({ square: ["bg-icon-warning-base/15"], dot: ["bg-icon-warning-base"] })
-    expect(tone("error")).toEqual({ square: ["bg-icon-critical-base/15"], dot: ["bg-icon-critical-base"] })
-  })
-
-  test("done is a text-coloured dot and idle renders nothing", () => {
-    const done = render(() => <NavigationStatusMark status="done" />)
-    expect(mark(done.container)?.classList.contains("bg-text-base")).toBe(true)
-    expect(mark(done.container)?.querySelector("*")).toBeNull()
+    expect(tone("permission")).toEqual(["bg-icon-interactive-base"])
+    expect(tone("error")).toEqual(["bg-icon-interactive-base"])
+    expect(tone("done")).toEqual(["bg-text-weak"])
     const idle = render(() => <NavigationStatusMark status="idle" />)
     expect(idle.container.innerHTML).toBe("")
   })

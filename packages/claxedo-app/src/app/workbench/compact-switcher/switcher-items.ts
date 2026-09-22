@@ -26,7 +26,7 @@ export type SwitcherItem = {
 }
 
 export type SwitcherCardDetails = {
-  status: () => { text: string; tone?: "warning" | "critical" } | undefined
+  status: () => { text: string; tone?: "attention" } | undefined
   /** The question a session is waiting on, when it is waiting on one. */
   question: () => string | undefined
   todo: () => { text?: string; done: number; total: number } | undefined

@@ -1,5 +1,4 @@
 import { Match, Show, Switch, createEffect, on, onCleanup, type JSX } from "solid-js"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { createHoverEngagement } from "../rail/rail-hover-engagement"
 import { useDragSource } from "../workbench/index"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
@@ -192,12 +191,10 @@ export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
 
 /**
  * The one status mark for a session or terminal, drawn by the sidebar rows and
- * the compact tab alike so the two never disagree. It fits the 16px avatar and
- * glyph slot:
- *   working          → the app spinner, grey
- *   permission/error → an avatar-shaped tint around a 6px dot; warning for
- *                      "needs you", critical for a failed turn
- *   done             → a 6px dot in the text colour
+ * the compact tab alike so the two never disagree:
+ *   working          → a grey ring spinner
+ *   permission/error → a blue dot: the session needs you
+ *   done             → a grey dot
  *   idle             → nothing
  * `surface` picks the data attribute each surface's e2e oracle reads.
  */
@@ -208,33 +205,20 @@ export function NavigationStatusMark(props: { status: SwitcherStatus; surface?: 
   return (
     <Switch>
       <Match when={props.status === "working"}>
-        {/* The spinner animates through inline styles, so only `!important`
-            stops it; its rects then read as a still grid. */}
-        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 items-center justify-center text-icon-weak-base">
-          <Spinner class="motion-reduce:[&_rect]:!animate-none" style={{ width: "14px" }} />
+        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 items-center justify-center">
+          <span class="size-3.5 rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none" />
         </span>
       </Match>
-      <Match when={props.status === "permission" || props.status === "error"}>
+      <Match when={props.status !== "idle"}>
         <span
           aria-hidden="true"
           {...data()}
-          class="flex size-4 shrink-0 items-center justify-center rounded-sm"
+          class="size-1.5 shrink-0 rounded-full"
           classList={{
-            "bg-icon-warning-base/15": props.status === "permission",
-            "bg-icon-critical-base/15": props.status === "error",
+            "bg-icon-interactive-base": props.status === "permission" || props.status === "error",
+            "bg-text-weak": props.status === "done",
           }}
-        >
-          <span
-            class="size-1.5 rounded-full"
-            classList={{
-              "bg-icon-warning-base": props.status === "permission",
-              "bg-icon-critical-base": props.status === "error",
-            }}
-          />
-        </span>
-      </Match>
-      <Match when={props.status === "done"}>
-        <span aria-hidden="true" {...data()} class="size-1.5 shrink-0 rounded-full bg-text-base" />
+        />
       </Match>
     </Switch>
   )

@@ -24,11 +24,6 @@ function fallback(value: string | undefined, empty = "Not available") {
   return value?.trim() || empty
 }
 
-// Working, waiting and failed take the whole avatar slot: they are what the
-// tab is about right now, so they stay at full opacity on inactive tabs too.
-const takesAvatarSlot = (status: SwitcherItem["status"]) =>
-  status === "working" || status === "permission" || status === "error"
-
 function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; status: Accessor<SwitcherItem["status"]> }) {
   const status = createMemo(() => props.status() ?? "idle")
   return (
@@ -42,8 +37,10 @@ function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; statu
         "opacity-100": props.active || status() !== "idle",
       }}
     >
+      {/* Working replaces the avatar: it is what the tab is about right now.
+          Every other state is a dot on the avatar's corner. */}
       <Show
-        when={takesAvatarSlot(status())}
+        when={status() === "working"}
         fallback={
           <>
             <ProjectAvatar
@@ -52,15 +49,15 @@ function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; statu
               variant="outline"
               class="size-4 shrink-0"
             />
-            <Show when={status() === "done"}>
+            <Show when={status() !== "idle"}>
               <span class="absolute bottom-[3px] right-0 flex rounded-full bg-background-base p-px">
-                <NavigationStatusMark status="done" surface="switcher" />
+                <NavigationStatusMark status={status()} surface="switcher" />
               </span>
             </Show>
           </>
         }
       >
-        <NavigationStatusMark status={status()} surface="switcher" />
+        <NavigationStatusMark status="working" surface="switcher" />
       </Show>
     </span>
   )
@@ -71,7 +68,7 @@ function MetadataRow(props: {
   label: string
   value?: string
   detail?: string
-  tone?: "warning" | "critical"
+  tone?: "attention"
 }) {
   const value = () => props.value?.trim()
   // A row with nothing to say is left out rather than drawn as a placeholder:
@@ -100,8 +97,7 @@ function MetadataRow(props: {
             class="min-w-0 truncate text-sm"
             classList={{
               "text-text-base": !props.tone,
-              "text-icon-warning-base": props.tone === "warning",
-              "text-icon-critical-base": props.tone === "critical",
+              "text-text-interactive-base": props.tone === "attention",
             }}
             title={props.detail ? `${text()} ${props.detail}` : text()}
           >

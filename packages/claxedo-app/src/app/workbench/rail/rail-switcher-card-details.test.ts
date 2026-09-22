@@ -13,21 +13,21 @@ describe("switcher card status", () => {
       .toEqual({ text: "Working for 4m" })
   })
 
-  test("waiting counts from the oldest open permission and takes the warning tone", () => {
+  test("waiting counts from the oldest open permission and takes the attention tone", () => {
     expect(switcherCardStatus({ status: "permission", turnStartedAt: () => undefined, waitingSince: () => minutesAgo(12) }))
-      .toEqual({ text: "Waiting for you · 12m", tone: "warning" })
+      .toEqual({ text: "Waiting for you · 12m", tone: "attention" })
   })
 
   test("a state with no known start says so without a duration", () => {
     expect(switcherCardStatus({ status: "working", turnStartedAt: () => undefined, waitingSince: () => undefined }))
       .toEqual({ text: "Working" })
     expect(switcherCardStatus({ status: "permission", turnStartedAt: () => undefined, waitingSince: () => undefined }))
-      .toEqual({ text: "Waiting for you", tone: "warning" })
+      .toEqual({ text: "Waiting for you", tone: "attention" })
   })
 
-  test("a failed turn is critical; idle and done have no status row", () => {
+  test("a failed turn needs attention; idle and done have no status row", () => {
     expect(switcherCardStatus({ status: "error", turnStartedAt: () => undefined, waitingSince: () => undefined }))
-      .toEqual({ text: "Last turn failed", tone: "critical" })
+      .toEqual({ text: "Last turn failed", tone: "attention" })
     for (const status of ["idle", "done", undefined] as const) {
       expect(switcherCardStatus({ status, turnStartedAt: () => minutesAgo(1), waitingSince: () => minutesAgo(1) })).toBeUndefined()
     }
