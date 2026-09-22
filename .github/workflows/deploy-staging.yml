@@ -1,0 +1,248 @@
+name: deploy-staging
+
+# Everything merged to `staging` ships from here: control plane, relay, sandbox
+# image, app. The desktop app is NOT part of this run — it is tag-driven
+# (`claxedo-v*` -> release-claxedo.yml). See docs/deploy/staging-branch.md.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      components:
+        description: "Component to (re)deploy"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - control-plane
+          - relay
+          - sandbox-image
+          - app
+
+# Shared with deploy-claxedo-app-staging.yml: one Claxedo cloud deploy at a
+# time, and a queued run waits rather than being cancelled mid-release — a
+# cancelled release leaves the ledger holding a candidate revision nothing
+# activated.
+concurrency:
+  group: claxedo-cloud-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  plan:
+    name: select components
+    runs-on: ubuntu-latest
+    outputs:
+      control_plane: ${{ steps.select.outputs.control_plane }}
+      relay: ${{ steps.select.outputs.relay }}
+      sandbox_image: ${{ steps.select.outputs.sandbox_image }}
+      app: ${{ steps.select.outputs.app }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Select components
+        id: select
+        env:
+          REQUESTED: ${{ inputs.components || 'all' }}
+          BEFORE: ${{ github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          selected() { [ "$REQUESTED" = "all" ] || [ "$REQUESTED" = "$1" ]; }
+
+          # The sandbox image is a ~4.5 GB container build; it only earns a run
+          # when the Worker, its build script, or a package the image bundles
+          # changed. A dispatch that names it runs it unconditionally.
+          sandbox_changed=false
+          if [ "$REQUESTED" = "sandbox-image" ]; then
+            sandbox_changed=true
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            if git diff --name-only "$BEFORE" "$HEAD" | grep -Eq '^(packages/claxedo-server/scripts/sandbox/|packages/sandbox-contract/|packages/sandbox-manager/|packages/workspace-runtime/|packages/agent-sdk-runtime/|packages/agent-runtime-contract/|packages/agent-event-runtime/|\.github/workflows/deploy-cloudflare-sandbox-worker\.yml$)'; then
+              sandbox_changed=true
+            fi
+          else
+            echo "no usable base commit; treating the sandbox image as changed"
+            sandbox_changed=true
+          fi
+
+          {
+            selected control-plane && echo "control_plane=true" || echo "control_plane=false"
+            selected relay && echo "relay=true" || echo "relay=false"
+            { selected sandbox-image && [ "$sandbox_changed" = true ]; } && echo "sandbox_image=true" || echo "sandbox_image=false"
+            selected app && echo "app=true" || echo "app=false"
+          } >> "$GITHUB_OUTPUT"
+
+          cat "$GITHUB_OUTPUT"
+
+  gate:
+    name: lint, typecheck, architecture ratchets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      # typecheck.yml runs the same three commands behind the affected-surface
+      # selector. A deploy gate takes the whole repository instead: the branch
+      # being released is what has to be green, not the diff that reached it.
+      - name: Run lint
+        run: bun run lint
+
+      - name: Run typecheck
+        run: bun typecheck
+
+      - name: Run architecture ratchets
+        run: bun run test:architecture-ratchets
+
+  unit:
+    name: CI suite
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
+  control-plane:
+    name: control plane (Better Auth + D1)
+    needs: [plan, gate, unit]
+    if: ${{ !cancelled() && needs.plan.outputs.control_plane == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+      CLAXEDO_AUTH_INTROSPECTION_SECRET: ${{ secrets.CLAXEDO_AUTH_INTROSPECTION_SECRET }}
+      CLAXEDO_ADAPTER_PROFILE: better-auth-d1
+      CLAXEDO_PRODUCT_POSTURE: user-deployed
+      CLAXEDO_SANDBOX_POSTURE: full-hosted
+      CLAXEDO_SANDBOX_DRIVER: cloudflare
+      CLAXEDO_AUTH_METHODS: ${{ vars.CLAXEDO_AUTH_METHODS }}
+      GITHUB_CLIENT_ID: ${{ vars.CLAXEDO_GITHUB_CLIENT_ID }}
+      CLAXEDO_ENVIRONMENT_ID: ${{ vars.CLAXEDO_ENVIRONMENT_ID }}
+      CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: ${{ vars.CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID }}
+      CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: ${{ vars.CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME }}
+      CLAXEDO_STAGING_DEPLOYMENT_ID: ${{ vars.CLAXEDO_STAGING_DEPLOYMENT_ID }}
+      CLAXEDO_STAGING_API_ORIGIN: ${{ vars.CLAXEDO_STAGING_API_ORIGIN }}
+      CLAXEDO_STAGING_APP_ORIGIN: ${{ vars.CLAXEDO_STAGING_APP_ORIGIN }}
+      CLAXEDO_STAGING_WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_STAGING_WORKSPACE_RELAY_URL }}
+      CLAXEDO_STAGING_AUTH_D1_DATABASE_ID: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_ID }}
+      CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME }}
+      CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_ID: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_ID }}
+      CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME }}
+      CLAXEDO_STAGING_SANDBOX_WORKER_URL: ${{ vars.CLAXEDO_STAGING_SANDBOX_WORKER_URL }}
+      # release-better-auth-d1.ts refuses a release whose two environments share
+      # a deployment id, origin, database or limiter namespace, so the
+      # production side of every pair is an input even on a staging run.
+      CLAXEDO_PRODUCTION_DEPLOYMENT_ID: ${{ vars.CLAXEDO_PRODUCTION_DEPLOYMENT_ID }}
+      CLAXEDO_PRODUCTION_API_ORIGIN: ${{ vars.CLAXEDO_PRODUCTION_API_ORIGIN }}
+      CLAXEDO_PRODUCTION_APP_ORIGIN: ${{ vars.CLAXEDO_PRODUCTION_APP_ORIGIN }}
+      CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL }}
+      CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_ID: ${{ vars.CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_ID }}
+      CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_NAME: ${{ vars.CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_NAME }}
+      CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_ID: ${{ vars.CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_ID }}
+      CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_NAME: ${{ vars.CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_NAME }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Verify the release inputs are configured
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID BETTER_AUTH_SECRET \
+            CLAXEDO_AUTH_INTROSPECTION_SECRET CLAXEDO_AUTH_METHODS GITHUB_CLIENT_ID \
+            CLAXEDO_ENVIRONMENT_ID CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID \
+            CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME CLAXEDO_STAGING_DEPLOYMENT_ID \
+            CLAXEDO_STAGING_API_ORIGIN CLAXEDO_STAGING_APP_ORIGIN \
+            CLAXEDO_STAGING_WORKSPACE_RELAY_URL CLAXEDO_STAGING_AUTH_D1_DATABASE_ID \
+            CLAXEDO_STAGING_AUTH_D1_DATABASE_NAME CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_ID \
+            CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME CLAXEDO_STAGING_SANDBOX_WORKER_URL \
+            CLAXEDO_PRODUCTION_DEPLOYMENT_ID CLAXEDO_PRODUCTION_API_ORIGIN \
+            CLAXEDO_PRODUCTION_APP_ORIGIN CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL \
+            CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_ID CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_NAME \
+            CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_ID CLAXEDO_PRODUCTION_CONTROL_PLANE_D1_DATABASE_NAME; do
+            [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
+          done
+
+      - name: Print the derived release inputs
+        working-directory: packages/claxedo-server
+        run: bun scripts/deploy/staging-release.ts --staging --dry-run
+
+      # ~10 minutes of unavailability: the ledger goes `locked` at cutover and
+      # every product route answers 503 until --dev-open writes `open`.
+      - name: Release the control plane
+        working-directory: packages/claxedo-server
+        run: bun scripts/deploy/staging-release.ts --staging
+
+  relay:
+    name: workspace relay
+    needs: [plan, gate, unit, control-plane]
+    if: ${{ !cancelled() && needs.plan.outputs.relay == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' && needs.control-plane.result != 'failure' }}
+    uses: ./.github/workflows/deploy-relay.yml
+    with:
+      environment: staging
+    secrets: inherit
+
+  sandbox-image:
+    name: cloudflare sandbox worker
+    needs: [plan, gate, unit, control-plane, relay]
+    if: ${{ !cancelled() && needs.plan.outputs.sandbox_image == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' && needs.control-plane.result != 'failure' && needs.relay.result != 'failure' }}
+    uses: ./.github/workflows/deploy-cloudflare-sandbox-worker.yml
+    with:
+      deploy_worker: true
+      agent_plugins: true
+    secrets: inherit
+
+  app:
+    name: browser app
+    needs: [plan, gate, unit, control-plane, relay, sandbox-image]
+    if: ${{ !cancelled() && needs.plan.outputs.app == 'true' && needs.gate.result == 'success' && needs.unit.result == 'success' && needs.control-plane.result != 'failure' && needs.relay.result != 'failure' && needs.sandbox-image.result != 'failure' }}
+    uses: ./.github/workflows/deploy-claxedo-app.yml
+    with:
+      target_environment: staging
+    secrets: inherit
+
+  result:
+    name: staging deploy result
+    if: always()
+    needs: [plan, gate, unit, control-plane, relay, sandbox-image, app]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected component to have deployed
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          GATE_RESULT: ${{ needs.gate.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          CONTROL_PLANE_SELECTED: ${{ needs.plan.outputs.control_plane }}
+          CONTROL_PLANE_RESULT: ${{ needs.control-plane.result }}
+          RELAY_SELECTED: ${{ needs.plan.outputs.relay }}
+          RELAY_RESULT: ${{ needs.relay.result }}
+          SANDBOX_SELECTED: ${{ needs.plan.outputs.sandbox_image }}
+          SANDBOX_RESULT: ${{ needs.sandbox-image.result }}
+          APP_SELECTED: ${{ needs.plan.outputs.app }}
+          APP_RESULT: ${{ needs.app.result }}
+        run: |
+          set -uo pipefail
+          failed=0
+          require() {
+            if [ "$2" != "success" ]; then
+              echo "::error::$1 concluded: $2"
+              failed=1
+            fi
+          }
+          require "Component selection" "$PLAN_RESULT"
+          require "Lint/typecheck/ratchets gate" "$GATE_RESULT"
+          require "CI suite" "$UNIT_RESULT"
+          [ "$CONTROL_PLANE_SELECTED" = "true" ] && require "Control plane" "$CONTROL_PLANE_RESULT"
+          [ "$RELAY_SELECTED" = "true" ] && require "Relay" "$RELAY_RESULT"
+          [ "$SANDBOX_SELECTED" = "true" ] && require "Sandbox image" "$SANDBOX_RESULT"
+          [ "$APP_SELECTED" = "true" ] && require "App" "$APP_RESULT"
+          exit "$failed"

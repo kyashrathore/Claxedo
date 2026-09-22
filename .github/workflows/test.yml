@@ -6,6 +6,10 @@ on:
       - dev
   pull_request:
   workflow_dispatch:
+  # deploy-staging.yml calls this so a red suite blocks the release through
+  # `needs:`. `staging` stays out of `push.branches` above: a push trigger would
+  # run the whole suite a second time, in a run the deploy does not depend on.
+  workflow_call:
 
 concurrency:
   # Keep every run on dev so cancelled checks do not pollute the default branch

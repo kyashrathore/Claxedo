@@ -189,7 +189,11 @@ export function pairedD1RecoveryEpoch(input: {
     .digest("hex")}`
 }
 
-function environmentValue(env: NodeJS.ProcessEnv, environment: BetterAuthD1ReleaseEnvironment, suffix: string) {
+export function betterAuthD1EnvironmentValue(
+  env: NodeJS.ProcessEnv,
+  environment: BetterAuthD1ReleaseEnvironment,
+  suffix: string,
+) {
   return required(env, `CLAXEDO_${environment.toUpperCase()}_${suffix}`)
 }
 
@@ -205,32 +209,32 @@ function assertIsolatedDeploymentResources(env: NodeJS.ProcessEnv) {
     "CONTROL_PLANE_D1_DATABASE_NAME",
   ] as const
   for (const field of fields) {
-    const production = environmentValue(env, "production", field)
-    const staging = environmentValue(env, "staging", field)
+    const production = betterAuthD1EnvironmentValue(env, "production", field)
+    const staging = betterAuthD1EnvironmentValue(env, "staging", field)
     if (production === staging) {
       throw new Error(`production and staging ${field} must be distinct`)
     }
   }
   for (const environment of ["production", "staging"] as const) {
     if (
-      environmentValue(env, environment, "AUTH_D1_DATABASE_ID") ===
-      environmentValue(env, environment, "CONTROL_PLANE_D1_DATABASE_ID")
+      betterAuthD1EnvironmentValue(env, environment, "AUTH_D1_DATABASE_ID") ===
+      betterAuthD1EnvironmentValue(env, environment, "CONTROL_PLANE_D1_DATABASE_ID")
     ) {
       throw new Error(`${environment} AUTH and CONTROL_PLANE database IDs must be distinct`)
     }
     if (
-      environmentValue(env, environment, "AUTH_D1_DATABASE_NAME") ===
-      environmentValue(env, environment, "CONTROL_PLANE_D1_DATABASE_NAME")
+      betterAuthD1EnvironmentValue(env, environment, "AUTH_D1_DATABASE_NAME") ===
+      betterAuthD1EnvironmentValue(env, environment, "CONTROL_PLANE_D1_DATABASE_NAME")
     ) {
       throw new Error(`${environment} AUTH and CONTROL_PLANE database names must be distinct`)
     }
   }
   const productionNamespace = allocatedRequestLimiterNamespaceId(
-    environmentValue(env, "production", "DEPLOYMENT_ID"),
+    betterAuthD1EnvironmentValue(env, "production", "DEPLOYMENT_ID"),
     betterAuthD1WorkerName("production"),
   )
   const stagingNamespace = allocatedRequestLimiterNamespaceId(
-    environmentValue(env, "staging", "DEPLOYMENT_ID"),
+    betterAuthD1EnvironmentValue(env, "staging", "DEPLOYMENT_ID"),
     betterAuthD1WorkerName("staging"),
   )
   if (productionNamespace === stagingNamespace) {
@@ -287,8 +291,8 @@ export function betterAuthD1ReleaseInputs(
     apiOrigin.hostname.endsWith(".pages.dev")
   )
     throw new Error(`${apiOriginName} must be the exact HTTPS custom API origin`)
-  const authDatabaseId = environmentValue(env, environment, "AUTH_D1_DATABASE_ID")
-  const controlPlaneDatabaseId = environmentValue(env, environment, "CONTROL_PLANE_D1_DATABASE_ID")
+  const authDatabaseId = betterAuthD1EnvironmentValue(env, environment, "AUTH_D1_DATABASE_ID")
+  const controlPlaneDatabaseId = betterAuthD1EnvironmentValue(env, environment, "CONTROL_PLANE_D1_DATABASE_ID")
   for (const [resource, databaseId] of [
     ["AUTH", authDatabaseId],
     ["CONTROL_PLANE", controlPlaneDatabaseId],
@@ -298,7 +302,7 @@ export function betterAuthD1ReleaseInputs(
     }
   }
   const namespaceId = allocatedRequestLimiterNamespaceId(
-    environmentValue(env, environment, "DEPLOYMENT_ID"),
+    betterAuthD1EnvironmentValue(env, environment, "DEPLOYMENT_ID"),
     betterAuthD1WorkerName(environment),
   )
   if (env.CLAXEDO_PREVIOUS_PHASE?.trim() === "open") {
@@ -326,7 +330,7 @@ export function betterAuthD1ReleaseInputs(
     throw new Error("all Better Auth D1 successor CAS inputs must be provided together")
   }
   const releaseId = required(env, "CLAXEDO_RELEASE_ID")
-  const deploymentId = environmentValue(env, environment, "DEPLOYMENT_ID")
+  const deploymentId = betterAuthD1EnvironmentValue(env, environment, "DEPLOYMENT_ID")
   const recoveryEpoch = pairedD1RecoveryEpoch({
     deploymentId,
     releaseId,
@@ -395,9 +399,9 @@ export function betterAuthD1ReleaseInputs(
     environment,
     apiOrigin: apiOrigin.origin,
     authDatabaseId,
-    authDatabaseName: environmentValue(env, environment, "AUTH_D1_DATABASE_NAME"),
+    authDatabaseName: betterAuthD1EnvironmentValue(env, environment, "AUTH_D1_DATABASE_NAME"),
     controlPlaneDatabaseId,
-    controlPlaneDatabaseName: environmentValue(env, environment, "CONTROL_PLANE_D1_DATABASE_NAME"),
+    controlPlaneDatabaseName: betterAuthD1EnvironmentValue(env, environment, "CONTROL_PLANE_D1_DATABASE_NAME"),
     namespaceId,
     publicProviderVariables,
     authConfiguration: {

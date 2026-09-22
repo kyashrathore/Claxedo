@@ -52,6 +52,15 @@ name: deploy-relay
 #                             green with telemetry quietly off.
 
 on:
+  # deploy-staging.yml calls this with `staging`. `production` keeps its human
+  # gate either way: the environment carries required reviewers, and a caller
+  # cannot bypass an environment protection rule.
+  workflow_call:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       environment:

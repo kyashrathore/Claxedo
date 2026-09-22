@@ -1,19 +1,11 @@
 name: deploy-claxedo-app-staging
 
-# App-only staging releases enter through this lock-owning workflow. There is
-# no ordered control-plane workflow to defer to anymore: the control plane
-# (Better Auth + D1) is released separately, by hand, via
-# packages/claxedo-server/scripts/deploy/release-better-auth-d1.ts. So the app
-# deploys whenever its own watched paths change, with no change-detection
-# gate on unrelated server packages.
+# App-only staging release, by hand. Merging to `staging` deploys the app as
+# part of deploy-staging.yml, after the control plane it is built against; this
+# workflow exists for the case where only the app needs to go out again and the
+# rest of the staging release is already live.
 on:
-  push:
-    branches: [dev]
-    paths:
-      - packages/claxedo-app/**
-      - .github/actions/setup-bun/action.yml
-      - .github/workflows/deploy-claxedo-app.yml
-      - .github/workflows/deploy-claxedo-app-staging.yml
+  workflow_dispatch:
 
 concurrency:
   group: claxedo-cloud-deploy
