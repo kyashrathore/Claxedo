@@ -108,8 +108,9 @@
  *   13. Pasting a supported file from the clipboard adds it the same way as the button.
  *   14. Dragging a file over the composer shows the drop overlay, which disappears on
  *       drag-leave without adding anything; dropping the file adds the attachment.
- *   15. Selecting an unsupported file type shows the "Unsupported attachment" toast and
- *       adds no chip.
+ *   15. A file of an opaque type travels as `application/octet-stream`: an engine whose
+ *       prompt inputs take any file attaches it as a folder-icon chip; a harness whose
+ *       inputs cannot carry it refuses it with a toast naming the harness and the type.
  *   16. The chip's remove button deletes the attachment from the prompt.
  *   17. Clicking an attachment thumbnail opens the `ImagePreview` dialog for that image.
  *   18. A prompt with only image attachments (no text) is a valid, submittable turn —
@@ -210,9 +211,9 @@ function pngFile(name = "attachment.png") {
   return { name, mimeType: "image/png", buffer: Buffer.from(PNG_BASE64, "base64") }
 }
 
-function unsupportedFile(name = "mystery.dat") {
+function opaqueFile(name = "mystery.dat") {
   // A null byte fails the text heuristic and the type/extension are unrecognized, so
-  // `attachmentMime` resolves to undefined.
+  // `attachmentMime` resolves to `application/octet-stream`.
   return { name, mimeType: "application/octet-stream", buffer: Buffer.from([0, 1, 2, 3, 0, 5, 6, 7, 0, 9]) }
 }
 
@@ -488,17 +489,39 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator('img[alt="dropped.png"]')).toBeVisible({ timeout: 10_000 })
   })
 
-  test("unsupported file type shows a warning toast and adds nothing", async ({ page }) => {
+  // The mock's default harness is the OpenCode engine, whose prompt inputs take any file.
+  test("an opaque file is attached as a folder chip on an engine that takes any file type", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await seedProjects(page, [DIR])
     await openDraftPrompt(page, DIR)
 
     const chooser = await openAttachPicker(page)
-    await chooser.setFiles(unsupportedFile())
+    await chooser.setFiles(opaqueFile())
 
-    await expect(page.getByText("Unsupported attachment")).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText("Only images, PDFs, or text files can be attached here.")).toBeVisible()
-    await expect(page.locator("img[alt=\"mystery.dat\"]")).toHaveCount(0)
+    await expect(page.getByText("mystery.dat", { exact: true })).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(1)
+    await expect(page.locator('img[alt="mystery.dat"]')).toHaveCount(0)
+    await expect(page.getByText(/cannot take this attachment/)).toHaveCount(0)
+  })
+
+  // Pi's prompt inputs carry images only and its driver writes nothing into the workspace,
+  // so the refusal names the harness and the mime rather than a generic "unsupported".
+  test("an opaque file is refused by harness name where its prompt inputs cannot carry it", async ({ page }) => {
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harness: "pi" })
+    await seedProjects(page, [DIR])
+    await openDraftPrompt(page, DIR)
+
+    const chooser = await openAttachPicker(page)
+    await chooser.setFiles(opaqueFile())
+
+    await expect(page.getByText("Pi cannot take this attachment")).toBeVisible({ timeout: 10_000 })
+    await expect(
+      page.getByText(
+        "Pi has no prompt input for application/octet-stream, and this session has no workspace folder to keep the file in.",
+      ),
+    ).toBeVisible()
+    await expect(page.getByText("mystery.dat", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
   })
 
   test("an image-only prompt with no text is a valid, submittable turn", async ({ page }) => {

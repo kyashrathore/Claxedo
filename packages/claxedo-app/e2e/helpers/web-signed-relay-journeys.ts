@@ -385,7 +385,7 @@ export async function journeyC4(ctx: JourneyCtx) {
   scripted.resetCounts()
 
   await selectScriptedModel(page)
-  await selectSignedHarness(page, "Claude", "claude")
+  await selectSignedHarness(page, "Claude Code", "claude")
   const trigger = page.locator('[data-action="prompt-harness-model"]:visible').last()
   await expect(trigger).not.toContainText(/Select model|Loading models/i, { timeout: 45_000 })
 
