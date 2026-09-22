@@ -52,7 +52,8 @@ export type TasksAppPorts = {
   /** Navigates the Tasks tab between its list and a task. */
   useOpenPage: () => (page?: TasksPage) => void
   /** Presets live in Settings; a feature may not import the dialog that holds them. */
-  openPresetSettings: (dialog: { show: (element: () => JSX.Element) => unknown }) => void
+  /** Resolved where it is used: the destination is a route, and a route needs the router. */
+  useOpenPresetSettings: () => () => void
   /** The workbench slot a Tasks surface renders in; keys with no focus arrive through it. */
   usePaneCtx: typeof PaneCtxModule.usePaneCtx
 }

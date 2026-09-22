@@ -52,7 +52,8 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
     setBackendOverride(undefined)
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
-    process.env.CLAXEDO_DATA_DIR = prev
+    if (prev === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = prev
   })
 
   test("a deployment that states nothing and has no account says nothing at all", async () => {

@@ -7,7 +7,6 @@ import type * as Config from "@/app/providers/config"
 import type * as TerminalFit from "@/features/terminal/workbench/terminal-fit"
 import type * as DialogRecoverWorkspaceModule from "@/features/workspaces/ui/dialogs/recover-workspace-dialog"
 import type * as DialogDeleteWorkspaceModule from "@/features/workspaces/ui/dialogs/delete-workspace-dialog"
-import type * as DialogSettingsModule from "@/app/dialogs/settings"
 import type * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
 import type * as LayoutActions from "@/app/workbench/actions/shared"
 import type * as SessionQueries from "@/features/session/data/sync/queries"
@@ -26,7 +25,6 @@ export type WorkspacesAppPorts = {
   emitTerminalFit: typeof TerminalFit.emitTerminalFit
   DialogRecoverWorkspace: typeof DialogRecoverWorkspaceModule.DialogRecoverWorkspace
   DialogDeleteWorkspace: typeof DialogDeleteWorkspaceModule.DialogDeleteWorkspace
-  DialogSettings: typeof DialogSettingsModule.DialogSettings
   DialogSelectDirectory: typeof DialogSelectDirectoryModule.DialogSelectDirectory
   ensureDirectorySessionCache: typeof LayoutActions.ensureDirectorySessionCache
   findProjectForWorkspace: typeof LayoutActions.findProjectForWorkspace
@@ -75,7 +73,6 @@ export const useConfigOptional = bind((ports) => ports.useConfigOptional)
 export const emitTerminalFit = bind((ports) => ports.emitTerminalFit)
 export const DialogRecoverWorkspace = bind((ports) => ports.DialogRecoverWorkspace)
 export const DialogDeleteWorkspace = bind((ports) => ports.DialogDeleteWorkspace)
-export const DialogSettings = bind((ports) => ports.DialogSettings)
 export const DialogSelectDirectory = bind((ports) => ports.DialogSelectDirectory)
 export const ensureDirectorySessionCache = bind((ports) => ports.ensureDirectorySessionCache)
 export const findProjectForWorkspace = bind((ports) => ports.findProjectForWorkspace)

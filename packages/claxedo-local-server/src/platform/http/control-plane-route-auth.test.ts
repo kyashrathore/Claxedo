@@ -23,8 +23,10 @@ const { ProviderAuthRoutes } = await import("../../credentials/routes/provider-a
 type ControlPlaneAuthConfig = import("@claxedo/server-core/platform/auth/auth").ControlPlaneAuthConfig
 
 afterAll(async () => {
-  process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
-  process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
+  if (prev.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
+  else process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
+  if (prev.CLAXEDO_STATE_DIR === undefined) delete process.env.CLAXEDO_STATE_DIR
+  else process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
   await fs.rm(root, { recursive: true, force: true })
 })
 

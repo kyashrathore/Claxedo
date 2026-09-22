@@ -3,9 +3,20 @@ import Ajv from "ajv"
 import schema from "./desktop-theme.schema.json"
 import { TRANSCRIPT_PAIRING_KEYS } from "./transcript-typography"
 import { contrastRatio } from "./color"
-import { DEFAULT_THEMES } from "./default-themes"
+import { readdirSync, readFileSync } from "node:fs"
+import { parseDesktopTheme } from "./parse"
 import type { DesktopTheme, HexColor } from "./types"
 import { SEMANTIC_THEME_ROLE_FALLBACKS, resolveTheme, themeToCss } from "./resolve"
+
+const themesDir = new URL("./themes/", import.meta.url)
+const DEFAULT_THEMES: Record<string, DesktopTheme> = Object.fromEntries(
+  readdirSync(themesDir)
+    .filter((file) => file.endsWith(".json"))
+    .map((file) => [
+      file.slice(0, -".json".length),
+      parseDesktopTheme(JSON.parse(readFileSync(new URL(file, themesDir), "utf8")), `themes/${file}`),
+    ]),
+)
 
 const roles = Object.keys(SEMANTIC_THEME_ROLE_FALLBACKS) as (keyof typeof SEMANTIC_THEME_ROLE_FALLBACKS)[]
 const modes = ["light", "dark"] as const

@@ -4,12 +4,40 @@ import type { ComponentProps } from "solid-js"
 import { AgentHarnessRow, type AgentAccount } from "./agent-harness-row"
 
 vi.mock("@opencode-ai/ui/provider-icon", () => ({ ProviderIcon: () => null }))
+// Connecting opens a dialog now; this suite is about the row it opens from.
+// Connecting opens a dialog now. The suite keeps asserting what the flow was
+// opened WITH, so the mock records the element and the test mounts it.
+const shownDialogs = vi.hoisted(() => [] as Array<() => unknown>)
+vi.mock("@opencode-ai/ui/context/dialog", () => ({
+  useDialog: () => ({
+    show: (element: () => unknown) => {
+      shownDialogs.push(element)
+      return Promise.resolve()
+    },
+    close: () => {},
+  }),
+}))
 
 vi.mock("@/features/settings/app-ports", () => ({
   ProviderConnectForm: (props: { provider: string; credentialId?: string }) => (
     <div data-testid="connect-form" data-provider={props.provider} data-credential={props.credentialId ?? ""} />
   ),
 }))
+
+// The dialog's own chrome belongs to the UI kit; this suite is about what the
+// row opens it with.
+vi.mock("@/features/settings/ui/dialog-provider-connect", () => ({
+  DialogProviderConnect: (props: { provider: string; credentialId?: string }) => (
+    <div data-testid="connect-form" data-provider={props.provider} data-credential={props.credentialId ?? ""} />
+  ),
+}))
+
+/** Mounts the connect dialog the row just opened. */
+function openedConnectDialog() {
+  const element = shownDialogs.at(-1)
+  if (!element) throw new Error("no dialog was shown")
+  return render(() => element() as never)
+}
 
 vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({
@@ -94,6 +122,7 @@ describe("AgentHarnessRow header", () => {
 
     fireEvent.click(actions[0])
 
+    openedConnectDialog()
     expect(screen.getByTestId("connect-form").dataset.credential).toBe("")
   })
 
@@ -259,9 +288,10 @@ describe("AgentHarnessRow accounts", () => {
 
     fireEvent.click(reconnect)
 
-    expect(screen.getByTestId("connect-form").dataset.credential).toBe("cred_1")
-    expect(document.querySelector('[data-component="provider-connect-card"]')?.getAttribute("data-credential"))
-      .toBe("cred_1")
+    // Reconnect opens the same dialog Add-an-account does, naming the row it
+    // came from; the header's control names none.
+    openedConnectDialog()
+    expect(screen.getAllByTestId("connect-form").at(-1)!.dataset.credential).toBe("cred_1")
   })
 
   test("a refused account is a ring and the provider's word on its second line, not red words or a hover", () => {
@@ -330,6 +360,7 @@ describe("AgentHarnessRow accounts", () => {
 
     fireEvent.click(add)
 
+    openedConnectDialog()
     expect(screen.getByTestId("connect-form").dataset.credential).toBe("")
   })
 
@@ -343,6 +374,7 @@ describe("AgentHarnessRow accounts", () => {
 
     const after = [...document.querySelectorAll('[data-component="agent-account"]')]
     expect(after).toEqual(before)
+    openedConnectDialog()
     expect(screen.getByTestId("connect-form")).toBeTruthy()
   })
 })

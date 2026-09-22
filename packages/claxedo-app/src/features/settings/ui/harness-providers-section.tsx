@@ -3,8 +3,10 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { TextField } from "@opencode-ai/ui/text-field"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
-import { createEffect, createMemo, createSignal, For, Show, type Component } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
 import { DialogCustomProvider, useProviders } from "@/features/settings/app-ports"
 import { useSettingsScope } from "@/features/settings/scope/settings-scope"
 import {
@@ -14,7 +16,7 @@ import {
   removeProviderAuthEntry,
   type ProviderSource,
 } from "@/features/settings/provider-settings-logic"
-import { SettingsList } from "@/features/settings/ui/list"
+import { SettingsEmpty, SettingsList } from "@/ui/controls/settings-list"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
@@ -23,16 +25,10 @@ import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
 import type { NativeHarnessId } from "@/platform/identity/harness-selection"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { popularProviders } from "@/platform/query/provider-list"
+import { settingsCatalogProviders } from "@/features/settings/ui/settings-catalog-rules"
 import { queryClient } from "@/platform/query/query-client"
 
 type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
-
-/**
- * Above this size a catalog is the models.dev registry (~179 entries) rather
- * than a harness's own binding set, and the unsearched page shows the popular
- * and connected rows instead of all of it.
- */
-const FULL_CATALOG_LIMIT = 24
 
 const PROVIDER_NOTES = [
   { match: (id: string) => id === "opencode", key: "dialog.provider.opencode.note" },
@@ -54,8 +50,11 @@ const PROVIDER_NOTES = [
  */
 export const HarnessProvidersSection: Component<{
   harness: NativeHarnessId
-  titleKey: string
+  /** Omitted where the surrounding section already names the harness. */
+  titleKey?: string
   descriptionKey?: string
+  /** Hands the custom-provider opener out, so a surface can draw it in its own header. */
+  onAddCustomRef?: (open: () => void) => void
 }> = (props) => {
   const language = useLanguage()
   const dialog = useDialog()
@@ -83,20 +82,13 @@ export const HarnessProvidersSection: Component<{
     void Promise.allSettled(ids.map((id) => providers.load(id)))
   })
 
-  const rows = createMemo(() => {
-    const query = search().trim().toLowerCase()
-    const connected = new Set(providerList().connected)
-    const items = providerItems()
-    return items
-      .filter((item) => {
-        if (query) {
-          return item.id.toLowerCase().includes(query) || item.name.toLowerCase().includes(query)
-        }
-        if (items.length <= FULL_CATALOG_LIMIT) return true
-        return popularProviders.includes(item.id) || connected.has(item.id)
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-  })
+  const rows = createMemo(() =>
+    settingsCatalogProviders({
+      all: providerItems(),
+      connectedIds: providerList().connected,
+      popularProviders,
+      query: search(),
+    }))
 
   const type = (item: ProviderItem) => language.t(providerSourceTagKey(source(item)))
   const canDisconnect = (item: ProviderItem) => canDisconnectProvider(source(item))
@@ -115,6 +107,9 @@ export const HarnessProvidersSection: Component<{
   const addCustomProvider = () => {
     void dialog.show(() => <DialogCustomProvider scope={scope.scopeRef()} />)
   }
+  onMount(() => {
+    if (props.harness === "opencode") props.onAddCustomRef?.(addCustomProvider)
+  })
 
   const disconnect = async (item: ProviderItem) => {
     await disconnectProvider({
@@ -153,53 +148,67 @@ export const HarnessProvidersSection: Component<{
 
   return (
     <div class="flex flex-col gap-3" data-component={`${props.harness}-providers-section`}>
-      <div class="flex items-start justify-between gap-4">
+      <Show when={props.titleKey || props.descriptionKey}>
         <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong">{language.t(props.titleKey)}</h3>
+          <Show when={props.titleKey}>
+            {(key) => <h3 class="text-14-medium text-text-strong">{language.t(key())}</h3>}
+          </Show>
           <Show when={props.descriptionKey}>
             {(key) => <p class="text-12-regular text-text-weak">{language.t(key())}</p>}
           </Show>
         </div>
-        <Show when={props.harness === "opencode"}>
-          <Button
-            size="small"
-            variant="ghost"
-            data-action="settings-providers-add-custom"
-            onClick={addCustomProvider}
-          >
-            {language.t("provider.custom.title")}
-          </Button>
-        </Show>
-      </div>
+      </Show>
 
       <Show when={providers.error()}>
         {(message) => (
-          <p class="text-12-regular text-text-weak" data-component={`${props.harness}-catalog-error`}>
-            {language.t("settings.providers.catalog.error", {
-              harness: harnessLabel(),
-              workspace: workspaceLabel(),
-              reason: message(),
-            })}
-          </p>
+          <SettingsEmpty>
+            <span data-component={`${props.harness}-catalog-error`}>
+              {language.t("settings.providers.catalog.error", {
+                harness: harnessLabel(),
+                workspace: workspaceLabel(),
+                reason: message(),
+              })}
+            </span>
+          </SettingsEmpty>
         )}
       </Show>
 
       <Show when={!providers.error() && !providers.loading() && providerItems().length === 0}>
-        <p class="text-12-regular text-text-weak" data-component={`${props.harness}-catalog-empty`}>
-          {language.t("settings.providers.catalog.empty", {
-            harness: harnessLabel(),
-            workspace: workspaceLabel(),
-          })}
-        </p>
+        <SettingsEmpty>
+          <span data-component={`${props.harness}-catalog-empty`}>
+            {language.t("settings.providers.catalog.empty", {
+              harness: harnessLabel(),
+              workspace: workspaceLabel(),
+            })}
+          </span>
+        </SettingsEmpty>
       </Show>
 
-      <Show when={providerItems().length > FULL_CATALOG_LIMIT}>
-        <TextField
-          label={language.t("settings.providers.search.label")}
-          placeholder={language.t("settings.providers.search.placeholder")}
-          value={search()}
-          onChange={setSearch}
-        />
+      {/* Always searchable. The threshold decides whether the unsearched view
+          is a SUBSET, not whether a list is worth searching: Pi's seven rows
+          and OpenCode's two hundred are both faster to type than to scan. */}
+      <Show when={providerItems().length > 1}>
+        {/* The same control the models list uses: a labelled, bordered field
+            beside an unlabelled one read as two different kinds of search. */}
+        <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">
+          <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
+          <TextField
+            variant="ghost"
+            type="text"
+            value={search()}
+            onChange={setSearch}
+            placeholder={language.t("settings.providers.search.placeholder")}
+            spellcheck={false}
+            autocorrect="off"
+            autocomplete="off"
+            autocapitalize="off"
+            class="flex-1"
+            data-action="settings-providers-search"
+          />
+          <Show when={search()}>
+            <IconButton icon="circle-x" variant="ghost" onClick={() => setSearch("")} />
+          </Show>
+        </div>
       </Show>
 
       <SettingsList>

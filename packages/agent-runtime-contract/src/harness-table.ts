@@ -92,3 +92,34 @@ export function harnessBindingIds(harness: HarnessId): string[] {
   const record = HARNESS_TABLE[harness]
   return record.providerIds.filter((id) => id !== record.vendorProvider)
 }
+
+/**
+ * Every stored provider id whose row can stand in for one vendor, the vendor's
+ * own id first and the harness logins behind it.
+ *
+ * A subscription connected for Claude Code is an Anthropic login and nothing
+ * about it is Claude Code's alone — the broker sends it to the same origin and
+ * the same paths an Anthropic key goes to, differing only in the header it
+ * rides in. So an engine that runs Anthropic models resolves it here instead
+ * of asking for the account a second time.
+ *
+ * The vendor leads, which is the opposite of the order `harnessProjection`
+ * reads. Both are right about their own question: Claude Code asked which
+ * login to run ITSELF on and its own binding is the answer, while an engine
+ * borrowing the vendor spends the key that was pasted for the vendor before it
+ * reaches for a subscription that belongs to another product. The engine's
+ * overlay precedence already resolved a tie this way, and two orders for one
+ * question is how they would come to disagree.
+ *
+ * Structure only. Whether a candidate can be bound at all is the broker's
+ * answer (a provider with no destination row has no binding), and whether this
+ * vendor's binding can spend a given form is the caller's: a ChatGPT plan and
+ * an OpenAI key reach different origins, so an engine provider that means the
+ * key must not take the plan.
+ */
+export function vendorCredentialProviderIds(vendorProvider: string): string[] {
+  const bindings = HARNESS_IDS
+    .filter((harness) => HARNESS_TABLE[harness].vendorProvider === vendorProvider)
+    .flatMap((harness) => harnessBindingIds(harness))
+  return [...new Set([vendorProvider, ...bindings])]
+}

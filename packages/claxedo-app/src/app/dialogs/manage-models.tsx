@@ -9,12 +9,14 @@ import { useLocal } from "@/features/session/providers/session-selection"
 import { popularProviders } from "@/app/providers/use-providers"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { openSettings } from "@/features/settings/open-settings"
+import { useNavigate } from "@solidjs/router"
+import { settingsRoute } from "@/platform/settings/route"
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()
   const language = useLanguage()
   const dialog = useDialog()
+  const navigate = useNavigate()
 
   // The pane's model store already owns the catalog of the (workspace, harness)
   // it is mounted for; hydrating through it is what fills these rows.
@@ -23,7 +25,8 @@ export const DialogManageModels: Component = () => {
   })
 
   const handleConnectProvider = () => {
-    void openSettings(dialog, () => import("@/app/dialogs/settings"), "providers")
+    dialog.close()
+    navigate(settingsRoute("models"))
   }
   const providerRank = (id: string) => popularProviders.indexOf(id)
   const providerList = (providerID: string) => local.model.list().filter((x) => x.provider.id === providerID)

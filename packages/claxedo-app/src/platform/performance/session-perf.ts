@@ -92,6 +92,7 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
     ring.push(record)
     if (ring.length > RETENTION_LIMIT) ring.splice(0, ring.length - RETENTION_LIMIT)
     if (input.log) input.log(record)
+    // oxlint-disable-next-line no-console -- opt-in tracing behind the `claxedo:perf` localStorage flag
     else if (enabled()) console.info("[claxedo:perf]", record.kind, record.name, record)
   }
   const mark = (name: string) => {

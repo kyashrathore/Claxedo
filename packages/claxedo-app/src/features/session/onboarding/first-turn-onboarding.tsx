@@ -1,6 +1,8 @@
 import { createComputed, on, type Accessor } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { openSettingsProviders, useFirstTurnFunnel } from "@/features/session/app-ports"
+import { useFirstTurnFunnel } from "@/features/session/app-ports"
+import { useNavigate } from "@solidjs/router"
+import { settingsRoute } from "@/platform/settings/route"
 import { useLocal } from "@/features/session/providers/session-selection"
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
@@ -11,7 +13,7 @@ import { capture, identityProps } from "@/platform/telemetry/analytics"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { Dialog } from "@opencode-ai/ui/dialog"
-import { ModelList, type PickerItem } from "@/features/session/ui/model/select-model"
+import { ModelList, type PickerItem } from "@/features/session/ui/model/model-list"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 
@@ -34,6 +36,7 @@ export function createFirstTurnOnboarding(input: {
 }) {
   const local = useLocal()
   const dialog = useDialog()
+  const navigate = useNavigate()
   const funnel = useFirstTurnFunnel()
   let retry: PromptRetryAction | undefined
   const emitted = new Set<string>()
@@ -67,7 +70,7 @@ export function createFirstTurnOnboarding(input: {
       return undefined
     }
     if (kind === "credential") {
-      void openSettingsProviders(dialog)
+      navigate(settingsRoute("models"))
       return undefined
     }
     if (kind === "model" || kind === "usage_limit") {

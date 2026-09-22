@@ -154,6 +154,7 @@ export type StartOfferOptions = {
 export function useTaskStartOffers(scope: () => TasksScope, store: TasksStore) {
   const ports = useTasksAppPorts()
   const dialog = useDialog()
+  const openPresetSettings = ports.useOpenPresetSettings()
   const commands = useStartTaskCommands(scope)
   const presets = usePresetList(scope, () => false)
   const [busyTaskId, setBusyTaskId] = createSignal<string | undefined>()
@@ -217,7 +218,7 @@ export function useTaskStartOffers(scope: () => TasksScope, store: TasksStore) {
       onStart: (choice) => void start(task, choice),
       onContinue: continued && slot ? () => void start(task, { presetId: continued.id, slot }, true) : undefined,
       onOpen: options.onOpen,
-      onOpenPresetSettings: () => ports.openPresetSettings(dialog),
+      onOpenPresetSettings: openPresetSettings,
     }
   }
 

@@ -60,7 +60,7 @@
 /* --bp-md complement (767 = below BP_MD) + coarse-pointer touch floor. */
 @media (max-width: 767px), (pointer: coarse) {
   [data-claxedo] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
-  .settings-dialog :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
+  [data-component="settings-surface"] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
   .claxedo-diagnostics-dialog :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]) {
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
@@ -81,7 +81,7 @@
       [role="button"][aria-label],
       [data-component="icon-button"]
     ):not([data-claxedo-compact-touch]):not([data-claxedo-compact-touch] *),
-  .settings-dialog
+  [data-component="settings-surface"]
     :is(
       button[aria-label],
       button:has(> [data-component="icon"]),
@@ -103,7 +103,7 @@
     :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]):active:not(:disabled):not(
       [data-disabled]
     ),
-  .settings-dialog
+  [data-component="settings-surface"]
     :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]):active:not(:disabled):not(
       [data-disabled]
     ),
@@ -116,7 +116,7 @@
   }
 
   [data-claxedo] :is(button, [role="button"], [data-component="icon-button"]):focus-visible,
-  .settings-dialog :is(button, [role="button"], [data-component="icon-button"]):focus-visible,
+  [data-component="settings-surface"] :is(button, [role="button"], [data-component="icon-button"]):focus-visible,
   .claxedo-diagnostics-dialog :is(button, [role="button"], [data-component="icon-button"]):focus-visible {
     outline: 2px solid color-mix(in srgb, var(--border-interactive-focus) 70%, transparent);
     outline-offset: 2px;
@@ -258,6 +258,16 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   --workspace-data-hairline: var(--workspace-page-hairline);
   --settings-surface-content: var(--background-base);
   background: var(--background-base);
+}
+
+/* Settings is a shell surface rather than a page-scale dialog, and it consumes
+   the same roles: its canvas is the real page, and every section's cards are
+   rebound off `--settings-surface-content` by the codex theme. Declared here so
+   the panes read the same whichever section is open. */
+[data-component="settings-surface"] {
+  --workspace-page-hairline: color-mix(in srgb, var(--border-weak-base) 68%, transparent);
+  --workspace-data-hairline: var(--workspace-page-hairline);
+  --settings-surface-content: var(--background-base);
 }
 
 .workspace-page-dialog-shell {
@@ -679,7 +689,8 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
    is selected from their shared <body> ancestor. The shared 0.2 alpha is
    invisible against the dark app chrome; this dims and blurs enough to read the
    dialog as modal. */
-body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay {
+body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay,
+body:has([data-slot="dialog-content"].claxedo-modal-backdrop) .ui-dialog-overlay {
   background-color: hsl(from var(--background-base) h s l / 0.6);
   backdrop-filter: blur(3px);
   /* Match the dialog's own 150ms in / 100ms out so the backdrop and the panel
@@ -687,7 +698,8 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-ov
   animation: claxedoDialogBackdropHide 100ms ease-in forwards;
 }
 
-body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay[data-expanded] {
+body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay[data-expanded],
+body:has([data-slot="dialog-content"].claxedo-modal-backdrop) .ui-dialog-overlay[data-expanded] {
   animation: claxedoDialogBackdropShow 150ms ease-out;
 }
 
@@ -711,7 +723,9 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-ov
 
 @media (prefers-reduced-motion: reduce) {
   body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay,
-  body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay[data-expanded] {
+  body:has([data-slot="dialog-content"].claxedo-modal-backdrop) .ui-dialog-overlay,
+  body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay[data-expanded],
+body:has([data-slot="dialog-content"].claxedo-modal-backdrop) .ui-dialog-overlay[data-expanded] {
     animation: none;
   }
 }
@@ -789,66 +803,6 @@ body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-ov
   }
 }
 
-/* ─── Settings dialog: mobile drill-down layout ─── */
-
-/* Back button hidden by default (desktop) */
-.settings-mobile-back {
-  display: none;
-}
-
-/* --bp-sm complement (639 = below BP_SM) — pairs with settings.tsx's `max-sm:` mobile header. */
-@media (max-width: 639px) {
-  /* Single column on mobile */
-  .settings-dialog {
-    flex-direction: column !important;
-  }
-
-  /* Menu mode: full-width tab list, hide content */
-  .settings-mobile-menu > .ui-tabs-list {
-    width: 100% !important;
-    min-width: 0 !important;
-    border-right: none !important;
-  }
-  .settings-mobile-menu > .ui-tabs-content {
-    display: none !important;
-  }
-
-  /* Content mode: hide tab list, show back + content */
-  .settings-mobile-content > .ui-tabs-list {
-    display: none !important;
-  }
-  .settings-mobile-content > .settings-mobile-back {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-weak-base);
-    cursor: pointer;
-    color: var(--text-base);
-    font-family: var(--font-family-sans);
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-medium);
-    background: var(--surface-raised-stronger-non-alpha);
-    flex-shrink: 0;
-  }
-  .settings-mobile-content > .settings-mobile-back:active {
-    background: var(--surface-raised-base-hover);
-  }
-}
-
-/*
- * Floating host: while the workspace panel covers the workbench column at full
- * view, the column paints above the panel so a floating session stack can sit
- * on top of it. Everything else in the column was already hidden under the
- * panel, so it stops painting and stops catching pointer events; the floating
- * stack re-enables both for itself (session-presentation.css).
- */
-[data-floating-host] {
-  position: relative;
-  z-index: 40;
-  background: transparent;
-  pointer-events: none;
-}
 /* The workbench root paints its ground inline; the override has to outrank it. */
 [data-floating-host] [data-testid="workbench-root"] {
   background-color: transparent !important;

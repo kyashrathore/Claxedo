@@ -30,7 +30,7 @@ import { agentSettingsApi } from "@/features/settings/data/agent-settings-api"
 import { ConnectedAppsSettingsSection } from "@/features/settings/ui/connected-apps-section"
 import { Can } from "@/platform/auth/role"
 import { Link } from "@/features/settings/app-ports"
-import { SettingsList, SettingsRow } from "@/features/settings/ui/list"
+import { SettingsList, SettingsRow } from "@/ui/controls/settings-list"
 import { getScreenReaderModePreference, setScreenReaderModePreference } from "@/platform/settings/terminal-preferences"
 
 type ThemeOption = {
@@ -137,7 +137,7 @@ export const SettingsGeneral: Component = () => {
         // so `capture_exceptions` never sees it. A broken update path is
         // invisible to us otherwise, and it is the one failure that stops users
         // receiving every later fix.
-        captureException(err, { ...identityProps(), surface: "settings" })
+        captureException(err, { surface: "settings" })
         const message = err instanceof Error ? err.message : String(err)
         showToast({ title: language.t("common.requestFailed"), description: message })
       })
@@ -172,7 +172,7 @@ export const SettingsGeneral: Component = () => {
   const [screenReaderTerminal, setScreenReaderTerminal] = createSignal(getScreenReaderModePreference())
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <div class="flex flex-col pb-10">
       <div class="flex flex-col gap-1 pt-6 pb-8">
         <h2 class="text-18-medium text-text-strong">{language.t("settings.tab.general")}</h2>
       </div>
@@ -182,7 +182,7 @@ export const SettingsGeneral: Component = () => {
         <div class="flex flex-col gap-1">
           <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.row.language.title")}</h3>
 
-          <div class="bg-surface-raised-base px-4 rounded-lg">
+          <SettingsList>
             <SettingsRow
               title={language.t("settings.general.row.language.title")}
               description={language.t("settings.general.row.language.description")}
@@ -204,11 +204,11 @@ export const SettingsGeneral: Component = () => {
                 triggerVariant="settings"
               />
             </SettingsRow>
-          </div>
+          </SettingsList>
         </div>
 
         <div class="flex flex-col gap-1">
-          <div class="bg-surface-raised-base px-4 rounded-lg">
+          <SettingsList>
             <SettingsRow
               title={language.t("settings.general.row.reasoningSummaries.title")}
               description={language.t("settings.general.row.reasoningSummaries.description")}
@@ -285,7 +285,7 @@ export const SettingsGeneral: Component = () => {
                 triggerStyle={{ "min-width": "180px" }}
               />
             </SettingsRow>
-          </div>
+          </SettingsList>
         </div>
 
         <div class="flex flex-col gap-1">
@@ -467,7 +467,7 @@ export const SettingsGeneral: Component = () => {
         <div class="flex flex-col gap-1">
           <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.notifications")}</h3>
 
-          <div class="bg-surface-raised-base px-4 rounded-lg">
+          <SettingsList>
             <SettingsRow
               title={language.t("settings.general.notifications.agent.title")}
               description={language.t("settings.general.notifications.agent.description")}
@@ -528,14 +528,14 @@ export const SettingsGeneral: Component = () => {
                 </Switch>
               </div>
             </SettingsRow>
-          </div>
+          </SettingsList>
         </div>
 
         {/* Sound effects Section */}
         <div class="flex flex-col gap-1">
           <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.sounds")}</h3>
 
-          <div class="bg-surface-raised-base px-4 rounded-lg">
+          <SettingsList>
             <SettingsRow
               title={language.t("settings.general.sounds.agent.title")}
               description={language.t("settings.general.sounds.agent.description")}
@@ -616,14 +616,14 @@ export const SettingsGeneral: Component = () => {
                 triggerVariant="settings"
               />
             </SettingsRow>
-          </div>
+          </SettingsList>
         </div>
 
         {/* Updates Section */}
         <div class="flex flex-col gap-1">
           <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.updates")}</h3>
 
-          <div class="bg-surface-raised-base px-4 rounded-lg">
+          <SettingsList>
             <SettingsRow
               title={language.t("settings.updates.row.startup.title")}
               description={language.t("settings.updates.row.startup.description")}
@@ -670,7 +670,7 @@ export const SettingsGeneral: Component = () => {
                   : language.t("settings.updates.action.checkNow")}
               </Button>
             </SettingsRow>
-          </div>
+          </SettingsList>
         </div>
 
         <Can do="view.account">

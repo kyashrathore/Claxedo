@@ -412,13 +412,13 @@ const assistantContent = () => SELECTORS.assistantContentVisible
 async function enableReasoningSummaries(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
   await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
-  const dialog = page.locator('[data-slot="dialog-container"]').last()
-  await expect(dialog).toBeVisible({ timeout: 10_000 })
-  const toggle = dialog.locator('[data-action="settings-feed-reasoning-summaries"] [data-slot="switch-control"]')
+  const surface = page.locator('[data-component="settings-content"]')
+  await expect(surface).toBeVisible({ timeout: 10_000 })
+  const toggle = surface.locator('[data-action="settings-feed-reasoning-summaries"] [data-slot="switch-control"]')
   await toggle.scrollIntoViewIfNeeded()
   await toggle.click()
-  await page.keyboard.press("Escape")
-  await expect(dialog).toBeHidden({ timeout: 5_000 })
+  await page.locator('[data-action="settings-nav-back"]').click()
+  await expect(surface).toHaveCount(0, { timeout: 5_000 })
 }
 
 /**

@@ -9,6 +9,7 @@
 import { CodeBlock } from "@tiptap/extension-code-block"
 import { renderSafeMermaidSvg } from "@/ui/mermaid"
 import { mermaidKeyAction } from "./mermaid-keyboard"
+import { captureException } from "@/platform/telemetry/analytics"
 
 // ── SVG icon helpers ────────────────────────────────────────────────
 
@@ -371,7 +372,7 @@ export const MermaidCodeBlock = CodeBlock.extend({
           (error) => {
             copyBtn.title = "Copy failed"
             copyBtn.setAttribute("aria-label", "Copy failed")
-            console.error("[documents] Mermaid source copy failed", error)
+            captureException(error, { surface: "documents", operation: "mermaid-copy" })
           },
         )
       }

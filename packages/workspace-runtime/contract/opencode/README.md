@@ -19,7 +19,7 @@ that known upstream defect; it is not a product acceptance check.
 
 The product installs the public SDK with the exact-version patches in
 `patches/README.opencode-node.md`. Node 24 or newer is required; Electron
-stays at 43.2.0. No Bun sidecar, private host import, or old engine fallback
+is 44.4.3. No Bun sidecar, private host import, or old engine fallback
 is used. Its owner is `workspace-runtime/src/opencode`.
 
 Run product acceptance from `packages/workspace-runtime`:

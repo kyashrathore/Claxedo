@@ -601,7 +601,36 @@ export const desktopRendererUnsigned: Policy = {
   // — see the app-local ledger. The renderer mounts the same timeline, so the
   // split owner rides in here too; no new package edge. Exact measured 1167
   // modules / 58 packages, with no headroom.
-  ceilings: { modules: 1167, packages: 58 },
+  // +1 module (2026-09-22): `features/session/ui/model/model-list.tsx` — see
+  // the app-local ledger; the renderer shares the session screen that mounts
+  // the first-turn onboarding, so the split rides in here too. No new package
+  // edge.
+  // +3 modules (2026-09-22): Settings became a shell surface instead of a
+  // dialog — `platform/settings/route.ts`, `features/settings/settings-surface.tsx`
+  // and the nav/content/registry split that replaced `settings-page.tsx`,
+  // `app/dialogs/settings.tsx` and `features/settings/open-settings.tsx`. The
+  // rail lists the sections and the workbench column draws the open one, so
+  // the surface is reachable from the shell rather than from a lazy dialog;
+  // the nav itself is still lazily imported so the panels stay out of the
+  // shell's chunk. Owner: `features/settings`. No new package edge.
+  // +1 module (2026-09-22): `features/settings/ui/settings-header.tsx` — the
+  // settings column's own bar, one tab and the sidebar control, replacing the
+  // workbench header that acts on a workspace. Owner: `features/settings`.
+  // +1 module (2026-09-22): `features/settings/ui/dialog-provider-connect.tsx`
+  // — connecting an account moved out of the row it came from and into a
+  // dialog, so the list stays where the user left it. Owner:
+  // `features/settings`. No new package edge.
+  // +2 modules (2026-09-22): `features/settings/ui/machines-section.tsx` and
+  // `platform/remote-access/machine-online.ts` — the Machines panel is
+  // Settings' own surface now (the fleet list and the enrollment instructions
+  // left the shared onboarding surface, which enrolls one machine and has no
+  // list), and a machine is reported connected by one rule both halves read.
+  // Owner: `features/settings`. No new package edge.
+  // Exact measured 1174 modules / 58 packages, with no headroom.
+  // Both ledgers above landed in one merge on 2026-09-22; the closure was
+  // re-measured over the merged tree rather than added up. Exact measured
+  // 1174 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1174, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

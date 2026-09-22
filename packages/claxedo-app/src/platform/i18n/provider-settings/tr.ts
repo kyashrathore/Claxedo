@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}}, sağlayıcıları ve kimlik bilgilerini Claxedo dışında yönetir. Bunları ilgili ajan veya sunucuda yapılandırın; kullanılabilir modeller oturumun model seçicisinde görünür.",
   "command.openProviders": "Sağlayıcıları aç",
   "settings.models.previewCount": "{{count}} tane daha göster",
   "settings.models.providerSearch.empty": "“{{query}}” ile eşleşen model yok.",

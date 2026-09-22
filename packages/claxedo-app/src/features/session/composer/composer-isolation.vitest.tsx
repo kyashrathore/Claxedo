@@ -11,7 +11,7 @@ const frameSnapshots = vi.hoisted(() => [] as Array<{
   surfaceId?: string
 }>)
 const dialogShow = vi.hoisted(() => vi.fn())
-const openSettingsProviders = vi.hoisted(() => vi.fn())
+const openSettingsModels = vi.hoisted(() => vi.fn())
 // `prompt.goal` is per-draft state the real provider owns; the composer's Goal
 // controller reads it during render, so the stub has to carry it too.
 const goalArmed = vi.hoisted(() => ({ value: false }))
@@ -134,7 +134,7 @@ vi.mock("@/features/session/app-ports", async () => ({
   workspacePlacement: () => undefined,
   listDocumentMentions: vi.fn(async () => []),
   documentMentionText: vi.fn(),
-  openSettingsProviders,
+  openSettingsModels,
 }))
 
 vi.mock("@/features/session/providers/session-selection", () => ({
@@ -242,7 +242,7 @@ vi.mock("@/features/session/providers/session-params", () => ({
 afterEach(() => {
   frameSnapshots.length = 0
   dialogShow.mockClear()
-  openSettingsProviders.mockClear()
+  openSettingsModels.mockClear()
   cleanup()
 })
 

@@ -4,6 +4,7 @@
   "version": "0.0.1",
   "type": "module",
   "license": "MIT",
+  "description": "Claxedo desktop app",
   "homepage": "https://claxedo.ai",
   "author": {
     "name": "Claxedo",
@@ -73,7 +74,8 @@
     "pidusage": "4.0.1",
     "posthog-node": "4.18.0",
     "solid-js": "1.9.12",
-    "tree-kill": "1.2.2"
+    "tree-kill": "1.2.2",
+    "zod": "4.4.3"
   },
   "optionalDependencies": {
     "@vscode/windows-process-tree": "0.8.0"
@@ -83,7 +85,7 @@
     "@types/bun": "1.3.13",
     "@types/node": "24.12.2",
     "@typescript/native-preview": "7.0.0-dev.20251207.1",
-    "electron": "43.2.0",
+    "electron": "44.4.3",
     "electron-builder": "26.8.1",
     "electron-vite": "5.0.0",
     "react-grab": "0.1.32",

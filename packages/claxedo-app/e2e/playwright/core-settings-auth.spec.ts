@@ -172,17 +172,16 @@ async function openWorkbench(page: Page, dir: string) {
 async function openSettings(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
   await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
-  const dialog = page.locator('[data-slot="dialog-container"]').last()
-  await expect(dialog).toBeVisible({ timeout: 10_000 })
-  return dialog
+  const surface = page.locator('[data-component="settings-content"]')
+  await expect(surface).toBeVisible({ timeout: 10_000 })
+  return surface
 }
 
-/** Escape is the Settings dialog's own close affordance at desktop viewport:
- * the `aria-label="Close settings"` button only renders under the
- * `max-sm:flex` mobile breakpoint. */
+/** The rail's own back row. Settings is a surface on a route, so Escape closes
+ * nothing and the workbench behind it was never unmounted. */
 async function closeSettings(page: Page) {
-  await page.keyboard.press("Escape")
-  await expect(page.locator('[data-slot="dialog-container"]').last()).toBeHidden({ timeout: 5_000 })
+  await page.locator('[data-action="settings-nav-back"]').click()
+  await expect(page.locator('[data-component="settings-content"]')).toHaveCount(0, { timeout: 5_000 })
 }
 
 /**
@@ -289,12 +288,12 @@ async function driveOneTurn(page: Page, promptText: string) {
 }
 
 function tabTrigger(page: Page, value: string) {
-  return page.locator(`[role="tab"][data-value="${value}"]`)
+  return page.locator(`[data-component="settings-nav-item"][data-section="${value}"]`)
 }
 
 async function selectTab(page: Page, value: string) {
   await tabTrigger(page, value).click()
-  await expect(tabTrigger(page, value)).toHaveAttribute("aria-selected", "true")
+  await expect(tabTrigger(page, value)).toHaveAttribute("aria-current", "page")
 }
 
 async function openSelect(page: Page, dataAction: string) {
@@ -552,9 +551,9 @@ test.describe("core settings + auth @core", () => {
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
       await expect(page.getByRole("heading", { name: "Keyboard shortcuts", exact: true })).toBeVisible()
 
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
-      await expect(page.getByRole("heading", { name: "Providers", exact: true })).toBeVisible()
+      await expect(page.getByRole("heading", { name: "Models", exact: true })).toBeVisible()
 
       await selectTab(page, "connections")
       await expect(page.locator('[data-slot="tabs-content"]:not([hidden])')).toHaveCount(1)
@@ -958,7 +957,7 @@ test.describe("core settings + auth @core", () => {
       await mockCredentialRoutes(page, credHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
 
       const harnessSection = page.locator('[data-component="pi-providers-section"]')
       await expect(harnessSection.getByText("Anthropic")).toBeVisible()
@@ -990,7 +989,7 @@ test.describe("core settings + auth @core", () => {
       await mockAuthRoutes(page, authHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
 
       const harnessSection = page.locator('[data-component="pi-providers-section"]')
       const envRow = harnessSection.locator('[data-provider="anthropic"]')
@@ -1022,7 +1021,7 @@ test.describe("core settings + auth @core", () => {
       await mockAuthRoutes(page, authHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
       const row = page.locator('[data-component="pi-providers-section"] [data-provider="clinepass-2"]')
       await expect(row.getByText("Config", { exact: true })).toBeVisible()
       await expect(row.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
@@ -1036,7 +1035,7 @@ test.describe("core settings + auth @core", () => {
       await mockProviderCatalog(page, { connected: [], popular: [] })
       await openWorkbench(page, DIR)
       await openSettings(page)
-      await selectTab(page, "providers")
+      await selectTab(page, "models")
       await expect(page.locator('[data-component="custom-provider-section"]')).toHaveCount(0)
     })
   })
@@ -1059,15 +1058,15 @@ test.describe("core settings + auth @core", () => {
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "models")
-      // Models edits one harness's catalog, and this workspace remembers none,
-      // so name the harness whose models the assertions below expect.
-      await page.locator('[data-action="settings-scope-harness"]').click()
-      await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22opencode%22%7D"]').click()
 
-      const modelsPanel = page.locator('[data-slot="tabs-content"]:not([hidden])')
-      await expect(modelsPanel.getByText("OpenCode Zen")).toBeVisible({ timeout: 15_000 })
-      await expect(modelsPanel.getByRole("switch", { name: "Big Pickle" })).toBeVisible({ timeout: 15_000 })
-      await expect(modelsPanel.getByRole("switch", { name: "Second Model" })).toBeVisible({ timeout: 15_000 })
+      // A harness opens on its accounts; its models are the other tab, and a
+      // provider's own models sit behind its row.
+      const harness = page.locator('[data-component="models-section-opencode"]')
+      await harness.locator('[data-action="settings-models-tab-models"]').click()
+      await expect(harness.getByText("OpenCode Zen")).toBeVisible({ timeout: 15_000 })
+      await harness.locator('[data-action="settings-models-group-expand"]').first().click()
+      await expect(harness.getByRole("switch", { name: "Big Pickle" })).toBeVisible({ timeout: 15_000 })
+      await expect(harness.getByRole("switch", { name: "Second Model" })).toBeVisible({ timeout: 15_000 })
     })
   })
 
@@ -1210,18 +1209,9 @@ test.describe("core settings + auth @core", () => {
       const secretField = dialog.getByLabel("API secret")
       await secretField.fill("leaked-if-not-cleared")
       await dialog.locator('[data-slot="dialog-close-button"]').click()
-      // NOT "the Settings dialog underneath" — verified live (a throwaway
-      // reproduction polling dialog count every 100ms showed it hit 0
-      // immediately and stayed there): `useDialog().show()`
-      // (packages/ui/src/context/dialog.tsx) DISPOSES the entire
-      // existing dialog stack before mounting the new one — it is a
-      // stack-REPLACE, not a stack-PUSH (that's the separate `push()`
-      // method, unused by `DialogConnectIntegration`'s call site). Opening
-      // the connect dialog therefore already disposed the Settings dialog;
-      // closing the connect dialog leaves NO dialog open at all, not the
-      // Settings dialog one layer down. Re-verify secret hygiene by
-      // reopening Settings → Connections → Connect from scratch, matching
-      // what the app actually does.
+      // Connect is the only dialog on screen: Settings is a surface on a
+      // route, so it is not in the dialog stack at all and closing this one
+      // leaves nothing behind it.
       await expect(page.locator('[data-slot="dialog-container"]')).toHaveCount(0)
 
       await openSettings(page)

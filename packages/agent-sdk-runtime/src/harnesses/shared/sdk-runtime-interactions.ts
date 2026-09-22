@@ -218,7 +218,7 @@ export class SdkRuntimeInteractions {
   }
 
   rejectAllQuestions() {
-    // Snapshot: rejecting deletes from the map this walks.
+    // Snapshot: settling deletes from the same map this walks.
     for (const id of Array.from(this.questions.keys())) this.rejectPendingQuestion(id)
   }
 }

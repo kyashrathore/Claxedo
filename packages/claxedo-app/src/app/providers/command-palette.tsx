@@ -7,6 +7,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useSettings } from "@/platform/settings/provider"
 import { dict as en } from "@/platform/i18n/en"
 import { Persist, persisted } from "@/platform/persistence/persist"
+import { captureException } from "@/platform/telemetry/analytics"
 
 const IS_MAC = typeof navigator === "object" && /(Mac|iPod|iPhone|iPad)/.test(navigator.platform)
 
@@ -348,7 +349,7 @@ const commandContextInput = {
       registrations: [] as CommandRegistration[],
       suspendCount: 0,
     })
-    const warnedDuplicates = new Set<string>()
+    const reportedDuplicates = new Set<string>()
 
     type CommandCatalog = Record<string, CommandCatalogItem>
     const [catalog, setCatalog, _, catalogReady] = persisted(
@@ -361,9 +362,11 @@ const commandContextInput = {
 
     const registered = createMemo(() =>
       projectCommandRegistrations(store.registrations, (id) => {
-        if (!import.meta.env.DEV || warnedDuplicates.has(id)) return
-        warnedDuplicates.add(id)
-        console.warn(`[command] duplicate command id "${id}" registered; keeping first entry`)
+        if (reportedDuplicates.has(id)) return
+        reportedDuplicates.add(id)
+        captureException(new Error(`duplicate command id "${id}" registered; keeping first entry`), {
+          surface: "command_palette",
+        })
       }),
     )
     const has = createCommandPresence(() => registered().ids)

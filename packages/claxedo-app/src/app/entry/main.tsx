@@ -25,6 +25,7 @@ import {
   identityProps,
   resolveDeploymentMode,
   setDeploymentMode,
+  captureException,
 } from "@/platform/telemetry/analytics"
 import { isEmbedMode } from "@/platform/api/api"
 import { writeBrowserRoute } from "@/lib/browser-history"
@@ -292,6 +293,6 @@ function renderStartupFailure(error: unknown) {
 }
 
 void startApp().catch((error) => {
-  console.error("[claxedo:boot]", "failed", error)
+  captureException(error, { surface: "app_shell", operation: "boot" })
   renderStartupFailure(error)
 })

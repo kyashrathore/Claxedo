@@ -114,7 +114,7 @@ vi.mock("@/features/session/app-ports", async () => ({
   workspacePlacement: () => undefined,
   listDocumentMentions: vi.fn(async () => []),
   documentMentionText: vi.fn(),
-  openSettingsProviders: vi.fn(),
+  openSettingsModels: vi.fn(),
 }))
 
 vi.mock("@/features/session/providers/session-selection", () => ({

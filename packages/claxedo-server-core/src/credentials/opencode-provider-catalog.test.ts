@@ -132,6 +132,44 @@ describe("opencodeProviderCatalog", () => {
     }
   })
 
+  test("a Claude Code login connects the engine's Anthropic provider, which is the one it binds", async () => {
+    // `reconcileCredentialsIntoSdk` binds a `claude-sdk` row to the engine's
+    // `anthropic` provider, so a catalog that asked only for `anthropic`
+    // called that provider unconnected while turns were already running on it.
+    setBackendOverride(createTestBackend())
+    const login = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "oauth_token",
+      source: "managed",
+      secret: JSON.stringify({ access_token: "plan-token" }),
+    })
+    try {
+      const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk() })
+      expect(catalog.connected).toContain("anthropic")
+    } finally {
+      for (const row of listCredentials()) await deleteCredential(row.id)
+      setBackendOverride(undefined)
+    }
+    void login
+  })
+
+  test("a harness login for one vendor does not connect another vendor's provider", async () => {
+    setBackendOverride(createTestBackend())
+    await putCredential({
+      provider_id: "codex-app-server",
+      kind: "oauth_token",
+      source: "managed",
+      secret: JSON.stringify({ access_token: "plan-token" }),
+    })
+    try {
+      const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk() })
+      expect(catalog.connected).not.toContain("anthropic")
+    } finally {
+      for (const row of listCredentials()) await deleteCredential(row.id)
+      setBackendOverride(undefined)
+    }
+  })
+
   test("OpenCode Zen and providers with no env requirement are connected without credentials", async () => {
     const catalog = await opencodeProviderCatalog({
       env: env(cacheFile()),

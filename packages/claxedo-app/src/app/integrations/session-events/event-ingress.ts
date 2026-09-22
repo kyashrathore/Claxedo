@@ -31,6 +31,7 @@ import { allowPersistedSessionConversations } from "@/features/session/conversat
 import { asRecord, readField, readString } from "@/lib/record"
 import { sessionEventRow } from "@/features/session/data/sync/session-event-info"
 import { asFiniteNumber, asString } from "@claxedo/helpers/guards"
+import { captureException } from "@/platform/telemetry/analytics"
 
 export type SessionAccessRevokedEvent = { sessionId: string; workspaceId: string }
 
@@ -154,7 +155,7 @@ async function retrySessionRevocationOperation<T>(
       if (!shouldContinue()) return { completed: false }
       const delay = delays[Math.min(attempt, delays.length - 1)]
       if (attempt === 0 || (attempt + 1) % 12 === 0) {
-        console.error("Retrying revoked session reconciliation", error)
+        captureException(error, { surface: "session", operation: "revoked-session-reconciliation", attempt })
       }
       await new Promise((resolve) => setTimeout(resolve, delay))
     }
@@ -429,10 +430,10 @@ async function handleSessionShareRevoked(
   } catch (error) {
     // Defensive guard for programmer errors outside the retryable authority and
     // persistence operations. Never redirect after incomplete durable cleanup.
-    console.error("Failed to reconcile revoked session access", error)
+    captureException(error, { surface: "session", operation: "revoked-session-access" })
   } finally {
     await invalidateSessionShareQueries().catch((error) => {
-      console.error("Failed to refresh session shares after access change", error)
+      captureException(error, { surface: "session", operation: "session-shares-refresh" })
     })
   }
 }

@@ -16,7 +16,7 @@
  * └────────┴────────────────────────────────────────────────────┘
  */
 
-import { createSignal, lazy, onCleanup, onMount, Show, type ParentProps, type JSX } from "solid-js"
+import { createSignal, lazy, onCleanup, onMount, Show, Suspense, type ParentProps, type JSX } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import { useClaxedoState, type ContentMeta, type ContentType } from "./workbench/state/index"
 import type { ProjectItem } from "./workbench/rail/domain-types"
@@ -27,6 +27,7 @@ import { usePermission } from "@/features/session/providers/permission"
 import { useCommand } from "@/app/providers/command"
 import { useServer } from "@/app/connection/server"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { useSettingsSurfaceOptional } from "@/features/settings/settings-surface"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useRailKeyboardController } from "./workbench/rail/rail-keyboard-controller"
 import {
@@ -66,6 +67,12 @@ import { resolveAppShellNavigationActions } from "./app-shell-navigation"
 type WorkspaceDirectoryRef = string
 import "./styles/ui-overrides.css"
 
+const SettingsContent = lazy(async () => ({
+  default: (await import("@/app/integrations/settings/settings-content")).SettingsContent,
+}))
+const SettingsHeader = lazy(async () => ({
+  default: (await import("@/features/settings/ui/settings-header")).SettingsHeader,
+}))
 const RailSidebarShell = lazy(() =>
   import("./workbench/rail/rail-sidebar-shell").then((module) => ({
     default: module.RailSidebarShell,
@@ -203,6 +210,9 @@ export type AppShellLayoutProps = ParentProps<{
 const FLOATING_CONTENT_TYPES: readonly ContentType[] = ["session", "draft-session"]
 
 function AppShellLayoutBody(props: AppShellLayoutProps) {
+  // Optional: a harness that mounts the layout on its own never opens
+  // settings, and the workbench column is then all there is to draw.
+  const settingsSurface = useSettingsSurfaceOptional()
   const isolationStage = window.__CLAXEDO__?.startupIsolationStage
   const [sidebarMounted, setSidebarMounted] = createSignal(false)
   let sidebarMountFrame: number | undefined
@@ -509,6 +519,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
             <MainContentReady />
           </main>
         ) : (
+        <Show when={settingsSurface?.section()} fallback={(
         <PanePresentationProvider value={panePresentation}>
         <RailWorkbenchShell
           activeGlobal={emptyDraft.activeGlobal}
@@ -566,6 +577,20 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           {props.children}
         </RailWorkbenchShell>
         </PanePresentationProvider>
+        )}>
+          {(section) => (
+            <main class="flex flex-1 min-h-0 flex-col bg-background-base" data-component="settings-surface">
+              <Suspense fallback={null}>
+                <SettingsHeader
+                  sidebarPinned={() => !sidebarHidden()}
+                  onShowSidebar={showSidebar}
+                  trafficLightPad={chrome.trafficLightPad}
+                />
+                <SettingsContent section={section()} />
+              </Suspense>
+            </main>
+          )}
+        </Show>
         )}
       </div>
     </div>

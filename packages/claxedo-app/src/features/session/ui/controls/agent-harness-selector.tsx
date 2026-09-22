@@ -2,7 +2,7 @@ import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/ses
 import { Show, createEffect, createMemo, createSignal, onCleanup, untrack, type Accessor, type JSX } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { type PickerItem, type PickerState } from "@/features/session/ui/model/select-model"
+import { type PickerItem, type PickerState } from "@/features/session/ui/model/model-list"
 import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model-picker"
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
@@ -17,7 +17,9 @@ import {
   createModelSelectionController,
   modelKeyFromPickerSelection,
 } from "@/features/session/commands/model-selection"
-import { openSettingsProviders, useProviders } from "@/features/session/app-ports"
+import { useProviders } from "@/features/session/app-ports"
+import { useNavigate } from "@solidjs/router"
+import { settingsRoute } from "@/platform/settings/route"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import {
   NATIVE_HARNESS_IDS,
@@ -89,6 +91,7 @@ interface AgentHarnessSelectorProps {
 
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const dialog = useDialog()
+  const navigate = useNavigate()
   const connections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
   const connectionRows = createMemo(() => {
     const catalog = connections.data()
@@ -390,7 +393,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     }),
   )
   const openProviders = () => {
-    void openSettingsProviders(dialog)
+    navigate(settingsRoute("models"))
   }
   const model = createMemo<PickerState>(() => ({
     list: () => rows() as PickerItem[],

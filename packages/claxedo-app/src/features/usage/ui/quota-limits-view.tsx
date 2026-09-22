@@ -221,97 +221,103 @@ export function QuotaLimitsView(props: {
         when={groups().length}
         fallback={<div class="usage-chart-empty">{props.error ?? language.t("usage.quota.empty")}</div>}
       >
-        <For each={groups()}>{(group) => (
-          <section class={`usage-quota-harness usage-brand-row-${usageBrand(group.key)}`} aria-label={say(group.name)}>
-            <h4>
-              <Show when={group.icon}>
-                {(icon) => <ProviderIcon id={icon()} class="size-4 shrink-0 icon-strong-base" />}
-              </Show>
-              {say(group.name)}
-            </h4>
-            <div class="usage-quota-grid">
-              <For each={group.cards}>{(entry) => (
-                <article
-                  class="usage-quota-account"
-                  data-account={entry.key}
-                  data-refused={entry.refusedKey === undefined ? undefined : "true"}
-                >
-                  <header>
-                    <strong>{say(entry.label)}</strong>
-                    <Show when={entry.plan}><span>{entry.plan}</span></Show>
-                    <Show when={entry.inUse}>
-                      <span class="usage-quota-in-use">{language.t("usage.quota.inUse")}</span>
-                    </Show>
-                    <Show when={entry.reach}>
-                      {(reach) => <Reach reach={reach()} />}
-                    </Show>
-                    <Show when={entry.usageAt}>
-                      {(at) => (
-                        <Tooltip
-                          value={lastCheckedSentence(language.t, at(), language.locale())}
-                          placement="top"
-                          class="usage-quota-as-of"
-                        >
-                          <CheckedAge
-                            at={at()}
-                            component="usage-quota-as-of"
-                            t={language.t}
-                            locale={language.locale()}
-                          />
-                        </Tooltip>
+        <div class="usage-quota-groups">
+          <For each={groups()}>{(group) => (
+            <section
+              class={`usage-quota-harness usage-brand-row-${usageBrand(group.key)}`}
+              aria-label={say(group.name)}
+              data-wide={group.cards.length > 1 ? "true" : undefined}
+            >
+              <h4>
+                <Show when={group.icon}>
+                  {(icon) => <ProviderIcon id={icon()} class="size-4 shrink-0 icon-strong-base" />}
+                </Show>
+                {say(group.name)}
+              </h4>
+              <div class="usage-quota-grid">
+                <For each={group.cards}>{(entry) => (
+                  <article
+                    class="usage-quota-account"
+                    data-account={entry.key}
+                    data-refused={entry.refusedKey === undefined ? undefined : "true"}
+                  >
+                    <header>
+                      <strong>{say(entry.label)}</strong>
+                      <Show when={entry.plan}><span>{entry.plan}</span></Show>
+                      <Show when={entry.inUse}>
+                        <span class="usage-quota-in-use">{language.t("usage.quota.inUse")}</span>
+                      </Show>
+                      <Show when={entry.reach}>
+                        {(reach) => <Reach reach={reach()} />}
+                      </Show>
+                      <Show when={entry.usageAt}>
+                        {(at) => (
+                          <Tooltip
+                            value={lastCheckedSentence(language.t, at(), language.locale())}
+                            placement="top"
+                            class="usage-quota-as-of"
+                          >
+                            <CheckedAge
+                              at={at()}
+                              component="usage-quota-as-of"
+                              t={language.t}
+                              locale={language.locale()}
+                            />
+                          </Tooltip>
+                        )}
+                      </Show>
+                    </header>
+                    <Show when={note(entry)}>
+                      {(value) => (
+                        <p class="usage-quota-account-note">
+                          {value().text}
+                          <Show when={value().check}>
+                            {" · "}
+                            <button
+                              type="button"
+                              class="usage-quota-check"
+                              disabled={props.busy}
+                              onClick={() => props.onCheck?.()}
+                            >
+                              {language.t("usage.quota.check")}
+                            </button>
+                          </Show>
+                        </p>
                       )}
                     </Show>
-                  </header>
-                  <Show when={note(entry)}>
-                    {(value) => (
-                      <p class="usage-quota-account-note">
-                        {value().text}
-                        <Show when={value().check}>
-                          {" · "}
-                          <button
-                            type="button"
-                            class="usage-quota-check"
-                            disabled={props.busy}
-                            onClick={() => props.onCheck?.()}
-                          >
-                            {language.t("usage.quota.check")}
-                          </button>
-                        </Show>
-                      </p>
-                    )}
-                  </Show>
-                  <For each={entry.windows}>{(window) => {
-                    const reset = createMemo(() => untilReset(window.resetsAt))
-                    return (
-                      <div class="usage-quota-window">
-                        <progress
-                          max="100"
-                          value={window.percent}
-                          aria-label={language.t("usage.quota.windowUsed", {
-                            account: say(entry.label),
-                            window: say(window.name),
-                            percent: readPercent(window.percent),
-                          })}
-                        />
-                        <div class="usage-quota-window-face">
-                          <span class="usage-quota-window-name">{say(window.name)}</span>
-                          <b>{language.t("usage.quota.windowLeft", { percent: readPercent(100 - window.percent) })}</b>
-                          <Show when={reset()}>
-                            {(value) => (
-                              <span class="usage-quota-window-reset">
-                                {language.t("usage.quota.windowResets", { reset: value() })}
-                              </span>
-                            )}
-                          </Show>
+                    <For each={entry.windows}>{(window) => {
+                      const reset = createMemo(() => untilReset(window.resetsAt))
+                      return (
+                        <div class="usage-quota-window">
+                          <progress
+                            max="100"
+                            value={window.percent}
+                            aria-label={language.t("usage.quota.windowUsed", {
+                              account: say(entry.label),
+                              window: say(window.name),
+                              percent: readPercent(window.percent),
+                            })}
+                          />
+                          <div class="usage-quota-window-face">
+                            <span class="usage-quota-window-name">{say(window.name)}</span>
+                            <b>{language.t("usage.quota.windowLeft", { percent: readPercent(100 - window.percent) })}</b>
+                            <Show when={reset()}>
+                              {(value) => (
+                                <span class="usage-quota-window-reset">
+                                  {language.t("usage.quota.windowResets", { reset: value() })}
+                                </span>
+                              )}
+                            </Show>
+                          </div>
                         </div>
-                      </div>
-                    )
-                  }}</For>
-                </article>
-              )}</For>
-            </div>
-          </section>
-        )}</For>
+                      )
+                    }}</For>
+                  </article>
+                )}</For>
+              </div>
+            </section>
+          )}</For>
+        </div>
       </Show>
     </section>
   )

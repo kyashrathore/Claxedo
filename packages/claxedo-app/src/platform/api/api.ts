@@ -253,7 +253,6 @@ function apiFetchDebugEnabled(route: string) {
     return localStorage.getItem("claxedo.debug.api-fetch") === "1"
   }
   return (
-    import.meta.env.DEV ||
     localStorage.getItem("claxedo.debug.request-loop") === "1" ||
     localStorage.getItem("claxedo.debug.api-fetch") === "1"
   )
@@ -361,6 +360,7 @@ function beginApiFetchDebug(input: string | URL | Request) {
         __fetchThrottle?: { inFlight: number; queued: number; cap: number }
       }
     ).__fetchThrottle
+    // oxlint-disable-next-line no-console -- opt-in tracing behind the localStorage flags above
     console.debug("[claxedo:api-fetch]", phase, {
       id,
       route,

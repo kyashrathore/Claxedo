@@ -8,7 +8,7 @@
 // @claxedo/agent-runtime-contract, so that half cannot drift.
 import { providerErrorDetail, providerUsageLimitDetail } from "./provider-error-detail"
 import type { HarnessSelectionSnapshot } from "@/features/session/harness/controller"
-import type { PickerItem } from "@/features/session/ui/model/select-model"
+import type { PickerItem } from "@/features/session/ui/model/model-list"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 import { asRecord } from "@/lib/record"

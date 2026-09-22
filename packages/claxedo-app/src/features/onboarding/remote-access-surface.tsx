@@ -1,11 +1,11 @@
 import { Button } from "@opencode-ai/ui/button"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { For, Show, createResource, createSignal, type Component } from "solid-js"
+import { SettingsList, SettingsRow } from "@/ui/controls/settings-list"
+import { Show, createResource, createSignal, type Component } from "solid-js"
 import type {
   MachineProviderBinding,
   MachineProviderConfigRow,
 } from "@/platform/remote-access/machine-remote-access-port"
-import { MachineProviderConfig } from "./machine-provider-config"
 import {
   REMOTE_ACCESS_PHONE_COPY,
   type RemoteAccessAvailability,
@@ -48,10 +48,6 @@ export type RemoteAccessSurfaceProps = {
   availability: RemoteAccessAvailability
   /** Whose machine this is. Absent in surfaces that only enroll it. */
   identity?: RemoteAccessIdentity
-  devices: readonly RemoteAccessDevice[]
-  /** Absent where the product cannot name the machine it runs on. */
-  thisMachine?: RemoteAccessThisMachine
-  showDevices?: boolean
   startAtLogin: boolean
   onStartAtLoginChange: (enabled: boolean) => void
   onEnable: () => void | Promise<void>
@@ -59,20 +55,6 @@ export type RemoteAccessSurfaceProps = {
   onRevoke: (hostId: string) => void
   /** Offered only where the product can genuinely pause its own heartbeat. */
   onPause?: () => void | Promise<void>
-  /**
-   * Rename a machine. Absent where the product cannot write the name, which is
-   * a different thing from a machine whose name may not change.
-   */
-  onRename?: (hostId: string, displayName: string) => void | Promise<void>
-  providerConfig?: RemoteAccessProviderConfig
-  /**
-   * Whether the machine this surface runs on is served by the desktop app.
-   *
-   * It decides whether `claxedo connect` is offered for THIS machine: the
-   * desktop already serves it under its own enrollment and `connect` refuses to
-   * start beside a running desktop.
-   */
-  servedByDesktopApp?: boolean
   /**
    * How many workspaces this machine serves right now, straight off the
    * connector snapshot. Undefined while that is still unknown — which is a
@@ -137,123 +119,120 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
     return await QRCode.toDataURL(link, { width: 224, margin: 1 })
   })
 
+  /** The state, in the two or three words that go beside the light. */
+  const title = () => {
+    const state = props.availability.state
+    if (state === "locked") return "Not available yet"
+    if (state === "sign-in-required") return "Sign in required"
+    if (state === "ready-to-enable") return "Off"
+    return servingLabel(props.serving)
+  }
+
   return (
-    <div class="flex flex-col gap-4" data-component="remote-access-surface">
-      <Show when={props.availability.state === "locked" ? props.availability : undefined}>
-        {(availability) => (
-          <div class="rounded-md border border-border-weak-base bg-surface-raised-base p-4">
-            <h3 class="text-14-medium text-text-strong">Remote access is locked</h3>
-            <p class="mt-1 text-12-regular text-text-weak">{availability().reason}</p>
-          </div>
-        )}
-      </Show>
-
-      <Show when={props.availability.state === "sign-in-required"}>
-        <div class="rounded-md border border-border-weak-base p-4">
-          <h3 class="text-14-medium text-text-strong">Sign in to continue</h3>
-          <p class="mt-1 text-12-regular text-text-weak">Your hosted account authorizes this machine.</p>
-          <Button class="mt-3" onClick={props.onSignIn}>Sign in</Button>
-        </div>
-      </Show>
-
-      <Show when={props.availability.state === "ready-to-enable"}>
-        <div class="rounded-md border border-border-weak-base p-4">
-          <h3 class="text-14-medium text-text-strong">Enable remote access</h3>
-          <p class="mt-1 text-12-regular text-text-weak">
-            Reach every workspace on this machine from your other devices.
-          </p>
-          <p class="mt-1 text-12-regular text-text-weak" data-slot="remote-access-disclosure">
-            {REMOTE_ACCESS_PUBLICATION_DISCLOSURE}
-          </p>
-          <label class="mt-3 flex items-center gap-2 text-12-regular text-text-base">
-            <input
-              type="checkbox"
-              checked={props.startAtLogin}
-              onChange={(event) => props.onStartAtLoginChange(event.currentTarget.checked)}
-            />
-            Start Claxedo when I sign in
-          </label>
-          <div class="mt-3 flex items-center gap-3">
-            <Button disabled={enabling()} onClick={enable}>
-              {enabling() ? "Enabling…" : "Enable remote access"}
-            </Button>
-            <Show when={enableError()}>
-              {(message) => <span class="text-12-regular text-icon-critical-base">{message()}</span>}
-            </Show>
-          </div>
-        </div>
-      </Show>
-
-      <Show when={props.availability.state === "enabled"}>
-        <div class="flex flex-col gap-3 rounded-md border border-border-weak-base p-4">
-          <Show when={props.identity}>
-            {(identity) => <RemoteAccessIdentityRow identity={identity()} />}
-          </Show>
-
-          <div class="flex items-center gap-2">
+    <div class="flex flex-col gap-2" data-component="remote-access-surface">
+      {/* Outlined until it is on: locked, unsigned and off are all states the
+          reader cannot act on here, and a filled card promises otherwise. */}
+      <SettingsList variant={props.availability.state === "enabled" ? "card" : "outline"}>
+        <SettingsRow
+          leading={(
             <span
               class="size-2 shrink-0 rounded-full"
               classList={{
-                "bg-icon-success-base": !pending(),
-                "bg-icon-weak-base": !!pending(),
+                "bg-icon-success-base": props.availability.state === "enabled" && !pending(),
+                "bg-icon-weak-base": props.availability.state !== "enabled" || !!pending(),
               }}
               aria-hidden="true"
             />
-            <span
-              class="text-13-medium text-text-strong"
-              title={pending()}
-              data-serving-state={pending() ? "pending" : "up"}
-            >
-              {servingLabel(props.serving)}
+          )}
+          title={(
+            <span title={pending()} data-serving-state={pending() ? "pending" : "up"}>{title()}</span>
+          )}
+          description={(
+            <span class="flex flex-col gap-0.5">
+              <Show when={props.availability.state === "locked" ? props.availability : undefined}>
+                {(availability) => <span data-slot="remote-access-locked">{availability().reason}</span>}
+              </Show>
+              <Show when={props.availability.state === "sign-in-required"}>
+                <span>Your hosted account authorizes this machine.</span>
+              </Show>
+              <Show when={props.availability.state === "ready-to-enable"}>
+                <span>Reach every workspace on this machine from your other devices.</span>
+                <span data-slot="remote-access-disclosure">{REMOTE_ACCESS_PUBLICATION_DISCLOSURE}</span>
+              </Show>
+              <Show when={props.availability.state === "enabled"}>
+                <Show when={pending()}>
+                  {(reason) => <span>{reason()}</span>}
+                </Show>
+                <Show when={props.identity}>
+                  {(identity) => <RemoteAccessIdentityRow identity={identity()} />}
+                </Show>
+              </Show>
             </span>
-            <Show when={pending()}>
-              {(reason) => <span class="text-12-regular text-text-weak">{reason()}</span>}
+          )}
+        >
+          <div class="flex items-center gap-2">
+            <Show when={props.availability.state === "locked"}>
+              {/* Drawn and refused rather than hidden: the control this build
+                  will have is the clearest statement of what is missing. */}
+              <Button size="small" disabled>Enable remote access</Button>
+            </Show>
+            <Show when={props.availability.state === "sign-in-required"}>
+              <Button size="small" onClick={props.onSignIn}>Sign in</Button>
+            </Show>
+            <Show when={props.availability.state === "ready-to-enable"}>
+              <Button size="small" disabled={enabling()} onClick={enable}>
+                {enabling() ? "Enabling…" : "Enable remote access"}
+              </Button>
+            </Show>
+            <Show when={props.availability.state === "enabled"}>
+              <Button size="small" disabled={!props.deviceLink} onClick={() => setConnectOpen(true)}>
+                Connect a device
+              </Button>
+              <Show when={props.onPause}>
+                <Button size="small" variant="ghost" onClick={() => void props.onPause?.()}>Pause</Button>
+              </Show>
+              <Button size="small" variant="ghost" onClick={() => props.onRevoke(THIS_MACHINE)}>
+                Revoke this machine
+              </Button>
             </Show>
           </div>
+        </SettingsRow>
 
-          <Show when={props.shareFailure}>
-            {(failure) => (
-              <p class="text-12-regular text-icon-critical-base">
-                Couldn't share {failure().label} — retrying on next sync. {failure().message}
-              </p>
-            )}
-          </Show>
+        <Show when={props.availability.state === "ready-to-enable"}>
+          <SettingsRow
+            title="Start Claxedo when I sign in"
+            description="Remote access comes back after a reboot without anyone opening the app."
+          >
+            <input
+              type="checkbox"
+              aria-label="Start Claxedo when I sign in"
+              checked={props.startAtLogin}
+              onChange={(event) => props.onStartAtLoginChange(event.currentTarget.checked)}
+            />
+          </SettingsRow>
+        </Show>
+      </SettingsList>
 
-          <Show when={props.availability.state === "enabled" && props.availability.proven}>
-            <p class="text-12-medium text-icon-success-base">Opened on a second device</p>
-          </Show>
+      <Show when={enableError()}>
+        {(message) => <p class="text-12-regular text-icon-critical-base">{message()}</p>}
+      </Show>
 
-          <div class="flex flex-wrap items-center gap-2">
-            <Button size="small" disabled={!props.deviceLink} onClick={() => setConnectOpen(true)}>
-              Connect a device
-            </Button>
-            <Show when={props.onPause}>
-              <Button size="small" variant="secondary" onClick={() => void props.onPause?.()}>Pause</Button>
-            </Show>
-            <Button size="small" variant="secondary" onClick={() => props.onRevoke(THIS_MACHINE)}>
-              Revoke this machine
-            </Button>
-          </div>
-        </div>
+      <Show when={props.shareFailure}>
+        {(failure) => (
+          <p class="text-12-regular text-icon-critical-base">
+            Couldn't share {failure().label} — retrying on next sync. {failure().message}
+          </p>
+        )}
+      </Show>
+
+      <Show when={props.availability.state === "enabled" && props.availability.proven}>
+        <p class="text-12-medium text-icon-success-base">Opened on a second device</p>
       </Show>
 
       <Show when={connectOpen() && props.deviceLink ? props.deviceLink : undefined}>
         {(link) => (
           <ConnectDeviceModal link={link()} qr={qr()} onClose={() => setConnectOpen(false)} />
         )}
-      </Show>
-
-      <Show when={props.showDevices !== false}>
-        <Show when={props.devices.length > 0 || props.thisMachine !== undefined}>
-          <RemoteAccessDevices
-            devices={props.devices}
-            {...(props.thisMachine ? { thisMachine: props.thisMachine } : {})}
-            onRevoke={props.onRevoke}
-            {...(props.onRename ? { onRename: props.onRename } : {})}
-            {...(props.providerConfig ? { providerConfig: props.providerConfig } : {})}
-          />
-        </Show>
-        <AddMachine servedByDesktopApp={props.servedByDesktopApp === true} />
       </Show>
     </div>
   )
@@ -268,7 +247,7 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
  * the HTTP product's server publishes the machine it is itself running on.
  * Naming it is honest; inventing a per-device list to pick from is not.
  */
-const THIS_MACHINE = "this-machine"
+export const THIS_MACHINE = "this-machine"
 
 /**
  * What turning the switch on sends, stated on the switch.
@@ -279,11 +258,6 @@ const THIS_MACHINE = "this-machine"
  */
 export const REMOTE_ACCESS_PUBLICATION_DISCLOSURE =
   "Your workspace names and paths are sent to the control plane so your other devices can find them."
-
-/** Mints the single-use token, on a machine that is already signed in. */
-const INVITE_COMMAND = "claxedo host invite --name build-box --root ~/code"
-/** Run on the machine being added, with the token the invite printed. */
-const CONNECT_COMMAND = "claxedo connect --token-file ./invite.txt --install-service"
 
 function servingLabel(serving: number | undefined) {
   if (serving === undefined) return "Serving this machine's workspaces"
@@ -359,184 +333,6 @@ const ConnectDeviceModal: Component<{
           <Button size="small" variant="secondary" onClick={() => props.onClose()}>Close</Button>
         </div>
       </div>
-    </div>
-  )
-}
-
-/**
- * One instruction per machine, and the `claxedo connect` one for the machine
- * the user is NOT sitting at.
- *
- * A machine running the desktop app is already served under its own
- * enrollment, and `connect` refuses to start beside a live desktop daemon, so
- * offering the command there would be offering a command that fails.
- */
-const AddMachine: Component<{ servedByDesktopApp: boolean }> = (props) => (
-  <section class="flex flex-col gap-2" aria-labelledby="add-machine-title">
-    <h3 id="add-machine-title" class="text-14-medium text-text-strong">Add a machine</h3>
-    <div class="rounded-md border border-border-weak-base p-3">
-      <h4 class="text-13-medium text-text-strong">The computer you are sitting at</h4>
-      <Show
-        when={props.servedByDesktopApp}
-        fallback={
-          <p class="mt-1 text-12-regular text-text-weak">
-            Install the Claxedo desktop app on it and sign in. It appears here under its own name.
-          </p>
-        }
-      >
-        <p class="mt-1 text-12-regular text-text-weak" data-slot="this-machine-already-added">
-          The desktop app already serves this machine under its own name. Nothing to install.
-        </p>
-      </Show>
-    </div>
-    <div class="flex flex-col gap-2 rounded-md border border-border-weak-base p-3" data-slot="add-connect-host">
-      <div>
-        <h4 class="text-13-medium text-text-strong">Another machine you own</h4>
-        <p class="mt-1 text-12-regular text-text-weak">
-          Run <code>claxedo host invite</code> on this machine for a single-use token, then run{" "}
-          <code>claxedo connect</code> on the machine you are adding.
-        </p>
-      </div>
-      <CopyableCommand command={INVITE_COMMAND} label="Copy invite command" />
-      <CopyableCommand command={CONNECT_COMMAND} label="Copy connect command" />
-    </div>
-  </section>
-)
-
-const CopyableCommand: Component<{ command: string; label: string }> = (props) => (
-  <div class="flex min-w-0 items-center gap-2">
-    <code class="min-w-0 flex-1 truncate rounded bg-surface-base px-2 py-1 text-11-regular">{props.command}</code>
-    <Button
-      size="small"
-      variant="secondary"
-      aria-label={props.label}
-      onClick={() => void navigator.clipboard.writeText(props.command)}
-    >
-      Copy
-    </Button>
-  </div>
-)
-
-export const RemoteAccessDevices: Component<{
-  devices: readonly RemoteAccessDevice[]
-  thisMachine?: RemoteAccessThisMachine
-  onRevoke: (hostId: string) => void
-  onRename?: (hostId: string, displayName: string) => void | Promise<void>
-  providerConfig?: RemoteAccessProviderConfig
-}> = (props) => (
-  <section class="flex flex-col gap-2" aria-labelledby="remote-access-devices-title">
-    <h3 id="remote-access-devices-title" class="text-14-medium text-text-strong">Machines</h3>
-    <p class="text-12-regular text-text-weak">
-      Each machine below serves the workspaces it holds. Revoking a machine ends its remote access.
-    </p>
-    <Show when={props.thisMachine}>
-      {(here) => (
-        <MachineRow
-          device={{
-            hostId: THIS_MACHINE,
-            displayName: here().displayName,
-            online: here().online,
-            workspaceIds: here().workspaceIds,
-          }}
-          here
-          onRevoke={props.onRevoke}
-          {...(props.onRename ? { onRename: props.onRename } : {})}
-        />
-      )}
-    </Show>
-    <For each={props.devices}>
-      {(device) => (
-        <div class="flex flex-col gap-2">
-          <MachineRow
-            device={device}
-            onRevoke={props.onRevoke}
-            {...(props.onRename ? { onRename: props.onRename } : {})}
-          />
-          <Show when={props.providerConfig}>
-            {(config) => (
-              <Show when={config().rows.find((row) => row.hostId === device.hostId)}>
-                {(row) => (
-                  <MachineProviderConfig
-                    machineName={device.displayName}
-                    row={row()}
-                    onPush={config().onPush}
-                    onClear={config().onClear}
-                  />
-                )}
-              </Show>
-            )}
-          </Show>
-        </div>
-      )}
-    </For>
-  </section>
-)
-
-/**
- * One machine, under the name it derived for itself, and the owner's override
- * of that name.
- *
- * The draft is seeded from the device on every open rather than held across
- * renames, so a rename that lands from another device is what the next open
- * shows.
- */
-const MachineRow: Component<{
-  device: { hostId: string; displayName: string; lastSeenAt?: number; online?: boolean; workspaceIds: readonly string[] }
-  /** The computer the user is sitting at, whose revoke the panel above already offers. */
-  here?: boolean
-  onRevoke: (hostId: string) => void
-  onRename?: (hostId: string, displayName: string) => void | Promise<void>
-}> = (props) => {
-  const [draft, setDraft] = createSignal<string>()
-  const commit = () => {
-    const name = draft()?.trim()
-    setDraft(undefined)
-    if (!name || name === props.device.displayName) return
-    void props.onRename?.(props.device.hostId, name)
-  }
-  return (
-    <div class="flex items-center justify-between gap-3 rounded-md border border-border-weak-base p-3">
-      <div class="min-w-0 flex-1">
-        <Show
-          when={draft() !== undefined}
-          fallback={<div class="truncate text-13-medium text-text-strong">{props.device.displayName}</div>}
-        >
-          <input
-            class="w-full rounded bg-surface-base px-2 py-1 text-13-medium text-text-strong"
-            aria-label={`Name for ${props.device.displayName}`}
-            value={draft() ?? ""}
-            autofocus
-            onInput={(event) => setDraft(event.currentTarget.value)}
-            onBlur={commit}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") commit()
-              if (event.key === "Escape") setDraft(undefined)
-            }}
-          />
-        </Show>
-        <div class="text-11-regular text-text-weak" data-slot="machine-state">
-          {props.here
-            ? `This computer · ${props.device.online ? "Remote access on" : "Remote access off"}`
-            : `Last seen ${new Date(props.device.lastSeenAt ?? 0).toLocaleString()}`}{" "}
-          · {props.device.workspaceIds.length}{" "}
-          {props.device.workspaceIds.length === 1 ? "workspace" : "workspaces"}
-        </div>
-      </div>
-      <Show when={props.onRename}>
-        <Button
-          size="small"
-          variant="secondary"
-          aria-label={`Rename ${props.device.displayName}`}
-          onClick={() => setDraft(props.device.displayName)}
-        >
-          Rename
-        </Button>
-      </Show>
-      <Show when={!props.here}>
-        <Button size="small" variant="secondary" onClick={() => props.onRevoke(props.device.hostId)}>
-          Revoke {props.device.displayName}
-        </Button>
-      </Show>
     </div>
   )
 }

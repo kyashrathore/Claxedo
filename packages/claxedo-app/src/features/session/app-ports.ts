@@ -85,7 +85,6 @@ export type SessionAppPorts = {
   sessionRefForActionWorkspace: typeof LayoutActions.sessionRefForActionWorkspace
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
   loadManageModelsDialog: () => Promise<typeof ManageModels>
-  openSettingsProviders: (dialog: { show: (element: () => JSX.Element) => unknown }) => Promise<void>
   listDocumentMentions: typeof DocumentMentions.listDocumentMentions
   documentMentionText: typeof DocumentMentions.documentMentionText
   useFirstTurnFunnel: () => {
@@ -176,7 +175,6 @@ export const message = bind((ports) => ports.message)
 export const sessionRefForActionWorkspace = bind((ports) => ports.sessionRefForActionWorkspace)
 export const recoverMissingWorkspace = bind((ports) => ports.recoverMissingWorkspace)
 export const loadManageModelsDialog = bind((ports) => ports.loadManageModelsDialog)
-export const openSettingsProviders = bind((ports) => ports.openSettingsProviders)
 export const listDocumentMentions = bind((ports) => ports.listDocumentMentions)
 export const documentMentionText = bind((ports) => ports.documentMentionText)
 export type DocumentMentionOption = DocumentMentions.DocumentMentionOption

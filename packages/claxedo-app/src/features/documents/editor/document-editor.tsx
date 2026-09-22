@@ -13,6 +13,7 @@ import { RichMode } from "./rich-mode"
 import { SaveStatus } from "./save-status"
 import { SourceMode } from "./source-mode"
 import { VersionHistory } from "./version-history"
+import { captureException } from "@/platform/telemetry/analytics"
 
 export type DocumentEditorProps = {
   document: OpenDocument
@@ -37,7 +38,8 @@ const memoryStorage = () => {
 
 export default function DocumentEditor(props: DocumentEditorProps) {
   const api = props.api ?? documentsApi
-  const reportError = props.reportError ?? ((error: unknown) => console.error(error))
+  const reportError =
+    props.reportError ?? ((error: unknown) => captureException(error, { surface: "documents", operation: "editor" }))
   const controller = createDocumentPersistenceController({
     document: {
       id: props.document.id,

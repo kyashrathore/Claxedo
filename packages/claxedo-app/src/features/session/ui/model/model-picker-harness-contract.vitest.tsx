@@ -7,7 +7,6 @@
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
-const openSettingsProviders = vi.fn()
 
 vi.mock("@opencode-ai/ui/context/dialog", () => ({
   useDialog: () => ({
@@ -27,8 +26,12 @@ vi.mock("@/platform/telemetry/analytics", () => ({
 
 vi.mock("@/features/session/app-ports", () => ({
   loadManageModelsDialog: async () => ({ DialogManageModels: () => null }),
-  openSettingsProviders,
 }))
+
+const navigated = vi.fn()
+// Connecting a provider is a navigation now, not a dialog; these suites mount
+// the control without a router.
+vi.mock("@solidjs/router", () => ({ useNavigate: () => navigated, useLocation: () => ({ pathname: "/", search: "" }) }))
 
 const { ModelSelectorPopover } = await import("./select-model")
 
@@ -49,17 +52,17 @@ async function openConnect(container: HTMLElement) {
     return node!
   })
   fireEvent.click(connect)
-  await waitFor(() => expect(openSettingsProviders).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(navigated).toHaveBeenCalledWith("/settings/models"))
 }
 
 beforeEach(() => {
-  openSettingsProviders.mockClear()
+  navigated.mockClear()
 })
 
 afterEach(() => cleanup())
 
-describe("the model picker's Connect action opens Settings → Providers", () => {
-  test("Connect redirects to providers settings", async () => {
+describe("the model picker's Connect action opens Settings → Models", () => {
+  test("Connect navigates to the models settings section", async () => {
     const { container } = render(() => (
       <ModelSelectorPopover model={pickerState()} actions>
         <span data-slot="model-trigger">model</span>

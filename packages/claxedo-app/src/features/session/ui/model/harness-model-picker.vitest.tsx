@@ -10,7 +10,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 }))
 vi.mock("@/features/session/app-ports", () => ({
   loadManageModelsDialog: async () => ({ DialogManageModels: () => null }),
-  openSettingsProviders: vi.fn(),
+  openSettingsModels: vi.fn(),
 }))
 vi.mock("@/platform/telemetry/analytics", () => ({ capture: vi.fn(), identityProps: () => ({}) }))
 afterEach(() => cleanup())

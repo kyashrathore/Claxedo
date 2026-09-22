@@ -31,20 +31,32 @@ const STORE_KEY = "model"
 const VISIBILITY_KEY = "model-visibility"
 
 /**
- * Which models the user hid or showed, keyed `providerID:modelID`. One answer
- * for the whole app: a model hidden in Settings is hidden in every workspace
- * and under every harness that offers that provider/model pair.
+ * Which models and which whole groups the user hid or showed. One answer for
+ * the whole app: a model hidden in Settings is hidden in every workspace and
+ * under every harness that offers that provider/model pair.
+ *
+ * `entries` is keyed `providerID:modelID`, `groups` by the group key its
+ * models were listed under — a provider id for a catalog harness, `<harness>/
+ * <vendor>` for a harness that reports one list across many vendors. The two
+ * are separate maps because a group answer must survive the models moving in
+ * and out of it, which a prefix scan over `entries` could not do.
  */
-export type ModelVisibilityRecord = { entries: Record<string, Visibility> }
+export type ModelVisibilityRecord = {
+  entries: Record<string, Visibility>
+  groups: Record<string, Visibility>
+}
+
+function visibilityMap(value: unknown): Record<string, Visibility> {
+  const row = asRecord(value)
+  if (!row) return {}
+  return Object.fromEntries(
+    Object.entries(row).filter((entry): entry is [string, Visibility] => entry[1] === "show" || entry[1] === "hide"),
+  )
+}
 
 export function decodeModelVisibilityRecord(value: unknown): ModelVisibilityRecord {
-  const entries = asRecord(asRecord(value)?.entries)
-  if (!entries) return { entries: {} }
-  return {
-    entries: Object.fromEntries(
-      Object.entries(entries).filter((entry): entry is [string, Visibility] => entry[1] === "show" || entry[1] === "hide"),
-    ),
-  }
+  const row = asRecord(value)
+  return { entries: visibilityMap(row?.entries), groups: visibilityMap(row?.groups) }
 }
 /**
  * The single global store this one replaces. `persisted` moves it into the
@@ -109,9 +121,19 @@ export function resolveModelVisibility(input: {
   model: ModelKey
   defaults: Record<string, string>
   user?: Visibility
+  /** The answer for the whole group this model was listed under. */
+  group?: Visibility
+  /** False when the harness reports a model it currently holds no credential for. */
+  connected?: boolean
 }) {
   if (input.user === "hide") return false
   if (input.user === "show") return true
+  if (input.group === "hide") return false
+  if (input.group === "show") return true
+  // A harness that reports its own catalog reports vendors it cannot reach:
+  // Pi ships ~1350 models and can run the handful its credentials cover. The
+  // offer is what it can run, not what it can name.
+  if (input.connected === false) return false
   // A provider with a catalog default is the models.dev registry, where only
   // the default is offered until the user enables more. A harness that reports
   // its own list has no defaults, and that list is already the offer.
@@ -152,7 +174,7 @@ function createModelStoreRecord(target: ReturnType<typeof Persist.serverWorkspac
 function createModelVisibilityRecord() {
   return persisted(
     { ...Persist.global(VISIBILITY_KEY), migrate: decodeModelVisibilityRecord },
-    createStore<ModelVisibilityRecord>({ entries: {} }),
+    createStore<ModelVisibilityRecord>({ entries: {}, groups: {} }),
   )
 }
 
@@ -319,14 +341,42 @@ const modelsContextInput = {
 export const { use: useModels, provider: ModelsProvider } =
   createSimpleContext<ReturnType<typeof modelsContextInput.init>, ModelsScope>(modelsContextInput)
 
+/** What the caller knows about where a model was listed, beyond the key itself. */
+export type ModelVisibilityContext = {
+  defaults?: Record<string, string>
+  /** The group key the model was listed under, whose answer covers all of them. */
+  group?: string
+  connected?: boolean
+}
+
 /** The visibility answer alone, for surfaces that edit it without a workspace's model store. */
 export function useModelVisibility() {
   const [store, setStore] = useModelStoreRegistry().visibility()
   return {
-    visible: (model: ModelKey, defaults: Record<string, string> = {}) =>
-      resolveModelVisibility({ model, defaults, user: store.entries[modelKey(model)] }),
+    visible: (model: ModelKey, context: ModelVisibilityContext = {}) =>
+      resolveModelVisibility({
+        model,
+        defaults: context.defaults ?? {},
+        user: store.entries[modelKey(model)],
+        ...(context.group === undefined ? {} : { group: store.groups[context.group] }),
+        ...(context.connected === undefined ? {} : { connected: context.connected }),
+      }),
     setVisibility: (model: ModelKey, state: boolean) => {
       setStore("entries", modelKey(model), state ? "show" : "hide")
+    },
+    groupVisibility: (group: string) => store.groups[group],
+    /**
+     * Answers for a whole group, and drops the per-model answers it would
+     * otherwise lose to: a model switched off by hand stays off against an
+     * "enable all" that is supposed to turn the group on.
+     */
+    setGroupVisibility: (group: string, state: boolean, models: readonly ModelKey[]) => {
+      setStore("groups", group, state ? "show" : "hide")
+      setStore("entries", (entries) => {
+        const next = { ...entries }
+        for (const model of models) delete next[modelKey(model)]
+        return next
+      })
     },
   }
 }

@@ -18,6 +18,8 @@ import { AppShellLayout } from "./app-shell-layout"
 
 import { PromptHarnessControllersProvider } from "../features/session/composer/ui/harness-controller"
 import { ModelStoreRegistryProvider } from "../features/session/providers/models"
+import { SettingsSurfaceProvider, useSettingsSurface } from "@/features/settings/settings-surface"
+import { SettingsScopeProvider } from "@/features/settings/scope/settings-scope"
 import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
 import { ClaxedoRouteStateBridge } from "./workbench/state/route-bridge"
 import { routeSuppressesEmptyDraftSession } from "./workbench/state/provider"
@@ -133,7 +135,6 @@ function ClaxedoAppShellContent(props: ParentProps) {
     handleSessionSelect,
     handleNewProject,
     handleProjectCreated,
-    handleSettings,
     handleUsage,
     handleHelp,
     handleNewSession,
@@ -153,6 +154,8 @@ function ClaxedoAppShellContent(props: ParentProps) {
     navigate,
   })
 
+  const settingsSurface = useSettingsSurface()
+
   return (
     <WorkspaceScopeHost workspaceIds={shell.openWorkspaceIds}>
       <AppShellLayout
@@ -168,7 +171,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onSessionSelect={handleSessionSelect}
         onNewProject={handleNewProject}
         onProjectCreated={handleProjectCreated}
-        onSettings={handleSettings}
+        onSettings={() => settingsSurface.open()}
         onUsage={handleUsage}
         onHelp={handleHelp}
         onOpenMarketplace={handleOpenMarketplace}
@@ -210,9 +213,19 @@ export function ClaxedoAppShellInner(props: ParentProps) {
               document, so they must hold the same record rather than a copy
               each. Mounted here, above every pane and above the dialog host's
               caller, so both find it. */}
-          <ModelStoreRegistryProvider>
-            <ClaxedoAppShellContent>{props.children}</ClaxedoAppShellContent>
-          </ModelStoreRegistryProvider>
+          {/* Above the shell body so the rail and the workbench column read
+              one answer: settings replaces what each of them draws, together. */}
+          <SettingsSurfaceProvider>
+            {/* The scope is derived state over the projects query the shell
+                already runs, and BOTH halves of settings read it — the rail's
+                nav and the workbench column — so it is mounted once here
+                rather than inside either of them. */}
+            <SettingsScopeProvider>
+              <ModelStoreRegistryProvider>
+                <ClaxedoAppShellContent>{props.children}</ClaxedoAppShellContent>
+              </ModelStoreRegistryProvider>
+            </SettingsScopeProvider>
+          </SettingsSurfaceProvider>
         </PromptHarnessControllersProvider>
       </ClaxedoRouteStateBridge>
     </>

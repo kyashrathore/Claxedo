@@ -14,6 +14,7 @@ import {
   type DocumentsApi,
 } from "../data/documents-api"
 import type { DocumentChangedEvent } from "../data/document-changed-event"
+import { captureException } from "@/platform/telemetry/analytics"
 import "./document-index.css"
 
 /**
@@ -191,10 +192,11 @@ export function createDocumentIndexController(input: {
   const connect = () => {
     if (stopped) return
     if (!input.subscribe) {
-      // Loud on purpose: a silently non-live index must not ship unnoticed.
-      console.warn(
-        "[documents] control-plane events port unavailable — the Documents index will not live-update.",
-      )
+      // Reported on purpose: a silently non-live index must not ship unnoticed.
+      captureException(new Error("control-plane events port unavailable; the Documents index will not live-update"), {
+        surface: "documents",
+        operation: "index-subscribe",
+      })
     }
     unsubscribe = input.subscribe?.((event) => {
       if (stopped) return
@@ -405,7 +407,7 @@ export function PageIndex(props: PageIndexProps) {
           if (currentGeneration === generation) setState(next)
         },
         onError: (error) => {
-          if (currentGeneration === generation) console.error(error)
+          if (currentGeneration === generation) captureException(error, { surface: "documents", operation: "index-load" })
         },
       })
       controller = current
@@ -424,7 +426,9 @@ export function PageIndex(props: PageIndexProps) {
               setStatuses((value) => ({ ...value, [projectId]: next }))
             },
             (error) => {
-              if (currentGeneration === generation) console.error(error)
+              if (currentGeneration === generation) {
+                captureException(error, { surface: "documents", operation: "list-statuses", projectId: scope.projectId })
+              }
             },
           ),
         ),

@@ -473,12 +473,10 @@ export function OnboardingEmptyState(props: {
         <RemoteAccessSurface
           availability={remoteAccess.availability()}
           identity={remoteAccess.identity()}
-          devices={remoteAccess.devices.data ?? []}
           deviceLink={remoteAccess.deviceLink()}
           serving={autoShare().serving}
           servingPending={autoShare().pending}
           shareFailure={autoShare().failure}
-          showDevices={false}
           startAtLogin={remoteAccess.startAtLogin()}
           onStartAtLoginChange={(enabled) => void remoteAccess.setStartAtLogin(enabled)}
           onEnable={() => void remoteAccess.enable()}

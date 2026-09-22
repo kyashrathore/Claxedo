@@ -157,7 +157,8 @@ export function shouldReuseSessionHistory(input: {
 }
 
 function sessionHydrationDebug(phase: string, data: Record<string, unknown>) {
-  if (!import.meta.env.DEV) return
+  if (typeof localStorage === "undefined" || localStorage.getItem("claxedo.debug.session-hydrate") !== "1") return
+  // oxlint-disable-next-line no-console -- opt-in tracing behind the localStorage flag above
   console.debug("[claxedo:session-hydrate]", phase, data)
 }
 

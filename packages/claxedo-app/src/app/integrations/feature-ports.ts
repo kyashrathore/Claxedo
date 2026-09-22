@@ -43,7 +43,6 @@ import * as SessionCache from "@/features/session/data/sync/directory-session-ca
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
-import { openSettings } from "@/features/settings/open-settings"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
 import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
@@ -61,9 +60,6 @@ const DialogDeleteWorkspace = lazyDialog(() =>
   import("@/features/workspaces/ui/dialogs/delete-workspace-dialog").then((module) => ({
     default: module.DialogDeleteWorkspace,
   })),
-)
-const DialogSettings = lazyDialog(() =>
-  import("@/app/dialogs/settings").then((module) => ({ default: module.DialogSettings })),
 )
 const DialogSelectDirectory = lazyDialog(() =>
   import("@/app/dialogs/select-directory").then((module) => ({ default: module.DialogSelectDirectory })),
@@ -128,7 +124,6 @@ configureSessionAppPorts({
   sessionRefForActionWorkspace: LayoutActions.sessionRefForActionWorkspace,
   recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,
   loadManageModelsDialog: () => import("@/app/dialogs/manage-models"),
-  openSettingsProviders: (dialog) => openSettings(dialog, () => import("@/app/dialogs/settings"), "providers"),
   listDocumentMentions: DocumentMentions.listDocumentMentions,
   documentMentionText: DocumentMentions.documentMentionText,
 })
@@ -155,7 +150,6 @@ configureWorkspacesAppPorts({
   emitTerminalFit: TerminalFit.emitTerminalFit,
   DialogRecoverWorkspace,
   DialogDeleteWorkspace,
-  DialogSettings,
   DialogSelectDirectory,
   ensureDirectorySessionCache: LayoutActions.ensureDirectorySessionCache,
   findProjectForWorkspace: LayoutActions.findProjectForWorkspace,

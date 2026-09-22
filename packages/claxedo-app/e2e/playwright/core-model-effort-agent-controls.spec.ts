@@ -489,13 +489,16 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
 
     await page.getByTestId("rail-account-trigger").click()
     await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
-    const dialog = page.locator('[data-slot="dialog-container"]')
-    await expect(dialog).toBeVisible({ timeout: 10_000 })
-    await page.getByRole("tab", { name: "Models" }).click()
-    // Settings reads under an explicit (workspace, harness) and nothing is remembered for
-    // a draft that never switched, so pick the harness the draft is on.
-    await page.locator('[data-action="settings-scope-harness"]').click()
-    await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22opencode%22%7D"]').click()
+    const surface = page.locator('[data-component="settings-content"]')
+    await expect(surface).toBeVisible({ timeout: 10_000 })
+    await page.locator('[data-component="settings-nav-item"][data-section="models"]').click()
+    // Every harness is a section on the one page, so the draft's harness is
+    // reached by name rather than chosen; its models are the second tab, and a
+    // provider that shares the harness's own name draws no group row to open.
+    const harness = page.locator('[data-component="models-section-opencode"]')
+    await harness.locator('[data-action="settings-models-tab-models"]').click()
+    const group = harness.locator('[data-action="settings-models-group-expand"]').first()
+    if (await group.count()) await group.click()
 
     const toggle = page.getByRole("switch", { name: "Haiku 3 (legacy)" })
     await expect(toggle).toBeVisible({ timeout: 10_000 })
@@ -506,8 +509,8 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await toggleVisual.click()
     await expect(toggle).toHaveAttribute("aria-checked", "true", { timeout: 10_000 })
 
-    await page.keyboard.press("Escape")
-    await expect(dialog).toHaveCount(0)
+    await page.locator('[data-action="settings-nav-back"]').click()
+    await expect(surface).toHaveCount(0)
 
     await openModelPopover(page)
     await expect(page.locator('[data-slot="list-item"]', { hasText: "Haiku 3 (legacy)" })).toBeVisible({ timeout: 10_000 })

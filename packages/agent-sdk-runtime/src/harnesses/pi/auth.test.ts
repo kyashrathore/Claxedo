@@ -141,7 +141,7 @@ test("a bound account reaches Pi as a models.json overlay and never as a key", a
   }
 })
 
-test("a projection for another harness leaves Pi on its own machine login", async () => {
+test("a projection for a vendor Pi cannot run leaves Pi on its own machine login", async () => {
   const f = await installFakePiRpc()
   const adapter = new PiHarnessAdapter({
     binary: f.binary,
@@ -149,9 +149,59 @@ test("a projection for another harness leaves Pi on its own machine login", asyn
     store: createMemoryRuntimeStore(),
   })
   try {
-    await adapter.applyConfig({ auth: { "claude-sdk": piProjection, "cursor-sdk": piProjection } })
+    // Cursor's login is Cursor's own service; Pi defines no provider it could
+    // serve, so there is nothing to overlay and the process keeps its own login.
+    await adapter.applyConfig({ auth: { "cursor-sdk": piProjection } })
 
     expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "models.json"), "utf8"))).toEqual({ providers: {} })
+  } finally {
+    await adapter.dispose()
+    await f.dispose()
+  }
+})
+
+test("a Claude Code login binds Pi's Anthropic provider without being connected again", async () => {
+  const f = await installFakePiRpc()
+  const adapter = new PiHarnessAdapter({
+    binary: f.binary,
+    agentDir: f.agentDir,
+    store: createMemoryRuntimeStore(),
+  })
+  try {
+    // Stored under the harness that signed in, bound here because the broker
+    // sends it to the same origin and paths an `anthropic` key goes to. This
+    // is the same order the credential catalog counts Anthropic connected in.
+    await adapter.applyConfig({ auth: { "claude-sdk": piProjection } })
+
+    expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "models.json"), "utf8"))).toEqual({
+      providers: { anthropic: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d", apiKey: "signed-placeholder" } },
+    })
+  } finally {
+    await adapter.dispose()
+    await f.dispose()
+  }
+})
+
+test("a key pasted for the vendor outranks a subscription that belongs to another product", async () => {
+  const f = await installFakePiRpc()
+  const adapter = new PiHarnessAdapter({
+    binary: f.binary,
+    agentDir: f.agentDir,
+    store: createMemoryRuntimeStore(),
+  })
+  try {
+    await adapter.applyConfig({
+      auth: {
+        "claude-sdk": piProjection,
+        anthropic: { ...piProjection, placeholder: "vendor-placeholder" },
+      },
+    })
+
+    // The vendor's own row leads `piCredentialProviderIDs`, the same way the
+    // engine's overlay precedence resolves the tie.
+    expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "models.json"), "utf8"))).toEqual({
+      providers: { anthropic: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d", apiKey: "vendor-placeholder" } },
+    })
   } finally {
     await adapter.dispose()
     await f.dispose()

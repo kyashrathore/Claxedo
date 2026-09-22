@@ -32,6 +32,15 @@ export function isRefusal(verdict: string): verdict is "auth_failed" | "no_billi
   return verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired"
 }
 
+/**
+ * The verdicts that leave a working login unusable for now: the provider's own
+ * cap, and a check that never reached it. Connecting again answers neither, so
+ * a row marks these rather than offering to reconnect.
+ */
+export function isUnavailable(verdict: string): verdict is "rate_capped" | "unknown" {
+  return verdict === "rate_capped" || verdict === "unknown"
+}
+
 /** The verdicts a provider itself returns, and which a row can hold stored. */
 export function isStoredVerdict(value: string): value is Exclude<ProviderVerdict, "unknown"> {
   return value !== "unknown" && value in VERDICT_KEY

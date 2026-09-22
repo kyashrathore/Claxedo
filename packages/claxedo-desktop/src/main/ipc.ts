@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { BrowserWindow, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
+import { BrowserWindow, ClipboardItem, app, clipboard, dialog, ipcMain, nativeImage, nativeTheme, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent, WebContents } from "electron"
 
 import type {
@@ -23,6 +23,8 @@ import { registerProcessDiagnosticsIpc } from "./diagnostics/ipc"
 import type { Profiler } from "./diagnostics/profiler"
 import { getStore } from "./store"
 import { assertStoreKey, assertStoreValue } from "./store-policy"
+
+const PNG = "image/png"
 
 type Deps = {
   awaitInitialization: (sendStep: (step: InitStep) => void) => Promise<ServerReadyData>
@@ -207,17 +209,21 @@ export function registerIpcHandlers(deps: Deps) {
     shell.showItemInFolder(path)
   })
 
-  ipcMain.handle("read-clipboard-image", () => {
-    const image = clipboard.readImage()
-    if (image.isEmpty()) return null
-    const buffer = image.toPNG().buffer
-    const size = image.getSize()
+  ipcMain.handle("read-clipboard-image", async () => {
+    const items = await clipboard.read()
+    const item = items.find((entry) => entry.types.includes(PNG))
+    if (!item) return null
+    const payload = await item.getType(PNG)
+    if (!(payload instanceof Blob)) return null
+    const buffer = await payload.arrayBuffer()
+    const size = nativeImage.createFromBuffer(Buffer.from(buffer)).getSize()
+    if (size.width === 0 || size.height === 0) return null
     return { buffer, width: size.width, height: size.height }
   })
-  ipcMain.handle("write-clipboard-image", (_event: IpcMainInvokeEvent, buffer: ArrayBuffer) => {
+  ipcMain.handle("write-clipboard-image", async (_event: IpcMainInvokeEvent, buffer: ArrayBuffer) => {
     const image = nativeImage.createFromBuffer(Buffer.from(buffer))
     if (image.isEmpty()) return false
-    clipboard.writeImage(image)
+    await clipboard.write([new ClipboardItem({ [PNG]: new Blob([new Uint8Array(image.toPNG())], { type: PNG }) })])
     return true
   })
 

@@ -7,7 +7,7 @@ import { createStore } from "solid-js/store"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { captureException, identityProps, type Surface } from "@/platform/telemetry/analytics"
+import { captureException, type Surface } from "@/platform/telemetry/analytics"
 import { formatError } from "./error-format"
 
 export type { InitError } from "./error-format"
@@ -28,11 +28,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
     const error = props.error
     if (error === reported) return
     reported = error
-    // The console line is the only locally-visible record: the boundary keeps
-    // the error out of window.onerror and the devtools console entirely, and
-    // the analytics capture below is invisible on a developer machine.
-    console.error("[error-page]", error)
-    captureException(error, { ...identityProps(), surface: props.surface ?? "error_page" })
+    captureException(error, { surface: props.surface ?? "error_page" })
   })
 
   const [store, setStore] = createStore({

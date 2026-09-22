@@ -16,6 +16,7 @@ export const SIDEBAR_SESSION_STATUS_FRESH_MS = 10_000
 export function sidebarRequestDebug(...args: unknown[]) {
   if (typeof localStorage === "undefined") return
   if (localStorage.getItem("claxedo.debug.sidebar-requests") !== "1") return
+  // oxlint-disable-next-line no-console -- opt-in tracing behind the localStorage flag above
   console.debug("[claxedo:sidebar-requests]", ...args)
 }
 

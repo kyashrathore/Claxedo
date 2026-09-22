@@ -75,7 +75,6 @@ export function TabPage(props: TabPageProps) {
               document={next()}
               onTitleChange={props.onTitleChange}
               onBackToIndex={props.onBackToIndex}
-              reportError={(error) => console.error("[documents] editor persistence error", error)}
             />
           )}
         </Match>

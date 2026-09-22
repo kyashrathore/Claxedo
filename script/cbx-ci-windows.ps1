@@ -24,7 +24,6 @@ function Assert-LastExitCode([string]$Command) {
 . (Join-Path $PSScriptRoot "cbx-prepare-windows.ps1") -CleanInstall:$CleanInstall -NodeVersion $NodeVersion
 
 $env:CI = "true"
-$env:OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER = "true"
 if ($AclAcceptance) {
   $env:CLAXEDO_WINDOWS_ACL_ACCEPTANCE = "1"
 }

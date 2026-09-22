@@ -491,7 +491,7 @@ export async function runPackagedSmoke() {
       const text = await evaluateText(
         client,
         `[...document.querySelectorAll('[role="dialog"]')]
-          .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
+          .find((candidate) => candidate.getAttribute("aria-label") === "This computer's diagnostics")
           ?.textContent ?? ""`,
       )
       const task = await renderedTaskEvidence(client)
@@ -642,7 +642,7 @@ function actionGrant(
 async function renderedTaskEvidence(client: CdpClient) {
   const value = await client.evaluate(`(() => {
     const root = [...document.querySelectorAll('[role="dialog"]')]
-      .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
+      .find((candidate) => candidate.getAttribute("aria-label") === "This computer's diagnostics")
     if (!root) return {}
     const contributors = [...root.querySelectorAll('[data-testid="diagnostics-contributor"]')]
     const kinds = new Set(contributors.map((item) => item.dataset.ownerKind))
@@ -750,7 +750,7 @@ async function openDiagnosticsDialog(client: CdpClient) {
   while (Date.now() < deadline) {
     const opened = await evaluateBoolean(client, `(() => {
       const dialog = [...document.querySelectorAll('[role="dialog"]')]
-        .find((candidate) => candidate.getAttribute("aria-label") === "Local performance diagnostics")
+        .find((candidate) => candidate.getAttribute("aria-label") === "This computer's diagnostics")
       if (dialog) return true
       const emptyTrigger = document.querySelector('[data-testid="empty-diagnostics-trigger"]')
       if (emptyTrigger instanceof HTMLElement) {
@@ -771,7 +771,7 @@ async function openDiagnosticsDialog(client: CdpClient) {
         client,
         `[...document.querySelectorAll('[role="dialog"]')]
           .some((candidate) =>
-            candidate.getAttribute("aria-label") === "Local performance diagnostics" &&
+            candidate.getAttribute("aria-label") === "This computer's diagnostics" &&
             candidate.textContent.includes("Collector"))`,
       )
       if (ready) return

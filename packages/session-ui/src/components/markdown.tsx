@@ -5,6 +5,7 @@ import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useData } from "../context"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/ui/utils/encode"
+import { reportUiError } from "@opencode-ai/ui/utils/report-error"
 import {
   type Accessor,
   type ComponentProps,
@@ -137,7 +138,7 @@ async function code(text: string, language: string | undefined, key: string, com
       !(error instanceof MarkdownWorkerSupersededError) &&
       !(error instanceof MarkdownWorkerUnavailableError)
     )
-      console.error("Markdown highlighting worker failed", error)
+      reportUiError(error, "markdown-highlight")
     return { language: name, generation: 0, stable: [], unstable: [[text, ""] as MarkdownToken] }
   }
 }

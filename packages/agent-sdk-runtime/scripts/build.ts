@@ -29,8 +29,6 @@ const ENTRIES = [
   "src/mcp-resolver.ts",
   "src/subagent-admission.ts",
   "src/launch/index.ts",
-  // Spawned by path from dist, so it is an entry rather than a bundled leaf.
-  "src/launch/launch-gate-child.ts",
   "src/stores/memory.ts",
   "src/stores/sqlite.ts",
   "src/session-start-store.ts",
@@ -71,6 +69,20 @@ run([
   "--out-extension:.js=.mjs",
   "--chunk-names=chunks/[name]-[hash]",
   ...EXTERNALS.map((item) => `--external:${item}`),
+].join(" "))
+// The gate child is spawned by path from wherever a consumer copies it (the
+// desktop unpacks the one file beside its main bundle, outside the asar), so
+// it can share nothing: no split chunk, no package it would have to resolve
+// from a directory that has no node_modules. Node builtins are all it may
+// import.
+run([
+  path.join(ROOT, "node_modules/.bin/esbuild"),
+  "src/launch/launch-gate-child.ts",
+  "--bundle",
+  "--platform=node",
+  "--format=esm",
+  "--target=node22",
+  "--outfile=dist/launch/launch-gate-child.mjs",
 ].join(" "))
 run(`${path.join(ROOT, "node_modules/.bin/tsc")} -p tsconfig.build.json`)
 run("bun scripts/check-package.ts")

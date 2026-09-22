@@ -1,5 +1,5 @@
 import { type Accessor, type JSX, Show } from "solid-js"
-import type { PickerState } from "@/features/session/ui/model/select-model"
+import type { PickerState } from "@/features/session/ui/model/model-list"
 import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harness-selector"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import { PromptAddMenu } from "@/features/session/composer/ui/add-menu"

@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}} administrerer udbydere og legitimationsoplysninger uden for Claxedo. Konfigurer dem i agenten eller serveren; tilgængelige modeller vises i sessionens modelvælger.",
   "command.openProviders": "Åbn udbydere",
   "settings.models.previewCount": "Vis {{count}} flere",
   "settings.models.providerSearch.empty": "Ingen modeller matcher “{{query}}”",

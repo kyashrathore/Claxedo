@@ -471,19 +471,31 @@
 .usage-quota {
   padding: 20px 0;
 }
-.usage-quota-grid {
+/* Two harnesses to a row, so a harness holding a single account does not leave
+   half the row empty. One holding more takes the whole row and pairs its own
+   cards across it instead. */
+.usage-quota-groups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  align-items: start;
+  gap: 18px 12px;
   margin-top: 18px;
+}
+.usage-quota-harness[data-wide="true"] {
+  grid-column: 1 / -1;
+}
+.usage-quota-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+.usage-quota-harness[data-wide="true"] .usage-quota-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .usage-quota-summary {
   margin-top: 10px;
   color: var(--text-base);
   font-size: var(--font-size-small);
-}
-.usage-quota-harness {
-  margin-top: 18px;
 }
 .usage-quota-harness h4 {
   display: flex;
@@ -491,9 +503,6 @@
   gap: 6px;
   color: var(--text-strong);
   font-size: var(--font-size-small);
-}
-.usage-quota-harness .usage-quota-grid {
-  margin-top: 10px;
 }
 .usage-quota-account {
   padding: 16px;
@@ -731,7 +740,8 @@
   .usage-metric-strip > div:nth-child(2n) {
     border-right: 0;
   }
-  .usage-quota-grid {
+  .usage-quota-groups,
+  .usage-quota-harness[data-wide="true"] .usage-quota-grid {
     grid-template-columns: 1fr;
   }
 }

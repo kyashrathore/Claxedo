@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
+import { piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
 import { isProviderUnavailable, providerBinding, type ProviderProjection } from "../../provider-projection"
 
 /** One `models.json` overlay per provider, merged onto Pi's own built-in definition. */
@@ -31,11 +32,24 @@ const PI_PROVIDERS = {
   xai: { path: "/v1", env: ["XAI_API_KEY"] },
 } as const
 
-/** The projections this harness consumes; every other key belongs to another harness. */
+/**
+ * The projections this harness consumes; every other key belongs to another
+ * harness.
+ *
+ * A projection map is keyed by the stored row's own provider id, so the row a
+ * Pi provider runs on is not always the one named after it: a Claude Code
+ * login is stored under `claude-sdk` and reaches Anthropic's API on the same
+ * paths an `anthropic` key does. `piCredentialProviderIDs` is the same order
+ * the credential catalog counts a provider connected in — held apart, Settings
+ * called Anthropic connected and the launch then wrote it no overlay.
+ */
 function piProjections(auth: Record<string, ProviderProjection> | undefined) {
   return Object.entries(PI_PROVIDERS).flatMap(([providerId, provider]) => {
-    const projection = auth?.[providerId]
-    return projection ? [{ providerId, provider, projection }] : []
+    for (const candidate of piCredentialProviderIDs(providerId)) {
+      const projection = auth?.[candidate]
+      if (projection) return [{ providerId, provider, projection }]
+    }
+    return []
   })
 }
 

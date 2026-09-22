@@ -125,7 +125,7 @@ export const SettingsConnections: Component<{ agentConnections: ReturnType<typeo
   }
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <div class="flex flex-col pb-10">
       <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
         <h2 class="text-18-medium text-text-strong">Connections</h2>
         <p class="text-13-regular text-text-weak">

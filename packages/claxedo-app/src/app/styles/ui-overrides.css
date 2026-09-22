@@ -741,23 +741,22 @@ html[data-theme="codex"] [data-slot="workspace-segment-button"][aria-pressed="tr
   color: var(--text-strong);
 }
 
-html[data-theme="codex"] .settings-dialog > .ui-tabs-list {
-  background-color: var(--shell-surface-sidebar);
-}
-
-html[data-theme="codex"] .settings-dialog > .ui-tabs-content {
+/* Settings moved from a tabbed dialog to a shell surface: the rail lists the
+   sections and the workbench column draws the open one. These rules follow it,
+   so a section's cards read the same as they did inside the dialog. */
+html[data-theme="codex"] [data-component="settings-content"] {
   background-color: var(--settings-surface-content);
 }
 
-html[data-theme="codex"] .settings-dialog .ui-tabs-trigger[aria-selected="true"] {
+html[data-theme="codex"] [data-component="settings-nav-item"][aria-current="page"] {
   background-color: var(--row-surface-selected);
 }
 
-html[data-theme="codex"] .settings-dialog [class~="bg-surface-raised-base"] {
+html[data-theme="codex"] [data-component="settings-content"] [class~="bg-surface-raised-base"] {
   background-color: var(--settings-surface-card);
 }
 
-html[data-theme="codex"] .settings-dialog [class~="bg-surface-base"] {
+html[data-theme="codex"] [data-component="settings-content"] [class~="bg-surface-base"] {
   background-color: var(--settings-surface-content);
 }
 

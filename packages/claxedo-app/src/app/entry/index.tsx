@@ -22,6 +22,8 @@ import {
   productUiFlagConfigFromEnv,
   type ProductUiFlagConfig,
 } from "@/app/composition/product-ui-flags"
+import { setUiErrorReporter } from "@opencode-ai/ui/utils/report-error"
+import { captureException } from "@/platform/telemetry/analytics"
 
 /**
  * Configuration for initializing Claxedo cloud extensions.
@@ -71,6 +73,8 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
  * ```
  */
 export function initClaxedo(config: ClaxedoConfig): void {
+  setUiErrorReporter((error, context) => captureException(error, { surface: "app_shell", ...context }))
+
   const app = appExtensions(config)
 
   setExtensions({

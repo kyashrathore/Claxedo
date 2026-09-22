@@ -105,10 +105,6 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   sessionRefForActionWorkspace: lazy("@/app/workbench/actions/shared", "sessionRefForActionWorkspace"),
   recoverMissingWorkspace: lazy("@/features/workspaces/actions/workspace-recovery", "recoverMissingWorkspace"),
   loadManageModelsDialog: () => () => import("@/app/dialogs/manage-models"),
-  openSettingsProviders: () => (dialog) => {
-    const { openSettings } = require("@/features/settings/open-settings") as typeof import("@/features/settings/open-settings")
-    return openSettings(dialog, () => import("@/app/dialogs/settings"), "providers")
-  },
   listDocumentMentions: lazy("@/app/integrations/document-mentions", "listDocumentMentions"),
   documentMentionText: lazy("@/app/integrations/document-mentions", "documentMentionText"),
 }
@@ -187,7 +183,6 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   emitTerminalFit: lazy("@/features/terminal/workbench/terminal-fit", "emitTerminalFit"),
   DialogRecoverWorkspace: lazy("@/features/workspaces/ui/dialogs/recover-workspace-dialog", "DialogRecoverWorkspace"),
   DialogDeleteWorkspace: lazy("@/features/workspaces/ui/dialogs/delete-workspace-dialog", "DialogDeleteWorkspace"),
-  DialogSettings: lazy("@/app/dialogs/settings", "DialogSettings"),
   DialogSelectDirectory: lazy("@/app/dialogs/select-directory", "DialogSelectDirectory"),
   ensureDirectorySessionCache: lazy("@/app/workbench/actions/shared", "ensureDirectorySessionCache"),
   findProjectForWorkspace: lazy("@/app/workbench/actions/shared", "findProjectForWorkspace"),
@@ -226,7 +221,7 @@ const tasksThunks: Thunks<TasksAppPorts> = {
   ProseEditor: lazy("@/app/integrations/tasks/tasks-prose-editor", "TasksProseEditor"),
   useOpenSession: lazy("@/app/integrations/tasks/open-task-session", "useOpenTaskSession"),
   useOpenPage: lazy("@/app/integrations/tasks/open-tasks-page", "useOpenTasksPage"),
-  openPresetSettings: lazy("@/app/integrations/tasks/tasks-ports", "openPresetSettings"),
+  useOpenPresetSettings: lazy("@/app/integrations/tasks/tasks-ports", "useOpenPresetSettings"),
   usePaneCtx: lazy("@/app/workbench/context/pane-ctx", "usePaneCtx"),
 }
 

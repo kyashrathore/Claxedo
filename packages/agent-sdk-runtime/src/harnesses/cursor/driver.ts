@@ -1,3 +1,4 @@
+import { credentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import {
   createAgentEventRuntime,
   type AgentEventRuntime,
@@ -66,6 +67,31 @@ import {
 const CURSOR_PENDING_PREFIX = "cursor-sdk:"
 const CURSOR_SDK_AUTH_ERROR =
   "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
+
+/**
+ * What a failed catalog read means, said in terms of the account rather than
+ * the broker's verdict code. `Cursor.models.list` reaches the cloud catalog on
+ * `api.cursor.com`; a binding routes only the agent service, so through a
+ * binding the read is refused by policy, and a binding with no stored key is
+ * refused before that.
+ */
+export function cursorModelCatalogError(cause: unknown, viaBinding: boolean): Error {
+  const text = cause instanceof Error ? cause.message : String(cause)
+  const code = viaBinding ? credentialBrokerErrorCode(text) : undefined
+  if (code === "credential_unavailable" || code === "binding_unavailable") {
+    return new Error(
+      "No Cursor API key is stored for this workspace, so Cursor's model catalog cannot be read. Add a cursor-sdk API key under Settings → Providers.",
+      { cause },
+    )
+  }
+  if (code === "request_outside_policy") {
+    return new Error(
+      "Cursor's model catalog (api.cursor.com) is not reachable through the credential broker, which routes only the agent service; models cannot be listed with a stored key. The default model still runs when that key is valid.",
+      { cause },
+    )
+  }
+  return new Error(`Cursor's model catalog could not be read: ${text}`, { cause })
+}
 type CursorEntry = {
   directory: string
   agent: CursorSDKAgent
@@ -487,7 +513,12 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     try {
       const { Cursor } = await this.loadSdk()
       const apiKey = this.cursorApiKey()
-      const listed = await Cursor.models.list(apiKey ? { apiKey } : undefined)
+      let listed: Awaited<ReturnType<typeof Cursor.models.list>>
+      try {
+        listed = await Cursor.models.list(apiKey ? { apiKey } : undefined)
+      } catch (cause) {
+        throw cursorModelCatalogError(cause, providerBinding("cursor", this.auth) !== undefined)
+      }
       const models: SdkModelEntry[] = listed.map((model) => ({
         id: model.id,
         name: model.displayName,

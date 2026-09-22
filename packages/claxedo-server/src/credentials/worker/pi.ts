@@ -1,6 +1,6 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { HTTPException } from "hono/http-exception"
-import { PI_LAUNCH_PROVIDERS, piCredentialConnected, piCredentialProviderIDs, projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
+import { PI_LAUNCH_PROVIDERS, piCredentialConnected, piCredentialProviderIDs, piProviderTakesApiKey, projectPiProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-projection"
 import type { ControlPlaneCredentials } from "../../authority/services"
 
 function credentialError(status: 400 | 503, code: string, message: string) {
@@ -33,7 +33,9 @@ export function hostedPiCredentials(input: {
       return projectPiProviderCatalog(new Set(connected.filter((id): id is NonNullable<typeof id> => !!id)))
     },
     putPiCredential: async (auth: SignedControlPlaneAuth, providerID: string, key: string) => {
-      if (providerID !== "anthropic" && providerID !== "openai") {
+      // A plan is signed in to, not pasted: `openai-codex` reaches the Codex
+      // backend on an OAuth token and has no key to accept.
+      if (!piProviderTakesApiKey(providerID)) {
         throw credentialError(400, "pi_provider_unsupported", "This Pi provider does not accept API keys")
       }
       const store = await credentials(auth)

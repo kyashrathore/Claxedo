@@ -5,7 +5,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useLanguage } from "@/platform/i18n/provider"
 import { loadManageModelsDialog } from "@/features/session/app-ports"
-import { ModelList, type PickerState } from "@/features/session/ui/model/select-model"
+import { ModelList, type PickerState } from "@/features/session/ui/model/model-list"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
 
 /**

@@ -19,8 +19,6 @@ export type SettingsHarnessOption = {
 }
 
 export type SettingsScope = {
-  /** Every workspace this principal can configure, from the workspace catalog. */
-  workspaces: Accessor<SettingsWorkspaceOption[]>
   /** Whether the catalog has answered yet. */
   loading: Accessor<boolean>
   /** The workspace in view, else the catalog's first: the machine every read here asks. */
@@ -37,7 +35,7 @@ export type SettingsScope = {
 const SettingsScopeContext = createContext<SettingsScope>()
 
 /**
- * The workspace this dialog opened over, when it opened over one.
+ * The workspace Settings opened over, when it opened over one.
  *
  * Same probe `useProviders` uses: inside a pane's SDK scope the focused
  * workspace is the one on screen, and outside one there is no focus to inherit.
@@ -79,7 +77,6 @@ export function SettingsScopeProvider(props: ParentProps) {
   ])
 
   const value: SettingsScope = {
-    workspaces,
     loading: () => catalog.isPending,
     workspace,
     harnesses,

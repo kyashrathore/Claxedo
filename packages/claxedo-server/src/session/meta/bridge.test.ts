@@ -49,8 +49,10 @@ afterEach(async () => {
 })
 
 afterAll(() => {
-  process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
-  process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
+  if (prev.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
+  else process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
+  if (prev.CLAXEDO_STATE_DIR === undefined) delete process.env.CLAXEDO_STATE_DIR
+  else process.env.CLAXEDO_STATE_DIR = prev.CLAXEDO_STATE_DIR
 })
 
 describe("projectLocalSessionMetaFromEvent (SSE-only auto-title -> projectionStore write path)", () => {

@@ -12,7 +12,7 @@ export async function eventStreamResponse(
 ) {
   if (c.req.header("upgrade")?.toLowerCase() !== "websocket") return streamSSE(c, write)
   const origin = c.req.header("origin")
-  if (origin && origin !== new URL(c.req.url).origin && c.res.headers.get("Access-Control-Allow-Origin") !== origin) {
+  if (origin && origin !== connectedOrigin(c) && c.res.headers.get("Access-Control-Allow-Origin") !== origin) {
     return c.json({ error: "Event WebSocket origin is not allowed" }, 403)
   }
   if (!upgradeWebSocket) return c.json({ error: "WebSocket event transport is unavailable" }, 501)
@@ -53,3 +53,12 @@ export async function eventStreamResponse(
 }
 
 export type { UpgradeWebSocket }
+
+// `@hono/node-ws` resolves an upgrade's URL against a fixed `http://localhost`
+// base, so on that path `c.req.url` never carries the port the client
+// connected to; the Host header does.
+function connectedOrigin(c: Context) {
+  const url = new URL(c.req.url)
+  const host = c.req.header("host")
+  return host ? `${url.protocol}//${host}` : url.origin
+}

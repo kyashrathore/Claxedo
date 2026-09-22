@@ -64,7 +64,7 @@ export const SettingsTerminals: Component = () => {
   }
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <div class="flex flex-col pb-10">
       <div class="flex flex-col gap-1 pt-6 pb-8">
         <h2 class="text-18-medium text-text-strong">Terminals</h2>
         <p class="text-12-regular text-text-weak">Configure the commands used when launching terminal sessions. The creator offers an agent once its CLI is installed on the machine the terminal runs on.</p>

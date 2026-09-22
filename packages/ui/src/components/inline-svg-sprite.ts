@@ -1,3 +1,5 @@
+import { reportUiError } from "../utils/report-error"
+
 const symbolPattern = /<symbol\b[^>]*\bid="([^"]+)"[^>]*>[\s\S]*?<\/symbol>/g
 
 function parseSymbols(rootID: string, markup: string) {
@@ -101,12 +103,12 @@ export function createLazyInlineSvgSprite(rootID: string, load: () => Promise<st
         pending.clear()
       })
       .catch((error) => {
-        // A missing development asset must not become an unhandled rejection
-        // that fails an unrelated render. The URL is immutable for the life of
-        // this module, so log once and stop retrying every mounted icon.
+        // A missing asset must not become an unhandled rejection that fails an
+        // unrelated render. The URL is immutable for the life of this module,
+        // so report once and stop retrying every mounted icon.
         failed = true
         pending.clear()
-        console.warn(`[svg-sprite] ${rootID} failed to load`, error)
+        reportUiError(error, `svg-sprite:${rootID}`)
       })
   }
 

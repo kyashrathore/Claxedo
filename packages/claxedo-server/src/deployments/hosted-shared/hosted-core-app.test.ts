@@ -1,6 +1,7 @@
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
+import { PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"
@@ -164,7 +165,11 @@ describe("hosted production Pi and connection discovery", () => {
     const response = await app.request(catalogPath, { headers: headers() })
     expect(response.status).toBe(200)
     const catalog = await response.json()
-    expect(catalog.all.map((provider: { id: string }) => provider.id).sort()).toEqual(["anthropic", "openai", "openai-codex"])
+    // The canonical list, not a copy of it: a provider Pi can be launched on is
+    // one the harness writes an overlay for and the broker has a destination
+    // for, and both of those are decided in `PI_LAUNCH_PROVIDERS`.
+    expect(catalog.all.map((provider: { id: string }) => provider.id).sort())
+      .toEqual([...PI_LAUNCH_PROVIDERS].sort())
     expect(catalog.all.every((provider: { models: object }) => Object.keys(provider.models).length === 0)).toBe(true)
     expect(catalog.modelAvailability).toBe("runtime_required")
     expect(catalog.connected).toEqual([])

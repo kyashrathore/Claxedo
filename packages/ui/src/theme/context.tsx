@@ -4,9 +4,10 @@ import { createEffect, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createSimpleContext } from "../context/helper"
-import { oc2Theme } from "./default-themes"
+import { oc2Theme } from "./default-theme"
 import { resolveThemeVariant, themeToCss } from "./resolve"
 import { ensureThemeStyleElement } from "./style-element"
+import { reportUiError } from "../utils/report-error"
 import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve"
 import type { DesktopTheme } from "./types"
 
@@ -287,12 +288,8 @@ export const { use: useTheme, useOptional: useThemeOptional, provider: ThemeProv
 
     const setTheme = (id: string) => {
       const next = normalize(id)
-      if (!next) {
-        console.warn(`Theme "${id}" not found`)
-        return
-      }
-      if (next !== "oc-2" && !knownThemes().has(next) && !store.themes[next]) {
-        console.warn(`Theme "${id}" not found`)
+      if (!next || (next !== "oc-2" && !knownThemes().has(next) && !store.themes[next])) {
+        reportUiError(new Error(`Theme "${id}" not found`), "theme")
         return
       }
       setStore("themeId", next)

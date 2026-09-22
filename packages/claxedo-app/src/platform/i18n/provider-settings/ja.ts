@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}} は Claxedo の外部でプロバイダーと認証情報を管理します。そのエージェントまたはサーバーで設定してください。利用可能なモデルはセッションのモデル選択に表示されます。",
   "command.openProviders": "プロバイダーを開く",
   "settings.models.previewCount": "さらに {{count}} 件を表示",
   "settings.models.providerSearch.empty": "「{{query}}」に一致するモデルはありません。",
