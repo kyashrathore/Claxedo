@@ -22,6 +22,12 @@ export function hasLiveAcpElicitation(store: AgentRuntimeStoreWithRecovery, id: 
   return [...(liveOwners.get(store) ?? [])].some((owner) => owner.owns(id))
 }
 
+/** The one field of a single-answer form response; `undefined` for every other shape. */
+function soleAnswer(answers: string[][]) {
+  const [only] = answers
+  return answers.length === 1 && only?.length === 1 ? only[0] : undefined
+}
+
 /** Live ACP resolvers are connection-owned; only the question data is durable. */
 export class AcpElicitationInteractions {
   private readonly questionOwner: SessionQuestionInteractions<Pending>
@@ -86,13 +92,14 @@ export class AcpElicitationInteractions {
 
   private async respond(pending: Pending, id: string, answers: string[][]) {
     if (answers.length === 0) return this.finish(id, { action: "cancel" }, answers)
+    const sole = soleAnswer(answers)
     if (pending.elicitation.mode === "url") {
-      if (answers.length !== 1 || answers[0]?.length !== 1 || answers[0][0] !== pending.request.questions[0]?.options[0]?.label) throw new ElicitationValidationError("invalid_answer", "URL elicitation requires explicit consent")
+      if (sole === undefined || sole !== pending.request.questions[0]?.options[0]?.label) throw new ElicitationValidationError("invalid_answer", "URL elicitation requires explicit consent")
       return this.finish(id, { action: "accept" }, answers)
     }
-    if (answers.length !== 1 || answers[0]?.length !== 1) throw new ElicitationValidationError("invalid_answer", "Elicitation requires one structured form response")
+    if (sole === undefined) throw new ElicitationValidationError("invalid_answer", "Elicitation requires one structured form response")
     let content: unknown
-    try { content = JSON.parse(answers[0][0]!) } catch { throw new ElicitationValidationError("invalid_answer", "Elicitation response must be a JSON object") }
+    try { content = JSON.parse(sole) } catch { throw new ElicitationValidationError("invalid_answer", "Elicitation response must be a JSON object") }
     if (pending.validating) throw new ElicitationValidationError("validation_busy", "This answer is already being validated")
     const controller = new AbortController()
     pending.validating = controller

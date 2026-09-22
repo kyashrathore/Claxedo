@@ -107,7 +107,7 @@ describe("Claude SDK driver", () => {
     }
   })
 
-  test("keeps the query's input stream open, so a prompt sent mid-turn reaches the same query", async () => {
+  test("refuses a mid-turn steer rather than writing a second message into the open query", async () => {
     const prompts: unknown[] = []
     const lifecycle = createSessionTurnLifecycle<ActiveTurn>()
     let endTurn!: () => void
@@ -123,7 +123,13 @@ describe("Claude SDK driver", () => {
       executable: () => "/fake/claude",
       query: ((request: { prompt: unknown }) => {
         prompts.push(request.prompt)
-        const stream = (async function* () { await turnClosed })()
+        const stream = (async function* () {
+          await turnClosed
+          yield {
+            type: "result", subtype: "success", uuid: "result-1", session_id: "claude-sdk:session-1",
+            is_error: false, usage: { input_tokens: 1, output_tokens: 1 }, modelUsage: {},
+          }
+        })()
         return Object.assign(stream, { close() {} }) as unknown as Query
       }) as never,
     }).runTurn({
@@ -135,13 +141,14 @@ describe("Claude SDK driver", () => {
     } as unknown as SdkRuntimeTurnInput)
 
     const steer = await waitForSteer(lifecycle, "session-1")
-    await steer({ parts: [{ type: "text", text: "also update the readme" }], assistantMessageId: "assistant-2", agent: "build", model: { providerID: "claude", modelID: "opus" } })
+    expect(await steer({ parts: [{ type: "text", text: "also update the readme" }], assistantMessageId: "assistant-2", agent: "build", model: { providerID: "claude", modelID: "opus" } }))
+      .toMatchObject({ ok: false, status: "unsupported" })
 
     const input = (prompts[0] as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
     expect(await promptedText(input)).toBe("start the work")
-    expect(await promptedText(input)).toBe("also update the readme")
     endTurn()
     await running
+    expect(await input.next()).toMatchObject({ done: true })
   })
 
   test("keeps a prompt with no attachments a plain string", () => {

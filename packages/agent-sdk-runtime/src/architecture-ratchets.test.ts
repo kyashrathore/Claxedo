@@ -28,9 +28,10 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // `harness-projection.ts` rather than a provider-alias reader of its own.
       "harnesses/codex/driver.ts": 633,
       "harnesses/shared/sdk-runtime-adapter.ts": 885,
-      // A composition root: it resolves the profile directory through
-      // `harnesses/pi/agent-dir.ts` and constructs the driver, nothing else.
-      "harnesses/pi/index.ts": 13,
+      // A composition root: `harnesses/pi/agent-dir.ts` owns the profile
+      // directory and the options that resolve it, so this file only composes
+      // the adapter's and driver's option types and constructs the driver.
+      "harnesses/pi/index.ts": 10,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {
       const lines = fs.readFileSync(path.join(root, file), "utf8").split("\n").length - 1

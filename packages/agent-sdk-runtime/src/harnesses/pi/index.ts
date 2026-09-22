@@ -1,15 +1,8 @@
 import { SdkRuntimeAdapter, type SdkRuntimeAdapterOptions } from "../shared/sdk-runtime-adapter"
-import { piAgentDir } from "./agent-dir"
+import { piAgentDir, type PiAgentDirInput } from "./agent-dir"
 import { createPiRpcDriver, type PiDriverOptions } from "./driver"
 
-export type PiAdapterOptions =
-  & Omit<SdkRuntimeAdapterOptions, "driver">
-  & Omit<PiDriverOptions, "agentDir">
-  & {
-    agentDir?: string
-    /** Which profile directory Pi runs out of: its `models.json` carries a broker placeholder that is one workspace's alone. */
-    workspaceId?: string
-  }
+export type PiAdapterOptions = Omit<SdkRuntimeAdapterOptions, "driver"> & Omit<PiDriverOptions, "agentDir"> & PiAgentDirInput
 export class PiHarnessAdapter extends SdkRuntimeAdapter {
   constructor(options: PiAdapterOptions) {
     super({ ...options, driver: (host) => createPiRpcDriver(host, { ...options, agentDir: piAgentDir(options) }) })

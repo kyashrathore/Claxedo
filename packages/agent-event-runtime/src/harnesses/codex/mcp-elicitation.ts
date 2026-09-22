@@ -20,7 +20,7 @@ export function codexMcpApproval(params: Record<string, unknown>) {
   const options = [
     ...actions.map((action) => ({
       id: action,
-      label: action[0]!.toUpperCase() + action.slice(1),
+      label: action.slice(0, 1).toUpperCase() + action.slice(1),
       response: { action, content: action === "accept" ? {} : null, _meta: null } satisfies McpServerElicitationRequestResponse,
     })),
     ...Array.from(new Set(scopes)).map((scope) => ({

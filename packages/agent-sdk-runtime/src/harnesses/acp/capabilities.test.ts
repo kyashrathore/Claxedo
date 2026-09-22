@@ -16,5 +16,5 @@ test("ACP effort reports only the selected model without inventing defaults or o
   const result = acpHarnessCapabilities({ ...base, config }).effortLevels
   expect(result).toEqual({ status: "unresolved", models: [{ modelID: "sonnet", levels: ["low", "high"] }] })
   expect(acpHarnessCapabilities({ ...base, child: true, config }).effortLevels).toEqual({ status: "unsupported", models: [] })
-  expect(acpHarnessCapabilities({ ...base, config: { options: [config.options[1]!] } }).effortLevels).toEqual({ status: "unresolved", models: [] })
+  expect(acpHarnessCapabilities({ ...base, config: { options: [config.options[1]] } }).effortLevels).toEqual({ status: "unresolved", models: [] })
 })

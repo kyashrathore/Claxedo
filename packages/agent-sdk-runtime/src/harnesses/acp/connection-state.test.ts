@@ -11,11 +11,11 @@ test("observations fence old generations, isolate directories, and never promote
   expect(observations.read("/work").state).toBe("configured")
   const old = observations.begin("main", "/work", "execution")
   old({ state: "ready" })
-  const oldGeneration = observations.read("/work", "main").processes[0]!.generation
+  const oldGeneration = observations.read("/work", "main").processes[0].generation
   const current = observations.begin("main", "/work", "execution")
   old({ state: "disconnected" })
   expect(observations.read("/work", "main").state).toBe("connecting")
-  expect(observations.read("/work", "main").processes[0]!.generation).not.toBe(oldGeneration)
+  expect(observations.read("/work", "main").processes[0].generation).not.toBe(oldGeneration)
   current({ state: "ready" })
   observations.begin("sibling", "/work", "execution")({ state: "failed", reason: "initialization_failed" })
   expect(observations.read("/work").state).toBe("ready")

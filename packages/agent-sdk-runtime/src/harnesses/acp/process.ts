@@ -415,9 +415,8 @@ export class ACPProcess {
     if (owner) this.startingRequests.set(params, { start: owner, quiet: lease.quiet!, controller: lease.controller })
     let result: InitializeResponse
     try {
-      result = await lease.wait(Promise.race([
-        this.agent.request(methods.agent.initialize, params, { cancellationSignal: lease.controller.signal }) as Promise<InitializeResponse>, this.exit.waitForExit(),
-      ]))
+      const handshake: Promise<InitializeResponse> = this.agent.request(methods.agent.initialize, params, { cancellationSignal: lease.controller.signal })
+      result = await lease.wait(Promise.race([handshake, this.exit.waitForExit()]))
     } finally { lease.release(); this.startingRequests.delete(params) }
     this.caps = result.agentCapabilities ?? null
     this.goal = goalExtension(result._meta)

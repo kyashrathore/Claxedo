@@ -14,7 +14,7 @@ function fixture() {
     count: { type: "integer", minimum: 1, maximum: 5 },
     approach: { type: "string", oneOf: [{ const: "safe", title: "Careful" }, { const: "fast" }] },
   }, required: ["count", "approach"] } }
-  return { store, events, interactions, scope, binding, form, id: () => store.listQuestions("/repo")[0]!.id }
+  return { store, events, interactions, scope, binding, form, id: () => store.listQuestions("/repo")[0].id }
 }
 
 describe("ACP elicitation", () => {

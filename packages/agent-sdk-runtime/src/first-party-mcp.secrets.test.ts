@@ -9,6 +9,7 @@ import type { SdkRuntimeTurnInput } from "./harnesses/shared/sdk-runtime-adapter
 import { createClaudeSdkDriver, type ClaudeSdkDriverOptions } from "./harnesses/claude/driver"
 import { createCursorSdkDriver } from "./harnesses/cursor/driver"
 import { ACPProcess } from "./harnesses/acp/process"
+import { createIdleReaper, type IdleReaper } from "./harnesses/shared/process-lifecycle"
 
 /**
  * The bearer is a per-session secret handed to a harness process. Every log
@@ -121,30 +122,37 @@ describe("first-party MCP bearer never leaves the header", () => {
   test("an ACP session/new logs the directory and ids, never the server headers", async () => {
     type Internals = {
       agent: { request(method: string, params: unknown): Promise<{ sessionId: string }> }
-      idle: { touch(): void }
+      idle: IdleReaper
       mcp: (sessionId?: string) => McpServer[]
       states: Map<string, unknown>
+      loadedSessions: Set<string>
       caps: null
       transport: { alive: boolean }
       cachedConfigOptions: null
       cachedResolvedModel: null
     }
     let params: { mcpServers?: McpServer[] } | undefined
+    let reaped = false
+    const idle = createIdleReaper({ idleMs: 10, onIdle: () => { reaped = true } })
     const proc = Object.create(ACPProcess.prototype) as WithInternals<ACPProcess, Internals>
     Object.assign(proc, {
       agent: { request: async (_method: string, input: typeof params) => { params = input; return { sessionId: "agent-1" } } },
-      idle: { touch() {} },
+      idle,
       mcp: (sessionId?: string) => (sessionId ? [acpFirstPartyMcpServer(provider.server(sessionId))] : []),
       states: new Map(),
+      loadedSessions: new Set(),
       caps: null,
       transport: { alive: true },
       cachedConfigOptions: null,
       cachedResolvedModel: null,
     })
     await proc.newSession(path.resolve("/work"), undefined, "session-a")
+    idle.cancel()
 
     expect(JSON.stringify(params?.mcpServers)).toContain(TOKEN)
     expect(written.length).toBeGreaterThan(0)
     expect(written.join("")).not.toContain(TOKEN)
+    expect(idle.activeLeases()).toBe(0)
+    expect(reaped).toBe(false)
   })
 })

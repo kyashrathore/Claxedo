@@ -16,7 +16,9 @@ function piWorkspaceDirName(workspaceId: string | undefined) {
  * profile would let the workspace that applied last hand its binding to every
  * other workspace's turns.
  */
-export function piAgentDir(options: { agentDir?: string; storeRoot?: string; workspaceId?: string }): string {
+export type PiAgentDirInput = { agentDir?: string; storeRoot?: string; workspaceId?: string }
+
+export function piAgentDir(options: PiAgentDirInput): string {
   return options.agentDir
     ?? (options.storeRoot ? path.join(options.storeRoot, "pi", "agent") : undefined)
     ?? trimToUndefined(process.env.PI_CODING_AGENT_DIR)

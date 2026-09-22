@@ -20,15 +20,15 @@ export function claudeUserMessage(text: string): SDKUserMessage {
 }
 
 /**
- * The turn's input as a stream the driver holds open.
+ * The turn's input as a stream the driver holds open until `end()`.
  *
  * `query()` writes each yielded message to the CLI's stdin as it arrives and
  * closes stdin the moment the iterable RETURNS, so a generator that yields the
  * prompt and finishes — which is what a plain string prompt compiles to — can
- * never carry a second message. Staying open until `end()` is what makes
- * steering reachable, and the driver ends it on the turn's result rather than
- * on the write, because a message already written is still run after stdin
- * closes.
+ * never carry a second message. `steer()` is the only way another one reaches
+ * the same CLI turn. The Claude driver does not call it: the installed SDK
+ * exposes no acknowledgement that would separate this local write from provider
+ * acceptance, so the driver refuses steering rather than reporting one.
  */
 export function createClaudeTurnInput(opening: ClaudeTurnPrompt): ClaudeTurnInput {
   const pending: SDKUserMessage[] = []

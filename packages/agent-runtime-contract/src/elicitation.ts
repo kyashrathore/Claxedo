@@ -76,7 +76,7 @@ function rfc3339DateTime(text: string): boolean {
   // of historical leap-second announcements.
   const utc = new Date(0)
   const [year, month, day] = match[1]!.split("-").map(Number)
-  utc.setUTCFullYear(year!, month! - 1, day!)
+  utc.setUTCFullYear(year!, month! - 1, day)
   utc.setUTCHours(hour, minute, 59, 0)
   const offset = (offsetHour * 60 + offsetMinute) * (zone.startsWith("-") ? -1 : 1)
   utc.setUTCMinutes(utc.getUTCMinutes() - offset)

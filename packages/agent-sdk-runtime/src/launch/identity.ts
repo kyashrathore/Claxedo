@@ -58,15 +58,15 @@ export function readBootTime(): Promise<string> {
 async function probeBootTime(): Promise<string> {
   if (process.platform === "darwin") {
     const { stdout } = await execFileAsync("sysctl", ["-n", "kern.boottime"], { timeout: PROBE_TIMEOUT_MS })
-    const seconds = /sec\s*=\s*(\d+)/.exec(stdout)
-    if (!seconds) throw new Error(`kern.boottime is not in the expected form: ${stdout.trim()}`)
-    return seconds[1]!
+    const seconds = /sec\s*=\s*(\d+)/.exec(stdout)?.[1]
+    if (seconds === undefined) throw new Error(`kern.boottime is not in the expected form: ${stdout.trim()}`)
+    return seconds
   }
   if (process.platform === "linux") {
     const stat = await fs.readFile("/proc/stat", "utf8")
-    const btime = /^btime\s+(\d+)$/m.exec(stat)
-    if (!btime) throw new Error("/proc/stat carries no btime line")
-    return btime[1]!
+    const btime = /^btime\s+(\d+)$/m.exec(stat)?.[1]
+    if (btime === undefined) throw new Error("/proc/stat carries no btime line")
+    return btime
   }
   // Unverified: no Windows machine was available to this change. The CIM
   // datetime is local-time with an offset suffix, which is stable within one
@@ -99,8 +99,8 @@ async function readDarwinCreationIdentity(pid: number, boot: string): Promise<Cr
     throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
   }
   const row = /^\s*(\d+)\s+(\d+)\s+(\S.*)$/.exec(stdout.trim())
-  if (!row) return undefined
-  const startSecond = row[3]!.trim()
+  const startSecond = row?.[3]?.trim()
+  if (!row || startSecond === undefined) return undefined
   return {
     pid,
     processGroupId: Number(row[1]),

@@ -13,13 +13,16 @@ import { resolveClaudeExecutable } from "./executable"
 /**
  * The held-open turn input against the real Claude Code CLI.
  *
- * `driver.test.ts` substitutes `query`, so it proves what the driver hands the
- * SDK and nothing about the process on the other side: whether the CLI reads a
- * second user message off stdin while it is answering the first, and whether
- * the query still terminates once the driver closes stdin on the turn's result.
- * A credentialled Claude is not needed for either question — the model is the
- * one part that can be stubbed — so this spawns the installed CLI against a
- * local Anthropic endpoint that streams the first answer slowly enough to steer.
+ * Claude has no correlated provider acknowledgement for a message sent into a
+ * running turn, so the driver refuses steering rather than promoting a local
+ * stdin write to acceptance. `driver.test.ts` substitutes `query`, so it proves
+ * what the driver hands the SDK and nothing about the process on the other
+ * side: that the refused prompt never reaches the model, and that the query
+ * still terminates once the driver closes stdin on the turn's result. A
+ * credentialled Claude is not needed for either question — the model is the one
+ * part that can be stubbed — so this spawns the installed CLI against a local
+ * Anthropic endpoint that streams the first answer slowly enough for a mid-turn
+ * prompt to land in.
  *
  * `steer-conformance.live.test.ts` asks the same thing of a credentialled
  * harness and skips when there is none.
@@ -111,7 +114,7 @@ const claudeBinary = resolveClaudeExecutable()
 
 describe("the Claude turn input the driver holds open", () => {
   test.skipIf(claudeBinary === undefined)(
-    "carries a prompt sent mid-turn into the running CLI turn, which then ends on its own",
+    "refuses a prompt sent mid-turn with its reason, and the CLI turn still ends on its own",
     async () => {
       const stub = await stubAnthropicApi()
       const restoreEnv = withAnthropicEnv(stub)
@@ -156,8 +159,9 @@ describe("the Claude turn input the driver holds open", () => {
           delivery: "steer",
           text: `Stop counting and reply with exactly ${STEER_MARKER}`,
         })
-        expect(steered.delivery).toBe("steer")
-        expect(steered.assistantMessageId).toBe(first.assistantMessageId)
+        expect(steered.delivery).toBe("queue")
+        expect(steered.steering).toMatchObject({ ok: false, status: "unsupported" })
+        expect(steered.assistantMessageId).not.toBe(first.assistantMessageId)
 
         let timer: ReturnType<typeof setTimeout> | undefined
         const ended = await Promise.race([
@@ -170,22 +174,22 @@ describe("the Claude turn input the driver holds open", () => {
         expect((await runtime.sessions.get(session.id))?.lastTurn)
           .toMatchObject({ status: "completed", assistantMessageId: first.assistantMessageId })
 
-        // The steer reached the model through the query the counting prompt
-        // opened: one request carries both, so the CLI read it off the stdin
-        // that was still open rather than starting a conversation of its own.
-        const carried = stub.requests.filter((body) => body.includes(STEER_MARKER) && body.includes(COUNT_MARKER))
-        expect(carried).not.toHaveLength(0)
+        // The refusal is the whole point: nothing was written to the stdin the
+        // driver still held open, so no request the CLI made carries the marker.
+        expect(stub.requests.filter((body) => body.includes(STEER_MARKER))).toHaveLength(0)
 
         const messages = await runtime.events.list(session.id)
         expect(messages.filter((message) => message.info.role === "assistant").map((message) => message.info.id))
           .toEqual([first.assistantMessageId])
         const reply = await assistantText()
         expect(reply).toContain(`${SLOW_REPLY_LINES}\n`)
-        expect(reply).toContain(STEER_MARKER)
-        expect(textOf(messages.find((message) => message.info.id === steered.userMessageId))).toContain(STEER_MARKER)
+        expect(reply).not.toContain(STEER_MARKER)
+        // A refused prompt has no place in the transcript: acceptance is what
+        // would earn one, and there was none.
+        expect(messages.find((message) => message.info.id === steered.userMessageId)).toBeUndefined()
 
         console.log(
-          `[claude cli] steered after ${beforeSteer.split("\n").length - 1} streamed lines, `
+          `[claude cli] refused a steer after ${beforeSteer.split("\n").length - 1} streamed lines, `
             + `turn ended in ${Date.now() - startedAt}ms over ${stub.requests.length} model requests`,
         )
       } finally {
