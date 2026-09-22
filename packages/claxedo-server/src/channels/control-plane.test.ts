@@ -16,11 +16,10 @@ import type { ControlPlaneServices } from "../authority/services"
 const ADMIN_TOKEN = "0123456789abcdef0123456789abcdef"
 
 function pairingAdminApp(env: Record<string, string>) {
+  const listPending = vi.fn(async () => [])
+  const approve = vi.fn(async () => ({ ok: true as const, channel: "telegram", externalUserId: "u_1" }))
   const channels = {
-    access: {
-      listPending: vi.fn(async () => []),
-      approve: vi.fn(async () => ({ ok: true as const, channel: "telegram", externalUserId: "u_1" })),
-    },
+    access: { listPending, approve },
     ingress: new Hono(),
   } as unknown as ReturnType<typeof createControlPlaneChannels>
   const app = new Hono()
@@ -31,15 +30,15 @@ function pairingAdminApp(env: Record<string, string>) {
     channels,
     requireLoopbackForFake: false,
   })
-  return { app, channels }
+  return { app, listPending, approve }
 }
 
 describe("pairing admin bearer gate", () => {
   test("a loopback caller is admitted without a token", async () => {
-    const { app, channels } = pairingAdminApp({})
+    const { app, listPending } = pairingAdminApp({})
     const res = await app.request("http://127.0.0.1/api/channels/pairing")
     expect(res.status).toBe(200)
-    expect(channels.access.listPending).toHaveBeenCalled()
+    expect(listPending).toHaveBeenCalled()
   })
 
   test("a remote caller with the correct bearer token is admitted", async () => {
@@ -51,7 +50,7 @@ describe("pairing admin bearer gate", () => {
   })
 
   test("a remote caller with an invalid or unequal-length token is refused", async () => {
-    const { app, channels } = pairingAdminApp({ CLAXEDO_CHANNEL_ADMIN_TOKEN: ADMIN_TOKEN })
+    const { app, listPending } = pairingAdminApp({ CLAXEDO_CHANNEL_ADMIN_TOKEN: ADMIN_TOKEN })
     for (const authorization of [
       `Bearer ${"0".repeat(ADMIN_TOKEN.length)}`,
       `Bearer ${ADMIN_TOKEN.slice(0, -1)}`,
@@ -64,7 +63,7 @@ describe("pairing admin bearer gate", () => {
       })
       expect(res.status, authorization || "(no header)").toBe(401)
     }
-    expect(channels.access.listPending).not.toHaveBeenCalled()
+    expect(listPending).not.toHaveBeenCalled()
   })
 
   test("a remote caller is refused when no admin token is configured", async () => {
@@ -76,14 +75,14 @@ describe("pairing admin bearer gate", () => {
   })
 
   test("the same gate guards approve", async () => {
-    const { app, channels } = pairingAdminApp({ CLAXEDO_CHANNEL_ADMIN_TOKEN: ADMIN_TOKEN })
+    const { app, approve } = pairingAdminApp({ CLAXEDO_CHANNEL_ADMIN_TOKEN: ADMIN_TOKEN })
     const denied = await app.request("https://admin.example.test/api/channels/pairing/approve", {
       method: "POST",
       headers: { authorization: `Bearer ${ADMIN_TOKEN.slice(1)}`, "content-type": "application/json" },
       body: JSON.stringify({ code: "ABC123" }),
     })
     expect(denied.status).toBe(401)
-    expect(channels.access.approve).not.toHaveBeenCalled()
+    expect(approve).not.toHaveBeenCalled()
 
     const allowed = await app.request("https://admin.example.test/api/channels/pairing/approve", {
       method: "POST",
@@ -91,7 +90,7 @@ describe("pairing admin bearer gate", () => {
       body: JSON.stringify({ code: "ABC123" }),
     })
     expect(allowed.status).toBe(200)
-    expect(channels.access.approve).toHaveBeenCalledWith("ABC123", "admin:route")
+    expect(approve).toHaveBeenCalledWith("ABC123", "admin:route")
   })
 })
 
