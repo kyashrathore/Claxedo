@@ -476,7 +476,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
             })
             continue
           }
-          if (!onGoal) continue
           const goal = claudeTranscriptGoalSnapshot(
             input.sessionId,
             entry,
