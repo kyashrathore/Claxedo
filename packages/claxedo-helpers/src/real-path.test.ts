@@ -78,7 +78,11 @@ describe("watchRealDirectory", () => {
           ].join("\n"),
         )
         const child = spawnSync("node", [script, directory, target], { encoding: "utf8" })
-        expect(`${child.status} ${child.stdout.trim()} ${child.stderr.trim()}`).toBe("0 changed")
+        expect({
+          status: child.status,
+          stdout: child.stdout.trim(),
+          stderr: child.stderr.trim(),
+        }).toEqual({ status: 0, stdout: "changed", stderr: "" })
       } finally {
         fs.rmSync(directory, { recursive: true, force: true })
       }
