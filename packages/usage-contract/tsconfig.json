@@ -6,7 +6,7 @@
     // Workspace packages export `development` -> src/*.ts ahead of `types` ->
     // dist/*.d.ts, so typecheck reads sibling SOURCE and never needs a build.
     "customConditions": ["development"],
-    "lib": ["ESNext"],
+    "lib": ["ESNext", "DOM"],
     "types": []
   },
   "include": ["src"]
