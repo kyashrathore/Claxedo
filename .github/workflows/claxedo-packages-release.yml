@@ -96,6 +96,11 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      # The cli bundles the private @claxedo/host-connector, which the publisher
+      # never builds, and esbuild resolves it through dist/.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
       - name: Unit-test the release tooling
         working-directory: packages/claxedo-server
         run: node ./node_modules/vitest/vitest.mjs run scripts/release/tests
@@ -123,6 +128,9 @@ jobs:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
           scope: "@claxedo"
+
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
 
       - name: Publish
         env:
