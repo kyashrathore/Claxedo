@@ -66,13 +66,11 @@ jobs:
       - name: Install worker dependencies
         run: npm install
 
-      # sandbox-manager resolves @claxedo/sandbox-contract through its dist, which
-      # a fresh runner does not have; build the contract first.
-      - name: Build sandbox contract
-        run: bun run --cwd ../../../../sandbox-contract build
-
-      - name: Build sandbox manager
-        run: bun run --cwd ../../../../sandbox-manager build
+      # build-sandbox-image.ts runs under tsx, which resolves every @claxedo
+      # package it imports through dist/, and a fresh runner has none.
+      - name: Build dist-resolved workspace packages
+        working-directory: ${{ github.workspace }}
+        run: bun run build:packages
 
       # The image ships the in-repo workspace-runtime host bundle (COPY .build/)
       # instead of npm-installing @claxedo/workspace-runtime — publishing is a
