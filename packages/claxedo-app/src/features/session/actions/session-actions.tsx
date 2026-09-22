@@ -203,10 +203,16 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       workspaceDir,
       sessionId,
     })
-    props.state.layout.openSession(workspaceDir, sessionId, session?.title || "Session", {
+    const contentId = props.state.layout.openSession(workspaceDir, sessionId, session?.title || "Session", {
       sessionRef,
     })
-    setTimeout(() => replaceSessionUrl(sessionId), 120)
+    setTimeout(() => {
+      // `replaceSessionUrl` notifies the router, and route intent turns a
+      // session route back into a focus — so this would take the pane off a
+      // surface the reader activated inside the 120ms.
+      if (props.state.wb.selectors.focusedContent() !== contentId) return
+      replaceSessionUrl(sessionId)
+    }, 120)
   }
 
   const handleNewSession = async (workspaceDir?: string, _paneId?: string, selectedRouteId?: string) => {

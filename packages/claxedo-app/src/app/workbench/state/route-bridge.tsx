@@ -545,6 +545,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     if (routeSessionMetaLookups.has(sessionId)) return true
     if (routeSessionMetaLookupDone.has(sessionId)) return false
     routeSessionMetaLookups.add(sessionId)
+    const focusedAtStart = state.wb.selectors.focusedContent()
     markRouteSessionMetaLookupChanged()
     void fetchRouteSessionMeta({
       serverUrl: getClaxedoServerUrl(),
@@ -552,6 +553,9 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     })
       .then(async (session) => {
         if (directSessionRouteId() !== sessionId) return
+        // Whatever the reader moved to while the metadata was in flight keeps
+        // the focus; this lookup opens a surface and would take it back.
+        if (state.wb.selectors.focusedContent() !== focusedAtStart) return
         if (routeSessionMetaIsArchived(session)) {
           markRouteIntentClosed({ sessionId })
           // A cold direct route may have materialized a provisional surface
