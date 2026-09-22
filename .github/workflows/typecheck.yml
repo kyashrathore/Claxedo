@@ -44,16 +44,23 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
-      # No build step: every @claxedo/* workspace package exports the
-      # `development` condition -> src/*.ts, and each tsconfig declares
-      # `customConditions: ["development"]`, so typecheck reads sibling SOURCE.
-      # dist/ is only for Node/npm consumers (`import`/`default` conditions).
+      # Typecheck reads sibling source through the `development` export
+      # condition each tsconfig declares. Type-aware lint does not: files no
+      # tsconfig includes (desktop scripts and tests, stories) resolve
+      # @claxedo/* through the default condition, which is dist/, and an
+      # unresolved import is an `error` type that trips
+      # no-redundant-type-constituents and the unsafe-* rules.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
 
+      # perf-harness is not a workspace package: without its own install its
+      # agent-app-benchmark imports are `error` types too.
+      - name: Install performance harness
+        working-directory: packages/claxedo-app/perf-harness
+        run: bun install --frozen-lockfile
 
-      # Full-repo lint is ~12 s and needs the same dist outputs as typecheck
-      # (type-aware rules resolve @claxedo/* through package exports). The
-      # root .oxlintrc.json sets every enabled rule to error, so this fails on
-      # any finding, exactly like the pre-push hook (`bun run prepush`).
+      # The root .oxlintrc.json sets every enabled rule to error, so this
+      # fails on any finding, exactly like the pre-push hook (`bun run prepush`).
       - name: Run lint
         run: bun run lint
 

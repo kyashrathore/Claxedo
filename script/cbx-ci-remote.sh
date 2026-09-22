@@ -310,6 +310,8 @@ run_workspace_files() {
 run_typecheck() {
   install_root
   build_dist_packages
+  (cd packages/claxedo-app/perf-harness && bun install --frozen-lockfile)
+  bun run lint
   bun typecheck
 }
 

@@ -94,6 +94,15 @@ jobs:
       # typecheck.yml runs these same commands behind the affected-surface
       # selector. A deploy gate takes the whole repository instead: the branch
       # being released is what has to be green, not the diff that reached it.
+      # Type-aware lint resolves @claxedo/* through dist/ for files outside a
+      # tsconfig, and perf-harness has its own install; see typecheck.yml.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
+      - name: Install performance harness
+        working-directory: packages/claxedo-app/perf-harness
+        run: bun install --frozen-lockfile
+
       - name: Run lint
         run: bun run lint
 
