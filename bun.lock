@@ -144,6 +144,7 @@
       "devDependencies": {
         "@anthropic-ai/sdk": "0.115.0",
         "@axe-core/playwright": "4.12.1",
+        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/opencode-server-adapter": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
         "@happy-dom/global-registrator": "20.0.11",
@@ -186,6 +187,7 @@
         "@chat-adapter/slack": "4.35.0",
         "@chat-adapter/telegram": "4.35.0",
         "@chat-adapter/whatsapp": "4.35.0",
+        "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@whiskeysockets/baileys": "7.0.0-rc13",
         "chat": "4.35.0",
@@ -215,6 +217,8 @@
       "name": "@claxedo/desktop",
       "version": "0.0.1",
       "dependencies": {
+        "@claxedo/agent-runtime-contract": "workspace:*",
+        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/app": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/host-connector": "workspace:*",
@@ -508,9 +512,10 @@
       "name": "@claxedo/cli",
       "version": "0.1.0",
       "bin": {
-        "claxedo": "./dist/index.mjs",
+        "claxedo": "dist/index.mjs",
       },
       "dependencies": {
+        "@claxedo/agent-sdk-runtime": "workspace:*",
         "@claxedo/workspace-runtime": "workspace:*",
       },
       "devDependencies": {
