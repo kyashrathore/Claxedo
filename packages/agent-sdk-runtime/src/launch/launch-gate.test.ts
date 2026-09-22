@@ -342,7 +342,9 @@ test.skipIf(!posix)("retirement refuses a recorded process that does not lead it
   expect(await gone(child.pid!, 100)).toBe(false)
 })
 
-test.skipIf(!posix)("an identity probe that fails reports unknown rather than clear", async () => {
+// Only the darwin probe shells out (to `ps`); Linux reads /proc and has no
+// failure this test can inject without root.
+test.skipIf(process.platform !== "darwin")("a ps probe that cannot run reports unknown rather than clear", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
   const owned = await launch({
