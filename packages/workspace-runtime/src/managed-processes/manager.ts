@@ -83,6 +83,15 @@ interface State {
   restartTimers: Map<string, ReturnType<typeof setTimeout>>
   watcher: FSWatcher | undefined
   debounceTimer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * What this manager last wrote to the config file, newest last, and how
+   * many saves it has made. The watcher reconciles the file back into memory
+   * for edits made elsewhere; a snapshot that is one of these writes, or one
+   * read while a save was landing, describes state memory has already moved
+   * past and must not be applied over it.
+   */
+  selfWrites: string[]
+  saveSeq: number
   initializing: Promise<void> | undefined
   initialized: boolean
   dispose: (() => void) | undefined
@@ -111,6 +120,8 @@ function getState(directory: string): State {
       restartTimers: new Map(),
       watcher: undefined,
       debounceTimer: undefined,
+      selfWrites: [],
+      saveSeq: 0,
       initializing: undefined,
       initialized: false,
       dispose: undefined,
@@ -556,14 +567,17 @@ export async function saveConfig(directory: string, configs: Process.ProcessConf
     $schema: "./processes.schema.json",
     processes: configs,
   }
-  await fs.writeFile(filePath, JSON.stringify(file, null, 2) + "\n", "utf-8")
+  const content = JSON.stringify(file, null, 2) + "\n"
+  const s = getState(directory)
+  s.selfWrites = [...s.selfWrites.slice(-3), content]
+  await fs.writeFile(filePath, content, "utf-8")
   void writeSchema(directory)
 
-  const s = getState(directory)
   s.configs.clear()
   for (const config of configs) {
     s.configs.set(config.id, config)
   }
+  s.saveSeq += 1
   await mirror(directory, configs)
 
   workspaceRuntimeBus.publish({ type: "process.config.changed", directory: real(directory), configs })
@@ -634,14 +648,16 @@ export function watchConfig(directory: string): void {
 /**
  * Re-read the config file from disk and reconcile with current state.
  */
-async function reconcileFromDisk(directory: string): Promise<void> {
+export async function reconcileFromDisk(directory: string): Promise<void> {
   const s = getState(directory)
   const filePath = cfgPath(directory)
 
   let newConfigs: Process.ProcessConfig[]
 
   try {
+    const readAtSave = s.saveSeq
     const content = await fs.readFile(filePath, "utf-8")
+    if (s.selfWrites.includes(content) || s.saveSeq !== readAtSave) return
     const raw = parseJsonc(content)
     const parsed = Process.ProcessConfigFile.safeParse(raw)
 

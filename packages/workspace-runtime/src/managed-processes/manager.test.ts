@@ -87,6 +87,29 @@ describe("process config file", () => {
     await manager.dispose(tmpDir)
   })
 
+  test("a snapshot the manager wrote earlier does not undo a config saved since", async () => {
+    await fs.mkdir(path.join(tmpDir, ".workspace-runtime"), { recursive: true })
+    const file = path.join(tmpDir, ".workspace-runtime", "processes.jsonc")
+    await fs.writeFile(file, JSON.stringify({ processes: [] }))
+    const manager = await import("./manager")
+    await manager.initialize(tmpDir)
+
+    await manager.saveConfig(tmpDir, [])
+    const stale = await fs.readFile(file, "utf-8")
+    await manager.saveConfig(tmpDir, [{ id: "proc_greeter", name: "greeter", command: "/bin/echo", args: ["ready"], autoStart: false, restartPolicy: "never", maxRestarts: 0 }])
+
+    // The watcher's debounced read of the first save landing after the second.
+    await fs.writeFile(file, stale, "utf-8")
+    await manager.reconcileFromDisk(tmpDir)
+    expect(manager.configs(tmpDir).map((config) => config.id)).toEqual(["proc_greeter"])
+
+    // An edit made elsewhere is still applied.
+    await fs.writeFile(file, JSON.stringify({ processes: [{ id: "proc_edited", name: "edited", command: "/bin/true" }] }), "utf-8")
+    await manager.reconcileFromDisk(tmpDir)
+    expect(manager.configs(tmpDir).map((config) => config.id)).toEqual(["proc_edited"])
+    await manager.dispose(tmpDir)
+  })
+
 })
 
 // ---------------------------------------------------------------------------
