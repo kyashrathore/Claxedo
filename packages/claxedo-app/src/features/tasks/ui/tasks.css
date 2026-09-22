@@ -45,10 +45,6 @@
   min-width: 0;
 }
 
-.tsk-mono {
-  font-variant-numeric: tabular-nums;
-}
-
 .tsk-truncate {
   min-width: 0;
   overflow: hidden;
@@ -299,20 +295,10 @@
     visibility: hidden;
   }
 
-  .tsk-tr .ui-button.tsk-row-quiet {
-    opacity: 0;
-    transition: opacity 100ms linear;
-  }
-
-  .tsk-tr:hover .tsk-row-quiet,
-  .tsk-tr:focus-within .tsk-row-quiet {
-    opacity: 1;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .tsk-tr .tsk-row-tools,
-  .tsk-tr .ui-button.tsk-row-quiet,
   .tsk-card .tsk-row-tools,
   .tsk-column-head .ui-icon-button {
     transition: none;
@@ -1276,38 +1262,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.tsk-thead {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: grid;
-  align-items: center;
-  gap: 10px;
-  height: var(--tsk-head);
-  padding: 0 var(--tsk-gutter);
-  background: var(--surface-base);
-  color: var(--text-weak);
-  font-size: var(--font-size-2x-small);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-section);
-  text-transform: uppercase;
-}
-
-/* A column header is a label, not a paragraph: uppercase with tracking runs
-   wider than the fixed columns it sits in, and without this the labels ran
-   into each other rather than being cut. */
-.tsk-thead > * {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tsk-row-quiet.ui-button {
-  justify-self: end;
-  color: var(--text-weak);
 }
 
 .tsk-preset-form {

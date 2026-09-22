@@ -223,7 +223,6 @@ describe("Settings → Models", () => {
       "OpenAIsettings.models.group.count:1|1settings.models.group.disableAll",
     ])
     for (const slug of ["claude", "codex", "cursor", "pi", "opencode", "connection:team-agent"]) expect(section(slug)).not.toBeNull()
-    expect(document.querySelector('[data-component="settings-scope-selector"]')).toBeNull()
     expect(section("claude")?.textContent).toContain("settings.models.enabled.count:2")
   })
 

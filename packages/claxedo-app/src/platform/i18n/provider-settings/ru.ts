@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}} управляет провайдерами и учётными данными вне Claxedo. Настройте их в агенте или на сервере; доступные модели появятся в выборе модели сеанса.",
   "command.openProviders": "Открыть провайдеров",
   "settings.models.previewCount": "Показать ещё {{count}}",
   "settings.models.providerSearch.empty": "Нет моделей, соответствующих «{{query}}».",

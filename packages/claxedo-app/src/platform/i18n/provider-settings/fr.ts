@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}} gère ses fournisseurs et identifiants en dehors de Claxedo. Configurez-les dans cet agent ou serveur ; les modèles disponibles apparaissent dans le sélecteur de modèles de la session.",
   "command.openProviders": "Ouvrir les fournisseurs",
   "settings.models.previewCount": "Afficher {{count}} de plus",
   "settings.models.providerSearch.empty": "Aucun modèle ne correspond à « {{query}} ».",

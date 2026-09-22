@@ -152,7 +152,6 @@ export const dict = {
   "provider.connect.title.harness": "连接 {{harness}}",
   "provider.connect.title.engine": "为 {{engine}} 连接 {{vendor}}",
   "provider.connect.selectMethod": "选择 {{vendor}} 的登录方式。",
-  "provider.connect.changeMethod": "更改",
   "provider.connect.status.inProgress": "正在授权...",
   "provider.connect.status.waiting": "等待授权...",
   "provider.connect.apiKey.label": "{{vendor}} API 密钥",
@@ -510,14 +509,8 @@ export const dict = {
   "sidebar.nav.projectsAndSessions": "项目和会话",
   "sidebar.settings": "设置",
   "sidebar.help": "帮助",
-
-
-  "settings.section.desktop": "桌面",
-  "settings.section.workspace": "工作区",
-  "settings.section.account": "账户",
   "settings.scope.workspace.loading": "正在加载工作区…",
   "settings.scope.workspace.empty": "暂无工作区",
-  "settings.providers.section.harness": "{{harness}} 提供商",
   "settings.providers.catalog.empty": "{{harness}} 未报告 {{workspace}} 的任何提供商。",
   "settings.providers.catalog.error": "{{harness}} 无法为 {{workspace}} 作答：{{reason}}",
 
@@ -596,8 +589,6 @@ export const dict = {
   "settings.shortcuts.group.modelAndAgent": "模型与智能体",
   "settings.shortcuts.group.terminal": "终端",
   "settings.shortcuts.group.prompt": "提示",
-
-  "settings.providers.section.agents": "本机上的代理",
   "settings.providers.agents.checkAccount": "检查",
   "settings.providers.agents.scanning": "正在检查这台电脑…",
   "settings.providers.agents.rescanning": "正在检查…",
@@ -698,8 +689,6 @@ export const dict = {
   "common.time.minutesAgo.short": "{{count}}分钟前",
   "common.time.hoursAgo.short": "{{count}}小时前",
   "common.time.daysAgo.short": "{{count}}天前",
-  "settings.providers.connected.environmentDescription": "已通过环境变量连接",
-
   "session.todo.progress": "已完成 {{done}} 个任务（共 {{total}} 个）",
   "session.question.progress": "{{current}}/{{total}} 个问题",
   "session.question.collapse": "折叠问题",
@@ -751,12 +740,9 @@ export const dict = {
   "settings.models.tab.accounts": "账户",
   "settings.models.tab.models": "模型",
   "settings.models.accounts.connection": "{{harness}} 使用其设置时的连接运行。",
-  "settings.models.group.expand": "显示 {{provider}} 模型",
   "settings.models.enabled.empty": "尚未启用任何模型。在下方选择一个提供商，并打开你希望出现在选择器中的模型。",
-  "settings.models.add.title": "添加模型",
   "settings.models.add.providerSearch": "搜索提供商…",
   "settings.models.add.noProviders": "没有与“{{query}}”匹配的提供商。",
-  "settings.models.add.back": "返回提供商",
   "settings.models.harness.empty": "{{harness}} 未为 {{workspace}} 报告任何模型。",
   "settings.providers.search.placeholder": "搜索提供商…",
   "settings.providers.status.notConnected": "未连接",

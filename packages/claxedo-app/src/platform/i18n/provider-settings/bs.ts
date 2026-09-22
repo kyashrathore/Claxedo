@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}} upravlja pružaocima i pristupnim podacima izvan Claxeda. Podesite ih u tom agentu ili serveru; dostupni modeli se prikazuju u biraču modela sesije.",
   "command.openProviders": "Otvori pružaoce usluga",
   "settings.models.previewCount": "Prikaži još {{count}}",
   "settings.models.providerSearch.empty": "Nijedan model ne odgovara upitu „{{query}}“.",

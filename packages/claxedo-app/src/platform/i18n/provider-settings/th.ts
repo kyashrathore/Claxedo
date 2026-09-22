@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}} จัดการผู้ให้บริการและข้อมูลรับรองภายนอก Claxedo โปรดกำหนดค่าในเอเจนต์หรือเซิร์ฟเวอร์นั้น โมเดลที่พร้อมใช้งานจะแสดงในตัวเลือกโมเดลของเซสชัน",
   "command.openProviders": "เปิดผู้ให้บริการ",
   "settings.models.previewCount": "แสดงเพิ่มอีก {{count}} รายการ",
   "settings.models.providerSearch.empty": "ไม่มีโมเดลที่ตรงกับ “{{query}}”",

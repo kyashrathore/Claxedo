@@ -23,7 +23,6 @@ import { isCatalogHarnessId, type NativeHarnessId } from "@/platform/identity/ha
 import { MachineAccountsProvider } from "@/features/settings/machine-accounts"
 import { AgentHarnessAccounts, MachineScanStatus, machineHarnessFor } from "@/features/settings/ui/agents-section"
 import { HarnessProvidersSection } from "@/features/settings/ui/harness-providers-section"
-import "./models.css"
 
 type ModelItem = {
   id: string

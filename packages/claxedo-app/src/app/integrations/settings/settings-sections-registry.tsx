@@ -21,7 +21,6 @@ export type SettingsSectionEntry = {
   id: string
   label: string
   icon: ClaxedoIconName
-  group: SettingsSection
   /**
    * What the panel says about itself, for the sections that say nothing.
    * General and Models open with their own title and blurb; the rest were
@@ -61,21 +60,19 @@ export function useSettingsSectionRegistry() {
           id: entry.id,
           label: entry.label,
           icon: entry.icon ?? "sliders",
-          group,
           // No heading supplied: a contributed section draws its own surface,
           // and the one it draws already opens with its name.
           render: () => entry.renderer(),
         }))
 
     return [
-      { id: "general", label: language.t("settings.tab.general"), icon: "sliders" as const, group: "desktop" as const, render: () => <SettingsGeneral /> },
-      { id: "shortcuts", label: language.t("settings.tab.shortcuts"), icon: "keyboard" as const, group: "desktop" as const, render: () => <SettingsKeybinds /> },
-      { id: "terminals", label: "Terminals", icon: "terminal" as const, group: "desktop" as const, render: () => <SettingsTerminals /> },
+      { id: "general", label: language.t("settings.tab.general"), icon: "sliders" as const, render: () => <SettingsGeneral /> },
+      { id: "shortcuts", label: language.t("settings.tab.shortcuts"), icon: "keyboard" as const, render: () => <SettingsKeybinds /> },
+      { id: "terminals", label: "Terminals", icon: "terminal" as const, render: () => <SettingsTerminals /> },
       {
         id: "devices",
         label: "Machines",
         icon: "link" as const,
-        group: "desktop" as const,
         heading: { title: "Machines", description: "The computers this account can reach, and what each one serves." },
         render: () => <SettingsMachines />,
       },
@@ -83,7 +80,6 @@ export function useSettingsSectionRegistry() {
         id: "orgs",
         label: "Orgs & Teams",
         icon: "folders" as const,
-        group: "desktop" as const,
         heading: { title: "Orgs & Teams", description: "The organizations you belong to and the teams inside them." },
         render: () => <OrgTeamSettingsSection />,
       },
@@ -92,7 +88,6 @@ export function useSettingsSectionRegistry() {
         id: "models",
         label: language.t("settings.models.title"),
         icon: "models" as const,
-        group: "workspace" as const,
         heading: { title: language.t("settings.models.title"), description: language.t("settings.models.description") },
         render: () => <SettingsModels />,
       },
@@ -102,7 +97,6 @@ export function useSettingsSectionRegistry() {
             id: "connections",
             label: "Connections",
             icon: "link" as const,
-            group: "account" as const,
             heading: { title: "Connections", description: "The services this account is connected to." },
             render: () => (
               <SettingsConnections agentConnections={agentConnections} integrations={productUi().settingsConnections} />
@@ -114,7 +108,6 @@ export function useSettingsSectionRegistry() {
             id: "compute",
             label: "Sandbox",
             icon: "cloud-upload" as const,
-            group: "account" as const,
             heading: { title: "Sandbox", description: "Where sandboxed workspaces run." },
             render: () => <SandboxSettingsSection />,
           }]

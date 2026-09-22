@@ -81,14 +81,9 @@ export function visibleModelsForProvider<T extends ModelListItem>(input: {
   items: T[]
   query: string
   pageFilterActive: boolean
-  previewCount?: number
-  searchThreshold?: number
 }): T[] {
-  const previewCount = input.previewCount ?? MODELS_PREVIEW_COUNT
-  const searchThreshold = input.searchThreshold ?? MODELS_SEARCH_THRESHOLD
-
   if (input.pageFilterActive) return input.items
-  if (input.items.length <= searchThreshold) return input.items
+  if (input.items.length <= MODELS_SEARCH_THRESHOLD) return input.items
 
   const q = input.query.trim().toLowerCase()
   if (q) {
@@ -96,5 +91,5 @@ export function visibleModelsForProvider<T extends ModelListItem>(input: {
       (item) => item.name.toLowerCase().includes(q) || item.id.toLowerCase().includes(q),
     )
   }
-  return input.items.slice(0, previewCount)
+  return input.items.slice(0, MODELS_PREVIEW_COUNT)
 }

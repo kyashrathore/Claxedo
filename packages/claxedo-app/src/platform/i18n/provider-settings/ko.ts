@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}}는 Claxedo 외부에서 제공업체와 자격 증명을 관리합니다. 해당 에이전트나 서버에서 구성하세요. 사용 가능한 모델은 세션 모델 선택기에 표시됩니다.",
   "command.openProviders": "공급자 열기",
   "settings.models.previewCount": "{{count}}개 더 보기",
   "settings.models.providerSearch.empty": "“{{query}}”와 일치하는 모델이 없습니다.",

@@ -493,13 +493,6 @@ describe("Settings → Providers reads both credential stores for the workspace 
     ])
   })
 
-  test("the page offers no scope picker and no externally-managed note", async () => {
-    mount()
-    await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
-    expect(document.querySelector('[data-component="settings-scope-selector"]')).toBeNull()
-    expect(document.querySelector('[data-component="providers-externally-managed"]')).toBeNull()
-  })
-
   test("catalog caches stay isolated when the page reopens on another workspace", async () => {
     const client = newClient()
     state.focusedWorkspace = { workspaceId: "ws_local", directory: "/repo" }
@@ -559,7 +552,6 @@ describe("Settings → Providers reads both credential stores for the workspace 
   test("the OpenCode section opens the custom-provider dialog under the workspace in view", async () => {
     mount()
     await waitFor(() => expect(providerIds("opencode")).toEqual(["external-backend"]))
-    expect(section("pi").querySelector('[data-action="settings-providers-add-custom"]')).toBeNull()
 
     // The custom-provider control sits on the section's tab row now.
     fireEvent.click(

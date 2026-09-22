@@ -118,9 +118,9 @@ async function modKey(page: Page): Promise<"Meta" | "Control"> {
 async function openSettings(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
   await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
-  const dialog = page.locator('[data-slot="dialog-container"]').last()
-  await expect(dialog).toBeVisible({ timeout: 10_000 })
-  return dialog
+  const surface = page.locator('[data-component="settings-content"]')
+  await expect(surface).toBeVisible({ timeout: 10_000 })
+  return surface
 }
 
 async function openCommandPalette(page: Page) {

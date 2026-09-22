@@ -253,16 +253,16 @@ function audioPlayCount(page: Page) {
 async function selectAgentCompletionSound(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
   await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
-  const dialog = page.locator('[data-slot="dialog-container"]').last()
-  await expect(dialog).toBeVisible({ timeout: 10_000 })
+  const surface = page.locator('[data-component="settings-content"]')
+  await expect(surface).toBeVisible({ timeout: 10_000 })
 
-  const trigger = dialog.locator('[data-action="settings-sounds-agent"] [data-slot="select-select-trigger"]')
+  const trigger = surface.locator('[data-action="settings-sounds-agent"] [data-slot="select-select-trigger"]')
   await trigger.click()
   await page.locator('[data-slot="select-select-item"]').first().click()
   await expect(trigger).toContainText("Alert 01")
 
-  await page.keyboard.press("Escape")
-  await expect(dialog).toBeHidden({ timeout: 5_000 })
+  await page.locator('[data-action="settings-nav-back"]').click()
+  await expect(surface).toHaveCount(0, { timeout: 5_000 })
 }
 
 test.describe("core panes: split, tabs, focus, shell chrome @core", () => {

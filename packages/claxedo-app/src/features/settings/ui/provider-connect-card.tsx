@@ -11,7 +11,7 @@ import {
 } from "@/platform/identity/harness-catalog"
 
 /**
- * The connect form, inset in the row that opened it.
+ * The connect form, with the name of what is being connected above it.
  *
  * `credentialId` switches it to replacing one account's token rather than
  * storing another account: the row keeps its id, its position and its place in

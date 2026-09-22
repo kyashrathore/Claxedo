@@ -1422,16 +1422,22 @@ test.describe("live real-harness smoke @live", () => {
     test.skip(before.connected.length > 0, "This detection flow requires an unconnected Pi profile")
     await page.locator('[data-action="prompt-harness-model"]').last().click()
     await page.locator('[data-component="harness-model-picker"] [data-key="pi:openai-codex/gpt-5.4"]').click()
+    // The scan lives on the Models page, which is where every harness's
+    // accounts are listed; the draft above only decides which harness's
+    // section the row below is read from.
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
+    await page.locator('[data-component="settings-nav-item"][data-section="models"]').click()
     const detected = page.waitForResponse((response) => response.url().includes("/credentials/discover") && response.request().method() === "POST")
-    await page.locator('[data-action="settings-providers-detect"]').click()
+    await page.locator('[data-action="settings-providers-rescan"]').click()
     const response = await detected
     expect(response.ok()).toBe(true)
     const body = await response.json() as { items: Array<{ provider_id: string; probe?: { state: string } }> }
     const codex = body.items.find((item) => item.provider_id === "codex-app-server" && item.probe?.state === "working")
     expect(codex, "Installed authenticated Codex login was not discovered").toBeTruthy()
-    const row = page.locator('[data-component="agents-providers-section"] [data-provider="openai"]')
-    await expect(row.getByText("Detected", { exact: true })).toBeVisible()
-    await expect(page.locator('[data-action="settings-providers-detect"]')).toBeEnabled()
+    const row = page.locator('[data-component="models-section-pi"] [data-component="agent-account"]')
+    await expect(row.first()).toBeVisible()
+    await expect(page.locator('[data-action="settings-providers-rescan"]')).toBeEnabled()
     const after = await (await fetch(providerUrl)).json() as { connected: string[] }
     expect(after.connected).toEqual(before.connected)
     await page.screenshot({ path: test.info().outputPath("machine-logins-detected.png") })

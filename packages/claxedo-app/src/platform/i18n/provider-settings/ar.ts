@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "يدير {{harness}} موفري الخدمة وبيانات الاعتماد خارج Claxedo. اضبطها في ذلك الوكيل أو الخادم؛ وستظهر النماذج المتاحة في محدد نماذج الجلسة.",
   "command.openProviders": "فتح المزوّدين",
   "settings.models.previewCount": "إظهار {{count}} أخرى",
   "settings.models.providerSearch.empty": "لا توجد نماذج تطابق «{{query}}».",

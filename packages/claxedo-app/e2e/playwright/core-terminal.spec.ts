@@ -663,14 +663,14 @@ test.describe("core terminal panel @core", () => {
     // save path is part of what this proves.
     await page.locator('[data-testid="rail-account-trigger"]').click()
     await page.getByRole("menuitem", { name: "Settings" }).click()
-    await page.getByRole("tab", { name: "Terminals" }).click()
+    await page.locator('[data-component="settings-nav-item"][data-section="terminals"]').click()
     await page.getByRole("button", { name: "Add", exact: true }).click()
     await page.getByPlaceholder("Command name (e.g., Aider)").fill("Aider")
     await page.getByPlaceholder("Command to run (e.g., aider --model gpt-4)").fill("aider --model gpt-4")
     await page.getByRole("button", { name: "Save Changes" }).click()
     await expect(page.getByText("Terminal commands saved")).toBeVisible({ timeout: 10_000 })
-    await page.keyboard.press("Escape")
-    await expect(page.getByRole("tab", { name: "Terminals" })).toHaveCount(0, { timeout: 10_000 })
+    await page.locator('[data-action="settings-nav-back"]').click()
+    await expect(page.locator('[data-component="settings-content"]')).toHaveCount(0, { timeout: 10_000 })
 
     const id = await createCustomTerminal(page, api, "Aider")
 

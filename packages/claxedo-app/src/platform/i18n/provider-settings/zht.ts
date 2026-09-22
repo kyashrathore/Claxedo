@@ -1,5 +1,4 @@
 export const dict = {
-  "settings.providers.externallyManaged": "{{harness}} 在 Claxedo 外部管理供應商和憑證。請在該代理程式或伺服器中設定；可用模型會顯示在工作階段模型選擇器中。",
   "command.openProviders": "開啟提供者",
   "settings.models.previewCount": "再顯示 {{count}} 個",
   "settings.models.providerSearch.empty": "沒有模型符合「{{query}}」。",
