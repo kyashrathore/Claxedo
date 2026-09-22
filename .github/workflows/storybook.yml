@@ -39,5 +39,8 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
       - name: Build Storybook
         run: bun --cwd packages/storybook build
