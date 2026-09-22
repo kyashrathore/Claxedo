@@ -450,7 +450,9 @@ describe("GitWorktreeRoutes log", () => {
         shortHash: second.slice(0, 7),
         subject: "second",
         author: "Test User",
-        date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/),
+        // `%aI` is strict ISO 8601, and git spells a zero offset `Z`: every
+        // commit authored on a UTC machine reads that way.
+        date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$/),
         refs: ["main", "tag: v1"],
         parents: [first],
       })
