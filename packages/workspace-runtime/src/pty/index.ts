@@ -243,6 +243,7 @@ export namespace Pty {
   async function retireSession(id: string, session: ActiveSession, closeNative: () => void): Promise<RetirementResult> {
     if (!session.identity) {
       closeNative()
+      if (await leaderVanished(session)) return { leader: "exited", descendants: "unknown", signals: [] }
       return {
         leader: "unknown",
         descendants: "unknown",
@@ -263,6 +264,23 @@ export namespace Pty {
     )
     await persistRetirement(id, session, result)
     return result
+  }
+
+  /**
+   * A payload that exits before its identity is read (`/bin/echo` under a
+   * managed process) leaves nothing to verify, but the PTY library reaping it
+   * or its pid no longer existing is proof that the leader is gone. A pid that
+   * still answers may be a reuse, so it stays unverifiable rather than exited.
+   */
+  async function leaderVanished(session: ActiveSession) {
+    if (session.exited) return true
+    const pid = session.info.pid
+    if (!(pid > 0)) return false
+    try {
+      return (await readCreationIdentity(pid)) === undefined
+    } catch {
+      return false
+    }
   }
 
   /**

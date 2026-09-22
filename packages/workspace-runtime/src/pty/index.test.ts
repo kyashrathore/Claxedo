@@ -358,6 +358,19 @@ describe("Pty unresolved retirement", () => {
     expect(Pty.get(info.id)).toBeUndefined()
   }, 20_000)
 
+  test("a payload that exited before its identity was read is reported exited, not unverifiable", async () => {
+    const { Pty } = await import("./index")
+    const brief = spawnChild("/bin/sh", ["-c", "exit 0"], { detached: true, stdio: "ignore" })
+    await new Promise<void>((resolve) => brief.once("exit", () => resolve()))
+    nextSpawnPid = brief.pid!
+
+    const info = await Pty.create({ cwd: tmpDir, title: "brief" }, ownership)
+    const result = await Pty.remove(info.id)
+
+    expect(result).toEqual({ leader: "exited", descendants: "unknown", signals: [] })
+    expect(Pty.get(info.id)).toBeUndefined()
+  }, 20_000)
+
   test("a pid the runtime did not spawn records no identity and never becomes a signal target", async () => {
     const { Pty } = await import("./index")
     // init: alive, readable, and emphatically not ours. Recording its identity
