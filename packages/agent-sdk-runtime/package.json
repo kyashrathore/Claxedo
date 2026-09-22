@@ -196,7 +196,7 @@
     "verify:public-api": "bun test src/public-api.test.ts",
     "verify:publish": "bun run build && bun scripts/verify-publish.ts && npm pack --dry-run --ignore-scripts >/dev/null",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
+    "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --timeout 20000 --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.3.0",

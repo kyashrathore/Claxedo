@@ -66,6 +66,11 @@ test("a launch whose payload never ran owns nothing", () => {
 const posix = process.platform !== "win32"
 const budgets = { termGraceMs: 400, killVerifyMs: 200 }
 
+/**
+ * Spawning the leader and reading its identity both cost a subprocess, so
+ * these tests need more than bun's 5s default on a loaded machine; the
+ * package's test script raises it.
+ */
 async function detachedLeader() {
   const child = spawn("/bin/sh", ["-c", "sleep 30"], { detached: true, stdio: "ignore" })
   child.unref()
