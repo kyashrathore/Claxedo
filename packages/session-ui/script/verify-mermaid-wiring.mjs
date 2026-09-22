@@ -60,11 +60,13 @@
  *   marked.tsx's languageClass transformer removed -> only the 2 nested cases
  *     fail, each reporting "0 code block(s) carried language-mermaid", 6/8 calls;
  *   the `block.complete` gate removed -> the streaming case fires 6 times for one
- *     diagram and the partial fence bodies are named in the report.
+ *     diagram and the partial fence bodies are named in the report;
+ *   `optimizeDeps.entries` removed -> Vite discovers @shikijs/stream under the
+ *     first case and reloads, and the run reports the replay instead of dying.
  * Re-check that when changing this file: a guard that cannot fail is not a guard.
  */
 import { createRequire } from "node:module"
-import { mkdir, rm, symlink, writeFile } from "node:fs/promises"
+import { mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -83,6 +85,17 @@ const MERMAID_PACKAGE = resolve(dirname(require_.resolve("mermaid/package.json")
 // in the `finally` below, so a failure part-way through cannot strand it in the
 // source tree.
 const ROOT = join(HERE, ".mermaid-wiring")
+
+// Vite's dependency scanner crawls index.html's graph and stops dead at
+// `?worker&url`, so nothing a worker imports — @shikijs/stream — reaches the
+// first optimize pass unless the worker source is itself an optimizer entry.
+// Resolved here rather than globbed inline because an empty result would
+// silently restore the mid-run reload these entries exist to prevent.
+const WORKER_SOURCES = (await readdir(join(PACKAGE, "src"), { recursive: true }))
+  .filter((entry) => entry.endsWith(".worker.ts"))
+  .map((entry) => join(PACKAGE, "src", entry))
+if (!WORKER_SOURCES.some((file) => file.endsWith("markdown-shiki.worker.ts")))
+  throw new Error(`no markdown shiki worker source to pre-optimize; found ${JSON.stringify(WORKER_SOURCES)}`)
 
 // MERMAID_WIRING_DEBUG=1 dumps what each streamed chunk actually put in the DOM.
 // The streaming case is the one that is easy to break into a silent no-op, so
@@ -276,7 +289,7 @@ const fenceBody = (chunk) => {
 const CASES = [
   {
     name: "top-level-fence",
-    why: "the bug: a bare ```mermaid fence is a mode:\"code\" block that never reached decorate()",
+    why: 'the bug: a bare ```mermaid fence is a mode:"code" block that never reached decorate()',
     diagrams: 1,
     labels: ["Top Alpha", "Top Beta"],
     sources: [diagram("Top Alpha", "Top Beta")],
@@ -424,6 +437,11 @@ try {
   server = await createServer({
     configFile: false,
     root: ROOT,
+    // Vite otherwise anchors the optimizer cache on the nearest package.json
+    // ABOVE the fixture — packages/session-ui — where it outlives the `rm(ROOT)`
+    // below and warms every later local run. CI is always cold, so that
+    // divergence is how a cold-start reload gets past a green local run.
+    cacheDir: join(ROOT, ".vite"),
     logLevel: "error",
     plugins: [solid()],
     // markdown-worker.ts imports `./markdown-shiki.worker.ts?worker&url`, and
@@ -431,6 +449,11 @@ try {
     // cannot express that.
     worker: { format: "es" },
     optimizeDeps: {
+      // Without the worker sources, the first worker load discovers
+      // @shikijs/stream, re-optimizes, and renames the deps directory — which
+      // stales the `?v=` hash of the shiki oniguruma chunk the page is already
+      // holding, 504s that request and makes Vite force a full page reload.
+      entries: ["index.html", ...WORKER_SOURCES],
       // Pre-bundling these two rewrites the shiki/oniguruma wasm plumbing they
       // ship and the highlighter fails to start.
       exclude: ["@pierre/diffs", "@pierre/theming"],
@@ -460,22 +483,20 @@ try {
   await page.goto(url, { waitUntil: "load" })
   await page.waitForFunction(() => !!window.__harness, undefined, { timeout: 60_000 })
 
-  // Warm Vite's dependency optimizer BEFORE the first real case. The first
-  // diagram is what pulls mermaid, the shiki highlighter and the markdown worker
-  // into the graph; Vite answers those newly-discovered deps with a 504 and a
-  // full page reload, which silently wipes the mount out from under the case
-  // that triggered it. Rendering one throwaway diagram forces the discovery, and
-  // the reload afterwards starts the run on an already-optimized, stable graph
-  // with a fresh (empty) call log.
+  // Render one throwaway diagram before the first real case, then reload. It
+  // imports the markdown path — mermaid, the shiki highlighter, the worker — so
+  // a dependency `optimizeDeps.entries` failed to name is more likely to be
+  // discovered here than under a case, and the reload hands the run an
+  // optimized graph and a fresh (empty) call log. Only more likely: the wait
+  // below is satisfied by the diagram, not by the worker settling, which is why
+  // the replay below exists.
   await page.evaluate(
     (text) => window.__harness.mount("warmup", text, false, false),
     "```mermaid\n" + diagram("Warm Up", "Optimizer") + "\n```\n",
   )
   // Tolerant on purpose: if the wiring is broken this never renders, and the run
   // must still reach the report and say WHICH fence shapes stopped working
-  // rather than dying on a Playwright timeout. Dependency discovery — the thing
-  // the warmup exists for — happens on module import, not on a successful
-  // render, so it has already done its job either way.
+  // rather than dying on a Playwright timeout.
   const warm = await page
     .waitForFunction(() => document.querySelectorAll('[data-mermaid-state="rendered"]').length === 1, undefined, {
       timeout: 90_000,
@@ -484,92 +505,162 @@ try {
     .catch(() => false)
   if (!warm) console.log("  note warmup diagram never rendered; expect failures below")
   await page.reload({ waitUntil: "load" })
-  await page.waitForFunction(() => !!window.__harness, undefined, { timeout: 60_000 })
 
-  // Any reload from here on invalidates the call accounting, so make it loud
-  // rather than letting it read as a missing diagram.
-  let reloads = 0
-  page.on("load", () => reloads++)
+  // A reload past this point replaces window.__harness with a fresh one, so the
+  // mounted case AND the whole call log are gone: the attempt cannot be patched
+  // up, only replayed against the graph the reload settled. `entries` above is
+  // what should keep this at zero; this is the net for the next dependency that
+  // slips past the scanner.
+  let reloaded = false
+  page.on("load", () => {
+    reloaded = true
+  })
 
-  const results = []
-  for (const testCase of CASES) {
-    const before = await page.evaluate(() => window.__harness.calls.length)
-    let partialStates = 0
-
-    await page.evaluate(
-      ([name, text, hostile]) => window.__harness.mount(name, text, false, hostile),
-      [testCase.name, testCase.stream ? testCase.stream[0] : testCase.text, !!testCase.hostile],
-    )
-
-    if (testCase.stream) {
-      // Re-mount in streaming mode and feed cumulative prefixes, waiting for each
-      // partial body to actually reach the DOM before sending the next one. The
-      // wait is the point: `updateBlock` only runs when a projection lands, so
-      // firing chunks on a fixed timer can skip every intermediate state and an
-      // ungated renderer would never be caught.
-      await page.evaluate(
-        ([name, text, hostile]) => window.__harness.mount(name, text, true, hostile),
-        [testCase.name, testCase.stream[0], !!testCase.hostile],
-      )
-      for (const chunk of testCase.stream.slice(1)) {
-        await page.evaluate((text) => window.__harness.update(text, true), chunk)
-        const partial = fenceBody(chunk)
-        if (partial) {
-          const landed = await page
-            .waitForFunction(
-              (want) =>
-                Array.from(document.querySelectorAll('[data-component="markdown-code"] code')).some(
-                  (code) => (code.textContent ?? "").trimEnd() === want,
-                ),
-              partial.trimEnd(),
-              { timeout: 10_000 },
-            )
-            .then(() => true)
-            .catch(() => false)
-          if (landed) partialStates++
-          if (DEBUG) {
-            const shown = await page.evaluate(() =>
-              Array.from(document.querySelectorAll('[data-component="markdown-code"] code')).map((code) => ({
-                class: code.className,
-                text: code.textContent,
-              })),
-            )
-            console.log(`  debug want=${JSON.stringify(partial)} landed=${landed} dom=${JSON.stringify(shown)}`)
-          }
-        }
-        await page.waitForTimeout(120)
-      }
-      await page.evaluate((text) => window.__harness.update(text, false), testCase.text)
+  // The "load" event is not enough on its own: playwright resolves an evaluate
+  // issued during a navigation against the NEW document, which reaches the
+  // undefined `window.__harness` before "load" has fired. So the harness the
+  // attempt is driving is stamped, and losing the stamp IS the reload.
+  // A reload landing between the wait and the stamp takes the stamp with it, so
+  // the pair is retried rather than thrown out of the run.
+  const settle = async () => {
+    for (let tries = 0; tries < 3; tries++) {
+      await page.waitForFunction(() => !!window.__harness, undefined, { timeout: 60_000 })
+      const stamped = await page
+        .evaluate(() => {
+          window.__harness.driving = true
+          return true
+        })
+        .catch(() => false)
+      if (stamped) break
     }
-
-    if (testCase.diagrams > 0) {
-      // Never throws: a case that does not render is a FAIL line in the report,
-      // not a dead run. The budget is generous when the warmup proved rendering
-      // works and short when it did not, so a broken build reports fast.
-      await page
-        .waitForFunction(
-          (n) => document.querySelectorAll('[data-mermaid-state="rendered"]').length === n,
-          testCase.diagrams,
-          { timeout: warm ? 30_000 : 15_000 },
-        )
-        .catch(() => {})
-    } else {
-      await page.waitForFunction(() => {
-        const root = document.querySelector('[data-component="markdown"]')
-        return !!root && root.childElementCount > 0
-      })
-    }
-    // Settle: catches a *second*, late diagram and gives an ungated streaming
-    // renderer time to have produced one.
-    await page.waitForTimeout(500)
-
-    const measured = await page.evaluate(() => window.__harness.measure())
-    const after = await page.evaluate(() => window.__harness.calls.length)
-    results.push({ ...testCase, measured, calls: after - before, partialStates })
+    reloaded = false
+  }
+  const driving = () => page.evaluate(() => window.__harness?.driving === true).catch(() => false)
+  const lost = async () => {
+    if (reloaded) return true
+    if (await driving()) return false
+    reloaded = true
+    return true
   }
 
-  const finalCalls = await page.evaluate(() => window.__harness.calls)
-  const fired = await page.evaluate(() => window.__fired)
+  // A reload either destroys the execution context this was going to run in or
+  // hands it a harness-less document; both throw, and both mean the attempt is
+  // void rather than the assertion under it failing.
+  const evaluate = async (fn, arg) => {
+    try {
+      return await page.evaluate(fn, arg)
+    } catch (error) {
+      if (await driving()) throw error
+      reloaded = true
+      return undefined
+    }
+  }
+
+  const attempt = async () => {
+    const results = []
+    for (const testCase of CASES) {
+      const before = await evaluate(() => window.__harness.calls.length)
+      let partialStates = 0
+
+      await evaluate(
+        ([name, text, hostile]) => window.__harness.mount(name, text, false, hostile),
+        [testCase.name, testCase.stream ? testCase.stream[0] : testCase.text, !!testCase.hostile],
+      )
+
+      if (testCase.stream) {
+        // Re-mount in streaming mode and feed cumulative prefixes, waiting for each
+        // partial body to actually reach the DOM before sending the next one. The
+        // wait is the point: `updateBlock` only runs when a projection lands, so
+        // firing chunks on a fixed timer can skip every intermediate state and an
+        // ungated renderer would never be caught.
+        await evaluate(
+          ([name, text, hostile]) => window.__harness.mount(name, text, true, hostile),
+          [testCase.name, testCase.stream[0], !!testCase.hostile],
+        )
+        for (const chunk of testCase.stream.slice(1)) {
+          await evaluate((text) => window.__harness.update(text, true), chunk)
+          const partial = fenceBody(chunk)
+          if (partial) {
+            const landed = await page
+              .waitForFunction(
+                (want) =>
+                  Array.from(document.querySelectorAll('[data-component="markdown-code"] code')).some(
+                    (code) => (code.textContent ?? "").trimEnd() === want,
+                  ),
+                partial.trimEnd(),
+                { timeout: 10_000 },
+              )
+              .then(() => true)
+              .catch(() => false)
+            if (landed) partialStates++
+            if (DEBUG) {
+              const shown = await evaluate(() =>
+                Array.from(document.querySelectorAll('[data-component="markdown-code"] code')).map((code) => ({
+                  class: code.className,
+                  text: code.textContent,
+                })),
+              )
+              console.log(`  debug want=${JSON.stringify(partial)} landed=${landed} dom=${JSON.stringify(shown)}`)
+            }
+          }
+          await page.waitForTimeout(120)
+        }
+        await evaluate((text) => window.__harness.update(text, false), testCase.text)
+      }
+
+      if (testCase.diagrams > 0) {
+        // Never throws: a case that does not render is a FAIL line in the report,
+        // not a dead run. The budget is generous when the warmup proved rendering
+        // works and short when it did not, so a broken build reports fast.
+        await page
+          .waitForFunction(
+            (n) => document.querySelectorAll('[data-mermaid-state="rendered"]').length === n,
+            testCase.diagrams,
+            { timeout: warm ? 30_000 : 15_000 },
+          )
+          .catch(() => {})
+      } else {
+        // Bounded for the same reason: after a reload nothing is mounted, and an
+        // unbounded wait here would hang instead of surrendering the attempt.
+        await page
+          .waitForFunction(
+            () => {
+              const root = document.querySelector('[data-component="markdown"]')
+              return !!root && root.childElementCount > 0
+            },
+            undefined,
+            { timeout: warm ? 30_000 : 15_000 },
+          )
+          .catch(() => {})
+      }
+      // Settle: catches a *second*, late diagram and gives an ungated streaming
+      // renderer time to have produced one.
+      await page.waitForTimeout(500)
+
+      const measured = await evaluate(() => window.__harness.measure())
+      const after = await evaluate(() => window.__harness.calls.length)
+      if (await lost()) return undefined
+      results.push({ ...testCase, measured, calls: after - before, partialStates })
+    }
+
+    const finalCalls = await evaluate(() => window.__harness.calls)
+    const fired = await evaluate(() => window.__fired)
+    return (await lost()) ? undefined : { results, finalCalls, fired }
+  }
+
+  await settle()
+  let run = await attempt()
+  const replayed = !run
+  if (replayed) {
+    console.log("  note the page reloaded mid-run; replaying every case on the settled graph")
+    await settle()
+    run = await attempt()
+  }
+  if (!run) fail("the page reloaded on two consecutive runs; a dependency is still being discovered mid-run")
+
+  const results = run?.results ?? []
+  const finalCalls = run?.finalCalls ?? []
+  const fired = run?.fired ?? []
   const hostileCase = results.find((r) => r.hostile)?.measured ?? {}
   const hostileHtml = hostileCase.html ?? ""
   const hostileHrefs = (hostileCase.hrefs ?? []).filter(Boolean)
@@ -604,7 +695,8 @@ try {
       )
     if (m.svgs !== r.diagrams) fail(`${r.name}: ${m.svgs} '[data-slot="mermaid-diagram"] svg'; expected ${r.diagrams}`)
     if (m.diagrams !== r.diagrams) fail(`${r.name}: ${m.diagrams} diagram slot(s); expected ${r.diagrams}`)
-    if (m.rendered !== r.diagrams) fail(`${r.name}: ${m.rendered} data-mermaid-state="rendered"; expected ${r.diagrams}`)
+    if (m.rendered !== r.diagrams)
+      fail(`${r.name}: ${m.rendered} data-mermaid-state="rendered"; expected ${r.diagrams}`)
     if (r.calls !== r.diagrams) fail(`${r.name}: renderer called ${r.calls}x for ${r.diagrams} diagram(s)`)
 
     const mermaidSources = m.sources.filter((s) => /(?:^|\s)language-mermaid(?:\s|$)/.test(s.language))
@@ -627,7 +719,7 @@ try {
 
   console.log("\nRENDERER CALL ACCOUNTING")
   console.log(`  total calls=${finalCalls.length} expected=${EXPECTED_DIAGRAMS}`)
-  if (reloads) fail(`the page reloaded ${reloads}x mid-run; every count below is unreliable`)
+  if (replayed) console.log("  note these counts come from the replay, not the first run")
   if (finalCalls.length !== EXPECTED_DIAGRAMS)
     fail(`renderer called ${finalCalls.length}x for ${EXPECTED_DIAGRAMS} diagram(s)`)
   const partial = finalCalls.filter((c) => !EXPECTED_SOURCES.has(c.source))
