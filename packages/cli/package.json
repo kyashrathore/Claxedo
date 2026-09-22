@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "@claxedo/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The claxedo command: sign in, connect a machine to the control plane, manage which machines serve which folders, deploy",
   "type": "module",
   "license": "MIT",

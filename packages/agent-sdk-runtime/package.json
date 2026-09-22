@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/agent-sdk-runtime",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "type": "module",
   "description": "AgentRuntime facade over native SDK harnesses and configured agent connections",
   "license": "MIT",

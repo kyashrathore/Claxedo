@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/workspace-runtime",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "description": "Per-workspace host runtime for agent sessions, terminals, processes, files, diffs, and relay attachment.",
   "type": "module",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "@claxedo/helpers",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Canonical small helpers shared across the workspace, one owner per behaviour",
   "license": "MIT",

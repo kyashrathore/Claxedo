@@ -398,6 +398,13 @@ Entry point status:
 - Integration: `@claxedo/agent-sdk-runtime/stores/session-start` supplies durable
   creation ownership for a host-owned SQLite database.
 
+- Stable: `@claxedo/agent-sdk-runtime/launch` owns launch ownership: creation
+  identity, the launch gate, and bounded identity-checked retirement.
+
+- Internal: `@claxedo/agent-sdk-runtime/launch-gate-child` is the launch gate
+  program. Hosts spawn it by path and never import it; a bundled host ships
+  the file beside its bundle.
+
 - Stable: `@claxedo/agent-sdk-runtime`,
   `@claxedo/agent-sdk-runtime/capabilities`
 - Stable: `@claxedo/agent-sdk-runtime/harnesses`,
