@@ -8,7 +8,7 @@ Merging to `staging` deploys Claxedo Cloud staging. One workflow owns the run:
 | # | Job | What it deploys | Reusable workflow / script |
 | - | --- | --- | --- |
 | 1 | `plan` | nothing — selects components | `.github/actions/detect-ci-changes` |
-| 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:architecture-ratchets` |
+| 2 | `gate` | nothing | `bun run lint`, `bun typecheck`, `bun run test:ci-policy`, `bun run test:architecture-ratchets` |
 | 2 | `unit` | nothing | `.github/workflows/test.yml` (whole CI suite) |
 | 3 | `control-plane` | Better Auth + D1 Worker **and the browser app** | `packages/claxedo-server/scripts/deploy/staging-release.ts` |
 | 4 | `relay` | workspace relay Worker (Durable Object) | `packages/workspace-relay/scripts/deploy-cloudflare.ts` |
@@ -46,8 +46,8 @@ environment's `CLAXEDO_CONTROL_PLANE_URL` and `CLAXEDO_APP_URL` first.
 Staging's relay is the Worker-safe Durable Object relay
 (`packages/workspace-relay/src/worker.ts`), deployed under the name the control
 plane's `CLAXEDO_WORKSPACE_RELAY_URL` resolves to. `deploy-relay.yml` deploys
-the Fly **process** relay and remains a production-only dispatch; its `staging`
-choice names a Fly app that does not exist.
+the Fly **process** relay; it dispatches to `production` only, because no Fly
+staging app resolves in DNS.
 
 `wrangler deploy` replaces a Worker's whole plain-text var set with what the
 config and `--var` declare, and `wrangler.toml` cannot name one deployment's

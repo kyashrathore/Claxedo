@@ -82,7 +82,7 @@ jobs:
           cat "$GITHUB_OUTPUT"
 
   gate:
-    name: lint, typecheck, architecture ratchets
+    name: lint, typecheck, CI policy, architecture ratchets
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -91,7 +91,7 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      # typecheck.yml runs the same three commands behind the affected-surface
+      # typecheck.yml runs these same commands behind the affected-surface
       # selector. A deploy gate takes the whole repository instead: the branch
       # being released is what has to be green, not the diff that reached it.
       - name: Run lint
@@ -99,6 +99,9 @@ jobs:
 
       - name: Run typecheck
         run: bun typecheck
+
+      - name: Run CI gate-selection policy tests
+        run: bun run test:ci-policy
 
       - name: Run architecture ratchets
         run: bun run test:architecture-ratchets

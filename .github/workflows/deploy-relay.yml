@@ -28,12 +28,11 @@ name: deploy-relay
 # (public-docs/relay-and-deployment.md). Policy (ADR §2.4 R2): batch relay
 # deploys and run tunnel-affecting ones at a published time.
 #
-# Environment-scoped secrets (same names in `staging` and `production`):
+# Secrets on the `production` environment:
 #   FLY_API_TOKEN               — deploy token for the relay Fly app
 #   CLAXEDO_RELAY_METRICS_TOKEN — bearer token for the relay's /metrics
-# Environment-scoped variables:
-#   CLAXEDO_RELAY_FLY_APP — Fly app name (e.g. claxedo-workspace-relay-staging
-#                           on staging, claxedo-workspace-relay on production)
+# Variables on the `production` environment:
+#   CLAXEDO_RELAY_FLY_APP — Fly app name (claxedo-workspace-relay)
 #
 # Relay observability (D12; plan 2026-07-28-001) — PostHog carries both
 # product analytics and error tracking for the relay. These are Fly runtime
@@ -54,14 +53,15 @@ name: deploy-relay
 on:
   workflow_dispatch:
     inputs:
+      # Production only: staging's relay is the Durable Object Worker that
+      # deploy-staging.yml deploys, and no Fly staging app resolves in DNS.
       environment:
         description: "Target environment"
         required: true
         type: choice
         options:
-          - staging
           - production
-        default: staging
+        default: production
 
 concurrency:
   group: deploy-relay-${{ inputs.environment }}

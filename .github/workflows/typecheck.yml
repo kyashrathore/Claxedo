@@ -68,6 +68,14 @@ jobs:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      # script/ci-changes.mjs decides which gates every workflow runs, so a
+      # mistake in it is silent: the gate it stops selecting simply never
+      # reports. Its test ran in no workflow at all until this step. Editing it
+      # is a GLOBAL_FILE change, which forces `full`, so this job is always
+      # selected when the policy moves.
+      - name: Run CI gate-selection policy tests
+        run: bun run test:ci-policy
+
       # `bun run prepush` is lint, then typecheck, then this. The first two ran
       # above; without this step the ratchets ran in no workflow at all and
       # deterministic closure drift reached `dev` whenever someone pushed with
