@@ -189,7 +189,7 @@
     "build": "bun scripts/build.ts",
     "check:api-manifest": "bun scripts/validate-api-manifest.ts",
     "check:package": "bun scripts/check-package.ts",
-    "check:source-shape": "bun scripts/check-source-shape.ts && bunx oxlint -c scripts/oxlint.json --disable-nested-config --quiet src",
+    "check:source-shape": "bun scripts/check-source-shape.ts && bun x oxlint -c scripts/oxlint.json --disable-nested-config --quiet src",
     "pi:install": "bun scripts/install-pinned-pi.ts",
     "test:architecture": "bun test src/architecture-ratchets.test.ts",
     "prepublishOnly": "bun run verify:publish",
