@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isCreationIdentity, readCreationIdentity, type CreationIdentity } from "./identity"
+import { identityFromSpawn, isCreationIdentity, readCreationIdentity, type CreationIdentity } from "./identity"
 
 const identity = (over: Record<string, unknown> = {}): unknown => ({
   pid: 4321,
@@ -43,5 +43,36 @@ describe("a creation identity read back out of a record", () => {
     expect(isCreationIdentity(identity({ startedAtMs: "1790000043000" }))).toBe(false)
     expect(isCreationIdentity(null)).toBe(false)
     expect(isCreationIdentity("darwin-ps")).toBe(false)
+  })
+})
+
+describe("identityFromSpawn", () => {
+  const spawned = (startedAtMs: number, source: CreationIdentity["source"] = "darwin-ps"): CreationIdentity => ({
+    pid: 4242,
+    processGroupId: 4242,
+    startSecond: String(Math.floor(startedAtMs / 1000)),
+    bootTime: "1",
+    parentPid: 1,
+    startedAtMs,
+    source,
+  })
+
+  test("a process that began after the spawn is the one this launcher started", () => {
+    const spawnedAt = 1_000_000
+    expect(identityFromSpawn(spawned(spawnedAt + 5), spawnedAt)).toBeDefined()
+  })
+
+  test("a pid whose process began before the spawn is a stranger the launcher never started", () => {
+    const spawnedAt = 1_000_000
+    expect(identityFromSpawn(spawned(spawnedAt - 60_000), spawnedAt)).toBeUndefined()
+  })
+
+  test("a darwin start floored to the spawn's second is accepted", () => {
+    expect(identityFromSpawn(spawned(1_000_000), 1_000_900)).toBeDefined()
+  })
+
+  test("a Linux start that reads a whole second before the spawn's second is accepted", () => {
+    // btime and starttime are both floored to the second: 42.076 read as 41.000.
+    expect(identityFromSpawn(spawned(1_001_000, "linux-procfs"), 1_002_076)).toBeDefined()
   })
 })

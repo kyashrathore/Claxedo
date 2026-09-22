@@ -196,6 +196,27 @@ async function readWindowsCreationIdentity(pid: number, boot: string): Promise<C
 }
 
 /**
+ * How much earlier than the spawn clock a process this launcher started may
+ * read. darwin `lstart` is whole seconds (up to 1s early). Linux `btime` is
+ * whole seconds and `starttime` is floored to whole seconds on top of it, so
+ * the sum reads up to 2s early: a shell spawned at 42.076 read as 41.000.
+ */
+export const IDENTITY_START_TOLERANCE_MS = 2_000
+
+/**
+ * Whether an identity read after a spawn describes the process that spawn
+ * started.
+ *
+ * A pid is free for reuse the moment its previous holder exits, so this read
+ * can land on a stranger. A process that began before this launcher called
+ * spawn is one, and retiring it would signal it.
+ */
+export function identityFromSpawn(observed: CreationIdentity | undefined, spawnedAt: number) {
+  if (!observed) return undefined
+  return observed.startedAtMs >= spawnedAt - IDENTITY_START_TOLERANCE_MS ? observed : undefined
+}
+
+/**
  * Whether a recorded identity and one REPORTED by something else describe the
  * same launch — a daemon answering about itself over HTTP, a child over IPC.
  *

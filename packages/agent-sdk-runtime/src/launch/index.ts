@@ -1,4 +1,6 @@
 export {
+  IDENTITY_START_TOLERANCE_MS,
+  identityFromSpawn,
   isCreationIdentity,
   launchErrorText,
   readBootTime,

@@ -16,6 +16,7 @@ import {
   LaunchRefusedError,
   captureDescendants,
   captureOwnedGroup,
+  identityFromSpawn,
   launchErrorText,
   readCreationIdentity,
   retire,
@@ -839,9 +840,7 @@ export namespace Pty {
       .catch((error: unknown) => { throw new LaunchRefusedError("terminal", error) })
 
     const t3 = performance.now()
-    // `ps` reports whole seconds, so a process that started in the second
-    // before this one is still allowed to be ours.
-    const spawnedAfter = Date.now() - 1_000
+    const spawnedAt = Date.now()
     const ptyProcess = spawn(command, args, {
       name: "xterm-256color",
       cwd,
@@ -854,22 +853,19 @@ export namespace Pty {
           return undefined
         })
       : undefined
-    // Only a process this runtime is the parent of may be recorded. A pid the
-    // PTY library reported but that belongs to something else must never
-    // become a signal target.
     // The PTY library's own spawn helper is the child's parent, not this
     // runtime, so parentage proves nothing. What does: a process that already
     // existed before this spawn cannot be the one this spawn created, and a
     // pid that is not its own group leader is not a terminal session.
-    const ours = !!observed && observed.startedAtMs >= spawnedAfter && observed.processGroupId === observed.pid
-    const identity = ours ? observed : undefined
+    const started = identityFromSpawn(observed, spawnedAt)
+    const identity = started && started.processGroupId === started.pid ? started : undefined
     if (observed && !identity) {
       log.error("the PTY reported a pid this spawn cannot own; it will not be signalled", {
         id,
         pid: observed.pid,
         startedAtMs: observed.startedAtMs,
         processGroupId: observed.processGroupId,
-        spawnedAfter,
+        spawnedAt,
       })
     }
     let unrecorded: string | undefined

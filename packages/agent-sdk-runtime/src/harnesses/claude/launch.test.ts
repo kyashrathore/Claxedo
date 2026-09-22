@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { volatileLaunchOwnership, type CreationIdentity } from "../../launch"
-import { identityFromSpawn, ownDirectClaudeLaunch } from "./launch"
+import { ownDirectClaudeLaunch } from "./launch"
 
 function identity(startedAtMs: number): CreationIdentity {
   return {
@@ -13,24 +13,6 @@ function identity(startedAtMs: number): CreationIdentity {
     source: "darwin-ps",
   }
 }
-
-test("a process that began after the spawn is the one this launcher started", () => {
-  const spawnedAt = 1_000_000
-  expect(identityFromSpawn(identity(spawnedAt + 5), spawnedAt)).toBeDefined()
-})
-
-test("a pid whose process began before the spawn is a stranger the launcher never started", () => {
-  const spawnedAt = 1_000_000
-  // Well outside the one-second resolution the platform readers offer.
-  expect(identityFromSpawn(identity(spawnedAt - 60_000), spawnedAt)).toBeUndefined()
-})
-
-test("a process that began in the same second as the spawn is accepted", () => {
-  // `startedAtMs` is floored to the second, so a process started milliseconds
-  // after the spawn reads as marginally earlier than the clock sampled here.
-  const spawnedAt = 1_000_900
-  expect(identityFromSpawn(identity(1_000_000), spawnedAt)).toBeDefined()
-})
 
 test("a launch whose pid was recycled records no identity, so its retirement signals nothing", async () => {
   const ownership = volatileLaunchOwnership()

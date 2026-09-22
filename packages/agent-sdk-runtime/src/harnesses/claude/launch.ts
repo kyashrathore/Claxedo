@@ -5,6 +5,7 @@ import { observeAgentProcess, type AgentProcessObserver, type AgentProcessObserv
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { errorMessage } from "../shared/sdk-runtime-values"
 import {
+  identityFromSpawn,
   readCreationIdentity,
   retire,
   volatileLaunchOwnership,
@@ -103,13 +104,6 @@ export function spawnObservedClaudeCodeProcess(input: {
   return proc
 }
 
-/**
- * `startedAtMs` has one-second resolution on every platform reachable without
- * a native addon, so a process started in the same second as the spawn reads
- * as marginally earlier than the clock this launcher sampled.
- */
-const IDENTITY_START_TOLERANCE_MS = 1_000
-
 export type ClaudeDirectLaunch = {
   retire(budgets: RetirementBudgets): Promise<RetirementResult>
 }
@@ -121,18 +115,6 @@ export type ClaudeDirectLaunch = {
  * is read after the spawn — a prepared row alone can therefore never prove the
  * process did not start, and `reconcileLaunch` says exactly that.
  */
-/**
- * Whether an identity read after a spawn describes the process that spawn
- * started.
- *
- * A pid is free for reuse the moment its previous holder exits, so this read
- * can land on a stranger. A process that began before this launcher called
- * spawn is one, and retiring it would signal it.
- */
-export function identityFromSpawn(observed: CreationIdentity | undefined, spawnedAt: number) {
-  if (!observed) return undefined
-  return observed.startedAtMs >= spawnedAt - IDENTITY_START_TOLERANCE_MS ? observed : undefined
-}
 
 export function ownDirectClaudeLaunch(input: {
   /** Only the pid is read: `SpawnedProcess` does not carry one, but every local spawn does. */
