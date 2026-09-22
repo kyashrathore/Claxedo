@@ -362,6 +362,44 @@ describe("Cursor SDK driver", () => {
     }
   })
 
+  function catalogDriver(reject: Error) {
+    return createCursorSdkDriver({
+      lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
+      pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
+      bindSession() {},
+    } as never, {
+      loadSdk: async () => ({
+        Agent: { async create() { return { agentId: "cursor-agent-1", close() {} } } },
+        Cursor: { models: { list: async () => { throw reject } } },
+      } as never),
+    })
+  }
+
+  test("a binding with no stored key reads as a missing Cursor API key, not a broker code", async () => {
+    const driver = catalogDriver(new Error('403 {"error":{"code":"credential_unavailable","message":"The credential is not available"}}'))
+    await driver.applyConfig({ auth: { "cursor-sdk": cursorProjection } })
+    await expect(driver.configOptions("auto")).rejects.toThrow("No Cursor API key is stored for this workspace")
+  })
+
+  test("a brokered catalog refusal names the unrouted catalog host", async () => {
+    const driver = catalogDriver(new Error("[request_outside_policy] The request is outside the routes this binding allows"))
+    await driver.applyConfig({ auth: { "cursor-sdk": cursorProjection } })
+    await expect(driver.configOptions("auto")).rejects.toThrow("model catalog (api.cursor.com) is not reachable through the credential broker")
+  })
+
+  test("a catalog failure outside a binding keeps the vendor's own message", async () => {
+    const savedKey = process.env.CURSOR_API_KEY
+    process.env.CURSOR_API_KEY = "machine-cursor-key"
+    try {
+      const driver = catalogDriver(new Error("[request_outside_policy] not from a broker"))
+      await expect(driver.configOptions("auto")).rejects.toThrow("Cursor's model catalog could not be read: [request_outside_policy] not from a broker")
+    } finally {
+      if (savedKey === undefined) delete process.env.CURSOR_API_KEY
+      else process.env.CURSOR_API_KEY = savedKey
+    }
+  })
+
   test("keeps an SDK-only local root inferred and action-ineligible", async () => {
     const descriptors: AgentProcessDescriptor[] = []
     const processObserver: AgentProcessObserver = {
