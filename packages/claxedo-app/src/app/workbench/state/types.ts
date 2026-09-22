@@ -7,6 +7,7 @@
 // display/identity information (type, directory, sessionId, terminalId, title,
 // etc.) plus the live payload needed by renderers.
 
+import type { SurfaceActivity } from "./surface-budget"
 import type { WorkbenchState } from "../workbench/index"
 import type {
   WorkspacePanelState,
@@ -204,4 +205,6 @@ export type ClaxedoState = {
   workspacePanel: WorkspacePanelState
   terminal: TerminalSlice
   processPane: ProcessPaneSlice
+  /** Per-content last use, keyed like `meta`. Read on launch to close idle tabs. */
+  activity: Record<string, SurfaceActivity>
 }

@@ -79,3 +79,38 @@ export function selectEvictableSurfaces(input: SurfaceBudgetInput): string[] {
   const keep = Math.max(0, max - exempt.size)
   return candidates.slice(keep)
 }
+
+/** A tab nobody has opened or focused for this long is closed on the next launch. */
+export const SURFACE_IDLE_MS = 24 * 60 * 60 * 1000
+
+export type SurfaceActivity = {
+  lastActiveAt: number
+  /** Set while the tab's session or terminal agent is working or waiting for input. */
+  held?: true
+}
+
+export type IdleSurfaceInput = {
+  contentIds: readonly string[]
+  activity: Readonly<Record<string, SurfaceActivity | undefined>>
+  now: number
+  /** Contents currently assigned to a pane. Never idle. */
+  mountedIds?: Iterable<string>
+  /** Contents that refuse to close (pinned built-ins). Never idle. */
+  pinnedIds?: Iterable<string>
+  idleMs?: number
+}
+
+/**
+ * Ids untouched for longer than `idleMs`. A tab with no activity record is not
+ * idle: it predates the record, and the caller stamps it instead of guessing.
+ */
+export function selectIdleSurfaces(input: IdleSurfaceInput): string[] {
+  const idleMs = input.idleMs ?? SURFACE_IDLE_MS
+  const exempt = new Set([...(input.mountedIds ?? []), ...(input.pinnedIds ?? [])])
+  return input.contentIds.filter((id) => {
+    if (exempt.has(id)) return false
+    const activity = input.activity[id]
+    if (!activity || activity.held) return false
+    return input.now - activity.lastActiveAt > idleMs
+  })
+}

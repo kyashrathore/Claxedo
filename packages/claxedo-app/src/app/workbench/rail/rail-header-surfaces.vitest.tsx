@@ -71,6 +71,50 @@ describe("rail header surface ownership", () => {
     expect(row.active).toBe(true)
   })
 
+  test("opening and focusing a tab records when it was last used", () => {
+    vi.useFakeTimers({ now: 1_000, toFake: ["Date"] })
+    try {
+      const { state } = mountHeader()
+      const alpha = state.layout.openSession(directory, "ses_alpha", "Alpha")
+      expect(state.state.activity[alpha]).toEqual({ lastActiveAt: 1_000 })
+
+      vi.setSystemTime(5_000)
+      const bravo = state.layout.openSession(directory, "ses_bravo", "Bravo", { focus: false })
+      expect(state.state.activity[bravo]).toEqual({ lastActiveAt: 5_000 })
+
+      vi.setSystemTime(7_000)
+      state.wb.navigation.show(bravo)
+      expect(state.state.activity[bravo]).toEqual({ lastActiveAt: 7_000 })
+
+      vi.setSystemTime(9_000)
+      state.wb.navigation.show(alpha)
+      expect(state.state.activity[alpha]).toEqual({ lastActiveAt: 9_000 })
+      expect(state.state.activity[bravo]).toEqual({ lastActiveAt: 7_000 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a tab is held across the idle cut while its session works or waits, and released as used", () => {
+    vi.useFakeTimers({ now: 1_000, toFake: ["Date"] })
+    try {
+      const { state, header } = mountHeader()
+      const alpha = state.layout.openSession(directory, "ses_alpha", "Alpha")
+      state.wb.navigation.show(state.layout.openSession(directory, "ses_bravo", "Bravo"))
+      header.switcherItems()
+
+      vi.setSystemTime(2_000)
+      dispatchSessionStatusEvent({ event: { type: "session.status", source: "server", sessionID: "ses_alpha", status: { type: "busy" } } })
+      expect(state.state.activity[alpha]).toEqual({ lastActiveAt: 1_000, held: true })
+
+      vi.setSystemTime(7_000)
+      dispatchSessionStatusEvent({ event: { type: "session.idle", source: "server", sessionID: "ses_alpha" } })
+      expect(state.state.activity[alpha]).toEqual({ lastActiveAt: 7_000 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test("terminal status is read from its state owner without leaking to another terminal", () => {
     const { state, header } = mountHeader()
     const first = state.layout.openTerminal(directory, "pty_one", "One")

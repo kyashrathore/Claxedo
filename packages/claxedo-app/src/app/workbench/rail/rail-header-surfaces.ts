@@ -1,4 +1,4 @@
-import { createComputed, createEffect, createMemo, createSelector, createSignal, mapArray, onCleanup, type Accessor } from "solid-js"
+import { createComputed, createEffect, createMemo, createSelector, createSignal, mapArray, on, onCleanup, type Accessor } from "solid-js"
 import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 
@@ -114,6 +114,9 @@ export function useRailHeaderSurfaces(input: {
         autoResponds: input.autoResponds,
       })
     }
+    createEffect(on(status, (current) => {
+      input.state.activity.hold(contentId, current === "working" || current === "permission")
+    }))
     const base = createMemo(() => buildSwitcherItemsFromStateWithOptions(input.state, {
       canUseDocuments: true,
       sessionTitle: () => titleSelection()?.title(),

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { emptyClaxedoState, validate } from "./persistence"
-import { MAX_OPEN_SURFACES } from "./surface-budget"
+import { MAX_OPEN_SURFACES, SURFACE_IDLE_MS } from "./surface-budget"
+
+const NOW = Date.UTC(2026, 8, 23, 12)
+const STALE = NOW - SURFACE_IDLE_MS - 1
 
 const localSessionRef = (sessionId: string) => ({
   sessionId,
@@ -310,7 +313,9 @@ describe("state/persistence", () => {
     }
 
     test("keeps a persisted blob that is already within budget intact", () => {
-      const result = validate(stateWithSessions(MAX_OPEN_SURFACES))
+      const input = stateWithSessions(MAX_OPEN_SURFACES)
+      input.activity = Object.fromEntries(input.workbench.contentIds.map((id) => [id, { lastActiveAt: NOW }]))
+      const result = validate(input, NOW)
 
       expect(result.dirty).toBe(false)
       expect(result.state.workbench.contentIds).toHaveLength(MAX_OPEN_SURFACES)
@@ -367,6 +372,102 @@ describe("state/persistence", () => {
       expect(result.state.workbench.contentIds).toContain("content_151")
       expect(result.state.meta.content_151?.type).toBe("pages-index")
       expect(result.state.workbench.contentIds).toHaveLength(MAX_OPEN_SURFACES)
+    })
+
+    describe("idle tabs", () => {
+      const withActivity = (activity: ReturnType<typeof emptyClaxedoState>["activity"]) => {
+        const input = stateWithSessions(4)
+        input.activity = activity
+        return input
+      }
+
+      test("drops tabs untouched for more than a day and keeps recent ones", () => {
+        const result = validate(withActivity({
+          content_1: { lastActiveAt: STALE },
+          content_2: { lastActiveAt: NOW - 60_000 },
+          content_3: { lastActiveAt: STALE },
+          content_4: { lastActiveAt: NOW - SURFACE_IDLE_MS },
+        }), NOW)
+
+        expect(result.dirty).toBe(true)
+        expect(result.state.workbench.contentIds).toEqual(["content_1", "content_2", "content_4"])
+        expect(result.state.workbench.contentRecency).not.toContain("content_3")
+        expect(result.state.meta.content_3).toBeUndefined()
+        expect(result.state.activity.content_3).toBeUndefined()
+      })
+
+      test("keeps the tab in a pane however stale it is", () => {
+        const result = validate(withActivity({
+          content_1: { lastActiveAt: STALE },
+          content_2: { lastActiveAt: STALE },
+          content_3: { lastActiveAt: NOW },
+          content_4: { lastActiveAt: NOW },
+        }), NOW)
+
+        expect(result.state.workbench.panes[0]?.contentId).toBe("content_1")
+        expect(result.state.workbench.contentIds).toEqual(["content_1", "content_3", "content_4"])
+      })
+
+      test("keeps a stale tab whose agent was working or waiting when the app closed", () => {
+        const result = validate(withActivity({
+          content_1: { lastActiveAt: NOW },
+          content_2: { lastActiveAt: STALE, held: true },
+          content_3: { lastActiveAt: STALE },
+          content_4: { lastActiveAt: NOW },
+        }), NOW)
+
+        expect(result.state.workbench.contentIds).toEqual(["content_1", "content_2", "content_4"])
+        expect(result.state.activity.content_2).toEqual({ lastActiveAt: STALE, held: true })
+      })
+
+      test("keeps a stale pinned pages-index tab", () => {
+        const input = withActivity({
+          content_1: { lastActiveAt: NOW },
+          content_2: { lastActiveAt: STALE },
+          content_3: { lastActiveAt: NOW },
+          content_4: { lastActiveAt: NOW },
+        })
+        input.meta.content_2 = { id: "content_2", type: "pages-index", scope: "directory", directory: "/work/foo" }
+
+        const result = validate(input, NOW)
+
+        expect(result.state.workbench.contentIds).toContain("content_2")
+      })
+
+      test("stamps a restored tab with no record as active now instead of dropping it", () => {
+        const input = withActivity({ content_1: { lastActiveAt: STALE } })
+        ;(input as { activity: unknown }).activity = { content_1: { lastActiveAt: STALE }, content_2: { lastActiveAt: "yesterday" } }
+
+        const result = validate(input, NOW)
+
+        expect(result.dirty).toBe(true)
+        expect(result.state.workbench.contentIds).toEqual(["content_1", "content_2", "content_3", "content_4"])
+        expect(result.state.activity.content_2).toEqual({ lastActiveAt: NOW })
+        expect(result.state.activity.content_3).toEqual({ lastActiveAt: NOW })
+      })
+
+      test("loads a blob written before activity existed without closing anything", () => {
+        const input: Record<string, unknown> = { ...stateWithSessions(4) }
+        delete input.activity
+
+        const result = validate(input, NOW)
+
+        expect(result.state.workbench.contentIds).toHaveLength(4)
+        expect(Object.values(result.state.activity)).toEqual(Array(4).fill({ lastActiveAt: NOW }))
+      })
+
+      test("forgets activity for contents that are no longer open", () => {
+        const result = validate(withActivity({
+          content_1: { lastActiveAt: NOW },
+          content_2: { lastActiveAt: NOW },
+          content_3: { lastActiveAt: NOW },
+          content_4: { lastActiveAt: NOW },
+          closed_long_ago: { lastActiveAt: NOW },
+        }), NOW)
+
+        expect(result.dirty).toBe(true)
+        expect(result.state.activity.closed_long_ago).toBeUndefined()
+      })
     })
 
     test("spends the budget on live surfaces, not on junk it was going to drop anyway", () => {

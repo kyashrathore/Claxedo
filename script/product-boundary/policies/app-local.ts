@@ -558,7 +558,13 @@ export const appLocal: Policy = {
   // under the 800-line budget when the pane hit test was bounded to the
   // workbench root. It sits beside the drag helpers it already used and
   // reaches nothing new. Owner: `app/workbench/workbench`. No new package edge.
-  ceilings: { modules: 1131, packages: 58 },
+  // +1 module (2026-09-23): `app/workbench/state/surface-activity.ts` — the
+  // slice that records when each tab was last opened or focused and whether
+  // its agent holds it, read on launch to close tabs idle for a day. It sits
+  // beside the other state slices and reaches only solid-js/store, which this
+  // entry already carries. Owner: `app/workbench/state`. No new package edge.
+  // Exact measured 1132 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1132, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -12,7 +12,7 @@ import {
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import type { TasksPage } from "@/platform/identity/route"
 import { CONTENT_TYPES, PINNED_CONTENT_TYPES } from "./types"
-import { selectEvictableSurfaces } from "./surface-budget"
+import { selectEvictableSurfaces, selectIdleSurfaces, type SurfaceActivity } from "./surface-budget"
 import type {
   ClaxedoState,
   ContentMeta,
@@ -56,6 +56,7 @@ export function emptyClaxedoState(): ClaxedoState {
     workspacePanel: createWorkspacePanel(),
     terminal: defaultTerminal(),
     processPane: defaultProcessPane(),
+    activity: {},
   }
 }
 
@@ -317,6 +318,24 @@ function validateWorkspacePanel(input: unknown): WorkspacePanelState {
   }
 }
 
+/** A restored tab with no usable record is stamped `now`, never treated as idle. */
+function validateActivity(input: unknown, aliveIds: readonly string[], now: number) {
+  const o = asRecordOrEmpty(input)
+  const activity: Record<string, SurfaceActivity> = {}
+  let dirty = Object.keys(o).some((id) => !aliveIds.includes(id))
+  for (const id of aliveIds) {
+    const entry = asRecordOrEmpty(o[id])
+    const lastActiveAt = num(entry.lastActiveAt)
+    if (lastActiveAt === undefined) {
+      activity[id] = { lastActiveAt: now }
+      dirty = true
+      continue
+    }
+    activity[id] = entry.held === true ? { lastActiveAt, held: true } : { lastActiveAt }
+  }
+  return { activity, dirty }
+}
+
 /**
  * Remove a set of contents from a workbench state — unassign their panes, drop
  * them from `contentIds`/`contentRecency`, and discard their layout snapshots.
@@ -340,7 +359,7 @@ function dropContents(state: WorkbenchState, drop: ReadonlySet<string>): Workben
  * Normalize an unknown blob to a fully-formed ClaxedoState. Always returns a
  * usable state — drops invalid fragments and back-fills defaults.
  */
-export function validate(input: unknown): { state: ClaxedoState; dirty: boolean } {
+export function validate(input: unknown, now = Date.now()): { state: ClaxedoState; dirty: boolean } {
   if (!isRecord(input)) {
     return { state: emptyClaxedoState(), dirty: true }
   }
@@ -400,6 +419,32 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
     if (cleaned.dirty) dirty = true
   }
 
+  const activityResult = validateActivity(input.activity, workbench.contentIds, now)
+  const activity = activityResult.activity
+  if (activityResult.dirty) dirty = true
+  const mountedIds = () => workbench.panes
+    .map((pane) => pane.contentId)
+    .filter((id): id is string => !!id)
+  const pinnedIds = () => workbench.contentIds.filter((id) => {
+    const type = meta[id]?.type
+    return !!type && PINNED_CONTENT_TYPES.has(type)
+  })
+  const idleIds = new Set(selectIdleSurfaces({
+    contentIds: workbench.contentIds,
+    activity,
+    now,
+    mountedIds: mountedIds(),
+    pinnedIds: pinnedIds(),
+  }))
+  if (idleIds.size > 0) {
+    workbench = validateWorkbench(dropContents(workbench, idleIds)).state
+    dirty = true
+    for (const id of idleIds) {
+      delete meta[id]
+      delete activity[id]
+    }
+  }
+
   // Apply the LRU surface budget to what survived. Nothing else reaps tabs, so
   // without this a long-lived profile accumulates every session and terminal it
   // ever opened — the persisted blob only ever grows, and tabs whose backing
@@ -409,20 +454,18 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
     selectEvictableSurfaces({
       contentIds: workbench.contentIds,
       contentRecency: workbench.contentRecency,
-      mountedIds: workbench.panes
-        .map((pane) => pane.contentId)
-        .filter((id): id is string => !!id),
-      pinnedIds: workbench.contentIds.filter((id) => {
-        const type = meta[id]?.type
-        return !!type && PINNED_CONTENT_TYPES.has(type)
-      }),
+      mountedIds: mountedIds(),
+      pinnedIds: pinnedIds(),
     }),
   )
   if (evictedIds.size > 0) {
     const trimmed = validateWorkbench(dropContents(workbench, evictedIds))
     workbench = trimmed.state
     dirty = true
-    for (const id of evictedIds) delete meta[id]
+    for (const id of evictedIds) {
+      delete meta[id]
+      delete activity[id]
+    }
   }
 
   const rail = validateRail(input.rail)
@@ -432,7 +475,7 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
   const processPane = validateProcessPane(input.processPane)
 
   return {
-    state: { workbench, meta, rail, workspace, workspacePanel, terminal, processPane },
+    state: { workbench, meta, rail, workspace, workspacePanel, terminal, processPane, activity },
     dirty,
   }
 }

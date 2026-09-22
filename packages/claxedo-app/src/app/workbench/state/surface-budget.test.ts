@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { MAX_OPEN_SURFACES, selectEvictableSurfaces } from "./surface-budget"
+import { MAX_OPEN_SURFACES, SURFACE_IDLE_MS, selectEvictableSurfaces, selectIdleSurfaces } from "./surface-budget"
 
 const ids = (count: number, prefix = "c") =>
   Array.from({ length: count }, (_, index) => `${prefix}${index + 1}`)
@@ -102,5 +102,46 @@ describe("state/surface-budget", () => {
     expect(
       selectEvictableSurfaces({ contentIds, contentRecency: contentIds, max: 2 }),
     ).toEqual(["c3", "c4", "c5"])
+  })
+})
+
+describe("state/surface-budget idle surfaces", () => {
+  const now = 1_000_000_000
+  const stale = now - SURFACE_IDLE_MS - 1
+
+  test("selects only tabs untouched for longer than the idle window", () => {
+    expect(selectIdleSurfaces({
+      contentIds: ["a", "b", "c"],
+      activity: { a: { lastActiveAt: stale }, b: { lastActiveAt: now - SURFACE_IDLE_MS }, c: { lastActiveAt: now } },
+      now,
+    })).toEqual(["a"])
+  })
+
+  test("never selects mounted, pinned or held tabs", () => {
+    expect(selectIdleSurfaces({
+      contentIds: ["mounted", "pinned", "held", "idle"],
+      activity: {
+        mounted: { lastActiveAt: stale },
+        pinned: { lastActiveAt: stale },
+        held: { lastActiveAt: stale, held: true },
+        idle: { lastActiveAt: stale },
+      },
+      now,
+      mountedIds: ["mounted"],
+      pinnedIds: ["pinned"],
+    })).toEqual(["idle"])
+  })
+
+  test("treats a tab with no record as active", () => {
+    expect(selectIdleSurfaces({ contentIds: ["unknown"], activity: {}, now })).toEqual([])
+  })
+
+  test("honours a custom idle window", () => {
+    expect(selectIdleSurfaces({
+      contentIds: ["a"],
+      activity: { a: { lastActiveAt: now - 61_000 } },
+      now,
+      idleMs: 60_000,
+    })).toEqual(["a"])
   })
 })

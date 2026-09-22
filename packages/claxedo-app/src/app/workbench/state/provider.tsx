@@ -28,6 +28,7 @@ import { createWorkspacePanelSlice, syncFocusedSessionPanel, type WorkspacePanel
 import { createProcessPaneSlice, type ProcessPaneSliceApi } from "@/features/processes/state"
 import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orchestration"
 import { emptyClaxedoState, validate } from "./persistence"
+import { createSurfaceActivitySlice, type SurfaceActivityApi } from "./surface-activity"
 import type { ClaxedoState, ContentMeta } from "./types"
 import { parseShellRoute } from "@/platform/identity/route"
 import { wrapSetStore } from "@/platform/persistence/solid-store-erasure"
@@ -130,6 +131,7 @@ export function initialStateForPath(state: ClaxedoState, pathname: string) {
     terminal: empty.terminal,
     workspacePanel: empty.workspacePanel,
     processPane: empty.processPane,
+    activity: empty.activity,
   }
 }
 
@@ -217,6 +219,7 @@ export type ClaxedoStateApi = {
   rail: RailSliceApi
   workspacePanel: WorkspacePanelSliceApi
   processPane: ProcessPaneSliceApi
+  activity: SurfaceActivityApi
   layout: LayoutOrchestrationApi
   /** Reactive readiness flag — `true` once the persisted state has hydrated. */
   ready: Accessor<boolean>
@@ -242,6 +245,7 @@ const InnerCtx = createSimpleContext<ClaxedoStateApi, InnerProps>({
 type InnerProps = {
   state: ClaxedoState
   setState: SetStoreFunction<ClaxedoState>
+  activity: SurfaceActivityApi
   ready: Accessor<boolean>
 }
 
@@ -249,7 +253,7 @@ type InnerProps = {
 export const useClaxedoState = InnerCtx.use
 
 function buildApi(props: InnerProps): ClaxedoStateApi {
-  const { state, setState, ready } = props
+  const { state, setState, activity, ready } = props
   const wb = useWorkbench()
 
   setOpenSessionMetas(Object.values(state.meta).filter((meta): meta is ContentMeta => !!meta))
@@ -316,6 +320,7 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
     rail,
     workspacePanel,
     processPane,
+    activity,
     layout,
     ready,
     state,
@@ -333,6 +338,7 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
   // rather than at each caller. `wrapSetStore` owns the two claims Solid's
   // overloaded `SetStoreFunction` forces; see `solid-store-erasure`.
   const setPersistentState = wrapSetStore(setState, (args) => schedulePersistState(state, args))
+  const activity = createSurfaceActivitySlice({ state, setState: setPersistentState })
   if (typeof window !== "undefined") {
     const flush = () => flushPersistState(state)
     window.addEventListener("pagehide", flush)
@@ -349,6 +355,13 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
     const contentIdsChanged = !sameStringArray(current.contentIds, next.contentIds)
     const contentRecencyChanged = !sameStringArray(current.contentRecency, next.contentRecency)
     const snapshotsChanged = !sameSnapshots(current.layoutSnapshots, next.layoutSnapshots)
+    // An open moves its content to the head of recency; focusing a tab that was
+    // opened in the background leaves recency alone and changes the pane.
+    const focusedContent = (wb: WorkbenchState) => wb.panes.find((pane) => pane.id === wb.focusedPaneId)?.contentId
+    const used = new Set<string>()
+    if (next.contentRecency[0] && next.contentRecency[0] !== current.contentRecency[0]) used.add(next.contentRecency[0])
+    const nextFocused = focusedContent(next)
+    if (nextFocused && nextFocused !== focusedContent(current)) used.add(nextFocused)
     if (
       !focusedPaneChanged &&
       !panesChanged &&
@@ -384,6 +397,7 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
           if (contentRecencyChanged) arrays.contentRecency = next.contentRecency
           setState("workbench", arrays)
         }
+        for (const id of used) activity.touch(id)
         if (snapshotsChanged) {
           setState("workbench", "layoutSnapshots", reconcile(next.layoutSnapshots))
         }
@@ -396,7 +410,7 @@ export function ClaxedoStateProvider(props: ClaxedoStateProviderProps): JSX.Elem
 
   return (
     <WorkbenchProvider state={wbState()} onChange={wbOnChange}>
-      <InnerCtx.provider state={state} setState={setPersistentState} ready={ready}>
+      <InnerCtx.provider state={state} setState={setPersistentState} activity={activity} ready={ready}>
         {props.children}
       </InnerCtx.provider>
     </WorkbenchProvider>
