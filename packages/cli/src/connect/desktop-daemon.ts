@@ -105,7 +105,7 @@ export type DesktopDaemonVerdict = "live" | "unresponsive"
  */
 export async function verifyDesktopDaemon(
   record: DesktopDaemonDiscovery,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl: (input: string, init: RequestInit) => Promise<Response> = fetch,
 ): Promise<DesktopDaemonVerdict> {
   try {
     const response = await fetchImpl(`http://127.0.0.1:${record.port}/api/claxedo/daemon`, {
