@@ -90,3 +90,22 @@ test("WebSocket upgrade honors the composition's explicit CORS origin decision",
   expect(wire.connections).toHaveLength(1)
   wire.connections[0].disconnect()
 })
+
+test("a same-host WebSocket origin is judged by the Host the client connected to", async () => {
+  const write = vi.fn(async () => {})
+  const wire = transport()
+  const app = new Hono().get("/events", (c) => eventStreamResponse(c, write, wire.upgrade))
+  // The node-ws upgrade path hands the app a `http://localhost/...` URL while
+  // the client connected to, and names in `Origin`, the daemon's real host:port.
+  const sameHost = await app.request("http://localhost/events", {
+    headers: { upgrade: "websocket", host: "127.0.0.1:2593", origin: "http://127.0.0.1:2593" },
+  })
+  expect(sameHost.status).not.toBe(403)
+  expect(wire.connections).toHaveLength(1)
+  const otherPort = await app.request("http://localhost/events", {
+    headers: { upgrade: "websocket", host: "127.0.0.1:2593", origin: "http://127.0.0.1:1" },
+  })
+  expect(otherPort.status).toBe(403)
+  expect(wire.connections).toHaveLength(1)
+  for (const connection of wire.connections) connection.disconnect()
+})
