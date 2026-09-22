@@ -589,7 +589,7 @@ const PREPARED_CACHE_FILE = "prepared.json"
  * handles beside it are complete. Launches copy the handles, which keeps P0
  * never-launched for every scenario that reuses it.
  */
-async function writePreparedCache(cacheRoot: string, materialization: ClaxedoPublicMaterialization) {
+export async function writePreparedCache(cacheRoot: string, materialization: ClaxedoPublicMaterialization) {
   await writeFile(
     path.join(cacheRoot, PREPARED_CACHE_FILE),
     JSON.stringify({ ...materialization, readinessTargets: [...materialization.readinessTargets] }),
@@ -597,19 +597,102 @@ async function writePreparedCache(cacheRoot: string, materialization: ClaxedoPub
   )
 }
 
-async function readPreparedCache(
+export async function readPreparedCache(
   cacheRoot: string,
   corpusDigestSha256: string,
 ): Promise<ClaxedoPublicMaterialization | undefined> {
   const text = await readFile(path.join(cacheRoot, PREPARED_CACHE_FILE), "utf8").catch(() => undefined)
   if (text === undefined) return undefined
   const record: unknown = JSON.parse(text)
-  if (!isRecord(record) || record.corpusDigestSha256 !== corpusDigestSha256 || !Array.isArray(record.readinessTargets))
-    throw new Error("Claxedo prepared-state cache belongs to a different corpus")
-  return {
-    ...(record as Omit<ClaxedoPublicMaterialization, "readinessTargets">),
-    readinessTargets: new Map(record.readinessTargets as [string, Target & { logicalSessionId: string; workspaceDirectory: string }][]),
+  const materialization = isRecord(record) ? parsePreparedCache(record) : undefined
+  if (!materialization || materialization.corpusDigestSha256 !== corpusDigestSha256)
+    throw new Error("Claxedo prepared-state cache is unreadable or belongs to a different corpus")
+  return materialization
+}
+
+function parsePreparedCache(record: Record<string, unknown>): ClaxedoPublicMaterialization | undefined {
+  const corpusDigestSha256 = textField(record, "corpusDigestSha256")
+  const eventSchemaDigestSha256 = textField(record, "eventSchemaDigestSha256")
+  const mappingDigestSha256 = textField(record, "mappingDigestSha256")
+  const workspaceFixtureDigestSha256 = textField(record, "workspaceFixtureDigestSha256")
+  const sessionMapping = stringRecord(record.sessionMapping)
+  const messageCount = numberField(record, "messageCount")
+  const transcriptBytes = numberField(record, "transcriptBytes")
+  const entries = Array.isArray(record.readinessTargets) ? record.readinessTargets : undefined
+  if (
+    !corpusDigestSha256 ||
+    !eventSchemaDigestSha256 ||
+    !mappingDigestSha256 ||
+    !sessionMapping ||
+    messageCount === undefined ||
+    transcriptBytes === undefined ||
+    !entries
+  )
+    return undefined
+  const readinessTargets = new Map<string, Target>()
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || typeof entry[0] !== "string" || !isRecord(entry[1])) return undefined
+    const target = parseCachedTarget(entry[1])
+    if (!target) return undefined
+    readinessTargets.set(entry[0], target)
   }
+  return {
+    corpusDigestSha256,
+    eventSchemaDigestSha256,
+    mappingDigestSha256,
+    ...(workspaceFixtureDigestSha256 ? { workspaceFixtureDigestSha256 } : {}),
+    sessionMapping,
+    readinessTargets,
+    messageCount,
+    transcriptBytes,
+  }
+}
+
+function parseCachedTarget(
+  record: Record<string, unknown>,
+): Target | undefined {
+  const sessionId = textField(record, "sessionId")
+  const title = textField(record, "title")
+  const logicalSessionId = textField(record, "logicalSessionId")
+  const workspaceDirectory = textField(record, "workspaceDirectory")
+  const expectedMessageIds = stringArray(record.expectedMessageIds)
+  const expectedPartIds = stringArray(record.expectedPartIds)
+  const expectedContentSha256 = stringRecord(record.expectedContentSha256)
+  const expectedTextPartSha256 = stringRecord(record.expectedTextPartSha256)
+  if (
+    !sessionId ||
+    title === undefined ||
+    !logicalSessionId ||
+    !workspaceDirectory ||
+    !expectedMessageIds ||
+    !expectedPartIds ||
+    !expectedContentSha256 ||
+    !expectedTextPartSha256
+  )
+    return undefined
+  return {
+    sessionId,
+    title,
+    logicalSessionId,
+    workspaceDirectory,
+    expectedMessageIds,
+    expectedPartIds,
+    expectedContentSha256,
+    expectedTextPartSha256,
+  }
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const strings = value.filter((item): item is string => typeof item === "string")
+  return strings.length === value.length ? strings : undefined
+}
+
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined
+  const entries = Object.entries(value)
+  const strings = entries.filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  return strings.length === entries.length ? Object.fromEntries(strings) : undefined
 }
 
 async function applicationBuildFiles(executable: string) {

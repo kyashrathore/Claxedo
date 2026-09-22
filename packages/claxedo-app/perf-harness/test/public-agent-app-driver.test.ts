@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { readFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import { buildWorkspaceFixtureManifest } from "agent-app-benchmark/workspace-fixture"
 import type { WorkspaceLoad } from "agent-app-benchmark/driver-sdk"
-import { createClaxedoPublicDriver, PUBLIC_SCENARIO_IDS } from "../src/public-agent-app-driver"
+import {
+  createClaxedoPublicDriver,
+  PUBLIC_SCENARIO_IDS,
+  readPreparedCache,
+  writePreparedCache,
+} from "../src/public-agent-app-driver"
 import {
   runPrearmedStablePaint,
   waitForPanelOwner,
@@ -558,5 +565,53 @@ describe("Claxedo public driver", () => {
         workspaceFixtureManifest: workspaceFixtureManifest as never,
       }),
     ).rejects.toThrow("must define light, moderate, and heavy")
+  })
+})
+
+describe("Claxedo prepared-state cache", () => {
+  const target = {
+    sessionId: "ses_control",
+    title: "1. Synthetic benchmark control",
+    logicalSessionId: "control",
+    workspaceDirectory: "/workspaces/workspace-a",
+    expectedMessageIds: ["msg_1"],
+    expectedPartIds: ["prt_1", "prt_2"],
+    expectedContentSha256: { msg_1: "a".repeat(64) },
+    expectedTextPartSha256: { prt_1: "b".repeat(64) },
+  }
+  const materialization = {
+    corpusDigestSha256: "c".repeat(64),
+    eventSchemaDigestSha256: "d".repeat(64),
+    mappingDigestSha256: "e".repeat(64),
+    sessionMapping: { control: "ses_control" },
+    readinessTargets: new Map([["control", target]]),
+    messageCount: 152,
+    transcriptBytes: 1_048_576,
+  }
+
+  test("a later scenario reads back exactly the materialization the first one wrote", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-prepared-cache-"))
+    try {
+      expect(await readPreparedCache(root, materialization.corpusDigestSha256)).toBeUndefined()
+      await writePreparedCache(root, materialization)
+      expect(await readPreparedCache(root, materialization.corpusDigestSha256)).toEqual(materialization)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  test("a cache from another corpus or with a malformed target is rejected, not reused", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-prepared-cache-"))
+    try {
+      await writePreparedCache(root, materialization)
+      await expect(readPreparedCache(root, "f".repeat(64))).rejects.toThrow("different corpus")
+      await writeFile(
+        path.join(root, "prepared.json"),
+        JSON.stringify({ ...materialization, readinessTargets: [["control", { ...target, expectedMessageIds: [1] }]] }),
+      )
+      await expect(readPreparedCache(root, materialization.corpusDigestSha256)).rejects.toThrow("unreadable")
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
