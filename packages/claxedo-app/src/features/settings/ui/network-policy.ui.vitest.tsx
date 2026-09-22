@@ -6,6 +6,11 @@ import { queryClient } from "@/platform/query/query-client"
 const calls: Array<{ method: string; url: string; body?: unknown }> = []
 let workspaceRole: "owner" | "admin" | "editor" | "viewer" = "admin"
 
+// The connection mint is a POST of its own, so a method-only filter reads it
+// as a policy write.
+const policyWrites = (method: "POST" | "DELETE") =>
+  calls.filter((call) => call.method === method && new URL(call.url).pathname.startsWith("/api/claxedo/network-policy"))
+
 async function requestBody(request: Request) {
   const text = await request.clone().text()
   return text ? JSON.parse(text) as unknown : undefined
@@ -77,7 +82,7 @@ describe("NetworkPolicySettings role gate", () => {
     })
     expect(screen.getByRole("button", { name: "Add" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Remove api.example.com" })).toBeDisabled()
-    expect(calls.some((call) => call.method === "POST" || call.method === "DELETE")).toBe(false)
+    expect([...policyWrites("POST"), ...policyWrites("DELETE")]).toEqual([])
   })
 
   test("allows workspace policy writes for admin roles", async () => {
@@ -91,7 +96,7 @@ describe("NetworkPolicySettings role gate", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Add" })).not.toBeDisabled())
     fireEvent.click(screen.getByRole("button", { name: "Add" }))
 
-    await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toEqual([{
+    await waitFor(() => expect(policyWrites("POST")).toEqual([{
       method: "POST",
       url: "http://127.0.0.1:3001/api/claxedo/network-policy",
       body: { workspace_id: "ws_1", target: "api2.example.com", kind: "host" },

@@ -26,7 +26,7 @@ const globalBoot = {
 
 function run(body: unknown) {
   const patches: Array<Record<string, unknown>> = []
-  const fetchFn = (async () => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch
+  const fetchFn: typeof fetch = async () => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
   return bootstrapGlobal({
     baseUrl,
     fetch: fetchFn,

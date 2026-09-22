@@ -1,9 +1,9 @@
 {
   "asAnyCasts": 6,
-  "asAnyCastsTest": 17,
+  "asAnyCastsTest": 16,
   "conversationHydrationEntrypoints": 0,
   "deepSessionUiImports": 0,
-  "directoryStringParams": 295,
+  "directoryStringParams": 296,
   "effectStateWrites": 91,
   "filesystemShapeRegexClones": 2,
   "isFilesystemDirectory": 12,
@@ -11,7 +11,7 @@
   "isSignedInGates": 0,
   "isWorkspaceIdRef": 3,
   "legacyDirectoryRouteKeyRefs": 2,
-  "moduleScopeMutableState": 44,
+  "moduleScopeMutableState": 45,
   "productionTimerAllowlistTimers": 5,
   "propsDestructuring": 1,
   "queryMirrorEffects": 2,
@@ -22,6 +22,6 @@
   "signedControlPlaneAccess": 0,
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
-  "untrackCalls": 17,
+  "untrackCalls": 19,
   "hostKindComparisons": 105
 }

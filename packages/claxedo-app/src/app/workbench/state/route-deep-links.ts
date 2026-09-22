@@ -1,4 +1,5 @@
 import { projectWorkspaceDirectories } from "@/features/workspaces/lib/workspace-display"
+import { asDirectoryRef, type DirectoryRef } from "@/platform/identity/brand"
 import { sessionRoute, workspaceRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
 
@@ -108,7 +109,7 @@ export type DeepLinkProject = {
 }
 
 /** What the user is shown before an unregistered directory becomes a project. */
-export type DeepLinkOpenRequest = { directory: string; prompt?: string }
+export type DeepLinkOpenRequest = { directory: DirectoryRef; prompt?: string }
 
 const windowsDrive = /^[A-Za-z]:[\\/]/
 
@@ -140,14 +141,14 @@ function collapsePathSegments(prefix: string, body: string, separator: "/" | "\\
  * only base a relative path could take here is the server process's working
  * directory, which the user has no way to see.
  */
-export function deepLinkDirectory(raw: string) {
+export function deepLinkDirectory(raw: string): DirectoryRef | undefined {
   const trimmed = raw.trim()
-  if (windowsDrive.test(trimmed)) return collapsePathSegments(trimmed.slice(0, 2), trimmed.slice(2), "\\")
+  if (windowsDrive.test(trimmed)) return asDirectoryRef(collapsePathSegments(trimmed.slice(0, 2), trimmed.slice(2), "\\"))
   // A leading `//` is a UNC share on Windows and implementation-defined on
   // POSIX; collapsing it would silently rewrite the host segment into a
   // top-level directory name.
   if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return undefined
-  return collapsePathSegments("", trimmed, "/")
+  return asDirectoryRef(collapsePathSegments("", trimmed, "/"))
 }
 
 /**
@@ -155,7 +156,7 @@ export function deepLinkDirectory(raw: string) {
  * the same rows the rail, the router and every workspace query read, so a
  * project the user can already see never asks to be opened again.
  */
-export function deepLinkProjectRegistered(projects: readonly DeepLinkProject[], directory: string) {
+export function deepLinkProjectRegistered(projects: readonly DeepLinkProject[], directory: DirectoryRef) {
   return projects.some((project) =>
     projectWorkspaceDirectories(project).some((candidate) => deepLinkDirectory(candidate) === directory),
   )
@@ -229,8 +230,8 @@ export type DeepLinkProjectOpener = {
   local: () => boolean
   projects: () => readonly DeepLinkProject[]
   confirm: (request: DeepLinkOpenRequest) => Promise<boolean>
-  ensure: (directory: string) => Promise<readonly DeepLinkProject[] | undefined>
-  open: (directory: string) => void
+  ensure: (directory: DirectoryRef) => Promise<readonly DeepLinkProject[] | undefined>
+  open: (directory: DirectoryRef) => void
   navigate: (route: string) => void
 }
 

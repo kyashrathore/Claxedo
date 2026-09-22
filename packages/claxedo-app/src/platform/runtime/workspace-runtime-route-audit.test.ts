@@ -1238,10 +1238,11 @@ describe("workspace runtime route audit", () => {
     expect(desktopRenderer).not.toMatch(/name:\s*"claxedo-override-resolver"/)
     expect(desktopRenderer).not.toMatch(/firstPartyOwners/)
     expect(desktopRenderer).not.toMatch(/\.\.\/app\/src/)
-    // The boundary-manifest plugin is a first-party build-report emitter, not
-    // a resolver; the invariant is that no override-resolver plugin returns.
+    // The document-route, CSP and boundary-manifest plugins are first-party
+    // document and build-report emitters, not resolvers; the invariant is that
+    // no override-resolver plugin returns.
     expect(desktopRenderer).toMatch(
-      /plugins:\s*\[solidPlugin\(\), tailwindcss\(\), desktopRendererBoundaryManifestPlugin\(desktopDir\)\]/,
+      /plugins:\s*\[\s*rendererDocumentRoutes\(\),\s*rendererDocumentCsp\(mode\),\s*solidPlugin\(\),\s*tailwindcss\(\),\s*desktopRendererBoundaryManifestPlugin\(desktopDir\),?\s*\]/,
     )
     expect(desktopRenderer).toMatch(/find:\s*"@\/"/)
     expect(desktopRenderer).toMatch(
@@ -1674,10 +1675,11 @@ describe("workspace runtime route audit", () => {
     expect(paneQueries).toMatch(/directorySessionCacheQueryOptions/)
     expect(paneQueries).not.toMatch(/createStore/)
     expect(paneQueries).not.toMatch(/SetStoreFunction/)
-    expect(text).toMatch(/dispatchSessionStatusEvent/)
-    // Requests dispatch goes through the shared meta derivation
-    // (applyDirectorySessionMeta in directory-session-meta.ts).
+    // Status and requests dispatch both go through the shared meta derivation,
+    // so the controller names `applyDirectorySessionMeta` and nothing else:
+    // a second dispatch site here would be a second writer of the same state.
     expect(text).toMatch(/applyDirectorySessionMeta/)
+    expect(text).not.toMatch(/dispatchSessionStatusEvent/)
     expect(directoryMeta).toMatch(/dispatchSessionRequestsEvent/)
     expect(directoryMeta).toMatch(/dispatchSessionStatusEvent/)
     expect(directoryMeta).not.toMatch(/createStore/)
@@ -2490,7 +2492,10 @@ describe("workspace runtime route audit", () => {
     const workspaceResolver = await Bun.file(path.join(root, "features/session/composer/workspace-resolver.ts")).text()
 
     expect(text).not.toMatch(/agentListQuery\(/)
-    expect(text).toMatch(/agents: local\.agent\.list/)
+    // Mentions offer every agent the directory declares; the toolbar offers
+    // only those that can own a session, which is what `list` filters to.
+    expect(text).toMatch(/agents: local\.agent\.catalog/)
+    expect(text).toMatch(/agentList: local\.agent\.list/)
     expect(text).toMatch(/commandListQuery\(/)
     expect(text).toMatch(/enabled: hydrateDirectoryCommands\(\)/)
     expect(text).toMatch(
