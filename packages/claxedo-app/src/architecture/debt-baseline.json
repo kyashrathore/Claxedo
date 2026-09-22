@@ -4,8 +4,9 @@
   "conversationHydrationEntrypoints": 0,
   "deepSessionUiImports": 0,
   "directoryStringParams": 296,
-  "effectStateWrites": 91,
+  "effectStateWrites": 88,
   "filesystemShapeRegexClones": 2,
+  "hostKindComparisons": 105,
   "isFilesystemDirectory": 12,
   "isLoopbackHttpUrl": 4,
   "isSignedInGates": 0,
@@ -14,7 +15,7 @@
   "moduleScopeMutableState": 45,
   "productionTimerAllowlistTimers": 5,
   "propsDestructuring": 1,
-  "queryMirrorEffects": 2,
+  "queryMirrorEffects": 1,
   "runtimeGatewayOutsideTransport": 0,
   "sdkImportingFiles": 0,
   "setQueryDataCalls": 71,
@@ -22,6 +23,5 @@
   "signedControlPlaneAccess": 0,
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
-  "untrackCalls": 19,
-  "hostKindComparisons": 105
+  "untrackCalls": 19
 }

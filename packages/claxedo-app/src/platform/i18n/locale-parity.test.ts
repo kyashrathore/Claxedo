@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { dict as baseEn } from "./en"
 import { dict as sourceControlEn } from "./source-control/en"
 import { dict as machinesEn } from "./machines/en"
-import { dict as sessionRecoveryEn } from "./session-recovery/en"
 import { cloudStrings } from "./cloud-strings"
 import { LOCALE_ENTRIES, type LocaleCode } from "./locales"
 import missingKeysBaseline from "./missing-keys-baseline.json"
@@ -12,7 +11,7 @@ import missingKeysBaseline from "./missing-keys-baseline.json"
 // mistranslated {{placeholder}}, or the locale manifest pointing at a file
 // that does not exist in this package or in @/ui.
 
-const en = { ...baseEn, ...sourceControlEn, ...machinesEn, ...sessionRecoveryEn }
+const en = { ...baseEn, ...sourceControlEn, ...machinesEn }
 const NON_EN_ENTRIES = LOCALE_ENTRIES.filter((entry) => entry.code !== "en")
 const BASELINE = missingKeysBaseline as Record<string, string[]>
 
@@ -24,7 +23,7 @@ function tokenSet(value: string): string[] {
 async function loadAppDict(code: LocaleCode): Promise<Record<string, string>> {
   // The app-side dictionary file backing locale "br" is pt-BR.ts (see
   // src/platform/i18n/locales.ts's file header) — every other code matches its
-  // file 1:1. Provider settings, source control, machines and session recovery
+  // file 1:1. Provider settings, source control and machines
   // are themed dictionaries so the already-large base locale files stay inside
   // their size ratchets; English has no provider-settings file because that
   // copy stays in en.ts.
@@ -32,10 +31,9 @@ async function loadAppDict(code: LocaleCode): Promise<Record<string, string>> {
   const base = (await import(`./${filename}`)) as { dict: Record<string, string> }
   const sourceControl = (await import(`./source-control/${filename}`)) as { dict: Record<string, string> }
   const machines = (await import(`./machines/${filename}`)) as { dict: Record<string, string> }
-  const sessionRecovery = (await import(`./session-recovery/${filename}`)) as { dict: Record<string, string> }
-  if (code === "en") return { ...base.dict, ...sourceControl.dict, ...machines.dict, ...sessionRecovery.dict }
+  if (code === "en") return { ...base.dict, ...sourceControl.dict, ...machines.dict }
   const provider = (await import(`./provider-settings/${filename}`)) as { dict: Record<string, string> }
-  return { ...base.dict, ...provider.dict, ...sourceControl.dict, ...machines.dict, ...sessionRecovery.dict }
+  return { ...base.dict, ...provider.dict, ...sourceControl.dict, ...machines.dict }
 }
 
 describe("locale-parity: missing keys vs en.ts", () => {

@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import type { RecoveryOperation, RecoveryOperationState, RecoveryOutcome, RecoveryRequest, RecoveryTurnTarget } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
+import * as analytics from "@/platform/telemetry/analytics"
 import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
 import {
   clearPendingPromptsForTest,
@@ -202,30 +203,38 @@ test("interaction Stop surfaces Goal failure after interrupting its turn", async
 })
 
 describe("prompt Stop results", () => {
-  const failures: Array<[string, (request: RecoveryRequest) => Promise<RecoveryOutcome> | RecoveryOutcome, string]> = [
-    ["a rejected request", () => Promise.reject(new Error("Stop request failed")), "Stop request failed"],
+  const reported = () => {
+    const spy = spyOn(analytics, "captureException").mockImplementation(() => {})
+    afterEach(() => spy.mockRestore())
+    return spy
+  }
+
+  const failures: Array<[string, (request: RecoveryRequest) => Promise<RecoveryOutcome> | RecoveryOutcome, string, string]> = [
+    ["a rejected request", () => Promise.reject(new Error("Stop request failed")), "unreachable", "Stop request failed"],
     [
       "an operation whose execution never went terminal",
       (request) => ({ kind: "operation", operation: operation(request, "needs_action", STILL_RUNNING, "Stop request failed") }),
+      "still_running",
       "Stop request failed",
     ],
     [
       "an operation whose interrupted state was never saved",
       (request) => ({ kind: "operation", operation: operation(request, "needs_action", SAVE_FAILED, "Stop request failed") }),
+      "not_saved",
       "Stop request failed",
     ],
-    ["a refusal", () => ({ kind: "refused", refusal: { kind: "generation_conflict", message: "the turn was replaced" } }), "the turn was replaced"],
-    ["an unavailable owner", () => ({ kind: "refused", refusal: { kind: "unavailable", message: "the runtime is closing" } }), "the runtime is closing"],
+    ["a refusal", () => ({ kind: "refused", refusal: { kind: "generation_conflict", message: "the turn was replaced" } }), "refused_generation_conflict", "the turn was replaced"],
+    ["an unavailable owner", () => ({ kind: "refused", refusal: { kind: "unavailable", message: "the runtime is closing" } }), "refused_unavailable", "the runtime is closing"],
   ]
 
-  test.each(failures)("reports %s without refreshing authoritative state", async (_name, answer, message) => {
-    const toasts: Array<{ description: string }> = []
+  test.each(failures)("sends %s to error reporting, shows nothing, and refreshes nothing", async (_name, answer, kind, message) => {
+    const report = reported()
+    const toasts: unknown[] = []
     const double = clientDouble({ sessionID: "stop-failure", answer })
     const abort = createSubmitAbort({
       sessionID: () => "stop-failure",
       defaultDirectory: "/repo",
       clientForDirectory: () => double.client,
-      recoveryToast: (copy) => ({ title: "Request failed", description: copy.ownerMessage ?? copy.reading }),
       stopGoalFailedTitle: () => "Goal Stop failed",
       errorMessage: (error) => (error as Error).message,
       showToast: (toast) => { toasts.push(toast) },
@@ -233,7 +242,11 @@ describe("prompt Stop results", () => {
 
     await expect(abort()).resolves.toBeUndefined()
 
-    expect(toasts).toEqual([{ title: "Request failed", description: message, variant: "error" }])
+    expect(toasts).toEqual([])
+    expect(report).toHaveBeenCalledTimes(1)
+    const [error, properties] = report.mock.calls[0]
+    expect((error as Error).message).toBe(`Stop did not stop the turn: ${kind}`)
+    expect(properties).toMatchObject({ surface: "session", session_id: "stop-failure", stop_failure: kind, owner_message: message })
     expect(double.calls.filter((call) => call !== "inspect" && call !== "submit")).toEqual([])
   })
 
@@ -241,6 +254,7 @@ describe("prompt Stop results", () => {
   // working Stop closes as `needs_action`. Reading that as a failure would put
   // a red toast on every Stop and skip the reconcile the interrupted turn needs.
   test("a turn that ended and was saved is stopped even when cleanup is unverified", async () => {
+    const report = reported()
     const toasts: unknown[] = []
     const double = clientDouble({
       sessionID: "stop-unverified",
@@ -250,7 +264,6 @@ describe("prompt Stop results", () => {
       sessionID: () => "stop-unverified",
       defaultDirectory: "/repo",
       clientForDirectory: () => double.client,
-      recoveryToast: (copy) => ({ title: "Request failed", description: copy.reading }),
       stopGoalFailedTitle: () => "Goal Stop failed",
       errorMessage: (error) => (error as Error).message,
       showToast: (toast) => { toasts.push(toast) },
@@ -259,6 +272,7 @@ describe("prompt Stop results", () => {
     await abort()
 
     expect(toasts).toEqual([])
+    expect(report).not.toHaveBeenCalled()
     expect(double.calls).toEqual(["inspect", "submit", "get", "status", "permissions", "questions"])
   })
 
@@ -496,7 +510,7 @@ describe("the recovery command a Stop leaves behind", () => {
     expect(command?.unreachable).toBeUndefined()
   })
 
-  test("a Stop that never reached an owner stays visible as unreached, with no facts invented", async () => {
+  test("a Stop that never reached an owner is recorded as unreached, with no facts invented", async () => {
     clearSessionRecoveryCommand("command-unreached")
     const double = clientDouble({
       sessionID: "command-unreached",
@@ -513,7 +527,8 @@ describe("the recovery command a Stop leaves behind", () => {
   })
 })
 
-test("an owner that refuses inspection leaves a command the user can act on", async () => {
+test("an owner that refuses inspection is the Stop's outcome, and is reported", async () => {
+  const report = spyOn(analytics, "captureException").mockImplementation(() => {})
   clearSessionRecoveryCommand("inspect-refused")
   const refusal = { kind: "refused" as const, refusal: { kind: "unavailable" as const, message: "no owner on this machine" } }
   const double = clientDouble({
@@ -523,8 +538,11 @@ test("an owner that refuses inspection leaves a command the user can act on", as
 
   const result = await stopRunningTurn({ client: double.client, sessionID: "inspect-refused" })
 
+  const kinds = report.mock.calls.map(([, properties]) => properties.stop_failure)
+  report.mockRestore()
+
   expect(result).toEqual({ cancelled: true, outcome: refusal })
-  expect(sessionRecoveryCommand("inspect-refused")?.outcome).toEqual(refusal)
+  expect(kinds).toEqual(["refused_unavailable"])
   expect(double.requests).toEqual([])
 })
 

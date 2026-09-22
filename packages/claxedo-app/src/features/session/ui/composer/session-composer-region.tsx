@@ -1,9 +1,5 @@
-import { isRecoveryOutcome, type AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
+import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
 import { stopSessionInteraction } from "../../composer/ui/submit-abort"
-import { SessionRecoveryPanel, type SessionRecoveryClient } from "../session-recovery"
-import { recoveryPanelReachable, unresolvedRecoveryOperations } from "../recovery-outcome-copy"
-import type { ConversationDirectory } from "../../conversation/conversation-chat-client"
-import { sessionRecoveryCommand, subscribeSessionRecoveryCommand } from "../../store/session-status-dispatcher"
 import { Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLayout } from "@/features/session/app-ports"
@@ -109,11 +105,6 @@ export function SessionComposerRegion(props: {
   countWidthDuration?: number
   sessionID?: string
   sessionDirectory?: string
-  /**
-   * Reaches the session's recovery owner. Absent on surfaces with no owner to
-   * ask, which simply get no panel rather than a page that cannot act.
-   */
-  recoveryClient?: (directory: ConversationDirectory) => SessionRecoveryClient
   parentID?: string
   /**
    * A surface that embeds someone else's session. The reader gets no prompt
@@ -181,64 +172,6 @@ export function SessionComposerRegion(props: {
     const id = sessionID()
     return `${sessionDirectory() ?? ""}${id ? "/" + id : ""}`
   })
-  // The panel appears only while a recovery command is unresolved, so the
-  // normal Stop leaves the dock as it was. `turnStopped` is not the gate: a
-  // turn that stopped with cleanup it could not verify still resolves the
-  // command, and there is nothing left for a user to do about it here.
-  const [recoveryCommand, setRecoveryCommand] = createSignal(sessionRecoveryCommand(sessionID()))
-  createEffect(() => {
-    const id = sessionID()
-    setRecoveryCommand(sessionRecoveryCommand(id))
-    if (!id) return
-    onCleanup(subscribeSessionRecoveryCommand(id, () => setRecoveryCommand(sessionRecoveryCommand(id))))
-  })
-  /**
-   * What the owner was still holding when this session mounted. A reload loses
-   * the command a Stop left behind but not the operation it opened, so without
-   * one read here the session that most needs recovery cannot reach it.
-   *
-   * Exactly one read per session, gated on an authoritative non-idle status —
-   * an idle session has nothing outstanding to ask about, and a session that is
-   * busy is asked once rather than on a timer.
-   */
-  const [retainedRecovery, setRetainedRecovery] = createSignal<{ operations: number; failures: number }>()
-  let inspectedSession: string | undefined
-  createEffect(() => {
-    const id = sessionID()
-    const client = props.recoveryClient
-    const status = props.status?.()
-    if (inspectedSession !== id) setRetainedRecovery(undefined)
-    if (!id || !client || inspectedSession === id) return
-    if (!status || status.type === "idle") return
-    inspectedSession = id
-    const directory = sessionDirectory()
-    let abandoned = false
-    onCleanup(() => { abandoned = true })
-    void client(directory).session.recovery
-      .inspect({ sessionID: id, directory })
-      .then((answer) => {
-        if (abandoned || isRecoveryOutcome(answer.data)) return
-        setRetainedRecovery({
-          operations: unresolvedRecoveryOperations(answer.data.operations),
-          failures: answer.data.failures.length,
-        })
-      })
-      // A mount-time read that cannot reach the owner reports nothing rather
-      // than opening a panel whose every action would fail the same way.
-      .catch(() => undefined)
-  })
-
-  const unsettledRecovery = createMemo(() => {
-    const client = props.recoveryClient
-    const id = sessionID()
-    if (!client || !id) return undefined
-    const reachable = recoveryPanelReachable({
-      ...(recoveryCommand() ? { command: recoveryCommand() } : {}),
-      ...(retainedRecovery() ? { retained: retainedRecovery() } : {}),
-    })
-    return reachable ? { sessionID: id, directory: sessionDirectory(), client } : undefined
-  })
-
   const handoffPrompt = createMemo(() => getSessionHandoff(sessionKey())?.prompt)
   const info = createMemo(() => directorySessions(sessionDirectory()).find((session) => session.id === sessionID()))
   const parentID = createMemo(() => props.parentID ?? info()?.parentID)
@@ -315,15 +248,6 @@ export function SessionComposerRegion(props: {
           "md:max-w-192 md:mx-auto 2xl:max-w-[880px]": props.centered,
         }}
       >
-        <Show when={unsettledRecovery()} keyed>
-          {(recovery) => (
-            <SessionRecoveryPanel
-              sessionID={recovery.sessionID}
-              directory={recovery.directory}
-              client={recovery.client(recovery.directory)}
-            />
-          )}
-        </Show>
         <Show when={props.state.requestReadError()}>
           {(message) => <div role="alert" class="rounded-lg border border-border-weak-base bg-background-base p-3 text-text-base">
             <div>{language.t("session.requests.loadFailed")}</div>

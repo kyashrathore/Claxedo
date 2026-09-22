@@ -11,7 +11,6 @@ import { createSignal } from "solid-js"
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { AgentPermission, AgentQuestion, AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
-import type { SessionRecoveryClient } from "../session-recovery"
 import { SessionComposerRegion } from "./session-composer-region"
 import type { SessionComposerState } from "./session-composer-state"
 
@@ -252,13 +251,11 @@ function mountRegion(input: {
   onRetryRequests?: () => Promise<unknown>
   sessionID?: string
   status?: () => AgentRuntimeStatus
-  recoveryClient?: (directory: string) => SessionRecoveryClient
 }) {
   return render(() => (
     <SessionComposerRegion
       sessionID={input.sessionID}
       status={input.status}
-      recoveryClient={input.recoveryClient}
       state={{ ...idleState, ...input.state }}
       ready
       centered
@@ -387,134 +384,4 @@ test("native startup questions retain the same canonical composer dock", () => {
   expect(questionDock()?.closest('[data-component="session-prompt-dock"]')).not.toBeNull()
   expect(editor()).toBeNull()
   expect(document.querySelector('[data-component="session-new-design"]')).toBeNull()
-})
-
-describe("reaching recovery for work that predates this mount", () => {
-  const target = {
-    scope: "turn" as const,
-    workspaceId: "ws_1",
-    sessionId: "ses_reload",
-    turnId: "msg_1",
-    ownerGeneration: "lease_1",
-  }
-  const evidence = (value: string) => ({ value, source: "codex", observedAt: 1_000, generation: "lease_1" })
-  const inspection = (over?: { operations?: number; failures?: number }) => ({
-    sessionId: "ses_reload",
-    target,
-    facts: { execution: evidence("unknown"), cleanup: evidence("owned"), persistence: evidence("pending") },
-    health: { status: "ok" as const },
-    failures: Array.from({ length: over?.failures ?? 0 }, () => ({
-      code: "persistence_unavailable" as const,
-      origin: "workspace-store",
-      target,
-      stage: "reconcile" as const,
-      executionMayContinue: false,
-      message: "the journal is not writable",
-      at: 1_000,
-    })),
-    operations: Array.from({ length: over?.operations ?? 0 }, () => ({
-      operationId: "op_1",
-      requestId: "req_1",
-      target,
-      action: "cancel_turn" as const,
-      scopeRevision: "lease_1",
-      attempt: 1,
-      state: "needs_action" as const,
-      phase: "graceful_cancel" as const,
-      phaseDeadlineAt: 2_000,
-      facts: { execution: evidence("unknown"), cleanup: evidence("owned"), persistence: evidence("pending") },
-      cleanupErrors: [],
-      nextActions: [],
-      receipt: "durable" as const,
-      createdAt: 1_000,
-      updatedAt: 1_000,
-    })),
-    queued: 0,
-  })
-
-  function client(answer: () => ReturnType<typeof inspection>, onInspect?: () => void) {
-    return () => ({
-      session: {
-        recovery: {
-          inspect: async () => {
-            onInspect?.()
-            return { data: answer() }
-          },
-          submit: async () => ({ data: { kind: "refused" as const, refusal: { kind: "unavailable" as const, message: "n/a" } } }),
-        },
-      },
-    }) as SessionRecoveryClient
-  }
-
-  const panel = () => document.querySelector('[aria-label="session.recovery.panel.title"]')
-
-  test("a busy session asks its owner once, and shows the panel for work it still holds", async () => {
-    let inspects = 0
-    mountRegion({
-      sessionID: "ses_reload",
-      status: () => ({ type: "busy" }),
-      recoveryClient: client(() => inspection({ operations: 1 }), () => { inspects += 1 }),
-    })
-
-    // One read decides whether the panel is reachable. The panel it opens makes
-    // its own read for the facts it renders, which is why this is not 1.
-    await waitFor(() => expect(panel()).toBeTruthy())
-    expect(inspects).toBeLessThanOrEqual(2)
-  })
-
-  test("an owner holding a retained failure and no operation still opens it", async () => {
-    mountRegion({
-      sessionID: "ses_reload",
-      status: () => ({ type: "busy" }),
-      recoveryClient: client(() => inspection({ failures: 1 })),
-    })
-
-    await waitFor(() => expect(panel()).toBeTruthy())
-  })
-
-  test("an owner holding nothing leaves the dock alone", async () => {
-    mountRegion({
-      sessionID: "ses_reload",
-      status: () => ({ type: "busy" }),
-      recoveryClient: client(() => inspection()),
-    })
-
-    await waitFor(() => expect(document.querySelector('[data-component="prompt-input"]')).toBeTruthy())
-    expect(panel()).toBeNull()
-  })
-
-  // An idle session has nothing outstanding to ask about, so the mount costs
-  // no request at all.
-  test("an idle session is not asked", async () => {
-    let inspects = 0
-    mountRegion({
-      sessionID: "ses_reload",
-      status: () => ({ type: "idle" }),
-      recoveryClient: client(() => inspection({ operations: 1 }), () => { inspects += 1 }),
-    })
-
-    await waitFor(() => expect(document.querySelector('[data-component="prompt-input"]')).toBeTruthy())
-    expect(inspects).toBe(0)
-    expect(panel()).toBeNull()
-  })
-
-  test("a status that changes while busy does not ask again", async () => {
-    let inspects = 0
-    const [status, setStatus] = createSignal<AgentRuntimeStatus>({ type: "busy" })
-    mountRegion({
-      sessionID: "ses_reload",
-      status,
-      recoveryClient: client(() => inspection({ operations: 1 }), () => { inspects += 1 }),
-    })
-
-    await waitFor(() => expect(panel()).toBeTruthy())
-    const settled = inspects
-
-    setStatus({ type: "retry", attempt: 1, message: "retrying", next: 0 })
-    setStatus({ type: "busy" })
-    setStatus({ type: "retry", attempt: 2, message: "retrying", next: 0 })
-    await waitFor(() => expect(panel()).toBeTruthy())
-
-    expect(inspects, "a status change re-asked the owner; the mount read is not bounded").toBe(settled)
-  })
 })
