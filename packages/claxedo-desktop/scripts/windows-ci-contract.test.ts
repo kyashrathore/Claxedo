@@ -10,6 +10,7 @@ const releaseGatesWorkflow = readFileSync(path.join(root, ".github/workflows/rel
 const crabboxRunner = readFileSync(path.join(root, "script/cbx-ci.ts"), "utf8")
 const prepare = readFileSync(path.join(root, "script/cbx-prepare-windows.ps1"), "utf8")
 const acceptance = readFileSync(path.join(root, "script/cbx-test-windows.ps1"), "utf8")
+const unitLane = readFileSync(path.join(root, "script/cbx-ci-windows.ps1"), "utf8")
 const desktopManifest = JSON.parse(readFileSync(path.join(root, "packages/claxedo-desktop/package.json"), "utf8")) as {
   dependencies: Record<string, string>
   scripts: Record<string, string>
@@ -71,6 +72,20 @@ describe("Windows CI contract", () => {
     expect(acceptance).toContain("$env:CLAXEDO_BUILD_SOURCE_COMMIT = $SourceCommit")
     expect(prepare).toContain('throw "bun install exited $LASTEXITCODE"')
     expect(prepare).toContain('throw "Windows process-tree native dependency was not installed"')
+  })
+
+  // The embedded-OpenCode step is where the Windows leg died for three weeks
+  // (docs/verification/windows-unit-opencode-node-2026-09-22.md). The crabbox
+  // lane is the only way to reproduce it, and it can only do that while it
+  // runs the same command in the same position the workflow does.
+  test("the crabbox unit lane replays the workflow's embedded-OpenCode step", () => {
+    const step = "bun run --cwd packages/workspace-runtime test:opencode-node"
+    expect(workflow).toContain(step)
+    expect(unitLane).toContain(step)
+    expect(workflow.indexOf(step)).toBeGreaterThan(workflow.indexOf("bun run build:packages"))
+    expect(unitLane.indexOf(step)).toBeGreaterThan(unitLane.indexOf("bun run build:packages"))
+    expect(unitLane.indexOf(step)).toBeLessThan(unitLane.indexOf("bun turbo @turboArguments"))
+    expect(crabboxRunner).toContain('"focus-opencode-node-windows"')
   })
 
   test("keeps desktop compilation behind explicit release entrypoints", () => {
