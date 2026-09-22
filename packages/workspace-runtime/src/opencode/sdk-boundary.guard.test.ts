@@ -107,10 +107,12 @@ describe("public SDK boundary", () => {
         fs.writeFileSync(path.join(root, file), violation)
       }
 
-      expect(search("dist/internal", ["packages/excluded"], root)).toEqual([
+      // Sorted: the scanner reports what the search tool walked, and directory
+      // order is the filesystem's, not this list's.
+      expect(search("dist/internal", ["packages/excluded"], root).sort()).toEqual([
         `./packages/app/src/deep.ts:1:${violation.trimEnd()}`,
         `./packages/app/src/nested/deep.tsx:1:${violation.trimEnd()}`,
-      ])
+      ].sort())
     } finally {
       fs.rmSync(root, { recursive: true, force: true })
     }
