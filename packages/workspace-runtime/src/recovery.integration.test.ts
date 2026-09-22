@@ -120,15 +120,21 @@ function openWorkspace(input: { directory: string; storeRoot: string; workspaceI
         },
         async cancelTurn(binding: AgentExecutionBinding, cancel: { turnId: string }): Promise<CancelAnswer> {
           cancels.push({ sessionId: binding.sessionId, turnId: cancel.turnId })
+          // Taken now, not when the release runs: the runtime admits the
+          // replacement turn as soon as this answer is finalized, and a release
+          // that looked the session up later would free that turn instead and
+          // strand this one's producer.
+          const release = held.get(binding.sessionId)
+          held.delete(binding.sessionId)
           if (input.cancel === "deferred") {
             return await new Promise<CancelAnswer>((resolve) => {
-              answerCancel = (answer) => { releaseTurn(binding.sessionId); resolve(answer) }
+              answerCancel = (answer) => { release?.(); resolve(answer) }
             })
           }
           // The producer is released only after this answer has been
           // finalized, so the interlock under test is the runtime's released
           // admission rather than whichever writer happened to run first.
-          setTimeout(() => releaseTurn(binding.sessionId), 0)
+          setTimeout(() => release?.(), 0)
           return { execution: "terminal", cleanup: "unknown" }
         },
         readHarnessCapabilities() {
