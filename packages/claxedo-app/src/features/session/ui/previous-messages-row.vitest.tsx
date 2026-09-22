@@ -42,4 +42,10 @@ describe("PreviousMessagesRow", () => {
     expect(onReveal).toHaveBeenCalledTimes(1)
     expect(onOuterClick).not.toHaveBeenCalled()
   })
+
+  test("a press does not take focus, so a composer the row sits beside keeps it", () => {
+    render(() => <PreviousMessagesRow count={2} onReveal={() => {}} />)
+
+    expect(fireEvent.mouseDown(screen.getByTestId("timeline-previous-messages"))).toBe(false)
+  })
 })

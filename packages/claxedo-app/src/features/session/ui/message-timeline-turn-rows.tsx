@@ -64,6 +64,11 @@ export function PreviousMessagesRow(props: {
         data-testid={props.testId ?? "timeline-previous-messages"}
         data-count={props.count}
         aria-expanded={props.expanded ? "true" : "false"}
+        // Chromium focuses a button on mousedown. In the floating card that
+        // blurs the composer, the composer folds, and this bottom-anchored row
+        // moves ~52px under the pointer before mouseup, so the click lands on
+        // whatever is behind the card and never reaches this button.
+        onMouseDown={(event) => event.preventDefault()}
         onClick={(event) => {
           event.stopPropagation()
           props.onReveal()
