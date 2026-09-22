@@ -186,6 +186,12 @@ jobs:
             [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
           done
 
+      # The release builds the browser app, which consumes the @claxedo
+      # workspace packages as their published dist (script/published-exports-plugin.ts).
+      # A fresh checkout has none, and Vite fails to resolve @claxedo/helpers.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
       - name: Print the derived release inputs
         working-directory: packages/claxedo-server
         run: bun scripts/deploy/staging-release.ts --staging --dry-run
