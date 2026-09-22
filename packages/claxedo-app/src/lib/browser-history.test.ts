@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
-import { writeBrowserRoute } from "./browser-history"
+import { configureBrowserHistory, writeBrowserRoute } from "./browser-history"
 
 const initialUrl = window.location.href
 const initialState = window.history.state
 afterEach(() => {
+  configureBrowserHistory(true)
   window.location.href = initialUrl
   window.history.replaceState(initialState, "", initialUrl)
 })
@@ -24,6 +25,16 @@ function observe(url: string) {
 }
 
 describe("browser route writes", () => {
+  test("an HTTP desktop document using MemoryRouter never changes its reload URL", () => {
+    const observed = observe("http://localhost:5173/index.local.html")
+    configureBrowserHistory(false)
+    try {
+      writeBrowserRoute("/s/session", { replace: true, notify: true })
+      expect(observed.replace.mock.calls).toEqual([])
+      expect(observed.events).toEqual([])
+    } finally { observed.dispose() }
+  })
+
   test.each([true, false])("a file-backed document neither writes nor notifies (replace=%s)", (replace) => {
     const observed = observe("file:///Applications/Claxedo/index.html")
     try {

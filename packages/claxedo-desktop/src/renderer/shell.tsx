@@ -535,7 +535,7 @@ function ServerGate(props: { children: (data: Accessor<ServerReadyData>) => JSX.
           when={serverData.state !== "pending" && serverData()}
           fallback={
             <div class="h-screen w-screen flex flex-col items-center justify-center bg-background-base">
-              <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
+              <ClaxedoSplash class="w-16 h-20 opacity-50" />
             </div>
           }
         >

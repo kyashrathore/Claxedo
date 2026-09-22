@@ -51,6 +51,7 @@ import { QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
 import { markShellRevealed, shellRevealedOnce } from "@/app/shell-revealed"
+import { configureBrowserHistory } from "@/lib/browser-history"
 import { signInGate, useDeploymentPosture } from "@/app/connection/deployment-posture"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
@@ -616,6 +617,7 @@ export function AppInterface(props: {
   router?: Component<BaseRouterProps>
 }) {
   const RouterComponent = props.router ?? Router
+  configureBrowserHistory(RouterComponent === Router)
   const OAuthConsentRoute = props.oauthConsent ?? (() => <Navigate href="/" />)
   const DeviceApprovalRoute = props.deviceApproval ?? (() => <Navigate href="/" />)
 
