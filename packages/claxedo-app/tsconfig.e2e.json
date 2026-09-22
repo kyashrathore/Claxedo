@@ -35,6 +35,9 @@
       // dependency of this package. Same source-alias convention as the three
       // agent-event-runtime entries above.
       "@claxedo/agent-sdk-runtime": ["../agent-sdk-runtime/src/index.ts"],
+      // `desktop-daemon.ts` calls `verifyCreationIdentity` to prove a daemon it
+      // is about to drain is the one this run launched.
+      "@claxedo/agent-sdk-runtime/launch": ["../agent-sdk-runtime/src/launch/index.ts"],
       // Point at SOURCE, not `dist`. These subpaths resolve to `dist/*.d.ts` by
       // package exports, and `dist` is gitignored — so a clean tree (or anyone who
       // has not run a build) gets `TS2307: Cannot find module`, which is exactly
