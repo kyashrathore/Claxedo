@@ -1,9 +1,10 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, expect, spyOn, test } from "bun:test"
 import { spawn } from "node:child_process"
 import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
+import * as identityModule from "./identity"
 import { readCreationIdentity, verifyCreationIdentity } from "./identity"
 import { GATE_EXIT, launchOwnedProcess, resolveLaunchGateChild, spawnLaunchGate } from "./launch-gate"
 import { LaunchRefusedError, reconcileLaunch, type LaunchOwnershipStore } from "./ownership-store"
@@ -342,9 +343,7 @@ test.skipIf(!posix)("retirement refuses a recorded process that does not lead it
   expect(await gone(child.pid!, 100)).toBe(false)
 })
 
-// Only the darwin probe shells out (to `ps`); Linux reads /proc and has no
-// failure this test can inject without root.
-test.skipIf(process.platform !== "darwin")("a ps probe that cannot run reports unknown rather than clear", async () => {
+test.skipIf(!posix)("an identity probe that fails reports unknown rather than clear", async () => {
   const directory = await workspace()
   const ownership = volatileLaunchOwnership()
   const owned = await launch({
@@ -356,18 +355,21 @@ test.skipIf(process.platform !== "darwin")("a ps probe that cannot run reports u
     env: process.env,
   })
 
-  const broken = await fs.mkdtemp(path.join(os.tmpdir(), "no-ps-"))
-  cleanup.push(() => fs.rm(broken, { recursive: true, force: true }))
-  const realPath = process.env.PATH
-  process.env.PATH = broken
+  // What breaks the probe differs per platform (`ps` unreachable on darwin,
+  // `/proc/<pid>/stat` unreadable on linux; identity.test.ts drives each), so
+  // this injects the verdict every one of those failures reduces to.
+  const probe = spyOn(identityModule, "verifyCreationIdentity")
+    .mockResolvedValue({ state: "unknown", reason: "ps: command not found" })
   try {
     const result = await retire({ identity: owned.identity }, budgets)
     expect(result.leader).toBe("unknown")
     expect(result.descendants).toBe("unknown")
     expect(result.error?.code).toBe("ownership_unverified")
+    expect(result.error?.message).toContain("ps: command not found")
     expect(result.signals[0]?.refusal).toBe("identity_unverifiable")
+    expect(probe).toHaveBeenCalledTimes(1)
   } finally {
-    process.env.PATH = realPath
+    probe.mockRestore()
   }
   expect(await gone(owned.identity.pid, 100)).toBe(false)
 })
