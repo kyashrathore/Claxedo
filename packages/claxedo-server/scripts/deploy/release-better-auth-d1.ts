@@ -1165,14 +1165,33 @@ async function verifyRestoredIncumbent(apiOrigin: string, versionId: string) {
   }
 }
 
+/**
+ * The asset upload returns before every edge serves the new version, so the
+ * first read can still be the incumbent's attestation. Converging the same way
+ * the Worker health check does keeps a propagation lag from failing a release
+ * that did deploy — as it did on 2026-09-22, leaving staging locked with its
+ * API refusing every route.
+ */
 async function verifyBrowserArtifact(appOrigin: string, browserBuildId: string) {
-  const response = await fetchReleaseProbe(`${appOrigin}/${BROWSER_BUILD_ATTESTATION}`, {
-    signal: AbortSignal.timeout(15_000),
-  })
-  const body = await readJsonRecord(response)
-  if (!response.ok || stringField(body, "browserBuildId") !== browserBuildId) {
-    throw new Error("deployed browser did not serve the exact release-bound build identity")
+  let failure: unknown
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    try {
+      const response = await fetchReleaseProbe(`${appOrigin}/${BROWSER_BUILD_ATTESTATION}`, {
+        signal: AbortSignal.timeout(15_000),
+      })
+      const body = await readJsonRecord(response)
+      if (response.ok && stringField(body, "browserBuildId") === browserBuildId) return
+      failure = new Error("browser attestation did not match the release-bound build identity")
+    } catch (error) {
+      failure = error
+    }
+    if (attempt < 6) {
+      const delayMs = attempt * 1_000
+      console.warn(`Browser attestation has not converged; retrying exact verification in ${delayMs}ms`)
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
   }
+  throw new Error("deployed browser did not serve the exact release-bound build identity", { cause: failure })
 }
 
 async function main() {
