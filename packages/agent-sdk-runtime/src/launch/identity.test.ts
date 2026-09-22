@@ -1,5 +1,8 @@
-import { describe, expect, test } from "bun:test"
-import { isCreationIdentity, readCreationIdentity, type CreationIdentity } from "./identity"
+import { describe, expect, spyOn, test } from "bun:test"
+import { promises as fs } from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { isCreationIdentity, readCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "./identity"
 
 const identity = (over: Record<string, unknown> = {}): unknown => ({
   pid: 4321,
@@ -43,5 +46,44 @@ describe("a creation identity read back out of a record", () => {
     expect(isCreationIdentity(identity({ startedAtMs: "1790000043000" }))).toBe(false)
     expect(isCreationIdentity(null)).toBe(false)
     expect(isCreationIdentity("darwin-ps")).toBe(false)
+  })
+})
+
+/**
+ * Makes this platform's probe fail the way it fails on a real machine — `ps`
+ * not on PATH on darwin, `/proc/<pid>/stat` refusing to be read on linux (a
+ * `hidepid` mount) — and returns the undo. Boot time is already memoised by
+ * the read that produced the recorded identity, so only the pid probe breaks.
+ */
+async function breakCreationProbe(): Promise<() => Promise<void>> {
+  if (process.platform === "linux") {
+    const readFile = spyOn(fs, "readFile")
+      .mockRejectedValue(Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }))
+    return async () => { readFile.mockRestore() }
+  }
+  const empty = await fs.mkdtemp(path.join(os.tmpdir(), "no-ps-"))
+  const realPath = process.env.PATH
+  process.env.PATH = empty
+  return async () => {
+    process.env.PATH = realPath
+    await fs.rm(empty, { recursive: true, force: true })
+  }
+}
+
+describe("verifying a recorded identity", () => {
+  test.skipIf(process.platform === "win32")("a probe that cannot run is an unknown verdict, never an exit", async () => {
+    const recorded = await readCreationIdentity(process.pid)
+    if (!recorded) throw new Error("the running process must be readable")
+
+    const restore = await breakCreationProbe()
+    let verdict
+    try {
+      verdict = await verifyCreationIdentity(recorded)
+    } finally {
+      await restore()
+    }
+    expect(verdict.state).toBe("unknown")
+    expect(verdict.state === "unknown" && verdict.reason).toContain(String(process.pid))
+    expect((await verifyCreationIdentity(recorded)).state).toBe("live")
   })
 })
