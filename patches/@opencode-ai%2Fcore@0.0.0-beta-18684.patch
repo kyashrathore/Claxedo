@@ -1,7 +1,7 @@
 diff --git a/dist/chunks/state-ns0sdez7.js b/dist/chunks/state-ns0sdez7.js
 --- a/dist/chunks/state-ns0sdez7.js
 +++ b/dist/chunks/state-ns0sdez7.js
-@@ -25,7 +25,7 @@
+@@ -25,11 +25,11 @@ __export(exports_watcher, {
    Native: () => Native,
    Event: () => Event
  });
@@ -10,6 +10,42 @@ diff --git a/dist/chunks/state-ns0sdez7.js b/dist/chunks/state-ns0sdez7.js
  import { FileSystem } from "@opencode-ai/schema/filesystem";
  import { makeGlobalNode } from "@opencode-ai/util/effect/app-node";
  import { Cause, Context, Effect, Layer, PubSub, RcMap, Schema, Stream } from "effect";
+-import { watch } from "node:fs";
++import { realpathSync, watch } from "node:fs";
+ import path from "path";
+ var SUBSCRIBE_TIMEOUT_MS = 1e4;
+ var Event = { Updated: FileSystem.Event.Changed };
+@@ -49,6 +49,18 @@ function getBackend() {
+     return "inotify";
+ }
+ var hasNativeBinding = () => !!watcher();
++// libuv 1.52.1's Windows fs-event handler asserts that every reported change,
++// after GetLongPathNameW, still starts with the directory string it was given;
++// a directory watched under an 8.3 spelling such as C:\Users\RUNNER~1\...
++// therefore aborts the whole process on its first change. Node 24.21.0 floats
++// a fallback for this, Node 24.20.0 and Electron 43's Node 24.18.0 do not.
++// realpathSync.native goes through GetFinalPathNameByHandle and returns the
++// long spelling.
++function watchedDirectory(directory) {
++  if (process.platform !== "win32")
++    return directory;
++  return realpathSync.native(directory);
++}
+ 
+ class Native extends Context.Service()("@opencode/Watcher/Native") {
+ }
+@@ -132,9 +144,9 @@ var nativeLayer = Layer.succeed(Native, Native.of({
+   subscribe: (input) => {
+     if (input.type === "file") {
+       return Effect.sync(() => {
+-        const directory = path.dirname(input.target);
++        const directory = watchedDirectory(path.dirname(input.target));
+         const subscription = watch(directory, { recursive: false }, (_event, file) => {
+-          if (file && path.resolve(directory, file.toString()) !== input.target)
++          if (file && file.toString() !== path.basename(input.target))
+             return;
+           input.publish({ path: input.target, type: "update" });
+         });
 diff --git a/dist/util/process-lock-ffi.node.js b/dist/util/process-lock-ffi.node.js
 --- a/dist/util/process-lock-ffi.node.js
 +++ b/dist/util/process-lock-ffi.node.js

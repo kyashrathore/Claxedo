@@ -1,8 +1,12 @@
 param(
-  [ValidateSet("unit", "package", "package-test")]
+  [ValidateSet("unit", "opencode-node", "package", "package-test")]
   [string]$Lane = "unit",
   [string]$Package,
-  [switch]$AclAcceptance
+  [switch]$AclAcceptance,
+  [switch]$CleanInstall,
+  [string]$NodeVersion,
+  # turbo stops at the first failing package; an inventory run wants them all.
+  [switch]$Continue
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,7 +21,7 @@ function Assert-LastExitCode([string]$Command) {
 
 # Native Windows is a separate Crabbox job because Linux cannot validate the
 # Windows process-tree dependency, path rules, or PowerShell execution path.
-. (Join-Path $PSScriptRoot "cbx-prepare-windows.ps1")
+. (Join-Path $PSScriptRoot "cbx-prepare-windows.ps1") -CleanInstall:$CleanInstall -NodeVersion $NodeVersion
 
 $env:CI = "true"
 $env:OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER = "true"
@@ -49,5 +53,15 @@ if ($Lane -eq "package" -or $Lane -eq "package-test") {
 bun run build:packages
 Assert-LastExitCode "bun run build:packages"
 
-bun turbo test --concurrency=2
-Assert-LastExitCode "bun turbo test --concurrency=2"
+bun run --cwd packages/workspace-runtime test:opencode-node
+Assert-LastExitCode "bun run --cwd packages/workspace-runtime test:opencode-node"
+if ($Lane -eq "opencode-node") {
+  exit 0
+}
+
+$turboArguments = @("test", "--concurrency=2")
+if ($Continue) {
+  $turboArguments += "--continue"
+}
+bun turbo @turboArguments
+Assert-LastExitCode "bun turbo $turboArguments"

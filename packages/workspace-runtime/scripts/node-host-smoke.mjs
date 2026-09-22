@@ -2,8 +2,21 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { spawnSync } from "node:child_process"
 
 assert.equal(typeof globalThis.Bun, "undefined")
+// GitHub's Windows runner hands out %TEMP% as C:\Users\RUNNER~1\AppData\Local\Temp,
+// where the engine's file watcher aborted the process on Node 24.20.0 while
+// every box with a long %TEMP% passed. cmd's %~s spells the directory the same
+// way, where the volume keeps 8.3 names at all; the JSON line below prints the
+// root that ran.
+if (process.platform === "win32") {
+  const child = spawnSync("cmd.exe", ["/d", "/c", `for %I in ("${os.tmpdir()}") do @echo %~sI`], {
+    encoding: "utf8", windowsVerbatimArguments: true,
+  })
+  assert.equal(child.status, 0, child.stderr)
+  process.env.TEMP = process.env.TMP = child.stdout.trim()
+}
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-node-host-"))
 const previousDirectory = process.cwd()
 Object.assign(process.env, {
@@ -53,7 +66,7 @@ try {
   assert.ok(Array.isArray(snapshot.messages))
   assert.ok(Number.isSafeInteger(snapshot.maxEventOrdinal))
   assert.equal((await request("/api/session")).status, 404)
-  console.log(JSON.stringify({ ok: true, node: process.versions.node, electron: process.versions.electron ?? null }))
+  console.log(JSON.stringify({ ok: true, node: process.versions.node, electron: process.versions.electron ?? null, root }))
 } finally {
   host.dispose()
   await runtime.close()

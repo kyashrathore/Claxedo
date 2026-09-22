@@ -320,6 +320,17 @@ jobs:
     command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane unit
     stop: auto
 
+  # The unit job's "Verify embedded OpenCode on the Node runtime" step alone:
+  # tools, install, build:packages, then the two Node smokes.
+  focus-opencode-node-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane opencode-node
+    stop: auto
+
   focus-agent-sdk-runtime-windows:
     provider: aws
     target: windows

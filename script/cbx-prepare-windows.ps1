@@ -2,7 +2,10 @@ param(
   [switch]$ToolsOnly,
   [switch]$CleanInstall,
   [string]$GitSeedOrigin = "https://github.com/kyashrathore/Claxedo.git",
-  [string]$GitSeedRef = "dev"
+  [string]$GitSeedRef = "dev",
+  # GitHub's setup-node resolves "24" from its own manifest, which lags
+  # nodejs.org; pass the version a run actually printed to replay that build.
+  [string]$NodeVersion
 )
 
 $ErrorActionPreference = "Stop"
@@ -69,19 +72,20 @@ function Expand-ToolArchive([string]$Url, [string]$Archive, [string]$Destination
   Expand-Archive -LiteralPath $Archive -DestinationPath $toolsRoot -Force
 }
 
-$nodeChecksums = & curl.exe --fail --location --silent --show-error "https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt"
+$nodeDist = if ($NodeVersion) { "https://nodejs.org/dist/v$NodeVersion" } else { "https://nodejs.org/dist/latest-v24.x" }
+$nodeChecksums = & curl.exe --fail --location --silent --show-error "$nodeDist/SHASUMS256.txt"
 if ($LASTEXITCODE -ne 0) {
-  throw "Could not download Node.js 24 checksums"
+  throw "Could not download Node.js checksums from $nodeDist"
 }
 $nodeArchiveName = (($nodeChecksums -join "`n") -split '\s+' |
   Where-Object { $_ -like "node-v24.*-win-x64.zip" } |
   Select-Object -First 1)
 if (-not $nodeArchiveName) {
-  throw "Could not resolve the latest Node.js 24 release"
+  throw "Could not resolve a Node.js 24 win-x64 archive at $nodeDist"
 }
 $nodeDirectory = $nodeArchiveName -replace '\.zip$', ''
 $nodePath = Join-Path $toolsRoot $nodeDirectory
-Expand-ToolArchive "https://nodejs.org/dist/latest-v24.x/$nodeArchiveName" (Join-Path $downloads $nodeArchiveName) $nodePath
+Expand-ToolArchive "$nodeDist/$nodeArchiveName" (Join-Path $downloads $nodeArchiveName) $nodePath
 Add-ToolPath $nodePath
 
 $bunDirectory = "bun-windows-x64-baseline"
