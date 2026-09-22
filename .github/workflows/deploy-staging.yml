@@ -233,6 +233,12 @@ jobs:
             [ -n "${!name}" ] || { echo "::error::$name is not configured in the staging environment"; exit 1; }
           done
 
+      # wrangler bundles the worker, which imports @claxedo/* through their
+      # published dist. A fresh checkout has none, so the bundle cannot resolve
+      # @claxedo/helpers/string.
+      - name: Build dist-resolved workspace packages
+        run: bun run build:packages
+
       - name: Deploy the relay Worker
         working-directory: packages/workspace-relay
         run: ./node_modules/.bin/tsx scripts/deploy-cloudflare.ts
