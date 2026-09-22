@@ -516,9 +516,14 @@ export const appLocal: Policy = {
   // `features/session/store/session-coverage-obligations.ts`, extracted from
   // the dialog and the controller that were over budget. The size guard
   // forbids raising a file's line ceiling, so this count is that rule's
-  // consequence. No new package edge. Exact measured 1122 modules /
+  // consequence. No new package edge.
+  // +1 module (2026-09-22): `features/session/ui/message-timeline-list-gestures.ts`
+  // owns the timeline list's wheel, touch, pointer and scroll handlers, split
+  // out of `message-timeline.tsx` for that same size budget. It sits beside the
+  // timeline that is its only caller and reaches only `./message-gesture`,
+  // which this entry already carries. Exact measured 1123 modules /
   // 58 packages, with no headroom.
-  ceilings: { modules: 1122, packages: 58 },
+  ceilings: { modules: 1123, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

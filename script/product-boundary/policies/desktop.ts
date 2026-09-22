@@ -596,8 +596,12 @@ export const desktopRendererUnsigned: Policy = {
   // +19 modules (2026-09-22): the recovery size split — see the app-local
   // ledger. The renderer shares the i18n manifest and the session feature, so
   // the themed dictionary and both extracted owners ride in here too; no new
-  // package edge. Exact measured 1166 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1166, packages: 58 },
+  // package edge.
+  // +1 module (2026-09-22): `features/session/ui/message-timeline-list-gestures.ts`
+  // — see the app-local ledger. The renderer mounts the same timeline, so the
+  // split owner rides in here too; no new package edge. Exact measured 1167
+  // modules / 58 packages, with no headroom.
+  ceilings: { modules: 1167, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

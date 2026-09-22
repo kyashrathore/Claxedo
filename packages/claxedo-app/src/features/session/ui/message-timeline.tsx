@@ -58,7 +58,7 @@ import type {
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/ui/utils/binary"
 import { getFilename } from "@opencode-ai/ui/utils/path"
-import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "./message-gesture"
+import { createTimelineListGestures } from "./message-timeline-list-gestures"
 import { openTitleEditorPatch, resolveTitleSave } from "./session-title-editor"
 import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "./session-archive"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -179,40 +179,7 @@ const taskDescription = (part: PartType, sessionID: string) => {
 
 const pace = (width: number) => Math.round(Math.max(1200, Math.min(3200, (Math.max(width, 360) * 2000) / 900)))
 
-const boundaryTarget = (root: HTMLElement, target: EventTarget | null) => {
-  const current = target instanceof Element ? target : undefined
-  const nested = current?.closest("[data-scrollable]")
-  if (!nested || nested === root) return root
-  if (!(nested instanceof HTMLElement)) return root
-  return nested
-}
-
-const markBoundaryGesture = (input: {
-  root: HTMLDivElement
-  target: EventTarget | null
-  delta: number
-  onMarkScrollGesture: (target?: EventTarget | null) => void
-}) => {
-  const target = boundaryTarget(input.root, input.target)
-  if (target === input.root) {
-    input.onMarkScrollGesture(input.root)
-    return
-  }
-  if (
-    shouldMarkBoundaryGesture({
-      delta: input.delta,
-      scrollTop: target.scrollTop,
-      scrollHeight: target.scrollHeight,
-      clientHeight: target.clientHeight,
-    })
-  ) {
-    input.onMarkScrollGesture(input.root)
-  }
-}
-
 export function MessageTimeline(props: MessageTimelineProps) {
-  let touchGesture: number | undefined
-
   const navigate = useNavigate()
   const sdk = useSDK()
   const data = useData()
@@ -953,76 +920,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
     props.setScrollRef(root)
   }
 
-  const boundaryGesture = (event: { currentTarget: HTMLDivElement; target: EventTarget | null }, delta: number) =>
-    markBoundaryGesture({
-      root: event.currentTarget,
-      target: event.target,
-      delta,
-      onMarkScrollGesture: props.onMarkScrollGesture,
-    })
-
-  const handleListWheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
-    prepareInteractionScroll()
-    const delta = normalizeWheelDelta({
-      deltaY: event.deltaY,
-      deltaMode: event.deltaMode,
-      rootHeight: event.currentTarget.clientHeight,
-    })
-    if (!delta) return
-    boundaryGesture(event, delta)
-  }
-
-  const handleListTouchStart = (event: TouchEvent) => {
-    prepareInteractionScroll()
-    touchGesture = event.touches[0]?.clientY
-  }
-
-  const handleListTouchMove = (event: TouchEvent & { currentTarget: HTMLDivElement }) => {
-    const next = event.touches[0]?.clientY
-    const prev = touchGesture
-    touchGesture = next
-    if (next === undefined || prev === undefined) return
-
-    const delta = prev - next
-    if (!delta) return
-
-    boundaryGesture(event, delta)
-  }
-
-  const handleListTouchEnd = () => {
-    touchGesture = undefined
-  }
-
-  const handleListPointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
-    // A pointer press on a control is an action, not a scroll gesture. Expanding
-    // the cold virtual range here would replace the pressed row between
-    // pointerdown and click, so the browser never delivers the click to
-    // timeline controls such as WorkGroup and recovery-card buttons.
-    const target = event.target instanceof Element ? event.target : undefined
-    if (target?.closest("button, a, input, textarea, select, [role='button'], [role='menuitem']")) return
-    prepareInteractionScroll()
-    props.onMarkScrollGesture(event.target)
-  }
-
-  // Drag-to-select starts on a child node, not the list — mark it so autoscroll yields.
-  const handleListPointerMove = (event: PointerEvent) => {
-    if (event.buttons === 1) props.onMarkScrollGesture(event.target)
-  }
-
-  const handleListScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
-    if (!props.active()) return
-    if (prepend.loading()) prepend.update()
-    updateViewportMessage(event.currentTarget)
-    props.onScheduleScrollState(event.currentTarget)
-    props.onHistoryScroll()
-    // The virtualizer and resizeItem re-anchor own bottom-following.
-    if (props.hasScrollGesture()) {
-      props.onUserScroll()
-      props.onAutoScrollHandleScroll()
-      props.onMarkScrollGesture(event.currentTarget)
-    }
-    scrollMemory.capture()
-  }
+  const listGestures = createTimelineListGestures({
+    props,
+    prepareInteractionScroll,
+    prepend,
+    updateViewportMessage,
+    captureScroll: () => scrollMemory.capture(),
+  })
 
   onCleanup(() => {
     props.setScrollRef(undefined)
@@ -1803,14 +1707,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
       <ScrollView
         data-slot="session-timeline-scroll"
         viewportRef={bindListRoot}
-        onWheel={handleListWheel}
-        onTouchStart={handleListTouchStart}
-        onTouchMove={handleListTouchMove}
-        onTouchEnd={handleListTouchEnd}
-        onTouchCancel={handleListTouchEnd}
-        onPointerDown={handleListPointerDown}
-        onPointerMove={handleListPointerMove}
-        onScroll={handleListScroll}
+        onWheel={listGestures.onWheel}
+        onTouchStart={listGestures.onTouchStart}
+        onTouchMove={listGestures.onTouchMove}
+        onTouchEnd={listGestures.onTouchEnd}
+        onTouchCancel={listGestures.onTouchEnd}
+        onPointerDown={listGestures.onPointerDown}
+        onPointerMove={listGestures.onPointerMove}
+        onScroll={listGestures.onScroll}
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
         style={{
