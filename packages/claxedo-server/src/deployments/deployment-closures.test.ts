@@ -183,7 +183,12 @@ describe("server deployment entry closures", () => {
     // composition here shares: Better Auth deletes a consent without revoking
     // its opaque access and refresh tokens, and this Worker issues both. A
     // plugin over `better-auth/api`, already in this graph, so no package edge.
-    expect(result.modules.length).toBeLessThanOrEqual(16)
+    // +1: `platform/auth/device-approval-transaction.ts`, from that same
+    // plugin list. Better Auth authorizes `/device/approve` on the short,
+    // hand-typed user code plus whoever claimed it, so an approval here also
+    // carries an HMAC over the request row the approver was shown. Another
+    // plugin over `better-auth/api`, so no package edge.
+    expect(result.modules.length).toBeLessThanOrEqual(17)
     // The release identity reads its empty-service manifest ID from the
     // dependency-neutral `@claxedo/service-contract` rather than owning a
     // second string. No service implementation enters the locked graph; the
