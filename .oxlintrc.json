@@ -237,6 +237,40 @@
       "rules": {
         "typescript/no-unsafe-type-assertion": "off"
       }
+    },
+    {
+      // The browser-delivered packages write nothing to the devtools console.
+      // Handled errors go through `claxedo-app/src/platform/telemetry/analytics.ts`
+      // `captureException` (PostHog error tracking; the console only in a dev
+      // build), and `@opencode-ai/ui/utils/report-error` forwards the leaf
+      // packages' failures to it. The exemptions are inline, each naming the
+      // opt-in localStorage flag that has to be set before the line prints.
+      "files": [
+        "packages/claxedo-app/src/**",
+        "packages/claxedo-web/src/**",
+        "packages/session-app/src/**",
+        "packages/session-ui/src/**",
+        "packages/ui/src/**"
+      ],
+      "rules": {
+        "no-console": "error"
+      }
+    },
+    {
+      "files": [
+        "packages/claxedo-app/src/**/*.test.ts", "packages/claxedo-app/src/**/*.test.tsx",
+        "packages/claxedo-app/src/**/*.vitest.ts", "packages/claxedo-app/src/**/*.vitest.tsx",
+        "packages/claxedo-app/src/**/test-support/**", "packages/claxedo-app/src/**/tests/**",
+        "packages/claxedo-app/src/**/__tests__/**",
+        "packages/claxedo-web/src/**/*.test.ts",
+        "packages/session-app/src/**/*.test.ts", "packages/session-app/src/**/*.test.tsx",
+        "packages/session-ui/src/**/*.test.ts", "packages/session-ui/src/**/*.test.tsx",
+        "packages/ui/src/**/*.test.ts", "packages/ui/src/**/*.test.tsx",
+        "packages/ui/src/**/*.stories.tsx", "packages/ui/src/storybook/**"
+      ],
+      "rules": {
+        "no-console": "off"
+      }
     }
   ],
   "ignorePatterns": ["**/node_modules", "**/dist", "**/.build", "**/*.astro", "**/*.d.ts", "**/sdk.gen.ts"]
