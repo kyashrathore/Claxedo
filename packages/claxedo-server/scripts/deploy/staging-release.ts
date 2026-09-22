@@ -36,6 +36,8 @@ export type StagingLedgerState = Readonly<{
   activePhaseRevision: number
   activeReleaseSequence: number
   maxStateRevision: number
+  /** The active release's own identity, enough to finish opening it. */
+  activeIdentity: Readonly<Record<string, string>>
 }>
 
 export type StagingReleasePredecessor = Readonly<{
@@ -54,6 +56,12 @@ export function stagingLedgerSql(deploymentId: string) {
   "state"."phase" as "activePhase",
   "state"."phaseRevision" as "activePhaseRevision",
   "release"."releaseSequence" as "activeReleaseSequence",
+  "release"."workerBuildId" as "activeWorkerBuildId",
+  "release"."platformVersionId" as "activePlatformVersionId",
+  "release"."browserBuildId" as "activeBrowserBuildId",
+  "release"."relayBuildId" as "activeRelayBuildId",
+  "release"."authConfigurationId" as "activeAuthConfigurationId",
+  "release"."requestLimiterNamespaceId" as "activeRequestLimiterNamespaceId",
   (select max("stateRevision") from "deploymentReleaseStateHistory"
     where "deploymentId" = ${id}) as "maxStateRevision"
 from "deploymentReleaseActive" as "active"
@@ -91,6 +99,20 @@ export function parseStagingLedgerState(output: string): StagingLedgerState {
   ) {
     throw new Error("staging release ledger row carries a non-integer revision or sequence")
   }
+  const identityColumns = {
+    CLAXEDO_WORKER_BUILD_ID: "activeWorkerBuildId",
+    CLAXEDO_PLATFORM_VERSION_ID: "activePlatformVersionId",
+    CLAXEDO_BROWSER_BUILD_ID: "activeBrowserBuildId",
+    CLAXEDO_RELAY_BUILD_ID: "activeRelayBuildId",
+    CLAXEDO_AUTH_CONFIGURATION_ID: "activeAuthConfigurationId",
+    CLAXEDO_REQUEST_LIMITER_NAMESPACE_ID: "activeRequestLimiterNamespaceId",
+  } as const
+  const activeIdentity: Record<string, string> = {}
+  for (const [name, column] of Object.entries(identityColumns)) {
+    const value = stringField(row, column)
+    if (value === undefined) throw new Error(`staging release ledger row is missing ${column}`)
+    activeIdentity[name] = value
+  }
   return Object.freeze({
     activeStateRevision,
     activeReleaseId,
@@ -98,6 +120,7 @@ export function parseStagingLedgerState(output: string): StagingLedgerState {
     activePhaseRevision,
     activeReleaseSequence,
     maxStateRevision,
+    activeIdentity: Object.freeze(activeIdentity),
   })
 }
 
@@ -304,7 +327,7 @@ async function main() {
       parseDeploymentStatus(await capture(wranglerExecutable, ["deployments", "status", ...configArgs, "--json"])),
       workerName,
     )
-    const predecessor = stagingReleasePredecessor(
+    const readLedger = async () =>
       parseStagingLedgerState(
         await capture(wranglerExecutable, [
           "d1",
@@ -316,8 +339,25 @@ async function main() {
           "--command",
           stagingLedgerSql(deploymentId),
         ]),
-      ),
-    )
+      )
+    let ledger = await readLedger()
+    // A release deploys and then opens, and a failure between the two leaves
+    // the active row locked — which refuses every release after it, including
+    // the one that would carry the fix. The row itself holds the identity that
+    // finishes it, so staging opens it and carries on; production has no
+    // `--dev-open` at all and still stops here.
+    if (ledger.activePhase === "locked" && !dryRun) {
+      console.log(`finishing ${ledger.activeReleaseId}, left locked by an interrupted release`)
+      await inherit(process.execPath, ["run", "scripts/deploy/prepare-better-auth-d1.ts", "--dev-open", "--staging"], {
+        ...process.env,
+        ...ledger.activeIdentity,
+        CLAXEDO_DEPLOYMENT_ID: deploymentId,
+        CLAXEDO_RELEASE_ID: ledger.activeReleaseId,
+        CLAXEDO_RELEASE_SEQUENCE: String(ledger.activeReleaseSequence),
+      })
+      ledger = await readLedger()
+    }
+    const predecessor = stagingReleasePredecessor(ledger)
 
     const releaseEnv: NodeJS.ProcessEnv = {
       ...process.env,

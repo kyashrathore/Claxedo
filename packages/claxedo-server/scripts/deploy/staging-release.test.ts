@@ -23,9 +23,35 @@ const openLedger = {
   activePhaseRevision: 1,
   activeReleaseSequence: 84,
   maxStateRevision: 204,
+  activeWorkerBuildId: "sha256:worker",
+  activePlatformVersionId: "11111111-2222-3333-4444-555555555555",
+  activeBrowserBuildId: "sha256:browser",
+  activeRelayBuildId: "relay-absent-v1",
+  activeAuthConfigurationId: "sha256:auth",
+  activeRequestLimiterNamespaceId: "2101",
 }
 
 describe("staging ledger read", () => {
+  test("carries the active release's identity, which is what finishes a locked row", () => {
+    const state = parseStagingLedgerState(ledger({ ...openLedger, activePhase: "locked", activePhaseRevision: 0 }))
+
+    expect(state.activeIdentity).toEqual({
+      CLAXEDO_WORKER_BUILD_ID: "sha256:worker",
+      CLAXEDO_PLATFORM_VERSION_ID: "11111111-2222-3333-4444-555555555555",
+      CLAXEDO_BROWSER_BUILD_ID: "sha256:browser",
+      CLAXEDO_RELAY_BUILD_ID: "relay-absent-v1",
+      CLAXEDO_AUTH_CONFIGURATION_ID: "sha256:auth",
+      CLAXEDO_REQUEST_LIMITER_NAMESPACE_ID: "2101",
+    })
+  })
+
+  test("refuses a row that cannot say what its active release is", () => {
+    const { activeWorkerBuildId: _omitted, ...withoutWorker } = openLedger
+
+    expect(() => parseStagingLedgerState(ledger(withoutWorker))).toThrow("activeWorkerBuildId")
+  })
+
+
   test("scopes both the active row and the history high-water mark to one deployment", () => {
     const sql = stagingLedgerSql("acc-stg-260830-232009-3851")
 
