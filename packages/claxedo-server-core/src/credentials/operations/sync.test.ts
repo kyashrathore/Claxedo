@@ -85,7 +85,8 @@ describe("syncLocalCredentials", () => {
     setBackendOverride(undefined)
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
-    process.env.CLAXEDO_DATA_DIR = prev
+    if (prev === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = prev
     process.env.HOME = prevHome
     process.env.ANTHROPIC_API_KEY = prevAnthropic
     process.env.CLAUDE_CODE_OAUTH_TOKEN = prevClaudeOAuth

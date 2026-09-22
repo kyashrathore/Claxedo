@@ -25,7 +25,8 @@ describe("credential verification integration", () => {
     setBackendOverride(undefined)
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
-    process.env.CLAXEDO_DATA_DIR = previous
+    if (previous === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previous
   })
 
   test("persists the route result and returns that same redacted health from listing", async () => {

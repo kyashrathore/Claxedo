@@ -54,7 +54,8 @@ describe("credential registry", () => {
     setBackendOverride(undefined)
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
-    process.env.CLAXEDO_DATA_DIR = prev
+    if (prev === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = prev
   })
 
   test("putCredential creates metadata and stores secret in backend", async () => {

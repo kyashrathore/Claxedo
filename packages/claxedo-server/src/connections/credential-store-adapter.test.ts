@@ -59,7 +59,8 @@ afterAll(async () => {
   ClaxedoDB.close()
   await controlPlane.dispose()
   await fs.rm(root, { recursive: true, force: true })
-  process.env.CLAXEDO_DATA_DIR = prev
+  if (prev === undefined) delete process.env.CLAXEDO_DATA_DIR
+  else process.env.CLAXEDO_DATA_DIR = prev
 })
 
 /** The hosted store over one D1 database, on a fresh org per call: the org scope is what empties it. */

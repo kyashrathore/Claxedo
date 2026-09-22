@@ -21,6 +21,17 @@ const { ClaxedoDB } = await import("../platform/db")
 const { defaultControlPlaneCredentials } = await import("./default-credentials")
 ClaxedoDB.Drizzle()
 
+// File scope, not the first describe's: every describe below opens this same
+// database, and restoring the variable by assignment would store the string
+// "undefined" — which resolves to ./undefined/ under the package cwd.
+afterAll(async () => {
+  setBackendOverride(undefined)
+  ClaxedoDB.close()
+  await fs.rm(root, { recursive: true, force: true })
+  if (prev === undefined) delete process.env.CLAXEDO_DATA_DIR
+  else process.env.CLAXEDO_DATA_DIR = prev
+})
+
 describe("the engine hears about the providers a mutation touched", () => {
   const port = defaultControlPlaneCredentials()
 
@@ -28,13 +39,6 @@ describe("the engine hears about the providers a mutation touched", () => {
     setBackendOverride(createTestBackend())
     ClaxedoDB.use((db) => db.delete(ClaxedoProviderCredentialTable).run())
     synced.mockClear()
-  })
-
-  afterAll(async () => {
-    setBackendOverride(undefined)
-    ClaxedoDB.close()
-    await fs.rm(root, { recursive: true, force: true })
-    process.env.CLAXEDO_DATA_DIR = prev
   })
 
   test("a stored key names its own provider", async () => {
