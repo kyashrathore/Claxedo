@@ -275,6 +275,15 @@ async function installHostTunnelRuntimeMock(
     model: { providerID: "opencode", modelID: BIG_PICKLE.id },
     agent: "build",
   })
+  // The runtime store's `last_human_turn_at`, written only for a turn whose
+  // actor is human: the newest user message's stamp, and absent on a session
+  // nobody has prompted.
+  const lastHumanTurn = () => {
+    const created = messages.filter((row) => row.info.role === "user").at(-1)?.info.time
+    return typeof created === "object" && created && "created" in created && typeof created.created === "number"
+      ? { lastHumanTurn: created.created }
+      : {}
+  }
   // A runtime always names its OWN filesystem path; `sessionRowDirectory` is
   // what decides the identity the row carries into the app.
   const sessionRow = () => ({
@@ -284,14 +293,14 @@ async function installHostTunnelRuntimeMock(
     directory: HOST_DIR,
     title: textOf(messages[0]?.parts) || SEEDED_SESSION_TITLE,
     version: "2",
-    time: { created: 1, updated: Date.now() },
+    time: { created: 1, updated: Date.now(), ...lastHumanTurn() },
     summary: { additions: 0, deletions: 0, files: 0 },
     config: sessionConfig(),
   })
 
-  // Created AFTER the session above and untouched since: the two rows order
-  // one way by creation and the other way by activity, so the rail's order is
-  // decided rather than accidental.
+  // Created AFTER the session above and never prompted: the two rows order
+  // one way by creation and the other way by the reader's last turn, so the
+  // rail's order is decided rather than accidental.
   const idleSessionRow = () => ({
     id: IDLE_SESSION_ID,
     slug: IDLE_SESSION_ID,
@@ -1105,7 +1114,7 @@ test.describe("core machine-placed workspace @core", () => {
 
     await page.getByTestId("rail-account-trigger").click()
     await page.getByRole("menuitem", { name: /settings/i }).click()
-    await page.getByRole("tab", { name: "Machines" }).click()
+    await page.locator('[data-component="settings-nav-item"][data-section="devices"]').click()
 
     // Nothing is published before the machine is enabled — the reconciler must
     // not post an assignment at a machine that is not up.
@@ -1157,9 +1166,9 @@ test.describe("core machine-placed workspace @core", () => {
     await expect(projectGroup.getByTestId("rail-sidebar-session-list-empty")).toHaveCount(0)
     expect(mock.requests.relayHits).toContain("GET /session")
 
-    // Most recently ACTIVE first: the idle row was created later, so an order
-    // taken from creation time would put it on top and leave the session the
-    // user last worked in below it.
+    // The session the reader last spoke to first, then the never-prompted ones:
+    // the idle row was created later, so an order taken from creation time
+    // would put it on top and leave the session the user last worked in below.
     await expect(projectGroup.locator('[data-testid="rail-sidebar-session-row"]').first())
       .toHaveAttribute("data-session-id", SESSION_ID, { timeout: CONTENTION_TIMEOUT })
 
