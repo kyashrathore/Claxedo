@@ -31,7 +31,7 @@ explain a maintained package or cross-package delivery contract.
     the harness's own listing. Fixes the Codex `threadName` field and the
     ACP `session-info` empty-title overwrite on the way.
 
-- [Onboarding v2: project → AI → where it runs](./2026-09-15-001-feat-onboarding-v2-project-ai-execution.md) — proposed; not started.
+- [Onboarding v2: project → AI → where it runs](./2026-09-15-001-feat-onboarding-v2-project-ai-execution.md) — in progress (2026-09-23); re-verified against the hosted plane.
   - The no-project canvas becomes a three-step wizard: folder-first project
     with a server-derived name and a GitHub repository list for clones, AI
     logins verified through the Providers page's own detect and probe, and
