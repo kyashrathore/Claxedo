@@ -134,7 +134,7 @@ export const appLocal: Policy = {
   // list; reviewed owner is the workspaces data domain, which already owns both
   // halves (`share-workspace` decides what is local, `shared-workspaces` reads
   // what is published) and is the only layer allowed to import them —
-  // `features/onboarding` may not.
+  // `features/settings` may not.
   // Session open/switch instrumentation (`platform/performance/session-perf.ts`
   // and its screen-side owner `features/session/ui/session-open-perf.ts`)
   // adds two modules and no package edge.
@@ -465,7 +465,7 @@ export const appLocal: Policy = {
   // with its reconnect policy in `app/providers/claxedo-events-reconnect.ts`;
   // the global-sdk provider consumes its frames and opens nothing of its own.
   //
-  // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
+  // +1 module (2026-09-20): `features/settings/remote-access/machine-provider-config.tsx`
   // — the owner's push/clear of sealed provider credentials for one enrolled
   // machine, rendered under each row of the Machines list by
   // `remote-access-surface.tsx`. It reaches the control plane only through

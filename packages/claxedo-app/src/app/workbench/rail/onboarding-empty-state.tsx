@@ -19,12 +19,10 @@ import {
   onboardingState,
   readCodeHostStatus,
   readSandboxProviderCatalog,
-  RemoteAccessSurface,
   sandboxProviderQueryOptions,
   SetupOptionRow,
   SetupPage,
   SetupRows,
-  useRemoteAccessController,
   type AIConnectView,
   type CodeHostRequest,
   type OnboardingGoFurtherCardId,
@@ -32,6 +30,8 @@ import {
   type OnboardingDestination,
   type SetupPageStep,
 } from "@/features/onboarding"
+import { useRemoteAccessController } from "@/features/settings/remote-access/remote-access-controller"
+import { RemoteAccessSurface } from "@/features/settings/remote-access/remote-access-surface"
 import { useLocalWorkspaceAutoShareStatus } from "@/features/workspaces/data/auto-share-local-workspaces"
 import { invalidateSharedWorkspaces } from "@/features/workspaces/data/shared-workspaces"
 import { workspaceSandboxDriverAuthUrl } from "@/features/settings/ui/sandbox-section-logic"
@@ -76,7 +76,6 @@ export function OnboardingEmptyState(props: {
   const remoteAccess = useRemoteAccessController({
     serverUrl: server.url,
     signInAvailable: () => productUi().accountSignIn,
-    emit: funnel().emit,
     // See the note in `app/dialogs/settings.tsx`: the reconciler reads the
     // published set, and only this tells it the machine just came up.
     onMachineChanged: () => invalidateSharedWorkspaces(queryClient),

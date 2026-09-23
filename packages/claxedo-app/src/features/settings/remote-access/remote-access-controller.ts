@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/solid-query"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useAccountPort } from "@/platform/account/account-provider"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
-import type { OnboardingFunnelEvent } from "./funnel"
 import type { RemoteAccessProviderConfig } from "./remote-access-surface"
 import {
   remoteAccessAvailability,
@@ -21,24 +20,18 @@ import {
  * the operation only, and `platform/remote-access` decides the call — the
  * desktop's Host Connector, an HTTP client, or anything else a future product
  * adds.
- *
- * The funnel events live here rather than inside either implementation.
- * "Someone completed the remote-access onboarding step" is onboarding's fact,
- * not the transport's, and putting it in one implementation would leave the
- * other silently un-instrumented.
  */
 export function useRemoteAccessController(input: {
   serverUrl: string
   /** A hosted account can be entered even before its connector adapter loads. */
   signInAvailable?: () => boolean
-  emit?: (event: Extract<OnboardingFunnelEvent, { name: "remote_access_enabled" | "second_device_open" }>) => void
   /**
    * This machine started or stopped publishing.
    *
-   * Injected rather than done here, for the same reason `emit` is: what has to
-   * be re-read when the machine's publication state changes is the caller's
-   * knowledge, not this controller's. The workspaces domain owns "which
-   * workspaces are published" and onboarding may not import it.
+   * Injected rather than done here: what has to be re-read when the machine's
+   * publication state changes is the caller's knowledge, not this
+   * controller's. The workspaces domain owns "which workspaces are published"
+   * and a feature may not import another feature.
    *
    * It is not optional in practice on any product without a pushing port: the
    * HTTP implementation has no `subscribe`, so without this the published set
@@ -146,7 +139,6 @@ export function useRemoteAccessController(input: {
     const remote = port()
     if (!remote) throw new Error("This build cannot publish a machine for remote access")
     await remote.enable({ startAtLogin: startAtLogin() ?? false })
-    input.emit?.({ name: "remote_access_enabled" })
     input.onMachineChanged?.()
     await Promise.all([status.refetch(), devices.refetch()])
   }

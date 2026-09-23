@@ -554,7 +554,7 @@ export const desktopRendererUnsigned: Policy = {
   // -4 modules (2026-09-17): the second stream reader — see the app-local
   // ledger.
   //
-  // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
+  // +1 module (2026-09-20): `features/settings/remote-access/machine-provider-config.tsx`
   // — see the app-local ledger. The renderer's port leaves `providerConfig`
   // absent, so the control never renders here; the module rides in with the
   // shared surface.

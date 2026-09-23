@@ -198,9 +198,9 @@ describe("machine and workspace copy: the screens", () => {
   test("the walk reaches the screens it is meant to", () => {
     // A walk that found nothing would pass every assertion below.
     expect(screens.length).toBeGreaterThan(200)
-    expect(screens).toContain("features/onboarding/remote-access-surface.tsx")
+    expect(screens).toContain("features/settings/remote-access/remote-access-surface.tsx")
     expect(screens).toContain("app/workbench/rail/rail-sidebar.tsx")
-    expect(screens).not.toContain("features/onboarding/remote-access-surface.vitest.tsx")
+    expect(screens).not.toContain("features/settings/remote-access/remote-access-surface.vitest.tsx")
   })
 
   test("no screen names a workspace's type in prose", () => {

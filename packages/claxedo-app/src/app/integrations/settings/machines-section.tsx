@@ -5,15 +5,15 @@ import { createMemo, createSignal, For, Show, type Component, type JSX } from "s
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 import { useServer } from "@/app/connection/server"
 import { useConfigOptional } from "@/app/providers/config"
+import { MachineProviderConfig } from "@/features/settings/remote-access/machine-provider-config"
+import { useRemoteAccessController } from "@/features/settings/remote-access/remote-access-controller"
 import {
   RemoteAccessSurface,
   THIS_MACHINE,
-  useRemoteAccessController,
   type RemoteAccessDevice,
   type RemoteAccessProviderConfig,
   type RemoteAccessThisMachine,
-} from "@/features/onboarding"
-import { MachineProviderConfig } from "@/features/onboarding/machine-provider-config"
+} from "@/features/settings/remote-access/remote-access-surface"
 import { SettingsList, SettingsRow } from "@/ui/controls/settings-list"
 import { useLocalWorkspaceAutoShareStatus } from "@/features/workspaces/data/auto-share-local-workspaces"
 import { invalidateSharedWorkspaces } from "@/features/workspaces/data/shared-workspaces"
@@ -29,14 +29,9 @@ const CONNECT_COMMAND = "claxedo connect --token-file ./invite.txt --install-ser
 /**
  * The machines this account can reach.
  *
- * Composed here rather than under `features/settings`: the panel joins
- * onboarding's remote-access surface to the workspaces domain's publication
- * status, and a feature may not reach another feature directly.
- *
- * Remote access itself — whether this build has it, enabling it, and what this
- * machine currently serves — is the shared surface, because the onboarding step
- * asks the same question. The fleet below it is Settings' alone: onboarding
- * enrolls one machine and has no list to draw.
+ * Composed here rather than under `features/settings`: the panel joins the
+ * remote-access surface to the workspaces domain's publication status, and a
+ * feature may not reach another feature directly.
  */
 export const SettingsMachines: Component = () => {
   const server = useServer()
