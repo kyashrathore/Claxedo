@@ -1,0 +1,26 @@
+import type { PlacementId, ProjectId } from "./ids"
+
+export const queryKeys = {
+  bootstrap: (server: string) => ["server", server, "bootstrap"] as const,
+  projects: (server: string) => ["server", server, "projects"] as const,
+  project: (server: string, id: ProjectId) => ["server", server, "projects", id] as const,
+  placements: (server: string) => ["server", server, "placements"] as const,
+  machines: (server: string) => ["server", server, "machines"] as const,
+  accounts: (server: string) => ["server", server, "accounts"] as const,
+  providers: (server: string, harness: string) => ["server", server, "providers", harness] as const,
+  harnesses: (server: string) => ["server", server, "harnesses"] as const,
+  usage: (server: string, request: unknown) => ["server", server, "usage", request] as const,
+  usageAll: (server: string) => ["server", server, "usage"] as const,
+  marketplace: (server: string, projectId: ProjectId | undefined) => ["server", server, "marketplace", projectId ?? ""] as const,
+  marketplaceAll: (server: string) => ["server", server, "marketplace"] as const,
+  tasks: (server: string) => ["server", server, "tasks", "availability"] as const,
+  documents: (server: string) => ["server", server, "documents", "availability"] as const,
+  fileTree: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "tree", path] as const,
+  fileContent: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "content", path] as const,
+  fileStatus: (server: string, placementId: PlacementId) => ["server", server, "files", placementId, "status"] as const,
+  filesOf: (server: string, placementId: PlacementId) => ["server", server, "files", placementId] as const,
+  gitStatus: (server: string, placementId: PlacementId) => ["server", server, "git", placementId, "status"] as const,
+  gitLog: (server: string, placementId: PlacementId, limit: number) => ["server", server, "git", placementId, "log", limit] as const,
+  gitOf: (server: string, placementId: PlacementId) => ["server", server, "git", placementId] as const,
+  services: (server: string) => ["server", server, "services"] as const,
+} as const

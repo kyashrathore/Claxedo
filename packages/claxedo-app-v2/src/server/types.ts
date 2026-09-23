@@ -90,7 +90,7 @@ export type AgentRequest =
 export type AgentRequestReply =
   | { readonly kind: "permission"; readonly reply: AgentPermissionReply }
   | { readonly kind: "question"; readonly answers: readonly AgentQuestionAnswer[] }
-  | { readonly kind: "dismiss" }
+  | { readonly kind: "dismiss"; readonly request?: "permission" | "question" }
 
 export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff

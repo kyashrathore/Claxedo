@@ -1,7 +1,8 @@
-import { createContext, useContext, type Accessor } from "solid-js"
+import type { Accessor } from "solid-js"
 import type { QueryClient } from "@tanstack/solid-query"
 import type { ConnectionState, ServerEvent } from "./events"
 import type { PlacementId, ProjectId, RequestId } from "./ids"
+import type { ServerQueries } from "./queries"
 import type {
   AgentRequestReply,
   Capabilities,
@@ -20,6 +21,17 @@ import type {
 export type * from "./types"
 export type * from "./events"
 export * from "./ids"
+export type { AuthSource, ServerConfig } from "./config"
+export type { ServerQueries } from "./queries"
+export type { Account, Provider, ProviderList, ProviderModel } from "./accounts"
+export type { FileContent, FileNode, FileStatus } from "./files"
+export type { GitCommit, GitStatus, GitStatusEntry } from "./git"
+export type { MarketplaceCatalog, PluginCandidate, PluginHarness } from "./marketplace"
+export type { FeatureAvailability } from "./tasks"
+export type { UsageRequest, UsageSummary } from "./usage"
+export { ServerError, isRetryable, toAppError } from "./errors"
+export { ServerContext, useServer } from "./context"
+export { createServer, ServerProvider, type ServerHandle } from "./server"
 
 export type SessionsApi = {
   readonly list: (input: { readonly cursor?: string; readonly limit: number }) => Promise<SessionPage>
@@ -52,12 +64,5 @@ export type Server = {
   readonly sessions: SessionsApi
   readonly projects: ProjectsApi
   readonly placements: PlacementsApi
-}
-
-export const ServerContext = createContext<Server>()
-
-export function useServer(): Server {
-  const server = useContext(ServerContext)
-  if (!server) throw new Error("useServer needs a ServerContext provider above it")
-  return server
+  readonly queries: ServerQueries
 }

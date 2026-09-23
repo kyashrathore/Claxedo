@@ -34,6 +34,23 @@ export type ServerEvent =
   | { readonly type: "projectChanged"; readonly projectId: ProjectId }
   | { readonly type: "pluginsChanged" }
   | { readonly type: "streamGap"; readonly placementId?: PlacementId }
+  | { readonly type: "sessionsChanged"; readonly placementId?: PlacementId }
+  | { readonly type: "placementsChanged" }
+  | { readonly type: "documentsChanged"; readonly placementId?: PlacementId }
+  | { readonly type: "usageChanged" }
+  | {
+      readonly type: "terminalChanged"
+      readonly placementId?: PlacementId
+      readonly terminalId: string
+      readonly change: "created" | "updated" | "exited" | "removed"
+    }
+  | {
+      readonly type: "agentActivity"
+      readonly placementId?: PlacementId
+      readonly terminalId?: string
+      readonly sessionId?: string
+      readonly activity: "busy" | "idle" | "waitingOnUser" | "failed"
+    }
 
 export type ConnectionState =
   | { readonly kind: "connecting" }
