@@ -203,6 +203,71 @@ export async function readCodeHostAttempt(
   return { state: "failed", reason: "That sign-in wasn't approved. Try again." }
 }
 
+export type CodeHostRepository = {
+  id: string
+  name: string
+  /** `owner/name`, the form a clone is asked for by. */
+  fullName: string
+  cloneUrl: string
+  private: boolean
+  permissions: { read: boolean; write: boolean }
+}
+
+export type CodeHostRepositoryList =
+  | { ok: true; repositories: CodeHostRepository[] }
+  | { ok: false; reason: string }
+
+/**
+ * The connected account's repositories, in the server's order (the host's
+ * "recently updated" — the ones the user most likely came for sit first, so
+ * the list is not re-sorted here).
+ */
+export async function listCodeHostRepositories(
+  request: CodeHostRequest,
+  connectionId: string,
+): Promise<CodeHostRepositoryList> {
+  let response: Response
+  try {
+    response = await request(`/connections/${encodeURIComponent(connectionId)}/repositories`)
+  } catch {
+    return { ok: false, reason: "Couldn't reach the server to list repositories. Check your connection and try again." }
+  }
+  const body = asRecord(await response.json().catch(() => undefined))
+  if (!response.ok) return { ok: false, reason: repositoryListFailureCopy(body, response.status) }
+  return { ok: true, repositories: (readArray(body, "repositories") ?? []).flatMap(parseRepository) }
+}
+
+function parseRepository(value: unknown): CodeHostRepository[] {
+  const id = readString(value, "id")
+  const name = readString(value, "name")
+  const fullName = readString(value, "fullName")
+  const cloneUrl = readString(value, "cloneUrl")
+  if (id === undefined || name === undefined || fullName === undefined || cloneUrl === undefined) return []
+  const permissions = readField(value, "permissions")
+  return [{
+    id,
+    name,
+    fullName,
+    cloneUrl,
+    private: readBoolean(value, "private") === true,
+    permissions: {
+      read: readBoolean(permissions, "read") === true,
+      write: readBoolean(permissions, "write") === true,
+    },
+  }]
+}
+
+function repositoryListFailureCopy(body: Record<string, unknown> | undefined, status: number) {
+  const code = readString(body, "code") ?? ""
+  if (code === "repository_listing_unsupported") return "This code host can't list repositories here. Paste a URL instead."
+  if (code === "connection_not_found") return "That connection is gone. Connect the account again."
+  if (status === 401 || status === 403 || code === "repository_provider_unauthorized") {
+    return "That token was rejected. Reconnect the account in Settings, or paste a URL instead."
+  }
+  if (status === 502) return "The code host didn't answer. Try again in a moment, or paste a URL instead."
+  return "Couldn't list repositories. Try again, or paste a URL instead."
+}
+
 /** Never surface a raw server code — say what happened and what repairs it. */
 export function codeHostFailureCopy(body: Record<string, unknown> | undefined, status: number) {
   const code = readString(body, "code") ?? readString(readField(body, "error"), "code") ?? ""

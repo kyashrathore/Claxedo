@@ -4,6 +4,7 @@ import {
   connectCodeHost,
   connectedCodeHosts,
   hasConnectedCodeHost,
+  listCodeHostRepositories,
   readCodeHostAttempt,
   readCodeHostStatus,
 } from "./code-host-api"
@@ -238,6 +239,74 @@ describe("waiting on a device grant", () => {
       return new Response(JSON.stringify({ status: "pending" }))
     }, "a/../b")
     expect(paths).toEqual(["/attempts/a%2F..%2Fb"])
+  })
+})
+
+describe("listing a connected account's repositories", () => {
+  const repository = (fullName: string, overrides: Record<string, unknown> = {}) => ({
+    id: "1",
+    name: fullName.split("/")[1],
+    fullName,
+    cloneUrl: `https://github.com/${fullName}.git`,
+    private: false,
+    permissions: { read: true, write: false },
+    ...overrides,
+  })
+
+  test("reads the connection's route and keeps the server's order", async () => {
+    const paths: string[] = []
+    const outcome = await listCodeHostRepositories(async (path) => {
+      paths.push(path)
+      return new Response(JSON.stringify({
+        repositories: [repository("me/zebra", { id: "9" }), repository("me/apple", { private: true, permissions: { read: true, write: true } })],
+      }))
+    }, "conn/1")
+
+    // GitHub answers most-recently-updated first; the row the user came for
+    // is usually at the top, so the order is not the alphabet's.
+    expect(paths).toEqual(["/connections/conn%2F1/repositories"])
+    expect(outcome).toEqual({
+      ok: true,
+      repositories: [
+        { id: "9", name: "zebra", fullName: "me/zebra", cloneUrl: "https://github.com/me/zebra.git", private: false, permissions: { read: true, write: false } },
+        { id: "1", name: "apple", fullName: "me/apple", cloneUrl: "https://github.com/me/apple.git", private: true, permissions: { read: true, write: true } },
+      ],
+    })
+  })
+
+  test("a malformed row is dropped rather than crashing the list", async () => {
+    const outcome = await listCodeHostRepositories(responding({
+      repositories: [null, { id: "2", name: "no full name" }, repository("me/kept", { permissions: null })],
+    }), "conn-1")
+
+    expect(outcome.ok).toBe(true)
+    expect(outcome.ok && outcome.repositories.map((row) => row.fullName)).toEqual(["me/kept"])
+    expect(outcome.ok && outcome.repositories[0].permissions).toEqual({ read: false, write: false })
+  })
+
+  test.each([
+    [{ code: "capability_not_granted" }, 403, "token was rejected"],
+    [{}, 401, "token was rejected"],
+    [{ code: "repository_provider_unauthorized" }, 502, "token was rejected"],
+    [{ code: "repository_listing_unsupported" }, 501, "can't list repositories"],
+    [{ code: "repository_provider_unavailable" }, 502, "didn't answer"],
+    [{ code: "connection_not_found" }, 404, "connection is gone"],
+    [{}, 500, "Couldn't list repositories"],
+  ])("maps %o (%i) to a sentence, never a server code", async (body, status, expected) => {
+    const outcome = await listCodeHostRepositories(responding(body, status), "conn-1")
+
+    expect(outcome.ok).toBe(false)
+    expect(!outcome.ok && outcome.reason).toContain(expected)
+    expect(!outcome.ok && outcome.reason).not.toMatch(/repository_|capability_|connection_not_found|\b\d{3}\b/)
+  })
+
+  test("an unreachable server is a sentence, not an exception", async () => {
+    const outcome = await listCodeHostRepositories(async () => {
+      throw new Error("connection refused")
+    }, "conn-1")
+
+    expect(outcome.ok).toBe(false)
+    expect(!outcome.ok && outcome.reason).toContain("Couldn't reach the server")
   })
 })
 

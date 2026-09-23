@@ -19,7 +19,15 @@ export type ProjectRecord = {
   updated_at: number
 }
 
-export type ProjectSource = { kind: "directory"; folder: string } | { kind: "repository"; repoUrl: string }
+/**
+ * Where a project's repository comes from. A connection source names a
+ * repository of the caller's connected code host; the server resolves the
+ * clone URL and token itself, so a private clone never carries a token here.
+ */
+export type ProjectSource =
+  | { kind: "directory"; folder: string }
+  | { kind: "repository"; repoUrl: string }
+  | { kind: "repository"; connectionId: string; repo: { fullName: string } }
 
 function projectsUrl(baseUrl: string | undefined, path = "") {
   return `${normalizeUrl(baseUrl) ?? getDefaultBaseUrl()}/api/claxedo/projects${path}`
@@ -36,14 +44,13 @@ function toWireSource(source: ProjectSource) {
   return source.kind === "directory" ? { kind: "directory", directory: source.folder } : source
 }
 
+/** The server names the project from its source (remote, folder or URL) and suffixes a clash. */
 export async function createProject(input: {
   baseUrl?: string
-  name: string
   source: ProjectSource
   env?: Record<string, string>
 }) {
   const { project } = await api.post<{ project: WireProject }>(projectsUrl(input.baseUrl), {
-    name: input.name,
     source: toWireSource(input.source),
     ...(input.env && Object.keys(input.env).length ? { env: input.env } : {}),
   })
