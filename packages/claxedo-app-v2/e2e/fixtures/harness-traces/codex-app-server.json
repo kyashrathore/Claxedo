@@ -1,0 +1,268 @@
+{
+  "envelopes": [
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "part": {
+            "id": "000000_msg_assistant_1-text",
+            "sessionID": "ses_harness_matrix_codex-app-server",
+            "messageID": "msg_assistant_1",
+            "type": "text",
+            "text": ""
+          },
+          "time": 1010
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.delta:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "messageID": "msg_assistant_1",
+          "partID": "000000_msg_assistant_1-text",
+          "field": "text",
+          "delta": "Inspecting the repo."
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000001_msg_assistant_1-reasoning",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "part": {
+            "id": "000001_msg_assistant_1-reasoning",
+            "sessionID": "ses_harness_matrix_codex-app-server",
+            "messageID": "msg_assistant_1",
+            "type": "reasoning",
+            "text": "",
+            "time": {
+              "start": 1020
+            }
+          },
+          "time": 1030
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.delta:msg_assistant_1:000001_msg_assistant_1-reasoning",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "messageID": "msg_assistant_1",
+          "partID": "000001_msg_assistant_1-reasoning",
+          "field": "text",
+          "delta": "Checking test coverage first."
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.delta:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "messageID": "msg_assistant_1",
+          "partID": "000000_msg_assistant_1-text",
+          "field": "text",
+          "delta": "- inspect tests\n"
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.delta:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "messageID": "msg_assistant_1",
+          "partID": "000000_msg_assistant_1-text",
+          "field": "text",
+          "delta": "- run suite"
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000002_cmd-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "part": {
+            "id": "000002_cmd-1",
+            "sessionID": "ses_harness_matrix_codex-app-server",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "cmd-1",
+            "tool": "command",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "shell",
+                "kind": "command_execution",
+                "description": "git status",
+                "command": "git status",
+                "cwd": "/repo"
+              },
+              "metadata": {
+                "codex": {
+                  "itemType": "command_execution"
+                }
+              },
+              "time": {
+                "start": 1060
+              }
+            },
+            "metadata": {
+              "codex": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          "time": 1060
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000002_cmd-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "part": {
+            "id": "000002_cmd-1",
+            "sessionID": "ses_harness_matrix_codex-app-server",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "cmd-1",
+            "tool": "command",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "shell",
+                "kind": "command_execution",
+                "description": "git status",
+                "command": "git status",
+                "cwd": "/repo"
+              },
+              "metadata": {
+                "codex": {
+                  "itemType": "command_execution"
+                }
+              },
+              "time": {
+                "start": 1070
+              }
+            },
+            "metadata": {
+              "codex": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          "time": 1070
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000002_cmd-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "part": {
+            "id": "000002_cmd-1",
+            "sessionID": "ses_harness_matrix_codex-app-server",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "cmd-1",
+            "tool": "command",
+            "state": {
+              "status": "completed",
+              "input": {
+                "intent": "shell",
+                "kind": "command_execution",
+                "description": "git status",
+                "command": "git status",
+                "cwd": "/repo"
+              },
+              "output": "clean",
+              "title": "command",
+              "metadata": {
+                "codex": {
+                  "itemType": "command_execution"
+                }
+              },
+              "time": {
+                "start": 1080,
+                "end": 1080
+              }
+            },
+            "metadata": {
+              "codex": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          "time": 1080
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-codex-app-server",
+      "payload": {
+        "id": "runtime.diagnostic:ses_harness_matrix_codex-app-server:codex_app_server.unmapped_event",
+        "type": "runtime.diagnostic",
+        "properties": {
+          "sessionID": "ses_harness_matrix_codex-app-server",
+          "harness": "codex-app-server",
+          "threadId": "thread-1",
+          "code": "codex_app_server.unmapped_event",
+          "message": "hook/started: Codex app-server method has no AgentRuntimeEvent mapping",
+          "severity": "info",
+          "diagnostic": {
+            "code": "codex_app_server.unmapped_event",
+            "message": "hook/started: Codex app-server method has no AgentRuntimeEvent mapping",
+            "severity": "info",
+            "source": "codex.app-server",
+            "method": "hook/started",
+            "raw": {
+              "threadId": "thread-1",
+              "turnId": "turn-1",
+              "run": {
+                "id": "hook-1"
+              }
+            }
+          },
+          "raw": {
+            "source": "codex.app-server",
+            "method": "hook/started",
+            "payload": {
+              "threadId": "thread-1",
+              "turnId": "turn-1",
+              "run": {
+                "id": "hook-1"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+// Shared "focus the visible composer editor" helper.
+//
+// The composer editor renders as `[data-component="prompt-input"]` with
+// `role="textbox"` and `contenteditable="true"` (see `prompt-input/frame.tsx`).
+// Several keyboard-flow entry points need to hand focus to it after a
+// navigation/mount:
+//   - the palette/chord "New session" command (focus must not be left on BODY),
+//   - the "skip to composer" bypass link that lets a keyboard user jump past the
+//     project/session tree in the sidebar.
+//
+// A surface can mount more than one prompt-input node during a route transition
+// (an outgoing one kept `visibility:hidden` for animation, plus the live one),
+// so we skip hidden/aria-hidden nodes and only focus a live, editable one.
+
+function liveComposerEditors(doc: Document, options?: { sessionId?: string }): HTMLElement[] {
+  return Array.from(doc.querySelectorAll<HTMLElement>('[data-component="prompt-input"]')).filter((node) => {
+    if (node.getAttribute("contenteditable") !== "true") return false
+    if (node.getAttribute("aria-hidden") === "true") return false
+    if (options?.sessionId && node.closest<HTMLElement>("[data-session-id]")?.dataset.sessionId !== options.sessionId) return false
+    const style = doc.defaultView?.getComputedStyle(node)
+    return !style || style.visibility !== "hidden"
+  })
+}
+
+/** The first visible, editable composer editor node, if one is live. */
+export function visibleComposerEditor(doc: Document = document, options?: { sessionId?: string }): HTMLElement | undefined {
+  return liveComposerEditors(doc, options)[0]
+}
+
+/** Focus the first visible, editable composer editor. Returns whether one was focused. */
+export function focusComposerSurface(doc: Document = document, options?: { sessionId?: string }): boolean {
+  for (const node of liveComposerEditors(doc, options)) {
+    node.focus()
+    if (doc.activeElement === node) return true
+  }
+  return false
+}
+
+// Focus has to happen after the destination surface mounts, so the handoff is
+// deferred a frame. Exposed as a mutable object so tests can run it
+// synchronously without leaning on real timers/rAF.
+export const composerFocus = {
+  // Arrow property: tests capture and restore `composerFocus.schedule` as a bare
+  // reference, which is only sound for a function that carries no `this`.
+  schedule: (run: () => void): void => {
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => run())
+      return
+    }
+    queueMicrotask(run)
+  },
+}
+
+// A destination composer (e.g. a fresh draft opened by "New session") mounts
+// asynchronously after the route change and data load, so a single deferred
+// attempt can fire before it exists. Retry across a bounded number of frames
+// until the composer is present, then give up and run the fallback. We stop
+// early (without stealing focus) if the user has already moved focus to some
+// other real target while we were waiting.
+export function focusComposerWhenReady(options?: {
+  attempts?: number
+  fallback?: () => void
+  doc?: Document
+  origin?: Element | null
+  sessionId?: string
+}): void {
+  const doc = options?.doc ?? document
+  const maxAttempts = options?.attempts ?? 150 // ~2.5s at 60fps — draft mount can be slow
+  let tries = 0
+  const tick = () => {
+    const active = doc.activeElement
+    const userMovedFocus = !!active &&
+      active !== doc.body &&
+      active !== options?.origin &&
+      active.getAttribute("data-component") !== "prompt-input"
+    if (userMovedFocus) return
+    if (focusComposerSurface(doc, { sessionId: options?.sessionId })) return
+    tries += 1
+    if (tries >= maxAttempts) {
+      options?.fallback?.()
+      return
+    }
+    composerFocus.schedule(tick)
+  }
+  composerFocus.schedule(tick)
+}

@@ -1,0 +1,533 @@
+import { queryOptions, skipToken } from "@tanstack/solid-query"
+import { showToast } from "@opencode-ai/ui/toast"
+import { getFilename } from "@opencode-ai/ui/utils/path"
+import { formatServerError } from "@/lib/server-errors"
+import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
+import { authFetch } from "@/platform/api/api"
+import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
+import { isCancelledError } from "@tanstack/solid-query"
+import { queryClient } from "@/platform/query/query-client"
+import { shellDataKeys } from "@/platform/sync/keys"
+import { pathQuery } from "../../../features/session/data/query/directory"
+import { providerAuthQuery, providerListQuery } from "@/platform/query/control-plane"
+import { workspaceCatalogQuery } from "@/features/workspaces/data/workspace-catalog"
+import { mapInventoryToSessions } from "../../../features/session/data/query/inventory"
+import { cleanupDroppedSessionCaches } from "../../../features/session/data/sync/session-cache-cleanup"
+import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/platform/sync/session-load"
+import { bootstrapDirectory, bootstrapGlobal, isLoopbackServer, type GlobalBootstrapState } from "./bootstrap"
+import type {
+  SessionCacheValue,
+  SessionInventoryRow,
+  WorkspaceGroup,
+} from "../../../features/session/data/sync/global-sync-types"
+import { SESSION_RECENT_LIMIT } from "../../../features/session/data/sync/global-sync-types"
+import type { SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
+import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import {
+  sessionLoadMetaKey,
+  sessionLoadMetaMatchesWorkspace,
+  type DirectorySessionCacheRefreshOptions,
+  type DirectorySessionLoadMeta,
+} from "../../../features/session/data/sync/directory-session-cache"
+import { trimSessions } from "../../../platform/sync/global-sync/session-trim"
+import { shouldUseSignedControlPlaneInventory, type InventoryGlobalSession } from "../../../features/session/data/sync/inventory-source"
+
+type DirectoryRef = string
+type SessionRow = SessionCacheValue["session"][number]
+type QueryOptionsClient =
+  Parameters<typeof workspaceCatalogQuery>[0]["client"] &
+  Parameters<typeof pathQuery>[0]["client"] & {
+    mcp: { status: () => Promise<{ data?: unknown }> }
+  }
+type SessionListClient = {
+  session: {
+    list: (query: { directory: DirectoryRef; roots: true; limit?: number }) => Promise<{ data?: SessionRow[] }>
+  }
+}
+type DirectoryChildren = {
+  pin: (directory: DirectoryRef) => void
+  unpin: (directory: DirectoryRef) => void
+  sessionCache: (directory: DirectoryRef) => SessionCacheValue
+}
+type WorkspaceInfo = SignedWorkspaceInfo
+type RuntimeRef = { workspaceId: string }
+type Translate = (key: string, vars?: Record<string, string | number>) => string
+
+/**
+ * Remove a request-tracking query without leaking a CancelledError.
+ *
+ * `removeQueries` destroys the query outright; when a CONCURRENT bootstrap is
+ * mid-fetch on the same key (sign-in remounts overlap these), destruction
+ * rejects that fetch with a CancelledError nothing awaits — an
+ * unhandledrejection overlay in dev. `cancelQueries` settles the in-flight
+ * fetch first and swallows the cancellation, making the removal inert.
+ */
+/**
+ * A bootstrap's fetchQuery rejecting with a CancelledError is a principal
+ * change (sign-in/out clears the query client) or a concurrent removal — not
+ * a failure to report. Callers fire bootstraps with `void`, so an unswallowed
+ * cancellation surfaces as an unhandledrejection overlay in dev.
+ */
+function swallowCancellation(error: unknown): null {
+  if (isCancelledError(error)) return null
+  throw error
+}
+
+function dropRequestQuery(filter: { queryKey: readonly unknown[]; exact?: boolean }) {
+  void queryClient
+    .cancelQueries(filter)
+    .catch(() => undefined)
+    .then(() => queryClient.removeQueries(filter))
+}
+
+export function bootstrapSessionRuntimeTarget(input: {
+  workspace?: WorkspaceSessionBacking
+  runtimeRef?: RuntimeRef
+}) {
+  if (input.workspace) {
+    return {
+      workspaceId: input.workspace.workspaceId,
+      hostKind: input.workspace.kind,
+      signedControlPlane: true,
+    } as const
+  }
+  if (!input.runtimeRef) return undefined
+  return { workspaceId: input.runtimeRef.workspaceId } as const
+}
+
+export function sessionInventoryMatchesWorkspace(
+  inventory: Pick<WorkspaceGroup, "workspaceId"> | undefined,
+  workspace: WorkspaceSessionBacking | undefined,
+) {
+  return !workspace || inventory?.workspaceId === workspace.workspaceId
+}
+
+export function runtimeInventoryWorkspaceIdentity(input: {
+  directory: DirectoryRef
+  requestedWorkspace?: WorkspaceSessionBacking
+  signedWorkspace?: WorkspaceInfo
+}) {
+  const workspaceId = input.requestedWorkspace?.workspaceId ?? input.signedWorkspace?.workspaceId ?? input.directory
+  const metadata = input.signedWorkspace?.workspaceId === workspaceId ? input.signedWorkspace : undefined
+  return {
+    workspaceId,
+    directory: metadata?.directory ?? input.directory,
+    workspaceName: metadata?.workspaceName,
+  }
+}
+
+export const loadMcpQuery = (directory: DirectoryRef, sdk?: QueryOptionsClient) =>
+  queryOptions({
+    queryKey: [directory, "mcp"],
+    queryFn: sdk ? () => sdk.mcp.status().then((r) => r.data ?? {}) : skipToken,
+  })
+
+export function workspaceScopedCacheKey(input: { directory: DirectoryRef; workspaceId?: string }) {
+  return input.workspaceId ?? input.directory
+}
+
+export function bootstrapRequestKey(
+  directory: DirectoryRef,
+  harnessType?: string,
+  workspace?: WorkspaceSessionBacking,
+) {
+  const authority = workspace
+    ? `${workspace.kind}:${workspace.workspaceId}:${workspace.hostId ?? ""}`
+    : "local"
+  return ["shell", "global-sync", "bootstrap", directory, harnessType ?? "", authority, "request"] as const
+}
+
+export function bootstrapRequestPrefix(directory: DirectoryRef) {
+  return ["shell", "global-sync", "bootstrap", directory] as const
+}
+
+export function globalBootstrapRequestKey(baseUrl: string, harnessType?: string) {
+  return ["shell", "global-sync", "bootstrap", "global", baseUrl, harnessType ?? "", "request"] as const
+}
+
+export function globalBootstrapFreshKey(baseUrl: string, harnessType?: string) {
+  return ["shell", "global-sync", "bootstrap", "global", baseUrl, harnessType ?? "", "fresh"] as const
+}
+
+export function sessionLoadRequestKey(directory: DirectoryRef) {
+  return ["shell", "global-sync", "session-load", directory, "request"] as const
+}
+
+export function createQueryOptionsApi(input: {
+  globalSDK: () => QueryOptionsClient
+  sdkFor: (directory: DirectoryRef) => QueryOptionsClient
+  hasSignedAccess: () => boolean
+  baseUrl?: string
+  request?: typeof fetch
+  harnessType?: string
+}) {
+  return {
+    projects: () => workspaceCatalogQuery({
+      baseUrl: input.baseUrl,
+      client: input.globalSDK(),
+      request: input.request,
+      signedAccess: input.hasSignedAccess(),
+    }),
+    providers: (directory: DirectoryRef | null, harnessType: string) =>
+      providerListQuery({
+        baseUrl: input.baseUrl,
+        directory,
+        harnessType,
+        request: input.request,
+      }),
+    providerAuth: (harnessType: string) => providerAuthQuery({
+      baseUrl: input.baseUrl,
+      harnessType,
+      request: input.request,
+    }),
+    path: (directory: DirectoryRef | null) =>
+      pathQuery({
+        baseUrl: input.baseUrl,
+        directory: directory ?? "",
+        client: directory === null ? input.globalSDK() : input.sdkFor(directory),
+      }),
+    mcp: (directory: DirectoryRef) => loadMcpQuery(directory, input.sdkFor(directory)),
+    sessions: (directory: DirectoryRef) => ({ queryKey: [directory, "loadSessions"] as const }),
+  }
+}
+
+export type QueryOptionsApi = ReturnType<typeof createQueryOptionsApi>
+
+export function localLoopbackFetch(baseUrl: string) {
+  if (!isLoopbackServer(baseUrl)) return undefined
+  return globalThis.fetch
+}
+
+export function globalBootstrapFetch(baseUrl: string, platformFetch?: typeof fetch) {
+  return localLoopbackFetch(baseUrl) ?? platformFetch ?? authFetch
+}
+
+export function shouldUseSignedRouteBootstrap(input: {
+  signedRoute: boolean
+  baseUrl: string
+  platformFetch?: typeof fetch
+}) {
+  if (!input.signedRoute) return false
+  if (isLoopbackServer(input.baseUrl)) return false
+  return !!input.platformFetch
+}
+
+function shouldUseLocalSessionListClient(input: { baseUrl: string; directory: DirectoryRef }) {
+  return isLoopbackServer(input.baseUrl) && isFilesystemDirectory(input.directory)
+}
+
+function shouldSkipCentralSessionList(input: { baseUrl: string; directory: DirectoryRef }) {
+  const loopback = isLoopbackServer(input.baseUrl)
+  const filesystemDirectory = isFilesystemDirectory(input.directory)
+  return loopback ? !filesystemDirectory : filesystemDirectory
+}
+
+export function createBootstrapOrchestrator(input: {
+  baseUrl: () => string
+  globalSDK: () => QueryOptionsClient & SessionListClient & Parameters<typeof bootstrapGlobal>[0]["globalSDK"]
+  children: DirectoryChildren
+  translate: Translate
+  platformFetch: () => typeof fetch | undefined
+  ready: () => boolean
+  setGlobalState: (patch: Partial<GlobalBootstrapState>) => void
+  initialRouteDirectory: () => DirectoryRef | undefined
+  hasSignedAccess: () => boolean
+  workspaceDirectoryRef: (directory: DirectoryRef) => boolean
+  workspaceRuntimeRef: (directory: DirectoryRef) => RuntimeRef | undefined
+  signedWorkspaceInfo: (directory: DirectoryRef) => WorkspaceInfo | undefined
+  signedInventorySource: { fetchSignedDirectorySessions: (directory: DirectoryRef) => Promise<SessionInventoryRow[]> }
+  sessionInventory: () => { byWorkspace: Record<string, WorkspaceGroup> }
+  projectFor: (directory: DirectoryRef) => { id: string } | undefined
+  inventoryRow: (session: InventoryGlobalSession) => SessionInventoryRow
+  cacheSessions: (directory: DirectoryRef, value: Omit<SessionCacheValue, "at">) => void
+  sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
+  sdkFor: (directory: DirectoryRef) => QueryOptionsClient & Parameters<typeof bootstrapDirectory>[0]["sdk"]
+  localSessionListClient: (directory: DirectoryRef) => SessionListClient
+  setSessionLoadMeta: (directory: DirectoryRef, value: DirectorySessionLoadMeta) => void
+  markGlobalBootstrapFresh: (baseUrl: string, harnessType?: string) => void
+  replaceRuntimeWorkspaceRows: (input: {
+    workspaceKey: string
+    directory: DirectoryRef
+    workspaceName?: string
+    projectID: string
+    rows: SessionInventoryRow[]
+    total: number
+  }) => void
+}) {
+  function permissionMapForTrim(sessions: SessionRow[]) {
+    const permission: Parameters<typeof trimSessions>[1]["permission"] = {}
+    for (const session of sessions) {
+      const cached = queryClient.getQueryData<{ permissions: Parameters<typeof trimSessions>[1]["permission"][string] }>(
+        shellDataKeys.sessionId(session.id, "requests"),
+      )
+      if (cached?.permissions.length) permission[session.id] = cached.permissions
+    }
+    return permission
+  }
+
+  async function loadSessions(
+    directory: DirectoryRef,
+    opts: DirectorySessionCacheRefreshOptions & { force?: boolean } = {},
+  ) {
+    const signedWorkspace = input.signedWorkspaceInfo(directory)
+    const requestedWorkspace = opts.workspace ?? signedWorkspace
+    const requestKey = sessionLoadRequestKey(directory)
+    const pending = queryClient.getQueryState(requestKey)?.fetchStatus === "fetching"
+    if (pending && !opts.force) {
+      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null }).catch(swallowCancellation)
+      const settledMeta = queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(directory))
+      if (sessionLoadMetaMatchesWorkspace(settledMeta, requestedWorkspace)) return
+    }
+
+    input.children.pin(directory)
+    const currentCache = () => input.children.sessionCache(directory)
+    const currentLimit = () => input.sessionCacheLimit(directory, currentCache().limit)
+    const inventory = input.sessionInventory().byWorkspace[workspaceScopedCacheKey({
+      directory,
+      workspaceId: requestedWorkspace?.workspaceId,
+    })]
+    const inventoryMatchesWorkspace = sessionInventoryMatchesWorkspace(inventory, requestedWorkspace)
+    if (inventory && inventoryMatchesWorkspace && !opts.force && !(input.workspaceRuntimeRef(directory) && inventory.sessions.length === 0)) {
+      const cache = currentCache()
+      const limit = currentLimit()
+      const rootSessions = mapInventoryToSessions(inventory.sessions)
+      const childSessions = cache.session.filter((session) => !!session.parentID)
+      const sessions = trimSessions([...rootSessions, ...childSessions], {
+        limit,
+        permission: permissionMapForTrim([...rootSessions, ...childSessions]),
+      })
+      const previous = cache.session.slice()
+      cleanupDroppedSessionCaches(previous, sessions, directory)
+      input.setSessionLoadMeta(directory, {
+        limit,
+        ...(requestedWorkspace ? { workspace: requestedWorkspace } : {}),
+      })
+      input.cacheSessions(directory, {
+        limit,
+        total: inventory.total,
+        session: sessions,
+      })
+      input.children.unpin(directory)
+      return
+    }
+
+    const meta = queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(directory))
+    const cachedLimit = currentLimit()
+    if (meta && meta.limit >= cachedLimit && sessionLoadMetaMatchesWorkspace(meta, requestedWorkspace) && !opts.force) {
+      const cache = currentCache()
+      const next = trimSessions(cache.session, {
+        limit: cachedLimit,
+        permission: permissionMapForTrim(cache.session),
+      })
+      if (next.length !== cache.session.length || cache.limit !== cachedLimit) {
+        const previous = cache.session.slice()
+        cleanupDroppedSessionCaches(previous, next, directory)
+        input.cacheSessions(directory, {
+          limit: cachedLimit,
+          total: cache.total,
+          session: next,
+        })
+      }
+      input.children.unpin(directory)
+      return
+    }
+
+    const requestLimit = Math.max(cachedLimit + SESSION_RECENT_LIMIT, SESSION_RECENT_LIMIT)
+    const baseUrl = input.baseUrl()
+    const runtimeTarget = bootstrapSessionRuntimeTarget({
+      workspace: requestedWorkspace,
+      runtimeRef: input.workspaceRuntimeRef(directory),
+    })
+    const runtimeSessionClient = runtimeTarget
+      ? createAgentRuntimeClient({
+          serverUrl: baseUrl,
+          request: localLoopbackFetch(baseUrl) ?? authFetch,
+          ...runtimeTarget,
+        })
+      : undefined
+    const signedInventory = !runtimeSessionClient && shouldUseSignedControlPlaneInventory({
+      hasSignedAccess: input.hasSignedAccess(),
+      baseUrl,
+      directory,
+    })
+    const sessionListClient = shouldUseLocalSessionListClient({ baseUrl, directory })
+      ? input.localSessionListClient(directory)
+      : input.globalSDK()
+
+    await queryClient.fetchQuery({
+      queryKey: requestKey,
+      queryFn: async () => {
+        await (signedInventory
+          ? Promise.resolve({
+              data: mapInventoryToSessions(await input.signedInventorySource.fetchSignedDirectorySessions(directory)),
+              limit: requestLimit,
+              limited: false,
+            })
+          : loadRootSessionsWithFallback({
+              directory,
+              limit: requestLimit,
+              list: async (query) => {
+                if (runtimeSessionClient) return { data: (await runtimeSessionClient.listSessions(query)).sessions ?? [] }
+                if (shouldSkipCentralSessionList({ baseUrl, directory: query.directory })) {
+                  return { data: [] }
+                }
+                return sessionListClient.session.list(query)
+              },
+            }))
+          .then((result) => {
+            const nonArchived = (result.data ?? [])
+              .filter((session) => !!session?.id)
+              .filter((session) => !session.time?.archived)
+              .map((session) => runtimeSessionClient ? { ...session, directory } : session)
+              .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+            const cache = currentCache()
+            const limit = currentLimit()
+            const childSessions = cache.session.filter((session) => !!session.parentID)
+            const sessions = trimSessions([...nonArchived, ...childSessions], {
+              limit,
+              permission: permissionMapForTrim([...nonArchived, ...childSessions]),
+            })
+            const total = estimateRootSessionTotal({ count: nonArchived.length, limit: result.limit, limited: result.limited })
+            const previous = cache.session.slice()
+            cleanupDroppedSessionCaches(previous, sessions, directory)
+            input.setSessionLoadMeta(directory, {
+              limit,
+              ...(requestedWorkspace ? { workspace: requestedWorkspace } : {}),
+            })
+            input.cacheSessions(directory, {
+              limit,
+              total,
+              session: sessions,
+            })
+            if (!runtimeSessionClient) return
+            const workspace = runtimeInventoryWorkspaceIdentity({
+              directory,
+              requestedWorkspace,
+              signedWorkspace,
+            })
+            const workspaceSessions = nonArchived.map((session) => ({
+              ...input.inventoryRow(session as InventoryGlobalSession),
+              directory: workspace.directory,
+              workspaceId: workspace.workspaceId,
+              workspaceName: workspace.workspaceName,
+            }))
+            input.replaceRuntimeWorkspaceRows({
+              workspaceKey: workspace.workspaceId,
+              directory: workspace.directory,
+              workspaceName: workspace.workspaceName,
+              projectID: input.projectFor(workspace.directory)?.id ?? input.projectFor(directory)?.id ?? workspace.workspaceId,
+              rows: workspaceSessions,
+              total,
+            })
+          })
+          .catch((err) => {
+            if (opts.quiet) return
+            const project = getFilename(directory)
+            showToast({
+              variant: "error",
+              title: input.translate("toast.session.listFailed.title", { project }),
+              description: formatServerError(err, input.translate),
+            })
+          })
+        return null
+      },
+    }).catch(swallowCancellation).finally(() => {
+      dropRequestQuery({ queryKey: requestKey })
+      input.children.unpin(directory)
+    })
+  }
+
+  async function bootstrapInstance(
+    directory: DirectoryRef,
+    harnessType?: string,
+    opts: DirectorySessionCacheRefreshOptions = {},
+  ) {
+    if (!directory) return
+    const effectiveHarnessType = harnessType
+    const workspace = opts.workspace ?? input.signedWorkspaceInfo(directory)
+    const requestKey = bootstrapRequestKey(directory, effectiveHarnessType, workspace)
+    await queryClient.fetchQuery({
+      queryKey: requestKey,
+      queryFn: async () => {
+        input.children.pin(directory)
+        await bootstrapDirectory({
+          directory,
+          sdk: input.sdkFor(directory),
+          loadSessions,
+          translate: input.translate,
+          fetch: input.platformFetch() ?? fetch,
+          baseUrl: input.baseUrl(),
+          harnessType: effectiveHarnessType,
+          quiet: opts.quiet,
+          workspace,
+        })
+        return null
+      },
+    }).catch(swallowCancellation).finally(() => {
+      dropRequestQuery({ queryKey: requestKey })
+      input.children.unpin(directory)
+    })
+  }
+
+  async function bootstrap(harnessType?: string, opts: { force?: boolean } = {}) {
+    const requestKey = globalBootstrapRequestKey(input.baseUrl(), harnessType)
+    const freshKey = globalBootstrapFreshKey(input.baseUrl(), harnessType)
+    const pending = queryClient.getQueryState(requestKey)?.fetchStatus === "fetching"
+    if (pending) {
+      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null }).catch(swallowCancellation)
+      return
+    }
+    const updatedAt = queryClient.getQueryState(freshKey)?.dataUpdatedAt ?? 0
+    if (!opts.force && input.ready() && updatedAt > 0 && Date.now() - updatedAt < 60_000) return
+    const directory = input.initialRouteDirectory()
+    const signedRoute = shouldUseSignedRouteBootstrap({
+      signedRoute: false,
+      baseUrl: input.baseUrl(),
+      platformFetch: input.platformFetch(),
+    })
+    await queryClient.fetchQuery({
+      queryKey: requestKey,
+      queryFn: async () => {
+        await bootstrapGlobal({
+          baseUrl: input.baseUrl(),
+          globalSDK: input.globalSDK(),
+          fetch: signedRoute || shouldUseSignedControlPlaneInventory({
+            hasSignedAccess: input.hasSignedAccess(),
+            baseUrl: input.baseUrl(),
+            directory,
+          })
+            ? input.platformFetch() ?? authFetch
+            : globalBootstrapFetch(input.baseUrl(), input.platformFetch()),
+          connectErrorTitle: input.translate("dialog.server.add.error"),
+          connectErrorDescription: input.translate("error.globalSync.connectFailed", { url: input.baseUrl() }),
+          requestFailedTitle: input.translate("common.requestFailed"),
+          translate: input.translate,
+          formatMoreCount: (count) => input.translate("common.moreCountSuffix", { count }),
+          setGlobalState: input.setGlobalState,
+          harnessType,
+        })
+        return null
+      },
+    }).catch(swallowCancellation).finally(() => {
+      dropRequestQuery({ queryKey: requestKey, exact: true })
+      input.markGlobalBootstrapFresh(input.baseUrl(), harnessType)
+    })
+  }
+
+  return {
+    bootstrap,
+    bootstrapInstance,
+    loadSessions,
+    queryOptionsApi: createQueryOptionsApi({
+      globalSDK: input.globalSDK,
+      sdkFor: input.sdkFor,
+      hasSignedAccess: input.hasSignedAccess,
+      baseUrl: input.baseUrl(),
+      request: input.platformFetch() ?? authFetch,
+    }),
+    refreshDirectory(directory: DirectoryRef, harnessType?: string, opts?: DirectorySessionCacheRefreshOptions) {
+      if (!directory) return Promise.resolve()
+      return bootstrapInstance(directory, harnessType, opts)
+    },
+  }
+}

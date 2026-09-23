@@ -1,0 +1,95 @@
+// Forwarded-for API proxy for the desktop signed lane (`e2e/helpers/desktop-signed-server.ts`).
+// The browser lanes serve a built bundle through `fixture-web-preview.mjs` instead. Reuses the
+// real `vite.cloud.config.ts` (same plugins, aliases, proxy route list) but layers one
+// additive change: every proxied request gets a real, non-loopback `X-Forwarded-For`
+// header.
+//
+// Why this is needed (not a workaround, a real product code path): claxedo-server's
+// `/api/claxedo/bootstrap` route (packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts) takes
+// the LOCAL, unsigned bootstrap path for ANY request whose real socket peer is loopback
+// (`isLoopbackLocalRequest`, packages/claxedo-server-core/src/platform/http/peer-address.ts)
+// REGARDLESS of a valid bearer token being present — this is deliberate (desktop/local
+// dev shortcut). A MACHINE placement, however, reaches the client only through the
+// SIGNED bootstrap body: its projection (`signedBootstrapBody` -> `services.authority.
+// listWorkspaces(auth)` -> that file's `signedBootstrapProjects`) passes the control
+// plane's `backing` through, so a workspace another machine serves arrives as
+// `backing: "local-worktree"`. The local body answers `listProjects()` instead, whose
+// rows carry the daemon store's own `kind` — `"local" | "cloud"`, a column with no word
+// for a machine — so `rowHostKind` narrows them to `self` or `provisioner` and the
+// client's `sessionWorkspaceRuntimeRef` resolver never reads a `signedKind` of
+// `"machine"` through the local path. Since this whole spec necessarily runs over
+// loopback (its dedicated backend and frontend are both on 127.0.0.1 by construction),
+// the unsigned-local shortcut would otherwise swallow every control-plane request. `isLoopbackLocalRequest` fails closed on any
+// forwarded-client header (`FORWARDED_CLIENT_HEADERS`): forwarding destroys the direct
+// socket-to-client relationship unsigned-local trust is built on, so a request carrying
+// one is never treated as local no matter what its socket peer is. This launcher is
+// exactly that front door — the reverse proxy a production deployment runs in front of
+// claxedo-server — stamping a genuine non-loopback client IP via `X-Forwarded-For` on
+// every proxied request, the same signal a real nginx/Cloudflare edge adds. No
+// claxedo-server or claxedo-app product source is modified by this.
+//
+// Scope of that stamp: it covers every SAME-ORIGIN request a page makes through this dev
+// server. `VITE_CLAXEDO_SERVER_URL` is what the app resolves its control-plane base from
+// (`src/platform/api/api.ts`'s `getClaxedoServerUrl`) AND what `vite.cloud.config.ts`
+// uses as its proxy target, so pointing it at the backend puts the app's own
+// control-plane calls on an absolute base that bypasses this front door entirely — and
+// they then take the unsigned-local path, where a relay-backed workspace comes back
+// `kind: "local"`. A caller that wants the app itself to come through the front door
+// sets `CLAXEDO_E2E_RELAY_PROXY_TARGET` to the backend and `VITE_CLAXEDO_SERVER_URL` to
+// this server's OWN origin: the bundle then addresses the control plane same-origin, the
+// proxy below carries it to the backend, and the stamp applies to it like everything
+// else. Without that variable this launcher behaves exactly as before.
+import { createServer } from "vite"
+import { fileURLToPath } from "node:url"
+import path from "node:path"
+
+// Build environment is the spawner's to supply, from the one owner every e2e
+// vite launcher reads (`e2e/auth-mode.ts`'s `e2eAppViteEnvironment`): this file
+// is JavaScript precisely so `node` can run it without a TypeScript loader, so
+// it inherits that environment rather than importing it.
+const backendUrl = process.env.VITE_CLAXEDO_SERVER_URL
+if (!backendUrl) throw new Error("VITE_CLAXEDO_SERVER_URL is required")
+const port = Number(process.env.PORT)
+if (!port) throw new Error("PORT is required")
+
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+
+const FORWARDED_CLIENT_IP = "203.0.113.10" // TEST-NET-3 (RFC 5737), never a real client.
+
+// `vite.cloud.config.ts` is TypeScript and imports further TypeScript modules
+// (`./vite.browser-auth`), which a bare `node` import cannot resolve — vite loads and
+// transpiles its own config file, so this launcher hands vite the real config path and
+// layers the forwarded-client header on as a plugin. `configResolved` runs while
+// `createServer` resolves the config, before it builds the proxy middleware from
+// `config.server.proxy`, so every route in the config's own proxy list is covered
+// without this file restating that list.
+const proxyTarget = process.env.CLAXEDO_E2E_RELAY_PROXY_TARGET
+const forwardedClientPlugin = {
+  name: "live-host-tunnel-relay:forwarded-client",
+  configResolved(config) {
+    for (const entry of Object.values(config.server.proxy ?? {})) {
+      if (proxyTarget) entry.target = proxyTarget
+      entry.configure = (proxy) => {
+        proxy.on("proxyReq", (proxyReq) => {
+          proxyReq.setHeader("x-forwarded-for", FORWARDED_CLIENT_IP)
+        })
+      }
+    }
+  },
+}
+
+const server = await createServer({
+  root: appDir,
+  configFile: path.join(appDir, "vite.cloud.config.ts"),
+  plugins: [forwardedClientPlugin],
+  server: {
+    // Dual-stack bind. The app is addressed through a front-door HOSTNAME
+    // (see the launcher's caller), and a browser and node may each resolve
+    // that name to either loopback family; binding `::` accepts both.
+    host: "::",
+    port,
+    strictPort: true,
+  },
+})
+await server.listen()
+console.log(JSON.stringify({ ready: true, port }))

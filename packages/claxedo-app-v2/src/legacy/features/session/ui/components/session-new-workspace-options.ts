@@ -1,0 +1,171 @@
+import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { inventoryHostKind, type WorkspaceHostKind, type InventoryKindWord } from "@/platform/runtime/placement-wire"
+
+export const MAIN_WORKTREE = "main"
+export const CREATE_WORKTREE = "create"
+
+export type ProjectWorkspace = {
+  kind?: InventoryKindWord | null
+  workspace_name?: string | null
+  available?: boolean | null
+  /** Git remote — the only project-scoped identity a hosted cloud row carries. */
+  repo_url?: string | null
+  repo_name?: string | null
+  /** Present on the ws-id-keyed bootstrap shape, where the KEY is the workspace id. */
+  directory?: string | null
+  id?: string | null
+  workspaceId?: string | null
+}
+
+export type ProjectInventoryEntry = {
+  worktree?: string
+  name?: string
+  sandboxes?: string[]
+  workspaces?: Record<string, ProjectWorkspace>
+}
+
+/**
+ * The environment options the composer may offer.
+ *
+ * The server's mode decides: a server that runs workspaces on its own
+ * filesystem (`localExecution` from its health document — the self-host
+ * binary, which is also the desktop's server) offers "Local", signed in or
+ * not; the hosted plane has no filesystem and offers none. A server that
+ * says nothing about its filesystem is taken as the local product when
+ * unsigned and the hosted product when signed. "Cloud" is offered wherever
+ * sandbox creation is enabled.
+ */
+export function newSessionEnvironmentOptions(input: {
+  localExecution: boolean | undefined
+  signed: boolean
+  sandboxEnabled?: boolean
+}): Array<Exclude<WorkspaceHostKind, "machine">> {
+  const options: Array<Exclude<WorkspaceHostKind, "machine">> = (input.localExecution ?? !input.signed) ? ["self"] : []
+  if (input.sandboxEnabled !== false) options.push("provisioner")
+  return options
+}
+
+/**
+ * "owner/repo" from a git remote. Mirrors `app/workbench/rail/rail-git-remote.ts`
+ * — inlined because a feature may not import `@/app/*` (`architecture/ownership.ts`).
+ */
+export function ownerRepoFromRemote(remote: string | null | undefined) {
+  if (!remote) return undefined
+  return remote.match(/[:/]([^/]+\/[^/]+?)(?:\.git)?$/)?.[1]
+}
+
+/**
+ * A project label derived from the repo identity its workspaces carry.
+ *
+ * Hosted cloud projects live in the literal directory "/workspace", so the
+ * directory basename — the composer's last-resort label — renders the word
+ * "workspace" as if it were the project's name. The repo is the real identity;
+ * prefer it over the basename, exactly as the rail's `railProjectLabel` does.
+ */
+export function repoDerivedProjectLabel(
+  workspaces: Record<string, ProjectWorkspace> | undefined,
+): string | undefined {
+  const entries = Object.values(workspaces ?? {})
+  const named = entries.find((workspace) => workspace?.repo_name?.trim())?.repo_name?.trim()
+  if (named) return named
+  return ownerRepoFromRemote(entries.find((workspace) => workspace?.repo_url)?.repo_url)
+}
+
+/**
+ * Resolve the project a directory belongs to.
+ *
+ * The inventory arrives in TWO shapes that key `workspaces` differently: the
+ * server bootstrap keys by WORKSPACE ID (routes/hosted/shell.ts, where
+ * `directory` is a field on the value) and the client snapshot keys by
+ * DIRECTORY (data/query/inventory.ts). Matching the key, the directory and the
+ * id fields lets either shape resolve; a miss leaves the active project
+ * undefined and collapses the workspace chip, which filters THAT project's
+ * workspaces, to its "create new" path.
+ */
+export function findProjectForDirectory<T extends ProjectInventoryEntry>(
+  projects: readonly T[],
+  directories: ReadonlyArray<string | undefined>,
+): T | undefined {
+  const wanted = directories.filter((value): value is string => !!value)
+  if (wanted.length === 0) return undefined
+  const matches = (value: string | null | undefined) => !!value && wanted.includes(value)
+  return projects.find((project) =>
+    matches(project.worktree) ||
+    project.sandboxes?.some((sandbox) => matches(sandbox)) ||
+    Object.entries(project.workspaces ?? {}).some(([key, workspace]) =>
+      matches(key) ||
+      matches(workspace?.directory) ||
+      matches(workspace?.id) ||
+      matches(workspace?.workspaceId)
+    )
+  )
+}
+
+export function createNewSessionWorkspaceState(input: {
+  projectRoot: string
+  selectedWorktree: string
+  hostKind: WorkspaceHostKind
+  sandboxes?: string[]
+  workspaces?: Record<string, ProjectWorkspace>
+}) {
+  const workspaces = input.workspaces ?? {}
+  const directoryFor = (value: string) => value === MAIN_WORKTREE ? input.projectRoot : value
+  const kindFor = (value: string): WorkspaceHostKind => {
+    // A workspace on an enrolled machine is its OWN host — never collapse it
+    // into the provisioner's. `creatingWorkspace` below auto-fires only for the
+    // provisioner, so one collapsed into it falls into the "New cloud sandbox"
+    // create path. Such a workspace already exists and connects through the
+    // relay; it is never provisioned.
+    const wsKind = inventoryHostKind(projectWorkspaceForRef(workspaces, directoryFor(value))?.kind)
+    if (wsKind === "machine") return "machine"
+    if (wsKind === "provisioner" || !!sessionWorkspaceRuntimeRef({ directory: directoryFor(value) })) return "provisioner"
+    return "self"
+  }
+  // MAIN_WORKTREE already stands for the project root, and the signed
+  // inventories list that root among `sandboxes` (both groupings push every
+  // workspace's directory, the root's included). Without this filter the root
+  // appears twice and the hosted picker offers two identical "main" rows.
+  // One option per workspace, whichever ref form named it: an id-keyed
+  // bootstrap row and a directory-keyed snapshot row can be the same workspace,
+  // and `sandboxes` may carry either. The directory is the ref the rest of the
+  // composer addresses a workspace by, so it wins — except where a project's
+  // workspaces share one, as every hosted cloud row sits in "/workspace"; there
+  // only the id tells them apart, and collapsing on directory would offer a
+  // single row for all of them.
+  const perDirectory = Object.values(workspaces).reduce((counts, workspace) => {
+    const directory = workspace?.directory
+    if (directory) counts.set(directory, (counts.get(directory) ?? 0) + 1)
+    return counts
+  }, new Map<string, number>())
+  const directories = [...new Set([
+    ...(input.sandboxes ?? []), ...Object.keys(workspaces),
+  ].map((ref) => {
+    const workspace = projectWorkspaceForRef(workspaces, ref)
+    const directory = workspace?.directory
+    if (!directory) return ref
+    if ((perDirectory.get(directory) ?? 0) < 2) return directory
+    return workspace?.id ?? workspace?.workspaceId ?? ref
+  }))]
+  const candidates = [MAIN_WORKTREE, ...directories.filter((value) => value !== input.projectRoot && value !== MAIN_WORKTREE)]
+  const options = candidates.filter((value) => {
+    const workspace = projectWorkspaceForRef(workspaces, directoryFor(value))
+    if (workspace?.available === false) return false
+    return kindFor(value) === input.hostKind
+  })
+  const currentWorktree =
+    input.selectedWorktree === CREATE_WORKTREE
+      ? options[0]
+      : options.includes(input.selectedWorktree)
+        ? input.selectedWorktree
+        : options[0]
+
+  return {
+    options,
+    currentWorktree,
+    creatingWorkspace: input.selectedWorktree === CREATE_WORKTREE || (input.hostKind === "provisioner" && options.length === 0),
+    createSessionWorktree: input.hostKind === "provisioner" || input.selectedWorktree === CREATE_WORKTREE,
+    directoryFor,
+    kindFor,
+  }
+}

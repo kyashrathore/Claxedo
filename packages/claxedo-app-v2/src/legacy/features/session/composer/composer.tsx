@@ -1,0 +1,774 @@
+// Claxedo keeps upstream's v2 composer while moving workspace-start controls into the session start surface.
+import { createEffect, Component, createMemo, createSignal, lazy, onCleanup } from "solid-js"
+import { composerCollapsed } from "@/features/session/composer/collapsed-state"
+import { useQuery } from "@tanstack/solid-query"
+import { useLocal } from "@/features/session/providers/session-selection"
+import {
+  documentMentionText, listDocumentMentions,
+  useCommand,
+  useFile,
+  useLayout,
+  useProviders,
+  useSDK,
+  useShellQueryOptions as useQueryOptions,
+  useWorkspaceQuery,
+} from "@/features/session/app-ports"
+import { usePrompt, ImageAttachmentPart } from "@/features/session/providers/prompt"
+import { useSessionParams } from "@/features/session/providers/session-params"
+import { useComments } from "@/platform/comments/provider"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import type { PickerState } from "@/features/session/ui/model/model-list"
+import { usePermission } from "@/features/session/providers/permission"
+import { useLanguage } from "@/platform/i18n/provider"
+import { usePlatform } from "@/platform/runtime/platform-provider"
+import { scrollPromptCursorIntoView, setCursorPosition } from "@/features/session/composer/ui/editor-dom"
+import { submitHardBlocked } from "@/features/session/composer/submit-block-reason"
+import { createPromptAttachments } from "@/features/session/composer/ui/attachments"
+import { firstMarkNumber, numberImageMarks } from "@/features/session/image-marks/marks"
+import { ACCEPTED_FILE_TYPES } from "@/features/session/composer/ui/files"
+import { promptLength } from "@/features/session/composer/ui/history"
+import { createPromptCommentRouter } from "@/features/session/composer/ui/comment-routing"
+import { createPromptSubmit } from "@/features/session/composer/ui/submit"
+import { createPromptInputBootState, createPromptInputSubmitRetry } from "@/features/session/composer/ui/submit-ui-state"
+import { registerPromptModeCommands } from "@/features/session/composer/ui/mode-commands"
+import { createPromptEditLoader, createPromptExampleRotation } from "@/features/session/composer/ui/lifecycle"
+import { PromptInputFrame } from "@/features/session/composer/ui/frame"
+import { promptPlaceholder } from "@/features/session/composer/ui/placeholder"
+import { harnessModesUnavailable, promptDesignPlaceholder } from "@/features/session/composer/role-gate"
+import { createHarnessSubmitController } from "@/features/session/harness/controller"
+import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
+import { commandListQuery } from "../data/query/shell"
+import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
+import { directorySessionCacheQueryOptions } from "../data/sync/queries"
+import { getClaxedoServerUrl } from "@/platform/api/api"
+import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { registeredConversationHasUserMessage } from "../conversation/conversation-registry"
+import { promptSessionStatusStage, subscribePromptSessionStatusMeta } from "../store/session-status-dispatcher"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { PROMPT_EXAMPLES } from "./examples"
+import { composerModeSnapshot } from "./mode-snapshot"
+import { createComposerHarnessMode } from "./harness-mode-helpers"
+import { showToast } from "@opencode-ai/ui/toast"
+import type { PromptInputProps } from "./prompt-input-props"
+import { createPromptToolbarState } from "./toolbar-state"
+import { composerUsesSignedTransport, selectedNewSessionWorkspace, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
+import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
+import { harnessSelectionKey, harnessSelectionValue } from "@/platform/identity/harness-selection"
+import { createComposerEngine } from "./v2/engine"
+import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
+import { createComposerPermissionSurface } from "./permission-mode-wiring"
+import { createPromptToolbarMotion } from "./ui/toolbar-motion"
+import { createComposerGoalController } from "./goal-controller"
+const idleSessionStatus = { type: "idle" as const }
+const ImageMarkEditor = lazy(() =>
+  import("@/features/session/image-marks/image-mark-editor").then((module) => ({
+    default: module.ImageMarkEditor,
+  })),
+)
+
+export const PromptInput: Component<PromptInputProps> = (props) => {
+  const sdk = useSDK()
+  const queryOptions = useQueryOptions()
+  const local = useLocal()
+  const files = useFile()
+  const prompt = usePrompt()
+  const layout = useLayout()
+  const comments = useComments()
+  const sessionParams = useSessionParams()
+  const dialog = useDialog()
+  const command = useCommand()
+  const permission = usePermission()
+  const language = useLanguage()
+  const platform = usePlatform()
+  const harnessController = props.harnessSubmitController ?? createHarnessSubmitController(undefined)
+  const harnessSelectionController = props.harnessSelectionController
+  let principal: ReturnType<typeof usePrincipal> | undefined
+  try {
+    principal = usePrincipal()
+  } catch {
+    /* PromptInput can also render outside the Claxedo app shell in isolated tests. */
+  }
+  let editorRef!: HTMLDivElement
+  let fileInputRef: HTMLInputElement | undefined
+  let scrollRef!: HTMLDivElement
+  // Captured so the no-model explain-on-intent action can open the model picker
+  // that already lives in this composer's toolbar (reuse, no new picker).
+  let rootEl: HTMLDivElement | undefined
+
+  const inset = 56
+
+  const scrollCursorIntoView = () => scrollPromptCursorIntoView({
+    editor: editorRef,
+    container: scrollRef,
+    length: promptLength(prompt.current().filter((part) => part.type !== "image")),
+    bottomInset: inset,
+  })
+
+  const queueScroll = () => {
+    requestAnimationFrame(scrollCursorIntoView)
+  }
+
+  const composerMode = createMemo(() => props.mode)
+  const { isHarnessMode, toolbarHarnessMode, harnessReadiness, harnessReadyForSubmit, currentHarnessType } =
+    createComposerHarnessMode({ composerMode, harnessController, harnessSelectionController })
+  const modeSnapshot = createMemo(() => composerModeSnapshot({
+    mode: composerMode(),
+    sdkDirectory: sdk.directory,
+    sessionDirectory: props.sessionDirectory ?? sessionParams.directory(),
+    draftId: props.draftId,
+    surfaceId: sessionParams.surfaceId?.(),
+  }))
+  const isNewSessionVariant = () => modeSnapshot().newSession
+  const resolvedSessionId = () => modeSnapshot().sessionId
+  // A held harness pick has no session behind it yet, so its modes are chosen the way a draft's are.
+  const permissionSessionId = () => resolvedSessionId() === "new" || harnessController.heldHarness(scope()) ? undefined : resolvedSessionId()
+  const harnessSessionId = () => modeSnapshot().harnessSessionId
+  const resolvedSessionDirectory = () => props.sessionDirectory ?? sessionParams.directory()
+  const harnessDirectory = createMemo(() =>
+    promptHarnessDirectory({
+      sdkDirectory: sdk.directory,
+      sessionDirectory: resolvedSessionDirectory(),
+      sessionId: harnessSessionId(),
+    }),
+  )
+  const resolvedDraftId = () => modeSnapshot().draftId
+  const scope = () => modeSnapshot().scope
+  const providers = useProviders(() => {
+    const selection = currentHarnessType(scope())
+    return selection?.kind === "native" ? selection.harnessId : ""
+  })
+  const selectedModelKey = () => {
+    const model = local.model.current()
+    if (!model) return undefined
+    return {
+      providerID: model.provider.id,
+      modelID: model.id,
+      variant: local.model.variant.current(),
+    }
+  }
+  const pickerModel = createMemo<PickerState>(() => ({
+    ...createModelSelectionPicker({
+      list: local.model.list,
+      current: local.model.current,
+      visible: local.model.visible,
+      scope: () => ({
+        key: `prompt:${scope()}`,
+        current: selectedModelKey,
+      }),
+      write: local.model.set,
+    }),
+    hydrate: () => { void local.model.hydrate() },
+  }))
+  const harnessPending = createMemo(() => {
+    const nextScope = scope()
+    const next = isHarnessMode(nextScope) && harnessReadiness(nextScope) === "polling"
+    return next
+  })
+  const sessionKey = () => modeSnapshot().sessionKey
+  const tabs = createMemo(() => layout.tabs(sessionKey))
+  const view = createMemo(() => layout.view(sessionKey))
+  const commandDirectory = createMemo(() => resolvedSessionDirectory() ?? sdk.directory)
+  const newSession = isNewSessionVariant
+  const hydrateDirectoryCommands = createDeferredDirectoryResourceGate({
+    // The gate is per harness: `harnessSelectionKey` is the canonical cache
+    // identity for a HarnessSelection. Interpolating the selection object itself
+    // yielded "[object Object]", so every harness shared one gate scope.
+    scope: () => {
+      const harness = currentHarnessType(scope())
+      const harnessKey = harness ? harnessSelectionKey(harness) : ""
+      return `${sdk.url ?? ""}:${commandDirectory()}:${harnessKey}:commands`
+    },
+    active: () => sessionParams.active?.() ?? true,
+  })
+  const customCommandsQuery = useWorkspaceQuery(() => {
+    const directory = commandDirectory()
+    return {
+      ...commandListQuery({
+        baseUrl: sdk.url,
+        directory,
+        // The command set is the HARNESS's, for this worktree: OpenCode's slash
+        // commands are not the ones a Codex or Claude pane can run.
+        harnessType: currentHarnessType(scope()) ? harnessSelectionValue(currentHarnessType(scope())!) : undefined,
+        request: platform.fetch ?? fetch,
+        workspace: sdk.workspace(directory),
+        client: sdk.createClient({ directory }),
+      }),
+      workspaceId: sdk.workspace(directory)?.workspaceId,
+      enabled: hydrateDirectoryCommands(),
+    }
+  })
+  const customCommands = () => info()?.commands ?? customCommandsQuery.data
+  const openComment = createPromptCommentRouter({
+    comments,
+    diffFiles: () => props.diffFiles?.(),
+    view,
+    layout,
+    tabs,
+    files,
+  })
+
+  const recent = createMemo(() => {
+    const all = tabs().all()
+    const active = tabs().active()
+    const order = active ? [active, ...all.filter((x) => x !== active)] : all
+    const seen = new Set<string>()
+    const paths: string[] = []
+
+    for (const tab of order) {
+      const path = files.pathFromTab(tab)
+      if (!path) continue
+      if (seen.has(path)) continue
+      seen.add(path)
+      paths.push(path)
+    }
+
+    return paths
+  })
+  const directorySessionCacheQuery = useQuery(() =>
+    directorySessionCacheQueryOptions({
+      directory: resolvedSessionDirectory() ?? sdk.directory,
+    }),
+  )
+  const projectsQuery = useQuery(() => queryOptions.projects())
+  const projectCatalog = () => (projectsQuery.data ?? []) as ProjectCatalogItem[]
+  const selectedRemoteWorkspace = () => selectedNewSessionWorkspace({
+    newSession: isNewSessionVariant(),
+    kind: props.newSessionHostKind,
+    worktree: props.newSessionWorktree,
+  })
+  const submitSessionDirectory = () => {
+    const routeRef = sessionWorkspaceRuntimeRef({ directory: sessionParams.directory() })
+    if (routeRef) return routeRef.workspaceId
+    const directory = resolvedSessionDirectory() ?? sdk.directory
+    const runtimeRef = sessionWorkspaceRuntimeRef({
+      directory,
+      sessionRef: props.sessionRef?.(),
+    })
+    if (runtimeRef) return runtimeRef.workspaceId
+    return resolveSubmitSessionDirectory({
+      directory,
+      projects: projectCatalog(),
+      sdkWorkspace: sdk.workspace(directory),
+    })
+  }
+  const signedControlPlane = createMemo(() => {
+    if (selectedRemoteWorkspace()) return true
+    const directory = resolvedSessionDirectory() ?? sdk.directory
+    return composerUsesSignedTransport({
+      explicit: props.signedControlPlane?.(), directory, projects: projectCatalog(), sdkWorkspace: sdk.workspace(directory),
+      sessionRef: props.sessionRef?.(), principalHasSignedAccess: principal ? principalHasSignedAccess(principal()) : false,
+      routeWorkspaceAuthorityId: props.workspaceId?.(), serverUrl: getClaxedoServerUrl(),
+    })
+  })
+  const goalController = createComposerGoalController({
+    isNewSession: newSession, harness: () => currentHarnessType(scope()), harnessPending,
+    directory: submitSessionDirectory,
+    serverUrl: () => getClaxedoServerUrl(), signedControlPlane,
+    workspaceId: () => props.workspaceId?.(), hostKind: () => props.hostKind?.(),
+    sessionRef: () => props.sessionRef?.(),
+    sessionCapabilities: () => props.goalCapabilities?.(), refreshGoal: props.refreshGoal,
+    armed: prompt.goal.armed,
+    setArmed: prompt.goal.setArmed,
+    unavailable: (reason) => {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: reason ?? "Goals are unavailable for this harness.",
+      })
+    },
+    normalizeMode: () => { engine?.setMode("normal"); engine?.closePopover() },
+    focus: () => editorRef?.focus(),
+  })
+  const { selectable: goalSelectable, armed: goalArmed, arm: armGoal, toggle: toggleGoal } = goalController
+  const info = createMemo(() => {
+    const sid = resolvedSessionId()
+    return sid ? directorySessionCacheQuery.data?.session.find((session) => session.id === sid) : undefined
+  })
+  const status = createMemo(() => props.status?.() ?? idleSessionStatus)
+  const working = createMemo(() => {
+    const activeTurn = props.activeTurn?.()
+    if (activeTurn !== undefined) return activeTurn
+    const current = status()
+    return current.type === "busy" || current.type === "retry" || (current.type === "recovering" && current.kind === "uncertain_execution")
+  })
+  // status-meta has no query observer, so subscribe explicitly; otherwise the
+  // escalation stages never re-render after their timers fire.
+  const [statusMetaVersion, setStatusMetaVersion] = createSignal(0)
+  createEffect(() => {
+    const sid = resolvedSessionId()
+    if (!sid) return
+    const unsubscribe = subscribePromptSessionStatusMeta(sid, () => setStatusMetaVersion((version) => version + 1))
+    onCleanup(unsubscribe)
+  })
+  const statusStage = createMemo(() => {
+    const explicit = props.statusStage?.()
+    if (explicit !== undefined) return explicit
+    statusMetaVersion()
+    return promptSessionStatusStage(resolvedSessionId())
+  })
+  const canAbort = createMemo(() => props.canAbort?.() ?? true)
+  const { setBoot, booting, stoppable, bootText } = createPromptInputBootState({
+    working,
+    canAbort,
+  })
+  const imageAttachments = createMemo(() =>
+    prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
+  )
+
+  const imageMarks = createMemo(() => numberImageMarks(imageAttachments()))
+
+  const [placeholderIndex, setPlaceholderIndex] = createSignal(Math.floor(Math.random() * PROMPT_EXAMPLES.length))
+  // Input engine: Claxedo's own editor/popover/history machinery or upstream's
+  // vendored `createPromptInputV2Controller`, behind `v2/engine-contract.ts`.
+  // The draft belongs to neither, so switching is lossless. Values defined
+  // later in this component are passed as thunks.
+  const engine = createComposerEngine({
+    editor: () => editorRef,
+    prompt,
+    imageAttachments,
+    queueScroll,
+    comments,
+    agents: local.agent.catalog,
+    recentFiles: recent,
+    searchFilesAndDirectories: files.searchFilesAndDirectories,
+    commandOptions: () => command.slashOptions,
+    customCommands,
+    triggerSlashCommand: (id) => command.trigger(id, "slash"),
+    documentDirectory: commandDirectory,
+    listDocuments: listDocumentMentions,
+    documentMentionText,
+    pick: () => pick(),
+    escBlur: () => escBlur(),
+    stoppable: () => stoppable(),
+    booting: () => booting(),
+    working: () => working(),
+    blank: () => blank(),
+    abort: () => void abort(),
+    handleSubmit: (event) => void handleSubmit(event),
+  })
+
+  const { buttons, control } = createPromptToolbarMotion({
+    shellMode: () => engine.mode() === "shell",
+    pending: harnessPending,
+  })
+
+  const commentCount = createMemo(() => {
+    if (engine.mode() === "shell") return 0
+    return prompt.context.items().filter((item) => !!item.comment?.trim()).length
+  })
+  const blank = createMemo(() => {
+    const text = prompt
+      .current()
+      .map((part) => ("content" in part ? part.content : ""))
+      .join("")
+    return text.trim().length === 0 && imageAttachments().length === 0 && commentCount() === 0
+  })
+  const contextItems = createMemo(() => {
+    const items = prompt.context.items()
+    if (engine.mode() !== "shell") return items
+    return items.filter((item) => !item.comment?.trim())
+  })
+
+  const [editorFocused, setEditorFocused] = createSignal(false)
+  const collapsed = createMemo(() =>
+    composerCollapsed({
+      collapsible: props.collapsible ?? false,
+      editorFocused: editorFocused(),
+      blank: blank(),
+      contextItemCount: contextItems().length,
+      popoverOpen: engine.popover() !== null,
+      documentPickerOpen: engine.documentPicker.open(),
+    }),
+  )
+
+  const hasUserPrompt = createMemo(() => {
+    const sessionID = resolvedSessionId()
+    return registeredConversationHasUserMessage(sdk.directory, sessionID)
+  })
+
+  const suggest = createMemo(() => !hasUserPrompt())
+
+  const placeholder = createMemo(() =>
+    promptPlaceholder({
+      mode: engine.mode(),
+      commentCount: commentCount(),
+      example: suggest() ? language.t(PROMPT_EXAMPLES[placeholderIndex()]) : "",
+      suggest: suggest(),
+      t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params),
+    }),
+  )
+
+  const handleRootFocusIn = () => undefined
+
+  const escBlur = () => platform.platform === "desktop" && platform.os === "macos"
+
+  const pick = () => fileInputRef?.click()
+
+  const restoreFocus = () => requestAnimationFrame(() => editorRef?.focus())
+
+  const bindEditorRef = (el: HTMLDivElement) => {
+    editorRef = el
+    engine.bindEditor(el)
+    props.ref?.(el)
+  }
+  registerPromptModeCommands({
+    register: (scope, commands) => command.register(scope, commands),
+    mode: engine.mode,
+    pick,
+    setMode: engine.enterMode,
+    goalSelectable,
+    armGoal,
+    labels: {
+      attachFile: language.t("prompt.action.attachFile"),
+      fileCategory: language.t("command.category.file"),
+      shellMode: language.t("command.prompt.mode.shell"),
+      normalMode: language.t("command.prompt.mode.normal"),
+      sessionCategory: language.t("command.category.session"),
+      goal: language.t("prompt.action.goal"),
+    },
+  })
+
+  createPromptExampleRotation({
+    disabled: () => !!resolvedSessionId() || !suggest(),
+    setPlaceholder: (next) => setPlaceholderIndex(next),
+  })
+
+  const selectedVariant = createMemo<string | null | undefined>(() => local.model.variant.selected())
+  const toolbarState = createPromptToolbarState({
+    agentList: local.agent.list,
+    currentAgent: local.agent.current,
+    fallbackAgent: () => undefined,
+    agentOverride: () => props.agent,
+    providerLoading: providers.loading,
+    currentModel: local.model.current,
+    currentModelSource: local.model.currentSource,
+    hasSelectedModel: () => !!local.model.selected(),
+    modelRestorePending: local.model.restorePending,
+    selectionCatalogPending: local.model.selectionCatalogPending,
+    harnessMode: () => toolbarHarnessMode(scope()),
+    existingSession: () => !!resolvedSessionId() && resolvedSessionId() !== "new",
+    variantList: local.model.variant.list,
+    selectedVariant,
+    configuredVariant: local.model.variant.configured,
+  })
+
+  createPromptEditLoader({
+    edit: () => props.edit,
+    prompt,
+    editor: () => editorRef,
+    queueScroll,
+    setMode: engine.setMode,
+    setPopover: () => engine.closePopover(),
+    // The edit loader only ever clears history navigation; both engines express
+    // that as one forced reset rather than two separate field writes.
+    setHistoryIndex: () => engine.resetHistoryNavigation(true),
+    setSavedPrompt: () => undefined,
+    onEditLoaded: props.onEditLoaded,
+  })
+
+  const { addAttachments, removeAttachment, setImageMarks, handlePaste } = createPromptAttachments({
+    active: () => sessionParams.active?.() ?? true,
+    editor: () => editorRef,
+    root: () => rootEl,
+    isDialogActive: () => !!dialog.active,
+    setDraggingType: engine.setDraggingType,
+    focusEditor: () => {
+      editorRef.focus()
+      setCursorPosition(editorRef, promptLength(prompt.current()))
+    },
+    addPart: engine.addPart,
+    readClipboardImage: platform.readClipboardImage,
+    // A workspace reached through the relay has no path this runtime can write
+    // an attachment into, so only the harness's own prompt inputs remain there.
+    target: () => ({
+      ...(currentHarnessType(scope()) ? { harness: currentHarnessType(scope())! } : {}),
+      workspace: !props.hostKind?.(),
+    }),
+  })
+  const composerBootScope = createMemo(() => [
+    props.variant ?? "dock",
+    resolvedSessionDirectory() ?? sdk.directory,
+    resolvedSessionId() ?? "new",
+    resolvedDraftId() ?? "",
+    sessionParams.surfaceId?.() ?? "",
+    toolbarState.currentVariant() ?? "default",
+  ].join("\n"))
+  /**
+   * The harness for permission purposes, and the ONLY accessor either permission
+   * control may use.
+   *
+   * `currentHarnessType` cannot be trusted to assert "this is opencode": on a
+   * session-mode composer it returns `composerHarnessId(mode)`, which DEFAULTS to
+   * "opencode" whenever the SessionRef carries no harness — true for a local
+   * ACP session, whose toolbar meanwhile reads its connection key from the harness
+   * selection controller. Believing the default meant writing an opencode permission
+   * ruleset to a session that is not running opencode. Caught by
+   * core-permission-ruleset-delivery.spec.ts.
+   *
+   * So an "opencode" answer is only accepted when NO source claims a harness session.
+   * `toolbarHarnessMode` is that union — it is the one predicate that consults the
+   * selection controller. Every other answer passes through untouched, because those
+   * are affirmative rather than defaulted.
+   *
+   * Returning undefined means "no native policy to push", which degrades to Claxedo
+   * answering locally — the safe direction.
+   */
+  const permissionHarness = () => {
+    const snapshot = harnessSelectionController?.read(scope())
+    // Withhold until the selection controller has a real answer; the bare
+    // opencode default otherwise flashes Claxedo permission rows on Codex
+    // drafts during hydration.
+    if (toolbarHarnessMode(scope())) {
+      const selected = snapshot?.harness
+      return selected ? harnessSelectionValue(selected) : undefined
+    }
+    if (!snapshot || snapshot.readiness !== "ready") return undefined
+    if (snapshot.harness) return harnessSelectionValue(snapshot.harness)
+    const current = currentHarnessType(scope())
+    return current ? harnessSelectionValue(current) : undefined
+  }
+
+  const { autoAccept, permissionMode } = createComposerPermissionSurface({
+    sessionId: permissionSessionId,
+    resolvedSessionId,
+    directory: () => resolvedSessionDirectory() ?? sdk.directory,
+    harness: permissionHarness,
+    harnessSelection: () => currentHarnessType(scope()),
+    harnessUnavailable: () =>
+      harnessModesUnavailable({ isHarness: isHarnessMode(scope()), readiness: harnessReadiness(scope()),
+        configError: !!harnessSelectionController?.read(scope())?.configError, harness: permissionHarness() }),
+    claxedoServerUrl: getClaxedoServerUrl,
+    signedControlPlane,
+    workspace: () => {
+      const workspaceId = props.workspaceId?.()
+      const kind = props.hostKind?.()
+      return workspaceId && kind ? { workspaceId, kind } : undefined
+    },
+    sessionRef: () => props.sessionRef?.(),
+    requestFailedTitle: () => language.t("common.requestFailed"),
+    permission,
+  })
+
+  const { authorityBlock, submitBlock, submitInertBlocked, openModelPicker } =
+    createComposerSubmitBlockWiring({
+      statusReady: props.statusReady,
+      workspaceId: props.workspaceId,
+      sessionPromptAdmitted: props.sessionPromptAdmitted,
+      scope,
+      isHarnessMode,
+      harnessReadiness,
+      harnessReadyForSubmit,
+      harnessSelectionController,
+      toolbarState,
+      providers,
+      booting,
+      stoppable,
+      blank,
+      rootEl: () => rootEl,
+    })
+  const { abort, handleSubmit: rawHandleSubmit } = createPromptSubmit({
+    info,
+    // Only HARNESS modes travel with the prompt. Claxedo's own options are not
+    // ids any harness would recognise — they are delivered by their own paths
+    // (the opencode ruleset write, or Claxedo answering prompts locally), and
+    // forwarding one here would have the runtime try to set a mode that does
+    // not exist.
+    permissionMode: permissionMode.promptModeId,
+    sessionID: resolvedSessionId,
+    sessionRef: () => props.sessionRef?.(),
+    conversationDirectory: resolvedSessionDirectory,
+    sessionDirectory: submitSessionDirectory,
+    surfaceId: () => sessionParams.surfaceId?.(),
+    imageAttachments,
+    commentCount,
+    autoAccept: () => autoAccept.active(),
+    mode: engine.mode,
+    working: stoppable,
+    editor: () => editorRef,
+    queueScroll,
+    promptLength,
+    addToHistory: engine.addToHistory,
+    resetHistoryNavigation: () => engine.resetHistoryNavigation(true),
+    setMode: engine.setMode,
+    setPopover: () => engine.closePopover(),
+    composerMode,
+    newSessionWorktree: () => props.newSessionWorktree,
+    newSessionBaseRef: () => props.newSessionBaseRef,
+    newSessionSourceBranch: () => props.newSessionSourceBranch,
+    newSessionHostKind: () => props.newSessionHostKind,
+    onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
+    onSessionStart: props.onSessionStart,
+    onCloudStartup: props.onCloudStartup,
+    draftId: resolvedDraftId,
+    harnessScope: scope,
+    onSubmit: props.onSubmit,
+    navigateOnCreate: () => props.navigateOnCreate ?? true,
+    system: () => props.system,
+    agent: () => props.agent,
+    variant: toolbarState.currentVariant,
+    setBooting: setBoot,
+    bootScope: composerBootScope,
+    signedControlPlane,
+    workspaceId: props.workspaceId,
+    hostKind: props.hostKind,
+    harnessController,
+    ...goalController.submitInput(props.goal, props.stopGoal),
+  })
+
+  const submitRetry = createPromptInputSubmitRetry({
+    resetKey: composerBootScope,
+    rawHandleSubmit,
+    authorityBlocked: () => !!authorityBlock(),
+    // Clickability must never become submittability. An authority refusal
+    // hard-blocks unconditionally; every other block reason also guards the
+    // handler. Enter routes missing-model to the picker (see
+    // createPromptInputSubmitRetry) instead of the submit toast guard.
+    submitBlocked: () => submitHardBlocked({ stoppable: stoppable(), block: submitBlock() }),
+    submitBlock,
+    onChooseModel: openModelPicker,
+    prompt,
+    imageCount: () => imageAttachments().length,
+    commentCount,
+    mode: engine.mode,
+    setMode: engine.setMode,
+    promptLength,
+    clearBoot: () => setBoot(undefined),
+    registerRetry: props.registerRetry,
+  })
+  const handleSubmit = submitRetry.handleSubmit
+  const onRetry = submitRetry.onRetry
+  const designPlaceholder = () => goalArmed()
+    ? language.t("prompt.goal.placeholder")
+    : promptDesignPlaceholder({ authorityBlock: authorityBlock(), mode: engine.mode(), shellPlaceholder: placeholder() })
+  return (
+    <PromptInputFrame
+      rootRef={(el) => (rootEl = el)}
+      editorRef={bindEditorRef}
+      scrollRef={(el) => (scrollRef = el)}
+      className={props.class}
+      newSession={newSession}
+      mode={engine.mode}
+      dirty={prompt.dirty}
+      collapsed={collapsed}
+      draggingType={engine.draggingType}
+      designPlaceholder={designPlaceholder}
+      handleRootFocusIn={handleRootFocusIn}
+      handleSubmit={handleSubmit}
+      harnessPending={harnessPending}
+      onEditorFocus={() => {
+        setEditorFocused(true)
+        engine.handleFocus()
+      }}
+      onEditorInput={engine.handleInput}
+      onEditorPaste={handlePaste}
+      onCompositionStart={engine.handleCompositionStart}
+      onCompositionEnd={engine.handleCompositionEnd}
+      onEditorBlur={() => {
+        setEditorFocused(false)
+        engine.handleBlur()
+      }}
+      onEditorKeyDown={(event) => {
+        // Escape gives an edited queued message back before anything else
+        // Escape means here — the next handler down would stop the turn.
+        const edit = prompt.queuedEdit.current()
+        if (event.key === "Escape" && edit && engine.popover() === null && engine.mode() === "normal") {
+          event.preventDefault()
+          event.stopPropagation()
+          edit.cancel()
+          return
+        }
+        engine.handleKeyDown(event)
+      }}
+      focusEditor={() => editorRef?.focus()}
+      popover={engine.popover()}
+      documentPicker={engine.documentPicker.open()}
+      documentNotice={engine.documentPicker.notice()}
+      setSlashPopoverRef={engine.popoverView.setSlashPopoverRef}
+      atFlat={engine.popoverView.atFlat()}
+      atActive={engine.popoverView.atActive()}
+      atKey={engine.popoverView.atKey}
+      setAtActive={engine.popoverView.setAtActive}
+      onAtSelect={engine.popoverView.onAtSelect}
+      slashFlat={engine.popoverView.slashFlat()}
+      slashActive={engine.popoverView.slashActive()}
+      setSlashActive={engine.popoverView.setSlashActive}
+      onSlashSelect={engine.popoverView.onSlashSelect}
+      commandKeybind={(id) => command.keybind(id)}
+      contextItems={contextItems()}
+      contextActive={(item) => {
+        const active = comments.active()
+        return !!item.commentID && item.commentID === active?.id && item.path === active?.file
+      }}
+      openComment={openComment}
+      removeContextItem={(item) => {
+        if (item.commentID) comments.remove(item.path, item.commentID)
+        prompt.context.remove(item.key)
+      }}
+      imageAttachments={imageAttachments()}
+      imageMarks={imageMarks()}
+      openImageMarks={(attachment, focusIndex) =>
+        dialog.show(() => (
+          <ImageMarkEditor
+            image={attachment}
+            firstNumber={firstMarkNumber(imageAttachments(), attachment.id)}
+            focusIndex={focusIndex}
+            onSave={(marks) => setImageMarks(attachment.id, marks)}
+          />
+        ))
+      }
+      removeImageMark={(entry) => {
+        const image = imageAttachments().find((part) => part.id === entry.imageId)
+        if (!image) return
+        setImageMarks(entry.imageId, (image.marks ?? []).filter((_, index) => index !== entry.index))
+      }}
+      removeAttachment={removeAttachment}
+      fileInputRef={(el) => (fileInputRef = el)}
+      acceptedFileTypes={ACCEPTED_FILE_TYPES}
+      addAttachments={(files) => void addAttachments(files)}
+      attachStyle={buttons}
+      pick={pick}
+      openCommands={() => engine.openPopover("slash")}
+      openContext={() => engine.openPopover("at")}
+      enterShellMode={() => engine.enterMode("shell")}
+      goalSelectable={goalSelectable} goalArmed={goalArmed}
+      armGoal={armGoal} toggleGoal={toggleGoal}
+      approveEnabled={() => props.canPrompt?.() ?? true}
+      permissionGroups={permissionMode.groups}
+      permissionCurrent={permissionMode.current}
+      onPermissionSelect={permissionMode.select}
+      harnessController={() => harnessSelectionController}
+      harnessDirectory={harnessDirectory}
+      harnessSessionId={harnessSessionId}
+      sessionRef={() => props.sessionRef?.()}
+      surfaceId={() => sessionParams.surfaceId?.()}
+      draftId={resolvedDraftId}
+      active={() => sessionParams.active?.() ?? true}
+      controlStyle={control}
+      sessionLocked={() => harnessSessionId() !== undefined && harnessSessionId() !== "new"}
+      showAgentSelector={toolbarState.showAgentSelector}
+      agentNames={toolbarState.agentNames}
+      currentAgentName={() => toolbarState.currentAgent()?.name ?? ""}
+      onAgentSelect={(value) => {
+        local.agent.set(value)
+        restoreFocus()
+      }}
+      providerLoading={providers.loading}
+      modelLabel={() => toolbarState.readiness().label ?? language.t("dialog.model.select.title")}
+      model={pickerModel}
+      statusStage={statusStage}
+      stoppable={stoppable}
+      abort={() => abort()}
+      onRetry={onRetry}
+      booting={booting}
+      working={working}
+      blank={blank}
+      bootText={bootText}
+      submitDisabled={submitInertBlocked}
+      submitExcludeFromTab={submitInertBlocked}
+      submitBlock={submitBlock}
+      onChooseModel={openModelPicker}
+      workspaceRoleBlocked={() => authorityBlock() === "workspace-role"}
+      t={(key) => language.t(key as Parameters<typeof language.t>[0])}
+    />
+  )
+}

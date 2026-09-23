@@ -1,0 +1,241 @@
+# e2e Invariants
+
+This file is the constitution for `packages/claxedo-app/e2e/**`. It exists because the
+prior suite failed ~20 rounds of the same regression class (assistant replies that never
+visibly render) while staying green — every default spec fabricated the agent reply
+itself instead of streaming a real busy→completed transition, and assertions targeted
+only the user bubble slot while the assistant slot was hidden via `aria-hidden` in a way
+Playwright's visibility checks don't catch. Every spec file links back here; this
+document is authoritative on *why* the suite is shaped the way it is. Do not weaken any
+rule below without updating this file first.
+
+## The #1 rule: an assertion is a claim, not proof
+
+Nothing is "done" because tests pass. Done = tests pass **AND** the visual evidence has
+actually been looked at (by a vision-capable reviewer — AI or human) and confirms what the
+assertions claim. An agent executing a spec in this suite must never report it complete on
+green output alone.
+
+1. **Nothing is "done" because tests pass.**
+2. **Every oracle assertion produces evidence** — a screenshot captured at the moment of
+   each claimed reply, into a per-run evidence directory
+   (`test-results/evidence/<spec>/<scenario>.png`); core-suite runs additionally record
+   video (`PLAYWRIGHT_VIDEO=1`).
+3. **Evidence gets reviewed, not just archived.** After a spec goes green, its author (or a
+   dedicated verifier) opens the oracle screenshots/video frames and confirms with their
+   own eyes that the reply text is legibly rendered — not hidden, not covered, not
+   off-screen, not a Thinking placeholder. The review verdict (`visual_verified:
+   true/false`) is reported separately from the test verdict, and a spec is not accepted
+   without it.
+4. **If the evidence contradicts the assertion, the assertion is the bug.** Fix the
+   oracle, never the evidence.
+5. **An assertion that can pass while the feature is unusable is a defect in the suite,
+   not reassurance.** Boot/render assertions ("the shell renders", "the page loaded") may
+   exist ONLY as labelled diagnostics and never count as coverage. The incident: on
+   2026-08-05/06 the packaged desktop app booted fine through every one of defects 1
+   (`file://` renderer became its own API base), 3 (reload broke the packaged app), and 4
+   (WebSocket `Origin: file://` rejected, terminal stuck at `Reconnecting... n/6`) — the
+   owner only discovered the app was broken when *creating a session* or *creating a
+   terminal*, not from watching it boot. A "shell renders" assertion would have stayed
+   green through the entire period. Coverage must sit on the first server-touching
+   mutation (`POST /session`, terminal creation, a real send) — never on the shell having
+   rendered. A boot assertion may stay only as a diagnostic that fails earlier and more
+   legibly than the first server-touching one, never as the proof.
+
+## The Oracle
+
+Proof of a completed turn is ALL of:
+
+- **DOM truth** — assistant reply **text** present inside
+  `[data-slot="session-turn-assistant-content"]` whose `aria-hidden` is not `"true"`, the
+  Thinking row gone, the submit control back to ready.
+- **Geometric truth** — the reply element has a non-zero bounding box inside the
+  viewport (after scroll), and a hit-test (`document.elementFromPoint` at its center)
+  resolves inside the assistant content — this catches overlays, zero-height collapse, and
+  off-screen rendering that CSS-visibility checks miss.
+- **Visual evidence** — a screenshot captured at assertion time into
+  `test-results/evidence/<spec>/<scenario>.png` (plus suite video), reviewed per the
+  doctrine above.
+
+Payload, store, message-count, and network assertions are supplements — never proof.
+
+Implemented once as `e2e/helpers/turn-oracle.ts` (`expectAssistantReplyVisible`), used by
+every send in every spec. A grep ratchet bans asserting assistant text any other way — see
+"Authoring rules" below.
+
+The default mock (`e2e/helpers/mock-runtime.ts`) streams `busy → message parts →
+completed → idle` as **separate** events over real time, never pre-completed, never
+instant idle. It ships variant hooks for stale-busy (completed message, idle never
+arrives), delayed idle, error mid-turn, dispatch failure, and slow/failed config PATCH.
+
+## Cross-cutting invariants
+
+These hold across every spec in this suite. A spec that needs to violate one must say so
+in its own header comment, with a reason.
+
+1. **Harness ownership.** The selected harness (opencode / acp:claude / codex-app-server /
+   acp:cursor / pi / …) owns model, effort/variant, and submit payload shape at every
+   stage of a session's life — draft, first send, mid-session change, reload, follow-up
+   send. Exactly one model control exists in the DOM at a time, even mid-switch. A harness
+   is locked once the session is created; nothing silently falls back to plain OpenCode.
+2. **Workspace draft defaults are paired, session config is durable.** A new draft reads
+   one server/workspace-scoped `{ harness, model }` pair. An explicit harness or model
+   action atomically replaces that pair for future drafts; it never live-patches another
+   already-open draft. Restoration validates the exact provider/model identity against
+   that harness's live catalog or config options. A removed or disconnected saved model
+   stays visibly unavailable and submit-blocked instead of silently substituting another
+   model. After first-send promotion, server session config is the only authority and late
+   draft/catalog responses are ignored.
+3. **Completed assistant content is never hidden by stale busy state.** Once an assistant
+   message's `time.completed` is set (or it carries an `error`), the turn is "settled" and
+   its content slot must render regardless of what `session.status` is doing separately.
+   (See `assistantMessageSettled` / `workingTurn` in
+   `src/pages/session/message-timeline.tsx` — `workingTurn` requires `!turnSettled`, so a
+   settled turn is never hidden by a late/never-arriving idle event.) Corollary: the
+   **stale-busy** scenario — message completed, `session.idle` never sent — is a permanent
+   non-skipped test (spec 5), not a `test.skip`.
+4. **No silent fallback to OpenCode.** An unavailable/auth-error harness shows a red dot,
+   disables submit, locks the editor, and sends **zero** requests. It never silently routes
+   the turn through the default OpenCode runtime instead.
+5. **Submit gating.** The submit control is the single source of truth for "can I send
+   right now": `[data-action="prompt-submit"]`'s `data-icon` is `"stop"` while busy with
+   an empty composer. A nonempty draft offers Send even while the turn is busy, so
+   a send icon alone does not prove the turn is idle; verify lifecycle state when
+   that distinction is the subject of the test. The control is `disabled` when
+   gating (missing model/agent, readonly role, readiness polling, etc.) applies. Never
+   assert readiness via a fixed `waitForTimeout` sleep — poll the control's actual state.
+6. **Test User has an unsigned-local twin.** Every watched browser flow runs under both
+   `CLAXEDO_E2E_AUTH_MODE=test-user` and `CLAXEDO_E2E_AUTH_MODE=local-unsigned`.
+   The unsigned mode keeps the auth UI mounted but supplies no provider key and disables
+   the Playwright webdriver bypass, so it has no synthetic user and makes no external
+   identity-provider request. A behavior whose subject is specifically a signed user
+   must call `stampTestAuth()` explicitly; no spec may depend silently on
+   `navigator.webdriver` to become Test User.
+
+## The header comment (every spec file)
+
+Every spec file opens with a doc comment naming what the file covers and the constraints a
+reader has to know before editing it: where the relevant state lives and what survives a
+reload, the traps in the harness (a route pattern that must end in `**`, a fixture whose
+ids have to sort in emission order, a selector that resolves to an off-screen twin), and
+anything the file does that looks wrong until you know why.
+
+Keep it to what a reader of this file alone cannot work out from the code below it. It is
+not a specification of the feature, an inventory of selectors, a list of the tests, or a
+record of how the file came to look this way. A header that restates the test titles has
+nothing in it; delete those lines rather than maintain them.
+
+The same bar applies to every comment in the file. A comment earns its place by naming a
+non-obvious invariant, a reason, or a trap — written in the present tense against the code
+as it stands. References to plans, reviews, defect numbers, dated decisions, or numbered
+behaviors resolve to nothing for the next reader and do not belong in the source. A past
+failure may appear only as the clause explaining why a guard exists.
+
+## Authoring rules
+
+1. **Shared helpers only.** Route mocking goes through `e2e/helpers/mock-runtime.ts`
+   (`installMockRuntime`). Reply verification goes through `e2e/helpers/turn-oracle.ts`
+   (`expectAssistantReplyVisible`, `expectTurnCounts`, `expectNoDuplicateRows`). Do not
+   hand-roll a parallel mock or a parallel assistant-text assertion in a spec file — extend
+   the shared helper instead, so every spec benefits from the fix.
+2. **No bare `getByText` (or any other locator) for assistant text.** Assistant reply text
+   is asserted **only** through `expectAssistantReplyVisible`. A spec that does
+   `page.getByText(replyText)` or `page.locator('[data-slot="session-turn-assistant-
+   content"]').getByText(...)` directly, instead of calling the oracle, is a regression —
+   that is exactly the pattern that let the old suite pass while replies never rendered.
+3. **No `waitForTimeout` as the sole guard of a negative.** "X did not happen" must be
+   proven by a request-count/log assertion (`installMockRuntime`'s `requests` handle) or a
+   deterministic wait (`expect.poll`, `page.waitForResponse`, a DOM state change) — never
+   by sleeping N ms and hoping nothing showed up. `waitForTimeout` is fine as an
+   *additional* settle buffer alongside a real assertion, never as the only proof.
+4. **Titles state the behavior.** A `test()` title says what the user-visible behavior is
+   and, where it matters, what proves it — e.g. `test("core local session survives multiple
+   turns and reload resume @core", ...)`. A title that names only a mechanism or a number
+   tells a reader of a failing CI log nothing.
+5. **Evidence path convention.** Screenshots land at
+   `test-results/evidence/<spec-file-basename-without-.spec.ts>/<test-title-slug>.png`.
+   `expectAssistantReplyVisible` derives this automatically from Playwright's `testInfo`
+   when no explicit `{spec, scenario}` is passed — prefer the automatic form.
+6. **Three tiers: M, R, L.** A spec belongs to exactly one, and its filename prefix says
+   which.
+   - **Tier M** (`e2e/playwright/core-*.spec.ts`) mocks every route via
+     `installMockRuntime`; it must never make a real network call.
+   - **Tier R** (`e2e/playwright/real-*.spec.ts`, tagged `@core @tier-real`) is the
+     close-to-real tier: real app, real `claxedo-server`, real embedded engine, real
+     harness binaries (claude / codex CLIs), real workspace-runtime, and — in the cloud
+     lane — a real relay and tunnel. It makes **zero** `page.route()` calls. The ONLY
+     faked thing is the model HTTP endpoint: a deterministic scripted server, plus the
+     provider-config/env injection that points the engine and harnesses at it
+     (`OPENCODE_CONFIG_CONTENT`, `ANTHROPIC_BASE_URL`, `CODEX_CONFIG`). Faking anything
+     else — a route, a runtime event, a session payload — moves the spec to Tier M. It
+   runs hermetically with no credentials, so it belongs in every-PR CI; a missing
+   binary or credential **fails** with a clear `GATING:` message, same loud-skip
+   doctrine as Tier L. The oracle is mandatory.
+   - **Tier L** (`e2e/playwright/live-*.spec.ts`) makes zero `page.route()` calls and
+     fakes nothing at all — real models, real credentials. A missing credential/binary
+     **fails** the test with a clear setup message (loud-skip) — silent `test.skip()` is
+     forbidden in Tier L.
+7. **Legacy suite — retired.** `e2e-legacy/` was ported and deleted; the number is kept
+   so the invariants below keep their citations.
+8. **The DEV direct-bus test seam is not a transport.** `window.__claxedoEmitTestEvent` /
+   `emitClaxedoEvent` hands an event straight to the client-side bus — it MUST NOT be the
+   sole delivery path for any assertion that claims a transport works. The incident:
+   `core-terminal.spec.ts`'s status-dot scenarios (around lines 920-1000) injected via this
+   seam, bypassing the SSE fetch, stream-target selection, and frame parser entirely — so
+   those specs stayed green through the 2026-08-05/06 period when defects 4-7 meant
+   *nothing* was actually delivered to a real user (WebSocket `Origin: file://` rejected,
+   a directory path posted as `workspaceId`, `CLAXEDO_PORT=80` from a portless synthetic
+   origin, a workspace on this machine opening no event stream at all). "On units it's working" was
+   true and useless. A transport-dependent proof goes through `mock.emit()` (served by
+   the real `**/api/wr/events` route) or a real Tier R/L lane; the direct-bus seam may
+   still be used for setup/scaffolding that is not itself the thing under test.
+
+## Spec index
+
+The original consolidation was 25 spec files across two tiers (Tier M specs 1–21
+mocked/fixture, Tier L specs 22–25 live); Tier R was added later per rule 6 and is
+indexed alongside them. This file will grow a one-line link per spec, naming what each
+one owns, as specs land:
+
+- **1. `core-first-prompt-local`** — draft composer → first send → full session UI;
+  oracle; exactly one user + one assistant row; optimistic user row before reconcile;
+  attach-workspace-before-prompt guard.
+
+## Testing gotchas
+
+Operational lessons paid for in hours of chasing false signals. Do not relearn these.
+
+1. **Tier M must run against `bun run dev`, never `vite preview`.** DEV-only seams get
+   dead-code-eliminated in a preview build, producing false "regressions" that look like
+   real breakage but are only a build-mode artifact.
+2. **Cap roughly 3 concurrent Playwright suites machine-wide.** Recycle long-lived dev
+   servers rather than spinning up more in parallel.
+3. **SSE mocks need per-connection broadcast semantics, not drain-once queues.** A
+   drain-once queue turns delivery into a lottery between the app's multiple stream
+   consumers (fixed in `mock-runtime.ts`; keep new mock variants consistent with this).
+4. **Playwright `page.route` matching is LIFO** — the last-registered handler wins.
+   Order route registrations accordingly when a spec stacks more than one.
+5. **A shared git index across parallel agent sessions means a bare `git commit` sweeps
+   other agents' staged files.** Always commit by pathspec (`git commit --only <paths>`),
+   never a bare `git commit` when other sessions may have work staged.
+6. **Two concurrent `launchPackagedApp()` calls on the same machine are NOT
+   independent, even with distinct `--user-data-dir`s.** Found 2026-08-06 authoring
+   `desktop-signed-embedded-shared.spec.ts`/`real-desktop-signed-cloud.spec.ts`: an
+   otherwise-clean `A1` scenario failed with `electron.launch: Target page, context or
+   browser has been closed` after only ~190ms, no window ever opening, main-process
+   `exitCode: 0`. Root-caused, not guessed: `packages/claxedo-desktop/src/main/
+   index.ts:161` calls `app.requestSingleInstanceLock()` before any window opens, and on
+   `false` calls `app.quit()` and `return`s immediately — this exact log signature
+   (`app starting` printed, then nothing, then a clean exit). Electron's singleton lock
+   is keyed by the app's OS-level bundle identity, NOT by `--user-data-dir`, so a SECOND
+   `Claxedo Dev.app` process launched anywhere on the machine (a concurrent agent
+   session, a leftover probe script, a developer's own running copy) silently steals the
+   lock from whichever instance loses the race — the loser looks exactly like a random
+   flake with no error inside the app itself. Confirmed empirically: the identical two
+   test files passed cleanly back-to-back except for one run where `ps aux` showed a
+   SEPARATE, concurrently-running `Claxedo Dev.app` process (a different `--user-data-dir`
+   entirely) that was not this suite's own. This is a real hazard for EVERY
+   `desktop-*.spec.ts` lane, not specific to the signed lanes — until Electron's lock is
+   made `--user-data-dir`-aware (out of scope for an e2e spec file) or CI serializes all
+   `@surface-desktop` jobs onto one runner, do not treat a single red `desktop-*` run as
+   proof of a regression: `ps aux | grep -i "Claxedo"` for a second app instance FIRST.

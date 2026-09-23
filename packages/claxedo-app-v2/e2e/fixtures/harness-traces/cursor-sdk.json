@@ -1,0 +1,199 @@
+{
+  "envelopes": [
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-cursor-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_cursor-sdk",
+          "part": {
+            "id": "000000_msg_assistant_1-text",
+            "sessionID": "ses_harness_matrix_cursor-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "text",
+            "text": ""
+          },
+          "time": 1010
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-cursor-sdk",
+      "payload": {
+        "id": "message.part.delta:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_cursor-sdk",
+          "messageID": "msg_assistant_1",
+          "partID": "000000_msg_assistant_1-text",
+          "field": "text",
+          "delta": "Hel"
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-cursor-sdk",
+      "payload": {
+        "id": "message.part.delta:msg_assistant_1:000000_msg_assistant_1-text",
+        "type": "message.part.delta",
+        "properties": {
+          "sessionID": "ses_harness_matrix_cursor-sdk",
+          "messageID": "msg_assistant_1",
+          "partID": "000000_msg_assistant_1-text",
+          "field": "text",
+          "delta": "lo there"
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-cursor-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000001_tool-shell-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_cursor-sdk",
+          "part": {
+            "id": "000001_tool-shell-1",
+            "sessionID": "ses_harness_matrix_cursor-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-shell-1",
+            "tool": "shell",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "shell",
+                "kind": "command_execution",
+                "description": "bun test",
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              },
+              "metadata": {
+                "cursor": {
+                  "itemType": "command_execution"
+                }
+              },
+              "time": {
+                "start": 1030
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          "time": 1030
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-cursor-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000001_tool-shell-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_cursor-sdk",
+          "part": {
+            "id": "000001_tool-shell-1",
+            "sessionID": "ses_harness_matrix_cursor-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-shell-1",
+            "tool": "shell",
+            "state": {
+              "status": "running",
+              "input": {
+                "intent": "shell",
+                "kind": "command_execution",
+                "description": "bun test",
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              },
+              "metadata": {
+                "cursor": {
+                  "itemType": "command_execution"
+                }
+              },
+              "time": {
+                "start": 1040
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          "time": 1040
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-cursor-sdk",
+      "payload": {
+        "id": "message.part.updated:msg_assistant_1:000001_tool-shell-1",
+        "type": "message.part.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_cursor-sdk",
+          "part": {
+            "id": "000001_tool-shell-1",
+            "sessionID": "ses_harness_matrix_cursor-sdk",
+            "messageID": "msg_assistant_1",
+            "type": "tool",
+            "callID": "tool-shell-1",
+            "tool": "shell",
+            "state": {
+              "status": "completed",
+              "input": {
+                "intent": "shell",
+                "kind": "command_execution",
+                "description": "bun test",
+                "command": "bun test",
+                "workingDirectory": "/repo",
+                "cwd": "/repo"
+              },
+              "output": "passed",
+              "title": "shell",
+              "metadata": {
+                "cursor": {
+                  "itemType": "command_execution"
+                }
+              },
+              "time": {
+                "start": 1050,
+                "end": 1050
+              }
+            },
+            "metadata": {
+              "cursor": {
+                "itemType": "command_execution"
+              }
+            }
+          },
+          "time": 1050
+        }
+      }
+    },
+    {
+      "directory": "/tmp/e2e-core-harness-rendering-matrix-cursor-sdk",
+      "payload": {
+        "id": "todo.updated:ses_harness_matrix_cursor-sdk",
+        "type": "todo.updated",
+        "properties": {
+          "sessionID": "ses_harness_matrix_cursor-sdk",
+          "todos": [
+            {
+              "content": "Ship adapter",
+              "status": "in_progress",
+              "priority": "medium"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,727 @@
+{
+  "messages": [
+    {
+      "info": {
+        "id": "msg_09a18dd31001dXDMbKO7nsmb3H",
+        "sessionID": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+        "role": "user",
+        "time": {
+          "created": 1789291717046
+        },
+        "agent": "build",
+        "model": {
+          "providerID": "codex",
+          "modelID": "gpt-5.6-sol"
+        },
+        "variant": "low"
+      },
+      "parts": [
+        {
+          "id": "prt_09a18dd31002trjoGB7PCQqEie",
+          "sessionID": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+          "messageID": "msg_09a18dd31001dXDMbKO7nsmb3H",
+          "type": "text",
+          "text": "QA first-open fold fixture 1164. Run shell printf QA_FIRST_ONE_1164; then say QA_FIRST_BETWEEN_1164; then run shell printf QA_FIRST_TWO_1164; then reply QA_FIRST_DONE_1164. Use two separate shell calls with the prose between. No files or other tools."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+        "sessionID": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+        "role": "assistant",
+        "time": {
+          "created": 1789291717046,
+          "completed": 1789291732054
+        },
+        "parentID": "msg_09a18dd31001dXDMbKO7nsmb3H",
+        "modelID": "gpt-5.6-sol",
+        "providerID": "codex",
+        "mode": "auto",
+        "agent": "build",
+        "path": {
+          "cwd": "/tmp/e2e-completed-fold-replay",
+          "root": "/tmp/e2e-completed-fold-replay"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        }
+      },
+      "parts": [
+        {
+          "id": "000000_msg_09a18dd31001dXDMbKO7nsmb3H_r-text",
+          "sessionID": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+          "messageID": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+          "type": "text",
+          "text": "I\u2019m starting the two-call QA sequence now."
+        },
+        {
+          "id": "000001_exec-d91811ba-c1a9-47ea-8502-eaba7922c996",
+          "sessionID": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+          "messageID": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+          "type": "tool",
+          "callID": "exec-d91811ba-c1a9-47ea-8502-eaba7922c996",
+          "tool": "bash",
+          "state": {
+            "status": "completed",
+            "input": {
+              "intent": "shell",
+              "kind": "command_execution",
+              "description": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+              "command": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+              "cwd": "/tmp/e2e-completed-fold-replay",
+              "processId": "92751"
+            },
+            "output": "QA_FIRST_ONE_1164",
+            "title": "bash",
+            "metadata": {
+              "codex": {
+                "itemType": "command_execution",
+                "exitCode": 0
+              }
+            },
+            "time": {
+              "start": 1789291725762,
+              "end": 1789291725762
+            }
+          },
+          "metadata": {
+            "codex": {
+              "itemType": "command_execution",
+              "exitCode": 0
+            }
+          }
+        },
+        {
+          "id": "000002_msg_09a18dd31001dXDMbKO7nsmb3H_r-text-1",
+          "sessionID": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+          "messageID": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+          "type": "text",
+          "text": "QA_FIRST_BETWEEN_1164"
+        },
+        {
+          "id": "000003_exec-a21acea7-6d99-4401-98d3-6e5c7e1845c1",
+          "sessionID": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+          "messageID": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+          "type": "tool",
+          "callID": "exec-a21acea7-6d99-4401-98d3-6e5c7e1845c1",
+          "tool": "bash",
+          "state": {
+            "status": "completed",
+            "input": {
+              "intent": "shell",
+              "kind": "command_execution",
+              "description": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+              "command": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+              "cwd": "/tmp/e2e-completed-fold-replay",
+              "processId": "21406"
+            },
+            "output": "QA_FIRST_TWO_1164",
+            "title": "bash",
+            "metadata": {
+              "codex": {
+                "itemType": "command_execution",
+                "exitCode": 0
+              }
+            },
+            "time": {
+              "start": 1789291729350,
+              "end": 1789291729350
+            }
+          },
+          "metadata": {
+            "codex": {
+              "itemType": "command_execution",
+              "exitCode": 0
+            }
+          }
+        },
+        {
+          "id": "000004_msg_09a18dd31001dXDMbKO7nsmb3H_r-text-2",
+          "sessionID": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+          "messageID": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+          "type": "text",
+          "text": "QA_FIRST_DONE_1164"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "session-status",
+        "status": "busy"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "session-status",
+        "status": "busy"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "I"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "\u2019m"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": " starting"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": " the"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": " two"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "-call"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": " QA"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": " sequence"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": " now"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "."
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "tool-start",
+        "toolCallId": "exec-d91811ba-c1a9-47ea-8502-eaba7922c996",
+        "toolName": "command",
+        "kind": "command_execution",
+        "display": {
+          "kind": "command_execution",
+          "intent": "shell",
+          "command": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+          "description": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+          "input": {
+            "command": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+            "cwd": "/tmp/e2e-completed-fold-replay",
+            "processId": "92751"
+          }
+        },
+        "metadata": {
+          "codex": {
+            "itemType": "command_execution"
+          }
+        }
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "tool-input",
+        "toolCallId": "exec-d91811ba-c1a9-47ea-8502-eaba7922c996",
+        "input": {
+          "command": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+          "cwd": "/tmp/e2e-completed-fold-replay",
+          "processId": "92751"
+        },
+        "display": {
+          "kind": "command_execution",
+          "intent": "shell",
+          "command": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+          "description": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+          "input": {
+            "command": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+            "cwd": "/tmp/e2e-completed-fold-replay",
+            "processId": "92751"
+          }
+        },
+        "metadata": {
+          "codex": {
+            "itemType": "command_execution"
+          }
+        }
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "tool-output",
+        "toolCallId": "exec-d91811ba-c1a9-47ea-8502-eaba7922c996",
+        "output": "QA_FIRST_ONE_1164",
+        "display": {
+          "kind": "command_execution",
+          "intent": "shell",
+          "command": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+          "description": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+          "input": {
+            "command": "/bin/zsh -lc 'printf QA_FIRST_ONE_1164'",
+            "cwd": "/tmp/e2e-completed-fold-replay",
+            "processId": "92751"
+          }
+        },
+        "metadata": {
+          "codex": {
+            "itemType": "command_execution",
+            "exitCode": 0
+          }
+        }
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "QA"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "_FIRST"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "_B"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "ET"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "WEEN"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "_"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "116"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "4"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "tool-start",
+        "toolCallId": "exec-a21acea7-6d99-4401-98d3-6e5c7e1845c1",
+        "toolName": "command",
+        "kind": "command_execution",
+        "display": {
+          "kind": "command_execution",
+          "intent": "shell",
+          "command": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+          "description": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+          "input": {
+            "command": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+            "cwd": "/tmp/e2e-completed-fold-replay",
+            "processId": "21406"
+          }
+        },
+        "metadata": {
+          "codex": {
+            "itemType": "command_execution"
+          }
+        }
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "tool-input",
+        "toolCallId": "exec-a21acea7-6d99-4401-98d3-6e5c7e1845c1",
+        "input": {
+          "command": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+          "cwd": "/tmp/e2e-completed-fold-replay",
+          "processId": "21406"
+        },
+        "display": {
+          "kind": "command_execution",
+          "intent": "shell",
+          "command": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+          "description": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+          "input": {
+            "command": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+            "cwd": "/tmp/e2e-completed-fold-replay",
+            "processId": "21406"
+          }
+        },
+        "metadata": {
+          "codex": {
+            "itemType": "command_execution"
+          }
+        }
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "tool-output",
+        "toolCallId": "exec-a21acea7-6d99-4401-98d3-6e5c7e1845c1",
+        "output": "QA_FIRST_TWO_1164",
+        "display": {
+          "kind": "command_execution",
+          "intent": "shell",
+          "command": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+          "description": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+          "input": {
+            "command": "/bin/zsh -lc 'printf QA_FIRST_TWO_1164'",
+            "cwd": "/tmp/e2e-completed-fold-replay",
+            "processId": "21406"
+          }
+        },
+        "metadata": {
+          "codex": {
+            "itemType": "command_execution",
+            "exitCode": 0
+          }
+        }
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "QA"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "_FIRST"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "_DONE"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "_"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "116"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "text-delta",
+        "delta": "4"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "session-status",
+        "status": "idle"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "session-status",
+        "status": "idle"
+      },
+      "contractVersion": 7
+    },
+    {
+      "directory": "/tmp/e2e-completed-fold-replay",
+      "sessionId": "a8e275cd-bdcc-4971-9d0a-04923de0d505",
+      "agentSessionId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+      "assistantMessageId": "msg_09a18dd31001dXDMbKO7nsmb3H_r",
+      "payload": {
+        "harness": "codex",
+        "threadId": "01a09a18-d651-7700-a133-aaf585c2e00e",
+        "type": "finish",
+        "sessionId": "01a09a18-d651-7700-a133-aaf585c2e00e"
+      },
+      "contractVersion": 7
+    }
+  ]
+}

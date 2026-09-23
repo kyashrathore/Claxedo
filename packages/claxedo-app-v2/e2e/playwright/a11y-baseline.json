@@ -1,0 +1,15 @@
+{
+  "home": [],
+  "session-page": [
+    "color-contrast"
+  ],
+  "settings-surface": [
+    "color-contrast"
+  ],
+  "command-palette": [
+    "color-contrast"
+  ],
+  "prompt-input-focused": [
+    "color-contrast"
+  ]
+}

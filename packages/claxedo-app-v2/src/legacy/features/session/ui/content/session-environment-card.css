@@ -1,0 +1,315 @@
+/* Placement + tokens for the session Environment card — Codex's "pinned
+   summary" model. The card's LOOK lives in the shared `@/ui/context-card`
+   shell (`variant="floating"` supplies the raised bounded-card surface).
+
+   Placement here is gutter-in-scroller: the timeline's scroll viewport keeps
+   the FULL pane width (so its scrollbar stays on the pane's right edge) and
+   reserves a right gutter via padding while the card is mounted; the card sits
+   absolutely INSIDE that gutter. Inline — never floating over content, never a
+   full-height rail. Class namespace is `session-envcard-*` — never reuse
+   generic names. */
+
+.session-envcard-shell {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  /* Size queries below resolve against THIS pane, not the window. Splitting the
+     workbench narrows the shell without touching the viewport, so a `@media`
+     rule cannot see the case that actually matters — two panes on a wide
+     display. Named so the queries can only ever match this container.
+     Safe on this element: its inline size comes from the pane, never from its
+     contents, and it is already the `position: relative` containing block the
+     card is absolutely placed against, so `contain: layout` changes nothing. */
+  container: session-envcard-shell / inline-size;
+}
+
+.session-envcard-primary {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Bounded card, top-aligned inside the reserved gutter, content-sized.
+
+   `top: 1.75rem` is a shared-corner constraint, not a taste value. The pane's
+   own "Close Pane" control is `absolute right-2 top-2` at `size-5`, so it owns
+   rows 8-28px down the SAME right edge this card is anchored to; at 0.85rem
+   the collapsed rail's top-right corner sat underneath it. 28px is the first
+   row that clears it — and it is also where the session header's "…" glyph
+   starts (its 24px button box begins at 24, but the box is invisible; the
+   16px icon inside starts at 28), so clearing the close control and lining up
+   with the "…" are the same number. Keep them in step if either moves.
+   The bottom gutter stays 0.85rem, hence the asymmetric max-height. */
+.session-envcard {
+  position: absolute;
+  top: 1.75rem;
+  right: 0.85rem;
+  z-index: 30;
+  width: 15rem;
+  max-height: calc(100% - 2.6rem);
+  overflow-y: auto;
+}
+
+/* Collapsed: the same gutter spot holds the shell's vertical icon rail. */
+.session-envcard.is-collapsed {
+  width: 1.75rem;
+  overflow-y: visible;
+}
+
+/* The gutter inset applies INSTANTLY. It used to transition 220ms here, but
+   occupancy flips every time the workspace panel toggles (the card hides while
+   the panel is open), so quick toggles chained animated relayouts of the
+   scroll viewport and composer dock — dragging the whole transcript through
+   continuous padding animations. Layout properties never animate well at this
+   scale; snap instead. */
+
+/* Reserve the gutter inside the timeline's scroll viewport so chat content
+   squeezes left while the scrollbar remains on the pane edge. Keyed off
+   `data-session-envcard`, which the card reports to the shell from the same
+   `painted()` / `collapsed()` state that decides whether it renders — so
+   visibility still has one source of truth, and the collapsed value ("collapsed"
+   vs the plain present-and-expanded attribute) picks the width.
+
+   This was `:has(.session-envcard)` / `:has(.session-envcard.is-collapsed)`.
+   `:has()` here made this shell — which wraps the ENTIRE session pane — a Blink
+   `:has()` invalidation anchor. Blink re-checks an anchor on essentially any
+   mutation below it and then schedules the document's AGGREGATED `:has`
+   descendant invalidation set (the union of every `:has()` rule's descendant
+   features, which in this UI kit means `data-slot` and `data-component`, i.e.
+   almost every element) across the anchor's whole subtree. On the session-switch
+   perf flow that anchor plus the timeline root's own one produced 3426 of 3756
+   style invalidations and ~21% of RecalcStyleDuration; replacing both with
+   explicit state took recalcStyleMs from ~375 to ~294 and single_switch_ms from
+   ~304 to ~265. Do not reintroduce a `:has()` anchored above the transcript.
+
+   Ordering note: the two rules below are now equal specificity (0,2,0), so the
+   collapsed one wins on source order — keep it second.
+
+   The collapsed rail only needs a sliver. The composer dock gets the SAME
+   inset so it stays centered on the squeezed chat column — never on the full
+   pane. So does the loading placeholder that stands in for the timeline before
+   messages land (`[data-session-timeline-loading]`, session-timeline-skeleton.tsx):
+   it replaces the scroll viewport rather than living inside it, so without its
+   own rule it centres on the full pane and the column visibly jumps left the
+   moment the real messages arrive. The scroll-to-bottom overlay uses the same
+   inset to center its button on this column while remaining outside the scroller. */
+@media (min-width: 769px) {
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-jump],
+  .session-envcard-shell[data-session-envcard] .ui-session-prompt-dock {
+    padding-right: 16.4rem;
+  }
+
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-jump],
+  .session-envcard-shell[data-session-envcard="collapsed"] .ui-session-prompt-dock {
+    padding-right: 3rem;
+  }
+}
+
+/* Gone entirely in a narrow PANE, not just a narrow window.
+
+   The `@media` rule below drops the card under a 768px viewport, but it cannot
+   see the case that actually bites: splitting a wide window leaves each pane a
+   few hundred pixels across while the viewport stays wide. A size query on the
+   shell measures the pane, so both cases resolve through one threshold (BP_MD).
+
+   Under that width the card is `display: none` — not merely unexpandable. It
+   does not come back on focus, on hover, or on any other state: this block is
+   width-only, and nothing else in this file re-shows the card.
+
+   The gutter reservation has to go with it. A `display: none` card is still a
+   painted card as far as `data-session-envcard` is concerned, and the
+   reservation lives under `@media (min-width: 769px)` — so in a narrow pane
+   inside a wide window the card would be invisible while the timeline still
+   paid 3.6rem for it. Same selectors, later in the file, so these win on source
+   order at equal specificity. */
+@container session-envcard-shell (max-width: 768px) {
+  .session-envcard {
+    display: none;
+  }
+
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-jump],
+  .session-envcard-shell[data-session-envcard] .ui-session-prompt-dock,
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-root] .scroll-view__viewport,
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-jump],
+  .session-envcard-shell[data-session-envcard="collapsed"] .ui-session-prompt-dock {
+    padding-right: 0;
+  }
+}
+
+/* Below desktop width the reading column needs the full width; drop the card
+   (the gutter rule above is already scoped to desktop widths). Kept alongside
+   the size query: this one also covers a shell that never became a container. */
+@media (max-width: 768px) {
+  .session-envcard {
+    display: none;
+  }
+}
+
+/* This card sits over the live timeline, so it reads a touch brighter than the
+   shared shell's quiet defaults. Everything below is scoped to .session-envcard
+   so the shared ContextCard keeps its quieter look. */
+
+/* Surface lift: a translucent white layered over the opaque raised surface.
+   In dark themes this nudges #1c1c1c up to ~#242424; over the light theme's
+   white surface it is a no-op, so the lift never dims light mode. */
+.session-envcard.is-floating {
+  background:
+    linear-gradient(var(--surface-light-wash), var(--surface-light-wash)), var(--surface-raised-stronger-non-alpha);
+}
+
+/* Framing labels stay visibly subordinate to both metadata and actions. */
+.session-envcard .ui-context-card-label,
+.session-envcard .ui-context-card-section-label {
+  color: var(--text-weaker);
+  font-weight: var(--font-weight-body);
+}
+
+/* Clickable rows are the card's primary foreground. */
+.session-envcard .ui-context-card-row.is-selectable .ui-context-card-row-label {
+  color: var(--text-strong);
+}
+
+/* Information rows are intentionally quieter than navigation controls. */
+.session-envcard .ui-context-card-row:not(.is-selectable) .ui-context-card-row-label,
+.session-envcard-value {
+  color: var(--text-base);
+}
+
+.session-envcard-copy-action {
+  display: grid;
+  place-items: center;
+  color: var(--icon-weak-base);
+  opacity: 0.75;
+  transition:
+    color 110ms ease,
+    opacity 110ms ease;
+}
+
+.session-envcard .ui-context-card-row.is-selectable:hover .session-envcard-copy-action,
+.session-envcard .ui-context-card-row.is-selectable:focus-visible .session-envcard-copy-action {
+  color: var(--icon-base);
+  opacity: 1;
+}
+
+/* The Repository row's trailing "opens externally" glyph is a quiet affordance,
+   so it sits at the muted meta weight rather than the full icon color. */
+.session-envcard-extglyph {
+  color: var(--icon-weak-base);
+  opacity: 0.75;
+}
+
+.session-envcard-quiet {
+  color: var(--text-weaker);
+}
+
+.session-envcard-metric {
+  font-variant-numeric: tabular-nums;
+}
+
+.session-envcard-add {
+  color: var(--icon-diff-add-base);
+}
+
+.session-envcard-del {
+  margin-left: 0.35rem;
+  color: var(--icon-diff-delete-base);
+}
+
+/* ── Processes row: running badge + quick-actions popover ──────────── */
+
+/* Green variant of the shell's status dot (default is the red unread dot). */
+.session-envcard-dot-running {
+  background: var(--surface-success-strong);
+}
+
+/* Green dot + running count, the Processes row's trailing meta. */
+.session-envcard-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.session-envcard-running-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The quick-actions popover portals out of the card; the shared popover shell
+   already supplies the surface/border/shadow, so only size + tighten here. */
+.session-envcard-proc-popover {
+  width: 15rem;
+}
+
+.session-envcard-proc-popover .ui-popover-body {
+  padding: 0.35rem;
+}
+
+.session-envcard-proc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.session-envcard-proc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.9rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius-md);
+}
+
+.session-envcard-proc-name {
+  overflow: hidden;
+  font-size: var(--font-size-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-envcard-proc-port {
+  flex-shrink: 0;
+  font-size: var(--font-size-x-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-weaker);
+}
+
+.session-envcard-proc-action {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--radius-md);
+  color: var(--icon-weak-base);
+  transition:
+    background 110ms ease,
+    color 110ms ease;
+}
+
+.session-envcard-proc-action:hover,
+.session-envcard-proc-action:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--icon-base);
+}
+
+/* Footer link to the full panel, under a hairline. */
+.session-envcard-proc-openpanel {
+  margin-top: 0.15rem;
+  padding: 0.35rem;
+  border-top: 1px solid var(--border-weak-base);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  font-size: var(--font-size-small);
+  text-align: left;
+  color: var(--text-weak);
+  transition: color 110ms ease;
+}
+
+.session-envcard-proc-openpanel:hover,
+.session-envcard-proc-openpanel:focus-visible {
+  color: var(--text-base);
+}

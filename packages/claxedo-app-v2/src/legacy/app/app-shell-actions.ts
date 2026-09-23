@@ -1,0 +1,91 @@
+import type { Navigator, Params } from "@solidjs/router"
+import { checkServerHealthCached } from "@/app/connection/server-health"
+
+import { createClaxedoLayoutActions } from "./workbench/actions/index"
+import { useClaxedoEventsOptional } from "./integrations/claxedo-events"
+import { useCommand } from "@/app/providers/command"
+import { useLanguage } from "@/platform/i18n/provider"
+import { marketplaceRoute, tasksRoute } from "@/platform/identity/route"
+import type { AppShellState } from "./app-shell-state"
+import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
+
+export function useAppShellActions(input: { shell: AppShellState; params: Params; navigate: Navigator }) {
+  const events = useClaxedoEventsOptional()
+  const handleOpenMarketplace = () => {
+    input.shell.state.layout.openMarketplace()
+    input.navigate(marketplaceRoute())
+  }
+  const handleOpenTasks = () => {
+    input.shell.state.layout.openTasks()
+    input.navigate(tasksRoute())
+  }
+  const handleUsage = async () => {
+    const returnFocus = document.querySelector<HTMLElement>("[data-testid='rail-account-trigger']")
+    const { DialogUsage } = await import("./dialogs/usage")
+    void input.shell.dialog.show(
+      () => DialogUsage({}),
+      () => {
+        // Kobalte restores its own pre-dialog focus during the close microtask.
+        // Run after that restoration so the durable account trigger, rather
+        // than the menu item that was removed, owns focus.
+        setTimeout(() => {
+          if (returnFocus?.isConnected) returnFocus.focus()
+        }, 0)
+      },
+    )
+  }
+
+  const actions = createClaxedoLayoutActions({
+    params: input.params,
+    navigate: (path) => input.navigate(path),
+    state: input.shell.state,
+    dialog: input.shell.dialog,
+    directorySessionCacheActions: input.shell.directorySessionCacheActions,
+    globalBootstrapActions: input.shell.globalBootstrapActions,
+    projectInventoryActions: input.shell.projectInventoryActions,
+    globalSDK: input.shell.globalSDK,
+    layout: input.shell.layout,
+    platform: input.shell.platform,
+    config: input.shell.config,
+    events,
+    projects: input.shell.projects,
+    routeDirectory: input.shell.routeDirectory,
+    activeDirectory: input.shell.activeDirectory,
+    activeWorkspaceRouteId: input.shell.activeWorkspaceRouteId,
+    activeProjectId: input.shell.activeProjectId,
+    workspaceRouteId: input.shell.routeIdForDirectory,
+    hostKindForRoute: (routeId) => workspaceConnection(routeId)?.kind,
+    canUseDocuments: input.shell.canUseDocuments,
+    // The server's own account of itself (local execution), read from its
+    // health document; features take it as a port rather than reaching in.
+    serverHealth: () => {
+      const url = input.shell.globalSDK.url
+      return url
+        ? checkServerHealthCached({ url }, input.shell.platform.fetch ?? globalThis.fetch)
+        : Promise.resolve(undefined)
+    },
+    flowLog: input.shell.flowLog,
+  })
+
+  // `handleNewProject` raises the create-project intent the mounted composer's
+  // Project chip answers (its create panel). The desktop menu's "Open
+  // Project..." entry declares `project.open` (app/entry/desktop-menu.ts) and
+  // was permanently disabled while nothing registered that id.
+  const command = useCommand()
+  const language = useLanguage()
+  command.register("claxedo-project", () => [
+    {
+      id: "project.open",
+      title: language.t("command.project.open"),
+      category: language.t("command.category.project"),
+      onSelect: () => actions.handleNewProject(),
+    },
+  ])
+
+  return {
+    ...actions,
+    handleOpenMarketplace,
+    handleOpenTasks,
+    handleUsage,
+  }
+}

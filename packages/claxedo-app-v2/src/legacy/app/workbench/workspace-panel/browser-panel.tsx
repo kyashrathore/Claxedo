@@ -1,0 +1,99 @@
+import { BrowserPane, type BrowserPaneCommentPayload } from "@/features/browser"
+import { usePrompt, type ImageAttachmentPart } from "@/features/session/providers/prompt"
+
+export function buildScreenshotAttachment(payload: BrowserPaneCommentPayload): ImageAttachmentPart | undefined {
+  const dataUrl = payload.screenshotDataUrl
+  if (!dataUrl || !dataUrl.startsWith("data:image/")) return undefined
+  // Mime is between "data:" and the first ";" — fall back to image/png if missing.
+  const mimeEnd = dataUrl.indexOf(";", 5)
+  const mime = mimeEnd > 5 ? dataUrl.slice(5, mimeEnd) : "image/png"
+  // Sanitize selector for filename: drop quotes/punct, cap at 32 chars.
+  const safeSelector = (payload.selector || "element").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "element"
+  const filename = `browser-${safeSelector}-${Date.now()}.${mime.split("/")[1] || "png"}`
+  return {
+    type: "image",
+    id: `browser-pick-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    filename,
+    mime,
+    dataUrl,
+  }
+}
+
+export type WorkspaceBrowserPanelProps = {
+  /**
+   * Stable identifier for the panel mount. Used as the BrowserPane's
+   * `paneId` (the desktop main process keys CDP attaches by it). The workspace
+   * panel is a singleton per directory, so a stable string per directory is fine.
+   */
+  panelKey: string
+  /**
+   * Active session id resolved by the parent WorkspacePanelBody. May be
+   * "new" if no session is focused — a page comment then has no session to
+   * land in and the pane reports it as unsent.
+   */
+  sessionId: string
+  initialUrl?: string
+  navigationVersion?: number
+}
+
+export function WorkspaceBrowserPanel(props: WorkspaceBrowserPanelProps) {
+  // The PromptProvider is in scope here (DirectoryScope mounts it). For
+  // tests / cloud builds where it's missing, the optional try/catch keeps
+  // the panel mountable.
+  let prompt: ReturnType<typeof usePrompt> | undefined
+  try {
+    prompt = usePrompt()
+  } catch {
+    prompt = undefined
+  }
+
+  const handlePageComment = (payload: BrowserPaneCommentPayload): boolean => {
+    if (!prompt || props.sessionId === "new" || !props.sessionId) return false
+    // Use the FileContextItem shape with a URL-shaped path. The
+    // submit.ts override on dev splits these out of the file-fetch path
+    // and emits text-only request parts so the agent doesn't try to
+    // file:// the URL.
+    prompt.context.add({
+      type: "file",
+      path: payload.pageUrl || "page",
+      comment: payload.noteText?.trim() || payload.comment?.trim() || "",
+      commentOrigin: "file",
+      preview: payload.selector || undefined,
+    })
+    // Append the viewport screenshot (if captured) as an image attachment
+    // on the prompt. The prompt-input UI's `imageAttachments` memo filters
+    // ImageAttachmentParts out of `prompt.current()`, so the agent picks
+    // it up on submit alongside the comment text.
+    const attachment = buildScreenshotAttachment(payload)
+    if (attachment) {
+      prompt.set([...prompt.current(), attachment])
+    }
+    return true
+  }
+
+  return (
+    <div
+      class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background-base"
+      data-component="workspace-browser-panel"
+      data-testid="workspace-browser-panel"
+    >
+      <BrowserPaneMount {...props} onPageComment={handlePageComment} />
+    </div>
+  )
+}
+
+function BrowserPaneMount(props: WorkspaceBrowserPanelProps & {
+  onPageComment: (p: BrowserPaneCommentPayload) => boolean
+}) {
+  return (
+    <BrowserPane
+      paneId={props.panelKey}
+      tabId={props.panelKey}
+      browserId={props.panelKey}
+      initialUrl={props.initialUrl}
+      hostedUrl={props.initialUrl}
+      navigationVersion={props.navigationVersion}
+      onPageComment={props.onPageComment}
+    />
+  )
+}

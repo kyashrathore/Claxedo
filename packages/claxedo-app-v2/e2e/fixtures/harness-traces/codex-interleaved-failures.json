@@ -1,0 +1,152 @@
+[
+  {
+    "info": {
+      "id": "msg_09747e3ff001PlO1gGmCJB0fBB",
+      "sessionID": "239d35f0-b59f-4178-be03-874a29361a59",
+      "role": "user",
+      "time": {
+        "created": 1789244466576
+      },
+      "agent": "build",
+      "model": {
+        "providerID": "codex",
+        "modelID": "gpt-5.6-sol"
+      },
+      "variant": "low"
+    },
+    "parts": [
+      {
+        "id": "prt_09747e3ff002CrMhxlRpM5ahjR",
+        "sessionID": "239d35f0-b59f-4178-be03-874a29361a59",
+        "messageID": "msg_09747e3ff001PlO1gGmCJB0fBB",
+        "type": "text",
+        "text": "QA exit-code check. Run false as one shell tool call, then run grep QA_IMPOSSIBLE_MARKER_985312 package.json as a separate shell tool call. Do not repair anything or edit files. Report both exit codes."
+      }
+    ]
+  },
+  {
+    "info": {
+      "id": "msg_09747e3ff001PlO1gGmCJB0fBB_r",
+      "sessionID": "239d35f0-b59f-4178-be03-874a29361a59",
+      "role": "assistant",
+      "time": {
+        "created": 1789244466576,
+        "completed": 1789244484245
+      },
+      "parentID": "msg_09747e3ff001PlO1gGmCJB0fBB",
+      "modelID": "gpt-5.6-sol",
+      "providerID": "codex",
+      "mode": "auto",
+      "agent": "build",
+      "path": {
+        "cwd": "/tmp/e2e-codex-interleaved-failures",
+        "root": "/tmp/e2e-codex-interleaved-failures"
+      },
+      "cost": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "cache": {
+          "read": 0,
+          "write": 0
+        }
+      }
+    },
+    "parts": [
+      {
+        "id": "000000_msg_09747e3ff001PlO1gGmCJB0fBB_r-text",
+        "sessionID": "239d35f0-b59f-4178-be03-874a29361a59",
+        "messageID": "msg_09747e3ff001PlO1gGmCJB0fBB_r",
+        "type": "text",
+        "text": "Running the first command exactly and recording its exit code."
+      },
+      {
+        "id": "000001_exec-e5c76b92-953c-4986-a1fa-d13cbb583c36",
+        "sessionID": "239d35f0-b59f-4178-be03-874a29361a59",
+        "messageID": "msg_09747e3ff001PlO1gGmCJB0fBB_r",
+        "type": "tool",
+        "callID": "exec-e5c76b92-953c-4986-a1fa-d13cbb583c36",
+        "tool": "bash",
+        "state": {
+          "status": "error",
+          "input": {
+            "intent": "shell",
+            "kind": "command_execution",
+            "description": "/bin/zsh -lc false",
+            "command": "/bin/zsh -lc false",
+            "cwd": "/tmp/e2e-codex-interleaved-failures",
+            "processId": "52875"
+          },
+          "error": "Process exited with code 1",
+          "metadata": {
+            "codex": {
+              "itemType": "command_execution",
+              "exitCode": 1
+            }
+          },
+          "time": {
+            "start": 1789244475965,
+            "end": 1789244475965
+          }
+        },
+        "metadata": {
+          "codex": {
+            "itemType": "command_execution",
+            "exitCode": 1
+          }
+        }
+      },
+      {
+        "id": "000002_msg_09747e3ff001PlO1gGmCJB0fBB_r-text-1",
+        "sessionID": "239d35f0-b59f-4178-be03-874a29361a59",
+        "messageID": "msg_09747e3ff001PlO1gGmCJB0fBB_r",
+        "type": "text",
+        "text": "The first command exited with code 1. Running the separate `grep` command now."
+      },
+      {
+        "id": "000003_exec-f392b0a9-f702-4a7d-80d4-6ef614c4a609",
+        "sessionID": "239d35f0-b59f-4178-be03-874a29361a59",
+        "messageID": "msg_09747e3ff001PlO1gGmCJB0fBB_r",
+        "type": "tool",
+        "callID": "exec-f392b0a9-f702-4a7d-80d4-6ef614c4a609",
+        "tool": "bash",
+        "state": {
+          "status": "error",
+          "input": {
+            "intent": "shell",
+            "kind": "command_execution",
+            "description": "/bin/zsh -lc 'grep QA_IMPOSSIBLE_MARKER_985312 package.json'",
+            "command": "/bin/zsh -lc 'grep QA_IMPOSSIBLE_MARKER_985312 package.json'",
+            "cwd": "/tmp/e2e-codex-interleaved-failures",
+            "processId": "95488"
+          },
+          "error": "Process exited with code 1",
+          "metadata": {
+            "codex": {
+              "itemType": "command_execution",
+              "exitCode": 1
+            }
+          },
+          "time": {
+            "start": 1789244479875,
+            "end": 1789244479875
+          }
+        },
+        "metadata": {
+          "codex": {
+            "itemType": "command_execution",
+            "exitCode": 1
+          }
+        }
+      },
+      {
+        "id": "000004_msg_09747e3ff001PlO1gGmCJB0fBB_r-text-2",
+        "sessionID": "239d35f0-b59f-4178-be03-874a29361a59",
+        "messageID": "msg_09747e3ff001PlO1gGmCJB0fBB_r",
+        "type": "text",
+        "text": "- `false`: exit code 1\n- `grep QA_IMPOSSIBLE_MARKER_985312 package.json`: exit code 1"
+      }
+    ]
+  }
+]

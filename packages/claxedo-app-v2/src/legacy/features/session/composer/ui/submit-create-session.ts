@@ -1,0 +1,362 @@
+import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
+import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
+import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
+import type { useClaxedoState } from "@/features/session/app-ports"
+import { scheduleSessionProjectionPull, sessionProjectionBacking } from "@/platform/runtime/agent/session-projection"
+import { invalidateSessionListQueries } from "@/features/session/data/query/session-list"
+import type {
+  HarnessConfigPromoter,
+  ClaxedoLifecycleListener,
+  SubmitDirectory,
+  SubmitSessionGetClient,
+  SubmitSessionTarget,
+  SubmitSessionTargetResult,
+} from "../../submit/index"
+import { applyCreatedSessionTargetEffects, createSessionWithLifecycle, resolveSubmitSessionTarget } from "../../submit/index"
+import type { HarnessRef, SessionRef } from "@/platform/identity/session-ref"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
+import {
+  sessionRefForSubmitTarget,
+  type ProjectCatalogItem,
+  type RuntimeWorkspaceRef,
+} from "../workspace-resolver"
+import { reservePrivateSession } from "@/platform/runtime/private-session-reservation"
+import { holdSessionEventScope } from "@/platform/runtime/session-event-scope"
+
+export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull
+
+export type SubmitSessionTargetAcquisitionInput = {
+  readonly session: SubmitSessionTarget | undefined
+  readonly explicitSessionID: string | undefined
+  readonly isNewSession: boolean
+  readonly replaceSession: boolean
+  /**
+   * Whether the runtime serving this session owns its lifecycle. A
+   * `managed-private` runtime refuses `POST /session` until the caller holds a
+   * reservation, and it does so for every workspace it serves — including one
+   * reached over loopback, which is why this is not the transport flag. The
+   * serving process declares it on the workspace's catalog row; see
+   * `submitTransportForPlacement`.
+   */
+  readonly managedSessionRegistration: boolean
+  readonly workspaceId?: string
+  readonly serverUrl?: string
+  readonly request?: typeof fetch
+  readonly reserveManagedSession?: typeof reservePrivateSession
+  readonly sessionDirectory: SubmitDirectory
+  readonly sessionClient: () => SubmitSessionGetClient
+  readonly scope: string
+  readonly onSessionStart?: (draftId: string, binding: AgentSessionStartBinding | undefined, outcome?: "transport-failed") => void
+  readonly draftId: string | undefined
+  readonly sessionHarnessType: HarnessSelection
+  readonly sessionConfig: {
+    readonly agent: string
+    readonly model?: { readonly providerID: string; readonly modelID: string }
+    readonly variant: string | undefined
+  }
+  readonly events: ClaxedoLifecycleListener | undefined
+  readonly boot: (sessionID?: string) => void
+  readonly claimHarnessSession: (input: {
+    readonly scope: string
+    readonly directory: SubmitDirectory
+    readonly sessionID: string | undefined
+    readonly headers?: Record<string, string>
+    readonly sessionConfig: SubmitSessionTargetAcquisitionInput["sessionConfig"]
+  }) => Promise<SubmitSessionTarget | undefined>
+  /** Reports a session that could not be created. */
+  readonly onCreateError: (err: unknown) => void
+}
+
+export type CloudStartupState = {
+  open: boolean
+  sync?: boolean
+  id?: string
+  status?: string
+  err?: string
+  logs?: CloudLog[]
+}
+
+export function createCloudStartupController(input: {
+  readonly enabled: boolean
+  readonly onCloudStartup?: (state?: CloudStartupState) => void
+  readonly errorMessage: (err: unknown) => string
+  readonly now?: () => number
+}) {
+  let lastState: Omit<CloudStartupState, "open"> | undefined
+  const now = () => input.now?.() ?? Date.now()
+  const publishState = () => {
+    input.onCloudStartup?.({
+      open: true,
+      ...lastState,
+    })
+  }
+
+  // Arrow properties: the caller destructures these off the controller
+  // (`const { publish, clear, reportError } = cloudStartup`), so none of them
+  // may depend on `this`.
+  return {
+    remember: (state: Omit<CloudStartupState, "open">) => {
+      lastState = state
+    },
+    publish: (status: string, message: string) => {
+      if (!input.enabled) return
+      lastState = {
+        id: lastState?.id,
+        status,
+        err: undefined,
+        logs: appendWorkspaceRuntimeLog(lastState?.logs ?? [], status, message, undefined, now()),
+      }
+      publishState()
+    },
+    clear: () => {
+      if (input.enabled) input.onCloudStartup?.()
+      lastState = undefined
+    },
+    reportError: (err: unknown) => {
+      if (!input.enabled) return
+      const message = input.errorMessage(err)
+      lastState = {
+        id: lastState?.id,
+        status: "error",
+        err: message,
+        logs: appendWorkspaceRuntimeLog(lastState?.logs ?? [], "error", message, undefined, now()),
+      }
+      publishState()
+    },
+  }
+}
+
+export async function acquireSubmitSessionTarget(
+  input: SubmitSessionTargetAcquisitionInput,
+): Promise<SubmitSessionTargetResult> {
+  return await resolveSubmitSessionTarget({
+    isNewSession: input.isNewSession,
+    replaceSession: input.replaceSession,
+    sessionDirectory: input.sessionDirectory,
+    sessionClient: input.sessionClient,
+    createSessionTarget: () => createRuntimeSessionTarget(input),
+    ...(input.session === undefined ? {} : { session: input.session }),
+    ...(input.explicitSessionID === undefined ? {} : { explicitSessionID: input.explicitSessionID }),
+  })
+}
+
+async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionInput) {
+  const reservation = input.managedSessionRegistration
+    ? await (input.reserveManagedSession ?? reservePrivateSession)({
+        workspaceId: requiredWorkspaceId(input.workspaceId),
+        kind: "create",
+        ...(input.explicitSessionID && input.explicitSessionID !== "new"
+          ? { sessionId: input.explicitSessionID }
+          : {}),
+        ...(input.serverUrl ? { serverUrl: input.serverUrl } : {}),
+        ...(input.request ? { request: input.request } : {}),
+      })
+    : undefined
+  const headers: Record<string, string> = {}
+  if (input.draftId) headers["x-claxedo-draft-id"] = input.draftId
+  if (reservation) headers["x-claxedo-session-registration-operation"] = reservation.operationId
+  const session = await createSessionWithLifecycle({
+    draftId: input.draftId,
+    events: input.events,
+    onLifecycle: (event) => {
+      if (!input.draftId) return
+      if (event.phase === "creating" && event.start) {
+        input.onSessionStart?.(input.draftId, event.start)
+        openSessionEventStreams(event.start.sessionId)
+      } else if (event.phase === "created" || event.phase === "failed") {
+        input.onSessionStart?.(input.draftId, undefined)
+      }
+    },
+    perform: async () => {
+      const session = await input.claimHarnessSession({
+        scope: input.scope,
+        directory: input.sessionDirectory,
+        sessionID: reservation?.sessionId ?? input.explicitSessionID,
+        sessionConfig: input.sessionConfig,
+        headers,
+      })
+      if (!session) throw new Error("Failed to create session")
+      return session
+    },
+  }).catch((err) => {
+    if (input.draftId) input.onSessionStart?.(input.draftId, undefined, "transport-failed")
+    input.onCreateError(err)
+    return undefined
+  })
+  if (session) {
+    if (input.draftId) input.onSessionStart?.(input.draftId, undefined)
+    input.boot(session.id)
+    openSessionEventStreams(session.id)
+  }
+  return session
+}
+
+/**
+ * Publishes the created session to `session-event-scope`, the owner of which
+ * session's scoped streams must be open.
+ *
+ * A relay-backed runtime serves SESSION-scoped event streams, so until some
+ * owner names the session there is no stream to receive it on. This is the
+ * first moment the session id is authoritative and the last moment before the
+ * caller dispatches its first prompt, so publishing here is what lets both
+ * lanes open BEFORE that turn's frames exist — the shell route still points at
+ * the draft at this point and only navigates afterwards.
+ *
+ * A local (loopback) runtime is unmanaged: its workspace stream already carries
+ * every session, so the published scope changes nothing there and needs no
+ * branch of its own.
+ */
+function openSessionEventStreams(sessionID: string) {
+  holdSessionEventScope(sessionID)
+}
+
+function requiredWorkspaceId(value: string | undefined) {
+  const workspaceId = value?.trim()
+  if (!workspaceId) throw new Error("Managed session creation requires an authoritative workspace id")
+  return workspaceId
+}
+
+export function finalizeSubmitSessionTarget(input: {
+  readonly target: { readonly created: boolean }
+  readonly session: SubmitSessionTarget
+  readonly sessionDirectory: SubmitDirectory
+  readonly scope: string
+  readonly provisionalTitle?: string
+  readonly surfaceId: string | undefined
+  readonly claxedoState: ReturnType<typeof useClaxedoState> | undefined
+  readonly projects: readonly ProjectCatalogItem[]
+  readonly runtimeWorkspaceRef: RuntimeWorkspaceRef | undefined
+  readonly harness: HarnessRef | undefined
+  readonly agent: string
+  readonly model?: { providerID: string; modelID: string }
+  readonly variant: string | undefined
+  readonly draftId: string | undefined
+  readonly previousSessionId: string
+  readonly shouldAutoAccept: boolean
+  readonly harnessConfig: HarnessConfigPromoter | undefined
+  readonly enableAutoAccept: (sessionID: string, directory: SubmitDirectory) => void
+  readonly navigateOnCreate: boolean
+  readonly setLayoutTabs: (sessionKey: string, sessionID: string) => void
+  readonly navigate: (href: string) => void
+  readonly publishCloudHandoff: (status: string, message: string) => void
+  readonly scheduleProjectionPull?: SubmitProjectionScheduler
+  readonly invalidateSessionList?: typeof invalidateSessionListQueries
+  readonly promoteSession: (
+    directory: SubmitDirectory,
+    sessionID: string,
+    config: { harness?: HarnessRef; agent: string; model?: { providerID: string; modelID: string }; variant: string | null },
+  ) => void
+}) {
+  const sessionRef = sessionRefForSurface({
+    created: input.target.created,
+    session: input.session,
+    sessionDirectory: input.sessionDirectory,
+    surfaceId: input.surfaceId,
+    claxedoState: input.claxedoState,
+    projects: input.projects,
+    runtimeWorkspaceRef: input.runtimeWorkspaceRef,
+    harness: input.harness,
+  })
+
+  if (input.target.created) {
+    input.promoteSession(input.sessionDirectory, input.session.id, {
+      ...(input.harness ? { harness: input.harness } : {}),
+      agent: input.agent,
+      model: input.model,
+      variant: input.variant ?? null,
+    })
+    const backing = sessionProjectionBacking(sessionWorkspaceRuntimeRef({
+      directory: input.sessionDirectory,
+      ...(sessionRef === undefined ? {} : { sessionRef }),
+    }))
+    const projection = backing && (input.scheduleProjectionPull ?? scheduleSessionProjectionPull)({
+      action: "register",
+      reason: "session-created",
+      workspaceId: backing.workspaceId,
+      sessionId: input.session.id,
+      idempotencyKey: `session-created:${backing.workspaceId}:${input.session.id}:${input.draftId ?? ""}`,
+    })
+    if (projection) {
+      void projection.then((registered) => {
+        // The lifecycle doorbell is published before the authority records the
+        // session. Its eager list refetch can therefore finish stale and
+        // overwrite the optimistic row. Registration success is the first
+        // point at which the control-plane list is authoritative, so reconcile
+        // again from that owner instead of waiting for another unrelated event.
+        if (registered) void (input.invalidateSessionList ?? invalidateSessionListQueries)()
+      })
+    }
+  }
+
+  return {
+    sessionRef,
+    handoffCreatedSession: applyCreatedSessionTargetEffects({
+      created: input.target.created,
+      session: input.session,
+      sourceScope: input.scope,
+      sessionDirectory: input.sessionDirectory,
+      workspaceRouteId: workspaceRouteId(input.projects, input.sessionDirectory),
+      shouldAutoAccept: input.shouldAutoAccept,
+      provisionalTitle: input.provisionalTitle,
+      enableAutoAccept: input.enableAutoAccept,
+      navigateOnCreate: input.navigateOnCreate,
+      previousSessionId: input.previousSessionId,
+      setLayoutTabs: input.setLayoutTabs,
+      navigate: input.navigate,
+      publishCloudHandoff: input.publishCloudHandoff,
+      ...(input.harnessConfig === undefined ? {} : { harnessConfig: input.harnessConfig }),
+      ...(sessionRef === undefined ? {} : { sessionRef }),
+      ...(input.surfaceId === undefined ? {} : { surfaceId: input.surfaceId }),
+      ...(input.draftId === undefined ? {} : { draftId: input.draftId }),
+      ...(input.claxedoState === undefined ? {} : { claxedoState: input.claxedoState }),
+    }).handoffCreatedSession,
+  }
+}
+
+export function patchExistingSubmitSessionRef(input: {
+  readonly claxedoState: ReturnType<typeof useClaxedoState> | undefined
+  readonly surfaceId: string | undefined
+  readonly sessionID: string
+  readonly sessionRef: SessionRef
+}) {
+  const meta = input.surfaceId
+    ? input.claxedoState?.meta.get(input.surfaceId)
+    : input.claxedoState?.meta.find((item) => item.sessionId === input.sessionID)
+  if (meta?.content?.type !== "session") return
+  input.claxedoState?.meta.patch(meta.id, {
+    content: {
+      ...meta.content,
+      type: "session",
+      sessionRef: input.sessionRef,
+    },
+  })
+}
+
+function sessionRefForSurface(input: {
+  readonly created: boolean
+  readonly session: SubmitSessionTarget
+  readonly sessionDirectory: SubmitDirectory
+  readonly surfaceId: string | undefined
+  readonly claxedoState: ReturnType<typeof useClaxedoState> | undefined
+  readonly projects: readonly ProjectCatalogItem[]
+  readonly runtimeWorkspaceRef: RuntimeWorkspaceRef | undefined
+  readonly harness: HarnessRef | undefined
+}): SessionRef | undefined {
+  const resolved = () => sessionRefForSubmitTarget({
+    sessionId: input.session.id,
+    directory: input.sessionDirectory,
+    projects: input.projects,
+    ...(input.runtimeWorkspaceRef === undefined ? {} : { runtimeWorkspaceRef: input.runtimeWorkspaceRef }),
+    ...(input.harness === undefined ? {} : { harness: input.harness }),
+  })
+  if (input.created) return resolved()
+
+  const withHarness = (ref: SessionRef | undefined) =>
+    ref && input.harness ? { ...ref, harness: input.harness } : ref
+  const surfaceMeta = input.surfaceId ? input.claxedoState?.meta.get(input.surfaceId) : undefined
+  return withHarness(surfaceMeta?.content?.sessionRef) ??
+    withHarness(input.claxedoState?.meta.find((meta) => meta.sessionId === input.session.id)?.content?.sessionRef) ??
+    resolved()
+}

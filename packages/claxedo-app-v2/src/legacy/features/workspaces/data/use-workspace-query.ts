@@ -1,0 +1,69 @@
+import { useQuery, type DefaultError, type QueryKey, type SolidQueryOptions } from "@tanstack/solid-query"
+import { isWorkspaceReady } from "./workspace-connection"
+
+// A thin wrapper over `@tanstack/solid-query`'s `useQuery` that BAKES IN
+// `enabled: isWorkspaceReady(workspaceId)`. Any query that depends on the
+// workspace runtime MUST be created via `useWorkspaceQuery` and MUST pass
+// `workspaceId` — it then cannot fire while the connection is not `ready`.
+//
+// This is the STRUCTURAL kill for the toast/retry spam: connection-failure
+// handling becomes ABSENCE of a fetch, not a caught-and-suppressed error. When
+// the authority flips `ready → reconnecting/offline`, `enabled` flips false and
+// solid-query parks the query (no fetch, no error, no toast). When it flips back
+// to `ready`, the query re-enables and refetches.
+//
+// A workspace this process serves over loopback is `ready` from its first
+// frame (`acquireWorkspaceConnection`), so the gate never parks its queries.
+
+export type WorkspaceQueryOptions<
+  TQueryFnData = unknown,
+  TError = DefaultError,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+> = Omit<SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey>, "initialData"> & {
+  // The workspaceId whose connection gates this query. A workspace the attached
+  // server does not serve itself supplies its real id and the query is gated on
+  // the authority flipping that id to `ready`.
+  //
+  // `undefined` means there is NO relay backing for this scope — the query
+  // targets the central / loopback server, which is reachable as soon as the
+  // global bootstrap has happened. By default that reads as ready, the same
+  // answer the authority gives a workspace this process serves over loopback.
+  // Pass `gateWhenUnbacked: true` to instead keep the query disabled when no
+  // workspaceId is known (for the rare case where a missing id is an error, not
+  // a loopback fallback).
+  workspaceId: string | undefined
+  // When `true`, an `undefined` workspaceId DISABLES the query instead of
+  // treating it as the local/central fallback. Defaults to `false` (fallback).
+  gateWhenUnbacked?: boolean
+}
+
+export function useWorkspaceQuery<
+  TQueryFnData = unknown,
+  TError = DefaultError,
+  TData = TQueryFnData,
+  TQueryKey extends QueryKey = QueryKey,
+>(optsFn: () => WorkspaceQueryOptions<TQueryFnData, TError, TData, TQueryKey>) {
+  return useQuery(() => {
+    const opts = optsFn()
+    const { workspaceId, gateWhenUnbacked, ...rest } = opts
+    // Reactive: tracks the authority's status for this workspaceId.
+    //
+    // When `workspaceId` is undefined and the caller did NOT opt into
+    // `gateWhenUnbacked`, the scope is local/central — there is no relay
+    // connection to wait on, so `ready` is true (no-op gate for loopback).
+    const ready = workspaceId === undefined
+      ? gateWhenUnbacked !== true
+      : isWorkspaceReady(workspaceId)
+    // Workspace queries never seed initialData — the options type omits it, so
+    // this lands on `useQuery`'s no-initial-data overload without an assertion.
+    const resolved: SolidQueryOptions<TQueryFnData, TError, TData, TQueryKey> & { initialData?: undefined } = {
+      ...rest,
+      // AND with caller-supplied enabled — never widens it.
+      enabled: ready && (opts.enabled ?? true),
+      // Do not retry while offline; the authority owns retry/backoff.
+      retry: opts.retry ?? false,
+    }
+    return resolved
+  })
+}

@@ -1,0 +1,389 @@
+// Workspace-panel slice — wraps the existing pure helpers in
+// `workspace-panel/workspace-panel-state.ts` (which we keep, since they are
+// already pure data transitions). This slice gives the orchestration layer a
+// minimal facade that owns the live state.
+
+import { batch, createSignal, type Accessor } from "solid-js"
+import type { SetStoreFunction } from "solid-js/store"
+import {
+  closeWorkspacePanel,
+  openWorkspacePanel,
+  retargetWorkspacePanel,
+  type WorkspacePanelActivitySubject,
+  type WorkspacePanelFocus,
+  type WorkspacePanelMode,
+  type WorkspacePanelState,
+  type WorkspacePanelTarget,
+} from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import {
+  createReviewWorkspaceWorkingSetStore,
+  panelReviewWorkingSetKey,
+  workingSetActiveFilePath,
+  type ReviewWorkspaceWorkingSetStore,
+} from "../review/review-workspace-working-set"
+import { createPathHelpers } from "@/platform/files/path"
+import { closeSessionWorkspaceTabs } from "@/features/review/ui/review-workspace-tabs"
+import type { ClaxedoState } from "./types"
+
+// Call sites use two equivalent shapes:
+//   - `open({ mode: "review", workspaceDir, ... })`   (target-only)
+//   - `open("review", { workspaceDir, ... })`         (mode-then-target)
+// The slice accepts both and merges them into a single
+// `WorkspacePanelTarget`. Without this, the mode-first form silently
+// dropped the target object (because `"review"` got bound as `target`),
+// which is why the L2 trio buttons in `L2HeaderStrip` looked dead.
+type OpenArgs =
+  | [target?: WorkspacePanelTarget]
+  | [mode: WorkspacePanelMode, target?: WorkspacePanelTarget]
+
+function normalizeArgs(args: OpenArgs): WorkspacePanelTarget {
+  const head = args[0]
+  if (typeof head === "string") {
+    return { mode: head, ...args[1] }
+  }
+  return head ?? {}
+}
+
+function panelPatch(current: WorkspacePanelState, next: WorkspacePanelState) {
+  return {
+    open: next.open !== current.open,
+    mode: next.mode !== current.mode,
+    workspaceDir: next.workspaceDir !== current.workspaceDir,
+    targetPaneId: next.targetPaneId !== current.targetPaneId,
+    navigator: next.navigator !== current.navigator,
+    navigatorHidden: next.navigatorHidden !== current.navigatorHidden,
+    focus: !sameFocus(next.focus, current.focus),
+    focusVersion: next.focusVersion !== current.focusVersion,
+    activitySubject: !sameActivitySubject(next.activitySubject, current.activitySubject),
+  }
+}
+
+function sameFocus(left: WorkspacePanelFocus | undefined, right: WorkspacePanelFocus | undefined) {
+  if (!left || !right) return left === right
+  if (left.kind !== right.kind || left.version !== right.version) return false
+  if (left.kind === "review" && right.kind === "review") return true
+  if (left.kind === "file" && right.kind === "file") {
+    return (
+      left.path === right.path &&
+      left.intent === right.intent &&
+      left.line === right.line &&
+      left.col === right.col
+    )
+  }
+  if (left.kind === "browser" && right.kind === "browser") return left.url === right.url
+  if (left.kind === "process" && right.kind === "process") return left.processId === right.processId
+  // Label and description come from the row that was clicked, and the runtime
+  // rewrites that row as the agent works, so a reopen carrying the finished
+  // summary must reach the panel instead of being folded into the last request.
+  if (left.kind === "subagent" && right.kind === "subagent") {
+    return left.sessionId === right.sessionId &&
+      left.label === right.label &&
+      left.description === right.description
+  }
+  if (left.kind === "plan" && right.kind === "plan") {
+    return left.sessionId === right.sessionId &&
+      left.planId === right.planId &&
+      left.title === right.title &&
+      left.markdown === right.markdown
+  }
+  return left.kind === "context" && right.kind === "context" && left.sessionId === right.sessionId
+}
+
+function sameActivitySubject(
+  left: WorkspacePanelActivitySubject | undefined,
+  right: WorkspacePanelActivitySubject | undefined,
+) {
+  if (!left || !right) return left === right
+  return left.subjectType === right.subjectType &&
+    left.subjectId === right.subjectId &&
+    left.label === right.label
+}
+
+function samePanelState(current: WorkspacePanelState, next: WorkspacePanelState) {
+  const patch = panelPatch(current, next)
+  return !patch.open &&
+    !patch.mode &&
+    !patch.workspaceDir &&
+    !patch.targetPaneId &&
+    !patch.navigator &&
+    !patch.navigatorHidden &&
+    !patch.focus &&
+    !patch.focusVersion &&
+    !patch.activitySubject
+}
+
+export type WorkspacePanelSliceApi = {
+  state: Accessor<WorkspacePanelState>
+  open: (...args: OpenArgs) => void
+  close: () => void
+  toggle: (...args: OpenArgs) => void
+  retarget: (target?: WorkspacePanelTarget) => void
+  rememberSession: (sessionId: string | undefined) => void
+  restoreSession: (sessionId: string | undefined, target?: WorkspacePanelTarget) => boolean
+  /** Switch the active mode in place without re-opening or moving focus. */
+  select: (mode: WorkspacePanelMode) => void
+  setNavigatorHidden: (hidden: boolean) => void
+  /**
+   * Open the panel to a global-navigation mode that is NOT bound to any
+   * workspace. Clears every workspace binding (dir/pane/navigator/focus) so the
+   * active global surface owns the panel content.
+   */
+  openGlobal: (mode: WorkspacePanelMode) => void
+  /** Toggle a global-navigation mode: closes if that exact mode is open, else opens it. */
+  toggleGlobal: (mode: WorkspacePanelMode) => void
+  /**
+   * Retained Review working sets (tab DTOs, active tab, semantic Review
+   * scroll), keyed by `reviewWorkspaceWorkingSetKey`.
+   *
+   * It lives on the slice, not inside the panel, because the panel body is
+   * unmounted after the close motion so a closed Workspace owns zero DOM and
+   * zero CPU. Reopen then reads its exact working set back from here. Snapshots
+   * are small UI state only — never server payloads, loaders, or DOM — and the
+   * store is non-reactive so restoring one cannot schedule global Solid work.
+   */
+  reviewWorkingSet: ReviewWorkspaceWorkingSetStore
+  /**
+   * The session the runtime deleted most recently. A subagent tab outlives the
+   * panel body that opened it, so the retained working sets are pruned here and a
+   * mounted workspace watches this to drop the same tabs from its live strip.
+   */
+  deletedSession: Accessor<string | undefined>
+  noteDeletedSession: (sessionId: string) => void
+}
+
+/**
+ * Upper bound on retained per-session panel snapshots. Snapshots live only to
+ * restore panel layout when a user re-selects a session, so a bounded LRU is
+ * ample. Without a cap this Map grew once per session opened for the entire
+ * lifetime of a (long-running Electron) process — an unbounded leak.
+ */
+export const MAX_SESSION_PANEL_SNAPSHOTS = 64
+
+function usableSessionId(sessionId: string | undefined): sessionId is string {
+  return !!sessionId && sessionId !== "new"
+}
+
+/**
+ * Remember the session that is LEAVING, then restore the one that is arriving.
+ *
+ * Callers must pass the previous focused session id from the last effect run,
+ * not a live query after navigation. Reading "current session" after
+ * `openSession` / `onSessionSelect` has already focused the destination stamps
+ * the previous panel onto the new session, so every session inherits the last
+ * Files/Changes/Processes surface.
+ */
+export function syncFocusedSessionPanel(input: {
+  previousSessionId: string | undefined
+  nextSessionId: string | undefined
+  remember: (sessionId: string) => void
+  restore: (sessionId: string) => void
+}) {
+  if (input.previousSessionId === input.nextSessionId) return
+  if (usableSessionId(input.previousSessionId)) input.remember(input.previousSessionId)
+  if (usableSessionId(input.nextSessionId)) input.restore(input.nextSessionId)
+}
+
+function snapshotPanel(state: WorkspacePanelState): WorkspacePanelState {
+  return {
+    ...state,
+    ...(state.focus ? { focus: { ...state.focus } } : {}),
+    ...(state.activitySubject ? { activitySubject: { ...state.activitySubject } } : {}),
+  }
+}
+
+export function createWorkspacePanelSlice(input: {
+  state: ClaxedoState
+  setState: SetStoreFunction<ClaxedoState>
+  /** Resolves the natural target for an open call when the caller doesn't pass one. */
+  defaultTarget: () => WorkspacePanelTarget
+}): WorkspacePanelSliceApi {
+  const { state, setState, defaultTarget } = input
+
+  // Per-provider-instance (a second ClaxedoStateProvider mount no longer shares
+  // and cross-contaminates snapshots) and bounded (see MAX_SESSION_PANEL_SNAPSHOTS).
+  // The working set that owns the active file tab is keyed by workspace, not
+  // session, so the per-session snapshot must carry the file the session last
+  // selected or a returning session would inherit whatever the previous
+  // session left active.
+  const sessionPanelSnapshots = new Map<string, { panel: WorkspacePanelState; filePath?: string }>()
+  // Same provider-instance ownership as `sessionPanelSnapshots`, and bounded by
+  // MAX_REVIEW_WORKSPACE_WORKING_SETS.
+  const reviewWorkingSet = createReviewWorkspaceWorkingSetStore()
+  const [deletedSession, setDeletedSession] = createSignal<string>()
+  const activeFilePath = (workspaceDir: string | undefined) => {
+    if (!workspaceDir) return undefined
+    const snapshot = reviewWorkingSet.get(panelReviewWorkingSetKey({ directory: workspaceDir }))
+    const path = createPathHelpers(() => workspaceDir)
+    return workingSetActiveFilePath(snapshot, (tabId) => path.pathFromTab(tabId))
+  }
+
+  const touchSnapshot = (sessionId: string, snapshot: { panel: WorkspacePanelState; filePath?: string }) => {
+    // Re-insert so this key becomes the most-recent in insertion order (LRU).
+    sessionPanelSnapshots.delete(sessionId)
+    sessionPanelSnapshots.set(sessionId, snapshot)
+    while (sessionPanelSnapshots.size > MAX_SESSION_PANEL_SNAPSHOTS) {
+      const oldest = sessionPanelSnapshots.keys().next().value
+      if (oldest === undefined) break
+      sessionPanelSnapshots.delete(oldest)
+    }
+  }
+
+  const accessor: Accessor<WorkspacePanelState> = () => state.workspacePanel
+  const resolvedTarget = (target: WorkspacePanelTarget) =>
+    target.workspaceDir !== undefined && target.targetPaneId !== undefined
+      ? target
+      : { ...defaultTarget(), ...target }
+  const replacePanel = (next: WorkspacePanelState) => {
+    if (samePanelState(state.workspacePanel, next)) return
+    setState("workspacePanel", next)
+  }
+
+  return {
+    state: accessor,
+    open(...args) {
+      const target = normalizeArgs(args)
+      const next = openWorkspacePanel(state.workspacePanel, resolvedTarget(target))
+      const patch = panelPatch(state.workspacePanel, next)
+      batch(() => {
+        if (patch.open) setState("workspacePanel", "open", next.open)
+        if (patch.mode) setState("workspacePanel", "mode", next.mode)
+        if (patch.workspaceDir) setState("workspacePanel", "workspaceDir", next.workspaceDir)
+        if (patch.targetPaneId) setState("workspacePanel", "targetPaneId", next.targetPaneId)
+        if (patch.navigator) setState("workspacePanel", "navigator", next.navigator)
+        if (patch.navigatorHidden) setState("workspacePanel", "navigatorHidden", next.navigatorHidden)
+        if (patch.focus) setState("workspacePanel", "focus", next.focus)
+        if (patch.focusVersion) setState("workspacePanel", "focusVersion", next.focusVersion)
+        if (patch.activitySubject) setState("workspacePanel", "activitySubject", next.activitySubject)
+      })
+    },
+    close() {
+      if (!state.workspacePanel.open) return
+      setState("workspacePanel", "open", closeWorkspacePanel(state.workspacePanel).open)
+    },
+    toggle(...args) {
+      const target = normalizeArgs(args)
+      const current = state.workspacePanel
+      const next = resolvedTarget(target)
+      const requestedNavigator = "navigator" in target ? next.navigator : current.navigator
+      const changingFocus = "focus" in target
+      const changingActivity = "activitySubject" in target
+      const requestedMode = "mode" in target ? next.mode : current.mode
+      if (
+        current.open &&
+        current.workspaceDir === next.workspaceDir &&
+        current.navigator === requestedNavigator &&
+        current.mode === requestedMode &&
+        !changingFocus &&
+        !changingActivity
+      ) {
+        replacePanel(closeWorkspacePanel(current))
+        return
+      }
+      replacePanel(openWorkspacePanel(current, next))
+    },
+    retarget(target) {
+      replacePanel(retargetWorkspacePanel(state.workspacePanel, resolvedTarget(target ?? {})))
+    },
+    rememberSession(sessionId) {
+      if (!usableSessionId(sessionId)) return
+      const current = state.workspacePanel
+      // A file focus still pending delivery is fresher than the working set's
+      // last publish — the workspace has not consumed it yet.
+      const pendingFile = current.focus?.kind === "file" && current.focus.intent === "tab"
+        ? current.focus.path
+        : undefined
+      // Closed sessions store a minimal snapshot so restore cannot reopen a
+      // stale navigator/mode without a workspace bind (that left Files with
+      // zero rows during panel-open session-navigation seeds).
+      touchSnapshot(sessionId, current.open
+        ? { panel: snapshotPanel(current), filePath: pendingFile ?? activeFilePath(current.workspaceDir) }
+        : { panel: { open: false } })
+    },
+    restoreSession(sessionId, target) {
+      if (!usableSessionId(sessionId)) return false
+      const snapshot = sessionPanelSnapshots.get(sessionId)
+      const resolved = resolvedTarget(target ?? {})
+      if (!snapshot || !snapshot.panel.open) {
+        // First visit or last closed on this session: do not inherit the
+        // previous session's open Files/Changes/Processes surface.
+        if (state.workspacePanel.open) replacePanel(closeWorkspacePanel(state.workspacePanel))
+        return false
+      }
+      // Mark as recently used so an active session isn't evicted first.
+      touchSnapshot(sessionId, snapshot)
+      const workspaceDir = resolved.workspaceDir ?? snapshot.panel.workspaceDir
+      // Re-issue the session's file selection through the focus channel so the
+      // workspace-owned working set reactivates it. The version mints from the
+      // live counter — the snapshot's is stale while other sessions' panels
+      // were open — so it can never collide with a consumed record.
+      const currentFile = activeFilePath(workspaceDir)
+      const focus = snapshot.filePath && snapshot.filePath !== currentFile
+        ? {
+            kind: "file" as const,
+            path: snapshot.filePath,
+            intent: "tab" as const,
+            version: (state.workspacePanel.focusVersion ?? state.workspacePanel.focus?.version ?? 0) + 1,
+          }
+        : snapshot.panel.focus
+      replacePanel({
+        ...snapshot.panel,
+        ...(focus ? { focus: { ...focus } } : {}),
+        focusVersion: Math.max(
+          focus?.version ?? 0,
+          state.workspacePanel.focusVersion ?? 0,
+          snapshot.panel.focusVersion ?? 0,
+        ),
+        ...(snapshot.panel.activitySubject ? { activitySubject: { ...snapshot.panel.activitySubject } } : {}),
+        workspaceDir,
+        targetPaneId: resolved.targetPaneId ?? snapshot.panel.targetPaneId,
+      })
+      return true
+    },
+    select(mode) {
+      const current = state.workspacePanel
+      // If the panel is closed, opening into the selected mode uses the
+      // default target (directory + pane) so the panel mounts in the
+      // right scope. If it's open, switch the active mode in place
+      // without disturbing dir/pane/navigator/focus.
+      if (!current.open) {
+        replacePanel(openWorkspacePanel(current, { ...defaultTarget(), mode }))
+        return
+      }
+      // Just patch `mode` directly — using `retargetWorkspacePanel`
+      // here would clobber `workspaceDir`/`targetPaneId` with undefined.
+      if (current.mode === mode) return
+      setState("workspacePanel", "mode", mode)
+    },
+    setNavigatorHidden(hidden) {
+      if (state.workspacePanel.navigatorHidden === hidden) return
+      setState("workspacePanel", "navigatorHidden", hidden)
+    },
+    openGlobal(mode) {
+      // Full replace, dropping any prior workspace binding: a global panel is
+      // workspace-agnostic and its content is contributed by the active surface.
+      replacePanel({ open: true, mode })
+    },
+    toggleGlobal(mode) {
+      const current = state.workspacePanel
+      if (current.open && current.mode === mode) {
+        replacePanel(closeWorkspacePanel(current))
+        return
+      }
+      replacePanel({ open: true, mode })
+    },
+    reviewWorkingSet,
+    deletedSession,
+    noteDeletedSession(sessionId) {
+      reviewWorkingSet.rewrite((snapshot) => {
+        const next = closeSessionWorkspaceTabs({
+          tabs: snapshot.tabs,
+          activeTabId: snapshot.activeTabId,
+          sessionId,
+        })
+        if (!next.removed) return snapshot
+        return { ...snapshot, tabs: [...next.tabs], activeTabId: next.activeTabId }
+      })
+      setDeletedSession(sessionId)
+    },
+  }
+}

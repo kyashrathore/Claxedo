@@ -1,0 +1,555 @@
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
+import type { InitError } from "@/app/routes/error"
+import { createContext, useContext, onCleanup, onMount, createSignal, type ParentProps } from "solid-js"
+import { usePlatform } from "@/platform/runtime/platform-provider"
+import { useLanguage } from "@/platform/i18n/provider"
+import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
+import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
+import { projectForDirectory } from "./project-owner"
+import { initialRouteDirectory, workspaceDirectoryRef } from "./bootstrap-scope"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
+import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
+import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
+import { clearSessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
+import type {
+  SessionInventoryRow,
+  SessionCacheValue,
+  WorkspaceGroup,
+} from "@/features/session/data/sync/global-sync-types"
+import { GLOBAL_SESSION_PAGE_SIZE } from "@/platform/sync/global-sync/session-pagination"
+import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
+import { type SessionInventoryStoredValue, type SessionInventoryValue } from "../../../features/session/data/sync/queries"
+import {
+  applySessionInventoryLifecycle,
+  createSessionInventorySnapshotValue,
+  readSessionInventoryQueryData,
+  removeSessionInventoryRow,
+  replaceSessionInventoryWorkspaceRows,
+  setSessionInventoryQueryData,
+  updateSessionInventoryQueryData,
+} from "../../../features/session/data/sync/inventory-writers"
+import {
+  applyWorkspaceCatalog,
+  readWorkspaceCatalog,
+  refreshWorkspaceCatalog,
+} from "@/features/workspaces/data/workspace-catalog"
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
+import {
+  cachedGlobalSyncServerClient,
+  clearGlobalSyncServerClientsForDirectory,
+  clearGlobalSyncServerClientsForOwner,
+} from "@/platform/sync/global-sync-sdk-client-cache"
+import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { principalDataScope, principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { useAccountPort } from "@/platform/account/account-provider"
+import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
+import { sessionLoadMetaKey, setDirectorySessionCache, type DirectorySessionCacheRefreshOptions } from "../../../features/session/data/sync/directory-session-cache"
+import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
+import {
+  bootstrapRequestPrefix,
+  createBootstrapOrchestrator,
+  globalBootstrapFreshKey,
+  sessionLoadRequestKey,
+} from "../../boot/data/bootstrap-orchestrator"
+import {
+  createGlobalSyncEventIngress,
+  createSessionAccessRevocationChannel,
+  createSessionAuthorityRevision,
+  reconcileAuthorizedSessionPersistence,
+} from "../../integrations/session-events/event-ingress"
+import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
+import { bootstrapInitialShell } from "./shell-bootstrap"
+import {
+  createInventoryPageSource,
+  createSignedInventorySource,
+  type InventoryGlobalSession,
+  mergeWorkspaceGroups,
+  shouldDiscoverSignedWorkspaceSnapshot,
+  shouldUseSignedControlPlaneInventory,
+  shouldUseSignedProjectSessionInventory,
+  shouldUseSignedSessionInventory,
+  toSessionInventoryRow,
+  workspaceGroupKey,
+} from "../../../features/session/data/sync/inventory-source"
+export { shouldDiscoverSignedWorkspaceSnapshot, shouldUseSignedControlPlaneInventory, shouldUseSignedProjectSessionInventory, shouldUseSignedSessionInventory } from "../../../features/session/data/sync/inventory-source"
+const GLOBAL_TAG = "global"
+const GLOBAL_SHOW_TAG = "global:default"
+const PAGE = GLOBAL_SESSION_PAGE_SIZE
+
+function createGlobalSync(input: { flushNavigationPersistence: () => Promise<void> }) {
+  const globalSDK = useGlobalSDK()
+  const platform = usePlatform()
+  const language = useLanguage()
+  const principal = usePrincipal()
+  const account = useAccountPort()
+  const sessionTitles = useSessionTitleProjection()
+  // A browser surface alone is not signed authority: local/mock browser lanes
+  // are web too. Inventory predicates further narrow this principal capability
+  // to an explicit relay-backed project, route, or non-loopback control plane.
+  const hasSignedAccess = () => principalHasSignedAccess(principal())
+  const principalScope = () => principalDataScope(principal())
+  // Account presence, not principal capability: hosted-workspace discovery is
+  // an account-port question and must stay answerable on loopback, where the
+  // signed-inventory predicates deliberately answer no.
+  const hasHostedAccount = () => account.state().status === "signed"
+  const claxedoEvents = useClaxedoEventsOptional()
+  const sessionAccessRevocations = createSessionAccessRevocationChannel()
+  const sessionAuthorityRevision = createSessionAuthorityRevision()
+  const sdkClientCacheOwner = Math.random().toString(36).slice(2, 7)
+
+  const sessionInventory = () => readSessionInventoryQueryData({ baseUrl: globalSDK.url })
+  const publishSessionTitles = () => sessionTitles.replaceInventory(sessionInventory().sessions)
+  const setSessionInventory = (value: SessionInventoryStoredValue | SessionInventoryValue) => {
+    setSessionInventoryQueryData({ baseUrl: globalSDK.url, value })
+    publishSessionTitles()
+  }
+  const updateSessionInventory = (
+    mutate: (draft: SessionInventoryValue) => void,
+  ) => {
+    updateSessionInventoryQueryData({ baseUrl: globalSDK.url, mutate })
+    publishSessionTitles()
+  }
+  const [ready, setReady] = createSignal(false)
+  const [error, setError] = createSignal<InitError | undefined>()
+  const [reload, setReload] = createSignal<undefined | "pending" | "complete">()
+  const projects = () => readWorkspaceCatalog(globalSDK.url)
+  const catalogInput = () => ({
+    baseUrl: globalSDK.url,
+    client: globalSDK.client,
+    request: platform.fetch,
+    signedAccess: hasSignedAccess(),
+  })
+  // `error` rides on the patch but is not part of `GlobalBootstrapState` (it is
+  // provider-local signal state), so the parameter names it rather than the
+  // read asserting it.
+  const setGlobalState = (patch: Partial<GlobalBootstrapState> & { error?: InitError }) => {
+    if ("ready" in patch) setReady(!!patch.ready)
+    if ("error" in patch) setError(patch.error)
+    if (patch.path) queryClient.setQueryData(queryKeys.directory.path(globalSDK.url, ""), patch.path)
+    if ("reload" in patch) setReload(patch.reload)
+  }
+
+  function projectFor(directory: string) {
+    return projectForDirectory(projects(), directory)
+  }
+  function inventoryRow(session: InventoryGlobalSession) {
+    return toSessionInventoryRow(session, { projectID: projectFor(session.directory)?.id })
+  }
+  function isGlobal(item: Pick<SessionInventoryRow, "tags">) {
+    return item.tags.includes(GLOBAL_TAG)
+  }
+  function showGlobal(item: Pick<SessionInventoryRow, "tags">) {
+    return item.tags.includes(GLOBAL_SHOW_TAG)
+  }
+  function signedWorkspaceProjects() {
+    return projects().filter((project) =>
+      shouldUseSignedProjectSessionInventory({
+        hasSignedAccess: hasSignedAccess(),
+        baseUrl: globalSDK.url,
+        project: project as Project & {
+          workspaces?: Record<string, { kind?: string }>
+        },
+      })
+    )
+  }
+
+  function signedWorkspaceInfo(key: string) {
+    return signedWorkspaceFromProjects(projects(), key)
+  }
+
+  function workspaceScopeKey(directory: string) {
+    return signedWorkspaceInfo(directory)?.workspaceId ??
+      sessionWorkspaceRuntimeRef({ directory })?.workspaceId ??
+      directory
+  }
+
+  const signedInventorySource = createSignedInventorySource({
+    queryClient,
+    baseUrl: () => getClaxedoServerUrl(),
+    owner: principalScope,
+    authFetch,
+    signedWorkspaceInfo,
+    resolveWorkspace: async ({ directory }) =>
+      await resolveWorkspaceRuntime({
+        baseUrl: globalSDK.url,
+        request: platform.fetch,
+        directory,
+      }) ?? undefined,
+  })
+  const {
+    fetchGlobalList,
+    fetchWorkspaceGrouped,
+  } = createInventoryPageSource({
+    baseUrl: () => globalSDK.url,
+    pageSize: PAGE,
+    platformFetch: () => platform.fetch,
+    authFetch,
+    queryClient,
+    hasSignedAccess,
+    signedWorkspaceProjects,
+    signedInventorySource,
+  })
+
+  async function loadSessionInventorySnapshot() {
+    const scope = principalScope()
+    const isCurrent = sessionAuthorityRevision.capture(() => principalScope() === scope)
+    const inventory = sessionInventory()
+    if (inventory.loaded || inventory.loading) return
+    updateSessionInventory((draft) => {
+      draft.loading = true
+    })
+    try {
+      // Two independent reasons to fetch the signed snapshot, kept as one union.
+      // The first two terms are session-read authority (a signed route, a
+      // non-loopback control plane, an already-known signed workspace). The
+      // third is catalog DISCOVERY, which has to run on loopback too: session
+      // reads stay on this machine there, but without the fetch a workspace
+      // another machine serves never enters the project cache. The
+      // `!== "loopback"` guard below keeps the discovery-only case from
+      // replacing this machine's own list.
+      const useSignedSnapshot =
+        shouldUseSignedSessionInventory({
+          hasSignedAccess: hasSignedAccess(),
+          signedRoute: false,
+          baseUrl: globalSDK.url,
+        }) ||
+        signedWorkspaceProjects().length > 0 ||
+        shouldDiscoverSignedWorkspaceSnapshot({ hasHostedAccount: hasHostedAccount() })
+      const signedSnapshot = useSignedSnapshot
+        ? await signedInventorySource.fetchSignedWorkspaceSnapshot()
+        : { groups: [] as WorkspaceGroup[] }
+      if (!isCurrent()) throw new Error("Session authority changed during inventory load")
+      if (useSignedSnapshot && centralTransportForServer(globalSDK.url) !== "loopback") {
+        const snapshot = signedSnapshot
+        const wsResult = snapshot.groups
+        reconcileAuthorizedSessionPersistence(wsResult.flatMap((group) => group.sessions), scope)
+        const byWorkspace = Object.fromEntries(wsResult.map((group) => [workspaceGroupKey(group), group] as const))
+        const workspaceState = Object.fromEntries(wsResult.map((group) => [
+          workspaceGroupKey(group),
+          {
+            hasMore: group.hasMore,
+            loading: false,
+            cursor: group.nextCursor,
+          },
+        ] as const))
+        setSessionInventory(createSessionInventorySnapshotValue({
+          groups: byWorkspace,
+          workspaceState,
+          workspaceOrder: wsResult.map(workspaceGroupKey),
+          loaded: true,
+        }))
+        return
+      }
+      const [flatResult, wsResult] = await Promise.all([
+        fetchGlobalList({ limit: 100 }),
+        fetchWorkspaceGrouped({ perGroup: PAGE }),
+      ])
+      if (!isCurrent()) throw new Error("Session authority changed during inventory load")
+      const combinedWorkspaceResult = mergeWorkspaceGroups(wsResult, signedSnapshot.groups)
+      reconcileAuthorizedSessionPersistence(
+        combinedWorkspaceResult.flatMap((group) => group.sessions),
+        scope,
+      )
+      const sessions = flatResult.data.filter((s) => !!s?.id && !s.parentID)
+      const cursor = flatResult.cursor
+
+      const rows = sessions.flatMap((s) => {
+        const item = inventoryRow(s)
+        if (isGlobal(item)) {
+          return showGlobal(item) ? [item] : []
+        }
+        return [item]
+      })
+
+      // Build workspace-level stores
+      const byWorkspace: Record<string, WorkspaceGroup> = {}
+      const workspaceState: Record<string, { hasMore: boolean; loading: boolean; cursor?: number }> = {}
+      const workspaceOrder: string[] = []
+      for (const g of combinedWorkspaceResult) {
+        const wsSessions = (g.sessions ?? [])
+          .filter((s) => !!s.id)
+          .sort((a: SessionInventoryRow, b: SessionInventoryRow) => (b.time.updated ?? 0) - (a.time.updated ?? 0))
+        const key = workspaceGroupKey(g)
+        byWorkspace[key] = {
+          key,
+          directory: g.directory,
+          workspaceId: g.workspaceId,
+          workspaceName: g.workspaceName,
+          projectID: g.projectID,
+          sessions: wsSessions,
+          hasMore: g.hasMore,
+          total: g.total,
+          nextCursor: typeof g.nextCursor === "number" ? g.nextCursor : undefined,
+        }
+        workspaceState[key] = {
+          hasMore: g.hasMore,
+          loading: false,
+          cursor:
+            typeof g.nextCursor === "number"
+              ? g.nextCursor
+              : g.hasMore
+                ? wsSessions.at(-1)?.time.updated
+                : undefined,
+        }
+        workspaceOrder.push(key)
+      }
+
+      const projectIDs = new Set([
+        ...rows.flatMap((row) => row.projectID ? [row.projectID] : []),
+        ...Object.values(byWorkspace).map((group) => group.projectID),
+      ])
+      setSessionInventory(createSessionInventorySnapshotValue({
+        rows,
+        groups: byWorkspace,
+        workspaceState,
+        workspaceOrder,
+        projectState: cursor
+          ? Object.fromEntries([...projectIDs].map((pid) => [pid, { hasMore: true, loading: false, cursor: undefined }]))
+          : {},
+        loaded: true,
+        ...(cursor ? { initialCursor: Number(cursor) } : {}),
+      }))
+    } catch {
+      if (principalScope() !== scope) return
+      updateSessionInventory((draft) => {
+        draft.loading = false
+      })
+    }
+  }
+
+  function applySessionEventToGlobal(info: Session, type: "created" | "updated" | "deleted") {
+    updateSessionInventory((draft) => {
+      applySessionInventoryLifecycle(draft, info, type)
+    })
+  }
+
+  function dropGlobalSession(input: { id: string; directory: string; projectID?: string; tags?: string[] }) {
+    updateSessionInventory((draft) => {
+      removeSessionInventoryRow(draft, input)
+    })
+  }
+
+  const paused = () => reload() !== undefined
+  let bootstrapOrchestrator: ReturnType<typeof createBootstrapOrchestrator> | undefined
+
+  function bootstrap(harnessType?: string, opts: { force?: boolean } = {}) {
+    if (!bootstrapOrchestrator) return Promise.resolve()
+    return bootstrapOrchestrator.bootstrap(harnessType, opts)
+  }
+
+  function bootstrapInstance(directory: string, harnessType?: string, opts: DirectorySessionCacheRefreshOptions = {}) {
+    if (!bootstrapOrchestrator) return Promise.resolve()
+    return bootstrapOrchestrator.bootstrapInstance(directory, harnessType, opts)
+  }
+
+  function refreshDirectory(directory: Parameters<typeof bootstrapInstance>[0], harnessType?: string, opts?: DirectorySessionCacheRefreshOptions) {
+    if (!bootstrapOrchestrator) return Promise.resolve()
+    return bootstrapOrchestrator.refreshDirectory(directory, harnessType, opts)
+  }
+
+  const queue = createRefreshQueue({
+    paused,
+    bootstrap,
+    bootstrapInstance,
+  })
+
+  const children = createDirectoryCacheManager({
+    isBooting: (directory) =>
+      queryClient.getQueryCache().findAll({ queryKey: bootstrapRequestPrefix(directory) }).length > 0,
+    isLoadingSessions: (directory) => !!queryClient.getQueryData(sessionLoadRequestKey(directory)),
+    onDispose: (directory) => {
+      queue.clear(directory)
+      queryClient.removeQueries({ queryKey: sessionLoadRequestKey(directory) })
+      queryClient.removeQueries({ queryKey: sessionLoadMetaKey(directory) })
+      clearGlobalSyncServerClientsForDirectory({ owner: sdkClientCacheOwner, directory })
+      clearSessionPrefetchDirectory(directory)
+    },
+    resolveScopeKey: workspaceScopeKey,
+    translate: language.t,
+  })
+
+  const sdkFor = (directory: string) => {
+    const workspace = signedWorkspaceInfo(directory)
+    const workspaceId = workspace?.workspaceId ?? sessionWorkspaceRuntimeRef({ directory })?.workspaceId
+    const request = platform.fetch ?? authFetch
+    return cachedGlobalSyncServerClient({
+      owner: sdkClientCacheOwner,
+      serverUrl: globalSDK.url,
+      directory,
+      workspaceId,
+      create: () => globalSDK.createClient({
+        directory,
+        ...(workspaceId ? { workspaceId } : {}),
+        request,
+      }),
+    })
+  }
+
+  bootstrapOrchestrator = createBootstrapOrchestrator({
+    baseUrl: () => globalSDK.url,
+    globalSDK: () => globalSDK.client,
+    children,
+    translate: language.t,
+    platformFetch: () => platform.fetch,
+    ready,
+    setGlobalState,
+    initialRouteDirectory,
+    hasSignedAccess,
+    workspaceDirectoryRef,
+    workspaceRuntimeRef: (directory) => sessionWorkspaceRuntimeRef({ directory, projects: projects() }),
+    signedWorkspaceInfo,
+    signedInventorySource,
+    sessionInventory: () => sessionInventory(),
+    projectFor,
+    inventoryRow,
+    cacheSessions,
+    sessionCacheLimit,
+    sdkFor,
+    localSessionListClient: (directory) => globalSDK.createClient({
+      request: unsignedLocalFetch,
+      directory,
+    }),
+    setSessionLoadMeta: (directory, value) => queryClient.setQueryData(sessionLoadMetaKey(directory), value),
+    markGlobalBootstrapFresh: (baseUrl, harnessType) => queryClient.setQueryData(globalBootstrapFreshKey(baseUrl, harnessType), true),
+    replaceRuntimeWorkspaceRows: (input) => {
+      updateSessionInventory((draft) => {
+        replaceSessionInventoryWorkspaceRows(draft, input)
+      })
+    },
+  })
+  const queryOptionsApi = bootstrapOrchestrator.queryOptionsApi
+
+  function cacheSessions(directory: string, value: Omit<SessionCacheValue, "at">) {
+    const next = {
+      ...value,
+      at: Date.now(),
+    }
+    for (const alias of children.aliasesFor(directory)) {
+      setDirectorySessionCache(alias, next)
+    }
+  }
+
+  function sessionCacheLimit(directory: string, fallback: number) {
+    const key = workspaceScopeKey(directory)
+    return Math.max(
+      queryClient.getQueryData<SessionCacheValue>(queryKeys.directory.sessionCache(key))?.limit ?? 0,
+      queryClient.getQueryData<SessionCacheValue>(queryKeys.directory.sessionCache(directory))?.limit ?? 0,
+      fallback,
+    )
+  }
+
+  onCleanup(createGlobalSyncEventIngress({
+    globalEvents: globalSDK.event,
+    claxedoEvents,
+    projects,
+    projectFor,
+    children,
+    push: queue.push,
+    // `global.disposed` / `server.connected` mean the whole global surface
+    // changed underneath us: re-run the queued bootstraps AND re-read the
+    // catalog from its own sources.
+    refresh: () => {
+      queue.refresh()
+      void refreshWorkspaceCatalog(catalogInput())
+    },
+    setGlobalProject: (next) => applyWorkspaceCatalog({ baseUrl: globalSDK.url, next }),
+    sessionInventoryLoaded: () => sessionInventory().loaded,
+    applySessionEvent: applySessionEventToGlobal,
+    sessionTitles: {
+      // Called through the projection rather than handed over unbound: the
+      // members are declared as METHODS on `SessionTitleProjectionApi`, so
+      // detaching them here would silently drop the receiver if the projection
+      // ever stops being a closure-backed object literal.
+      publishCanonical: (target) => sessionTitles.publishCanonical(target),
+      remove: (target) => sessionTitles.remove(target),
+    },
+    draftWasRolledBack: wasRolledBackDraft,
+    cacheSessions,
+    sessionCacheLimit,
+    sessionAccessRetained: signedInventorySource.hasControlPlaneSessionAccess,
+    revocationScope: principalScope,
+    onSessionAuthorityChanged: sessionAuthorityRevision.invalidate,
+    onSessionAccessRevoked: sessionAccessRevocations.publish,
+    flushNavigationPersistence: input.flushNavigationPersistence,
+  }))
+  onCleanup(() => {
+    queue.dispose()
+  })
+  onCleanup(() => {
+    for (const directory of children.directories()) {
+      children.disposeDirectory(directory)
+    }
+    clearGlobalSyncServerClientsForOwner(sdkClientCacheOwner)
+  })
+
+  onMount(() => {
+    queueMicrotask(() => {
+      globalSDK.event.start()
+    })
+    const loopback = centralTransportForServer(globalSDK.url) === "loopback"
+    void (loopback
+      ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap })
+      : bootstrap())
+    onCleanup(scheduleMarkdownPrewarm())
+  })
+
+  /**
+   * What is left of the session inventory: the one snapshot that seeds which
+   * rail sections open, and the row drop that follows a deletion. The rendered
+   * rows themselves come from each section's own source
+   * (`features/session/data/sync/session-source.ts`), so the inventory no
+   * longer paginates, reloads, or refetches anything.
+   */
+  const sessionInventoryActions = {
+    load: loadSessionInventorySnapshot,
+    drop: dropGlobalSession,
+  }
+
+  return {
+    get ready() {
+      return ready()
+    },
+    get error() {
+      return error()
+    },
+    queryOptions: queryOptionsApi,
+    bootstrap,
+    refreshDirectory,
+    // Tells the bootstrap queue which workspace the user is currently
+    // focused on, so its hydration is prioritized over any background
+    // refresh. Has no effect if the directory isn't queued. Caller should
+    // invoke this on URL changes / workspace switches.
+    setFocusedDirectory(directory: string | undefined) {
+      queue.setFocused(directory)
+    },
+    onSessionAccessRevoked: sessionAccessRevocations.subscribe,
+    inventoryActions: sessionInventoryActions,
+  }
+}
+
+const GlobalSyncContext = createContext<ReturnType<typeof createGlobalSync>>()
+
+export function GlobalSyncProvider(props: ParentProps<{ flushNavigationPersistence: () => Promise<void> }>) {
+  const value = createGlobalSync({ flushNavigationPersistence: props.flushNavigationPersistence })
+  // Children mount immediately instead of waiting on `value.ready` (the
+  // bootstrap fetch, already kicked off unconditionally above). Readers that
+  // care use `useGlobalShellReady()` (layout.tsx, app-shell-state.ts); every
+  // other reader goes through TanStack Query, which handles a pending first
+  // fetch on its own. This removed a boot dependency stage with no real data need.
+  return <GlobalSyncContext.Provider value={value}>{props.children}</GlobalSyncContext.Provider>
+}
+
+export function useGlobalSync() {
+  const context = useContext(GlobalSyncContext)
+  if (!context) throw new Error("useGlobalSync must be used within GlobalSyncProvider")
+  return context
+}
+
+export function useQueryOptions() {
+  return useGlobalSync().queryOptions
+}

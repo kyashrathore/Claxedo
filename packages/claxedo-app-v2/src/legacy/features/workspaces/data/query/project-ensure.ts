@@ -1,0 +1,40 @@
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
+import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
+
+type FetchQueryInput = Parameters<typeof queryClient.fetchQuery>[0]
+
+export async function ensureLocalProject(input: {
+  baseUrl?: string
+  request?: typeof fetch
+  directory: string
+  projectsQuery: FetchQueryInput
+}) {
+  const directory = input.directory.trim()
+  if (!directory) return undefined
+  const workspace = await resolveWorkspaceRuntime({
+    baseUrl: input.baseUrl,
+    request: input.request,
+    directory,
+    create: true,
+  })
+  if (!workspace) throw new Error("Failed to ensure workspace")
+  await queryClient.invalidateQueries({
+    queryKey: queryKeys.runtime.workspace({
+      baseUrl: input.baseUrl,
+      directory,
+    }),
+  })
+  await queryClient.invalidateQueries({ queryKey: input.projectsQuery.queryKey })
+  return queryClient.fetchQuery(input.projectsQuery)
+}
+
+/**
+ * The project inventory after the server has changed it — a project the
+ * create route just made is not in the cached list, and routing to it needs
+ * the fresh one.
+ */
+export async function refreshProjectInventory(projectsQuery: FetchQueryInput) {
+  await queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey })
+  return queryClient.fetchQuery(projectsQuery)
+}

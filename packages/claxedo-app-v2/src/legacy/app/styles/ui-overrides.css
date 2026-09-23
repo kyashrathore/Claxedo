@@ -1,0 +1,807 @@
+/* Pane floating controls — 10px icons to fit within 12px top strip */
+.pane-ctrl-icon .ui-icon {
+  width: 10px !important;
+  height: 10px !important;
+}
+
+/* Claxedo keeps the session spinner but hides the upstream header whip bar. */
+.ui-session-progress {
+  display: none !important;
+}
+
+/* Transcript/output scroll regions own their scrollbar styling. */
+:not([data-scrollable])::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* Other surfaces retain the app default. */
+:not([data-scrollable]) {
+  scrollbar-width: none !important;
+}
+
+/* Restore thin scrollbar for scrollable pane containers */
+[data-scrollable-pane] {
+  scrollbar-width: thin !important;
+}
+[data-scrollable-pane]::-webkit-scrollbar {
+  display: block !important;
+  height: 6px;
+}
+[data-scrollable-pane]::-webkit-scrollbar-thumb {
+  background: var(--border-weak-base);
+  border-radius: var(--radius-3);
+}
+[data-scrollable-pane]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.claxedo-workspace-review [data-component="line-comment"] [data-slot="line-comment-textarea"] {
+  min-height: 84px;
+}
+
+/*
+ * Flat, flush changed-files list in the review pane. The shared accordion rounds
+ * the first/last rows into a card; here we want a plain edge-to-edge list (the
+ * surrounding padding is dropped via the review-tab `classes` too). Scoped to
+ * .claxedo-workspace-review so every other accordion keeps its rounded card.
+ */
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:first-child [data-slot="accordion-header"] .ui-accordion-trigger,
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child:not([data-expanded]) [data-slot="accordion-header"] .ui-accordion-trigger,
+.claxedo-workspace-review [data-component="accordion"] [data-slot="accordion-item"]:last-child[data-expanded] .ui-accordion-content {
+  border-radius: 0;
+}
+
+/*
+ * Restore wider centered max-width for session composer and timeline.
+ * Upstream narrowed from 800px/1000px to 500px/700px (commit 66d0beba6)
+ * which is too narrow for Claxedo split panels.
+ */
+/* --bp-md (768 = BP_MD) — re-derives Tailwind's own md breakpoint for this shim. */
+@media (min-width: 768px) {
+  .md\:max-w-\[500px\].md\:mx-auto {
+    max-width: 50rem; /* 800px */
+  }
+}
+/* --bp-2xl (1536 = BP_2XL). */
+@media (min-width: 1536px) {
+  .md\:mx-auto.\32xl\:max-w-\[700px\],
+  .\32xl\:max-w-\[700px\] {
+    max-width: 1000px;
+  }
+}
+
+/* Dot-wave for the jump-to-bottom button while the session is busy (T21). */
+.tl-dot-wave {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.tl-dot-wave span {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--icon-base);
+  animation: tl-dot-wave 1s ease-in-out infinite;
+}
+
+.tl-dot-wave span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.tl-dot-wave span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes tl-dot-wave {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-dot-wave span {
+    animation: none;
+  }
+}
+
+/*
+ * Timeline loading skeleton (session-timeline-skeleton.tsx). The bars are tinted
+ * from the muted text role rather than a surface token so they stay legible on
+ * every theme's page background, and each one carries its own animation-delay so
+ * the breathe reads as a wave down the column instead of a single flat blink.
+ */
+.session-skeleton-bar {
+  background: color-mix(in oklab, var(--text-weak) 16%, transparent);
+}
+
+@keyframes session-skeleton-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-skeleton-bar {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/*
+ * Semantic application surfaces
+ *
+ * These rules are theme-agnostic. Every role they name resolves for every
+ * bundled theme — a theme that does not override the role inherits the generic
+ * token named in `SEMANTIC_THEME_ROLE_FALLBACKS` (packages/ui/src/theme/resolve.ts)
+ * — so the shell no longer needs one selector per theme. Codex only supplies
+ * different values.
+ */
+
+/*
+ * Floating surfaces rebind the page palette to the overlay palette for their
+ * whole subtree, so content authored against the generic tokens follows the
+ * menu it sits in rather than the page behind it. `[data-surface="overlay"]` is
+ * stamped by DropdownMenu; `.overlay-palette` is the opt-in for component
+ * APIs that expose only a class hook rather than arbitrary data attributes —
+ * model picker, Review source, composer suggestions, document filters — that
+ * are built outside the shared menu primitives.
+ *
+ * For a theme with no overlay overrides every value below resolves to exactly
+ * the token the surface already painted, so this is inert outside Codex.
+ */
+[data-surface="overlay"],
+.overlay-palette {
+  --background-base: var(--overlay-surface);
+  --background-stronger: var(--overlay-surface);
+  --surface-base: var(--overlay-surface);
+  --surface-base-hover: var(--overlay-surface-hover);
+  --surface-base-active: var(--overlay-surface-hover);
+  --surface-inset-base: var(--overlay-surface-input);
+  --surface-inset-base-hover: var(--overlay-surface-hover);
+  --surface-inset-strong: var(--overlay-surface-input);
+  --surface-inset-strong-hover: var(--overlay-surface-hover);
+  --surface-raised-base: var(--overlay-surface);
+  --surface-raised-base-hover: var(--overlay-surface-hover);
+  --surface-raised-base-active: var(--overlay-surface-hover);
+  --surface-raised-stronger-non-alpha: var(--overlay-surface);
+  --border-base: var(--overlay-border);
+  --border-weak-base: var(--overlay-border);
+  --border-weaker-base: var(--overlay-border);
+  --text-stronger: var(--overlay-text);
+  --text-strong: var(--overlay-text);
+  --text-base: var(--overlay-text);
+  --text-weak: var(--overlay-text-muted);
+  --text-weaker: var(--overlay-text-muted);
+  --icon-strong-base: var(--overlay-icon);
+  --icon-base: var(--overlay-icon);
+  --icon-weak-base: var(--overlay-icon-muted);
+  --icon-interaction-muted: var(--overlay-icon-muted);
+  --icon-interaction-strong: var(--overlay-icon);
+  --color-background-base: var(--overlay-surface);
+  --color-background-stronger: var(--overlay-surface);
+  --color-surface-base: var(--overlay-surface);
+  --color-surface-base-hover: var(--overlay-surface-hover);
+  --color-surface-base-active: var(--overlay-surface-hover);
+  --color-surface-inset-base: var(--overlay-surface-input);
+  --color-surface-inset-base-hover: var(--overlay-surface-hover);
+  --color-surface-inset-strong: var(--overlay-surface-input);
+  --color-surface-inset-strong-hover: var(--overlay-surface-hover);
+  --color-surface-raised-base: var(--overlay-surface);
+  --color-surface-raised-base-hover: var(--overlay-surface-hover);
+  --color-surface-raised-base-active: var(--overlay-surface-hover);
+  --color-surface-raised-stronger-non-alpha: var(--overlay-surface);
+  --color-border-base: var(--overlay-border);
+  --color-border-weak-base: var(--overlay-border);
+  --color-border-weaker-base: var(--overlay-border);
+  --color-text-stronger: var(--overlay-text);
+  --color-text-strong: var(--overlay-text);
+  --color-text-base: var(--overlay-text);
+  --color-text-weak: var(--overlay-text-muted);
+  --color-text-weaker: var(--overlay-text-muted);
+  --color-icon-strong-base: var(--overlay-icon);
+  --color-icon-base: var(--overlay-icon);
+  --color-icon-weak-base: var(--overlay-icon-muted);
+  color: var(--overlay-text);
+}
+
+[data-overlay-shell="menu"] {
+  border: var(--surface-overlay-border, 1px solid var(--overlay-border));
+  border-radius: var(--surface-overlay-radius, var(--radius-md));
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-md));
+}
+
+[data-overlay-shell="prominent"] {
+  border: var(--surface-overlay-border, 0.5px solid var(--border-weak-base));
+  border-radius: var(--surface-overlay-radius, 10px);
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-lg));
+}
+
+[data-overlay-shell="raised-menu"] {
+  border: var(--surface-overlay-border, 1px solid var(--border-weak-base));
+  border-radius: var(--surface-overlay-radius, var(--radius-md));
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-lg));
+}
+
+[data-overlay-shell="prompt"] {
+  border: var(--surface-overlay-border, none);
+  border-radius: var(--surface-overlay-radius, 12px);
+  box-shadow: var(--surface-overlay-shadow, var(--shadow-lg-border-base));
+}
+
+[data-surface="sidebar"] {
+  box-shadow: var(--surface-sidebar-shadow, none);
+}
+
+@media (forced-colors: active) {
+  :is(
+    [data-component="dialog"] [data-slot="dialog-content"],
+    [data-component="dropdown-menu-content"],
+    [data-component="dropdown-menu-sub-content"],
+    [data-component="context-menu-content"],
+    [data-component="context-menu-sub-content"],
+    [data-component="popover-content"],
+    [data-component="select-content"],
+    [data-component="tooltip"],
+    [data-component="menu-v2-content"],
+    [data-component="tooltip-v2"],
+    [data-overlay-shell],
+    .ui-context-card.is-floating,
+    .ui-context-card-rail,
+    [data-slot="switcher-metadata-card"],
+    [data-surface="composer"]
+  ) {
+    border: 1px solid CanvasText;
+    box-shadow: none;
+  }
+}
+
+/*
+ * Only the hand-authored shells need the paint forced. They carry utility
+ * classes (`bg-background-base`, `bg-surface-raised-stronger-non-alpha`) that
+ * would otherwise win. The shared menu primitives already paint themselves from
+ * `--overlay-surface`, so overriding them here would be redundant — and a
+ * forced declaration on `[data-surface="overlay"]` would take the paint away from
+ * every caller of DropdownMenu in every theme.
+ */
+.overlay-palette.overlay-palette {
+  background-color: var(--overlay-surface);
+  border-color: var(--overlay-border);
+}
+
+/*
+ * The dock shell masks overlapping surfaces with a ring painted in its own
+ * background color, so the ring has to know what the composer is painted with.
+ * Only the color is bound here; the composer keeps whatever elevation its own
+ * surface defines.
+ */
+[data-surface="composer"] {
+  --dock-shell-border-underlay-background: var(--shell-surface-composer);
+}
+
+/*
+ * Icon interaction grammar. The `data-icon-interaction` attribute is emitted by
+ * the shared icon controls in every theme, so its paint is theme-agnostic too:
+ * - passive glyphs stay visually quiet when their containing row is hovered;
+ * - row actions brighten their outline without drawing a second hover pill;
+ * - standalone controls receive a hover surface;
+ * - a pressed binary control is communicated by its glyph and foreground,
+ *   not a persistent filled background.
+ * `icon-interaction-muted` / `-strong` are contrast-derived per theme against
+ * the shell surfaces, so a glyph is legible wherever the shell puts it.
+ */
+[data-icon-interaction="passive"],
+[data-icon-interaction="row-action"],
+[data-icon-interaction="row-actions"] button,
+[data-icon-interaction="binary"],
+[data-icon-interaction="subdued"] {
+  color: var(--icon-interaction-muted);
+}
+
+[data-icon-interaction="passive"] .ui-icon,
+[data-icon-interaction="passive"] .ui-icon-svg,
+[data-icon-interaction="row-action"] .ui-icon,
+[data-icon-interaction="row-action"] .ui-icon-svg,
+[data-icon-interaction="row-actions"] button .ui-icon,
+[data-icon-interaction="row-actions"] button .ui-icon-svg,
+[data-icon-interaction="binary"] .ui-icon,
+[data-icon-interaction="binary"] .ui-icon-svg,
+[data-icon-interaction="persistent"] .ui-icon,
+[data-icon-interaction="persistent"] .ui-icon-svg,
+[data-icon-interaction="subdued"] .ui-icon,
+[data-icon-interaction="subdued"] .ui-icon-svg {
+  color: inherit;
+}
+
+[data-icon-interaction="row-action"]:hover,
+[data-icon-interaction="row-action"]:focus-visible,
+[data-icon-interaction="row-actions"] button:hover,
+[data-icon-interaction="row-actions"]:focus-within button {
+  color: var(--icon-interaction-strong);
+  background-color: transparent;
+}
+
+[data-icon-interaction="binary"][aria-pressed="true"],
+[data-icon-interaction="binary"][aria-expanded="true"],
+[data-icon-interaction="binary"][data-icon-state="open"],
+[data-icon-interaction="binary"][data-icon-state="active"],
+[data-icon-interaction="binary"][data-icon-state="selected"],
+[data-icon-interaction="persistent"],
+[data-icon-interaction="standalone"] {
+  color: var(--icon-interaction-strong);
+}
+
+/*
+ * Filled primary icon buttons define their own inverse foreground. Persistent
+ * interaction emphasis must not repaint that glyph with the shell icon color.
+ *
+ * DO NOT DELETE THIS RULE. `ClaxedoIconButton` defaults to
+ * `data-icon-interaction="persistent"`, so without this the rule above paints
+ * a filled primary button `--icon-interaction-strong` — and the
+ * the inherited color rule two rules up then forces the glyph to follow it,
+ * beating the button's own inverse utility class. The composer send arrow ends
+ * up the same color as the circle it sits on. That is invisible, not merely
+ * wrong, and since this grammar is no longer scoped to Codex it happens in
+ * every theme.
+ *
+ * No test catches it. A cascade conflict needs a real style resolver, and the
+ * component-level vitests assert only what the component owns — they stay
+ * green while the arrow disappears. This is a rendered-pixels check; it belongs
+ * in the visual pass, on the composer, not just on shell surfaces.
+ */
+.ui-icon-button[data-variant="primary"][data-icon-interaction="persistent"] {
+  color: var(--v2-icon-icon-inverse);
+}
+
+[data-icon-interaction="standalone"]:hover {
+  background-color: var(--row-surface-hover);
+}
+
+[data-icon-interaction="standalone"][aria-pressed="true"] {
+  background-color: transparent;
+}
+
+[data-icon-interaction="subdued"]:hover,
+[data-icon-interaction="subdued"]:focus-visible {
+  color: var(--icon-interaction-muted);
+  background-color: var(--row-surface-hover);
+}
+
+/*
+ * Every searchable picker, not just the model one. The shared List paints its
+ * search field with `--surface-base` — the SHELL surface — which was invisible
+ * back when menus were dark but reads as a grey slab on a light menu. The
+ * model and directory pickers were rebound individually and the composer's
+ * chip pickers (project / local-cloud / branch) were missed, so the same
+ * control came out two different greys. One rule now covers all of them.
+ */
+.theme-model-picker [data-slot="list-search"],
+.theme-directory-picker [data-slot="list-search"],
+.codex-model-picker [data-slot="list-search"],
+.claxedo-composer-menu [data-slot="list-search"] {
+  background-color: var(--overlay-surface-input);
+  border-radius: var(--radius-lg);
+}
+
+/*
+ * The merged harness→model picker's search is a FIELD, not the panel's header
+ * rule. It was drawn flush and transparent with a hairline under it, which on a
+ * surface this dark left nothing to distinguish an input from a label — the
+ * magnifier was carrying the entire affordance. It gets the same inset fill
+ * every other picker's search has, plus a gap so it is not welded to the
+ * section header directly above it.
+ *
+ * Specificity has to clear `.claxedo-composer-menu.claxedo-composer-menu
+ * [data-slot="list-search"]` in index.css (0,3,0); doubling the class and
+ * adding the component attribute lands at (0,4,0).
+ */
+.claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"] .ui-list-search {
+  background-color: var(--overlay-surface-input);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+}
+
+.claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"] .ui-list-search-wrapper {
+  margin-bottom: 6px;
+}
+
+/* The manage-models action now rides INSIDE the field with the clear button, so
+   it takes the magnifier's treatment: same muted tint, same brightening on
+   hover, no button chrome of its own competing with the input's fill. */
+.claxedo-composer-menu.claxedo-composer-menu[data-component="harness-model-picker"]
+  [data-slot="harness-picker-manage"] {
+  flex-shrink: 0;
+}
+
+.theme-model-picker [data-slot="list-search-container"] > .ui-icon,
+.theme-directory-picker [data-slot="list-search-container"] > .ui-icon,
+.codex-model-picker [data-slot="list-search-container"] > .ui-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--overlay-icon-muted);
+}
+
+/* The search-container icon is sized by the rule above: it IS the svg now, so
+ * there is no inner `[data-slot="icon-svg"]` left to reach for here. */
+.codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] .ui-icon,
+.codex-model-picker [data-slot="list-search-wrapper"] [data-component="icon-button"] .ui-icon-svg {
+  width: 14px;
+  height: 14px;
+}
+
+/*
+ * The platform directory picker is a full dialog rather than a floating menu,
+ * but the overlay family covers both. Keep the list canvas on the overlay
+ * surface and reserve the lighter tone for the search field and hovered rows.
+ */
+.theme-directory-picker [data-slot="dialog-header"],
+.theme-directory-picker .ui-dialog-body,
+.theme-directory-picker .ui-list,
+.theme-directory-picker .ui-list-scroll,
+.theme-directory-picker .ui-list-header {
+  background-color: var(--overlay-surface);
+}
+
+.theme-directory-picker .ui-list-search-wrapper {
+  margin: 0;
+  padding: 0 12px 8px;
+}
+
+/*
+ * Codex appearance layer
+ *
+ * Theme JSON owns the shared semantic palette; the block above spends it.
+ * What is left here is what a color token cannot express: typography, SVG
+ * geometry, and the elevation scale.
+ *
+ * The shell selectors below still key off `data-testid` and stay scoped to
+ * Codex. `data-surface="sidebar"` / `"header"` now exist in the markup, but
+ * moving these rules onto them unscoped would repaint the sidebar, header and
+ * tabs of all 37 other themes in one go — every one of them would start
+ * following `shell-surface-*`, which most have never been checked against.
+ * That is a deliberate follow-up with its own before/after pass, not a
+ * side effect of this port.
+ */
+html[data-theme="codex"] {
+  --font-family-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-family-text:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --v2-font-family-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-family: var(--font-family-sans);
+  --font-weight-body: 400;
+  --font-weight-regular: 400;
+  --menu-item-font-size: var(--font-size-base);
+  --menu-item-font-weight: var(--font-weight-body);
+  --menu-item-line-height: var(--line-height-large);
+  --letter-spacing-ui: 0;
+  --letter-spacing-navigation: 0;
+  --letter-spacing-body-tight: 0;
+  --letter-spacing-heading: 0;
+  --letter-spacing-display: 0;
+  --letter-spacing-title: 0;
+  --letter-spacing-chat: 0;
+  --letter-spacing-tight: 0;
+  --letter-spacing-tightest: 0;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+
+  /*
+   * These live here rather than in the theme's `overrides` because those are
+   * validated as color values by desktop-theme.schema.json, while a shadow is
+   * a geometry-plus-color string.
+   */
+  --radius-overlay: 10px;
+  --elevation-shadow-raised: 0 2px 4px -1px light-dark(#00000014, #00000033);
+
+  /*
+   * Electron elevation copied from the installed Codex bundle. Prominent
+   * surfaces are one semantic half-pixel stroke plus two fixed, very light
+   * black washes; Codex does not strengthen those washes in dark mode:
+   *
+   *   --elevation-stroke:    0 0 0 .5px var(--color-token-border-heavy)
+   *   --elevation-prominent: var(--elevation-stroke), 0 3px 7.5px #0000000a, 0 0 20px #0000000d
+   *   --elevation-sidebar:   var(--elevation-stroke), 0 3px 7.5px #00000008, 0 0 16px #00000005
+   *
+   * Codex derives `--color-token-border-heavy` from its primary foreground at
+   * 12%. `--text-strong` is the matching semantic foreground in this theme.
+   * Keeping that color relationship matters: a hard-coded black/white ring is
+   * visibly heavier even when its alpha is numerically identical.
+   */
+  --elevation-stroke: 0 0 0 0.5px color-mix(in oklab, var(--text-strong) 12%, transparent);
+  --elevation-prominent: var(--elevation-stroke), 0 3px 7.5px #0000000a, 0 0 20px #0000000d;
+  --elevation-sidebar: var(--elevation-stroke), 0 3px 7.5px #00000008, 0 0 16px #00000005;
+  --surface-overlay-radius: var(--radius-overlay);
+  --surface-overlay-border: 0;
+  --surface-overlay-shadow: var(--elevation-prominent);
+  --surface-card-radius: var(--radius-overlay);
+  --surface-card-border: 0;
+  --surface-card-shadow: var(--elevation-prominent);
+  /*
+   * Installed Codex composer (`app-initial`): `border: 0`, `radius-3xl`
+   * (20px), input background at 90% opacity over a 16px backdrop blur, and
+   * `--elevation-prominent`. The half-pixel stroke already lives inside that
+   * elevation; adding a CSS border or inset ring makes the shell look doubled.
+   */
+  --surface-composer-background: color-mix(in oklab, var(--shell-surface-composer) 90%, transparent);
+  --surface-composer-backdrop-filter: blur(16px);
+  --surface-composer-radius: 20px;
+  --surface-composer-shadow: var(--elevation-prominent);
+  /* Installed Codex user bubble: foreground/5, rounded-2xl (16px), no stroke. */
+  --surface-user-message: color-mix(in oklab, var(--text-strong) 5%, transparent);
+  --surface-user-message-radius: 16px;
+  --surface-sidebar-shadow: var(--elevation-sidebar);
+}
+
+html[data-theme="codex"] body {
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-normal);
+}
+
+/*
+ * The workbench reads as the raised surface, so the falloff belongs on the
+ * sidebar, darkening it as it approaches the content edge. This is an INSET
+ * shadow on the sidebar rather than an outer one on either element, because an
+ * outer shadow here is at the mercy of two things that cancel it: the sidebar
+ * frame clips its own overflow for the width transition, and the workbench is a
+ * later positioned sibling that paints over whatever escapes. Inset paints
+ * inside the sidebar, so neither can touch it.
+ */
+html[data-theme="codex"] [data-testid="rail-sidebar"] {
+  background-color: var(--shell-surface-sidebar);
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar"] > :first-child {
+  background-color: var(--shell-surface-sidebar);
+  border-bottom-color: var(--shell-border-sidebar);
+}
+
+html[data-theme="codex"] .session-envcard.is-floating {
+  background: var(--shell-surface-composer);
+}
+
+html[data-theme="codex"] [data-testid="global-navigation"] {
+  border-bottom-color: var(--shell-border-sidebar);
+}
+
+html[data-theme="codex"] [data-testid="global-navigation"] button,
+html[data-theme="codex"] [data-testid="project-header"],
+html[data-theme="codex"] [data-testid="workspace-project-header"] {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-navigation);
+}
+
+html[data-theme="codex"][data-color-scheme="light"] [data-testid="global-navigation"] button,
+html[data-theme="codex"][data-color-scheme="light"] [data-testid="project-header"],
+html[data-theme="codex"][data-color-scheme="light"] [data-testid="workspace-project-header"],
+html[data-theme="codex"][data-color-scheme="light"] .ui-session-navigation-title {
+  color: var(--text-strong);
+}
+
+/* Installed Codex navigation rows are 30px with its 10px `radius-lg`. */
+html[data-theme="codex"] [data-testid="global-navigation"] button,
+html[data-theme="codex"] [data-testid="project-header"],
+html[data-theme="codex"] [data-testid="workspace-project-header"],
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"],
+html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] {
+  min-height: 30px;
+  border-radius: var(--radius-xl);
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"] .ui-navigation-row-activate,
+html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"] .ui-navigation-row-activate {
+  border-radius: var(--radius-xl);
+}
+
+html[data-theme="codex"] [data-slot="rail-section-label"] {
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-body-tight);
+  text-transform: none;
+}
+
+html[data-theme="codex"] .ui-session-navigation-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-navigation);
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"] .ui-session-navigation-title {
+  font-weight: var(--font-weight-body);
+}
+
+html[data-theme="codex"] .ui-session-navigation-time {
+  font-size: var(--font-size-small);
+}
+
+html[data-theme="codex"] [data-testid="rail-sidebar-session-row"][data-active="true"],
+html[data-theme="codex"] [data-testid="rail-sidebar-terminal-row"][data-active="true"] {
+  background-color: var(--row-surface-selected);
+}
+
+html[data-theme="codex"] [data-testid="global-navigation"] button:hover,
+html[data-theme="codex"] .ui-navigation-row-activate:hover,
+html[data-theme="codex"] [data-testid="project-header"]:hover,
+html[data-theme="codex"] [data-testid="workspace-project-header"]:hover {
+  background-color: var(--row-surface-hover);
+}
+
+html[data-theme="codex"] [data-testid="workbench-shell-header"] {
+  background-color: var(--shell-surface-header);
+  border-bottom-color: var(--shell-border-header);
+}
+
+html[data-theme="codex"] [data-slot="workbench-tab"][data-selected="true"],
+html[data-theme="codex"] [data-slot="workspace-tab"][data-selected="true"] {
+  background-color: var(--tab-surface-selected);
+}
+
+html[data-theme="codex"] [data-component="session-new-composer"],
+html[data-theme="codex"] [data-component="session-composer"] {
+  background-color: var(--surface-composer-background);
+  border: 0;
+  border-radius: var(--surface-composer-radius);
+  backdrop-filter: var(--surface-composer-backdrop-filter);
+}
+
+/*
+ * The legacy session layout otherwise replaces the modern user bubble with a
+ * white card, a full 1px border, and a 6px radius. Codex uses the same bubble
+ * treatment in both layouts, so keep that legacy branch from changing it.
+ */
+html[data-theme="codex"] body:not([data-new-layout]) :is([data-component="user-message"], [data-component="queued-message"]) .ui-user-message-text {
+  background: var(--surface-user-message);
+  border: 0;
+  border-radius: var(--surface-user-message-radius);
+}
+
+/*
+ * Positioners opt out of overlay chrome.
+ *
+ * Some overlays exist only to place something that draws its own surface — the
+ * session card sits inside a tooltip whose content is deliberately
+ * `border-none bg-transparent shadow-none`. The doubled opt-out class has
+ * enough specificity to beat the component shell while keeping the exception
+ * theme-agnostic.
+ */
+/* Class doubled deliberately so this opt-out beats the shared component shell
+   without increasing specificity through a theme selector. */
+.theme-overlay-bare.theme-overlay-bare {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/*
+ * Component palette bridges. The v2 components and the two chip surfaces are
+ * authored against their own design-system tokens, which have no semantic
+ * overlay role yet. Rebinding those tokens on the component root gives Codex
+ * its overlay palette without naming Codex inside the shared stylesheet, and
+ * leaves every other theme on its own v2 ramp.
+ */
+html[data-theme="codex"] [data-component="menu-v2-content"],
+html[data-theme="codex"] .ui-tooltip-v2 {
+  --v2-background-bg-layer-01: var(--overlay-surface);
+  --v2-text-text-base: var(--overlay-text);
+  --v2-text-text-muted: var(--overlay-text-muted);
+  --v2-text-text-faint: var(--overlay-text-muted);
+  --v2-icon-icon-base: var(--overlay-icon);
+  --v2-icon-icon-muted: var(--overlay-icon-muted);
+  --v2-overlay-simple-overlay-hover: var(--overlay-surface-hover);
+  --v2-border-border-muted: var(--overlay-border);
+}
+
+/*
+ * Codex tooltips are not inverted: the shipped app defines
+ * `--tooltip-background-color: var(--color-surface-elevated)` (gray-0, white
+ * in light) with `--tooltip-text-color: var(--color-text)`. Its dark chip is a
+ * separate "compact" variant we do not have, so the tooltip's float/invert
+ * roles are remapped onto the overlay family everything else that floats uses.
+ */
+html[data-theme="codex"] .ui-tooltip {
+  --surface-float-base: var(--overlay-surface);
+  --text-invert-strong: var(--overlay-text);
+  --text-invert-base: var(--overlay-text-muted);
+  --border-weak-base: var(--overlay-border);
+}
+
+html[data-theme="codex"] [data-component="prompt-input"] {
+  color: var(--text-strong);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-body);
+  letter-spacing: var(--letter-spacing-body-tight);
+}
+
+html[data-theme="codex"] [data-component="prompt-input"][data-placeholder]::before {
+  color: var(--text-weak);
+}
+
+html[data-theme="codex"] [data-slot="workspace-segmented-control"] {
+  background-color: var(--control-surface);
+  border-color: var(--control-border);
+}
+
+html[data-theme="codex"] [data-slot="workspace-segment-button"][aria-pressed="true"] {
+  background-color: var(--control-surface-active);
+  color: var(--text-strong);
+}
+
+/* Settings moved from a tabbed dialog to a shell surface: the rail lists the
+   sections and the workbench column draws the open one. These rules follow it,
+   so a section's cards read the same as they did inside the dialog. */
+html[data-theme="codex"] [data-component="settings-content"] {
+  background-color: var(--settings-surface-content);
+}
+
+html[data-theme="codex"] [data-component="settings-nav-item"][aria-current="page"] {
+  background-color: var(--row-surface-selected);
+}
+
+html[data-theme="codex"] [data-component="settings-content"] [class~="bg-surface-raised-base"] {
+  background-color: var(--settings-surface-card);
+}
+
+html[data-theme="codex"] [data-component="settings-content"] [class~="bg-surface-base"] {
+  background-color: var(--settings-surface-content);
+}
+
+/* The codex treatment of the icon primitive (inherit the surrounding colour,
+ * render the glyph geometrically) moved to the primitive's own stylesheet,
+ * `@opencode-ai/ui`'s components/icon.css. The icon is one `<svg>` now, so an
+ * unlayered `color` here would outrank the `text-*` utility every call site
+ * passes on that same element. */
+
+html[data-theme="codex"] .claxedo-workspace-review .ui-accordion {
+  gap: 2px;
+}
+
+html[data-theme="codex"]
+  .claxedo-workspace-review
+  [data-component="accordion"]
+  [data-slot="accordion-item"]
+  + .ui-accordion-item {
+  margin-top: 0;
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] .ui-accordion-trigger,
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] .ui-accordion-content {
+  border: 0;
+  border-radius: var(--radius-md);
+}
+
+html[data-theme="codex"] .claxedo-workspace-review [data-component="accordion"] .ui-accordion-trigger {
+  height: 30px;
+  padding: 6px 12px;
+  background-color: transparent;
+}
+
+html[data-theme="codex"][data-color-scheme="dark"]
+  .claxedo-workspace-review
+  [data-component="accordion"]
+  .ui-accordion-trigger {
+  background-color: var(--surface-base);
+}
+
+/* Row geometry, the hover control cluster and the path spans live with the
+   markup, in session-ui's `session-review.css`; what stays here is the chrome
+   Codex adds on top of it. */
+html[data-theme="codex"] .claxedo-workspace-review .ui-file-icon {
+  width: 14px;
+  height: 14px;
+}
+

@@ -1,0 +1,135 @@
+import { workspaceRoute } from "@/platform/identity/route"
+import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
+import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
+import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { inventoryHostKind, isSelfHostKind } from "@/platform/runtime/placement-wire"
+
+type ProjectWorkspace = {
+  id?: string
+  workspace_id?: string
+  directory?: string
+  kind?: string
+}
+
+export type LocalWorkspaceShareTarget = {
+  workspaceId: string
+  directory: string
+}
+
+type ShareableProject = {
+  id?: string
+  worktree: string
+  workspaces?: Record<string, ProjectWorkspace>
+}
+
+/** Publishing a placement needs a signed account to record it against. */
+export function accountCanShareWorkspace(status: string | undefined) {
+  return status === "signed"
+}
+
+export function localWorkspaceShareTarget(input: {
+  project: ShareableProject
+  directory: string
+}): LocalWorkspaceShareTarget | undefined {
+  const workspaces = input.project.workspaces ?? {}
+  const rows = Object.values(workspaces)
+  const row = workspaces[input.directory] ??
+    rows.find((item) => item.directory === input.directory) ??
+    rows.find((item) => item.id === input.directory || item.workspace_id === input.directory)
+  const directory = row?.directory ?? (input.directory === input.project.worktree ? input.project.worktree : undefined)
+  const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
+  if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return undefined
+  // A row placed anywhere but on the attached server — the provisioner, another
+  // machine, or the control plane's echo of this machine's own registration —
+  // is a remote representation, never a directory this machine can publish.
+  if (row?.kind && !isSelfHostKind(inventoryHostKind(row.kind))) return undefined
+  return { workspaceId, directory }
+}
+
+function errorMessage(input: unknown, fallback: string) {
+  if (!input || typeof input !== "object") return fallback
+  const error = (input as { error?: unknown }).error
+  if (!error || typeof error !== "object") return fallback
+  const message = (error as { message?: unknown }).message
+  return typeof message === "string" && message.trim() ? message : fallback
+}
+
+async function responseJson(response: Response) {
+  return await response.clone().json().catch(() => undefined)
+}
+
+export function workspaceShareUrl(input: { origin?: string; workspaceId: string }) {
+  const origin = input.origin ?? (typeof window === "undefined" ? undefined : window.location.origin)
+  if (!origin) return workspaceRoute(input.workspaceId)
+  return new URL(workspaceRoute(input.workspaceId), origin).toString()
+}
+
+function workspaceHostAssignmentUrl(input: { serverUrl?: string; workspaceId: string }) {
+  return new URL(
+    `/api/workspace/${encodeURIComponent(input.workspaceId)}/host-assignment`,
+    normalizeUrl(input.serverUrl) ?? getClaxedoServerUrl(),
+  )
+}
+
+/**
+ * Records this workspace's placement: the directory, on the machine this
+ * process runs on.
+ *
+ * The renderer cannot name that machine — the host id belongs to whoever holds
+ * the machine key, which on desktop is Electron main's Host Connector and
+ * never this process. So the port is the only path when one is bound; the
+ * self-hosted server has no port and performs the same assignment server-side
+ * from its own local route below.
+ */
+export async function publishWorkspacePlacement(input: {
+  workspaceId: string
+  displayName?: string
+  serverUrl?: string
+  request?: typeof fetch
+}): Promise<void> {
+  // The desktop: the Host Connector owns the machine key, so the port is the
+  // only path that can produce the signed challenge. The self-hosted server:
+  // no port is bound, and its own local route below performs the same flow
+  // server-side.
+  const port = input.request ? undefined : machineRemoteAccess()
+  if (port?.shareWorkspace) {
+    await port.shareWorkspace({
+      workspaceId: input.workspaceId,
+      ...(input.displayName ? { displayName: input.displayName } : {}),
+    })
+    return
+  }
+  const response = await (input.request ?? authFetch)(workspaceHostAssignmentUrl({
+    serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+    workspaceId: input.workspaceId,
+  }), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify((input.displayName ? { displayName: input.displayName } : {})),
+  })
+  if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
+}
+
+/** Withdraws one placement this machine published. Mirrors the publish above. */
+export async function withdrawWorkspacePlacement(input: {
+  workspaceId: string
+  serverUrl?: string
+  request?: typeof fetch
+}): Promise<void> {
+  const port = input.request ? undefined : machineRemoteAccess()
+  if (port?.unshareWorkspace) {
+    await port.unshareWorkspace(input.workspaceId)
+    return
+  }
+  const response = await (input.request ?? authFetch)(workspaceHostAssignmentUrl({
+    serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+    workspaceId: input.workspaceId,
+  }), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  })
+  if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Unshare workspace failed: ${response.status}`))
+}
