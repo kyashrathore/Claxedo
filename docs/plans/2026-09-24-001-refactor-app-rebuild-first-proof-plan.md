@@ -17,11 +17,11 @@ Because the directory gets its old name back, CI workflows and scripts that poin
 **Outside `claxedo-app-v2`, only these change:**
 - a desktop build target that loads v2;
 - the benchmark driver, moved to the benchmark repo;
-- the first-party plugin packages under `plugins/`.
+- the first-party plugin packages under `plugins/`;
+- the CLI's `claxedo plugin` commands and the plugin-authoring skill;
+- the server additions you approved: the projects route ([The projects route](#the-projects-route)) and the daemon's live-plugin routes ([Live plugins](#live-plugins)).
 
-No server code changes, except two that you may choose to approve ([Where today's contract falls short](#where-todays-contract-falls-short)):
-- a harness-status fix, only if P0.7 shows it is needed;
-- a hosted projects route.
+A harness-status fix is added only if P0.7 shows it is needed and you approve it ([Where today's contract falls short](#where-todays-contract-falls-short)).
 
 ## Why today's server contracts
 
@@ -40,12 +40,43 @@ Keeping the server as it is makes the proof smaller and easier to trust:
 - **Pages:** today's documents API already works signed and unsigned.
 - **Project ids:** the server already gives projects ids, both locally and on hosted.
 
+## Why rebuild at all
+
+Most of the line count goes by deleting, and deleting doesn't need a rebuild. The rebuild is for what deleting can't fix.
+
+| Where the 169k production lines go | Lines | Needs the rebuild? |
+| --- | --- | --- |
+| Perf harness, Storybook, dead code, removed features (Processes, diagnostics), app scanners, dead routes, the second composer engine | ~65k | No: today's app could delete these |
+| Comments and data tables in the moved code (transcript, timeline, composer core, terminal, workbench reducers) | ~6k | No |
+| The data layer, shell and screens, rebuilt: ~161k today → ~64k | ~97k | Yes |
+
+The 169.8k lines of unit tests go by your ruling, not because of the rebuild.
+
+**What only the rebuild buys:**
+1. **A session list you can trust.**
+   - **Today:** a row comes from 4 sources, 6 caches and 16 per-session cache kinds, and its status from 8 files plus a timer. Of the 238 commits on that code since the fork, 132 have "fix" in the subject.
+   - **v2:** one owner, six written rules, and race flows.
+2. **Projects as ids.**
+   - **Today:** projects are folder paths in browser storage, routes carry `?directory=`, and `ShellRoute` still has a `legacy-directory` kind.
+   - **Why a rebuild:** ids reach every store and route, so this can't be patched in one place.
+3. **One UI kit.** Upstream retired v1 on 2026-09-14, and today's app imports the v1 kits 610 times from 249 files. Moving to v2 touches every screen either way.
+4. **Speed where today is slow.** Idle CPU is 8.6% against T3's 4.4%. Opening the workspace panel takes about a second, 900 ms of it a hydration delay. The rebuild owns the code on those paths, and the gate requires beating them.
+5. **A shell that knows nothing about features** ([The app shell](#the-app-shell)).
+6. **Code agents can keep correct:** one owner per concept, files under 300 lines, state machines, and fourteen checks.
+7. **One place to change when the server is rebuilt:** the adapter.
+
+**Why a copy and not in place.** Items 1–3 each touch most of the app.
+- **In place,** they would land on `dev` while other sessions change the same files, with no clean comparison.
+- **The copy** runs beside today's app on the same server, the same flows judge both apps, and one swap finishes it.
+
+**What the rebuild doesn't rewrite:** the transcript, the terminal backend, the workbench reducers and the composer's editor core. They are moved.
+
 ## The goal
 
 Rebuild the app so it is simpler, easier to reason about and easier for AI agents to maintain on their own. The rebuilt app must meet these constraints:
 
 1. **Only v2.** One UI kit, v2 components and tokens, living inside the app. No v1 component or token is left.
-2. **Today's server contracts.** No server route, event name or payload changes, apart from the two you may approve.
+2. **Today's server contracts.** No server route, event name or payload changes, apart from the additions you approved (the projects route, the live-plugin routes) and a harness-status fix if P0.7 needs one.
 3. **Only e2e tests, and better ones than v1 had.** The suite must be robust, work, stay honest and run fast, measured by the criteria in [End-to-end tests](#end-to-end-tests).
 4. **Extensible where we need it now.** A small plugin API, used by four first-party plugins: Tasks, Pages, compact tabs and the Codex theme. It grows when a need appears. Browser tabs and terminal links are part of the app.
 5. **The session transcript stays as it is.** It is moved, not rebuilt, and proven against a corpus of today's rendering ([Areas that need extra care](#areas-that-need-extra-care)).
@@ -61,7 +92,7 @@ Rebuild the app so it is simpler, easier to reason about and easier for AI agent
 
 | | Today | After the swap |
 | --- | --- | --- |
-| App + UI kits | 261.0k (app 208.7k; `ui`, `session-ui`, Storybook 52.3k) | **≤ 93k**, all in `packages/claxedo-app` |
+| App + UI kits | 261.0k (app 208.7k; `ui`, `session-ui`, Storybook 52.3k) | **≤ 94k**, all in `packages/claxedo-app` |
 | First-party plugins, in `plugins/` | inside the app and the UI kit | ≤ 7k |
 | Unit tests, app + kits | 169.8k | **0** |
 | e2e specs and helpers | 56.8k (32 of 58 specs run against a mocked server) | **≤ 16k**, none mocked; corpus data not counted |
@@ -74,10 +105,14 @@ Lines are tracked `.ts/.tsx/.js/.mjs` files, with locales not counted. While the
 - phone layouts (+1.0k);
 - the id-first project flow (+0.5k).
 
+Live plugins add about 0.8k more.
+
 ## Rulings this plan implements
 
 - **Side by side:** copy → `claxedo-app-v2` → you test → delete `claxedo-app` → rename v2 back to `claxedo-app`.
-- **Server:** today's contracts. The app adapts; the server does not change.
+- **Server:** today's contracts; the app adapts to them. Two additions are approved:
+  - the projects route, served the same way locally and on hosted;
+  - the daemon's live-plugin routes.
 - **Conventions:** in `packages/claxedo-app-v2/AGENTS.md`. The root files stay unchanged.
 - **UI:** v2 is the one kit. Upstream made it the default (`newLayoutDesignsDefault = true`; old interface sunset 2026-09-14).
 - **Tests:** e2e only, robust, better than v1, working, honest and fast.
@@ -90,16 +125,35 @@ Lines are tracked `.ts/.tsx/.js/.mjs` files, with locales not counted. While the
   - First-party: Tasks, Pages, compact tabs, the Codex theme.
   - Browser tabs and terminal links stay in the app (ours).
   - Plugin backends on Cloudflare are the known next step when a plugin needs one.
+  - User plugins are prompted from inside the app and applied live: on desktop at the user's own risk, on the web in a sandboxed iframe ([Live plugins](#live-plugins)).
 - **Comments:** none in the new work.
 - **Naming:** Claxedo names inside the app.
 - **Performance:** must beat today's agent-app-benchmark results.
+- **App shell:**
+  - a left sidebar with two modes, main and settings;
+  - the workbench of split panes in the center;
+  - a right workspace panel with tabs;
+  - one reusable page tab for Marketplace, Tasks, Settings and the like, which can't be split or dragged ([The app shell](#the-app-shell)).
+- **Pace:** aim for P0–P5 in one 6-hour push with parallel agents ([Execution](#execution-the-6-hour-push)).
+- **No backward compatibility** ([No backward compatibility](#no-backward-compatibility)).
+- **Access:** one written model of roles, orgs and shares, and one app domain ([Roles, permissions and orgs](#roles-permissions-and-orgs)).
 - **From earlier rulings:**
   - flat session list ordered by `human_turn_desc`;
   - one identity per machine that sign-in adopts;
   - per-user account selection;
-  - no backward-compatibility bridges;
   - Cloudflare-only hosting and Node-only tooling;
   - the perf harness moves out of main.
+
+## No backward compatibility
+
+Your ruling: nothing is kept for compatibility, because there are no users to protect yet.
+
+- **Browser storage.** v2 reads nothing the old app stored: no `default.dat`, `layout.v6`, `Persist.*` or `claxedo.global.dat:*` keys. Preferences start fresh. A folder the old app remembered only in the browser is added again as a project.
+- **URLs.** No `legacy-directory` routes and no old deep-link shapes.
+- **Server shapes.** The adapter speaks today's server only; there is no code for older server versions.
+- **Server changes** move the store, the routes and every reader in one change, together with their migration. Nothing is deprecated for a release.
+- **Old paths.** Today's app keeps working until the swap, because your side-by-side test needs it. The swap then deletes, in the same change, every server path that only the old app used.
+- **No switches.** No flags between old and new behavior, and no dual reads or dual writes.
 
 ## Areas that need extra care
 
@@ -175,7 +229,10 @@ At the end of every case, the visible list must equal the server's list and stat
 - **The server already has ids:**
   - the local server and the self-hosted app serve project records (`/api/claxedo/projects`: name, environment, clone source) that workspaces register under;
   - on hosted, a cloud workspace carries a `projectId`, and creating one can name an existing project.
-- **Hosted has no projects route.** A hosted project comes into being with its first cloud workspace (`createCloudBody` takes `projectName` and a repo). The onboarding v2 plan's live probe on 2026-09-15 found the web Project chip posting to that missing route.
+- **Hosted has no projects route.**
+  - A hosted project comes into being with its first cloud workspace, and `projectName` only becomes that workspace's display name.
+  - The onboarding v2 plan's live probe on 2026-09-15 found the web Project chip posting to the missing route.
+  - The approved projects route fixes this ([The projects route](#the-projects-route)).
 
 **Rules:**
 - **A project is a server record with an id.**
@@ -183,9 +240,11 @@ At the end of every case, the visible list must equal the server's list and stat
   - `SessionRef` = project id + placement id + session id.
   - A directory is never an identity. Only the adapter turns a placement into today's `directory=`.
 - **The project list comes from the server**, never from browser storage.
-- **The add flow is designed for hosted first:** name and source (a repo from a connected GitHub account, or a URL; a folder only when running on a machine) → the AI → where it runs (a cloud workspace or a connected machine).
-  - **On hosted,** today's contract creates the project together with its first cloud workspace, so the flow commits at the end.
-  - **Locally,** the project record comes first, as today, then its placement.
+- **The add flow is designed for hosted first:**
+  1. name and source: a repo from a connected GitHub account, or a URL; a folder only when running on a machine;
+  2. the AI;
+  3. where it runs: a cloud workspace or a connected machine.
+  - On every deployment, the project record is created first through the projects route, then its placement.
 - **Routes and deep links use ids**, never paths.
 
 **Flows 2 and 32:**
@@ -228,7 +287,7 @@ Each asserts the id read back from the server.
 | Transcript | Everything it shows today, rendered by today's code: text, reasoning, every tool card, diffs, images, file links, Mermaid and math, line comments, subagent chips, message navigation, find in transcript, long-session scrolling, turn folding |
 | Composer | Text, attachments with image marks, `@` mentions (files and plugin items), slash commands, agent/model/effort/permission-mode pickers, goal mode, queued messages, stop |
 | Agents | Claude, Codex, ACP agents (Cursor, OpenCode, Gemini and custom), the external OpenCode server, Pi; subagents; permission prompts and questions |
-| Workbench | Panes, tabs, splits, drag; command palette |
+| Workbench | Panes, tabs, splits and drag for sessions, terminals, files and Pages documents; command palette. Marketplace, Tasks, Settings and the Pages index open in one page tab. |
 | Browser tabs | On desktop: preview a URL, navigate, console, pick an element and comment on it into the prompt. On the web: the sandboxed preview, as today |
 | Terminal | Terminal panes; file-path, URL, multi-line and fallback-format links; agent status in terminals |
 | Review | Diff, line comments sent to the agent, commit, push, worktrees, file tree, file tabs |
@@ -237,7 +296,7 @@ Each asserts the id read back from the server.
 | Cloud | Cloud workspaces: create, start, stop, delete |
 | Usage | Per-turn usage and quota windows |
 | Phone | Every screen at phone width: the sidebar as a drawer, panes as sheets |
-| As plugins | Tasks; Pages; compact tabs; the Codex theme and icon skin |
+| Plugins | Tasks; Pages; compact tabs; the Codex theme and icon skin. New: your own plugins, prompted from inside the app and applied live |
 | Languages | All 18 |
 
 ### Goes
@@ -252,9 +311,10 @@ Each asserts the id read back from the server.
 | Instant terminal restore from localStorage | Replay from the runtime's existing PTY route instead |
 | Dev-only surfaces | Typography knobs, dialog/error harness routes, perf tracing |
 | Themes outside the v2 set, apart from plugin themes | v2 only |
+| Marketplace, Tasks and the Pages index as panes you can split and drag | They open in the one page tab ([The app shell](#the-app-shell)) |
 
 **Open, your call** (see [Open decisions](#open-decisions)):
-- a hosted projects route;
+- consolidating access checks on the server;
 - teams inside an org;
 - network-policy settings;
 - the custom-provider dialog;
@@ -321,7 +381,7 @@ The Tasks and documents server code stays on the server, unchanged.
 | Architecture scanners and guard scripts in the app | 2.5k | Checks live in `script/` |
 | Dead and dev-only routes | 0.7k | See [Goes](#goes) |
 | Kit: dead files; v1 components with a v2 twin; generated icon tables; OpenCode icon libraries and artwork | 6.2k | Not carried into `src/ui/`; `packages/ui` and `packages/session-ui` are deleted at the swap |
-| The 35 `AGENTS.md` files copied from the old app | — | Each domain's `README.md` replaces its one |
+| The old app's own `AGENTS.md` files (8 left, the package root's included) | — | Appendix A replaces the root one; each domain's `README.md` replaces the rest |
 | **Whole-file deletions, total** | **~88k** (plus ~11k moving into plugins) | |
 
 ### Rebuilt (the concept stays, the file shrinks; estimated)
@@ -332,11 +392,12 @@ The Tasks and documents server code stays on the server, unchanged.
 | Session client, including the session list store | 31.1k | ~9.5k | One store per session and one list store with written reconcile rules; snapshot plus today's streams; `SessionRef`; pickers from one capabilities reader |
 | Session screen, apart from the kept timeline and docks | ~13.8k | ~8.1k | v2; its own status and placement guessing goes |
 | Composer | 12.0k | ~5.5k | `PromptInputV2` frame with Claxedo's slots; the 592-line `handleSubmit` closure → a ~150-line send |
-| Rail and workbench | 21.8k | ~8.5k | One flat list over the list store; three groupers → one; route sync over `SessionRef`; one state owner; phone drawer and sheets |
+| Rail and workbench | 21.8k | ~8.3k | One flat list over the list store; three groupers → one; route sync over `SessionRef`; one state owner; phone drawer and sheets |
 | Browser tabs, `features/browser/*` | 1.4k | ~1.1k | v2 screens; one machine for loading and element picking; the 954-line `browser-pane.tsx` split into address bar, page host, console and picker. The desktop's `window.api.browser` bridge and `<webview>`, and the web's sandboxed preview, are unchanged. |
 | Shell and platform | 26.2k | ~6.5k | One entry, capabilities instead of 11 build flags; the wire moves to the adapter |
 | Terminal | 8.2k | ~4.3k | One attach path; links kept |
-| Settings (with accounts, machines and remote access) | 12.3k | ~5.7k | One Accounts screen; one Machines screen; remote access still goes through today's desktop path |
+| Settings (with accounts, machines and remote access) | 12.3k | ~5.2k | One Accounts screen; one Machines screen; remote access still goes through today's desktop path; org and sharing move to Access |
+| Access: roles, org, members and shares. Today in `platform/auth/role.tsx`, `org-team-section.tsx`, `org-team-api.ts`, the rail's org switcher and the share controls | ~1k | ~1.0k | One domain; one `can()` that answers from server facts only |
 | Review, git, files | 8.6k | ~4.3k | Four file caches → one store |
 | Projects and cloud workspaces | 5.7k | ~3.0k | One project model keyed by id; the hosted-first add flow; placements; today's lifecycle routes through the adapter |
 | Onboarding and usage | 3.4k | ~1.8k | Through the adapter |
@@ -347,7 +408,7 @@ The Tasks and documents server code stays on the server, unchanged.
 
 | What | Lines (estimated) |
 | --- | --- |
-| Plugin host: the slots and primitives the four plugins use, loader, error boundaries | 0.9k |
+| Plugin host: the primitives, the live-plugin loader and hot swap, the web iframe bridge, error boundaries | 1.7k |
 | `machine()` helper for state machines | 0.1k |
 | Four v2 components vendored from upstream (progress circle, split button, tab state indicator, wordmark) | 0.2k |
 
@@ -357,22 +418,23 @@ The Tasks and documents server code stays on the server, unchanged.
 | --- | --- |
 | Server adapter | 4.0k |
 | Session client, including the session list store | 9.5k |
-| Session screen incl. the kept timeline and docks, with its phone layout | 14.6k |
+| Session screen incl. the kept timeline and docks, with its phone layout | 14.3k |
 | Composer | 5.5k |
-| Rail and workbench | 8.5k |
+| Rail and workbench | 8.3k |
 | Browser tabs | 1.1k |
 | Shell and platform | 6.5k |
 | Terminal | 4.3k |
-| Settings | 5.7k |
+| Settings | 5.2k |
+| Access | 1.0k |
 | Review, git, files | 4.3k |
 | Projects and cloud | 3.0k |
 | Onboarding and usage | 1.8k |
-| Plugin host | 0.9k |
+| Plugin host | 1.7k |
 | Marketplace | 1.8k |
 | Moved in from the session feature (rail rows, review clients) | 0.6k |
 | State-machine helper | 0.1k |
 | UI kit (`src/ui/`) and kept transcript renderers (`src/transcript/`) | ~20k |
-| **Total** | **≤ 93k** (the parts add up to 92.2k) |
+| **Total** | **≤ 94k** (the parts add up to 93.0k) |
 
 ## The server adapter
 
@@ -385,7 +447,7 @@ The Tasks and documents server code stays on the server, unchanged.
 | `wire/` | Today's shapes (`sessionID`, `message.part.updated`, `prompt_async`, `?directory=`) and their conversion to app types, both ways |
 | `sessions.ts` | List (the same route the product uses today), snapshot, subscribe, create, prompt, stop, answer permissions and questions |
 | `status.ts` | Session status from the snapshot and the stream (`session.status`, `session.idle`, `session.error`, `permission.asked`, `question.asked`): one owner, where today it is spread across 8 files |
-| `projects.ts` | Project records by id: `/api/claxedo/projects` locally and on self-hosted; on hosted, projects through their cloud workspaces' `projectId` |
+| `projects.ts` | Project records by id through `/api/claxedo/projects`, the same route on every deployment ([The projects route](#the-projects-route)) |
 | `workspaces.ts` | Placements (folders, worktrees, cloud workspaces) and machines; `SessionRef` → the directory that today's routes need |
 | `capabilities.ts` | One `Capabilities` value derived from today's agent catalog, account state and service list |
 | `files.ts`, `git.ts`, `terminal.ts`, `accounts.ts`, `usage.ts`, `marketplace.ts`, `cloud.ts`, `machines.ts` | The rest of today's routes, one area each |
@@ -406,28 +468,241 @@ When the server is rebuilt later, only this folder changes.
   - **If they all arrive:** `status.ts` keeps no timer.
   - **If some never arrive:** `status.ts` keeps one bounded 5-second re-read, in one place instead of eight files. You then decide whether a small runtime fix is worth it. It would keep the event name and shape, and only send the event where it is missing today.
 
-**2. Hosted has no projects route.** A hosted project exists only once it has a cloud workspace. v2 works within that: the hosted add flow creates the project together with its first workspace. Two things need a hosted projects route, a server change:
-- a hosted project that exists before its first workspace;
-- a hosted project list that doesn't go through workspaces.
-
-This is [open decision 1](#open-decisions).
+**2. Hosted has no projects route.** Approved: one projects route, served the same way on every deployment ([The projects route](#the-projects-route)).
 
 **Pages needs no server change.** Today's documents API already works in both setups:
 - **signed:** through control-plane operations;
 - **unsigned:** through the daemon's `/documents` routes, git-backed in the project.
 
+## State, caching and fetching
+
+**Today**, from a read of the code:
+- **The transcript is held four times:**
+  - a module `Map` of `@tanstack/ai-client` chat clients;
+  - a TanStack Query mirror;
+  - an IndexedDB store (`claxedo-conversations-v2`) with no size or age limit;
+  - a message-prefetch copy.
+- **Every streamed text delta:**
+  - copies the message and part arrays;
+  - makes `setQueryData` walk the whole value for structural sharing;
+  - queues an IndexedDB write with no debounce, twice.
+- **Session rows live in six caches** kept in step by hand. Event handlers write rows with `setQueryData`, then invalidation "doorbells" refetch what they just wrote. The code documents the races.
+- **Session status has 25 writers.** A timer ladder (8 s, 20 s, 45 s, 5 min) makes up a `retry` status. More polls run: a 5 s status poll after 60 s, the rail's 5 s poll, the queue every 1 s, processes every 5 s, health every 20 s, the server every 10 s.
+- **The query cache holds things that aren't data:** in-flight Promises and counters.
+- **Query keys are scattered:** 7 key families with 34 builders, an open-ended shell key space, 31 literal keys written in place, and 9 harness key builders.
+- **Persistence:**
+  - 19 `persisted()` sites and about 20 raw `localStorage` uses;
+  - a hand-written IndexedDB query persister, which drops its whole snapshot past 2 MiB.
+- **Libraries used for little:** `@tanstack/ai` and `@tanstack/ai-client` serve only as a message-array holder and an IndexedDB persistor; their connection is a no-op. `@solid-primitives/event-bus` re-emits frames per scope inside an effect with no cleanup.
+
+**The redesign.** One mechanism per kind of data, one home per entity, and a library for every generic part.
+
+| Kind of data | Home | Library |
+| --- | --- | --- |
+| Data the server pushes: session rows, status, the transcript (messages and parts), permission and question requests, todos | One normalized Solid store per domain, fed by the snapshot and the stream through the adapter | `solid-js/store`: a text delta updates one text node, with no copies and no deep compare |
+| Data the app fetches: projects, machines, accounts and providers, tasks, the documents index, Marketplace, usage, the file tree, file content and status, git status and log, diffs on demand | The TanStack Query cache | `@tanstack/solid-query`, kept: caching, dedup, pagination, retries and background refetch are not ours to write |
+| Preferences | `makePersisted`, keyed by user and `SessionRef` | `@solid-primitives/storage`, kept |
+| The warm-boot transcript cache, only if the benchmark needs it | IndexedDB, written when a turn ends, never per delta, with a size cap | `idb-keyval`, kept |
+| The event stream | An SSE client that resumes by `Last-Event-ID` | A maintained SSE library in place of today's hand-written 753-line client; a P0 spike picks between `eventsource` (with a custom fetch) and `eventsource-parser` |
+| State machines | `machine()` | None, because a ~100-line helper covers flat state unions |
+
+**Rules:**
+1. **Every entity has one home.** Pushed data never enters the query cache, and fetched data is never copied into a store.
+2. **Events never write into the query cache.** They invalidate, through one table in `src/server/` that maps each event to query keys. `setQueryData` is used only for a mutation's own result, inside `src/server/`.
+3. **Query keys come only from the query options** exported by `src/server/<area>.ts`.
+4. **The query cache holds only server data:** no Promises, counters or UI state.
+5. **Cache timing:** `staleTime` is infinite for data an event invalidates, and `gcTime` is bounded. Retries happen only for the `network` and `rate_limit` error classes.
+6. **Streaming deltas** are coalesced per animation frame and applied in place. Nothing is copied or persisted per delta.
+7. **Every cache has a bound:**
+   - transcript stores for the 8 most recently open sessions;
+   - a 10-minute `gcTime`;
+   - IndexedDB at 20 sessions or 64 MiB.
+8. **Status comes only from server facts.** No timer makes up a status.
+9. **No app-wide event bus.** The adapter hands each frame to the domain stores through one typed switch.
+10. **The transcript keeps the timeline's input shape.** The store produces the rows the timeline builds from today, and `@tanstack/ai`'s message wrapper goes.
+
+**Dropped:**
+- `@tanstack/ai`, `@tanstack/ai-client` and `@tanstack/ai-solid`;
+- `@solid-primitives/event-bus`;
+- the hand-written query persister;
+- the conversation registry, hydrator and persistor.
+
+**Not adopted:**
+- **TanStack DB:**
+  - it is beta (0.9), and its Solid adapter has only `useLiveQuery`;
+  - each streamed delta would run a dataflow pass.
+  - Revisit it at 1.0, for the session list.
+- **TinyBase, LiveStore, Zero and Electric:** each brings its own sync model or server protocol.
+
+**Why it matters for speed (to be measured in P2):** each delta goes from several whole-array copies, a deep compare and two IndexedDB writes to one in-place update per frame. That is the likeliest lever for the idle-CPU and long-row targets.
+
+## The projects route
+
+You approved one projects route that the local server, the self-hosted app and the hosted worker all serve the same way.
+
+**Today:**
+- **Local.**
+  - `claxedo-local-server/src/workspace/routes/projects-route.ts` serves `/api/claxedo/projects`: list, create, `by-directory`, and name and environment edits.
+  - Records live in the server-core workspace store (`workspaces.json`).
+  - A project's id is its root workspace's UUID, and worktrees share it through `repo_key`.
+- **Self-hosted** mounts the same router, and files a SQLite authority row under the local id.
+- **Hosted** has no projects route.
+  - A cloud-workspace create derives the project from `(org_id, repo_key)` or mints a `prj_…` id, and inserts rows into `projects` and `project_memberships`.
+  - The D1 `projects` table has no name or environment column.
+  - Hosted `GET /project` groups projects out of the workspace list, using name heuristics.
+
+**The change:**
+- **One route module in server-core,** `/api/claxedo/projects`, over a `ProjectStore` port:
+
+  | Endpoint | Does |
+  | --- | --- |
+  | `GET /` | List the projects the caller may read |
+  | `POST /` | Create from a source: a repository (URL, or connection + full name), or a folder on a machine |
+  | `GET /:id` | Read one project |
+  | `PATCH /:id` | Rename; set its environment |
+  | `DELETE /:id` | Remove the project and unregister its placements. Folders on disk are untouched; cloud workspaces must be deleted first (409) |
+
+- **Two store adapters:**
+  - the local one wraps today's workspace store;
+  - the D1 one adds `name` and `env` columns by migration. It reuses the `repo_key` derivation, so a project created first and one created by a cloud-workspace create agree on ids.
+- **Mounted three times:** by the desktop's local server, the self-hosted app and the hosted worker.
+- **Access:** checked through the one access policy ([Roles, permissions and orgs](#roles-permissions-and-orgs)).
+- **Ids:** opaque and minted per deployment (a UUID locally, `prj_…` on hosted). The app never parses them.
+
+**Deleted at the swap** (they serve only the old app):
+- `projectName` on cloud-workspace create: `createCloudBody`, `CreateCloudWorkspaceInput`, and the desktop's forwarded body;
+- the onboarding's hosted `draftProjectName` branch;
+- the `signedShellProjects` name heuristics and the synthetic `hostedProject()` in `routes/hosted/shell.ts`;
+- `GET /by-directory`, because v2 never looks a project up by folder;
+- the hosted-operation inventory's exemption for the missing route;
+- the OpenCode-shaped `/project` and `/project/current` routes, once nothing but the old app reads them.
+
+**Verification:** flows 2 and 32 run against both the local server and the hosted worker, and each reads the project back by id.
+
+## Roles, permissions and orgs
+
+This section is the one place the plan defines who may do what. In the app, `src/access/` is the one place that code lives.
+
+**Two different words.**
+- **Access** is who may do what: org roles, session shares, machine ownership.
+- **Agent requests** are an agent asking to run a tool, or asking a question. The UI keeps the word "permission" for those prompts.
+- **In code the two never share a name.** Access lives in `src/access/`, and agent requests in `src/session/requests/`.
+- **Today they collide.** The runtime's access table lists agent-prompt operations (`permission_list`, `permission_response`). The app has a stub `/permissions` page and, in `composer/role-gate.ts`, mixes access with permission modes.
+
+**The model**, from your rulings:
+
+| Concept | What it is | What it grants |
+| --- | --- | --- |
+| User | A signed-in person, or the machine's own identity when unsigned | — |
+| Org | A group of people | Nothing on any machine, folder or project |
+| Org role | Owner, admin or member | Owners and admins manage the org's provider accounts, org plugins and network policy. Members manage nothing. |
+| Machine | A computer running Claxedo, owned by one user | Only its owner runs agents, opens terminals and reads folders on it |
+| Project and its placements | A record with an id, and where it runs | Its owner's. Others see it only through a shared session. |
+| Session share | The only grant between people: **follow** (read) or **send** (read and prompt) | That one session, until revoked. A share never controls the machine. |
+| Provider account | Chosen per user, per provider: an org account or a personal one | Only the machine owner may fall back to the machine's own keys and logins |
+
+**Today, in code:**
+- **About 28 places on the server decide access, in three vocabularies:**
+  - the control plane, with SQLite and D1 twins of each rule;
+  - the runtime's `SessionAccessPolicy`, `denyWorkspaceViewers` and host-capability checks;
+  - the relay's `roleAllowsRelayRequest`.
+- **Where the server disagrees with your rulings:**
+  - An org owner or admin ranks as admin on every org workspace, members' machines included (`orgWorkspaceRole`).
+  - Team grants give roles on projects (`grantTeamProject`).
+  - A `send` share can answer agent prompts, because `permission_response` counts as an agent-turn operation.
+- **The members list has no server route.** Adding or removing members has none; `addOrganizationMember` has no caller.
+- **The app:**
+  - it copies the relay's and runtime's rules on the client (`RolePolicy` and `can()` in `platform/auth/role.tsx`);
+  - it doesn't gate the org and team screens on role, so the server answers 403 instead;
+  - it keeps the active org and team only in browser storage, where nothing else reads them.
+
+**v2's `src/access/` domain:**
+- **It holds** the principal, the user's org and role, the member list, and each session's shares.
+- **It has one `can(action, subject)`.** It answers only from facts the server reports: the runtime's `capabilities.prompt`, the session's `can_manage_shares`, and the org role. It never re-derives a server rule, so `RolePolicy` goes.
+- **Screens:**
+  - one Settings page, **Organization**: members, roles, the org's provider accounts;
+  - the share control on a session: follow or send, and revoke;
+  - no team screens, unless you keep teams (open decision 3);
+  - no org switcher, because today's server resolves one org per user.
+- **Flow 36** checks the rules today's server already enforces:
+  - org settings open only to owners and admins;
+  - a follow share reads, a send share prompts, and revoking ends both.
+
+**On the server (open decision 1).** One policy module in server-core would hold the table above.
+- Every one of the ~28 sites asks it.
+- SQLite and D1 only fetch facts.
+- The relay and runtime read the same table through their token claims.
+
+That removes the three disagreements above. It touches the security boundary everywhere, so I recommend running it as its own slice right after this push, with its own flows and review.
+
+## The app shell
+
+**Today.** The shell is spread across `app/`, about 46k lines:
+- **Size:**
+  - `app/workbench` is 24.8k: the rail 8.5k, workbench state and route sync 6.2k, the workbench 2.8k, review 1.9k;
+  - then `app/integrations` 4.8k, `app/providers` 4.6k, `app/dialogs` 2.2k, `app/routes` 1.7k, and entry, boot and composition 3.6k.
+- **Pages are panes.** Marketplace, Tasks and the Pages index are workbench content types beside sessions and terminals, so they split, drag and persist like panes.
+- **Settings is its own route.** `/settings/<section>` swaps the rail for `settings-nav.tsx`, which copies the rail's row component.
+- **Routing and layout state are tangled.** `ShellRoute` still has a `legacy-directory` kind, layout state has seven owners, and `route-bridge.tsx` alone runs past 690 lines.
+- **Phone behavior is scattered** across `ui/controls/breakpoints.ts`, the workbench, the workspace panel, the terminal accessory row and the browser pane.
+
+**v2: three regions and one page tab**, your structure:
+
+| Region | Holds | Behavior | On a phone |
+| --- | --- | --- | --- |
+| Left sidebar | **Main** mode: projects, sessions, and rows for Tasks, Pages and Marketplace. **Settings** mode: the settings sections | Resizable, collapsible | A drawer |
+| Workbench (center) | Split panes: sessions and drafts, terminals, files, Pages documents | Split, tabs, drag, restore | One pane at a time, with a pane switcher in the top bar |
+| Page tab (center) | One reusable tab for Marketplace, Tasks, Settings, the Pages index and plugin pages | No split, no drag; opening another page reuses it; its state is the URL | Full screen |
+| Workspace panel (right) | Tabs: Files, Changes, Browser, Subagents, Context | Resizable, collapsible | A sheet |
+
+**The component.** `src/shell/` draws the regions and knows nothing about features:
+
+```tsx
+<AppShell
+  sidebar={{ mode: route.sidebarMode, main: <MainSidebar />, settings: <SettingsSidebar /> }}
+  center={route.page ? { kind: "page", page: route.page } : { kind: "panes" }}
+  panel={{ tabs: panelTabs() }}
+/>
+```
+
+- **What it owns:** resizing, collapsing, the phone drawer, sheet and pane switcher, focus order, and one error boundary per region.
+- **Region state:** one `ShellLayout` machine holds each region's state (open, collapsed, drawer, sheet).
+- **The URL is the source of truth** for the center (a page, or the active pane) and for the sidebar mode. A settings path means settings mode.
+- **Preferences:** the pane layout and the panel's width and tab are per-user preferences, kept per project.
+
+**What fills it: typed registries, one entry type per region.**
+- **The types:**
+  - `PageEntry`: `id`, `path`, `title`, `icon`, `sidebar: "main" | "settings"`, `view`;
+  - `PaneKind`: `kind`, `title`, `view`, `restore`;
+  - `PanelTab`;
+  - `SettingsSection`.
+- **First-party entries** are static arrays in `src/shell/registry.ts`, so every page, pane kind and tab can be found in one file.
+- **Plugins** add entries of the same types while they are on. Marketplace is a first-party `PageEntry`; Tasks and Pages register theirs.
+
+**Routes, by id only:**
+- `/w/<workspaceId>/s/<sessionId>` and `/w/<workspaceId>/t/<terminalId>`;
+- `/marketplace`, `/settings/<section>`, and each page's own path (`/tasks/<taskId>`, `/pages`);
+- no directory routes, and no `legacy-directory`.
+
+**Size.** The frame (regions, the layout machine, the router, the registries, phone behavior) targets about 1.5k lines within the shell budget. The sidebar's contents, the panes and the panel tabs belong to their domains.
+
 ## How plugins work (now)
 
-**Scope.** Only first-party plugins, bundled from `plugins/` and switched on or off in Settings. Third-party app plugins, plugin backends and plugin machine code come later, when a need appears.
+**Scope.**
+- **First-party plugins** are bundled from `plugins/`.
+- **User plugins** are prompted from inside the app and applied live ([Live plugins](#live-plugins)).
+- **Not now:** plugins that run on the server or on hosted cloud workspaces come later.
+- Every plugin can be switched on or off in Settings.
 
-A plugin is a package with a small manifest and an app entry: `activate(api)` registers what it contributes. The host gives it only what the four plugins use.
+A plugin is a package with a small manifest and an app entry: `activate(api)` registers what it contributes. The host gives it only what the four first-party plugins use, and user plugins get the same API.
 
 | Primitive | Used by |
 | --- | --- |
-| `slots.navPanel`: a rail item that opens a panel | Tasks, Pages |
-| `slots.pane`: a workbench pane type with its own tab and restore state | Pages editor |
-| `slots.settingsSection` | Tasks presets |
-| `slots.overlay`: a keyboard-invoked overlay | Compact tabs |
+| `sidebar.item`: a row in the main sidebar that opens a page | Tasks, Pages |
+| `pages.register`: a page in the page tab, with its own path | Tasks, Pages |
+| `panes.register`: a pane kind in the workbench, with its restore state | Pages documents |
+| `settings.section`: a section in the settings sidebar and page | Tasks presets |
+| `overlays.register`: a keyboard-invoked overlay | Compact tabs |
 | `commands.register`, with keybindings | all |
 | `mentions.register`: items in the composer's `@` menu | Tasks, Pages |
 | `workbench`: list tabs with status, activate, close, move | Compact tabs |
@@ -437,7 +712,25 @@ A plugin is a package with a small manifest and an app entry: `activate(api)` re
 | `server`: authenticated calls through the adapter, limited to what the manifest names. That is route prefixes on the Claxedo server (Tasks: `/api/claxedo/tasks`) and control-plane operations (Pages: `documents.*`, which the adapter sends to the control plane when signed and to the daemon's `/documents` routes when not, as today). | Tasks, Pages |
 | `context`, `ui` (toast, confirm), `i18n.t` | all |
 
-Each slot renders inside an error boundary, so a failing plugin can't take down the app. Each slot also has a phone layout.
+Every contribution renders inside the plugin's error boundary, so a failing plugin can't take down the app, and it gets the shell's phone behavior.
+
+### At runtime
+
+1. **Build.** The four plugins are workspace packages under `plugins/`, listed in `src/plugins/bundled.ts` by static import. Their heavy views load through `import()` with literal paths, so bundles stay split and the import graph stays readable.
+2. **Boot.** Once the adapter has a connection and `Capabilities`, the host checks each plugin. A plugin activates when both of these hold:
+   - the user hasn't switched it off (a per-user preference; on by default);
+   - its `requires` are met: Tasks needs the tasks route on the connected server, and Pages needs the documents API.
+3. **Activate.** The host runs `activate(api)` inside a Solid root that belongs to the plugin. Every registration (`sidebar.item`, `pages.register`, `commands.register`, …) adds an entry to the shell's registries, tagged with the plugin's id, and removes it again when that root is disposed.
+4. **Render.** The regions read the registries reactively. The plugin's rows, pages, panes and commands appear without a reload, each inside the plugin's error boundary.
+5. **Change.**
+   - Switching a plugin off disposes its root. All its entries disappear, and an open page or pane of its kind shows "plugin off" in place.
+   - Switching it on activates it again.
+   - When capabilities change (sign-in, sign-out, another server), the host re-checks `requires` and activates or disposes to match.
+6. **Failure.** If `activate` throws, the plugin's machine moves to `failed(reason)`, its root is disposed, and Settings shows why. A render error stays inside the boundary where it happened.
+
+**Trust.**
+- **First-party plugins, and user plugins on desktop,** run in the app's own JavaScript. The manifest's route list catches mistakes; it is not a sandbox.
+- **On the web,** user plugins run in a sandboxed iframe ([Live plugins](#live-plugins)).
 
 **Parity lists:**
 - **Tasks:** create a task (title, Markdown, images, To do/Backlog, project); list and board views with filters; presets; Start → a session with the task as the first message; agents' task tools keep working, because the server side is unchanged.
@@ -454,6 +747,62 @@ Each slot renders inside an error boundary, so a failing plugin can't take down 
 - **Status:** both Cloudflare features are open beta on Workers Paid.
 
 It is not built in this slice.
+
+## Live plugins
+
+A user asks an agent, inside the app, for a plugin, and the running app picks it up without a reload.
+
+**How bb does it** (read from `~/test/bb`):
+1. **Create.** The agent scaffolds a plugin package and registers its folder in place.
+2. **Rebuild.** A dev loop rebuilds with esbuild on every save and tells the server to reload.
+3. **Swap.** The server swaps the plugin's backend inside its own process, serves the frontend as a hashed bundle, and broadcasts `plugins-changed`.
+4. **Reload clients.** Every open client imports the new bundle and swaps its slot registrations. The new version starts before the old one is disposed, and a failed load keeps the old one.
+5. **Learning the API.** The agent learns it from a skill that the `bb-guide` plugin adds to every session.
+6. **Trust.** There is no sandbox. Plugins are full trust, gated only by an install confirmation, and each slot has an error boundary.
+
+**In Claxedo:**
+1. **One format.** A plugin is a package whose `package.json` has a `claxedo` block: `id`, `name`, the `app` entry, `requires`, and the server routes it may call. The four first-party plugins use the same format.
+2. **Where it lives.** Any folder on the user's machine, registered in place with the daemon (`claxedo plugin add <dir>`). The registry belongs to the machine's owner.
+3. **Build.** The daemon watches registered folders, builds them with esbuild, and serves each build as a hashed, immutable bundle. The app provides `solid-js`, the plugin API and the v2 kit at runtime, so plugins stay small and look native.
+4. **Notify and swap.** The daemon sends `plugins.changed` on the stream the app already reads.
+   - The host activates the new version in a fresh root, then disposes the old one.
+   - A version that fails to activate leaves the old one running and shows the error.
+5. **Where it runs, by your ruling:**
+   - **Desktop:** in the app's own JavaScript, with the app's full reach, at the user's own risk. Adding a plugin asks for confirmation once.
+   - **Web:** in a sandboxed iframe (`sandbox="allow-scripts"`, no same-origin) placed in the plugin's page, pane or panel tab.
+     - The plugin API reaches the iframe over `postMessage`, limited to the manifest's primitives and routes.
+     - The host passes the v2 tokens in, so the plugin looks close to native.
+6. **Prompting.**
+   - A `claxedo-plugin-authoring` skill, added to every session, carries the API reference and examples.
+   - The CLI gets `claxedo plugin new | add | dev | check`; `check` typechecks against the API, then builds.
+   - "Make me a plugin that …" ends with the plugin live in the app.
+7. **Safety nets:**
+   - an error boundary per contribution;
+   - Settings → Plugins lists every plugin, with on, off and remove;
+   - safe mode starts the app with every user plugin off;
+   - a user's plugins load only in that user's app, never in someone else's view of a shared session.
+8. **Not in this slice:** user plugins running on the server, and plugins for hosted cloud workspaces.
+
+**New daemon pieces:**
+- `GET /api/claxedo/plugins`;
+- the bundle route, `GET /api/claxedo/plugins/:id/:hash/app.js`;
+- add and remove;
+- the folder watcher and build;
+- the `plugins.changed` event.
+
+**A2UI as the UI shape.** I read a2ui.org.
+- **What it is:**
+  - a declarative UI protocol from Google, under Apache-2.0;
+  - v0.9.1 is current, and v1.0 is a candidate whose stable release is targeted for Q4 2026. It calls itself an early public preview.
+- **How it works.** An agent sends JSON surfaces built only from a component catalog the app owns. The app renders them natively and routes their actions to its own handlers.
+- **Strengths:**
+  - It is data, not code, so it is safe anywhere, even on the web without an iframe.
+  - It could use the v2 kit as its catalog.
+- **Limits:**
+  - It has no logic: no expressions and no conditionals, only a few format and validation functions.
+  - The basic catalog has no charts or tables.
+  - There is no SolidJS renderer. We would write one over `@a2ui/web_core`, which also brings Preact signals and Zod.
+- **Recommendation:** plugins stay code (`activate(api)`), because a prompted plugin usually needs logic. A2UI fits later for agent-generated UI inside the transcript, where the agent sends data rather than code. It is not in this slice.
 
 ## Retiring OpenCode naming
 
@@ -495,7 +844,8 @@ Inside the app, only Claxedo names. The server keeps its names in this slice, an
 | File view | loading, ready, missing, failed(class) | review and files |
 | Cloud workspace | provisioning, starting, ready, stopping, stopped, failed(reason) | cloud |
 | Remote access | off, publishing, published, paused, failed(reason) | machines |
-| Plugin | off, loading, on, failed(reason) | plugin host |
+| Plugin | off, loading, on(version), swapping(to version), failed(reason) | plugin host |
+| Shell layout | each side region: open, collapsed, or on a phone drawer or sheet (open or closed); the center: panes or page(ref) | shell |
 | Onboarding | one state per step, plus done | onboarding |
 
 The transcript's own state stays as it is today (moved, not rebuilt).
@@ -517,10 +867,11 @@ Every rule a machine can check is checked. These checks run over `packages/claxe
 | Adapter boundary | An import of `src/server/wire/` from outside `src/server/` |
 | No swallowed errors | `.catch(() =>`, an empty `catch`, matching on error text outside `src/server/errors.ts` |
 | No polling | `setInterval`, and `setTimeout` loops outside the named owners: the stream reconnect, and `status.ts` if P0.7 finds harness status that never arrives |
-| One store | A query-library import; module-level mutable `let` in a domain |
+| One home per datum | `setQueryData` or `setQueriesData` outside `src/server/`; a literal query key; an `@tanstack/ai*` or event-bus import; a query for pushed data (sessions, transcript, status, requests); module-level mutable `let` in a domain |
 | Domain boundaries | An import of another domain except through its `index.ts` |
 | One owner | The same exported name defined in two domains; duplicated blocks over 25 lines |
 | No directory identity | A folder path used as a key, a route parameter or a stored project identity outside `src/server/` |
+| Access boundary | A role, rank or share rule outside `src/access/`: comparing role names, or reading `capabilities.prompt` or `can_manage_shares` anywhere else |
 | Protected areas | A change under `src/transcript/`, the timeline or `src/session/list/` in a CI run that skipped flows 30 or 31 |
 | e2e hygiene | A CSS-class selector, `waitForTimeout`, a spec without its flow number, or a mock of a Claxedo component |
 
@@ -577,7 +928,7 @@ A flow marked **B** (baseline) must pass on today's app and on v2. A flow marked
 | 9 | Subagents: created by the agent, opened, navigated | local web | B |
 | 10 | Session list: flat order, live status for a harness session (working → waiting → idle), archive, rename, delete, search | local web | N |
 | 11 | Long transcript: virtualization, prepend anchors, find, file link → file tab | local web | B |
-| 12 | Workbench: split, tabs, drag, command palette | local web | B |
+| 12 | Workbench and shell: split, tabs, drag, command palette. Marketplace, Tasks and Settings open in the one page tab, which can't be split or dragged. Settings switches the sidebar to settings mode | local web | N |
 | 13 | Terminal: run a command, reload → replay, TUI exit leaves no mouse garbage, multi-line link opens the file at the line, agent status in the terminal | desktop | B |
 | 14 | Review: diff, line comment → agent, commit, push to a local bare remote, worktree | local web | B |
 | 15 | Settings: accounts per agent, machine logins, theme, keybindings | local web | B |
@@ -599,6 +950,9 @@ A flow marked **B** (baseline) must pass on today's app and on v2. A flow marked
 | 31 | Session-list races: the cases in [Session sidebar](#2-session-sidebar-one-owner-written-reconcile-rules); the visible list equals the server's list and statuses at the end | local web, two browsers | N |
 | 32 | Add a project, hosted first: signed web → repo → AI → cloud workspace; the project id read back; a deep link by id | Worker + local driver | N |
 | 33 | Phone: flows 3, 6, 8, 10, 15, 18 and 19 at 390×844 with touch; the drawer and sheets; no horizontal scroll; an axe sweep | local web, `phone` project | B |
+| 34 | Live plugin on desktop: a scripted agent turn creates a plugin; the daemon builds it; its page appears without a reload; an edit swaps it; a broken edit keeps the old version and shows the error; switching it off removes it | desktop | N |
+| 35 | Live plugin on the web: the same plugin renders in a sandboxed iframe, works through the bridge, and can't read the app's storage or DOM | local web | N |
+| 36 | Access: the Organization page and org settings open only to owners and admins; a follow share reads, a send share prompts, revoking ends both | Worker + relay, two browsers | N |
 
 **Budget:** ≤ 16k lines for the suite and harness together; the corpus data is JSON and not counted. Transcript screenshots from today's app must match v2; other screens get new baselines on v2.
 
@@ -657,14 +1011,14 @@ Each phase ends green on the e2e flows that exist so far, on the five e2e criter
   - `packages/claxedo-app` is copied to `packages/claxedo-app-v2`, without `perf-harness/`, unit tests or Storybook files.
   - Its package is renamed `@claxedo/app-v2`, with its own dev port.
   - The desktop gets `dev:v2` and `package:mac:v2` targets, and CI gets a v2 job.
-  - `AGENTS.md` (Appendix A) and `CLAUDE.md` (`@AGENTS.md`) are written into it; the 35 copied `AGENTS.md` files are removed.
+  - `AGENTS.md` (Appendix A) replaces the copied package-root one, and `CLAUDE.md` (`@AGENTS.md`) is added. The other 7 copied `AGENTS.md` files are removed.
   - v2 runs exactly like today's app.
   - `Progress:`
 - [ ] **P0.2 Benchmark driver out of the app.** The driver lives in the benchmark repo with the two hook maps. Baseline runs of today's packaged app are recorded (3 runs, gate host). `Progress:`
 - [ ] **P0.3 e2e harness** in `claxedo-app-v2/e2e`: scripted ACP agent, scripted model server wired to the real Claude and Codex CLIs, `wrangler dev` Worker and relay, local sandbox driver, desktop launcher, the `phone` project, `--app=v1|v2`. The harness start time and one warm flow are measured against the "fast" targets. `Progress:`
 - [ ] **P0.4 v1 measured.** v1's coverage map (all 58 specs), durations, and flake rate over its last 20 CI runs are recorded. v2 must beat all of them. `Progress:`
 - [ ] **P0.5 Baseline flows.** Every **B** flow passes on today's app, with its recorded red run; 20 local runs green each. Transcript screenshots are recorded. `Progress:`
-- [ ] **P0.6 Checks.** The thirteen checks run over `claxedo-app-v2` and `plugins/`. The per-part line budget ratchet starts at the copy's size and can only go down. `Progress:`
+- [ ] **P0.6 Checks.** The fourteen checks run over `claxedo-app-v2` and `plugins/`. The per-part line budget ratchet starts at the copy's size and can only go down. `Progress:`
 - [ ] **P0.7 Harness status on today's stream.** On the real stack, scripted Claude and ACP turns run while a probe records which `session.status`, `session.idle`, `session.error`, `permission.asked` and `question.asked` frames arrive on the stream the app reads. The result decides whether `status.ts` needs its re-read ([Where today's contract falls short](#where-todays-contract-falls-short)). `Progress:`
 - [ ] **P0.8 Transcript corpus.**
   - The corpus is built from the seeds.
@@ -674,7 +1028,7 @@ Each phase ends green on the e2e flows that exist so far, on the five e2e criter
   - Flow 30 is green on today's app.
   - `Progress:`
 - [ ] **P0.9 Session list.** The reconcile rules are written into `src/session/list/README.md`. Flow 31 is written and run on today's app, and its results are recorded. `Progress:`
-- [ ] **P0.10 Projects.** Today's project contract is mapped, locally and on hosted: create, list, rename, remove, and the id each one returns. That includes a signed web user adding a project for a connected machine through the relay. `Progress:`
+- [ ] **P0.10 Projects.** The projects route's contract is fixed from the mapped facts ([The projects route](#the-projects-route)), and flows 2 and 32 are written against it. That includes a signed web user adding a project for a connected machine through the relay. `Progress:`
 
 ### P1 — The server adapter, the v2 kit and the transcript move (in parallel)
 
@@ -683,6 +1037,11 @@ Each phase ends green on the e2e flows that exist so far, on the five e2e criter
   - Streams resume by `Last-Event-ID` and re-read after a `stream.replay-gap`.
   - The rest of v2 imports only its Claxedo-typed surface.
   - The wire code scattered through `platform/*` and `features/*` is deleted.
+  - `Progress:`
+- [ ] **Projects route.**
+  - One route module and a `ProjectStore` port in server-core, with the local adapter and the D1 adapter plus its migration.
+  - It is mounted by the local server, the self-hosted app and the hosted worker.
+  - `projects.ts` in the adapter uses only this route.
   - `Progress:`
 - [ ] **Status.** `status.ts` reads status from the snapshot and the stream. It keeps the one 5-second re-read only if P0.7 found harness status changes that never arrive. `Progress:`
 - [ ] **Kit.** `src/ui/` with v2 components and tokens only, Claxedo names, no comments, each component checked at phone width. The no-twin components are restyled into v2, and upstream's four missing v2 components are vendored. `Progress:`
@@ -704,7 +1063,12 @@ Each phase ends green on the e2e flows that exist so far, on the five e2e criter
 ### P3 — Rail, workbench, browser tabs, terminal, review
 
 - [ ] Flat rail over the session list store, with live status from the adapter's one status owner, and the phone drawer. Flows 10 and 31 pass. `Progress:`
-- [ ] One workbench state owner, with phone sheets; the layout twins are deleted; flow 12 passes. `Progress:`
+- [ ] **The shell:**
+  - three regions and one page tab over typed registries;
+  - one workbench state owner;
+  - the phone drawer, sheet and pane switcher.
+  - The layout twins are deleted, and flow 12 passes.
+  - `Progress:`
 - [ ] Browser tabs on v2 over today's desktop bridge and web preview; flow 27 passes. `Progress:`
 - [ ] Terminal on one attach path, links kept; the client replay twin is deleted; flow 13 passes. `Progress:`
 - [ ] Review, git and files on one file store; flow 14 passes; the panel-open row is measured (target ≤ 250 ms). `Progress:`
@@ -717,63 +1081,117 @@ Each phase ends green on the e2e flows that exist so far, on the five e2e criter
 - [ ] Cloud workspaces; flow 24 passes. `Progress:`
 - [ ] Onboarding (on the new project flow) and usage; flows 1 and 16 pass. `Progress:`
 - [ ] Team flows; flow 23 passes. `Progress:`
+- [ ] **Access.**
+  - `src/access/` with one `can()` that answers from server facts, and the Organization page.
+  - `RolePolicy` is deleted.
+  - Flow 36 passes.
+  - `Progress:`
 - [ ] Marketplace for agent plugins; flow 17 passes. `Progress:`
 
-### P5 — Plugin host and the four plugins
+### P5 — Plugin host, the four plugins and live plugins
 
 - [ ] The plugin host with the primitives in [How plugins work](#how-plugins-work-now), error boundaries, and on/off in Settings; flow 20 passes. `Progress:`
 - [ ] Tasks (flow 18) and Pages (flow 19). `Progress:`
 - [ ] Compact tabs (flow 28) and the Codex theme (flow 29). `Progress:`
+- [ ] **Live plugins.**
+  - The daemon registers, builds, serves and watches plugins, and sends `plugins.changed`.
+  - The host loads plugins and swaps them live: in the app's JavaScript on desktop, and through the iframe bridge on the web.
+  - The CLI's `plugin` commands and the authoring skill are in place.
+  - Flows 34 and 35 pass.
+  - `Progress:`
 
 ### P6 — Your test and the swap
 
 - [ ] **Ready for you:**
-  - all 33 flows green on v2, flow 33 on every screen;
+  - all 36 flows green on v2, flow 33 on every screen;
   - the five e2e criteria met, including the coverage map against v1;
   - every check at zero;
-  - the v2 line budget ≤ 93k;
+  - the v2 line budget ≤ 94k;
   - the benchmark verdict passes (packaged today vs packaged v2, three runs).
   - `Progress:`
 - [ ] **You test** v2 on web, phone width, desktop dev and the packaged build, and approve. `Progress:`
 - [ ] **The swap, one change:**
   - delete `packages/claxedo-app`, `packages/ui`, `packages/session-ui` and `packages/storybook`;
   - rename `packages/claxedo-app-v2` → `packages/claxedo-app` and `@claxedo/app-v2` → `@claxedo/app`;
+  - delete every server path only the old app used, including the project paths listed in [The projects route](#the-projects-route);
   - remove the desktop v2 targets, the v2 CI job and the perf-harness workflow steps;
   - point the desktop's two remaining kit imports at the app.
   - `Progress:`
-- [ ] **After the swap:** all 33 flows, the five e2e criteria, every check and the benchmark pass again on the renamed app. `Progress:`
+- [ ] **After the swap:** all 36 flows, the five e2e criteria, every check and the benchmark pass again on the renamed app. `Progress:`
 
-## Execution: parallel lanes
+## Execution: the 6-hour push
 
-Use parallel agents with disjoint file ownership, and a Workflow for the flow-writing and verification fan-outs. Each lane owns its files. A lane that needs another lane's file sends the change to its owner.
+The aim is P0–P5 in one 6-hour push with parallel agents, then your test and the swap.
 
-| Lane | Owns | Starts after | Delivers |
-| --- | --- | --- | --- |
-| **Setup** | the copy, `claxedo-app-v2/package.json`, `AGENTS.md`/`CLAUDE.md`, the desktop v2 targets, the v2 CI job | now | P0.1 |
-| **E2E** | `claxedo-app-v2/e2e/**`, apart from the corpus | P0.1 | P0.3–P0.5, P0.7, P0.9; then each phase's flows and the five criteria |
-| **Bench** | the benchmark repo's `drivers/claxedo/` | now | P0.2, the gate in P6 |
-| **Checks** | `script/` checks and the v2 budget baseline | P0.1 | P0.6 |
-| **Transcript** | `claxedo-app-v2/src/transcript/**`, `src/session/view/timeline/**`, `e2e/corpus/**` | P0.1 | P0.8, the P1 transcript move, flow 30 at every gate |
-| **Adapter** | `claxedo-app-v2/src/server/**` | P0.1 | P0.10, the P1 adapter and status; answers every other lane's server needs |
-| **Kit** | `claxedo-app-v2/src/ui/**` | P0.1 | P1 kit |
-| **Session** | `claxedo-app-v2/src/{session,composer}/**`, apart from the timeline | the adapter's session surface frozen | P2 |
-| **Workbench** | `claxedo-app-v2/src/{rail,workbench,browser,terminal,review,files}/**` | P2's store APIs frozen | P3 |
-| **Shell** | `claxedo-app-v2/src/{shell,auth,projects,settings,cloud,machines,onboarding,usage,marketplace}/**` | P2's store APIs frozen | P4 |
-| **Plugins** | `claxedo-app-v2/src/plugins/**` (the host), `plugins/*` | P3 | P5 |
+**How it stays parallel:**
+- **A dedicated worktree.** `~/test/opencode-app-v2` on `feat/app-v2` off `dev`, with its own install, because other sessions sweep the main worktree's index with `git add -A`.
+- **Contracts first.** In the first 45 minutes the orchestrator makes the copy (P0.1) and freezes the types every lane builds against:
+  - `src/server/index.ts`: sessions, status, projects, placements, capabilities, errors;
+  - the session, session-list and project store APIs;
+  - the shell's regions and registry entry types;
+  - the plugin API;
+  - `machine()`.
+  - A change to any of them goes through the orchestrator.
+- **Disjoint files.** Each lane owns its files. The shared ones belong to the orchestrator: `src/shell/registry.ts`, the router and `package.json`.
 
-- **Review.** Every lane's slice gets an adversarial review before it merges. A "done" row from an agent is a claim until the flows, the five criteria and the checks say so. The transcript, the session list and projects get a second reviewer.
-- **Workflows:**
-  - In P0.5, fan out one agent per flow to write specs (33 flows, each with its red run).
-  - In P0.8, fan out agents over the 95 transcript fix commits (about ten each) and over the transcript comments, turning each into a corpus case, a README line or a deletion.
-  - In P1–P5, fan out a review agent per deleted-file group, which checks that nothing in v2 still imports it.
-- **Shared worktree.** Commit with `git commit --only <paths>`. Other sessions sweep the index with `git add -A`.
+| Lane | Owns | Delivers |
+| --- | --- | --- |
+| **Harness** | `e2e/**`, apart from the corpus | P0.3–P0.5, P0.7, P0.9; flows as the other lanes land |
+| **Bench** | the benchmark repo's `drivers/claxedo/` | P0.2; one packaged benchmark run at the end |
+| **Checks** | `script/` checks and the v2 budget baseline | P0.6 |
+| **Transcript** | `src/transcript/**`, `src/session/view/timeline/**`, `e2e/corpus/**` | P0.8; the transcript move; flow 30 |
+| **Adapter** | `src/server/**` | P0.10; the adapter and status |
+| **Server** | the projects route in server-core, its D1 migration and its three mounts | the projects route; the old-path deletions at the swap |
+| **Kit** | `src/ui/**` | the v2 kit |
+| **Session data** | the session and session-list stores in `src/session/` | P2 stores; flow 31 |
+| **Session screen** | the rest of `src/session/view/**`, and `src/composer/**` | P2 screen and composer |
+| **Shell** | `src/{shell,rail,workbench}/**` | the shell frame, sidebar modes, page tab, panel frame and phone behavior; P3 rail and workbench |
+| **Tools** | `src/{terminal,browser,review,files}/**` | P3 terminal, browser tabs, review and files |
+| **Projects** | `src/{projects,cloud,onboarding}/**` | P4 projects, cloud and onboarding |
+| **Settings** | `src/{settings,access,auth,machines,marketplace,usage}/**` | P4 settings, access, machines, Marketplace and usage |
+| **Plugins** | `src/plugins/**`, `plugins/*`, the daemon's plugin routes, the CLI's `plugin` commands, the authoring skill | P5 host, the four plugins and live plugins |
+
+**The schedule:**
+
+| When | What |
+| --- | --- |
+| 0:00–0:45 | The worktree, the copy, the frozen contracts |
+| 0:45–4:30 | All lanes in parallel, landing in slices. Each slice gets an adversarial review before it merges. |
+| From 2:00 | Flows run as slices land, on as many local stacks as the machine holds. Web flows can also run on crabbox boxes. |
+| 4:30–6:00 | Integration, the full suite, fix loops, one packaged benchmark run |
+
+**What six hours can honestly reach:**
+- **Likely:**
+  - v2 running end to end on today's server;
+  - every lane's first version merged;
+  - most flows green once;
+  - the corpus compared on its seeded cases;
+  - one benchmark run.
+- **Unlikely in the same six hours:**
+  - 20 clean runs of every flow;
+  - all 95 transcript fix commits mined into cases;
+  - the idle-CPU and long-row targets, which may need profiling;
+  - your sign-off and the swap.
+  - Those need a second, shorter block.
+
+**Cost and setup.** About 14 lanes plus reviewers running for about five hours is a large model spend.
+- **Models:** lanes run on Fable, falling back to Opus when Fable is limited.
+- **Workflow:** it runs as a workflow, which needs your go-ahead. The session's workflow size setting (medium, under 10 agents) must be raised in `/config`.
+
+**Review.**
+- A "done" row from an agent is a claim until the flows, the five criteria and the checks say so.
+- The transcript, the session list and projects get a second reviewer.
+
+**Fan-outs inside lanes:**
+- one agent per flow, 36 in all, each with its red run;
+- agents over the 95 transcript fix commits, about ten commits each, and over the transcript comments;
+- one review agent per deleted-file group, checking that nothing in v2 still imports it.
 
 ## Open decisions
 
-1. **A hosted projects route.**
-   - **Without it,** v2 builds the hosted-first flow on today's contract: a hosted project is created together with its first cloud workspace, and the hosted project list comes through workspaces.
-   - **With it,** a hosted project can exist before it runs anywhere, and the list is direct. It would be one route family with the same record shape as the local `/api/claxedo/projects`, repo sources only. Because the adapter owns projects, adding it later changes only `projects.ts`.
-   - **Recommendation:** build on today's contract now, and add the route as the first server change.
+1. **Consolidating access on the server** ([Roles, permissions and orgs](#roles-permissions-and-orgs)).
+   - One policy module in server-core that all ~28 sites ask, which removes the three places where the server disagrees with your rulings.
+   - **Recommendation:** run it as its own slice right after this push, with its own flows and review.
 2. **Harness status,** only if P0.7 finds changes that never reach the app. Either keep the one 5-second re-read in `status.ts` (no server change), or approve a small runtime fix that sends today's `session.status` event where it is missing.
 3. **Teams inside an org.**
    - **What it is.** Named groups of members inside an org. In Settings you can create teams, add and remove members, and pick an active team. `grantTeamProject` gives a team access to a project, and a session can be shared with a whole team. The rail has an org/team switcher, but in the app only that switcher and the settings page read the chosen team; nothing else is scoped by it.
@@ -788,7 +1206,7 @@ Use parallel agents with disjoint file ownership, and a Workflow for the flow-wr
 1. **The adapter is the critical path.** Every other lane builds on its Claxedo-typed surface, so it is built and frozen first.
 2. **Transcript regressions.** Hundreds of fixes live in that code, many recorded only in comments. The code moves instead of being rewritten; every comment is triaged before it goes; the corpus runs on every change; and any visible difference needs your sign-off.
 3. **Session-list races.** The rebuild replaces today's brittle data path. The reconcile rules are written before the code, and flow 31 is written and run on today's app before the new store exists.
-4. **Project identity across deployments.** Local project records and hosted projects are separate id spaces today, and a hosted project needs a workspace to exist. P0.10 maps it before the flow is built.
+4. **Project ids differ per deployment.** Ids are UUIDs locally and `prj_…` on hosted. The app treats both as opaque and always knows which server it is talking to, and the projects route gives both the same contract.
 5. **Today's contract shapes some app behavior.** The adapter carries OpenCode's shapes until the server is rebuilt, and harness status may need the app's one bounded re-read (P0.7 decides).
 6. **Phone layouts drift.** Each phase ships its screens with phone layouts, and flow 33 grows with them, so there is no end-of-project mobile pass.
 7. **e2e only means slower feedback.** A single flow must run in 60 seconds or less locally, or agents will stop running it; "fast" is a gate, not a hope.
@@ -796,8 +1214,8 @@ Use parallel agents with disjoint file ownership, and a Workflow for the flow-wr
 
 ## Definition of done
 
-- [ ] `packages/claxedo-app` (the renamed v2) ≤ 93k production lines, with per-part budgets enforced by the ratchet; first-party plugins ≤ 7k in `plugins/`.
-- [ ] No server contract changed, apart from the changes you approved (a hosted projects route, a harness-status fix).
+- [ ] `packages/claxedo-app` (the renamed v2) ≤ 94k production lines, with per-part budgets enforced by the ratchet; first-party plugins ≤ 7k in `plugins/`.
+- [ ] **Server changes are only the approved ones:** the projects route, the live-plugin routes, and a harness-status fix if you approved one. The swap deletes every server path only the old app used.
 - [ ] **Transcript:**
   - moved, not rebuilt;
   - flow 30 green, with no visible difference you haven't signed off;
@@ -806,11 +1224,14 @@ Use parallel agents with disjoint file ownership, and a Workflow for the flow-wr
 - [ ] **Session sidebar:** one owner; the reconcile rules written in its README; flow 31 green on 20 runs in a row.
 - [ ] **Projects:** every project an id; no folder path used as an identity outside `src/server/`; flows 2 and 32 green.
 - [ ] **Phone:** every screen has a phone layout; flow 33 green; no horizontal scroll at 390 px.
+- [ ] **Shell:** three regions and one page tab; pages can't be split or dragged; flow 12 green.
+- [ ] **Access:** one `src/access/` domain; `can()` answers only from server facts; flow 36 green.
+- [ ] **Live plugins:** a prompted plugin reaches the running app, on desktop directly and on the web in a sandboxed iframe; flows 34 and 35 green.
 - [ ] No v1 component, token or class; no import from the old kit packages, which are deleted.
 - [ ] Zero comments in the app and plugins; every check at zero.
 - [ ] No retired OpenCode name outside `src/server/wire/`.
 - [ ] Every machine in [State machines](#state-machines) exists; no view guesses status.
-- [ ] Zero unit tests; ≤ 16k lines of e2e; all 33 flows green on CI against the real stack.
+- [ ] Zero unit tests; ≤ 16k lines of e2e; all 36 flows green on CI against the real stack.
 - [ ] The five e2e criteria are met: robust (20 clean CI runs), better than v1 (coverage map, zero mocked specs), works, honest (the four rules, a red run per spec), fast (≤ 60 s per flow, ≤ 12 min suite).
 - [ ] Browser tabs and terminal links work in the app; the four first-party plugins work with their parity lists.
 - [ ] The benchmark verdict passes: no row lost; idle CPU, long rows, panel open, idle memory and app start won.
@@ -845,6 +1266,16 @@ The app runs on today's server contracts. `src/server/` is the only place that k
 - **Phone:**
   - Every screen and plugin slot has a phone layout at 390 px: the sidebar as a drawer, panes as sheets, no hover-only controls, touch targets of at least 44 px, no horizontal scroll.
   - A new screen extends flow 33 in the same change.
+
+## Access
+
+- Every access question in the UI goes through `can()` in `src/access/`, which answers only from facts the server reports. Never re-derive a server rule in the app.
+- "Permission" in code means an agent request, and lives in `src/session/requests/`. Access code never uses the word.
+
+## Plugins
+
+- First-party and user plugins get the same API. Add a primitive only when a plugin needs it, and add it to the plan's primitive table in the same change.
+- User plugins run in the app's JavaScript on desktop, and in a sandboxed iframe on the web. Never give that iframe same-origin.
 
 ## No comments
 
@@ -888,11 +1319,14 @@ Directives a tool reads are not comments and stay, with no prose added: `// @ts-
   - Effects run outside the transition. No parallel booleans (`isLoading`, `isError`, `hasData`) describing one thing.
 - **Make illegal states unrepresentable.** A field that exists in only one state lives only in that state's variant.
 - **Server-owned lifecycles** (session, turn, request, cloud workspace, remote access) are fed only by the adapter's mapping of server data and events. Views never guess status from timing or message contents.
-- **Server data reaches a domain one way:** a snapshot plus the stream, through the adapter, into one store per domain. Not allowed:
-  - a second cache;
-  - a query library;
-  - module-level mutable state;
-  - an effect that copies one store into another (derive with memos instead).
+- **Every datum has one home:**
+  - **Data the server pushes** (sessions, status, transcript, requests, todos) lives in one Solid store per domain, fed by the snapshot and the stream through the adapter. Deltas are coalesced per frame and applied in place.
+  - **Data the app fetches** (projects, machines, accounts, tasks, files, git, Marketplace, usage) lives in the TanStack Query cache, through the query options in `src/server/<area>.ts`. Events only invalidate it, through the adapter's event table. `setQueryData` is only for a mutation's own result, inside `src/server/`.
+  - **Not allowed:**
+    - a second copy of any datum;
+    - Promises, counters or UI state in the query cache;
+    - module-level mutable state;
+    - an effect that copies one store into another (derive with memos instead).
 - **UI state that belongs to one component stays in that component.** Persisted UI preferences go through `persisted()`, keyed by user and `SessionRef`.
 
 ## Errors
@@ -966,10 +1400,11 @@ The suite must be robust, better than v1, working, honest and fast.
 - adapter boundary;
 - no swallowed errors;
 - no polling;
-- one store;
+- one home per datum;
 - domain boundaries;
 - one owner;
 - no directory identity;
+- access boundary;
 - protected areas;
 - e2e hygiene.
 
