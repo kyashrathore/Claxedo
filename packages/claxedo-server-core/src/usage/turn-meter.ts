@@ -42,7 +42,10 @@ type State = {
   settlement?: TurnUsageRevision["settlement"]
   status?: TurnUsageStatus
   quality: TurnUsageRevision["quality"]
-  lastObservationKey?: string
+  /** Each scope's running usage; `tokens` is their sum. */
+  streams: Map<string, RuntimeTokenUsage>
+  /** The last observation each scope applied, so a re-emitted one is not applied twice. */
+  lastObservationKeys: Map<string, string>
   context?: TurnContext
 }
 
@@ -77,6 +80,12 @@ function applyObservation(previous: RuntimeTokenUsage, observation: RuntimeUsage
   }
 }
 
+function sumStreams(streams: Map<string, RuntimeTokenUsage>): RuntimeTokenUsage {
+  let total = unknownTokens()
+  for (const tokens of streams.values()) total = applyObservation(total, { kind: "delta", tokens })
+  return total
+}
+
 function numberOrNull(input: unknown) {
   return typeof input === "number" && Number.isSafeInteger(input) && input >= 0 ? input : null
 }
@@ -103,10 +112,13 @@ function observationKey(observation: RuntimeUsageObservation) {
   // and Cursor cumulative ids identify the containing turn/run, so their
   // evolving token snapshots must include the counters in the signature.
   if (observation.kind === "delta" && observation.providerObservationId) {
-    return `provider:${observation.providerObservationId}`
+    return observation.scope
+      ? `provider:${observation.scope}:${observation.providerObservationId}`
+      : `provider:${observation.providerObservationId}`
   }
   return JSON.stringify({
     kind: observation.kind,
+    ...(observation.scope ? { scope: observation.scope } : {}),
     sequence: observation.sequence ?? null,
     providerObservationId: observation.providerObservationId ?? null,
     nativeSessionId: observation.nativeSessionId ?? null,
@@ -156,11 +168,15 @@ export function createTurnMeter(input: {
       settlement: fact.settlement,
       status: fact.status,
       quality: fact.quality,
-      ...(fact.quality.providerObservationKey
-        ? { lastObservationKey: fact.quality.providerObservationKey }
-        : fact.quality.observationKind === "delta" && fact.quality.providerObservationId
-          ? { lastObservationKey: `provider:${fact.quality.providerObservationId}` }
-          : {}),
+      // The stored fact keeps only the sum, so a restored turn is one stream.
+      streams: new Map(fact.quality.knownCategories.length > 0 ? [["", fact.tokens]] : []),
+      lastObservationKeys: new Map(
+        fact.quality.providerObservationKey
+          ? [["", fact.quality.providerObservationKey]]
+          : fact.quality.observationKind === "delta" && fact.quality.providerObservationId
+            ? [["", `provider:${fact.quality.providerObservationId}`]]
+            : [],
+      ),
       ...(fact.completedAt === undefined ? {} : { completedAt: fact.completedAt }),
       context: {
         sessionRef: fact.sessionRef,
@@ -228,6 +244,8 @@ export function createTurnMeter(input: {
       tokens: unknownTokens(),
       hasUsage: false,
       quality: { source: "lifecycle", knownCategories: [] },
+      streams: new Map(),
+      lastObservationKeys: new Map(),
     }
     states.set(id, created)
     return created
@@ -306,9 +324,14 @@ export function createTurnMeter(input: {
       const messageId = event.payload.properties.messageID
       if (!observation || !messageId) return
       const current = await state(sessionId, messageId)
+      const scope = observation.scope ?? ""
       const signature = observationKey(observation)
-      if (current.lastObservationKey === signature) return
-      current.tokens = applyObservation(current.tokens, observation)
+      if (current.lastObservationKeys.get(scope) === signature) return
+      // Provider observations are canonical: tokens read off an assistant
+      // message before the first of them are a fallback, not a stream.
+      if (current.quality.source !== "provider") current.streams.clear()
+      current.streams.set(scope, applyObservation(current.streams.get(scope) ?? unknownTokens(), observation))
+      current.tokens = sumStreams(current.streams)
       current.hasUsage = true
       current.observedAt = observation.observedAt ?? now()
       current.nativeSessionId = observation.nativeSessionId ?? current.nativeSessionId
@@ -319,7 +342,7 @@ export function createTurnMeter(input: {
         providerObservationKey: signature,
         knownCategories: knownTokenCategories(current.tokens),
       }
-      current.lastObservationKey = signature
+      current.lastObservationKeys.set(scope, signature)
       activeBySession.set(sessionId, messageId)
       const terminalSettlement = current.settlement
       await persist(

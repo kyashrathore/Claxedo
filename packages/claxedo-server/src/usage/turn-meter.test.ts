@@ -166,6 +166,63 @@ describe("turn usage meter", () => {
     ])
   })
 
+  test("sums each scope's usage, and a cumulative replaces only its own scope", async () => {
+    const { meter, facts } = harness()
+    const usage = (scope: string | undefined, kind: "cumulative" | "delta", id: string, input: number, output: number) =>
+      envelope(
+        sessionUsage({
+          sessionID: "session-1",
+          messageID: "msg-1",
+          contextSize: 100,
+          contextUsed: 1,
+          observation: {
+            kind,
+            ...(scope === undefined ? {} : { scope }),
+            providerObservationId: id,
+            tokens: { input, output, reasoning: null, cache: { read: null, write: null } },
+          },
+        }),
+      )
+    await meter.consume(usage(undefined, "cumulative", "own", 10, 1))
+    await meter.consume(usage("thread-2:turn-1", "cumulative", "turn-1", 100, 10))
+    await meter.consume(usage("thread-2:turn-2", "cumulative", "turn-2", 1_000, 100))
+    await meter.consume(usage("thread-2:turn-1", "cumulative", "turn-1", 200, 20))
+    await meter.consume(usage("child:a", "delta", "same-id", 5, 0))
+    await meter.consume(usage("child:b", "delta", "same-id", 7, 0))
+    await meter.consume(usage("child:b", "delta", "same-id", 7, 0))
+
+    expect(facts.map((fact) => [fact.tokens.input, fact.tokens.output])).toEqual([
+      [10, 1],
+      [110, 11],
+      [1_110, 111],
+      [1_210, 121],
+      [1_215, 121],
+      [1_222, 121],
+    ])
+  })
+
+  test("a provider observation supersedes tokens read off an assistant message before it", async () => {
+    const { meter, facts } = harness()
+    await meter.consume(envelope(messageUpdated(assistant({ tokens: { input: 50, output: 50, reasoning: 0, cache: { read: 0, write: 0 } } }) as never)))
+    await meter.consume(
+      envelope(
+        sessionUsage({
+          sessionID: "session-1",
+          messageID: "msg-1",
+          contextSize: 100,
+          contextUsed: 1,
+          observation: {
+            kind: "delta",
+            providerObservationId: "step-1",
+            tokens: { input: 3, output: 2, reasoning: null, cache: { read: null, write: null } },
+          },
+        }),
+      ),
+    )
+
+    expect(facts.at(-1)?.tokens).toEqual({ input: 3, output: 2, reasoning: null, cache: { read: null, write: null } })
+  })
+
   test("adds one-hour cache writes across deltas and takes a cumulative's split as reported", async () => {
     const { meter, facts } = harness()
     const usage = (id: string, kind: "cumulative" | "delta", write: number, write1h?: number) =>

@@ -10,18 +10,45 @@ import type {
 import type { AgentRuntimeStatus } from "./availability"
 import type { AgentSubagentUpdate, RuntimeGoalSnapshot } from "./subagents"
 
+/**
+ * Provider-reported token categories for one turn observation.
+ *
+ * `null` means the provider did not report the category. This is deliberately
+ * different from a reported zero: metering consumers must never manufacture a
+ * measured zero for an unknown category.
+ */
 export type RuntimeTokenUsage = {
   input: number | null
   output: number | null
   reasoning: number | null
-  cache: { read: number | null; write: number | null }
+  cache: {
+    read: number | null
+    write: number | null
+    /**
+     * The part of `write` held in the one-hour cache, which Anthropic bills at
+     * 2x input instead of the five-minute 1.25x. Absent where the provider
+     * reports no split; a write with no split is a five-minute write.
+     */
+    write1h?: number | null
+  }
 }
 
 export type RuntimeUsageObservation = {
+  /** Whether this observation replaces prior usage in its scope or adds to it. */
   kind: "cumulative" | "delta"
+  /**
+   * One independent stream of usage within the turn — a provider thread's own
+   * turn, a subagent's requests. A cumulative observation replaces only its
+   * scope's running total, and the turn's usage is the sum over every scope,
+   * so two streams that land on one turn never overwrite each other. Absent is
+   * the turn's own stream.
+   */
+  scope?: string
   tokens: RuntimeTokenUsage
+  /** Provider-native ordering data when the source exposes it. */
   sequence?: number
   providerObservationId?: string
+  /** Provider-native session/thread identity used only for local overlap classification. */
   nativeSessionId?: string
   observedAt?: number
 }
