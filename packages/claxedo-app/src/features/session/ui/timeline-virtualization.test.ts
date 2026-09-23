@@ -185,7 +185,13 @@ describe("timeline resize anchor — in-view insert hold", () => {
   const cleanups: Array<() => void> = []
   afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup() })
 
-  function keyedHarness(options: { keys: string[]; scrollTop: number; displayed?: () => boolean }) {
+  function keyedHarness(options: {
+    keys: string[]
+    scrollTop: number
+    displayed?: () => boolean
+    shouldAnchorBottom?: () => boolean
+    followsInsertBeside?: (displacedKey: string) => boolean
+  }) {
     const keys = [...options.keys]
     const recorded = { scrollToEnd: 0, inserts: 0 }
     const virtualizer = new Virtualizer<HTMLDivElement, HTMLDivElement>({
@@ -212,9 +218,10 @@ describe("timeline resize anchor — in-view insert hold", () => {
       virtualizer,
       root: () => root,
       displayed: options.displayed ?? (() => true),
-      shouldAnchorBottom: () => true,
+      shouldAnchorBottom: options.shouldAnchorBottom ?? (() => true),
       hasScrollGesture: () => false,
       onInViewInsert: () => { recorded.inserts += 1 },
+      followsInsertBeside: options.followsInsertBeside,
     })
     anchor.noteRowKeys([...keys])
     return {
@@ -253,9 +260,19 @@ describe("timeline resize anchor — in-view insert hold", () => {
     expect(h.recorded.scrollToEnd).toBe(1)
   })
 
-  test("a pure tail append displaces nothing and never holds", async () => {
+  test("a tail append under a visible last row holds the bottom anchor", async () => {
     const before = Array.from({ length: 15 }, (_, index) => `row-${index}`)
     const h = keyedHarness({ keys: before, scrollTop: 2000 })
+    h.insertKeys([...before, "appended"])
+    expect(h.recorded.inserts).toBe(1)
+    h.virtualizer.resizeItem(10, 240)
+    await Promise.resolve()
+    expect(h.recorded.scrollToEnd).toBe(0)
+  })
+
+  test("a tail append below the fold does not hold", async () => {
+    const before = Array.from({ length: 15 }, (_, index) => `row-${index}`)
+    const h = keyedHarness({ keys: before, scrollTop: 0 })
     h.insertKeys([...before, "appended"])
     expect(h.recorded.inserts).toBe(0)
   })
@@ -266,6 +283,22 @@ describe("timeline resize anchor — in-view insert hold", () => {
     // With the viewport at the top, the displaced tail row sits below the fold.
     h.insertKeys([...before.slice(0, 14), "reply", "row-14"])
     expect(h.recorded.inserts).toBe(0)
+  })
+
+  test("a reply landing under the Thinking row in the turn's settling batch is still followed to its tail", async () => {
+    const before = [...Array.from({ length: 14 }, (_, index) => `row-${index}`), "thinking:turn"]
+    const h = keyedHarness({
+      keys: before,
+      scrollTop: 2000,
+      shouldAnchorBottom: () => false,
+      followsInsertBeside: (key) => key.startsWith("thinking:"),
+    })
+    h.insertKeys([...before.slice(0, 14), "reply", "thinking:turn"])
+    expect(h.recorded.inserts).toBe(1)
+    h.virtualizer.getTotalSize()
+    h.virtualizer.resizeItem(14, 900)
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(h.recorded.scrollToEnd).toBe(1)
   })
 
   test("the deferred tail re-pin stands down on a stashed surface", async () => {

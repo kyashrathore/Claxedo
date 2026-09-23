@@ -718,6 +718,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     shouldAnchorBottom: followsEnd,
     hasScrollGesture: props.hasScrollGesture,
     onInViewInsert: () => props.onMarkScrollGesture(),
+    followsInsertBeside: TimelineRow.keyIsThinking,
   })
   const scrollMemory = createTimelineScrollMemory({
     initial: savedScroll, active: props.active, root: listRoot,
