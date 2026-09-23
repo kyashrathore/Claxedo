@@ -58,7 +58,7 @@ import { claudeAuthEnv } from "./auth"
 import { harnessProjection } from "../../harness-projection"
 import { brokeredClaudeConfigDir } from "./config-dir"
 import { requireClaudeExecutable } from "./executable"
-import { createClaudeTurnInput, type ClaudeTurnInput } from "./turn-input"
+import { CLAUDE_TURN_INPUT_ARGS, createClaudeTurnInput, type ClaudeTurnInput } from "./turn-input"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import { spawnObservedClaudeCodeProcess, type ClaudeDirectLaunch } from "./launch"
 import { goalStopDeadline } from "../shared/request-deadline"
@@ -369,6 +369,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     })))
     try {
       await this.runQuery(input, turnInput.prompt, undefined, turnInput)
+      turnInput.settle("ended", "Claude finished the turn before taking the message")
+    } catch (cause) {
+      if (input.abort.signal.aborted) turnInput.settle("ended", "The turn was stopped before Claude took the message")
+      else turnInput.settle("failed", errorMessage(cause))
+      throw cause
     } finally {
       turnInput.end()
     }
@@ -594,6 +599,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // bundled binary. Throws an actionable install error when absent.
         pathToClaudeCodeExecutable: (this.driverOptions.executable ?? requireClaudeExecutable)(),
         includePartialMessages: true,
+        ...(turnInput ? { extraArgs: CLAUDE_TURN_INPUT_ARGS } : {}),
         sessionStore,
         sessionStoreFlush: "eager",
         forwardSubagentText: CLAUDE_FORWARD_SUBAGENT_TEXT,
@@ -648,11 +654,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       stops,
       ...(turnInput
         ? {
-            steer: async () => ({
-              ok: false as const,
-              status: "unsupported" as const,
-              message: "Claude steering requires a correlated provider acknowledgement; local enqueue is not acceptance",
-            }),
+            steer: async (steered) => await turnInput.steer(claudeTurnPrompt(await deliverPromptAttachments({
+              parts: steered.parts,
+              directory: input.directory,
+            }))),
           }
         : {}),
     })
@@ -664,6 +669,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           applyGoal(claudeGoalSnapshot(input.sessionId, message))
           continue
         }
+        if (turnInput?.observe(message)) continue
         // Ordinary query results precede subprocess cleanup. Keep their terminal
         // projection out of both the store and event hub until iteration closes.
         if (!onGoal && message.type === "result") {

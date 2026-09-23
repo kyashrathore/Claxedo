@@ -13,16 +13,13 @@ import { resolveClaudeExecutable } from "./executable"
 /**
  * The held-open turn input against the real Claude Code CLI.
  *
- * Claude has no correlated provider acknowledgement for a message sent into a
- * running turn, so the driver refuses steering rather than promoting a local
- * stdin write to acceptance. `driver.test.ts` substitutes `query`, so it proves
- * what the driver hands the SDK and nothing about the process on the other
- * side: that the refused prompt never reaches the model, and that the query
- * still terminates once the driver closes stdin on the turn's result. A
- * credentialled Claude is not needed for either question — the model is the one
- * part that can be stubbed — so this spawns the installed CLI against a local
- * Anthropic endpoint that streams the first answer slowly enough for a mid-turn
- * prompt to land in.
+ * `driver.test.ts` substitutes `query`, so it proves what the driver hands the
+ * SDK and nothing about the process on the other side: that the CLI replays a
+ * steered message only as it sends it to the model, and that the query still
+ * terminates once the driver closes stdin on the turn's result. A credentialled
+ * Claude is not needed for either question, so this spawns the installed CLI
+ * against a local Anthropic endpoint that streams the first answer slowly
+ * enough for a mid-turn prompt to land in.
  *
  * `steer-conformance.live.test.ts` asks the same thing of a credentialled
  * harness and skips when there is none.
@@ -114,7 +111,7 @@ const claudeBinary = resolveClaudeExecutable()
 
 describe("the Claude turn input the driver holds open", () => {
   test.skipIf(claudeBinary === undefined)(
-    "refuses a prompt sent mid-turn with its reason, and the CLI turn still ends on its own",
+    "accepts a prompt sent mid-turn once the CLI replays it, and the turn still ends on its own",
     async () => {
       const stub = await stubAnthropicApi()
       const restoreEnv = withAnthropicEnv(stub)
@@ -159,9 +156,9 @@ describe("the Claude turn input the driver holds open", () => {
           delivery: "steer",
           text: `Stop counting and reply with exactly ${STEER_MARKER}`,
         })
-        expect(steered.delivery).toBe("queue")
-        expect(steered.steering).toMatchObject({ ok: false, status: "unsupported" })
-        expect(steered.assistantMessageId).not.toBe(first.assistantMessageId)
+        expect(steered.delivery).toBe("steer")
+        expect(steered.steering).toEqual({ ok: true })
+        expect(stub.requests.filter((body) => body.includes(STEER_MARKER))).toHaveLength(1)
 
         let timer: ReturnType<typeof setTimeout> | undefined
         const ended = await Promise.race([
@@ -174,22 +171,15 @@ describe("the Claude turn input the driver holds open", () => {
         expect((await runtime.sessions.get(session.id))?.lastTurn)
           .toMatchObject({ status: "completed", assistantMessageId: first.assistantMessageId })
 
-        // The refusal is the whole point: nothing was written to the stdin the
-        // driver still held open, so no request the CLI made carries the marker.
-        expect(stub.requests.filter((body) => body.includes(STEER_MARKER))).toHaveLength(0)
-
         const messages = await runtime.events.list(session.id)
-        expect(messages.filter((message) => message.info.role === "assistant").map((message) => message.info.id))
-          .toEqual([first.assistantMessageId])
         const reply = await assistantText()
         expect(reply).toContain(`${SLOW_REPLY_LINES}\n`)
-        expect(reply).not.toContain(STEER_MARKER)
-        // A refused prompt has no place in the transcript: acceptance is what
-        // would earn one, and there was none.
-        expect(messages.find((message) => message.info.id === steered.userMessageId)).toBeUndefined()
-
+        expect(reply).toContain(STEER_MARKER)
+        // Transcript placement of an accepted steer is not built for any
+        // harness yet, so the steered prompt has no user row of its own.
+        expect(messages.map((message) => message.info.role)).toEqual(["user", "assistant"])
         console.log(
-          `[claude cli] refused a steer after ${beforeSteer.split("\n").length - 1} streamed lines, `
+          `[claude cli] accepted a steer after ${beforeSteer.split("\n").length - 1} streamed lines, `
             + `turn ended in ${Date.now() - startedAt}ms over ${stub.requests.length} model requests`,
         )
       } finally {
