@@ -22,7 +22,7 @@ import {
 import { ensureComposerModelSelected, expectAssistantReplyVisible, expectAssistantTextOccurrences, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
 import { sampleElementDuringAction, scrollTimelineToEnd, scrollTimelineToTop } from "../helpers/geometry-oracle"
 import { expectRailRowVisible } from "../helpers/rail-oracle"
-import { writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "harness-traces")
 
@@ -344,6 +344,101 @@ function subagentTab(page: Page, childSessionId: string) {
 /** The one panel body the user is looking at; retained bodies are marked inert. */
 function workspacePanelBody(page: Page) {
   return page.locator('[data-testid="workspace-panel-body"]:not([data-panel-body-inert="true"])')
+}
+
+const PLAN_MARKDOWN = "# Finish steering\n\n## Context\n\nSteering reaches the running turn."
+const PLAN_FILE = "/Users/me/.claude/plans/snappy-puzzling-rainbow.md"
+
+/**
+ * What each harness's proposed plan becomes after its adapter and the projection,
+ * pinned against the real adapters in agent-event-runtime's plan-mode-projection.test.ts.
+ * Pi has no plan mode and the embedded OpenCode engine plans by writing ordinary files,
+ * so neither emits anything plan-shaped to replay.
+ */
+type PlanHarnessCase = {
+  name: string
+  harness: string
+  parts: Array<
+    | { kind: "tool"; callId: string; tool: string; input: Record<string, unknown> }
+    | { kind: "text"; text: string }
+  >
+  opensPlanTab: boolean
+}
+
+const planHarnessCases: PlanHarnessCase[] = [
+  {
+    name: "Claude native",
+    harness: "claude-sdk",
+    parts: [
+      { kind: "tool", callId: "toolu-enter-plan", tool: "enterplanmode", input: { intent: "generic", kind: "dynamic_tool_call" } },
+      {
+        kind: "tool",
+        callId: "toolu-exit-plan",
+        tool: "exitplanmode",
+        input: { intent: "generic", kind: "dynamic_tool_call", plan: PLAN_MARKDOWN, planFilePath: PLAN_FILE },
+      },
+    ],
+    opensPlanTab: true,
+  },
+  {
+    name: "Claude ACP",
+    harness: "claude-acp",
+    parts: [{
+      kind: "tool",
+      callId: "toolu-exit-plan",
+      tool: "ready",
+      input: { intent: "switch_mode", kind: "switch_mode", summary: "Ready to code?", plan: PLAN_MARKDOWN, planFilePath: PLAN_FILE },
+    }],
+    opensPlanTab: false,
+  },
+  {
+    name: "Cursor native",
+    harness: "cursor-sdk",
+    parts: [{ kind: "tool", callId: "cursor-create-plan", tool: "createplan", input: { intent: "generic", kind: "plan", plan: PLAN_MARKDOWN } }],
+    opensPlanTab: false,
+  },
+  {
+    name: "Codex native",
+    harness: "codex-app-server",
+    parts: [{ kind: "text", text: PLAN_MARKDOWN }],
+    opensPlanTab: false,
+  },
+]
+
+function planPartEnvelope(input: { sessionId: string; assistantId: string; part: PlanHarnessCase["parts"][number]; index: number }) {
+  const partId = input.part.kind === "tool" ? input.part.callId : `plan-text-${input.index}`
+  const part = input.part.kind === "tool"
+    ? {
+        id: partId,
+        sessionID: input.sessionId,
+        messageID: input.assistantId,
+        type: "tool",
+        callID: input.part.callId,
+        tool: input.part.tool,
+        state: { status: "completed", input: input.part.input, output: "", title: input.part.tool, metadata: {}, time: { start: 1, end: 2 } },
+      }
+    : { id: partId, sessionID: input.sessionId, messageID: input.assistantId, type: "text", text: input.part.text }
+  return {
+    directory: "",
+    payload: {
+      id: `message.part.updated:${input.assistantId}:${partId}`,
+      type: "message.part.updated",
+      properties: { sessionID: input.sessionId, part, time: 2 },
+    },
+  }
+}
+
+function planTab(page: Page) {
+  return page.locator('[data-slot="workspace-tab"][data-workspace-tab-kind="plan"]')
+}
+
+/** The final plan state, beside the oracle's reply shots, for the INVARIANTS.md review. */
+async function capturePlanEvidence(page: Page, name: string) {
+  const dir = join(process.cwd(), "test-results", "evidence", "core-harness-rendering-matrix")
+  await mkdir(dir, { recursive: true })
+  const slug = name.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")
+  const screenshot = await page.screenshot({ path: join(dir, `plan-${slug}.png`) })
+  await test.info().attach(`plan-${slug}`, { body: screenshot, contentType: "image/png" })
 }
 
 function subagentTaskEnvelope(input: {
@@ -1449,6 +1544,61 @@ test.describe("core harness rendering matrix @core", () => {
         timeout: 30_000,
       })
       await expectAssistantReplyVisible(page, `ack 1: matrix probe ${input.harness}`)
+    })
+  }
+
+  for (const input of planHarnessCases) {
+    test(`plan — ${input.name} ${input.opensPlanTab ? "reads as \"Planned …\" and opens as a Plan tab" : "has no plan row to open"}`, async ({ page }) => {
+      const primed = await primeHarness(page, input.harness)
+      await replay(
+        primed.mock,
+        primed.dir,
+        input.parts.map((part, index) => planPartEnvelope({ sessionId: primed.sessionId, assistantId: primed.assistantId, part, index })),
+        primed.assistantInfo,
+      )
+      const content = page.locator(assistantContent())
+      const plannedRow = content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "Planned" })
+      const openPlan = content.getByRole("button", { name: "Open plan", exact: true })
+
+      if (!input.opensPlanTab) {
+        const toolParts = input.parts.filter((part) => part.kind === "tool").length
+        if (toolParts === 0) {
+          await expect(content.getByText("Steering reaches the running turn.")).toBeVisible({ timeout: 45_000 })
+        } else {
+          await revealTurn(page)
+          await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(toolParts, { timeout: 45_000 })
+          await expect(content.locator('[data-component="generic-tool"]')).toHaveCount(toolParts)
+        }
+        await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(toolParts)
+        await expect(plannedRow).toHaveCount(0)
+        await expect(openPlan).toHaveCount(0)
+        await expect(planTab(page)).toHaveCount(0)
+        await capturePlanEvidence(page, input.name)
+        return
+      }
+
+      await revealTurn(page)
+      await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "Entered plan mode" })).toBeVisible({ timeout: 45_000 })
+      await expect(plannedRow).toBeVisible()
+      await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "Finish steering" })).toBeVisible()
+      await expect(content.locator('[data-component="generic-tool"]')).toHaveCount(0)
+      await expect(content.getByText(/enterplanmode|exitplanmode/)).toHaveCount(0)
+
+      const closeWorkspacePanel = page.getByRole("button", { name: "Close workspace panel", exact: true })
+      if (await closeWorkspacePanel.isVisible().catch(() => false)) await closeWorkspacePanel.click()
+      await openPlan.click()
+
+      await expect(page.locator('[data-testid="workspace-panel-shell"]')).toHaveAttribute("data-open", "true", { timeout: 30_000 })
+      const tab = planTab(page)
+      await expect(tab).toHaveCount(1)
+      await expect(tab).toHaveAttribute("data-workspace-tab-id", "plan:toolu-exit-plan")
+      await expect(tab).toHaveAttribute("data-selected", "true")
+      await expect(tab).toContainText("Finish steering")
+      await expect(workspacePanelBody(page).locator('[data-testid="workspace-plan-tab"]')).toContainText(
+        "Steering reaches the running turn.",
+        { timeout: 30_000 },
+      )
+      await capturePlanEvidence(page, input.name)
     })
   }
 

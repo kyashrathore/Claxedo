@@ -2,7 +2,7 @@ import { Show, batch, createEffect, createMemo, createResource, createSignal, on
 import { useLocation, useNavigate } from "@solidjs/router"
 import { RoleGuardedTerminal } from "../../core/role-guarded-terminal"
 import { useTerminal } from "@/features/terminal/providers/provider"
-import { WebSocketCloseError } from "@/features/terminal/core/terminal-connection"
+import { PtyGoneError } from "@/features/terminal/core/terminal-connection"
 import { requestTerminalFitOnPaneChange } from "../../workbench/terminal-fit"
 import { aliasTerminalSessionPreview, loadTerminalSessionPreview } from "../../lib/terminal-session-preview"
 import { aliasTerminalLogSummary } from "../../lib/terminal-log-summary"
@@ -509,7 +509,7 @@ function TerminalContentInner(props: {
     setConnected(false)
     const id = realPtyId()
     if (!id) return
-    if (error instanceof WebSocketCloseError && error.code === 1008) {
+    if (error instanceof PtyGoneError) {
       let newId: string | undefined
       try {
         newId = await trackRecovery(

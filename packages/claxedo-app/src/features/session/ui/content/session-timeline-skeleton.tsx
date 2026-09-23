@@ -1,6 +1,7 @@
-import { Index, Show, createSignal, onCleanup, onMount } from "solid-js"
+import { Index } from "solid-js"
 
 import { useLanguage } from "@/platform/i18n/provider"
+import { DelayedLoading } from "@/ui/controls/delayed-loading"
 
 /**
  * Loading placeholder for the message timeline.
@@ -42,21 +43,15 @@ const TURNS: SkeletonTurn[] = (() => {
   }))
 })()
 
-export function SessionTimelineSkeleton(props: { centered?: boolean }) {
+export function sessionTranscriptLoadingEpisode(sessionId: string | undefined) {
+  return sessionId ? `session-transcript:${sessionId}` : undefined
+}
+
+export function SessionTimelineSkeleton(props: { centered?: boolean; sessionId?: string }) {
   const language = useLanguage()
   const centered = () => props.centered !== false
-  // Most session opens resolve well under 100ms; painting (and then tearing
-  // down) a placeholder inside that window is pure churn the user perceives
-  // as flicker. Render NOTHING for the first 100ms — only a genuinely slow
-  // load earns a loading surface.
-  const [pastGrace, setPastGrace] = createSignal(false)
-  onMount(() => {
-    const timer = setTimeout(() => setPastGrace(true), 100)
-    onCleanup(() => clearTimeout(timer))
-  })
 
   return (
-    <Show when={pastGrace()}>
     <div
       role="status"
       aria-busy="true"
@@ -76,33 +71,34 @@ export function SessionTimelineSkeleton(props: { centered?: boolean }) {
       }}
     >
       <span class="sr-only">{language.t("session.messages.loading")}</span>
-      <div
-        aria-hidden="true"
-        classList={{
-          "min-w-0 w-full max-w-full": true,
-          "md:max-w-192 2xl:max-w-[880px] md:mx-auto": centered(),
-        }}
-      >
-        <Index each={TURNS}>
-          {(turn) => (
-            <div class="w-full px-4 pt-8 md:px-5">
-              <div class="flex flex-col items-end">
-                <div
-                  class="flex flex-col gap-2.5 rounded-md border border-border-weak-base bg-surface-base px-3 py-2.5"
-                  style={{ width: turn().bubble }}
-                >
-                  <Index each={turn().user}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
+      <DelayedLoading episode={sessionTranscriptLoadingEpisode(props.sessionId)}>
+        <div
+          aria-hidden="true"
+          classList={{
+            "min-w-0 w-full max-w-full": true,
+            "md:max-w-192 2xl:max-w-[880px] md:mx-auto": centered(),
+          }}
+        >
+          <Index each={TURNS}>
+            {(turn) => (
+              <div class="w-full px-4 pt-8 md:px-5">
+                <div class="flex flex-col items-end">
+                  <div
+                    class="flex flex-col gap-2.5 rounded-md border border-border-weak-base bg-surface-base px-3 py-2.5"
+                    style={{ width: turn().bubble }}
+                  >
+                    <Index each={turn().user}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
+                  </div>
+                </div>
+                <div class="mt-6 flex flex-col gap-2.5">
+                  <Index each={turn().assistant}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
                 </div>
               </div>
-              <div class="mt-6 flex flex-col gap-2.5">
-                <Index each={turn().assistant}>{(bar) => <SkeletonLine bar={bar()} />}</Index>
-              </div>
-            </div>
-          )}
-        </Index>
-      </div>
+            )}
+          </Index>
+        </div>
+      </DelayedLoading>
     </div>
-    </Show>
   )
 }
 

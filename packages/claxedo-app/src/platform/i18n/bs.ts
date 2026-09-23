@@ -482,11 +482,6 @@ export const dict = {
   "session.revertDock.expand": "Proširi vraćene poruke",
   "session.revertDock.restore": "Vrati poruku",
 
-  "session.new.title": "Napravi bilo šta",
-  "session.new.worktree.main": "Glavna grana",
-  "session.new.worktree.mainWithBranch": "Glavna grana ({{branch}})",
-  "session.new.worktree.create": "Kreiraj novi worktree",
-  "session.new.lastModified": "Posljednja izmjena",
 
   "session.header.search.placeholder": "Pretraži {{project}}",
   "session.header.searchFiles": "Pretraži datoteke",
@@ -637,6 +632,7 @@ export const dict = {
   "settings.providers.window.session": "Sesija",
   "settings.providers.window.weekly": "Sedmično",
   "settings.providers.window.weeklyOpus": "Sedmično · Opus",
+  "usage.quota.checking": "Provjeravamo vaše agente…",
   "usage.quota.notChecked": "Još nije provjereno",
   "usage.quota.check": "Provjeri",
   "usage.quota.reconnect": "Ponovo poveži u Postavkama",

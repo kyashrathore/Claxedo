@@ -528,12 +528,18 @@
   font-size: var(--font-size-2x-small);
 }
 .usage-quota-account header .usage-quota-in-use {
-  padding: 1px 6px;
-  border: 1px solid var(--usage-hairline);
-  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--text-base);
-  font-size: var(--font-size-micro);
-  text-transform: uppercase;
+  font-weight: var(--font-weight-medium);
+}
+.usage-quota-account header .usage-quota-in-use::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--icon-success-base);
 }
 /* Tooltip puts a div of its own around what it is triggered by, so that div is
    the header's flex item; the baseline row has nothing to sit an icon on and

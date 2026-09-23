@@ -20,6 +20,10 @@ export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
     case "session.share.changed":
     case "session.inventory.changed":
       return true
+    case "usage.quota.changed":
+      // Rung several times per dashboard open; retained, it would push the
+      // doorbells above out of the ring. The view re-reads on a gap anyway.
+      return false
     case "provision":
       return event.step === "ready" || event.step === "error"
     default:

@@ -150,6 +150,12 @@ export type UnifiedUsageResponse = {
      * indistinguishable from a refresh that ran and found nothing changed.
      */
     throttledUntil?: number
+    /**
+     * Present while a read of some source is still running: the snapshot is
+     * what the earlier reads left behind, and `usage.quota.changed` on
+     * `cp/events` rings as each source lands.
+     */
+    refreshing?: true
   }
   claxedo: UsageSeries & {
     cost: UsageCost

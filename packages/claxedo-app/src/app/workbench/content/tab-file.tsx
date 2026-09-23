@@ -29,6 +29,7 @@ import { imagePreviewUrl } from "@/platform/files/file-preview"
 import { createPathHelpers } from "@/platform/files/path"
 import type { LineComment } from "@/platform/comments/provider"
 import { fileHeaderActionsSlot } from "@/ui/controls/portal-slot"
+import { DelayedLoading } from "@/ui/controls/delayed-loading"
 import { cachedFileReadRequest, peekCachedFileReadRequest, type FileRequestRuntime } from "@/platform/files/file-request-cache"
 import { errorMessage } from "@/lib/server-errors"
 
@@ -445,10 +446,12 @@ export function TabFile(props: TabFileProps) {
       <div class="flex-1 min-h-0 overflow-auto">
         <Switch>
           <Match when={loading()}>
-            <div class="flex items-center gap-2 px-4 py-6 text-text-weak">
-              <div class="size-4 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
-              <span>Loading...</span>
-            </div>
+            <DelayedLoading>
+              <div class="flex items-center gap-2 px-4 py-6 text-text-weak">
+                <div class="size-4 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
+                <span>Loading...</span>
+              </div>
+            </DelayedLoading>
           </Match>
 
           <Match when={error()}>{(e) => <div class="px-4 py-6 text-text-on-critical-base">{e()}</div>}</Match>

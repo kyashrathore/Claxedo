@@ -132,6 +132,7 @@ const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
     snapshot: QuotaSnapshotSchema.optional(),
     error: z.string().optional(),
     throttledUntil: z.number().optional(),
+    refreshing: z.literal(true).optional(),
   }),
   claxedo: z.object({
     ...UsageSeriesShape,

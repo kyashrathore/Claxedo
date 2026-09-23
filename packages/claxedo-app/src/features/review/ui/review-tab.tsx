@@ -37,6 +37,7 @@ import { isReviewMediaFile, reviewContentRequestPlan, reviewMediaLoad } from "./
 import { ReviewCodeViewFileHeader, ReviewRowBody } from "./review-file-row"
 import { diffTriggerTestId, exceedsDiffLimit } from "./review-session-logic"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { DelayedLoading } from "@/ui/controls/delayed-loading"
 import { ClaxedoLogo as Mark } from "@/ui/controls/claxedo-logo"
 import type { AgentVcsFileDiff as VcsFileDiff } from "@claxedo/agent-runtime-contract"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
@@ -651,10 +652,12 @@ export function ReviewTab(props: ReviewTabProps) {
               data-testid="review-pane-loading"
               class="h-full px-6 pb-42 flex flex-col items-center justify-center text-center gap-3"
             >
-              <Spinner class="h-5 w-5 text-text-weak" />
-              <div class="text-13-regular text-text-weak">
-                Loading review{language.t("common.loading.ellipsis")}
-              </div>
+              <DelayedLoading>
+                <Spinner class="h-5 w-5 text-text-weak" />
+                <div class="text-13-regular text-text-weak">
+                  Loading review{language.t("common.loading.ellipsis")}
+                </div>
+              </DelayedLoading>
             </div>
           </div>
         </Match>
@@ -662,9 +665,11 @@ export function ReviewTab(props: ReviewTabProps) {
           <Show
             when={diffsReady()}
             fallback={
-              <div class="px-3 py-2 text-12-regular text-text-weak">
-                {language.t("common.loading")}{language.t("common.loading.ellipsis")}
-              </div>
+              <DelayedLoading>
+                <div class="px-3 py-2 text-12-regular text-text-weak">
+                  {language.t("common.loading")}{language.t("common.loading.ellipsis")}
+                </div>
+              </DelayedLoading>
             }
           >
             <div

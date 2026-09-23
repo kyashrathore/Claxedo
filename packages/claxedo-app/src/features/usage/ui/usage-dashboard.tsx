@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { unifiedUsageQuery } from "../data/usage-query"
@@ -41,7 +41,15 @@ function inclusiveLocalRange(days: number, now: number) {
   return { since: since.getTime(), until: until.getTime() }
 }
 
-export function UsageDashboard() {
+export function UsageDashboard(props: {
+  /**
+   * Calls `notify` whenever figures for the Usage-limits view may have moved:
+   * a source landing on the server, or a stream hole that could have swallowed
+   * that news. Absent where nothing streams, and the view reads on open and
+   * on Refresh only.
+   */
+  quotaChanges?: (notify: () => void) => () => void
+}) {
   const [selected, setSelected] = createSignal<UsageView>("quota")
   const [days, setDays] = createSignal(7)
   const [metric, setMetric] = createSignal<"tokens" | "cost">("tokens")
@@ -69,6 +77,12 @@ export function UsageDashboard() {
   }))
   const query = useQuery(() => unifiedUsageQuery(request()))
   const data = createMemo<UnifiedUsageResponse | undefined>(() => query.data)
+  const quotaRefreshing = () => selected() === "quota" && (query.isPending || data()?.quota.refreshing === true)
+  if (props.quotaChanges) {
+    onCleanup(props.quotaChanges(() => {
+      if (selected() === "quota") void query.refetch()
+    }))
+  }
   const claxedo = createMemo(
     () => data()?.claxedo ?? { ...empty(), cost: emptyCost(), status: "available" as const, scope: "local" as const },
   )
@@ -145,7 +159,7 @@ export function UsageDashboard() {
             disabled={query.isFetching}
             onClick={refresh}
           >
-            <Icon name="reload" size="small" classList={{ "animate-spin": query.isFetching }} />
+            <Icon name="reload" size="small" classList={{ "animate-spin": query.isFetching || quotaRefreshing() }} />
           </button>
         </div>
       </header>
@@ -190,25 +204,23 @@ export function UsageDashboard() {
       </Show>
 
       <Show
-        when={data()}
+        when={selected() === "quota"}
         fallback={
-          <div class="usage-dashboard-loading" aria-live="polite">
-            <i />
-            <span>
-              {query.isError
-                ? `Usage unavailable · ${(query.error).message}`
-                : selected() === "total"
-                  ? "Scanning local usage history…"
-                  : selected() === "quota"
-                    ? "Reading usage limits…"
-                    : "Reading usage ledger…"}
-            </span>
-          </div>
-        }
-      >
-        <Show
-          when={selected() === "quota"}
-          fallback={
+          <Show
+            when={data()}
+            fallback={
+              <div class="usage-dashboard-loading" aria-live="polite">
+                <i />
+                <span>
+                  {query.isError
+                    ? `Usage unavailable · ${(query.error).message}`
+                    : selected() === "total"
+                      ? "Scanning local usage history…"
+                      : "Reading usage ledger…"}
+                </span>
+              </div>
+            }
+          >
             <>
               <div class="usage-overview-grid">
                 <aside
@@ -335,16 +347,17 @@ export function UsageDashboard() {
                 </Show>
               </div>
             </>
-          }
-        >
-          <QuotaLimitsView
-            snapshot={data()?.quota.snapshot}
-            throttledUntil={data()?.quota.throttledUntil}
-            error={data()?.quota.error}
-            onCheck={refresh}
-            busy={query.isFetching}
-          />
-        </Show>
+          </Show>
+        }
+      >
+        <QuotaLimitsView
+          snapshot={data()?.quota.snapshot}
+          throttledUntil={data()?.quota.throttledUntil}
+          error={data()?.quota.error ?? (query.isError ? `Usage unavailable · ${query.error.message}` : undefined)}
+          refreshing={quotaRefreshing()}
+          onCheck={refresh}
+          busy={query.isFetching}
+        />
       </Show>
 
       <Show when={selected() !== "quota"}>

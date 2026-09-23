@@ -66,6 +66,7 @@ describe("local daemon lifecycle", () => {
 
       await vi.advanceTimersByTimeAsync(1)
       expect(onIdle).toHaveBeenCalledTimes(1)
+      expect(onIdle).toHaveBeenCalledWith({ kind: "idle", idleMs: 180_000 })
     } finally {
       vi.useRealTimers()
     }
@@ -416,9 +417,9 @@ describe("machine recovery operations", () => {
       activity: () => machineWork(pins > 0 ? [owner("workspace:ws_a", "serving#0")] : [], pins)(),
       // The real entry releases its owners here and resolves only once they are
       // gone; a receipt written on the acknowledgement would say needs_action.
-      onStop: async () => {
+      onStop: async (reason) => {
         await Promise.resolve()
-        released.push("owners")
+        released.push(reason.kind === "stop_daemon" ? `owners for ${reason.operationId}` : "owners while idle")
         pins = 0
       },
       // Read at the instant the process would exit: a receipt committed after
@@ -438,7 +439,7 @@ describe("machine recovery operations", () => {
     if (submitted.kind !== "operation") throw new Error("the stop was refused")
     await lifecycle.recovery.settled()
 
-    expect(released).toEqual(["owners"])
+    expect(released).toEqual([`owners for ${submitted.operation.operationId}`])
     const read = lifecycle.recovery.read(submitted.operation.operationId)
     if (read.kind !== "operation") throw new Error("the stop was not retained")
     expect(read.operation.state).toBe("succeeded")

@@ -478,11 +478,6 @@ export const dict = {
   "session.revertDock.expand": "ขยายข้อความที่ถูกย้อนกลับ",
   "session.revertDock.restore": "กู้คืนข้อความ",
 
-  "session.new.title": "สร้างอะไรก็ได้",
-  "session.new.worktree.main": "สาขาหลัก",
-  "session.new.worktree.mainWithBranch": "สาขาหลัก ({{branch}})",
-  "session.new.worktree.create": "สร้าง worktree ใหม่",
-  "session.new.lastModified": "แก้ไขล่าสุด",
 
   "session.header.search.placeholder": "ค้นหา {{project}}",
   "session.header.searchFiles": "ค้นหาไฟล์",
@@ -630,6 +625,7 @@ export const dict = {
   "settings.providers.window.session": "เซสชัน",
   "settings.providers.window.weekly": "รายสัปดาห์",
   "settings.providers.window.weeklyOpus": "รายสัปดาห์ · Opus",
+  "usage.quota.checking": "กำลังตรวจสอบเอเจนต์ของคุณ…",
   "usage.quota.notChecked": "ยังไม่ได้ตรวจสอบ",
   "usage.quota.check": "ตรวจสอบ",
   "usage.quota.reconnect": "เชื่อมต่ออีกครั้งในการตั้งค่า",

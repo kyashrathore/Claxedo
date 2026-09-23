@@ -5,6 +5,7 @@ import { useFile } from "@/app/providers/file"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { DelayedLoading } from "@/ui/controls/delayed-loading"
 import type { WorkspaceFileStatus as StatusFile } from "@claxedo/workspace-runtime/client"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { workspaceFileStatusQueryOptions } from "@/platform/files/workspace-file-status-query"
@@ -69,6 +70,7 @@ export function WorkspaceFilesNavigator(props: {
   onFileClick: (path: string) => void
 }) {
   const sdk = useSDK()
+  const fileTreeLoadingEpisode = () => `file-tree:${sdk.directory}`
   const file = useFile()
   const [search, setSearch] = createSignal("")
   const [refresh, setRefresh] = createSignal<number | undefined>()
@@ -274,16 +276,20 @@ export function WorkspaceFilesNavigator(props: {
         {pendingFilesShell() ? (
           <div data-component="filetree" class="flex flex-col gap-0.5 p-1">
             <div data-file-tree-loading class="flex flex-col gap-0.5" aria-label="Loading files">
-              <div class="h-6 w-[82%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[76%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[69%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[61%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[54%] rounded-md bg-surface-base" />
+              <DelayedLoading episode={fileTreeLoadingEpisode()}>
+                <div class="h-6 w-[82%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[76%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[69%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[61%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[54%] rounded-md bg-surface-base" />
+              </DelayedLoading>
             </div>
           </div>
         ) : searchPending() ? (
           <div class="flex h-24 items-center justify-center">
-            <Spinner class="h-4 w-4 text-text-weak" />
+            <DelayedLoading>
+              <Spinner class="h-4 w-4 text-text-weak" />
+            </DelayedLoading>
           </div>
         ) : emptySearch() ? (
           <div class="px-3 py-6 text-center text-12-regular text-text-weak">No files found</div>
@@ -305,6 +311,7 @@ export function WorkspaceFilesNavigator(props: {
               active={props.activePath}
               draggable={false}
               visibleLimit={24}
+              loadingEpisode={fileTreeLoadingEpisode()}
               onFilePointerEnter={(node) => prefetchFile(node.path)}
               onFilePointerLeave={(node) => cancelPendingFilePrefetch(node.path)}
               onFileClick={(node) => props.onFileClick(node.path)}

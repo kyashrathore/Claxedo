@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono"
 import type { WSContext } from "hono/ws"
 import type { UpgradeWebSocket } from "hono/ws"
 import { Pty } from "../pty/index"
+import { Log } from "../log"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { routeParam } from "@claxedo/helpers/route-param"
 import { assertTarget, authoritativeWorkspaceId, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
@@ -30,6 +31,8 @@ import { volatileLaunchOwnership, type LaunchOwnershipStore } from "@claxedo/age
 function invalidInput(details: Record<string, unknown>) {
   return errorBody("pty_invalid_input", "Invalid PTY request body", details)
 }
+
+const log = Log.create({ service: "pty-route" })
 
 function notFound() {
   return errorBody("pty_session_not_found", "Session not found")
@@ -251,7 +254,10 @@ export function PtyRoutes(
     .get("/:ptyID", async (c) => {
       const id = c.req.param("ptyID")
       const info = Pty.get(id)
-      if (!info) return c.json(notFound(), 404)
+      if (!info) {
+        log.info("terminal lookup: no such PTY in this process", { ptyId: id })
+        return c.json(notFound(), 404)
+      }
       const guarded = await authorize(c, info, "pty_read")
       if (guarded) return guarded
       return c.json(info)
@@ -284,7 +290,10 @@ export function PtyRoutes(
       "/:ptyID/connect",
       async (c, next) => {
         const info = Pty.get(c.req.param("ptyID"))
-        if (!info) return c.json(notFound(), 404)
+        if (!info) {
+          log.warn("terminal attach refused: no such PTY in this process", { ptyId: c.req.param("ptyID") })
+          return c.json(notFound(), 404)
+        }
         const admission = await authorizePtyAttach({ policy, access: attachAccess(c), info })
         if (!admission.allowed) return ptyAccessRefusalResponse(admission)
         // The upgrade below is a second closure over the same request; the

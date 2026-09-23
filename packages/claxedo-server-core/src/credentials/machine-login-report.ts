@@ -17,7 +17,7 @@
 
 import { agentUsageOrNone } from "./machine-agent-usage"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
-import type { MachineAgentUsageReader } from "./machine-agent-usage"
+import type { MachineAgentUsage, MachineAgentUsageReader } from "./machine-agent-usage"
 import type { HarnessId } from "@claxedo/agent-runtime-contract"
 import type { CredentialReach } from "./native-delivery"
 import type { MachineLogin } from "./machine-login"
@@ -52,24 +52,52 @@ export async function machineLoginsWithUsage(
   },
 ): Promise<ReportedMachineLogin[]> {
   if (!credentials.machineLogins) return []
-  const logins = await credentials.machineLogins(options.harnesses, { fresh: options.fresh })
-  const agents = await agentUsageOrNone(options.agentUsage, { fresh: options.fresh })
-  const { readMachineLoginUsage, recordMachineLoginUsage } = credentials
-  const held = readMachineLoginUsage ? await readMachineLoginUsage() : []
-  const stored = new Map(held.map((row) => [usageKey(row.harness, row.account), row]))
+  const [logins, agents] = await Promise.all([
+    credentials.machineLogins(options.harnesses, { fresh: options.fresh }),
+    agentUsageOrNone(options.agentUsage, { fresh: options.fresh }),
+  ])
   const at = options.now()
-  const out: ReportedMachineLogin[] = []
+  await recordReportedUsage(credentials, logins, at)
+  return joinMachineLoginUsage(credentials, { logins, agents, at })
+}
+
+/**
+ * Keeps what each harness said about its own plan, so a later read on which it
+ * says nothing can still draw it. Once per read of the harnesses: `at` is when
+ * they answered, and recording it again at a later join would date the figures
+ * by the join.
+ */
+export async function recordReportedUsage(
+  credentials: ControlPlaneCredentials,
+  logins: readonly MachineLogin[],
+  at: number,
+) {
   for (const login of logins) {
+    if (login.usage?.length) await credentials.recordMachineLoginUsage?.(login.harness, login.email ?? "", login.usage, at)
+  }
+}
+
+/**
+ * Each login joined to the best plan figures anything holds for it. `at` is
+ * when the harnesses answered, which is when a harness's own windows were read.
+ */
+export async function joinMachineLoginUsage(
+  credentials: ControlPlaneCredentials,
+  input: { logins: readonly MachineLogin[]; agents: readonly MachineAgentUsage[]; at: number },
+): Promise<ReportedMachineLogin[]> {
+  const held = credentials.readMachineLoginUsage ? await credentials.readMachineLoginUsage() : []
+  const stored = new Map(held.map((row) => [usageKey(row.harness, row.account), row]))
+  const out: ReportedMachineLogin[] = []
+  for (const login of input.logins) {
     const account = login.email ?? ""
     if (login.usage?.length) {
-      await recordMachineLoginUsage?.(login.harness, account, login.usage, at)
-      out.push({ ...login, deliverable: MACHINE_LOGIN_REACH, usageAt: at })
+      out.push({ ...login, deliverable: MACHINE_LOGIN_REACH, usageAt: input.at })
       continue
     }
     // Only what a harness says about itself is recorded. The probe reads the
     // vendor on every ask, so a copy of its answer would only be a second
     // figure to go stale, and the account it names is nobody's stored row.
-    const agent = agents.find((row) => row.harness === login.harness)
+    const agent = input.agents.find((row) => row.harness === login.harness)
     if (agent?.windows.length) {
       out.push({ ...login, deliverable: MACHINE_LOGIN_REACH, usage: agent.windows, usageAt: agent.at })
       continue

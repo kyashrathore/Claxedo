@@ -483,11 +483,6 @@ export const dict = {
   "session.revertDock.expand": "Utvid tilbakestilte meldinger",
   "session.revertDock.restore": "Gjenopprett melding",
 
-  "session.new.title": "Bygg hva som helst",
-  "session.new.worktree.main": "Hovedgren",
-  "session.new.worktree.mainWithBranch": "Hovedgren ({{branch}})",
-  "session.new.worktree.create": "Opprett nytt worktree",
-  "session.new.lastModified": "Sist endret",
 
   "session.header.search.placeholder": "Søk i {{project}}",
   "session.header.searchFiles": "Søk etter filer",
@@ -635,6 +630,7 @@ export const dict = {
   "settings.providers.window.session": "Økt",
   "settings.providers.window.weekly": "Ukentlig",
   "settings.providers.window.weeklyOpus": "Ukentlig · Opus",
+  "usage.quota.checking": "Sjekker agentene dine…",
   "usage.quota.notChecked": "Ikke sjekket ennå",
   "usage.quota.check": "Sjekk",
   "usage.quota.reconnect": "Koble til på nytt i Innstillinger",

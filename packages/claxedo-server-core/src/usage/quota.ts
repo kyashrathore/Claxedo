@@ -4,24 +4,28 @@
  *
  * Two writes own the figures for an account Claxedo runs turns on: the windows
  * a Check kept against a stored account, and the windows a harness on this
- * machine reported about its own login. Neither is asked again on a read — a
- * dashboard opening must not spend a vendor request per account — so a read
- * answers from what they left behind, and only an explicit refresh runs them.
+ * machine reported about its own login. The machine-wide probe is the third
+ * source and answers about agents rather than accounts, including the agents
+ * Claxedo cannot run a turn on at all.
  *
- * The machine-wide probe is the third source and answers about agents rather
- * than accounts, including the agents Claxedo cannot run a turn on at all. It
- * holds its own answer, so a read costs a vendor request only when it is stale.
+ * A read never waits on any of them. Reading the harnesses costs a process
+ * each and the probe waits on its slowest vendor, so a read answers from what
+ * the last reads left behind and starts the ones that are due. Each source
+ * rings `usage.quota.changed` on `cp/events` as it lands, and the reader
+ * re-reads.
  */
 
 import { HARNESS_IDS, HARNESS_TABLE, harnessForProviderId, isHarnessId } from "@claxedo/agent-runtime-contract"
 import { agentUsageOrNone } from "../credentials/machine-agent-usage"
 import { credentialReach } from "../credentials/native-delivery"
-import { machineLoginsWithUsage } from "../credentials/machine-login-report"
+import { joinMachineLoginUsage, recordReportedUsage } from "../credentials/machine-login-report"
 import { checkCredential } from "../credentials/operations/check"
 import { isSubscriptionKind } from "../credentials/secret-material"
+import { controlBus } from "../platform/runtime/lib/bus"
 import { Log } from "../platform/runtime/lib/log"
 import type { ControlPlaneCredentials } from "../authority/control-plane-contract"
-import type { MachineAgentUsageReader } from "../credentials/machine-agent-usage"
+import type { MachineAgentUsage, MachineAgentUsageReader } from "../credentials/machine-agent-usage"
+import type { ReportedMachineLogin } from "../credentials/machine-login-report"
 import type { CredentialMetadata } from "../credentials/types"
 import type { QuotaAccount, QuotaSnapshot, UnifiedUsageResponse } from "@claxedo/usage-contract"
 
@@ -29,10 +33,20 @@ const log = Log.create({ service: "usage-quota" })
 
 const INFERENCE_ONLY_LOGIN = "Setup-tokens are inference-only, so this account runs turns but cannot report its plan usage. Sign the Claude CLI in to this account to see it."
 
-/** A Check spends a vendor request per stored account, so refreshes are spaced. */
+/**
+ * A Check spends a vendor request per stored account, so refreshes are spaced,
+ * and the machine's own sources are read again on an ordinary read only this
+ * long after the last one started.
+ */
 const REFRESH_INTERVAL_MS = 60_000
 
 export type UsageQuotaReader = (input: { org: string; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
+
+/** What the last reads of this machine's harnesses and probe left behind. */
+type MachineSources = {
+  logins: readonly ReportedMachineLogin[]
+  agents: readonly MachineAgentUsage[]
+}
 
 export function createUsageQuotaReader(input: {
   credentials: ControlPlaneCredentials
@@ -42,20 +56,77 @@ export function createUsageQuotaReader(input: {
   /** Absent wherever the host is not the machine the agents are installed on. */
   agentUsage?: MachineAgentUsageReader
 }): UsageQuotaReader {
+  const { credentials, agentUsage } = input
   const now = input.now ?? Date.now
   const interval = input.refreshIntervalMs ?? REFRESH_INTERVAL_MS
   const lastRefresh = new Map<string, number>()
+  const checking = new Set<string>()
+  const held: MachineSources = { logins: [], agents: [] }
+  let machineReadAt: number | undefined
+  let machinePending = 0
+
+  const ring = () => controlBus.publish({ type: "usage.quota.changed", ts: now() })
+
+  /**
+   * One harness read and one probe read, each landing on its own. Logins are
+   * joined again when the probe lands, because a harness that reports no
+   * windows of its own is drawn from the probe's.
+   */
+  const readMachine = (fresh: boolean) => {
+    machineReadAt = now()
+    let raw: { logins: Awaited<ReturnType<NonNullable<ControlPlaneCredentials["machineLogins"]>>>; at: number } | undefined
+    const join = async () => {
+      if (raw) held.logins = await joinMachineLoginUsage(credentials, { ...raw, agents: held.agents })
+    }
+    const land = (read: Promise<void>, label: string) => {
+      machinePending += 1
+      void read
+        .catch((error: unknown) => {
+          log.warn("quota source read failed", { source: label, detail: error instanceof Error ? error.message : String(error) })
+        })
+        .finally(() => {
+          machinePending -= 1
+          ring()
+        })
+    }
+    const machineLogins = credentials.machineLogins
+    if (machineLogins) {
+      land((async () => {
+        const logins = await machineLogins(undefined, { fresh })
+        const at = now()
+        await recordReportedUsage(credentials, logins, at)
+        raw = { logins, at }
+        await join()
+      })(), "harness logins")
+    }
+    if (agentUsage) {
+      land((async () => {
+        held.agents = await agentUsageOrNone(agentUsage, { fresh })
+        await join()
+      })(), "agent probe")
+    }
+  }
+
+  const check = (org: string) => {
+    checking.add(org)
+    void runChecks(credentials, org, { now, ...(input.fetch ? { fetch: input.fetch } : {}) })
+      .catch((error: unknown) => {
+        log.warn("quota checks failed", { org, detail: error instanceof Error ? error.message : String(error) })
+      })
+      .finally(() => {
+        checking.delete(org)
+        ring()
+      })
+  }
+
   return async ({ org, refresh }) => {
     const last = lastRefresh.get(org)
     const since = now() - (last ?? Number.NEGATIVE_INFINITY)
     let throttledUntil: number | undefined
-    if (refresh && since >= interval) {
+    const refreshing = refresh && since >= interval
+    if (refreshing) {
       lastRefresh.set(org, now())
-      await runChecks(input.credentials, org, {
-        now,
-        ...(input.fetch ? { fetch: input.fetch } : {}),
-        ...(input.agentUsage ? { agentUsage: input.agentUsage } : {}),
-      })
+      if (!checking.has(org)) check(org)
     } else if (refresh && last !== undefined) {
       // A Check spends a vendor request per stored account, so a second Refresh
       // inside the interval answers from what the first one wrote. Said out
@@ -64,11 +135,14 @@ export function createUsageQuotaReader(input: {
       throttledUntil = last + interval
       log.info("Quota refresh answered from the last one", { org, since_ms: since, interval_ms: interval })
     }
-    const snapshot = await composeSnapshot(input.credentials, org, now, input.agentUsage)
+    const machineDue = machineReadAt === undefined || now() - machineReadAt >= interval
+    if (machinePending === 0 && (refreshing || machineDue)) readMachine(refreshing)
+    const snapshot = await composeSnapshot(credentials, org, held)
     return {
       status: quotaStatus(snapshot),
       snapshot,
       ...(throttledUntil === undefined ? {} : { throttledUntil }),
+      ...(machinePending > 0 || checking.has(org) ? { refreshing: true } : {}),
     }
   }
 }
@@ -96,8 +170,7 @@ type StoredAccount = {
 async function composeSnapshot(
   credentials: ControlPlaneCredentials,
   org: string,
-  now: () => number,
-  agentUsage?: MachineAgentUsageReader,
+  machine: MachineSources,
 ): Promise<QuotaSnapshot> {
   const rows = await credentials.listCredentials(org)
   // Ownership is resolved over every stored row, and only then narrowed to the
@@ -136,12 +209,7 @@ async function composeSnapshot(
         : {}),
     }
   })
-  const logins = await machineLoginsWithUsage(credentials, {
-    fresh: false,
-    now,
-    ...(agentUsage ? { agentUsage } : {}),
-  })
-  for (const login of logins) {
+  for (const login of machine.logins) {
     if (login.state !== "signed_in") continue
     accounts.push({
       harness: login.harness,
@@ -157,7 +225,7 @@ async function composeSnapshot(
       ...(login.usageError === undefined ? {} : { usageError: login.usageError }),
     })
   }
-  for (const agent of await agentUsageOrNone(agentUsage, { fresh: false })) {
+  for (const agent of machine.agents) {
     // An agent the probe knows as a harness is already a card above, drawn from
     // the login Claxedo would run a turn on rather than from the probe's view
     // of the same machine.
@@ -255,30 +323,22 @@ async function accountsInUse(
 }
 
 /**
- * The refresh: the same Check the Providers list runs per stored account, the
- * same self-report it runs per harness on this machine, and the probe asked for
- * figures newer than the ones it is holding.
+ * The Check the Providers list runs, once per stored plan account, all at
+ * once: each is a request to its own vendor, and none waits on another.
  *
  * One account's failure is not the view's: a revoked login should leave every
- * other plan on screen, so a Check that fails is logged and the next account is
- * asked.
+ * other plan on screen, so a Check that fails is logged and the rest land.
  */
 async function runChecks(
   credentials: ControlPlaneCredentials,
   org: string,
-  options: { now: () => number; fetch?: typeof fetch; agentUsage?: MachineAgentUsageReader },
+  options: { now: () => number; fetch?: typeof fetch },
 ) {
-  const { agentUsage, ...check } = options
   const rows = (await credentials.listCredentials(org)).filter((row) => isSubscriptionKind(row.kind))
-  for (const row of rows) {
-    const outcome = await checkCredential(credentials, row, { org, ...check })
+  await Promise.all(rows.map(async (row) => {
+    const outcome = await checkCredential(credentials, row, { org, ...options })
     if (outcome.status === "failed") {
       log.warn("quota check failed", { credential_id: row.id, ...outcome.detail })
     }
-  }
-  await machineLoginsWithUsage(credentials, {
-    fresh: true,
-    now: options.now,
-    ...(agentUsage ? { agentUsage } : {}),
-  })
+  }))
 }

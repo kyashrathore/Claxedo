@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Event, MessageBoxOptions } from "electron"
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, session, utilityProcess } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, powerMonitor, safeStorage, session, utilityProcess } from "electron"
 import { grantMainRendererDaemonAccess } from "./renderer-daemon-access"
 import { createDaemonFetch, type DaemonEndpoint } from "./daemon-request"
 import pkg from "electron-updater"
@@ -270,12 +270,15 @@ function setupApp() {
   app.on("before-quit", (event: Event) => {
     if (quitting) return
     quitting = true
+    logger.log("app quitting")
     event.preventDefault()
     void shutdown().finally(() => app.quit())
   })
 
   void app.whenReady().then(async () => {
     diagnosticsProfiler.requestSample("lifecycle")
+    powerMonitor.on("suspend", () => logger.log("system suspending"))
+    powerMonitor.on("resume", () => logger.log("system resumed"))
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
     setupAutoUpdater()
@@ -469,11 +472,13 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
       listening.reject(error)
       logger.error("claxedo-server child process failed", { error: String(error) })
     })
-    child.once("exit", (code) => {
+    child.once("exit", (code, signal) => {
       ownerBridge?.dispose()
       exited.resolve(code)
       listening.reject(new Error(`claxedo-server exited before listening (code ${String(code)})`))
-      if (!quitting && code !== 0) logger.error("claxedo-server child process exited", { code })
+      const detail = { pid: child.pid, code, signal }
+      if (quitting || code === 0) logger.log("claxedo-server child process exited", detail)
+      else logger.error("claxedo-server child process exited", detail)
     })
 
     const claxedoUrl = `http://127.0.0.1:${claxedoPort}`

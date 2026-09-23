@@ -42,6 +42,7 @@ import { usePrompt } from "@/features/session/providers/prompt"
 import { useComments } from "@/platform/comments/provider"
 import { pickProjectFolderWith } from "./components/session-pick-project-folder"
 import { NewSessionDesignView, SessionHeader } from "@/features/session/ui/components"
+import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
 import { asHostKind, inventoryHostKind, isRelayHostKind, type RelayHostKind, type WorkspaceHostKind, type InventoryKindWord } from "@/platform/runtime/placement-wire"
 import { PreviousMessagesRow } from "./message-timeline-turn-rows"
 
@@ -118,7 +119,7 @@ import { createActivePaneProjection } from "@/features/session/store/active-pane
 import { createSessionScreenCacheProjection } from "@/features/session/ui/session-screen-cache-projection"
 import { createParentSessionNavigation } from "@/features/session/ui/session-parent-navigation"
 import { createNewSessionBranchSource } from "@/features/session/ui/components/session-new-branch-source"
-import { newSessionProjectRoot } from "@/features/session/ui/components/session-new-view-root"
+import { newSessionProjectRoot } from "@/features/session/ui/components/session-new-project-root"
 import { useMarked } from "@opencode-ai/ui/context/marked"
 import {
   firstFoldMarkdownBodies,
@@ -1291,13 +1292,7 @@ export default function SessionPage(props: {
                         messagesReady: messagesReady(),
                         sessionKey: sessionKey(),
                       })}
-                      fallback={
-                        <div
-                          class="size-full bg-background-base"
-                          data-session-timeline-loading
-                          data-testid="session-messages-loading"
-                        />
-                      }
+                      fallback={<SessionTimelineSkeleton centered={centered()} sessionId={sessionID()} />}
                     >
                       {(_id) => (
                         <MessageTimeline

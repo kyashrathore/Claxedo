@@ -116,13 +116,25 @@ export type SessionInventoryChangedEvent = {
 }
 
 /**
+ * Figures for the Usage-limits view landed from one of their sources: a stored
+ * account's Check, the harnesses' own logins, or the machine-wide probe. Names
+ * nothing, so it carries nothing a subscriber could not already read; the
+ * quota read decides who sees the figures.
+ */
+export type UsageQuotaChangedEvent = {
+  type: "usage.quota.changed"
+  ts: number
+}
+
+/**
  * What the control plane tells its clients on `cp/events`: something changed
  * and the reader re-reads. Never a session's content — that is the workspace
  * runtime's stream. One bus, one publisher per event kind: the sandbox
  * provisioner, the worktree routes, the documents backend, the session-share
- * authority, the session-meta store (`session/meta/index.ts`).
+ * authority, the session-meta store (`session/meta/index.ts`), the usage quota
+ * reader (`usage/quota.ts`).
  *
- * The local daemon and a self-hosted node serve all six kinds. The hosted
+ * The local daemon and a self-hosted node serve all seven kinds. The hosted
  * plane's room (`hosted-workerd/live-sync-room.cf.ts`) carries `provision`,
  * `document.changed` and `session.share.changed` only: worktrees are a
  * machine's, and the hosted worker has no publisher for
@@ -151,5 +163,6 @@ export type ControlPlaneEvent =
   | DocumentChangedEvent
   | SessionShareChangedEvent
   | SessionInventoryChangedEvent
+  | UsageQuotaChangedEvent
 
 export const controlBus = createBus<ControlPlaneEvent>()

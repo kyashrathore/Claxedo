@@ -157,6 +157,8 @@ export const dict: Record<string, string> = {
   "ui.basicTool.action.sendMessage": "Send message",
   "ui.basicTool.action.searchTools": "Search tools",
   "ui.basicTool.action.listAgents": "List agents",
+  "ui.basicTool.action.enterPlanMode": "Enter plan mode",
+  "ui.basicTool.action.proposePlan": "Propose plan",
   "ui.subagent.status.working": "working",
   "ui.subagent.status.done": "done",
   "ui.subagent.status.paused": "paused",

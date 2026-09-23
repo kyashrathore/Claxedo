@@ -89,6 +89,8 @@ export type ClaxedoEvent =
   | DocumentChangedEvent
   | SessionShareChangedEvent
   | SessionInventoryChangedEvent
+  /** Figures for the Usage-limits view landed from one of their sources; the view re-reads. */
+  | { type: "usage.quota.changed"; ts: number }
   | ClaxedoDirectoryEvent
   | {
       type: "provision"

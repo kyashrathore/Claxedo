@@ -152,6 +152,8 @@ export function QuotaLimitsView(props: {
   snapshot?: QuotaSnapshot
   error?: string
   throttledUntil?: number
+  /** A source is still being read, so an empty list is not yet an answer. */
+  refreshing?: boolean
   onCheck?: () => void
   busy?: boolean
 }) {
@@ -219,7 +221,11 @@ export function QuotaLimitsView(props: {
       </Show>
       <Show
         when={groups().length}
-        fallback={<div class="usage-chart-empty">{props.error ?? language.t("usage.quota.empty")}</div>}
+        fallback={
+          <div class="usage-chart-empty">
+            {props.error ?? language.t(props.refreshing ? "usage.quota.checking" : "usage.quota.empty")}
+          </div>
+        }
       >
         <div class="usage-quota-groups">
           <For each={groups()}>{(group) => (

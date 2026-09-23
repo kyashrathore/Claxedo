@@ -208,6 +208,43 @@ describe("openTerminalWebSocket direct vs relay", () => {
   })
 })
 
+describe("PTY presence", () => {
+  const presenceOf = (respond: () => Response | Promise<Response>) => {
+    const calls: string[] = []
+    const client = createTerminalPtyClient({
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo",
+      request: (async (input) => {
+        calls.push(requestUrl(input))
+        return await respond()
+      }) as typeof fetch,
+    })
+    return { calls, presence: () => client.presence("pty_1") }
+  }
+
+  test("the PTY route's not-found answer means the PTY is gone", async () => {
+    const probe = presenceOf(() =>
+      Response.json({ error: { code: "pty_session_not_found", message: "Session not found" } }, { status: 404 }))
+    expect(await probe.presence()).toBe("gone")
+    expect(probe.calls).toEqual(["http://127.0.0.1:3001/api/wr/pty/pty_1?directory=%2Frepo"])
+  })
+
+  test("a 404 that is not the PTY route's own is not proof the PTY is gone", async () => {
+    expect(await presenceOf(() => new Response("Not Found", { status: 404 })).presence()).toBe("unreachable")
+    expect(await presenceOf(() =>
+      Response.json({ error: { code: "workspace_not_found", message: "no" } }, { status: 404 })).presence()).toBe("unreachable")
+  })
+
+  test("a PTY the server returns is live", async () => {
+    expect(await presenceOf(() => Response.json({ id: "pty_1" })).presence()).toBe("live")
+  })
+
+  test("a server that fails or cannot be reached is unreachable", async () => {
+    expect(await presenceOf(() => new Response("down", { status: 503 })).presence()).toBe("unreachable")
+    expect(await presenceOf(() => Promise.reject(new TypeError("fetch failed"))).presence()).toBe("unreachable")
+  })
+})
+
 describe("terminal runtime routing", () => {
   test("terminalPtyApiPath preserves suffix and runtime scope query", () => {
     expect(terminalPtyApiPath({

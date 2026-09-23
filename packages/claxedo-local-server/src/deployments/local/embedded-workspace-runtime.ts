@@ -670,6 +670,11 @@ export async function attachEmbeddedWorkspacePty(input: {
   })
   const info = Pty.get(input.ptyId)
   if (!info || !await ownsPath(input.workspace, info.cwd)) {
+    log.warn("terminal attach refused", {
+      ptyId: input.ptyId,
+      workspaceId: input.workspace.id,
+      reason: info ? "outside the workspace" : "no such PTY in this process",
+    })
     return { ok: false, response: ptyAccessRefusalResponse(PTY_NOT_FOUND_REFUSAL) }
   }
   const policy = embeddedSessionAccessPolicy()

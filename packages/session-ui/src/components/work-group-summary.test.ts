@@ -42,6 +42,7 @@ describe("workGroupTitle", () => {
 
   test("names the distinct members of a mixed run", () => {
     expect(title([tool("skill"), tool("listagents")])).toBe("Used skill, list agents")
+    expect(title([tool("enterplanmode"), tool("exitplanmode", { plan: "# Fix" })])).toBe("Used enter plan mode, propose plan")
     expect(title([tool("sessions_list"), tool("processes")])).toBe("Used sessions list, processes")
   })
 

@@ -80,6 +80,10 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ControlPla
       // authority-internal namespace as principal.orgId. Org-less (local)
       // workspaces stay invisible to signed subscribers.
       return !!principal.orgId && event.orgId === principal.orgId
+    case "usage.quota.changed":
+      // Carries no figures and names no account: the quota read it provokes
+      // is what applies `operator_required`.
+      return true
     default:
       // worktree.* carries no owner identity: it is a local daemon's notice
       // about its own checkout, and a signed subscriber to a shared control

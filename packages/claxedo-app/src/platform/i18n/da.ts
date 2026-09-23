@@ -477,11 +477,6 @@ export const dict = {
   "session.revertDock.expand": "Udvid tilbagerullede beskeder",
   "session.revertDock.restore": "Gendan besked",
 
-  "session.new.title": "Byg hvad som helst",
-  "session.new.worktree.main": "Hovedgren",
-  "session.new.worktree.mainWithBranch": "Hovedgren ({{branch}})",
-  "session.new.worktree.create": "Opret nyt worktree",
-  "session.new.lastModified": "Sidst ændret",
 
   "session.header.search.placeholder": "Søg {{project}}",
   "session.header.searchFiles": "Søg efter filer",
@@ -629,6 +624,7 @@ export const dict = {
   "settings.providers.window.session": "Session",
   "settings.providers.window.weekly": "Ugentligt",
   "settings.providers.window.weeklyOpus": "Ugentligt · Opus",
+  "usage.quota.checking": "Tjekker dine agenter…",
   "usage.quota.notChecked": "Endnu ikke tjekket",
   "usage.quota.check": "Tjek",
   "usage.quota.reconnect": "Tilslut igen i Indstillinger",
