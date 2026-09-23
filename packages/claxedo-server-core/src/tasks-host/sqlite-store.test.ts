@@ -16,7 +16,7 @@ const roots: string[] = []
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 
 const { ClaxedoDB, CLAXEDO_MIGRATION_JOURNAL, configureClaxedoMigrations } = await import("../platform/db/index")
-const { sqliteTasksStore } = await import("./sqlite-store")
+const { sqliteTasksStore, closeTasksStore } = await import("./sqlite-store")
 const { TasksStoredRowError } = await import("./stored-rows")
 const { tasksStoreConformance, tasksCommandReplayConformance } = await import("@claxedo/tasks/conformance")
 
@@ -37,6 +37,7 @@ function freshDatabase() {
 
 afterAll(async () => {
   ClaxedoDB.close()
+  closeTasksStore()
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })))
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
