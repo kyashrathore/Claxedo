@@ -777,7 +777,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
     async ({ page }) => {
       test.setTimeout(120_000)
       await stampTestAuth(page.context())
-      const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID })
+      const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, issuesSessions: true })
 
       // A hosted account before its first project: `installMockRuntime`'s default
       // local-worktree row has no cloud kind and the signed inventory contract rejects it.
