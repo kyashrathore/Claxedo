@@ -319,6 +319,10 @@ function safeFileURLToPath(source: string): string | undefined {
 
 export function resolveElectronBinary(fromDir: string): string {
   const require = createRequire(path.join(fromDir, "package.json"))
+  // `electron` reads dist/path.txt once, when first loaded. predev loads it
+  // before renaming the dev bundle to Claxedo Dev.app and rewriting path.txt,
+  // so a cached module still names the Electron.app that no longer exists.
+  delete require.cache[require.resolve("electron")]
   // Named on the binding rather than asserted: `require` answers `any`.
   const electronPath: string = require("electron")
   return electronPath
