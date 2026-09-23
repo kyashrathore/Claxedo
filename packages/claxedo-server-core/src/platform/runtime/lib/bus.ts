@@ -127,6 +127,23 @@ export type UsageQuotaChangedEvent = {
 }
 
 /**
+ * A live plugin registered with this daemon changed: a build started,
+ * landed at `hash`, failed (the last good `hash` stays served), or the
+ * plugin was removed. A doorbell: the app re-reads the live-plugins list.
+ *
+ * Publisher: the daemon's live-plugin service
+ * (`claxedo-local-server/src/plugins/service.ts`). A machine's own notice,
+ * so `event-visibility.ts` keeps it from signed subscribers.
+ */
+export type PluginsChangedEvent = {
+  type: "plugins.changed"
+  pluginId: string
+  status: "building" | "ready" | "failed" | "removed"
+  hash?: string
+  ts: number
+}
+
+/**
  * What the control plane tells its clients on `cp/events`: something changed
  * and the reader re-reads. Never a session's content — that is the workspace
  * runtime's stream. One bus, one publisher per event kind: the sandbox
@@ -164,5 +181,6 @@ export type ControlPlaneEvent =
   | SessionShareChangedEvent
   | SessionInventoryChangedEvent
   | UsageQuotaChangedEvent
+  | PluginsChangedEvent
 
 export const controlBus = createBus<ControlPlaneEvent>()
