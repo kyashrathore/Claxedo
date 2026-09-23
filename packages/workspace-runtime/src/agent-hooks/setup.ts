@@ -7,7 +7,7 @@
 import * as fs from "fs"
 import { materializeAgentHooks } from "./materialize-status-hooks"
 import { Log } from "../log"
-import { userHomeDir } from "../env"
+import { userHomeDir } from "@claxedo/helpers/path"
 import {
   BIN_DIR,
   CLAXEDO_DIR,

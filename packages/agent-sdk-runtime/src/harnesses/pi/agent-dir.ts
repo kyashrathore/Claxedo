@@ -1,6 +1,6 @@
-import os from "node:os"
 import path from "node:path"
 import { createHash } from "node:crypto"
+import { userHomeDir } from "@claxedo/helpers/path"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 /** A workspace id as one path segment; the id itself may contain separators. */
@@ -22,5 +22,5 @@ export function piAgentDir(options: PiAgentDirInput): string {
   return options.agentDir
     ?? (options.storeRoot ? path.join(options.storeRoot, "pi", "agent") : undefined)
     ?? trimToUndefined(process.env.PI_CODING_AGENT_DIR)
-    ?? path.join(os.homedir(), ".claxedo", "pi", "agent", piWorkspaceDirName(options.workspaceId))
+    ?? path.join(userHomeDir(), ".claxedo", "pi", "agent", piWorkspaceDirName(options.workspaceId))
 }

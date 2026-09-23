@@ -3,7 +3,8 @@ import { createHash } from "node:crypto"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { userHomeDir, workspaceRuntimeDataDir } from "../env"
+import { userHomeDir } from "@claxedo/helpers/path"
+import { workspaceRuntimeDataDir } from "../env"
 import { agentHookConfigPaths } from "./materialize-status-hooks"
 import { setupAgentHooks } from "./setup"
 
@@ -19,7 +20,7 @@ function fingerprint(homeDir: string) {
   }))
 }
 
-/** The passwd home: unlike `os.homedir()`, HOME cannot redirect it. */
+/** The home this process was launched with: Bun 1.3 reports the startup HOME here, not one the preload assigns. */
 const accountHome = os.userInfo().homedir
 
 test("agent hook setup writes every harness config under the test home and none under the account home", async () => {

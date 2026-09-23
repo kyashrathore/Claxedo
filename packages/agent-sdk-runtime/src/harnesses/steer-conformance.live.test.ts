@@ -7,6 +7,7 @@ import { createAgentRuntime, type AgentHarnessFactory } from "../runtime"
 import { createMemoryRuntimeStore } from "../stores/memory"
 import type { AgentMessage, PromptDelivery } from "../index"
 import type { SessionHarnessId } from "@claxedo/agent-runtime-contract"
+import { userHomeDir } from "@claxedo/helpers/path"
 import { claude, codex, cursor } from "./index"
 import { harnessFactory } from "../harness-factories/factory"
 import { PiHarnessAdapter } from "./pi"
@@ -88,7 +89,7 @@ function codexUnavailable(): string | undefined {
   const binary = resolveCodexExecutable()
   if (!binary) return `Codex is not installed. ${CODEX_INSTALL_HINT}`
   if (ambientKey("OPENAI_API_KEY")) return undefined
-  const home = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
+  const home = process.env.CODEX_HOME ?? path.join(userHomeDir(), ".codex")
   const auth = readCodexAuthFile(home)
   const signedIn = !!auth && (!!codexChatgptAuthTokens(auth) || typeof auth.OPENAI_API_KEY === "string")
   return signedIn ? undefined : `Codex is not signed in: no usable credential in ${path.join(home, "auth.json")}`

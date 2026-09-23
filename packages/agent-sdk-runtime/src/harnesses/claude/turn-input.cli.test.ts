@@ -3,6 +3,7 @@ import fs from "node:fs"
 import http from "node:http"
 import os from "node:os"
 import path from "node:path"
+import { userHomeDir } from "@claxedo/helpers/path"
 import { createAgentRuntime } from "../../runtime"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentMessage } from "../../index"
@@ -107,12 +108,24 @@ function textOf(message: AgentMessage | undefined) {
   return (message?.parts ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
 }
 
+/** The home this process was launched with: Bun 1.3 reports the startup HOME here, not one the preload assigns. */
+const launchHome = os.userInfo().homedir
+
+/** The CLI names a transcript directory after the session's cwd, whose mkdtemp suffix is unique to this run. */
+function transcriptDirs(home: string, directory: string) {
+  const projects = path.join(home, ".claude", "projects")
+  if (!fs.existsSync(projects)) return []
+  return fs.readdirSync(projects).filter((name) => name.endsWith(path.basename(directory)))
+}
+
 const claudeBinary = resolveClaudeExecutable()
 
 describe("the Claude turn input the driver holds open", () => {
   test.skipIf(claudeBinary === undefined)(
     "accepts a prompt sent mid-turn once the CLI replays it, and the turn still ends on its own",
     async () => {
+      expect(userHomeDir(), "run from packages/agent-sdk-runtime, whose bunfig.toml preloads src/test-utils/isolated-home.mjs")
+        .not.toBe(launchHome)
       const stub = await stubAnthropicApi()
       const restoreEnv = withAnthropicEnv(stub)
       const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "claude-turn-input-")))
@@ -178,6 +191,8 @@ describe("the Claude turn input the driver holds open", () => {
         // Transcript placement of an accepted steer is not built for any
         // harness yet, so the steered prompt has no user row of its own.
         expect(messages.map((message) => message.info.role)).toEqual(["user", "assistant"])
+        expect(transcriptDirs(userHomeDir(), directory)).toHaveLength(1)
+        expect(transcriptDirs(launchHome, directory)).toEqual([])
         console.log(
           `[claude cli] accepted a steer after ${beforeSteer.split("\n").length - 1} streamed lines, `
             + `turn ended in ${Date.now() - startedAt}ms over ${stub.requests.length} model requests`,

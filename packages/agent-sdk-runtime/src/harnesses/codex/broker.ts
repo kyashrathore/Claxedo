@@ -1,7 +1,7 @@
 import { credentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
+import { userHomeDir } from "@claxedo/helpers/path"
 import {
   providerBinding,
   providerProjectionKey,
@@ -61,7 +61,7 @@ export class CodexBrokerProvider {
   private readonly root: string
 
   constructor(root?: string) {
-    this.root = root ?? path.join(os.homedir(), ".claxedo", "codex", "home")
+    this.root = root ?? path.join(userHomeDir(), ".claxedo", "codex", "home")
   }
 
   /** True when what the next launch must run on differs from what is running. */

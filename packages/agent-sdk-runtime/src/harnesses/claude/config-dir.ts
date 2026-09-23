@@ -1,7 +1,7 @@
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { asRecord } from "@claxedo/helpers/guards"
+import { userHomeDir } from "@claxedo/helpers/path"
 
 /**
  * The entries of the operator's `~/.claude` this config dir mirrors.
@@ -106,8 +106,8 @@ export function brokeredClaudeSettings(content: string | undefined): Record<stri
 export function brokeredClaudeConfigDir(input: {
   root: string
   source?: string
-} = { root: path.join(os.homedir(), ".claxedo", "claude", "config") }): string {
-  const source = input.source ?? path.join(os.homedir(), ".claude")
+} = { root: path.join(userHomeDir(), ".claxedo", "claude", "config") }): string {
+  const source = input.source ?? path.join(userHomeDir(), ".claude")
   fs.mkdirSync(input.root, { recursive: true, mode: 0o700 })
   const present = fs.existsSync(source) ? fs.readdirSync(source) : []
   const mirrored = present.filter((name) => MIRRORED_ENTRIES.has(name))

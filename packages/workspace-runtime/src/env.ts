@@ -1,6 +1,6 @@
-import os from "node:os"
 import path from "node:path"
 import { envText } from "@claxedo/helpers"
+import { userHomeDir } from "@claxedo/helpers/path"
 
 export function runtimeEnvText(env: NodeJS.ProcessEnv, key: string) {
   return envText(env, key)
@@ -17,15 +17,6 @@ export function workspaceRuntimeEpoch(env: NodeJS.ProcessEnv = process.env) {
   if (!raw) return undefined
   const epoch = Number(raw)
   return Number.isSafeInteger(epoch) && epoch > 0 ? epoch : undefined
-}
-
-/**
- * The home directory `os.homedir()` would report, read from `env` on every
- * call. Bun 1.3 snapshots HOME at startup, so a HOME a test preload assigns
- * later never reaches Bun's `os.homedir()`.
- */
-export function userHomeDir(env: NodeJS.ProcessEnv = process.env) {
-  return runtimeEnvText(env, process.platform === "win32" ? "USERPROFILE" : "HOME") ?? os.homedir()
 }
 
 export function workspaceRuntimeDataDir(env: NodeJS.ProcessEnv = process.env) {

@@ -33,6 +33,16 @@ export function absoluteConfiguredDir(key: string, value: string): string {
 }
 
 /**
+ * The home directory `os.homedir()` would report, read from `env` on every
+ * call. Bun 1.3 snapshots HOME at startup, so a HOME a test preload assigns
+ * later never reaches Bun's `os.homedir()`; Node reads it per call, where the
+ * two agree.
+ */
+export function userHomeDir(env: Record<string, string | undefined> = process.env): string {
+  return envText(env, process.platform === "win32" ? "USERPROFILE" : "HOME") ?? homedir()
+}
+
+/**
  * Where this process keeps Claxedo's data, and the state under it. One owner:
  * the runtime, the server and their tests all resolve `CLAXEDO_DATA_DIR` the
  * same way, including the `:memory:` sentinel that `ClaxedoDB.Path` forwards

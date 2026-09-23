@@ -1,5 +1,4 @@
 import { createIdleReaper } from "../shared/process-lifecycle"
-import os from "os"
 import path from "path"
 import {
   createAgentEventRuntime,
@@ -18,6 +17,7 @@ import { Log } from "../../log"
 import { harnessEffortLevels } from "../../harness-effort"
 import { createLiveModelSource } from "../../live-model-source"
 import { asRecord } from "@claxedo/helpers/guards"
+import { userHomeDir } from "@claxedo/helpers/path"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import {
   errorMessage,
@@ -120,7 +120,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     private readonly options: CodexDriverOptions,
   ) {
     // Keep auth reads and writes on the same resolved Codex home for this driver.
-    this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
+    this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? path.join(userHomeDir(), ".codex")
     this.broker = new CodexBrokerProvider(options.brokeredHome)
     this.operatorLogin = new CodexOperatorLogin({ home: this.codexHome, ...(options.fetch ? { fetch: options.fetch } : {}) })
     this.goalController = new CodexGoalController({
