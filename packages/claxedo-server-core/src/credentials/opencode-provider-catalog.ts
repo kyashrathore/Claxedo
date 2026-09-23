@@ -5,9 +5,13 @@
  * (`docs/architecture/opencode-embedded-sdk-contract.md`).
  *
  * Source: models.dev, the same catalog the engine reads, overlaid with the
- * caller's org-scoped custom providers. The offline `piModelCatalog` would be
- * cheaper but carries 31 providers against models.dev's 203, so it would
- * silently shrink the model picker.
+ * caller's org-scoped custom providers. Which models can run is the running
+ * engine's answer (`engineModels`), not a guess from stored credentials or
+ * environment variables: a model is `connected` exactly when the engine lists
+ * it, and its `free` flag, effort variants and the provider's connected state
+ * all come from that same list. The offline `piModelCatalog` would be cheaper
+ * but carries 31 providers against models.dev's 203, so it would silently
+ * shrink the model picker.
  *
  * With neither a live fetch nor a cached copy this throws rather than returning
  * an empty catalog: an unavailable catalog is not "there are no providers", and
@@ -18,8 +22,7 @@ import * as path from "node:path"
 import { isJsonRecord, jsonRecord, parseJsonRecord } from "../platform/runtime/lib/json"
 import { dataDir } from "../platform/runtime/lib/paths"
 import { listCustomProviders } from "./custom-provider"
-import { vendorCredentialProviderIds } from "@claxedo/agent-runtime-contract"
-import { credentialByProvider, credentialOrg, PROVIDER_AUTH_KINDS, type CredentialOrgScope } from "./registry"
+import { credentialOrg, type CredentialOrgScope } from "./registry"
 
 const MODELS_DEV_URL = "https://models.dev/api.json"
 
@@ -42,6 +45,21 @@ export type OpenCodeCatalogModel = {
   temperature?: boolean
   limit?: unknown
   cost?: unknown
+  /** The engine's effort variants for this model, keyed by id; absent when it applies none. */
+  variants?: Record<string, Record<string, never>>
+  /** Whether the engine can run a turn on this model now. */
+  connected: boolean
+  /** Whether the engine prices every tier of this model at zero. */
+  free: boolean
+}
+
+/** One model the running engine can run a turn on. */
+export type OpenCodeEngineModel = {
+  providerID: string
+  id: string
+  name?: string
+  variants?: readonly string[]
+  cost: readonly Readonly<{ input: number; output: number }>[]
 }
 
 export type OpenCodeCatalogProvider = {
@@ -181,30 +199,6 @@ export async function resolveModelsDevCatalog(
   }
 }
 
-function providerConnected(
-  provider: Pick<ModelsDevProvider, "env">,
-  id: string,
-  env: NodeJS.ProcessEnv,
-  org: string,
-): boolean {
-  // OpenCode Zen is the house catalog: its models must be pickable without a
-  // stored key. A provider that declares no env vars has the same bar.
-  if (id === "opencode" || !(provider.env ?? []).length) return true
-  // Every row the engine would bind for this provider, not only the one stored
-  // under its own name: `reconcileCredentialsIntoSdk` binds a Claude Code
-  // login to the engine's Anthropic provider, and a catalog that asked only
-  // for `anthropic` called that provider unconnected while turns ran on it.
-  const candidates = vendorCredentialProviderIds(id)
-  if (candidates.some((candidate) =>
-    credentialByProvider(candidate, { onOutage: "throw", kind: PROVIDER_AUTH_KINDS }, org)?.status === "available")) {
-    return true
-  }
-  // models.dev names the environment variables a provider authenticates with;
-  // an operator-supplied key counts as connected exactly as it does for the
-  // harness-binding catalog.
-  return (provider.env ?? []).some((key) => !!env[key]?.trim())
-}
-
 function toModel(raw: Record<string, unknown>, id: string): OpenCodeCatalogModel {
   return {
     id: typeof raw.id === "string" ? raw.id : id,
@@ -215,26 +209,36 @@ function toModel(raw: Record<string, unknown>, id: string): OpenCodeCatalogModel
     temperature: raw.temperature === true,
     limit: raw.limit,
     cost: raw.cost,
+    connected: false,
+    free: false,
   }
 }
 
 /** Build the catalog `providerBody` serves for the OpenCode harness. */
 export async function opencodeProviderCatalog(
-  options: { env?: NodeJS.ProcessEnv; fetchImpl?: CatalogFetch; now?: number; org?: CredentialOrgScope } = {},
+  options: {
+    env?: NodeJS.ProcessEnv
+    fetchImpl?: CatalogFetch
+    now?: number
+    org?: CredentialOrgScope
+    /** The models the engine that runs OpenCode turns can run. */
+    engineModels: () => Promise<readonly OpenCodeEngineModel[]>
+  },
 ): Promise<OpenCodeCatalog> {
   const env = options.env ?? process.env
   const org = credentialOrg(options.org)
   const raw = await resolveModelsDevCatalog({ ...options, env })
 
   const all: OpenCodeCatalog["all"] = []
-  const connected: string[] = []
-  const defaults: Record<string, string> = {}
 
   for (const [id, provider] of Object.entries(raw)) {
     if (!provider || typeof provider !== "object") continue
     const models = provider.models ?? {}
+    // The engine skips deprecated models when it loads models.dev, so a turn
+    // on one fails; listing them would advertise a model nothing can run.
     const entries = Object.entries(models).filter(
-      (entry): entry is [string, Record<string, unknown>] => !!entry[1] && typeof entry[1] === "object",
+      (entry): entry is [string, Record<string, unknown>] =>
+        !!entry[1] && typeof entry[1] === "object" && entry[1].status !== "deprecated",
     )
     if (entries.length === 0) continue
 
@@ -245,19 +249,84 @@ export async function opencodeProviderCatalog(
       source: "config",
       models: Object.fromEntries(entries.map(([modelId, model]) => [modelId, toModel(model, modelId)])),
     })
-
-    // Stable default: models.dev key order is not guaranteed, so sort rather
-    // than trusting whichever key happened to come first.
-    const first = entries.map(([modelId]) => modelId).sort()[0]
-    if (first) defaults[id] = first
-    if (providerConnected(provider, id, env, org)) connected.push(id)
   }
 
   if (all.length === 0) {
     throw new OpenCodeCatalogUnavailableError("the OpenCode model catalog contained no providers")
   }
 
-  return mergeCustomProviders({ all, connected, default: defaults }, env, org)
+  return withEngineModels(mergeCustomProviders(all, org), await readEngineModels(options.engineModels))
+}
+
+/**
+ * An engine that cannot list its models leaves no answer to which models can
+ * run, and "nothing is connected" would be a different, false answer.
+ */
+async function readEngineModels(read: () => Promise<readonly OpenCodeEngineModel[]>) {
+  try {
+    return await read()
+  } catch (cause) {
+    throw new OpenCodeCatalogUnavailableError("the OpenCode engine could not list the models it runs", { cause })
+  }
+}
+
+function isFree(model: OpenCodeEngineModel) {
+  return model.cost.length > 0 && model.cost.every((tier) => tier.input === 0 && tier.output === 0)
+}
+
+function runnable(model: Omit<OpenCodeCatalogModel, "connected" | "free">, engine: OpenCodeEngineModel): OpenCodeCatalogModel {
+  return {
+    ...model,
+    connected: true,
+    free: isFree(engine),
+    ...(engine.variants?.length ? { variants: Object.fromEntries(engine.variants.map((id) => [id, {}])) } : {}),
+  }
+}
+
+/**
+ * Marks what the engine can run, adds what it runs that models.dev does not
+ * list, and derives the connected providers and each provider's default from
+ * that. The default is the first runnable model by id, so a draft never
+ * defaults to a model its provider cannot run.
+ */
+export function withEngineModels(
+  providers: readonly OpenCodeCatalogProvider[],
+  engine: readonly OpenCodeEngineModel[],
+): OpenCodeCatalog {
+  const byProvider = new Map<string, OpenCodeEngineModel[]>()
+  for (const model of engine) byProvider.set(model.providerID, [...(byProvider.get(model.providerID) ?? []), model])
+
+  const all = providers.map((provider) => {
+    const engineModels = new Map((byProvider.get(provider.id) ?? []).map((model) => [model.id, model]))
+    byProvider.delete(provider.id)
+    const models = Object.fromEntries(Object.entries(provider.models).map(([key, model]) => {
+      const match = engineModels.get(model.id)
+      engineModels.delete(model.id)
+      return [key, match ? runnable(model, match) : model]
+    }))
+    for (const model of engineModels.values()) models[model.id] = runnable({ id: model.id, name: model.name ?? model.id }, model)
+    return { ...provider, models }
+  })
+  for (const [id, models] of byProvider) {
+    all.push({
+      id,
+      name: id,
+      env: [],
+      source: "config",
+      models: Object.fromEntries(models.map((model) => [model.id, runnable({ id: model.id, name: model.name ?? model.id }, model)])),
+    })
+  }
+
+  const connected: string[] = []
+  const defaults: Record<string, string> = {}
+  for (const provider of all) {
+    const ids = Object.keys(provider.models).sort()
+    const firstRunnable = ids.find((id) => provider.models[id].connected)
+    if (firstRunnable) connected.push(provider.id)
+    const first = firstRunnable ?? ids[0]
+    if (first) defaults[provider.id] = first
+  }
+  return { all, connected, default: defaults }
 }
 
 /**
@@ -267,14 +336,11 @@ export async function opencodeProviderCatalog(
  * pointed that id at their own base URL, and serving both would leave the
  * picker showing one name for two different endpoints.
  */
-function mergeCustomProviders(catalog: OpenCodeCatalog, env: NodeJS.ProcessEnv, org: string): OpenCodeCatalog {
+function mergeCustomProviders(providers: readonly OpenCodeCatalogProvider[], org: string): OpenCodeCatalogProvider[] {
   const custom = listCustomProviders(org)
-  if (custom.length === 0) return catalog
+  if (custom.length === 0) return [...providers]
 
-  const byId = new Map(catalog.all.map((provider) => [provider.id, provider]))
-  const connected = new Set(catalog.connected)
-  const defaults = { ...catalog.default }
-
+  const byId = new Map(providers.map((provider) => [provider.id, provider]))
   for (const provider of custom) {
     byId.set(provider.providerID, {
       id: provider.providerID,
@@ -282,15 +348,10 @@ function mergeCustomProviders(catalog: OpenCodeCatalog, env: NodeJS.ProcessEnv, 
       env: provider.env,
       source: "custom",
       models: Object.fromEntries(
-        Object.entries(provider.models).map(([id, model]) => [id, { id, name: model.name, tool_call: true }]),
+        Object.entries(provider.models).map(([id, model]) => [id, { id, name: model.name, tool_call: true, connected: false, free: false }]),
       ),
       options: { baseURL: provider.baseURL, ...(Object.keys(provider.headers).length ? { headers: provider.headers } : {}) },
     })
-    const first = Object.keys(provider.models).sort()[0]
-    if (first) defaults[provider.providerID] = first
-    if (providerConnected(provider, provider.providerID, env, org)) connected.add(provider.providerID)
-    else connected.delete(provider.providerID)
   }
-
-  return { all: [...byId.values()], connected: [...connected], default: defaults }
+  return [...byId.values()]
 }

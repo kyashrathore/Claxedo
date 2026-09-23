@@ -35,6 +35,7 @@ fs.mkdirSync(sessionDir, { recursive: true }); fs.writeFileSync(file, JSON.strin
 fs.writeFileSync(path.join(sessionDir, "..", "launch-env.json"), JSON.stringify(process.env))
 const emit = value => process.stdout.write(JSON.stringify(value) + "\\n")
 let pending
+let thinkingLevel = "off"
 const done = text => {
   emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], usage: { input: 11, output: 3, cacheRead: 0, cacheWrite: 0 }, timestamp: Date.now() } })
   emit({ type: "agent_end" }); emit({ type: "agent_settled" })
@@ -44,10 +45,12 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
   if (cmd.type === "extension_ui_response") { done(cmd.value || "cancelled"); continue }
   const ok = data => emit({ type: "response", id: cmd.id, command: cmd.type, success: true, data })
   switch (cmd.type) {
-    case "get_state": ok({ sessionId: id, sessionFile: file, model: { provider: "test", id: "model" }, thinkingLevel: "off" }); break
+    case "get_state": ok({ sessionId: id, sessionFile: file, model: { provider: "test", id: "model" }, thinkingLevel }); break
     case "get_available_models": ok({ models: [{ provider: "test", id: "model", name: "Test" }] }); break
     case "get_available_thinking_levels": ok({ levels: ["off", "high"] }); break
-    case "set_model": case "set_thinking_level": case "clear_queue": ok({}); break
+    case "set_model": thinkingLevel = "off"; ok({}); break
+    case "set_thinking_level": thinkingLevel = ["off", "high"].includes(cmd.level) ? cmd.level : "high"; ok({}); break
+    case "clear_queue": ok({}); break
     case "steer": ok({}); done("steered: " + cmd.message); break
     case "abort": ok({}); emit({ type: "agent_settled" }); break
     case "set_session_name": ok({}); emit({ type: "session_info_changed", name: cmd.name }); break

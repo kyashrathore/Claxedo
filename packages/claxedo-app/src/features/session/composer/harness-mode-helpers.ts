@@ -3,12 +3,11 @@ import type { HarnessSelectionController, HarnessSubmitController } from "@/feat
 import { composerHarnessId, isComposerHarnessMode, type ComposerMode } from "./mode"
 
 /**
- * The composer's per-scope harness-mode predicates, factored out of
- * `composer.tsx`. They fold the active {@link ComposerMode} together with the
- * submit and selection controllers into the four questions the toolbar and
- * submit wiring ask ("is this scope in harness mode?", "is it ready?", "what
- * harness type?"). Pure delegation — behaviour is identical to the inline
- * closures it replaces.
+ * The composer's per-scope harness-mode predicates. They fold the active
+ * {@link ComposerMode} together with the submit and selection controllers into
+ * the questions the toolbar and submit wiring ask ("is this scope in harness
+ * mode?", "is it ready?", "what harness type?"). A session's harness type is a
+ * held pick while there is one, because that is what its next send runs on.
  */
 export function createComposerHarnessMode(deps: {
   composerMode: Accessor<ComposerMode>
@@ -33,7 +32,7 @@ export function createComposerHarnessMode(deps: {
   const currentHarnessType = (scope: string) => {
     const mode = deps.composerMode()
     if (mode.kind === "session") {
-      return composerHarnessId(mode) ?? deps.harnessController.harness(scope)
+      return deps.harnessController.heldHarness(scope) ?? composerHarnessId(mode) ?? deps.harnessController.harness(scope)
     }
     const harness = deps.harnessController.harness(scope)
     return harness ?? composerHarnessId(mode)

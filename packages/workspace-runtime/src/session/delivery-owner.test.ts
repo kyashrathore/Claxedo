@@ -55,7 +55,7 @@ function gate() {
 function submission(messageID = "message") {
   return { sessionId: "session_1", body: { messageID, parts: [{ type: "text" as const, text: "then run tests" }],
     agent: "build", model: { providerID: "test", modelID: "fixture" }, permissionMode: "ask", tools: { bash: false },
-    system: "be brief", variant: "thinking" },
+    system: "be brief", variant: "thinking", serviceTier: "priority" },
     actor: { actorId: "actor", actorKind: "human" as const }, author: { id: "public", name: "Yash", kind: "human" as const },
     provenance: "loopback-direct" as const }
 }

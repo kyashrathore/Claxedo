@@ -19,8 +19,8 @@ describe("submit model gate", () => {
     expect(cloudSubmitMissingModel({ ...base, hostKind: "self" })).toBe(false)
   })
 
-  test("resumed sessions keep their model and agent while accepting provider effort changes", () => {
-    const unexpectedDraftRead = () => { throw new Error("A resumed session must not consult draft defaults") }
+  test("a resumed catalog session keeps its model and agent and runs at the harness picker's level", () => {
+    const unexpectedProviderRead = () => { throw new Error("A catalog harness's effort lives in the harness picker") }
     expect(resolvePromptSubmitConfig({
       existing: {
         harnessType: { kind: "native", harnessId: "opencode" },
@@ -30,16 +30,39 @@ describe("submit model gate", () => {
       },
       harnessMode: true,
       selection: { kind: "native", harnessId: "opencode" },
-      variant: () => "high",
-      modelKey: unexpectedDraftRead,
-      currentAgent: unexpectedDraftRead,
-      defaultAgent: unexpectedDraftRead,
+      variant: unexpectedProviderRead,
+      modelKey: () => ({ providerID: "saved-provider", modelID: "saved-model", variant: "high" }),
+      currentAgent: () => undefined,
+      defaultAgent: () => undefined,
       agent: () => undefined,
     })).toEqual({
       model: { providerID: "saved-provider", modelID: "saved-model" },
       agent: "saved-agent",
       variant: "high",
     })
+  })
+
+  test("a bound native-harness session runs at the picker's effort or explicitly none, and ignores a picker still on another model", () => {
+    const input = {
+      existing: {
+        harnessType: { kind: "native", harnessId: "codex" } as const,
+        model: { providerID: "codex", modelID: "gpt-6-astra" },
+        agent: "build",
+        variant: "high",
+      },
+      harnessMode: true,
+      selection: { kind: "native", harnessId: "codex" } as const,
+      variant: () => { throw new Error("Provider effort must not leak into a native harness") },
+      currentAgent: () => undefined,
+      defaultAgent: () => undefined,
+      agent: () => undefined,
+    }
+    expect(resolvePromptSubmitConfig({ ...input, modelKey: () => ({ providerID: "codex", modelID: "gpt-6-astra", variant: "xhigh" }) }))
+      .toEqual({ model: { providerID: "codex", modelID: "gpt-6-astra" }, agent: "build", variant: "xhigh" })
+    expect(resolvePromptSubmitConfig({ ...input, modelKey: () => ({ providerID: "codex", modelID: "gpt-6-astra" }) }))
+      .toEqual({ model: { providerID: "codex", modelID: "gpt-6-astra" }, agent: "build", variant: null })
+    expect(resolvePromptSubmitConfig({ ...input, modelKey: () => ({ providerID: "codex", modelID: "other", variant: "low" }) }))
+      .toEqual({ model: { providerID: "codex", modelID: "gpt-6-astra" }, agent: "build", variant: "high" })
   })
 
   test("connection drafts use the harness model's effort without reading the provider picker", () => {

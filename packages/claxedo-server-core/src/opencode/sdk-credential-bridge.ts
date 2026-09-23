@@ -1,7 +1,7 @@
 /** Route the public embedded SDK's providers at Claxedo's credential broker. */
 import fs from "node:fs"
 import path from "node:path"
-import type { ProviderBindingOverlay } from "@claxedo/workspace-runtime/opencode"
+import type { ProviderBindingOverlay, ProviderDefinition } from "@claxedo/workspace-runtime/opencode"
 import {
   isProviderUnavailable,
   projectionRenewalDue,
@@ -10,6 +10,7 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 import { vendorCredentialProviderIds } from "@claxedo/agent-runtime-contract"
 import { hasProviderDestination } from "../credentials/destinations"
+import { listCustomProviders, type CustomProviderConfig } from "../credentials/custom-provider"
 import { jsonRecord } from "../platform/runtime/lib/json"
 import { projectRuntimeAuth } from "../agent-config/index"
 import { SINGLE_TENANT_ORG, type CredentialOrgScope } from "../credentials/registry"
@@ -43,7 +44,7 @@ const ENGINE_VENDORS = ["anthropic", "openai", "openrouter", "google", "groq", "
 const PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = Object.fromEntries(
   ENGINE_VENDORS.flatMap((vendor) =>
     vendorCredentialProviderIds(vendor)
-      .filter(hasProviderDestination)
+      .filter((registryId) => hasProviderDestination(registryId))
       .map((registryId) => [registryId, vendor])))
 
 /**
@@ -73,8 +74,8 @@ const ENGINE_PROVIDER_ENV: Readonly<Record<string, readonly string[]>> = {
 /** What this process removed, so an account the operator drops hands it back. */
 const withheldEnv = new Map<string, string>()
 
-function withholdEngineProviderEnv(providers: readonly string[]) {
-  const withhold = new Set(providers.flatMap((providerID) => ENGINE_PROVIDER_ENV[providerID] ?? []))
+function withholdEngineProviderEnv(names: readonly string[]) {
+  const withhold = new Set(names)
   for (const [name, value] of withheldEnv) {
     if (withhold.has(name)) continue
     process.env[name] = value
@@ -152,9 +153,32 @@ function readLedger(): Ledger {
 
 export type SdkCredentialSyncResult = Readonly<{ bound: readonly string[]; removed: readonly string[] }>
 
-/** Whether a registry provider has a row in the engine's own catalog. */
-export function engineBindsProvider(providerId: string): boolean {
+/** Whether a registry provider has a row in the engine's catalog: a vendor it defines, or one of the org's custom providers. */
+export function engineBindsProvider(providerId: string, org: CredentialOrgScope = SINGLE_TENANT_ORG): boolean {
   return Object.hasOwn(PROVIDER_BY_REGISTRY_ID, providerId)
+    || listCustomProviders(org).some((provider) => provider.providerID === providerId)
+}
+
+/**
+ * A custom provider as the engine is told about it. It is switched on when some
+ * key source can serve it: an overlay the broker bound, the variable dedicated
+ * to it holding a value, or — when it names no variable and no account was
+ * chosen for it — none at all, which is a keyless endpoint such as a local
+ * model server. An unavailable overlay switches it off at the binding.
+ */
+function customProviderDefinition(provider: CustomProviderConfig, overlay: ProviderBindingOverlay | undefined): ProviderDefinition {
+  const enabled = overlay
+    ? !isProviderUnavailable(overlay)
+    : provider.env.length === 0 || provider.env.some((name) => !!process.env[name]?.trim())
+  return {
+    id: provider.providerID,
+    name: provider.name,
+    baseURL: provider.baseURL,
+    headers: provider.headers,
+    models: provider.models,
+    env: provider.env,
+    enabled,
+  }
 }
 
 /**
@@ -176,7 +200,7 @@ export async function syncCredentialsToSdk(
   providers?: readonly string[],
 ): Promise<SdkCredentialSyncResult> {
   if (!openCodeSdkRuntimeLoaded()) return { bound: [], removed: [] }
-  if (providers && !providers.some(engineBindsProvider)) return { bound: [], removed: [] }
+  if (providers && !providers.some((provider) => engineBindsProvider(provider, org))) return { bound: [], removed: [] }
   try {
     return await reconcileCredentialsIntoSdk(org)
   } catch (error: unknown) {
@@ -239,9 +263,22 @@ export async function reconcileCredentialsIntoSdk(
     if (!overridesOverlay(overlays[providerID], overlay, registryID === providerID)) continue
     overlays[providerID] = overlay
   }
+  // A custom provider replaces the vendor row of the same id, so a vendor
+  // account bound to that id would send its requests to the vendor instead.
+  const custom = listCustomProviders(org)
+  for (const provider of custom) {
+    delete overlays[provider.providerID]
+    const projection = auth[provider.providerID]
+    if (!projection) continue
+    overlays[provider.providerID] = isProviderUnavailable(projection)
+      ? { unavailable: true, reason: projection.reason }
+      : { baseURL: `${projection.baseUrl}${projection.apiPath ?? ""}`, apiKey: projection.placeholder }
+  }
   const removed = await removeStoredCredentials(runtime)
   const bound = Object.keys(overlays)
-  withholdEngineProviderEnv(bound)
+  const customEnv = new Map(custom.map((provider) => [provider.providerID, provider.env]))
+  withholdEngineProviderEnv(bound.flatMap((providerID) => customEnv.get(providerID) ?? ENGINE_PROVIDER_ENV[providerID] ?? []))
+  await runtime.defineProviders(custom.map((provider) => customProviderDefinition(provider, overlays[provider.providerID])))
   await runtime.bindProviders(overlays)
   const dueAt = projectionRenewalDueAt(auth, projectedAt)
   renewal = { org, ...(dueAt === undefined ? {} : { at: dueAt }) }

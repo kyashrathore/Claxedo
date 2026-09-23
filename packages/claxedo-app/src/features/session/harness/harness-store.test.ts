@@ -63,6 +63,44 @@ describe("harness store facade", () => {
 
 
 
+  test("a held pick shows the picked harness and restores the session's own state exactly", () => {
+    const store = createHarnessStore(storage)
+    const scope = "session:ses_1"
+    store.applyPatch(scope, {
+      harness: PI,
+      harnessMode: "harness",
+      selectedModel: "test/model",
+      selectedModelProvider: "pi",
+      dynamicModels: [{ id: "test/model", name: "Test" }],
+      readiness: "ready",
+    })
+    const bound = structuredClone(unwrap(store.read(scope)))
+
+    store.holdHarness(scope, { harness: NATIVE_CODEX, selectedModel: "", selectedModelProvider: undefined, dynamicModels: null, configError: "Choose a model" })
+    store.holdHarness(scope, { harness: EXTERNAL_OPENCODE, selectedModel: "default", dynamicModels: [] })
+
+    expect(store.heldHarness(scope)).toEqual(EXTERNAL_OPENCODE)
+    expect(store.harness(scope)).toEqual(EXTERNAL_OPENCODE)
+    expect(store.restoreHeldHarness(scope, NATIVE_CODEX)).toBe(false)
+    expect(store.restoreHeldHarness(scope, PI)).toBe(true)
+    expect(store.heldHarness(scope)).toBeUndefined()
+    expect(unwrap(store.read(scope))).toEqual(bound)
+  })
+
+  test("releasing a held pick keeps it as the scope's harness", () => {
+    const store = createHarnessStore(storage)
+    const scope = "session:ses_1"
+    store.applyPatch(scope, { harness: PI, harnessMode: "harness", selectedModel: "test/model", selectedModelProvider: "pi" })
+    store.holdHarness(scope, { harness: NATIVE_CODEX, selectedModel: "gpt-5.5", selectedModelProvider: "codex" })
+
+    store.releaseHeldHarness(scope)
+
+    expect(store.heldHarness(scope)).toBeUndefined()
+    expect(store.harness(scope)).toEqual(NATIVE_CODEX)
+    expect(store.restoreHeldHarness(scope, PI)).toBe(false)
+    expect(store.harnessModelKeyForSubmit(scope)).toEqual({ providerID: "codex", modelID: "gpt-5.5" })
+  })
+
   test("applies patches and derives submit selectors from the current state", () => {
     const store = createHarnessStore(storage)
 

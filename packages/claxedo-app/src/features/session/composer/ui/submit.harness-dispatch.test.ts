@@ -278,6 +278,28 @@ describe("Harness + demo dispatch and abort", () => {
     expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).not.toHaveProperty("variant")
   })
 
+  test("the harness's fast tier rides the prompt on a new session and on a follow-up", async () => {
+    state.runtimeSessionUrl = "http://runtime.example.com"
+    state.harnessMode = true
+    const fast = { ...h.testHarnessController(), serviceTierForSubmit: () => "priority" }
+
+    await createSubmit({ sessionID: () => "new", sessionDirectory: () => "/repo/main", harnessController: fast })
+      .handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "session-1", serviceTier: "priority" })
+
+    await createSubmit({
+      info: () => ({ id: "session-1" }),
+      sessionID: () => "session-1",
+      sessionDirectory: () => "/repo/main",
+      harnessController: { ...fast, serviceTierForSubmit: () => undefined },
+    }).handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 1)
+    expect(transportPromptAsyncCalls.at(-1)).not.toHaveProperty("serviceTier")
+  })
+
   test("existing harness follow-up preserves its persisted harness variant", async () => {
     state.runtimeSessionUrl = "http://runtime.example.com"
     state.localSessionConfig = {
@@ -312,6 +334,72 @@ describe("Harness + demo dispatch and abort", () => {
       variant: "high",
     })
     expect(unsignedCalls.filter((call) => call.url.includes("/config") && call.method === "PATCH")).toHaveLength(0)
+  })
+
+  test("existing native-harness follow-up runs at the picker's effort and persists it", async () => {
+    state.runtimeSessionUrl = "http://runtime.example.com"
+    state.harnessMode = true
+    state.harnessSubmitModel = { key: { providerID: "claude-sdk", modelID: "opus", variant: "low" }, name: "Opus" }
+    const persisted = {
+      harness: { id: "claude", access: "native" },
+      agent: "build",
+      model: { providerID: "claude-sdk", modelID: "opus" },
+      variant: "high",
+    }
+    state.localSessionConfig = persisted
+
+    const submit = createSubmit({
+      info: () => ({ id: "session-1", config: persisted }),
+      sessionID: () => "session-1",
+      sessionDirectory: () => "/repo/main",
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "session-1", variant: "low" })
+    await waitForSubmitEffect(() => unsignedCalls.some((call) => call.url.includes("/config") && call.method === "PATCH"))
+    const patch = unsignedCalls.find((call) => call.url.includes("/config") && call.method === "PATCH")
+    expect(JSON.parse(patch?.body ?? "{}")).toMatchObject({ variant: "low" })
+  })
+
+  test("a bound native session whose picker shows no level sends none and clears the saved one", async () => {
+    state.runtimeSessionUrl = "http://runtime.example.com"
+    state.harnessMode = true
+    state.harnessSubmitModel = { key: { providerID: "claude-sdk", modelID: "opus" }, name: "Opus" }
+    const persisted = { harness: { id: "claude", access: "native" }, agent: "build", model: { providerID: "claude-sdk", modelID: "opus" }, variant: "high" }
+    state.localSessionConfig = persisted
+
+    await createSubmit({ info: () => ({ id: "session-1", config: persisted }), sessionID: () => "session-1", sessionDirectory: () => "/repo/main" })
+      .handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "session-1", variant: null })
+    await waitForSubmitEffect(() => unsignedCalls.some((call) => call.url.includes("/config") && call.method === "PATCH"))
+    const patch = unsignedCalls.find((call) => call.url.includes("/config") && call.method === "PATCH")
+    expect(JSON.parse(patch?.body ?? "{}")).toMatchObject({ variant: null })
+  })
+
+  test("a model picked just before sending is saved before the turn reads the session's model", async () => {
+    state.runtimeSessionUrl = "http://runtime.example.com"
+    state.harnessMode = true
+    state.localSessionConfig = { harness: { id: "claude", access: "native" }, agent: "build", model: { providerID: "claude-sdk", modelID: "opus" } }
+    const controller = {
+      ...h.testHarnessController(),
+      settledModel: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        state.localSessionConfig = { harness: { id: "claude", access: "native" }, agent: "build", model: { providerID: "claude-sdk", modelID: "sonnet" } }
+      },
+    }
+
+    await createSubmit({ info: () => ({ id: "session-1" }), sessionID: () => "session-1", sessionDirectory: () => "/repo/main", harnessController: controller })
+      .handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ model: { providerID: "claude-sdk", modelID: "sonnet" } })
   })
 
   test("harness draft submit refuses unresolved provider/model state", async () => {

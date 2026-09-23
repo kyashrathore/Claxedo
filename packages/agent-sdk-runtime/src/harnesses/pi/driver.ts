@@ -510,7 +510,16 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       if (!input.input.model) throw new Error("Pi turn requires a resolved model")
       const model = piModel(input.input.model)
       await process.request("set_model", { provider: model.providerID, modelId: model.modelID }, controlRequestDeadline())
-      if (input.input.variant) await process.request("set_thinking_level", { level: input.input.variant }, controlRequestDeadline())
+      if (input.input.variant) {
+        const requested = input.input.variant
+        await process.request("set_thinking_level", { level: requested }, controlRequestDeadline())
+        // Pi clamps a level the model does not support instead of refusing it,
+        // so the level it kept is read back rather than assumed.
+        const kept = text(record(await process.request("get_state", {}, controlRequestDeadline()))?.thinkingLevel)
+        if (kept !== requested) {
+          throw new Error(`Pi does not run ${model.providerID}/${model.modelID} at thinking level ${requested}${kept ? `; it kept ${kept}` : ""}`)
+        }
+      }
       if (input.abort.signal.aborted) {
         await settled
         return

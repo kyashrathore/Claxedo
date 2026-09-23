@@ -749,12 +749,20 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async applyConfig(config: Record<string, unknown>): Promise<void> { await this.driver.applyConfig(config) }
 
-  async probeConfigOptions(directory: string): Promise<AgentConfigOptions> {
-    return sdkConfigOptions(await this.driver.configOptions(this.currentModel, directory))
+  async probeConfigOptions(directory: string, binding?: AgentExecutionBinding, model?: string): Promise<AgentConfigOptions> {
+    return sdkConfigOptions(await this.driver.configOptions(this.optionsModel(binding, model), directory))
   }
 
-  peekConfigOptions(directory: string): AgentConfigOptions {
-    return sdkConfigOptions(this.driver.peekConfigOptions(this.currentModel, directory))
+  peekConfigOptions(directory: string, binding?: AgentExecutionBinding, model?: string): AgentConfigOptions {
+    return sdkConfigOptions(this.driver.peekConfigOptions(this.optionsModel(binding, model), directory))
+  }
+
+  /** "" is the harness's default model; the adapter's last-created model is another session's choice. */
+  private optionsModel(binding: AgentExecutionBinding | undefined, model: string | undefined) {
+    if (model) return model
+    if (!binding) return ""
+    requireAgentExecutionBinding(binding)
+    return this.store.getSessionConfig(binding.sessionId)?.model?.modelID ?? ""
   }
 
   readRuntimeHealth(_directory: string, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth {

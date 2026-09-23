@@ -10,6 +10,7 @@ import {
 } from "../compat-events"
 import {
   admitSessionPromptTurn,
+  parseSessionPromptBody,
   runRuntimePromptTurn,
   runSessionPromptTurn,
   sessionPromptReply,
@@ -184,6 +185,47 @@ describe("session service", () => {
     })
 
     expect(modes).toEqual(["agent-full-access"])
+  })
+
+  it("runs the turn's own effort, none when it asks for none, and the saved one only when it names nothing", async () => {
+    const variants: Array<string | undefined> = []
+    for (const wire of [{ variant: "low" }, { variant: null }, {}]) {
+      await promptTurn({
+        binding: executionBinding,
+        adapter: adapter({
+          getSessionConfig: async () => ({ harness: { id: "codex", access: "native" }, variant: "high", agent: null }),
+          async *executeTurn(_binding, input) {
+            variants.push(input.variant)
+          },
+        }),
+        sessionId: "s1",
+        directory: "/work",
+        body: parseSessionPromptBody({ parts: [{ type: "text", text: "hello" }], ...wire }),
+        publishGlobal: () => {},
+      })
+    }
+
+    expect(variants).toEqual(["low", undefined, "high"])
+  })
+
+  it("carries a requested service tier from the wire body into the adapter turn", async () => {
+    const tiers: Array<string | undefined> = []
+    for (const wire of [{ serviceTier: "priority" }, {}, { serviceTier: 7 }]) {
+      await promptTurn({
+        binding: executionBinding,
+        adapter: adapter({
+          async *executeTurn(_binding, input) {
+            tiers.push(input.serviceTier)
+          },
+        }),
+        sessionId: "s1",
+        directory: "/work",
+        body: parseSessionPromptBody({ parts: [{ type: "text", text: "hello" }], ...wire }),
+        publishGlobal: () => {},
+      })
+    }
+
+    expect(tiers).toEqual(["priority", undefined, undefined])
   })
 
   it("uses the agent-owned default model when an ACP session has no selected model", async () => {

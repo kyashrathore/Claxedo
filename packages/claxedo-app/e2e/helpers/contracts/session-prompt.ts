@@ -141,8 +141,13 @@ export const SESSION_PROMPT_FIELDS = {
     whenAbsent: "omitted from PromptInput entirely (adapter/system default applies)",
   },
   variant: {
-    check: optionalString("variant"),
-    whenAbsent: "falls back to session config's variant, else omitted — note the server checks `!== undefined`, so an explicit variant of \"\" is meaningful and NOT the same as absent",
+    check: (value) =>
+      value === null ? undefined : optionalString("variant")(value),
+    whenAbsent: "falls back to session config's variant, else omitted; an explicit null runs the turn at the model's own default instead of the saved variant",
+  },
+  serviceTier: {
+    check: optionalString("serviceTier"),
+    whenAbsent: "the turn runs at the standard tier",
   },
   permissionMode: {
     check: optionalString("permissionMode"),

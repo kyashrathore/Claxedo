@@ -24,6 +24,18 @@ describe("model picker provider hierarchy", () => {
     ])
   })
 
+  test("a group whose first model cannot run still ranks as connected when another can", () => {
+    const zen = { id: "opencode", name: "OpenCode Zen" }
+    const mixed = {
+      category: "opencode",
+      items: [
+        { id: "a-paid", name: "Paid", provider: zen, connected: false },
+        { id: "b-free", name: "Free", provider: zen, connected: true },
+      ] satisfies PickerItem[],
+    }
+    expect([group("zzz", true), mixed].sort(comparePickerProviderGroups)[0]).toBe(mixed)
+  })
+
   test("preserves popular-provider order within each connection tier", () => {
     expect([
       group("openai", true),

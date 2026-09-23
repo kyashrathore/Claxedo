@@ -16,9 +16,7 @@ import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-p
 import { Log } from "../../log"
 import { harnessEffortLevels } from "../../harness-effort"
 import { createLiveModelSource } from "../../live-model-source"
-import {
-  resolveSupportedEffort,
-} from "../../sdk-model-options"
+import { catalogModel, requireTurnEffort, resolveSupportedServiceTier } from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import {
@@ -132,6 +130,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       liveProcess: () => this.process,
       lease: () => this.idle.lease(),
       threadConfig: (sessionId) => this.threadConfig(sessionId),
+      threadSettings: (sessionId, directory) => {
+        const config = this.host.getSessionConfig(sessionId)
+        return this.threadSettings(directory, codexAppServerModel(config?.model?.modelID), config?.variant ?? undefined)
+      },
       activeThreads: this.activeThreads,
       projectThreadNotification: projectCodexThreadNotification,
     })
@@ -196,6 +198,23 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   async setPermissionMode(sessionId: string, modeId: string, _directory: string) {
     if (!CODEX_SETTINGS[modeId]) throw new Error(`Unknown Codex permission mode "${modeId}"`)
     return this.permissionSelection.set(sessionId, modeId)
+  }
+
+  /**
+   * The model and effort a thread runs next. Codex keeps a thread's last
+   * `model` and `effort` for whatever omits them, so both are always named:
+   * "default" becomes the catalog's default row and an unrequested effort that
+   * model's own default. The catalog is loaded, not peeked — a cold one (a
+   * restarted server, a caller that never opened the picker) would otherwise
+   * leave both out.
+   */
+  private async threadSettings(directory: string, requestedModel: string | undefined, requestedEffort: string | undefined) {
+    const catalog = await this.modelSource.models(directory)
+    const row = catalogModel(catalog, requestedModel)
+    const model = row?.id ?? requestedModel
+    const effort = requireTurnEffort({ harness: "Codex", models: catalog, modelId: model, requested: requestedEffort })
+      ?? (row?.defaultEffort && row.supportedEffortLevels?.includes(row.defaultEffort) ? row.defaultEffort : undefined)
+    return { model, effort }
   }
 
   async createAgentSession(input: { directory: string; model: string; system?: string; sessionId: string }) {
@@ -314,12 +333,15 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const onStderr = (message: string) => {
       if (message.includes("401 Unauthorized")) failTurn(new Error(codexAuthFailure(message, this.broker.selected)))
     }
-    const model = codexTurnModel(input.input, input.model)
-    const effort = resolveSupportedEffort(
-      this.modelSource.peek(input.directory),
-      codexAppServerModel(input.input.model?.modelID),
-      input.input.variant,
-    )
+    const { model, effort } = await this.threadSettings(input.directory, codexTurnModel(input.input, input.model), input.input.variant)
+    // `turn/start.serviceTier` persists onto later turns, and a `service_tier`
+    // in the user's Codex config applies when none is named, so the standard
+    // tier is an explicit `null` rather than an omitted field.
+    const serviceTier = resolveSupportedServiceTier(
+      await this.modelSource.models(input.directory),
+      model,
+      input.input.serviceTier,
+    ) ?? null
     const project = (method: string, payload: JsonRecord, frame: unknown, route?: { kind: "parent" } | { kind: "child"; correlationKey: string }) => input.ingest({
       source: CODEX_SOURCE,
       method,
@@ -335,6 +357,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       directory: input.directory,
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
+      serviceTier,
       process: proc,
       project,
       observeSubagent: input.observeSubagent,
@@ -376,6 +399,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       ),
       ...(model ? { model } : {}),
       ...(effort ? { effort } : {}),
+      serviceTier,
     }, modelRequestDeadline())) ?? {}
 
     try {

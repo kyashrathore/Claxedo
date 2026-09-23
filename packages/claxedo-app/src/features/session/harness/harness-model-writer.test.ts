@@ -18,8 +18,10 @@ let dropped: string[]
 let posts: { url: string; body: unknown }[]
 let remembered: Array<{ scope: string; model: { providerID: string; modelID: string }; directory?: string }>
 let publishedConfigs: unknown[]
+let reloads: string[]
 
 beforeEach(() => {
+  reloads = []
   state = {}
   pending = {}
   seeds = []
@@ -172,6 +174,41 @@ describe("harness model writer", () => {
     }])
   })
 
+  test("a failed session save puts the picker back on the saved model, and a pending one settles for submit", async () => {
+    const sonnet = { providerID: "anthropic", modelID: "sonnet" }
+    const writer = writerFor(true, { fail: true, shown: sonnet })
+    const saving = writer.setModel("session:ses_1", { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "ses_1" })
+    const settled = writer.settledModel("session:ses_1")
+    await expect(saving).rejects.toThrow("config store unavailable")
+    await settled
+    expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }, sonnet])
+  })
+
+  test("a changed model reloads its options, after the session saved it; an unchanged or unsaved one does not", async () => {
+    const opus = { providerID: "anthropic", modelID: "opus" }
+    await writerFor(true, { shown: opus }).setModel(scope, opus, { directory: "/repo", sessionId: "new" })
+    expect(reloads).toEqual([])
+    selectedModels.length = 0
+    await writerFor().setModel(scope, opus, { directory: "/repo", sessionId: "new" })
+    selectedModels.length = 0
+    await writerFor().setModel("session:ses_1", { providerID: "anthropic", modelID: "sonnet" }, { directory: "/repo", sessionId: "ses_1" })
+    expect(reloads).toEqual([scope, "session:ses_1"])
+    selectedModels.length = 0
+    await writerFor(true, { fail: true }).setModel("session:ses_2", opus, { directory: "/repo", sessionId: "ses_2" }).catch(() => undefined)
+    expect(reloads).toEqual([scope, "session:ses_1"])
+  })
+
+  test("a model picked for a held harness stays in the composer until the send switches the session", async () => {
+    const codex = { providerID: "codex", modelID: "gpt-5.5" }
+    await writerFor(true, { held: true }).setModel("session:ses_1", codex, { directory: "/repo", sessionId: "ses_1" })
+
+    expect(selectedModels).toEqual([codex])
+    expect(posts).toEqual([])
+    expect(publishedConfigs).toEqual([])
+    expect(remembered).toEqual([])
+    expect(reloads).toEqual(["session:ses_1"])
+  })
+
   test("rejects an ineligible draft model before changing selection or dropping a prepared session", async () => {
     await writerFor(false).setModel(scope, { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "new" })
 
@@ -182,12 +219,15 @@ describe("harness model writer", () => {
   })
 })
 
-function writerFor(acceptsDraftModel = true) {
+function writerFor(acceptsDraftModel = true, save: { fail?: boolean; shown?: { providerID: string; modelID: string }; held?: boolean } = {}) {
   return createHarnessModelWriter({
     base: "http://server",
     seed: (scope) => seeds.push(scope),
     acceptsDraftModel: () => acceptsDraftModel,
+    currentModel: () => selectedModels.at(-1) ?? save.shown,
     setSelectedModel: (_scope, model) => selectedModels.push(model),
+    holdsHarness: () => !!save.held,
+    reloadOptions: (scope) => { reloads.push(scope) },
     dropPrepared: (scope) => dropped.push(scope),
     rememberDraftModel: (scope, model, input) => remembered.push({
       scope,
@@ -201,6 +241,7 @@ function writerFor(acceptsDraftModel = true) {
           url: requestUrl(url),
           body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
         })
+        if (save.fail) return new Response("config store unavailable", { status: 503 })
         return Response.json({
           harness: { id: "claude", access: "native" },
           model: { providerID: "anthropic", modelID: "opus" },

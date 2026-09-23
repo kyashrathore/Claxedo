@@ -38,9 +38,12 @@ export type HarnessSelectionControllerStore = {
   setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput): void | Promise<void>
   setModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
   setThoughtLevel(scope: string, value: string | undefined): void
+  setServiceTier(scope: string, value: string | undefined): void
   rememberDraftModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   harness(scope: string): HarnessType | undefined
+  /** The harness picked for an existing session that its next send switches it to. */
+  heldHarness?(scope: string): HarnessType | undefined
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
   connectionState?(scope: string): HarnessConnectionState | undefined
@@ -48,6 +51,9 @@ export type HarnessSelectionControllerStore = {
   thoughtLevels(scope: string): HarnessModelOption[]
   setThoughtLevel(scope: string, value: string | undefined): void
   selectedThoughtLevel(scope: string): string | undefined
+  serviceTiers(scope: string): HarnessModelOption[]
+  setServiceTier(scope: string, value: string | undefined): void
+  selectedServiceTier(scope: string): string | undefined
   selectedModel(scope: string): string
   selectedModelKey(scope: string): ModelKey | undefined
   optionsStale(scope: string): boolean
@@ -64,6 +70,9 @@ export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
   promote(from: string, to: string): void
   harnessReadyForSubmit(scope: string): boolean
   harnessModelKeyForSubmit(scope: string): ModelKey | undefined
+  settledModel?(scope: string): Promise<void>
+  harnessServiceTierForSubmit(scope: string): string | undefined
+  releaseHeldHarness?(scope: string): void
 }
 
 export type HarnessSelectionSnapshot = {
@@ -78,6 +87,9 @@ export type HarnessSelectionSnapshot = {
   /** Reasoning/thinking levels for the CURRENT model, when offered. */
   thoughtLevels: HarnessModelOption[]
   selectedThoughtLevel: string | undefined
+  /** Faster tiers the CURRENT model offers; empty when it runs at one speed. */
+  serviceTiers: HarnessModelOption[]
+  selectedServiceTier: string | undefined
   selectedModelKey?: ModelKey
   optionsStale: boolean
   optionsLoading: boolean
@@ -103,6 +115,8 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
         selectedModelProvider: selectedModelKey?.providerID,
         thoughtLevels: store.thoughtLevels(scope),
         selectedThoughtLevel: store.selectedThoughtLevel(scope),
+        serviceTiers: store.serviceTiers(scope),
+        selectedServiceTier: store.selectedServiceTier(scope),
         selectedModelKey,
         optionsStale: store.optionsStale(scope),
         optionsLoading: store.optionsLoading(scope),
@@ -123,6 +137,7 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
     setModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.setModel(scope, model, input, labels),
     setThoughtLevel: (scope: string, value: string | undefined) => store.setThoughtLevel(scope, value),
+    setServiceTier: (scope: string, value: string | undefined) => store.setServiceTier(scope, value),
     rememberDraftModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.rememberDraftModel(scope, model, input, labels),
     resolveDraftDefault: (scope: string, input: Omit<ResolveDraftDefaultInput, "saved">) =>
@@ -135,12 +150,16 @@ export type HarnessSelectionController = ReturnType<typeof createHarnessSelectio
 export function createHarnessSubmitController(store: HarnessSubmitControllerStore | undefined) {
   return {
     harness: (scope: string): HarnessType | undefined => store?.harness(scope),
+    heldHarness: (scope: string): HarnessType | undefined => store?.heldHarness?.(scope),
+    releaseHeldHarness: (scope: string) => store?.releaseHeldHarness?.(scope),
     isHarnessMode: (scope: string) => store?.isHarnessMode(scope) ?? false,
     readiness: (scope: string): HarnessReadiness => store?.readiness(scope) ?? "unresolved",
     canOmitModel: (scope: string) => store?.canOmitModel?.(scope) ?? false,
     canCreateWithoutModel: (scope: string) => store?.canCreateWithoutModel?.(scope) ?? false,
     readyForSubmit: (scope: string) => store?.harnessReadyForSubmit(scope) ?? false,
     modelKeyForSubmit: (scope: string) => store?.harnessModelKeyForSubmit(scope),
+    settledModel: (scope: string) => store?.settledModel?.(scope) ?? Promise.resolve(),
+    serviceTierForSubmit: (scope: string) => store?.harnessServiceTierForSubmit(scope),
     claimSession: (scope: string, input: HarnessSessionClaimInput) =>
       store?.claimSession(scope, input) ?? Promise.resolve(undefined),
     setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput) =>

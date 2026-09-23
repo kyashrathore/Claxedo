@@ -30,6 +30,12 @@ describe("harness routes", () => {
     expect(response.status).toBe(200)
     expect(vi.mocked(sandboxFetch).mock.calls[0][1]).toBe("/session/session-a/config-options?directory=%2Fproject&connectionId=openclaw")
   })
+  test("forwards the picker's model, whose effort levels the options describe", async () => {
+    vi.mocked(sandboxFetch).mockResolvedValueOnce(Response.json({ options: [] }))
+    const response = await agentConfigHarnessRoutes().request("/harness/options?nativeHarness=codex&sessionId=session-a&workspaceId=workspace-1&model=gpt-6-luna")
+    expect(response.status).toBe(200)
+    expect(vi.mocked(sandboxFetch).mock.calls[0][1]).toBe("/session/session-a/config-options?directory=%2Fproject&nativeHarness=codex&model=gpt-6-luna")
+  })
   test.each([
     { kind: "native" as const, harnessId: "pi" },
     { kind: "connection" as const, connectionId: "external-opencode" },

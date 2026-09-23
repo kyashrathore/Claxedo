@@ -318,7 +318,7 @@ type ProviderFixture = {
   id: string
   name: string
   source?: "env" | "api" | "config" | "custom"
-  models?: Record<string, unknown>
+  models?: Record<string, Record<string, unknown>>
 }
 
 async function mockProviderCatalog(page: Page, input: {
@@ -329,12 +329,13 @@ async function mockProviderCatalog(page: Page, input: {
   const fullCatalog = {
     all: all.map((p) => {
       const models = p.models ?? { "m-1": { id: "m-1", name: "Model 1", cost: {} } }
+      const connected = input.connected.includes(p)
       return {
         id: p.id,
         name: p.name,
         source: p.source,
         env: [],
-        models,
+        models: Object.fromEntries(Object.entries(models).map(([id, model]) => [id, { ...model, connected, free: false }])),
       }
     }),
     default: Object.fromEntries(

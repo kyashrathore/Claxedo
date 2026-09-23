@@ -58,6 +58,7 @@ const claxedoIcons = {
   // scaled onto this component's 20 one. Byte-identical to the `mcp` entry in
   // `packages/ui/src/components/icon.tsx` so both components draw the same mark.
   mcp: `<g transform="scale(0.83333)" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"><path d="M15.688 2.343a2.588 2.588 0 00-3.61 0l-9.626 9.44a.863.863 0 01-1.203 0 .823.823 0 010-1.18l9.626-9.44a4.313 4.313 0 016.016 0 4.116 4.116 0 011.204 3.54 4.3 4.3 0 013.609 1.18l.05.05a4.115 4.115 0 010 5.9l-8.706 8.537a.274.274 0 000 .393l1.788 1.754a.823.823 0 010 1.18.863.863 0 01-1.203 0l-1.788-1.753a1.92 1.92 0 010-2.754l8.706-8.538a2.47 2.47 0 000-3.54l-.05-.049a2.588 2.588 0 00-3.607-.003l-7.172 7.034-.002.002-.098.097a.863.863 0 01-1.204 0 .823.823 0 010-1.18l7.273-7.133a2.47 2.47 0 00-.003-3.537z"/><path d="M14.485 4.703a.823.823 0 000-1.18.863.863 0 00-1.204 0l-7.119 6.982a4.115 4.115 0 000 5.9 4.314 4.314 0 006.016 0l7.12-6.982a.823.823 0 000-1.18.863.863 0 00-1.204 0l-7.119 6.982a2.588 2.588 0 01-3.61 0 2.47 2.47 0 010-3.54l7.12-6.982z"/></g>`,
+  bolt: `<path d="M11.25 2.5L4.5 11.25H9.75L8.75 17.5L15.5 8.75H10.25L11.25 2.5Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>`,
   "magnifying-glass": `<path d="M15.75 15.75L12.8023 12.8023M14.444 8.34701C14.444 11.4382 11.9382 13.944 8.84701 13.944C5.75587 13.944 3.25 11.4382 3.25 8.34701C3.25 5.25587 5.75587 2.75 8.84701 2.75C11.9382 2.75 14.444 5.25587 14.444 8.34701Z" stroke="currentColor" stroke-linecap="square"/>`,
   "magnifying-glass-menu": `<path d="M2.08325 10.0002H4.58325M2.08325 5.41683H5.41659M2.08325 14.5835H5.41659M16.4583 13.9585L18.7499 16.2502M17.9166 10.0002C17.9166 12.9917 15.4915 15.4168 12.4999 15.4168C9.50838 15.4168 7.08325 12.9917 7.08325 10.0002C7.08325 7.00862 9.50838 4.5835 12.4999 4.5835C15.4915 4.5835 17.9166 7.00862 17.9166 10.0002Z" stroke="currentColor" stroke-linecap="square"/>`,
   // Codex authors project disclosure folders on a 16px grid. Scale those
@@ -130,6 +131,7 @@ const customGlyphs = {
   "codex-custom-magnifying-glass-menu": "magnifying-glass-menu",
   "codex-custom-marketplace": "marketplace",
   "codex-custom-mcp": "mcp",
+  "codex-custom-bolt": "bolt",
   "codex-custom-models": "models",
   "codex-custom-three-dots": "three-dots",
   "codex-custom-openai": "openai",

@@ -102,6 +102,7 @@ export const UI_CODEX_ICON_ALIASES = {
   // graph nodes. Drawn locally instead, same as `marketplace` and `models`
   // above; see `CODEX_CUSTOM_GLYPHS` in ./icon.tsx.
   mcp: "codex-custom-mcp",
+  bolt: "codex-custom-bolt",
   menu: "codex-20-097",
   models: "codex-custom-models",
   "new-session": "codex-20-019",

@@ -416,6 +416,41 @@ test.describe("core harness ownership (local) @core", () => {
     ).toHaveAttribute("data-model", "sonnet", { timeout: 10_000 })
   })
 
+  test("a harness picked in an existing session stays in the composer until the next send switches it", async ({
+    page,
+  }) => {
+    const sessionId = "ses_core_harness_held_pick"
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId, harness: "claude-sdk" })
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+    const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    await expect(control).toHaveAttribute("data-harness", "claude", { timeout: 20_000 })
+
+    await composePrompt(page, input, "first turn on claude")
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
+    await expectAssistantReplyVisible(page, "ack 1: first turn on claude")
+    const writesBeforePick = mock.requests.configPatchCount
+
+    await switchDraftHarness(page, /^Codex$/, 0)
+    await expect(control).toHaveAttribute("data-harness", "codex", { timeout: 20_000 })
+    await expect(control, "a held pick lists the picked harness's models, not the session's").toContainText("GPT-5.5", {
+      timeout: 20_000,
+    })
+    expect(mock.requests.configPatchCount, "picking a harness wrote to the session").toBe(writesBeforePick)
+
+    await composePrompt(page, input, "second turn on codex")
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(2)
+    expect(mock.requests.configPatchBodies[writesBeforePick]?.body).toMatchObject({
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "codex", modelID: "gpt-5.5" },
+    })
+    expect(mock.requests.promptBodies[1]).toMatchObject({ providerID: "codex", modelID: "gpt-5.5" })
+    await expectAssistantReplyVisible(page, "ack 2: second turn on codex")
+    await expect(control).toHaveAttribute("data-harness", "codex")
+  })
+
   test("a newly-created busy Claude native session keeps its harness and model during the first turn", async ({
     page,
   }) => {

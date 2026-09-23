@@ -8,9 +8,6 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { capture as phCapture, identityProps, type Surface } from "@/platform/telemetry/analytics"
 
 
-const isFree = (provider: string, cost: { input: number } | undefined) =>
-  provider === "opencode" && (!cost || cost.input === 0)
-
 export type PickerItem = {
   id: string
   name: string
@@ -22,9 +19,11 @@ export type PickerItem = {
     id: string
     name: string
   }
-  cost?: { input: number; output?: number }
   latest?: boolean
+  /** The server's answer to whether this model can run now; absent where it does not say. */
   connected?: boolean
+  /** Set by the server when the model costs nothing to run. */
+  free?: boolean
   // Catalog-backed detail the hover card reads. Declared here because the picker
   // items ARE the catalog models (`useProviders().list()` spreads them through);
   // leaving them off meant every tooltip render asserted the item into a
@@ -35,12 +34,17 @@ export type PickerItem = {
   reasoning?: boolean
 }
 
+/** A provider group is connected when any of its models can run. */
+function groupConnected(items: readonly PickerItem[]) {
+  return items.some((item) => item.connected !== false)
+}
+
 export function comparePickerProviderGroups(
   a: { items: PickerItem[] },
   b: { items: PickerItem[] },
 ) {
-  const aConnected = a.items[0]?.connected !== false
-  const bConnected = b.items[0]?.connected !== false
+  const aConnected = groupConnected(a.items)
+  const bConnected = groupConnected(b.items)
   if (aConnected !== bConnected) return aConnected ? -1 : 1
 
   const aProvider = a.items[0]?.provider.id ?? ""
@@ -105,6 +109,8 @@ export const ModelList: Component<{
       .filter((m) => props.model.visible({ modelID: m.id, providerID: m.provider.id }))
       .filter((m) => (props.provider ? m.provider.id === props.provider : true)),
   )
+  const runnableProviders = createMemo(() =>
+    new Set(models().filter((m) => m.connected !== false).map((m) => m.provider.id)))
 
   return (
     <List
@@ -119,14 +125,14 @@ export const ModelList: Component<{
       groupBy={(x) => x.provider.name}
       groupHeader={(group) => {
         const item = group.items[0]
-        if (item.connected === undefined) return item.provider.name
+        if (group.items.every((entry) => entry.connected === undefined)) return item.provider.name
         return (
           <div class="w-full flex items-center justify-between gap-2">
             <span class="truncate">{item.provider.name}</span>
-            <Show when={item.connected}>
+            <Show when={groupConnected(group.items)}>
               <Tag>Configured</Tag>
             </Show>
-            <Show when={!item.connected}>
+            <Show when={!groupConnected(group.items)}>
               <Tag>{language.t("command.provider.connect")}</Tag>
             </Show>
           </div>
@@ -141,7 +147,7 @@ export const ModelList: Component<{
             placement="right-start"
             gutter={12}
             openDelay={0}
-            value={<ModelTooltip model={item} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
+            value={<ModelTooltip model={item} latest={item.latest} free={item.free === true} />}
           >
             {node}
           </Tooltip>
@@ -169,11 +175,15 @@ export const ModelList: Component<{
                 a display name is a short label ("Sonnet") and only this slot
                 carries it alone. */}
             <span data-slot="list-item-name" class="truncate">{i.name}</span>
-            <Show when={isFree(i.provider.id, i.cost)}>
+            <Show when={i.free}>
               <Tag>{language.t("model.tag.free")}</Tag>
             </Show>
             <Show when={i.latest}>
               <Tag>{language.t("model.tag.latest")}</Tag>
+            </Show>
+            {/* A group that is not connected says so once in its header. */}
+            <Show when={i.connected === false && runnableProviders().has(i.provider.id)}>
+              <Tag>{language.t("command.provider.connect")}</Tag>
             </Show>
           </div>
           {/* Display names are short labels ("Sonnet", "Opus"); the version and

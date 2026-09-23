@@ -210,7 +210,7 @@ export type PromptBody = {
   agent?: string
   providerID?: string
   modelID?: string
-  variant?: string
+  variant?: string | null
   /**
    * The permission mode this turn asked to run under.
    *
@@ -859,6 +859,11 @@ function harnessSelectionFor(harness: Harness) {
   return { kind: "connection" as const, connectionId: connectionIdFor(harness) }
 }
 
+function harnessFixtureFor(identity: SessionHarness): Harness | undefined {
+  return (Object.keys(DEFAULT_HARNESS_MODELS) as Harness[])
+    .find((fixture) => sameSessionHarness(sessionHarnessFor(fixture), identity))
+}
+
 function harnessFixtureFromUrl(input: string | URL, fallback: Harness): Harness {
   const url = input instanceof URL ? input : new URL(input)
   const nativeHarness = url.searchParams.get("nativeHarness")
@@ -1388,6 +1393,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
                 limit: { context: 200000, output: 8192 },
                 cost: { input: 0, output: 0 },
                 options: {},
+                connected: true,
+                free: activeProviderID === "opencode",
               },
             ]),
           ),
@@ -2704,7 +2711,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/api/claxedo/agent-config/harness/options**", (r) => {
     if (!api(r)) return r.continue()
     requests.harnessOptionsCount += 1
-    const type = harnessFixtureFromUrl(r.request().url(), harness)
+    // CONTRACT (claxedo-local-server harness-routes.ts): a `sessionId` sends the
+    // read to `/session/:id/config-options`, which answers for the harness the
+    // session runs whatever harness the query names.
+    const url = new URL(r.request().url())
+    const type = url.searchParams.get("sessionId") ? harness : harnessFixtureFromUrl(url, harness)
     requests.harnessOptionsHarnesses.push(type)
     const model = harnessModels[type]?.[0] ?? BIG_PICKLE
     return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(type, model)))
@@ -2909,7 +2920,17 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         // failure is enforced by the canonical identity check below.
         return json(route, { error: "could not save session config" }, 500)
       }
-      if (update.harness && !sameSessionHarness(currentHarness, update.harness)) {
+      // CONTRACT (workspace-runtime session-core.ts): a native SDK session hands off
+      // to the requested harness; an OpenCode session refuses the switch.
+      const switchTo = update.harness && !sameSessionHarness(currentHarness, update.harness) && harness !== "opencode"
+        ? harnessFixtureFor(update.harness)
+        : undefined
+      if (switchTo) {
+        harness = switchTo
+        savedModel = undefined
+        savedAgent = undefined
+        savedVariant = undefined
+      } else if (update.harness && !sameSessionHarness(currentHarness, update.harness)) {
         return json(
           route,
           sessionConfigPatchHarnessSwitchBody({

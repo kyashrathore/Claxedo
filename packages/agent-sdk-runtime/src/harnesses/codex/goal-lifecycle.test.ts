@@ -65,9 +65,11 @@ function goalControllerHarness() {
   const providerTurns: Array<Promise<boolean>> = []
   const activeThreads = new Map<string, CodexActiveThread>()
   let goal: JsonRecord | null = null
+  const requests: Array<{ method: string; params: unknown }> = []
   const proc = {
     alive: true,
     async request(method: string, params: unknown) {
+      requests.push({ method, params })
       const input = (params ?? {}) as { objective?: string; status?: string }
       if (method === "thread/goal/set") {
         goal = {
@@ -129,6 +131,7 @@ function goalControllerHarness() {
     liveProcess: () => appServer,
     lease: () => ({ release: () => {} }),
     threadConfig: () => ({}),
+    threadSettings: async () => ({ model: "gpt-6-astra", effort: "xhigh" }),
     activeThreads,
     projectThreadNotification: async (_input, threadId, method, params) => {
       projected.push({ threadId, method, payload: params })
@@ -138,6 +141,7 @@ function goalControllerHarness() {
     directory,
     published,
     projected,
+    requests,
     activeThreads,
     sessionByThread,
     activeThread: (sessionId: string): CodexActiveThread => ({
@@ -369,6 +373,17 @@ describe("Codex Goal lifecycle", () => {
     expect(parentFinishes).toHaveLength(1)
     expect(await adapter.goals!.read(session.id, fake.directory)).toMatchObject({ status: "paused" })
     await adapter.dispose()
+  })
+
+  test("a Goal names the session's model and effort on its thread before it starts", async () => {
+    const harness = goalControllerHarness()
+    const controller = new CodexGoalController(harness.host)
+    expect(await controller.resource.start("session-settings", { objective: "Ship" }, harness.directory))
+      .toMatchObject({ ok: true })
+    expect(harness.requests.filter((request) => request.method.startsWith("thread/"))).toEqual([
+      { method: "thread/settings/update", params: { threadId: THREAD_ID, model: "gpt-6-astra", effort: "xhigh" } },
+      { method: "thread/goal/set", params: { threadId: THREAD_ID, objective: "Ship" } },
+    ])
   })
 
   test("a child agent finishing does not end the parent Goal turn", async () => {

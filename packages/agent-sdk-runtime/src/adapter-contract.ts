@@ -451,9 +451,14 @@ export function resolvedModelFromConfigOptions(
   return name ? { id, name } : undefined
 }
 
+/**
+ * Options describe one model: effort levels and their default are per model,
+ * so `model` names the one the picker has selected. Absent, a bound session
+ * answers for its configured model and a draft for the harness's default.
+ */
 export interface SupportsConfigOptions {
-  probeConfigOptions(directory: RuntimeDirectory, binding?: AgentExecutionBinding): Promise<AgentConfigOptions>
-  peekConfigOptions?(directory: RuntimeDirectory, binding?: AgentExecutionBinding): Promise<AgentConfigOptions | null> | AgentConfigOptions | null
+  probeConfigOptions(directory: RuntimeDirectory, binding?: AgentExecutionBinding, model?: string): Promise<AgentConfigOptions>
+  peekConfigOptions?(directory: RuntimeDirectory, binding?: AgentExecutionBinding, model?: string): Promise<AgentConfigOptions | null> | AgentConfigOptions | null
 }
 
 export type AgentHarnessAdapter =

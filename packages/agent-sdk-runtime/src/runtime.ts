@@ -33,7 +33,7 @@ import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./ru
 import { createTurnPublication } from "./runtime/turn-publication"
 import { turnPrompt, turnStartRecord } from "./runtime/turn-record"
 import { assertSessionCreateBindingScope, normalizeDirectory as runtimeDirectory, requireExecutionBinding } from "./runtime/execution-binding"
-import { executeHandoffTransaction } from "./runtime/handoff-transaction"
+import { announceHandoff, executeHandoffTransaction, releaseKeptHandoffSource } from "./runtime/handoff-transaction"
 import { createRuntimeLifecycle } from "./runtime/lifecycle"
 import { createRuntimeGoalController } from "./runtime/goal-controller"
 import { createRuntimeRecovery } from "./runtime/recovery"
@@ -485,24 +485,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     }
     const session = store.getSession(sessionId)
     if (!session) throw new Error(`Session ${sessionId} not found`)
-    if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
     const targetDirectory = directory ?? session.directory
     const previousBinding = executionBinding(sessionId, targetDirectory, current.harness)
     const source = await adapterFor(current.harness)
     const target = await adapterFor(update.harness!)
     return executeHandoffTransaction({
-      sessionId,
-      directory: targetDirectory,
-      session,
-      current: current,
-      update: { ...update, harness: update.harness! },
-      binding: previousBinding,
-      store,
-      source,
-      target,
-      commit: (event) => {
-        commitAndPublish(sessionId, targetDirectory, event, { dir: "out", method: "session/handoff" })
-      },
+      sessionId, directory: targetDirectory, session, current, update: { ...update, harness: update.harness! },
+      binding: previousBinding, store, source, target, admissions,
       diagnose: (payload) => publish({ sessionId, directory: targetDirectory, payload }),
     })
   }
@@ -543,9 +532,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         if (create.id) assertCreateBindingScope(create.id, create)
         const adapter = await adapterFor(create.harness)
-        if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
-          adapter.setModel(create.model.modelID === DEFAULT_MODEL_ID ? "" : create.model.modelID)
-        }
+        // "" when the create names none: a skipped call keeps the previous create's model.
+        if (hasAdapterCapability(adapter, "runtime-config")) adapter.setModel(create.model?.modelID === DEFAULT_MODEL_ID ? "" : create.model?.modelID ?? "")
         const refusal = admitSessionInstructions({
           harness: create.harness.id,
           channel: adapter.instructionChannel,
@@ -613,7 +601,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       },
       async delete(sessionId: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)
-        await adapter.deleteSession(executionBinding(sessionId, directory))
+        const binding = executionBinding(sessionId, directory)
+        const config = store.getSessionConfig(sessionId)
+        await adapter.deleteSession(binding)
+        await releaseKeptHandoffSource({ sessionId, directory: binding.directory, config, adapterFor,
+          diagnose: (payload) => publish({ sessionId, directory: binding.directory, payload }) })
         store.deleteSession(sessionId)
         goals.forgetSession(sessionId)
       },
@@ -690,6 +682,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
+          announceHandoff({ sessionId: turn.sessionId, userMessageId, directory, config, store, adapterFor,
+            commit: (event) => commitAndPublish(turn.sessionId, directory, event, { dir: "out", method: "session/handoff" }, turn.admission),
+            diagnose: (payload) => publish({ sessionId: turn.sessionId, directory, payload }) })
           // This promise is detached, so a rejection has no caller to reach.
           // The failure is retained against the session instead, and the turn
           // keeps its admission and its lease until something clears it.

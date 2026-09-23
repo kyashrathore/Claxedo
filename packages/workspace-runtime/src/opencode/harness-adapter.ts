@@ -467,7 +467,12 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     }
     const scope = this.scope(binding.directory)
     if (update.agent) await runtime.sessions.switchAgent(scope, binding.sessionId, update.agent)
-    if (update.model) await runtime.sessions.switchModel(scope, binding.sessionId, update.model)
+    if (update.model) {
+      await runtime.sessions.switchModel(scope, binding.sessionId, {
+        ...update.model,
+        ...(next.variant ? { variant: next.variant } : {}),
+      })
+    }
     this.configs.set(binding.sessionId, next)
     return next
   }
@@ -482,6 +487,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     // whatever login this machine holds — under an identity the operator did
     // not choose — and bill it to that account.
     if (!input.model) throw new Error("OpenCode turn requires a resolved model")
+    await runtime.providersBound()
     const unavailable = runtime.providerUnavailableReason(input.model.providerID)
     if (unavailable) throw new ProviderCredentialUnavailableError("opencode", unavailable)
     const scope = this.scope(directory)
@@ -494,7 +500,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     try {
       await runtime.events.ready()
       await runtime.sessions.switchAgent(scope, id, input.agent)
-      await runtime.sessions.switchModel(scope, id, input.model)
+      await runtime.sessions.switchModel(scope, id, { ...input.model, ...(input.variant ? { variant: input.variant } : {}) })
       this.streaming.set(id, scope)
       await runtime.sessions.prompt(scope, id, prompt(input))
       while (true) {

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createHarnessHydrator, type HarnessHydratorCache } from "./harness-hydrator"
 import type { HarnessStoreState } from "./store-state"
 import type { HarnessScopeInput } from "./store-policy"
-import { harnessSelectionId, type HarnessType } from "./profile"
+import { harnessSelectionId, type HarnessState, type HarnessType } from "./profile"
 import { requestUrl } from "@/lib/url"
 
 type ScopeInput = HarnessScopeInput
@@ -44,6 +44,8 @@ function harnessState(overrides?: Partial<HarnessStoreState>): HarnessStoreState
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
+    serviceTiers: null,
+    selectedServiceTier: undefined,
     readiness: "ready",
     optionsSource: "empty",
     optionsStale: false,
@@ -65,6 +67,7 @@ function createSubject(input?: {
   statusOk?: boolean
 }) {
   const calls: string[] = []
+  const applied: HarnessState[] = []
   const statusUrls: string[] = []
   const cache = createCache()
   const state = new Map<string, HarnessStoreState>([["scope", input?.state ?? harnessState()]])
@@ -72,7 +75,10 @@ function createSubject(input?: {
     base: "http://127.0.0.1:3001",
     seed: (scope) => calls.push(`seed:${scope}`),
     state: (scope) => state.get(scope),
-    applyStatus: async (_scope, data) => calls.push(`apply:${harnessId(data.type)}:${data.model ?? ""}`),
+    applyStatus: async (_scope, data) => {
+      applied.push(data)
+      calls.push(`apply:${harnessId(data.type)}:${data.model ?? ""}`)
+    },
     setPollingHydration: (_scope, type) => calls.push(`polling:${harnessId(type)}`),
     setReadyHydration: (_scope, type) => calls.push(`ready:${harnessId(type)}`),
     fetchConfigOptions: (_scope, type) => calls.push(`options:${harnessId(type)}`),
@@ -104,7 +110,7 @@ function createSubject(input?: {
     },
     cache,
   })
-  return { cache, calls, hydrator, state, statusUrls }
+  return { applied, cache, calls, hydrator, state, statusUrls }
 }
 
 describe("harness hydrator", () => {
@@ -226,6 +232,29 @@ describe("harness hydrator", () => {
       "apply:codex-team:gpt-5.5",
     ])
     expect(subject.cache.seen.get("scope")).toBe("session:ses_1")
+  })
+
+  test("leaves a held harness pick alone, including on a reprobe", async () => {
+    const subject = createSubject({
+      state: harnessState({ harness: NATIVE_CODEX, heldFrom: harnessState({ harness: CURSOR_CONNECTION }) }),
+    })
+
+    await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
+    await subject.hydrator.reprobe("scope", { directory: "/repo", sessionId: "ses_1" })
+
+    expect(subject.calls).toEqual(["seed:scope", "seed:scope"])
+    expect(subject.applied).toEqual([])
+    expect(subject.cache.seen.get("scope")).toBeUndefined()
+  })
+
+  test("a reopened session restores the effort its config saved", async () => {
+    const subject = createSubject({
+      sessionConfig: { harness: { id: "codex", access: "native" }, model: { providerID: "codex", modelID: "gpt-6-astra" }, variant: "xhigh" },
+    })
+
+    await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
+
+    expect(subject.applied.at(-1)).toMatchObject({ model: "gpt-6-astra", thoughtLevel: "xhigh" })
   })
 
   test("keeps an existing session polling and retries when canonical config is temporarily unavailable", async () => {

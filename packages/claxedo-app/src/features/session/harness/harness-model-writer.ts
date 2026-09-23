@@ -58,7 +58,12 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   base: string
   seed(scope: string): void
   acceptsDraftModel(scope: string, model: ModelKey): boolean
+  currentModel(scope: string): ModelKey | undefined
   setSelectedModel(scope: string, model: ModelKey): void
+  /** A held pick is not the session's harness yet, so its model is a choice the next send carries. */
+  holdsHarness(scope: string): boolean
+  /** Effort levels and their default belong to the model, so a new one re-asks the harness. */
+  reloadOptions(scope: string, params?: ScopeInput): Promise<void> | void
   rememberDraftModel(scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels): void
   publishSessionConfig(input: ScopeInput, config: unknown): void
   dropPrepared(scope: string): void
@@ -93,20 +98,52 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
     })
   }
 
+  const saving = new Map<string, Promise<void>>()
+
   const setModel = async (scope: string, model: ModelKey, params?: ScopeInput, labels?: DraftDefaultLabels) => {
     input.seed(scope)
     if ((!params?.sessionId || params.sessionId === "new") && !input.acceptsDraftModel(scope, model)) return
+    const previous = input.currentModel(scope)
     input.setSelectedModel(scope, model)
+    const changed = previous?.providerID !== model.providerID || previous.modelID !== model.modelID
     if (!params?.sessionId || params.sessionId === "new") {
       input.rememberDraftModel(scope, model, params, labels)
       input.dropPrepared(scope)
+      if (changed) await input.reloadOptions(scope, params)
       return
     }
-    await syncSessionModel(params, model)
+    if (input.holdsHarness(scope)) {
+      if (changed) await input.reloadOptions(scope, params)
+      return
+    }
+    const run = syncSessionModel(params, model)
+    if (!run) {
+      if (changed) await input.reloadOptions(scope, params)
+      return
+    }
+    saving.set(scope, run)
+    try {
+      await run
+    } catch (error) {
+      // A session runs its saved model, so a save that failed must not leave
+      // the picker showing one the next turn will not run on.
+      const shown = input.currentModel(scope)
+      if (previous && shown?.providerID === model.providerID && shown.modelID === model.modelID) input.setSelectedModel(scope, previous)
+      throw error
+    } finally {
+      if (saving.get(scope) === run) saving.delete(scope)
+    }
+    if (changed) await input.reloadOptions(scope, params)
+  }
+
+  /** Settles once the scope's in-flight model save has landed or been rolled back. */
+  const settledModel = async (scope: string) => {
+    await saving.get(scope)?.catch(() => undefined)
   }
 
   return {
     setModel,
+    settledModel,
     syncSessionModel,
   }
 }

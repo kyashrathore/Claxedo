@@ -1,9 +1,10 @@
-import { afterAll, beforeEach, describe, expect, test } from "bun:test"
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { getClaudeManagedHookCommand, materializeAgentHooks } from "./materialize-status-hooks"
+import { agentHookConfigPaths, getClaudeManagedHookCommand, materializeAgentHooks } from "./materialize-status-hooks"
+import { generateAntigravityHook, generateCursorHook, generateGeminiHook, generateNotifyScript } from "./core/hooks"
 
 const root = path.join(os.tmpdir(), `agent-hooks-materializer-${randomUUID().slice(0, 8)}`)
 const notifyPath = path.join(root, ".claxedo", "hooks", "notify.sh")
@@ -238,5 +239,183 @@ describe("materializeAgentHooks", () => {
         ],
       },
     })
+  })
+})
+
+function hookCommandsIn(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(hookCommandsIn)
+  if (!value || typeof value !== "object") return []
+  const record = value as Record<string, unknown>
+  return [...(typeof record.command === "string" ? [record.command] : []), ...Object.values(record).flatMap(hookCommandsIn)]
+}
+
+async function commandsIn(file: string) {
+  return hookCommandsIn(await readJson(file)).sort()
+}
+
+function times(count: number, command: string) {
+  return Array.from({ length: count }, () => command)
+}
+
+function scriptsIn(dataRoot: string) {
+  const hooks = path.join(dataRoot, "hooks")
+  return {
+    notify: path.join(hooks, "notify.sh"),
+    gemini: path.join(hooks, "gemini-hook.sh"),
+    cursor: path.join(hooks, "cursor-hook.sh"),
+    antigravity: path.join(hooks, "antigravity-hook.sh"),
+  }
+}
+
+async function writeGeneratedScripts(dataRoot: string) {
+  const scripts = scriptsIn(dataRoot)
+  await fs.mkdir(path.dirname(scripts.notify), { recursive: true })
+  await fs.writeFile(scripts.notify, generateNotifyScript(7860), { mode: 0o755 })
+  await fs.writeFile(scripts.gemini, generateGeminiHook(scripts.notify), { mode: 0o755 })
+  await fs.writeFile(scripts.cursor, generateCursorHook(scripts.notify), { mode: 0o755 })
+  await fs.writeFile(scripts.antigravity, generateAntigravityHook(scripts.notify), { mode: 0o755 })
+  return scripts
+}
+
+async function writeJson(file: string, value: unknown) {
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await fs.writeFile(file, JSON.stringify(value))
+}
+
+describe("materializeAgentHooks across data roots", () => {
+  let home: string
+  beforeEach(async () => {
+    home = await fs.mkdtemp(path.join(os.tmpdir(), "agent-hooks-data-roots-"))
+  })
+  afterEach(async () => {
+    await fs.rm(home, { recursive: true, force: true })
+  })
+
+  function materializeFor(scripts: ReturnType<typeof scriptsIn>) {
+    return materializeAgentHooks({
+      homeDir: home,
+      notifyPath: scripts.notify,
+      geminiHookPath: scripts.gemini,
+      cursorHookPath: scripts.cursor,
+      codexNativeHooks: true,
+    })
+  }
+
+  test("a run from a fresh temp data root leaves one registration per event, not one per past run", async () => {
+    let last = scriptsIn(home)
+    for (const run of ["run-1", "run-2", "run-3"]) {
+      const dataRoot = path.join(home, "tmp", run)
+      last = await writeGeneratedScripts(dataRoot)
+      expect((await materializeFor(last)).filter((result) => result.status !== "applied")).toEqual([])
+      await fs.rm(dataRoot, { recursive: true, force: true })
+    }
+    const files = agentHookConfigPaths(home)
+    expect(await commandsIn(files.gemini)).toEqual(times(3, last.gemini))
+    expect(await commandsIn(files.mastra)).toEqual(times(3, `bash '${last.notify}' --harness=mastracode`))
+    expect(await commandsIn(files.droid)).toEqual(times(4, `'${last.notify}' --harness=droid`))
+    expect(await commandsIn(files.codex)).toEqual(times(4, `'${last.notify}' --harness=codex`))
+    expect((await commandsIn(files.cursor)).length).toBe(6)
+    expect(await commandsIn(files.antigravity)).toEqual([
+      `bash '${last.antigravity}' PreInvocation`,
+      `bash '${last.antigravity}' Stop`,
+    ])
+  })
+
+  test("retires generated registrations from other data roots and keeps foreign ones", async () => {
+    const current = await writeGeneratedScripts(path.join(home, ".workspace-runtime"))
+    const previous = await writeGeneratedScripts(path.join(home, "previous-data"))
+    const deleted = scriptsIn(path.join(home, "deleted-data"))
+    const foreign = path.join(home, ".superset", "hooks", "notify.sh")
+    await fs.mkdir(path.dirname(foreign), { recursive: true })
+    await fs.writeFile(foreign, "#!/bin/bash\n# Superset agent notification hook\n", { mode: 0o755 })
+    const guardedMissing = `if [ -x '${deleted.gemini}' ]; then /bin/sh '${deleted.gemini}'; fi`
+    const supersetDynamic = `[ -n "$SUPERSET_HOME_DIR" ] && [ -x "$SUPERSET_HOME_DIR/hooks/notify.sh" ] && "$SUPERSET_HOME_DIR/hooks/notify.sh" || true`
+    const command = (value: string) => ({ type: "command", command: value })
+    const files = agentHookConfigPaths(home)
+    const droidSettings = path.join(path.dirname(files.droid), "settings.json")
+
+    await writeJson(files.codex, { hooks: {
+      SessionStart: [{ hooks: [command(`'${previous.notify}' --harness=codex`)] }, { hooks: [command(foreign)] }],
+      Stop: [{ hooks: [command(`'${deleted.notify}' --harness=codex`), command(foreign)] }],
+    } })
+    await writeJson(files.droid, {
+      Stop: [{ hooks: [command(deleted.notify)] }, { hooks: [command(foreign)] }],
+      PostToolUse: [{ matcher: "*", hooks: [command(`'${previous.notify}' --harness=droid`)] }],
+    })
+    await writeJson(droidSettings, { hooks: { Stop: [{ hooks: [command(deleted.notify), command(foreign)] }] } })
+    await writeJson(files.mastra, {
+      Stop: [command(`bash '${deleted.notify}'`), command(`bash '${foreign}'`)],
+      UserPromptSubmit: [command(`bash '${previous.notify}' --harness=mastracode`)],
+      Notification: [command(`bash '${deleted.notify}'`)],
+    })
+    await writeJson(files.gemini, { hooks: { BeforeAgent: [
+      { hooks: [command(deleted.gemini)] },
+      { hooks: [command(previous.gemini)] },
+      { hooks: [command(guardedMissing)] },
+    ], Notification: [
+      { hooks: [command(previous.gemini), command("/user/gemini-notify.sh")] },
+      { hooks: [command(deleted.gemini)] },
+    ] } })
+    await writeJson(files.cursor, { version: 1, hooks: { stop: [
+      { command: `${deleted.cursor} Stop` },
+      { command: `${previous.cursor} Stop` },
+      { command: "./scripts/format.sh" },
+    ], afterAgentResponse: [{ command: `${deleted.cursor} Stop` }] } })
+    await writeJson(files.claude, { hooks: { Stop: [{ hooks: [
+      command(`'${deleted.notify}' --harness=claude`),
+      command(supersetDynamic),
+      command(foreign),
+    ] }] } })
+    await writeJson(files.antigravity, { "claxedo-lifecycle": {
+      PreInvocation: [{ ...command(`bash '${previous.antigravity}' PreInvocation`), timeout: 3 }],
+      Stop: [{ ...command(`bash '${deleted.antigravity}' Stop`), timeout: 3 }],
+    } })
+
+    for (let i = 0; i < 2; i++) {
+      expect((await materializeFor(current)).filter((result) => result.status !== "applied")).toEqual([])
+    }
+
+    const sorted = (...commands: string[]) => commands.sort()
+    expect(await commandsIn(files.codex)).toEqual(sorted(...times(2, foreign), ...times(4, `'${current.notify}' --harness=codex`)))
+    expect(await commandsIn(files.droid)).toEqual(sorted(foreign, ...times(4, `'${current.notify}' --harness=droid`)))
+    expect(await commandsIn(droidSettings)).toEqual([foreign])
+    expect(await commandsIn(files.mastra)).toEqual(sorted(`bash '${foreign}'`, ...times(3, `bash '${current.notify}' --harness=mastracode`)))
+    expect(await commandsIn(files.gemini)).toEqual(sorted(guardedMissing, "/user/gemini-notify.sh", ...times(3, current.gemini)))
+    expect(Object.keys((await readJson(files.cursor)).hooks as object)).not.toContain("afterAgentResponse")
+    expect((await commandsIn(files.cursor)).filter((value) => !value.startsWith(`${current.cursor} `))).toEqual(["./scripts/format.sh"])
+    expect(await commandsIn(files.claude)).toEqual(sorted(foreign, supersetDynamic, ...times(6, getClaudeManagedHookCommand())))
+    expect(await commandsIn(files.antigravity)).toEqual([
+      `bash '${current.antigravity}' PreInvocation`,
+      `bash '${current.antigravity}' Stop`,
+    ])
+  })
+
+  test("the script's marker, not its path, decides ownership of an existing notify.sh", async () => {
+    const current = await writeGeneratedScripts(path.join(home, ".workspace-runtime"))
+    const other = path.join(home, ".superset", "hooks", "notify.sh")
+    await fs.mkdir(path.dirname(other), { recursive: true })
+    await fs.writeFile(other, "#!/bin/bash\n# Superset agent notification hook\n", { mode: 0o755 })
+    const file = agentHookConfigPaths(home).codex
+    await writeJson(file, { hooks: { Stop: [{ hooks: [{ type: "command", command: other }] }] } })
+
+    await materializeFor(current)
+    expect(await commandsIn(file)).toContain(other)
+
+    await fs.writeFile(other, generateNotifyScript(7860))
+    await materializeFor(current)
+    expect(await commandsIn(file)).toEqual(times(4, `'${current.notify}' --harness=codex`))
+  })
+
+  test("Antigravity refuses a claxedo-lifecycle hook whose script exists without the marker", async () => {
+    const current = await writeGeneratedScripts(path.join(home, ".workspace-runtime"))
+    const other = path.join(home, "elsewhere", "hooks", "antigravity-hook.sh")
+    await fs.mkdir(path.dirname(other), { recursive: true })
+    await fs.writeFile(other, "#!/bin/sh\necho mine\n")
+    const file = agentHookConfigPaths(home).antigravity
+    const original = { "claxedo-lifecycle": { Stop: [{ type: "command", command: `bash '${other}' Stop` }] } }
+    await writeJson(file, original)
+
+    expect((await materializeFor(current)).find((result) => result.runner === "antigravity")?.status).toBe("failed")
+    expect(await readJson(file)).toEqual(original)
   })
 })

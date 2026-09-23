@@ -60,7 +60,7 @@ type SessionConfigPayload = {
   readonly harnessType: HarnessType
   readonly agent?: string
   readonly model?: { providerID: string; modelID: string }
-  readonly variant?: string
+  readonly variant?: string | null
 }
 
 export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
@@ -219,13 +219,15 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       body: next,
     })
     if (!res.ok) throw new Error((await res.text().catch(() => "")) || `session config save failed: ${res.status}`)
+    const config: unknown = await res.json()
     setSessionConfigRawQueryData({
       sessionID: configInput.sessionID,
       directory: configInput.directory,
       workspaceId: input.workspaceId(),
       sessionRef: input.sessionRef?.(),
       serverUrl: input.serverUrl(),
-    }, await res.json())
+    }, config)
+    return config
   }
 
   const saveSessionConfig = async (configInput: SaveSessionConfigInput) => {
@@ -282,6 +284,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     sessionClient,
     createRuntimePromptClient,
     readSessionConfig,
+    persistSessionConfig,
     saveSessionConfig,
   }
 }
@@ -291,7 +294,7 @@ function sessionConfigBody(input: SessionConfigPayload) {
     harness: sessionHarnessIdentity(input.harnessType),
     ...(input.agent ? { agent: input.agent } : {}),
     ...(input.model ? { model: input.model } : {}),
-    ...(input.variant ? { variant: input.variant } : {}),
+    ...(input.variant !== undefined ? { variant: input.variant } : {}),
   }
 }
 

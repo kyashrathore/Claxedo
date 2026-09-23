@@ -1,5 +1,5 @@
 import { batch } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, unwrap } from "solid-js/store"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { harnessHasConfigOptions, isCatalogHarness, type HarnessType } from "./profile"
@@ -9,6 +9,7 @@ import {
   draftConnectionAllowsNoModel,
   harnessDisplayName,
   harnessModelKeyForSubmit,
+  harnessServiceTierForSubmit,
   harnessModelNameForSubmit,
   harnessModels,
   harnessReadyForSubmit,
@@ -272,8 +273,27 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
   const acceptsDraftModel = (scope: string, model: ModelKey) => canSelectDraftModel(read(scope), model)
 
+  /** Show `patch` in an existing session's scope as a choice, keeping what the session itself runs. */
+  const holdHarness = (scope: string, patch: HarnessStorePatch) => {
+    seed(scope)
+    const { heldFrom, ...bound } = structuredClone(unwrap(read(scope)))
+    setStore(scope, { ...patch, heldFrom: heldFrom ?? bound })
+  }
+
+  /** Undo a held pick when `type` is the harness the session still runs. */
+  const restoreHeldHarness = (scope: string, type: HarnessType) => {
+    const heldFrom = read(scope).heldFrom
+    if (!heldFrom || !sameHarnessSelection(heldFrom.harness, type)) return false
+    setStore({ [scope]: structuredClone(unwrap(heldFrom)) })
+    return true
+  }
+
   return {
     applyPatch,
+    holdHarness,
+    restoreHeldHarness,
+    releaseHeldHarness: (scope: string) => setStore(scope, "heldFrom", undefined),
+    heldHarness: (scope: string) => read(scope).heldFrom ? read(scope).harness : undefined,
     applyDraftDefault,
     beginDraftDefault,
     beginDraftHarnessChoice,
@@ -299,6 +319,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     harness: (scope: string) => read(scope).harness,
     harnessMode: (scope: string) => read(scope).harnessMode,
     harnessModelKeyForSubmit: (scope: string) => harnessModelKeyForSubmit(read(scope)),
+    harnessServiceTierForSubmit: (scope: string) => harnessServiceTierForSubmit(read(scope)),
     harnessModelNameForSubmit: (scope: string) => harnessModelNameForSubmit(read(scope)),
     harnessReadyForSubmit: (scope: string) => draftConnectionAllowsNoModel(scope, read(scope)) || harnessReadyForSubmit(read(scope)),
     canOmitModel: (scope: string) => connectionAllowsNoModel(read(scope)),
@@ -314,6 +335,9 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       applyPatch(scope, { selectedThoughtLevel: value })
     },
     selectedThoughtLevel: (scope: string) => read(scope).selectedThoughtLevel,
+    serviceTiers: (scope: string) => read(scope).serviceTiers ?? [],
+    setServiceTier: (scope: string, value: string | undefined) => applyPatch(scope, { selectedServiceTier: value }),
+    selectedServiceTier: (scope: string) => read(scope).selectedServiceTier,
     selectedModel: (scope: string) => read(scope).selectedModel ?? "",
     selectedModelKey: (scope: string) => harnessModelKeyForSubmit(read(scope)),
     optionsSource: (scope: string) => read(scope).optionsSource,

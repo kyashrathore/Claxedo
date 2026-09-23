@@ -51,6 +51,20 @@ describe("harness options loader", () => {
     })
   })
 
+  test("asks for the options of the scope's selected model, whose effort levels they describe", async () => {
+    const asked: Array<string | undefined> = []
+    const loader = loaderFor({
+      fetch: async (_type, _params, model) => {
+        asked.push(model)
+        return optionsResponse({ source: "harness", stale: false, options: [] })
+      },
+    })
+    await loader.load(scope, nativeHarness("codex"))
+    selectedModel = ""
+    await loader.load(scope, nativeHarness("codex"))
+    expect(asked).toEqual(["sonnet", undefined])
+  })
+
   test("keeps an equivalent generic connection current across structural copies", async () => {
     harness = connectionHarness("cloud-agent")
     const requested = connectionHarness("cloud-agent")
@@ -252,6 +266,7 @@ describe("harness options loader", () => {
       optionsSource: "harness",
       optionsStale: false,
       thoughtLevels: [],
+      serviceTiers: [],
       optionsLoading: false,
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
     })

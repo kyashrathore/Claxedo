@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createHarnessSwitcher, type HarnessSwitcherCache } from "./harness-switcher"
 import type { WorkspaceBoot } from "./harness-config-runtime"
-import { sessionResourceUrl } from "./harness-config-routes"
 import type { HarnessType } from "./profile"
 import type { HarnessStorePatch } from "./store-state"
-import { connectionHarness, nativeHarness } from "@/platform/identity/harness-selection"
-import { requestUrl } from "@/lib/url"
+import { connectionHarness, nativeHarness, sameHarnessSelection } from "@/platform/identity/harness-selection"
 
 const scope = "draft:/repo:route"
 
@@ -13,28 +11,26 @@ let pending: Record<string, Promise<void> | undefined>
 let patches: HarnessStorePatch[]
 let refreshes: { directory?: string; type?: string; draft?: boolean }[]
 let optionFetches: { scope: string; type: HarnessType; directory?: string; sessionId?: string }[]
-let posts: { url: string; body: unknown }[]
 let dropped: string[]
 let clearedTries: string[]
 let workspace: WorkspaceBoot | undefined
-let postResponse: Response
 let workspaceCalls: number
 let remembered: Array<{ scope: string; type: HarnessType; directory?: string }>
-let publishedConfigs: Array<{ sessionId?: string; directory?: string; config: unknown }>
+let held: Array<{ scope: string; patch: HarnessStorePatch }>
+let heldFrom: HarnessType | undefined
 
 beforeEach(() => {
   pending = {}
   patches = []
   refreshes = []
   optionFetches = []
-  posts = []
   dropped = []
   clearedTries = []
   workspace = { kind: "self" }
-  postResponse = new Response(null, { status: 204 })
   workspaceCalls = 0
   remembered = []
-  publishedConfigs = []
+  held = []
+  heldFrom = undefined
 })
 
 describe("harness switcher", () => {
@@ -110,7 +106,7 @@ describe("harness switcher", () => {
       optionsLoading: true,
       readiness: "ready",
     })
-    expect(posts).toEqual([])
+    expect(held).toEqual([])
     expect(optionFetches).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo", sessionId: "new" }])
     expect(refreshes).toEqual([{ directory: "/repo", type: undefined, draft: true }])
     expect(remembered).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo" }])
@@ -145,78 +141,44 @@ describe("harness switcher", () => {
 
     await switcher.setHarness(scope, connectionHarness("codex-team"), { directory: "/repo", sessionId: "new" })
 
-    expect(posts).toEqual([])
     expect(optionFetches).toEqual([{ scope, type: connectionHarness("codex-team"), directory: "/repo", sessionId: "new" }])
     expect(refreshes).toEqual([{ directory: "/repo", type: undefined, draft: true }])
   })
 
-  test("switches non-local existing sessions through canonical session config", async () => {
+  test("holds an existing session's pick in the composer and loads the picked harness's options", async () => {
     const switcher = switcherFor()
 
     await switcher.setHarness("session:ses_1", nativeHarness("cursor"), { directory: "/repo", sessionId: "ses_1" })
 
-    expect(posts).toEqual([{
-      url: `${sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" })}&nativeHarness=cursor`,
-      body: {},
+    expect(held).toEqual([{
+      scope: "session:ses_1",
+      patch: expect.objectContaining({ harness: nativeHarness("cursor"), optionsLoading: true, readiness: "ready" }),
     }])
+    expect(patches).toEqual([])
     expect(optionFetches).toEqual([{ scope: "session:ses_1", type: nativeHarness("cursor"), directory: "/repo", sessionId: "ses_1" }])
-    expect(refreshes).toEqual([{ directory: "/repo", type: undefined, draft: undefined }])
-    expect(publishedConfigs).toEqual([{
-      sessionId: "ses_1",
-      directory: "/repo",
-      config: { harness: { id: "cursor", access: "native" } },
-    }])
+    expect(refreshes).toEqual([{ directory: "/repo", type: undefined, draft: true }])
+    expect(remembered).toEqual([])
   })
 
-  test("does not publish an older harness response that finishes parsing after a newer choice", async () => {
-    let releaseOldJson: (config: unknown) => void = () => {}
-    let oldJsonStarted: () => void = () => {}
-    const parsing = new Promise<void>((resolve) => {
-      oldJsonStarted = resolve
-    })
-    let calls = 0
-    const switcher = switcherFor({
-      sessionFetch: async (_url, _init) => {
-        calls += 1
-        if (calls === 1) {
-          return {
-            ok: true,
-            json: () => {
-              oldJsonStarted()
-              return new Promise((resolve) => {
-                releaseOldJson = resolve
-              })
-            },
-          } as Response
-        }
-        return Response.json({ harness: { id: "codex", access: "native" } })
-      },
-    })
+  test("picking an existing session's own harness back restores it without loading anything", async () => {
+    heldFrom = nativeHarness("claude")
+    const switcher = switcherFor()
 
-    const oldSwitch = switcher.setHarness("session:ses_1", nativeHarness("claude"), { directory: "/repo", sessionId: "ses_1" })
-    await parsing
-    await switcher.setHarness("session:ses_1", nativeHarness("codex"), { directory: "/repo", sessionId: "ses_1" })
-    releaseOldJson({ harness: { id: "claude", access: "native" } })
-    await oldSwitch
+    await switcher.setHarness("session:ses_1", nativeHarness("claude"), { directory: "/repo", sessionId: "ses_1" })
 
-    expect(publishedConfigs).toEqual([{
-      sessionId: "ses_1",
-      directory: "/repo",
-      config: { harness: { id: "codex", access: "native" } },
-    }])
+    expect(held).toEqual([])
+    expect(optionFetches).toEqual([])
+    expect(refreshes).toEqual([])
+    expect(workspaceCalls).toBe(0)
   })
 
-  test("switches an existing model-less connection without probing config options", async () => {
+  test("holds an existing session's model-less connection without probing config options", async () => {
     const switcher = switcherFor({ hasConfigOptions: async () => false })
     const selection = connectionHarness("external-opencode")
 
     await switcher.setHarness("session:ses_1", selection, { directory: "/repo", sessionId: "ses_1" })
 
-    expect(posts).toEqual([{
-      url: `${sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" })}&connectionId=external-opencode`,
-      body: {},
-    }])
-    expect(refreshes).toEqual([{ directory: "/repo", type: undefined, draft: undefined }])
+    expect(held).toEqual([{ scope: "session:ses_1", patch: expect.objectContaining({ harness: selection }) }])
     expect(optionFetches).toEqual([])
     expect(patches.at(-1)).toEqual({
       selectedModel: "default",
@@ -224,30 +186,14 @@ describe("harness switcher", () => {
       optionsSource: "empty",
       optionsStale: false,
       optionsLoading: false,
+      configError: undefined,
     })
-  })
-
-  test("records existing-session switch failures as readiness errors", async () => {
-    postResponse = Response.json({ error: { message: "binary missing" } }, { status: 500 })
-    const switcher = switcherFor()
-
-    await switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "ses_1" })
-
-    expect(patches.at(-1)).toEqual({
-      configError: "binary missing",
-      readiness: "error",
-      optionsLoading: false,
-    })
-    expect(refreshes).toEqual([])
-    expect(optionFetches).toEqual([])
-    expect(remembered).toEqual([])
   })
 
 })
 
 function switcherFor(input?: {
   workspace?: () => Promise<WorkspaceBoot | undefined>
-  sessionFetch?: typeof fetch
   hasConfigOptions?: (type: HarnessType) => Promise<boolean>
 }) {
   return createHarnessSwitcher({
@@ -255,6 +201,8 @@ function switcherFor(input?: {
     seed: () => {},
     dropPrepared: (scope) => dropped.push(scope),
     applyPatch: (_scope, patch) => patches.push(patch),
+    holdHarness: (scope, patch) => held.push({ scope, patch }),
+    restoreHeldHarness: (_scope, type) => sameHarnessSelection(heldFrom, type),
     rememberDraftHarness: (scope, type, params) => remembered.push({
       scope,
       type,
@@ -266,31 +214,8 @@ function switcherFor(input?: {
     fetchConfigOptions: (scope, type, params) => {
       optionFetches.push({ scope, type, directory: params?.directory, sessionId: params?.sessionId })
     },
-    publishSessionConfig: (params, config) => {
-      publishedConfigs.push({ sessionId: params.sessionId, directory: params.directory, config })
-    },
     hasConfigOptions: input?.hasConfigOptions,
-    errorMessage: async (res, fallback) => {
-      const body = await res.json().catch(() => undefined) as { error?: string | { message?: string } } | undefined
-      if (typeof body?.error === "string") return body.error
-      if (typeof body?.error?.message === "string") return body.error.message
-      return fallback
-    },
     runtime: {
-      harnessSessionFetch: () => input?.sessionFetch ?? (async (url, init) => {
-        posts.push({
-          url: requestUrl(url),
-          body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
-        })
-        const target = new URL(requestUrl(url))
-        const native = target.searchParams.get("nativeHarness")
-        const connection = target.searchParams.get("connectionId")
-        return postResponse.status === 204
-          ? Response.json({ harness: native
-            ? { id: native, access: "native" }
-            : { id: connection, access: "connection" } })
-          : postResponse
-      }),
       workspace: input?.workspace ?? (async () => workspace),
     },
     cache: fakeCache(),

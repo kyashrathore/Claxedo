@@ -48,7 +48,7 @@ export {
   type SessionTool,
   type SessionToolRegistration,
 } from "./tool-port"
-export { createOpenCodeRuntime, type OpenCodeRuntime } from "./runtime"
+export { createOpenCodeRuntime, type OpenCodeRuntime, type OpenCodeRuntimeOptions } from "./runtime"
 export {
   createConfigurationPort,
   type IntegrationConnection,
@@ -58,3 +58,4 @@ export {
 export { OpenCodeSdkHarnessAdapter } from "./harness-adapter"
 export { createLaunchPolicy, type LaunchPolicyStore, type OpenCodeLaunchDocument } from "./launch-policy"
 export { createProviderBindingPolicy, type ProviderBindingOverlay } from "./provider-binding"
+export { createProviderDefinitionPolicy, type ProviderDefinition } from "./provider-definition"

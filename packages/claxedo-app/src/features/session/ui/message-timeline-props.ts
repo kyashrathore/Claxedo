@@ -22,7 +22,6 @@ export type MessageTimelineProps = {
   onHistoryScroll: () => void
   /** An upward wheel or swipe on the list itself while it is at its top. */
   onHistoryPull?: () => void
-  onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
   hasScrollTarget: () => boolean
   restoreFollowing: (following: boolean) => void

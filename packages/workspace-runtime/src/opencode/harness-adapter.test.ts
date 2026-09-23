@@ -19,6 +19,7 @@ function runtime(options: {
   lifecycle?: "cold" | "ready"
   execution?: "auto" | "manual"
   unavailableProvider?: Record<string, string>
+  providersBound?: () => Promise<void>
 } = {}) {
   const listeners = new Set<(event: ProjectedEvent) => void>()
   const emit = (event: ProjectedEvent) => {
@@ -110,6 +111,7 @@ function runtime(options: {
     },
     host: { status: () => ({ lifecycle: options.lifecycle ?? "ready", events: "healthy" }) },
     providerUnavailableReason: (providerID: string) => options.unavailableProvider?.[providerID],
+    providersBound: options.providersBound ?? (async () => {}),
     close: async () => {},
   } as unknown as OpenCodeRuntime
   return { value, sessions, launch, launchWrites, emit, finish: (sessionID: string, assistantMessageID = "msg_a") => {
@@ -162,6 +164,24 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     expect(fake.sessions.prompt).not.toHaveBeenCalled()
   })
 
+  test("a turn waits for the host to bind its accounts before it prompts the engine", async () => {
+    let bind!: () => void
+    const bound = new Promise<void>((resolve) => { bind = resolve })
+    const fake = runtime({ providersBound: () => bound })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+
+    const drained = (async () => {
+      for await (const _event of adapter.executeTurn(binding(directory, "ses_1"), promptInput("go", "1"))) { /* drain */ }
+    })()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fake.sessions.prompt).not.toHaveBeenCalled()
+
+    bind()
+    await drained
+    expect(fake.sessions.prompt).toHaveBeenCalledTimes(1)
+  })
+
   test("only the typed SDK missing-session error becomes a missing session", async () => {
     const fake = runtime()
     const directory = workspace()
@@ -197,6 +217,41 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     const adapter = adapterFor(fake, workspace())
     expect(adapter.sessionConfigOwner).toBe("runtime")
     expect(adapter.readHarnessCapabilities()).toMatchObject({ harness: "opencode", configOptions: false, permissions: true })
+  })
+
+  test("hands the turn's effort to the engine with its model", async () => {
+    const fake = runtime()
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    for await (const _event of adapter.executeTurn(binding(directory, "ses_1"), {
+      parts: [{ type: "text", text: "hi" }],
+      assistantMessageId: "caller-assistant-id",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+      variant: "high",
+    })) void _event
+
+    expect(fake.sessions.switchModel).toHaveBeenCalledWith(expect.anything(), "ses_1", {
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4",
+      variant: "high",
+    })
+  })
+
+  test("a config update hands the engine the session's effort with its new model", async () => {
+    const fake = runtime()
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    await adapter.updateSessionConfig(binding(directory, "ses_1"), {
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+      variant: "high",
+    })
+
+    expect(fake.sessions.switchModel).toHaveBeenCalledWith(expect.anything(), "ses_1", {
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4",
+      variant: "high",
+    })
   })
 
   test("subscribes before admission and emits canonical runtime events", async () => {

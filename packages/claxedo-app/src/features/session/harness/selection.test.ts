@@ -8,6 +8,7 @@ import {
   harnessModels,
   harnessMode,
   harnessReadyForSubmit,
+  harnessServiceTierForSubmit,
   type HarnessSelectionState,
 } from "./selection"
 
@@ -253,4 +254,12 @@ test("only declared optional or unsupported ACP drafts bypass failed discovery w
   expect(connectionAllowsNoModel(optional)).toBe(true)
   expect(connectionAllowsNoModel({ ...optional, selectedModel: "explicit-unavailable" })).toBe(false)
   expect(connectionAllowsNoModel({ ...state, harness: { kind: "native", harnessId: "codex" } })).toBe(false)
+})
+
+test("submits a fast tier only while the selected model still offers it", () => {
+  const tiers = [{ id: "priority", name: "Fast" }]
+  expect(harnessServiceTierForSubmit({ serviceTiers: tiers, selectedServiceTier: "priority" })).toBe("priority")
+  expect(harnessServiceTierForSubmit({ serviceTiers: tiers, selectedServiceTier: undefined })).toBeUndefined()
+  expect(harnessServiceTierForSubmit({ serviceTiers: [], selectedServiceTier: "priority" })).toBeUndefined()
+  expect(harnessServiceTierForSubmit({ serviceTiers: null, selectedServiceTier: "priority" })).toBeUndefined()
 })

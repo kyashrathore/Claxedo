@@ -1,5 +1,5 @@
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
-import { Show, createEffect, createMemo, createSignal, onCleanup, untrack, type Accessor, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createResource, createSignal, onCleanup, untrack, type Accessor, type JSX } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { type PickerItem, type PickerState } from "@/features/session/ui/model/model-list"
 import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model-picker"
@@ -17,6 +17,7 @@ import {
   modelKeyFromPickerSelection,
 } from "@/features/session/commands/model-selection"
 import { useProviders } from "@/features/session/app-ports"
+import { hydrateConnectedProviderDetails } from "@/features/session/providers/models"
 import { useNavigate } from "@solidjs/router"
 import { settingsRoute } from "@/platform/settings/route"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
@@ -83,9 +84,6 @@ interface AgentHarnessSelectorProps {
   harnessController: HarnessSelectionController
   /** Canonical provider picker state for the embedded OpenCode catalog. */
   providerModel?: Accessor<PickerState>
-  providerVariants?: Accessor<string[]>
-  providerVariant?: Accessor<string | undefined>
-  onProviderVariantSelect?: (value: string) => void
 }
 
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
@@ -215,7 +213,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         id: item.id,
         name: item.name,
         provider: { id: provider.id, name: provider.name },
-        connected: connected.has(provider.id),
+        connected: item.connected,
+        free: item.free,
       })),
     )
     return {
@@ -226,12 +225,31 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         .map((item) => ({ providerID: item.provider.id, modelID: item.id })),
     }
   })
+  // A catalog restored from storage keeps only each connected provider's
+  // default model, so its rows, effort levels and draft-default answer are
+  // wrong until every connected provider's detail has been merged back in.
+  const catalogHydrationKey = () => JSON.stringify([
+    catalogProviders.queryKey(),
+    catalogProviders.connected().map((provider) => provider.id).sort(),
+  ])
+  const catalogAnswered = () =>
+    !!catalogHarnessId(harness())
+    && catalogProviders.resolved()
+    && !catalogProviders.loading()
+    && !catalogProviders.error()
+  const [hydratedCatalog] = createResource(
+    () => catalogAnswered() && catalogHydrationKey(),
+    async (key) => {
+      await hydrateConnectedProviderDetails(catalogProviders)
+      return key
+    },
+  )
+  const catalogReady = () => catalogAnswered() && hydratedCatalog.latest === catalogHydrationKey()
   createEffect(() => {
     const current = selection()
     if (current.draftDefaultState !== undefined) return
     if (current.harness && isCatalogHarness(current.harness)) {
-      if (!catalogProviders.resolved()) return
-      if (catalogProviders.loading() || catalogProviders.error()) return
+      if (!catalogReady()) return
       const catalog = catalogRows()
       props.harnessController.resolveDraftDefault(scope(), {
         supportedHarnesses: harnessOptions(),
@@ -249,8 +267,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const currentHarness = harness()
     if (!currentHarness || !isCatalogHarness(currentHarness)) return
     if (sessionLocked()) return
-    if (!catalogProviders.resolved()) return
-    if (catalogProviders.loading() || catalogProviders.error()) return
+    if (!catalogReady()) return
     // Already submit-ready (auto-picked here, saved-default-resolved, or user-picked).
     if (selection().selectedModelKey || picked()) return
     // A saved-but-unavailable model owns the surface (shows its own error) — don't override it.
@@ -378,6 +395,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         const hit = rows().find(
           (item) => item.id === command.model?.modelID && item.provider.id === command.model.providerID,
         )
+        // A catalog model's levels are its own: one the new model lacks must
+        // not ride the next prompt behind a control that no longer offers it.
+        const level = selection().selectedThoughtLevel
+        if (catalogSelected() && level && !catalogVariants(command.model).includes(level)) {
+          props.harnessController.setThoughtLevel(scope(), undefined)
+        }
         return props.harnessController.setModel(
           scope(),
           command.model,
@@ -581,17 +604,34 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const activeModelLabel = createMemo(() => modelLabel() || "Select model")
   const harnessThoughtLevels = createMemo(() => selection().thoughtLevels ?? [])
   const catalogSelected = createMemo(() => !!harness() && isCatalogHarness(harness()))
-  const activeVariants = createMemo(() =>
-    catalogSelected()
-      ? props.providerVariants?.() ?? []
-      : harnessThoughtLevels().map((item) => item.id),
-  )
+  // A catalog harness's levels are the engine variants its catalog carries for
+  // the selected model; "default" (no variant) leads them.
+  const catalogVariants = (model: { providerID?: string; modelID?: string }) => {
+    const provider = model.providerID ? catalogProviders.all().get(model.providerID) : undefined
+    const row = Object.values(provider?.models ?? {}).find((item) => item.id === model.modelID)
+    return Object.keys(row?.variants ?? {})
+  }
+  const activeVariants = createMemo(() => {
+    if (!catalogSelected()) return harnessThoughtLevels().map((item) => item.id)
+    const variants = catalogVariants({ providerID: selection().selectedModelProvider, modelID: selection().selectedModel })
+    return variants.length ? ["default", ...variants] : []
+  })
   const activeShowEffort = createMemo(() => activeVariants().length > 1)
-  const activeCurrentVariant = createMemo(() =>
-    catalogSelected() ? props.providerVariant?.() : selection().selectedThoughtLevel,
-  )
+  const activeCurrentVariant = createMemo(() => selection().selectedThoughtLevel)
   const harnessLevelName = (value: string) =>
     harnessThoughtLevels().find((item) => item.id === value)?.name ?? value
+  // One toggle, so the model's first faster tier is "fast". Codex reports
+  // exactly one (`priority`, "Fast") on every model that has any.
+  const fastTier = createMemo(() => (catalogSelected() ? undefined : selection().serviceTiers[0]))
+  const fastControl = createMemo(() => {
+    const tier = fastTier()
+    if (!tier) return undefined
+    return {
+      on: selection().selectedServiceTier === tier.id,
+      label: tier.name,
+      ...(tier.description ? { description: tier.description } : {}),
+    }
+  })
 
   const activeModelLoading = createMemo(() => modelLoading() || harnessSwitching())
   const activeModelDisabled = modelDisabled
@@ -644,12 +684,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         currentVariant={activeCurrentVariant}
         variantLabel={harnessLevelName}
         onVariantSelect={(value) => {
-          if (catalogSelected()) {
-            props.onProviderVariantSelect?.(value)
-            return
-          }
-          props.harnessController.setThoughtLevel(scope(), value === "default" ? undefined : value)
+          props.harnessController.setThoughtLevel(scope(), catalogSelected() && value === "default" ? undefined : value)
         }}
+        fast={fastControl}
+        onFastToggle={(next) => props.harnessController.setServiceTier(scope(), next ? fastTier()?.id : undefined)}
         triggerStyle={() => style(activeModelDisabled())}
         triggerHint={modelHint}
         triggerLabel={modelHint() ? `Select harness and model — ${modelHint()}` : "Select harness and model"}

@@ -26,7 +26,8 @@ export type PromptDispatchPayload = {
   model?: { providerID: string; modelID: string }
   messageID: string
   parts: PromptRequestPart[]
-  variant?: string
+  /** `null` asks for the harness's default effort, overriding a level the session saved. */
+  variant?: string | null
   permissionMode?: string
   system?: string
   format?: OutputFormat
@@ -76,7 +77,8 @@ export type SubmitAgent = { name: string; id?: string }
 export type SubmittedConfig = {
   model?: { providerID: string; modelID: string }
   agent: string
-  variant?: string
+  /** `null` is an explicit "no level": the picker shows none, so none is sent. */
+  variant?: string | null
 }
 
 export type PromptTimelineOptimisticStore = {

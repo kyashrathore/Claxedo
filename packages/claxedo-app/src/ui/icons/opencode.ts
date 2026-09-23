@@ -66,6 +66,7 @@ const OPEN_CODE_GLYPHS = [
   "new-session-active",
   "pencil-line",
   "mcp",
+  "bolt",
   "glasses",
   "magnifying-glass-menu",
   "window-cursor",

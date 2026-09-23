@@ -70,6 +70,14 @@ export function sameRuntime(a: RuntimeIdentity, b: RuntimeIdentity) {
 }
 
 /**
+ * Whether a credential may travel to this origin: HTTPS, or plain HTTP to this
+ * machine's own loopback interface, which never leaves the host.
+ */
+export function secureOrLoopback(origin: URL): boolean {
+  return origin.protocol === "https:" || (origin.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(origin.hostname))
+}
+
+/**
  * The path a projection points a harness at, refusing an origin the broker
  * could not be reached on safely: the placeholder is bearer authority over a
  * credential, so a plaintext origin off the loopback interface hands it to the
@@ -78,9 +86,7 @@ export function sameRuntime(a: RuntimeIdentity, b: RuntimeIdentity) {
  */
 export function bindingBaseUrl(brokerOrigin: string, bindingId: string): string {
   const origin = new URL(brokerOrigin)
-  if (origin.protocol !== "https:" && !(origin.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(origin.hostname))) {
-    throw new Error("Broker must use HTTPS or loopback HTTP")
-  }
+  if (!secureOrLoopback(origin)) throw new Error("Broker must use HTTPS or loopback HTTP")
   if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error("Invalid broker origin")
   if (!/^[A-Za-z0-9_-]+$/.test(bindingId)) throw new Error("Invalid binding id")
   return `${origin.origin}/bindings/${bindingId}`

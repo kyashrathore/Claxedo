@@ -14,7 +14,8 @@ export type OptionsSource = "harness" | "catalog" | "empty"
 export type HarnessHealthStatus = "ok" | "degraded" | "unavailable"
 export type HarnessHealth = { status?: HarnessHealthStatus; reason?: string }
 export type HarnessConnectionState = { connectionId: string; state: "configured" | "connecting" | "ready" | "auth-required" | "disconnected" | "failed" }
-export type HarnessState = { type?: HarnessType; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth; connectionState?: HarnessConnectionState }
+/** `thoughtLevel` is the effort a bound session saved; only its config carries one. */
+export type HarnessState = { type?: HarnessType; model?: string | null; modelProviderID?: string | null; thoughtLevel?: string; activeType?: HarnessType; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth; connectionState?: HarnessConnectionState }
 /** A model choice offered by a harness. `description` carries the version and
  * context window (e.g. "Opus 4.8 with 1M context"), which `name` omits. */
 export type HarnessModelOption = { id: string; name: string; description?: string; connected?: boolean }
@@ -183,6 +184,16 @@ export function extractThoughtLevelFromConfigOptions(
   }
 }
 
+/**
+ * The faster tiers the selected model offers (`service_tier`), `[]` when it
+ * runs at one speed. The option lists only non-standard tiers; standard is the
+ * absence of one.
+ */
+export function extractServiceTiersFromConfigOptions(options: HarnessConfigOption[]): HarnessModelOption[] {
+  const opt = options.find((item) => item.category === "service_tier" && item.type === "select")
+  return (opt?.selectOptions ?? []).map((item) => ({ ...item }))
+}
+
 /** Sound because `harnessStatuses` IS the `HarnessState["status"]` union. */
 function isHarnessStatus(value: unknown): value is NonNullable<HarnessState["status"]> {
   return (harnessStatuses as readonly unknown[]).includes(value)
@@ -239,6 +250,7 @@ export function decodeSessionConfig(value: unknown) {
           ...(typeof model.providerID === "string" || model.providerID === null ? { providerID: model.providerID } : {}),
         }
       : null,
+    variant: typeof raw.variant === "string" && raw.variant ? raw.variant : undefined,
   }
 }
 

@@ -315,15 +315,39 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       // the draft out of the scope its harness selection was recorded under.
       harnessController.promote(sourceScope, scope)
     }
-    const existingSessionConfig = isNewSession ? undefined : await loadExistingSubmitConfig(
+    // The session config is the model the turn runs, so a model picked just
+    // before this send has to be saved (or rolled back) before it is read.
+    if (!isNewSession) await harnessController.settledModel(scope)
+    const showConfigFailed = (err: unknown) => showToast({
+      title: language.t("prompt.toast.promptSendFailed.title"),
+      description: errorMessage(err),
+      variant: "error",
+    })
+    let existingSessionConfig = isNewSession ? undefined : await loadExistingSubmitConfig(
       () => readSessionConfig({ sessionID: explicitSessionID, directory: sessionDirectory }),
-      (err) => showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: errorMessage(err),
-        variant: "error",
-      }),
+      showConfigFailed,
     )
     if (!isNewSession && !existingSessionConfig) return undefined
+    // A harness held in the picker becomes the session's own before anything
+    // reaches the timeline, so a switch that fails leaves the draft unsent.
+    const heldHarness = isNewSession ? undefined : harnessController.heldHarness(scope)
+    if (heldHarness && explicitSessionID) {
+      const heldModel = harnessController.modelKeyForSubmit(scope)
+      setBooting({ harness: harnessProfile(heldHarness).displayName, sessionID: explicitSessionID, phase: "booting" })
+      existingSessionConfig = await loadExistingSubmitConfig(
+        () => transport.persistSessionConfig({
+          sessionID: explicitSessionID,
+          directory: sessionDirectory,
+          harnessType: heldHarness,
+          ...(heldModel ? { model: { providerID: heldModel.providerID, modelID: heldModel.modelID } } : {}),
+          ...(heldModel?.variant ? { variant: heldModel.variant } : {}),
+        }),
+        showConfigFailed,
+      )
+      setBooting()
+      if (!existingSessionConfig) return undefined
+      harnessController.releaseHeldHarness(scope)
+    }
     const sessionHarnessType = isNewSession ? selectedHarnessType(scope) : existingSessionConfig?.harnessType
     if (!sessionHarnessType) {
       showToast({
@@ -378,6 +402,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const model = submittedConfig.model
     const agent = submittedConfig.agent
     const variant = submittedConfig.variant
+    const serviceTier = harnessController.serviceTierForSubmit(scope)
     const persistedHarnessType: HarnessSelection = sessionHarnessType
     const persistedHarnessRef = persistedHarnessType
     publishCloudHandoff("creating_session", "Creating session.")
@@ -409,7 +434,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       sessionConfig: {
         agent,
         model,
-        variant,
+        variant: variant ?? undefined,
       },
       events,
       onSessionStart: input.onSessionStart,
@@ -455,7 +480,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       harness: persistedHarnessRef,
       agent,
       ...(model ? { model: { providerID: model.providerID, modelID: model.modelID } } : {}),
-      variant,
+      variant: variant ?? undefined,
       draftId,
       previousSessionId,
       shouldAutoAccept,
@@ -674,6 +699,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
+      ...(serviceTier ? { serviceTier } : {}),
       permissionMode,
       system: input.system?.()?.trim(),
       format: input.format?.(),

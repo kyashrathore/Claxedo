@@ -1117,7 +1117,7 @@ describe("stop without proof of exit", () => {
 
     try {
       const Manager = await import("./manager")
-      await startOne(directory)
+      expect((await startOne(directory)).kind).toBe("started")
       expect((await Manager.stop(directory, "proc_held")).state).toBe("unresolved")
 
       const retried = await Manager.stop(directory, "proc_held")
@@ -1152,7 +1152,7 @@ describe("stop without proof of exit", () => {
 
     try {
       const Manager = await import("./manager")
-      await startOne(directory)
+      expect((await startOne(directory)).kind).toBe("started")
 
       expect((await Manager.stop(directory, "proc_held")).state).toBe("stopped")
 

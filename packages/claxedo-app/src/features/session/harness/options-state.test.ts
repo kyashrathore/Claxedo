@@ -37,6 +37,7 @@ describe("harness options state", () => {
         optionsStale: false,
         optionsLoading: false,
         thoughtLevels: [],
+        serviceTiers: [],
         dynamicModels: [
           { id: "sonnet", name: "Sonnet" },
           { id: "opus", name: "Opus" },
@@ -101,6 +102,7 @@ describe("harness options state", () => {
         optionsStale: false,
         optionsLoading: false,
         thoughtLevels: [],
+        serviceTiers: [],
         dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
         selectedModel: "removed",
         configError: "Selected model unavailable",
@@ -137,6 +139,7 @@ describe("harness options state", () => {
         optionsStale: false,
         optionsLoading: true,
         thoughtLevels: [],
+        serviceTiers: [],
         dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
         selectedModel: "sonnet",
         configError: undefined,
@@ -160,6 +163,7 @@ describe("harness options state", () => {
         optionsStale: true,
         optionsLoading: true,
         thoughtLevels: [],
+        serviceTiers: [],
         dynamicModels: [],
         configError: "Loading model options...",
       },
@@ -180,6 +184,7 @@ describe("harness options state", () => {
         optionsStale: true,
         optionsLoading: false,
         thoughtLevels: [],
+        serviceTiers: [],
         dynamicModels: [],
         selectedModel: "",
         configError: "Model options unavailable",
@@ -203,6 +208,7 @@ describe("harness options state", () => {
         optionsStale: false,
         optionsLoading: false,
         thoughtLevels: [],
+        serviceTiers: [],
         dynamicModels: [],
         selectedModel: "",
         configError: "No model options available",
@@ -245,6 +251,7 @@ describe("harness options state", () => {
           { id: "low", name: "Low" },
           { id: "adaptive", name: "Adaptive" },
         ],
+        serviceTiers: [],
         selectedThoughtLevel: "adaptive",
         dynamicModels: [],
         selectedModel: "",
@@ -289,6 +296,7 @@ describe("harness options state", () => {
           { id: "low", name: "Low" },
           { id: "adaptive", name: "Adaptive" },
         ],
+        serviceTiers: [],
         selectedThoughtLevel: "adaptive",
         dynamicModels: [{ id: "claude-opus-4-6", name: "Opus 4.6" }],
         selectedModel: "claude-opus-4-6",
@@ -329,6 +337,7 @@ describe("harness options state", () => {
         optionsStale: true,
         optionsLoading: false,
         thoughtLevels: [],
+        serviceTiers: [],
         dynamicModels: [],
         selectedModel: "",
         configError: "Model options unavailable",
@@ -365,6 +374,7 @@ describe("harness options state", () => {
         optionsStale: true,
         optionsLoading: true,
         thoughtLevels: [],
+        serviceTiers: [],
         dynamicModels: [{ id: "", name: "Empty" }],
         configError: "Loading model options...",
       },
@@ -422,6 +432,27 @@ describe("harness options state — thought level", () => {
     expect(result.patch.selectedThoughtLevel).toBe("high")
   })
 
+  test("an options answer keeps the level the user picked while the model still accepts it", () => {
+    const answer = (selectedThoughtLevel: string | undefined) => applyHarnessOptionsResponse({
+      type: CLAUDE_CONNECTION,
+      selectedModel: "sonnet",
+      selectedThoughtLevel,
+      tries: 0,
+      payload: { source: "harness", stale: false, options: [modelOption, effortOption] },
+    }).patch.selectedThoughtLevel
+    expect(answer("default")).toBe("default")
+    expect(answer(undefined)).toBe("high")
+    expect(answer("xhigh")).toBe("high")
+    const patch = applyHarnessOptionsResponse({
+      type: CLAUDE_CONNECTION,
+      selectedModel: "sonnet",
+      selectedThoughtLevel: "high",
+      tries: 0,
+      payload: { source: "harness", stale: false, options: [modelOption] },
+    }).patch
+    expect(patch).toHaveProperty("selectedThoughtLevel", undefined)
+  })
+
   /**
    * The effort payload must survive the branches that bail on the MODEL result.
    * A harness can legitimately answer with an effort option while its model list
@@ -451,6 +482,31 @@ describe("harness options state — thought level", () => {
     })
     expect(result.patch.thoughtLevels).toEqual([])
     expect(result.patch.selectedThoughtLevel).toBeUndefined()
+  })
+
+  test("carries the selected model's fast tiers, and none when the model has no service_tier option", () => {
+    const tierOption = {
+      id: "service_tier",
+      name: "Speed",
+      category: "service_tier",
+      type: "select" as const,
+      currentValue: undefined,
+      selectOptions: [{ id: "priority", name: "Fast", description: "2x speed, increased usage" }],
+    }
+    const offered = applyHarnessOptionsResponse({
+      type: CLAUDE_CONNECTION,
+      selectedModel: "sonnet",
+      tries: 0,
+      payload: { source: "harness", stale: false, options: [modelOption, effortOption, tierOption] },
+    })
+    expect(offered.patch.serviceTiers).toEqual([{ id: "priority", name: "Fast", description: "2x speed, increased usage" }])
+    const absent = applyHarnessOptionsResponse({
+      type: CLAUDE_CONNECTION,
+      selectedModel: "sonnet",
+      tries: 0,
+      payload: { source: "harness", stale: false, options: [modelOption] },
+    })
+    expect(absent.patch.serviceTiers).toEqual([])
   })
 
   /**

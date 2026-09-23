@@ -22,6 +22,7 @@ import type { AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStart
 import {
   parseRecoveryRequest,
   RecoveryContractError,
+  sameSessionHarness,
   serializeRecoveryOutcome,
   type RecoveryOutcome,
   type RecoveryRefusal,
@@ -1096,10 +1097,6 @@ async function unsupportedIfUnavailable(
   })
 }
 
-function sameSessionHarness(a: SessionConfig["harness"], b: SessionConfig["harness"]) {
-  return a.id === b.id && a.access === b.access
-}
-
 function harnessSwitchUnsupported(
   c: Ctx,
   caps: HarnessCapabilities,
@@ -1864,8 +1861,11 @@ export function createSessionRoutes(opts: Opts) {
             ...(body.instructions ? { instructions: body.instructions } : {}),
             ...(body.group ? { group: body.group } : {}),
           }
-          if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
-            adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
+          // Set on every create, "" when it names no model: the adapter keeps
+          // one model for the sessions it creates, and a create that skipped
+          // this would inherit the previous session's.
+          if (hasAdapterCapability(adapter, "runtime-config")) {
+            adapter.setModel(!config.model || config.model.modelID === "default" ? "" : config.model.modelID)
           }
           let session = existing ?? (opts.createSession
             ? await opts.createSession(c, directory, body.title, body.id, { ...(body.parentID ? { parentID: body.parentID } : {}), ...(ceiling ? { permissionCeiling: ceiling } : {}), ...createOptions })
@@ -2119,7 +2119,7 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const binding = await requireExecutionBinding(opts, c, directory, sessionId, adapter)
       if (!adapter.probeConfigOptions) return noStoreJson(c, { error: "Session harness does not expose config options" }, 404)
-      return noStoreJson(c, await adapter.probeConfigOptions(directory, binding))
+      return noStoreJson(c, await adapter.probeConfigOptions(directory, binding, c.req.query("model") || undefined))
     })
     .get("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
