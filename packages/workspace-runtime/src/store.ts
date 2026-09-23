@@ -38,6 +38,8 @@ import type {
   PromptInput,
   SessionConfig,
   SessionConfigUpdate,
+  SessionHandoff,
+  SessionHandoffSource,
   SessionHarness,
   SessionModelGroup,
   SubagentObservation,
@@ -689,22 +691,52 @@ function nullable(input: unknown): string | null | undefined {
   return typeof input === "string" ? input : undefined
 }
 
-function sessionHandoff(input: string | null | undefined): SessionConfig["handoff"] | undefined {
+function sessionHandoff(input: string | null | undefined): SessionHandoff | undefined {
   if (!input) return undefined
   try {
-    const value: SessionConfig["handoff"] = JSON.parse(input)
-    if (!value || !value.pending || !value.from?.id || typeof value.transcript !== "string") return undefined
-    const from = normalizeHarnessIdentity(value.from)
-    if (!from) return undefined
-    return {
-      from,
-      pending: true,
-      transcript: value.transcript,
-      ...(value.reason === "missing-session" ? { reason: value.reason } : {}),
-      ...(value.announced === true ? { announced: true } : {}),
-    }
+    const value: unknown = JSON.parse(input)
+    const handoff = pendingHandoff(value)
+    const source = handoff && handoffSource(asRecord(value)?.source)
+    return source ? { ...handoff, source } : handoff
   } catch {
     return undefined
+  }
+}
+
+function pendingHandoff(input: unknown): Omit<SessionHandoff, "source"> | undefined {
+  const value = asRecord(input)
+  if (!value || value.pending !== true || typeof value.transcript !== "string") return undefined
+  const from = normalizeHarnessIdentity(value.from)
+  if (!from) return undefined
+  return {
+    from,
+    pending: true,
+    transcript: value.transcript,
+    ...(value.reason === "missing-session" ? { reason: value.reason } : {}),
+    ...(value.announced === true ? { announced: true } : {}),
+  }
+}
+
+function handoffSource(input: unknown): SessionHandoffSource | undefined {
+  const value = asRecord(input)
+  const ownerKey = nullable(value?.ownerKey)
+  if (!value || typeof value.agentSessionId !== "string" || typeof value.upstreamSessionId !== "string" || ownerKey === undefined) {
+    return undefined
+  }
+  const model = asRecord(value.model)
+  const variant = nullable(value.variant)
+  const agent = nullable(value.agent)
+  const handoff = pendingHandoff(value.handoff)
+  return {
+    agentSessionId: value.agentSessionId,
+    upstreamSessionId: value.upstreamSessionId,
+    ownerKey,
+    ...(typeof model?.providerID === "string" && typeof model.modelID === "string"
+      ? { model: { providerID: model.providerID, modelID: model.modelID } }
+      : {}),
+    ...(variant !== undefined ? { variant } : {}),
+    ...(agent !== undefined ? { agent } : {}),
+    ...(handoff ? { handoff } : {}),
   }
 }
 
