@@ -371,3 +371,12 @@ jobs:
     shell: true
     command: bash script/cbx-ci-macos.sh e2e-desktop
     stop: auto
+
+  focus-server-windows:
+    provider: aws
+    target: windows
+    architecture: amd64
+    serverType: m7i.2xlarge
+    market: on-demand
+    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane package-test -Package @claxedo/server -BuildPackages
+    stop: auto

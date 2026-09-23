@@ -16,7 +16,7 @@ import { createSqliteCentralStore } from "../../authority/adapters/sqlite/centra
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { FirstPartyMcpOptions, McpClientInputs } from "@claxedo/mcp"
-import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/local-server/self-hosted-execution"
+import { EMBEDDED_RELAY_HOST_AUTH_HEADER, shutdownEmbeddedWorkspaceRuntimes } from "@claxedo/local-server/self-hosted-execution"
 import { stampRequestPeerAddress } from "@claxedo/server-core/platform/http/peer-address"
 
 /**
@@ -45,8 +45,11 @@ beforeEach(() => {
   process.env.CLAXEDO_DATA_DIR = dataDir
 })
 
-afterEach(() => {
+afterEach(async () => {
   vi.unstubAllEnvs()
+  // A call through `/api/wr` mounts an embedded runtime whose store under
+  // `dataDir` stays open until it is retired, and NT cannot delete an open file.
+  await shutdownEmbeddedWorkspaceRuntimes()
   if (savedDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = savedDataDir
   removeTestDataDir(dataDir)
