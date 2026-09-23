@@ -6,7 +6,8 @@ import { claudeSdkAdapter, createClaudeTaskLedger } from "@claxedo/agent-event-r
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 import { createMemoryRuntimeStore, MemoryRuntimeStore } from "../../stores/memory"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "../shared/sdk-runtime-adapter"
-import { ingestClaudeSdkMessage } from "./driver"
+import type { SessionKey, SessionStore } from "@anthropic-ai/claude-agent-sdk"
+import { createClaudeSdkDriver, ingestClaudeSdkMessage } from "./driver"
 
 function claudeDriverFor(messages: unknown[]) {
   return (): SdkRuntimeDriver => ({ ...claudeDriver(), async runTurn(input) {
@@ -699,6 +700,126 @@ describe("Claude native subagent routing", () => {
       toolCallId: "tool-skill-1",
       status: "interrupted",
     }))
+    await adapter.dispose()
+  })
+})
+
+describe("Claude subagent usage", () => {
+  const PARENT_REQUEST = { input_tokens: 3, cache_read_input_tokens: 1000, cache_creation_input_tokens: 200, output_tokens: 2 }
+  const CHILD_REQUESTS = [
+    { id: "msg-child-1", opening: { input_tokens: 4, cache_read_input_tokens: 700, cache_creation_input_tokens: 30, cache_creation: { ephemeral_1h_input_tokens: 30, ephemeral_5m_input_tokens: 0 }, output_tokens: 2 }, finalOutput: 310 },
+    { id: "msg-child-2", opening: { input_tokens: 6, cache_read_input_tokens: 900, cache_creation_input_tokens: 0, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 }, output_tokens: 1 }, finalOutput: 95 },
+  ]
+  const subagentTranscript: SessionKey = { projectKey: "repo", sessionId: "claude-parent-thread", subpath: "subagents/agent-a42" }
+
+  const stream = (event: Record<string, unknown>) =>
+    ({ type: "stream_event", uuid: `stream-${String(event.type)}`, session_id: "claude-parent-thread", parent_tool_use_id: null, event })
+  const childFrame = (request: typeof CHILD_REQUESTS[number]) => ({
+    type: "assistant",
+    uuid: `frame-${request.id}`,
+    session_id: "claude-parent-thread",
+    parent_tool_use_id: "tool-agent-1",
+    message: { id: request.id, content: [{ type: "text", text: "Reading the auth module" }], usage: request.opening },
+  })
+  /** Claude Code writes an entry per content block; only a message's last one carries the final output. */
+  const transcriptEntries = (request: typeof CHILD_REQUESTS[number]) => [request.opening, { ...request.opening, output_tokens: request.finalOutput }]
+    .map((usage, block) => ({
+      type: "assistant",
+      uuid: `entry-${request.id}-${block}`,
+      sessionId: "claude-parent-thread",
+      isSidechain: true,
+      agentId: "a42",
+      requestId: `req-${request.id}`,
+      message: { id: request.id, role: "assistant", content: [], usage },
+    }))
+
+  async function* delegatingTurn(sessionStore: SessionStore) {
+    yield stream({ type: "message_start", message: { id: "msg-parent-1", type: "message", role: "assistant", content: [], usage: PARENT_REQUEST } })
+    yield {
+      type: "assistant",
+      uuid: "parent-agent-call",
+      session_id: "claude-parent-thread",
+      parent_tool_use_id: null,
+      message: {
+        id: "msg-parent-1",
+        content: [{ type: "tool_use", id: "tool-agent-1", name: "Agent", input: { description: "Review auth", subagent_type: "code-reviewer" } }],
+        usage: PARENT_REQUEST,
+      },
+    }
+    yield stream({ type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { ...PARENT_REQUEST, output_tokens: 120 } })
+    yield stream({ type: "message_stop" })
+    await sessionStore.append(subagentTranscript, transcriptEntries(CHILD_REQUESTS[0]))
+    yield childFrame(CHILD_REQUESTS[0])
+    yield childFrame(CHILD_REQUESTS[1])
+    await sessionStore.append(subagentTranscript, transcriptEntries(CHILD_REQUESTS[1]))
+    yield {
+      type: "user",
+      uuid: "parent-agent-result",
+      session_id: "claude-parent-thread",
+      parent_tool_use_id: null,
+      message: { content: [{ type: "tool_result", tool_use_id: "tool-agent-1", content: "opaque trailer" }] },
+      tool_use_result: { status: "completed", agentId: "a42", content: [{ type: "text", text: "Review complete" }] },
+    }
+    yield {
+      type: "result",
+      subtype: "success",
+      uuid: "turn-result-1",
+      session_id: "claude-parent-thread",
+      is_error: false,
+      usage: { ...PARENT_REQUEST, output_tokens: 120 },
+      modelUsage: { test: { contextWindow: 200000 } },
+    }
+  }
+
+  test("meters a subagent's requests on its child session from its mirrored transcript, whichever arrives first", async () => {
+    const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const childUsage: Array<{ sessionID: string; messageID?: string; observation?: { tokens: unknown } }> = []
+    eventHub.subscribeGlobal((envelope) => {
+      if (envelope.payload.type === "session.usage") childUsage.push(envelope.payload.properties)
+    })
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: (host) => createClaudeSdkDriver(host, {
+        executable: () => "/fake/claude",
+        query: ((request: { options: { sessionStore: SessionStore } }) => Object.assign(delegatingTurn(request.options.sessionStore), {
+          close() {},
+          supportedModels: async () => [],
+        })) as never,
+      }),
+    })
+    const parent = await adapter.createSession(path.resolve("/repo"))
+
+    const parentUsage: Array<{ observation?: { tokens: unknown } }> = []
+    for await (const event of executeTestTurn(adapter, parent.id, {
+      parts: [{ type: "text", text: "Delegate review" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "build",
+      model: { providerID: "claude", modelID: "test" },
+    }, path.resolve("/repo"))) {
+      if (event.type === "session.usage") parentUsage.push(event.properties)
+    }
+
+    const child = (store.listSessions(path.resolve("/repo")) as Array<{ id: string }>)
+      .find((session) => session.id !== parent.id)
+    const childAssistant = (store.getMessages(child!.id) as Array<{ info: { id: string; role: string } }>)
+      .find((message) => message.info.role === "assistant")
+    expect(childUsage.every((usage) => usage.sessionID === child!.id && usage.messageID === childAssistant!.info.id)).toBe(true)
+    expect(childUsage.at(-1)?.observation?.tokens).toEqual({
+      input: 4 + 6,
+      output: 310 + 95,
+      reasoning: null,
+      cache: { read: 700 + 900, write: 30, write1h: 30 },
+    })
+    expect(parentUsage.map((usage) => (usage.observation?.tokens as { input?: number } | undefined)?.input)).toEqual(parentUsage.map(() => 3))
+    expect(parentUsage.at(-1)?.observation?.tokens).toEqual({
+      input: 3,
+      output: 120,
+      reasoning: null,
+      cache: { read: 1000, write: 200 },
+    })
     await adapter.dispose()
   })
 })

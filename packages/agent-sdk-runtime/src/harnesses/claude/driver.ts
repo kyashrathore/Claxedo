@@ -5,6 +5,7 @@ import {
 } from "@claxedo/agent-event-runtime"
 import {
   CLAUDE_QUESTION_DISMISSED,
+  CLAUDE_SUBAGENT_USAGE_METHOD,
   claudeChildCorrelationKey,
   claudeSdkAdapter,
   claudeSubagentObservations,
@@ -12,6 +13,7 @@ import {
   type ClaudeTaskLedger,
 } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { randomUUID } from "crypto"
+import { createClaudeSubagentUsage } from "./subagent-usage"
 import { claudeCommandGrant, hasClaudeCommandGrant, withClaudeCommandGrant } from "./permission-state"
 import {
   query,
@@ -451,11 +453,21 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       onGoal?.(goal)
       this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal })
     }
+    const subagentUsage = createClaudeSubagentUsage((correlationKey, usage) => input.ingest({
+      source: "claude.sdk",
+      method: CLAUDE_SUBAGENT_USAGE_METHOD,
+      payload: usage,
+    }, {
+      dir: "in",
+      method: "claude.sessionStore",
+      frame: usage,
+    }, { kind: "child", correlationKey }))
     /**
      * A WRITE-ONLY observer, not a storage adapter: `append` is the only
-     * channel on which the CLI reports Goal progress and its own session
-     * title (`ai-title` from its generator, `custom-title` from `/rename`);
-     * neither is on the SDK message stream. It deliberately keeps nothing.
+     * channel on which the CLI reports Goal progress, its own session title
+     * (`ai-title` from its generator, `custom-title` from `/rename`) and a
+     * subagent request's final usage; none of them is on the SDK message
+     * stream. It keeps nothing beyond the usage still waiting for its child.
      *
      * Storing (or importing) a transcript here would be worse than useless.
      * The subprocess keeps writing its own complete local JSONL — this is a
@@ -465,8 +477,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
      * transcript. Answering with nothing keeps the CLI on its own history.
      */
     const sessionStore: SessionStore = {
-      append: async (_key, entries) => {
+      append: async (key, entries) => {
         if (input.abort.signal.aborted) return
+        subagentUsage.observeEntries(key, entries)
         for (const entry of entries) {
           const row = asRecord(entry)
           if (row?.type === "ai-title" || row?.type === "custom-title") {
@@ -681,6 +694,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           continue
         }
         await ingestClaudeSdkMessage(input, message, tasks)
+        subagentUsage.observeFrame(message)
       }
       if (result) await ingestClaudeSdkMessage(input, result, tasks)
     } catch (cause) {
