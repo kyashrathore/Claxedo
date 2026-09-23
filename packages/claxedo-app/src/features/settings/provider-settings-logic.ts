@@ -1,3 +1,5 @@
+import { readField, readString } from "@/lib/record"
+
 export type ProviderSource = "env" | "api" | "config" | "custom"
 
 export function providerSourceTagKey(source?: ProviderSource): string {
@@ -35,6 +37,46 @@ export async function removeProviderAuthEntry(input: {
     throw new Error(text || `Request failed: ${res.status}`)
   }
   await res.text().catch(() => undefined)
+}
+
+/**
+ * Store one API key as a harness auth entry, on the machine serving one scope.
+ *
+ * The hosted plane keeps Pi keys only here: it serves no
+ * `/api/claxedo/credentials`, so this is the one write a browser signed in
+ * to it can make. The plane refuses with its own sentence — a provider that
+ * signs in rather than taking a key, or a deployment whose credential store
+ * is off — and that sentence is what the thrown error carries.
+ */
+export async function putProviderAuthEntry(input: {
+  serverUrl: string
+  providerId: string
+  harness: string
+  key: string
+  directory?: string
+  request: (url: URL, init?: RequestInit) => Promise<Response>
+}) {
+  const url = new URL(`/auth/${encodeURIComponent(input.providerId)}`, input.serverUrl)
+  url.searchParams.set("harness", input.harness)
+  if (input.directory) url.searchParams.set("directory", input.directory)
+  const res = await input.request(url, {
+    method: "PUT",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ auth: { key: input.key } }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => "")
+    throw new Error(refusalSentence(text) ?? (text || `Request failed: ${res.status}`))
+  }
+  await res.text().catch(() => undefined)
+}
+
+function refusalSentence(text: string) {
+  try {
+    return readString(readField(JSON.parse(text), "error"), "message") || undefined
+  } catch {
+    return undefined
+  }
 }
 
 export type DisconnectProviderDeps = {
