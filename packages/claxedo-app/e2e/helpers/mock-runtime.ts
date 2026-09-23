@@ -2881,21 +2881,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/experimental/session", handleSessionList)
   await page.route("**/experimental/session?**", handleSessionList)
 
-  // CONTRACT (workspace-runtime `session-core.ts` `GET /session/:id/config-options`):
-  // the session's harness answers with the same options list the draft route serves.
-  await contractRoute(page, "**/session/*/config-options**", (r) => {
-    if (!api(r)) return r.continue()
-    const type = harnessFixtureFromUrl(r.request().url(), harness)
-    requests.harnessOptionsCount += 1
-    requests.harnessOptionsHarnesses.push(type)
-    const model = harnessModels[type]?.[0] ?? BIG_PICKLE
-    return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(type, model)))
-  })
-
   await contractRoute(page, "**/session/*/config**", async (route) => {
     if (!api(route)) return route.continue()
-    // The glob's trailing `**` also matches `/config-options`; that path has its own route.
-    if (new URL(route.request().url()).pathname.endsWith("/config-options")) return route.fallback()
     if (route.request().method() === "PATCH") {
       requests.configPatchCount += 1
       const url = route.request().url()
@@ -2942,6 +2929,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(route, saved, SESSION_CONFIG_PATCH_SUCCESS_STATUS)
     }
     return json(route, sessionConfig())
+  })
+
+  // CONTRACT (workspace-runtime `session-core.ts` `GET /session/:id/config-options`):
+  // the session's harness answers with the same options list the draft route serves.
+  // Registered after `**/session/*/config**`, whose trailing `**` also matches this
+  // path: Playwright tries the most recently registered route first.
+  await contractRoute(page, "**/session/*/config-options**", (r) => {
+    if (!api(r)) return r.continue()
+    const type = harnessFixtureFromUrl(r.request().url(), harness)
+    requests.harnessOptionsCount += 1
+    requests.harnessOptionsHarnesses.push(type)
+    const model = harnessModels[type]?.[0] ?? BIG_PICKLE
+    return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(type, model)))
   })
 
   // CONTRACT (workspace-runtime `session-core.ts` `GET /session/:id/queue` and
@@ -3612,21 +3612,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await page.route(`${base}/session`, handleCloudSessionList)
     await page.route(`${base}/session?**`, handleCloudSessionList)
 
-    // CONTRACT (workspace-runtime `session-core.ts` `GET /session/:id/config-options`):
-    // the session's harness answers with the same options list the draft route serves.
-    await contractRoute(page, `${base}/session/*/config-options**`, (r) => {
-      if (!api(r)) return r.continue()
-      const type = harnessFixtureFromUrl(r.request().url(), cloudHarness)
-      requests.cloudHarnessOptionsCount += 1
-      requests.cloudHarnessOptionsHarnesses.push(type)
-      const model = harnessModels[type]?.[0] ?? BIG_PICKLE
-      return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(type, model)))
-    })
-
     await contractRoute(page, `${base}/session/*/config**`, async (route) => {
       if (!api(route)) return route.continue()
-      // The glob's trailing `**` also matches `/config-options`; that path has its own route.
-      if (new URL(route.request().url()).pathname.endsWith("/config-options")) return route.fallback()
       if (route.request().method() === "PATCH") {
         const url = route.request().url()
         const update = parseSessionConfigPatch(route.request().postDataJSON(), url)
@@ -3650,6 +3637,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         return json(route, saved, SESSION_CONFIG_PATCH_SUCCESS_STATUS)
       }
       return json(route, cloudSessionConfig())
+    })
+
+    // CONTRACT (workspace-runtime `session-core.ts` `GET /session/:id/config-options`):
+    // the session's harness answers with the same options list the draft route serves.
+    // Registered after `${base}/session/*/config**`, whose trailing `**` also matches
+    // this path: Playwright tries the most recently registered route first.
+    await contractRoute(page, `${base}/session/*/config-options**`, (r) => {
+      if (!api(r)) return r.continue()
+      const type = harnessFixtureFromUrl(r.request().url(), cloudHarness)
+      requests.cloudHarnessOptionsCount += 1
+      requests.cloudHarnessOptionsHarnesses.push(type)
+      const model = harnessModels[type]?.[0] ?? BIG_PICKLE
+      return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(type, model)))
     })
     await page.route(`${base}/session/*/capabilities**`, (r) =>
       json(r, {
