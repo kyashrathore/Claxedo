@@ -196,6 +196,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
           onCompatEvent: usage.onCompatEvent,
           onTurnOutcome: usage.onTurnOutcome,
           bindSessionConfig: usage.bindSessionConfig,
+          bindSessionParents: usage.bindSessionParents,
         }
       : {}),
     ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),

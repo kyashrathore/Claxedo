@@ -223,6 +223,7 @@ describe("claxedo workspace-runtime boot policy", () => {
       expect(metered.options.onCompatEvent).toBeTypeOf("function")
       expect(metered.options.onTurnOutcome).toBeTypeOf("function")
       expect(metered.options.bindSessionConfig).toBeTypeOf("function")
+      expect(metered.options.bindSessionParents).toBeTypeOf("function")
       expect(metered.options.sessionAccessPolicy?.sessionAuthority).toBe("managed-private")
       expect(existsSync(path.join(store, "usage.sqlite"))).toBe(true)
 

@@ -533,7 +533,7 @@ describe("sqlite workspace authority", () => {
     })).resolves.toMatchObject({ messages })
   })
 
-  test("usage ownership answers the admitted turn producer, else the session creator", async () => {
+  test("usage ownership answers the named turn's producer and no other, else the latest turn's, else the session creator", async () => {
     const { authority, database } = fileAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_usage", displayName: "Usage" })
     await authority.usersMe(other)
@@ -562,6 +562,11 @@ describe("sqlite workspace authority", () => {
     await recordUserTurns({ authority, auth: other, workspaceId: "ws_usage", sessionId: "ses_usage", turnIds: ["msg_other"] })
     expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_usage" }))
       .toEqual({ org_id: workspaceOrg, user_id: "user_other" })
+    expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_usage", turnId: "msg_other" }))
+      .toEqual({ org_id: workspaceOrg, user_id: "user_other" })
+    expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_usage", turnId: "msg_never" })).toBeUndefined()
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_usage", sessionId: "ses_usage_other" })
+    expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_usage_other", turnId: "msg_other" })).toBeUndefined()
     authority.close()
     database.close()
   })

@@ -7,6 +7,7 @@ import {
   TURN_USAGE_SETTLEMENTS,
   TURN_USAGE_STATUSES,
   type TurnUsageRevision,
+  type UsageRevisionWriteResult,
 } from "./contracts"
 
 /** The session-authority action a cloud workspace runtime ships its usage revisions under. */
@@ -17,9 +18,33 @@ export const USAGE_REPORT_ACTION = "usage_report"
  * location are absent on purpose: the plane files a report under its own
  * verified proof, and a reported value for any of them is refused.
  */
-export type UsageReportFact = Omit<TurnUsageRevision, "sessionRef" | "sessionId" | "workspaceId" | "hostId" | "location">
+export type UsageReportRevision = Omit<TurnUsageRevision, "sessionRef" | "sessionId" | "workspaceId" | "hostId" | "location">
 
-const REPORT_FACT_KEYS: ReadonlySet<string> = new Set([
+/**
+ * A reported revision and the turn it was metered under. The plane accepts
+ * the turn only as one the report's verified session admitted, and files the
+ * revision under that turn's producer whichever turn's lease carried it.
+ */
+export type UsageReportFact = UsageReportRevision & { turnId: string }
+
+/**
+ * The plane's answer for one fact. `refused` is final: the fact names a turn
+ * its session never admitted, or one whose producer has no account.
+ */
+export type UsageReportResult = { messageId: string; revision: number } & (
+  | UsageRevisionWriteResult
+  | { status: "refused"; code: "usage_owner_unresolved" }
+)
+
+export const USAGE_REPORT_RESULT_STATUSES = [
+  "accepted",
+  "duplicate",
+  "stale",
+  "conflict",
+  "refused",
+] as const satisfies readonly UsageReportResult["status"][]
+
+const REPORT_REVISION_KEYS: ReadonlySet<string> = new Set([
   "messageId",
   "revision",
   "observedAt",
@@ -48,7 +73,7 @@ export function cloudWorkspaceUsageContext(input: { workspaceId: string; session
   }
 }
 
-export function usageReportFact(fact: TurnUsageRevision): UsageReportFact {
+export function usageReportRevision(fact: UsageReportRevision): UsageReportRevision {
   return {
     messageId: fact.messageId,
     revision: fact.revision,
@@ -67,13 +92,18 @@ export function usageReportFact(fact: TurnUsageRevision): UsageReportFact {
 
 /**
  * The revision a report stands for, filed under the plane's verified session
- * and workspace. Throws for a fact that is not a well-formed revision.
+ * and workspace. A fact's turn decides who owns the revision, never what it
+ * says. Throws for a fact that is not a well-formed revision.
  */
 export function cloudWorkspaceUsageRevision(
-  fact: UsageReportFact,
+  fact: UsageReportRevision,
   proof: { workspaceId: string; sessionId: string },
 ): TurnUsageRevision {
-  const revision: TurnUsageRevision = { ...fact, sessionId: proof.sessionId, ...cloudWorkspaceUsageContext(proof) }
+  const revision: TurnUsageRevision = {
+    ...usageReportRevision(fact),
+    sessionId: proof.sessionId,
+    ...cloudWorkspaceUsageContext(proof),
+  }
   assertTurnUsageRevision(revision)
   return revision
 }
@@ -100,8 +130,9 @@ function readTokens(value: unknown): RuntimeTokenUsage | undefined {
   }
 }
 
-function readUsageReportFact(value: unknown): UsageReportFact | undefined {
-  if (!isJsonRecord(value) || Object.keys(value).some((key) => !REPORT_FACT_KEYS.has(key))) return undefined
+/** A reported revision, or nothing when it is malformed or names a field the plane owns. */
+export function readUsageReportRevision(value: unknown): UsageReportRevision | undefined {
+  if (!isJsonRecord(value) || Object.keys(value).some((key) => !REPORT_REVISION_KEYS.has(key))) return undefined
   const tokens = readTokens(value.tokens)
   const { messageId, revision, observedAt, completedAt, settlement, status, harness, providerId, modelId, nativeSessionId } = value
   if (
@@ -132,6 +163,13 @@ function readUsageReportFact(value: unknown): UsageReportFact | undefined {
     tokens,
     quality: readTurnUsageQuality(value.quality),
   }
+}
+
+function readUsageReportFact(value: unknown): UsageReportFact | undefined {
+  if (!isJsonRecord(value)) return undefined
+  const { turnId, ...reported } = value
+  const revision = readUsageReportRevision(reported)
+  return revision && isNonEmptyString(turnId) ? { ...revision, turnId } : undefined
 }
 
 /** A report's facts, or nothing when any one of them is malformed or names a field the plane owns. */

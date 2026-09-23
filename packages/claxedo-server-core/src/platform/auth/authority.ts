@@ -607,9 +607,10 @@ export type WorkspaceAuthority = {
     },
   ) => Promise<unknown>
   /**
-   * The account a session's usage is attributed to: the actor the runtime
-   * admitted for `turnId` when one is named and recorded, else for the
-   * session's latest turn, else the creator the session registered under. The
+   * The account a session's usage is attributed to. With `turnId` named, the
+   * actor the runtime admitted for that turn of this session, or no owner when
+   * it admitted no such turn. With none named, the actor of the session's
+   * latest turn, else the creator the session registered under. The
    * metering path holds no caller auth — this takes none and answers from the
    * authority's own records — and a session it cannot place resolves to no
    * owner rather than a guessed one.

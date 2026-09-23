@@ -30,11 +30,12 @@ import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceAuthority, WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
-import type { UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
+import type { TurnUsageRevision, UsageOwner, UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
 import {
   cloudWorkspaceUsageRevision,
   readUsageReportFacts,
   USAGE_REPORT_ACTION,
+  type UsageReportResult,
 } from "@claxedo/server-core/usage/usage-report"
 import type { ConnectionTurnCredentials } from "../connections/turn-credentials"
 import {
@@ -406,10 +407,13 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   /**
    * A cloud workspace runtime's usage for one session, proven by a turn lease
    * the plane minted for that session. Session and workspace come from the
-   * lease, location and host from the plane, and the owner from the turn's
-   * recorded producer; the report names none of them. The lease may already
-   * be released: it proves the turn was admitted, and its own expiry bounds
-   * how late a report can arrive.
+   * lease, location and host from the plane; the report names none of them.
+   * Each fact names the turn it was metered under and is owned by that turn's
+   * recorded producer, so a fact retried under a later turn's lease stays its
+   * own turn's. A turn the session never admitted, or one no account
+   * produced, refuses that fact alone.
+   * The lease may already be released: it proves the turn was admitted, and
+   * its own expiry bounds how late a report can arrive.
    */
   async function reportUsage(context: Context, body: Record<string, unknown>) {
     const sessionId = trimToUndefined(body.sessionId)
@@ -430,9 +434,9 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         401,
       )
     }
-    let revisions: ReturnType<typeof cloudWorkspaceUsageRevision>[]
+    let revisions: Array<{ turnId: string; revision: TurnUsageRevision }>
     try {
-      revisions = facts.map((fact) => cloudWorkspaceUsageRevision(fact, lease))
+      revisions = facts.map((fact) => ({ turnId: fact.turnId, revision: cloudWorkspaceUsageRevision(fact, lease) }))
     } catch {
       return context.json({ error: { code: "usage_report_invalid", message: "A reported usage revision is malformed" } }, 400)
     }
@@ -440,16 +444,21 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       const denial = await proofDenial({ authority: options.authority, resolveWorkspaceOwner }, lease)
       if (denial) return context.json({ error: denial }, 401)
       const writer = options.usageWriter
-      if (!writer || !options.authority.resolveSessionUsageOwner) {
+      const authority = options.authority
+      if (!writer || !authority.resolveSessionUsageOwner) {
         return context.json({ error: { code: "usage_report_unavailable", message: "Usage reporting is not configured" } }, 503)
       }
-      const owner = await options.authority.resolveSessionUsageOwner({ sessionId, turnId })
-      if (!owner) {
-        return context.json({ error: { code: "usage_owner_unresolved", message: "No account produced this turn" } }, 403)
+      const owners = new Map<string, UsageOwner | undefined>()
+      for (const factTurnId of new Set(revisions.map((item) => item.turnId))) {
+        owners.set(factTurnId, await authority.resolveSessionUsageOwner({ sessionId, turnId: factTurnId }))
       }
-      const results = []
-      for (const revision of revisions) {
-        results.push({ messageId: revision.messageId, revision: revision.revision, ...await writer.writeRevision(revision, { owner }) })
+      const results: UsageReportResult[] = []
+      for (const { turnId: factTurnId, revision } of revisions) {
+        const owner = owners.get(factTurnId)
+        const reported = { messageId: revision.messageId, revision: revision.revision }
+        results.push(owner
+          ? { ...reported, ...await writer.writeRevision(revision, { owner }) }
+          : { ...reported, status: "refused", code: "usage_owner_unresolved" })
       }
       return context.json({ results })
     } catch {

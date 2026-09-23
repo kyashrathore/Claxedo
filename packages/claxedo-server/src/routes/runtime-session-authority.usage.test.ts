@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { LocalUsageRoutes, createUsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
-import type { UsageReportFact } from "@claxedo/server-core/usage/usage-report"
+import type { UsageReportFact, UsageReportRevision } from "@claxedo/server-core/usage/usage-report"
 import { usageReportPlane, type UsageReportPlane } from "../test-support/usage-report-plane"
 
 const planes: UsageReportPlane[] = []
@@ -17,21 +17,27 @@ async function plane(input: { usageWriter?: boolean } = {}) {
 
 const OBSERVED_AT = Date.parse("2026-09-20T10:00:00Z")
 
+const REVISION: UsageReportRevision = {
+  messageId: "msg_assistant_1",
+  revision: 2,
+  observedAt: OBSERVED_AT,
+  completedAt: OBSERVED_AT + 5_000,
+  settlement: "final",
+  status: "completed",
+  harness: "codex",
+  providerId: "anthropic",
+  modelId: "claude-sonnet-5",
+  tokens: { input: 1_000, output: 200, reasoning: null, cache: { read: 300, write: 80, write1h: 50 } },
+  quality: { source: "provider", observationKind: "cumulative", knownCategories: ["input", "output", "cache_read", "cache_write"] },
+}
+
 function reported(input: Partial<UsageReportFact> = {}): UsageReportFact {
-  return {
-    messageId: "msg_assistant_1",
-    revision: 2,
-    observedAt: OBSERVED_AT,
-    completedAt: OBSERVED_AT + 5_000,
-    settlement: "final",
-    status: "completed",
-    harness: "codex",
-    providerId: "anthropic",
-    modelId: "claude-sonnet-5",
-    tokens: { input: 1_000, output: 200, reasoning: null, cache: { read: 300, write: 80, write1h: 50 } },
-    quality: { source: "provider", observationKind: "cumulative", knownCategories: ["input", "output", "cache_read", "cache_write"] },
-    ...input,
-  }
+  return { ...REVISION, turnId: "msg_user_1", ...input }
+}
+
+async function filedFor(target: UsageReportPlane, userId: "owner" | "member") {
+  const filed = await target.ledger.pendingOutbox({ all: true, owner: { org_id: target.orgId, user_id: userId } })
+  return filed.map((fact) => fact.messageId)
 }
 
 type Lease = Awaited<ReturnType<UsageReportPlane["acquire"]>>
@@ -75,25 +81,56 @@ describe("usage reports over the runtime session authority", () => {
       tokens: { input: 1_000, output: 200, reasoning: null, cache: { read: 300, write: 80, write1h: 50 } },
       quality: { source: "provider", observationKind: "cumulative", knownCategories: ["input", "output", "cache_read", "cache_write"] },
     }])
-    const owned = await target.ledger.pendingOutbox({ all: true, owner: { org_id: target.orgId, user_id: "owner" } })
-    expect(owned.map((fact) => fact.sessionId)).toEqual(["ses_report"])
-    expect(await target.ledger.pendingOutbox({ all: true, owner: { org_id: target.orgId, user_id: "member" } })).toEqual([])
+    expect(await filedFor(target, "owner")).toEqual(["msg_assistant_1"])
+    expect(await filedFor(target, "member")).toEqual([])
   })
 
-  test("attributes each turn's usage to the account that started that turn, even once its lease is released", async () => {
+  test("files each fact under the producer of the turn it names, whichever turn's lease carries the report", async () => {
     const target = await plane()
     await target.session("ses_shared")
     const ownerTurn = await target.acquire(target.owner, "ses_shared", "msg_user_owner")
     expect((await target.post({ action: "turn_release", ...ownerTurn })).status).toBe(200)
     const memberTurn = await target.acquire(target.member, "ses_shared", "msg_user_member")
 
-    expect((await report(target, memberTurn, [reported({ messageId: "msg_by_member" })])).status).toBe(200)
-    expect((await report(target, ownerTurn, [reported({ messageId: "msg_by_owner" })])).status).toBe(200)
+    const carried = await report(target, memberTurn, [
+      reported({ messageId: "msg_by_owner", turnId: "msg_user_owner" }),
+      reported({ messageId: "msg_by_member", turnId: "msg_user_member" }),
+    ])
+    expect(await carried.json()).toEqual({ results: [
+      { messageId: "msg_by_owner", revision: 2, status: "accepted" },
+      { messageId: "msg_by_member", revision: 2, status: "accepted" },
+    ] })
+    const late = await report(target, ownerTurn, [reported({ messageId: "msg_late_by_owner", turnId: "msg_user_owner" })])
+    expect(await late.json()).toEqual({ results: [{ messageId: "msg_late_by_owner", revision: 2, status: "accepted" }] })
 
-    const ownerFacts = await target.ledger.pendingOutbox({ all: true, owner: { org_id: target.orgId, user_id: "owner" } })
-    const memberFacts = await target.ledger.pendingOutbox({ all: true, owner: { org_id: target.orgId, user_id: "member" } })
-    expect(ownerFacts.map((fact) => fact.messageId)).toEqual(["msg_by_owner"])
-    expect(memberFacts.map((fact) => fact.messageId)).toEqual(["msg_by_member"])
+    expect(await filedFor(target, "owner")).toEqual(["msg_by_owner", "msg_late_by_owner"])
+    expect(await filedFor(target, "member")).toEqual(["msg_by_member"])
+  })
+
+  test("refuses, fact by fact, a fact naming a turn its session never admitted", async () => {
+    const target = await plane()
+    await target.session("ses_reported")
+    await target.session("ses_elsewhere")
+    const elsewhere = await target.acquire(target.owner, "ses_elsewhere", "msg_user_elsewhere")
+    expect((await target.post({ action: "turn_release", ...elsewhere })).status).toBe(200)
+    const lease = await target.acquire(target.member, "ses_reported", "msg_user_1")
+
+    const answer = await report(target, lease, [
+      reported({ messageId: "msg_own_turn" }),
+      reported({ messageId: "msg_other_session_turn", turnId: "msg_user_elsewhere" }),
+      reported({ messageId: "msg_unknown_turn", turnId: "msg_user_never" }),
+    ])
+    expect(answer.status).toBe(200)
+    expect(await answer.json()).toEqual({ results: [
+      { messageId: "msg_own_turn", revision: 2, status: "accepted" },
+      { messageId: "msg_other_session_turn", revision: 2, status: "refused", code: "usage_owner_unresolved" },
+      { messageId: "msg_unknown_turn", revision: 2, status: "refused", code: "usage_owner_unresolved" },
+    ] })
+
+    expect((await target.ledger.current({ sessionId: "ses_reported" })).map((fact) => fact.messageId)).toEqual(["msg_own_turn"])
+    expect(await target.ledger.current({ sessionId: "ses_elsewhere" })).toEqual([])
+    expect(await filedFor(target, "member")).toEqual(["msg_own_turn"])
+    expect(await filedFor(target, "owner")).toEqual([])
   })
 
   test("refuses a report whose turn proof does not verify, and stores nothing", async () => {
@@ -147,6 +184,8 @@ describe("usage reports over the runtime session authority", () => {
       expect((await report(target, lease, [reported()], field)).status, JSON.stringify(field)).toBe(400)
     }
     expect((await report(target, lease, [reported({ revision: 0 })])).status).toBe(400)
+    expect((await report(target, lease, [REVISION])).status).toBe(400)
+    expect((await report(target, lease, [reported({ turnId: "" })])).status).toBe(400)
     expect((await report(target, lease, [])).status).toBe(400)
 
     expect(await target.ledger.current({ sessionId: "ses_forged" })).toEqual([])
@@ -170,7 +209,9 @@ describe("the self-hosted usage view over reported cloud turns", () => {
     const lease = await target.acquire(target.owner, "ses_view", "msg_user_1")
     expect((await report(target, lease, [reported({ messageId: "msg_view" })])).status).toBe(200)
     await target.ledger.writeRevision({
-      ...reported({ messageId: "msg_local", tokens: { input: 10, output: 5, reasoning: null, cache: { read: null, write: null } } }),
+      ...REVISION,
+      messageId: "msg_local",
+      tokens: { input: 10, output: 5, reasoning: null, cache: { read: null, write: null } },
       sessionId: "ses_local",
       sessionRef: "local:/work:session:ses_local",
       hostId: "host_this_machine",

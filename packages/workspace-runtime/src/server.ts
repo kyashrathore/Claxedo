@@ -133,6 +133,12 @@ export type WorkspaceRuntimeServerOptions = {
    * harness and model from outside the runtime.
    */
   bindSessionConfig?: (read: Host["getSessionConfig"]) => void
+  /**
+   * Receives this runtime's reader of a session's parent — the session a
+   * subagent's child session is filed under — once the host exists. The parent
+   * is written only when the session is bound, never on an event.
+   */
+  bindSessionParents?: (read: Host["parentSessionIdFor"]) => void
 }
 
 type ListenPolicyEnv = {
@@ -455,6 +461,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
   })
   options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))
+  options.bindSessionParents?.((sessionId) => host.parentSessionIdFor(sessionId))
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,

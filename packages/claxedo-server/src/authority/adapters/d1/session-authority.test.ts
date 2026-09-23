@@ -894,7 +894,7 @@ describe("D1 private multiplayer session authority", () => {
     ).rejects.toMatchObject({ status: 403 })
   })
 
-  test("attributes a session's usage to the account that started the named turn, else its latest turn, else its creator", async () => {
+  test("attributes usage to the account that started the named turn and no other, else the latest turn, else the creator", async () => {
     const input = await setup()
     const { alice, bob } = await sharedWorkspace(input)
     await reserveAndRegister(input.sessions, alice, { operationId: "op_usage", sessionId: "ses_usage" })
@@ -921,7 +921,10 @@ describe("D1 private multiplayer session authority", () => {
     expect(await input.sessions.resolveSessionUsageOwner({ sessionId: "ses_usage" })).toEqual(aliceOwner)
     expect(await input.sessions.resolveSessionUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toEqual(bobOwner)
     expect(await input.sessions.resolveSessionUsageOwner({ sessionId: "ses_usage", turnId: "msg_alice" })).toEqual(aliceOwner)
-    expect(await input.sessions.resolveSessionUsageOwner({ sessionId: "ses_usage", turnId: "msg_never" })).toEqual(aliceOwner)
+    expect(await input.sessions.resolveSessionUsageOwner({ sessionId: "ses_usage", turnId: "msg_never" })).toBeUndefined()
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_usage_other", sessionId: "ses_usage_other" })
+    expect(await input.sessions.resolveSessionUsageOwner({ sessionId: "ses_usage_other" })).toEqual(aliceOwner)
+    expect(await input.sessions.resolveSessionUsageOwner({ sessionId: "ses_usage_other", turnId: "msg_bob" })).toBeUndefined()
 
     await input.database.prepare("update workspaces set deleted_at = ? where workspace_id = ?").bind(input.now(), "ws_main").run()
     expect(await input.sessions.resolveSessionUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toBeUndefined()

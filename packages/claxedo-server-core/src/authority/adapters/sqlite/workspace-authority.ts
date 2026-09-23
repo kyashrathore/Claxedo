@@ -2804,15 +2804,19 @@ export function createSqliteWorkspaceAuthority(
 
     async resolveSessionUsageOwner(args: { sessionId: string; turnId?: string }) {
       const db = database()
-      // The actor the runtime admitted for the turn produced the usage; a
-      // session nobody has driven yet is its creator's.
-      const turn = args.turnId === undefined ? undefined : db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
-        SELECT actor_id, workspace_id FROM session_turn_producers WHERE session_id = ? AND turn_id = ?
-      `).get(args.sessionId, args.turnId)
-      const produced = turn ?? db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
-        SELECT actor_id, workspace_id FROM session_turn_producers
-        WHERE session_id = ? ORDER BY fencing_token DESC LIMIT 1
-      `).get(args.sessionId)
+      // A named turn's usage is its admitted actor's or nobody's: answering
+      // for a turn this session never admitted would bill whoever drove it
+      // last. Unnamed, the latest turn's actor produced it, and a session
+      // nobody has driven yet is its creator's.
+      const produced = args.turnId === undefined
+        ? db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
+          SELECT actor_id, workspace_id FROM session_turn_producers
+          WHERE session_id = ? ORDER BY fencing_token DESC LIMIT 1
+        `).get(args.sessionId)
+        : db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
+          SELECT actor_id, workspace_id FROM session_turn_producers WHERE session_id = ? AND turn_id = ?
+        `).get(args.sessionId, args.turnId)
+      if (args.turnId !== undefined && !produced) return undefined
       const registered = db.prepare<unknown[], { creator_actor_id: string; workspace_id: string }>(`
         SELECT creator_actor_id, workspace_id FROM session_history
         WHERE session_id = ? AND deleted_at IS NULL

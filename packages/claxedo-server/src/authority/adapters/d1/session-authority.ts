@@ -1489,11 +1489,15 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       join actors actor on actor.actor_id = source.actor_id and actor.user_id is not null
       join workspaces workspace on workspace.workspace_id = source.workspace_id and workspace.deleted_at is null
     `
-    const turn = args.turnId === undefined ? null : await this.database.prepare(`
-      select source.org_id, actor.user_id from session_turn_producers source ${owned}
-      where source.session_id = ? and source.turn_id = ?
-    `).bind(sessionId, args.turnId).first<{ org_id: string; user_id: string }>()
-    if (turn) return turn
+    // A named turn's usage is its admitted actor's or nobody's: answering for
+    // a turn this session never admitted would bill whoever drove it last.
+    if (args.turnId !== undefined) {
+      const turn = await this.database.prepare(`
+        select source.org_id, actor.user_id from session_turn_producers source ${owned}
+        where source.session_id = ? and source.turn_id = ?
+      `).bind(sessionId, args.turnId).first<{ org_id: string; user_id: string }>()
+      return turn ?? undefined
+    }
     const latest = await this.database.prepare(`
       select source.org_id, actor.user_id from session_turn_producers source ${owned}
       where source.session_id = ? order by source.fencing_token desc limit 1
