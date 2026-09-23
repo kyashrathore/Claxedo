@@ -14,11 +14,13 @@ export type HarnessOptionsLoaderCache = {
 type HarnessOptionsTimer = ReturnType<typeof setTimeout> | undefined
 
 export function createHarnessOptionsLoader<ScopeInput>(input: {
-  fetch(type: HarnessType, params?: ScopeInput): Promise<Response>
+  /** `model` is the scope's selected model: effort levels and their default belong to it. */
+  fetch(type: HarnessType, params?: ScopeInput, model?: string): Promise<Response>
   currentHarness(scope: string): HarnessType | undefined
   selectedModel(scope: string): string | undefined
   modelOptional?(scope: string): boolean
   preserveSelectedModel?(scope: string): boolean
+  selectedThoughtLevel?(scope: string): string | undefined
   seed(scope: string): void
   applyPatch(scope: string, patch: HarnessOptionsStatePatch): void
   draftDefaultApplication?(scope: string, type: HarnessType): DraftDefaultApplication | undefined
@@ -72,7 +74,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
     }
     const superseded = () => input.cache.getSeq(scope) !== id || !sameHarnessSelection(input.currentHarness(scope), type)
     try {
-      const res = await input.fetch(type, params)
+      const res = await input.fetch(type, params, input.selectedModel(scope) || undefined)
       if (!res.ok) {
         if (superseded()) return abandon()
         const configError = await input.errorMessage(res, "Failed to load model options")
@@ -96,6 +98,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       const decision = applyHarnessOptionsResponse({
         type,
         selectedModel: input.selectedModel(scope),
+        selectedThoughtLevel: input.selectedThoughtLevel?.(scope),
         modelOptional: input.modelOptional?.(scope),
         preserveSelectedModel: input.preserveSelectedModel?.(scope),
         payload,

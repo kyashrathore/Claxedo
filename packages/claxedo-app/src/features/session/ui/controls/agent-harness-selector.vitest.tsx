@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
-import { createSignal, For } from "solid-js"
+import { createSignal, For, Show } from "solid-js"
 import type { HarnessSelection, SessionRef } from "@/platform/identity/session-ref"
 import type { HarnessConnectionState } from "../../harness/profile"
 
 type CatalogProvider = {
   id: string
   name: string
-  models: Record<string, { id: string; name: string }>
+  models: Record<string, { id: string; name: string; variants?: Record<string, object>; connected: boolean; free?: boolean }>
 }
 
 const dialogState = vi.hoisted(() => ({
@@ -49,20 +49,37 @@ let catalogLoading = false
 let catalogError: string | undefined
 let catalogConnected: string[] = []
 let catalogProviders = new Map<string, CatalogProvider>()
+let catalogDetails = new Map<string, CatalogProvider>()
+const catalogLoadCalls: string[] = []
+const [catalogVersion, setCatalogVersion] = createSignal(0)
 let catalogRefreshCalls = 0
 let catalogDefaults: Record<string, string> = {}
 let draftDefaultState: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement" | undefined = "ready"
 let draftDefaultLabels: { provider?: string; model?: string } | undefined
 let harnessMode = true
+let serviceTiers: Array<{ id: string; name: string; description?: string }> = []
+let thoughtLevels: Array<{ id: string; name: string }> = []
+const setThoughtLevelCalls: Array<string | undefined> = []
+let selectedServiceTier: string | undefined
+const setServiceTierCalls: Array<{ scope: string; value: string | undefined }> = []
 
 vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
     resolved: () => true,
-    all: () => catalogProviders,
-    connected: () => catalogConnected.flatMap((id) => {
+    all: () => (catalogVersion(), catalogProviders),
+    connected: () => (catalogVersion(), catalogConnected.flatMap((id) => {
       const provider = catalogProviders.get(id)
       return provider ? [provider] : []
-    }),
+    })),
+    queryKey: () => ["providers", "opencode"],
+    load: async (providerId: string) => {
+      catalogLoadCalls.push(providerId)
+      await Promise.resolve()
+      const detail = catalogDetails.get(providerId)
+      if (!detail) return
+      catalogProviders.set(providerId, detail)
+      setCatalogVersion((version) => version + 1)
+    },
     loading: () => catalogLoading,
     error: () => catalogError,
     refresh: async () => { catalogRefreshCalls += 1 },
@@ -117,6 +134,21 @@ vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
           >
             {props.modelLabel?.()}
           </div>
+          <For each={props.variants?.() ?? []}>{(value: string) => (
+            <button data-testid={`variant-${value}`} onClick={() => props.onVariantSelect?.(value)}>{value}</button>
+          )}</For>
+          <Show when={props.fast?.()}>
+            {(fast: () => { on: boolean; label: string; description?: string }) => (
+              <button
+                data-testid="fast-toggle"
+                aria-pressed={fast().on}
+                title={fast().description}
+                onClick={() => props.onFastToggle?.(!fast().on)}
+              >
+                {fast().label}
+              </button>
+            )}
+          </Show>
           {(props.model?.().list?.() ?? []).map((item: any) => (
             <button
               data-testid={`model-option-${item.id}`}
@@ -171,12 +203,17 @@ function harnessController(): HarnessSelectionController {
       connectionState,
       models,
       selectedModel,
+      selectedModelProvider: selectedModel ? selectedModelProvider ?? harnessId(harnessType) : undefined,
       selectedModelKey: selectedModel ? { providerID: selectedModelProvider ?? harnessId(harnessType), modelID: selectedModel } : undefined,
       configError,
       optionsStale,
       optionsLoading,
       draftDefaultState,
       draftDefaultLabels,
+      thoughtLevels,
+      selectedThoughtLevel: undefined,
+      serviceTiers,
+      selectedServiceTier,
       draftDefaultModel: selectedModel
         ? { providerID: selectedModelProvider ?? harnessId(harnessType), modelID: selectedModel }
         : undefined,
@@ -192,6 +229,14 @@ function harnessController(): HarnessSelectionController {
       setModelCalls.push({ scope, model })
       selectedModel = model.modelID
       selectedModelProvider = model.providerID
+      refresh((value) => value + 1)
+    },
+    setThoughtLevel: (_scope: string, value: string | undefined) => {
+      setThoughtLevelCalls.push(value)
+    },
+    setServiceTier: (scope: string, value: string | undefined) => {
+      setServiceTierCalls.push({ scope, value })
+      selectedServiceTier = value
       refresh((value) => value + 1)
     },
     rememberDraftModel: () => false,
@@ -249,10 +294,17 @@ beforeEach(() => {
   catalogError = undefined
   catalogConnected = []
   catalogProviders = new Map()
+  catalogDetails = new Map()
+  catalogLoadCalls.length = 0
   catalogRefreshCalls = 0
   catalogDefaults = {}
   draftDefaultState = "ready"
   draftDefaultLabels = undefined
+  serviceTiers = []
+  thoughtLevels = []
+  setThoughtLevelCalls.length = 0
+  selectedServiceTier = undefined
+  setServiceTierCalls.length = 0
   dialogState.show.mockClear()
   navigated.mockClear()
 })
@@ -260,6 +312,59 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("AgentHarnessSelector — effort", () => {
+  test("a harness's own \"default\" level is selected as that level, not dropped to none", async () => {
+    harnessType = { kind: "connection", connectionId: "claude-acp" }
+    thoughtLevels = [{ id: "default", name: "Default" }, { id: "high", name: "High" }]
+    const view = render(() => <TestAgentHarnessSelector />)
+    fireEvent.click(await waitFor(() => view.getByTestId("variant-default")))
+    fireEvent.click(view.getByTestId("variant-high"))
+    expect(setThoughtLevelCalls).toEqual(["default", "high"])
+  })
+})
+
+describe("AgentHarnessSelector — catalog effort", () => {
+  test("OpenCode's levels are the selected model's engine variants, and Default stores no level", async () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    catalogProviders.set("opencode", {
+      id: "opencode",
+      name: "OpenCode Zen",
+      models: { "deepseek-v4-flash-free": { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash Free", connected: true, variants: { low: {}, high: {}, max: {} } } },
+    })
+    catalogConnected = ["opencode"]
+    selectedModel = "deepseek-v4-flash-free"
+    selectedModelProvider = "opencode"
+    const view = render(() => <TestAgentHarnessSelector />)
+    await waitFor(() => view.getByTestId("variant-max"))
+    expect(["default", "low", "high", "max"].every((id) => view.queryByTestId(`variant-${id}`))).toBe(true)
+    fireEvent.click(view.getByTestId("variant-high"))
+    fireEvent.click(view.getByTestId("variant-default"))
+    expect(setThoughtLevelCalls).toEqual(["high", undefined])
+  })
+})
+
+describe("AgentHarnessSelector — fast mode", () => {
+  test("offers the model's fast tier and toggles it through the harness controller", async () => {
+    harnessType = { kind: "native", harnessId: "codex" }
+    serviceTiers = [{ id: "priority", name: "Fast", description: "2x speed, increased usage" }]
+    const view = render(() => <TestAgentHarnessSelector />)
+    const toggle = await waitFor(() => view.getByTestId("fast-toggle"))
+    expect(toggle.getAttribute("aria-pressed")).toBe("false")
+    expect(toggle.getAttribute("title")).toBe("2x speed, increased usage")
+
+    fireEvent.click(toggle)
+    await waitFor(() => expect(view.getByTestId("fast-toggle").getAttribute("aria-pressed")).toBe("true"))
+    fireEvent.click(view.getByTestId("fast-toggle"))
+    expect(setServiceTierCalls.map((call) => call.value)).toEqual(["priority", undefined])
+  })
+
+  test("shows no fast toggle when the model has no faster tier", () => {
+    harnessType = { kind: "native", harnessId: "claude" }
+    const view = render(() => <TestAgentHarnessSelector />)
+    expect(view.queryByTestId("fast-toggle")).toBeNull()
+  })
+})
 
 describe("AgentHarnessSelector — existing session handoff", () => {
   test("shows observed handshake state separately from model discovery readiness", () => {
@@ -824,8 +929,8 @@ describe("AgentHarnessSelector — OpenCode provider catalog", () => {
       id: "pi",
       name: "OpenCode",
       models: {
-        virtual: { id: "virtual", name: "Virtual" },
-        legacy: { id: "legacy", name: "Legacy" },
+        virtual: { id: "virtual", name: "Virtual", connected: true },
+        legacy: { id: "legacy", name: "Legacy", connected: true },
       },
     })
 
@@ -851,7 +956,7 @@ describe("AgentHarnessSelector — OpenCode provider catalog", () => {
     catalogProviders.set("pi", {
       id: "pi",
       name: "OpenCode",
-      models: { virtual: { id: "virtual", name: "Virtual" } },
+      models: { virtual: { id: "virtual", name: "Virtual", connected: true } },
     })
     const visible = vi.fn((_model, defaults?: Record<string, string>) => defaults?.pi === "virtual")
 
@@ -881,7 +986,7 @@ describe("AgentHarnessSelector — OpenCode provider catalog", () => {
     catalogProviders.set("pi", {
       id: "pi",
       name: "OpenCode",
-      models: { virtual: { id: "virtual", name: "Virtual" } },
+      models: { virtual: { id: "virtual", name: "Virtual", connected: true } },
     })
     const setProviderModel = vi.fn()
 
@@ -912,7 +1017,7 @@ describe("AgentHarnessSelector — OpenCode provider catalog", () => {
     catalogProviders.set("openai-codex", {
       id: "openai-codex",
       name: "OpenAI Codex",
-      models: { "gpt-5.5": { id: "gpt-5.5", name: "GPT-5.5" } },
+      models: { "gpt-5.5": { id: "gpt-5.5", name: "GPT-5.5", connected: true } },
     })
 
     render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
@@ -925,18 +1030,72 @@ describe("AgentHarnessSelector — OpenCode provider catalog", () => {
     }))
   })
 
+  test("a catalog restored with only default models resolves the draft default after connected providers load", async () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    draftDefaultState = undefined
+    catalogConnected = ["opencode"]
+    catalogDefaults = { opencode: "big-pickle" }
+    catalogProviders.set("opencode", {
+      id: "opencode",
+      name: "OpenCode Zen",
+      models: { "big-pickle": { id: "big-pickle", name: "Big Pickle", connected: true } },
+    })
+    catalogDetails.set("opencode", {
+      id: "opencode",
+      name: "OpenCode Zen",
+      models: {
+        "big-pickle": { id: "big-pickle", name: "Big Pickle", connected: true },
+        muse: { id: "muse", name: "Muse", connected: true, variants: { low: {}, high: {} } },
+      },
+    })
+
+    const { container } = render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
+
+    await waitFor(() => expect(resolveDefaultCalls.length).toBeGreaterThan(0))
+    expect(catalogLoadCalls).toContain("opencode")
+    for (const call of resolveDefaultCalls) {
+      expect(call).toMatchObject({
+        eligibleModels: [
+          { providerID: "opencode", modelID: "big-pickle" },
+          { providerID: "opencode", modelID: "muse" },
+        ],
+      })
+    }
+    expect(container.querySelector("[data-testid='model-option-muse']")).not.toBeNull()
+  })
+
   test("a loaded OpenCode catalog is usable without connected credentials", async () => {
     harnessType = { kind: "native", harnessId: "opencode" }
     catalogConnected = ["opencode"]
     catalogProviders.set("opencode", {
       id: "opencode",
       name: "OpenCode Zen",
-      models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+      models: { "big-pickle": { id: "big-pickle", name: "Big Pickle", connected: true } },
     })
 
     const { container } = render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
 
     expect(noticeRow(container)).toBeNull()
+    await waitFor(() => expect(setModelCalls).toEqual([{
+      scope: "test-scope",
+      model: { providerID: "opencode", modelID: "big-pickle" },
+    }]))
+  })
+
+  test("a model the engine cannot run is neither auto-picked nor eligible, even in a connected provider", async () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    catalogConnected = ["opencode"]
+    catalogProviders.set("opencode", {
+      id: "opencode",
+      name: "OpenCode Zen",
+      models: {
+        "a-paid": { id: "a-paid", name: "Paid", connected: false },
+        "big-pickle": { id: "big-pickle", name: "Big Pickle", connected: true, free: true },
+      },
+    })
+
+    render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
+
     await waitFor(() => expect(setModelCalls).toEqual([{
       scope: "test-scope",
       model: { providerID: "opencode", modelID: "big-pickle" },
@@ -949,7 +1108,7 @@ describe("AgentHarnessSelector — OpenCode provider catalog", () => {
     catalogProviders.set("opencode", {
       id: "opencode",
       name: "OpenCode Zen",
-      models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+      models: { "big-pickle": { id: "big-pickle", name: "Big Pickle", connected: false } },
     })
 
     const { container } = render(() => <TestAgentHarnessSelector />)

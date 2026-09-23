@@ -23,6 +23,9 @@ function selectionStore(overrides: Partial<HarnessSelectionControllerStore> = {}
     thoughtLevels: () => [{ id: "low", name: "Low" }, { id: "high", name: "High" }],
     selectedThoughtLevel: () => "high",
     setThoughtLevel: () => {},
+    serviceTiers: () => [{ id: "priority", name: "Fast" }],
+    selectedServiceTier: () => "priority",
+    setServiceTier: () => {},
     selectedModel: () => "gpt-5.5",
     selectedModelKey: () => ({ providerID: "codex-team", modelID: "gpt-5.5" }),
     optionsStale: () => false,
@@ -42,6 +45,7 @@ function submitStore(overrides: Partial<HarnessSubmitControllerStore> = {}): Har
     promote: () => undefined,
     harnessReadyForSubmit: () => true,
     harnessModelKeyForSubmit: () => ({ providerID: "codex-team", modelID: "gpt-5.5" }),
+    harnessServiceTierForSubmit: () => "priority",
     ...overrides,
   }
 }
@@ -61,6 +65,8 @@ describe("harness controller facade", () => {
       models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       thoughtLevels: [{ id: "low", name: "Low" }, { id: "high", name: "High" }],
       selectedThoughtLevel: "high",
+      serviceTiers: [{ id: "priority", name: "Fast" }],
+      selectedServiceTier: "priority",
       selectedModel: "gpt-5.5",
       selectedModelProvider: "codex-team",
       selectedModelKey: { providerID: "codex-team", modelID: "gpt-5.5" },

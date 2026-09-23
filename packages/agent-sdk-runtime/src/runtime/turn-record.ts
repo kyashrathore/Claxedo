@@ -31,7 +31,10 @@ export function turnPrompt(input: {
     ...(turn.format ? { format: turn.format } : {}),
     ...(system ? { system } : {}),
     ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
-    ...(turn.variant !== undefined ? { variant: turn.variant } : config.variant ? { variant: config.variant } : {}),
+    ...(turn.variant === undefined
+      ? config.variant ? { variant: config.variant } : {}
+      : turn.variant ? { variant: turn.variant } : {}),
+    ...(turn.serviceTier ? { serviceTier: turn.serviceTier } : {}),
     ...(turn.author ? { author: turn.author } : {}),
   }
 }

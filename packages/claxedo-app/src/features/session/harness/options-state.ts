@@ -1,5 +1,6 @@
 import {
   extractModelsFromConfigOptions,
+  extractServiceTiersFromConfigOptions,
   extractThoughtLevelFromConfigOptions,
   isNativeSdkHarness,
   isStaticCatalogOptions,
@@ -19,6 +20,7 @@ export type HarnessOptionsStatePatch = {
   /** Reasoning/thinking levels this harness offers; `[]` when it offers none. */
   thoughtLevels?: HarnessModelOption[] | null
   selectedThoughtLevel?: string
+  serviceTiers?: HarnessModelOption[] | null
   selectedModel?: string
   optionsSource?: OptionsSource
   optionsStale?: boolean
@@ -57,6 +59,7 @@ function terminalEmptyOptionsDecision(input: {
 export function applyHarnessOptionsResponse(input: {
   type: HarnessType
   selectedModel?: string
+  selectedThoughtLevel?: string
   modelOptional?: boolean
   preserveSelectedModel?: boolean
   payload: OptionsResponse
@@ -69,12 +72,20 @@ export function applyHarnessOptionsResponse(input: {
   // early — dropping effort there is how a control that "sometimes disappears"
   // gets built.
   const thought = extractThoughtLevelFromConfigOptions(input.payload.options)
+  // `currentValue` is the harness's default for the model (native SDKs report
+  // no per-session effort), so it seeds the level and never replaces one the
+  // user picked that this model still accepts.
+  const kept = thought?.levels.some((level) => level.id === input.selectedThoughtLevel)
+  const selectedThoughtLevel = kept ? input.selectedThoughtLevel : thought?.current
   const base = {
     optionsSource: input.payload.source,
     optionsStale: input.payload.stale,
     optionsLoading: input.payload.stale,
     thoughtLevels: thought?.levels ?? [],
-    ...(thought?.current !== undefined ? { selectedThoughtLevel: thought.current } : {}),
+    serviceTiers: extractServiceTiersFromConfigOptions(input.payload.options),
+    // Written even when empty: a level this model does not offer must not stay
+    // selected behind a hidden or changed control and ride the next prompt.
+    selectedThoughtLevel,
   } satisfies HarnessOptionsStatePatch
   const clearTries = !input.payload.stale
 

@@ -38,6 +38,8 @@ import type {
   PromptInput,
   SessionConfig,
   SessionConfigUpdate,
+  SessionHandoff,
+  SessionHandoffSource,
   SessionHarness,
   SessionModelGroup,
   SubagentObservation,
@@ -288,6 +290,7 @@ export type QueuedPromptRecord = {
   format?: PromptFormat
   system?: string
   variant?: string
+  serviceTier?: string
   permissionMode?: string
   delivery: "steer" | "queue"
   actor?: { actorId: string; actorKind: "human" | "agent" }
@@ -307,6 +310,7 @@ type QueuedPromptRow = {
   authority_json: string | null
   origin_provenance: string | null
   turn_grant: string | null
+  service_tier: string | null
   held: number
   steering_json: string | null
   session_id: string
@@ -398,6 +402,7 @@ function queuedPrompt(row: QueuedPromptRow): QueuedPromptRecord {
     ...(format === undefined ? {} : { format }),
     ...(row.system === null ? {} : { system: row.system }),
     ...(row.variant === null ? {} : { variant: row.variant }),
+    ...(row.service_tier === null ? {} : { serviceTier: row.service_tier }),
     ...(row.permission_mode === null ? {} : { permissionMode: row.permission_mode }),
     delivery: row.delivery === "steer" ? "steer" : "queue",
     ...(row.actor_id === null || kind === undefined ? {} : { actor: { actorId: row.actor_id, actorKind: kind } }),
@@ -686,16 +691,52 @@ function nullable(input: unknown): string | null | undefined {
   return typeof input === "string" ? input : undefined
 }
 
-function sessionHandoff(input: string | null | undefined): SessionConfig["handoff"] | undefined {
+function sessionHandoff(input: string | null | undefined): SessionHandoff | undefined {
   if (!input) return undefined
   try {
-    const value: SessionConfig["handoff"] = JSON.parse(input)
-    if (!value || !value.pending || !value.from?.id || typeof value.transcript !== "string") return undefined
-    const from = normalizeHarnessIdentity(value.from)
-    if (!from) return undefined
-    return { from, pending: true, transcript: value.transcript }
+    const value: unknown = JSON.parse(input)
+    const handoff = pendingHandoff(value)
+    const source = handoff && handoffSource(asRecord(value)?.source)
+    return source ? { ...handoff, source } : handoff
   } catch {
     return undefined
+  }
+}
+
+function pendingHandoff(input: unknown): Omit<SessionHandoff, "source"> | undefined {
+  const value = asRecord(input)
+  if (!value || value.pending !== true || typeof value.transcript !== "string") return undefined
+  const from = normalizeHarnessIdentity(value.from)
+  if (!from) return undefined
+  return {
+    from,
+    pending: true,
+    transcript: value.transcript,
+    ...(value.reason === "missing-session" ? { reason: value.reason } : {}),
+    ...(value.announced === true ? { announced: true } : {}),
+  }
+}
+
+function handoffSource(input: unknown): SessionHandoffSource | undefined {
+  const value = asRecord(input)
+  const ownerKey = nullable(value?.ownerKey)
+  if (!value || typeof value.agentSessionId !== "string" || typeof value.upstreamSessionId !== "string" || ownerKey === undefined) {
+    return undefined
+  }
+  const model = asRecord(value.model)
+  const variant = nullable(value.variant)
+  const agent = nullable(value.agent)
+  const handoff = pendingHandoff(value.handoff)
+  return {
+    agentSessionId: value.agentSessionId,
+    upstreamSessionId: value.upstreamSessionId,
+    ownerKey,
+    ...(typeof model?.providerID === "string" && typeof model.modelID === "string"
+      ? { model: { providerID: model.providerID, modelID: model.modelID } }
+      : {}),
+    ...(variant !== undefined ? { variant } : {}),
+    ...(agent !== undefined ? { agent } : {}),
+    ...(handoff ? { handoff } : {}),
   }
 }
 
@@ -1045,10 +1086,11 @@ export class RuntimeStore {
           authority_json TEXT,
           origin_provenance TEXT,
           turn_grant TEXT,
+          service_tier TEXT,
           PRIMARY KEY (session_id, seq)
         )
       `)
-      for (const column of ["origin_provenance", "turn_grant"]) {
+      for (const column of ["origin_provenance", "turn_grant", "service_tier"]) {
         if (!hasColumn(this.db, "runtime_delivery", column)) {
           this.db.exec(`ALTER TABLE runtime_delivery ADD COLUMN ${column} TEXT`)
         }
@@ -2196,8 +2238,9 @@ export class RuntimeStore {
           queued_at,
           authority_json,
           origin_provenance,
-          turn_grant
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          turn_grant,
+          service_tier
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         )
         .run(
@@ -2224,6 +2267,7 @@ export class RuntimeStore {
           record.authority ? JSON.stringify(record.authority) : null,
           record.provenance ?? null,
           record.grant ?? null,
+          record.serviceTier ?? null,
         )
       return record
     }, "immediate")
@@ -2304,6 +2348,7 @@ export class RuntimeStore {
         authority_json,
         origin_provenance,
         turn_grant,
+        service_tier,
         held
       FROM runtime_delivery
       ORDER BY queued_at, session_id, seq

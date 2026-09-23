@@ -1,4 +1,5 @@
-import { isHarnessEffortLevel, type HarnessEffortLevel } from "@claxedo/agent-runtime-contract"
+import { harnessEffortRefusal } from "@claxedo/agent-runtime-contract"
+import { harnessEffortLevels } from "./harness-effort"
 import type { AgentConfigOption } from "./index"
 
 /** A model entry a harness reported for the picker. */
@@ -19,40 +20,52 @@ export type SdkModelEntry = {
   supportsEffort?: boolean
   supportedEffortLevels?: string[]
   defaultEffort?: string
+  /** The full model id an alias row runs (Claude's `opus` → `claude-opus-…`). */
+  resolvedModel?: string
+  /** Served and validated, but not offered in the picker. */
+  hidden?: boolean
+  /**
+   * Faster tiers the model can run a turn on, beyond its standard one
+   * (Codex's `serviceTiers`, e.g. `priority` named "Fast"). Per model, like
+   * effort.
+   */
+  serviceTiers?: SdkServiceTier[]
 }
+
+export type SdkServiceTier = { id: string; name: string; description?: string }
 
 const EFFORT_CONFIG_ID = "effort"
+const SERVICE_TIER_CONFIG_ID = "service_tier"
 
 /**
- * The effort to send with a turn, or `undefined` for "let the model decide".
+ * The effort a turn sends: `undefined` when none was requested, the requested
+ * level when the model accepts it, and a thrown refusal otherwise.
  *
- * Validated against the SELECTED MODEL's own `supportedEffortLevels` rather
- * than cast. Two reasons, and both are ways the UI would otherwise lie:
- * the SDK silently downgrades a level the model does not support, so the turn
- * would run at an effort the composer never showed; and a level persisted under
- * a previous model survives a model switch, so "max" chosen on Opus must not
- * leak onto a model that tops out lower.
+ * Never a silent drop. A harness handed a level its model lacks either
+ * downgrades it on its own (the Claude SDK) or keeps the previous turn's level
+ * (Codex), so dropping the request runs the turn at an effort the composer
+ * never showed. An empty catalog cannot confirm anything, which is also a
+ * refusal: callers pass a loaded catalog, not a cache that may be cold.
  */
-export function resolveTurnEffort(
-  models: readonly SdkModelEntry[],
-  modelId: string | undefined,
-  requested: string | undefined,
-): HarnessEffortLevel | undefined {
-  if (!requested || !isHarnessEffortLevel(requested)) return undefined
-  const resolved = resolveSupportedEffort(models, modelId, requested)
-  return resolved && isHarnessEffortLevel(resolved) ? resolved : undefined
-}
-
-/** Resolves a harness-advertised effort without imposing another harness's union. */
-export function resolveSupportedEffort(
-  models: readonly SdkModelEntry[],
-  modelId: string | undefined,
-  requested: string | undefined,
-) {
+export function requireTurnEffort(input: {
+  harness: string
+  models: readonly SdkModelEntry[]
+  modelId: string | undefined
+  requested: string | undefined
+}): string | undefined {
+  const requested = input.requested
   if (!requested) return undefined
-  const model = selectedEffortModel(models, modelId)
-  if (!model?.supportsEffort) return undefined
-  return model.supportedEffortLevels?.includes(requested) ? requested : undefined
+  if (input.models.length === 0) {
+    throw new Error(`The ${input.harness} model list is unavailable, so effort ${requested} cannot be confirmed`)
+  }
+  const model = catalogModel(input.models, input.modelId)
+  if (model?.supportsEffort && model.supportedEffortLevels?.includes(requested)) return requested
+  throw new Error(harnessEffortRefusal({
+    harness: input.harness,
+    catalog: harnessEffortLevels(input.models),
+    modelID: model?.id ?? input.modelId,
+    effort: requested,
+  }) ?? `The ${input.harness} harness does not run ${input.modelId ?? "its default model"} at effort ${requested}`)
 }
 
 function titleCase(value: string) {
@@ -71,20 +84,15 @@ function titleCase(value: string) {
 export function thoughtLevelConfigOption(
   models: readonly SdkModelEntry[],
   currentModel: string | undefined,
-  currentEffort: string | undefined,
 ): AgentConfigOption | undefined {
   // An empty model selection means the model catalog's advertised default.
   // A named model is resolved only by its own id.
-  const model = selectedEffortModel(models, currentModel)
+  const model = catalogModel(models, currentModel)
   const levels = model?.supportsEffort ? model.supportedEffortLevels ?? [] : []
   if (levels.length < 2) return undefined
-  // The current value describes an explicit supported selection or the model's
-  // declared default. An absent value leaves selection with the model.
-  const current = currentEffort && levels.includes(currentEffort)
-    ? currentEffort
-    : model?.defaultEffort && levels.includes(model.defaultEffort)
-    ? model.defaultEffort
-    : undefined
+  // The model's declared default, which is what a turn naming no level runs at.
+  // Absent when the harness declares none: the selection then stays with it.
+  const current = model?.defaultEffort && levels.includes(model.defaultEffort) ? model.defaultEffort : undefined
   return {
     id: EFFORT_CONFIG_ID,
     name: "Effort",
@@ -96,8 +104,40 @@ export function thoughtLevelConfigOption(
   }
 }
 
-function selectedEffortModel(models: readonly SdkModelEntry[], modelId: string | undefined) {
-  if (modelId) return models.find((item) => item.id === modelId)
+/** The requested tier when the selected model offers it; otherwise the standard tier. */
+export function resolveSupportedServiceTier(
+  models: readonly SdkModelEntry[],
+  modelId: string | undefined,
+  requested: string | undefined,
+) {
+  if (!requested) return undefined
+  return catalogModel(models, modelId)?.serviceTiers?.some((tier) => tier.id === requested) ? requested : undefined
+}
+
+/**
+ * The selected model's faster tiers as a `service_tier` config option, or
+ * `undefined` when it has none. The option lists only the non-standard tiers:
+ * standard is the absence of a tier, which is what the app sends when fast is
+ * off.
+ */
+export function serviceTierConfigOption(
+  models: readonly SdkModelEntry[],
+  currentModel: string | undefined,
+): AgentConfigOption | undefined {
+  const tiers = catalogModel(models, currentModel)?.serviceTiers ?? []
+  if (tiers.length === 0) return undefined
+  return {
+    id: SERVICE_TIER_CONFIG_ID,
+    name: "Speed",
+    category: "service_tier",
+    type: "select",
+    selectOptions: tiers.map((tier) => ({ ...tier })),
+  }
+}
+
+/** The row a model id names — by id, then as an alias's full model — or the default row when none is named. */
+export function catalogModel(models: readonly SdkModelEntry[], modelId: string | undefined) {
+  if (modelId) return models.find((item) => item.id === modelId) ?? models.find((item) => item.resolvedModel === modelId)
   return models.find((item) => item.isDefault) ?? models[0]
 }
 
@@ -109,6 +149,8 @@ export function modelConfigOption(models: readonly SdkModelEntry[], currentModel
     category: "model",
     type: "select",
     currentValue: currentModel && models.some((item) => item.id === currentModel) ? currentModel : defaultModel,
-    selectOptions: models.map(({ isDefault: _isDefault, ...item }) => ({ ...item })),
+    selectOptions: models
+      .filter((item) => !item.hidden || item.id === currentModel)
+      .map(({ isDefault: _isDefault, hidden: _hidden, resolvedModel: _resolvedModel, ...item }) => ({ ...item })),
   }
 }

@@ -13,11 +13,13 @@ import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics
  *
  * Three separate chips would read as unrelated settings when they are in fact
  * one decision made in order: the harness decides which models exist, and the
- * model decides whether effort is offered at all. An accordion states that
- * order literally — pick a harness and it folds shut, handing you the model
- * list it just produced.
+ * model decides whether effort (and a fast tier) is offered at all. The two
+ * list questions are an accordion — pick a harness and it folds shut, handing
+ * you the model list it just produced. Effort is an ordered scale, not a list,
+ * so it is a slider pinned under both sections and stays visible while the
+ * model list is open (see `EffortRow`).
  *
- * Exactly one section is open. That is what keeps the popover a FIXED height
+ * At most one section is open. That is what keeps the popover a FIXED height
  * (`h-80`, the same as the model picker it replaces) instead of a stack that
  * runs off-screen once a harness has thirty models.
  *
@@ -34,11 +36,11 @@ import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics
  * including its manage-models action and Settings → Providers redirect. Nothing forks.
  */
 
-export type HarnessModelPickerSection = "harness" | "model" | "effort"
+type HarnessModelPickerSection = "harness" | "model"
 
 /**
- * Every row in this popover — the three section headers, the harness options,
- * the effort options and the model list's own rows — is this one box. Same
+ * Every list row in this popover — the section headers, the harness options
+ * and the model list's own rows — is this one box. Same
  * width, same 10px gutter, same radius, same hover.
  *
  * A row narrower than the row above it reads as a different kind of row, and
@@ -143,8 +145,8 @@ function OptionRow(props: { selected: boolean; icon?: JSX.Element; label: string
       >
         {props.label}
       </span>
-      {/* Trailing check, matching the model list's own selected marker so all
-          three sections agree on what "current" looks like. */}
+      {/* Trailing check, matching the model list's own selected marker so both
+          lists agree on what "current" looks like. */}
       <Icon
         name="check"
         size="small"
@@ -152,6 +154,134 @@ function OptionRow(props: { selected: boolean; icon?: JSX.Element; label: string
         classList={{ invisible: !props.selected }}
       />
     </button>
+  )
+}
+
+export type FastModeControl = {
+  on: boolean
+  label: string
+  description?: string
+}
+
+/**
+ * The harness picker's last row: the effort slider, and the fast toggle beside
+ * it when the selected model has a fast tier.
+ *
+ * The row is always rendered, even when the harness takes no effort, so the
+ * popover keeps its height as the harness changes; an unsupported slider is an
+ * empty dashed well rather than a missing row.
+ */
+function EffortRow(props: {
+  /** The selected model's levels in order, least effort first; fewer than two renders the empty well. */
+  levels: string[]
+  current: string
+  label: (value: string) => string
+  onSelect: (value: string) => void
+  fast?: FastModeControl
+  onFastToggle: (next: boolean) => void
+}) {
+  return (
+    <div data-slot="harness-picker-effort-row" class="harness-picker-effort-row" data-fast={props.fast ? "true" : undefined}>
+      <Show
+        when={props.levels.length > 1}
+        fallback={<div data-slot="harness-picker-effort" data-supported="false" class="harness-picker-effort" title="No effort control" />}
+      >
+        <EffortSlider levels={props.levels} current={props.current} label={props.label} onSelect={props.onSelect} />
+      </Show>
+      <Show when={props.fast}>
+        {(fast) => (
+          <button
+            type="button"
+            data-slot="harness-picker-fast"
+            aria-pressed={fast().on}
+            aria-label={fast().label}
+            title={fast().description ? `${fast().label} · ${fast().description}` : fast().label}
+            class="harness-picker-fast"
+            onClick={() => props.onFastToggle(!fast().on)}
+          >
+            <Icon name="bolt" size="small" />
+          </button>
+        )}
+      </Show>
+    </div>
+  )
+}
+
+function EffortSlider(props: {
+  levels: string[]
+  current: string
+  label: (value: string) => string
+  onSelect: (value: string) => void
+}) {
+  const [dragging, setDragging] = createSignal(false)
+  const index = createMemo(() => Math.max(0, props.levels.indexOf(props.current)))
+  const last = createMemo(() => props.levels.length - 1)
+  const ratio = createMemo(() => index() / last())
+
+  const select = (next: number) => {
+    const value = props.levels[Math.max(0, Math.min(last(), next))]
+    if (value !== undefined && value !== props.current) props.onSelect(value)
+  }
+  // Stops sit on the thumb's travel, which is inset by the thumb's half-width
+  // plus the track padding on each side; mapping against the raw track width
+  // lands a click between stops on the wrong one near either end.
+  const indexAt = (element: HTMLElement, clientX: number) => {
+    const box = element.getBoundingClientRect()
+    const inset = Number.parseFloat(getComputedStyle(element).getPropertyValue("--effort-stop-inset")) || 0
+    const travel = box.width - inset * 2
+    if (travel <= 0) return index()
+    return Math.round(((clientX - box.left - inset) / travel) * last())
+  }
+
+  return (
+    <div
+      role="slider"
+      tabIndex={0}
+      aria-label="Effort"
+      aria-valuemin={0}
+      aria-valuemax={last()}
+      aria-valuenow={index()}
+      aria-valuetext={props.label(props.current)}
+      title={`Effort · ${props.label(props.current)}`}
+      data-slot="harness-picker-effort"
+      data-supported="true"
+      data-dragging={dragging() ? "true" : undefined}
+      class="harness-picker-effort"
+      style={{ "--effort-ratio": ratio() }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return
+        event.currentTarget.setPointerCapture(event.pointerId)
+        setDragging(true)
+        select(indexAt(event.currentTarget, event.clientX))
+      }}
+      onPointerMove={(event) => {
+        if (!dragging()) return
+        select(indexAt(event.currentTarget, event.clientX))
+      }}
+      onPointerUp={() => setDragging(false)}
+      onPointerCancel={() => setDragging(false)}
+      onKeyDown={(event) => {
+        const step = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[event.key]
+        if (step !== undefined) select(index() + step)
+        else if (event.key === "Home") select(0)
+        else if (event.key === "End") select(last())
+        else return
+        event.preventDefault()
+      }}
+    >
+      <span aria-hidden="true" class="harness-picker-effort-fill" />
+      <For each={props.levels}>
+        {(_, stop) => (
+          <span
+            aria-hidden="true"
+            class="harness-picker-effort-stop"
+            data-filled={stop() <= index() ? "true" : undefined}
+            style={{ "--effort-stop": stop() / last() }}
+          />
+        )}
+      </For>
+      <span aria-hidden="true" class="harness-picker-effort-thumb" />
+    </div>
   )
 }
 
@@ -236,12 +366,15 @@ export function HarnessModelPicker<H>(props: {
    */
   showManageModels: Accessor<boolean>
 
-  /** Effort section. Omitted entirely when the harness offers no variants. */
+  /** Effort slider. An empty well when the harness offers no variants. */
   showEffort: Accessor<boolean>
   variants: Accessor<string[]>
   currentVariant: Accessor<string | undefined>
   variantLabel: (value: string) => string
   onVariantSelect: (value: string) => void
+  /** The selected model's fast tier; absent hides the toggle. */
+  fast?: Accessor<FastModeControl | undefined>
+  onFastToggle?: (next: boolean) => void
 
   triggerStyle?: Accessor<JSX.CSSProperties>
   triggerLabel?: string
@@ -268,7 +401,7 @@ export function HarnessModelPicker<H>(props: {
   const [section, setSection] = createSignal<HarnessModelPickerSection | null>("model")
 
   // Clicking the OPEN header closes it. An accordion whose sections can only
-  // be swapped, never shut, gives you no way to see all three current values at
+  // be swapped, never shut, gives you no way to see both current values at
   // once — which is the one thing the collapsed state is good at.
   const toggle = (next: HarnessModelPickerSection) =>
     setSection((current) => (current === next ? null : next))
@@ -283,7 +416,7 @@ export function HarnessModelPicker<H>(props: {
   })
 
   const currentVariant = createMemo(() => props.currentVariant() ?? "default")
-  const effortValue = createMemo(() => props.variantLabel(currentVariant()))
+  const effortLevels = createMemo(() => (props.showEffort() ? props.variants() : []))
   // Only a NON-default effort earns space in the trigger. "Default" restates
   // the absence of a choice, and the chip already carries a harness mark, a
   // model name and a chevron — a fourth token that says nothing is what makes
@@ -348,6 +481,9 @@ export function HarnessModelPicker<H>(props: {
         <Show when={props.showEffort() && effortInTrigger()}>
           <span class="shrink-0 text-v2-text-text-faint">{effortInTrigger()}</span>
         </Show>
+        <Show when={props.fast?.()?.on}>
+          <Icon name="bolt" size="small" aria-label={props.fast?.()?.label} class="shrink-0 text-v2-text-text-faint" />
+        </Show>
         <Icon name="chevron-down" size="small" class="shrink-0 text-v2-icon-icon-muted" />
       </Kobalte.Trigger>
 
@@ -364,10 +500,10 @@ export function HarnessModelPicker<H>(props: {
           classList={{
             [`${COMPOSER_MENU_CLASS} claxedo-composer-menu-picker harness-picker-surface z-[260] flex flex-col gap-0.5 overflow-hidden outline-none`]: true,
             // The model list is the one section worth real estate — it is
-            // searchable and routinely 100+ rows, where harness and effort are
-            // short fixed lists that would just sit in whitespace at this size.
+            // searchable and routinely 100+ rows, where the harness list is
+            // short and would just sit in whitespace at this size.
             "h-[26rem]": section() === "model",
-            "h-80": section() === "harness" || section() === "effort",
+            "h-80": section() === "harness",
           }}
           onOpenAutoFocus={(event) => {
             // The model list autofocuses its own search box; letting the
@@ -465,30 +601,14 @@ export function HarnessModelPicker<H>(props: {
             </SectionPanel>
           </Show>
 
-          <Show when={props.showEffort()}>
-            <SectionHeader
-              label="Effort"
-              value={effortValue()}
-              expanded={section() === "effort"}
-              onToggle={() => toggle("effort")}
-            />
-            <Show when={section() === "effort"}>
-              <SectionPanel class="min-h-0 flex-1 overflow-y-auto">
-                <For each={props.variants()}>
-                  {(value) => (
-                    <OptionRow
-                      selected={value === currentVariant()}
-                      label={props.variantLabel(value)}
-                      onSelect={() => {
-                        if (value !== currentVariant()) props.onVariantSelect(value)
-                        setOpen(false)
-                      }}
-                    />
-                  )}
-                </For>
-              </SectionPanel>
-            </Show>
-          </Show>
+          <EffortRow
+            levels={effortLevels()}
+            current={currentVariant()}
+            label={props.variantLabel}
+            onSelect={props.onVariantSelect}
+            fast={props.fast?.()}
+            onFastToggle={(next) => props.onFastToggle?.(next)}
+          />
         </Kobalte.Content>
       </Kobalte.Portal>
     </Kobalte>

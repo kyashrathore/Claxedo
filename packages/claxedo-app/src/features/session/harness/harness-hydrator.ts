@@ -151,6 +151,9 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     input.seed(scope)
     const key = stamp(params)
     const existingSession = !!params?.sessionId && params.sessionId !== "new"
+    // The session still runs its own harness under a held pick, so its config
+    // describes the harness the user just picked away from.
+    if (existingSession && input.state(scope)?.heldFrom) return
     if (existingSession) input.markServer?.(scope)
     const draftDefault = existingSession ? undefined : input.beginDraftDefault?.(scope, params)
     // The draft harness selection persists across directory switches — the

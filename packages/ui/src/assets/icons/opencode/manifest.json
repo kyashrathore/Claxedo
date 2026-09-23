@@ -1,8 +1,8 @@
 {
   "source": "packages/ui/src/components/icon.tsx",
   "extraction": "Source artwork; SHA-256 of viewBox + newline + SVG content",
-  "count": 120,
-  "uniqueGeometries": 119,
+  "count": 121,
+  "uniqueGeometries": 120,
   "icons": [
     {
       "id": "opencode-icon-codex-collapse-all",
@@ -358,6 +358,12 @@
       "name": "pencil-line",
       "viewBox": "0 0 20 20",
       "hash": "b9ae32d2155f78f5783296bd231fe26364222c358c15c9c96e1c37b132f51ccc"
+    },
+    {
+      "id": "opencode-icon-bolt",
+      "name": "bolt",
+      "viewBox": "0 0 20 20",
+      "hash": "dae644efaab2937741989f01e004bad58df5d07bc36a1263486d3995f5a69e8d"
     },
     {
       "id": "opencode-icon-mcp",

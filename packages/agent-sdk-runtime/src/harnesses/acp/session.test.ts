@@ -129,6 +129,67 @@ describe("ACP session config sync", () => {
   })
 })
 
+describe("ACP model and effort sync never runs a turn on values the picker did not show", () => {
+  const levelsFor: Record<string, string[]> = { a: ["low", "medium"], b: ["low", "medium", "xhigh"] }
+  const options = (model: string, effort: string) => [
+    { id: "model", name: "Model", category: "model", type: "select" as const, currentValue: model,
+      options: [{ value: "a", name: "A" }, { value: "b", name: "B" }] },
+    { id: "effort", name: "Effort", category: "thought_level", type: "select" as const, currentValue: effort,
+      options: levelsFor[model].map((value) => ({ value, name: value })) },
+  ]
+  // An agent that resets effort to "medium" on a model switch and clamps
+  // anything its current model does not list.
+  function agent(start: { model: string; effort: string }, clamp = false) {
+    let current = { ...start }
+    const calls: Array<{ configId: string; value: string }> = []
+    const conn = {
+      async request(_method: unknown, params: { configId: string; value: string }) {
+        calls.push({ configId: params.configId, value: params.value })
+        if (params.configId === "model") current = { model: params.value, effort: "medium" }
+        else current = { ...current, effort: clamp ? "medium" : params.value }
+        return { configOptions: options(current.model, current.effort) }
+      },
+    }
+    const state = merge(init({}), { configOptions: options(start.model, start.effort) })
+    return { conn, calls, state }
+  }
+  const turn = (modelID: string, variant?: string) =>
+    ({ agent: "build", model: { providerID: "connection:x", modelID }, ...(variant ? { variant } : {}), parts: [] }) as never
+
+  test("switches the model first, then applies an effort only the new model offers", async () => {
+    const { conn, calls, state } = agent({ model: "a", effort: "low" })
+    await sync(conn as never, state, "s", turn("b", "xhigh"), { syncMode: false })
+    expect(calls).toEqual([{ configId: "model", value: "b" }, { configId: "effort", value: "xhigh" }])
+  })
+
+  test("refuses an effort the current model does not offer instead of skipping it", async () => {
+    const { conn, state } = agent({ model: "a", effort: "low" })
+    await expect(sync(conn as never, state, "s", turn("a", "xhigh"), { syncMode: false }))
+      .rejects.toThrow("ACP agent does not offer effort xhigh; it offers low, medium")
+  })
+
+  test("refuses when the agent keeps a different effort than it was sent", async () => {
+    const { conn, state } = agent({ model: "b", effort: "low" }, true)
+    await expect(sync(conn as never, state, "s", turn("b", "xhigh"), { syncMode: false }))
+      .rejects.toThrow("ACP agent kept effort medium instead of xhigh")
+  })
+
+  test("matches the most specific model id first, whatever order the agent lists them in", async () => {
+    const cfg = [{ id: "model", name: "Model", category: "model", type: "select" as const, currentValue: "other",
+      options: [{ value: "gpt", name: "GPT" }, { value: "connection:x/gpt", name: "GPT (x)" }, { value: "other", name: "Other" }] }]
+    const calls: Array<{ value: string }> = []
+    const conn = { request: async (_method: unknown, params: { value: string }) => { calls.push({ value: params.value }); return {} } }
+    await sync(conn as never, merge(init({}), { configOptions: cfg }), "s", turn("gpt"), { syncMode: false })
+    expect(calls).toEqual([{ value: "connection:x/gpt" }])
+  })
+
+  test("refuses an effort for an agent with no effort control", async () => {
+    const state = merge(init({}), { configOptions: [options("a", "low")[0]] })
+    await expect(sync({ request: async () => ({}) } as never, state, "s", turn("a", "high"), { syncMode: false }))
+      .rejects.toThrow("ACP agent offers no effort control, so effort high cannot be applied")
+  })
+})
+
 describe("ACP advertised modes", () => {
   const base = () => init(null)
 

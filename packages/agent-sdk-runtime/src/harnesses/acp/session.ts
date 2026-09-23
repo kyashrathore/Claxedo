@@ -164,10 +164,11 @@ function pick(cfg: SessionConfigOption[] | null, kind: "mode" | "model" | "thoug
   return cfg?.find((item) => item.type === "select" && (item.category === kind || item.id === kind)) ?? null
 }
 
+/** The first of `ids`, in the caller's priority order, that the select offers. */
 function match(opt: SessionConfigOption | null, ids: string[]) {
   if (!opt || opt.type !== "select") return null
-  const set = new Set(ids)
-  return flat(opt.options ?? []).find((item) => set.has(item.value))?.value
+  const values = new Set(flat(opt.options ?? []).map((item) => item.value))
+  return ids.find((id) => values.has(id))
 }
 
 function currentValue(opt: SessionConfigOption | null): string | undefined {
@@ -527,40 +528,59 @@ export async function sync(
     }
   }
 
-  const effort = pick(next.cfg, "thought_level")
-  const effortId = input.variant ? match(effort, [input.variant, input.variant.toLowerCase()]) : undefined
-  if (effortId && currentValue(effort) !== effortId) {
-    next = merge(
-      next,
-      await conn.request(methods.agent.session.setConfigOption, {
-        sessionId,
-        configId: effort!.id,
-        value: effortId,
-      }),
-    )
+  // Model before effort: the effort option lists the levels of the model that
+  // is current, and an agent may reset effort on a model switch, so a level
+  // matched against the previous model is matched against the wrong list.
+  let effortInModel = false
+  if (input.model) {
+    const cfg = pick(next.cfg, "model")
+    const aid = match(cfg, ids(input.model, input.variant))
+    if (aid) {
+      effortInModel = !!input.variant && aid.endsWith(`/${input.variant}`)
+      // Skip if already set to the desired value — redundant setSessionConfigOption
+      // calls inject visible "/model" local commands into the ACP agent's conversation.
+      if (currentValue(cfg) !== aid) next = await setOption(conn, next, sessionId, cfg!, aid, "model")
+    } else if (input.model.modelID !== "default" && input.model.modelID !== resolvedModel(next)?.id) {
+      throw new Error(cfg
+        ? `ACP agent does not offer model ${input.model.modelID}`
+        : "ACP agent owns model selection and does not advertise a model selector")
+    }
   }
 
-  if (!input.model) return next
-  const cfg = pick(next.cfg, "model")
-  const aid = match(cfg, ids(input.model, input.variant))
-  if (aid) {
-    // Skip if already set to the desired value — redundant setSessionConfigOption
-    // calls inject visible "/model" local commands into the ACP agent's conversation.
-    if (currentValue(cfg) === aid) return next
-    next = merge(
-      next,
-      await conn.request(methods.agent.session.setConfigOption, {
-        sessionId,
-        configId: cfg!.id,
-        value: aid,
-      }),
-    )
-    return next
+  if (!input.variant || effortInModel) return next
+  const effort = pick(next.cfg, "thought_level")
+  const effortId = match(effort, [input.variant, input.variant.toLowerCase()])
+  if (!effortId) {
+    const offered = effort?.type === "select" ? flat(effort.options ?? []).map((option) => option.value) : []
+    throw new Error(offered.length
+      ? `ACP agent does not offer effort ${input.variant}; it offers ${offered.join(", ")}`
+      : `ACP agent offers no effort control, so effort ${input.variant} cannot be applied`)
   }
-  if (input.model.modelID !== "default" && input.model.modelID !== resolvedModel(next)?.id) {
-    throw new Error(cfg
-      ? `ACP agent does not offer model ${input.model.modelID}`
-      : "ACP agent owns model selection and does not advertise a model selector")
+  if (currentValue(effort) !== effortId) next = await setOption(conn, next, sessionId, effort!, effortId, "thought_level")
+  return next
+}
+
+/**
+ * Sets one select and confirms the value the agent kept. An agent may clamp or
+ * ignore a value it accepted on the wire; when its answer carries its options,
+ * a different current value is a refusal rather than a turn run on something
+ * the picker never showed.
+ */
+async function setOption(
+  conn: ACPConn,
+  state: ACPState,
+  sessionId: string,
+  option: SessionConfigOption,
+  value: string,
+  kind: "model" | "thought_level",
+) {
+  const meta = await conn.request(methods.agent.session.setConfigOption, { sessionId, configId: option.id, value })
+  const next = merge(state, meta)
+  if (meta.configOptions !== undefined) {
+    const kept = currentValue(pick(next.cfg, kind))
+    if (kept !== undefined && kept !== value) {
+      throw new Error(`ACP agent kept ${kind === "model" ? "model" : "effort"} ${kept} instead of ${value}`)
+    }
   }
   return next
 }

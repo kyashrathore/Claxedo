@@ -629,6 +629,26 @@ void describe("RuntimeStore", () => {
     reopened.close()
   })
 
+  void it("keeps a queued prompt's service tier across reopen, including on a queue table created before the column", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "s1", directory: "/workspace", agentSessionId: "a1" })
+    db(store).exec("ALTER TABLE runtime_delivery DROP COLUMN service_tier")
+    store.close()
+
+    const upgraded = new RuntimeStore(root)
+    upgraded.queuePrompt({ sessionId: "s1", messageId: "fast", parts: [], delivery: "queue", serviceTier: "priority" })
+    upgraded.queuePrompt({ sessionId: "s1", messageId: "standard", parts: [], delivery: "queue" })
+    upgraded.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(
+      reopened.listQueuedPrompts().map((row) => [row.messageId, row.serviceTier]),
+      [["fast", "priority"], ["standard", undefined]],
+    )
+    reopened.close()
+  })
+
   void it("routes an observation carrying an already-owned child session to the owning row (claude dual-channel split)", () => {
     // Repro of the live crash "UNIQUE constraint failed:
     // session_subagent.child_session_id": the claude harness reports one Task
@@ -2847,6 +2867,39 @@ void describe("RuntimeStore", () => {
     replayed.updateSessionConfig("s1", { handoff: null })
     assert.equal(replayed.getSessionConfig("s1")?.handoff, undefined)
     assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.handoff, undefined)
+  })
+
+  void it("persists why a handoff is pending, whether a sent message marked it, and the session it kept", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.bindSession({ sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 1 })
+    const from = { id: "claude", access: "native" } as const
+    first.updateSessionConfig("s1", {
+      harness: from,
+      handoff: { from, pending: true, transcript: "rebuilt", reason: "missing-session" },
+    })
+    first.updateSessionConfig("s2", {
+      harness: { id: "codex", access: "native" },
+      handoff: { from, pending: true, transcript: "switched", announced: true },
+    })
+    const kept = {
+      agentSessionId: "a1",
+      upstreamSessionId: "a1",
+      ownerKey: "proc:/work",
+      model: { providerID: "anthropic", modelID: "opus" },
+      variant: "high",
+      agent: null,
+      handoff: { from, pending: true, transcript: "rebuilt", reason: "missing-session" },
+    } as const
+    first.updateSessionConfig("s1", {
+      harness: { id: "codex", access: "native" },
+      handoff: { from, pending: true, transcript: "picked", source: kept },
+    })
+
+    const replayed = new RuntimeStore(root)
+    assert.deepEqual(replayed.getSessionConfig("s1")?.handoff, { from, pending: true, transcript: "picked", source: kept })
+    assert.deepEqual(replayed.getSessionConfig("s2")?.handoff, { from, pending: true, transcript: "switched", announced: true })
   })
 
 })

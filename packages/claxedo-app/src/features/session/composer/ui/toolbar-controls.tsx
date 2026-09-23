@@ -61,13 +61,6 @@ export function PromptToolbarControls(props: {
   providerLoading: Accessor<boolean>
   modelLabel: Accessor<string>
   model: Accessor<PickerState>
-  showVariantSelector: Accessor<boolean>
-  variantTitle: string
-  variantKeybind: string
-  variants: Accessor<string[]>
-  currentVariant: Accessor<string | undefined>
-  variantLabel: (value: string) => string
-  onVariantSelect: (value: string) => void
 }) {
   const addDisabled = () => props.mode() !== "normal" || props.harnessPending()
 
@@ -137,9 +130,6 @@ export function PromptToolbarControls(props: {
               triggerStyle={props.controlStyle()}
               sessionLocked={props.sessionLocked()}
               providerModel={props.model}
-              providerVariants={props.variants}
-              providerVariant={props.currentVariant}
-              onProviderVariantSelect={props.onVariantSelect}
             />
           )}
         </Show>

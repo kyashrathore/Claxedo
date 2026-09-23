@@ -243,6 +243,36 @@ export {
   type AgentProcessRole,
 } from "./process-observer"
 
+/**
+ * Conversation context owed to a session's fresh native thread, carried on
+ * every turn until one completes. `announced` records that the harness change
+ * was written onto a sent user message, so a retried first turn does not mark
+ * it again.
+ */
+export type SessionHandoff = {
+  from: SessionHarness
+  pending: true
+  transcript: string
+  reason?: "missing-session"
+  announced?: true
+  source?: SessionHandoffSource
+}
+
+/**
+ * The native session of the harness a handoff left, and the config it ran
+ * under. It is kept until a message is sent on the new harness, so picking the
+ * left harness back resumes its own thread instead of a transcript copy.
+ */
+export type SessionHandoffSource = {
+  agentSessionId: string
+  upstreamSessionId: string
+  ownerKey: string | null
+  model?: PromptModel
+  variant?: string | null
+  agent?: string | null
+  handoff?: Omit<SessionHandoff, "source">
+}
+
 export type SessionConfig = {
   /** Host-owned maximum permission level, retained across harness changes. */
   permissionCeiling?: import("./adapter-contract").AutoLevel
@@ -268,7 +298,7 @@ export type SessionConfig = {
    * instruction prose the group was also rendered into.
    */
   group?: SessionModelGroup | null
-  handoff?: { from: SessionHarness; pending: true; transcript: string; reason?: "missing-session" } | null
+  handoff?: SessionHandoff | null
 }
 
 /**
@@ -290,7 +320,7 @@ export type SessionConfigUpdate = {
   agent?: string | null
   instructions?: string | null
   group?: SessionModelGroup | null
-  handoff?: { from: SessionHarness; pending: true; transcript: string; reason?: "missing-session" } | null
+  handoff?: SessionHandoff | null
 }
 
 /**

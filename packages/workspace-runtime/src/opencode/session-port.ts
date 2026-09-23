@@ -150,7 +150,8 @@ export type OpenCodeSessionPort = Readonly<{
   remove(scope: WorkspaceScope, sessionID: string): Promise<void>
   fork(scope: WorkspaceScope, sessionID: string, boundary: ForkBoundary): Promise<SessionSummary>
   switchAgent(scope: WorkspaceScope, sessionID: string, agent: string): Promise<void>
-  switchModel(scope: WorkspaceScope, sessionID: string, model: { providerID: string; modelID: string }): Promise<void>
+  /** `variant` is the model's effort; absent runs the model's default. */
+  switchModel(scope: WorkspaceScope, sessionID: string, model: { providerID: string; modelID: string; variant?: string }): Promise<void>
 
   prompt(scope: WorkspaceScope, sessionID: string, request: PromptRequest): Promise<AdmittedMessage>
   command(
@@ -333,7 +334,10 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
     async switchModel(scope, sessionID, model) {
       const client = await host.client()
       await port.get(scope, sessionID)
-      await client.sessions.switchModel({ sessionID, model: { providerID: model.providerID, id: model.modelID } })
+      await client.sessions.switchModel({
+        sessionID,
+        model: { providerID: model.providerID, id: model.modelID, ...(model.variant ? { variant: model.variant } : {}) },
+      })
     },
 
     async prompt(scope, sessionID, request) {

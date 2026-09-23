@@ -1,4 +1,3 @@
-import { isCatalogHarness } from "../../harness/profile"
 import { resolveSubmittedConfig } from "../../submit/resolve"
 import type { ResolveSubmittedConfigContext } from "../../submit/types"
 import type { ExistingSessionConfig } from "./submit-session-config"
@@ -36,11 +35,23 @@ export function resolvePromptSubmitConfig(input: {
   defaultAgent: () => ResolveSubmittedConfigContext["defaultAgent"]
   agent: () => string | undefined
 }) {
-  const providerOwnsEffort = !input.harnessMode || (input.selection !== undefined && isCatalogHarness(input.selection))
-  const selectedVariant = providerOwnsEffort ? input.variant() : undefined
+  // Outside harness mode the provider picker owns effort; every harness —
+  // native or catalog — keeps its level in the harness picker's store.
+  const providerOwnsEffort = !input.harnessMode
+  // A bound session's model is its saved config (a picked model is saved before
+  // a submit reads it), but a changed effort lives only in the picker until a
+  // turn carries it. The picker speaks for the session once it holds the
+  // session's own model — hydration sets exactly that — and then its level, or
+  // explicitly none, is what the turn runs at. Before that its key is another
+  // scope's, and the saved level stands.
+  const picked = providerOwnsEffort ? undefined : input.modelKey()
+  const selectedVariant = providerOwnsEffort ? input.variant() : picked?.variant
   const existing = input.existing
   if (existing) {
-    const variant = selectedVariant ?? existing.variant
+    const describesSession = !!picked && picked.providerID === existing.model?.providerID && picked.modelID === existing.model.modelID
+    const variant: string | null | undefined = providerOwnsEffort
+      ? selectedVariant ?? existing.variant
+      : describesSession ? picked.variant ?? null : existing.variant
     const agent = input.agent() || existing.agent
     const config = resolveSubmittedConfig({
       harnessModelKey: existing.model,
@@ -49,7 +60,7 @@ export function resolvePromptSubmitConfig(input: {
       agentOverride: agent,
       ...(variant ? { variant } : {}),
     })
-    return config && { ...config, ...(variant ? { variant } : {}) }
+    return config && { ...config, ...(variant !== undefined ? { variant } : {}) }
   }
   return resolveSubmittedConfig({
     modelOptional: input.modelOptional && input.selection?.kind === "connection",

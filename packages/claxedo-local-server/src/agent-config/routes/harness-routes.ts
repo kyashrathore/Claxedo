@@ -70,6 +70,8 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
   const url = new URL(sessionId ? `/session/${encodeURIComponent(sessionId)}/config-options` : "/api/wr/harness-config-options", "http://workspace-runtime.local")
   url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
   appendSelection(url, selection)
+  const model = c.req.query("model")
+  if (model) url.searchParams.set("model", model)
   const response = await sandboxFetch(
     ws,
     `${url.pathname}${url.search}`,

@@ -7,6 +7,7 @@ import * as h from "./test-support/submit-harness"
 const realBuildRequestParts = buildRequestParts
 
 const PI = { kind: "native", harnessId: "pi" } as const
+const CODEX = { kind: "native", harnessId: "codex" } as const
 const config = {
   harness: { id: "pi", access: "native" },
   model: { providerID: "provider", modelID: "model" },
@@ -124,4 +125,44 @@ test("a failed config hydration preserves the prompt and reports the failure ins
   expect(h.harnessClaimCalls).toEqual([])
   expect(h.promptValue[0]).toMatchObject({ content: "recover this turn" })
   expect(h.toasts).toEqual([expect.objectContaining({ description: "Session config authorization failed" })])
+})
+
+test("a harness held in the picker switches the session, with its model and effort, before the prompt goes out", async () => {
+  h.state.localSessionConfig = config
+  h.state.heldHarness = CODEX
+  h.state.harnessMode = true
+  h.state.harnessSubmitModel = { key: { providerID: "codex", modelID: "gpt-5.5", variant: "high" }, name: "GPT-5.5" }
+  const submit = sessionSubmit({ id: "session-1" })
+  setPrompt("continue on codex")
+  await submit.handleSubmit(h.submitEvent())
+  await h.waitForSubmitEffect(() => h.calls.transportAsync === 1)
+
+  const configWrites = h.unsignedCalls.filter((call) => call.method === "PATCH" && call.url.includes("/session/session-1/config"))
+  expect(JSON.parse(configWrites[0]?.body ?? "{}")).toEqual({
+    harness: { id: "codex", access: "native" },
+    model: { providerID: "codex", modelID: "gpt-5.5" },
+    variant: "high",
+  })
+  expect(h.state.heldHarness).toBeUndefined()
+  expect(h.transportPromptAsyncCalls[0]).toMatchObject({ model: { providerID: "codex", modelID: "gpt-5.5" }, variant: "high" })
+  expect(h.toasts).toEqual([])
+})
+
+test("a held harness the session cannot switch to sends nothing and keeps the draft and the pick", async () => {
+  h.state.localSessionConfig = config
+  h.state.heldHarness = CODEX
+  h.state.harnessMode = true
+  h.state.harnessSubmitModel = { key: { providerID: "codex", modelID: "gpt-5.5" }, name: "GPT-5.5" }
+  h.state.sessionConfigSaveError = "Wait for the current turn to finish before switching harness"
+  const submit = sessionSubmit({ id: "session-1" })
+  setPrompt("keep this for codex")
+  await submit.handleSubmit(h.submitEvent())
+  await h.settleSubmitEffects()
+
+  expect(h.calls.transportAsync).toBe(0)
+  expect(h.optimisticAdds).toEqual([])
+  expect(h.promptCalls.reset).toEqual([])
+  expect(h.promptValue[0]).toMatchObject({ content: "keep this for codex" })
+  expect(h.state.heldHarness).toEqual(CODEX)
+  expect(h.toasts).toEqual([expect.objectContaining({ description: "Wait for the current turn to finish before switching harness" })])
 })

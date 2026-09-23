@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "fs"
+import { chmodSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "fs"
 import { execFileSync } from "child_process"
 import * as path from "path"
 import * as os from "os"
@@ -13,7 +13,7 @@ import {
   getShellArgs,
   getCommandShellArgs,
 } from "./core/shell"
-import { BIN_DIR, CLAXEDO_DIR, SHELL_DIR, SHELL_MARKER } from "./core/constants"
+import { BASH_DIR, BIN_DIR, CLAXEDO_DIR, SHELL_DIR, SHELL_MARKER } from "./core/constants"
 
 const TEST_ROOT = path.join(os.tmpdir(), `claxedo-shell-test-${process.pid}-${Date.now()}`)
 
@@ -259,18 +259,42 @@ describe("getShellArgs", () => {
 // ── getCommandShellArgs ─────────────────────────────────────────────────────
 
 describe("getCommandShellArgs", () => {
+  const zshRc = path.join(SHELL_DIR, ".zshrc")
+  const bashRcfile = path.join(BASH_DIR, "rcfile")
+  // These rc files are the developer's real generated ones unless the
+  // isolated-home preload (bunfig.toml, applied only when bun runs from this
+  // package) moved the data root into the temp dir. afterEach runs even when
+  // beforeEach fails, so it checks too.
+  const relative = path.relative(realpathSync(os.tmpdir()), CLAXEDO_DIR)
+  const isolated = !relative.startsWith("..") && !path.isAbsolute(relative)
+
+  beforeEach(() => {
+    expect({ CLAXEDO_DIR, isolated }).toEqual({ CLAXEDO_DIR, isolated: true })
+    mkdirSync(SHELL_DIR, { recursive: true })
+    mkdirSync(BASH_DIR, { recursive: true })
+    writeFileSync(zshRc, "")
+    writeFileSync(bashRcfile, "")
+  })
+
+  afterEach(() => {
+    if (!isolated) return
+    rmSync(zshRc, { force: true })
+    rmSync(bashRcfile, { force: true })
+  })
+
   it("sources zshrc inline for zsh", () => {
-    const args = getCommandShellArgs("/bin/zsh", "echo hello")
-    expect(args[0]).toBe("-lc")
-    expect(args[1]).toContain("source")
-    expect(args[1]).toContain("echo hello")
+    expect(getCommandShellArgs("/bin/zsh", "echo hello")).toEqual(["-lc", `source '${zshRc}' &&\necho hello`])
   })
 
   it("sources bash rcfile inline for bash", () => {
-    const args = getCommandShellArgs("/bin/bash", "echo hello")
-    expect(args[0]).toBe("-c")
-    expect(args[1]).toContain("source")
-    expect(args[1]).toContain("echo hello")
+    expect(getCommandShellArgs("/bin/bash", "echo hello")).toEqual(["-c", `source '${bashRcfile}' &&\necho hello`])
+  })
+
+  it("runs the bare command as a login shell when the rc file was never generated", () => {
+    rmSync(zshRc)
+    rmSync(bashRcfile)
+    expect(getCommandShellArgs("/bin/zsh", "echo hello")).toEqual(["-lc", "echo hello"])
+    expect(getCommandShellArgs("/bin/bash", "echo hello")).toEqual(["-lc", "echo hello"])
   })
 
   it("uses -lc for unknown shells", () => {

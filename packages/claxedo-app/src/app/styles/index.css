@@ -292,6 +292,134 @@
   }
 }
 
+/* The effort row sits on the picker's bottom edge, so its outer corners are the
+   surface radius minus the surface's 6px padding: concentric with the popover
+   in every theme, whatever `--surface-overlay-radius` it sets. Corners facing
+   another control stay tight so the slider and the fast button read as one
+   strip. Colours are the overlay roles, never raised/base surfaces: inside an
+   overlay those resolve to the popover's own fill and the track would vanish. */
+.harness-picker-effort-row {
+  --effort-outer-radius: max(calc(var(--surface-overlay-radius, 8px) - 6px), 4px);
+  --effort-inner-radius: 4px;
+  --effort-height: 28px;
+  --effort-thumb: 22px;
+  --effort-thumb-gap: 3px;
+  /* Thumb gap plus half the thumb, written as a literal: the slider reads it
+     back through getComputedStyle, which returns a custom property's text
+     unresolved, so a calc() here parses as 0 and clicks land a stop off. */
+  --effort-stop-inset: 14px;
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.harness-picker-effort {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: var(--effort-height);
+  border-radius: var(--effort-inner-radius) var(--effort-inner-radius) var(--effort-outer-radius)
+    var(--effort-outer-radius);
+  background: var(--overlay-surface-input);
+  outline: none;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.harness-picker-effort-row[data-fast="true"] .harness-picker-effort {
+  border-bottom-right-radius: var(--effort-inner-radius);
+}
+
+.harness-picker-effort:focus-visible {
+  box-shadow: 0 0 0 1.5px var(--overlay-border);
+}
+
+.harness-picker-effort[data-supported="false"] {
+  background: transparent;
+  border: 1px dashed var(--overlay-border);
+  cursor: default;
+}
+
+/* Thumb centre = inset + ratio * (width - 2 * inset); the fill ends one gap past
+   the thumb's trailing edge, and every stop sits on the same travel. */
+.harness-picker-effort-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--effort-ratio) * (100% - 2 * var(--effort-stop-inset)) + 2 * var(--effort-stop-inset));
+  border-radius: inherit;
+  border-bottom-right-radius: var(--effort-inner-radius);
+  border-top-right-radius: var(--effort-inner-radius);
+  background: var(--overlay-text);
+  transition: width 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.harness-picker-effort-stop {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--effort-stop-inset) + var(--effort-stop) * (100% - 2 * var(--effort-stop-inset)));
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--overlay-icon-muted);
+  transform: translate(-50%, -50%);
+}
+
+.harness-picker-effort-stop[data-filled="true"] {
+  background: color-mix(in srgb, var(--overlay-surface) 50%, transparent);
+}
+
+.harness-picker-effort-thumb {
+  position: absolute;
+  top: var(--effort-thumb-gap);
+  left: calc(var(--effort-thumb-gap) + var(--effort-ratio) * (100% - 2 * var(--effort-stop-inset)));
+  width: var(--effort-thumb);
+  height: var(--effort-thumb);
+  border-radius: 3px 3px max(calc(var(--effort-outer-radius) - var(--effort-thumb-gap)), 3px)
+    max(calc(var(--effort-outer-radius) - var(--effort-thumb-gap)), 3px);
+  background: var(--overlay-surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+  transition: left 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.harness-picker-effort[data-dragging="true"] :is(.harness-picker-effort-fill, .harness-picker-effort-thumb) {
+  transition: none;
+}
+
+.harness-picker-fast {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: var(--effort-height);
+  border-radius: var(--effort-inner-radius) var(--effort-inner-radius) var(--effort-outer-radius)
+    var(--effort-inner-radius);
+  background: var(--overlay-surface-input);
+  color: var(--overlay-icon);
+  outline: none;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+
+.harness-picker-fast:hover,
+.harness-picker-fast:focus-visible {
+  background: var(--overlay-surface-hover);
+  color: var(--overlay-text);
+}
+
+.harness-picker-fast[aria-pressed="true"] {
+  background: var(--overlay-text);
+  color: var(--overlay-surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.harness-picker-effort-fill, .harness-picker-effort-thumb, .harness-picker-fast) {
+    transition: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .harness-picker-panel {
     animation: none;

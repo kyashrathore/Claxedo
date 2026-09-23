@@ -22,6 +22,8 @@ export type HarnessSelectionState = {
   readonly configError?: string
   /** Chosen reasoning/thinking level, when the harness offers any. */
   readonly selectedThoughtLevel?: string
+  readonly serviceTiers?: readonly HarnessModelOption[] | null
+  readonly selectedServiceTier?: string
 }
 
 export function harnessMode(type?: HarnessType) {
@@ -85,6 +87,16 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
     // process — which is why this needed no new transport.
     ...(state.selectedThoughtLevel ? { variant: state.selectedThoughtLevel } : {}),
   }
+}
+
+/**
+ * The fast tier a prompt runs on, or `undefined` for the standard tier. A tier
+ * chosen under a previous model is dropped rather than sent: the options it came
+ * from belong to the model now selected.
+ */
+export function harnessServiceTierForSubmit(state: Pick<HarnessSelectionState, "serviceTiers" | "selectedServiceTier">) {
+  const tier = state.selectedServiceTier
+  return tier && state.serviceTiers?.some((option) => option.id === tier) ? tier : undefined
 }
 
 export function harnessModelNameForSubmit(state: HarnessSelectionState) {

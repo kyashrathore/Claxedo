@@ -54,35 +54,7 @@ export function isProviderListResponse(value: unknown): value is ProviderListRes
 
 export function normalizeProviderList(input: ProviderListResponse): NormalizedProviderListResponse {
   const all = input.all instanceof Map ? [...input.all.values()] : Array.isArray(input.all) ? input.all : []
-  return {
-    ...input,
-    all: new Map(
-      all.map(
-        (provider) =>
-          [
-            provider.id,
-            {
-              ...provider,
-              models: Object.fromEntries(
-                Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated"),
-              ),
-            },
-          ] as const,
-      ),
-    ),
-  }
-}
-
-/** Drop providers the user disabled in global config from the connected set. */
-export function filterConnectedByDisabledProviders(
-  input: NormalizedProviderListResponse,
-  disabledProviders: readonly string[] | undefined,
-): NormalizedProviderListResponse {
-  if (!disabledProviders?.length) return input
-  const disabled = new Set(disabledProviders)
-  const connected = input.connected.filter((id) => !disabled.has(id))
-  if (connected.length === input.connected.length) return input
-  return { ...input, connected }
+  return { ...input, all: new Map(all.map((provider) => [provider.id, provider] as const)) }
 }
 
 export function providerNeedsDetailHydration(

@@ -7,6 +7,7 @@ import { createSessionPort, type OpenCodeSessionPort } from "./session-port"
 import { createToolPort, type OpenCodeToolPort } from "./tool-port"
 import { createLaunchPolicy, type LaunchPolicyStore } from "./launch-policy"
 import { createProviderBindingPolicy, type ProviderBindingOverlay } from "./provider-binding"
+import { createProviderDefinitionPolicy, type ProviderDefinition } from "./provider-definition"
 import { createProviderPolicy, type ProviderConfigStore } from "./provider-policy"
 import type { WorkspaceScope } from "./scope"
 
@@ -16,10 +17,14 @@ export type OpenCodeRuntime = Readonly<{
   catalog: OpenCodeCatalogPort
   configuration: OpenCodeConfigurationPort
   providerConfig(scope: WorkspaceScope): Promise<ProviderConfigStore>
+  /** Declare the providers the engine has no row for; the set replaces the last one. */
+  defineProviders(definitions: readonly ProviderDefinition[]): Promise<void>
   /** Route the engine's providers at Claxedo's credential broker; absent providers keep the engine's own auth. */
   bindProviders(overlays: Record<string, ProviderBindingOverlay>): Promise<void>
   /** Why a turn on this provider must be refused, or nothing when it may run. */
   providerUnavailableReason(providerID: string): string | undefined
+  /** Settles once the host has carried its accounts and providers into the engine; a turn waits on it. */
+  providersBound(): Promise<void>
   /** The workspace's launch document (skills + MCP servers) enforced in the engine. */
   launch(scope: WorkspaceScope): Promise<LaunchPolicyStore>
   interactions: OpenCodeInteractionPort
@@ -40,13 +45,24 @@ export type OpenCodeRuntime = Readonly<{
  * is process-wide and fans out downstream; adapters and browser subscribers
  * never create their own SDK subscription.
  */
-export function createOpenCodeRuntime(options: OpenCodeHostOptions): OpenCodeRuntime {
+export type OpenCodeRuntimeOptions = OpenCodeHostOptions & Readonly<{
+  /**
+   * The host's first carry of accounts and providers into the engine. Absent,
+   * the engine runs on its own configuration alone and there is nothing to
+   * wait for.
+   */
+  providersBound?: () => Promise<void>
+}>
+
+export function createOpenCodeRuntime(options: OpenCodeRuntimeOptions): OpenCodeRuntime {
   const policy = createProviderPolicy()
+  const definitions = createProviderDefinitionPolicy()
   const bindings = createProviderBindingPolicy()
   const launch = createLaunchPolicy()
+  const { providersBound, ...hostOptions } = options
   const host = createOpenCodeHost({
-    ...options,
-    plugins: [...(options.plugins ?? []), policy.plugin, bindings.plugin, launch.plugin],
+    ...hostOptions,
+    plugins: [...(options.plugins ?? []), policy.plugin, definitions.plugin, bindings.plugin, launch.plugin],
   })
   const listeners = new Set<(event: ProjectedEvent) => void>()
   const pump: EventPump = createEventPump(host, {
@@ -64,8 +80,10 @@ export function createOpenCodeRuntime(options: OpenCodeHostOptions): OpenCodeRun
     catalog: createCatalogPort(host),
     configuration: createConfigurationPort(host),
     providerConfig: (scope) => policy.store(host, scope),
+    defineProviders: (next) => definitions.apply(next),
     bindProviders: (overlays) => bindings.apply(overlays),
     providerUnavailableReason: (providerID) => bindings.unavailableReason(providerID),
+    providersBound: providersBound ?? (() => Promise.resolve()),
     launch: (scope) => launch.store(host, scope),
     interactions: createInteractionPort(host),
     tools: createToolPort(host),

@@ -1318,7 +1318,6 @@ export default function SessionPage(props: {
                           hasScrollGesture={scrollGesture.active}
                           onUserScroll={markUserScroll}
                           onHistoryScroll={historyWindow.onScrollerScroll}
-                          onAutoScrollInteraction={autoScroll.handleInteraction}
                           shouldAnchorBottom={() =>
                             !paneLocation().hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
                           }

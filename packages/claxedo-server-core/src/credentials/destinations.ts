@@ -11,6 +11,8 @@
 import type { BindingInjection } from "@claxedo/egress-broker"
 import { credentialSecretMaterial, isSubscriptionKind } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialKind } from "@claxedo/server-core/credentials/types"
+import { listCustomProviders } from "@claxedo/server-core/credentials/custom-provider"
+import type { CredentialOrgScope } from "@claxedo/server-core/credentials/registry"
 
 export type ProviderDestination = {
   origin: string
@@ -169,13 +171,40 @@ const PROVIDER_ROWS: Record<string, ProviderRow> = {
 }
 
 /**
- * Whether this provider can be bound at all, asked without reading its secret.
+ * An operator-declared provider's row: its own base URL, reached with the key
+ * as a bearer token, the way an OpenAI-compatible endpoint takes it. It wins
+ * over a vendor row of the same id because the catalog serves the custom
+ * provider in that row's place, and the engine sends that id's requests to it.
+ */
+function customProviderRow(providerId: string, org: CredentialOrgScope | undefined): ProviderRow | undefined {
+  if (org === undefined) return undefined
+  const config = listCustomProviders(org).find((provider) => provider.providerID === providerId)
+  if (!config) return undefined
+  const url = new URL(config.baseURL)
+  const apiPath = url.pathname.replace(/\/+$/, "")
+  return () => ({
+    origin: url.origin,
+    methods: ["POST", "GET"],
+    pathPrefixes: [`${apiPath}/`],
+    apiPath,
+    injection: { header: "Authorization", scheme: "Bearer" },
+  })
+}
+
+/**
+ * The row for a provider. `org` names whose custom providers count; a caller
+ * delivering somewhere custom providers cannot be reached passes none.
  *
  * `Object.hasOwn`, because `in` reaches `Object.prototype`: a provider id of
  * `constructor` or `toString` answered true here and then had no row to bind.
  */
-export function hasProviderDestination(providerId: string): boolean {
-  return Object.hasOwn(PROVIDER_ROWS, providerId)
+function providerRow(providerId: string, org: CredentialOrgScope | undefined): ProviderRow | undefined {
+  return customProviderRow(providerId, org) ?? (Object.hasOwn(PROVIDER_ROWS, providerId) ? PROVIDER_ROWS[providerId] : undefined)
+}
+
+/** Whether this provider can be bound at all, asked without reading its secret. */
+export function hasProviderDestination(providerId: string, org?: CredentialOrgScope): boolean {
+  return providerRow(providerId, org) !== undefined
 }
 
 /**
@@ -192,7 +221,7 @@ export function providerDestinationShape(input: {
   providerId: string
   kind: CredentialKind
 }): Omit<ProviderDestination, "value"> | undefined {
-  const row = Object.hasOwn(PROVIDER_ROWS, input.providerId) ? PROVIDER_ROWS[input.providerId] : undefined
+  const row = providerRow(input.providerId, undefined)
   return row?.({ token: "", form: isSubscriptionKind(input.kind) ? "subscription" : "api-key" })
 }
 
@@ -200,8 +229,9 @@ export function providerDestination(input: {
   providerId: string
   kind: CredentialKind
   secret: string
+  org?: CredentialOrgScope
 }): ProviderDestination | undefined {
-  const row = Object.hasOwn(PROVIDER_ROWS, input.providerId) ? PROVIDER_ROWS[input.providerId] : undefined
+  const row = providerRow(input.providerId, input.org)
   if (!row) return undefined
   const material = credentialSecretMaterial({ kind: input.kind, secret: input.secret })
   if (!material) return undefined

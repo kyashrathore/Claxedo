@@ -20,7 +20,6 @@ export type MessageTimelineProps = {
   hasScrollGesture: () => boolean
   onUserScroll: () => void
   onHistoryScroll: () => void
-  onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
   hasScrollTarget: () => boolean
   restoreFollowing: (following: boolean) => void

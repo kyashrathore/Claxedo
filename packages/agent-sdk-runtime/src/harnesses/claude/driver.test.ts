@@ -944,3 +944,38 @@ describe("Claude turn usage", () => {
     })).toEqual(BOTH)
   })
 })
+
+describe("Claude turn effort is never dropped silently", () => {
+  const models = [
+    { value: "default", displayName: "Default", description: "", resolvedModel: "claude-opus-5-5", supportsEffort: true, supportedEffortLevels: ["low", "high", "max"] },
+    { value: "haiku", displayName: "Haiku", description: "", resolvedModel: "claude-haiku-4-5", supportsEffort: false },
+  ]
+  async function effortFor(modelID: string, variant: string) {
+    const calls: Parameters<NonNullable<ClaudeSdkDriverOptions["query"]>>[0][] = []
+    const query: NonNullable<ClaudeSdkDriverOptions["query"]> = (input) => {
+      calls.push(input)
+      return Object.assign((async function* () {})(), { close() {}, supportedModels: async () => models }) as unknown as Query
+    }
+    // A fresh driver: nothing has probed its model list, as after a server restart.
+    await createClaudeSdkDriver(turnHost(), { query, executable: () => "/fake/claude" }).runTurn({
+      sessionId: "session-1",
+      getAgentSessionId: () => "claude-sdk:session-1",
+      input: { parts: [{ type: "text", text: "hi" }], assistantMessageId: "assistant-1", model: { providerID: "claude", modelID }, variant },
+      directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+      observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
+    } as unknown as SdkRuntimeTurnInput)
+    return calls.at(-1)?.options?.effort
+  }
+
+  test("a cold model list is loaded, so the first turn still sends its effort", async () => {
+    expect(await effortFor("default", "max")).toBe("max")
+  })
+
+  test("a session saved under the full model id finds its alias row", async () => {
+    expect(await effortFor("claude-opus-5-5", "high")).toBe("high")
+  })
+
+  test("a level the model does not take fails the turn instead of vanishing", async () => {
+    await expect(effortFor("haiku", "high")).rejects.toThrow("does not run haiku at effort high")
+  })
+})

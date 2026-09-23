@@ -23,8 +23,11 @@ export function findFreePort(): Promise<number> {
 export async function findPidOnPort(port: number): Promise<number | undefined> {
   try {
     const { execSync } = await import("child_process")
+    // `lsof -i:PORT` alone also matches UDP sockets and clients whose remote
+    // end is PORT, so a browser's QUIC socket or a connected client would be
+    // reported as the port's holder.
     const cmd = process.platform === "darwin"
-      ? `lsof -ti:${port}`
+      ? `lsof -nP -t -iTCP:${port} -sTCP:LISTEN`
       : `fuser ${port}/tcp 2>/dev/null`
     const output = execSync(cmd, { encoding: "utf-8", timeout: 5000 }).trim()
     const pid = parseInt(output.split("\n")[0] ?? "", 10)

@@ -184,7 +184,9 @@ export type AgentRuntimeTurnStartInput = {
   format?: PromptInput["format"]
   system?: string
   permissionMode?: string
-  variant?: string
+  /** `null` asks for the harness's default effort, overriding a level the session saved. */
+  variant?: string | null
+  serviceTier?: string
   author?: PromptInput["author"]
   /**
    * What to do when a turn is already running for this session. Absent takes

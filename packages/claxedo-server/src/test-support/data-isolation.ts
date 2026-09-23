@@ -1,15 +1,18 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterAll } from "vitest"
 
 /**
- * Every data root this package can reach resolves from `os.homedir()` when its
+ * Every root this package can reach resolves from the user's home when its
  * environment variable is absent: `~/.claxedo` (server-core `dataDir()`, which
- * carries `claxedo.db` and `authority.db`) and `~/.workspace-runtime`
+ * carries `claxedo.db` and `authority.db`), `~/.workspace-runtime`
  * (workspace-runtime `workspaceRuntimeDataDir()`, aliased to source by
- * `vitest.config.ts`). A test that opens the database therefore migrates and
- * writes the developer's own profile unless something redirects it first.
+ * `vitest.config.ts`), and the harness configs `setupAgentHooks()` rewrites
+ * whenever a server starts (`~/.codex/hooks.json`, `~/.cursor/hooks.json`,
+ * `~/.claude/settings.json`, ...). A test that opens the database or starts a
+ * server therefore writes the developer's own profile unless something
+ * redirects it first.
  *
  * A setup file is the only hook early enough: it runs before the test file's
  * module graph is imported, so a store opened from a top-level import — ahead
@@ -21,8 +24,13 @@ import { afterAll } from "vitest"
  */
 const root = mkdtempSync(path.join(realpathSync(tmpdir()), "claxedo-server-vitest-"))
 
+const home = path.join(root, "home")
 const claxedo = path.join(root, "claxedo")
 const workspaceRuntime = path.join(root, "workspace-runtime")
+
+mkdirSync(home)
+process.env.HOME = home
+process.env.USERPROFILE = home
 
 process.env.CLAXEDO_DATA_DIR = claxedo
 process.env.WORKSPACE_RUNTIME_DATA_DIR = workspaceRuntime

@@ -678,6 +678,23 @@ describe("CodexHarnessAdapter", () => {
     await adapter.dispose()
   })
 
+  test("options describe the model they are asked for, never the last-created session's", async () => {
+    const mini = { ...codexModel(["low", "medium", "high"], "medium"), id: "gpt-mini", model: "gpt-mini", isDefault: false }
+    const fake = await makeFakeCodex({ models: [codexModel(["low", "high", "xhigh"], "high"), mini] })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+    const effort = async (model?: string) => (await adapter.probeConfigOptions(fake.dir, undefined, model)).options
+      .find((option) => option.category === "thought_level")
+    expect(await effort("gpt-mini")).toMatchObject({ currentValue: "medium", selectOptions: [{ id: "low" }, { id: "medium" }, { id: "high" }] })
+    adapter.setModel("gpt-mini")
+    expect(await effort()).toMatchObject({ currentValue: "high", selectOptions: [{ id: "low" }, { id: "high" }, { id: "xhigh" }] })
+    await adapter.dispose()
+  })
+
   test("passes the selected reasoning effort to Codex turn/start", async () => {
     const fake = await makeFakeCodex({
       models: [codexModel(["minimal", "high"], "high")],
@@ -698,6 +715,105 @@ describe("CodexHarnessAdapter", () => {
       params?: Record<string, unknown>
     })
     expect(requests.find((request) => request.method === "turn/start")!.params?.effort).toBe("minimal")
+  })
+
+  async function turnStartFor(input: { models: unknown[]; prompt: PromptInput; probe?: boolean }) {
+    const fake = await makeFakeCodex({ models: input.models })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("default")
+    if (input.probe) await adapter.probeConfigOptions(fake.dir)
+    const session = await adapter.createSession(fake.dir)
+    const events: unknown[] = []
+    for await (const event of executeTestTurn(adapter, session.id, input.prompt, fake.dir)) events.push(event)
+    await adapter.dispose()
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method: string
+      params?: Record<string, unknown>
+    })
+    return { turnStart: requests.find((request) => request.method === "turn/start")?.params, events }
+  }
+
+  test("a turn that arrives before any options probe still names its effort and tier", async () => {
+    const models = [{ ...codexModel(["low", "high"], "high"), serviceTiers: [{ id: "priority", name: "Fast", description: "" }] }]
+    const { turnStart } = await turnStartFor({ models, prompt: { ...prompt("gpt-5.5", "low"), serviceTier: "priority" } })
+    expect(turnStart).toMatchObject({ model: "gpt-5.5", effort: "low", serviceTier: "priority" })
+  })
+
+  test("every turn names a concrete model and effort, so nothing carries over from the last one", async () => {
+    const { turnStart } = await turnStartFor({ models: [codexModel(["low", "medium", "high"], "medium")], prompt: prompt("default") })
+    expect(turnStart).toMatchObject({ model: "gpt-5.5", effort: "medium" })
+  })
+
+  test("a hidden model still has its effort confirmed", async () => {
+    const hidden = { ...codexModel(["low", "high"], "high"), id: "gpt-hidden", model: "gpt-hidden", hidden: true, isDefault: false }
+    const { turnStart } = await turnStartFor({ models: [codexModel(["low"], "low"), hidden], prompt: prompt("gpt-hidden", "high") })
+    expect(turnStart).toMatchObject({ model: "gpt-hidden", effort: "high" })
+  })
+
+  test("refuses a level the model does not offer instead of running without it", async () => {
+    const { turnStart, events } = await turnStartFor({ models: [codexModel(["low", "high"], "high")], prompt: prompt("gpt-5.5", "xhigh") })
+    expect(turnStart).toBeUndefined()
+    expect(JSON.stringify(events)).toContain("does not run gpt-5.5 at effort xhigh; it accepts low, high")
+  })
+
+  test("exposes the selected Codex model's fast tier as a service_tier option", async () => {
+    const fake = await makeFakeCodex({
+      models: [
+        {
+          ...codexModel(["low", "high"], "high"),
+          serviceTiers: [{ id: "priority", name: "Fast", description: "2x speed, increased usage" }],
+        },
+        { ...codexModel(["low", "high"], "high"), id: "gpt-5.4", model: "gpt-5.4", isDefault: false },
+      ],
+    })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+    expect((await adapter.probeConfigOptions(fake.dir)).options).toContainEqual({
+      id: "service_tier",
+      name: "Speed",
+      category: "service_tier",
+      type: "select",
+      selectOptions: [{ id: "priority", name: "Fast", description: "2x speed, increased usage" }],
+    })
+    expect((await adapter.probeConfigOptions(fake.dir, undefined, "gpt-5.4")).options.some((option) => option.category === "service_tier")).toBe(false)
+    await adapter.dispose()
+  })
+
+  test.each([
+    ["priority", "priority"],
+    [undefined, null],
+    ["flex", null],
+  ] as const)("a requested tier %p reaches turn/start as %p", async (requested, sent) => {
+    const fake = await makeFakeCodex({
+      models: [{ ...codexModel(["low", "high"], "high"), serviceTiers: [{ id: "priority", name: "Fast", description: "" }] }],
+    })
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+    await adapter.probeConfigOptions(fake.dir)
+    const session = await adapter.createSession(fake.dir)
+    const input = { ...prompt("gpt-5.5"), ...(requested ? { serviceTier: requested } : {}) }
+    for await (const _event of executeTestTurn(adapter, session.id, input, fake.dir)) {}
+    await adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method: string
+      params?: Record<string, unknown>
+    })
+    const turnStart = requests.find((request) => request.method === "turn/start")!.params!
+    expect("serviceTier" in turnStart).toBe(true)
+    expect(turnStart.serviceTier).toBe(sent)
   })
 
   test("answers the app-server refresh request from its own ChatGPT auth file", async () => {

@@ -28,6 +28,8 @@ beforeEach(() => {
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
+    serviceTiers: null,
+    selectedServiceTier: undefined,
     readiness: "ready",
     optionsSource: "empty",
     optionsStale: false,

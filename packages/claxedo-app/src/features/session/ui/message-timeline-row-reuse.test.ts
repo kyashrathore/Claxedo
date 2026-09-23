@@ -4,27 +4,34 @@ import { Timeline } from "./message-timeline.data"
 import { TimelineRow } from "./timeline-row-model"
 
 describe("timeline row reuse", () => {
-  test("renders a durable cross-harness boundary as a named divider", () => {
-    const marker = textPart("part_handoff", "msg_handoff", "")
+  test("marks the sent message that crossed harnesses with a named divider before its reply", () => {
+    const marker = textPart("msg_user-handoff", "msg_user", "")
     Object.assign(marker, {
       from: { id: "claude", access: "native" },
       to: { id: "codex", access: "native" },
     })
     Object.defineProperty(marker, "type", { value: "handoff" })
+    const parts = new Map<string, Part[]>([
+      ["msg_user", [textPart("part_prompt", "msg_user", "keep going"), marker]],
+      ["msg_reply", [textPart("part_reply", "msg_reply", "done")]],
+    ])
 
     const rows = Timeline.constructMessageRows(
-      userMessage("msg_handoff"),
-      () => [marker],
-      [],
+      userMessage("msg_user"),
+      (id) => parts.get(id) ?? [],
+      [assistantMessage("msg_reply", "msg_user", { completed: 3 })],
       1,
       false,
       "idle",
       false,
     )
+    const tags = rows.map((row) => row._tag)
 
     expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
       expect.objectContaining({ label: "handoff", harness: "Codex" }),
     )
+    expect(tags.indexOf("UserMessage")).toBeLessThan(tags.indexOf("TurnDivider"))
+    expect(tags.indexOf("TurnDivider")).toBeLessThan(tags.indexOf("AssistantPart"))
   })
 
   test("bounds cold assistant part rows without truncating canonical turn semantics", () => {

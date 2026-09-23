@@ -250,6 +250,7 @@ const modelsContextInput = {
     const available = createMemo(() =>
       providers.connected().flatMap((p) =>
         Object.values(p.models)
+          .filter((m) => m.connected)
           .map((m) => ({
             ...m,
             provider: p,

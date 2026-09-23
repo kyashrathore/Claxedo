@@ -38,7 +38,8 @@ import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-p
 import { harnessEffortLevels } from "../../harness-effort"
 import { createLiveModelSource } from "../../live-model-source"
 import { DEFAULT_MODEL_ID } from "../../session-model"
-import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-options"
+import { isHarnessEffortLevel } from "@claxedo/agent-runtime-contract"
+import { modelConfigOption, requireTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
@@ -326,13 +327,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     this.firstPartyMcp = firstPartyMcpProvider(config)
     this.currentPlugins = claudePluginConfigs(config.launch)
     if (providerProjectionKey(this.auth.anthropic) !== previous) this.modelSource.invalidate()
-    // Held, not applied here: the SDK takes `effort` as a per-query option, so
-    // it is read when the next session is created rather than pushed at the
-    // running one. `undefined` means "let the model decide", which is not the
-    // same as any named level and must survive a config apply that omits it.
-    if ("effort" in config) {
-      this.currentEffort = typeof config.effort === "string" ? config.effort : undefined
-    }
   }
 
   private mcpServersFor(sessionId: string): { mcpServers?: Record<string, McpServerConfig> } {
@@ -343,9 +337,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     }
     return Object.keys(mcpServers).length ? { mcpServers } : {}
   }
-
-  /** Selected reasoning effort, echoed back through `configOptions`. */
-  private currentEffort: string | undefined
 
   async createAgentSession() {
     return { id: `${CLAUDE_PENDING_PREFIX}${randomUUID()}` }
@@ -598,11 +589,14 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       return result
     }
 
-    const turnEffort = resolveTurnEffort(
-      this.modelSource.peek(input.directory),
-      input.input.model?.modelID,
-      input.input.variant,
-    )
+    const turnEffort = input.input.variant
+      ? claudeEffortLevel(requireTurnEffort({
+          harness: "Claude",
+          models: await this.modelSource.models(input.directory),
+          modelId: turnModel(input.input.model?.modelID, input.model),
+          requested: input.input.variant,
+        }))
+      : undefined
     const systemPrompt = claudeSystemPrompt(input.input.system)
     const permissionModeId = this.permissionSelection.currentId(input.sessionId)
     const permissions = readClaudePermissionState(this.host.getSessionConfig(input.sessionId)?.permissionState)
@@ -744,7 +738,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    */
   private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOption[] {
     if (models.length === 0) return []
-    const effort = thoughtLevelConfigOption(models, currentModel, this.currentEffort)
+    const effort = thoughtLevelConfigOption(models, currentModel)
     return effort
       ? [modelConfigOption(models, currentModel), effort]
       : [modelConfigOption(models, currentModel)]
@@ -787,6 +781,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // The row `defaultSessionModel` selects when the session names no model,
         // so the picker marks the same one the turn sends.
         ...(model.value === DEFAULT_MODEL_ID ? { isDefault: true as const } : {}),
+        ...(model.resolvedModel ? { resolvedModel: model.resolvedModel } : {}),
         // Model-specific effort metadata drives the harness config options.
         ...(model.supportsEffort ? { supportsEffort: true } : {}),
         ...(model.supportedEffortLevels?.length
@@ -859,6 +854,11 @@ function claudeMcpServers(input: Record<string, ResolvedMcpServer>): Record<stri
  * Omitting `model` instead hands the choice to the CLI's settings resolution,
  * which answers `settings.json` and can name a model the picker never showed.
  */
+function claudeEffortLevel(level: string | undefined) {
+  if (level === undefined || isHarnessEffortLevel(level)) return level
+  throw new Error(`The Claude SDK has no effort level ${level}`)
+}
+
 function turnModel(input: string | undefined, configuredModel: string) {
   return text(input) ?? text(configuredModel)
 }

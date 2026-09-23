@@ -6,7 +6,8 @@ export type ExistingSessionConfig = {
   harnessType: HarnessType
   agent?: string
   model?: { providerID: string; modelID: string }
-  variant?: string
+  /** `null` clears a saved level: the session runs at the harness's default. */
+  variant?: string | null
 }
 
 export function parseExistingSessionConfig(input: unknown): ExistingSessionConfig | undefined {
@@ -25,7 +26,7 @@ export function parseExistingSessionConfig(input: unknown): ExistingSessionConfi
 export function sameExistingSessionConfig(left: ExistingSessionConfig, right: ExistingSessionConfig) {
   return sameHarnessSelection(left.harnessType, right.harnessType) &&
     left.agent === right.agent &&
-    left.variant === right.variant &&
+    (left.variant ?? null) === (right.variant ?? null) &&
     left.model?.providerID === right.model?.providerID &&
     left.model?.modelID === right.model?.modelID
 }

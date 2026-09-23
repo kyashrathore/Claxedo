@@ -1,21 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { filterConnectedByDisabledProviders, normalizeProviderList, providerNeedsDetailHydration } from "./provider-list"
-
-describe("filterConnectedByDisabledProviders", () => {
-  test("removes disabled ids from connected without mutating the input", () => {
-    const cached = normalizeProviderList({
-      all: [
-        { id: "openai", name: "OpenAI", models: {} },
-        { id: "clinepass-2", name: "Cline pass 2", models: {} },
-      ],
-      connected: ["openai", "clinepass-2"],
-      default: {},
-    })
-    const filtered = filterConnectedByDisabledProviders(cached, ["clinepass-2"])
-    expect(filtered.connected).toEqual(["openai"])
-    expect(cached.connected).toEqual(["openai", "clinepass-2"])
-  })
-})
+import { normalizeProviderList, providerNeedsDetailHydration } from "./provider-list"
 
 describe("providerNeedsDetailHydration", () => {
   test("connected index rows with one default model still need detail", () => {

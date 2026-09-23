@@ -2,6 +2,7 @@ import { createMachineWakes } from "../../session/machine-wakes"
 import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import fs from "node:fs"
 import path from "node:path"
+import type { Duplex } from "node:stream"
 import os from "node:os"
 import { Hono } from "hono"
 import type { MiddlewareHandler } from "hono"
@@ -1929,20 +1930,36 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     hostname: process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1",
   })
   built.injectWebSocket(server)
+  // `closeAllConnections` reaches only the sockets the HTTP parser still owns.
+  // A WebSocket handshake takes its socket off that list while `close()` keeps
+  // waiting for it, so shutdown ends those itself.
+  const upgraded = new Set<Duplex>()
+  server.on("upgrade", (_request: unknown, socket: Duplex) => {
+    upgraded.add(socket)
+    socket.once("close", () => upgraded.delete(socket))
+  })
+  const released = new Promise<void>((resolve) => {
+    server.once("close", () => {
+      process.off("SIGTERM", stopServer)
+      process.off("SIGINT", stopServer)
+      process.off("exit", releaseDataDirOwner)
+      void built.dispose().finally(() => {
+        releaseDataDirOwner()
+        services.close?.()
+        resolve()
+      })
+    })
+  })
+  // `close()` alone waits for every open connection, and the app's event
+  // streams never end on their own.
   const stopServer = async () => {
     stopConfigRenewal()
     server.close()
-    await built.dispose()
+    if ("closeAllConnections" in server) server.closeAllConnections()
+    for (const socket of upgraded) socket.destroy()
+    await released
     await shutdownControlPlaneRuntime()
   }
-  server.on("close", async () => {
-    await built.dispose()
-    process.off("SIGTERM", stopServer)
-    process.off("SIGINT", stopServer)
-    process.off("exit", releaseDataDirOwner)
-    releaseDataDirOwner()
-    services.close?.()
-  })
 
   // Initialize agent hooks (wrapper scripts, shell integration)
   setupAgentHooks({ port }).catch((err) => {

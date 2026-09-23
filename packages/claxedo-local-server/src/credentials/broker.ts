@@ -246,7 +246,7 @@ export function createLocalCredentialBroker(input: {
    */
   function selectedCredentials(scope: SecretScope, org: string) {
     return activeCredentialsForScope(scope, { onOutage: "throw" }, org)
-      .map((row) => hasProviderDestination(row.credential.provider_id)
+      .map((row) => hasProviderDestination(row.credential.provider_id, org)
         ? row
         : { credential: row.credential, unavailable: row.unavailable ?? "no_destination" })
   }
@@ -258,7 +258,7 @@ export function createLocalCredentialBroker(input: {
   async function destinationFor(credential: CredentialMetadata, org: string) {
     const secret = await readSecretById(credential.id, org)
     if (!secret) return undefined
-    return providerDestination({ providerId: credential.provider_id, kind: credential.kind, secret })
+    return providerDestination({ providerId: credential.provider_id, kind: credential.kind, secret, org })
   }
 
   function binding(

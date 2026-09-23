@@ -85,6 +85,8 @@ const icons = {
   "new-session-active": `<path d="M6 11.3818V14H8.61818L18 4.61818L15.3818 2L6 11.3818Z" fill="currentColor" fill-opacity="0.1"/>
 <path d="M12 2H2V18H18V8M6 11.3818V14H8.61818L18 4.61818L15.3818 2L6 11.3818Z" stroke="currentColor"/>`,
   "pencil-line": `<path d="M9.58301 17.9166H17.9163M17.9163 5.83325L14.1663 2.08325L2.08301 14.1666V17.9166H5.83301L17.9163 5.83325Z" stroke="currentColor" stroke-linecap="square"/>`,
+  // Fast mode: the speed tier a model can run a turn on.
+  bolt: `<path d="M11.25 2.5L4.5 11.25H9.75L8.75 17.5L15.5 8.75H10.25L11.25 2.5Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>`,
   // The official Model Context Protocol mark, as published by lobe-icons (MIT)
   // on a 24 grid and scaled onto this file's 20 one. It replaces a hand-traced
   // stroke version whose paths ran from 0.97 to 19.18 and clipped at the corner.
@@ -366,6 +368,7 @@ const CODEX_CUSTOM_GLYPHS = {
   "codex-custom-magnifying-glass-menu": "magnifying-glass-menu",
   "codex-custom-marketplace": "marketplace",
   "codex-custom-mcp": "mcp",
+  "codex-custom-bolt": "bolt",
   "codex-custom-models": "models",
   "codex-custom-three-dots": "codex-three-dots",
   "codex-custom-panel-restore": "panel-restore",

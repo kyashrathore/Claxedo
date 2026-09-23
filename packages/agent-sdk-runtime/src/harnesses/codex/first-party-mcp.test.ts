@@ -41,6 +41,7 @@ process.stdin.on("data", (chunk) => {
     if (message.method === "initialize") write({ id: message.id, result: { userAgent: "fake-codex" } })
     if (message.method === "account/login/start") write({ id: message.id, result: { type: "apiKey" } })
     if (message.method === "account/logout") write({ id: message.id, result: {} })
+    if (message.method === "model/list") write({ id: message.id, result: { data: [], nextCursor: null } })
     if (message.method === "thread/start") {
       fs.appendFileSync(logPath, JSON.stringify(message) + "\\n")
       write({ id: message.id, result: { thread: { id: "thread-" + message.id } } })

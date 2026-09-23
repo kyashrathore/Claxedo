@@ -10,7 +10,7 @@ import type { CodexActiveThread } from "./active-thread"
 
 type DynamicCodexThread = Pick<
   CodexActiveThread,
-  "sessionId" | "agentSessionId" | "directory" | "model" | "effort" | "observeSubagent" | "adoptSubagent"
+  "sessionId" | "agentSessionId" | "directory" | "model" | "effort" | "serviceTier" | "observeSubagent" | "adoptSubagent"
 > & { process: Pick<CodexAppServerProcess, "request" | "onMessage"> }
 
 export async function spawnDynamicCodexAgent(input: {
@@ -121,6 +121,7 @@ async function runDynamicCodexChild(
       sandboxPolicy: codexSandboxPolicy(settings.sandbox, active.directory),
       ...(active.model ? { model: active.model } : {}),
       ...(active.effort ? { effort: active.effort } : {}),
+      ...(active.serviceTier !== undefined ? { serviceTier: active.serviceTier } : {}),
     }, modelRequestDeadline())
     await completed
   } finally {
