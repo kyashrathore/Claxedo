@@ -369,6 +369,9 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
     expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
     expect(child.exitCode).toBe(0)
     expect(fs.existsSync(discoveryPath)).toBe(false)
+    expect(stderr).toMatch(new RegExp(`daemon stopping service=daemon kind=idle idleMs=\\d+ pid=${child.pid}`))
+    expect(stderr).toContain(`daemon exit requested service=daemon trigger=lifecycle pid=${child.pid}`)
+    expect(stderr).toContain(`daemon exited service=daemon code=0 pid=${child.pid}`)
   } catch (error) {
     throw new Error(`${String(error)}\n${stderr.slice(-4000)}`, { cause: error })
   } finally {
@@ -376,6 +379,113 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
     fs.rmSync(root, { recursive: true, force: true })
   }
 }, 30_000)
+
+test("a terminal whose daemon was killed is reported gone and restored from history by the replacement", async () => {
+  if (!fs.existsSync(SERVER_BUNDLE)) {
+    console.warn("[skip] server bundle missing — run `bun run predev` first")
+    return
+  }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-pty-gone-test-"))
+  const workspaceDirectory = path.join(root, "workspace")
+  fs.mkdirSync(workspaceDirectory)
+  execFileSync("git", ["init", workspaceDirectory], { stdio: "ignore" })
+  const directory = encodeURIComponent(workspaceDirectory)
+  const daemonToken = "pty-gone-daemon-token"
+  let log = ""
+  const started: ChildProcess[] = []
+  const sockets: Array<ReturnType<typeof openPtySocket>> = []
+
+  const startDaemon = async (generation: string) => {
+    const port = await freePort()
+    const serverLog = fs.openSync(path.join(root, "server.log"), "a")
+    const child = fork(SERVER_BUNDLE, [], {
+      ...claxedoServerForkOptions({
+        ...Object.fromEntries(
+          Object.entries(Bun.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+        ),
+        HOME: root,
+        CLAXEDO_CHILD_PORT: String(port),
+        CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
+        CLAXEDO_DAEMON_TOKEN: daemonToken,
+        CLAXEDO_DAEMON_GENERATION: generation,
+        CLAXEDO_DAEMON_DISCOVERY_PATH: path.join(root, "data", "local-daemon.json"),
+        CLAXEDO_DATA_DIR: path.join(root, "data"),
+      }, serverLog),
+      execPath: electronExecutable(),
+      stdio: ["ignore", "ignore", "pipe", "ipc"],
+    })
+    fs.closeSync(serverLog)
+    started.push(child)
+    child.stderr?.setEncoding("utf8")
+    child.stderr?.on("data", (chunk) => { log += String(chunk) })
+    const base = `http://127.0.0.1:${port}`
+    await waitForHealth(base, child, () => log)
+    const daemon = createDaemonFetch({ endpoint: () => ({ origin: base, capability: daemonToken }) })
+    expect((await daemon(`/api/claxedo/workspace/resolve?directory=${directory}`, { method: "POST" })).status).toBe(200)
+    const attach = (ptyId: string) => {
+      const socket = openPtySocket(
+        `ws://127.0.0.1:${port}/api/wr/pty/${encodeURIComponent(ptyId)}/connect?directory=${directory}`,
+        daemonToken,
+      )
+      sockets.push(socket)
+      return socket
+    }
+    const createPty = async (body: Record<string, unknown>) => {
+      const res = await daemon(`/api/wr/pty?directory=${directory}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      expect(res.status).toBe(200)
+      return (await res.json() as { id: string }).id
+    }
+    return { child, daemon, attach, createPty }
+  }
+
+  try {
+    const first = await startDaemon("pty-gone-first")
+    const lostId = await first.createPty({ title: "lost", initialCommand: "printf 'written-before-the-daemon-died\\n'" })
+    const before = first.attach(lostId)
+    await before.opened
+    await before.waitForText("written-before-the-daemon-died")
+    before.ws.close()
+    first.child.kill("SIGKILL")
+    await new Promise((resolve) => first.child.once("exit", resolve))
+
+    const second = await startDaemon("pty-gone-second")
+    // The lookup the terminal asks before retrying: the PTY route's own
+    // not-found code, carried through the local proxy unchanged.
+    const lookup = await second.daemon(`/api/wr/pty/${encodeURIComponent(lostId)}?directory=${directory}`)
+    expect(lookup.status).toBe(404)
+    expect(await lookup.json()).toEqual({ error: { code: "pty_session_not_found", message: "Session not found" } })
+    await expect(second.attach(lostId).opened).rejects.toThrow("PTY WebSocket failed to open")
+
+    const restoredId = await second.createPty({ title: "lost", env: { previousPtyId: lostId } })
+    expect(restoredId).not.toBe(lostId)
+    const restored = second.attach(restoredId)
+    await restored.opened
+    expect(await restored.waitForText("Session contents restored")).toContain("written-before-the-daemon-died")
+    restored.ws.close()
+
+    second.child.kill("SIGTERM")
+    await new Promise((resolve) => second.child.once("exit", resolve))
+
+    expect(log).toContain(`pid=${first.child.pid}`)
+    expect(log).not.toContain(`daemon exited service=daemon code=0 pid=${first.child.pid}`)
+    expect(log).toContain(`terminal lookup: no such PTY in this process service=pty-route ptyId=${lostId}`)
+    expect(log).toContain(`terminal attach refused service=embedded-workspace-runtime ptyId=${lostId}`)
+    expect(log).toMatch(new RegExp(`creating session service=pty id=${restoredId} .*restoring=${lostId}`))
+    expect(log).toMatch(new RegExp(`pty history restored service=pty id=${restoredId} previousPtyId=${lostId} restoredChars=[1-9]`))
+    expect(log).toContain(`daemon exit requested service=daemon trigger=SIGTERM pid=${second.child.pid}`)
+    expect(log).toContain(`daemon exited service=daemon code=0 pid=${second.child.pid}`)
+  } catch (error) {
+    throw new Error(`${String(error)}\n${log.slice(-6000)}`, { cause: error })
+  } finally {
+    for (const socket of sockets) socket.ws.close()
+    for (const child of started) if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}, 120_000)
 
 async function freePort() {
   const server = net.createServer()

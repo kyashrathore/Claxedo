@@ -244,6 +244,10 @@ type MachineOperationRun = {
   released?: true
 }
 
+export type LocalDaemonStopReason =
+  | { kind: "idle"; idleMs: number }
+  | { kind: "stop_daemon"; operationId: string }
+
 export function createLocalDaemonLifecycle(options: {
   activity?: () => LocalDaemonWorkActivity
   /**
@@ -251,7 +255,7 @@ export function createLocalDaemonLifecycle(options: {
    * `stop_daemon`; it must resolve only once the owners are actually released,
    * because the receipt is written from what it reached.
    */
-  onStop: () => void | Promise<unknown>
+  onStop: (reason: LocalDaemonStopReason) => void | Promise<unknown>
   /**
    * Ends the process. Called after `onStop` has settled AND any receipt that
    * asked for it has been committed, so a stop's own receipt is never lost to
@@ -382,7 +386,8 @@ export function createLocalDaemonLifecycle(options: {
     const current = evaluate()
     if (current.residencyPins === 0 && current.idleRemainingMs === 0) {
       state = "stopping"
-      void Promise.resolve(options.onStop()).finally(() => {
+      const idleMs = current.at - (idleSince ?? current.at)
+      void Promise.resolve(options.onStop({ kind: "idle", idleMs })).finally(() => {
         state = "stopped"
         stopped()
       })
@@ -666,7 +671,7 @@ export function createLocalDaemonLifecycle(options: {
     if (!run) return
     state = "stopping"
     try {
-      await options.onStop()
+      await options.onStop({ kind: "stop_daemon", operationId })
     } finally {
       state = "stopped"
     }
