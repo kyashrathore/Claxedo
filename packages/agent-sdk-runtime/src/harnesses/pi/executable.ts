@@ -30,7 +30,8 @@ export function resolvePiExecutable(env: NodeJS.ProcessEnv = process.env): strin
       )
       if (!fs.statSync(candidate).isFile()) continue
       if (/\.(cmd|bat)$/i.test(candidate)) {
-        const packageRoot = path.join(path.dirname(candidate), "node_modules/@earendil-works/pi-coding-agent")
+        const packageRoot = shimmedPackageRoot(path.dirname(candidate))
+        if (!packageRoot) continue
         const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8"))
         const binary = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.pi
         if (typeof binary !== "string" || !binary) continue
@@ -46,6 +47,21 @@ export function resolvePiExecutable(env: NodeJS.ProcessEnv = process.env): strin
   }
   return undefined
 }
+/**
+ * Where npm put the package a Windows shim launches: a global prefix keeps
+ * `pi.cmd` beside its `node_modules`, a project install keeps it inside
+ * `node_modules/.bin`, one level below the package.
+ */
+function shimmedPackageRoot(shimDirectory: string) {
+  for (const root of [
+    path.join(shimDirectory, "node_modules", "@earendil-works", "pi-coding-agent"),
+    path.join(shimDirectory, "..", "@earendil-works", "pi-coding-agent"),
+  ]) {
+    if (fs.existsSync(path.join(root, "package.json"))) return root
+  }
+  return undefined
+}
+
 export function requirePiExecutable() {
   const binary = resolvePiExecutable()
   if (!binary) throw new Error(`Pi executable not found. ${PI_INSTALL_HINT}`)
