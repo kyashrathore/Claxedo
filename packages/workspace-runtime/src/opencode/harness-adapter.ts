@@ -22,6 +22,7 @@ import type { OpenCodeRuntime } from "./runtime"
 import { WorkspaceScope } from "./scope"
 import type { ProjectedEvent } from "./event-pump"
 import { openCodePartId, type SessionMessage, type SessionSummary } from "./session-port"
+import { createTurnUsage } from "./turn-usage"
 import { errorMessage } from "../error-message"
 import { rec, str } from "../json-value"
 
@@ -232,7 +233,7 @@ function terminal(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamE
   return undefined
 }
 
-function projectTurnEvent(event: ProjectedEvent, sessionID: string): AgentRuntimeStreamEvent | undefined {
+function projectTurnEvent(event: ProjectedEvent): AgentRuntimeStreamEvent | undefined {
   const data = asRecordOrEmpty(event.data)
   if (event.type === "session.execution.started") return { type: "session-status", status: "busy", harness: "opencode" }
   if (event.type === "session.text.delta" && typeof data.delta === "string") {
@@ -260,7 +261,7 @@ function projectTurnEvent(event: ProjectedEvent, sessionID: string): AgentRuntim
   if (event.type === "session.tool.failed" && typeof data.id === "string") {
     return { type: "tool-error", toolCallId: data.id, error: JSON.stringify(data.error), harness: "opencode" }
   }
-  return terminal(event, sessionID)
+  return undefined
 }
 
 function prompt(input: PromptInput) {
@@ -493,6 +494,11 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     })
     try {
       await runtime.events.ready()
+      // Read before the prompt is admitted: the total's growth from here to
+      // the terminal is this turn's usage. A failed read costs the turn its
+      // reconciliation, not the turn.
+      const opened = await runtime.sessions.get(scope, id).then((session) => session.tokens, () => undefined)
+      const usage = createTurnUsage(id, opened)
       await runtime.sessions.switchAgent(scope, id, input.agent)
       await runtime.sessions.switchModel(scope, id, input.model)
       this.streaming.set(id, scope)
@@ -503,9 +509,17 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
         // needs that name to tell this turn's terminal from its successor's.
         const executing = eventAssistantMessageID(event)
         if (executing) this.executions.set(id, executing)
-        const projected = projectTurnEvent(event, id)
+        const ended = terminal(event, id)
+        if (ended) {
+          // The engine commits a durable event's projection before publishing
+          // it, so the total read after the terminal holds every step before it.
+          const closing = await usage.close(async () => (await runtime.sessions.get(scope, id)).tokens, event)
+          if (closing) yield closing
+          yield ended
+          return
+        }
+        const projected = projectTurnEvent(event) ?? usage.observe(event)
         if (projected) yield projected
-        if (terminal(event, id)) return
       }
     } catch (error) {
       yield { type: "error", error: errorMessage(error), harness: "opencode" }

@@ -4,8 +4,12 @@ import { join } from "node:path"
 import { describe, expect, mock, test } from "bun:test"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { OpenCodeSdkHarnessAdapter } from "./harness-adapter"
-import type { ProjectedEvent } from "./event-pump"
+import { createEventPump, type ProjectedEvent } from "./event-pump"
+import type { OpenCodeHost } from "./host"
 import type { OpenCodeRuntime } from "./runtime"
+import type { TokenUsage } from "./session-port"
+
+const NO_TOKENS: TokenUsage = { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
 
 function workspace() {
   return realpathSync(mkdtempSync(join(tmpdir(), "claxedo-sdk-adapter-")))
@@ -25,6 +29,8 @@ function runtime(options: {
     for (const listener of Array.from(listeners)) listener(event)
   }
   const running = new Set<string>()
+  /** Each session's recorded usage total, as `session.get` reports it. */
+  const totals = new Map<string, TokenUsage>()
   const sessions = {
     list: mock(async (scope: { directory: string }) => ({
       sessions: [{ id: "ses_1", title: "SDK", directory: scope.directory, createdAt: 1, updatedAt: 2 }],
@@ -35,6 +41,7 @@ function runtime(options: {
       directory: scope.directory,
       createdAt: 1,
       updatedAt: 2,
+      tokens: totals.get(id) ?? NO_TOKENS,
     })),
     create: mock(async (scope: { directory: string }, input: { id?: string; title?: string }) => ({
       id: input.id ?? "ses_created",
@@ -112,12 +119,12 @@ function runtime(options: {
     providerUnavailableReason: (providerID: string) => options.unavailableProvider?.[providerID],
     close: async () => {},
   } as unknown as OpenCodeRuntime
-  return { value, sessions, launch, launchWrites, emit, finish: (sessionID: string, assistantMessageID = "msg_a") => {
+  return { value, sessions, totals, launch, launchWrites, emit, finish: (sessionID: string, assistantMessageID = "msg_a", seq = 9) => {
     running.delete(sessionID)
     emit({
       id: "evt_done",
       type: "session.execution.succeeded",
-      durable: { aggregateID: sessionID, seq: 9 },
+      durable: { aggregateID: sessionID, seq },
       hintOnly: false,
       // The engine names the turn its execution belonged to; a terminal
       // without one cannot be attributed to a turn at all.
@@ -532,5 +539,239 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     expect(await stopping).toEqual({ execution: "terminal", cleanup: "unknown" })
     // Only A's session was ever interrupted.
     expect(fake.sessions.interrupt.mock.calls.map((call: unknown[]) => call[1])).toEqual(["ses_a"])
+  })
+})
+
+function tokens(input: number, output: number, reasoning: number, read: number, write: number): TokenUsage {
+  return { input, output, reasoning, cache: { read, write } }
+}
+
+function plus(a: TokenUsage, b: TokenUsage): TokenUsage {
+  return tokens(
+    a.input + b.input,
+    a.output + b.output,
+    a.reasoning + b.reasoning,
+    a.cache.read + b.cache.read,
+    a.cache.write + b.cache.write,
+  )
+}
+
+/** A durable engine event recording usage against a session, as the pump projects it. */
+function recorded(type: string, sessionID: string, seq: number, usage?: TokenUsage, data: Record<string, unknown> = {}): ProjectedEvent {
+  return {
+    id: `evt_${seq}`,
+    type,
+    durable: { aggregateID: sessionID, seq },
+    hintOnly: false,
+    data: { sessionID, assistantMessageID: `msg_step_${seq}`, ...(usage ? { tokens: usage, cost: 0 } : {}), ...data },
+  }
+}
+
+function usageEvent(kind: "delta" | "cumulative", sessionID: string, seq: number, usage: TokenUsage, contextUsed: number) {
+  return {
+    type: "usage",
+    contextSize: 0,
+    contextUsed,
+    observation: { kind, providerObservationId: `${sessionID}:${seq}`, nativeSessionId: sessionID, tokens: usage },
+    harness: "opencode",
+  }
+}
+
+const FINISHED = { type: "finish", sessionId: "ses_1", harness: "opencode" }
+
+/** Every category a distinct power of two, so a swapped or merged category changes every sum. */
+const FIRST_STEP = tokens(1, 2, 4, 8, 16)
+const SECOND_STEP = tokens(32, 64, 128, 256, 512)
+const EARLIER_TURNS = tokens(1000, 1000, 1000, 1000, 1000)
+
+describe("OpenCode turn usage", () => {
+  function startTurn(adapter: OpenCodeSdkHarnessAdapter, directory: string) {
+    const events: unknown[] = []
+    const done = (async () => {
+      for await (const event of adapter.executeTurn(binding(directory, "ses_1"), promptInput("work", "1"))) events.push(event)
+    })()
+    return { events, done }
+  }
+
+  test("meters each step as it ends and closes the turn on the growth of the session's recorded total", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    fake.totals.set("ses_1", EARLIER_TURNS)
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    fake.emit(recorded("session.step.ended", "ses_1", 12, FIRST_STEP))
+    fake.emit(recorded("session.step.ended", "ses_1", 17, SECOND_STEP))
+    fake.totals.set("ses_1", plus(EARLIER_TURNS, plus(FIRST_STEP, SECOND_STEP)))
+    fake.finish("ses_1", "msg_a", 18)
+    await turn.done
+
+    expect(turn.events).toEqual([
+      usageEvent("delta", "ses_1", 12, FIRST_STEP, 1 + 8 + 16),
+      usageEvent("delta", "ses_1", 17, SECOND_STEP, 32 + 256 + 512),
+      usageEvent("cumulative", "ses_1", 18, plus(FIRST_STEP, SECOND_STEP), 32 + 256 + 512),
+      FINISHED,
+    ])
+  })
+
+  test("a step the event stream never delivered is still in the turn's closing total", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    fake.emit(recorded("session.step.ended", "ses_1", 17, SECOND_STEP))
+    fake.totals.set("ses_1", plus(FIRST_STEP, SECOND_STEP))
+    fake.finish("ses_1", "msg_a", 18)
+    await turn.done
+
+    expect(turn.events).toEqual([
+      usageEvent("delta", "ses_1", 17, SECOND_STEP, 32 + 256 + 512),
+      usageEvent("cumulative", "ses_1", 18, plus(FIRST_STEP, SECOND_STEP), 32 + 256 + 512),
+      FINISHED,
+    ])
+  })
+
+  test("a step replayed after the event stream reconnects is metered once", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const wire = (type: string, seq: number, usage?: TokenUsage) => {
+      const event = recorded(type, "ses_1", seq, usage)
+      return { id: event.id, type, durable: { ...event.durable, version: 1 }, data: event.data }
+    }
+    let connections = 0
+    async function* stream(signal: AbortSignal) {
+      connections += 1
+      if (connections === 1) {
+        await until(() => fake.sessions.prompt.mock.calls.length === 1)
+        fake.totals.set("ses_1", plus(FIRST_STEP, SECOND_STEP))
+        yield wire("session.step.ended", 12, FIRST_STEP)
+        return
+      }
+      yield wire("session.step.ended", 12, FIRST_STEP)
+      yield wire("session.step.ended", 17, SECOND_STEP)
+      yield wire("session.execution.succeeded", 18)
+      await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }))
+    }
+    const host = {
+      client: async () => ({ events: { subscribe: (options: { signal: AbortSignal }) => stream(options.signal) } }),
+      setEventHealth: () => {},
+    } as unknown as OpenCodeHost
+    const listeners = new Set<(event: ProjectedEvent) => void>()
+    const pump = createEventPump(host, {
+      onEvent: (event) => { for (const listener of Array.from(listeners)) listener(event) },
+      sleep: async () => {},
+    })
+    const events: OpenCodeRuntime["events"] = {
+      start: () => pump.start(),
+      ready: () => pump.ready(),
+      subscribe(listener) {
+        listeners.add(listener)
+        pump.start()
+        return () => listeners.delete(listener)
+      },
+      checkpoint: (aggregateID) => pump.checkpoint(aggregateID),
+    }
+    const adapter = new OpenCodeSdkHarnessAdapter({
+      runtime: { ...fake.value, events },
+      workspaceID: "ws_1",
+      directory,
+      reportOwnerFailure: () => {},
+    })
+    try {
+      const turn = startTurn(adapter, directory)
+      await turn.done
+
+      expect(connections).toBe(2)
+      expect(turn.events).toEqual([
+        usageEvent("delta", "ses_1", 12, FIRST_STEP, 1 + 8 + 16),
+        usageEvent("delta", "ses_1", 17, SECOND_STEP, 32 + 256 + 512),
+        usageEvent("cumulative", "ses_1", 18, plus(FIRST_STEP, SECOND_STEP), 32 + 256 + 512),
+        FINISHED,
+      ])
+    } finally {
+      await pump.stop()
+    }
+  })
+
+  test("a failed step that reports tokens and compaction usage are metered, a failed step that reports none is not", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    fake.emit(recorded("session.step.failed", "ses_1", 12, FIRST_STEP, { error: { type: "aborted" } }))
+    fake.emit(recorded("session.step.failed", "ses_1", 13, undefined, { error: { type: "aborted" } }))
+    fake.emit(recorded("session.usage.recorded", "ses_1", 14, SECOND_STEP, { source: "compaction" }))
+    fake.totals.set("ses_1", plus(FIRST_STEP, SECOND_STEP))
+    fake.finish("ses_1", "msg_a", 15)
+    await turn.done
+
+    // Compaction is a side request: the context stays what the last step sent.
+    expect(turn.events).toEqual([
+      usageEvent("delta", "ses_1", 12, FIRST_STEP, 1 + 8 + 16),
+      usageEvent("delta", "ses_1", 14, SECOND_STEP, 1 + 8 + 16),
+      usageEvent("cumulative", "ses_1", 15, plus(FIRST_STEP, SECOND_STEP), 1 + 8 + 16),
+      FINISHED,
+    ])
+  })
+
+  test("a step the provider reported no usage for is not metered as a measured zero", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    fake.emit(recorded("session.step.ended", "ses_1", 12, NO_TOKENS))
+    fake.finish("ses_1", "msg_a", 13)
+    await turn.done
+
+    expect(turn.events).toEqual([FINISHED])
+  })
+
+  test("a session total the engine cannot report leaves the step usage standing and says so", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+    fake.sessions.get.mockRejectedValueOnce(new Error("engine closed"))
+
+    fake.emit(recorded("session.step.ended", "ses_1", 12, FIRST_STEP))
+    fake.finish("ses_1", "msg_a", 13)
+    await turn.done
+
+    expect(turn.events).toEqual([
+      usageEvent("delta", "ses_1", 12, FIRST_STEP, 1 + 8 + 16),
+      {
+        type: "diagnostic",
+        diagnostic: {
+          code: "opencode_turn_usage_unreconciled",
+          message: expect.stringContaining("engine closed"),
+          severity: "warn",
+          source: "opencode-adapter",
+        },
+        harness: "opencode",
+      },
+      FINISHED,
+    ])
+  })
+
+  test("a session total the engine cannot report before the prompt still runs the turn", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    fake.sessions.get.mockRejectedValueOnce(new Error("engine busy"))
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    fake.emit(recorded("session.step.ended", "ses_1", 12, FIRST_STEP))
+    fake.totals.set("ses_1", FIRST_STEP)
+    fake.finish("ses_1", "msg_a", 13)
+    await turn.done
+
+    expect(turn.events).toEqual([
+      usageEvent("delta", "ses_1", 12, FIRST_STEP, 1 + 8 + 16),
+      expect.objectContaining({ type: "diagnostic", diagnostic: expect.objectContaining({ code: "opencode_turn_usage_unreconciled" }) }),
+      FINISHED,
+    ])
   })
 })

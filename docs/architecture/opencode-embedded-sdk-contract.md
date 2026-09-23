@@ -705,24 +705,31 @@ Consistent with the published union (READ): every `V2Event` carries
 `SessionUsageUpdated` and `server.connected` do not.
 
 **Consequence for R6.** `session.usage.updated` has no durable sequence, so it
-cannot be checkpointed or replayed after a reconnect. Usage must be
-snapshot-derived, per Decision 5:
+cannot be checkpointed or replayed after a reconnect. Turn usage is metered
+from the durable records and closed against the session total
+(`workspace-runtime/src/opencode/turn-usage.ts`):
 
-- per-turn authority: assistant-message `tokens` from paged `message.list`
-  (`SessionMessageAssistant.tokens?: TokenUsageInfo`, `cost?: MoneyUSD` — both
-  READ, both **optional**);
-- session-level reconciliation: `session.get` → `SessionInfo.tokens` / `cost`.
+- live progress: every durable `session.step.ended`, `session.step.failed` with
+  tokens, and `session.usage.recorded` (compaction, title generation) is a delta
+  observation keyed by `aggregateID:seq`. `TokenUsageInfo` is already disjoint
+  (`input` excludes cache reads and writes, `output` excludes `reasoning`);
+- per-turn authority: the growth of `session.get` → `SessionInfo.tokens` from
+  before the prompt to after the terminal event, emitted as one cumulative
+  observation. The engine adds exactly those three records to the total in the
+  transaction that commits each event, and `events.subscribe` has no resume
+  cursor, so the total is what covers events missed while disconnected.
   VERIFIED present on a freshly created session
   (`{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}}`, cost `0`);
+- an assistant message's `tokens` is one step's usage, not the turn's: each
+  step creates its own assistant message;
 - aggregate audit only: `session.stats` → `SessionStatsInfo`, which is a
   **time-ranged dashboard rollup** (`range`, `sessions`, `activeDays`,
   `streak`, per-model usage). It cannot repair a specific missing per-message
   fact.
 
-**OPEN:** `tokens` and `cost` are optional on assistant messages. Unit 3 must
-define the reconciliation outcome for a completed assistant message that
-carries neither (e.g. `finish: "error"` / `"interrupted"`). Absence must not be
-metered as zero.
+The engine writes 0 for a category the provider did not report, so an all-zero
+record is metered as absent, never as a measured zero; a turn whose total did
+not grow settles as unavailable.
 
 ## 6. Session transfer (the Node migration path)
 
