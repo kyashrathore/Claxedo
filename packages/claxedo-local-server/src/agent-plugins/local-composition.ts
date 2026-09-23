@@ -32,6 +32,7 @@ import {
   type MaterializedAgentPluginGeneration,
 } from "./runtime/materialize"
 import { runtimeArtifactStore, runtimeMcpServers } from "./runtime/runtime-contribution"
+import { withLivePluginSkills } from "../plugins/skills/harness-launch"
 
 /**
  * The signed user's own runtime world, as the control plane hands it to a
@@ -226,7 +227,7 @@ export function createLocalAgentPluginsComposition(
   const harnessLaunch = async () => {
     await current
     await signedWork.catch(() => undefined)
-    return agentPluginHarnessLaunch(signedGeneration ?? activeGeneration)
+    return withLivePluginSkills(await agentPluginHarnessLaunch(signedGeneration ?? activeGeneration))
   }
   return {
     routeContributions: [

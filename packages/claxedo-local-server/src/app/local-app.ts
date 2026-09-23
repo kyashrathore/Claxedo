@@ -80,6 +80,8 @@ import {
   type RecoveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import { localDocumentsRoutes } from "./local-documents"
+import { LivePluginRoutes } from "../plugins/routes"
+import { LIVE_PLUGINS_ROUTE_PATH } from "../plugins/service"
 
 /**
  * Paths whose responses carry credential material: the registry routers, and
@@ -499,6 +501,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/api/claxedo/workspace", localWorkspaceRoutes)
   app.route("/api/claxedo/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/projects", LocalProjectRoutes(authRouteOptions(services)))
+  app.route(LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes(authRouteOptions(services)))
   // The renderer's inventory contract uses the hosted-compatible list path in
   // every product. On desktop, the authoritative local workspace store answers
   // it; this avoids treating an intentionally absent hosted router as a 404.
