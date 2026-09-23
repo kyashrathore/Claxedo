@@ -227,6 +227,23 @@ describe("conversation chat registry", () => {
     })
   })
 
+  test("a canonical page identical to the fragment that preceded it still lifts the fragment mark", () => {
+    registerSessionConversationChat("ses_1")
+    const settled = { ...message("msg_1", "ses_1"), time: { created: 1, completed: 2 } } as Message
+    const parts = { msg_1: [textPart("part_1", "ses_1", "msg_1", "the whole reply")] }
+
+    expect(hydrateRegisteredConversationSnapshot({
+      sessionID: "ses_1", messages: [settled], parts, fragmentParts: true,
+    })).toBe(true)
+    expect(registeredConversationSnapshot("ses_1").fragmentParts).toEqual(new Set(["msg_1"]))
+
+    expect(hydrateRegisteredConversationSnapshot({
+      sessionID: "ses_1", messages: [settled], parts,
+      canonicalMessageIDs: new Set(["msg_1"]), canonicalPartMessageIDs: new Set(["msg_1"]),
+    })).toBe(true)
+    expect(registeredConversationSnapshot("ses_1").fragmentParts).toEqual(new Set())
+  })
+
   test("re-hydrating an unchanged snapshot is a no-op", () => {
     registerSessionConversationChat("ses_1")
 
