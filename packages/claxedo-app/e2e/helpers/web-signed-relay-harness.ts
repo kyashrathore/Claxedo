@@ -162,16 +162,25 @@ export async function startSignedRelayFixture(opts: {
     throw error
   }
 
-  const inventory = await fetch(`${info.relayUrl}/workspaces/${info.workspaceId}/session`, {
-    headers: { authorization: `Bearer ${info.runtimeAccessToken}` },
-    signal: AbortSignal.timeout(15_000),
-  }).catch(async (error) => {
-    await stopChild(child)
-    throw error
-  })
-  if (!inventory.ok) {
-    await stopChild(child)
-    throw new Error(`Signed relay inventory failed: ${inventory.status} ${await inventory.text()}`)
+  // The fixture prints its record as soon as it has started the host tunnel,
+  // not once the tunnel has connected, and the relay answers
+  // `host_tunnel_offline` until it has; a refused first dial retries 1s later.
+  const onlineBy = Date.now() + 15_000
+  for (;;) {
+    const inventory = await fetch(`${info.relayUrl}/workspaces/${info.workspaceId}/session`, {
+      headers: { authorization: `Bearer ${info.runtimeAccessToken}` },
+      signal: AbortSignal.timeout(15_000),
+    }).catch(async (error) => {
+      await stopChild(child)
+      throw error
+    })
+    if (inventory.ok) break
+    const body = await inventory.text()
+    if (!body.includes('"host_tunnel_offline"') || Date.now() > onlineBy) {
+      await stopChild(child)
+      throw new Error(`Signed relay inventory failed: ${inventory.status} ${body}`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
   }
 
   return { info: { ...info, browserUrl: opts.browserUrl }, log: () => log, close: () => stopChild(child) }
