@@ -15,7 +15,7 @@ import { codexMcpApproval } from "./mcp-elicitation"
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
 
 export type CodexTurnUsageState = {
-  /** Raw session-cumulative totals from the previous tokenUsage event, for in-turn delta recovery. */
+  /** The thread's lifetime totals at its previous tokenUsage event, for in-turn delta recovery. */
   previousTotals?: Record<string, unknown>
   previousTotalsSignature?: string
   /** Raw token fields accumulated across every request of the current turn. */
@@ -35,7 +35,11 @@ export type CodexAppServerAdapterState = {
     input?: Record<string, unknown>
     itemType?: string
   }>
-  turnUsage?: CodexTurnUsageState
+  /**
+   * Keyed by thread: one app-server reports every thread it runs, and a
+   * thread's `total` only differences against that same thread's.
+   */
+  turnUsageByThread?: Record<string, CodexTurnUsageState>
   /**
    * Last account-level limit that actually fired (`rateLimitReachedType` set).
    * Thread `systemError` and failed turns do not carry that sentence, so the
@@ -55,6 +59,17 @@ function pruneTurnState(state?: CodexAppServerAdapterState): CodexAppServerAdapt
       ? { lastLimitedRateLimitMessage: state.lastLimitedRateLimitMessage }
       : {}),
   }
+}
+
+function endThreadTurn(
+  state: CodexAppServerAdapterState,
+  event: { payload: unknown },
+  context: HarnessEventAdapterContext,
+): CodexAppServerAdapterState {
+  const threadId = threadOf(event, context)
+  if (threadId === context.threadId) return pruneTurnState(state)
+  const { [threadId]: _ended, ...turnUsageByThread } = state.turnUsageByThread ?? {}
+  return { ...state, turnUsageByThread }
 }
 
 function payload(event: { payload: unknown }) {
@@ -150,8 +165,12 @@ function itemId(event: { payload: unknown }, fallback: string) {
   return text(eventFields(event).itemId) ?? text(payload(event).itemId) ?? text(item(event)?.id) ?? fallback
 }
 
+function threadOf(event: { payload: unknown }, context: HarnessEventAdapterContext) {
+  return text(payload(event).threadId) ?? context.threadId
+}
+
 function sessionId(event: { payload: unknown }, context: HarnessEventAdapterContext) {
-  return text(payload(event).sessionId) ?? text(eventFields(event).threadId) ?? context.threadId
+  return text(payload(event).sessionId) ?? threadOf(event, context)
 }
 
 function normalizeItemType(raw: unknown) {
@@ -298,10 +317,10 @@ function usage(
     contextUsed: contextUsed ?? contextSize ?? 0,
     ...(observation ? { observation } : {}),
   })
-  // `last` is one API request and the session-cumulative `total` is the
-  // authoritative observation identity: an unchanged total is a duplicate
-  // emission of the same request, not new spend. Duplicates still refresh the
-  // context meter but must not contribute a metering observation.
+  // `last` is one API request and the thread's lifetime `total` identifies
+  // it: an unchanged total is the same request emitted again, not new spend.
+  // A duplicate still refreshes the context meter but carries no metering
+  // observation.
   const totalsSignature = total ? JSON.stringify(total) : undefined
   if (totalsSignature !== undefined && totalsSignature === turnUsage?.previousTotalsSignature) {
     return { event: usageEvent(), turnUsage }
@@ -309,8 +328,8 @@ function usage(
   // A turn spans many API requests. Sum each request into a turn-cumulative
   // accumulator (kind "cumulative" replaces on the meter side, so emitting the
   // bare per-request `last` would drop every request but the final one).
-  // Within a turn, prefer the difference of session totals so a missed
-  // emission is recovered; the turn's first request falls back to `last`.
+  // Within a turn, the difference of the thread's totals recovers a missed
+  // emission; the turn's first request has no previous total and uses `last`.
   const previousTotals = turnUsage?.previousTotals
   const delta = (field: CodexUsageField) => {
     if (total && previousTotals) {
@@ -353,7 +372,7 @@ function usage(
 }
 
 function completionEvents(
-  event: { payload: unknown; threadId?: unknown },
+  event: { payload: unknown },
   context: HarnessEventAdapterContext,
   lastLimitedRateLimitMessage?: string,
 ) {
@@ -820,14 +839,14 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           return [{ type: "session-status", status: "busy" }]
 
         case "turn/completed":
-          return { state: pruneTurnState(state), events: completionEvents(event, context, state.lastLimitedRateLimitMessage) }
+          return { state: endThreadTurn(state, event, context), events: completionEvents(event, context, state.lastLimitedRateLimitMessage) }
 
         case "thread/status/changed":
           return threadStatusEvents(row)
 
         case "thread/closed":
           return {
-            state: pruneTurnState(state),
+            state: endThreadTurn(state, event, context),
             events: [
               { type: "session-status", status: "idle" },
               { type: "finish", sessionId: sessionId(event, context) },
@@ -850,10 +869,18 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         }
 
         case "thread/tokenUsage/updated": {
-          const result = usage(row, state.turnUsage, sessionId(event, context))
+          const threadId = threadOf(event, context)
+          const byThread = state.turnUsageByThread ?? {}
+          const { [threadId]: _previous, ...otherThreads } = byThread
+          const result = usage(row, own(byThread, threadId), threadId)
           if (!result) return []
           return {
-            state: { ...state, ...(result.turnUsage ? { turnUsage: result.turnUsage } : {}) },
+            state: {
+              ...state,
+              // Re-inserted last, so the bound evicts the thread that reported
+              // longest ago rather than the one this runtime was opened for.
+              turnUsageByThread: boundKeyedRecord({ ...otherThreads, [threadId]: result.turnUsage }, RETAINED_WIRE_KEYS_MAX),
+            },
             events: [result.event],
           }
         }

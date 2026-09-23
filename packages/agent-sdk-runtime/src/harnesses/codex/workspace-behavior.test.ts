@@ -14,6 +14,7 @@ import { createAgentRuntime, type AgentHarnessFactory } from "../../runtime"
 import type { AgentHarnessFactoryContext } from "../../runtime/contracts"
 import { createSqliteRuntimeStore } from "../../stores/sqlite"
 import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
+import { asRecord } from "@claxedo/helpers/guards"
 
 const tempDirs: string[] = []
 
@@ -85,6 +86,7 @@ async function makeFakeCodex(options: {
   models?: unknown[]
   subagent?: boolean
   subagentActivity?: boolean
+  foreignSession?: boolean
   initializeDelayMs?: number
   loginDelayMs?: number
   ignoreSigterm?: boolean
@@ -102,12 +104,14 @@ const mcpConsent = ${JSON.stringify(options.mcpConsent === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
 const subagent = ${JSON.stringify(options.subagent === true)}
 const subagentActivity = ${JSON.stringify(options.subagentActivity === true)}
+const foreignSession = ${JSON.stringify(options.foreignSession === true)}
 const initializeDelayMs = ${JSON.stringify(options.initializeDelayMs ?? 0)}
 const loginDelayMs = ${JSON.stringify(options.loginDelayMs ?? 0)}
 const ignoreSigterm = ${JSON.stringify(options.ignoreSigterm === true)}
 const models = ${JSON.stringify(options.models ?? [])}
 let buffer = ""
 let completed = false
+let threadCount = 0
 function write(message) {
   process.stdout.write(JSON.stringify(message) + "\\n")
 }
@@ -158,8 +162,9 @@ process.stdin.on("data", (chunk) => {
       write({ id: message.id, result: { data: models, nextCursor: null } })
     }
     if (message.method === "thread/start") {
-      write({ id: message.id, result: { thread: { id: "thread-1" } } })
-      write({ method: "thread/started", params: { thread: { id: "thread-1" } } })
+      const id = foreignSession ? "thread-" + ++threadCount : "thread-1"
+      write({ id: message.id, result: { thread: { id } } })
+      write({ method: "thread/started", params: { thread: { id } } })
     }
     if (message.method === "thread/archive") {
       write({ id: message.id, result: {} })
@@ -171,6 +176,11 @@ process.stdin.on("data", (chunk) => {
       if (auth401) {
         process.stderr.write("failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.com/v1/responses\\n")
         return
+      }
+      if (foreignSession && message.params.threadId === "thread-2") {
+        write({ id: message.id, result: { turn: { id: "turn-2", status: "inProgress" } } })
+        write({ method: "turn/started", params: { threadId: "thread-2", turn: { id: "turn-2", status: "inProgress" } } })
+        continue
       }
       write({ id: message.id, result: { turn: { id: "turn-1", status: "inProgress" } } })
       write({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1", status: "inProgress" } } })
@@ -190,6 +200,18 @@ process.stdin.on("data", (chunk) => {
         write({ method: "item/completed", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "spawn-1", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-1", "thread-child-2"], prompt: "Research both", model: "gpt-5.5", agentsStates: { "thread-child-1": { status: "running", message: null }, "thread-child-2": { status: "running", message: null } } } } })
         write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "send-1", type: "collabAgentToolCall", tool: "sendInput", status: "inProgress", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-1"], prompt: "Continue", model: null, agentsStates: { "thread-child-1": { status: "completed", message: null } } } } })
         write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "close-1", type: "collabAgentToolCall", tool: "closeAgent", status: "completed", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-2"], prompt: null, model: null, agentsStates: { "thread-child-2": { status: "shutdown", message: null } } } } })
+      }
+      if (foreignSession) {
+        const usage = (threadId, turnId, total, last) => write({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total, last, modelContextWindow: 258400 } } })
+        const foreignUsage = { inputTokens: 50, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 }
+        const childUsage = { inputTokens: 30, cachedInputTokens: 10, outputTokens: 5, reasoningOutputTokens: 1 }
+        usage("thread-1", "turn-1", { inputTokens: 10000, cachedInputTokens: 7000, outputTokens: 1200, reasoningOutputTokens: 600 }, { inputTokens: 100, cachedInputTokens: 60, outputTokens: 20, reasoningOutputTokens: 6 })
+        write({ method: "item/agentMessage/delta", params: { threadId: "thread-2", turnId: "turn-2", itemId: "foreign-message", delta: "FOREIGN-ONLY" } })
+        usage("thread-2", "turn-2", foreignUsage, foreignUsage)
+        usage("thread-child-1", "child-turn-1", childUsage, childUsage)
+        write({ method: "turn/completed", params: { threadId: "thread-2", turn: { id: "turn-2", status: "completed" } } })
+        write({ method: "turn/completed", params: { threadId: "thread-child-1", turn: { id: "child-turn-1", status: "completed" } } })
+        usage("thread-1", "turn-1", { inputTokens: 10200, cachedInputTokens: 7150, outputTokens: 1250, reasoningOutputTokens: 612 }, { inputTokens: 200, cachedInputTokens: 150, outputTokens: 50, reasoningOutputTokens: 12 })
       }
       if (requestRefresh) {
         write({ id: 900, method: "account/chatgptAuthTokens/refresh", params: { reason: "unauthorized", previousAccountId: "acct-1" } })
@@ -890,5 +912,61 @@ describe("CodexHarnessAdapter", () => {
     expect(childSessions.some((item) => JSON.stringify(store.getMessages(item.id)).includes("CHILD-ONLY"))).toBe(true)
     expect(childSessions.some((item) => JSON.stringify(store.getMessages(item.id)).includes("SECOND-CHILD-ONLY"))).toBe(true)
     expect(runtimeEvents.filter((event) => event.payload.type === "text-delta").map((event) => event.sessionId)).toEqual(expect.arrayContaining(childSessions.map((item) => item.id)))
+  })
+
+  test("meters each Codex thread on its own session while another session's turn shares the app-server", async () => {
+    const fake = await makeFakeCodex({ subagent: true, foreignSession: true })
+    const store = createMemoryRuntimeStore()
+    const appended: Array<Parameters<typeof store.appendEvent>[0]> = []
+    const append = store.appendEvent.bind(store)
+    store.appendEvent = (input) => {
+      appended.push(input)
+      return append(input)
+    }
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      eventHub: createRuntimeEventHub(),
+      store,
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+    try {
+      const session = await adapter.createSession(fake.dir)
+      const foreign = await adapter.createSession(fake.dir)
+      const foreignTurn = (async () => {
+        const input = { ...prompt("gpt-5.5"), userMessageId: "user-foreign", assistantMessageId: "assistant-foreign" }
+        for await (const _event of executeTestTurn(adapter, foreign.id, input, fake.dir)) {}
+      })()
+      await waitForLog(fake.log, (row) => row.method === "turn/start" && asRecord(row.params)?.threadId === "thread-2")
+      for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
+      await foreignTurn
+
+      const metered = (sessionId: string) => appended.flatMap(({ sessionId: owner, payload }) =>
+        owner === sessionId && payload.type === "session.usage" && payload.properties.observation
+          ? [{ nativeSessionId: payload.properties.observation.nativeSessionId, tokens: payload.properties.observation.tokens }]
+          : [])
+      const children = (store.listSessions(fake.dir) as Array<{ id: string; parentID?: string; agent_session_id?: string }>)
+        .filter((item) => item.parentID === session.id)
+      const child = children.find((item) => item.agent_session_id === "thread-child-1")
+      expect(metered(session.id)).toEqual([
+        { nativeSessionId: "thread-1", tokens: { input: 40, output: 14, reasoning: 6, cache: { read: 60, write: null } } },
+        { nativeSessionId: "thread-1", tokens: { input: 90, output: 52, reasoning: 18, cache: { read: 210, write: null } } },
+      ])
+      expect(metered(child!.id)).toEqual([
+        { nativeSessionId: "thread-child-1", tokens: { input: 20, output: 4, reasoning: 1, cache: { read: 10, write: null } } },
+      ])
+      expect(metered(foreign.id)).toEqual([
+        { nativeSessionId: "thread-2", tokens: { input: 50, output: 10, reasoning: 0, cache: { read: 0, write: null } } },
+      ])
+
+      const written = (sessionIds: string[]) => JSON.stringify(appended.filter((row) => sessionIds.includes(row.sessionId)))
+      const ownTree = written([session.id, ...children.map((item) => item.id)])
+      expect(ownTree).not.toContain("thread-2")
+      expect(ownTree).not.toContain("FOREIGN-ONLY")
+      expect(written([foreign.id])).toContain("FOREIGN-ONLY")
+      expect(written([foreign.id])).not.toMatch(/thread-1|thread-child|CHILD-ONLY/)
+    } finally {
+      await adapter.dispose()
+    }
   })
 })

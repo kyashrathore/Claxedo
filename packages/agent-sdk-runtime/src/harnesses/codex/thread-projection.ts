@@ -9,6 +9,71 @@ import { codexHostSubagentObservation } from "./host-subagent"
 
 const CODEX_SOURCE = "codex.app-server"
 
+/** `thread/started` names the thread it announces instead of carrying a `threadId`. */
+function notificationThreadId(params: JsonRecord) {
+  return text(params.threadId) ?? text(asRecord(params.thread)?.id)
+}
+
+function subagentThreads(method: string, params: JsonRecord) {
+  const started = method === "thread/started" ? codexStartedSubagent(params) : undefined
+  if (started) return { parentThreadId: started.parentThreadId, threadIds: [started.id] }
+  const activity = codexSubagentActivity(params.item)
+  const activityThreadId = text(params.threadId)
+  if (activity && activityThreadId) return { parentThreadId: activityThreadId, threadIds: [activity.agentThreadId] }
+  const call = codexCollabAgentCall(asRecord(params.item))
+  if (call) return { parentThreadId: call.senderThreadId, threadIds: call.receiverThreadIds }
+  return undefined
+}
+
+/**
+ * Which running turn answers for a Codex thread. One app-server hands
+ * every turn every thread's notifications, and a turn that projected another
+ * session's frames would hold them as unresolved child events of its own.
+ *
+ * `activeThreads` is keyed by the thread of every running turn. A thread with
+ * its own running turn is that turn's even when it is also a subagent of
+ * another, so its frames are not projected twice.
+ */
+export function createCodexThreadOwnership(activeThreads: ReadonlyMap<string, unknown>) {
+  const subagentsByTurn = new Map<string, Set<string>>()
+
+  const ownedElsewhere = (threadId: string, turnThreadId: string) => {
+    if (threadId === turnThreadId) return false
+    if (activeThreads.has(threadId)) return true
+    if (subagentsByTurn.get(turnThreadId)?.has(threadId)) return false
+    for (const [owner, subagents] of subagentsByTurn) {
+      if (owner !== turnThreadId && subagents.has(threadId)) return true
+    }
+    return false
+  }
+
+  return {
+    track(turnThreadId: string) {
+      const subagents = new Set<string>()
+      subagentsByTurn.set(turnThreadId, subagents)
+      return {
+        /** Records the subagents this notification starts beneath the turn, then answers for it. */
+        belongsElsewhere(method: string, params: JsonRecord) {
+          const spawned = subagentThreads(method, params)
+          if (spawned && (spawned.parentThreadId === turnThreadId || subagents.has(spawned.parentThreadId))) {
+            for (const threadId of spawned.threadIds) subagents.add(threadId)
+          }
+          // A started thread is judged by its parent as well: listeners run in
+          // registration order, so the turn that owns it may not have recorded it yet.
+          return [notificationThreadId(params), spawned?.parentThreadId]
+            .some((threadId) => threadId !== undefined && ownedElsewhere(threadId, turnThreadId))
+        },
+        release() {
+          if (subagentsByTurn.get(turnThreadId) === subagents) subagentsByTurn.delete(turnThreadId)
+        },
+      }
+    },
+    clear() {
+      subagentsByTurn.clear()
+    },
+  }
+}
+
 /**
  * Turns one app-server notification into the subagent observations and the
  * routed transcript event it carries.
@@ -87,7 +152,7 @@ export async function projectCodexThreadNotification(
   }
   const hostSpawn = method === "item/completed" ? codexHostSubagentObservation(threadId, asRecord(params.item)) : undefined
   if (hostSpawn) await input.observeSubagent({ observation: hostSpawn, correlationKeys: [], source: { dir: "in", method, frame } })
-  const eventThreadId = text(params.threadId) ?? text(asRecord(params.thread)?.id)
+  const eventThreadId = notificationThreadId(params)
   const parentOwned = !eventThreadId || eventThreadId === threadId
   input.ingest({ source: CODEX_SOURCE, method, payload: params }, {
     dir: "in",

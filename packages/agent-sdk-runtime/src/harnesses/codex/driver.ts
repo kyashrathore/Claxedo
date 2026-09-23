@@ -8,7 +8,7 @@ import {
 import {
   codexAppServerAdapter,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
-import { projectCodexThreadNotification } from "./thread-projection"
+import { createCodexThreadOwnership, projectCodexThreadNotification } from "./thread-projection"
 import type { AgentConfigOption } from "../../index"
 import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
@@ -110,6 +110,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPluginLaunch: CodexPluginLaunch | undefined
   private activeThreads = new Map<string, CodexActiveThread>()
+  private readonly threadOwnership = createCodexThreadOwnership(this.activeThreads)
   private readonly goalController: CodexGoalController
   readonly goals: AgentGoalResource
   private readonly codexHome: string
@@ -339,6 +340,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       project,
       observeSubagent: input.observeSubagent,
     })
+    const ownership = this.threadOwnership.track(threadId)
     let messageQueue = Promise.resolve()
     const unsubscribe = proc.onMessage((message) => {
       const method = text(message.method)
@@ -346,6 +348,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       if (!method) return
       cancellation.observe(method, params)
       if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
+      if (ownership.belongsElsewhere(method, params)) return
       messageQueue = messageQueue.then(async () => {
         const { parentOwned } = await projectCodexThreadNotification(input, threadId, method, params, message)
         if (method === "turn/started" && parentOwned) {
@@ -404,6 +407,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         unsubscribeStderr()
         unsubscribe()
         this.activeThreads.delete(threadId)
+        ownership.release()
       }
     }
   }
@@ -449,6 +453,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.idle.cancel()
     this.lifecycleRevision++
     this.activeThreads.clear()
+    this.threadOwnership.clear()
     this.goalController.dispose()
     this.processGoalUnsubscribe?.()
     this.processGoalUnsubscribe = null
@@ -489,6 +494,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     for (const pending of this.host.pendingQuestions.values()) pending.reject()
     this.host.pendingQuestions.clear()
     this.activeThreads.clear()
+    this.threadOwnership.clear()
     log.warn("codex app-server process died; cleared interactive state", { err })
   }
 
