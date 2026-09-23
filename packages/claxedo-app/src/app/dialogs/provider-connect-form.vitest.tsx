@@ -5,8 +5,19 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 const state = vi.hoisted(() => ({
   methods: [] as Array<{ type: "oauth" | "api" | "token"; label: string; command?: string }>,
   puts: [] as Array<{ input: unknown; body: Record<string, unknown> }>,
+  hostedPuts: [] as Array<Record<string, unknown>>,
+  hostedFailure: undefined as string | undefined,
   authorized: [] as Array<{ providerID: string; method: number }>,
   opened: [] as string[],
+  localExecution: true,
+}))
+
+vi.mock("@/app/connection/server-product", () => ({
+  useServerProduct: () => ({ localExecution: () => state.localExecution, known: () => true }),
+}))
+vi.mock("@/platform/api/api", () => ({
+  authFetch: async () => new Response("{}"),
+  getClaxedoServerUrl: () => "https://plane.test",
 }))
 
 /** The methods the server lists for a vendor, in the order it lists them. */
@@ -56,6 +67,11 @@ vi.mock("@/platform/api/credential-request", () => ({
     state.puts.push({ input, body: JSON.parse(typeof init?.body === "string" ? init.body : "{}") })
     return new Response(JSON.stringify({ credential: { id: "cred_1", provider_id: "claude-sdk" } }), { headers: { "Content-Type": "application/json" } })
   },
+  putHostedProviderKey: async (input: Record<string, unknown>) => {
+    const { request: _request, ...sent } = input
+    state.hostedPuts.push(sent)
+    if (state.hostedFailure) throw new Error(state.hostedFailure)
+  },
 }))
 vi.mock("@/platform/query/query-client", () => ({ queryClient: { invalidateQueries: async () => undefined } }))
 vi.mock("@opencode-ai/ui/toast", () => ({ showToast: () => undefined }))
@@ -76,6 +92,9 @@ const { engineConnectContext, harnessConnectContext } = await import("@/platform
 afterEach(() => {
   cleanup()
   state.puts.length = 0
+  state.hostedPuts.length = 0
+  state.hostedFailure = undefined
+  state.localExecution = true
   state.authorized.length = 0
   state.opened.length = 0
 })
@@ -261,5 +280,84 @@ describe("ProviderConnectForm storage", () => {
     await waitFor(() => expect(state.puts).toHaveLength(1))
     expect(state.puts[0].input).toEqual({ credentialId: "cred_bad", action: "reconnect" })
     expect(state.puts[0].body).toEqual({ secret: "sk-ant-fresh" })
+  })
+})
+
+describe("ProviderConnectForm storage, by the server it runs against", () => {
+  test("a self-hosted node takes a new key on the credential route, under a label of the user's own", async () => {
+    state.localExecution = true
+    state.methods = [{ type: "api", label: "API Key" }]
+    render(() => <ProviderConnectForm provider="anthropic" context={engineConnectContext("pi", "Anthropic")} harness="pi" hideHeading />)
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+
+    const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
+    fireEvent.input(input, { target: { value: "sk-ant-local" } })
+    fireEvent.input(document.querySelector<HTMLInputElement>('input[name="accountLabel"]')!, { target: { value: "work" } })
+    fireEvent.submit(input.closest("form")!)
+
+    await waitFor(() => expect(state.puts).toHaveLength(1))
+    expect(state.puts[0].body).toMatchObject({ provider_id: "anthropic", kind: "api_key", secret: "sk-ant-local", label: "work" })
+    expect(state.hostedPuts).toEqual([])
+  })
+
+  test("the hosted plane takes a new key on its own auth route, and asks for no label it cannot hold", async () => {
+    state.localExecution = false
+    state.methods = [{ type: "api", label: "API Key" }]
+    render(() => (
+      <ProviderConnectForm provider="anthropic" context={engineConnectContext("pi", "Anthropic")} harness="pi" workspaceScope="workspace:ws_1" hideHeading />
+    ))
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+    expect(document.querySelector('input[name="accountLabel"]')).toBeNull()
+
+    const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
+    fireEvent.input(input, { target: { value: "sk-ant-hosted" } })
+    fireEvent.submit(input.closest("form")!)
+
+    await waitFor(() => expect(state.hostedPuts).toHaveLength(1))
+    expect(state.hostedPuts[0]).toEqual({
+      serverUrl: "https://plane.test",
+      providerId: "anthropic",
+      harness: "pi",
+      key: "sk-ant-hosted",
+      directory: "workspace:ws_1",
+    })
+    expect(state.puts).toEqual([])
+  })
+
+  test("the plane's refusal is the field's error, in the plane's own words", async () => {
+    state.localExecution = false
+    state.hostedFailure = "Hosted credentials are disabled"
+    state.methods = [{ type: "api", label: "API Key" }]
+    render(() => <ProviderConnectForm provider="openai" context={engineConnectContext("pi", "OpenAI")} harness="pi" hideHeading />)
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+
+    const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
+    fireEvent.input(input, { target: { value: "sk-1" } })
+    fireEvent.submit(input.closest("form")!)
+
+    await waitFor(() => expect(document.body.textContent).toContain("Hosted credentials are disabled"))
+    expect(state.hostedPuts).toHaveLength(1)
+  })
+
+  test("on the plane Pi's ChatGPT provider has nothing to paste and says where it signs in", async () => {
+    state.localExecution = false
+    state.methods = []
+    render(() => <ProviderConnectForm provider="openai-codex" context={engineConnectContext("pi", "ChatGPT")} harness="pi" hideHeading />)
+
+    await waitFor(() => expect(document.querySelector('[data-component="provider-connect-unavailable"]')).not.toBeNull())
+    expect(document.querySelector('[data-component="provider-connect-unavailable"]')?.textContent)
+      .toBe("provider.connect.hosted.signsElsewhere:Pi|ChatGPT")
+    expect(document.querySelector("form")).toBeNull()
+    expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).toBeNull()
+  })
+
+  test("on a machine Pi's ChatGPT provider signs in through the Codex bundle's own OAuth", async () => {
+    state.localExecution = true
+    state.methods = []
+    render(() => <ProviderConnectForm provider="openai-codex" context={engineConnectContext("pi", "ChatGPT")} harness="pi" hideHeading />)
+
+    await waitFor(() => expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull())
+    fireEvent.click(document.querySelector<HTMLElement>('[data-action="provider-connect-oauth-start"]')!)
+    await waitFor(() => expect(state.authorized).toEqual([{ providerID: "codex-app-server", method: 0 }]))
   })
 })

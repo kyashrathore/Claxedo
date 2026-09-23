@@ -53,4 +53,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "مفتاح {{vendor}} لواجهة API",
   "provider.connect.method.generic.apiKey.for": "الدفع حسب الاستخدام عبر حسابك لدى {{vendor}}.",
   "provider.connect.method.generic.apiKey.how": "أنشئ مفتاح API في حسابك لدى {{vendor}} والصقه.",
+  "provider.connect.hosted.signsElsewhere": "يسجّل {{vendor}} الدخول من Codex CLI على جهاز تشغّله أنت. لا يحتفظ هذا النشر إلا بالمفاتيح الملصقة، لذا لا يوجد ما تدخله هنا.",
 }

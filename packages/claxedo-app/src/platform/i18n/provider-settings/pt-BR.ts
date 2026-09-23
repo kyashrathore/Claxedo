@@ -55,4 +55,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "Chave de API {{vendor}}",
   "provider.connect.method.generic.apiKey.for": "Pagamento por uso pela sua conta {{vendor}}.",
   "provider.connect.method.generic.apiKey.how": "Crie uma chave de API na sua conta {{vendor}} e cole-a.",
+  "provider.connect.hosted.signsElsewhere": "O login no {{vendor}} é feito pela CLI do Codex em uma máquina que você executa. Esta implantação guarda apenas chaves coladas, então não há nada a inserir aqui.",
 }

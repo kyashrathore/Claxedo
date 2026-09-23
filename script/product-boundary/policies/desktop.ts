@@ -670,7 +670,12 @@ export const desktopRendererUnsigned: Policy = {
   // Both ledgers above landed in one merge on 2026-09-23; the closure was
   // re-measured over the merged tree. Exact measured 1153 modules /
   // 58 packages, with no headroom.
-  ceilings: { modules: 1153, packages: 58 },
+  // +1 module (2026-09-23): `app/connection/local-execution.ts` — the app
+  // entry's one read of whether the server runs work on its own filesystem,
+  // carried here through the same first-project canvas and provider connect
+  // form. Owner: `app/connection`. No new package edge.
+  // Exact measured 1154 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1154, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

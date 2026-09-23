@@ -54,4 +54,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "{{vendor}} API anahtarı",
   "provider.connect.method.generic.apiKey.for": "{{vendor}} hesabınız üzerinden kullandıkça öde.",
   "provider.connect.method.generic.apiKey.how": "{{vendor}} hesabınızda bir API anahtarı oluşturup yapıştırın.",
+  "provider.connect.hosted.signsElsewhere": "{{vendor}} oturumu, sizin çalıştırdığınız bir makinedeki Codex CLI üzerinden açılır. Bu dağıtım yalnızca yapıştırılan anahtarları tutar, bu yüzden burada girilecek bir şey yok.",
 }

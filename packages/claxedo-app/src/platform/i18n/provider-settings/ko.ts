@@ -53,4 +53,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "{{vendor}} API 키",
   "provider.connect.method.generic.apiKey.for": "{{vendor}} 계정을 통한 사용량 기반 결제입니다.",
   "provider.connect.method.generic.apiKey.how": "{{vendor}} 계정에서 API 키를 만들어 붙여넣으세요.",
+  "provider.connect.hosted.signsElsewhere": "{{vendor}}에는 직접 실행하는 머신의 Codex CLI에서 로그인합니다. 이 배포는 붙여넣은 키만 보관하므로 여기에서 입력할 것이 없습니다.",
 }

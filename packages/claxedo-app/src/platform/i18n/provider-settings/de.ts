@@ -63,4 +63,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.for": "Zahlung nach Verbrauch über Ihr {{vendor}}-Konto.",
   "provider.connect.method.generic.apiKey.how":
     "Erstellen Sie in Ihrem {{vendor}}-Konto einen API-Schlüssel und fügen Sie ihn ein.",
+  "provider.connect.hosted.signsElsewhere": "Bei {{vendor}} wird über die Codex-CLI auf einem von Ihnen betriebenen Rechner angemeldet. Diese Installation speichert nur eingefügte Schlüssel, hier gibt es also nichts einzugeben.",
 }

@@ -598,7 +598,15 @@ export const appLocal: Policy = {
   // Both ledgers above landed in one merge on 2026-09-23; the closure was
   // re-measured over the merged tree. Exact measured 1109 modules /
   // 58 packages, with no headroom.
-  ceilings: { modules: 1109, packages: 58 },
+  // +1 module (2026-09-23): `app/connection/local-execution.ts` — the one
+  // read of whether the active server runs work on its own filesystem (its
+  // health document, else the posture declaration), which the first-project
+  // canvas and the provider connect form both key on: the form stores a new
+  // key on the credential route or on the hosted plane's auth route by it. It
+  // reaches only the server, health and posture modules this entry already
+  // carries. Owner: `app/connection`. No new package edge.
+  // Exact measured 1110 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1110, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

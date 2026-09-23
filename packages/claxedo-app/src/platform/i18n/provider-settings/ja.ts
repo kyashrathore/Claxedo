@@ -54,4 +54,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "{{vendor}} の API キー",
   "provider.connect.method.generic.apiKey.for": "お使いの {{vendor}} アカウント経由の従量課金です。",
   "provider.connect.method.generic.apiKey.how": "{{vendor}} アカウントで API キーを作成し、貼り付けてください。",
+  "provider.connect.hosted.signsElsewhere": "{{vendor}} へのサインインは、あなたが動かすマシン上の Codex CLI から行います。このデプロイは貼り付けたキーのみを保持するため、ここで入力するものはありません。",
 }

@@ -53,4 +53,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "{{vendor}}-API-nøkkel",
   "provider.connect.method.generic.apiKey.for": "Betaling etter bruk via {{vendor}}-kontoen din.",
   "provider.connect.method.generic.apiKey.how": "Opprett en API-nøkkel på {{vendor}}-kontoen din, og lim den inn.",
+  "provider.connect.hosted.signsElsewhere": "Du logger inn på {{vendor}} fra Codex CLI på en maskin du kjører. Denne installasjonen lagrer bare innlimte nøkler, så det er ingenting å skrive inn her.",
 }

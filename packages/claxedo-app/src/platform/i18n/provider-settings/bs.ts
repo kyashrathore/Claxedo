@@ -53,4 +53,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "{{vendor}} API ključ",
   "provider.connect.method.generic.apiKey.for": "Plaćanje po potrošnji preko vašeg {{vendor}} računa.",
   "provider.connect.method.generic.apiKey.how": "Napravite API ključ na svom {{vendor}} računu i zalijepite ga.",
+  "provider.connect.hosted.signsElsewhere": "Na {{vendor}} se prijavljuje putem Codex CLI-ja na mašini koju vi pokrećete. Ova instalacija čuva samo zalijepljene ključeve, pa ovdje nema šta unijeti.",
 }

@@ -53,4 +53,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "Klucz API {{vendor}}",
   "provider.connect.method.generic.apiKey.for": "Płatność za użycie przez Twoje konto {{vendor}}.",
   "provider.connect.method.generic.apiKey.how": "Utwórz klucz API na swoim koncie {{vendor}} i wklej go.",
+  "provider.connect.hosted.signsElsewhere": "Do {{vendor}} logujesz się z Codex CLI na maszynie, którą sam uruchamiasz. To wdrożenie przechowuje tylko wklejone klucze, więc nie ma tu nic do wpisania.",
 }

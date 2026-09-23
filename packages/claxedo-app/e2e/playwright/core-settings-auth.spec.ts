@@ -943,7 +943,13 @@ test.describe("core settings + auth @core", () => {
   })
 
   test.describe("Providers: connect, disconnect, env-locked, custom validation", () => {
-    test("connecting a popular API-key provider PUTs credentials and marks it connected", async ({ page }) => {
+    // The connect form stores a new key where this server keeps harness keys.
+    // `local-unsigned` is a daemon on its own filesystem, which takes the key on
+    // the Claxedo credential route under a label of the user's own; `test-user`
+    // is a session-issuing central with no filesystem, whose health document
+    // states no local execution, and it keeps Pi's keys under its own
+    // `PUT /auth/:providerID?harness=pi` with no label to hold.
+    test("connecting a popular API-key provider stores the key where this server keeps it and marks it connected", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockProviderCatalog(page, {
@@ -952,6 +958,13 @@ test.describe("core settings + auth @core", () => {
       })
       const credHits = { put: [] as unknown[], delete: [] as string[] }
       await mockCredentialRoutes(page, credHits)
+      const hostedHits: Array<{ path: string; harness: string | null; body: unknown }> = []
+      await page.route("**/auth/**", (route) => {
+        if (route.request().method() !== "PUT") return route.fallback()
+        const url = new URL(route.request().url())
+        hostedHits.push({ path: url.pathname, harness: url.searchParams.get("harness"), body: route.request().postDataJSON() })
+        return json(route, {})
+      })
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "models")
@@ -968,21 +981,33 @@ test.describe("core settings + auth @core", () => {
       await card.getByRole("radio").and(card.locator('[data-method-type="api"]')).click()
       await expect(card.getByLabel(/Anthropic API key/i)).toBeVisible()
       await card.getByLabel(/Anthropic API key/i).fill("sk-test-anthropic-key")
-      // A new credential needs a name of the user's own, or the row would be
-      // listed under the provider id, which reads the same for every key.
-      await card.getByRole("button", { name: "Continue" }).click()
-      await expect(card.getByText("Add a label so you can recognize this account")).toBeVisible()
-      expect(credHits.put).toEqual([])
-      await card.getByLabel("Label", { exact: true }).fill("work key")
-      await card.getByRole("button", { name: "Continue" }).click()
 
-      await expect.poll(() => credHits.put.length, { timeout: 10_000 }).toBe(1)
-      expect(credHits.put[0]).toMatchObject({
-        provider_id: "anthropic",
-        kind: "api_key",
-        secret: "sk-test-anthropic-key",
-        label: "work key",
-      })
+      const mode = process.env.CLAXEDO_E2E_AUTH_MODE ?? "test-user"
+      if (mode === "local-unsigned") {
+        // A new credential needs a name of the user's own, or the row would be
+        // listed under the provider id, which reads the same for every key.
+        await card.getByRole("button", { name: "Continue" }).click()
+        await expect(card.getByText("Add a label so you can recognize this account")).toBeVisible()
+        expect(credHits.put).toEqual([])
+        await card.getByLabel("Label", { exact: true }).fill("work key")
+        await card.getByRole("button", { name: "Continue" }).click()
+
+        await expect.poll(() => credHits.put.length, { timeout: 10_000 }).toBe(1)
+        expect(credHits.put[0]).toMatchObject({
+          provider_id: "anthropic",
+          kind: "api_key",
+          secret: "sk-test-anthropic-key",
+          label: "work key",
+        })
+        expect(hostedHits).toEqual([])
+      } else {
+        await expect(card.getByLabel("Label", { exact: true })).toHaveCount(0)
+        await card.getByRole("button", { name: "Continue" }).click()
+
+        await expect.poll(() => hostedHits.length, { timeout: 10_000 }).toBe(1)
+        expect(hostedHits[0]).toEqual({ path: "/auth/anthropic", harness: "pi", body: { auth: { key: "sk-test-anthropic-key" } } })
+        expect(credHits.put).toEqual([])
+      }
       await expect(page.getByText("Anthropic connected")).toBeVisible()
       // The list is where the user left it: the dialog closes on its own.
       await expect(card).toHaveCount(0)

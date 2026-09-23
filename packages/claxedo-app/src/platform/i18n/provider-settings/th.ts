@@ -53,4 +53,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "คีย์ API ของ {{vendor}}",
   "provider.connect.method.generic.apiKey.for": "จ่ายตามการใช้งานผ่านบัญชี {{vendor}} ของคุณ",
   "provider.connect.method.generic.apiKey.how": "สร้างคีย์ API ในบัญชี {{vendor}} ของคุณ แล้ววาง",
+  "provider.connect.hosted.signsElsewhere": "การลงชื่อเข้าใช้ {{vendor}} ทำจาก Codex CLI บนเครื่องที่คุณรันเอง การติดตั้งนี้เก็บเฉพาะคีย์ที่วางไว้ จึงไม่มีอะไรต้องกรอกที่นี่",
 }

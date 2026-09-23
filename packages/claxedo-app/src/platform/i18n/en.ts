@@ -140,6 +140,7 @@ export const dict = {
   "provider.connect.token.copyCommand": "Copy the command",
   "provider.connect.oauth.start": "Sign in",
   "provider.connect.oauth.hint": "Opens a code to enter in your browser.",
+  "provider.connect.hosted.signsElsewhere": "{{vendor}} is signed in to from the Codex CLI on a machine you run. This deployment holds pasted keys only, so there is nothing to enter here.",
   "provider.connect.oauth.code.visit.prefix": "Visit ",
   "provider.connect.oauth.code.visit.link": "this link",
   "provider.connect.oauth.code.visit.suffix.harness": " to collect your authorization code and run {{harness}} on this account.",

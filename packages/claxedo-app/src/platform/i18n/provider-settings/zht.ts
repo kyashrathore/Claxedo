@@ -51,4 +51,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "{{vendor}} API 金鑰",
   "provider.connect.method.generic.apiKey.for": "透過你的 {{vendor}} 帳戶按用量付費。",
   "provider.connect.method.generic.apiKey.how": "在你的 {{vendor}} 帳戶中建立 API 金鑰並貼上。",
+  "provider.connect.hosted.signsElsewhere": "{{vendor}} 透過你自己執行的機器上的 Codex CLI 登入。此部署只保存貼上的金鑰，因此這裡不需要輸入任何內容。",
 }

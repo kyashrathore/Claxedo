@@ -1,10 +1,14 @@
-// The single provider-connect implementation. Both the command-palette dialog
-// and the onboarding setup page render this; neither owns a private copy of the
-// method chooser, the OAuth flow, or the API-key field.
+// The single provider-connect implementation. The command-palette dialog, the
+// Models page's rows and the first-run wizard through them all render this;
+// none owns a private copy of the method chooser, the OAuth flow or the
+// API-key field.
 //
-// The only real difference between the two callers is credential scope —
-// onboarding writes a scoped credential so the user's "this machine only"
-// choice is honoured — so that is a prop, not a fork.
+// A new key is stored where the server keeps harness keys. A self-hosted node
+// and the desktop's embedded server take it on the Claxedo credential route,
+// under a label of the user's own; the hosted plane serves no credential route
+// and keeps Pi's keys under its own `PUT /auth/:providerID?harness=pi`, an
+// entry with no label to ask for. Which server this is comes from the health
+// document the whole shell reads, never from a caller.
 
 import type { ClaxedoProviderAuthorization as ProviderAuthAuthorization } from "@/platform/api/claxedo-api-types"
 import type { ClaxedoProviderAuthMethod as ProviderAuthMethod } from "@/platform/api/claxedo-api-types"
@@ -22,7 +26,9 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useProviderAuth, useProviders } from "@/app/providers/use-providers"
-import { claxedoCredentialRequest } from "@/platform/api/credential-request"
+import { useServerProduct } from "@/app/connection/server-product"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { claxedoCredentialRequest, putHostedProviderKey } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 import { errorMessage } from "@/lib/server-errors"
 import {
@@ -72,6 +78,8 @@ export type ProviderConnectFormProps = {
 function useProviderConnectForm(props: ProviderConnectFormProps) {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
+  const localExecution = useServerProduct().localExecution
+  const hosted = () => !localExecution()
   const providers = useProviders(() => props.harness, () => props.workspaceScope)
   // Auth belongs to the machine serving this scope, not to the harness name:
   // `useProviderAuth` reads it under the same (server, scope, harness) key the
@@ -83,11 +91,17 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   const contextKey = (base: string) => connectContextKey(base, props.context)
   const contextVars = () => connectVars(props.context)
 
+  // Pi's `openai-codex` rides the Codex app-server's ChatGPT login: on a
+  // machine that is the bundle's OAuth, and the hosted plane, with no machine
+  // to sign in on, refuses a pasted key for it. So on the plane it has no
+  // method at all, and the card says where it signs in instead.
   const codexBundleRequired = () => props.harness === "pi" && props.provider === "openai-codex"
   const authProviderID = () => codexBundleRequired() ? "codex-app-server" : props.provider
-  const fallback = createMemo<ProviderAuthMethod[]>(() => codexBundleRequired()
-    ? [{ type: "oauth", label: language.t("provider.connect.method.openai.plan.title") }]
-    : fallbackConnectMethods(props.provider))
+  const fallback = createMemo<ProviderAuthMethod[]>(() => {
+    if (!codexBundleRequired()) return fallbackConnectMethods(props.provider)
+    if (hosted()) return []
+    return [{ type: "oauth", label: language.t("provider.connect.method.openai.plan.title") }]
+  })
   // An empty list is as unusable as no answer at all: the card would offer
   // nothing to fill in, so both fall back to what the catalog knows is pasted.
   const served = () => providerAuthQuery.data?.[props.provider]
@@ -210,8 +224,9 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     const label = store.label.trim()
     // Without a name of the user's own the row would be listed under the
     // provider id it is stored against, which names the binding rather than
-    // the account and reads identically for every key they paste.
-    if (!props.credentialId && !label) {
+    // the account and reads identically for every key they paste. The hosted
+    // plane holds one key per provider and names nothing.
+    if (!props.credentialId && !hosted() && !label) {
       setStore("error", language.t("provider.connect.label.required"))
       return
     }
@@ -223,6 +238,15 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
         await claxedoCredentialRequest({ credentialId: props.credentialId, action: "reconnect" }, {
           method: "POST",
           body: JSON.stringify({ secret: apiKey }),
+        })
+      } else if (hosted()) {
+        await putHostedProviderKey({
+          serverUrl: getClaxedoServerUrl(),
+          providerId: props.provider,
+          harness: props.harness,
+          key: apiKey,
+          ...(props.workspaceScope === undefined ? {} : { directory: props.workspaceScope }),
+          request: authFetch,
         })
       } else {
         await claxedoCredentialRequest(undefined, {
@@ -252,6 +276,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     contextKey,
     contextVars,
     language,
+    hosted,
     options,
     selected,
     methodCopy,
@@ -360,6 +385,11 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
       </Show>
 
       <Switch>
+        <Match when={form.options().length === 0}>
+          <p class="text-13-regular text-text-base" data-component="provider-connect-unavailable">
+            {language.t("provider.connect.hosted.signsElsewhere", form.contextVars())}
+          </p>
+        </Match>
         <Match when={form.pastes()}>
           <form onSubmit={form.saveApiKey} class="flex flex-col items-start gap-4" data-method={form.selected()?.type ?? "api"}>
             {/* A command to run, not a field to fill: a bordered input with a
@@ -413,7 +443,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
               validationState={store.error ? "invalid" : undefined}
               error={store.error}
             />
-            <Show when={!props.credentialId}>
+            <Show when={!props.credentialId && !form.hosted()}>
               <TextField
                 type="text"
                 label={language.t("provider.connect.label.label")}

@@ -54,4 +54,5 @@ export const dict = {
   "provider.connect.method.generic.apiKey.title": "API-ключ {{vendor}}",
   "provider.connect.method.generic.apiKey.for": "Оплата по мере использования через вашу учётную запись {{vendor}}.",
   "provider.connect.method.generic.apiKey.how": "Создайте API-ключ в своей учётной записи {{vendor}} и вставьте его.",
+  "provider.connect.hosted.signsElsewhere": "Вход в {{vendor}} выполняется из Codex CLI на машине, которую запускаете вы. Это развёртывание хранит только вставленные ключи, поэтому здесь нечего вводить.",
 }
