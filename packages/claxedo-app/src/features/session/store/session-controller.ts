@@ -48,9 +48,10 @@ import { isWorkspaceReady } from "@/features/session/app-ports"
 import { scheduleSessionProjectionPull, sessionProjectionWorkspaceBacking } from "@/platform/runtime/agent/session-projection"
 import { directorySessionCacheOwnsSession, removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
-import { createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
+import { createHistoryMetaState, historyHasMore, historyIsLoading, sessionHistoryKey } from "./history-pagination"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSessionPrefetch, latestTurnWindowNeedsTailSync, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
+import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSessionPrefetch, runFirstFoldFallback, scheduleDeferredFirstFoldPrefetch, shouldScheduleFirstFoldHistory } from "./first-fold-prefetch"
+import { activeTurnTransition, syncLatestTurnHistory, syncSettledTurnHistory, type ActiveTurnSnapshot, type LatestTurnRead } from "./latest-turn-history"
 import { hydrateFirstFoldSessionPrefetch } from "./first-fold-hydration"
 import { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 import { createActivePaneProjection } from "./active-pane-projection"
@@ -89,9 +90,6 @@ export { resolveStoredMessages, resolveStoredParts }
 export { conversationHasAssistantMessage, conversationHasTurnReply } from "./assistant-turn-evidence"
 export { firstFoldSessionPrefetch } from "./first-fold-prefetch"
 export { createSessionInfoHydrationGetter, fetchTransportSession } from "./session-transport"
-export function sessionHistoryKey(input: { sessionID: string; directory: string }) {
-  return `${input.directory}\0${input.sessionID}`
-}
 
 type DirectoryRef = Parameters<typeof sessionHistoryKey>[0]["directory"]
 
@@ -160,62 +158,6 @@ function sessionHydrationDebug(phase: string, data: Record<string, unknown>) {
   if (typeof localStorage === "undefined" || localStorage.getItem("claxedo.debug.session-hydrate") !== "1") return
   // oxlint-disable-next-line no-console -- opt-in tracing behind the localStorage flag above
   console.debug("[claxedo:session-hydrate]", phase, data)
-}
-
-type ActiveTurnSnapshot = {
-  key: string
-  active: boolean
-}
-
-export function activeTurnTransition(input: {
-  previous?: ActiveTurnSnapshot
-  directory: string
-  sessionID?: string
-  active: boolean
-}) {
-  const key = input.sessionID && input.sessionID !== "new"
-    ? sessionHistoryKey({ directory: input.directory, sessionID: input.sessionID })
-    : undefined
-  return {
-    settled: !!key && input.previous?.key === key && input.previous.active && !input.active,
-    next: key ? { key, active: input.active } : undefined,
-  }
-}
-
-export type LatestTurnRead = { view: "latest-turn" } | { tail: true }
-
-/** The canonical read of the latest turn, widened to the tail page when its window cannot prove the turn. */
-export async function syncLatestTurnHistory(input: {
-  directory: string
-  sessionID: string
-  read: (request: LatestTurnRead) => Promise<boolean>
-}) {
-  if (!await input.read({ view: "latest-turn" })) return false
-  if (!latestTurnWindowNeedsTailSync(registeredConversationSnapshot(input.directory, input.sessionID).messages)) return true
-  return input.read({ tail: true })
-}
-
-/**
- * A `latest-surface` page marks each assistant message it introduces as holding
- * fragment parts, and the timeline holds that turn behind a loader until a
- * canonical read lifts the mark. The activation's one canonical read has run
- * before any turn settles, so a reply this page is first to deliver (its live
- * `message.updated` never arrived) needs the latest-turn read here.
- */
-export async function syncSettledTurnHistory(input: {
-  directory: string
-  sessionID: string
-  readSurface: () => Promise<boolean>
-  readLatestTurn: (request: LatestTurnRead) => Promise<boolean>
-}) {
-  if (!await input.readSurface()) return false
-  if (!latestTurnHoldsFragmentParts(registeredConversationSnapshot(input.directory, input.sessionID))) return true
-  return syncLatestTurnHistory({ directory: input.directory, sessionID: input.sessionID, read: input.readLatestTurn })
-}
-
-function latestTurnHoldsFragmentParts(conversation: { messages: readonly { id: string; role: string }[]; fragmentParts: ReadonlySet<string> }) {
-  const owningUser = conversation.messages.findLastIndex((message) => message.role === "user")
-  return conversation.messages.slice(owningUser + 1).some((message) => conversation.fragmentParts.has(message.id))
 }
 
 export async function syncSessionMeta(input: {
@@ -971,8 +913,7 @@ export function createSessionController(input: {
           activationAt,
           active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
           complete: () => syncLatestTurnHistory({
-            directory,
-            sessionID: id,
+            conversation: () => registeredConversationSnapshot(directory, id),
             read: (request) => readLatestTurnWindow(id, request, { activationEpoch, signal: readEpoch.signal }),
           }),
           onError: (error) => sessionHydrationDebug("latest-turn-error", {
@@ -1092,8 +1033,7 @@ export function createSessionController(input: {
             })
           }
           void syncSettledTurnHistory({
-            directory,
-            sessionID,
+            conversation: () => registeredConversationSnapshot(directory, sessionID),
             readSurface: () => syncSessionHistory(sessionID, { force: true }),
             readLatestTurn: (request) => readLatestTurnWindow(sessionID, request),
           })

@@ -10,6 +10,10 @@ import { createSignal, type Accessor } from "solid-js"
 //
 // Split out of session-controller.ts so the pagination state and its derivations
 // are independently testable without mounting the reactive controller.
+export function sessionHistoryKey(input: { sessionID: string; directory: string }) {
+  return `${input.directory}\0${input.sessionID}`
+}
+
 export type HistoryMeta = {
   limit: Record<string, number | undefined>
   cursor: Record<string, string | undefined>
