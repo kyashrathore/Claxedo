@@ -8,7 +8,7 @@ local simulations (clean worktree sim, crabbox Windows boxes), push once per bat
 
 | Ref | Commit | State |
 |---|---|---|
-| local `dev` | `40daff7395` | Everything below merged. **Not pushed.** Gate not replayed on this exact merge. |
+| local `dev` | tip (`git log -1 dev`) | Everything below merged. **Not pushed.** Gate not replayed on the final merge (`40daff7395` + docs). |
 | `origin/dev` | `4659087e22` | Last push. CI on it: Linux unit + typecheck + release green; Windows unit, tier-real red (fixed locally, see below). |
 | `origin/staging` | `4659087e22` | Deployed as release 90 (`release-staging-260923-141123-4659087e`), `/health` open. |
 | `integrate/tonight` | = local `dev` | Integration branch in `.claude/worktrees/integrate-tonight`. |
