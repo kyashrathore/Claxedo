@@ -254,9 +254,9 @@ jobs:
             export CLAXEDO_SERVER_TEST_SHARD="${LANE#server-}/4"
           fi
           if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
-            bun turbo test "$lane" --concurrency="$concurrency"
+            bun turbo test "$lane" --concurrency="$concurrency" --continue
           else
-            bun turbo test "$lane" --affected --concurrency="$concurrency"
+            bun turbo test "$lane" --affected --concurrency="$concurrency" --continue
           fi
         env:
           TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -587,14 +587,19 @@ jobs:
           # Each pattern is a title fragment of a `real harness journeys` test in
           # e2e/playwright/real-harness-local.spec.ts; `e2e/discovery.test.ts` pins
           # the titles, so a rename fails there before it silently empties this gate.
+          failed=()
           for scenario in \
             "pi-workspace harness completes exact turns|local new-worktree session receives its first reply" \
             "claude native SDK harness completes exact turns" \
             "codex native SDK harness completes exact turns" \
             "cursor harness materializes without silently routing"; do
             echo "=== Tier R gate scenario: ${scenario} ==="
-            bun run test:e2e:real -- --grep "${scenario}"
+            bun run test:e2e:real -- --grep "${scenario}" || failed+=("${scenario}")
           done
+          if (( ${#failed[@]} )); then
+            printf '::error::tier-real scenario failed: %s\n' "${failed[@]}"
+            exit 1
+          fi
 
       # These specs own their real hosted-node/relay fixtures and production
       # web builds, so the config-level webServer must stay disabled. Run them
@@ -602,6 +607,7 @@ jobs:
       # are distinct, but serial execution avoids concurrent Vite builds
       # starving the 4-vCPU runner and keeps one combined Playwright report.
       - name: Run signed web relay e2e (cloud + host tunnel + org-team multiplayer)
+        if: ${{ !cancelled() }}
         working-directory: packages/claxedo-app
         timeout-minutes: 60
         env:
