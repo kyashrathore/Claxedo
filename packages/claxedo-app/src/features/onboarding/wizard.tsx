@@ -8,24 +8,35 @@ import { ExecutionStep, type ExecutionChoice } from "./execution-step"
 import type { OnboardingFunnelEvent, OnboardingStepId } from "./funnel"
 import { ProjectStep } from "./project-step"
 
-const STEPS: ReadonlyArray<{ id: OnboardingStepId; label: string; headline: string; lede: string }> = [
+const STEPS: ReadonlyArray<{
+  id: OnboardingStepId
+  label: string
+  headline: string
+  lede: (product: { localExecution: boolean }) => string
+}> = [
   {
     id: "project",
     label: "Project",
     headline: "Start with a project",
-    lede: "Point Claxedo at a folder on this machine, or at a repository to clone. Where the work runs is a later question.",
+    lede: (product) =>
+      product.localExecution
+        ? "Point Claxedo at a folder on this machine, or at a repository to clone. Where the work runs is a later question."
+        : "Point Claxedo at a repository to clone. Where the work runs is a later question.",
   },
   {
     id: "ai",
     label: "AI",
     headline: "Connect an AI",
-    lede: "The agent runs on a login of yours. Anything found here can be changed later in Settings → Models.",
+    lede: () => "The agent runs on a login of yours. Anything found here can be changed later in Settings → Models.",
   },
   {
     id: "execution",
     label: "Where it runs",
     headline: "Where it runs",
-    lede: "Work runs on this machine unless you say otherwise.",
+    lede: (product) =>
+      product.localExecution
+        ? "Work runs on this machine unless you say otherwise."
+        : "Work runs in a cloud sandbox this deployment provides, or on a machine you connect.",
   },
 ]
 
@@ -56,7 +67,10 @@ export const OnboardingWizard: Component<{
   const [step, setStep] = createSignal<OnboardingStepId>("project")
   const [draft, setDraft] = createSignal<WizardDraft>()
   const [aiReady, setAiReady] = createSignal(false)
-  const [choice, setChoice] = createSignal<ExecutionChoice>(props.localExecution ? "local" : "cloud")
+  const [chosen, setChosen] = createSignal<ExecutionChoice>()
+  // Derived until the user picks: the server's word on local execution lands
+  // after this mounts, and a hosted plane has no "this machine" row to hold.
+  const choice = () => chosen() ?? (props.localExecution ? "local" : "cloud")
   const [executionReady, setExecutionReady] = createSignal(false)
   const [finishing, setFinishing] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
@@ -152,7 +166,7 @@ export const OnboardingWizard: Component<{
             </span>
           )}
         </Show>
-        {current().lede}
+        {current().lede({ localExecution: props.localExecution })}
       </p>
       <div class="first-project-card first-project-reveal" style={{ "--first-project-delay": "80ms" }}>
         <Show when={step() === "project"}>
@@ -175,7 +189,7 @@ export const OnboardingWizard: Component<{
             baseUrl={props.baseUrl}
             localExecution={props.localExecution}
             choice={choice()}
-            onChoice={setChoice}
+            onChoice={setChosen}
             onReady={setExecutionReady}
           />
         </Show>

@@ -804,9 +804,9 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
         return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
       })
 
-      // This deployment has no code host to choose from, so the wizard offers the URL field alone.
+      // This deployment offers no code host, so the wizard offers the URL field alone.
       await page.route("**/api/claxedo/integrations**", (route) =>
-        route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "route_not_found" } }) }),
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ integrations: [], connections: [] }) }),
       )
       // A hosted plane has no drivers route and no projects route; the wizard must ask neither.
       let driversRequests = 0
@@ -847,6 +847,9 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
         return route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
       })
 
+      // The one create, after which the plane lists and resolves the workspace so
+      // the route the wizard opens can hold it (its startup pipeline is the
+      // provisioning spec's own subject).
       const workspaceCreates: unknown[] = []
       await page.route("**/api/workspace/create", (route) => {
         if (route.request().method() !== "POST") return route.fallback()
@@ -856,6 +859,44 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
           contentType: "application/json",
           body: JSON.stringify({ workspaceId: HOSTED_WORKSPACE_ID, directory: HOSTED_WORKSPACE_ID, status: "acquiring_sandbox" }),
         })
+      })
+      await page.route("**/api/workspace**", (route) => {
+        const url = new URL(route.request().url())
+        if (route.request().method() !== "GET") return route.fallback()
+        if (isWorkspaceListPath(url.pathname)) {
+          return route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify(workspaceListResponse({
+              host: url.searchParams.get("host"),
+              workspaces: workspaceCreates.length > 0
+                ? [{
+                    workspace_id: HOSTED_WORKSPACE_ID,
+                    org_id: ORG_ID,
+                    project_id: "prj_core_cloud_hosted",
+                    display_name: "app",
+                    backing: "cloud-vm",
+                    placement: {},
+                    role: "owner",
+                  }]
+                : [],
+            })),
+          })
+        }
+        if (isWorkspaceResolvePath(url.pathname) && url.searchParams.get("workspaceId") === HOSTED_WORKSPACE_ID) {
+          return route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              workspaceId: HOSTED_WORKSPACE_ID,
+              projectId: "prj_core_cloud_hosted",
+              directory: HOSTED_WORKSPACE_ID,
+              kind: "cloud",
+              status: "acquiring_sandbox",
+            }),
+          })
+        }
+        return route.fallback()
       })
 
       await page.addInitScript((serverUrl: string) => {
@@ -910,9 +951,8 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-wizard-execution.png" })
       await page.getByRole("button", { name: "Create workspace" }).click()
 
-      await expect.poll(() => workspaceCreates.length, { timeout: 30_000 }).toBe(1)
-      expect(workspaceCreates[0]).toEqual({ projectName: "app", repoUrl: HOSTED_REPO_URL })
-      await expect(page).toHaveURL(new RegExp(`/w/${HOSTED_WORKSPACE_ID}/session`), { timeout: 20_000 })
+      await page.waitForURL(new RegExp(`/w/${HOSTED_WORKSPACE_ID}/session`), { timeout: 30_000 })
+      expect(workspaceCreates).toEqual([{ projectName: "app", repoUrl: HOSTED_REPO_URL }])
       expect(projectPosts).toBe(0)
       expect(driversRequests).toBe(0)
     },

@@ -36,10 +36,10 @@ export const ExecutionStep: Component<{
   /** Whether the chosen row is in a state Finish can act on. */
   onReady: (ready: boolean) => void
 }> = (props) => {
-  const [cloudReady, setCloudReady] = createSignal(!props.localExecution)
+  const [keyReady, setKeyReady] = createSignal(false)
   const ready = createMemo(() => {
     if (props.choice === "local") return true
-    if (props.choice === "cloud") return cloudReady()
+    if (props.choice === "cloud") return !props.localExecution || keyReady()
     return props.localExecution
   })
   createEffect(() => props.onReady(ready()))
@@ -87,7 +87,7 @@ export const ExecutionStep: Component<{
             </p>
           }
         >
-          <SandboxProviderKey baseUrl={props.baseUrl} onReady={setCloudReady} />
+          <SandboxProviderKey baseUrl={props.baseUrl} onReady={setKeyReady} />
         </Show>
       </Show>
 

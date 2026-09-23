@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ProjectSource } from "./draft"
@@ -52,10 +53,11 @@ function mount(input: { localExecution: boolean }) {
   const events: OnboardingFunnelEvent[] = []
   const opened: Array<{ id: string; worktree: string }> = []
   const cloud: Array<{ projectName: string; source: ProjectSource }> = []
+  const [localExecution, setLocalExecution] = createSignal(input.localExecution)
   render(() => (
     <OnboardingWizard
       baseUrl="http://server.test"
-      localExecution={input.localExecution}
+      localExecution={localExecution()}
       emit={(event) => events.push(event)}
       onProjectCreated={(project) => opened.push(project)}
       createCloudWorkspace={async (draft) => {
@@ -63,7 +65,7 @@ function mount(input: { localExecution: boolean }) {
       }}
     />
   ))
-  return { events, opened, cloud }
+  return { events, opened, cloud, setLocalExecution }
 }
 
 const step = () => screen.getByTestId("onboarding-wizard").getAttribute("data-step")
@@ -191,5 +193,17 @@ describe("OnboardingWizard on the hosted plane", () => {
     expect(events.length).toBeGreaterThan(0)
     expect(cloud).toEqual([])
     expect(opened).toEqual([])
+  })
+
+  test("a server that declares itself hosted after the wizard mounted still preselects the cloud row", async () => {
+    fixture.connected = { pi: ["anthropic"] }
+    const { setLocalExecution } = mount({ localExecution: true })
+    setLocalExecution(false)
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Next" }).disabled).toBe(false))
+    fireEvent.click(screen.getByRole("button", { name: "Next" }))
+    expect(screen.queryByRole("radio", { name: /Just this machine/ })).toBeNull()
+    expect(screen.getByRole("radio", { name: /A cloud sandbox/ }).getAttribute("aria-checked")).toBe("true")
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create workspace" }).disabled).toBe(false))
   })
 })
