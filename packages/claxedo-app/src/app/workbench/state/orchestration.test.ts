@@ -661,10 +661,20 @@ describe("state/orchestration", () => {
     expect(getState().contentIds).not.toContain(id)
   })
 
-  test("openTasks and openMarketplace own separate global tabs", () => {
-    const { layout } = makeFixture()
+  test("openTasks and openMarketplace share one tab that shows whichever opened last", () => {
+    const { layout, meta, getState } = makeFixture()
+    const tasks = layout.openTasks({ kind: "task", taskId: "task_1" })
+    const marketplace = layout.openMarketplace()
 
-    expect(layout.openTasks()).not.toBe(layout.openMarketplace())
+    expect(marketplace).toBe(tasks)
+    expect(meta.get(tasks)?.type).toBe("marketplace")
+    expect(meta.get(tasks)?.content).toEqual({ type: "marketplace", title: "Marketplace" })
+
+    expect(layout.openTasks()).toBe(tasks)
+    expect(meta.get(tasks)?.type).toBe("tasks")
+    expect(meta.get(tasks)?.content).toMatchObject({ type: "tasks", title: "Tasks" })
+    expect(meta.get(tasks)?.content?.page).toBeUndefined()
+    expect(getState().contentIds.filter((id) => ["tasks", "marketplace"].includes(meta.get(id)?.type ?? ""))).toEqual([tasks])
   })
 
   test("closeContent removes meta + content + cleans terminal owner", () => {

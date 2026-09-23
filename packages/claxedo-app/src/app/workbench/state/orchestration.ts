@@ -155,6 +155,11 @@ export function createLayoutOrchestration(input: {
     })
   }
 
+  // Marketplace and Tasks are places you visit, not work you keep open: both
+  // span every project, so they share one global tab that shows whichever was
+  // opened last.
+  const utilityTab = () => meta.find((m) => m.type === "marketplace" || m.type === "tasks")
+
   const patchSessionRouteId = (id: string, workspaceRouteId: string | undefined) => {
     const current = meta.get(id)?.content
     if (!workspaceRouteId || current?.type !== "session" || current.workspaceRouteId) return
@@ -531,8 +536,10 @@ export function createLayoutOrchestration(input: {
     },
 
     openMarketplace() {
-      // Marketplace is a single global tab — workspace-independent.
-      const existing = meta.find((m) => m.type === "marketplace")
+      const existing = utilityTab()
+      if (existing && existing.type !== "marketplace") {
+        meta.patch(existing.id, { type: "marketplace", content: { type: "marketplace", title: "Marketplace" } })
+      }
       return showOrCreate(existing, () => {
         const id = newId("marketplace")
         return {
@@ -550,13 +557,14 @@ export function createLayoutOrchestration(input: {
     },
 
     openTasks(page) {
-      // Tasks is a single global tab: the catalog spans every project the
-      // account can reach, so it is not scoped to a workspace. A nested page
-      // moves that one tab rather than opening a second, so the reuse path
-      // has to carry the page the caller asked for.
-      const existing = meta.find((m) => m.type === "tasks")
+      // A nested page moves the tab rather than opening a second, so the reuse
+      // path has to carry the page the caller asked for.
+      const existing = utilityTab()
       if (existing) {
-        meta.patch(existing.id, { content: { ...existing.content, type: "tasks", page } })
+        meta.patch(existing.id, {
+          type: "tasks",
+          content: { ...(existing.type === "tasks" ? existing.content : {}), type: "tasks", title: "Tasks", page },
+        })
       }
       return showOrCreate(existing, () => {
         const id = newId("tasks")
