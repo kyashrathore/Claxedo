@@ -20,7 +20,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { CLAXEDO_MCP_TOOL_GROUPS, CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { betterAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { removeTestDataDir } from "../test-support/test-data-dir"
 import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platform/http/route-contribution"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
@@ -45,13 +45,12 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  ClaxedoDB.close()
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
   }
   for (const directory of workspaceDirs.splice(0)) rmSync(directory, { recursive: true, force: true })
-  rmSync(dataDir, { recursive: true, force: true })
+  removeTestDataDir(dataDir)
 })
 
 function signedServices(): ControlPlaneServices {

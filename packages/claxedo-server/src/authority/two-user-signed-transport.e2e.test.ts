@@ -36,7 +36,7 @@ const [
   { openAuthorityDb },
   { controlPlaneAuthContext, betterAuthAdapter },
   { getEmbeddedAuth, EMBEDDED_AUTH_ISSUER },
-  { ClaxedoDB },
+  { removeTestDataDir },
 ] = await Promise.all([
   import("../deployments/self-hosted-node/app"),
   import("./services"),
@@ -45,7 +45,7 @@ const [
   import("@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"),
   import("@claxedo/server-core/platform/auth/auth"),
   import("../deployments/self-hosted-node/embedded-auth"),
-  import("../platform/db"),
+  import("../test-support/test-data-dir"),
 ])
 
 const embedded = getEmbeddedAuth()
@@ -62,15 +62,14 @@ const services = createControlPlaneServices({
 const app = createSelfHostedApp(services).app
 const inspectAuthority = openAuthorityDb({ path: authorityPath })
 
-afterAll(async () => {
+afterAll(() => {
   inspectAuthority().close()
   embedded.close()
-  ClaxedoDB.close()
   for (const [key, value] of Object.entries(previous)) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
   }
-  await fs.rm(root, { recursive: true, force: true })
+  removeTestDataDir(root)
 })
 
 describe("two-user signed app transport", () => {

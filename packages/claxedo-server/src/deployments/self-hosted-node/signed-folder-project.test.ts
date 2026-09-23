@@ -3,6 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { realDirectoryPath } from "@claxedo/helpers/real-path"
 
 // A folder project created by a signed caller on the self-hosted server, seen
 // through the routes the web app reads: the project list this server answers
@@ -88,7 +89,7 @@ async function signUp(handler: (request: Request) => Promise<Response>, email: s
 }
 
 function gitRepository() {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(dataDir, "repo-")))
+  const directory = realDirectoryPath(fs.mkdtempSync(path.join(dataDir, "repo-")))
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: directory, stdio: "ignore" })
   return directory
 }

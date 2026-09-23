@@ -1,13 +1,13 @@
 import { describe, expect, test, beforeEach, afterAll } from "vitest"
 import { defined } from "../../test-support/assert-helpers"
 import { execSync } from "child_process"
-import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { realDirectoryPath } from "@claxedo/helpers/real-path"
 
-const root = path.join(realpathSync(os.tmpdir()), `workspace-store-test-${randomUUID().slice(0, 8)}`)
+const root = path.join(realDirectoryPath(os.tmpdir()), `workspace-store-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from "node:fs"
+import { mkdtempSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterAll } from "vitest"
@@ -36,8 +36,6 @@ for (const key of [
 ]) delete process.env[key]
 
 afterAll(async () => {
-  const { ClaxedoDB } = await import("../platform/db")
-  ClaxedoDB.close()
-  // Retried for Windows: a just-closed SQLite file stays briefly locked.
-  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  const { removeTestDataDir } = await import("./test-data-dir")
+  removeTestDataDir(root)
 })

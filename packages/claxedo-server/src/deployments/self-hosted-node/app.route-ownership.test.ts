@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { removeTestDataDir } from "../../test-support/test-data-dir"
 import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { createSelfHostedApp } from "./app"
@@ -48,7 +49,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
   if (savedDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = savedDataDir
-  rmSync(dataDir, { recursive: true, force: true })
+  removeTestDataDir(dataDir)
 })
 
 function selfHosted(options: Parameters<typeof createSelfHostedApp>[1] = {}, signed = false) {

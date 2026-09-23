@@ -21,8 +21,16 @@ function env(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   }
 }
 
-/** A clock whose timers fire only when the test advances it, in due order. */
-function fakeClock(start = START) {
+/**
+ * A clock whose timers fire only when the test advances it, in due order.
+ *
+ * A timer here starts a renewal, which is I/O the clock cannot see: its answer
+ * is signed on the crypto thread pool and lands on a later macrotask than two
+ * zero-delay turns reach on a loaded 2-core runner. `settled` is how the test
+ * hands the clock every answer produced so far, so it waits for them before
+ * the turns that let the grant consume them.
+ */
+function fakeClock(settled: () => Promise<unknown> = async () => undefined, start = START) {
   let now = start
   let nextId = 1
   const timers = new Map<number, { due: number; fn: () => void }>()
@@ -45,6 +53,7 @@ function fakeClock(start = START) {
         timers.delete(next[0])
         now = next[1].due
         next[1].fn()
+        await settled()
         await new Promise((resolve) => setTimeout(resolve, 0))
         await new Promise((resolve) => setTimeout(resolve, 0))
       }
@@ -65,13 +74,13 @@ const scope = { userId: "alice", orgId: "org-1", projectId: "project-a", workspa
 
 async function renewingRuntime(answers: (request: Request, attempt: number) => Promise<Response> | Response) {
   const signing = await signingEnv()
-  const clock = fakeClock()
-  const minted = await mintTasksCapability({ ...scope, operations: ["read", "create"] }, signing, { now: clock.now, ttlSeconds: TTL_MS / 1_000 })
   let attempts = 0
   const fetch = vi.fn(async (request: Request) => {
     if (request.url === RENEW) return await answers(request, (attempts += 1))
     return new Response("{}")
   })
+  const clock = fakeClock(() => Promise.allSettled(fetch.mock.results.map((result) => result.value)))
+  const minted = await mintTasksCapability({ ...scope, operations: ["read", "create"] }, signing, { now: clock.now, ttlSeconds: TTL_MS / 1_000 })
   const log = { info: vi.fn(), warn: vi.fn() }
   const ownerGrant = { swap: vi.fn<(token: string) => void>() }
   const grant = workspaceRuntimeTasksGrant(

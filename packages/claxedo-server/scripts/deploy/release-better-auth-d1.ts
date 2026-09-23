@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { request as httpsRequest } from "node:https"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { isOwnerOnlyFile } from "@claxedo/helpers/fs"
 
 import { resolveDeploymentProfileFromEnv } from "../../src/deployments/hosted-shared/deployment-profile"
 import {
@@ -888,8 +889,8 @@ export async function resolveReleaseSecretsFile(env: NodeJS.ProcessEnv, required
   const file = path.resolve(configured)
   const metadata = await stat(file)
   if (!metadata.isFile()) throw new Error("CLAXEDO_RELEASE_SECRETS_FILE must be a regular JSON file")
-  if ((metadata.mode & 0o077) !== 0) {
-    throw new Error("CLAXEDO_RELEASE_SECRETS_FILE must not be accessible by group or others")
+  if (!(await isOwnerOnlyFile(file))) {
+    throw new Error("CLAXEDO_RELEASE_SECRETS_FILE must be readable by its owner alone")
   }
   const parsed = JSON.parse(await readFile(file, "utf8")) as unknown
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {

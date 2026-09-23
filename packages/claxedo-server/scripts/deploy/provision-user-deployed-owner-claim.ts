@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { isOwnerOnlyFile, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 
 import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
 
@@ -246,8 +247,7 @@ export async function resolveOwnerClaim(
   try {
     const metadata = await stat(target)
     if (!metadata.isFile()) throw new Error("bootstrap owner claim path is not a regular file")
-    if ((metadata.mode & 0o077) !== 0)
-      throw new Error("bootstrap owner claim file must not be accessible by group or others")
+    if (!(await isOwnerOnlyFile(target))) throw new Error("bootstrap owner claim file must be readable by its owner alone")
     const raw = await readFile(target, "utf8")
     const claim = raw.endsWith("\n") ? raw.slice(0, -1) : raw
     return Object.freeze({ claim: canonicalOwnerClaim(claim), file: target, generated: false as const })
@@ -255,7 +255,7 @@ export async function resolveOwnerClaim(
     if (errorCode(error) !== "ENOENT") throw error
   }
   const claim = generateCanonicalOwnerClaim()
-  await writeFile(target, `${claim}\n`, { encoding: "utf8", flag: "wx", mode: 0o600 })
+  await writePrivateFileAtomic(target, `${claim}\n`)
   return Object.freeze({ claim, file: target, generated: true as const })
 }
 

@@ -1,6 +1,7 @@
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { isOwnerOnlyFile } from "@claxedo/helpers/fs"
 
 import Database from "better-sqlite3"
 import { afterEach, describe, expect, test } from "vitest"
@@ -225,7 +226,7 @@ describe("user-deployed bootstrap-owner provisioning", () => {
     const file = path.join(directory, "owner.claim")
     const first = await resolveOwnerClaim({ CLAXEDO_BOOTSTRAP_OWNER_CLAIM_FILE: file })
     expect(first).toMatchObject({ file, generated: true })
-    expect((await stat(file)).mode & 0o077).toBe(0)
+    expect(await isOwnerOnlyFile(file)).toBe(true)
     expect((await readFile(file, "utf8")).trim()).toBe(first.claim)
     expect(await resolveOwnerClaim({ CLAXEDO_BOOTSTRAP_OWNER_CLAIM_FILE: file })).toMatchObject({
       claim: first.claim,
@@ -236,7 +237,7 @@ describe("user-deployed bootstrap-owner provisioning", () => {
     const publicFile = path.join(directory, "public.claim")
     await writeFile(publicFile, `${claim}\n`, { mode: 0o644 })
     await expect(resolveOwnerClaim({ CLAXEDO_BOOTSTRAP_OWNER_CLAIM_FILE: publicFile })).rejects.toThrow(
-      /group or others/,
+      /owner alone/,
     )
     await expect(
       resolveOwnerClaim({

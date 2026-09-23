@@ -3,6 +3,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { realDirectoryPath } from "@claxedo/helpers/real-path"
 
 // Project administration on a signed self-hosted box, driven through the real
 // composed app by two accounts that share nothing. The project store this
@@ -75,7 +76,7 @@ afterAll(async () => {
 })
 
 function gitRepository(prefix: string) {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(dataDir, prefix)))
+  const directory = realDirectoryPath(fs.mkdtempSync(path.join(dataDir, prefix)))
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: directory, stdio: "ignore" })
   return directory
 }

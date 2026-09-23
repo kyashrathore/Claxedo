@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 
 import { describe, expect, test } from "vitest"
 
@@ -168,7 +169,7 @@ describe("single-artifact Better Auth D1 release", () => {
     })
     expect(JSON.stringify(manifest)).not.toContain("SECRET")
     expect(betterAuthD1DeploymentManifestPath(env, "production")).toContain(
-      ".artifacts/deployments/production-release-test-0001.json",
+      path.join(".artifacts", "deployments", "production-release-test-0001.json"),
     )
   })
 
@@ -267,12 +268,9 @@ describe("single-artifact Better Auth D1 release", () => {
   })
 
   test("a secret carried by the release file rides the tagged version instead of needing a prior secret put", async () => {
-    const { mkdtemp, writeFile, chmod } = await import("node:fs/promises")
-    const { tmpdir } = await import("node:os")
-    const dir = await mkdtemp(`${tmpdir()}/claxedo-release-secrets-`)
-    const file = `${dir}/secrets.json`
-    await writeFile(file, JSON.stringify({ CLOUDFLARE_SANDBOX_API_TOKEN: "rotated" }))
-    await chmod(file, 0o600)
+    const dir = await mkdtemp(path.join(tmpdir(), "claxedo-release-secrets-"))
+    const file = path.join(dir, "secrets.json")
+    await writePrivateFileAtomic(file, JSON.stringify({ CLOUDFLARE_SANDBOX_API_TOKEN: "rotated" }))
     const resolved = await resolveReleaseSecretsFile(
       { CLAXEDO_RELEASE_SECRETS_FILE: file },
       ["BETTER_AUTH_SECRET", "CLOUDFLARE_SANDBOX_API_TOKEN"],
@@ -360,7 +358,7 @@ describe("single-artifact Better Auth D1 release", () => {
     const directory = await mkdtemp(path.join(tmpdir(), "claxedo-release-secrets-"))
     try {
       const file = path.join(directory, "secrets.json")
-      await writeFile(file, JSON.stringify({ GITHUB_CLIENT_SECRET: "rotated-secret" }), { mode: 0o600 })
+      await writePrivateFileAtomic(file, JSON.stringify({ GITHUB_CLIENT_SECRET: "rotated-secret" }))
       const resolved = await resolveReleaseSecretsFile({ CLAXEDO_RELEASE_SECRETS_FILE: file }, [
         "BETTER_AUTH_SECRET",
         "GITHUB_CLIENT_SECRET",

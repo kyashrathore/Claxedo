@@ -5,13 +5,13 @@
  * organization a caller's rows land in, who owns them, and what a caller from
  * another organization can reach — is decided by this composition and the kit.
  */
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { betterAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { removeTestDataDir } from "../test-support/test-data-dir"
 import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platform/http/route-contribution"
 import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
 import type { ControlPlaneServices } from "../authority/services"
@@ -48,12 +48,11 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  ClaxedoDB.close()
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
   }
-  rmSync(dataDir, { recursive: true, force: true })
+  removeTestDataDir(dataDir)
 })
 
 function services(): ControlPlaneServices {

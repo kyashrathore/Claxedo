@@ -8,6 +8,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { RuntimeStore } from "../../../workspace-runtime/src/store"
 import type { SessionRoutes } from "../../../workspace-runtime/src/routes/session"
+import { removeTestDataDir } from "./test-data-dir"
 
 /**
  * One child, one parent, two people, shared by the wake suites that put a
@@ -48,7 +49,7 @@ export const lifecycle = {
   async cleanup() {
     for (const dispose of hosts.splice(0)) await dispose()
     for (const close of closers.splice(0)) close()
-    for (const directory of directories.splice(0)) fs.rmSync(directory, { recursive: true, force: true })
+    for (const directory of directories.splice(0)) removeTestDataDir(directory)
   },
 }
 

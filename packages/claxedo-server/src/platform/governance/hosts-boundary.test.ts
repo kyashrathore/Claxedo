@@ -40,11 +40,16 @@ function hostFiles(includeTests = false) {
   )
 }
 
+/** Module paths under `src/`, spelled with `/` on every platform so an edge reads the same in any report. */
+function modulePath(file: string) {
+  return path.relative(SRC, file).split(path.sep).join("/")
+}
+
 function deploymentImports(file: string, text: string) {
   return [...text.matchAll(RELATIVE_IMPORT)]
-    .map((match) => path.relative(SRC, path.resolve(path.dirname(file), match[1])))
-    .filter((target) => target.split(path.sep)[0] === "deployments")
-    .map((target) => `${path.relative(SRC, file)} -> ${target}`)
+    .map((match) => modulePath(path.resolve(path.dirname(file), match[1])))
+    .filter((target) => target.startsWith("deployments/"))
+    .map((target) => `${modulePath(file)} -> ${target}`)
 }
 
 describe("hosts boundary", () => {
