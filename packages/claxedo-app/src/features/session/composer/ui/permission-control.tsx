@@ -127,29 +127,13 @@ export function PromptPermissionControl(props: {
 }
 
 /**
- * The three strings a mode row shows.
- *
- * Extracted and exported because this is exactly where the regression happened:
- * `caveat` was quietly dropped from the assembled parts while `modes.ts` kept
- * producing it and `modes.test.ts` kept asserting it existed, so the suite
- * stayed green while the warning stopped reaching anyone. As a pure function it
- * can be tested without standing up a portal-rendered menu.
- *
- * - `detail`   — what the mode does, plus why it is unavailable if it is.
- * - `caveat`   — the condition that can withdraw it. Rendered separately and
- *                never clamped: on the local-answering path this is the line
- *                that says the harness enforces nothing.
- * - `tooltip`  — everything, because `detail` is clamped to two lines and a
- *                truncated `blockedReason` is unreadable exactly when it matters.
+ * `caveat` is kept apart from `detail` because it renders as its own warning
+ * line: on the local-answering path it is the line that says the harness
+ * enforces nothing.
  */
 export function permissionRowText(row: PermissionModeRow) {
   const detail = [row.option.description, row.blockedReason].filter(Boolean).join(" — ")
-  const caveat = row.option.caveat
-  return {
-    detail,
-    caveat,
-    tooltip: [detail, caveat].filter(Boolean).join(" — ") || row.option.name,
-  }
+  return { detail, caveat: row.option.caveat }
 }
 
 function ModeRow(props: {
@@ -162,94 +146,91 @@ function ModeRow(props: {
   const text = () => permissionRowText(props.row)
   const detail = () => text().detail
   const caveat = () => text().caveat
-  const tooltip = () => text().tooltip
 
   return (
-    <Tooltip placement="right" value={tooltip()}>
-      <MenuV2.Item
-        data-permission-mode-row
-        data-mode={option().id}
-        data-what={option().delivery.kind}
-        data-selectable={props.row.selectable ? "true" : "false"}
-        /*
-         * `data-checked` is the menu's own selected convention — it already
-         * drives weight and accent colour in menu-v2.css. This row was styling
-         * selection by tinting the leading glyph from `icon-muted` to
-         * `icon-base`, which is a barely-visible grey shift on a 14px icon, so
-         * every row read the same. Opting into the existing contract gives the
-         * check, the weight and the colour together.
-         */
-        data-checked={selected() ? "true" : undefined}
-        aria-checked={selected()}
-        class="w-full"
-        disabled={!props.row.selectable}
-        onSelect={() => props.row.selectable && props.onSelect(option())}
-      >
-        <span class="flex w-full min-w-0 items-start gap-2">
-          <Icon
-            name="shield"
-            size="small"
-            /*
-             * Nudges the glyph down 1px to optically centre it against the 16px
-             * label line — geometric centring sits it a touch high. This was
-             * `mt-0.5` when the icon was an svg inside a fixed-height wrapper,
-             * where a 2px top margin under `align-items: center` moved the glyph
-             * exactly 1px and moved nothing else. The icon IS the box now, so
-             * the same 1px has to be a transform to stay out of the layout.
-             */
-            class="translate-y-px shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
-            classList={{
-              "text-v2-icon-icon-base": selected(),
-              "text-v2-icon-icon-muted": !selected(),
-            }}
-          />
-          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span data-slot="menu-v2-item-content" class="text-compact leading-4 text-v2-text-text-base">
-              {option().name}
+    <MenuV2.Item
+      data-permission-mode-row
+      data-mode={option().id}
+      data-what={option().delivery.kind}
+      data-selectable={props.row.selectable ? "true" : "false"}
+      /*
+       * `data-checked` is the menu's own selected convention — it already
+       * drives weight and accent colour in menu-v2.css. This row was styling
+       * selection by tinting the leading glyph from `icon-muted` to
+       * `icon-base`, which is a barely-visible grey shift on a 14px icon, so
+       * every row read the same. Opting into the existing contract gives the
+       * check, the weight and the colour together.
+       */
+      data-checked={selected() ? "true" : undefined}
+      aria-checked={selected()}
+      class="w-full"
+      disabled={!props.row.selectable}
+      onSelect={() => props.row.selectable && props.onSelect(option())}
+    >
+      <span class="flex w-full min-w-0 items-start gap-2">
+        <Icon
+          name="shield"
+          size="small"
+          /*
+           * Nudges the glyph down 1px to optically centre it against the 16px
+           * label line — geometric centring sits it a touch high. This was
+           * `mt-0.5` when the icon was an svg inside a fixed-height wrapper,
+           * where a 2px top margin under `align-items: center` moved the glyph
+           * exactly 1px and moved nothing else. The icon IS the box now, so
+           * the same 1px has to be a transform to stay out of the layout.
+           */
+          class="translate-y-px shrink-0 transition-[color] duration-150 ease-[cubic-bezier(0.2,0,0,1)]"
+          classList={{
+            "text-v2-icon-icon-base": selected(),
+            "text-v2-icon-icon-muted": !selected(),
+          }}
+        />
+        <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span data-slot="menu-v2-item-content" class="text-compact leading-4 text-v2-text-text-base">
+            {option().name}
+          </span>
+          <Show when={detail()}>
+            <span
+              data-slot="permission-mode-description"
+              class="whitespace-normal text-xs leading-[var(--line-height-15)] text-v2-text-text-faint"
+            >
+              {detail()}
             </span>
-            <Show when={detail()}>
-              <span
-                data-slot="permission-mode-description"
-                class="line-clamp-2 whitespace-normal text-xs leading-[var(--line-height-15)] text-v2-text-text-faint"
-              >
-                {detail()}
-              </span>
-            </Show>
-            <Show when={caveat()}>
-              <span
-                data-slot="permission-mode-caveat"
-                class="whitespace-normal text-xs leading-[var(--line-height-15)]"
-                // The composer is v2 UI, so this is the v2 warning foreground.
-                // Not `--text-danger`: that token is not defined by the theme
-                // layer these menus render under, so it silently resolves to
-                // inherited body text and the caveat stops reading as a warning.
-                style={{ color: "var(--v2-state-fg-warning)" }}
-              >
-                {caveat()}
-              </span>
-            </Show>
-          </span>
-          {/*
-            Trailing rather than leading, because the leading slot already
-            carries the shield/hand glyph that says what KIND of mode this is.
-            Two marks on the left would compete; kind on the left and state on
-            the right keeps each answering one question.
-
-            Always mounted, never conditionally rendered: the 16px slot holds
-            the row's width steady between states, and the check can animate in
-            rather than appearing. Rows are multi-line, so it pins to the first
-            line instead of centring against the whole block.
-          */}
-          <span
-            data-slot="menu-v2-item-indicator"
-            data-checked={selected() ? "true" : undefined}
-            aria-hidden="true"
-            class="mt-0.5 shrink-0"
-          >
-            <BareIcon name="check-small" size="small" />
-          </span>
+          </Show>
+          <Show when={caveat()}>
+            <span
+              data-slot="permission-mode-caveat"
+              class="whitespace-normal text-xs leading-[var(--line-height-15)]"
+              // The composer is v2 UI, so this is the v2 warning foreground.
+              // Not `--text-danger`: that token is not defined by the theme
+              // layer these menus render under, so it silently resolves to
+              // inherited body text and the caveat stops reading as a warning.
+              style={{ color: "var(--v2-state-fg-warning)" }}
+            >
+              {caveat()}
+            </span>
+          </Show>
         </span>
-      </MenuV2.Item>
-    </Tooltip>
+        {/*
+          Trailing rather than leading, because the leading slot already
+          carries the shield/hand glyph that says what KIND of mode this is.
+          Two marks on the left would compete; kind on the left and state on
+          the right keeps each answering one question.
+
+          Always mounted, never conditionally rendered: the 16px slot holds
+          the row's width steady between states, and the check can animate in
+          rather than appearing. Rows are multi-line, so it pins to the first
+          line instead of centring against the whole block.
+        */}
+        <span
+          data-slot="menu-v2-item-indicator"
+          data-checked={selected() ? "true" : undefined}
+          aria-hidden="true"
+          class="mt-0.5 shrink-0"
+        >
+          <BareIcon name="check-small" size="small" />
+        </span>
+      </span>
+    </MenuV2.Item>
   )
 }

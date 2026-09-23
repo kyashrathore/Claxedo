@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
+import { usePrincipal } from "@/platform/auth/identity-provider"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 
 export const SHARED_WORKSPACES_QUERY_KEY = ["claxedo", "remote-access", "shared-workspaces"] as const
@@ -18,6 +19,8 @@ export const SHARED_WORKSPACES_QUERY_KEY = ["claxedo", "remote-access", "shared-
  *
  * Absent port (unsigned, or a product without the connector) reads as an
  * empty set, not an error: "nothing is shared" is the truthful answer there.
+ * So does a caller with no account credential: the server authenticates these
+ * routes by account and refuses a loopback or anonymous caller with 401.
  */
 export type PublishedWorkspaces = {
   /** Whether this account is publishing a machine at all right now. */
@@ -26,11 +29,16 @@ export type PublishedWorkspaces = {
 }
 
 export function useSharedWorkspaceIds() {
+  const principal = usePrincipal()
+  const hasAccount = () => {
+    const kind = principal().kind
+    return kind !== "anonymous" && kind !== "local"
+  }
   const query = useQuery(() => ({
-    queryKey: SHARED_WORKSPACES_QUERY_KEY,
+    queryKey: [...SHARED_WORKSPACES_QUERY_KEY, hasAccount()] as const,
     queryFn: async (): Promise<PublishedWorkspaces> => {
       const port = machineRemoteAccess()
-      if (!port) return { publishing: false, ids: [] }
+      if (!port || !hasAccount()) return { publishing: false, ids: [] }
       if (port.devices) {
         const devices = await port.devices()
         return {

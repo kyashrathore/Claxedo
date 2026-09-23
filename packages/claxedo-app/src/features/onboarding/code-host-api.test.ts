@@ -96,6 +96,9 @@ describe("reading code-host status", () => {
       connections: [],
     })
     expect(await readCodeHostStatus(responding(null))).toEqual({ integrations: [], connections: [] })
+    expect(await readCodeHostStatus(async () => {
+      throw new TypeError("Failed to fetch")
+    })).toEqual({ integrations: [], connections: [] })
   })
 
   test("a malformed payload yields nothing rather than a crash", async () => {

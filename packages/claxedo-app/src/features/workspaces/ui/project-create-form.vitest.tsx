@@ -318,6 +318,21 @@ describe("a server without a code host", () => {
     expect(created.calls[0].source).toEqual({ kind: "repository", repoUrl: "https://github.com/owner/repo" })
   })
 
+  test("a status request that never reaches the server settles on the URL field", async () => {
+    const refused: CodeHostRequest = async () => {
+      throw new TypeError("Failed to fetch")
+    }
+    const { onCreated } = renderForm({ codeHost: refused })
+
+    const url = await screen.findByRole("textbox", { name: "Repository URL" })
+    expect(screen.queryByText("Checking connected accounts…")).toBeNull()
+
+    fireEvent.input(url, { target: { value: "https://github.com/owner/repo" } })
+    submit()
+    await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1))
+    expect(created.calls[0].source).toEqual({ kind: "repository", repoUrl: "https://github.com/owner/repo" })
+  })
+
   test("a refused create is the server's message, and the form stays", async () => {
     created.reject = '{"message":"a project already uses that folder"}'
     const host = fakeCodeHost({ root: json({}, 404) })

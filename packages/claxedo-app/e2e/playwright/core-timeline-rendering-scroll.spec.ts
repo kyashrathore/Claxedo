@@ -892,61 +892,129 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect.poll(() => jumpToBottomOpacity(page)).toBe("0")
   })
 
-  for (const scheme of ["light", "dark"] as const) {
-    test(`expanded output is readable with visible scrollbars in ${scheme} theme`, async ({ page }, testInfo) => {
+  // Each case boots in one scheme and switches to the other from Settings
+  // while every card is open, with the OS reporting the opposite of
+  // the target so no text can pass by following the OS instead of the app.
+  // `system` boots dark under a dark OS.
+  for (const { os, stored, target } of [
+    { os: "dark", stored: "system", target: "light" },
+    { os: "light", stored: "light", target: "dark" },
+  ] as const) {
+    test(`every collapsible card stays readable after switching to ${target} at runtime`, async ({ page }, testInfo) => {
       const rows = seededTurnRows(1)
-      rows[1].parts.unshift(toolPart({
-        id: "readable_output", messageID: "msg_assistant_01", tool: "bash",
-        input: { command: "print numbered lines" },
-        output: Array.from({ length: 100 }, (_, i) => `readable line ${i + 1}`).join("\n"),
-      }))
-      rows[1].parts.splice(1, 0, toolPart({
-        id: "readable_web", messageID: "msg_assistant_01", tool: "webfetch",
-        input: { url: "https://example.com" }, output: Array.from({ length: 100 }, (_, i) => `web line ${i + 1}`).join("\n\n"),
-      }))
+      const assistant = "msg_assistant_01"
+      const cards = [
+        toolPart({ id: "card_read", messageID: assistant, tool: "read", input: { filePath: "src/a.ts" }, output: "export const a = 1" }),
+        toolPart({ id: "card_grep", messageID: assistant, tool: "grep", input: { pattern: "needle" }, output: "src/a.ts:1: needle" }),
+        toolPart({
+          id: "card_bash", messageID: assistant, tool: "bash",
+          input: { command: "print numbered lines" },
+          output: Array.from({ length: 100 }, (_, i) => `readable line ${i + 1}`).join("\n"),
+        }),
+        toolPart({
+          id: "card_web", messageID: assistant, tool: "webfetch",
+          input: { url: "https://example.com" }, output: Array.from({ length: 100 }, (_, i) => `web line ${i + 1}`).join("\n\n"),
+        }),
+        toolPart({
+          id: "card_edit", messageID: assistant, tool: "edit",
+          input: { filePath: "src/app.ts", oldString: "const a = 1", newString: "const a = 2" },
+          metadata: { filediff: { file: "src/app.ts", before: "const a = 1\n", after: "const a = 2\n" } },
+        }),
+        toolPart({ id: "card_write", messageID: assistant, tool: "write", input: { filePath: "src/new.ts", content: "export const created = true\n" } }),
+        toolPart({ id: "card_search", messageID: assistant, tool: "websearch", input: { query: "solid js" }, output: "Title: Solid\nURL: https://solidjs.com\nText: A reactive UI library" }),
+        toolPart({ id: "card_error", messageID: assistant, tool: "bash", status: "error", input: { command: "false" }, output: "command exited with status 1" }),
+      ]
+      rows[1].parts.unshift(...cards)
       await installMockRuntime(page, {
         dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, harnessModels: HARNESS_MODELS,
         existingSession: { messages: rows as unknown as MockMessageRow[] },
       })
-      await seedOneProject(page, DIR, scheme)
+      await page.emulateMedia({ colorScheme: os })
+      await seedOneProject(page, DIR, "dark")
+      await page.addInitScript((scheme) => localStorage.setItem("opencode-color-scheme", scheme), stored)
       await gotoSession(page)
-      // The fold and group helpers below decide on the rows present at that
-      // moment; the answer's visibility is what proves the turn has rendered.
       await expectAssistantReplyVisible(page, "Reply 1. A short acknowledgement for turn 1.")
       await unfoldTurnIfNeeded(page, "msg_user_01")
-      await expandWorkGroupIfPresent(page, "readable_output,readable_web")
-      await expect(page.locator("html")).toHaveAttribute("data-color-scheme", scheme)
-      const group = page.locator('[data-component="work-group-list"]')
-      const tool = page.locator('[data-timeline-part-id="readable_output"]')
-      const trigger = tool.locator('[data-slot="collapsible-trigger"]')
-      await expect(trigger).toBeVisible()
-      if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click()
-      const output = tool.locator('[data-slot="bash-scroll"]')
-      await expect(output).toContainText("readable line 100")
-      await page.mouse.move(0, 0)
-      const style = await output.evaluate(element => {
-        const code = element.querySelector("code")!
-        return {
-          text: getComputedStyle(code).color,
-          scrollbar: getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor,
-          scrollbarDisplay: getComputedStyle(element, "::-webkit-scrollbar").display,
-          scrollbarWidth: getComputedStyle(element).scrollbarWidth,
-          overflow: element.scrollHeight > element.clientHeight,
+      // The desktop entry document carries no initial-paint rule, so the
+      // shared stylesheets alone must give page text its theme colour.
+      await page.evaluate(() => document.getElementById("claxedo-initial-paint")?.remove())
 
+      const closed = page.locator(
+        '[data-component="work-group-trigger"][aria-expanded="false"], [data-slot="collapsible-trigger"][aria-expanded="false"]',
+      )
+      for (let pass = 0; pass < 20 && (await closed.count()) > 0; pass++) await closed.first().click()
+      await expect(closed).toHaveCount(0)
+      for (const card of cards) await expect(page.locator(`[data-timeline-part-id="${card.id}"]`)).toBeVisible()
+      await expect(page.locator('[data-timeline-part-id="card_bash"] [data-slot="bash-scroll"]')).toContainText("readable line 100")
+
+      await expect(page.locator("html")).toHaveAttribute("data-color-scheme", os === "dark" && stored === "system" ? "dark" : stored)
+      await openSettings(page)
+      await page.locator('[data-action="settings-color-scheme"] [data-slot="select-select-trigger"]').click()
+      // The pointer crossing the option previews the scheme and re-renders the
+      // list under it, so the click skips actionability checks.
+      await page.locator('[data-slot="select-select-item"]').filter({ hasText: target === "light" ? "Light" : "Dark" }).click({ force: true })
+      await expect(page.locator("html")).toHaveAttribute("data-color-scheme", target)
+      await closeSettings(page)
+      await expect(closed).toHaveCount(0)
+      await page.mouse.move(0, 0)
+      await page.screenshot({ path: testInfo.outputPath(`cards-${target}.png`), fullPage: true })
+
+      const report = await page.evaluate(() => {
+        // Computed colours can be `oklab(...)` from `color-mix()`; a canvas
+        // resolves any syntax to sRGB bytes.
+        const pixel = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!
+        const rgba = (value: string) => {
+          pixel.clearRect(0, 0, 1, 1)
+          pixel.fillStyle = value
+          pixel.fillRect(0, 0, 1, 1)
+          const [r, g, b, a] = pixel.getImageData(0, 0, 1, 1).data
+          return { r, g, b, a: a / 255 }
         }
+        const luminance = ({ r, g, b }: { r: number; g: number; b: number }) => {
+          const [lr, lg, lb] = [r, g, b].map(c => c / 255).map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
+          return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb
+        }
+        const backdrop = (element: Element) => {
+          for (let node: Element | null = element; node; node = node.parentElement) {
+            const color = rgba(getComputedStyle(node).backgroundColor)
+            if (color.a >= 0.5) return color
+          }
+          return rgba(getComputedStyle(document.documentElement).backgroundColor)
+        }
+        const failures: string[] = []
+        let checked = 0
+        for (const card of document.querySelectorAll("[data-timeline-part-id], [data-component='work-group-trigger']")) {
+          for (const element of card.querySelectorAll("*")) {
+            const own = [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent!.trim())
+            if (!own || element.getClientRects().length === 0) continue
+            const style = getComputedStyle(element)
+            if (style.visibility === "hidden" || Number(style.opacity) === 0) continue
+            const fg = luminance(rgba(style.webkitTextFillColor || style.color))
+            const bg = luminance(backdrop(element))
+            const ratio = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)
+            checked++
+            if (ratio < 3) failures.push(`${card.getAttribute("data-timeline-part-id") ?? "work-group"} ${element.tagName} "${element.textContent!.trim().slice(0, 30)}" ${style.color} ratio ${ratio.toFixed(2)}`)
+          }
+        }
+        const root = getComputedStyle(document.documentElement)
+        return { checked, failures, rootScheme: root.colorScheme }
       })
-      await writeFile(testInfo.outputPath("output-styles.json"), JSON.stringify(style, null, 2))
-      await page.screenshot({ path: testInfo.outputPath("expanded-output.png") })
-      const color = style.text.match(/[\d.]+/g)!.slice(0, 3).map(Number)
-      const luminance = color.map(c => c / 255).map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-      const light = 0.2126 * luminance[0] + 0.7152 * luminance[1] + 0.0722 * luminance[2]
-      expect(scheme === "light" ? 1.05 / (light + 0.05) : (light + 0.05) / 0.05).toBeGreaterThan(4.5)
-      expect(await group.evaluate(element => getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor)).not.toBe("rgba(0, 0, 0, 0)")
-      await expect(tool.locator('[data-slot="basic-tool-tool-leading-icon"]')).toBeVisible()
-      expect(style.scrollbarDisplay).not.toBe("none")
-      expect(style.scrollbarWidth).not.toBe("none")
-      expect(style.overflow).toBe(true)
-      expect(style.scrollbar).not.toBe("rgba(0, 0, 0, 0)")
+      await writeFile(testInfo.outputPath("contrast.json"), JSON.stringify(report, null, 2))
+      expect(report.rootScheme).toBe(target)
+      expect(report.checked).toBeGreaterThan(cards.length)
+      expect(report.failures).toEqual([])
+
+      const output = page.locator('[data-timeline-part-id="card_bash"] [data-slot="bash-scroll"]')
+      const scroll = await output.evaluate(element => ({
+        thumb: getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor,
+        display: getComputedStyle(element, "::-webkit-scrollbar").display,
+        width: getComputedStyle(element).scrollbarWidth,
+        overflow: element.scrollHeight > element.clientHeight,
+      }))
+      expect(scroll.display).not.toBe("none")
+      expect(scroll.width).not.toBe("none")
+      expect(scroll.overflow).toBe(true)
+      expect(scroll.thumb).not.toBe("rgba(0, 0, 0, 0)")
       await output.evaluate(element => { element.scrollTop = 120 })
       await expect.poll(() => output.evaluate(element => element.scrollTop)).toBe(120)
     })
