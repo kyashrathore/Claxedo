@@ -209,7 +209,18 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
 }
 
 const onboardingThunks: Thunks<OnboardingAppPorts> = {
+  ProjectCreateForm: lazy("@/features/workspaces/ui/project-create-form", "ProjectCreateForm"),
+  createProject: lazy("@/features/workspaces/data/project-api", "createProject"),
+  projectRequestMessage: lazy("@/features/workspaces/data/project-api", "projectRequestMessage"),
+  MachineAccountsProvider: lazy("@/features/settings/machine-accounts", "MachineAccountsProvider"),
+  useMachineAccounts: lazy("@/features/settings/machine-accounts", "useMachineAccounts"),
+  AgentHarnessAccounts: lazy("@/features/settings/ui/agents-section", "AgentHarnessAccounts"),
+  HarnessProvidersSection: lazy("@/features/settings/ui/harness-providers-section", "HarnessProvidersSection"),
+  useProviders: lazy("@/app/providers/use-providers", "useProviders"),
+  putProviderAuthEntry: lazy("@/features/settings/provider-settings-logic", "putProviderAuthEntry"),
   workspaceSandboxDriversUrl: lazy("@/features/settings/ui/sandbox-section-logic", "workspaceSandboxDriversUrl"),
+  workspaceSandboxDriverAuthUrl: lazy("@/features/settings/ui/sandbox-section-logic", "workspaceSandboxDriverAuthUrl"),
+  SandboxDriverLogo: lazy("@/features/settings/ui/sandbox-driver-logo", "SandboxDriverLogo"),
 }
 
 const tasksThunks: Thunks<TasksAppPorts> = {

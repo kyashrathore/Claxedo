@@ -757,23 +757,22 @@ test.describe("core cloud provisioning @core", () => {
 
 /**
  * A hosted plane (`platform === "web"`, non-loopback central transport) has no
- * filesystem, so the create form offers a repository only. With no project yet the
- * canvas IS that form (`FirstProjectCanvas`); every later project comes from the
- * composer's Project chip, which renders the same `ProjectCreateForm`. Creating a
- * project never asks where it runs; execution is the Environment/Workspace chips'
- * question at first send.
+ * filesystem and no project route: with no project yet the canvas is the first-run
+ * wizard, and a project comes into being as the first cloud workspace the wizard
+ * creates at Finish. The AI step there is Pi's provider list, whose keys the plane
+ * keeps under `PUT /auth/:providerID?harness=pi`; the sandbox is the deployment's own,
+ * so nothing asks for a driver key.
  *
  * `__CLAXEDO_E2E_SERVER_URL__` forces the non-loopback default server; every route glob
- * is origin-agnostic, so the mocks still answer. The hosted plane does not serve
- * `/api/claxedo/projects` yet, so listing the created project is not asserted.
+ * is origin-agnostic, so the mocks still answer.
  */
 const HOSTED_SERVER_URL = "https://cloud.example.test"
 const HOSTED_REPO_URL = "https://github.com/acme/app"
-const HOSTED_PROJECT_ID = "prj_core_cloud_hosted"
+const HOSTED_WORKSPACE_ID = "ws_core_cloud_hosted"
 
 test.describe("core cloud project creation on a hosted control plane @core", () => {
   test(
-    "a hosted plane with no project opens on the create form and makes a repository project from it",
+    "a hosted plane with no project walks the wizard and creates the first cloud workspace at Finish",
     async ({ page }) => {
       test.setTimeout(120_000)
       await stampTestAuth(page.context())
@@ -781,7 +780,6 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
 
       // A hosted account before its first project: `installMockRuntime`'s default
       // local-worktree row has no cloud kind and the signed inventory contract rejects it.
-      const created: Array<{ id: string; name: string }> = []
       await page.route("**/api/claxedo/bootstrap**", (route) =>
         route.fulfill({
           status: 200,
@@ -792,87 +790,72 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
             path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
             events: { hostAggregate: true },
             deployment: bootstrapDeployment(true),
-            project: created.map((project) => ({
-              id: project.id,
-              name: project.name,
-              worktree: `ws_${project.id}`,
-              workspaces: {},
-              time: { created: 1, updated: 1 },
-            })),
+            project: [],
             provider: { all: [], default: {}, connected: [] },
             provider_auth: {},
             config: {},
           }),
         }),
       )
-      // The Project chip lists `GET /project`; same rows as bootstrap.
       await page.route("**/project**", (route) => {
         const type = route.request().resourceType()
         if (type !== "fetch" && type !== "xhr") return route.continue()
         if (new URL(route.request().url()).pathname !== "/project" || route.request().method() !== "GET") return route.fallback()
-        return route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify(created.map((project) => ({
-            id: project.id,
-            name: project.name,
-            worktree: `ws_${project.id}`,
-            workspaces: {},
-            time: { created: 1, updated: 1 },
-          }))),
-        })
+        return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
       })
 
-      // A hosted plane has no drivers route; creation must not ask for one.
+      // This deployment has no code host to choose from, so the wizard offers the URL field alone.
+      await page.route("**/api/claxedo/integrations**", (route) =>
+        route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "route_not_found" } }) }),
+      )
+      // A hosted plane has no drivers route and no projects route; the wizard must ask neither.
       let driversRequests = 0
       await page.route("**/api/workspace/drivers**", (route) => {
         driversRequests += 1
         return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "not_found" } }) })
       })
-      // ...and never provisions a workspace: a project is a repository and a name.
-      let workspaceCreates = 0
-      await page.route("**/api/workspace/create", (route) => {
-        workspaceCreates += 1
-        return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "unexpected" } }) })
+      let projectPosts = 0
+      await page.route("**/api/claxedo/projects**", (route) => {
+        if (route.request().method() === "POST") projectPosts += 1
+        return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "route_not_found" } }) })
       })
 
-      const createBodies: unknown[] = []
-      await page.route("**/api/claxedo/projects**", (route) => {
-        const request = route.request()
-        const wire = created.map((project) => ({
-          id: project.id,
-          name: project.name,
-          env: {},
-          directory: null,
-          repoUrl: HOSTED_REPO_URL,
-          created_at: 1,
-          updated_at: 1,
-        }))
-        if (request.method() === "GET") {
-          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ projects: wire }) })
+      // Pi's catalog, which reports a provider connected once its key is stored.
+      const piKeys: Array<{ providerId: string; body: unknown }> = []
+      await page.route("**/api/claxedo/agent-config/providers?**", (route) => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get("nativeHarness") !== "pi") {
+          return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "provider_catalog_unsupported" } }) })
         }
-        if (request.method() !== "POST") return route.fallback()
-        const body = request.postDataJSON?.() as { name?: string } | undefined
-        createBodies.push(body)
-        const project = { id: HOSTED_PROJECT_ID, name: body?.name ?? "" }
-        created.push(project)
         return route.fulfill({
-          status: 201,
+          status: 200,
           contentType: "application/json",
-          body: JSON.stringify({
-            project: { ...project, env: {}, directory: null, repoUrl: HOSTED_REPO_URL, created_at: 1, updated_at: 1 },
-          }),
+          body: JSON.stringify(providerCatalogIndex({
+            all: [
+              { id: "anthropic", name: "Anthropic", models: {} },
+              { id: "openai-codex", name: "ChatGPT", models: {} },
+            ],
+            connected: piKeys.map((entry) => entry.providerId),
+            default: {},
+          })),
         })
       })
+      await page.route("**/auth/*?harness=pi**", (route) => {
+        if (route.request().method() !== "PUT") return route.fallback()
+        const providerId = new URL(route.request().url()).pathname.split("/").pop() ?? ""
+        piKeys.push({ providerId, body: route.request().postDataJSON?.() })
+        return route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+      })
 
-      // On a hosted plane the project inventory is the signed workspace inventory; a
-      // created project has to be re-listed from it before the canvas can move on.
-      let inventoryReads = 0
-      page.on("request", (request) => {
-        const url = new URL(request.url())
-        if (request.method() === "GET" && isWorkspaceListPath(url.pathname) && url.searchParams.get("host") === "provisioner") {
-          inventoryReads += 1
-        }
+      const workspaceCreates: unknown[] = []
+      await page.route("**/api/workspace/create", (route) => {
+        if (route.request().method() !== "POST") return route.fallback()
+        workspaceCreates.push(route.request().postDataJSON?.())
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ workspaceId: HOSTED_WORKSPACE_ID, directory: HOSTED_WORKSPACE_ID, status: "acquiring_sandbox" }),
+        })
       })
 
       await page.addInitScript((serverUrl: string) => {
@@ -883,37 +866,55 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await page.goto("/", { waitUntil: "domcontentloaded", timeout: 100_000 })
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-      // No project: the form is the screen, with nothing to click through first.
+      // Step 1: the form is the screen, with a URL and nothing about execution.
       await expect(page.getByTestId("first-project-canvas")).toBeVisible({ timeout: 20_000 })
-      await expect(page.getByRole("button", { name: "New Project", exact: true })).toHaveCount(0)
+      const wizard = page.getByTestId("onboarding-wizard")
+      await expect(wizard).toHaveAttribute("data-step", "project")
+      await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
       const form = page.locator('[data-slot="project-create-form"]')
       await expect(form).toBeVisible({ timeout: 20_000 })
-
-      // No folder, no source switch, no provider control: execution is not this form's question.
       await expect(form.getByRole("button", { name: "Choose folder" })).toHaveCount(0)
       await expect(form.locator('[data-slot="project-create-source"]')).toHaveCount(0)
-      await expect(page.getByText("Sandbox Provider")).toHaveCount(0)
       const repoUrl = form.getByRole("textbox", { name: "Repository URL" })
-      await expect(repoUrl).toBeVisible()
+      await expect(repoUrl).toBeVisible({ timeout: 20_000 })
       await repoUrl.fill(HOSTED_REPO_URL)
-      await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-create-project-panel.png" })
+      await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-wizard-project.png" })
+      await form.getByRole("button", { name: "Continue" }).click()
 
-      // The body carries the source only; the server derives the name from it.
-      const inventoryReadsBeforeCreate = inventoryReads
-      await form.getByRole("button", { name: "Create project" }).click()
-      await expect.poll(() => createBodies.length, { timeout: 30_000 }).toBe(1)
-      expect(createBodies[0]).toEqual({ source: { kind: "repository", repoUrl: HOSTED_REPO_URL } })
+      // Step 2: Pi's providers; Next waits for a stored key, which goes to the plane's auth route.
+      await expect(wizard).toHaveAttribute("data-step", "ai")
+      await expect(page.getByRole("heading", { name: "Connect an AI" })).toBeVisible()
+      await expect(page.locator('[data-slot="onboarding-project-name"]')).toContainText("app")
+      await expect(page.getByRole("button", { name: "Skip for now" })).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
+      await expect(page.getByText("Signs in from a CLI; no key to paste here")).toBeVisible()
+      await page.locator('[data-provider="anthropic"]').getByRole("button", { name: "Connect" }).click()
+      await page.getByLabel("Anthropic API key").fill("sk-ant-e2e")
+      await page.getByRole("button", { name: "Save key" }).click()
+      await expect.poll(() => piKeys.length, { timeout: 10_000 }).toBe(1)
+      expect(piKeys[0]).toEqual({ providerId: "anthropic", body: { auth: { key: "sk-ant-e2e" } } })
+      await expect(page.locator('[data-provider="anthropic"]')).toHaveAttribute("data-connected", "true", { timeout: 10_000 })
+      await expect(page.getByRole("button", { name: "Next" })).toBeEnabled()
+      await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-wizard-ai.png" })
+      await page.getByRole("button", { name: "Next" }).click()
 
-      // Success re-lists the inventory. This mock's inventory never carries the project
-      // (a repository project has no workspace row), so the form is still the screen;
-      // the canvas leaving the form once a project lists is `rail-workbench-canvas`'s own.
-      await expect.poll(() => inventoryReads, { timeout: 20_000 }).toBeGreaterThan(inventoryReadsBeforeCreate)
-      await expect(form).toBeVisible()
-      await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-project-created.png" })
-
+      // Step 3: the deployment's sandbox is the answer; Finish creates the one workspace.
+      await expect(wizard).toHaveAttribute("data-step", "execution")
+      await expect(page.getByRole("radio", { name: /Just this machine/ })).toHaveCount(0)
+      await expect(page.getByRole("radio", { name: /A cloud sandbox/ })).toHaveAttribute("aria-checked", "true")
+      await expect(page.locator('[data-slot="onboarding-cloud-hosted"]')).toBeVisible()
       expect(driversRequests).toBe(0)
-      expect(workspaceCreates).toBe(0)
+      expect(projectPosts).toBe(0)
+      expect(workspaceCreates).toEqual([])
       expect(mock.requests.badResponses).toEqual([])
+      await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-wizard-execution.png" })
+      await page.getByRole("button", { name: "Create workspace" }).click()
+
+      await expect.poll(() => workspaceCreates.length, { timeout: 30_000 }).toBe(1)
+      expect(workspaceCreates[0]).toEqual({ projectName: "app", repoUrl: HOSTED_REPO_URL })
+      await expect(page).toHaveURL(new RegExp(`/w/${HOSTED_WORKSPACE_ID}/session`), { timeout: 20_000 })
+      expect(projectPosts).toBe(0)
+      expect(driversRequests).toBe(0)
     },
   )
 })

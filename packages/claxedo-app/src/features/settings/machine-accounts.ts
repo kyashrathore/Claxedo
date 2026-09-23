@@ -449,12 +449,29 @@ const machineAccountsInput = {
         : language.t("settings.providers.agents.scannedAt", { when: formatRelativeTime(at, language.locale()) })
     }
 
+    /**
+     * Whether the harness holds a login a turn can run on: the entry it runs
+     * on is a stored account its provider has not refused, or this computer's
+     * own login signed in and driving every binding the harness needs.
+     */
+    const runnable = (check: LocalHarnessCheck) => {
+      const selected = selectedKey(check)
+      if (selected === undefined) return false
+      if (selected === MACHINE) {
+        const login = machineLogin(check)
+        return login?.state === "signed_in" && !strandedBinding(login, check)
+      }
+      const row = accounts(check).find((account) => account.id === selected)
+      return row !== undefined && !refused(accountCheck(row))
+    }
+
     return {
       scanning,
       opened,
       scannedLabel,
       scan,
       listedAccounts,
+      runnable,
       select,
       selecting,
       check,

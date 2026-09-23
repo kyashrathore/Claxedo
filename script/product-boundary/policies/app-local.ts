@@ -565,13 +565,20 @@ export const appLocal: Policy = {
   // ai-connect-surface}`; the no-project screen is `first-project-canvas.tsx`
   // alone. No package edge changes. Exact measured 1100 modules / 58 packages,
   // with no headroom.
-  // +1 module (2026-09-23): `features/onboarding/code-host-api.ts`. The project
-  // form picks a repository from the connected code host, and reaches that
-  // module's status, connect and list reads through `WorkspacesAppPorts`
-  // (wired in `app/integrations/feature-ports.ts`). Owner:
-  // `features/onboarding`. No new package edge. Exact measured 1101 modules /
-  // 58 packages, with no headroom.
-  ceilings: { modules: 1101, packages: 58 },
+  // Re-measured (2026-09-23) on a clean checkout of that removal: 1101
+  // modules, one more than it recorded; the ledger below starts from the
+  // measured figure.
+  // +5 modules (2026-09-23): the first-run wizard,
+  // `features/onboarding/{wizard,project-step,ai-step,execution-step}.tsx`
+  // and `draft.ts`, hosted by `first-project-canvas.tsx`. It draws the Models
+  // page's account rows and provider sections and the workspaces form through
+  // `features/onboarding/app-ports.ts`, so nothing outside the feature is
+  // newly reached. Owner: `features/onboarding`. No new package edge.
+  // -4 modules (2026-09-23): `features/onboarding/{credential-query,
+  // credential-resolution,credential-sharing,sandbox-provider-query}.ts`, kept
+  // for a wizard that turned out not to read them, are gone. Exact measured
+  // 1102 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1102, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -2,6 +2,7 @@ import z from "zod"
 import { api } from "@/platform/api/api"
 import { hostedControlCall } from "@/platform/account/hosted-control-call"
 import { workspaceCreateUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import type { ProjectSource } from "./project-api"
 
 export type CreateCloudWorkspaceResult = {
   workspaceId: string
@@ -45,6 +46,17 @@ export type CreateCloudWorkspaceInput = {
   driver?: string
   gitBranch?: string
   baseUrl?: string
+}
+
+/**
+ * The source a hosted create clones from, for a project source the first-run
+ * wizard holds. A folder names a path on some machine's disk, which no sandbox
+ * can clone, so it is refused here rather than sent as a body with no source.
+ */
+export function cloudWorkspaceSource(source: ProjectSource): Pick<CreateCloudWorkspaceInput, "repoUrl" | "connectionId" | "repo"> {
+  if (source.kind === "directory") throw new Error("A folder on a machine cannot start a cloud workspace")
+  if ("repoUrl" in source) return { repoUrl: source.repoUrl }
+  return { connectionId: source.connectionId, repo: source.repo }
 }
 
 /**

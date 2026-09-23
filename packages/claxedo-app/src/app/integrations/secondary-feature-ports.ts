@@ -28,6 +28,13 @@ import * as SessionModels from "@/features/session/providers/models"
 import * as HarnessModelOptions from "@/features/session/harness/harness-model-options"
 import * as LinkModule from "@/app/controls/link"
 import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
+import * as SandboxDriverLogoModule from "@/features/settings/ui/sandbox-driver-logo"
+import * as ProjectCreateFormModule from "@/features/workspaces/ui/project-create-form"
+import * as ProjectApi from "@/features/workspaces/data/project-api"
+import * as MachineAccounts from "@/features/settings/machine-accounts"
+import * as AgentsSection from "@/features/settings/ui/agents-section"
+import * as HarnessProviders from "@/features/settings/ui/harness-providers-section"
+import * as ProviderSettingsLogic from "@/features/settings/provider-settings-logic"
 import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
 import { DialogConnectIntegration, useOnboardingFunnel } from "./feature-ports"
@@ -101,7 +108,18 @@ configureSettingsAppPorts({
 })
 
 configureOnboardingAppPorts({
+  ProjectCreateForm: ProjectCreateFormModule.ProjectCreateForm,
+  createProject: ProjectApi.createProject,
+  projectRequestMessage: ProjectApi.projectRequestMessage,
+  MachineAccountsProvider: MachineAccounts.MachineAccountsProvider,
+  useMachineAccounts: MachineAccounts.useMachineAccounts,
+  AgentHarnessAccounts: AgentsSection.AgentHarnessAccounts,
+  HarnessProvidersSection: HarnessProviders.HarnessProvidersSection,
+  useProviders: Providers.useProviders,
+  putProviderAuthEntry: ProviderSettingsLogic.putProviderAuthEntry,
   workspaceSandboxDriversUrl: SandboxSectionLogic.workspaceSandboxDriversUrl,
+  workspaceSandboxDriverAuthUrl: SandboxSectionLogic.workspaceSandboxDriverAuthUrl,
+  SandboxDriverLogo: SandboxDriverLogoModule.SandboxDriverLogo,
 })
 
 configureReviewAppPorts({
