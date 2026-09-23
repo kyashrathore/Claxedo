@@ -1149,7 +1149,7 @@ async function verifyHealth(input: {
     } catch (error) {
       failure = error
     }
-    if (attempt < 6) {
+    if (attempt < BROWSER_ATTESTATION_ATTEMPTS) {
       const delayMs = attempt * 1_000
       console.warn(`Worker health has not converged; retrying exact verification in ${delayMs}ms`)
       await new Promise((resolve) => setTimeout(resolve, delayMs))
@@ -1168,14 +1168,16 @@ async function verifyRestoredIncumbent(apiOrigin: string, versionId: string) {
 
 /**
  * The asset upload returns before every edge serves the new version, so the
- * first read can still be the incumbent's attestation. Converging the same way
- * the Worker health check does keeps a propagation lag from failing a release
- * that did deploy — as it did on 2026-09-22, leaving staging locked with its
- * API refusing every route.
+ * first read can still be the incumbent's attestation, and a release that stops
+ * here leaves staging locked with its API refusing every route. Twelve attempts
+ * wait about 66 s: on 2026-09-23 the custom domain had not served the new
+ * build within the 15 s six attempts allowed, and did a few minutes later.
  */
+const BROWSER_ATTESTATION_ATTEMPTS = 12
+
 async function verifyBrowserArtifact(appOrigin: string, browserBuildId: string) {
   let failure: unknown
-  for (let attempt = 1; attempt <= 6; attempt += 1) {
+  for (let attempt = 1; attempt <= BROWSER_ATTESTATION_ATTEMPTS; attempt += 1) {
     try {
       const response = await fetchReleaseProbe(`${appOrigin}/${BROWSER_BUILD_ATTESTATION}`, {
         signal: AbortSignal.timeout(15_000),
