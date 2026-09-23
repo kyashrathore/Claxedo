@@ -11,7 +11,7 @@ import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts
 import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "../../workspace-runtime/src/remote-session-authority.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
 import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/self-hosted-execution"
-import { loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
+import { configureAgentConfig, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { putCredential } from "@claxedo/server-core/credentials/registry"
 import {
   createSelfHostedApp,
@@ -75,6 +75,28 @@ if (hostMode === "connect" && !backendPort) throw new Error("connect host mode n
 const scriptedModelUrl = process.env.CLAXEDO_E2E_SCRIPTED_MODEL_URL?.trim()
 if (scriptedModelUrl && !process.env.PI_CODING_AGENT_DIR)
   throw new Error("Scripted Pi requires the provider fixture's native PI_CODING_AGENT_DIR")
+// The scripted endpoint is bound the way a real account reaches a runtime: as
+// the `openai` provider projection, which Pi takes as a `models.json` overlay
+// onto its own openai provider, so every openai model the picker offers
+// reaches the scripted server. The harness owns `models.json` in
+// `PI_CODING_AGENT_DIR` and replaces it on every config apply, so a base URL
+// hand-written there never reaches a turn. The cloud runtime receives it in the
+// snapshot `startCloudRuntime` applies; an embedded runtime in this process
+// receives it through the credential authority the production entry installs
+// with `configureAgentConfig`.
+const scriptedModelAuth = scriptedModelUrl
+  ? {
+    openai: {
+      baseUrl: new URL(scriptedModelUrl).origin,
+      apiPath: "/v1",
+      placeholder: "test-key",
+      authMode: "bearer",
+    },
+  }
+  : undefined
+if (scriptedModelAuth && backing === "local-worktree" && hostMode === "embedded") {
+  configureAgentConfig({ projectAuth: async () => scriptedModelAuth })
+}
 
 function configureRuntimeSessionAuthorityUrl(controlPlaneUrl) {
   const normalized = controlPlaneUrl.replace(/\/+$/, "")
@@ -186,26 +208,13 @@ async function startCloudRuntime(input) {
     configToken: runtimeConfigToken,
     harness: { kind: "native", harnessId: "pi" },
   })
-  // The scripted endpoint is bound the way the control plane's config push
-  // binds an account: as the `openai` provider projection. Pi takes a
-  // projection as a `models.json` overlay onto its own openai provider, so
-  // every openai model the picker offers reaches the scripted server. The
-  // harness owns `models.json` in `PI_CODING_AGENT_DIR` and replaces it on
-  // every config apply, so a base URL hand-written there never reaches a turn.
-  if (scriptedModelUrl) {
+  if (scriptedModelAuth) {
     await runtime.host.apply({
       version: 4,
       mcp: {},
       connections: [],
       defaultHarness: { kind: "native", harnessId: "pi" },
-      auth: {
-        openai: {
-          baseUrl: new URL(scriptedModelUrl).origin,
-          apiPath: "/v1",
-          placeholder: "test-key",
-          authMode: "bearer",
-        },
-      },
+      auth: scriptedModelAuth,
     })
   }
   // Every request the relay forwards to this cloud runtime passes through here.
