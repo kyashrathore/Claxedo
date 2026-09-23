@@ -668,11 +668,16 @@ async function runCursorHarnessBoundary(page: Page) {
   const input = await openDraftPrompt(page, dir)
   await switchDraftHarness(page, "cursor")
 
-  const notice = page.getByRole("alert").filter({ hasText: /Couldn't load Cursor models|Cursor is not set up/ })
+  // A critical notice is an alert and a warning a status; setup reads as a warning.
+  const notice = page.locator('[role="alert"], [role="status"]').filter({ hasText: /Couldn't load Cursor models|Cursor is not set up/ })
   const modelControl = page.locator('[data-action="prompt-harness-model"]')
+  // The model control mounts while discovery is still running, so only a
+  // control that names a model is ready; a failed discovery ends on the notice.
+  const modelNamed = async () =>
+    (await modelControl.count()) > 0 && !/Loading models|Select model|^\s*$/i.test(await modelControl.last().innerText())
   await expect
     .poll(
-      async () => ((await notice.count()) > 0 ? "unavailable" : (await modelControl.count()) > 0 ? "ready" : "pending"),
+      async () => ((await notice.count()) > 0 ? "unavailable" : (await modelNamed()) ? "ready" : "pending"),
       {
         timeout: 30_000,
         message: "composer settled into neither the cursor-ready nor the runtime-unavailable state",
