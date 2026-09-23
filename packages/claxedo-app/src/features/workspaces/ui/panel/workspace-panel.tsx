@@ -1,6 +1,7 @@
 import z from "zod"
 import { For, Show, createEffect, createMemo, createResource, createRoot, createSignal, getOwner, onCleanup, onMount, runWithOwner, untrack, type JSX } from "solid-js"
 import { BP_SM } from "@/ui/controls/breakpoints"
+import { DelayedLoading } from "@/ui/controls/delayed-loading"
 import { emitTerminalFit } from "@/features/workspaces/app-ports"
 import type { WorkspacePanelMode, WorkspacePanelState } from "./workspace-panel-state"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
@@ -199,28 +200,30 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
   const pendingMode = () => {
     if (props.state.navigator !== "files" && props.state.navigator !== "changes") {
       if (!props.state.mode) return undefined
-      // Review-shaped placeholder for the settle window between the toggle
-      // click and deferred content construction: a toolbar strip and file
-      // rows, so the opening shell paints a plausible surface, not a void.
+      // Holds the settle window between the toggle click and deferred content
+      // construction. A settle that outlasts the loading delay paints a
+      // review-shaped toolbar strip and file rows rather than an empty column.
       return (
         <div
           data-testid="workspace-review-pending"
           data-review-shell-pending="true"
           class="flex size-full min-h-0 flex-col"
         >
-          <div class="flex h-10 shrink-0 items-center gap-2 border-b border-border-weak-base px-3">
-            <div class="h-5 w-32 rounded bg-surface-base" />
-            <div class="ml-auto h-5 w-20 rounded bg-surface-base" />
-          </div>
-          <div class="min-h-0 flex-1 overflow-hidden p-2">
-            <div class="flex flex-col gap-1" aria-label="Loading review">
-              <div class="h-7 w-[88%] rounded-md bg-surface-base" />
-              <div class="h-7 w-[81%] rounded-md bg-surface-base" />
-              <div class="h-7 w-[74%] rounded-md bg-surface-base" />
-              <div class="h-7 w-[67%] rounded-md bg-surface-base" />
-              <div class="h-7 w-[59%] rounded-md bg-surface-base" />
+          <DelayedLoading>
+            <div class="flex h-10 shrink-0 items-center gap-2 border-b border-border-weak-base px-3">
+              <div class="h-5 w-32 rounded bg-surface-base" />
+              <div class="ml-auto h-5 w-20 rounded bg-surface-base" />
             </div>
-          </div>
+            <div class="min-h-0 flex-1 overflow-hidden p-2">
+              <div class="flex flex-col gap-1" aria-label="Loading review">
+                <div class="h-7 w-[88%] rounded-md bg-surface-base" />
+                <div class="h-7 w-[81%] rounded-md bg-surface-base" />
+                <div class="h-7 w-[74%] rounded-md bg-surface-base" />
+                <div class="h-7 w-[67%] rounded-md bg-surface-base" />
+                <div class="h-7 w-[59%] rounded-md bg-surface-base" />
+              </div>
+            </div>
+          </DelayedLoading>
         </div>
       )
     }
@@ -232,18 +235,22 @@ export function WorkspacePanel(props: WorkspacePanelProps) {
         data-file-tree-shell-ready="true"
         class="flex size-full min-h-0 flex-col"
       >
-        <div class="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-border-weak-base">
-          <div class="h-4 w-4 rounded bg-surface-base" />
-          <div class="h-5 min-w-0 flex-1 rounded bg-surface-base" />
-        </div>
+        <DelayedLoading>
+          <div class="shrink-0 flex items-center gap-1 px-2 h-9 border-b border-border-weak-base">
+            <div class="h-4 w-4 rounded bg-surface-base" />
+            <div class="h-5 min-w-0 flex-1 rounded bg-surface-base" />
+          </div>
+        </DelayedLoading>
         <div class="min-h-0 flex-1 overflow-hidden">
           <div data-component="filetree" class="flex flex-col gap-0.5 p-1">
             <div data-file-tree-loading class="flex flex-col gap-0.5" aria-label="Loading files">
-              <div class="h-6 w-[82%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[76%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[69%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[61%] rounded-md bg-surface-base" />
-              <div class="h-6 w-[54%] rounded-md bg-surface-base" />
+              <DelayedLoading>
+                <div class="h-6 w-[82%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[76%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[69%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[61%] rounded-md bg-surface-base" />
+                <div class="h-6 w-[54%] rounded-md bg-surface-base" />
+              </DelayedLoading>
             </div>
           </div>
         </div>

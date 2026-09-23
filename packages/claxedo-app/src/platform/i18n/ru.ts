@@ -481,11 +481,6 @@ export const dict = {
   "session.revertDock.expand": "Развернуть возвращённые сообщения",
   "session.revertDock.restore": "Восстановить сообщение",
 
-  "session.new.title": "Создавайте что угодно",
-  "session.new.worktree.main": "Основная ветка",
-  "session.new.worktree.mainWithBranch": "Основная ветка ({{branch}})",
-  "session.new.worktree.create": "Создать новый worktree",
-  "session.new.lastModified": "Последнее изменение",
 
   "session.header.search.placeholder": "Поиск {{project}}",
   "session.header.searchFiles": "Поиск файлов",

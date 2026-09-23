@@ -304,7 +304,7 @@ export function NewSessionDesignView(props: {
           avatar: projectAvatar(value),
         })),
         onSelect: openProject,
-        // Create project lives in the chip, like "Create new worktree" lives
+        // Create project lives in the chip, like the new-worktree action lives
         // in the Workspace chip: only where the repository is. Where it runs
         // is the Environment chip's question, asked later.
         panel: {

@@ -596,8 +596,14 @@ export const appLocal: Policy = {
   // and the global SDK this entry already carries. Owner:
   // `app/workbench/rail`. No new package edge.
   // Both ledgers above landed in one merge on 2026-09-23; the closure was
-  // re-measured over the merged tree. Exact measured 1109 modules /
-  // 58 packages, with no headroom.
+  // re-measured over the merged tree.
+  // -1 module (2026-09-23): `features/session/ui/components/session-new-view.tsx`,
+  // an empty-session view nothing rendered, which the components barrel still
+  // pulled in, is gone.
+  // +1 module (2026-09-23): `ui/controls/delayed-loading.tsx` — the shared
+  // 100ms grace every loading indicator waits out, and the loading-episode
+  // provider `AppBaseProviders` mounts. Owner: `ui/controls`. No new package
+  // edge. Exact measured 1109 modules / 58 packages, with no headroom.
   ceilings: { modules: 1109, packages: 58 },
 
   emitted: {

@@ -50,6 +50,7 @@ import { getClaxedoServerUrl, isHostedAppHostname } from "@/platform/api/api"
 import { QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
+import { LoadingEpisodesProvider } from "@/ui/controls/delayed-loading"
 import { markShellRevealed, shellRevealedOnce } from "@/app/shell-revealed"
 import { configureBrowserHistory } from "@/lib/browser-history"
 import { signInGate, useDeploymentPosture } from "@/app/connection/deployment-posture"
@@ -216,7 +217,9 @@ export function AppBaseProviders(props: ParentProps) {
               <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
                 <DialogProvider>
                   <MarkedProviderWithNativeParser>
-                    <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
+                    <FileComponentProvider component={File}>
+                      <LoadingEpisodesProvider>{props.children}</LoadingEpisodesProvider>
+                    </FileComponentProvider>
                   </MarkedProviderWithNativeParser>
                 </DialogProvider>
               </ErrorBoundary>

@@ -31,6 +31,7 @@ import { createPathHelpers } from "@/platform/files/path"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { useSettings } from "@/platform/settings/provider"
+import { DelayedLoading } from "@/ui/controls/delayed-loading"
 import { ReviewWorkspace } from "./workspace-panel-review-load"
 import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey } from "../review/review-workspace-working-set"
 
@@ -530,7 +531,9 @@ export function WorkspacePanelBody(props: {
                                 when={!workspaceOffline(reviewWorkspaceId())}
                                 fallback={<span>This workspace isn't available.</span>}
                               >
-                                <span>Connecting to workspace...</span>
+                                <DelayedLoading>
+                                  <span>Connecting to workspace...</span>
+                                </DelayedLoading>
                               </Show>
                             </div>
                           </Show>
