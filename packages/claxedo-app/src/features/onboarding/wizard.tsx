@@ -2,7 +2,7 @@ import { createSignal, For, onCleanup, onMount, Show, type Component, type JSX }
 import { Button } from "@opencode-ai/ui/button"
 import { validWorktree } from "@/platform/sync/worktree"
 import { animateHeightChanges } from "@/ui/controls/animate-height"
-import { createProject, projectRequestMessage } from "./app-ports"
+import { createProject, projectByCheckout, projectRequestCode, projectRequestMessage } from "./app-ports"
 import { AiStep } from "./ai-step"
 import { draftProjectName, type ProjectSource, type WizardDraft } from "./draft"
 import { ExecutionStep, type ExecutionChoice } from "./execution-step"
@@ -122,7 +122,14 @@ export const OnboardingWizard: Component<{
     setFailure(undefined)
     try {
       if (props.localExecution) {
-        const project = await createProject({ baseUrl: props.baseUrl, source: held.source })
+        const project = await createProject({ baseUrl: props.baseUrl, source: held.source }).catch(async (error: unknown) => {
+          // A folder this server already holds as a project is that project:
+          // open it rather than refuse, since picking it again says as much.
+          if (held.source.kind !== "directory" || projectRequestCode(error) !== "project_directory_taken") throw error
+          const existing = await projectByCheckout({ baseUrl: props.baseUrl, worktree: held.source.folder })
+          if (!existing) throw error
+          return existing
+        })
         if (!project.checkoutDirectory || !validWorktree(project.checkoutDirectory)) {
           setFailure(`The project was created but its folder cannot be opened here: ${project.checkoutDirectory ?? "no checkout"}`)
           return

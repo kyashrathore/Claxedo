@@ -111,6 +111,8 @@ configureOnboardingAppPorts({
   ProjectCreateForm: ProjectCreateFormModule.ProjectCreateForm,
   createProject: ProjectApi.createProject,
   projectRequestMessage: ProjectApi.projectRequestMessage,
+  projectRequestCode: ProjectApi.projectRequestCode,
+  projectByCheckout: ProjectApi.projectByCheckout,
   MachineAccountsProvider: MachineAccounts.MachineAccountsProvider,
   useMachineAccounts: MachineAccounts.useMachineAccounts,
   AgentHarnessAccounts: AgentsSection.AgentHarnessAccounts,

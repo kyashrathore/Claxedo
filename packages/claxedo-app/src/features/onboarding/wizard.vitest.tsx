@@ -9,12 +9,16 @@ const fixture = vi.hoisted(() => ({
   created: [] as Array<{ baseUrl?: string; source: ProjectSource }>,
   checkoutDirectory: "/home/me/widgets" as string | null,
   createFailure: undefined as Error | undefined,
+  existing: undefined as { id: string; checkoutDirectory: string } | undefined,
+  lookups: [] as string[],
   machineRunnable: false,
   connected: {} as Record<string, string[]>,
   formMounts: 0,
 }))
 
-vi.mock("@/features/onboarding/app-ports", () => ({
+vi.mock("@/features/onboarding/app-ports", async () => {
+  const projectApi = await vi.importActual<typeof import("@/features/workspaces/data/project-api")>("@/features/workspaces/data/project-api")
+  return {
   // A form with a state of its own, so the test can tell a kept form from a rebuilt one.
   ProjectCreateForm: (props: { onSubmit?: (source: ProjectSource) => void; submitLabel?: string; leadField?: (element: HTMLElement) => void }) => {
     fixture.formMounts += 1
@@ -32,9 +36,12 @@ vi.mock("@/features/onboarding/app-ports", () => ({
     if (fixture.createFailure) throw fixture.createFailure
     return { id: "prj_1", name: "widgets", env: {}, checkoutDirectory: fixture.checkoutDirectory, repoUrl: null, created_at: 1, updated_at: 1 }
   },
-  projectRequestMessage: (cause: unknown) => {
-    const text = cause instanceof Error ? cause.message : String(cause)
-    return /"message":"([^"]+)"/.exec(text)?.[1] ?? text
+  projectRequestMessage: projectApi.projectRequestMessage,
+  projectRequestCode: projectApi.projectRequestCode,
+  projectByCheckout: async (input: { worktree: string }) => {
+    fixture.lookups.push(input.worktree)
+    const found = fixture.existing
+    return found ? { id: found.id, name: "Claxedo", env: {}, checkoutDirectory: found.checkoutDirectory, repoUrl: null, created_at: 1, updated_at: 1 } : undefined
   },
   MachineAccountsProvider: (props: { children?: unknown }) => props.children,
   useMachineAccounts: () => ({ opened: () => true, runnable: () => fixture.machineRunnable }),
@@ -50,7 +57,8 @@ vi.mock("@/features/onboarding/app-ports", () => ({
   workspaceSandboxDriversUrl: () => "http://server.test/api/workspace/drivers",
   workspaceSandboxDriverAuthUrl: () => "http://server.test/api/workspace/drivers/x/auth",
   SandboxDriverLogo: () => <span />,
-}))
+  }
+})
 
 vi.mock("@/platform/api/api", () => ({ authFetch: async () => new Response("{}") }))
 
@@ -83,6 +91,8 @@ afterEach(() => {
   fixture.created = []
   fixture.checkoutDirectory = "/home/me/widgets"
   fixture.createFailure = undefined
+  fixture.existing = undefined
+  fixture.lookups = []
   fixture.machineRunnable = false
   fixture.connected = {}
   fixture.formMounts = 0
@@ -149,6 +159,27 @@ describe("OnboardingWizard on a desktop", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Only git repositories can be projects; that folder is not one"))
     expect(opened).toEqual([])
     expect(events.some((event) => event.name === "step_done" && event.step === "execution")).toBe(false)
+  })
+
+  test("a server sentence with quotes in it is shown whole", async () => {
+    fixture.createFailure = new Error(JSON.stringify({ error: { code: "project_name_taken", message: 'A project named "widgets" already exists' } }))
+    mount({ localExecution: true })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open project" }))
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe('A project named "widgets" already exists'))
+  })
+
+  test("a folder the server already holds as a project opens that project", async () => {
+    fixture.createFailure = new Error(JSON.stringify({ error: { code: "project_directory_taken", message: 'That folder is already the project "Claxedo"' } }))
+    fixture.existing = { id: "prj_existing", checkoutDirectory: "/home/me/widgets" }
+    const { opened } = mount({ localExecution: true })
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    fireEvent.click(screen.getByRole("button", { name: "Open project" }))
+    await waitFor(() => expect(opened).toEqual([{ id: "prj_existing", worktree: "/home/me/widgets" }]))
+    expect(fixture.lookups).toEqual(["/home/me/widgets"])
+    expect(screen.queryByRole("alert")).toBeNull()
   })
 
   test("a checkout the app cannot open is refused rather than handed on", async () => {

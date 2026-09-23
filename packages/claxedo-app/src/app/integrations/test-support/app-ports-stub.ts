@@ -212,6 +212,8 @@ const onboardingThunks: Thunks<OnboardingAppPorts> = {
   ProjectCreateForm: lazy("@/features/workspaces/ui/project-create-form", "ProjectCreateForm"),
   createProject: lazy("@/features/workspaces/data/project-api", "createProject"),
   projectRequestMessage: lazy("@/features/workspaces/data/project-api", "projectRequestMessage"),
+  projectRequestCode: lazy("@/features/workspaces/data/project-api", "projectRequestCode"),
+  projectByCheckout: lazy("@/features/workspaces/data/project-api", "projectByCheckout"),
   MachineAccountsProvider: lazy("@/features/settings/machine-accounts", "MachineAccountsProvider"),
   useMachineAccounts: lazy("@/features/settings/machine-accounts", "useMachineAccounts"),
   AgentHarnessAccounts: lazy("@/features/settings/ui/agents-section", "AgentHarnessAccounts"),

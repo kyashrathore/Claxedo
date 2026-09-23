@@ -17,6 +17,8 @@ export type OnboardingAppPorts = {
   ProjectCreateForm: typeof ProjectCreateFormModule.ProjectCreateForm
   createProject: typeof ProjectApi.createProject
   projectRequestMessage: typeof ProjectApi.projectRequestMessage
+  projectRequestCode: typeof ProjectApi.projectRequestCode
+  projectByCheckout: typeof ProjectApi.projectByCheckout
   MachineAccountsProvider: typeof MachineAccounts.MachineAccountsProvider
   useMachineAccounts: typeof MachineAccounts.useMachineAccounts
   AgentHarnessAccounts: typeof AgentsSection.AgentHarnessAccounts
@@ -52,6 +54,8 @@ function bind<A extends unknown[], R>(select: (ports: OnboardingAppPorts) => (..
 export const ProjectCreateForm = bind((ports) => ports.ProjectCreateForm)
 export const createProject = bind((ports) => ports.createProject)
 export const projectRequestMessage = bind((ports) => ports.projectRequestMessage)
+export const projectRequestCode = bind((ports) => ports.projectRequestCode)
+export const projectByCheckout = bind((ports) => ports.projectByCheckout)
 export const MachineAccountsProvider = bind((ports) => ports.MachineAccountsProvider)
 export const useMachineAccounts = bind((ports) => ports.useMachineAccounts)
 export const AgentHarnessAccounts = bind((ports) => ports.AgentHarnessAccounts)

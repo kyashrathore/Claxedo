@@ -1,4 +1,5 @@
 import { api, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { readField, readString } from "@/lib/record"
 
 /**
  * Projects on a server with its own filesystem (`/api/claxedo/projects`).
@@ -90,9 +91,28 @@ export async function updateProject(input: {
   return fromWire(project)
 }
 
+/** The `{ error: { code, message } }` envelope a refused project request carries in its thrown text. */
+function projectRequestFailure(error: unknown): { text: string; code?: string; message?: string } {
+  const text = error instanceof Error ? error.message : String(error)
+  let body: unknown
+  try {
+    body = JSON.parse(text)
+  } catch {
+    return { text }
+  }
+  const envelope = readField(body, "error")
+  const code = readString(envelope, "code")
+  const message = readString(envelope, "message")
+  return { text, ...(code === undefined ? {} : { code }), ...(message === undefined ? {} : { message }) }
+}
+
 /** The message the server gave for a refused create or update, or the error's own text. */
 export function projectRequestMessage(error: unknown) {
-  const text = error instanceof Error ? error.message : String(error)
-  const match = /"message":"([^"]+)"/.exec(text)
-  return match?.[1] ?? text
+  const failure = projectRequestFailure(error)
+  return failure.message ?? failure.text
+}
+
+/** The server's code for a refused create or update, when it gave one. */
+export function projectRequestCode(error: unknown) {
+  return projectRequestFailure(error).code
 }
