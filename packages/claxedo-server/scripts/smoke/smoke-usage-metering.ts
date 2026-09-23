@@ -172,7 +172,7 @@ export async function runUsageMeteringSmoke() {
       bucketStart: NOW - 500,
       nativeSessionId: "direct-claude",
       turnCount: 1,
-      tokens: { input: 40, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+      tokens: { input: 40, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
     }],
     since: NOW - 30 * DAY,
     until: NOW,

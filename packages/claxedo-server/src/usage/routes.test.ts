@@ -371,7 +371,7 @@ describe("local unified usage route", () => {
         bucketStart: 10,
         nativeSessionId: "cheap",
         turnCount: 1,
-        tokens: { input: 2_000_000, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+        tokens: { input: 2_000_000, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
       },
       {
         app: "claude",
@@ -380,7 +380,7 @@ describe("local unified usage route", () => {
         bucketStart: 10,
         nativeSessionId: "expensive",
         turnCount: 1,
-        tokens: { input: 0, output: 1_000_000, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+        tokens: { input: 0, output: 1_000_000, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
       },
     ]
     const app = LocalUsageRoutes({
@@ -429,7 +429,7 @@ describe("local unified usage route", () => {
           bucketStart: 10,
           nativeSessionId: "direct",
           turnCount: 1,
-          tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+          tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
         }
         const throughClaxedo = {
           app: "pi",
@@ -438,7 +438,7 @@ describe("local unified usage route", () => {
           bucketStart: 10,
           nativeSessionId: "native-claxedo",
           turnCount: 1,
-          tokens: { input: 10, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+          tokens: { input: 10, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
         }
         return {
           rows: [direct],
@@ -464,7 +464,7 @@ describe("local unified usage route", () => {
       bucketStart: 10,
       nativeSessionId: "historical-codex",
       turnCount: 123,
-      tokens: { input: 50, output: 5, reasoning: 2, cacheRead: 100, cacheWrite: 0 },
+      tokens: { input: 50, output: 5, reasoning: 2, cacheRead: 100, cacheWrite: 0, cacheWrite1h: null },
     }
     const app = LocalUsageRoutes({
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
@@ -753,7 +753,7 @@ describe("local unified usage route", () => {
             bucketStart: 10,
             nativeSessionId: "direct",
             turnCount: 1,
-            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
           },
         ],
         totalRows: [
@@ -764,7 +764,7 @@ describe("local unified usage route", () => {
             bucketStart: 10,
             nativeSessionId: "direct",
             turnCount: 1,
-            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+            tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
           },
           {
             app: "pi",
@@ -773,7 +773,7 @@ describe("local unified usage route", () => {
             bucketStart: 10,
             nativeSessionId: "claxedo-pi",
             turnCount: 1,
-            tokens: { input: 20, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+            tokens: { input: 20, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
           },
         ],
         coverage: [],

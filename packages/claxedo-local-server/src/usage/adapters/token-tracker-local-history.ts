@@ -13,26 +13,9 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { createHash } from "node:crypto"
+import type { ExternalUsageBucket } from "@claxedo/server-core/usage/projection"
 import type { UsageProvenance } from "@claxedo/server-core/usage/provenance"
 import { record } from "../../platform/json"
-
-export type ExternalUsageBucket = {
-  app: string
-  provider: string
-  model: string
-  bucketStart: number
-  nativeSessionId: string
-  turnCount: number
-  tokens: {
-    input: number | null
-    output: number | null
-    reasoning: number | null
-    cacheRead: number | null
-    cacheWrite: number | null
-    /** The part of `cacheWrite` written to the one-hour cache. */
-    cacheWrite1h: number | null
-  }
-}
 
 export type LocalHistorySnapshot = {
   rows: ExternalUsageBucket[]

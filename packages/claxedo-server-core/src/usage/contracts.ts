@@ -151,9 +151,14 @@ export function assertTurnUsageRevision(fact: TurnUsageRevision) {
     fact.tokens.reasoning,
     fact.tokens.cache.read,
     fact.tokens.cache.write,
+    fact.tokens.cache.write1h ?? null,
   ]) {
     if (value !== null && (!Number.isSafeInteger(value) || value < 0)) {
       throw new Error("usage token values must be non-negative integers or null")
     }
+  }
+  const write1h = fact.tokens.cache.write1h ?? null
+  if (write1h !== null && write1h > (fact.tokens.cache.write ?? 0)) {
+    throw new Error("usage one-hour cache writes cannot exceed cache writes")
   }
 }

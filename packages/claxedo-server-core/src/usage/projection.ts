@@ -13,7 +13,15 @@ export type ExternalUsageBucket = {
   bucketStart: number
   nativeSessionId: string
   turnCount: number
-  tokens: { input: number | null; output: number | null; reasoning: number | null; cacheRead: number | null; cacheWrite: number | null }
+  tokens: {
+    input: number | null
+    output: number | null
+    reasoning: number | null
+    cacheRead: number | null
+    cacheWrite: number | null
+    /** The part of `cacheWrite` written to the one-hour cache. */
+    cacheWrite1h: number | null
+  }
 }
 
 /**
@@ -203,7 +211,11 @@ export function usageSeriesFromExternal(input: {
       input: row.tokens.input,
       output: row.tokens.output,
       reasoning: row.tokens.reasoning,
-      cache: { read: row.tokens.cacheRead, write: row.tokens.cacheWrite },
+      cache: {
+        read: row.tokens.cacheRead,
+        write: row.tokens.cacheWrite,
+        ...(row.tokens.cacheWrite1h === null ? {} : { write1h: row.tokens.cacheWrite1h }),
+      },
     },
     quality: {
       source: "provider",

@@ -35,9 +35,15 @@ function canonicalPayload(fact: TurnUsageRevision) {
     modelId: fact.modelId,
     nativeSessionId: fact.nativeSessionId ?? null,
     workspaceId: fact.workspaceId ?? null,
-    tokens: fact.tokens,
+    tokens: storedTokens(fact.tokens),
     quality: fact.quality,
   })
+}
+
+/** The tokens a row can give back: a one-hour split that is null has no column value to return. */
+function storedTokens(tokens: TurnUsageRevision["tokens"]): TurnUsageRevision["tokens"] {
+  const { write1h, ...cache } = tokens.cache
+  return { ...tokens, cache: write1h === null || write1h === undefined ? cache : { ...cache, write1h } }
 }
 
 function payloadHash(fact: TurnUsageRevision) {
@@ -67,6 +73,7 @@ function values(fact: TurnUsageRevision, hash: string): typeof ClaxedoUsageTurnR
     reasoning_tokens: fact.tokens.reasoning,
     cache_read_tokens: fact.tokens.cache.read,
     cache_write_tokens: fact.tokens.cache.write,
+    cache_write_1h_tokens: fact.tokens.cache.write1h ?? null,
     quality_json: JSON.stringify(fact.quality),
   }
 }
@@ -96,7 +103,11 @@ function fact(row: UsageRow): TurnUsageRevision {
       input: row.input_tokens,
       output: row.output_tokens,
       reasoning: row.reasoning_tokens,
-      cache: { read: row.cache_read_tokens, write: row.cache_write_tokens },
+      cache: {
+        read: row.cache_read_tokens,
+        write: row.cache_write_tokens,
+        ...(row.cache_write_1h_tokens === null ? {} : { write1h: row.cache_write_1h_tokens }),
+      },
     },
     quality: quality(row.quality_json),
   }

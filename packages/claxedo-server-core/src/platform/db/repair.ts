@@ -6,7 +6,7 @@ import { columnInfo, hasColumn, hasIndex, hasTable, type SqliteSchemaReader } fr
  * stored fingerprint and forces one full repair pass per database even when
  * the schema itself has not changed.
  */
-export const REPAIR_VERSION = 5
+export const REPAIR_VERSION = 6
 
 type SqliteInstance = SqliteSchemaReader & {
   exec(sql: string): unknown
@@ -101,7 +101,8 @@ const sqls = [
     \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
     \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`native_session_id\` text, \`workspace_id\` text,
     \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
-    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`quality_json\` text NOT NULL,
+    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`cache_write_1h_tokens\` integer,
+    \`quality_json\` text NOT NULL,
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
   )`,
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_revision_observed_idx` ON `claxedo_usage_turn_revision` (`observed_at`)",
@@ -112,7 +113,8 @@ const sqls = [
     \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
     \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`native_session_id\` text, \`workspace_id\` text,
     \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
-    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`quality_json\` text NOT NULL,
+    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`cache_write_1h_tokens\` integer,
+    \`quality_json\` text NOT NULL,
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`)
   )`,
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_observed_idx` ON `claxedo_usage_turn_current` (`observed_at`)",
@@ -485,11 +487,14 @@ function ensureChannelIdentityVersionColumns(db: SqliteInstance, out: string[]) 
   }
 }
 
-function ensureUsageNativeSessionColumns(db: SqliteInstance, out: string[]) {
+function ensureUsageColumns(db: SqliteInstance, out: string[]) {
   for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"] as const) {
-    if (!hasTable(db, table) || hasColumn(db, table, "native_session_id")) continue
-    db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`native_session_id\` text`)
-    out.push(`${table}.native_session_id`)
+    if (!hasTable(db, table)) continue
+    for (const [column, type] of [["native_session_id", "text"], ["cache_write_1h_tokens", "integer"]] as const) {
+      if (hasColumn(db, table, column)) continue
+      db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${type}`)
+      out.push(`${table}.${column}`)
+    }
   }
 }
 
@@ -526,7 +531,7 @@ export function repair(db: SqliteInstance) {
   ensureNetworkPolicyHarnessColumn(db, out)
   ensureProviderCredentialColumns(db, out)
   ensureWorkspaceLeaseDriverColumns(db, out)
-  ensureUsageNativeSessionColumns(db, out)
+  ensureUsageColumns(db, out)
   ensureChannelIdentityVersionColumns(db, out)
   return out
 }

@@ -23,6 +23,7 @@ const usageColumns = () => ({
   reasoning_tokens: integer(),
   cache_read_tokens: integer(),
   cache_write_tokens: integer(),
+  cache_write_1h_tokens: integer(),
   quality_json: text().notNull(),
 })
 

@@ -166,6 +166,39 @@ describe("turn usage meter", () => {
     ])
   })
 
+  test("adds one-hour cache writes across deltas and takes a cumulative's split as reported", async () => {
+    const { meter, facts } = harness()
+    const usage = (id: string, kind: "cumulative" | "delta", write: number, write1h?: number) =>
+      envelope(
+        sessionUsage({
+          sessionID: "session-1",
+          messageID: "msg-1",
+          contextSize: 100,
+          contextUsed: 1,
+          observation: {
+            kind,
+            providerObservationId: id,
+            tokens: {
+              input: 1,
+              output: 1,
+              reasoning: null,
+              cache: { read: null, write, ...(write1h === undefined ? {} : { write1h }) },
+            },
+          },
+        }),
+      )
+    await meter.consume(usage("1", "delta", 100, 70))
+    await meter.consume(usage("2", "delta", 50))
+    await meter.consume(usage("3", "delta", 10, 10))
+    await meter.consume(usage("4", "cumulative", 400, 300))
+    expect(facts.map((fact) => fact.tokens.cache)).toEqual([
+      { read: null, write: 100, write1h: 70 },
+      { read: null, write: 150, write1h: 70 },
+      { read: null, write: 160, write1h: 80 },
+      { read: null, write: 400, write1h: 300 },
+    ])
+  })
+
   test("provider error settles known usage and terminal-without-usage is unavailable", async () => {
     const known = harness()
     await known.meter.consume(

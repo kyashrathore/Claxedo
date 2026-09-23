@@ -35,6 +35,12 @@ export type RuntimeTokenUsage = {
   cache: {
     read: number | null
     write: number | null
+    /**
+     * The part of `write` held in the one-hour cache, which Anthropic bills at
+     * 2x input instead of the five-minute 1.25x. Absent where the provider
+     * reports no split; a write with no split is a five-minute write.
+     */
+    write1h?: number | null
   }
 }
 

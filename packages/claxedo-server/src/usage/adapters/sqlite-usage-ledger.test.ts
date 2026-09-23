@@ -11,7 +11,7 @@ CREATE TABLE claxedo_usage_turn_revision (
   settlement TEXT NOT NULL, status TEXT NOT NULL, location TEXT NOT NULL, harness TEXT NOT NULL,
   provider_id TEXT NOT NULL, model_id TEXT NOT NULL, native_session_id TEXT, workspace_id TEXT,
   input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER, cache_read_tokens INTEGER,
-  cache_write_tokens INTEGER, quality_json TEXT NOT NULL,
+  cache_write_tokens INTEGER, cache_write_1h_tokens INTEGER, quality_json TEXT NOT NULL,
   PRIMARY KEY (host_id, session_ref, message_id, revision)
 );
 CREATE TABLE claxedo_usage_turn_current (
@@ -20,7 +20,7 @@ CREATE TABLE claxedo_usage_turn_current (
   settlement TEXT NOT NULL, status TEXT NOT NULL, location TEXT NOT NULL, harness TEXT NOT NULL,
   provider_id TEXT NOT NULL, model_id TEXT NOT NULL, native_session_id TEXT, workspace_id TEXT,
   input_tokens INTEGER, output_tokens INTEGER, reasoning_tokens INTEGER, cache_read_tokens INTEGER,
-  cache_write_tokens INTEGER, quality_json TEXT NOT NULL,
+  cache_write_tokens INTEGER, cache_write_1h_tokens INTEGER, quality_json TEXT NOT NULL,
   PRIMARY KEY (host_id, session_ref, message_id)
 );
 CREATE TABLE claxedo_usage_outbox (
@@ -227,6 +227,27 @@ describe("sqlite usage ledger", () => {
     for (const forbidden of ["prompt", "response", "directory", "credential", "auth", "apiKey"]) {
       expect(encoded).not.toContain(forbidden)
     }
+  })
+
+  test("keeps the one-hour share of cache writes, and a fact without one replays as itself", async () => {
+    const { ledger } = harness()
+    const split = revision({ tokens: { input: 1, output: 1, reasoning: null, cache: { read: 3, write: 100, write1h: 70 } } })
+    const unsplit = revision({ messageId: "msg_provider_2", tokens: { input: 1, output: 1, reasoning: null, cache: { read: 3, write: 40, write1h: null } } })
+    await ledger.writeRevision(split)
+    await ledger.writeRevision(unsplit)
+
+    const current = await ledger.current()
+    expect(current.find((fact) => fact.messageId === split.messageId)?.tokens.cache).toEqual({ read: 3, write: 100, write1h: 70 })
+    expect(current.find((fact) => fact.messageId === unsplit.messageId)?.tokens.cache).toEqual({ read: 3, write: 40 })
+    await expect(ledger.writeRevision(unsplit)).resolves.toMatchObject({ status: "duplicate" })
+    await expect(ledger.writeRevision(current.find((fact) => fact.messageId === unsplit.messageId)!)).resolves.toMatchObject({ status: "duplicate" })
+  })
+
+  test("refuses a one-hour share larger than the cache writes it is part of", async () => {
+    const { ledger } = harness()
+    await expect(
+      ledger.writeRevision(revision({ tokens: { input: 1, output: 1, reasoning: null, cache: { read: null, write: 10, write1h: 11 } } })),
+    ).rejects.toThrow("one-hour cache writes cannot exceed cache writes")
   })
 
   test("persists provider-native identity for overlap classification", async () => {

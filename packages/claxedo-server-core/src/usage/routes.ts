@@ -176,6 +176,7 @@ async function priceFacts(facts: readonly TurnUsageRevision[], timeZone = "UTC")
         reasoning: fact.tokens.reasoning ?? 0,
         cacheRead: fact.tokens.cache.read ?? 0,
         cacheWrite: fact.tokens.cache.write ?? 0,
+        cacheWrite1h: fact.tokens.cache.write1h ?? null,
       },
     })
     total.estimatedUsd += item.estimatedUsd
@@ -265,6 +266,7 @@ async function priceCentralBreakdown(rows: readonly CentralUsageRow[]) {
         reasoning: rowNumber(row, "reasoning_tokens"),
         cacheRead: rowNumber(row, "cache_read_tokens"),
         cacheWrite: rowNumber(row, "cache_write_tokens"),
+        cacheWrite1h: rowNumber(row, "cache_write_1h_tokens"),
       },
     })
     total.estimatedUsd += item.estimatedUsd

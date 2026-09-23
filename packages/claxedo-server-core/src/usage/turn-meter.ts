@@ -62,8 +62,9 @@ function add(previous: number | null, delta: number | null) {
   return (previous ?? 0) + delta
 }
 
-function applyObservation(previous: RuntimeTokenUsage, observation: RuntimeUsageObservation) {
+function applyObservation(previous: RuntimeTokenUsage, observation: RuntimeUsageObservation): RuntimeTokenUsage {
   if (observation.kind === "cumulative") return observation.tokens
+  const write1h = add(previous.cache.write1h ?? null, observation.tokens.cache.write1h ?? null)
   return {
     input: add(previous.input, observation.tokens.input),
     output: add(previous.output, observation.tokens.output),
@@ -71,6 +72,7 @@ function applyObservation(previous: RuntimeTokenUsage, observation: RuntimeUsage
     cache: {
       read: add(previous.cache.read, observation.tokens.cache.read),
       write: add(previous.cache.write, observation.tokens.cache.write),
+      ...(write1h === null ? {} : { write1h }),
     },
   }
 }
