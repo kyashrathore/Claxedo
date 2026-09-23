@@ -98,13 +98,13 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
   }),
   product({
     id: "private-file-permissions",
-    family: "Windows owner-only create-verify-publish for a credential file",
+    family: "Windows owner-only create-verify-publish for a credential file, and the read of its protection",
     owner: "desktop",
     linkage: "app",
     observation: "lifecycle-only",
     stop: "unsupported",
     kill: "unsupported",
-    source: { file: "packages/claxedo-helpers/src/windows-private-file.ts", callee: "spawn", calls: 1 },
+    source: { file: "packages/claxedo-helpers/src/windows-private-file.ts", callee: "spawn", calls: 2 },
   }),
   product({
     id: "desktop-app-probes",
