@@ -63,7 +63,9 @@ describe("the daemon ownership snapshot", () => {
     writeDaemonOwnershipSnapshot(file, snapshot())
 
     expect(readDaemonOwnershipSnapshot(file)).toEqual(snapshot())
-    expect(statSync(file).mode & 0o777).toBe(0o600)
+    // NT keeps no mode bits: there the snapshot takes its directory's
+    // descriptor, which is why it is written with nothing a secret could be in.
+    if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600)
   })
 
   test("carries ids, states and times, and nothing a command line would be in", () => {

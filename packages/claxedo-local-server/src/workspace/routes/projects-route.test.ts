@@ -655,7 +655,9 @@ describe("the clone this server really runs", () => {
 
   beforeAll(async () => {
     const source = await gitRepository("clone-origin-")
-    await fs.writeFile(path.join(source, "README.md"), "# origin\n")
+    // No line ending, so a checkout under `core.autocrlf` has nothing to
+    // rewrite and reads back the bytes committed.
+    await fs.writeFile(path.join(source, "README.md"), "# origin")
     execFileSync("git", ["add", "README.md"], { cwd: source, stdio: "ignore" })
     execFileSync("git", ["-c", "user.email=t@example.test", "-c", "user.name=t", "commit", "-m", "init"], {
       cwd: source,
@@ -689,7 +691,7 @@ describe("the clone this server really runs", () => {
     expect(created.status).toBe(201)
     const { project } = await created.json() as { project: { directory: string; repoUrl: string } }
     expect(project.repoUrl).toBe(origin)
-    expect(await fs.readFile(path.join(project.directory, "README.md"), "utf8")).toBe("# origin\n")
+    expect(await fs.readFile(path.join(project.directory, "README.md"), "utf8")).toBe("# origin")
     expect(requests.length).toBeGreaterThan(0)
     expect(requests.map((item) => item.authorization)).toEqual(requests.map(() => ""))
   })

@@ -1041,8 +1041,10 @@ describe("attaching to an embedded workspace terminal", () => {
   async function terminal(cwd: string, sessionId: string) {
     // These cases are about who may attach to a terminal, not about which
     // store owns its launch; a volatile owner records the launch and nothing
-    // here reads it back.
-    const info = await Pty.create({ command: "/bin/sh", cwd, sessionId }, volatileLaunchOwnership())
+    // here reads it back. node-pty resolves a bare name through PATH on
+    // Windows, where there is no `/bin/sh` to find.
+    const command = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
+    const info = await Pty.create({ command, cwd, sessionId }, volatileLaunchOwnership())
     Pty.commit(info.id)
     return info
   }

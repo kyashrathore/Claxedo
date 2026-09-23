@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { closeTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
 import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platform/http/route-contribution"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { createLocalApp, type LocalAppOptions } from "../app/local-app"
@@ -34,6 +35,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ClaxedoDB.close()
+  closeTasksStore()
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value

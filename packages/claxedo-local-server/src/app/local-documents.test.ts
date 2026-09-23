@@ -172,10 +172,14 @@ async function repositoryFixture() {
   await git(repository, ["add", "docs/plan.md", ".gitattributes"])
   await git(repository, ["commit", "-m", "initial"])
 
+  // Git hands both helpers to a POSIX shell, Git for Windows' own included,
+  // and that shell reads a backslash as an escape; forward slashes name the
+  // same Windows path to it.
+  const shellPath = (target: string) => target.replaceAll("\\", "/")
   const spy = async (name: string, body: string) => {
     const file = path.join(repository, ".git", `claxedo-${name}-spy.sh`)
-    await fs.writeFile(file, `#!/bin/sh\nenv > "${helpers}/${name}.$$"\n${body}\n`, { mode: 0o755 })
-    return file
+    await fs.writeFile(file, `#!/bin/sh\nenv > "${shellPath(helpers)}/${name}.$$"\n${body}\n`, { mode: 0o755 })
+    return shellPath(file)
   }
   // Exiting non-zero tells git the fsmonitor hook is unusable, so it falls back
   // to its own scan and the repository still behaves normally.

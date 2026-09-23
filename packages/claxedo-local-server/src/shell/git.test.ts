@@ -53,7 +53,9 @@ function git(dir: string, args: string[]) {
 async function makeRepo(name: string) {
   const dir = path.join(root, "repos", name)
   await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(path.join(dir, "README.md"), `# ${name}\n`)
+  // No line ending, so a checkout under `core.autocrlf` has nothing to
+  // rewrite and reads back the bytes committed.
+  await fs.writeFile(path.join(dir, "README.md"), `# ${name}`)
   execFileSync("git", ["init", "-b", "main", dir], { stdio: "ignore" })
   git(dir, ["config", "user.email", "test@example.com"])
   git(dir, ["config", "user.name", "test"])
@@ -275,7 +277,7 @@ describe("destructive worktree operations require a registered Git worktree", ()
     await fs.writeFile(path.join(directory, "untracked"), "remove this")
     const res = await app.request(`/experimental/worktree/reset?workspaceId=ws_a&directory=${encodeURIComponent(workspace.directory)}`, { method: "POST" })
     expect(res.status).toBe(200)
-    expect(await fs.readFile(path.join(directory, "README.md"), "utf8")).toBe("# project-a\n")
+    expect(await fs.readFile(path.join(directory, "README.md"), "utf8")).toBe("# project-a")
     expect(await exists(path.join(directory, "untracked"))).toBe(false)
   })
 

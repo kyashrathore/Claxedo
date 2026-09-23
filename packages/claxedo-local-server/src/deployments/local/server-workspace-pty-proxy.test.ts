@@ -31,6 +31,13 @@ import { setLocalHostEndpoints } from "./host-session-authority"
  * is whether they are consulted at all.
  */
 
+/**
+ * node-pty resolves a bare name through PATH on Windows and has no `/bin/sh`
+ * to find there; the prompt is how a test knows the shell is reading.
+ */
+const SHELL = process.platform === "win32" ? "cmd.exe" : "/bin/sh"
+const PROMPT = process.platform === "win32" ? />/ : /[$#]/
+
 const OWNER = { actorId: "actor_owner", actorPublicId: "user_owner", actorName: "Owner" }
 const MEMBER = { actorId: "actor_member", actorPublicId: "user_member", actorName: "Member" }
 
@@ -64,6 +71,8 @@ let admitted = new Set<string>()
 let readOnly = new Set<string>()
 /** How long a stream lease it hands out; the deadline an open socket is held to. */
 let leaseMs = 60_000
+/** Terminals a case started. Nothing else retires them: they belong to the process, not to the server. */
+const terminals: Array<{ workspace: string; id: string }> = []
 
 const relayActorOptions: RuntimeProxyOptions = {
   // Stands in for the signature check `localHostRelayActor` does against the
@@ -368,6 +377,10 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  for (const { workspace, id } of terminals.splice(0)) {
+    const removed = await identity.call(`${origin}/workspaces/${workspace}/api/wr/pty/${id}`, { method: "DELETE" })
+    expect(removed.status).toBe(200)
+  }
   await proxyOnly?.close()
   proxyOnly = undefined
   await server?.stop()
@@ -399,10 +412,12 @@ async function startTerminal(workspace: string, sessionId: string) {
   const response = await identity.call(`${origin}/workspaces/${workspace}/api/wr/pty`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ command: "/bin/sh", sessionId }),
+    body: JSON.stringify({ command: SHELL, sessionId }),
   })
   expect(response.status).toBe(200)
-  return (await response.json() as { id: string }).id
+  const { id } = await response.json() as { id: string }
+  terminals.push({ workspace, id })
+  return id
 }
 
 describe("attaching to an in-process terminal by workspace id", () => {
@@ -447,7 +462,7 @@ describe("attaching to an in-process terminal by workspace id", () => {
  * What the socket does after it is open, which is the whole of P-82: an
  * admission is not a permission to type, and it is not a permission that lasts.
  * Every case below runs against the real listener, the real proxy and a real
- * `/bin/sh`.
+ * shell.
  */
 describe("what an attached terminal may do while it is attached", () => {
   const sockets: TerminalSocket[] = []
@@ -471,7 +486,7 @@ describe("what an attached terminal may do while it is attached", () => {
 
     const reader = await attach(target, relayed("member-token"))
     const owner = await attach(target, relayed("owner-token"))
-    expect(await owner.until(() => owner.output().includes("$") || owner.output().includes("#"))).toBe(true)
+    expect(await owner.until(() => PROMPT.test(owner.output()))).toBe(true)
 
     reader.send("echo pwned\r")
     await new Promise((resolve) => setTimeout(resolve, 750))

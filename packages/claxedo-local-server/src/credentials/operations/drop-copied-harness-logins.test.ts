@@ -124,13 +124,22 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
   test("a marker that cannot be written costs this boot's deletes rather than the next boot's rows", async () => {
     const copied = await scanned("claude-sdk")
-    await fs.chmod(path.dirname(MARKER), 0o500)
+    // The marker's directory is a file for this pass, not a directory it may
+    // not write: an elevated Windows token, which CI runs under, opens through
+    // backup semantics and passes any deny entry. A marker path that is itself
+    // taken would read as a marker already written.
+    const directory = path.dirname(MARKER)
+    const aside = `${directory}.aside`
+    await fs.mkdir(directory, { recursive: true })
+    await fs.rename(directory, aside)
+    await fs.writeFile(directory, "")
 
     try {
       expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 0 })
       expect(credentialById(copied.id, { onOutage: "throw" })).toBeDefined()
     } finally {
-      await fs.chmod(path.dirname(MARKER), 0o700)
+      await fs.rm(directory)
+      await fs.rename(aside, directory)
     }
   })
 })
