@@ -1,4 +1,4 @@
-import { sanitizeSvg } from "./session-kit-loaders"
+import { sanitizeSvg } from "./markdown-cache"
 
 /**
  * Shared mermaid loader and renderer configuration for every surface that

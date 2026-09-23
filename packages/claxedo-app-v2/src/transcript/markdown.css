@@ -1,0 +1,597 @@
+.ui-markdown {
+  --markdown-inline-code-bg-mix: 8%;
+  --markdown-shell-code-background: var(--v2-background-bg-layer-02);
+  --markdown-shell-code-border: var(--v2-border-border-muted);
+  --markdown-shell-code-color: var(--v2-text-text-base);
+  --markdown-shell-code-token-color: currentColor;
+
+  /* Reset & Base Typography */
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  color: var(--v2-text-text-base);
+  font-family: var(--transcript-font-family-body, var(--font-family-sans));
+  font-size: var(--transcript-font-size, var(--font-size-base));
+  line-height: var(--transcript-line-height, var(--line-height-relaxed));
+  letter-spacing: var(--transcript-letter-spacing, normal);
+
+  &[data-markdown-stage="plain"] {
+    white-space: pre-wrap;
+  }
+
+  /* Spacing for flow */
+  > *:first-child {
+    margin-top: 0;
+  }
+  > *:last-child {
+    margin-bottom: 0;
+  }
+  > [data-markdown-block]:first-child > *:first-child {
+    margin-top: 0;
+  }
+  > [data-markdown-block]:last-child > *:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Headings: Sized by level, distinguished by color and spacing */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--transcript-font-family-heading, inherit);
+  }
+
+  h1 {
+    font-size: var(--transcript-h1-size, var(--font-size-title-small));
+    color: var(--v2-text-text-base);
+    font-weight: var(--transcript-h1-weight, var(--font-weight-semibold));
+    margin-top: var(--transcript-h1-top, 28px);
+    margin-bottom: var(--transcript-h1-bottom, 12px);
+    line-height: var(--transcript-heading-line-height, var(--line-height-large));
+    letter-spacing: var(--transcript-h1-tracking, normal);
+  }
+
+  h2 {
+    font-size: var(--transcript-h2-size, var(--font-size-intermediate));
+    color: var(--v2-text-text-base);
+    font-weight: var(--transcript-h2-weight, var(--font-weight-semibold));
+    margin-top: var(--transcript-h2-top, 24px);
+    margin-bottom: var(--transcript-h2-bottom, 10px);
+    line-height: var(--transcript-heading-line-height, var(--line-height-large));
+    letter-spacing: var(--transcript-h2-tracking, normal);
+  }
+
+  h3 {
+    font-size: var(--transcript-h3-size, var(--font-size-compact));
+    color: var(--v2-text-text-base);
+    font-weight: var(--transcript-h3-weight, var(--font-weight-medium));
+    margin-top: var(--transcript-h3-top, 20px);
+    margin-bottom: var(--transcript-h3-bottom, 8px);
+    line-height: var(--transcript-heading-line-height, var(--line-height-large));
+    letter-spacing: var(--transcript-h3-tracking, normal);
+  }
+
+  h4,
+  h5,
+  h6 {
+    font-size: var(--transcript-h4-size, var(--font-size-compact));
+    color: var(--v2-text-text-muted);
+    font-weight: var(--transcript-h4-weight, var(--font-weight-medium));
+    margin-top: var(--transcript-h4-top, 20px);
+    margin-bottom: var(--transcript-h4-bottom, 8px);
+    line-height: var(--transcript-heading-line-height, var(--line-height-large));
+    letter-spacing: var(--transcript-h4-tracking, normal);
+  }
+
+  /* Emphasis & Strong: Neutral strong color */
+  strong,
+  b {
+    color: var(--v2-text-text-base);
+    font-weight: var(--transcript-bold-weight, var(--font-weight-semibold));
+  }
+
+  /* Paragraphs */
+  p {
+    margin-bottom: var(--transcript-paragraph-gap, 6px);
+  }
+
+  /* Links */
+  a {
+    color: var(--transcript-link-color, var(--text-interactive-base));
+    text-decoration: var(--transcript-link-decoration, none);
+    font-weight: inherit;
+  }
+
+  a:hover {
+    text-decoration: var(--transcript-link-hover-decoration, underline);
+    text-underline-offset: 2px;
+  }
+
+  /* Lists */
+  ul,
+  ol {
+    margin-top: var(--transcript-block-gap, 8px);
+    margin-bottom: var(--transcript-block-gap, 12px);
+    margin-left: 0;
+    padding-left: var(--transcript-list-indent, 32px);
+    list-style-position: outside;
+  }
+
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+    padding-left: calc(var(--transcript-list-indent, 32px) + 4px);
+  }
+
+  li {
+    margin-bottom: var(--transcript-list-gap, 8px);
+  }
+
+  li > p:first-child {
+    display: inline;
+    margin: 0;
+  }
+
+  li:has(> input[type="checkbox"]),
+  li:has(> p > input[type="checkbox"]) {
+    position: relative;
+    list-style-type: none;
+  }
+
+  li > input[type="checkbox"],
+  li > p > input[type="checkbox"] {
+    position: absolute;
+    top: 4px;
+    left: -20px;
+    margin: 0;
+  }
+
+  li > p + p {
+    display: block;
+    margin-top: var(--transcript-paragraph-gap, 0.5rem);
+  }
+
+  li::marker {
+    color: var(--transcript-marker-color, var(--v2-text-text-muted));
+  }
+
+  li > ul,
+  li > ol {
+    margin-top: 0.25rem;
+    margin-bottom: 0.25rem;
+    padding-left: var(--transcript-nested-list-indent, 1rem);
+  }
+
+  li > ol {
+    padding-left: calc(var(--transcript-nested-list-indent, 1rem) + 0.75rem);
+  }
+
+  /* Blockquotes */
+  blockquote {
+    border-left: var(--transcript-quote-border, 0.5px) solid var(--v2-border-border-base);
+    margin: var(--transcript-block-gap, 1rem) 0;
+    padding-left: var(--transcript-quote-indent, 0.5rem);
+    color: var(--v2-text-text-muted);
+    font-style: normal;
+  }
+
+  hr {
+    border: none;
+    height: var(--transcript-hr-height, 0);
+    background: var(--border-weak-base);
+    margin: var(--transcript-hr-margin, 32px) 0;
+  }
+
+  .shiki {
+    background: var(--background-stronger);
+    color: var(--text-base);
+    font-size: var(--transcript-code-font-size, var(--font-size-compact));
+    line-height: var(--transcript-code-line-height, inherit);
+    padding: var(--transcript-code-padding, 12px);
+    border-radius: var(--radius-md);
+    border: 0.5px solid var(--v2-border-border-base);
+  }
+
+  [data-component="markdown-code"] {
+    position: relative;
+  }
+
+  [data-component="markdown-code"][data-code-kind="shell"] .shiki {
+    background: var(--markdown-shell-code-background);
+    border-color: var(--markdown-shell-code-border);
+    color: var(--markdown-shell-code-color);
+  }
+
+  [data-component="markdown-code"][data-code-kind="shell"] code {
+    color: var(--markdown-shell-code-color);
+  }
+
+  [data-component="markdown-code"][data-code-kind="shell"] code span {
+    color: var(--markdown-shell-code-token-color) !important;
+  }
+
+  [data-slot="markdown-copy-button"] {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 1;
+  }
+
+  [data-component="markdown-code"]:hover [data-slot="markdown-copy-button"],
+  [data-slot="markdown-copy-button"]:focus-within {
+    opacity: 1;
+  }
+
+  [data-slot="markdown-rich-controls"] {
+    position: absolute;
+    top: 2px;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    opacity: 0;
+    transition: opacity 150ms ease;
+    z-index: 2;
+  }
+
+  [data-markdown-rich]:hover > [data-slot="markdown-rich-controls"],
+  [data-slot="markdown-rich-controls"]:focus-within {
+    opacity: 1;
+  }
+
+  [data-slot="markdown-rich-controls"] > [data-slot="markdown-copy-button"] {
+    position: static;
+    opacity: 1;
+  }
+
+  [data-slot="markdown-view-button"] {
+    display: contents;
+  }
+
+  [data-slot="markdown-rich-controls"] .ui-icon-button-v2 {
+    width: 20px;
+    height: 20px;
+    background: transparent;
+  }
+
+  [data-slot="markdown-rich-controls"] .ui-icon-button-v2:is(:hover, :active, :focus-visible) {
+    background: transparent;
+    color: var(--v2-icon-icon-base);
+  }
+
+  [data-slot="mermaid-render-button"] {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    min-height: 28px;
+    padding: 0 10px;
+    border: 0.5px solid var(--v2-border-border-base, var(--border-weak-base));
+    border-radius: var(--radius-md);
+    background: var(--v2-background-bg-base, var(--surface-raised-base));
+    color: var(--v2-text-text-base, var(--text-strong));
+    cursor: pointer;
+    z-index: 1;
+  }
+
+  [data-slot="mermaid-render-button"]:hover,
+  [data-slot="mermaid-render-button"]:focus-visible {
+    background: var(--v2-background-bg-hover, var(--surface-inset-base));
+    outline: none;
+  }
+
+  [data-slot="markdown-copy-button"] [data-check-icon] {
+    display: none;
+  }
+
+  [data-slot="markdown-copy-button"][data-copied="true"] [data-copy-icon] {
+    display: none;
+  }
+
+  [data-slot="markdown-copy-button"][data-copied="true"] [data-check-icon] {
+    display: inline-flex;
+  }
+
+  pre {
+    margin-top: var(--transcript-block-gap, 12px);
+    margin-bottom: var(--transcript-block-gap, 24px);
+    overflow: auto;
+
+    scrollbar-width: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  /* Mermaid (T14): once rendered, hide the source <pre> and show the themed diagram. */
+  [data-component="markdown-code"][data-mermaid-state="rendered"] > pre {
+    display: none;
+  }
+
+  [data-slot="mermaid-diagram"] {
+    display: flex;
+    justify-content: center;
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  [data-slot="mermaid-diagram"] svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  :not(pre) > code {
+    font-family: var(--transcript-inline-code-family, var(--font-family-mono));
+    font-size: var(--transcript-inline-code-size, var(--font-size-inline-code));
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
+    color: var(--v2-text-text-base, var(--text-strong));
+    font-weight: var(--transcript-inline-code-weight, var(--font-weight-medium));
+    padding: var(--transcript-inline-code-padding, 1px 0.3rem);
+    border-radius: var(--radius-sm);
+    /* Pill (D§3.12): hairline inset ring on a legacy token so it reads as an object in
+       both themes even when the v2 palette is absent. */
+    box-shadow: inset 0 0 0 0.5px var(--border-weak-base);
+    background: color-mix(
+      in oklch,
+      var(--v2-text-text-base, var(--text-base)) var(--markdown-inline-code-bg-mix),
+      transparent
+    );
+  }
+
+  /*
+   * Path/url inline code keeps the neutral pill — no accent tint. Tinting every detected
+   * path turned prose into a wall of green (D§1: prose is the product; decoration should
+   * not compete with it). The affordance is the pointer + hover underline, not colour.
+   */
+  :not(pre) > code[data-inline-code-kind="path"] {
+    cursor: pointer;
+    text-underline-offset: 2px;
+  }
+
+  @media (hover: hover) {
+    :not(pre) > code[data-inline-code-kind="path"]:hover {
+      text-decoration: underline dotted 0.5px;
+      color: var(--text-strong);
+    }
+  }
+
+  a.external-link > code[data-inline-code-kind="url"] {
+    background: none;
+    box-shadow: none;
+    text-decoration: underline;
+    text-decoration-color: var(--border-weak-base);
+    text-underline-offset: 2px;
+  }
+
+  /* Tables */
+  [data-component="markdown-table"] {
+    position: relative;
+    width: 100%;
+    margin: var(--transcript-block-gap, 16px) 0;
+  }
+
+  [data-markdown-rich] {
+    --markdown-rich-rail-height: 24px;
+
+    padding-top: var(--markdown-rich-rail-height);
+  }
+
+  [data-markdown-rich]::before {
+    content: "";
+    position: absolute;
+    top: calc(var(--markdown-rich-rail-height) - 0.5px);
+    right: 0;
+    left: 0;
+    border-top: 0.5px solid var(--v2-border-border-muted);
+    pointer-events: none;
+  }
+
+  @media (hover: none) {
+    [data-slot="markdown-rich-controls"] {
+      opacity: 1;
+    }
+  }
+
+  [data-slot="markdown-table-scroll"] {
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  table {
+    width: max-content;
+    min-width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    font-size: var(--transcript-font-size, var(--font-size-base));
+  }
+
+  th,
+  td {
+    border-bottom: 0.5px solid var(--v2-border-border-muted);
+    padding: var(--transcript-table-cell-padding, 12px);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    color: var(--v2-text-text-base);
+    font-weight: var(--transcript-table-head-weight, var(--font-weight-medium));
+    background: var(--v2-background-bg-layer-01);
+    border-bottom: 0.5px solid var(--v2-border-border-base);
+  }
+
+  /* Images render as fixed compact tiles: loading, loaded, and failed states
+     occupy the same box, so a late decode or stream re-render cannot shift the
+     transcript. A loaded tile opens the full image. */
+  [data-component="markdown-image-tile"],
+  [data-component="markdown-image-fallback"] {
+    box-sizing: border-box;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: bottom;
+    width: 80px;
+    height: 80px;
+    margin: 0.25rem 0.25rem 0.25rem 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    overflow: hidden;
+  }
+  [data-component="markdown-image-tile"] {
+    cursor: zoom-in;
+  }
+  [data-component="markdown-image-tile"] > img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0.5px solid var(--v2-border-border-base);
+    border-radius: var(--radius-sm);
+    background: var(--v2-background-bg-layer-01);
+    object-fit: cover;
+  }
+  [data-component="markdown-image-fallback"] {
+    padding: 4px;
+    border: 0.5px solid var(--v2-border-border-base);
+    border-radius: var(--radius-sm);
+    background: var(--v2-background-bg-layer-01);
+    color: var(--v2-text-text-weak);
+    font-size: var(--font-size-x-small);
+    line-height: var(--line-height-12);
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  [data-component="markdown-image-fallback"][data-state="loading"]::after {
+    content: "";
+    width: 24px;
+    height: 18px;
+    border: 1px solid var(--v2-border-border-base);
+    border-radius: var(--radius-sm);
+    background: var(--v2-background-bg-layer-02);
+  }
+}
+
+body[data-new-layout] .ui-markdown {
+  [data-slot="markdown-copy-button"]::after {
+    box-sizing: border-box;
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--v2-background-bg-layer-01);
+    box-shadow: var(--v2-elevation-floating);
+    color: var(--v2-text-text-base);
+    user-select: none;
+    font-size: var(--font-size-x-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-12);
+    letter-spacing: var(--letter-spacing-micro-wide);
+    font-variant-numeric: tabular-nums;
+    font-variation-settings: "slnt" 0;
+  }
+}
+
+body:not([data-new-layout]) .ui-markdown {
+  color: var(--transcript-prose-color, var(--text-strong));
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-size: var(--transcript-font-size, var(--font-size-base));
+    color: var(--transcript-prose-color, var(--text-strong));
+    font-weight: var(--font-weight-medium);
+  }
+
+  h4,
+  h5,
+  h6 {
+    font-size: var(--transcript-h4-size, var(--transcript-font-size, var(--font-size-base)));
+    font-weight: var(--transcript-h4-weight, var(--font-weight-medium));
+  }
+
+  h1 {
+    font-size: var(--transcript-h1-size, var(--transcript-font-size, var(--font-size-base)));
+    font-weight: var(--transcript-h1-weight, var(--font-weight-medium));
+  }
+
+  h2 {
+    font-size: var(--transcript-h2-size, var(--transcript-font-size, var(--font-size-base)));
+    font-weight: var(--transcript-h2-weight, var(--font-weight-medium));
+  }
+
+  h3 {
+    font-size: var(--transcript-h3-size, var(--transcript-font-size, var(--font-size-base)));
+    font-weight: var(--transcript-h3-weight, var(--font-weight-medium));
+  }
+
+  strong,
+  b {
+    color: var(--transcript-prose-color, var(--text-strong));
+  }
+
+  li::marker {
+    color: var(--transcript-marker-color, var(--text-weak));
+  }
+
+  blockquote {
+    border-left: var(--transcript-quote-border, 2px) solid var(--border-weak-base);
+    color: var(--text-weak);
+  }
+
+  .shiki {
+    border-color: var(--border-weak-base);
+  }
+
+  /*
+   * Inline code reads as an object, not as syntax (T15/D§3.12). This used to paint every
+   * inline span with --syntax-string (teal #00ceb9 in dark), which turned prose into a
+   * wall of colour, and its padding/background resets silently overrode the pill defined
+   * in the base block above. Neutral pill, prose-coloured text.
+   */
+  :not(pre) > code {
+    color: var(--transcript-prose-color, var(--text-strong));
+    padding: var(--transcript-inline-code-padding, 1px 0.3rem);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--transcript-inline-code-ring, inset 0 0 0 0.5px var(--border-weak-base));
+    background: var(--transcript-inline-code-bg, color-mix(in oklch, var(--text-base) 8%, transparent));
+  }
+
+  th,
+  td {
+    border-bottom: 1px solid var(--border-weaker-base);
+  }
+
+  th {
+    color: var(--text-strong);
+    border-bottom-color: var(--border-weak-base);
+  }
+}
+
+[data-component="markdown"] a.external-link:hover > code {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
