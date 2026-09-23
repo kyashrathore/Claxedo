@@ -23,7 +23,7 @@ function recordsNothing(tokens: TokenUsage) {
   return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write === 0
 }
 
-function difference(closed: TokenUsage, opened: TokenUsage): TokenUsage {
+function subtractTokens(closed: TokenUsage, opened: TokenUsage): TokenUsage {
   return {
     input: closed.input - opened.input,
     output: closed.output - opened.output,
@@ -32,7 +32,7 @@ function difference(closed: TokenUsage, opened: TokenUsage): TokenUsage {
   }
 }
 
-function sum(left: TokenUsage, right: TokenUsage): TokenUsage {
+function addTokens(left: TokenUsage, right: TokenUsage): TokenUsage {
   return {
     input: left.input + right.input,
     output: left.output + right.output,
@@ -148,7 +148,7 @@ export function createTurnUsage(sessionID: string, opened: SessionTotal) {
       // model the engine chose for it.
       const model = event.type === "session.usage.recorded" || !message ? undefined : stepModels.get(message)
       servedModels.add(model)
-      observed = sum(observed, tokens)
+      observed = addTokens(observed, tokens)
       return usage("delta", tokens, id, model)
     },
 
@@ -156,7 +156,7 @@ export function createTurnUsage(sessionID: string, opened: SessionTotal) {
       if ("failure" in opened) return unreconciled(`the session total before the prompt was not read: ${opened.failure}`)
       if ("failure" in closed) return unreconciled(closed.failure)
       if (!opened.tokens || !closed.tokens) return unreconciled("the engine reported no session token total")
-      const grown = difference(closed.tokens, opened.tokens)
+      const grown = subtractTokens(closed.tokens, opened.tokens)
       if (recordsNothing(grown)) return undefined
       // The total spans every request of the turn, the ones the stream missed
       // included, so it names a model only when it is exactly the requests
