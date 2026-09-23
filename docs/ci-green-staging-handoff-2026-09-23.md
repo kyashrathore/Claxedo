@@ -52,12 +52,19 @@ Project / boot-splash fix (`31ea96947b`), and the merges of other sessions' dev 
   lane B: mcp `processes.test.ts` and 7 perf-harness EBUSY. `claxedo connect` refuses on
   win32 (folder serving is POSIX-only; rename-EPERM and private-key DACL recorded as
   prerequisites in the connect docs).
-- **Windows lane B** (worktree `.claude/worktrees/agent-a2aace8da91c231e9`, branch
-  `fix/win-workspace-runtime`, lease `pearl-crayfish`): ~68 workspace-runtime failures.
-  Known leads: PTYs record no creation identity on Windows (every stop `unresolved` /
-  `ownership_unverified`, also breaks mcp `processes.test.ts` and 2 local-server terminal
-  tests ~1 in 3), and a SQLite handle survives close/reopen (EBUSY in 7 perf-harness tests).
-- Stop both leases when the lanes finish: `./script/cbx stop <lease>`.
+- **Windows lane B — FINISHED, not merged** (worktree `.claude/worktrees/agent-a2aace8da91c231e9`,
+  branch `fix/win-workspace-runtime`, base `4659087e22`, 7 commits `0ba5dc0cff`..`5ca91453dd`,
+  lease stopped). On Windows: workspace-runtime `bun run test` 1518 pass / 0 fail (+ relay 42,
+  node 121), mcp `processes.test.ts` passes, agent-sdk-runtime acp 214/0; macOS suites green.
+  Review before merging, in particular: node-pty ConPTY returns pid 0 at spawn (waits ≤6 s for
+  the real pid); a **patch to `@opencode-ai/core`'s Bun SQLite adapter** to finalize statements
+  (EBUSY root cause); `9732845309` touches agent-sdk-runtime (a crashed ACP child's retirement
+  reports exited). Open from this lane: perf-harness still 10 Windows failures (6 EBUSY, likely
+  the same unfinalized-statement leak in `claxedo-server-core` `db.ts` / drizzle Bun driver);
+  managed processes start `/bin/sh` on Windows; terminal `PATH` joined with `:` on Windows;
+  local-server's two terminal tests need a combined Windows rerun with `fix/win-local-server`
+  (already on dev) + this branch, several times with `TURBO_FORCE=true`.
+- Stop lane A's lease `blue-crayfish` when it finishes: `./script/cbx stop blue-crayfish`.
 
 ## Findings from the live staging test (open unless marked fixed)
 
