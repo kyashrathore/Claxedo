@@ -605,8 +605,12 @@ export const appLocal: Policy = {
   // key on the credential route or on the hosted plane's auth route by it. It
   // reaches only the server, health and posture modules this entry already
   // carries. Owner: `app/connection`. No new package edge.
-  // Exact measured 1110 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1110, packages: 58 },
+  // +1 module (2026-09-23): `ui/controls/animate-height.ts` — the box whose
+  // content-driven height changes animate, which the first-run wizard's card
+  // is. It reaches only the reduced-motion read this entry already carries.
+  // Owner: `ui/controls`. No new package edge.
+  // Exact measured 1111 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1111, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -1,10 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Show, type Component } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { authFetch } from "@/platform/api/api"
-import { putHostedProviderKey } from "@/platform/api/credential-request"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
-import { errorText } from "./error-text"
+import { hasManagedProviderCredentials, NATIVE_HARNESS_IDS, type NativeHarnessId } from "@/platform/identity/harness-selection"
 import { localHarnessChecks } from "./ai-connect-state"
 import {
   AgentHarnessAccounts,
@@ -14,169 +11,111 @@ import {
   useProviders,
 } from "./app-ports"
 
-/** The catalog harnesses the Models page lists provider by provider. */
-const CATALOG_HARNESSES = ["pi", "opencode"] as const
+/** The harnesses connected provider by provider, in catalog order. */
+const CATALOG_HARNESSES: readonly NativeHarnessId[] = NATIVE_HARNESS_IDS.filter(hasManagedProviderCredentials)
 
 /**
- * Step 2: what runs the agent.
+ * The hosted plane serves one harness: its catalog and auth routes answer for
+ * `nativeHarness=pi` and refuse the rest.
+ */
+const HOSTED_HARNESSES: readonly NativeHarnessId[] = ["pi"]
+
+/**
+ * Step 2: what runs the agent, drawn with the Models page's own rows so what
+ * the wizard shows is exactly what Settings → Models will show afterwards.
  *
- * A desktop is scanned: the Models page's own rows, one per harness on this
- * machine and one provider list per catalog harness, so what the wizard
- * shows is exactly what Settings → Models will show afterwards. The hosted
- * plane has no machine to scan and serves one harness, Pi, whose keys it
- * keeps under its own auth route; that screen is Pi's provider list with a
- * key field per row.
+ * A desktop is scanned for the logins its harnesses already hold, and a
+ * catalog harness's provider list is there for whoever brings a key instead.
+ * The hosted plane has no machine to scan, so its one harness's provider list
+ * is the whole step; the same rows store the key under the plane's own auth
+ * route.
  */
 export const AiStep: Component<{
-  baseUrl: string
   localExecution: boolean
   /** Whether at least one login can run a turn, re-reported as the rows change. */
   onReady: (ready: boolean) => void
 }> = (props) => (
-  <Show when={props.localExecution} fallback={<HostedPiKeys baseUrl={props.baseUrl} onReady={props.onReady} />}>
+  <Show when={props.localExecution} fallback={<HostedLogins onReady={props.onReady} />}>
     <MachineAccountsProvider>
       <MachineLogins onReady={props.onReady} />
     </MachineAccountsProvider>
   </Show>
 )
 
-const MachineLogins: Component<{ onReady: (ready: boolean) => void }> = (props) => {
-  const machine = useMachineAccounts()
-  const pi = useProviders("pi")
-  const opencode = useProviders("opencode")
-  const ready = createMemo(
-    () =>
-      localHarnessChecks.some((check) => machine.runnable(check))
-      || pi.connected().length > 0
-      || opencode.connected().length > 0,
-  )
-  createEffect(() => props.onReady(ready()))
+function useCatalogs(harnesses: readonly NativeHarnessId[]) {
+  const catalogs = harnesses.map((harness) => ({ harness, providers: useProviders(harness) }))
+  return { catalogs, connected: () => catalogs.some((entry) => entry.providers.connected().length > 0) }
+}
 
+const CatalogSection: Component<{ harness: NativeHarnessId; class?: string }> = (props) => (
+  <section class={`flex flex-col gap-2 ${props.class ?? ""}`} data-harness={props.harness}>
+    <h3 class="text-14-medium text-text-strong">{harnessDisplayLabel(props.harness)}</h3>
+    <HarnessProvidersSection harness={props.harness} />
+  </section>
+)
+
+const HostedLogins: Component<{ onReady: (ready: boolean) => void }> = (props) => {
+  const { catalogs, connected } = useCatalogs(HOSTED_HARNESSES)
+  createEffect(() => props.onReady(connected()))
   return (
-    <div class="flex flex-col gap-6" data-slot="onboarding-ai-machine">
-      <For each={localHarnessChecks}>
-        {(check) => <AgentHarnessAccounts harness={check} />}
-      </For>
-      <For each={CATALOG_HARNESSES}>
-        {(harness) => (
-          <section class="flex flex-col gap-2" data-harness={harness}>
-            <h3 class="text-14-medium text-text-strong">{harnessDisplayLabel(harness)}</h3>
-            <HarnessProvidersSection harness={harness} />
-          </section>
-        )}
-      </For>
+    <div class="flex flex-col gap-6" data-slot="onboarding-ai-logins">
+      <For each={catalogs}>{(entry) => <CatalogSection harness={entry.harness} />}</For>
     </div>
   )
 }
 
-/** A Pi provider that signs in through a CLI rather than taking a key. */
-const SIGNS_IN_ELSEWHERE: readonly string[] = ["openai-codex"]
-
-const HostedPiKeys: Component<{ baseUrl: string; onReady: (ready: boolean) => void }> = (props) => {
-  const providers = useProviders("pi")
-  const [open, setOpen] = createSignal<string>()
-  const [key, setKey] = createSignal("")
-  const [saving, setSaving] = createSignal(false)
-  const [failure, setFailure] = createSignal<string>()
-  const connected = createMemo(() => new Set(providers.connected().map((provider) => provider.id)))
-  const rows = createMemo(() => [...providers.all().values()])
-  createEffect(() => props.onReady(connected().size > 0))
-
-  const save = async (providerId: string) => {
-    const secret = key().trim()
-    if (!secret) return
-    setSaving(true)
-    setFailure(undefined)
-    try {
-      await putHostedProviderKey({ serverUrl: props.baseUrl, providerId, harness: "pi", key: secret, request: authFetch })
-      await providers.refresh()
-      setOpen(undefined)
-      setKey("")
-    } catch (error) {
-      setFailure(errorText(error))
-    } finally {
-      setSaving(false)
-    }
-  }
+const MachineLogins: Component<{ onReady: (ready: boolean) => void }> = (props) => {
+  const machine = useMachineAccounts()
+  const { catalogs, connected } = useCatalogs(CATALOG_HARNESSES)
+  const [chosen, setChosen] = createSignal<NativeHarnessId>()
+  const ready = createMemo(() => localHarnessChecks.some((check) => machine.runnable(check)) || connected())
+  createEffect(() => props.onReady(ready()))
+  const choose = (harness: NativeHarnessId) => setChosen(chosen() === harness ? undefined : harness)
 
   return (
-    <div class="flex flex-col gap-2" data-slot="onboarding-ai-hosted">
-      <p class="text-13-regular text-text-weak">
-        Cloud sandboxes here run Pi. Paste a key for one provider; it is stored on this deployment and handed to every
-        sandbox you start.
-      </p>
-      <Show when={providers.error()}>
-        {(message) => (
-          <p class="text-12-regular text-icon-warning-base" role="alert">
-            {message()}
+    <div class="flex flex-col gap-4" data-slot="onboarding-ai-logins">
+      <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <span class="text-12-medium text-text-weak">Logins on this machine</span>
+        <span class="flex items-center gap-1.5 text-11-medium text-text-weak" data-slot="onboarding-ai-catalog">
+          <span>Or connect a provider for</span>
+          <For each={catalogs}>
+            {(entry, position) => (
+              <>
+                <Show when={position() > 0}>
+                  <span aria-hidden="true">·</span>
+                </Show>
+                <button
+                  type="button"
+                  aria-pressed={chosen() === entry.harness}
+                  data-harness-choice={entry.harness}
+                  class={`underline-offset-2 hover:text-text-strong hover:underline focus-visible:underline focus-visible:outline-none ${
+                    chosen() === entry.harness ? "text-text-strong underline" : ""
+                  }`}
+                  onClick={() => choose(entry.harness)}
+                >
+                  {harnessDisplayLabel(entry.harness)}
+                </button>
+              </>
+            )}
+          </For>
+        </span>
+      </div>
+      <Show
+        when={machine.opened()}
+        fallback={
+          <p class="flex items-center gap-2 py-2 text-12-regular text-text-weak" data-slot="onboarding-ai-scanning">
+            <Spinner class="size-4" />
+            <span>Scanning this machine for logins…</span>
           </p>
-        )}
+        }
+      >
+        <div class="flex flex-col gap-6">
+          <For each={localHarnessChecks}>{(check) => <AgentHarnessAccounts harness={check} />}</For>
+        </div>
       </Show>
-      <Show when={providers.loading() && rows().length === 0}>
-        <span class="text-12-regular text-text-weak">Loading providers…</span>
+      <Show when={chosen()}>
+        {(harness) => <CatalogSection harness={harness()} class="border-t border-border-weak-base pt-4" />}
       </Show>
-      <ul class="flex flex-col divide-y divide-border-weak-base" data-slot="onboarding-pi-providers">
-        <For each={rows()}>
-          {(provider) => (
-            <li class="flex flex-col gap-2 py-3" data-provider={provider.id} data-connected={connected().has(provider.id)}>
-              <div class="flex items-center gap-3">
-                <ProviderIcon id={provider.id} class="size-5 shrink-0 icon-strong-base" />
-                <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{provider.name}</span>
-                <Show
-                  when={!connected().has(provider.id)}
-                  fallback={<span class="text-12-medium text-text-weak">Connected</span>}
-                >
-                  <Show
-                    when={!SIGNS_IN_ELSEWHERE.includes(provider.id)}
-                    fallback={<span class="text-12-regular text-text-weak">Signs in from a CLI; no key to paste here</span>}
-                  >
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="small"
-                      onClick={() => {
-                        setFailure(undefined)
-                        setKey("")
-                        setOpen(open() === provider.id ? undefined : provider.id)
-                      }}
-                    >
-                      {open() === provider.id ? "Cancel" : "Connect"}
-                    </Button>
-                  </Show>
-                </Show>
-              </div>
-              <Show when={open() === provider.id}>
-                <form
-                  class="flex items-center gap-2"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    void save(provider.id)
-                  }}
-                >
-                  <input
-                    type="password"
-                    value={key()}
-                    onInput={(event) => setKey(event.currentTarget.value)}
-                    placeholder={`${provider.name} API key`}
-                    aria-label={`${provider.name} API key`}
-                    autocomplete="off"
-                    spellcheck={false}
-                    class="h-9 w-full min-w-0 rounded-md border border-border-base bg-surface-inset-base px-2.5 text-13-regular text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base"
-                  />
-                  <Button type="submit" variant="primary" size="small" disabled={saving() || !key().trim()}>
-                    {saving() ? "Saving…" : "Save key"}
-                  </Button>
-                </form>
-                <Show when={failure()}>
-                  <p class="text-12-regular text-icon-warning-base" role="alert">
-                    {failure()}
-                  </p>
-                </Show>
-              </Show>
-            </li>
-          )}
-        </For>
-      </ul>
     </div>
   )
 }

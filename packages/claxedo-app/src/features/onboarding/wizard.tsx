@@ -1,6 +1,7 @@
-import { createSignal, For, onMount, Show, type Component, type JSX } from "solid-js"
+import { createSignal, For, onCleanup, onMount, Show, type Component, type JSX } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { validWorktree } from "@/platform/sync/worktree"
+import { animateHeightChanges } from "@/ui/controls/animate-height"
 import { createProject, projectRequestMessage } from "./app-ports"
 import { AiStep } from "./ai-step"
 import { draftProjectName, type ProjectSource, type WizardDraft } from "./draft"
@@ -27,7 +28,10 @@ const STEPS: ReadonlyArray<{
     id: "ai",
     label: "AI",
     headline: "Connect an AI",
-    lede: () => "The agent runs on a login of yours. Anything found here can be changed later in Settings → Models.",
+    lede: (product) =>
+      product.localExecution
+        ? "The agent runs on a login of yours. Anything found here can be changed later in Settings → Models."
+        : "Cloud sandboxes here run Pi on a key of yours, stored on this deployment and handed to every sandbox you start. It can be changed later in Settings → Models.",
   },
   {
     id: "execution",
@@ -65,6 +69,14 @@ export const OnboardingWizard: Component<{
   footer?: JSX.Element
 }> = (props) => {
   const [step, setStep] = createSignal<OnboardingStepId>("project")
+  // A step mounts on its first visit and stays mounted, hidden, so what the
+  // user left in it — a chosen folder, a typed URL, a picked sandbox — is
+  // there again when they come back to it.
+  const [visited, setVisited] = createSignal<ReadonlySet<OnboardingStepId>>(new Set(["project"]))
+  const goTo = (next: OnboardingStepId) => {
+    setVisited((seen) => (seen.has(next) ? seen : new Set(seen).add(next)))
+    setStep(next)
+  }
   const [draft, setDraft] = createSignal<WizardDraft>()
   const [aiReady, setAiReady] = createSignal(false)
   const [chosen, setChosen] = createSignal<ExecutionChoice>()
@@ -74,8 +86,15 @@ export const OnboardingWizard: Component<{
   const [executionReady, setExecutionReady] = createSignal(false)
   const [finishing, setFinishing] = createSignal(false)
   const [failure, setFailure] = createSignal<string>()
+  let card!: HTMLDivElement
+  let steps!: HTMLDivElement
 
-  onMount(() => props.emit({ name: "setup_form_shown" }))
+  onMount(() => {
+    props.emit({ name: "setup_form_shown" })
+    // The card grows and shrinks with the step in it; the change is a motion,
+    // not a cut.
+    onCleanup(animateHeightChanges(card, [steps]))
+  })
 
   const index = () => STEPS.findIndex((item) => item.id === step())
   const current = () => STEPS[index()] ?? STEPS[0]
@@ -88,12 +107,12 @@ export const OnboardingWizard: Component<{
     props.emit({ name: "step_done", step: from })
     setFailure(undefined)
     const next = STEPS[STEPS.findIndex((item) => item.id === from) + 1]
-    if (next) setStep(next.id)
+    if (next) goTo(next.id)
   }
   const back = () => {
     setFailure(undefined)
     const previous = STEPS[index() - 1]
-    if (previous) setStep(previous.id)
+    if (previous) goTo(previous.id)
   }
 
   const finish = async () => {
@@ -141,7 +160,7 @@ export const OnboardingWizard: Component<{
   }
 
   return (
-    <div class="flex flex-col" data-testid="onboarding-wizard" data-step={step()}>
+    <div class="flex min-h-0 flex-col" data-testid="onboarding-wizard" data-step={step()}>
       <ol class="first-project-steps first-project-reveal" aria-label="Setup steps">
         <For each={STEPS}>
           {(item, position) => (
@@ -168,33 +187,44 @@ export const OnboardingWizard: Component<{
         </Show>
         {current().lede({ localExecution: props.localExecution })}
       </p>
-      <div class="first-project-card first-project-reveal" style={{ "--first-project-delay": "80ms" }}>
-        <Show when={step() === "project"}>
-          <ProjectStep
-            baseUrl={props.baseUrl}
-            localExecution={props.localExecution}
-            {...(props.pickFolder ? { pickFolder: props.pickFolder } : {})}
-            {...(props.leadField ? { leadField: props.leadField } : {})}
-            onChosen={(source) => {
-              setDraft({ source })
-              advance("project")
-            }}
-          />
-        </Show>
-        <Show when={step() === "ai"}>
-          <AiStep baseUrl={props.baseUrl} localExecution={props.localExecution} onReady={setAiReady} />
-        </Show>
-        <Show when={step() === "execution"}>
-          <ExecutionStep
-            baseUrl={props.baseUrl}
-            localExecution={props.localExecution}
-            choice={choice()}
-            onChoice={setChosen}
-            onReady={setExecutionReady}
-          />
-        </Show>
+      <div class="first-project-card first-project-reveal" style={{ "--first-project-delay": "80ms" }} ref={card}>
+        <div class="first-project-card-body" data-scrollable-pane data-slot="onboarding-card-body">
+          <div data-slot="onboarding-card-steps" ref={steps}>
+            <div hidden={step() !== "project"} data-step-panel="project">
+              <ProjectStep
+                baseUrl={props.baseUrl}
+                localExecution={props.localExecution}
+                {...(props.pickFolder ? { pickFolder: props.pickFolder } : {})}
+                {...(props.leadField ? { leadField: props.leadField } : {})}
+                onChosen={(source) => {
+                  setDraft({ source })
+                  advance("project")
+                }}
+              />
+            </div>
+            <Show when={visited().has("ai")}>
+              <div hidden={step() !== "ai"} data-step-panel="ai">
+                <AiStep localExecution={props.localExecution} onReady={setAiReady} />
+              </div>
+            </Show>
+            <Show when={visited().has("execution")}>
+              <div hidden={step() !== "execution"} data-step-panel="execution">
+                <ExecutionStep
+                  baseUrl={props.baseUrl}
+                  localExecution={props.localExecution}
+                  choice={choice()}
+                  onChoice={setChosen}
+                  onReady={setExecutionReady}
+                />
+              </div>
+            </Show>
+          </div>
+        </div>
         <Show when={step() !== "project"}>
-          <div class="mt-5 flex flex-wrap items-center gap-3 border-t border-border-weak-base pt-4">
+          <div
+            class="mt-5 flex shrink-0 flex-wrap items-center gap-3 border-t border-border-weak-base pt-4"
+            data-slot="onboarding-card-footer"
+          >
             <p
               class={`min-w-0 flex-1 text-12-regular ${failure() ? "text-icon-warning-base" : "text-text-weak"}`}
               data-slot="onboarding-reason"

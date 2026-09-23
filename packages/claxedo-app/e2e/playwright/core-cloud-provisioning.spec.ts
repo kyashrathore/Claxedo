@@ -43,6 +43,7 @@ import {
   SELECTORS,
 } from "../helpers/turn-oracle"
 import { bootstrapDeployment, installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
+import { wizardOverflow } from "../helpers/first-run-wizard"
 import { stampTestAuth } from "../playwright-global-setup"
 import { eventStream, lastEventId } from "../helpers/sse-route"
 import {
@@ -820,7 +821,8 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
         return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { code: "route_not_found" } }) })
       })
 
-      // Pi's catalog, which reports a provider connected once its key is stored.
+      // Pi's catalog, the plane's seven launch providers, which reports a
+      // provider connected once its key is stored.
       const piKeys: Array<{ providerId: string; body: unknown }> = []
       await page.route("**/api/claxedo/agent-config/providers?**", (route) => {
         const url = new URL(route.request().url())
@@ -832,8 +834,13 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
           contentType: "application/json",
           body: JSON.stringify(providerCatalogIndex({
             all: [
-              { id: "anthropic", name: "Anthropic", models: {} },
               { id: "openai-codex", name: "ChatGPT", models: {} },
+              { id: "anthropic", name: "Anthropic", models: {} },
+              { id: "openai", name: "OpenAI", models: {} },
+              { id: "openrouter", name: "OpenRouter", models: {} },
+              { id: "google", name: "Google", models: {} },
+              { id: "groq", name: "Groq", models: {} },
+              { id: "xai", name: "xAI", models: {} },
             ],
             connected: piKeys.map((entry) => entry.providerId),
             default: {},
@@ -903,6 +910,8 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
         localStorage.clear()
         ;(window as typeof window & { __CLAXEDO_E2E_SERVER_URL__?: string }).__CLAXEDO_E2E_SERVER_URL__ = serverUrl
       }, HOSTED_SERVER_URL)
+      // The dark theme; the first-run wizard's own spec walks the light one.
+      await page.addInitScript(() => localStorage.setItem("opencode-color-scheme", "dark"))
 
       await page.goto("/", { waitUntil: "domcontentloaded", timeout: 100_000 })
       await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -922,19 +931,61 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-wizard-project.png" })
       await form.getByRole("button", { name: "Continue" }).click()
 
-      // Step 2: Pi's providers; Next waits for a stored key, which goes to the plane's auth route.
+      // Step 2: Pi's providers are the Models page's own rows; Next waits for a
+      // stored key, which the connect form sends to the plane's auth route.
       await expect(wizard).toHaveAttribute("data-step", "ai")
       await expect(page.getByRole("heading", { name: "Connect an AI" })).toBeVisible()
       await expect(page.locator('[data-slot="onboarding-project-name"]')).toContainText("app")
       await expect(page.getByRole("button", { name: "Skip for now" })).toHaveCount(0)
       await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
-      await expect(page.getByText("Signs in from a CLI; no key to paste here")).toBeVisible()
-      await page.locator('[data-provider="anthropic"]').getByRole("button", { name: "Connect" }).click()
-      await page.getByLabel("Anthropic API key").fill("sk-ant-e2e")
-      await page.getByRole("button", { name: "Save key" }).click()
+      const piSection = page.locator('[data-component="pi-providers-section"]')
+      await expect(piSection.locator('[data-provider="anthropic"]')).toBeVisible()
+      await expect(page.locator('[data-component="agent-harness-row"]')).toHaveCount(0)
+
+      // Back shows step 1 as it was left, and the step comes back as it was.
+      await page.getByRole("button", { name: "Back" }).click()
+      await expect(wizard).toHaveAttribute("data-step", "project")
+      await expect(repoUrl).toHaveValue(HOSTED_REPO_URL)
+      await form.getByRole("button", { name: "Continue" }).click()
+      await expect(wizard).toHaveAttribute("data-step", "ai")
+      await expect(piSection.locator('[data-provider="anthropic"]')).toBeVisible()
+
+      // Seven rows are taller than a small window: the page and the canvas do
+      // not scroll, the card body does, and the footer stays in view.
+      const fullViewport = page.viewportSize()!
+      for (const viewport of [{ width: 1024, height: 640 }, { width: 375, height: 667 }]) {
+        await page.setViewportSize(viewport)
+        await page.waitForTimeout(350)
+        const overflow = await wizardOverflow(page)
+        expect(overflow.page, `${viewport.width}x${viewport.height}: page`).toBeLessThanOrEqual(0)
+        expect(overflow.canvas, `${viewport.width}x${viewport.height}: canvas`).toBeLessThanOrEqual(0)
+        expect(overflow.body, `${viewport.width}x${viewport.height}: card body`).toBeGreaterThan(0)
+        await expect(page.getByRole("button", { name: "Next" })).toBeInViewport()
+        await expect(page.getByRole("button", { name: "Back" })).toBeInViewport()
+        await expect(page.getByRole("list", { name: "Setup steps" })).toBeInViewport()
+        await page.screenshot({ path: `test-results/evidence/core-cloud-provisioning/hosted-wizard-ai-${viewport.width}x${viewport.height}.png` })
+      }
+      await page.setViewportSize(fullViewport)
+
+      // ChatGPT signs in from a machine's Codex CLI: the plane holds no key for it.
+      await piSection.locator('[data-provider="openai-codex"]').getByRole("button", { name: "Connect" }).click()
+      const card = page.locator('[data-component="provider-connect-card"]')
+      await expect(card.locator('[data-component="provider-connect-unavailable"]')).toContainText("ChatGPT is signed in to from the Codex CLI")
+      await expect(card.locator("form")).toHaveCount(0)
+      await card.locator('[data-action="provider-connect-close"]').click()
+      await expect(card).toHaveCount(0)
+
+      await piSection.locator('[data-provider="anthropic"]').getByRole("button", { name: "Connect" }).click()
+      await expect(card).toBeVisible()
+      await card.getByRole("radio").and(card.locator('[data-method-type="api"]')).click()
+      await card.getByLabel(/Anthropic API key/i).fill("sk-ant-e2e")
+      // The plane's entry carries no label, so none is asked for.
+      await expect(card.getByLabel("Label", { exact: true })).toHaveCount(0)
+      await card.getByRole("button", { name: "Continue" }).click()
       await expect.poll(() => piKeys.length, { timeout: 10_000 }).toBe(1)
       expect(piKeys[0]).toEqual({ providerId: "anthropic", body: { auth: { key: "sk-ant-e2e" } } })
-      await expect(page.locator('[data-provider="anthropic"]')).toHaveAttribute("data-connected", "true", { timeout: 10_000 })
+      await expect(card).toHaveCount(0)
+      await expect(piSection.locator('[data-provider="anthropic"]').getByRole("button", { name: "Connect" })).toHaveCount(0, { timeout: 10_000 })
       await expect(page.getByRole("button", { name: "Next" })).toBeEnabled()
       await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-wizard-ai.png" })
       await page.getByRole("button", { name: "Next" }).click()
@@ -948,6 +999,11 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       expect(projectPosts).toBe(0)
       expect(workspaceCreates).toEqual([])
       expect(mock.requests.badResponses).toEqual([])
+      await page.waitForTimeout(350)
+      const executionOverflow = await wizardOverflow(page)
+      expect(executionOverflow.page).toBeLessThanOrEqual(0)
+      expect(executionOverflow.canvas).toBeLessThanOrEqual(0)
+      await expect(page.getByRole("button", { name: "Create workspace" })).toBeInViewport()
       await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-wizard-execution.png" })
       await page.getByRole("button", { name: "Create workspace" }).click()
 

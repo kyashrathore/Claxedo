@@ -674,8 +674,11 @@ export const desktopRendererUnsigned: Policy = {
   // entry's one read of whether the server runs work on its own filesystem,
   // carried here through the same first-project canvas and provider connect
   // form. Owner: `app/connection`. No new package edge.
-  // Exact measured 1154 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1154, packages: 58 },
+  // +1 module (2026-09-23): `ui/controls/animate-height.ts` — the animated
+  // card height the app entry's first-run wizard gained, carried here through
+  // the same wizard. Owner: `ui/controls`. No new package edge.
+  // Exact measured 1155 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1155, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

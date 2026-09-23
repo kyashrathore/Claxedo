@@ -11,14 +11,22 @@ const fixture = vi.hoisted(() => ({
   createFailure: undefined as Error | undefined,
   machineRunnable: false,
   connected: {} as Record<string, string[]>,
+  formMounts: 0,
 }))
 
 vi.mock("@/features/onboarding/app-ports", () => ({
-  ProjectCreateForm: (props: { onSubmit?: (source: ProjectSource) => void; submitLabel?: string; leadField?: (element: HTMLElement) => void }) => (
-    <button type="button" ref={(element) => props.leadField?.(element)} onClick={() => props.onSubmit?.(fixture.source)}>
-      {props.submitLabel}
-    </button>
-  ),
+  // A form with a state of its own, so the test can tell a kept form from a rebuilt one.
+  ProjectCreateForm: (props: { onSubmit?: (source: ProjectSource) => void; submitLabel?: string; leadField?: (element: HTMLElement) => void }) => {
+    fixture.formMounts += 1
+    return (
+      <>
+        <input aria-label="Repository URL" />
+        <button type="button" ref={(element) => props.leadField?.(element)} onClick={() => props.onSubmit?.(fixture.source)}>
+          {props.submitLabel}
+        </button>
+      </>
+    )
+  },
   createProject: async (input: { baseUrl?: string; source: ProjectSource }) => {
     fixture.created.push(input)
     if (fixture.createFailure) throw fixture.createFailure
@@ -29,7 +37,7 @@ vi.mock("@/features/onboarding/app-ports", () => ({
     return /"message":"([^"]+)"/.exec(text)?.[1] ?? text
   },
   MachineAccountsProvider: (props: { children?: unknown }) => props.children,
-  useMachineAccounts: () => ({ runnable: () => fixture.machineRunnable }),
+  useMachineAccounts: () => ({ opened: () => true, runnable: () => fixture.machineRunnable }),
   AgentHarnessAccounts: (props: { harness: { id: string } }) => <div data-harness-row={props.harness.id} />,
   HarnessProvidersSection: (props: { harness: string }) => <div data-providers-section={props.harness} />,
   useProviders: (harness: string) => ({
@@ -45,7 +53,6 @@ vi.mock("@/features/onboarding/app-ports", () => ({
 }))
 
 vi.mock("@/platform/api/api", () => ({ authFetch: async () => new Response("{}") }))
-vi.mock("@/platform/api/credential-request", () => ({ putHostedProviderKey: async () => undefined }))
 
 const { OnboardingWizard } = await import("./wizard")
 
@@ -78,6 +85,7 @@ afterEach(() => {
   fixture.createFailure = undefined
   fixture.machineRunnable = false
   fixture.connected = {}
+  fixture.formMounts = 0
   cleanup()
 })
 
@@ -93,10 +101,19 @@ describe("OnboardingWizard on a desktop", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Connect an AI")
     expect(screen.getByText("widgets")).toBeTruthy()
     expect(document.querySelector('[data-harness-row="claude"]')).toBeTruthy()
-    expect(document.querySelector('[data-providers-section="pi"]')).toBeTruthy()
+    expect(document.querySelector('[data-harness-choice="pi"]')).toBeTruthy()
     expect(screen.getByRole("button", { name: "Next" }).disabled).toBe(true)
     expect(reason()).toBe("Connect a login above, or skip and connect at your first message.")
     expect(fixture.created).toEqual([])
+    // The rows scroll inside the card; the reason and the buttons are the
+    // card's footer, outside the scroll region, so they never leave the screen.
+    const body = document.querySelector('[data-slot="onboarding-card-body"]')!
+    expect(body.hasAttribute("data-scrollable-pane")).toBe(true)
+    expect(body.querySelector('[data-harness-row="claude"]')).toBeTruthy()
+    const footer = body.nextElementSibling!
+    expect(footer.getAttribute("data-slot")).toBe("onboarding-card-footer")
+    expect(footer.contains(screen.getByRole("button", { name: "Next" }))).toBe(true)
+    expect(footer.contains(document.querySelector('[data-slot="onboarding-reason"]'))).toBe(true)
 
     fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
     expect(step()).toBe("execution")
@@ -155,6 +172,42 @@ describe("OnboardingWizard on a desktop", () => {
     expect(step()).toBe("project")
     expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy()
   })
+
+  test("a step is shown again as it was left: each mounts once and is hidden, not rebuilt, while another is open", () => {
+    mount({ localExecution: true })
+    const panel = (id: string) => document.querySelector<HTMLElement>(`[data-step-panel="${id}"]`)
+    const url = screen.getByLabelText<HTMLInputElement>("Repository URL")
+    fireEvent.input(url, { target: { value: "https://github.com/acme/widgets" } })
+    expect(fixture.formMounts).toBe(1)
+    expect(panel("ai")).toBeNull()
+    expect(panel("execution")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    expect(panel("project")!.hidden).toBe(true)
+    expect(panel("ai")!.hidden).toBe(false)
+    fireEvent.click(screen.getByRole("button", { name: "Pi" }))
+    expect(document.querySelector('[data-providers-section="pi"]')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    expect(panel("execution")!.hidden).toBe(false)
+    expect(panel("ai")!.hidden).toBe(true)
+    fireEvent.click(screen.getByRole("radio", { name: /A cloud sandbox/ }))
+    expect(screen.getByRole("radio", { name: /A cloud sandbox/ }).getAttribute("aria-checked")).toBe("true")
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(step()).toBe("ai")
+    expect(document.querySelector('[data-providers-section="pi"]')).toBeTruthy()
+    expect(panel("execution")!.hidden).toBe(true)
+    fireEvent.click(screen.getByRole("button", { name: "Back" }))
+    expect(step()).toBe("project")
+    expect(panel("project")!.hidden).toBe(false)
+    expect(fixture.formMounts).toBe(1)
+    expect(screen.getByLabelText<HTMLInputElement>("Repository URL").value).toBe("https://github.com/acme/widgets")
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }))
+    fireEvent.click(screen.getByRole("button", { name: "Skip for now" }))
+    expect(screen.getByRole("radio", { name: /A cloud sandbox/ }).getAttribute("aria-checked")).toBe("true")
+  })
 })
 
 describe("OnboardingWizard on the hosted plane", () => {
@@ -163,7 +216,11 @@ describe("OnboardingWizard on the hosted plane", () => {
     const { events, cloud, opened } = mount({ localExecution: false })
     fireEvent.click(screen.getByRole("button", { name: "Continue" }))
     expect(step()).toBe("ai")
-    expect(document.querySelector('[data-slot="onboarding-ai-hosted"]')).toBeTruthy()
+    // The same Pi provider rows Settings → Models draws, and nothing of a machine.
+    expect(document.querySelector('[data-providers-section="pi"]')).toBeTruthy()
+    expect(document.querySelector('[data-providers-section="opencode"]')).toBeNull()
+    expect(document.querySelector("[data-harness-row]")).toBeNull()
+    expect(screen.getByRole("heading", { level: 1 }).nextElementSibling?.textContent).toContain("Cloud sandboxes here run Pi")
     expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull()
     expect(screen.getByRole("button", { name: "Next" }).disabled).toBe(true)
     expect(reason()).toBe("Save a key for one provider to continue.")

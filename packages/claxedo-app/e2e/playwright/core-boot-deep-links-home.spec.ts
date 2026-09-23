@@ -157,6 +157,7 @@
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { bootstrapDeployment, installMockRuntime } from "../helpers/mock-runtime"
+import { wizardOverflow } from "../helpers/first-run-wizard"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-boot-deep-links-home"
@@ -384,6 +385,163 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(nonProviderBadResponses(mock.requests.badResponses)).toEqual([])
     expect(mock.requests.unhandled).toEqual([])
     expectConsoleMirrorsAreAccountedFor(mock.requests)
+  })
+
+  // The first-run wizard on both products: `local-unsigned` is a daemon on its
+  // own filesystem, whose step 2 scans the machine and stores a key on the
+  // credential route; `test-user` is a session-issuing central that states no
+  // local execution, whose step 2 is Pi's provider list and whose key goes to
+  // the plane's own auth route. The screen itself keeps one rule on both: the
+  // page never scrolls, only the card body does, the footer stays in view, and
+  // a step comes back as it was left.
+  test("the first-run wizard fits the window on every step, scrolls only its card body, and keeps each step as it was left", async ({ page }) => {
+    test.setTimeout(120_000)
+    const local = (process.env.CLAXEDO_E2E_AUTH_MODE ?? "test-user") === "local-unsigned"
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
+    await page.route("**/api/claxedo/bootstrap**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          healthy: true,
+          events: { hostAggregate: true },
+          deployment: bootstrapDeployment(),
+          version: "1.0.0-test",
+          path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
+          project: [],
+          provider: { all: [], default: {}, connected: [] },
+          provider_auth: {},
+          config: {},
+        }),
+      }),
+    )
+    await page.route("**/project**", (route) => {
+      const type = route.request().resourceType()
+      if (type !== "fetch" && type !== "xhr") return route.continue()
+      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
+    })
+    await page.route("**/api/claxedo/integrations**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ integrations: [], connections: [] }) }),
+    )
+    // Pi's catalog reports a provider connected once its key is stored, on either route.
+    const piKeys: string[] = []
+    // The machine scan: no harness answers and nothing is stored.
+    const credentialPuts: unknown[] = []
+    await page.route("**/api/claxedo/credentials**", (route) => {
+      const url = new URL(route.request().url())
+      if (url.pathname.endsWith("/machine-logins") || url.pathname.endsWith("/effective")) {
+        return route.fulfill({ status: 501, contentType: "application/json", body: "{}" })
+      }
+      if (route.request().method() === "PUT") {
+        credentialPuts.push(route.request().postDataJSON())
+        piKeys.push("anthropic")
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ credential: { id: "cred_1", provider_id: "anthropic" } }) })
+      }
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ credentials: [] }) })
+    })
+    // Pi's catalog: the plane's seven launch providers.
+    const hostedPuts: Array<{ providerId: string; harness: string | null; body: unknown }> = []
+    await page.route("**/api/claxedo/agent-config/providers?**", (route) => {
+      const url = new URL(route.request().url())
+      if (url.searchParams.get("nativeHarness") !== "pi") return route.fallback()
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          all: ["openai-codex", "anthropic", "openai", "openrouter", "google", "groq", "xai"].map((id) => ({ id, name: id, env: [], models: {} })),
+          connected: [...piKeys],
+          default: {},
+        }),
+      })
+    })
+    await page.route("**/auth/**", (route) => {
+      if (route.request().method() !== "PUT") return route.fallback()
+      const url = new URL(route.request().url())
+      const providerId = url.pathname.split("/").pop() ?? ""
+      hostedPuts.push({ providerId, harness: url.searchParams.get("harness"), body: route.request().postDataJSON() })
+      piKeys.push(providerId)
+      return route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+    })
+
+    await seedNoProjects(page)
+    await page.setViewportSize({ width: 1024, height: 640 })
+    await page.goto("/", { waitUntil: "domcontentloaded" })
+    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId("first-project-canvas")).toBeVisible({ timeout: 20_000 })
+    const wizard = page.getByTestId("onboarding-wizard")
+    const form = page.locator('[data-slot="project-create-form"]')
+    await expect(form).toBeVisible({ timeout: 20_000 })
+
+    const expectFits = async (label: string, footer: string) => {
+      await page.waitForTimeout(350)
+      const overflow = await wizardOverflow(page)
+      expect(overflow.page, `${label}: page`).toBeLessThanOrEqual(0)
+      expect(overflow.canvas, `${label}: canvas`).toBeLessThanOrEqual(0)
+      await expect(page.getByRole("list", { name: "Setup steps" }), label).toBeInViewport()
+      await expect(page.getByRole("button", { name: footer }), label).toBeInViewport()
+      return overflow
+    }
+
+    // Step 1: a repository by URL; a daemon offers its folder first.
+    await expectFits("project", "Continue")
+    const sourceSwitch = form.locator('[data-slot="project-create-source"]')
+    expect(await sourceSwitch.count()).toBe(local ? 1 : 0)
+    if (local) await sourceSwitch.click()
+    const repoUrl = form.getByRole("textbox", { name: "Repository URL" })
+    await repoUrl.fill("https://github.com/acme/widgets")
+    await form.getByRole("button", { name: "Continue" }).click()
+
+    // Step 2, at a small window: seven Pi rows overflow the card body alone.
+    await expect(wizard).toHaveAttribute("data-step", "ai")
+    const piChoice = page.locator('[data-harness-choice="pi"]')
+    expect(await piChoice.count()).toBe(local ? 1 : 0)
+    if (local) {
+      await expect(page.locator('[data-component="agent-harness-row"]')).toHaveCount(3, { timeout: 15_000 })
+      await expect(page.locator('[data-slot="onboarding-ai-scanning"]')).toHaveCount(0)
+      await piChoice.click()
+    }
+    const piSection = page.locator('[data-component="pi-providers-section"]')
+    await expect(piSection.locator('[data-provider="xai"]')).toBeAttached()
+    const ai = await expectFits("ai", "Next")
+    expect(ai.body, "ai: card body").toBeGreaterThan(0)
+    await page.screenshot({ path: "test-results/evidence/core-boot-deep-links-home/first-run-ai-1024x640.png" })
+    await page.setViewportSize({ width: 375, height: 667 })
+    const aiPhone = await expectFits("ai phone", "Next")
+    expect(aiPhone.body, "ai phone: card body").toBeGreaterThan(0)
+    await page.screenshot({ path: "test-results/evidence/core-boot-deep-links-home/first-run-ai-375x667.png" })
+    await page.setViewportSize({ width: 1024, height: 640 })
+
+    // The Models page's connect form stores the key where this server keeps it.
+    await piSection.locator('[data-provider="anthropic"]').getByRole("button", { name: "Connect" }).click()
+    const card = page.locator('[data-component="provider-connect-card"]')
+    await card.getByRole("radio").and(card.locator('[data-method-type="api"]')).click()
+    await card.getByLabel(/anthropic API key/i).fill("sk-ant-first-run")
+    await expect(card.getByLabel("Label", { exact: true })).toHaveCount(local ? 1 : 0)
+    if (local) await card.getByLabel("Label", { exact: true }).fill("work")
+    await card.getByRole("button", { name: "Continue" }).click()
+    await expect(card).toHaveCount(0, { timeout: 10_000 })
+    if (local) {
+      expect(credentialPuts).toHaveLength(1)
+      expect(credentialPuts[0]).toMatchObject({ provider_id: "anthropic", kind: "api_key", secret: "sk-ant-first-run", label: "work" })
+      expect(hostedPuts).toEqual([])
+    } else {
+      expect(hostedPuts).toEqual([{ providerId: "anthropic", harness: "pi", body: { auth: { key: "sk-ant-first-run" } } }])
+      expect(credentialPuts).toEqual([])
+    }
+    await expect(page.getByRole("button", { name: "Next" })).toBeEnabled({ timeout: 10_000 })
+    await page.getByRole("button", { name: "Next" }).click()
+
+    // Step 3 fits too, and Back finds each step as it was left.
+    await expect(wizard).toHaveAttribute("data-step", "execution")
+    await expectFits("execution", local ? "Open project" : "Create workspace")
+    await page.getByRole("button", { name: "Back" }).click()
+    await expect(wizard).toHaveAttribute("data-step", "ai")
+    await expect(piSection.locator('[data-provider="anthropic"]').getByRole("button", { name: "Connect" })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Next" })).toBeEnabled()
+    await page.getByRole("button", { name: "Back" }).click()
+    await expect(wizard).toHaveAttribute("data-step", "project")
+    await expect(repoUrl).toHaveValue("https://github.com/acme/widgets")
+    await expectFits("project again", "Continue")
   })
 
   test("workspace-scoped deep link materializes the pane and a fresh nav discards stale tabs", async ({ page }) => {

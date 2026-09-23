@@ -28,6 +28,12 @@
  * centred by `justify-content` overflows its container on both ends when it
  * is taller, and the top end cannot be scrolled to. Margins keep a short card
  * centred and let a tall one start at the top.
+ *
+ * Capped at the canvas height so a tall step scrolls inside the card rather
+ * than the canvas: the column shrinks to fit, the card takes the shrink, and
+ * only the card body overflows. The canvas keeps its own scroll for the one
+ * case the cap cannot absorb, a window shorter than the headline, the lede and
+ * the card's footer together.
  */
 .first-project-content {
   position: relative;
@@ -35,8 +41,17 @@
   display: flex;
   width: 100%;
   max-width: 35rem;
+  max-height: 100%;
+  min-height: 0;
   margin: auto;
   flex-direction: column;
+}
+
+.first-project-steps,
+.first-project-headline,
+.first-project-lede,
+.first-project-diagnostics {
+  flex-shrink: 0;
 }
 
 /*
@@ -61,10 +76,17 @@
   mask-image: radial-gradient(125% 105% at 50% 38%, black 0%, black 34%, transparent 76%);
 }
 
+/*
+ * Clipped, because the hatch band below reaches 30% past this box on every
+ * side so its drift never shows an edge, and an absolutely positioned
+ * descendant extends the canvas's scrollable overflow: unclipped, the canvas
+ * scrolls 170px into nothing on a 640px window, on every step.
+ */
 .first-project-glow {
   position: absolute;
   inset: 0;
   z-index: 0;
+  overflow: hidden;
   pointer-events: none;
   background-image: radial-gradient(44rem 30rem at 50% 36%, var(--first-project-glow-tint) 0%, transparent 68%);
 }
@@ -165,14 +187,39 @@
   color: var(--text-weak);
 }
 
+/*
+ * `overflow: hidden` because the card's height is animated between the sizes
+ * its steps give it: mid-motion the box is shorter than what is inside it.
+ */
 .first-project-card {
   position: relative;
+  display: flex;
+  min-height: 0;
   margin-top: 1.85rem;
   padding: 1.5rem;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-2xl);
   background-color: var(--surface-raised-stronger-non-alpha);
   box-shadow: var(--shadow-lg);
+}
+
+/*
+ * The card's one scroll region; the footer below it stays in view. Sized by
+ * its content until the card runs out of height, so a short step is a short
+ * card. The floor keeps a row or two readable when the window is shorter than
+ * the screen's fixed parts, at which point the canvas scrolls instead. The
+ * negative inline margins run the scrollbar along the card's own edge rather
+ * than a padding width inside it.
+ */
+.first-project-card-body {
+  min-height: 8rem;
+  flex: 0 1 auto;
+  margin-inline: -1.5rem;
+  padding-inline: 1.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .first-project-card::before {
