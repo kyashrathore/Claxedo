@@ -4,9 +4,9 @@ import { createMemoryRuntimeStore } from "../../stores/memory"
 import { createAgentSessionIndex } from "./agent-session-index"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } from "./sdk-runtime-adapter"
 import { executionBinding } from "../../test-utils/execution-binding"
-import { workspaceDirectory } from "../../test-utils/workspace-directory"
+import { runtimeWorkspaceDirectory } from "../../test-utils/workspace-directory"
 
-const WORK = workspaceDirectory("work")
+const WORK = runtimeWorkspaceDirectory("work")
 
 describe("agent session index", () => {
   test("a provider session resolves back to its runtime session and scope", () => {

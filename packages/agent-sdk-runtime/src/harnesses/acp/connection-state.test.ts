@@ -3,9 +3,9 @@ import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { createACPConnectionObservations } from "./connection-state"
 import { AcpHarnessAdapter } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
-import { workspaceDirectory } from "../../test-utils/workspace-directory"
+import { runtimeWorkspaceDirectory } from "../../test-utils/workspace-directory"
 
-const WORK = workspaceDirectory("work")
+const WORK = runtimeWorkspaceDirectory("work")
 
 test("observations fence old generations, isolate directories, and never promote discovery readiness", () => {
   const observations = createACPConnectionObservations()

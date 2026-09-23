@@ -4,9 +4,9 @@ import { AcpHarnessAdapter, type ACPTransport } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
-import { workspaceDirectory } from "../../test-utils/workspace-directory"
+import { runtimeWorkspaceDirectory } from "../../test-utils/workspace-directory"
 
-const WORK = workspaceDirectory("work")
+const WORK = runtimeWorkspaceDirectory("work")
 
 function fixture() {
   const store = new MemoryRuntimeStore()

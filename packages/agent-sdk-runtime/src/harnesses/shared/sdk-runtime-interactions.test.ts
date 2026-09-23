@@ -2,10 +2,10 @@ import { expect, test } from "bun:test"
 import { SdkRuntimeInteractions } from "./sdk-runtime-interactions"
 import type { SdkRuntimeStore } from "./sdk-runtime-driver"
 import { executionBinding } from "../../test-utils/execution-binding"
-import { workspaceDirectory } from "../../test-utils/workspace-directory"
+import { runtimeWorkspaceDirectory } from "../../test-utils/workspace-directory"
 
-const WORK = workspaceDirectory("work")
-const OTHER_WORKSPACE = workspaceDirectory("other-workspace")
+const WORK = runtimeWorkspaceDirectory("work")
+const OTHER_WORKSPACE = runtimeWorkspaceDirectory("other-workspace")
 
 function rejectingStore(): SdkRuntimeStore {
   return {

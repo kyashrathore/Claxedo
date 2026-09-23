@@ -3,9 +3,9 @@ import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { AcpHarnessAdapter } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
-import { workspaceDirectory } from "../../test-utils/workspace-directory"
+import { runtimeWorkspaceDirectory } from "../../test-utils/workspace-directory"
 
-const WORK = workspaceDirectory("work")
+const WORK = runtimeWorkspaceDirectory("work")
 
 function fixture(holdInitialize = false) {
   const initializes: Array<string | number> = []

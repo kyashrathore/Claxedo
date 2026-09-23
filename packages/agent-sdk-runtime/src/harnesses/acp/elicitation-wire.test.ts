@@ -4,9 +4,9 @@ import { AcpHarnessAdapter, type ACPTransport } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
-import { workspaceDirectory } from "../../test-utils/workspace-directory"
+import { runtimeWorkspaceDirectory } from "../../test-utils/workspace-directory"
 
-const REPO = workspaceDirectory("repo")
+const REPO = runtimeWorkspaceDirectory("repo")
 
 function fixture(store = new MemoryRuntimeStore()) {
   const responses = new Map<string | number | null, AnyMessage>()

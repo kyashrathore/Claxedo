@@ -32,10 +32,10 @@ import { cancelAdapterTurn } from "../test-utils/cancel-turn"
 import { installFakePiRpc } from "../test-utils/fake-pi-rpc.mjs"
 import { executeTestTurn, executionBinding } from "../test-utils/execution-binding"
 import { questionAsked } from "../compat-events"
-import { workspaceDirectory } from "../test-utils/workspace-directory"
+import { runtimeWorkspaceDirectory } from "../test-utils/workspace-directory"
 
-const WORK = workspaceDirectory("work")
-const REPO = workspaceDirectory("repo")
+const WORK = runtimeWorkspaceDirectory("work")
+const REPO = runtimeWorkspaceDirectory("repo")
 
 /**
  * What each harness can actually establish about a turn it was asked to stop.

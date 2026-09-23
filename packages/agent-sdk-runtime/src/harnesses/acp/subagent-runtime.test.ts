@@ -3,9 +3,9 @@ import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { AcpHarnessAdapter } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
-import { workspaceDirectory } from "../../test-utils/workspace-directory"
+import { runtimeWorkspaceDirectory } from "../../test-utils/workspace-directory"
 
-const WORK = workspaceDirectory("work")
+const WORK = runtimeWorkspaceDirectory("work")
 
 test("negotiated children traverse ACP wire and isolated child transcripts", async () => {
   const store = new MemoryRuntimeStore()

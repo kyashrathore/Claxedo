@@ -6,6 +6,6 @@ import { requireWorkspaceDirectory } from "../target"
  * store row under the literal `/work` and then asks through the adapter reads
  * `/work` on POSIX but `D:\work` on Windows, and finds nothing.
  */
-export function workspaceDirectory(name: string) {
+export function runtimeWorkspaceDirectory(name: string) {
   return requireWorkspaceDirectory(`/${name}`)
 }
