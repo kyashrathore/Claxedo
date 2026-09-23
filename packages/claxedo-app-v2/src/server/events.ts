@@ -1,10 +1,12 @@
-import type { PlacementId, ProjectId, RequestId } from "./ids"
+import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type {
   AgentRequest,
   FileDiff,
   SessionRef,
   SessionRow,
   SessionStatus,
+  Terminal,
+  TerminalAgentStatus,
   Todo,
   TranscriptMessage,
   TranscriptPart,
@@ -34,6 +36,16 @@ export type ServerEvent =
   | { readonly type: "projectChanged"; readonly projectId: ProjectId }
   | { readonly type: "pluginsChanged" }
   | { readonly type: "streamGap"; readonly placementId?: PlacementId }
+  | { readonly type: "terminalCreated"; readonly terminal: Terminal }
+  | { readonly type: "terminalUpdated"; readonly terminal: Terminal }
+  | { readonly type: "terminalExited"; readonly placementId: PlacementId; readonly terminalId: TerminalId; readonly code?: number }
+  | { readonly type: "terminalRemoved"; readonly placementId: PlacementId; readonly terminalId: TerminalId }
+  | {
+      readonly type: "terminalAgentStatusChanged"
+      readonly placementId: PlacementId
+      readonly terminalId: TerminalId
+      readonly status: TerminalAgentStatus
+    }
 
 export type ConnectionState =
   | { readonly kind: "connecting" }
