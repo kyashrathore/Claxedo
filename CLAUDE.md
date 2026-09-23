@@ -20,6 +20,8 @@ Run `bun run test:architecture-ratchets` before completing any change that adds,
 
 When a ratchet fails, do not blindly raise a ceiling or baseline. First identify the newly reachable module and its dependency chain, then remove an accidental edge or reuse the canonical owner. If the dependency is intentional, run the affected product's full `verify:closure`, raise only the exact measured ceiling with no headroom, and update the adjacent comment to name the reviewed owner and why it belongs in that product. Never hide a dependency from the scanner with an opaque dynamic import.
 
+When a file-size ratchet fails (the 800-line production budget or a reviewed per-file ceiling), treat it as a design signal, not a line-count problem. Ask how the file can become modular: name the responsibilities it holds, find the ones that are separate concepts or already have an owner, and split the file along them into several files with narrow APIs. Never shrink a working system to fit the number by joining lines, deleting comments or blank lines, inlining helpers, or shortening names, and never raise the ceiling instead of splitting.
+
 ## Explanations and summaries
 
 Start with the direct answer, then build the mental model from the real code flow.
