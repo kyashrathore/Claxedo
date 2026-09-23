@@ -42,6 +42,8 @@ export type HarnessSelectionControllerStore = {
   rememberDraftModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
   harness(scope: string): HarnessType | undefined
+  /** The harness picked for an existing session that its next send switches it to. */
+  heldHarness?(scope: string): HarnessType | undefined
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
   connectionState?(scope: string): HarnessConnectionState | undefined
@@ -70,6 +72,7 @@ export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
   harnessModelKeyForSubmit(scope: string): ModelKey | undefined
   settledModel?(scope: string): Promise<void>
   harnessServiceTierForSubmit(scope: string): string | undefined
+  releaseHeldHarness?(scope: string): void
 }
 
 export type HarnessSelectionSnapshot = {
@@ -147,6 +150,8 @@ export type HarnessSelectionController = ReturnType<typeof createHarnessSelectio
 export function createHarnessSubmitController(store: HarnessSubmitControllerStore | undefined) {
   return {
     harness: (scope: string): HarnessType | undefined => store?.harness(scope),
+    heldHarness: (scope: string): HarnessType | undefined => store?.heldHarness?.(scope),
+    releaseHeldHarness: (scope: string) => store?.releaseHeldHarness?.(scope),
     isHarnessMode: (scope: string) => store?.isHarnessMode(scope) ?? false,
     readiness: (scope: string): HarnessReadiness => store?.readiness(scope) ?? "unresolved",
     canOmitModel: (scope: string) => store?.canOmitModel?.(scope) ?? false,

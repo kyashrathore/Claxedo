@@ -41,6 +41,14 @@ export type HarnessStoreState = {
   draftDefaultWorkspaceKey?: string
   draftDefault?: DraftDefault
   draftDefaultState?: DraftDefaultResult["state"]
+  /**
+   * What this existing session's scope showed before another harness was
+   * picked in it. The session keeps running its own harness until the next
+   * send switches it, so while this is set the scope's harness is only a
+   * choice: nothing server-side has changed, and picking the session's own
+   * harness back restores this.
+   */
+  heldFrom?: Omit<HarnessStoreState, "heldFrom">
 }
 
 export type HarnessStorePatch = Partial<HarnessStoreState>
@@ -83,11 +91,6 @@ function scopeAuthority(scope: string): DraftDefaultAuthority {
 export function harnessStatusPatch(input: {
   data: HarnessState
   current?: HarnessStoreState
-  // A COMPLETED switch response (harness-switcher applyPostedStatus), as opposed
-  // to a startup/in-flight hydration probe. A completed response is definitive:
-  // ready:false means the switch finished and the harness is unavailable, so it
-  // is an "error", not "polling". Default (probe) keeps the connecting semantics.
-  settled?: boolean
 }): HarnessStorePatch {
   const want = desiredHarness(input.data) ?? input.current?.harness
   if (!want) return {
@@ -98,8 +101,7 @@ export function harnessStatusPatch(input: {
   // A harness that reports ready:false without a hard failure
   // (status "error" or an error message) is still CONNECTING during a startup or
   // in-flight probe — surface that as "polling" so the selector renders a
-  // "Connecting" pill instead of a red "Unavailable". A hard failure — or a
-  // ready:false carried by a *settled* completed switch response — is "error".
+  // "Connecting" pill instead of a red "Unavailable". A hard failure is "error".
   // A live-but-degraded harness (`ready:true` while `harnessHealth.status` is
   // degraded/unavailable — the process was lost and is recovering) maps to
   // "degraded", which drives the composer health peek and the Send gate.
@@ -112,7 +114,7 @@ export function harnessStatusPatch(input: {
   const readiness: HarnessStoreState["readiness"] = hardFailedHarness(input.data)
     ? "error"
     : input.data.ready === false
-      ? (input.settled ? "error" : "polling")
+      ? "polling"
       : health === "degraded" || health === "unavailable"
         ? "degraded"
         : "ready"

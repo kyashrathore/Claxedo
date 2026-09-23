@@ -120,7 +120,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
   const isNewSessionVariant = () => modeSnapshot().newSession
   const resolvedSessionId = () => modeSnapshot().sessionId
-  const permissionSessionId = () => resolvedSessionId() === "new" ? undefined : resolvedSessionId()
+  // A held harness pick has no session behind it yet, so its modes are chosen the way a draft's are.
+  const permissionSessionId = () => resolvedSessionId() === "new" || harnessController.heldHarness(scope()) ? undefined : resolvedSessionId()
   const harnessSessionId = () => modeSnapshot().harnessSessionId
   const resolvedSessionDirectory = () => props.sessionDirectory ?? sessionParams.directory()
   const harnessDirectory = createMemo(() =>

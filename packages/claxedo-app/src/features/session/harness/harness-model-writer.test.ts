@@ -198,6 +198,17 @@ describe("harness model writer", () => {
     expect(reloads).toEqual([scope, "session:ses_1"])
   })
 
+  test("a model picked for a held harness stays in the composer until the send switches the session", async () => {
+    const codex = { providerID: "codex", modelID: "gpt-5.5" }
+    await writerFor(true, { held: true }).setModel("session:ses_1", codex, { directory: "/repo", sessionId: "ses_1" })
+
+    expect(selectedModels).toEqual([codex])
+    expect(posts).toEqual([])
+    expect(publishedConfigs).toEqual([])
+    expect(remembered).toEqual([])
+    expect(reloads).toEqual(["session:ses_1"])
+  })
+
   test("rejects an ineligible draft model before changing selection or dropping a prepared session", async () => {
     await writerFor(false).setModel(scope, { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "new" })
 
@@ -208,13 +219,14 @@ describe("harness model writer", () => {
   })
 })
 
-function writerFor(acceptsDraftModel = true, save: { fail?: boolean; shown?: { providerID: string; modelID: string } } = {}) {
+function writerFor(acceptsDraftModel = true, save: { fail?: boolean; shown?: { providerID: string; modelID: string }; held?: boolean } = {}) {
   return createHarnessModelWriter({
     base: "http://server",
     seed: (scope) => seeds.push(scope),
     acceptsDraftModel: () => acceptsDraftModel,
     currentModel: () => selectedModels.at(-1) ?? save.shown,
     setSelectedModel: (_scope, model) => selectedModels.push(model),
+    holdsHarness: () => !!save.held,
     reloadOptions: (scope) => { reloads.push(scope) },
     dropPrepared: (scope) => dropped.push(scope),
     rememberDraftModel: (scope, model, input) => remembered.push({

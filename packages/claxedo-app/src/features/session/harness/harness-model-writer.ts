@@ -60,6 +60,8 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   acceptsDraftModel(scope: string, model: ModelKey): boolean
   currentModel(scope: string): ModelKey | undefined
   setSelectedModel(scope: string, model: ModelKey): void
+  /** A held pick is not the session's harness yet, so its model is a choice the next send carries. */
+  holdsHarness(scope: string): boolean
   /** Effort levels and their default belong to the model, so a new one re-asks the harness. */
   reloadOptions(scope: string, params?: ScopeInput): Promise<void> | void
   rememberDraftModel(scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels): void
@@ -107,6 +109,10 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
     if (!params?.sessionId || params.sessionId === "new") {
       input.rememberDraftModel(scope, model, params, labels)
       input.dropPrepared(scope)
+      if (changed) await input.reloadOptions(scope, params)
+      return
+    }
+    if (input.holdsHarness(scope)) {
       if (changed) await input.reloadOptions(scope, params)
       return
     }

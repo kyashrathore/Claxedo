@@ -1,5 +1,5 @@
 import { batch } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, unwrap } from "solid-js/store"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { harnessHasConfigOptions, isCatalogHarness, type HarnessType } from "./profile"
@@ -273,8 +273,27 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
   const acceptsDraftModel = (scope: string, model: ModelKey) => canSelectDraftModel(read(scope), model)
 
+  /** Show `patch` in an existing session's scope as a choice, keeping what the session itself runs. */
+  const holdHarness = (scope: string, patch: HarnessStorePatch) => {
+    seed(scope)
+    const { heldFrom, ...bound } = structuredClone(unwrap(read(scope)))
+    setStore(scope, { ...patch, heldFrom: heldFrom ?? bound })
+  }
+
+  /** Undo a held pick when `type` is the harness the session still runs. */
+  const restoreHeldHarness = (scope: string, type: HarnessType) => {
+    const heldFrom = read(scope).heldFrom
+    if (!heldFrom || !sameHarnessSelection(heldFrom.harness, type)) return false
+    setStore({ [scope]: structuredClone(unwrap(heldFrom)) })
+    return true
+  }
+
   return {
     applyPatch,
+    holdHarness,
+    restoreHeldHarness,
+    releaseHeldHarness: (scope: string) => setStore(scope, "heldFrom", undefined),
+    heldHarness: (scope: string) => read(scope).heldFrom ? read(scope).harness : undefined,
     applyDraftDefault,
     beginDraftDefault,
     beginDraftHarnessChoice,

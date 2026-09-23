@@ -117,30 +117,11 @@ describe("harness store state projectors", () => {
       }),
     ).toMatchObject({ readiness: "error" })
 
-    // `settled: true` marks a COMPLETED switch response (not a startup/in-flight
-    // probe). A completed response that still reports ready:false is a definitive
-    // failure — the harness finished configuring and came back unavailable — so
-    // it is "error", not "polling". This is the harness-switcher applyPostedStatus
-    // path (core-harness-ownership-local, harness-switcher.test.ts:144).
-    expect(
-      harnessStatusPatch({
-        data: { type: codex, status: "configured", ready: false },
-        settled: true,
-      }),
-    ).toMatchObject({ readiness: "error" })
-    // Without `settled`, the same frame is an in-flight probe → still "polling".
     expect(
       harnessStatusPatch({
         data: { type: codex, status: "configured", ready: false },
       }),
     ).toMatchObject({ readiness: "polling" })
-    // A settled ready:true response is still "ready".
-    expect(
-      harnessStatusPatch({
-        data: { type: codex, status: "ready", ready: true },
-        settled: true,
-      }),
-    ).toMatchObject({ readiness: "ready" })
 
     // A ready harness is ready.
     expect(

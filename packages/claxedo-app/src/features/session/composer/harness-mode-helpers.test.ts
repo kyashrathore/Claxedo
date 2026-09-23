@@ -6,6 +6,8 @@ import { createComposerHarnessMode } from "./harness-mode-helpers"
 function controller(): HarnessSubmitController {
   return {
     harness: () => nativeHarness("codex"),
+    heldHarness: () => undefined,
+    releaseHeldHarness: () => undefined,
     isHarnessMode: () => true,
     readiness: () => "ready",
     readyForSubmit: () => true,

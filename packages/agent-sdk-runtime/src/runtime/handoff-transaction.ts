@@ -9,10 +9,12 @@ import { messagePartUpdated, type CompatEvent } from "../compat-events"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SessionHarness } from "../index"
 import { renderSessionHandoff } from "../session-handoff"
 import type { AgentRuntimeStoreWithRecovery } from "../harnesses/shared/runtime-store"
+import type { TurnAdmissions } from "./turn-admission"
 
 type HandoffSession = {
   title?: string | null
   directory?: string
+  status?: string | null
 }
 
 export type HandoffTransactionInput = {
@@ -25,6 +27,7 @@ export type HandoffTransactionInput = {
   source: AgentHarnessAdapter
   target: AgentHarnessAdapter
   binding: AgentExecutionBinding
+  admissions: Pick<TurnAdmissions, "gate">
   diagnose: (event: AgentRuntimeEvent) => void
 }
 
@@ -128,11 +131,25 @@ function diagnostic(
 /**
  * Owns the prepare/configure/commit/rollback boundary for a harness switch.
  *
+ * The session is held against new turns for the whole switch: a turn admitted
+ * part-way would run on one harness's binding under the other's config.
+ */
+export async function executeHandoffTransaction(input: HandoffTransactionInput): Promise<SessionConfig> {
+  const hold = input.session.status === "busy" ? undefined : input.admissions.gate(input.sessionId)
+  if (!hold) throw new Error("Wait for the current turn to finish before switching harness")
+  try {
+    return await switchHarness(input)
+  } finally {
+    hold.release()
+  }
+}
+
+/**
  * The native session being left is kept on the pending handoff until a message
  * is sent on the new harness. Picking it back before then resumes it under the
  * config it had; a harness picked in between carried nothing and is released.
  */
-export async function executeHandoffTransaction(input: HandoffTransactionInput): Promise<SessionConfig> {
+async function switchHarness(input: HandoffTransactionInput): Promise<SessionConfig> {
   const agentSessionId = input.store.getAgentSessionId(input.sessionId)
   if (!agentSessionId) throw new Error(`Session ${input.sessionId} has no native harness session`)
   const previous: NativeSession = { agentSessionId, ownerKey: input.store.getSessionOwnerKey?.(input.sessionId) ?? null }

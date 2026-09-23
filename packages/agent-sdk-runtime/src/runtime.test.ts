@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { createAgentRuntime } from "./runtime"
 import type { AgentHarnessFactory } from "./runtime"
 import { AgentRuntimeStaleTurnError } from "./adapters"
+import { AgentRuntimeTurnAdmissionError } from "./runtime/contracts"
 import type { AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
 import { goalCapabilities, type HarnessCapabilities } from "./capabilities"
 import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
@@ -1318,6 +1319,81 @@ describe("createAgentRuntime", () => {
     expect(rows.getSessionConfig(session.id)?.handoff?.source).toMatchObject({ agentSessionId: "ses_recovering", handoff: recovery })
     await runtime.sessions.updateConfig(session.id, { harness: { id: "pi", access: "native" } }, "/repo")
     expect(rows.getSessionConfig(session.id)?.handoff).toEqual(recovery)
+    await runtime.dispose()
+  })
+
+  test("holds the session against new turns until a harness switch lands", async () => {
+    const store = createMemoryRuntimeStore()
+    let finishPreparing!: () => void
+    const prepared = new Promise<void>((resolve) => { finishPreparing = resolve })
+    let startedPreparing!: () => void
+    const preparing = new Promise<void>((resolve) => { startedPreparing = resolve })
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [
+        handoffHarness({ id: "pi" }),
+        handoffHarness({ id: "claude", onAdapter(adapter) {
+          const create = adapter.createHandoffSession!.bind(adapter)
+          adapter.createHandoffSession = async (...args) => {
+            startedPreparing()
+            await prepared
+            return await create(...args)
+          }
+        } }),
+      ],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", id: "ses_gate", directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    const switching = runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+    await preparing
+    await expect(runtime.turns.start({ sessionId: session.id, messageId: "u_early", text: "too early" }))
+      .rejects.toBeInstanceOf(AgentRuntimeTurnAdmissionError)
+    let handed = false
+    const waiting = runtime.turns.whenIdle(session.id).then((handoff) => {
+      handed = true
+      return handoff
+    })
+    await tick()
+    expect(handed).toBe(false)
+
+    finishPreparing()
+    await switching
+    const handoff = await waiting
+    expect(handoff.unavailable).toBeUndefined()
+    const started = await runtime.turns.start({ sessionId: session.id, messageId: "u_after", text: "on claude" })
+    handoff.abandon()
+
+    expect(started.delivery).toBe("start")
+    expect(store.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
+    await runtime.dispose()
+  })
+
+  test("refuses a harness switch while a turn holds the session", async () => {
+    const store = createMemoryRuntimeStore()
+    let finishTurn!: () => void
+    const turnHeld = new Promise<void>((resolve) => { finishTurn = resolve })
+    const claudeHandoffs: string[] = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [
+        handoffHarness({ id: "pi", onAdapter(adapter) {
+          adapter.executeTurn = async function* (binding) {
+            await turnHeld
+            yield { type: "finish", sessionId: binding.sessionId }
+          }
+        } }),
+        handoffHarness({ id: "claude", handoffs: claudeHandoffs }),
+      ],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", id: "ses_busy", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "working" })
+
+    await expect(runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo"))
+      .rejects.toThrow("Wait for the current turn to finish before switching harness")
+    expect(claudeHandoffs).toEqual([])
+    expect(store.getSessionConfig(session.id)?.harness).toEqual({ id: "pi", access: "native" })
+    finishTurn()
+    await tick()
     await runtime.dispose()
   })
 

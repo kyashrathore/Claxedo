@@ -234,6 +234,19 @@ describe("harness hydrator", () => {
     expect(subject.cache.seen.get("scope")).toBe("session:ses_1")
   })
 
+  test("leaves a held harness pick alone, including on a reprobe", async () => {
+    const subject = createSubject({
+      state: harnessState({ harness: NATIVE_CODEX, heldFrom: harnessState({ harness: CURSOR_CONNECTION }) }),
+    })
+
+    await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
+    await subject.hydrator.reprobe("scope", { directory: "/repo", sessionId: "ses_1" })
+
+    expect(subject.calls).toEqual(["seed:scope", "seed:scope"])
+    expect(subject.applied).toEqual([])
+    expect(subject.cache.seen.get("scope")).toBeUndefined()
+  })
+
   test("a reopened session restores the effort its config saved", async () => {
     const subject = createSubject({
       sessionConfig: { harness: { id: "codex", access: "native" }, model: { providerID: "codex", modelID: "gpt-6-astra" }, variant: "xhigh" },

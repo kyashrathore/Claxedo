@@ -485,14 +485,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     }
     const session = store.getSession(sessionId)
     if (!session) throw new Error(`Session ${sessionId} not found`)
-    if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
     const targetDirectory = directory ?? session.directory
     const previousBinding = executionBinding(sessionId, targetDirectory, current.harness)
     const source = await adapterFor(current.harness)
     const target = await adapterFor(update.harness!)
     return executeHandoffTransaction({
       sessionId, directory: targetDirectory, session, current, update: { ...update, harness: update.harness! },
-      binding: previousBinding, store, source, target,
+      binding: previousBinding, store, source, target, admissions,
       diagnose: (payload) => publish({ sessionId, directory: targetDirectory, payload }),
     })
   }

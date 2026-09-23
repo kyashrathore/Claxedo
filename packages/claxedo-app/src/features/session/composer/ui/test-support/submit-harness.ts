@@ -162,6 +162,8 @@ export const state: {
   /** Base URL `resolveSessionUrl` answers with; null means no gateway URL resolves. */
   runtimeSessionUrl: string | null
   harnessMode: boolean
+  /** A harness picked for the existing session under test that its next send switches to. */
+  heldHarness: HarnessSelection | undefined
   harnessClaimSession: { id: string } | Promise<{ id: string } | undefined> | undefined
   harnessSubmitModel: { key: { providerID: string; modelID: string; variant?: string }; name: string } | undefined
   piSubmitModel: { key: { providerID: string; modelID: string }; name: string } | undefined
@@ -197,6 +199,7 @@ export const state: {
   localAgentList: [{ name: "agent" }],
   runtimeSessionUrl: null,
   harnessMode: false,
+  heldHarness: undefined,
   harnessClaimSession: { id: "session-1" },
   harnessSubmitModel: { key: { providerID: "claude-sdk", modelID: "opus" }, name: "Opus" },
   transportGetSession: true,
@@ -272,7 +275,9 @@ export function localSessionRef(sessionID: string) {
 
 export function testHarnessController(): HarnessSubmitController {
   return {
-    harness: (): HarnessSelection => state.harnessMode ? { kind: "native", harnessId: "claude" } : PI,
+    harness: (): HarnessSelection => state.heldHarness ?? (state.harnessMode ? { kind: "native", harnessId: "claude" } : PI),
+    heldHarness: () => state.heldHarness,
+    releaseHeldHarness: () => { state.heldHarness = undefined },
     isHarnessMode: () => state.harnessMode,
     readiness: () => "ready",
     canOmitModel: () => false,
@@ -1122,6 +1127,7 @@ export function resetSubmitHarness() {
     },
   }
   state.sessionConfigSaveError = undefined
+  state.heldHarness = undefined
   state.claxedoServerUrl = "http://localhost:3001"
   state.promptScope = { dir: "/repo/main", id: "new", draftId: "draft-1" }
   state.syncProject = { id: "project-1", worktree: "/repo/main", sandboxes: [], workspaces: { "/repo/main": { kind: "local" } } }

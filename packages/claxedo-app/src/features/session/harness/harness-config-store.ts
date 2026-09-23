@@ -120,12 +120,15 @@ export function createHarnessConfigStore() {
     cache: createHarnessOptionsQueryCache(base),
   })
 
+  // A held pick's options are the picked harness's, which only the
+  // directory-scoped route answers: the session route serves the harness the
+  // session still runs.
   async function fetchConfigOptions(
     scope: string,
     type: HarnessType,
     input?: ScopeInput,
   ): Promise<OptionsResponse | undefined> {
-    return optionsLoader.load(scope, type, input)
+    return optionsLoader.load(scope, type, harnessStore.heldHarness(scope) && input ? { ...input, sessionId: undefined } : input)
   }
 
   const statusActions = createHarnessStatusActions<ScopeInput>({
@@ -190,6 +193,7 @@ export function createHarnessConfigStore() {
         : undefined
     },
     setSelectedModel: harnessStore.setSelectedModel,
+    holdsHarness: (scope) => !!harnessStore.heldHarness(scope),
     reloadOptions: async (scope, params) => {
       const harness = harnessStore.state(scope)?.harness
       if (!harness || isCatalogHarness(harness) || !await hasConfigOptions(harness)) return
@@ -215,6 +219,8 @@ export function createHarnessConfigStore() {
       void preparedRuntimeSessions.drop(scope)
     },
     applyPatch: harnessStore.applyPatch,
+    holdHarness: harnessStore.holdHarness,
+    restoreHeldHarness: harnessStore.restoreHeldHarness,
     beginDraftHarnessChoice: (scope, type, input) => {
       const identity = draftDefaultIdentity(input)
       if (identity) harnessStore.beginDraftHarnessChoice(scope, identity, type)
@@ -226,9 +232,7 @@ export function createHarnessConfigStore() {
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },
-    publishSessionConfig,
     hasConfigOptions,
-    errorMessage,
     runtime: harnessRuntime,
     cache: createHarnessSwitcherQueryCache(base),
   })
@@ -279,7 +283,7 @@ export function createHarnessConfigStore() {
   // Probe the bound runtime without changing persisted harness/model identity.
   // Hydration alone cannot detect a runtime that exits after the session loads.
   const probeHarnessHealth = async (scope: string, input?: ScopeInput) => {
-    if (!input?.directory) return
+    if (!input?.directory || harnessStore.heldHarness(scope)) return
     const current = harnessStore.read(scope)
     if (!current.harness) return
     const res = await harnessRuntime.harnessHealthFetch(input).catch(() => undefined)
@@ -313,6 +317,8 @@ export function createHarnessConfigStore() {
     resolveDraftDefault: resolveCurrentDraftDefault,
     setModel,
     setHarness,
+    heldHarness: harnessStore.heldHarness,
+    releaseHeldHarness: harnessStore.releaseHeldHarness,
     canOmitModel: harnessStore.canOmitModel,
     canCreateWithoutModel: harnessStore.canCreateWithoutModel,
     setConnectionDeclaration: harnessStore.setConnectionDeclaration,
