@@ -206,7 +206,7 @@ export function NavigationStatusMark(props: { status: SwitcherStatus; surface?: 
     <Switch>
       <Match when={props.status === "working"}>
         <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 items-center justify-center">
-          <span class="size-3 rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none" />
+          <span class="size-2.5 rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none" />
         </span>
       </Match>
       <Match when={props.status !== "idle"}>
