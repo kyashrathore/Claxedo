@@ -19,9 +19,23 @@ export function workspaceRuntimeEpoch(env: NodeJS.ProcessEnv = process.env) {
   return Number.isSafeInteger(epoch) && epoch > 0 ? epoch : undefined
 }
 
+/**
+ * The home directory `os.homedir()` would report, read from `env` on every
+ * call. Bun 1.3 snapshots HOME at startup, so a HOME a test preload assigns
+ * later never reaches Bun's `os.homedir()`.
+ */
+export function userHomeDir(env: NodeJS.ProcessEnv = process.env) {
+  return runtimeEnvText(env, process.platform === "win32" ? "USERPROFILE" : "HOME") ?? os.homedir()
+}
+
 export function workspaceRuntimeDataDir(env: NodeJS.ProcessEnv = process.env) {
   return runtimeEnvText(env, "WORKSPACE_RUNTIME_DATA_DIR")
-    ?? path.join(os.homedir(), ".workspace-runtime")
+    ?? path.join(userHomeDir(env), ".workspace-runtime")
+}
+
+export function workspaceRuntimeWorkspacesDir(env: NodeJS.ProcessEnv = process.env) {
+  return runtimeEnvText(env, "WORKSPACE_RUNTIME_WORKSPACES_DIR")
+    ?? path.join(userHomeDir(env), ".claxedo", "workspaces")
 }
 
 export function workspaceRuntimeStateDir(env: NodeJS.ProcessEnv = process.env) {
@@ -34,11 +48,7 @@ export function workspaceRuntimeStoreDir(env: NodeJS.ProcessEnv = process.env) {
   if (configured) return configured
   const workspace = runtimeEnvText(env, "WORKSPACE_RUNTIME_WORKSPACE_ID")
   if (workspace && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(workspace)) {
-    return path.join(
-      runtimeEnvText(env, "WORKSPACE_RUNTIME_WORKSPACES_DIR") ?? path.join(os.homedir(), ".claxedo", "workspaces"),
-      workspace,
-      "runtime",
-    )
+    return path.join(workspaceRuntimeWorkspacesDir(env), workspace, "runtime")
   }
   return path.join(workspaceRuntimeDataDir(env), "store")
 }

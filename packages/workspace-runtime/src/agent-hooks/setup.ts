@@ -5,9 +5,9 @@
  */
 
 import * as fs from "fs"
-import * as os from "os"
 import { materializeAgentHooks } from "./materialize-status-hooks"
 import { Log } from "../log"
+import { userHomeDir } from "../env"
 import {
   BIN_DIR,
   CLAXEDO_DIR,
@@ -35,7 +35,7 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
 
   const manifest = await setupStatusHooks({ port, force, wrappers, replaceWrappers, codexNativeHooks })
   const results = await materializeAgentHooks({
-    homeDir: os.homedir(),
+    homeDir: userHomeDir(),
     notifyPath: manifest.files.notify,
     geminiHookPath: manifest.files.geminiHook,
     cursorHookPath: manifest.files.cursorHook,

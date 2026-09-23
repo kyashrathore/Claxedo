@@ -4,6 +4,7 @@ import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { writeIfChanged as writeFileAtomically } from "./core/utils"
 import { arr, rec, str } from "../json-value"
 import { generateAmpPlugin, generateAntigravityHook } from "./core/hooks"
+import { ANTIGRAVITY_HOOK, CURSOR_HOOK, GEMINI_HOOK, NOTIFY_MARKER, NOTIFY_SCRIPT } from "./core/constants"
 
 async function readFileIfExists(filePath: string): Promise<string | undefined> {
   try {
@@ -34,12 +35,12 @@ export type MaterializeAgentHooksOptions = {
   codexNativeHooks?: boolean
 }
 
-const NOTIFY_SCRIPT = "notify.sh"
-const GEMINI_HOOK_SCRIPT = "gemini-hook.sh"
-const CURSOR_HOOK_SCRIPT = "cursor-hook.sh"
 const CLAUDE_NOTIFY_RELATIVE = `hooks/${NOTIFY_SCRIPT}`
 const CLAUDE_DYNAMIC_NOTIFY = `$CLAXEDO_HOME_DIR/${CLAUDE_NOTIFY_RELATIVE}`
-const MANAGED_HOOK_PATH_PATTERN = /\/\.claxedo(?:-[^/'"\s\\]+)?\//
+// `[bash] <script> [--harness=<name> | <Event>]`, the script shell-quoted or bare.
+const GENERATED_HOOK_COMMAND = /^(?:bash\s+)?(?:'((?:[^']|'\\'')+)'|([^\s'"]+))(?:\s+(?:--harness=[\w-]+|[A-Za-z]+))?$/
+
+type IsManagedCommand = (command: string | undefined) => boolean
 
 /**
  * The record at `key`, creating and installing an empty one when the file has
@@ -85,27 +86,54 @@ async function writeIfChanged(filePath: string, content: string, mode: number, f
   return true
 }
 
-function isManagedHookCommand(command: string | undefined, scriptName: string) {
-  if (!command) return false
-  const normalized = command.replaceAll("\\", "/")
-  if (!normalized.includes(`/hooks/${scriptName}`)) return false
-  return MANAGED_HOOK_PATH_PATTERN.test(normalized)
+function generatedScriptPath(command: string, scriptName: string) {
+  const match = GENERATED_HOOK_COMMAND.exec(command.trim())
+  const script = match?.[1]?.replaceAll("'\\''", "'") ?? match?.[2]
+  if (!script || !path.isAbsolute(script)) return undefined
+  return script.replaceAll("\\", "/").endsWith(`/hooks/${scriptName}`) ? script : undefined
 }
 
-function reconcileManagedEntries<T>(input: {
-  current: T[] | undefined
-  desired: T[]
-  isManaged: (entry: T) => boolean
-  isEquivalent: (entry: T, desiredEntry: T) => boolean
-}) {
-  const existing = Array.isArray(input.current) ? input.current : []
-  return [
-    ...existing.filter((entry) => !input.isManaged(entry)),
-    ...input.desired,
-  ]
+async function isGeneratedScript(file: string) {
+  try {
+    return (await fs.readFile(file, "utf8")).includes(NOTIFY_MARKER)
+  } catch (error) {
+    const code = str(rec(error)?.code)
+    return code === "ENOENT" || code === "ENOTDIR"
+  }
 }
 
-function targetPaths(homeDir: string) {
+function hookCommands(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(hookCommands)
+  const record = rec(value)
+  if (!record) return []
+  return [...(typeof record.command === "string" ? [record.command] : []), ...Object.values(record).flatMap(hookCommands)]
+}
+
+/**
+ * Which hook commands in `configs` are registrations this runtime wrote: a
+ * generated-shape invocation of `scriptName` from a `hooks/` directory whose
+ * script carries NOTIFY_MARKER or no longer exists. Neither the current path
+ * nor a directory name can say this, because the data root moves between
+ * installs and every test run gets its own temp root. A foreign registration
+ * of the same bare shape whose script was deleted is also treated as managed.
+ */
+async function loadManagedHookCommands(scriptName: string, ...configs: unknown[]): Promise<IsManagedCommand> {
+  const scripts = new Map<string, string>()
+  for (const command of configs.flatMap(hookCommands)) {
+    const script = generatedScriptPath(command, scriptName)
+    if (script) scripts.set(command, script)
+  }
+  const owned = new Set<string>()
+  await Promise.all([...new Set(scripts.values())].map(async (script) => {
+    if (await isGeneratedScript(script)) owned.add(script)
+  }))
+  return (command) => {
+    const script = command === undefined ? undefined : scripts.get(command)
+    return script !== undefined && owned.has(script)
+  }
+}
+
+export function agentHookConfigPaths(homeDir: string) {
   return {
     antigravity: path.join(homeDir, ".gemini", "config", "hooks.json"),
     amp: path.join(homeDir, ".config", "amp", "plugins", "claxedo-lifecycle.ts"),
@@ -127,18 +155,7 @@ function notifyCommand(notifyPath: string, harness: string) {
   return `${shellQuote(notifyPath)} --harness=${harness}`
 }
 
-function isManagedClaudeHookCommand(command: string | undefined, notifyScriptPath: string) {
-  return (
-    command?.includes(notifyScriptPath) ||
-    command?.includes(CLAUDE_DYNAMIC_NOTIFY) ||
-    isManagedHookCommand(command, NOTIFY_SCRIPT)
-  )
-}
-
-function removeManagedHooksFromDefinition(
-  definition: Record<string, unknown>,
-  isManaged: (command: string | undefined) => boolean,
-) {
+function removeManagedHooksFromDefinition(definition: Record<string, unknown>, isManaged: IsManagedCommand) {
   const hooks = definition.hooks
   if (!Array.isArray(hooks)) return definition
   const filtered = hooks.filter((hook) => !isManaged(str(asRecordOrEmpty(hook).command)))
@@ -149,7 +166,7 @@ function removeManagedHooksFromDefinition(
 
 function reconcileNestedHooks(hooks: Record<string, unknown>, input: {
   events: { event: string; definition: Record<string, unknown> }[]
-  isManaged: (command: string | undefined) => boolean
+  isManaged: IsManagedCommand
 }) {
   // Remove this owner's previous registrations, including retired events.
   // User commands in the same definitions remain intact.
@@ -173,25 +190,28 @@ function reconcileNestedHooks(hooks: Record<string, unknown>, input: {
   }
 }
 
-async function upsertNestedHookSettings(input: {
-  file: string
-  notifyPath: string
-  force: boolean
-  events: { event: string; definition: Record<string, unknown> }[]
-  isManaged: (command: string | undefined) => boolean
+function reconcileFlatHooks(hooks: Record<string, unknown>, input: {
+  entries: Record<string, Record<string, unknown>>
+  isManaged: IsManagedCommand
 }) {
-  const existing = asRecordOrEmpty(await readJson(input.file))
-  const hooks = recordAt(existing, "hooks")
-
-  reconcileNestedHooks(hooks, input)
-
-  await writeIfChanged(input.file, JSON.stringify(existing, null, 2) + "\n", 0o644, input.force)
+  for (const [event, current] of Object.entries(hooks)) {
+    if (!Array.isArray(current)) continue
+    const retained = current.filter((entry) => !input.isManaged(str(asRecordOrEmpty(entry).command)))
+    if (retained.length === current.length) continue
+    if (retained.length === 0) delete hooks[event]
+    else hooks[event] = retained
+  }
+  for (const [event, entry] of Object.entries(input.entries)) {
+    hooks[event] = [...(arr(hooks[event]) ?? []), entry]
+  }
 }
 
-async function materializeClaude(input: { file: string; notifyPath: string; force: boolean }) {
+async function materializeClaude(input: { file: string; force: boolean }) {
+  const existing = asRecordOrEmpty(await readJson(input.file))
+  const hooks = recordAt(existing, "hooks")
+  const isGenerated = await loadManagedHookCommands(NOTIFY_SCRIPT, hooks)
   const command = getClaudeManagedHookCommand()
-  await upsertNestedHookSettings({
-    ...input,
+  reconcileNestedHooks(hooks, {
     events: [
       { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command }] } },
       { event: "Stop", definition: { hooks: [{ type: "command", command }] } },
@@ -200,8 +220,9 @@ async function materializeClaude(input: { file: string; notifyPath: string; forc
       { event: "PermissionRequest", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
       { event: "PermissionDenied", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
     ],
-    isManaged: (command) => isManagedClaudeHookCommand(command, input.notifyPath),
+    isManaged: (command) => !!command?.includes(CLAUDE_DYNAMIC_NOTIFY) || isGenerated(command),
   })
+  await writeIfChanged(input.file, JSON.stringify(existing, null, 2) + "\n", 0o644, input.force)
 }
 
 async function materializeDroid(input: { file: string; notifyPath: string; force: boolean }) {
@@ -215,8 +236,7 @@ async function materializeDroid(input: { file: string; notifyPath: string; force
   const hooks = standalone === undefined
     ? structuredClone(settingsHooks)
     : asRecordOrEmpty(await readJson(input.file))
-  const isManaged = (command: string | undefined) =>
-    !!command && (command.includes(input.notifyPath) || isManagedHookCommand(command, NOTIFY_SCRIPT))
+  const isManaged = await loadManagedHookCommands(NOTIFY_SCRIPT, hooks, settingsHooks)
   const command = notifyCommand(input.notifyPath, "droid")
   reconcileNestedHooks(hooks, {
     events: [
@@ -237,42 +257,20 @@ async function materializeDroid(input: { file: string; notifyPath: string; force
   }
 }
 
-function pruneCodexHooks(hooks: Record<string, unknown>, notifyPath: string) {
-  for (const [name, current] of Object.entries(hooks)) {
-    if (!Array.isArray(current)) continue
-    const entries = current.flatMap((def) => {
-      const next = removeManagedHooksFromDefinition(asRecordOrEmpty(def), (cmd) =>
-        cmd?.includes(notifyPath) || isManagedHookCommand(cmd, NOTIFY_SCRIPT),
-      )
-      return next ? [next] : []
-    })
-    if (entries.length === 0) {
-      delete hooks[name]
-      continue
-    }
-    hooks[name] = entries
-  }
-}
-
 async function materializeCodex(input: { file: string; notifyPath: string; force: boolean; native: boolean }) {
   const existing = asRecordOrEmpty(await readJson(input.file))
   if (!existing.hooks && !input.native) return
   const hooks = recordAt(existing, "hooks")
-  pruneCodexHooks(hooks, input.notifyPath)
-
-  if (input.native) {
-    const command = notifyCommand(input.notifyPath, "codex")
-    const events = [
-      { event: "SessionStart", definition: { hooks: [{ type: "command", command }] } },
-      { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command }] } },
-      { event: "Stop", definition: { hooks: [{ type: "command", command }] } },
-      { event: "Interrupt", definition: { hooks: [{ type: "command", command }] } },
-    ]
-    for (const item of events) {
-      const current = hooks[item.event]
-      hooks[item.event] = Array.isArray(current) ? [...current, item.definition] : [item.definition]
-    }
-  }
+  const command = notifyCommand(input.notifyPath, "codex")
+  reconcileNestedHooks(hooks, {
+    events: input.native
+      ? ["SessionStart", "UserPromptSubmit", "Stop", "Interrupt"].map((event) => ({
+        event,
+        definition: { hooks: [{ type: "command", command }] },
+      }))
+      : [],
+    isManaged: await loadManagedHookCommands(NOTIFY_SCRIPT, hooks),
+  })
 
   if (Object.keys(hooks).length === 0) delete existing.hooks
   await writeIfChanged(input.file, JSON.stringify(existing, null, 2) + "\n", 0o644, input.force)
@@ -281,21 +279,13 @@ async function materializeCodex(input: { file: string; notifyPath: string; force
 async function materializeGemini(input: { file: string; hookPath: string; force: boolean }) {
   const root = asRecordOrEmpty(await readJson(input.file))
   const hooks = recordAt(root, "hooks")
-
-  for (const event of ["BeforeAgent", "AfterAgent", "AfterTool"]) {
-    hooks[event] = reconcileManagedEntries({
-      current: arr(hooks[event]),
-      desired: [{ hooks: [{ type: "command", command: input.hookPath }] }],
-      isManaged: (entry) => {
-        const nested = arr(asRecordOrEmpty(entry).hooks) ?? []
-        return nested.some((hook) => {
-          const command = str(asRecordOrEmpty(hook).command)
-          return command === input.hookPath || isManagedHookCommand(command, GEMINI_HOOK_SCRIPT)
-        })
-      },
-      isEquivalent: (a, b) => JSON.stringify(asRecordOrEmpty(a).hooks ?? []) === JSON.stringify(asRecordOrEmpty(b).hooks ?? []),
-    })
-  }
+  reconcileNestedHooks(hooks, {
+    events: ["BeforeAgent", "AfterAgent", "AfterTool"].map((event) => ({
+      event,
+      definition: { hooks: [{ type: "command", command: input.hookPath }] },
+    })),
+    isManaged: await loadManagedHookCommands(GEMINI_HOOK, hooks),
+  })
 
   await writeIfChanged(input.file, JSON.stringify(root, null, 2) + "\n", 0o644, input.force)
 }
@@ -309,7 +299,7 @@ async function materializeCursor(input: { file: string; hookPath: string; force:
   // the same call completes or fails. Cursor applies the matcher itself, so
   // file-tool completions never spawn the hook.
   const toolMatcher = "^(Shell|MCP:.+)$"
-  const desired: Record<string, { command: string; matcher?: string }> = {
+  const desired: Record<string, Record<string, unknown>> = {
     beforeSubmitPrompt: { command: `${input.hookPath} Start` },
     stop: { command: `${input.hookPath} Stop` },
     beforeShellExecution: { command: `${input.hookPath} PermissionRequest` },
@@ -318,17 +308,7 @@ async function materializeCursor(input: { file: string; hookPath: string; force:
     postToolUseFailure: { command: `${input.hookPath} PostToolUse`, matcher: toolMatcher },
   }
 
-  for (const [event, entry] of Object.entries(desired)) {
-    hooks[event] = reconcileManagedEntries({
-      current: arr(hooks[event]),
-      desired: [entry],
-      isManaged: (item) => {
-        const command = str(asRecordOrEmpty(item).command)
-        return command?.includes(input.hookPath) || isManagedHookCommand(command, CURSOR_HOOK_SCRIPT)
-      },
-      isEquivalent: (a, b) => asRecordOrEmpty(a).command === asRecordOrEmpty(b).command,
-    })
-  }
+  reconcileFlatHooks(hooks, { entries: desired, isManaged: await loadManagedHookCommands(CURSOR_HOOK, hooks) })
 
   await writeIfChanged(input.file, JSON.stringify(root, null, 2) + "\n", 0o644, input.force)
 }
@@ -336,18 +316,10 @@ async function materializeCursor(input: { file: string; hookPath: string; force:
 async function materializeMastra(input: { file: string; notifyPath: string; force: boolean }) {
   const root = asRecordOrEmpty(await readJson(input.file))
   const command = `bash ${notifyCommand(input.notifyPath, "mastracode")}`
-
-  for (const event of ["UserPromptSubmit", "Stop", "PostToolUse"]) {
-    root[event] = reconcileManagedEntries({
-      current: arr(root[event]),
-      desired: [{ type: "command", command }],
-      isManaged: (entry) => {
-        const current = str(asRecordOrEmpty(entry).command)
-        return current?.includes(input.notifyPath) || isManagedHookCommand(current, NOTIFY_SCRIPT)
-      },
-      isEquivalent: (a, b) => asRecordOrEmpty(a).command === asRecordOrEmpty(b).command,
-    })
-  }
+  reconcileFlatHooks(root, {
+    entries: Object.fromEntries(["UserPromptSubmit", "Stop", "PostToolUse"].map((event) => [event, { type: "command", command }])),
+    isManaged: await loadManagedHookCommands(NOTIFY_SCRIPT, root),
+  })
 
   await writeIfChanged(input.file, JSON.stringify(root, null, 2) + "\n", 0o644, input.force)
 }
@@ -373,7 +345,7 @@ async function applyHook(input: {
 }
 
 export async function materializeAgentHooks(input: MaterializeAgentHooksOptions) {
-  const files = targetPaths(input.homeDir)
+  const files = agentHookConfigPaths(input.homeDir)
   const force = input.force ?? false
   const codexNativeHooks = input.codexNativeHooks ?? false
   return Promise.all([
@@ -382,13 +354,14 @@ export async function materializeAgentHooks(input: MaterializeAgentHooksOptions)
       file: files.antigravity,
       run: async () => {
         const root = asRecordOrEmpty(await readJson(files.antigravity))
-        const hookPath = path.join(path.dirname(input.notifyPath), "antigravity-hook.sh")
+        const hookPath = path.join(path.dirname(input.notifyPath), ANTIGRAVITY_HOOK)
         const desired = Object.fromEntries(["PreInvocation", "Stop"].map((event) => [event, [
           { type: "command", command: `bash ${shellQuote(hookPath)} ${event}`, timeout: 3 },
         ]]))
         const current = rec(root["claxedo-lifecycle"])
+        const isManaged = await loadManagedHookCommands(ANTIGRAVITY_HOOK, current)
         if (root["claxedo-lifecycle"] !== undefined && (!current || !Object.values(current).every((handlers) =>
-          arr(handlers)?.every((handler) => isManagedHookCommand(str(rec(handler)?.command), "antigravity-hook.sh"))))) {
+          arr(handlers)?.every((handler) => isManaged(str(rec(handler)?.command)))))) {
           throw new Error("Refusing to overwrite an unrecognized Antigravity hook named claxedo-lifecycle")
         }
         await writeIfChanged(hookPath, generateAntigravityHook(input.notifyPath), 0o755, force)
@@ -410,7 +383,7 @@ export async function materializeAgentHooks(input: MaterializeAgentHooksOptions)
     applyHook({
       runner: "claude",
       file: files.claude,
-      run: () => materializeClaude({ file: files.claude, notifyPath: input.notifyPath, force }),
+      run: () => materializeClaude({ file: files.claude, force }),
     }),
     applyHook({
       runner: "codex",

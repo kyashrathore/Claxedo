@@ -1,5 +1,5 @@
+import { root } from "./test-support/signed-browser-relay-fixture-root.mjs"
 import fs from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
@@ -86,7 +86,6 @@ function configureRuntimeSessionAuthorityUrl(controlPlaneUrl) {
 // `src/utils/workspace-relay-connection.ts`'s `ensureFresh`) almost
 // immediately after mint, without waiting out a real 120s TTL.
 const tokenTtlSeconds = Number(process.env.CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_SECONDS || 120)
-const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-signed-browser-relay-"))
 const dataDir = path.join(root, "data")
 const workspaceDir = path.join(root, "workspace")
 const desktopRefreshToken = "desktop_refresh_0"
