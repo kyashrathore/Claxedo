@@ -609,6 +609,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         observeSubagent({ observation, source: { dir: "in", method: "subagent/turn-end" } }))
       router.dispose()
     }
+    // Settling open subagents and disposing the router project after the loop
+    // stopped reading the queue; their usage reaches the meter only if yielded.
+    yield* queue.splice(0)
 
     const terminalIdentity = () => ({
       assistantMessageId: router.assistantMessageId(),

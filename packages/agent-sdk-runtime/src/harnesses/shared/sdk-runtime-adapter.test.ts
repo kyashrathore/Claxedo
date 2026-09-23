@@ -567,6 +567,48 @@ describe("SdkRuntimeAdapter", () => {
     await adapter.dispose()
   })
 
+  test("usage of a child that never bound reaches the parent stream when the turn ends", async () => {
+    const store = createMemoryRuntimeStore()
+    const observation = {
+      kind: "cumulative" as const,
+      scope: "unbound-child",
+      tokens: { input: 5, output: 7, reasoning: null, cache: { read: 11, write: null } },
+    }
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub: createRuntimeEventHub(),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        createRuntime: () => ({
+          ingest: () => ({
+            events: [{ type: "usage", contextSize: 0, contextUsed: 0, observation }],
+            snapshot: { harness: "codex", threadId: "thread-1", adapterState: {} },
+          }),
+          snapshot: () => ({ harness: "codex", threadId: "thread-1", adapterState: {} }),
+        }) as never,
+        runTurn: async (input) => {
+          input.ingest({ type: "child-usage" } as never, { dir: "in", method: "test" }, { kind: "child", correlationKey: "never-bound" })
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"))
+    const yielded: AgentRuntimeStreamEvent[] = []
+
+    for await (const event of executeTestTurn(adapter, session.id, {
+      parts: [{ type: "text", text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "general",
+      model: { providerID: "codex", modelID: "test" },
+    }, path.resolve("/repo"))) yielded.push(event)
+
+    expect(yielded).toContainEqual(expect.objectContaining({
+      type: "session.usage",
+      properties: expect.objectContaining({ sessionID: session.id, messageID: "parent-assistant", observation }),
+    }))
+    await adapter.dispose()
+  })
+
   test("adopts a requested deterministic Session without creating a second agent thread", async () => {
     let created = 0
     const adapter = new SdkRuntimeAdapter({
