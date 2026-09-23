@@ -239,6 +239,20 @@ export type SessionAccessPolicy = {
       fencingToken: number
     },
   ): Promise<SessionTurnReleaseDecision> | SessionTurnReleaseDecision
+  /**
+   * Called once when a turn this runtime held ends, before its lease is
+   * released, whether or not the lease was lost first: what the turn left
+   * behind is settled while the lease still proves it. The release goes
+   * ahead whatever this throws, so it cannot hold the session.
+   */
+  endTurn?(
+    input: SessionAccessPolicyInput & {
+      sessionId: string
+      turnId: string
+      leaseId: string
+      fencingToken: number
+    },
+  ): Promise<void> | void
 }
 
 export type SessionAuthorityInput = SessionAccessPolicyInput & {

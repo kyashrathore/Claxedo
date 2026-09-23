@@ -189,13 +189,15 @@ export async function acquireSessionTurnLease(input: {
         closed = true
         clearTimers()
         controller.abort()
-        if (leaseLost) return { released: false }
-        return await policy.releaseTurn!({
+        const turn = {
           ...input.access,
           turnId: current.turnId,
           leaseId: current.leaseId,
           fencingToken: current.fencingToken,
-        })
+        }
+        await Promise.resolve().then(() => policy.endTurn?.(turn)).catch(() => undefined)
+        if (leaseLost) return { released: false }
+        return await policy.releaseTurn!(turn)
       },
     },
   }

@@ -55,6 +55,19 @@ async function registerPrivateSession(input: {
   })
 }
 
+/** Makes `other` an org member holding a send-level share on `ses_usage`. */
+function shareForSending(database: ReturnType<typeof fileAuthority>["database"], workspaceOrg: string) {
+  database().prepare(`
+    INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+    VALUES (?, ?, 'member', 1, 1)
+  `).run(workspaceOrg, other.user.tokenIdentifier)
+  database().prepare(`
+    INSERT INTO session_share_grants
+      (grant_id, session_id, workspace_id, granted_to_user_token_identifier, created_by_token_identifier, created_at, level)
+    VALUES ('grant_other', 'ses_usage', 'ws_usage', ?, ?, 1, 'send')
+  `).run(other.user.tokenIdentifier, owner.user.tokenIdentifier)
+}
+
 async function recordUserTurns(input: {
   authority: ReturnType<typeof memoryAuthority>
   auth: SignedControlPlaneAuth
@@ -533,7 +546,7 @@ describe("sqlite workspace authority", () => {
     })).resolves.toMatchObject({ messages })
   })
 
-  test("usage ownership answers the admitted turn producer, else the session creator", async () => {
+  test("a machine's session usage belongs to its latest turn's producer, else its creator", async () => {
     const { authority, database } = fileAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_usage", displayName: "Usage" })
     await authority.usersMe(other)
@@ -548,20 +561,36 @@ describe("sqlite workspace authority", () => {
       .toEqual({ org_id: workspaceOrg, user_id: "user_owner" })
     expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_unknown" })).toBeUndefined()
 
-    // A member holding a send-level share drives a turn and is the producer:
-    // usage from that turn belongs to their account, not to the creator's.
-    database().prepare(`
-      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
-      VALUES (?, ?, 'member', 1, 1)
-    `).run(workspaceOrg, other.user.tokenIdentifier)
-    database().prepare(`
-      INSERT INTO session_share_grants
-        (grant_id, session_id, workspace_id, granted_to_user_token_identifier, created_by_token_identifier, created_at, level)
-      VALUES ('grant_other', 'ses_usage', 'ws_usage', ?, ?, 1, 'send')
-    `).run(other.user.tokenIdentifier, owner.user.tokenIdentifier)
+    shareForSending(database, workspaceOrg)
     await recordUserTurns({ authority, auth: other, workspaceId: "ws_usage", sessionId: "ses_usage", turnIds: ["msg_other"] })
     expect(await authority.resolveSessionUsageOwner?.({ sessionId: "ses_usage" }))
       .toEqual({ org_id: workspaceOrg, user_id: "user_other" })
+    authority.close()
+    database.close()
+  })
+
+  test("a cloud turn's usage belongs to that turn's producer, and a turn a machine served belongs to nobody", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_usage", displayName: "Usage" })
+    await authority.registerLocalForSharing(owner, { workspaceId: "ws_laptop", displayName: "Laptop", remoteDirectory: "/work/laptop" })
+    await authority.usersMe(other)
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_usage", sessionId: "ses_usage" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_laptop", sessionId: "ses_laptop" })
+    const workspaceOrg = (
+      database().prepare(`SELECT org_id FROM workspaces WHERE workspace_id = 'ws_usage'`).get() as { org_id: string }
+    ).org_id
+
+    shareForSending(database, workspaceOrg)
+    await recordUserTurns({ authority, auth: other, workspaceId: "ws_usage", sessionId: "ses_usage", turnIds: ["msg_other"] })
+    await recordUserTurns({ authority, auth: owner, workspaceId: "ws_usage", sessionId: "ses_usage", turnIds: ["msg_owner"] })
+    await recordUserTurns({ authority, auth: owner, workspaceId: "ws_laptop", sessionId: "ses_laptop", turnIds: ["msg_laptop"] })
+    expect(await authority.resolveCloudTurnUsageOwner?.({ sessionId: "ses_usage", turnId: "msg_other" }))
+      .toEqual({ org_id: workspaceOrg, user_id: "user_other" })
+    expect(await authority.resolveCloudTurnUsageOwner?.({ sessionId: "ses_usage", turnId: "msg_owner" }))
+      .toEqual({ org_id: workspaceOrg, user_id: "user_owner" })
+    expect(await authority.resolveCloudTurnUsageOwner?.({ sessionId: "ses_usage", turnId: "msg_never" })).toBeUndefined()
+    expect(await authority.resolveCloudTurnUsageOwner?.({ sessionId: "ses_laptop", turnId: "msg_other" })).toBeUndefined()
+    expect(await authority.resolveCloudTurnUsageOwner?.({ sessionId: "ses_laptop", turnId: "msg_laptop" })).toBeUndefined()
     authority.close()
     database.close()
   })

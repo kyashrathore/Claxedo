@@ -1,5 +1,5 @@
 import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk"
-import type { AgentSubagentUpdate, RuntimeGoalSnapshot, RuntimeQuestion } from "@claxedo/agent-runtime-contract"
+import type { AgentSubagentUpdate, RuntimeGoalSnapshot, RuntimeQuestion, RuntimeUsageObservation } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
@@ -19,36 +19,9 @@ export {
   type SubagentToolCallRole,
   type SubagentTranscript,
   type SubagentWake,
+  type RuntimeTokenUsage,
+  type RuntimeUsageObservation,
 } from "@claxedo/agent-runtime-contract"
-
-/**
- * Provider-reported token categories for one turn observation.
- *
- * `null` means the provider did not report the category. This is deliberately
- * different from a reported zero: metering consumers must never manufacture a
- * measured zero for an unknown category.
- */
-export type RuntimeTokenUsage = {
-  input: number | null
-  output: number | null
-  reasoning: number | null
-  cache: {
-    read: number | null
-    write: number | null
-  }
-}
-
-export type RuntimeUsageObservation = {
-  /** Whether this observation replaces prior turn usage or adds to it. */
-  kind: "cumulative" | "delta"
-  tokens: RuntimeTokenUsage
-  /** Provider-native ordering data when the source exposes it. */
-  sequence?: number
-  providerObservationId?: string
-  /** Provider-native session/thread identity used only for local overlap classification. */
-  nativeSessionId?: string
-  observedAt?: number
-}
 
 export type SubagentUpdatedEvent = { type: "subagent-updated" } & AgentSubagentUpdate
 

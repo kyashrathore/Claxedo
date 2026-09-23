@@ -30,6 +30,16 @@ import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceAuthority, WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { TurnUsageRevision, UsageOwner } from "@claxedo/server-core/usage/contracts"
+import {
+  cloudWorkspaceUsageRevision,
+  readUsageReportFacts,
+  usageReportFactInBounds,
+  USAGE_REPORT_ACTION,
+  type UsageReportFact,
+  type UsageReportResult,
+  type UsageReportWriter,
+} from "@claxedo/server-core/usage/usage-report"
 import type { ConnectionTurnCredentials } from "../connections/turn-credentials"
 import {
   deferredTurnGrantClaims,
@@ -67,6 +77,8 @@ type RuntimeSessionAuthorityPort = Pick<
   reserveRuntimeSession?: PrivateSessionAuthority["reserveRuntimeSession"]
   /** Absent on a plane that records no host enrollments; `adopt` then answers 503. */
   adoptRuntimeSession?: PrivateSessionAuthority["adoptRuntimeSession"]
+  /** Absent on a plane that records no turn producers; a usage report then answers 503. */
+  resolveCloudTurnUsageOwner?: WorkspaceAuthority["resolveCloudTurnUsageOwner"]
 }
 
 /** The workspace's owner as the authority records them now, or nothing for a workspace that has none. */
@@ -264,7 +276,11 @@ export type RuntimeSessionAuthorityOptions = {
   verifyStreamLease?: (lease: string) => Promise<SessionStreamLeaseClaims>
   mintTurnLease?: (claims: TurnLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyTurnLease?: (lease: string) => Promise<TurnLeaseClaims>
+  /** Where a cloud workspace's usage reports are filed; absent, a report answers 503. */
+  usageWriter?: UsageReportWriter
 }
+
+const USAGE_REPORT_KEYS: ReadonlySet<string> = new Set(["action", "sessionId", "turnId", "leaseId", "fencingToken", "facts"])
 
 /**
  * Narrow provider-neutral oracle for isolated workspace runtimes.
@@ -390,6 +406,76 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   }
 
   const resolveWorkspaceOwner = options.ownerGrants?.resolveWorkspaceOwner
+
+  /**
+   * A cloud workspace runtime's usage for one session, proven by a turn lease
+   * the plane minted for that session. Session and workspace come from the
+   * lease, location and host from the plane; the report names none of them.
+   * Each fact names the turn it was metered under and is owned by that turn's
+   * recorded producer, so a fact retried under a later turn's lease stays its
+   * own turn's. A fact is refused alone when it is out of bounds, when its
+   * turn is not one a cloud workspace's session admitted for an account, or
+   * when its turn already holds the most messages one turn files; a malformed
+   * fact, or too many of them, refuses the report.
+   * The lease may already be released: it proves the turn was admitted, and
+   * its own expiry bounds how late a report can arrive.
+   */
+  async function reportUsage(context: Context, body: Record<string, unknown>) {
+    const sessionId = trimToUndefined(body.sessionId)
+    const turnId = trimToUndefined(body.turnId)
+    const leaseId = trimToUndefined(body.leaseId)
+    const fencingToken = positiveInteger(body.fencingToken)
+    const facts = readUsageReportFacts(body.facts)
+    if (Object.keys(body).some((key) => !USAGE_REPORT_KEYS.has(key)) || !sessionId || !turnId || !leaseId || !fencingToken || !facts) {
+      return context.json(
+        { error: { code: "usage_report_invalid", message: "A usage report carries a session turn lease and well-formed facts only" } },
+        400,
+      )
+    }
+    const lease = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(leaseId).catch(() => undefined)
+    if (!lease || lease.sessionId !== sessionId || lease.turnId !== turnId || lease.fencingToken !== fencingToken) {
+      return context.json(
+        { error: { code: "session_turn_lease_invalid", message: "Session turn lease is invalid or mismatched" } },
+        401,
+      )
+    }
+    let revisions: Array<{ fact: UsageReportFact; revision: TurnUsageRevision }>
+    try {
+      revisions = facts.map((fact) => ({ fact, revision: cloudWorkspaceUsageRevision(fact, lease) }))
+    } catch {
+      return context.json({ error: { code: "usage_report_invalid", message: "A reported usage revision is malformed" } }, 400)
+    }
+    try {
+      const denial = await proofDenial({ authority: options.authority, resolveWorkspaceOwner }, lease)
+      if (denial) return context.json({ error: denial }, 401)
+      const writer = options.usageWriter
+      const authority = options.authority
+      if (!writer || !authority.resolveCloudTurnUsageOwner) {
+        return context.json({ error: { code: "usage_report_unavailable", message: "Usage reporting is not configured" } }, 503)
+      }
+      const window = { admittedAt: lease.acquiredAt, now: Date.now() }
+      const inBounds = revisions.filter(({ fact }) => usageReportFactInBounds(fact, window))
+      const owners = new Map<string, UsageOwner | undefined>()
+      for (const factTurnId of new Set(inBounds.map(({ fact }) => fact.turnId))) {
+        owners.set(factTurnId, await authority.resolveCloudTurnUsageOwner({ sessionId, turnId: factTurnId }))
+      }
+      const results: UsageReportResult[] = []
+      for (const item of revisions) {
+        const { fact, revision } = item
+        const reported = { messageId: revision.messageId, revision: revision.revision }
+        const owner = owners.get(fact.turnId)
+        if (!inBounds.includes(item)) results.push({ ...reported, status: "refused", code: "usage_fact_out_of_bounds" })
+        else if (!owner) results.push({ ...reported, status: "refused", code: "usage_owner_unresolved" })
+        else results.push({ ...reported, ...await writer.writeRevision(revision, { owner, turnId: fact.turnId }) })
+      }
+      return context.json({ results })
+    } catch {
+      return context.json(
+        { error: { code: "session_authority_unavailable", message: "Session authority is temporarily unavailable" } },
+        503,
+      )
+    }
+  }
 
   /**
    * A proof that only ever admits a turn — a lease over an owned turn, or a
@@ -676,6 +762,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
 
   return new Hono().post("/session-authorize", limitedBody, async (context) => {
     const body = await readJsonRecord(context.req.raw)
+    if (body?.action === USAGE_REPORT_ACTION) return reportUsage(context, body)
     if (isHostAuthorityAction(body?.action)) return authorizeHost(context, body.action, body)
     const request = parseSessionAuthorityRequest(body)
     if (!request) {

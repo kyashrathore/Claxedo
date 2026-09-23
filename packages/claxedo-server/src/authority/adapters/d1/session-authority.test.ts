@@ -894,6 +894,48 @@ describe("D1 private multiplayer session authority", () => {
     ).rejects.toMatchObject({ status: 403 })
   })
 
+  test("attributes a cloud turn's usage to the account that started that turn, and to nobody for a turn a machine served", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_usage", sessionId: "ses_usage" })
+    await input.sessions.grantSessionParticipant(alice, {
+      sessionId: "ses_usage",
+      workspaceId: "ws_main",
+      participantActorId: bob.principal!.actorId,
+    })
+    const alicePrincipal = { principalKind: "user" as const, actorId: alice.principal!.actorId, actorKind: "human" as const }
+    const bobPrincipal = { principalKind: "user" as const, actorId: bob.principal!.actorId, actorKind: "human" as const }
+    const aliceOwner = { org_id: "org_acme", user_id: alice.principal!.userId }
+    const bobOwner = { org_id: "org_acme", user_id: bob.principal!.userId }
+
+    const turn = { sessionId: "ses_usage", workspaceId: "ws_main" }
+    const bobTurn = await input.sessions.acquireSessionTurn({ ...bobPrincipal, ...turn, turnId: "msg_bob" })
+    await input.sessions.releaseSessionTurn({ ...bobPrincipal, ...turn, turnId: "msg_bob", leaseId: bobTurn.leaseId, fencingToken: bobTurn.fencingToken })
+    const aliceTurn = await input.sessions.acquireSessionTurn({ ...alicePrincipal, ...turn, turnId: "msg_alice" })
+    await input.sessions.releaseSessionTurn({ ...alicePrincipal, ...turn, turnId: "msg_alice", leaseId: aliceTurn.leaseId, fencingToken: aliceTurn.fencingToken })
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toEqual(bobOwner)
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_alice" })).toEqual(aliceOwner)
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_never" })).toBeUndefined()
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_usage_other", sessionId: "ses_usage_other" })
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage_other", turnId: "msg_bob" })).toBeUndefined()
+
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_laptop",
+      orgId: "org_acme",
+      displayName: "laptop",
+      repoUrl: "https://github.com/acme/laptop.git",
+      backing: "local-worktree",
+    })
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_usage_laptop", sessionId: "ses_laptop", workspaceId: "ws_laptop" })
+    const laptop = { sessionId: "ses_laptop", workspaceId: "ws_laptop" }
+    const laptopTurn = await input.sessions.acquireSessionTurn({ ...alicePrincipal, ...laptop, turnId: "msg_laptop" })
+    await input.sessions.releaseSessionTurn({ ...alicePrincipal, ...laptop, turnId: "msg_laptop", leaseId: laptopTurn.leaseId, fencingToken: laptopTurn.fencingToken })
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_laptop", turnId: "msg_laptop" })).toBeUndefined()
+
+    await input.database.prepare("update workspaces set deleted_at = ? where workspace_id = ?").bind(input.now(), "ws_main").run()
+    expect(await input.sessions.resolveCloudTurnUsageOwner({ sessionId: "ses_usage", turnId: "msg_bob" })).toBeUndefined()
+  })
+
   test("syncs only registered writable sessions and projects verified message attribution", async () => {
     const input = await setup()
     const { alice, bob } = await sharedWorkspace(input)

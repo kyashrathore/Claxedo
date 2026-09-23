@@ -3,7 +3,10 @@ import type { AgentConfigOption } from "../../index"
 import type { AgentProcessObserver } from "../../process-observer"
 import { observeAgentProcess } from "../../process-observer"
 import {
+  catalogModel,
   modelConfigOption,
+  requireTurnEffort,
+  resolveSupportedServiceTier,
   serviceTierConfigOption,
   thoughtLevelConfigOption,
   type SdkModelEntry,
@@ -14,6 +17,27 @@ import { controlRequestDeadline } from "../shared/request-deadline"
 import { text } from "../shared/sdk-runtime-adapter"
 import type { CodexAppServerProcess } from "./app-server-process"
 import { codexAppServerModel } from "./protocol"
+
+/**
+ * The model, effort and service tier a thread runs next. Codex keeps a
+ * thread's last `model`, `effort` and `serviceTier` for whatever a request
+ * omits, so all three are always named: "default" becomes the catalog's
+ * default row, an unrequested effort that model's own default, and the
+ * standard tier an explicit `null`, since a `service_tier` in the user's Codex
+ * config applies when none is named. `catalog` must be loaded, not peeked: a
+ * cold one (a restarted server, a caller that never opened the picker) would
+ * leave the model and effort unnamed.
+ */
+export function codexThreadSettings(
+  catalog: readonly SdkModelEntry[],
+  requested: { model?: string; effort?: string; serviceTier?: string },
+) {
+  const row = catalogModel(catalog, requested.model)
+  const model = row?.id ?? requested.model
+  const effort = requireTurnEffort({ harness: "Codex", models: catalog, modelId: model, requested: requested.effort })
+    ?? (row?.defaultEffort && row.supportedEffortLevels?.includes(row.defaultEffort) ? row.defaultEffort : undefined)
+  return { model, effort, serviceTier: resolveSupportedServiceTier(catalog, model, requested.serviceTier) ?? null }
+}
 
 export function codexConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOption[] {
   if (models.length === 0) return []

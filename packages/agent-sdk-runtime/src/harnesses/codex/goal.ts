@@ -1,6 +1,5 @@
 import type { RawHarnessEvent, RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { randomUUID } from "crypto"
-import { codexStartedSubagent } from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-contract"
 import { GOAL_ACTIONS, goalCapabilities } from "../../capabilities"
 import { Log } from "../../log"
@@ -20,10 +19,10 @@ import type { CodexAppServerProcess } from "./app-server-process"
 import {
   GoalTurnEventQueue,
   createCodexTurnStop,
-  type CodexActiveThread,
   codexGoalSnapshot,
   startTurnWithThreadRecovery,
 } from "./protocol"
+import { codexNotificationThreadId, type CodexThreadRegistry, type CodexTurnClaim } from "./thread-registry"
 
 const CODEX_SOURCE = "codex.app-server"
 const log = Log.create({ service: "codex-goal-controller" })
@@ -48,15 +47,13 @@ export type CodexGoalControllerHost = {
   threadConfig(sessionId: string): { config?: JsonRecord }
   /** The session's saved model and effort, resolved as a prompt turn resolves them. */
   threadSettings(sessionId: string, directory: string): Promise<{ model?: string; effort?: string }>
-  /** Shared with the driver: a thread with a live prompt turn owns its frames. */
-  activeThreads: Map<string, CodexActiveThread>
-  projectThreadNotification(
+  /** The driver's record of which running turn owns each thread; a Goal turn claims its thread there. */
+  threads: CodexThreadRegistry
+  /** One provider turn's notification projector. */
+  threadProjection(
     input: SdkRuntimeTurnInput,
-    threadId: string,
-    method: string,
-    params: JsonRecord,
-    frame: unknown,
-  ): Promise<unknown>
+    claim: CodexTurnClaim,
+  ): { project(method: string, params: JsonRecord, frame: unknown): Promise<unknown> }
 }
 
 /**
@@ -85,8 +82,7 @@ export class CodexGoalController {
   private leases = new Map<string, { release(): void }>()
   private bindings = new Map<string, { sessionId: string; directory: string }>()
   private statusByThread = new Map<string, RuntimeGoalSnapshot["status"]>()
-  private turnQueues = new Map<string, { turnId: string; queue: GoalTurnEventQueue }>()
-  private childOwners = new Map<string, string>()
+  private turnQueues = new Map<string, { turnId: string; queue: GoalTurnEventQueue; claim: CodexTurnClaim }>()
   private pendingGoalRequests = new Map<string, { id: string; text: string }>()
 
   constructor(private readonly host: CodexGoalControllerHost) {}
@@ -134,11 +130,12 @@ export class CodexGoalController {
         return response
       },
       resumeThread: async () => {
-        await proc.request("thread/resume", {
+        const resumed = asRecord(await proc.request("thread/resume", {
           threadId,
           cwd: directory,
           ...this.host.threadConfig(sessionId),
-        }, controlRequestDeadline())
+        }, controlRequestDeadline()))
+        this.host.threads.recordModel(threadId, resumed?.model)
       },
     })
   }
@@ -265,12 +262,10 @@ export class CodexGoalController {
     this.releaseGoalTurn(agentSessionId)
   }
 
-  /** Drops a Goal turn and the child ownership that only routed into it. */
+  /** Drops a Goal turn and its claim on the thread. */
   private releaseGoalTurn(threadId: string) {
+    this.turnQueues.get(threadId)?.claim.end()
     this.turnQueues.delete(threadId)
-    for (const [childId, ownerId] of this.childOwners) {
-      if (ownerId === threadId) this.childOwners.delete(childId)
-    }
   }
 
   /**
@@ -288,7 +283,7 @@ export class CodexGoalController {
   private resolveBinding(threadId: string) {
     const known = this.bindings.get(threadId)
     if (known) return known
-    const active = this.host.activeThreads.get(threadId)
+    const active = this.host.threads.activeThreads.get(threadId)
     const binding = active
       ? { sessionId: active.sessionId, directory: active.directory }
       : this.host.driverHost.getSessionForAgentSession(threadId)
@@ -319,96 +314,92 @@ export class CodexGoalController {
       this.handleGoalNotification(method, params)
       return
     }
-    const directThreadId = text(params.threadId) ?? text(asRecord(params.thread)?.id)
+    const directThreadId = codexNotificationThreadId(params)
     if (!directThreadId) return
-    const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
-    // A child only needs an owner while that owner has a Goal turn to route
-    // its frames into; recording every parented thread grew the map for the
-    // driver's whole life.
-    if (startedSubagent?.parentThreadId && this.turnQueues.has(startedSubagent.parentThreadId)) {
-      this.childOwners.set(startedSubagent.id, startedSubagent.parentThreadId)
-    }
-    const threadId = this.childOwners.get(directThreadId) ?? directThreadId
-    if (this.host.activeThreads.has(threadId) && !this.turnQueues.has(threadId)) return
-    const binding = this.resolveBinding(threadId)
-    if (!binding) return
     const raw: RawHarnessEvent = { source: CODEX_SOURCE, method, payload: params }
-    if (method === "turn/started" && directThreadId === threadId && !this.turnQueues.has(threadId)) {
-      // Only an ACTIVE Goal admits a new provider turn. A paused Goal must not
-      // start projecting new work, but a turn that was already admitted keeps
-      // receiving its frames below so `turn/completed` can end its queue —
-      // otherwise pausing mid-turn strands the runtime turn busy forever.
-      if (this.statusByThread.get(threadId) !== "active") return
-      const turnId = text(asRecord(params.turn)?.id)
-      if (!turnId) return
-      const queue = new GoalTurnEventQueue()
-      this.turnQueues.set(threadId, { turnId, queue })
-      const userMessage = this.pendingGoalRequests.get(threadId)
-      void this.host.driverHost.runProviderTurn({ ...binding, ...(userMessage ? { userMessage } : {}) }, async (input) => {
-        if (this.pendingGoalRequests.get(threadId) === userMessage) this.pendingGoalRequests.delete(threadId)
-        const proc = await this.host.ensureProcess(binding.directory)
-        const stops = createTurnStopRecord()
-        const cancellation = createCodexTurnStop({ process: proc, threadId, record: stops, turnId: () => turnId })
-        const project = (eventMethod: string, payload: JsonRecord, frame: unknown) => input.ingest({
-          source: CODEX_SOURCE,
-          method: eventMethod,
-          payload,
-        }, {
-          dir: "in",
-          method: eventMethod,
-          frame,
-        })
-        this.host.activeThreads.set(threadId, {
-          ...binding,
-          agentSessionId: threadId,
-          process: proc,
-          project,
-          observeSubagent: input.observeSubagent,
-        })
-        const onAbort = () => {
-          // Recorded on `stops` rather than awaited; the Goal turn ends now.
-          void cancellation.stop()
-          queue.end()
-        }
-        input.abort.signal.addEventListener("abort", onAbort, { once: true })
-        this.host.driverHost.lifecycle().set(binding.sessionId, { abort: input.abort, close: cancellation.stop, stops, turnId })
-        try {
-          for await (const event of queue) {
-            cancellation.observe(event.method ?? "codex.goal-turn", asRecord(event.payload) ?? {})
-            const eventMethod = event.method ?? "codex.goal-turn"
-            await this.host.projectThreadNotification(
-              input,
-              threadId,
-              eventMethod,
-              asRecord(event.payload) ?? {},
-              event,
-            )
-          }
-        } finally {
-          try {
-            if (input.abort.signal.aborted) await cancellation.stop()
-          } finally {
-            input.abort.signal.removeEventListener("abort", onAbort)
-            this.host.activeThreads.delete(threadId)
-            this.releaseGoalTurn(threadId)
-          }
-        }
-      }).then((admitted) => {
-        if (admitted || this.turnQueues.get(threadId)?.queue !== queue) return
-        queue.end()
-        this.releaseGoalTurn(threadId)
-      })
-      queue.push(raw)
+    const owner = this.host.threads.ownerOf(directThreadId)
+    if (owner) {
+      const active = owner.kind === "goal" ? this.turnQueues.get(owner.threadId) : undefined
+      if (active?.claim !== owner) return
+      active.queue.push(raw)
+      // Only the Goal thread's OWN turn ends the Goal turn. A child agent
+      // completing routes through its owner, and ending the queue on it would
+      // drop every remaining parent frame — the same guard the interactive turn
+      // applies through `parentOwned`. The claim ends with it, so the next
+      // iteration's `turn/started` opens a turn of its own while this one
+      // drains what it already holds.
+      if (method === "turn/completed" && directThreadId === owner.threadId) {
+        active.queue.end()
+        owner.end()
+      }
       return
     }
-    const active = this.turnQueues.get(threadId)
-    if (!active) return
-    active.queue.push(raw)
-    // Only the Goal thread's OWN turn ends the Goal turn. A child agent
-    // completing routes through its owner, and ending the queue on it would
-    // drop every remaining parent frame — the same guard the interactive turn
-    // applies through `parentOwned`.
-    if (method === "turn/completed" && directThreadId === threadId) active.queue.end()
+    if (method !== "turn/started") return
+    const threadId = directThreadId
+    const binding = this.resolveBinding(threadId)
+    if (!binding) return
+    // Only an ACTIVE Goal admits a new provider turn. A paused Goal must not
+    // start projecting new work, but a turn that was already admitted keeps
+    // receiving its frames above so `turn/completed` can end its queue —
+    // otherwise pausing mid-turn strands the runtime turn busy forever.
+    if (this.statusByThread.get(threadId) !== "active") return
+    const turnId = text(asRecord(params.turn)?.id)
+    if (!turnId) return
+    const queue = new GoalTurnEventQueue()
+    const claim = this.host.threads.beginTurn(threadId, "goal")
+    this.turnQueues.set(threadId, { turnId, queue, claim })
+    const userMessage = this.pendingGoalRequests.get(threadId)
+    void this.host.driverHost.runProviderTurn({ ...binding, ...(userMessage ? { userMessage } : {}) }, async (input) => {
+      if (this.pendingGoalRequests.get(threadId) === userMessage) this.pendingGoalRequests.delete(threadId)
+      const proc = await this.host.ensureProcess(binding.directory)
+      const stops = createTurnStopRecord()
+      const cancellation = createCodexTurnStop({ process: proc, threadId, record: stops, turnId: () => turnId, subagentThreads: () => claim.subagentThreads() })
+      const projection = this.host.threadProjection(input, claim)
+      const project = (eventMethod: string, payload: JsonRecord, frame: unknown) => input.ingest({
+        source: CODEX_SOURCE,
+        method: eventMethod,
+        payload,
+      }, {
+        dir: "in",
+        method: eventMethod,
+        frame,
+      })
+      claim.attach({
+        ...binding,
+        agentSessionId: threadId,
+        process: proc,
+        project,
+        observeSubagent: input.observeSubagent,
+        adoptSubagent: (childThreadId) => this.host.threads.adopt(childThreadId, threadId),
+      }, input.input.assistantMessageId)
+      const onAbort = () => {
+        // Recorded on `stops` rather than awaited; the Goal turn ends now.
+        void cancellation.stop()
+        queue.end()
+      }
+      input.abort.signal.addEventListener("abort", onAbort, { once: true })
+      this.host.driverHost.lifecycle().set(binding.sessionId, { abort: input.abort, close: cancellation.stop, stops, turnId })
+      try {
+        for await (const event of queue) {
+          const eventMethod = event.method ?? "codex.goal-turn"
+          cancellation.observe(eventMethod, asRecord(event.payload) ?? {})
+          await projection.project(eventMethod, asRecord(event.payload) ?? {}, event)
+        }
+      } finally {
+        try {
+          if (input.abort.signal.aborted) await cancellation.stop()
+        } finally {
+          input.abort.signal.removeEventListener("abort", onAbort)
+          if (this.turnQueues.get(threadId)?.queue === queue) this.releaseGoalTurn(threadId)
+          else claim.end()
+        }
+      }
+    }).then((admitted) => {
+      if (admitted || this.turnQueues.get(threadId)?.queue !== queue) return
+      queue.end()
+      this.releaseGoalTurn(threadId)
+    })
+    queue.push(raw)
   }
 
   dispose() {
@@ -416,9 +407,11 @@ export class CodexGoalController {
     this.leases.clear()
     this.bindings.clear()
     this.statusByThread.clear()
-    for (const turn of this.turnQueues.values()) turn.queue.end()
+    for (const turn of this.turnQueues.values()) {
+      turn.queue.end()
+      turn.claim.end()
+    }
     this.turnQueues.clear()
-    this.childOwners.clear()
     this.pendingGoalRequests.clear()
   }
 }

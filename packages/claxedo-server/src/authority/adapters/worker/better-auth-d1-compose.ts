@@ -18,6 +18,7 @@ import {
   type HostedWorkerEnv,
 } from "../../provider-neutral-hosted-services"
 import { D1ServiceInstallationStore } from "../../../platform/services/adapters/d1-installation-store"
+import { createD1UsageLedger } from "../../../usage/adapters/d1-usage-ledger"
 import {
   BETTER_AUTH_NATIVE_SCOPES,
   BETTER_AUTH_SESSION_COOKIE,
@@ -249,6 +250,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
           }),
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
       requestGuardExemptions: [],
+      usageLedger: createD1UsageLedger({ database: input.controlPlaneDatabase, ...(input.now ? { now: input.now } : {}) }),
       userDeployedIdentityAdmission: {
         admit: (auth, admission) => authority.admitUserDeployedIdentity(auth, admission),
       },

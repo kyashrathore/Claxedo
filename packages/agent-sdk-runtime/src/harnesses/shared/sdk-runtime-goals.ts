@@ -2,6 +2,7 @@ import { randomUUID } from "crypto"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-contract"
 import type { AgentRuntimeStreamEvent, PromptInput } from "../../index"
+import { toCompatEvent } from "../../compat-events"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { requireWorkspaceDirectory } from "../../target"
 import { createGoalPublisher, type GoalPublisher } from "./goal-publisher"
@@ -41,6 +42,24 @@ export function createSdkRuntimeGoals(host: SdkRuntimeGoalHost) {
    * still publish and forget safely — same pattern as the ACP adapter.
    */
   const publisher = (): GoalPublisher => (goalPublisher ??= createGoalPublisher(host.eventHub))
+
+  /**
+   * A Goal turn has no caller consuming its stream the way a prompt's turn
+   * runner does, so each event it streams reaches the hub here: the same
+   * global publication an ordinary turn's events get, which is where every
+   * reader of the session's transcript and usage listens.
+   */
+  const runTurn = async (
+    sessionId: string,
+    input: PromptInput,
+    directory: string,
+    execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+  ) => {
+    for await (const event of host.streamTurn(sessionId, input, directory, execute)) {
+      const payload = toCompatEvent(event)
+      if (payload) host.eventHub?.publishGlobal({ directory, payload })
+    }
+  }
 
 const resource = (): AgentGoalResource | undefined => {
   const goals = host.driver.goals
@@ -95,7 +114,7 @@ const nativeResource = (): AgentGoalResource | undefined => {
       agent: null,
     },
     defaultModelId: () => host.currentModel(),
-    streamTurn: (sessionId, input, directory, execute) => host.streamTurn(sessionId, input, directory, execute),
+    runTurn,
   })
 }
 
@@ -128,10 +147,10 @@ const runProviderTurn = (
       ...(config?.variant ? { variant: config.variant } : {}),
     }
     let admitted = false
-    for await (const _event of host.streamTurn(sessionId, input, directory, async (turn) => {
+    await runTurn(sessionId, input, directory, async (turn) => {
       admitted = true
       await execute(turn)
-    })) {}
+    })
     return admitted
   })().catch((error) => {
     console.error(`${host.driver.type} provider Goal turn projection failed`, error)

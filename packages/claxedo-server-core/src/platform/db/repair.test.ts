@@ -380,6 +380,104 @@ describe("claxedo schema", () => {
     expect(Map.groupBy(eventRows, (row) => row.session_id)).toEqual(Map.groupBy(messageRows, (row) => row.session_id))
   })
 
+  function migratedUntil(target: string) {
+    const sqlite = new Database(":memory:")
+    for (const entry of entries()) {
+      if (entry.name === target) break
+      applyMigration(sqlite, entry.name)
+    }
+    return sqlite
+  }
+
+  function plantUsageTurn(sqlite: InstanceType<typeof Database>, messageId: string) {
+    for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"]) {
+      sqlite.prepare(`
+        INSERT INTO ${table} (host_id, session_ref, session_id, message_id, revision, payload_hash, observed_at,
+          settlement, status, location, harness, provider_id, model_id, cache_write_tokens, quality_json)
+        VALUES ('host_1', 'ref_1', 'ses_1', ?, 1, 'hash', 1, 'final', 'completed', 'local', 'claude', 'anthropic', 'm', 40, '{}')
+      `).run(messageId)
+    }
+  }
+
+  test("the one-hour cache write migration keeps every turn and leaves its share unknown", () => {
+    const target = "20260923000100_usage_cache_write_1h"
+    const sqlite = migratedUntil(target)
+    plantUsageTurn(sqlite, "msg_before")
+
+    applyMigration(sqlite, target)
+
+    for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"]) {
+      expect(sqlite.prepare(`SELECT message_id, cache_write_tokens, cache_write_1h_tokens FROM ${table}`).all(), table)
+        .toEqual([{ message_id: "msg_before", cache_write_tokens: 40, cache_write_1h_tokens: null }])
+    }
+  })
+
+  test("repair gives usage tables that missed the one-hour cache write migration their column", () => {
+    const sqlite = migratedUntil("20260923000100_usage_cache_write_1h")
+    plantUsageTurn(sqlite, "msg_before")
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toEqual(expect.arrayContaining([
+      "claxedo_usage_turn_revision.cache_write_1h_tokens",
+      "claxedo_usage_turn_current.cache_write_1h_tokens",
+    ]))
+    expect(sqlite.prepare("SELECT message_id, cache_write_1h_tokens FROM claxedo_usage_turn_current").all())
+      .toEqual([{ message_id: "msg_before", cache_write_1h_tokens: null }])
+    expect(repair(sqlite).filter((name) => name.includes("cache_write_1h"))).toEqual([])
+  })
+
+  function plantOutbox(sqlite: InstanceType<typeof Database>) {
+    const stamp = sqlite.prepare(`
+      INSERT INTO claxedo_usage_outbox (host_id, session_ref, message_id, revision, payload_hash, org_id, user_id, state, attempts, created_at, updated_at)
+      VALUES ('host_1', 'ref_1', ?, ?, 'hash', ?, ?, 'pending', 0, 1, 1)
+    `)
+    stamp.run("msg_owned", 1, "org_a", "user_a")
+    stamp.run("msg_owned", 2, null, null)
+    stamp.run("msg_moved", 1, "org_a", "user_a")
+    stamp.run("msg_moved", 2, "org_b", "user_b")
+    stamp.run("msg_machine", 1, null, null)
+  }
+
+  const ownedTurns = [
+    { message_id: "msg_moved", org_id: "org_b", user_id: "user_b" },
+    { message_id: "msg_owned", org_id: "org_a", user_id: "user_a" },
+  ]
+
+  test("the turn owner migration files each turn under the account its latest stamped revision named", () => {
+    const target = "20260923000200_usage_turn_owner"
+    const sqlite = migratedUntil(target)
+    plantOutbox(sqlite)
+
+    applyMigration(sqlite, target)
+
+    expect(sqlite.prepare("SELECT message_id, org_id, user_id FROM claxedo_usage_turn_owner ORDER BY message_id").all())
+      .toEqual(ownedTurns)
+    expect(hasTable(sqlite, "claxedo_usage_outbox")).toBe(false)
+  })
+
+  test("repair retires an outbox that outlived the owner migration the same way the migration does", () => {
+    const sqlite = new Database(":memory:")
+    apply(sqlite)
+    sqlite.exec(`
+      CREATE TABLE claxedo_usage_outbox (
+        host_id text NOT NULL, session_ref text NOT NULL, message_id text NOT NULL, revision integer NOT NULL,
+        payload_hash text NOT NULL, org_id text, user_id text, state text NOT NULL DEFAULT 'pending',
+        attempts integer NOT NULL DEFAULT 0, created_at integer NOT NULL, updated_at integer NOT NULL,
+        PRIMARY KEY (host_id, session_ref, message_id, revision)
+      )
+    `)
+    plantOutbox(sqlite)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_usage_outbox.retired")
+    expect(sqlite.prepare("SELECT message_id, org_id, user_id FROM claxedo_usage_turn_owner ORDER BY message_id").all())
+      .toEqual(ownedTurns)
+    expect(hasTable(sqlite, "claxedo_usage_outbox")).toBe(false)
+    expect(repair(sqlite)).not.toContain("claxedo_usage_outbox.retired")
+  })
+
   test("repair heals partial migrations", () => {
     const sqlite = new Database(":memory:")
 
@@ -392,10 +490,16 @@ describe("claxedo schema", () => {
     expect(hasTable(sqlite, "claxedo_document_index")).toBe(true)
     expect(hasTable(sqlite, "claxedo_local_project")).toBe(true)
     expect(fixed).toEqual(
-      expect.arrayContaining(["claxedo_usage_turn_revision", "claxedo_usage_turn_current", "claxedo_usage_outbox"]),
+      expect.arrayContaining([
+        "claxedo_usage_turn_revision",
+        "claxedo_usage_turn_current",
+        "claxedo_usage_turn_owner",
+        "claxedo_usage_turn_meter_state",
+      ]),
     )
     expect(hasTable(sqlite, "claxedo_usage_turn_current")).toBe(true)
-    expect(hasTable(sqlite, "claxedo_usage_outbox")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_usage_turn_owner")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_usage_turn_meter_state")).toBe(true)
     expect(hasTable(sqlite, retiredArenaTable)).toBe(false)
     expect(hasTable(sqlite, retiredPageTable)).toBe(false)
   })

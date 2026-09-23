@@ -7,8 +7,6 @@ import type {
   ControlPlaneAuthConfig,
   SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import type { UsageLedger } from "./platform/telemetry/product/metering"
-import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import type { SessionShareChangedSink } from "./session/session-people-contract"
 import type { MachineSessionCreate } from "./session/machine-dispatch"
 
@@ -24,8 +22,6 @@ export type ControlPlaneAppOptions = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
   beforeLocalSessionList?: () => Promise<void>
-  usageLedger?: UsageLedger
-  mountPublicUsageRoute?: boolean
   sessionShareChangedSink?: SessionShareChangedSink
   createMachineSession?: (input: MachineSessionCreate, auth?: SignedControlPlaneAuth) => Promise<{ id: string }>
 }
@@ -49,15 +45,5 @@ export function createControlPlaneApp(services: ControlPlaneServices, options: C
       ...(options.verifier ? { verifier: options.verifier } : {}),
     }),
   )
-  if (options.usageLedger) {
-    const usageOptions = {
-      ledger: options.usageLedger,
-      ...(options.authConfig ? { authConfig: options.authConfig } : {}),
-      ...(options.verifier ? { verifier: options.verifier } : {}),
-      telemetry: services.telemetry,
-    }
-    app.route("/api/control/usage", UsageRoutes(usageOptions))
-    if (options.mountPublicUsageRoute !== false) app.route("/api/claxedo/usage", UsageRoutes(usageOptions))
-  }
   return { app }
 }

@@ -36,7 +36,7 @@ function host(): SdkRuntimeDriverHost {
   return {
     lifecycle: () => createSessionTurnLifecycle(), pendingPermissions: new Map(), pendingQuestions: new Map(),
     bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
-    getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+    getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true, meterUsage() {},
     getSessionConfig: () => ({ harness: { id: "cursor", access: "native" } }),
     updatePermissionState() {},
   }

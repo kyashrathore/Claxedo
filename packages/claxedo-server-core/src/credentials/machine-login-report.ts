@@ -88,8 +88,12 @@ export async function joinMachineLoginUsage(
   const held = credentials.readMachineLoginUsage ? await credentials.readMachineLoginUsage() : []
   const stored = new Map(held.map((row) => [usageKey(row.harness, row.account), row]))
   const out: ReportedMachineLogin[] = []
-  for (const login of input.logins) {
-    const account = login.email ?? ""
+  for (const reported of input.logins) {
+    const account = reported.email ?? ""
+    const agent = input.agents.find((row) => row.harness === reported.harness)
+    // Cursor's status command names no plan; the probe's read of the same
+    // login does.
+    const login = reported.plan === undefined && agent?.plan !== undefined ? { ...reported, plan: agent.plan } : reported
     if (login.usage?.length) {
       out.push({ ...login, deliverable: MACHINE_LOGIN_REACH, usageAt: input.at })
       continue
@@ -97,7 +101,6 @@ export async function joinMachineLoginUsage(
     // Only what a harness says about itself is recorded. The probe reads the
     // vendor on every ask, so a copy of its answer would only be a second
     // figure to go stale, and the account it names is nobody's stored row.
-    const agent = input.agents.find((row) => row.harness === login.harness)
     if (agent?.windows.length) {
       out.push({ ...login, deliverable: MACHINE_LOGIN_REACH, usage: agent.windows, usageAt: agent.at })
       continue

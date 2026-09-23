@@ -1,6 +1,9 @@
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type {
   AgentRuntimeEvent,
+  AgentRuntimeEventOf,
+  RuntimeTokenUsage,
+  RuntimeUsageObservation,
   SubagentStatus,
   SubagentToolCallRole,
 } from "../../contracts/agent-runtime-event"
@@ -15,7 +18,13 @@ import { codexMcpApproval } from "./mcp-elicitation"
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
 
 export type CodexTurnUsageState = {
-  /** Raw session-cumulative totals from the previous tokenUsage event, for in-turn delta recovery. */
+  /** The Codex turn the accumulator sums; a thread's next turn starts its own. */
+  turnId?: string
+  /** The model the accumulator's requests ran on; a turn moved to another model starts another. */
+  model?: string
+  /** The usage stream the accumulator reports under. */
+  scope?: string
+  /** The thread's lifetime totals at its previous tokenUsage event, for in-turn delta recovery. */
   previousTotals?: Record<string, unknown>
   previousTotalsSignature?: string
   /** Raw token fields accumulated across every request of the current turn. */
@@ -35,7 +44,16 @@ export type CodexAppServerAdapterState = {
     input?: Record<string, unknown>
     itemType?: string
   }>
-  turnUsage?: CodexTurnUsageState
+  /**
+   * Keyed by thread: one app-server reports every thread it runs, and a
+   * thread's `total` only differences against that same thread's.
+   */
+  turnUsageByThread?: Record<string, CodexTurnUsageState>
+  /**
+   * The models this turn's own frames reported, in the order they arrived:
+   * a thread's settings by thread id, a rerouted turn by thread and turn id.
+   */
+  reportedModels?: Record<string, string>
   /**
    * Last account-level limit that actually fired (`rateLimitReachedType` set).
    * Thread `systemError` and failed turns do not carry that sentence, so the
@@ -55,6 +73,17 @@ function pruneTurnState(state?: CodexAppServerAdapterState): CodexAppServerAdapt
       ? { lastLimitedRateLimitMessage: state.lastLimitedRateLimitMessage }
       : {}),
   }
+}
+
+function endThreadTurn(
+  state: CodexAppServerAdapterState,
+  event: { payload: unknown },
+  context: HarnessEventAdapterContext,
+): CodexAppServerAdapterState {
+  const threadId = threadOf(event, context)
+  if (threadId === context.threadId) return pruneTurnState(state)
+  const { [threadId]: _ended, ...turnUsageByThread } = state.turnUsageByThread ?? {}
+  return { ...state, turnUsageByThread }
 }
 
 function payload(event: { payload: unknown }) {
@@ -150,8 +179,12 @@ function itemId(event: { payload: unknown }, fallback: string) {
   return text(eventFields(event).itemId) ?? text(payload(event).itemId) ?? text(item(event)?.id) ?? fallback
 }
 
+function threadOf(event: { payload: unknown }, context: HarnessEventAdapterContext) {
+  return text(payload(event).threadId) ?? context.threadId
+}
+
 function sessionId(event: { payload: unknown }, context: HarnessEventAdapterContext) {
-  return text(payload(event).sessionId) ?? text(eventFields(event).threadId) ?? context.threadId
+  return text(payload(event).sessionId) ?? threadOf(event, context)
 }
 
 function normalizeItemType(raw: unknown) {
@@ -275,85 +308,208 @@ function todosFromPlan(row: Record<string, unknown>) {
 
 /** The turn accumulator names the raw Codex token fields; it is the only list of them. */
 type CodexUsageField = keyof CodexTurnUsageState["accumulated"]
+type CodexUsageFields = CodexTurnUsageState["accumulated"]
 
 function addNullable(previous: number | null, delta: number | undefined) {
   if (delta === undefined) return previous
   return (previous ?? 0) + delta
 }
 
-function usage(
-  row: Record<string, unknown>,
-  turnUsage: CodexTurnUsageState | undefined,
-  nativeSessionId?: string,
-): { event: AgentRuntimeEvent; turnUsage: CodexTurnUsageState } | undefined {
+/**
+ * Codex reports input inclusive of cached input, and output inclusive of
+ * reasoning; the runtime meters the disjoint categories.
+ */
+function disjointTokens(fields: CodexUsageFields): RuntimeTokenUsage {
+  return {
+    input: fields.inputTokens === null ? null : Math.max(0, fields.inputTokens - (fields.cachedInputTokens ?? 0)),
+    output: fields.outputTokens === null ? null : Math.max(0, fields.outputTokens - (fields.reasoningOutputTokens ?? 0)),
+    reasoning: fields.reasoningOutputTokens,
+    cache: { read: fields.cachedInputTokens, write: null },
+  }
+}
+
+type TokenUsageReport = {
+  total?: Record<string, unknown>
+  last: Record<string, unknown>
+  totalsSignature?: string
+  contextSize?: number
+  contextUsed?: number
+}
+
+function tokenUsageReport(row: Record<string, unknown>): TokenUsageReport | undefined {
   const tokenUsage = asRecord(row.tokenUsage) ?? row
   const total = asRecord(tokenUsage.total)
   const last = asRecord(tokenUsage.last) ?? {}
   const contextSize = asFiniteNumber(tokenUsage.modelContextWindow) ?? asFiniteNumber(row.modelContextWindow)
   const contextUsed = asFiniteNumber(last.totalTokens) ?? asFiniteNumber(tokenUsage.totalTokens) ?? asFiniteNumber(total?.totalTokens)
   if (contextUsed === undefined && contextSize === undefined) return undefined
-  const usageEvent = (observation?: Extract<AgentRuntimeEvent, { type: "usage" }>["observation"]) => ({
-    type: "usage" as const,
-    contextSize: contextSize ?? contextUsed ?? 0,
-    contextUsed: contextUsed ?? contextSize ?? 0,
-    ...(observation ? { observation } : {}),
-  })
-  // `last` is one API request and the session-cumulative `total` is the
-  // authoritative observation identity: an unchanged total is a duplicate
-  // emission of the same request, not new spend. Duplicates still refresh the
-  // context meter but must not contribute a metering observation.
-  const totalsSignature = total ? JSON.stringify(total) : undefined
-  if (totalsSignature !== undefined && totalsSignature === turnUsage?.previousTotalsSignature) {
-    return { event: usageEvent(), turnUsage }
+  return {
+    ...(total ? { total, totalsSignature: JSON.stringify(total) } : {}),
+    last,
+    ...(contextSize === undefined ? {} : { contextSize }),
+    ...(contextUsed === undefined ? {} : { contextUsed }),
   }
-  // A turn spans many API requests. Sum each request into a turn-cumulative
-  // accumulator (kind "cumulative" replaces on the meter side, so emitting the
-  // bare per-request `last` would drop every request but the final one).
-  // Within a turn, prefer the difference of session totals so a missed
-  // emission is recovered; the turn's first request falls back to `last`.
-  const previousTotals = turnUsage?.previousTotals
-  const delta = (field: CodexUsageField) => {
-    if (total && previousTotals) {
-      const current = asFiniteNumber(total[field])
+}
+
+/**
+ * What a report adds since `previousTotals`: the difference of the thread's
+ * lifetime totals, which recovers a missed emission, or the report's own
+ * request (`last`) when there is no previous total to difference against.
+ */
+function reportGrowth(report: TokenUsageReport, previousTotals: Record<string, unknown> | undefined) {
+  return (field: CodexUsageField) => {
+    if (report.total && previousTotals) {
+      const current = asFiniteNumber(report.total[field])
       const previous = asFiniteNumber(previousTotals[field])
       if (current !== undefined && previous !== undefined) return Math.max(0, current - previous)
     }
-    return asFiniteNumber(last[field])
+    return asFiniteNumber(report.last[field])
   }
+}
+
+function usageEvent(report: TokenUsageReport, observation?: RuntimeUsageObservation): AgentRuntimeEventOf<"usage"> {
+  return {
+    type: "usage",
+    contextSize: report.contextSize ?? report.contextUsed ?? 0,
+    contextUsed: report.contextUsed ?? report.contextSize ?? 0,
+    ...(observation ? { observation } : {}),
+  }
+}
+
+/** The model a thread runs on, as the app-server reported it in a response the driver read. */
+export type CodexThreadModel = (threadId: string) => string | undefined
+
+function reportedModelKey(threadId: string, turnId?: string) {
+  return turnId ? `${threadId}\0${turnId}` : threadId
+}
+
+/** The model a notification reports a thread, or one turn of it, now running on. */
+export function codexReportedModel(method: string, payload: unknown): { threadId: string; turnId?: string; model: string } | undefined {
+  const row = asRecord(payload) ?? {}
+  const threadId = text(row.threadId)
+  if (!threadId) return undefined
+  if (method === "thread/settings/updated") {
+    const model = text(asRecord(row.threadSettings)?.model)
+    return model ? { threadId, model } : undefined
+  }
+  if (method === "model/rerouted") {
+    const turnId = text(row.turnId)
+    const model = text(row.toModel)
+    return turnId && model ? { threadId, turnId, model } : undefined
+  }
+  return undefined
+}
+
+function recordReportedModel(state: CodexAppServerAdapterState, method: string, payload: unknown): CodexAppServerAdapterState {
+  const reported = codexReportedModel(method, payload)
+  if (!reported) return state
+  return {
+    ...state,
+    reportedModels: boundKeyedRecord({ ...state.reportedModels, [reportedModelKey(reported.threadId, reported.turnId)]: reported.model }, RETAINED_WIRE_KEYS_MAX),
+  }
+}
+
+/**
+ * Each Codex turn of each thread is its own usage scope: a thread reports one
+ * turn's running total at a time, and a Claxedo turn can span several of them
+ * — a subagent's second turn, a nested subagent folded into its ancestor.
+ */
+function usage(
+  row: Record<string, unknown>,
+  previous: CodexTurnUsageState | undefined,
+  threadId: string,
+  servedModel: (turnId: string | undefined) => string | undefined,
+): { event: AgentRuntimeEvent; turnUsage: CodexTurnUsageState } | undefined {
+  const turnId = text(row.turnId)
+  const sameTurn = previous?.turnId === turnId ? previous : undefined
+  const report = tokenUsageReport(row)
+  if (!report) return undefined
+  // `last` is one API request and the thread's lifetime `total` identifies
+  // it: an unchanged total is the same request emitted again, not new spend.
+  // A duplicate still refreshes the context meter but carries no metering
+  // observation.
+  if (report.totalsSignature !== undefined && report.totalsSignature === sameTurn?.previousTotalsSignature) {
+    return { event: usageEvent(report), turnUsage: sameTurn }
+  }
+  // A turn the app-server moved to another model reports the rest of its
+  // requests in a stream of their own, so each cumulative names the one model
+  // that served it.
+  const model = servedModel(turnId)
+  const turnScope = turnId ? `${threadId}:${turnId}` : threadId
+  const stream = sameTurn?.model === model ? sameTurn : undefined
+  const scope = stream ? stream.scope ?? turnScope : sameTurn ? `${turnScope}@${model ?? "unknown"}` : turnScope
+  // A turn spans many API requests. Sum each request into a turn-cumulative
+  // accumulator (kind "cumulative" replaces on the meter side, so emitting the
+  // bare per-request `last` would drop every request but the final one).
+  const growth = reportGrowth(report, sameTurn?.previousTotals)
   const accumulated = {
-    inputTokens: addNullable(turnUsage?.accumulated.inputTokens ?? null, delta("inputTokens")),
-    cachedInputTokens: addNullable(turnUsage?.accumulated.cachedInputTokens ?? null, delta("cachedInputTokens")),
-    outputTokens: addNullable(turnUsage?.accumulated.outputTokens ?? null, delta("outputTokens")),
-    reasoningOutputTokens: addNullable(turnUsage?.accumulated.reasoningOutputTokens ?? null, delta("reasoningOutputTokens")),
+    inputTokens: addNullable(stream?.accumulated.inputTokens ?? null, growth("inputTokens")),
+    cachedInputTokens: addNullable(stream?.accumulated.cachedInputTokens ?? null, growth("cachedInputTokens")),
+    outputTokens: addNullable(stream?.accumulated.outputTokens ?? null, growth("outputTokens")),
+    reasoningOutputTokens: addNullable(stream?.accumulated.reasoningOutputTokens ?? null, growth("reasoningOutputTokens")),
   }
   return {
-    event: usageEvent({
+    event: usageEvent(report, {
       kind: "cumulative",
-      ...(nativeSessionId ? { nativeSessionId } : {}),
-      ...(text(row.turnId) ? { providerObservationId: text(row.turnId) } : {}),
-      tokens: {
-        // Codex reports input inclusive of cached input, and output inclusive
-        // of reasoning; our schema tracks the disjoint categories.
-        input: accumulated.inputTokens === null
-          ? null
-          : Math.max(0, accumulated.inputTokens - (accumulated.cachedInputTokens ?? 0)),
-        output: accumulated.outputTokens === null
-          ? null
-          : Math.max(0, accumulated.outputTokens - (accumulated.reasoningOutputTokens ?? 0)),
-        reasoning: accumulated.reasoningOutputTokens,
-        cache: { read: accumulated.cachedInputTokens, write: null },
-      },
+      scope,
+      ...(threadId ? { nativeSessionId: threadId } : {}),
+      ...(turnId ? { providerObservationId: turnId } : {}),
+      ...(model ? { model } : {}),
+      tokens: disjointTokens(accumulated),
     }),
     turnUsage: {
-      ...(total ? { previousTotals: total } : {}),
-      ...(totalsSignature === undefined ? {} : { previousTotalsSignature: totalsSignature }),
+      ...(turnId ? { turnId } : {}),
+      ...(model ? { model } : {}),
+      scope,
+      ...(report.total ? { previousTotals: report.total } : {}),
+      ...(report.totalsSignature === undefined ? {} : { previousTotalsSignature: report.totalsSignature }),
       accumulated,
     },
   }
 }
 
+/**
+ * A `thread/tokenUsage/updated` report read by an owner that holds no turn's
+ * accumulator, as the spend since `previousTotal` — the same thread's lifetime
+ * total at the report before it, whoever read that one. It is a delta, so it
+ * adds to what the thread's turns already metered instead of replacing it,
+ * and a report repeating the previous total adds nothing.
+ */
+export function codexUsageGrowth(input: {
+  payload: unknown
+  previousTotal: Record<string, unknown> | undefined
+  scope: string
+  model?: string
+}): { total?: Record<string, unknown>; event?: AgentRuntimeEventOf<"usage"> } {
+  const row = asRecord(input.payload) ?? {}
+  const report = tokenUsageReport(row)
+  if (!report) return {}
+  const growth = reportGrowth(report, input.previousTotal)
+  const fields = {
+    inputTokens: growth("inputTokens") ?? null,
+    cachedInputTokens: growth("cachedInputTokens") ?? null,
+    outputTokens: growth("outputTokens") ?? null,
+    reasoningOutputTokens: growth("reasoningOutputTokens") ?? null,
+  }
+  const total = report.total ? { total: report.total } : {}
+  if (!Object.values(fields).some((value) => value !== null && value > 0)) return total
+  const threadId = text(row.threadId)
+  const turnId = text(row.turnId)
+  return {
+    ...total,
+    event: usageEvent(report, {
+      kind: "delta",
+      scope: input.scope,
+      ...(threadId ? { nativeSessionId: threadId } : {}),
+      providerObservationId: `${threadId ?? ""}:${turnId ?? ""}:${report.totalsSignature ?? JSON.stringify(report.last)}`,
+      ...(input.model ? { model: input.model } : {}),
+      tokens: disjointTokens(fields),
+    }),
+  }
+}
+
 function completionEvents(
-  event: { payload: unknown; threadId?: unknown },
+  event: { payload: unknown },
   context: HarnessEventAdapterContext,
   lastLimitedRateLimitMessage?: string,
 ) {
@@ -653,11 +809,27 @@ function protocolEvent(event: { method?: string; payload: unknown }): CodexAppSe
   } as CodexAppServerProtocolEvent
 }
 
-export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapterState> {
+/**
+ * An `error` frame of a thread folded into its first-level ancestor, which the
+ * driver re-files under this method: it ends that descendant's work, not the
+ * ancestor's session, so it is read as a diagnostic rather than a terminal.
+ */
+export const CODEX_DESCENDANT_ERROR_METHOD = "codex/descendant-error"
+
+export function codexAppServerAdapter(options: { threadModel?: CodexThreadModel } = {}): HarnessEventAdapter<CodexAppServerAdapterState> {
   return {
     name: "codex-app-server",
     createInitialState: createCodexAppServerAdapterState,
     translate({ state, event, context }) {
+      if (event.method === CODEX_DESCENDANT_ERROR_METHOD) {
+        const row = payload(event)
+        return [diagnosticForEvent({
+          code: "codex_app_server.descendant_error",
+          message: turnErrorMessage(asRecord(row.error), undefined) ?? text(row.message) ?? "A nested Codex subagent failed",
+          severity: "warn",
+          event,
+        })]
+      }
       const message = protocolEvent(event)
       const method = message.method
       const row = payload(event)
@@ -820,14 +992,14 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           return [{ type: "session-status", status: "busy" }]
 
         case "turn/completed":
-          return { state: pruneTurnState(state), events: completionEvents(event, context, state.lastLimitedRateLimitMessage) }
+          return { state: endThreadTurn(state, event, context), events: completionEvents(event, context, state.lastLimitedRateLimitMessage) }
 
         case "thread/status/changed":
           return threadStatusEvents(row)
 
         case "thread/closed":
           return {
-            state: pruneTurnState(state),
+            state: endThreadTurn(state, event, context),
             events: [
               { type: "session-status", status: "idle" },
               { type: "finish", sessionId: sessionId(event, context) },
@@ -850,10 +1022,20 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         }
 
         case "thread/tokenUsage/updated": {
-          const result = usage(row, state.turnUsage, sessionId(event, context))
+          const threadId = threadOf(event, context)
+          const byThread = state.turnUsageByThread ?? {}
+          const { [threadId]: _previous, ...otherThreads } = byThread
+          const reported = state.reportedModels ?? {}
+          const result = usage(row, own(byThread, threadId), threadId, (turnId) =>
+            (turnId ? own(reported, reportedModelKey(threadId, turnId)) : undefined) ?? own(reported, threadId) ?? options.threadModel?.(threadId))
           if (!result) return []
           return {
-            state: { ...state, ...(result.turnUsage ? { turnUsage: result.turnUsage } : {}) },
+            state: {
+              ...state,
+              // Re-inserted last, so the bound evicts the thread that reported
+              // longest ago rather than the one this runtime was opened for.
+              turnUsageByThread: boundKeyedRecord({ ...otherThreads, [threadId]: result.turnUsage }, RETAINED_WIRE_KEYS_MAX),
+            },
             events: [result.event],
           }
         }
@@ -968,12 +1150,18 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           })]
 
         case "model/rerouted":
-          return [harnessNotice({
-            code: "codex_app_server.model_rerouted",
-            message: `Model rerouted from ${text(row.fromModel) ?? "unknown"} to ${text(row.toModel) ?? "unknown"}`,
-            severity: "info",
-            details: row,
-          })]
+          return {
+            state: recordReportedModel(state, method, row),
+            events: [harnessNotice({
+              code: "codex_app_server.model_rerouted",
+              message: `Model rerouted from ${text(row.fromModel) ?? "unknown"} to ${text(row.toModel) ?? "unknown"}`,
+              severity: "info",
+              details: row,
+            })],
+          }
+
+        case "thread/settings/updated":
+          return { state: recordReportedModel(state, method, row), events: unmappedCodexAppServerEvent(event) }
 
         case "model/verification":
           return [harnessNotice({
@@ -1032,7 +1220,6 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         case "thread/archived":
         case "thread/goal/cleared":
         case "thread/goal/updated":
-        case "thread/settings/updated":
         case "thread/unarchived":
           return unmappedCodexAppServerEvent(event)
 

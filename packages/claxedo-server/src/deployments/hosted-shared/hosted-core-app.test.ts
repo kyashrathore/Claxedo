@@ -1,6 +1,7 @@
 import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
+import { exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, SignJWT } from "jose"
 import { PI_LAUNCH_PROVIDERS } from "@claxedo/agent-runtime-contract"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
@@ -555,6 +556,101 @@ describe("resource-closed hosted core app", () => {
       "build-secret",
       "lastHealthProbe",
     ]) expect(body).not.toContain(operatorOnly)
+  })
+})
+
+
+describe("hosted-core usage", () => {
+  async function signedTurnLease(env: Record<string, string>, claims: Record<string, unknown>) {
+    const now = Math.floor(Date.now() / 1_000)
+    return await new SignJWT(claims)
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer("claxedo-control-plane")
+      .setAudience("workspace-runtime-session-turn")
+      .setIssuedAt(now)
+      .setExpirationTime(now + 60)
+      .sign(await importPKCS8(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM, "EdDSA"))
+  }
+
+  test("serves the signed account's usage view from the composed ledger and files runtime reports into it", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const env = {
+      CLAXEDO_DEPLOYMENT_MODE: "hosted",
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+    }
+    const base = plane()
+    const composed = {
+      ...base,
+      env,
+      runtimeSessionAuthority: {
+        ...base.runtimeSessionAuthority,
+        resolveCloudTurnUsageOwner: vi.fn(async () => ({ org_id: "org-1", user_id: "alice" })),
+      },
+    } as unknown as HostedControlPlane
+    const usageDashboard = vi.fn(async () => ({
+      totals: { turn_count: 3 },
+      daily: [],
+      models: [{ value: "anthropic/claude-sonnet-4-5", input_tokens: 1_000_000 }],
+      locations: [],
+    }))
+    const cloudUsageFacts = vi.fn(async () => [])
+    const writeRevision = vi.fn(async () => ({ status: "accepted" as const }))
+    const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard, cloudUsageFacts } })
+
+    const view = await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2", {
+      headers: { authorization: "Bearer alice" },
+    }))
+    expect(view.status).toBe(200)
+    // The hosted plane prices from the catalog compiled into the Worker, never
+    // one refreshed from disk or the network.
+    expect(await view.json()).toMatchObject({
+      claxedo: {
+        totals: { turnCount: 3 },
+        scope: "cross-machine",
+        cost: { estimatedUsd: 3, pricedTokens: 1_000_000, catalog: { source: "bundled-seed" } },
+      },
+    })
+    expect(usageDashboard).toHaveBeenCalledWith(expect.objectContaining({ org_id: "org-1", user_id: "alice" }))
+    expect((await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2"))).status).toBe(401)
+
+    const facts = await app.fetch(new Request("https://core.test/api/claxedo/usage/cloud-facts?since=1&until=2", {
+      headers: { authorization: "Bearer alice" },
+    }))
+    expect(facts.status).toBe(200)
+    expect(await facts.json()).toEqual({ facts: [] })
+    expect(cloudUsageFacts).toHaveBeenCalledWith({ org_id: "org-1", user_id: "alice", since: 1, until: 2, limit: 10_001 })
+    expect((await app.fetch(new Request("https://core.test/api/claxedo/usage/cloud-facts?since=1&until=2"))).status).toBe(401)
+
+    const leaseId = await signedTurnLease(env, {
+      principal_kind: "user", actor_id: "actor:alice", actor_kind: "human", org_id: "org-1", workspace_id: "ws_cloud",
+      transport: "deferred-grant", grant_id: "grant_1", session_id: "ses_cloud", action: "write", turn_id: "msg_user_1",
+      authority_lease_id: "turn_lease_1", fencing_token: 4, acquired_at: Date.now(), authority_expires_at: Date.now() + 60_000,
+    })
+    const reported = await app.fetch(new Request("https://core.test/api/runtime-authority/session-authorize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "usage_report", sessionId: "ses_cloud", turnId: "msg_user_1", leaseId, fencingToken: 4,
+        facts: [{
+          turnId: "msg_user_1",
+          messageId: "msg_assistant_1", revision: 1, observedAt: Date.now(), settlement: "final", status: "completed",
+          harness: "claude", providerId: "anthropic", modelId: "claude-sonnet-5",
+          tokens: { input: 1, output: 1, reasoning: null, cache: { read: null, write: null } },
+          quality: { source: "provider", knownCategories: ["input", "output"] },
+        }],
+      }),
+    }))
+    expect(reported.status).toBe(200)
+    expect(writeRevision).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "ses_cloud", workspaceId: "ws_cloud", hostId: "workspace:ws_cloud", location: "cloud-workspace" }),
+      { owner: { org_id: "org-1", user_id: "alice" }, turnId: "msg_user_1" },
+    )
+
+    const bare = createHostedCoreApp(composed, options)
+    expect((await bare.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2", {
+      headers: { authorization: "Bearer alice" },
+    }))).status).toBe(404)
   })
 })
 

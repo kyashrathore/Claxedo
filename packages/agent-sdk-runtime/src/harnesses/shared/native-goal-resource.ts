@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-contract"
-import type { AgentRuntimeStreamEvent, PromptInput, SessionConfig } from "../../index"
+import type { PromptInput, SessionConfig } from "../../index"
 import { requireWorkspaceDirectory } from "../../target"
 import { settleGoalStop, type GoalTurnInterrupt } from "./goal-stop-order"
 import { goalStopDeadline } from "./request-deadline"
@@ -20,12 +20,13 @@ export type NativeGoalResourceHost = {
   publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null): void
   sessionConfig(sessionId: string, directory: string): Promise<SessionConfig>
   defaultModelId(): string
-  streamTurn(
+  /** Runs one turn through the adapter's projection, publishing what it streams. */
+  runTurn(
     sessionId: string,
     input: PromptInput,
     directory: string,
     execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
-  ): AsyncIterable<AgentRuntimeStreamEvent>
+  ): Promise<void>
 }
 
 /**
@@ -158,7 +159,7 @@ async function startNativeGoal(
     accept = resolve
   })
   const consume = async () => {
-    for await (const _event of host.streamTurn(
+    await host.runTurn(
       sessionId,
       input,
       directory,
@@ -169,7 +170,7 @@ async function startNativeGoal(
           accept({ ok: true, goal })
         }
       }),
-    )) {}
+    )
     if (!settled) {
       settled = true
       accept({ ok: false, status: "failed", message: `${host.driverType} ended before accepting Goal` })

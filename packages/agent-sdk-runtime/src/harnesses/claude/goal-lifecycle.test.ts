@@ -29,6 +29,7 @@ function goalDriver(
       onPublish(input.goal)
     },
     async runProviderTurn() { return true },
+    meterUsage() {},
   }, { executable: () => "/fake/claude", ...options })
 }
 

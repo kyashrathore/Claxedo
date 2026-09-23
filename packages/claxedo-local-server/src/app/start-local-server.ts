@@ -27,7 +27,7 @@ import type { Duplex } from "node:stream"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
-import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
+import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { createAcpConnectionProvider, type CompatEnvelope } from "@claxedo/agent-sdk-runtime"
@@ -61,12 +61,13 @@ import { hostProviderConfigProjectAuth } from "@claxedo/server-core/credentials/
 import { hostProviderConfig } from "../workspace/host-provider-config"
 import { requestOrg } from "../credentials/routes/credential"
 import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
+import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
 import { scanTokenTrackerLocalHistory } from "../usage/adapters/token-tracker-local-history"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
-import { createUsageOutboxSync } from "../usage/outbox-sync"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
 import { createLocalWorkspaceRelayProxy } from "../workspace/runtime-dispatch/shared-workspace-endpoint"
@@ -167,6 +168,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // workspace runtime this server creates; it is the native `opencode` harness.
   const opencodeRuntime = openCodeSdkRuntime()
 
+  type TurnOutcomeHandler = NonNullable<Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["onTurnOutcome"]>
+  let settleTurnOutcome: TurnOutcomeHandler = () => undefined
   let consumeRuntimeEvent = (event: CompatEnvelope) => {
     if (event.payload.type === "session.updated") {
       void projectLocalSessionMetaFromEvent(services.projectionStore, event)
@@ -202,6 +205,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     // published only on the workspace's own event stream. Without it, titles
     // revert to "Untitled" after a restart.
     onSessionMetaEvent: (event) => consumeRuntimeEvent(event),
+    onTurnOutcome: (outcome) => settleTurnOutcome(outcome),
     onSessionMetaCreated: async (workspace, session) => {
       await services.projectionStore.sync_session_meta(workspace, session)
     },
@@ -246,10 +250,10 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
   const usageSourceCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
-  const usageOutbox = createUsageOutboxSync({ local: usageRevisionStore, telemetry: services.telemetry })
   const turnMeter = createTurnMeter({
     writer: usageRevisionStore,
     reader: usageRevisionStore,
+    state: createSqliteTurnMeterStateStore(),
     currentFilter: (fact) => fact.location === "local",
     reconcileProvisionalOnStart: true,
     resolveContext: async ({ sessionId }) => {
@@ -273,7 +277,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         ...(meteringHarness === "pi" ? { nativeSessionId: sessionId } : {}),
       }
     },
-    onTerminal: async () => { await usageOutbox.notify() },
     onDegraded: (error) => log.warn("local usage metering degraded", { error: String(error) }),
   })
   void turnMeter.start()
@@ -288,6 +291,16 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       }
     }).catch((error) => log.warn("local runtime event projection degraded", { error: String(error) }))
   }
+  settleTurnOutcome = ({ sessionId, assistantMessageId, outcome }) => {
+    if (outcome.status !== "cancelled" || !assistantMessageId) return
+    usageEventTail = usageEventTail
+      .then(() => turnMeter.settle({
+        sessionId,
+        messageId: assistantMessageId,
+        status: outcome.reason === "steer" ? "interrupted_by_steer" : "stopped",
+      }))
+      .catch((error) => log.warn("local turn outcome metering degraded", { error: String(error) }))
+  }
   // One statement of the signed-auth configuration for both readers below. A
   // quota resolved from an empty one answers the single-tenant partition on a
   // signed box, so it reported another org's accounts than `identity` named.
@@ -300,7 +313,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   const readQuota = createUsageQuotaReader({ credentials: services.credentials, agentUsage: readMachineAgentUsage })
   const usage = {
     local: usageRevisionStore,
-    outbox: usageOutbox,
     identity: async (request: Request) => {
       const auth = await controlPlaneAuthContext(request, {
         config: authOptions.authConfig,
@@ -318,39 +330,16 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       await readQuota({ org: await requestOrg(request, authOptions), refresh }),
     history: async ({ since, until, refresh }: { since: number; until: number; refresh: boolean }) => {
       await usageSourceCoverageReady
-      const facts = await usageRevisionStore.current()
-      const incompleteSources = new Set<string>()
-      const entries = facts.flatMap((fact) => {
-        const source = tokenTrackerSourceForHarness(fact.harness)
-        const nativeSessionId = fact.nativeSessionId ?? (source === "pi" ? fact.sessionId : undefined)
-        if (source && !nativeSessionId) incompleteSources.add(source)
-        return source && nativeSessionId ? [{
-          source,
-          nativeSessionId,
-          sessionRef: fact.sessionRef,
-          harness: fact.harness,
-          ...(fact.workspaceId ? { workspaceId: fact.workspaceId } : {}),
-          startedAt: fact.observedAt,
-          ...(fact.completedAt === undefined ? {} : { endedAt: fact.completedAt }),
-        }] : []
-      })
-      // `current()` is the authoritative set of facts that contributes to the
-      // Claxedo series. A scanner row can overlap Total only when its native
-      // session appears in that set. Historical rows that have no contributing
-      // Claxedo fact are valid local history, not installation-time unknowns.
-      const completeAfter = Object.fromEntries(
-        Object.entries(await usageSourceCoverage.starts())
-          .filter(([source]) => !incompleteSources.has(source)),
-      )
       return await scanTokenTrackerLocalHistory({
         sourceHome: os.homedir(),
         stateDir: path.join(dataDir(), "usage-scanner"),
         since,
         until,
         refresh,
-        classify: createUsageProvenanceClassifier(entries, { completeAfter }),
+        classify: localHistoryClassifier(await usageRevisionStore.localTurnSpans(), await usageSourceCoverage.starts()),
       })
     },
+    pricing: tokenTrackerPricing("refreshed"),
     telemetry: services.telemetry,
   }
   // Both dispatch entrypoints resolve the same verified relay actor: one

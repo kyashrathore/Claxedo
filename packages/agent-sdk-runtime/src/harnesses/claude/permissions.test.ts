@@ -29,7 +29,7 @@ for (const decision of ["allow_always", "allow_once", "deny", "storage-failure"]
     const host: SdkRuntimeDriverHost = {
       lifecycle: () => createSessionTurnLifecycle(), pendingPermissions, pendingQuestions: new Map(),
       bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
-      getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+      getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true, meterUsage() {},
       getSessionConfig: (id) => ({ harness: { id: "claude", access: "native" }, permissionState: states.get(id) }),
       updatePermissionState: (id, state) => {
         if (decision === "storage-failure") throw new Error("Permission store unavailable")
@@ -84,7 +84,7 @@ for (const decision of ["allow_always", "allow_once", "deny", "reject_always"] a
     const host = {
       lifecycle: () => createSessionTurnLifecycle(), pendingPermissions, pendingQuestions: new Map(),
       bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
-      getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+      getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true, meterUsage() {},
       getSessionConfig: (id: string) => ({ harness: { id: "claude", access: "native" }, permissionState: states.get(id) }),
       updatePermissionState: (id: string, state: Record<string, unknown>) => states.set(id, JSON.parse(JSON.stringify(state))),
     } as SdkRuntimeDriverHost

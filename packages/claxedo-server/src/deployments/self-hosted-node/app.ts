@@ -178,12 +178,12 @@ import {
 } from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
+import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
-import type { UsageLedger } from "../../platform/telemetry/product/metering"
-import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { readMachineAgentUsage, scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
-import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
+import { localHistoryClassifier } from "@claxedo/server-core/usage/local-history-classifier"
 import { usageLocation } from "@claxedo/server-core/usage/projection"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
@@ -821,8 +821,6 @@ export function createSelfHostedApp(
     usageRevisionStore?: ReturnType<typeof createSqliteUsageLedger>
     usageSourceCoverage?: UsageSourceCoverageStore
     usageSourceCoverageReady?: Promise<void>
-    usageLedger?: UsageLedger
-    usageOutbox?: UsageOutboxSync
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
     /** Composition seam for tests/load fixtures; production keeps the default limiter. */
     connectionRateLimiter?: ConnectionRateLimiter
@@ -986,19 +984,10 @@ export function createSelfHostedApp(
       : {}),
   }
   const turnCredentials = options.connectionTurnCredentials ?? createConnectionTurnCredentials()
-  const usageOutbox = options.usageOutbox ?? (options.usageRevisionStore
-      ? createUsageOutboxSync({
-          local: options.usageRevisionStore,
-          ...(options.usageLedger ? { central: options.usageLedger } : {}),
-          telemetry: services.telemetry,
-        })
-    : undefined)
   const machineSessions = createMachineSessionDispatch(services, runtimeProxyOptions)
   const controlPlane = createControlPlaneApp(services, {
     ...authRouteOptions(services),
     createMachineSession: machineSessions.create,
-    ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
-    mountPublicUsageRoute: !options.usageRevisionStore,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
     sessionShareChangedSink: (event) => controlBus.publish(event),
   })
@@ -1348,6 +1337,9 @@ export function createSelfHostedApp(
     authority: selfHostedRuntimeAuthority(services.authority),
     turnAuthority: selfHostedTurnAuthority(services.authority),
     turnCredentials,
+    // A cloud sandbox this box provisions reports into the store its own
+    // turns meter into, so one usage view answers for both.
+    ...(options.usageRevisionStore ? { usageWriter: options.usageRevisionStore.reports } : {}),
   }))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
@@ -1397,8 +1389,6 @@ export function createSelfHostedApp(
     const readQuota = createUsageQuotaReader({ credentials: services.credentials, agentUsage: readMachineAgentUsage })
     app.route("/api/claxedo/usage", LocalUsageRoutes({
       local: options.usageRevisionStore,
-      ...(options.usageLedger ? { central: options.usageLedger } : {}),
-      outbox: usageOutbox!,
       identity: async (request) => {
         const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
         return auth.mode === "signed" && auth.user.orgId
@@ -1407,7 +1397,7 @@ export function createSelfHostedApp(
       },
       // Unsigned-local callers are the operator only on their own loopback;
       // signed callers only when the deployment names them. A member's token
-      // is not a machine claim, so their flushes never adopt unowned facts.
+      // is not a machine claim.
       machineOperator: async (request) => {
         const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
         if (auth.mode === "unsigned-local") return isLoopbackLocalRequest(request)
@@ -1421,33 +1411,20 @@ export function createSelfHostedApp(
       },
       quota: async ({ request, refresh }) => await readQuota({ org: await requestOrg(request, {}), refresh }),
       history: async ({ since, until, refresh }) => {
-        const facts = await options.usageRevisionStore!.current()
-        const incompleteSources = new Set<string>()
-        const entries = facts.flatMap((fact) => {
-          const source = tokenTrackerSourceForHarness(fact.harness)
-          const nativeSessionId = fact.nativeSessionId ?? (source === "pi" ? fact.sessionId : undefined)
-          if (source && !nativeSessionId) incompleteSources.add(source)
-          return source && nativeSessionId ? [{
-            source,
-            nativeSessionId,
-            sessionRef: fact.sessionRef,
-            harness: fact.harness,
-            ...(fact.workspaceId ? { workspaceId: fact.workspaceId } : {}),
-            startedAt: 0,
-          }] : []
-        })
-        const completeSources = ["claude", "codex", "cursor", "opencode", "pi"]
-          .filter((source) => !incompleteSources.has(source))
+        await options.usageSourceCoverageReady
         return await scanTokenTrackerLocalHistory({
           sourceHome: os.homedir(),
           stateDir: path.join(dataDir(), "usage-scanner"),
           since,
           until,
-          sources: completeSources,
           refresh,
-          classify: createUsageProvenanceClassifier(entries, { completeSources }),
+          classify: localHistoryClassifier(
+            await options.usageRevisionStore!.localTurnSpans(),
+            (await options.usageSourceCoverage?.starts()) ?? {},
+          ),
         })
       },
+      pricing: tokenTrackerPricing("refreshed"),
       telemetry: services.telemetry,
     }))
   }
@@ -1788,16 +1765,11 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
   const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
-  const usageLedger: UsageLedger | undefined = undefined
-  const usageOutbox = createUsageOutboxSync({
-    local: usageRevisionStore,
-    ...(usageLedger ? { central: usageLedger } : {}),
-    telemetry: services.telemetry,
-  })
   const localUsageHost = localHostIdentity()
   const localTurnMeter = createTurnMeter({
     writer: usageRevisionStore,
     reader: usageRevisionStore,
+    state: createSqliteTurnMeterStateStore(),
     currentFilter: (fact) => usageLocation(fact.location) === "local",
     reconcileProvisionalOnStart: true,
     resolveContext: async ({ sessionId }) => {
@@ -1805,8 +1777,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         sessionMeta(sessionId),
         localUsageHost,
         // The session's producing account, recorded by the authority at turn
-        // admission — a fact written without it belongs to the machine, not
-        // to whichever account next asks for a sync.
+        // admission. A fact written without it belongs to the machine, which
+        // only the machine's operator reads.
         services.authority?.resolveSessionUsageOwner?.({ sessionId }).catch(() => undefined),
       ])
       if (!meta?.sessionRef || !meta.workspaceID) {
@@ -1824,7 +1796,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         ...(owner ? { owner } : {}),
       }
     },
-    onTerminal: async () => { await usageOutbox.notify() },
     onDegraded: (error) => reportError(error, { tags: { source: "local_usage_metering" } }),
   })
   void localTurnMeter.start()
@@ -1924,8 +1895,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     usageRevisionStore,
     usageSourceCoverage,
     usageSourceCoverageReady: usageCoverageReady,
-    usageOutbox,
-    ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
     ...(options.tasksGrants ? { tasksGrants: options.tasksGrants } : {}),

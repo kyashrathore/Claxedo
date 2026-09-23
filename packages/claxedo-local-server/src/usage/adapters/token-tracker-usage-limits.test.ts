@@ -71,6 +71,23 @@ describe("tokentracker usage limits mapping", () => {
     ])
   })
 
+  test("an agent that bills by one period names its primary slot by that period", () => {
+    const grok = machineAgentUsage({
+      fetched_at: FETCHED_AT,
+      grok: {
+        configured: true,
+        error: null,
+        period_type: "weekly",
+        credit_usage_percent: 0,
+        primary_window: { used_percent: 0, reset_at: "2026-09-24T15:41:05.080Z" },
+        secondary_window: null,
+      },
+    }, 5_000)
+    expect(grok[0]?.windows).toEqual([
+      { window: "weekly", usedPercent: 0, resetsAt: Date.parse("2026-09-24T15:41:05.080Z") },
+    ])
+  })
+
   test("an agent this machine does not have is left out, and one that failed says so", () => {
     const agents = machineAgentUsage(probe, 5_000)
     expect(agents.map((agent) => agent.agent)).not.toContain("kimi")

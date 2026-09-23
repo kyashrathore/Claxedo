@@ -24,7 +24,7 @@ import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
-import { hostConnectEndpointOptions, signedOrError } from "../../workspace/route-support"
+import { hostConnectEndpointOptions, routeAuth, signedOrError } from "../../workspace/route-support"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
@@ -71,6 +71,10 @@ import type { FirstPartyMcpOptions } from "@claxedo/mcp"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
+import { UsageRoutes } from "@claxedo/server-core/usage/routes"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
+import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
+import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
@@ -120,6 +124,12 @@ export type HostedCoreAppOptions = {
    * base core, which mints none.
    */
   sandboxPasses?: Pick<SandboxPassRegister, "revoked">
+  /**
+   * The store cloud workspace runtimes report usage into and the signed
+   * account's usage view reads from. Absent, `/api/claxedo/usage` is not
+   * served and a runtime's usage report answers 503.
+   */
+  usageLedger?: UsageReportWriter & UsageProjectionLedger
 }
 
 /**
@@ -414,12 +424,27 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         ),
     }),
   )
+  if (options.usageLedger) {
+    app.route("/api/claxedo/usage", UsageRoutes({
+      ledger: options.usageLedger,
+      identity: async (request) => {
+        const auth = await routeAuth(request, { authentication: options.authentication, requireSigned: true })
+        if (!auth?.principal) return undefined
+        return { org_id: await requireAuthority(services).resolveOrgId(auth), user_id: auth.principal.userId }
+      },
+      // The hosted plane runs in a Worker, which has no home directory for a
+      // refreshed catalog's cache.
+      pricing: tokenTrackerPricing("bundled"),
+      telemetry: services.telemetry,
+    }))
+  }
   if (plane.runtimeSessionAuthority) {
     app.route(
       "/api/runtime-authority",
       RuntimeSessionAuthorityRoutes({
         authority: plane.runtimeSessionAuthority,
         ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
+        ...(options.usageLedger ? { usageWriter: options.usageLedger } : {}),
         ...(services.authority?.resolveWorkspaceOwner
           ? {
               ownerGrants: createOwnerGrantProof({

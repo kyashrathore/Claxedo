@@ -1,6 +1,9 @@
 import z from "zod"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { hostedControlCall } from "@/platform/account/hosted-control-call"
+import { parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
+import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { readArray, readField, readString } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 import type { UnifiedUsageResponse, UsageFilters } from "@claxedo/usage-contract"
 export type {
   UnifiedUsageResponse,
@@ -18,15 +21,11 @@ export type {
 /**
  * The wire schema for `@claxedo/usage-contract`'s `UnifiedUsageResponse`.
  *
- * `fetchUnifiedUsage` answers through `hostedControlCall`, which has two
- * producers, and neither one established this shape: `usage.get`'s decoder in
- * `HOSTED_OPERATIONS` proves object-ness, and the HTTP branch annotated
- * `await response.json()` — which is `any` — with the contract type. The whole
- * usage dashboard then indexed nested fields on that claim.
- *
- * The `z.ZodType<UnifiedUsageResponse>` annotation is what keeps this honest
- * over time: the schema lives here while the type lives in the contract
- * package, so a field added there and not here stops compiling.
+ * `await response.json()` is `any`, and the whole usage dashboard indexes
+ * nested fields of what it returns, so the answer is parsed here rather than
+ * claimed. The `z.ZodType<UnifiedUsageResponse>` annotation keeps the two in
+ * step: the schema lives here while the type lives in the contract package,
+ * so a field added there and not here stops compiling.
  */
 const UsageTotalsShape = {
   turnCount: z.number(),
@@ -138,7 +137,7 @@ const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
     ...UsageSeriesShape,
     cost: UsageCostSchema,
     locationShare: z.object({ localTokens: z.number(), cloudTokens: z.number() }),
-    status: z.enum(["available", "unavailable", "stale", "degraded"]),
+    status: z.enum(["available", "unavailable", "degraded"]),
     scope: z.enum(["local", "cross-machine"]),
     error: z.string().optional(),
   }),
@@ -151,37 +150,16 @@ const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
       status: z.enum(["available", "degraded", "unavailable", "unsupported"]),
       error: z.string().optional(),
     })),
-    unclassified: z.number(),
+    unclassifiedRequests: z.number(),
     scannedAt: z.number().optional(),
     error: z.string().optional(),
   }),
   total: z.object(UsageSeriesShape),
   totalCost: UsageCostSchema,
   filterOptions: z.object({ claxedo: UsageFilterOptionsSchema, total: UsageFilterOptionsSchema }),
-  sync: z.object({
-    attempted: z.number(),
-    delivered: z.number(),
-    conflicts: z.number(),
-    pending: z.number(),
-  }),
   breakdown: UsageBreakdownPageSchema.optional(),
   modelBreakdown: UsageBreakdownPageSchema.optional(),
   chart: UsageChartSeriesSchema.optional(),
-})
-
-/**
- * The outbox-sync counters, all optional.
- *
- * `syncUsageOutbox` used to promise four required numbers, but nothing in the
- * repo produces them under those names and its only caller
- * (`installUsageOutboxWakeups`) discards the result entirely. Requiring them
- * would turn a successful sync into a parse failure for a value no one reads.
- */
-const UsageSyncResultSchema = z.object({
-  attempted: z.number().optional(),
-  delivered: z.number().optional(),
-  conflicts: z.number().optional(),
-  pending: z.number().optional(),
 })
 
 export type UsageRequest = {
@@ -217,47 +195,72 @@ function usageQuery(input: UsageRequest): Record<string, string | number> {
   return query
 }
 
-export async function fetchUnifiedUsage(input: UsageRequest): Promise<UnifiedUsageResponse> {
-  return UnifiedUsageResponseSchema.parse(await hostedControlCall(
-    "usage.get",
-    usageQuery(input),
-    async () => {
-      const serverUrl = getClaxedoServerUrl()
-      const target = new URL("/api/claxedo/usage", normalizeUrl(serverUrl) ?? serverUrl)
-      for (const [key, value] of Object.entries(usageQuery(input))) {
-        target.searchParams.set(key, String(value))
-      }
-      const response = await authFetch(String(target))
-      if (!response.ok) throw new Error((await response.text()) || `Usage request failed: ${response.status}`)
-      return await response.json()
-    },
-  ))
-}
+type SignedAccountRun = NonNullable<Awaited<ReturnType<typeof signedAccountRun>>>
 
-export async function syncUsageOutbox(): Promise<{
-  attempted?: number
-  delivered?: number
-  conflicts?: number
-  pending?: number
-}> {
-  return UsageSyncResultSchema.parse(await hostedControlCall(
-    "usage.sync",
-    {},
-    async () => {
-      const serverUrl = getClaxedoServerUrl()
-      const target = new URL("/api/claxedo/usage/sync", normalizeUrl(serverUrl) ?? serverUrl)
-      const response = await authFetch(String(target), { method: "POST" })
-      if (!response.ok) throw new Error((await response.text()) || `Usage sync failed: ${response.status}`)
-      return await response.json()
-    },
-  ))
-}
-
-export function installUsageOutboxWakeups() {
-  const wake = () => {
-    void syncUsageOutbox().catch(() => undefined)
+/**
+ * The signed account's cloud workspace turns in the range, or why they could
+ * not be read. A failure is part of the answer rather than the request's: the
+ * machine's own usage is still worth drawing without them.
+ */
+async function cloudUsage(run: SignedAccountRun, input: UsageRequest) {
+  try {
+    const answer = decodeHostedResult("usage.cloudFacts", await run("usage.cloudFacts", {
+      since: input.since,
+      until: input.until,
+    }))
+    return { status: "available" as const, facts: readArray(answer, "facts") ?? [] }
+  } catch (error) {
+    return { status: "unavailable" as const, error: parseHostedHttpError(error)?.detail ?? errorMessage(error) }
   }
-  wake()
-  window.addEventListener("online", wake)
-  return () => window.removeEventListener("online", wake)
+}
+
+/** The refusals a server gives a usage read because of the cloud turns sent with it. */
+const CLOUD_PAYLOAD_REFUSALS = ["invalid_cloud_usage", "cloud_usage_too_large"] as const
+
+/**
+ * Why the server refused the cloud turns a read carried, or nothing when the
+ * refusal, if any, is about the read itself. A body too large for the server
+ * is refused before it is read, so any 413 is one.
+ */
+async function cloudPayloadRefusal(response: Response) {
+  if (response.status !== 400 && response.status !== 413) return undefined
+  const error = readField(await response.clone().json().catch(() => undefined), "error")
+  const code = readString(error, "code")
+  if (response.status === 400 && !CLOUD_PAYLOAD_REFUSALS.some((refusal) => refusal === code)) return undefined
+  return readString(error, "message") ?? `the server refused them (${response.status})`
+}
+
+async function readUsageResponse(response: Response) {
+  if (!response.ok) throw new Error((await response.text()) || `Usage request failed: ${response.status}`)
+  return UnifiedUsageResponseSchema.parse(await response.json())
+}
+
+/**
+ * Everything the Usage view draws lives with the server this app talks to:
+ * the machine's own plans, transcripts and turns on desktop, the account's
+ * cloud turns on the hosted web app. A signed desktop's sidecar holds no
+ * account credential, so the account's cloud turns ride along with its
+ * request. A server that refuses those turns still answers for the machine:
+ * the view reads again without them and says the cloud part is missing.
+ */
+export async function fetchUnifiedUsage(input: UsageRequest): Promise<UnifiedUsageResponse> {
+  const serverUrl = getClaxedoServerUrl()
+  const target = new URL("/api/claxedo/usage", normalizeUrl(serverUrl) ?? serverUrl)
+  for (const [key, value] of Object.entries(usageQuery(input))) {
+    target.searchParams.set(key, String(value))
+  }
+  const run = input.view === "quota" ? undefined : await signedAccountRun()
+  if (!run) return await readUsageResponse(await authFetch(String(target)))
+  const withCloud = await authFetch(String(target), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cloud: await cloudUsage(run, input) }),
+  })
+  const refusal = await cloudPayloadRefusal(withCloud)
+  if (refusal === undefined) return await readUsageResponse(withCloud)
+  const local = await readUsageResponse(await authFetch(String(target)))
+  return {
+    ...local,
+    claxedo: { ...local.claxedo, status: "degraded", error: `Cloud usage is unavailable: ${refusal}` },
+  }
 }

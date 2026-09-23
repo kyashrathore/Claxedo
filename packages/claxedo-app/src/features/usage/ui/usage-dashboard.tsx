@@ -8,7 +8,7 @@ import { UsageScopeSwitcher, type UsageView } from "./usage-scope-switcher"
 import { UsageChart } from "./usage-chart"
 import { UsageBreakdown } from "./usage-breakdown"
 import { QuotaLimitsView } from "./quota-limits-view"
-import { UsageBrandLabel, usageBrand } from "./usage-brand"
+import { UsageBrandLabel, noReportedUsageLabel, usageBrand } from "./usage-brand"
 import "./usage-dashboard.css"
 
 const empty = (): UsageSeries => ({
@@ -49,6 +49,12 @@ export function UsageDashboard(props: {
    * on Refresh only.
    */
   quotaChanges?: (notify: () => void) => () => void
+  /**
+   * Whether signing in here would add the account's cloud turns to this view:
+   * a desktop that is not signed in but can be. Anywhere else the hint would
+   * send the reader to something that cannot help.
+   */
+  offerCloudSignIn?: boolean
 }) {
   const [selected, setSelected] = createSignal<UsageView>("quota")
   const [days, setDays] = createSignal(7)
@@ -90,6 +96,12 @@ export function UsageDashboard(props: {
   const activeSeries = createMemo(() => (selected() === "total" ? total() : claxedo()))
   const activeCost = createMemo(() => (selected() === "total" ? (data()?.totalCost ?? emptyCost()) : claxedo().cost))
   const activeTokens = createMemo(() => totalTokens(activeSeries()))
+  const silentSeries = createMemo(() => {
+    const breakdown = data()?.breakdown
+    if (!breakdown || breakdown.dimension !== data()?.chart?.dimension) return undefined
+    return new Set(breakdown.rows.filter((row) => row.status === "unavailable").map((row) => row.value))
+  })
+  const unclassified = () => data()?.externalLocal.unclassifiedRequests ?? 0
   const metricRows = createMemo(() => {
     const values = activeSeries().totals
     return [
@@ -167,13 +179,16 @@ export function UsageDashboard(props: {
       <Show when={selected() !== "quota" && data()} keyed>
         {(snapshot) => (
           <div class="workspace-page-notices usage-source-notices" aria-live="polite">
-            <Show when={snapshot.claxedo.status !== "available" || snapshot.claxedo.scope === "local"}>
-              <p>
-                {snapshot.claxedo.error ??
-                  (snapshot.claxedo.scope === "local"
-                    ? "Local Claxedo usage is available. Sign in and reconnect to add cross-machine history."
-                    : "Cross-machine usage is stale; the last valid snapshot remains visible.")}
-              </p>
+            <Show
+              when={
+                snapshot.claxedo.error ??
+                (snapshot.claxedo.scope === "local" && props.offerCloudSignIn
+                  ? "Claxedo usage from this machine. Sign in to include your cloud usage."
+                  : undefined)
+              }
+              keyed
+            >
+              {(notice) => <p>{notice}</p>}
             </Show>
             <Show when={selected() === "total" && snapshot.externalLocal.status !== "available"}>
               <p>
@@ -245,19 +260,34 @@ export function UsageDashboard(props: {
                         const denominator = () => Math.max(1, activeTokens())
                         return (
                           <div class={`usage-hero-row usage-brand-row-${usageBrand(`${row.value} ${row.label}`)}`}>
-                            <div>
-                              <UsageBrandLabel value={row.value} label={row.label} />
-                              <strong>
-                                {metric() === "cost" ? `$${row.estimatedUsd.toFixed(2)}` : compact(rowTokens())}
-                              </strong>
-                            </div>
-                            <div class="usage-hero-bar">
-                              <i style={{ width: `${Math.min(100, (rowTokens() / denominator()) * 100)}%` }} />
-                            </div>
-                            <small>
-                              {Math.round((rowTokens() / denominator()) * 1000) / 10}% of{" "}
-                              {metric() === "cost" ? "reported tokens" : "tokens"}
-                            </small>
+                            <Show
+                              when={row.status === "unavailable"}
+                              fallback={
+                                <>
+                                  <div>
+                                    <UsageBrandLabel value={row.value} label={row.label} />
+                                    <strong>
+                                      {metric() === "cost" ? `$${row.estimatedUsd.toFixed(2)}` : compact(rowTokens())}
+                                    </strong>
+                                  </div>
+                                  <div class="usage-hero-bar">
+                                    <i style={{ width: `${Math.min(100, (rowTokens() / denominator()) * 100)}%` }} />
+                                  </div>
+                                  <small>
+                                    {Math.round((rowTokens() / denominator()) * 1000) / 10}% of{" "}
+                                    {metric() === "cost" ? "reported tokens" : "tokens"}
+                                  </small>
+                                </>
+                              }
+                            >
+                              <div>
+                                <UsageBrandLabel value={row.value} label={row.label} />
+                              </div>
+                              <small>
+                                {noReportedUsageLabel(row.value, row.label)} ·{" "}
+                                {row.turnCount.toLocaleString()} {row.turnCount === 1 ? "turn" : "turns"}
+                              </small>
+                            </Show>
                           </div>
                         )
                       }}
@@ -271,6 +301,7 @@ export function UsageDashboard(props: {
                     cost={activeCost()}
                     metric={metric()}
                     range={data()!.range}
+                    silentSeries={silentSeries()}
                   />
                 </div>
               </div>
@@ -363,9 +394,11 @@ export function UsageDashboard(props: {
       <Show when={selected() !== "quota"}>
         <footer class="usage-dashboard-footer">
           <span>{totalTokens(claxedo()).toLocaleString()} Claxedo tokens in range</span>
-          <Show when={(data()?.externalLocal.unclassified ?? 0) > 0}>
+          <Show when={selected() === "total" && unclassified() > 0}>
             <span class="usage-coverage-warning">
-              {data()!.externalLocal.unclassified} local events counted in Total without Claxedo ownership attribution.
+              {unclassified().toLocaleString()} {unclassified() === 1 ? "request" : "requests"} in this machine's history
+              {unclassified() === 1 ? " is" : " are"} counted in Total without knowing whether Claxedo made{" "}
+              {unclassified() === 1 ? "it" : "them"}.
             </span>
           </Show>
           <span>Missing token categories stay unknown; they are never filled with zero.</span>

@@ -8,7 +8,8 @@ import {
 import {
   codexAppServerAdapter,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
-import { projectCodexThreadNotification } from "./thread-projection"
+import { createCodexThreadProjection } from "./thread-projection"
+import { createCodexThreadRegistry } from "./thread-registry"
 import type { AgentConfigOption } from "../../index"
 import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
@@ -16,7 +17,6 @@ import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-p
 import { Log } from "../../log"
 import { harnessEffortLevels } from "../../harness-effort"
 import { createLiveModelSource } from "../../live-model-source"
-import { catalogModel, requireTurnEffort, resolveSupportedServiceTier } from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
 import { controlRequestDeadline, modelRequestDeadline } from "../shared/request-deadline"
 import {
@@ -37,13 +37,12 @@ import { providerProjectionRecord } from "../../provider-projection"
 import { CodexOperatorLogin } from "./operator-login"
 import { codexPluginLaunch, type CodexPluginLaunch } from "./plugin-launch"
 import type { SessionTitleRequest } from "../../title-generation"
-import { codexConfigOptions, fetchCodexModels } from "./model-options"
+import { codexConfigOptions, codexThreadSettings, fetchCodexModels } from "./model-options"
 import { handleCodexServerRequest } from "./server-request"
 import { CodexGoalController } from "./goal"
 import {
   CODEX_DYNAMIC_TOOLS,
   createCodexTurnStop,
-  type CodexActiveThread,
   codexAppServerModel,
   codexGoalSnapshot,
   codexIdleTimeoutMs,
@@ -98,7 +97,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   })
   private processStartup: Promise<CodexAppServerProcess> | null = null
   private processStartupAbort: AbortController | null = null
-  private processGoalUnsubscribe: (() => void) | null = null
+  private processUnsubscribe: (() => void) | null = null
   private lifecycleRevision = 0
   private disposed = false
   private processError: string | null = null
@@ -107,7 +106,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPluginLaunch: CodexPluginLaunch | undefined
-  private activeThreads = new Map<string, CodexActiveThread>()
+  private readonly threads = createCodexThreadRegistry({ meter: (usage) => this.host.meterUsage(usage) })
   private readonly goalController: CodexGoalController
   readonly goals: AgentGoalResource
   private readonly codexHome: string
@@ -130,12 +129,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       liveProcess: () => this.process,
       lease: () => this.idle.lease(),
       threadConfig: (sessionId) => this.threadConfig(sessionId),
-      threadSettings: (sessionId, directory) => {
+      threadSettings: async (sessionId, directory) => {
         const config = this.host.getSessionConfig(sessionId)
-        return this.threadSettings(directory, codexAppServerModel(config?.model?.modelID), config?.variant ?? undefined)
+        const requested = { model: codexAppServerModel(config?.model?.modelID), effort: config?.variant ?? undefined }
+        return codexThreadSettings(await this.modelSource.models(directory), requested)
       },
-      activeThreads: this.activeThreads,
-      projectThreadNotification: projectCodexThreadNotification,
+      threads: this.threads,
+      threadProjection: (input, claim) => createCodexThreadProjection(input, claim, this.threads),
     })
     this.goals = this.goalController.resource
   }
@@ -171,7 +171,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
 
   private async applyPluginLaunch(launch: CodexPluginLaunch | undefined) {
     if (JSON.stringify(launch) === JSON.stringify(this.currentPluginLaunch)) return
-    if (this.activeThreads.size > 0) {
+    if (this.threads.busy()) {
       throw new Error("Codex Agent Plugins cannot change while a Codex turn is active")
     }
     this.currentPluginLaunch = launch
@@ -200,23 +200,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     return this.permissionSelection.set(sessionId, modeId)
   }
 
-  /**
-   * The model and effort a thread runs next. Codex keeps a thread's last
-   * `model` and `effort` for whatever omits them, so both are always named:
-   * "default" becomes the catalog's default row and an unrequested effort that
-   * model's own default. The catalog is loaded, not peeked — a cold one (a
-   * restarted server, a caller that never opened the picker) would otherwise
-   * leave both out.
-   */
-  private async threadSettings(directory: string, requestedModel: string | undefined, requestedEffort: string | undefined) {
-    const catalog = await this.modelSource.models(directory)
-    const row = catalogModel(catalog, requestedModel)
-    const model = row?.id ?? requestedModel
-    const effort = requireTurnEffort({ harness: "Codex", models: catalog, modelId: model, requested: requestedEffort })
-      ?? (row?.defaultEffort && row.supportedEffortLevels?.includes(row.defaultEffort) ? row.defaultEffort : undefined)
-    return { model, effort }
-  }
-
   async createAgentSession(input: { directory: string; model: string; system?: string; sessionId: string }) {
     const proc = await this.ensureProcess(input.directory)
     const model = codexAppServerModel(input.model)
@@ -239,17 +222,21 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const thread = asRecord(result.thread)
     const threadId = text(thread?.id)
     if (!threadId) throw new Error("Codex app-server did not return a thread id")
+    this.threads.recordModel(threadId, result.model)
     return { id: threadId }
   }
 
-  generateTitle = ({ sessionId, request }: { sessionId: string; request: SessionTitleRequest }) => generateCodexTitle({ request, process: () => this.ensureProcess(request.directory), lease: () => this.idle.lease(), model: codexAppServerModel(request.model?.modelID), ...(this.broker.selected ? { modelProvider: CODEX_BROKER_PROVIDER } : {}), ...this.threadConfig(sessionId) })
+  generateTitle = ({ sessionId, agentSessionId, request }: { sessionId: string; agentSessionId: string; request: SessionTitleRequest }) => generateCodexTitle({
+    request, process: () => this.ensureProcess(request.directory), lease: () => this.idle.lease(), model: codexAppServerModel(request.model?.modelID), ...(this.broker.selected ? { modelProvider: CODEX_BROKER_PROVIDER } : {}), ...this.threadConfig(sessionId),
+    attributeThread: (threadId, reportedModel) => this.threads.attribute(threadId, agentSessionId, reportedModel),
+  })
   setAgentSessionTitle = ({ agentSessionId, title }: { agentSessionId: string; title: string }) => setCodexThreadName(this.process?.alive ? this.process : null, agentSessionId, title)
 
   createRuntime(threadId: string): AgentEventRuntime {
     return createAgentEventRuntime({
       harness: this.type,
       threadId,
-      adapter: codexAppServerAdapter(),
+      adapter: codexAppServerAdapter({ threadModel: this.threads.threadModel }),
     })
   }
 
@@ -299,6 +286,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       process: proc,
       threadId,
       record: stops,
+      subagentThreads: () => claim.subagentThreads(),
       turnId: async () => {
         if (startPending) {
           const result = await startPending
@@ -333,15 +321,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const onStderr = (message: string) => {
       if (message.includes("401 Unauthorized")) failTurn(new Error(codexAuthFailure(message, this.broker.selected)))
     }
-    const { model, effort } = await this.threadSettings(input.directory, codexTurnModel(input.input, input.model), input.input.variant)
-    // `turn/start.serviceTier` persists onto later turns, and a `service_tier`
-    // in the user's Codex config applies when none is named, so the standard
-    // tier is an explicit `null` rather than an omitted field.
-    const serviceTier = resolveSupportedServiceTier(
-      await this.modelSource.models(input.directory),
-      model,
-      input.input.serviceTier,
-    ) ?? null
+    const { model, effort, serviceTier } = codexThreadSettings(await this.modelSource.models(input.directory), {
+      model: codexTurnModel(input.input, input.model),
+      effort: input.input.variant,
+      serviceTier: input.input.serviceTier,
+    })
     const project = (method: string, payload: JsonRecord, frame: unknown, route?: { kind: "parent" } | { kind: "child"; correlationKey: string }) => input.ingest({
       source: CODEX_SOURCE,
       method,
@@ -351,7 +335,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       method,
       frame,
     }, route)
-    this.activeThreads.set(threadId, {
+    const claim = this.threads.beginTurn(threadId, "prompt")
+    claim.attach({
       sessionId: input.sessionId,
       agentSessionId: threadId,
       directory: input.directory,
@@ -361,7 +346,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       process: proc,
       project,
       observeSubagent: input.observeSubagent,
-    })
+      adoptSubagent: (childThreadId) => this.threads.adopt(childThreadId, threadId),
+    }, input.input.assistantMessageId)
+    const projection = createCodexThreadProjection(input, claim, this.threads)
     let messageQueue = Promise.resolve()
     const unsubscribe = proc.onMessage((message) => {
       const method = text(message.method)
@@ -369,8 +356,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       if (!method) return
       cancellation.observe(method, params)
       if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
+      if (!projection.owns(params)) return
       messageQueue = messageQueue.then(async () => {
-        const { parentOwned } = await projectCodexThreadNotification(input, threadId, method, params, message)
+        const { parentOwned } = await projection.project(method, params, message)
         if (method === "turn/started" && parentOwned) {
           turnId = text(asRecord(params.turn)?.id) ?? turnId
           const active = this.host.lifecycle().get(input.sessionId)
@@ -404,11 +392,14 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
 
     try {
       if (input.abort.signal.aborted) throw new Error("Codex turn aborted")
+      // A `turn/start` model override holds for this turn and every later one on the thread.
+      if (model) this.threads.recordModel(threadId, model)
       startPending = startTurnWithThreadRecovery({
         startTurn,
         resumeThread: async () => {
           log.info("codex thread missing from app-server process; resuming from disk", { threadId })
-          await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.threadConfig(input.sessionId) }, controlRequestDeadline())
+          const resumed = asRecord(await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.threadConfig(input.sessionId) }, controlRequestDeadline()))
+          this.threads.recordModel(threadId, resumed?.model)
         },
       })
       const result = await Promise.race([startPending, turnStartFailed])
@@ -427,7 +418,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         input.abort.signal.removeEventListener("abort", onAbort)
         unsubscribeStderr()
         unsubscribe()
-        this.activeThreads.delete(threadId)
+        claim.end()
       }
     }
   }
@@ -449,14 +440,15 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
    * lost session rather than as reclaimed memory.
    */
   private reapIdleProcess() {
-    if (this.activeThreads.size > 0) {
+    if (this.threads.busy()) {
       this.idle.touch()
       return
     }
     if (!this.process) return
     log.info("codex app-server idle timeout, disposing", { idleMs: this.idleMs })
-    this.processGoalUnsubscribe?.()
-    this.processGoalUnsubscribe = null
+    this.processUnsubscribe?.()
+    this.processUnsubscribe = null
+    this.threads.clear()
     const retiring = this.process
     this.process = null
     // Reclaiming memory must not silently leave a Codex process behind: an
@@ -472,10 +464,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.disposed = true
     this.idle.cancel()
     this.lifecycleRevision++
-    this.activeThreads.clear()
+    this.threads.clear()
     this.goalController.dispose()
-    this.processGoalUnsubscribe?.()
-    this.processGoalUnsubscribe = null
+    this.processUnsubscribe?.()
+    this.processUnsubscribe = null
     this.processStartupAbort?.abort()
     const running = this.process
     const startup = this.processStartup
@@ -512,7 +504,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.host.pendingPermissions.clear()
     for (const pending of this.host.pendingQuestions.values()) pending.reject()
     this.host.pendingQuestions.clear()
-    this.activeThreads.clear()
+    this.threads.clear()
     log.warn("codex app-server process died; cleared interactive state", { err })
   }
 
@@ -584,8 +576,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       },
       onClose: (err) => {
         if (this.process === started) {
-          this.processGoalUnsubscribe?.()
-          this.processGoalUnsubscribe = null
+          this.processUnsubscribe?.()
+          this.processUnsubscribe = null
           this.process = null
         }
         this.failInteractiveState(err)
@@ -596,8 +588,14 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       throw new Error("Codex app-server driver was disposed during startup")
     }
     this.process = started
-    this.processGoalUnsubscribe?.()
-    this.processGoalUnsubscribe = started.onMessage((message) => this.goalController.handleProcessMessage(message))
+    this.processUnsubscribe?.()
+    this.threads.clear()
+    // Registered before any turn subscribes, so every turn reads a frame's
+    // owner after the registry has filed the threads that frame starts.
+    this.processUnsubscribe = started.onMessage((message) => {
+      this.threads.observe(message)
+      this.goalController.handleProcessMessage(message)
+    })
     this.processError = null
     if (this.disposed || lifecycleRevision !== this.lifecycleRevision) {
       await started.dispose()
@@ -618,7 +616,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private handleServerRequest(message: JsonRecord) {
     return handleCodexServerRequest({
       message,
-      activeThreads: this.activeThreads,
+      activeThreads: this.threads.activeThreads,
       host: this.host,
       permissionModeId: (sessionId) => this.permissionSelection.currentId(sessionId),
       refreshTokens: () => this.operatorLogin.refresh(),

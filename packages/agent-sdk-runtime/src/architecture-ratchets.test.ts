@@ -26,7 +26,7 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       "harnesses/acp/index.ts": 831,
       // The driver reads the brokered provider's projection through
       // `harness-projection.ts` rather than a provider-alias reader of its own.
-      "harnesses/codex/driver.ts": 633,
+      "harnesses/codex/driver.ts": 627,
       "harnesses/shared/sdk-runtime-adapter.ts": 885,
       // A composition root: `harnesses/pi/agent-dir.ts` owns the profile
       // directory and the options that resolve it, so this file only composes

@@ -27,6 +27,7 @@ import type { AgentRuntimeStoreCore } from "./runtime-store"
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { SessionTurnLifecycle } from "./turn-lifecycle"
 import type { TurnStopRecord } from "./cancellation-facts"
+import type { OutsideTurnUsage } from "./outside-turn-usage"
 import type { RequestDeadline } from "../../launch"
 import type { ProviderProjection } from "../../provider-projection"
 import type { SessionTitleRequest } from "../../title-generation"
@@ -122,6 +123,8 @@ export type SdkRuntimeDriverHost = {
     input: { sessionId: string; directory: string; userMessage?: { id: string; text: string } },
     execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
   ): Promise<boolean>
+  /** Records usage no running turn projects on the session turn it is billed to. */
+  meterUsage(input: OutsideTurnUsage): void
 }
 
 export type SdkRuntimeTurnInput = {

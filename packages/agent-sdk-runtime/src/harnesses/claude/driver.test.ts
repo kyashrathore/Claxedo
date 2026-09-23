@@ -879,6 +879,72 @@ describe("Claude rate limits reach the runtime", () => {
   })
 })
 
+describe("Claude turn usage", () => {
+  const SESSION = "claude-session-usage"
+  const FIRST = { input_tokens: 3, cache_read_input_tokens: 1000, cache_creation_input_tokens: 200, cache_creation: { ephemeral_1h_input_tokens: 200, ephemeral_5m_input_tokens: 0 }, output_tokens: 2 }
+  const SECOND = { input_tokens: 5, cache_read_input_tokens: 1200, cache_creation_input_tokens: 50, cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 50 }, output_tokens: 1 }
+  const BOTH = { input: 8, output: 900 + 4000, reasoning: null, cache: { read: 2200, write: 250, write1h: 200 } }
+
+  const stream = (event: Record<string, unknown>) =>
+    ({ type: "stream_event", uuid: `stream-${String(event.type)}`, session_id: SESSION, parent_tool_use_id: null, event })
+  function* request(id: string, opening: typeof FIRST, finalOutput: number) {
+    yield stream({ type: "message_start", message: { id, type: "message", role: "assistant", content: [], usage: opening } })
+    yield { type: "assistant", uuid: `assistant-${id}`, session_id: SESSION, parent_tool_use_id: null, message: { id, content: [{ type: "text", text: "Done" }], usage: opening } }
+    yield stream({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { ...opening, output_tokens: finalOutput } })
+    yield stream({ type: "message_stop" })
+  }
+  const result = (usage: typeof FIRST) =>
+    ({ type: "result", subtype: "success", uuid: `result-${usage.output_tokens}`, session_id: SESSION, is_error: false, usage, modelUsage: {} })
+
+  async function meteredParentTokens(frames: () => AsyncGenerator) {
+    const store = createMemoryRuntimeStore()
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      driver: (host) => createClaudeSdkDriver(host, {
+        executable: () => "/fake/claude",
+        query: () => Object.assign(frames(), { close() {}, supportedModels: async () => [] }) as unknown as Query,
+      }),
+    })
+    const session = await adapter.createSession("/repo", undefined, "session-usage")
+    const binding = {
+      workspaceId: "workspace",
+      directory: "/repo",
+      sessionId: session.id,
+      upstreamSessionId: store.getAgentSessionId(session.id)!,
+      connectionId: "native:claude",
+    } as AgentExecutionBinding
+    const observed: unknown[] = []
+    for await (const event of adapter.executeTurn(binding, {
+      parts: [{ type: "text", text: "Start the work" }],
+      agent: "build",
+      assistantMessageId: "assistant-usage",
+      model: { providerID: "claude", modelID: "auto" },
+    })) {
+      if (event.type === "session.usage") observed.push(event.properties.observation?.tokens)
+    }
+    await adapter.dispose()
+    return observed.at(-1)
+  }
+
+  test("a steered query meters both of its CLI turns, though only its last result is ingested", async () => {
+    expect(await meteredParentTokens(async function* () {
+      yield* request("msg-1", FIRST, 900)
+      yield result({ ...FIRST, output_tokens: 900 })
+      yield { type: "user", isReplay: true, uuid: "steer-1", session_id: SESSION, parent_tool_use_id: null, message: { role: "user", content: "also update the readme" } }
+      yield* request("msg-2", SECOND, 4000)
+      yield result({ ...SECOND, output_tokens: 4000 })
+    })).toEqual(BOTH)
+  })
+
+  test("a query that dies before its result keeps each request's final output", async () => {
+    expect(await meteredParentTokens(async function* () {
+      yield* request("msg-1", FIRST, 900)
+      yield* request("msg-2", SECOND, 4000)
+      throw new Error("Claude Code process exited with code 1")
+    })).toEqual(BOTH)
+  })
+})
+
 describe("Claude turn effort is never dropped silently", () => {
   const models = [
     { value: "default", displayName: "Default", description: "", resolvedModel: "claude-opus-5-5", supportsEffort: true, supportedEffortLevels: ["low", "high", "max"] },

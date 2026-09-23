@@ -51,6 +51,7 @@ function fixture() {
     getSessionConfig: () => null,
     publishGoal() {},
     async runProviderTurn() { return true },
+    meterUsage() {},
   }, {
     loadAgent: async () => ({
       Agent: {

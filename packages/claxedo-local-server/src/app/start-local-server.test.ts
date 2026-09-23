@@ -236,7 +236,7 @@ describe("startLocalServer", () => {
   test("ships the unified usage endpoint in the desktop-local composition", async () => {
     const local = await boot()
     expect(local.app.routes.some((route) => route.method === "GET" && route.path === "/api/claxedo/usage")).toBe(true)
-    expect(local.app.routes.some((route) => route.method === "POST" && route.path === "/api/claxedo/usage/sync")).toBe(true)
+    expect(local.app.routes.some((route) => route.path.startsWith("/api/claxedo/usage/sync"))).toBe(false)
   }, 30_000)
 
   test("binds loopback only", async () => {

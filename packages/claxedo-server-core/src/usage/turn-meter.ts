@@ -10,6 +10,7 @@ import {
   type UsageRevisionReader,
   type UsageRevisionWriter,
 } from "./contracts"
+import type { TurnMeterState, TurnMeterStateStore } from "./turn-meter-state"
 
 type TurnContext = {
   sessionRef: string
@@ -36,13 +37,18 @@ type State = {
   hasUsage: boolean
   providerId?: string
   modelId?: string
+  /** The model a provider observation named as serving the turn, which outranks the configured `modelId`. */
+  servedModelId?: string
   nativeSessionId?: string
   observedAt?: number
   completedAt?: number
   settlement?: TurnUsageRevision["settlement"]
   status?: TurnUsageStatus
   quality: TurnUsageRevision["quality"]
-  lastObservationKey?: string
+  /** Each scope's running usage; `tokens` is their sum. */
+  streams: Map<string, RuntimeTokenUsage>
+  /** The last observation each scope applied, so a re-emitted one is not applied twice. */
+  lastObservationKeys: Map<string, string>
   context?: TurnContext
 }
 
@@ -62,8 +68,9 @@ function add(previous: number | null, delta: number | null) {
   return (previous ?? 0) + delta
 }
 
-function applyObservation(previous: RuntimeTokenUsage, observation: RuntimeUsageObservation) {
+function applyObservation(previous: RuntimeTokenUsage, observation: RuntimeUsageObservation): RuntimeTokenUsage {
   if (observation.kind === "cumulative") return observation.tokens
+  const write1h = add(previous.cache.write1h ?? null, observation.tokens.cache.write1h ?? null)
   return {
     input: add(previous.input, observation.tokens.input),
     output: add(previous.output, observation.tokens.output),
@@ -71,8 +78,27 @@ function applyObservation(previous: RuntimeTokenUsage, observation: RuntimeUsage
     cache: {
       read: add(previous.cache.read, observation.tokens.cache.read),
       write: add(previous.cache.write, observation.tokens.cache.write),
+      ...(write1h === null ? {} : { write1h }),
     },
   }
+}
+
+/**
+ * A scope's one-hour writes are a part of its cache writes. A share reported
+ * above the total, or with no total at all, would make every revision of the
+ * turn fail `assertTurnUsageRevision`.
+ */
+function oneHourWithinWrites(tokens: RuntimeTokenUsage): RuntimeTokenUsage {
+  const { write1h, ...cache } = tokens.cache
+  if (write1h === undefined || write1h === null) return tokens
+  if (cache.write === null) return { ...tokens, cache }
+  return write1h > cache.write ? { ...tokens, cache: { ...cache, write1h: cache.write } } : tokens
+}
+
+function sumStreams(streams: Map<string, RuntimeTokenUsage>): RuntimeTokenUsage {
+  let total = unknownTokens()
+  for (const tokens of streams.values()) total = applyObservation(total, { kind: "delta", tokens })
+  return total
 }
 
 function numberOrNull(input: unknown) {
@@ -101,10 +127,13 @@ function observationKey(observation: RuntimeUsageObservation) {
   // and Cursor cumulative ids identify the containing turn/run, so their
   // evolving token snapshots must include the counters in the signature.
   if (observation.kind === "delta" && observation.providerObservationId) {
-    return `provider:${observation.providerObservationId}`
+    return observation.scope
+      ? `provider:${observation.scope}:${observation.providerObservationId}`
+      : `provider:${observation.providerObservationId}`
   }
   return JSON.stringify({
     kind: observation.kind,
+    ...(observation.scope ? { scope: observation.scope } : {}),
     sequence: observation.sequence ?? null,
     providerObservationId: observation.providerObservationId ?? null,
     nativeSessionId: observation.nativeSessionId ?? null,
@@ -126,7 +155,9 @@ export type TurnMeter = {
 
 export function createTurnMeter(input: {
   writer: UsageRevisionWriter
-  reader?: UsageRevisionReader
+  reader?: Pick<UsageRevisionReader, "current">
+  /** Where each turn's per-scope streams outlive the process. */
+  state?: TurnMeterStateStore
   currentFilter?: (fact: TurnUsageRevision) => boolean
   reconcileProvisionalOnStart?: boolean
   resolveContext(value: { sessionId: string; messageId: string }): Promise<TurnContext>
@@ -140,25 +171,39 @@ export function createTurnMeter(input: {
   let queue = Promise.resolve()
   let initialized = false
 
-  function hydrate(fact: TurnUsageRevision) {
+  async function hydrate(fact: TurnUsageRevision) {
+    const saved = await input.state?.load({ sessionId: fact.sessionId, messageId: fact.messageId })
+    const streams = saved
+      ? new Map(Object.entries(saved.streams))
+      : new Map(fact.quality.knownCategories.length > 0 ? [["", fact.tokens]] : [])
+    // Saved streams can hold an observation whose revision never landed, so
+    // the turn's usage is their sum, and it is the provider's.
+    const restored = saved !== undefined && streams.size > 0
     const hydrated: State = {
       sessionId: fact.sessionId,
       messageId: fact.messageId,
       revision: fact.revision,
-      tokens: fact.tokens,
-      hasUsage: fact.quality.knownCategories.length > 0,
+      tokens: restored ? sumStreams(streams) : fact.tokens,
+      hasUsage: fact.quality.knownCategories.length > 0 || restored,
       providerId: fact.providerId,
       modelId: fact.modelId,
       ...(fact.nativeSessionId ? { nativeSessionId: fact.nativeSessionId } : {}),
       observedAt: fact.observedAt,
       settlement: fact.settlement,
       status: fact.status,
-      quality: fact.quality,
-      ...(fact.quality.providerObservationKey
-        ? { lastObservationKey: fact.quality.providerObservationKey }
-        : fact.quality.observationKind === "delta" && fact.quality.providerObservationId
-          ? { lastObservationKey: `provider:${fact.quality.providerObservationId}` }
-          : {}),
+      quality: restored ? { ...fact.quality, source: "provider" } : fact.quality,
+      // With no saved state the fact's sum is all there is, filed as the
+      // unscoped stream: a scoped observation replayed onto it is counted twice.
+      streams,
+      lastObservationKeys: saved
+        ? new Map(Object.entries(saved.lastObservationKeys))
+        : new Map(
+            fact.quality.providerObservationKey
+              ? [["", fact.quality.providerObservationKey]]
+              : fact.quality.observationKind === "delta" && fact.quality.providerObservationId
+                ? [["", `provider:${fact.quality.providerObservationId}`]]
+                : [],
+          ),
       ...(fact.completedAt === undefined ? {} : { completedAt: fact.completedAt }),
       context: {
         sessionRef: fact.sessionRef,
@@ -187,11 +232,10 @@ export function createTurnMeter(input: {
       : await input.reader.current()
     for (const fact of current) {
       if (input.currentFilter && !input.currentFilter(fact)) continue
-      hydrate(fact)
+      const hydrated = await hydrate(fact)
       if (fact.settlement === "provisional") {
         activeBySession.set(fact.sessionId, fact.messageId)
-        const current = states.get(key(fact.sessionId, fact.messageId))!
-        recover.push(current)
+        recover.push(hydrated)
       }
     }
     if (input.reconcileProvisionalOnStart) {
@@ -217,7 +261,7 @@ export function createTurnMeter(input: {
           messageId,
         })
       ).find((fact) => !input.currentFilter || input.currentFilter(fact))
-      if (persisted) return hydrate(persisted)
+      if (persisted) return await hydrate(persisted)
     }
     const created: State = {
       sessionId,
@@ -226,9 +270,18 @@ export function createTurnMeter(input: {
       tokens: unknownTokens(),
       hasUsage: false,
       quality: { source: "lifecycle", knownCategories: [] },
+      streams: new Map(),
+      lastObservationKeys: new Map(),
     }
     states.set(id, created)
     return created
+  }
+
+  function savedState(current: State): TurnMeterState {
+    return {
+      streams: Object.fromEntries(current.streams),
+      lastObservationKeys: Object.fromEntries(current.lastObservationKeys),
+    }
   }
 
   async function persist(
@@ -236,6 +289,14 @@ export function createTurnMeter(input: {
     terminal?: { settlement: TurnUsageRevision["settlement"]; status: TurnUsageStatus; completedAt?: number },
   ) {
     let fact: TurnUsageRevision | undefined
+    // Saved ahead of the revision: a restart between the two then restores an
+    // observation the fact lacks, which the next revision carries, instead of
+    // losing one the fact already counted.
+    if (input.state && current.streams.size > 0) {
+      await input.state
+        .save({ sessionId: current.sessionId, messageId: current.messageId, state: savedState(current) })
+        .catch((error: unknown) => input.onDegraded?.(error))
+    }
     try {
       const context =
         current.context ?? (await input.resolveContext({ sessionId: current.sessionId, messageId: current.messageId }))
@@ -253,9 +314,9 @@ export function createTurnMeter(input: {
         location: context.location,
         harness: context.harness,
         providerId: current.providerId ?? context.providerId ?? "unknown",
-        modelId: current.modelId ?? context.modelId ?? "unknown",
-        ...((current.nativeSessionId ?? context.nativeSessionId)
-          ? { nativeSessionId: current.nativeSessionId ?? context.nativeSessionId }
+        modelId: current.servedModelId ?? current.modelId ?? context.modelId ?? "unknown",
+        ...((context.nativeSessionId ?? current.nativeSessionId)
+          ? { nativeSessionId: context.nativeSessionId ?? current.nativeSessionId }
           : {}),
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
         hostId: context.hostId,
@@ -284,7 +345,7 @@ export function createTurnMeter(input: {
         current.status = fact.status
         current.completedAt = fact.completedAt
         if (fact.settlement !== "provisional") {
-          activeBySession.delete(current.sessionId)
+          if (activeBySession.get(current.sessionId) === current.messageId) activeBySession.delete(current.sessionId)
           await input.onTerminal?.(fact)
         }
       } else {
@@ -304,12 +365,23 @@ export function createTurnMeter(input: {
       const messageId = event.payload.properties.messageID
       if (!observation || !messageId) return
       const current = await state(sessionId, messageId)
+      const scope = observation.scope ?? ""
       const signature = observationKey(observation)
-      if (current.lastObservationKey === signature) return
-      current.tokens = applyObservation(current.tokens, observation)
+      if (current.lastObservationKeys.get(scope) === signature) return
+      // Provider observations are canonical: tokens read off an assistant
+      // message before the first of them are a fallback, not a stream.
+      if (current.quality.source !== "provider") current.streams.clear()
+      current.streams.set(
+        scope,
+        oneHourWithinWrites(applyObservation(current.streams.get(scope) ?? unknownTokens(), observation)),
+      )
+      current.tokens = sumStreams(current.streams)
       current.hasUsage = true
       current.observedAt = observation.observedAt ?? now()
-      current.nativeSessionId = observation.nativeSessionId ?? current.nativeSessionId
+      // The turn's own stream reports first; a child thread's or subagent's
+      // later observation must not rename the thread the fact belongs to.
+      current.nativeSessionId ??= observation.nativeSessionId
+      current.servedModelId ??= observation.model
       current.quality = {
         source: "provider",
         observationKind: observation.kind,
@@ -317,9 +389,9 @@ export function createTurnMeter(input: {
         providerObservationKey: signature,
         knownCategories: knownTokenCategories(current.tokens),
       }
-      current.lastObservationKey = signature
-      activeBySession.set(sessionId, messageId)
+      current.lastObservationKeys.set(scope, signature)
       const terminalSettlement = current.settlement
+      if (!terminalSettlement || terminalSettlement === "provisional") activeBySession.set(sessionId, messageId)
       await persist(
         current,
         terminalSettlement && terminalSettlement !== "provisional"

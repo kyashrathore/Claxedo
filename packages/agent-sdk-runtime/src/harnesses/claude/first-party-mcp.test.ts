@@ -41,6 +41,7 @@ function fixture() {
     getSessionConfig: () => null,
     publishGoal() {},
     async runProviderTurn() { return true },
+    meterUsage() {},
   }, { query, executable: () => "/fake/claude" })
   return { driver, calls }
 }

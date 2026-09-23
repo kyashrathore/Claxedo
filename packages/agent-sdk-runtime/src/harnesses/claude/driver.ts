@@ -5,13 +5,16 @@ import {
 } from "@claxedo/agent-event-runtime"
 import {
   CLAUDE_QUESTION_DISMISSED,
+  CLAUDE_SUBAGENT_USAGE_METHOD,
   claudeChildCorrelationKey,
   claudeSdkAdapter,
   claudeSubagentObservations,
   createClaudeTaskLedger,
+  foldNestedSubagentFrame,
   type ClaudeTaskLedger,
 } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { randomUUID } from "crypto"
+import { createClaudeSubagentUsage } from "./subagent-usage"
 import { claudeCommandGrant, hasClaudeCommandGrant, withClaudeCommandGrant } from "./permission-state"
 import {
   query,
@@ -442,11 +445,21 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       onGoal?.(goal)
       this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal })
     }
+    const subagentUsage = createClaudeSubagentUsage(Date.now(), (correlationKey, usage) => input.ingest({
+      source: "claude.sdk",
+      method: CLAUDE_SUBAGENT_USAGE_METHOD,
+      payload: usage,
+    }, {
+      dir: "in",
+      method: "claude.sessionStore",
+      frame: usage,
+    }, correlationKey ? { kind: "child", correlationKey } : { kind: "parent" }))
     /**
      * A WRITE-ONLY observer, not a storage adapter: `append` is the only
-     * channel on which the CLI reports Goal progress and its own session
-     * title (`ai-title` from its generator, `custom-title` from `/rename`);
-     * neither is on the SDK message stream. It deliberately keeps nothing.
+     * channel on which the CLI reports Goal progress, its own session title
+     * (`ai-title` from its generator, `custom-title` from `/rename`) and a
+     * subagent request's final usage; none of them is on the SDK message
+     * stream. It keeps nothing beyond the usage still waiting for its child.
      *
      * Storing (or importing) a transcript here would be worse than useless.
      * The subprocess keeps writing its own complete local JSONL — this is a
@@ -455,8 +468,12 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
      * CLAUDE_CONFIG_DIR and resumes the CLI from INSTEAD of that local
      * transcript. Answering with nothing keeps the CLI on its own history.
      */
+    // A subagent's final usage mirrored after an abort was still spent; only
+    // the query settling ends what this turn can meter.
+    let querySettled = false
     const sessionStore: SessionStore = {
-      append: async (_key, entries) => {
+      append: async (key, entries) => {
+        if (!querySettled) subagentUsage.observeEntries(key, entries)
         if (input.abort.signal.aborted) return
         for (const entry of entries) {
           const row = asRecord(entry)
@@ -674,8 +691,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           result = message
           continue
         }
-        await ingestClaudeSdkMessage(input, message, tasks)
+        subagentUsage.observeFrame(await ingestClaudeSdkMessage(input, message, tasks))
       }
+      // Ahead of the result, whose `session.idle` ends the turn's event stream.
+      subagentUsage.meterUnjoined()
       if (result) await ingestClaudeSdkMessage(input, result, tasks)
     } catch (cause) {
       // This query carried the Goal: if it died, no iteration is left to report
@@ -690,6 +709,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       )
       if (settled) applyGoal(settled)
       throw cause
+    } finally {
+      subagentUsage.meterUnjoined()
+      querySettled = true
     }
   }
 
@@ -773,6 +795,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 }
 
+/** Returns the frame as it was ingested: a nested subagent's frame names its first-level subagent. */
 export async function ingestClaudeSdkMessage(
   input: Pick<SdkRuntimeTurnInput, "ingest" | "observeSubagent" | "rebindAgentSession">,
   message: SDKMessage,
@@ -780,7 +803,9 @@ export async function ingestClaudeSdkMessage(
 ) {
   const sdkSessionId = text(asRecord(message)?.session_id)
   if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
-  await Promise.all(claudeSubagentObservations(message, tasks).map((observation) => input.observeSubagent({
+  const folded = foldNestedSubagentFrame(message, tasks)
+  const correlationKey = claudeChildCorrelationKey(folded)
+  await Promise.all(claudeSubagentObservations(folded, tasks).map((observation) => input.observeSubagent({
     observation,
     correlationKeys: [observation.stableCorrelationId, observation.toolCallId]
       .filter((key): key is string => !!key),
@@ -793,14 +818,13 @@ export async function ingestClaudeSdkMessage(
   input.ingest({
     source: "claude.sdk",
     method: `claude/${message.type}`,
-    payload: message,
+    payload: folded,
   }, {
     dir: "in",
     method: `claude.${message.type}`,
     frame: message,
-  }, claudeChildCorrelationKey(message)
-    ? { kind: "child", correlationKey: claudeChildCorrelationKey(message) }
-    : { kind: "parent" })
+  }, correlationKey ? { kind: "child", correlationKey } : { kind: "parent" })
+  return folded
 }
 
 export function claudeSpawnEnv(input: Record<string, string | undefined>) {

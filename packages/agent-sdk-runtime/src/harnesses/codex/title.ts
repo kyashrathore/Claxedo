@@ -21,6 +21,12 @@ export type CodexTitleInput = {
   model?: string
   modelProvider?: string
   config: JsonRecord
+  /**
+   * Bills the title thread's usage to the session that asked for the title,
+   * from the model the app-server reports starting the thread on; the
+   * returned release ends that once the thread is archived.
+   */
+  attributeThread(threadId: string, reportedModel: unknown): () => void
 }
 
 /**
@@ -46,10 +52,12 @@ export async function generateCodexTitle(input: CodexTitleInput): Promise<string
     }, controlRequestDeadline()))
     const threadId = text(asRecord(started?.thread)?.id)
     if (!threadId) return null
+    const release = input.attributeThread(threadId, started?.model)
     try {
       return await titleTurn(proc, threadId, input)
     } finally {
       await proc.request("thread/archive", { threadId }, controlRequestDeadline()).catch(() => {})
+      release()
     }
   } catch (error) {
     log.warn("Codex title turn failed", { error: error instanceof Error ? error.message : String(error) })

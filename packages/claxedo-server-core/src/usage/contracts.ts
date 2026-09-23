@@ -1,5 +1,5 @@
 import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
-import { isJsonRecord, isOneOf } from "../platform/runtime/lib/json"
+import { isJsonRecord, isNonEmptyString, isOneOf } from "../platform/runtime/lib/json"
 
 // The runtime lists are the single source for these unions: the SQLite schema
 // declares its columns from them, and boundary parsers narrow against them.
@@ -83,6 +83,61 @@ export type TurnUsageRevision = {
   quality: TurnUsageQuality
 }
 
+function canonicalTokens(tokens: TurnUsageRevision["tokens"]): TurnUsageRevision["tokens"] {
+  const write1h = tokens.cache.write1h
+  return {
+    input: tokens.input,
+    output: tokens.output,
+    reasoning: tokens.reasoning,
+    // A one-hour split that is null has no column value a stored row can give back.
+    cache: {
+      read: tokens.cache.read,
+      write: tokens.cache.write,
+      ...(write1h === null || write1h === undefined ? {} : { write1h }),
+    },
+  }
+}
+
+function canonicalQuality(quality: TurnUsageQuality): TurnUsageQuality {
+  return {
+    source: quality.source,
+    ...(quality.observationKind === undefined ? {} : { observationKind: quality.observationKind }),
+    ...(quality.providerObservationId === undefined ? {} : { providerObservationId: quality.providerObservationId }),
+    ...(quality.providerObservationKey === undefined ? {} : { providerObservationKey: quality.providerObservationKey }),
+    knownCategories: TURN_USAGE_TOKEN_CATEGORIES.filter((category) => quality.knownCategories.includes(category)),
+  }
+}
+
+/**
+ * The payload identity every usage store compares a replayed revision by.
+ * Every key, nested ones included, is written in one order here whatever
+ * order the caller built the fact in, so two stores hashing the same fact
+ * agree on `duplicate` versus `conflict`.
+ */
+export async function usageRevisionHash(fact: TurnUsageRevision): Promise<string> {
+  const canonical = JSON.stringify({
+    hostId: fact.hostId,
+    sessionRef: fact.sessionRef,
+    sessionId: fact.sessionId,
+    messageId: fact.messageId,
+    revision: fact.revision,
+    observedAt: fact.observedAt,
+    completedAt: fact.completedAt ?? null,
+    settlement: fact.settlement,
+    status: fact.status,
+    location: fact.location,
+    harness: fact.harness,
+    providerId: fact.providerId,
+    modelId: fact.modelId,
+    nativeSessionId: fact.nativeSessionId ?? null,
+    workspaceId: fact.workspaceId ?? null,
+    tokens: canonicalTokens(fact.tokens),
+    quality: canonicalQuality(fact.quality),
+  })
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 export type UsageRevisionWriteResult =
   | { status: "accepted" }
   | { status: "duplicate" }
@@ -90,10 +145,9 @@ export type UsageRevisionWriteResult =
   | { status: "conflict"; currentRevision: number }
 
 /**
- * The account a fact is attributed to when it uploads. Ownership is outbox
- * routing, not fact content: it is resolved by the composition from the
- * session's producing identity, never from the request that later asks to
- * sync, and it stays out of `TurnUsageRevision` so reattribution can never
+ * The account that produced a turn. It is not fact content: the composition
+ * resolves it from the session's producing identity, never from a later
+ * request, and it stays out of `TurnUsageRevision` so attribution can never
  * collide with the revision's payload hash.
  */
 export type UsageOwner = { org_id: string; user_id: string }
@@ -112,13 +166,11 @@ export type UsageRevisionReader = {
     until?: number
     settlement?: TurnUsageSettlement
   }): Promise<TurnUsageRevision[]>
-  pendingOutbox(input?: {
-    limit?: number
-    all?: boolean
-    since?: number
-    until?: number
-    owner?: UsageOwner
-  }): Promise<TurnUsageRevision[]>
+}
+
+export type UsageOwnedTurnReader = {
+  /** The latest revision of every turn `owner` produced and observed in [since, until]. */
+  ownedBy(owner: UsageOwner, range?: { since?: number; until?: number }): Promise<TurnUsageRevision[]>
 }
 
 export function knownTokenCategories(tokens: TurnUsageRevision["tokens"]): TurnUsageQuality["knownCategories"] {
@@ -151,9 +203,116 @@ export function assertTurnUsageRevision(fact: TurnUsageRevision) {
     fact.tokens.reasoning,
     fact.tokens.cache.read,
     fact.tokens.cache.write,
+    fact.tokens.cache.write1h ?? null,
   ]) {
     if (value !== null && (!Number.isSafeInteger(value) || value < 0)) {
       throw new Error("usage token values must be non-negative integers or null")
     }
   }
+  const write1h = fact.tokens.cache.write1h ?? null
+  if (write1h !== null && write1h > (fact.tokens.cache.write ?? 0)) {
+    throw new Error("usage one-hour cache writes cannot exceed cache writes")
+  }
+}
+
+function tokenCount(value: unknown): number | null | undefined {
+  if (value === null) return null
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+/** A revision's token counts read from JSON, or nothing when one is not a count or `null`. */
+export function readTurnUsageTokens(value: unknown): RuntimeTokenUsage | undefined {
+  if (!isJsonRecord(value) || !isJsonRecord(value.cache)) return undefined
+  const input = tokenCount(value.input)
+  const output = tokenCount(value.output)
+  const reasoning = tokenCount(value.reasoning)
+  const read = tokenCount(value.cache.read)
+  const write = tokenCount(value.cache.write)
+  const write1h = value.cache.write1h === undefined ? null : tokenCount(value.cache.write1h)
+  if ([input, output, reasoning, read, write, write1h].some((count) => count === undefined)) return undefined
+  return {
+    input: input ?? null,
+    output: output ?? null,
+    reasoning: reasoning ?? null,
+    cache: { read: read ?? null, write: write ?? null, ...(write1h === null || write1h === undefined ? {} : { write1h }) },
+  }
+}
+
+const REVISION_KEYS: ReadonlySet<string> = new Set<keyof TurnUsageRevision>([
+  "sessionRef",
+  "sessionId",
+  "messageId",
+  "revision",
+  "observedAt",
+  "completedAt",
+  "settlement",
+  "status",
+  "location",
+  "harness",
+  "providerId",
+  "modelId",
+  "nativeSessionId",
+  "workspaceId",
+  "hostId",
+  "tokens",
+  "quality",
+])
+
+/**
+ * A revision that crossed a JSON boundary, or nothing when it is not one. The
+ * revision is the privacy boundary, so nothing else a sender put in it is
+ * carried: a top-level field the contract does not name refuses the whole
+ * revision, and inside `tokens` and `quality` only the named fields are read.
+ */
+export function readTurnUsageRevision(value: unknown): TurnUsageRevision | undefined {
+  if (!isJsonRecord(value) || Object.keys(value).some((key) => !REVISION_KEYS.has(key))) return undefined
+  const tokens = readTurnUsageTokens(value.tokens)
+  const {
+    sessionRef, sessionId, messageId, revision, observedAt, completedAt, settlement, status, location,
+    harness, providerId, modelId, nativeSessionId, workspaceId, hostId,
+  } = value
+  if (
+    !tokens
+    || !isNonEmptyString(sessionRef)
+    || !isNonEmptyString(sessionId)
+    || !isNonEmptyString(messageId)
+    || typeof revision !== "number"
+    || typeof observedAt !== "number"
+    || (completedAt !== undefined && typeof completedAt !== "number")
+    || !isOneOf(settlement, TURN_USAGE_SETTLEMENTS)
+    || !isOneOf(status, TURN_USAGE_STATUSES)
+    || !isOneOf(location, TURN_USAGE_LOCATIONS)
+    || !isNonEmptyString(harness)
+    || !isNonEmptyString(providerId)
+    || !isNonEmptyString(modelId)
+    || (nativeSessionId !== undefined && !isNonEmptyString(nativeSessionId))
+    || (workspaceId !== undefined && !isNonEmptyString(workspaceId))
+    || !isNonEmptyString(hostId)
+    || !isJsonRecord(value.quality)
+  ) return undefined
+  const fact: TurnUsageRevision = {
+    sessionRef,
+    sessionId,
+    messageId,
+    revision,
+    observedAt,
+    ...(completedAt === undefined ? {} : { completedAt }),
+    settlement,
+    status,
+    location,
+    harness,
+    providerId,
+    modelId,
+    ...(nativeSessionId === undefined ? {} : { nativeSessionId }),
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    hostId,
+    tokens,
+    quality: readTurnUsageQuality(value.quality),
+  }
+  try {
+    assertTurnUsageRevision(fact)
+  } catch {
+    return undefined
+  }
+  return fact
 }

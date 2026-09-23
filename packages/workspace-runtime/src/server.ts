@@ -127,6 +127,24 @@ export type WorkspaceRuntimeServerOptions = {
    * without a relay host token. Absent, no harness receives the entry.
    */
   firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
+  /**
+   * Receives this runtime's reader of a session's committed configuration once
+   * the host exists, for a composition that attributes a session's work to its
+   * harness and model from outside the runtime.
+   */
+  bindSessionConfig?: (read: Host["getSessionConfig"]) => void
+  /**
+   * Receives this runtime's reader of a session's parent — the session a
+   * subagent's child session is filed under — once the host exists. The parent
+   * is written only when the session is bound, never on an event.
+   */
+  bindSessionParents?: (read: Host["parentSessionIdFor"]) => void
+  /**
+   * Host-owned work the process drain awaits last, once the runtime's
+   * sessions, processes and PTYs are disposed: whatever a disposed turn left
+   * behind is still the host's to settle before the process exits.
+   */
+  onDrain?: () => Promise<void> | void
 }
 
 type ListenPolicyEnv = {
@@ -290,6 +308,7 @@ type WorkspaceRuntimeDrainOptions = {
   processDispose?: (directory: string) => Promise<void>
   ptyDispose?: () => Promise<void>
   openCodeDispose?: () => Promise<void>
+  hostDrain?: () => Promise<void> | void
 }
 
 type WorkspaceRuntimeShutdownReason = NodeJS.Signals | "unhandledRejection" | "uncaughtException"
@@ -315,6 +334,7 @@ export async function drainWorkspaceRuntime(options: WorkspaceRuntimeDrainOption
         await drainStep(errors, () => (options.ptyDispose ?? Pty.dispose)())
         await drainStep(errors, () => options.runtime.host.dispose())
         await drainStep(errors, () => options.openCodeDispose?.())
+        await drainStep(errors, () => options.hostDrain?.())
         if (errors.length) {
           throw new AggregateError(errors, "Workspace runtime drain failed")
         }
@@ -448,6 +468,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
   })
+  options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))
+  options.bindSessionParents?.((sessionId) => host.parentSessionIdFor(sessionId))
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,
@@ -737,6 +759,7 @@ export function startServer(
         ...(options.ownsOpenCodeRuntime && options.opencodeRuntime
           ? { openCodeDispose: () => options.opencodeRuntime!.close() }
           : {}),
+        ...(options.onDrain ? { hostDrain: options.onDrain } : {}),
       }),
     exit: (code) => process.exit(code),
   })

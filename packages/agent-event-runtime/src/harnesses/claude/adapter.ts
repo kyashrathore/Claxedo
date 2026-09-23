@@ -8,6 +8,8 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type {
   AgentRuntimeEvent,
+  AgentRuntimeEventOf,
+  RuntimeTokenUsage,
   RuntimeToolAttachment,
   SubagentMode,
   SubagentStatus,
@@ -43,6 +45,9 @@ export type ClaudeRequestUsage = {
   reasoning: number | null
   cacheRead: number | null
   cacheWrite: number | null
+  cacheWrite1h: number | null
+  /** The model the request's first report named; it decides the usage stream the request adds to. */
+  model?: string
 }
 
 export type ClaudeSdkAdapterState = {
@@ -55,13 +60,32 @@ export type ClaudeSdkAdapterState = {
   cwd?: string
   lastKnownContextWindow?: number
   /**
-   * Per-request usage snapshots for the current turn, keyed by API message id.
-   * The turn's `result` usage is authoritative, but a turn that dies before
-   * `result` (crash, kill, steer) would otherwise meter nothing — these
-   * snapshots keep a provisional turn-cumulative observation flowing.
+   * Every API request of the turn, by owner and then message id. The owner is
+   * `""` for the main thread and a child's `parent_tool_use_id` otherwise; the
+   * driver routes a child frame's events to that child's own session, so a
+   * child's usage is summed apart from the parent's.
    */
-  turnUsageByRequestId?: Record<string, ClaudeRequestUsage>
+  requestUsageByOwner?: Record<string, Record<string, ClaudeRequestUsage>>
+  /** The request each owner is streaming, until its `message_stop`: `message_delta` names none. */
+  streamingRequestByOwner?: Record<string, string>
+  /** The request the main thread streamed last, which the context gauge reads. */
+  lastMainRequest?: string
 }
+
+/**
+ * A subagent request's usage as the Claude driver reads it from the subagent
+ * transcript the CLI mirrors through `sessionStore`, ingested under
+ * {@link CLAUDE_SUBAGENT_USAGE_METHOD}. It is routed to the child whose frame
+ * carried the same message id; `null` names the main thread, which meters a
+ * request whose frame never arrived.
+ */
+export type ClaudeSubagentUsage = {
+  parent_tool_use_id: string | null
+  session_id?: string
+  message: { id: string; usage: Record<string, unknown>; model?: string }
+}
+
+export const CLAUDE_SUBAGENT_USAGE_METHOD = "claude/subagent-usage"
 
 export type ClaudeSubagentObservation = {
   observationId: string
@@ -415,6 +439,24 @@ function reconcileAssistantSnapshot(shown: string, snapshot: string): { delta: s
   return { delta: snapshot.slice(shared), divergedAt: shared }
 }
 
+/**
+ * The frame as the first-level subagent it runs under owns it. An Agent call
+ * in a subagent's own message is recorded as nested first, so every frame of
+ * that nested subagent, at any depth, names the first-level key instead.
+ */
+export function foldNestedSubagentFrame(frame: unknown, ledger: ClaudeTaskLedger): unknown {
+  const message = asRecord(frame)
+  const owner = claudeChildCorrelationKey(message)
+  if (!message || !owner) return frame
+  const firstLevel = ledger.firstLevelSubagent(owner)
+  if (message.type === "assistant") {
+    for (const { tool } of assistantToolBlocks(message)) {
+      if (isTaskTool(tool.toolName) && !isHostSubagentTool(tool.toolName)) ledger.nestSubagentCall(tool.toolCallId, firstLevel)
+    }
+  }
+  return firstLevel === owner ? frame : { ...message, parent_tool_use_id: firstLevel }
+}
+
 export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLedger): ClaudeSubagentObservation[] {
   const message = asRecord(value)
   if (!message) return []
@@ -452,6 +494,8 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
     const result = asRecord(message.tool_use_result)
     const agentId = text(result?.agentId)
     if (!agentId) return claudeHostSubagentObservations(message, wrapperId, harnessExecutionId, ledger)
+    // A subagent's own Agent result reports a nested subagent, which has no row.
+    if (claudeChildCorrelationKey(message)) return []
     // `SDKUserMessage.tool_use_result` is one tool's Output, and `AgentOutput`
     // names no tool call, so the agent it reports can only be attributed when
     // the message carries a single tool_result block. Stamping every block of
@@ -495,12 +539,18 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
       const taskId = text(message.task_id)
       if (!taskId) return []
       const toolUseId = text(message.tool_use_id)
+      // Claude Code 2.1.280 sends `spawn_depth` (the pinned SDK types predate
+      // it), which marks a nested task even before the subagent frame that made
+      // its call has arrived.
+      const nested = (toolUseId !== undefined && ledger.isNestedSubagentCall(toolUseId)) ||
+        (asFiniteNumber(message.spawn_depth) ?? 0) > 1
       const record: ClaudeTaskRecord = {
         taskId,
         ...(toolUseId ? { toolUseId } : {}),
         ...(harnessExecutionId ? { harnessExecutionId } : {}),
         isAgentTask: !!text(message.subagent_type),
         skipTranscript: message.skip_transcript === true,
+        ...(nested ? { nested } : {}),
       }
       ledger.start(record)
       if (!admittedTask(record)) return []
@@ -554,7 +604,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
 }
 
 function admittedTask(record: ClaudeTaskRecord | undefined) {
-  return record?.isAgentTask && !record.skipTranscript ? record : undefined
+  return record?.isAgentTask && !record.skipTranscript && !record.nested ? record : undefined
 }
 
 function liveTaskIds(message: Record<string, unknown>) {
@@ -620,25 +670,54 @@ function slashCommandEvents(message: Record<string, unknown>) {
     : []
 }
 
-function requestUsage(message: Record<string, unknown>): { requestId: string; tokens: ClaudeRequestUsage; requestTotal: number } | undefined {
-  const row = asRecord(message.message)
-  if (!row) return undefined
-  const requestId = text(row.id)
-  const usage = asRecord(row.usage)
-  if (!requestId || !usage) return undefined
-  const tokens: ClaudeRequestUsage = {
+function requestUsage(usage: Record<string, unknown> | undefined, model: string | undefined): ClaudeRequestUsage | undefined {
+  if (!usage) return undefined
+  const tokens = {
     input: asFiniteNumber(usage.input_tokens) ?? null,
     output: asFiniteNumber(usage.output_tokens) ?? null,
     reasoning: asFiniteNumber(usage.thinking_tokens) ?? null,
     cacheRead: asFiniteNumber(usage.cache_read_input_tokens) ?? null,
     cacheWrite: asFiniteNumber(usage.cache_creation_input_tokens) ?? null,
+    cacheWrite1h: asFiniteNumber(asRecord(usage.cache_creation)?.ephemeral_1h_input_tokens) ?? null,
   }
-  if (![tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite].some((value) => value !== null && value > 0)) return undefined
+  if (!Object.values(tokens).some((value) => value !== null && value > 0)) return undefined
+  return model ? { ...tokens, model } : tokens
+}
+
+function larger(previous: number | null, next: number | null) {
+  if (previous === null) return next
+  if (next === null) return previous
+  return Math.max(previous, next)
+}
+
+/**
+ * No count of one request ever shrinks: `message_start` opens it,
+ * `message_delta` carries its final output, and an assistant frame or a
+ * transcript entry repeats whichever of the two it was built from. Keeping the
+ * larger value lets them arrive in any order.
+ */
+function mergeRequestUsage(previous: ClaudeRequestUsage | undefined, next: ClaudeRequestUsage): ClaudeRequestUsage {
+  if (!previous) return next
   return {
-    requestId,
-    tokens,
-    requestTotal: (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.cacheRead ?? 0) + (tokens.cacheWrite ?? 0),
+    input: larger(previous.input, next.input),
+    output: larger(previous.output, next.output),
+    reasoning: larger(previous.reasoning, next.reasoning),
+    cacheRead: larger(previous.cacheRead, next.cacheRead),
+    cacheWrite: larger(previous.cacheWrite, next.cacheWrite),
+    cacheWrite1h: larger(previous.cacheWrite1h, next.cacheWrite1h),
+    // Fixed at the first report: moving a request to another model's stream
+    // would leave its tokens in the cumulative that stream already reported.
+    ...(previous.model ? { model: previous.model } : {}),
   }
+}
+
+function sameRequestUsage(left: ClaudeRequestUsage, right: ClaudeRequestUsage) {
+  return left.input === right.input &&
+    left.output === right.output &&
+    left.reasoning === right.reasoning &&
+    left.cacheRead === right.cacheRead &&
+    left.cacheWrite === right.cacheWrite &&
+    left.cacheWrite1h === right.cacheWrite1h
 }
 
 function addNullable(previous: number | null, value: number | null) {
@@ -647,49 +726,116 @@ function addNullable(previous: number | null, value: number | null) {
 }
 
 function sumRequestUsage(requests: Record<string, ClaudeRequestUsage>): ClaudeRequestUsage {
-  const sum: ClaudeRequestUsage = { input: null, output: null, reasoning: null, cacheRead: null, cacheWrite: null }
+  const sum: ClaudeRequestUsage = { input: null, output: null, reasoning: null, cacheRead: null, cacheWrite: null, cacheWrite1h: null }
   for (const tokens of Object.values(requests)) {
     sum.input = addNullable(sum.input, tokens.input)
     sum.output = addNullable(sum.output, tokens.output)
     sum.reasoning = addNullable(sum.reasoning, tokens.reasoning)
     sum.cacheRead = addNullable(sum.cacheRead, tokens.cacheRead)
     sum.cacheWrite = addNullable(sum.cacheWrite, tokens.cacheWrite)
+    sum.cacheWrite1h = addNullable(sum.cacheWrite1h, tokens.cacheWrite1h)
   }
   return sum
 }
 
-function usageSnapshot(message: Record<string, unknown>, lastKnownContextWindow?: number) {
-  const usage = asRecord(message.usage)
-  if (!usage) return undefined
-  const inputTokens =
-    (asFiniteNumber(usage.input_tokens) ?? 0) +
-    (asFiniteNumber(usage.cache_creation_input_tokens) ?? 0) +
-    (asFiniteNumber(usage.cache_read_input_tokens) ?? 0)
-  const outputTokens = asFiniteNumber(usage.output_tokens) ?? 0
-  const totalTokens = asFiniteNumber(usage.total_tokens) ?? inputTokens + outputTokens
-  const modelUsage = asRecord(message.modelUsage)
-  const contextWindow = modelUsage
-    ? Object.values(modelUsage).flatMap((value) => asFiniteNumber(asRecord(value)?.contextWindow) ?? [])[0]
-    : undefined
-  const contextSize = contextWindow ?? lastKnownContextWindow ?? totalTokens
+function runtimeTokenUsage(tokens: ClaudeRequestUsage): RuntimeTokenUsage {
+  return {
+    input: tokens.input,
+    output: tokens.output,
+    reasoning: tokens.reasoning,
+    cache: {
+      read: tokens.cacheRead,
+      write: tokens.cacheWrite,
+      ...(tokens.cacheWrite1h === null ? {} : { write1h: tokens.cacheWrite1h }),
+    },
+  }
+}
+
+function ownerRequests(state: ClaudeSdkAdapterState, owner: string) {
+  return own(state.requestUsageByOwner ?? {}, owner) ?? {}
+}
+
+/**
+ * The stream an owner's requests on one model add to. An owner's requests are
+ * summed per model, so every observation names the one model that served it:
+ * the model of the owner's first request keeps the owner's own scope (none on
+ * the main thread), and each other model a request names gets one beside it.
+ */
+function modelScope(requests: Record<string, ClaudeRequestUsage>, owner: string, model: string | undefined) {
+  if (Object.values(requests)[0]?.model === model) return owner || undefined
+  return `${owner || "main"}@${model ?? "unknown"}`
+}
+
+/** The owner's whole-turn usage on `request`'s model. The context gauge reads `request` alone: every request resends the whole context. */
+function ownerUsageEvent(state: ClaudeSdkAdapterState, owner: string, request: ClaudeRequestUsage, nativeSessionId?: string) {
+  const requestTotal = (request.input ?? 0) + (request.output ?? 0) + (request.cacheRead ?? 0) + (request.cacheWrite ?? 0)
+  const contextSize = state.lastKnownContextWindow ?? requestTotal
+  const requests = ownerRequests(state, owner)
+  const scope = modelScope(requests, owner, request.model)
+  const sameModel = Object.fromEntries(Object.entries(requests).filter(([, tokens]) => tokens.model === request.model))
   return {
     type: "usage",
     contextSize,
-    contextUsed: Math.min(totalTokens, contextSize),
+    contextUsed: Math.min(requestTotal, contextSize),
     observation: {
       kind: "cumulative",
-      ...(text(message.session_id) ? { nativeSessionId: text(message.session_id) } : {}),
-      tokens: {
-        input: asFiniteNumber(usage.input_tokens) ?? null,
-        output: asFiniteNumber(usage.output_tokens) ?? null,
-        reasoning: asFiniteNumber(usage.thinking_tokens) ?? null,
-        cache: {
-          read: asFiniteNumber(usage.cache_read_input_tokens) ?? null,
-          write: asFiniteNumber(usage.cache_creation_input_tokens) ?? null,
-        },
-      },
+      ...(scope ? { scope } : {}),
+      ...(nativeSessionId ? { nativeSessionId } : {}),
+      ...(request.model ? { model: request.model } : {}),
+      tokens: runtimeTokenUsage(sumRequestUsage(sameModel)),
     },
   } satisfies AgentRuntimeEvent
+}
+
+/** Records one report of a request's usage; a report that changes nothing emits nothing. */
+function meterRequest(
+  state: ClaudeSdkAdapterState,
+  owner: string,
+  requestId: string,
+  usage: Record<string, unknown> | undefined,
+  nativeSessionId: string | undefined,
+  model: string | undefined,
+) {
+  const tokens = requestUsage(usage, model)
+  if (!tokens) return undefined
+  const requests = ownerRequests(state, owner)
+  const previous = own(requests, requestId)
+  const merged = mergeRequestUsage(previous, tokens)
+  if (previous && sameRequestUsage(previous, merged)) return undefined
+  const requestUsageByOwner = { ...state.requestUsageByOwner, [owner]: { ...requests, [requestId]: merged } }
+  return {
+    requestUsageByOwner,
+    event: ownerUsageEvent({ ...state, requestUsageByOwner }, owner, merged, nativeSessionId),
+  }
+}
+
+function meteredResult(state: ClaudeSdkAdapterState, metered: ReturnType<typeof meterRequest>) {
+  return metered
+    ? { state: { ...state, requestUsageByOwner: metered.requestUsageByOwner }, events: [metered.event] }
+    : []
+}
+
+/**
+ * The main thread's usage as a `result` closes a CLI turn. `result.usage` is
+ * not read: Claude Code 2.1.280 sums it from the same `message_start` and
+ * `message_delta` events this adapter meters, but only for the CLI turn that
+ * result ends, and one query can end several — a steer answered after a
+ * reply, each Goal iteration.
+ *
+ * The context gauge reads the request the main thread streamed last: a
+ * mirrored subagent request metered here was sent with that subagent's context.
+ */
+function resultUsageEvent(state: ClaudeSdkAdapterState, nativeSessionId?: string) {
+  const requests = ownerRequests(state, "")
+  const latest = (state.lastMainRequest ? own(requests, state.lastMainRequest) : undefined) ?? Object.values(requests).at(-1)
+  return latest ? ownerUsageEvent(state, "", latest, nativeSessionId) : undefined
+}
+
+function resultContextWindow(message: Record<string, unknown>) {
+  const modelUsage = asRecord(message.modelUsage)
+  return modelUsage
+    ? Object.values(modelUsage).flatMap((value) => asFiniteNumber(asRecord(value)?.contextWindow) ?? [])[0]
+    : undefined
 }
 
 function isInterruptedResult(message: Record<string, unknown>, errorMessage?: string) {
@@ -702,8 +848,11 @@ function isInterruptedResult(message: Record<string, unknown>, errorMessage?: st
   return ["request was aborted", "aborted", "cancelled", "canceled", "interrupted"].some((item) => summary.includes(item))
 }
 
-function resultEvents(message: Record<string, unknown>, context: HarnessEventAdapterContext, lastKnownContextWindow?: number) {
-  const usage = usageSnapshot(message, lastKnownContextWindow)
+function resultEvents(
+  message: Record<string, unknown>,
+  context: HarnessEventAdapterContext,
+  usage: AgentRuntimeEventOf<"usage"> | undefined,
+) {
   const sessionId = text(message.session_id) ?? context.threadId
   const errors = Array.isArray(message.errors)
     ? message.errors.filter((item): item is string => typeof item === "string")
@@ -836,6 +985,13 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
       }
 
       if (event.method === "claude/session-store") return claudeTranscriptTitle(rawMessage)
+
+      if (event.method === CLAUDE_SUBAGENT_USAGE_METHOD) {
+        const request = asRecord(rawMessage.message)
+        const requestId = text(request?.id)
+        if (!requestId) return []
+        return meteredResult(state, meterRequest(state, claudeStreamOwner(rawMessage), requestId, asRecord(request?.usage), text(rawMessage.session_id), text(request?.model)))
+      }
 
       if (!isSdkMessage(rawMessage)) {
         return unmappedSdkEvent({
@@ -1043,10 +1199,26 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
               }
               return []
             }
-            case "message_start":
-            case "message_delta":
+            case "message_start": {
+              const owner = claudeStreamOwner(rawMessage)
+              const requestId = text(stream.message.id)
+              if (!requestId) return []
+              const streaming = {
+                ...state,
+                streamingRequestByOwner: { ...state.streamingRequestByOwner, [owner]: requestId },
+                ...(owner ? {} : { lastMainRequest: requestId }),
+              }
+              const metered = meterRequest(streaming, owner, requestId, asRecord(stream.message.usage), text(rawMessage.session_id), text(stream.message.model))
+              return metered ? meteredResult(streaming, metered) : { state: streaming, events: [] }
+            }
+            case "message_delta": {
+              const owner = claudeStreamOwner(rawMessage)
+              const requestId = own(state.streamingRequestByOwner ?? {}, owner)
+              if (!requestId) return []
+              return meteredResult(state, meterRequest(state, owner, requestId, asRecord(stream.usage), text(rawMessage.session_id), undefined))
+            }
             case "message_stop":
-              return []
+              return { state: { ...state, streamingRequestByOwner: withoutKey(state.streamingRequestByOwner ?? {}, claudeStreamOwner(rawMessage)) }, events: [] }
             default:
               return assertNever(stream)
           }
@@ -1120,35 +1292,13 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
           })
           const toolsById = Object.fromEntries(completeTools.map(({ tool }) => [tool.toolCallId, tool]))
           const snapshot = assistantSnapshotText(rawMessage)
-          const childOwned = !!claudeChildCorrelationKey(rawMessage)
           const messageId = text(message.message.id)
           const owner = claudeStreamOwner(rawMessage)
           const shown = `${(messageId ? own(state.reconciledAssistantTextByMessageId, messageId) : undefined) ?? ""}${own(state.streamedAssistantTextByOwner, owner) ?? ""}`
           const reconciliation = snapshot ? reconcileAssistantSnapshot(shown, snapshot) : undefined
-          // Every assistant message carries its API request's usage. The turn's
-          // `result` usage stays authoritative (it replaces this observation),
-          // but accumulating per request means a turn that dies before `result`
-          // still meters what it consumed. Child (subagent) messages are
-          // skipped: their attribution belongs to the parent turn's result.
-          const request = childOwned ? undefined : requestUsage(rawMessage)
-          const turnUsageByRequestId = request
-            ? { ...state.turnUsageByRequestId, [request.requestId]: request.tokens }
-            : state.turnUsageByRequestId
-          const provisionalUsage = request
-            ? [{
-                type: "usage" as const,
-                contextSize: state.lastKnownContextWindow ?? request.requestTotal,
-                contextUsed: Math.min(request.requestTotal, state.lastKnownContextWindow ?? request.requestTotal),
-                observation: {
-                  kind: "cumulative" as const,
-                  ...(text(rawMessage.session_id) ? { nativeSessionId: text(rawMessage.session_id) } : {}),
-                  tokens: (({ input, output, reasoning, cacheRead, cacheWrite }) => ({
-                    input, output, reasoning,
-                    cache: { read: cacheRead, write: cacheWrite },
-                  }))(sumRequestUsage(turnUsageByRequestId ?? {})),
-                },
-              } satisfies AgentRuntimeEvent]
-            : []
+          const metered = messageId
+            ? meterRequest(state, owner, messageId, asRecord(message.message.usage), text(rawMessage.session_id), text(message.message.model))
+            : undefined
           return {
             state: {
               ...state,
@@ -1161,7 +1311,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
                       : {}),
                   }
                 : {}),
-              ...(turnUsageByRequestId ? { turnUsageByRequestId } : {}),
+              ...(metered ? { requestUsageByOwner: metered.requestUsageByOwner } : {}),
             },
             events: [
               ...completeToolEvents,
@@ -1178,25 +1328,24 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
                 },
               })]),
               ...(reconciliation?.delta ? [{ type: "text-delta", delta: reconciliation.delta } satisfies AgentRuntimeEvent] : []),
-              ...provisionalUsage,
+              ...(metered ? [metered.event] : []),
             ],
           }
         }
 
         case "result": {
-          const usage = usageSnapshot(rawMessage, state.lastKnownContextWindow)
-          const nextContextWindow = usage?.contextSize ?? state.lastKnownContextWindow
+          const lastKnownContextWindow = resultContextWindow(rawMessage) ?? state.lastKnownContextWindow
+          const next = {
+            ...state,
+            blocksByIndex: {},
+            toolsById: {},
+            streamedAssistantTextByOwner: {},
+            reconciledAssistantTextByMessageId: {},
+            ...(lastKnownContextWindow ? { lastKnownContextWindow } : {}),
+          }
           return {
-            state: {
-              ...state,
-              blocksByIndex: {},
-              toolsById: {},
-              streamedAssistantTextByOwner: {},
-              reconciledAssistantTextByMessageId: {},
-              turnUsageByRequestId: {},
-              ...(nextContextWindow ? { lastKnownContextWindow: nextContextWindow } : {}),
-            },
-            events: resultEvents(rawMessage, context, state.lastKnownContextWindow),
+            state: next,
+            events: resultEvents(rawMessage, context, resultUsageEvent(next, text(rawMessage.session_id))),
           }
         }
 
