@@ -66,6 +66,11 @@ import fuzzysort from "fuzzysort"
 import { workspaceResolveResponse } from "./contracts/workspace-resolve"
 import { unconfiguredWorkspaceDriversResponse } from "./contracts/workspace-drivers"
 import {
+  fulfillRemoteAccessRoute,
+  unconfiguredRemoteAccessDeployment,
+  type RemoteAccessDeployment,
+} from "./contracts/remote-access"
+import {
   isWorkspaceListPath,
   workspaceListResponse,
   type ControlPlaneWorkspaceRow,
@@ -523,6 +528,12 @@ export type MockRuntimeOptions = {
    * A spec that pins one posture regardless of the mode sets it explicitly.
    */
   issuesSessions?: boolean
+  /**
+   * The server's machine remote access. Defaults to a deployment with neither
+   * device sign-in nor a relay, signed exactly when the bootstrap says it
+   * issues sessions.
+   */
+  remoteAccess?: RemoteAccessDeployment
   /** Initial config persistence fails during `POST /session`, and later config PATCHes also return 500. */
   configPatchFailure?: boolean
   sessionArchive?: { delayMs?: number; failingSessionIds?: string[] }
@@ -2516,18 +2527,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       : r.continue(),
   )
 
-  // The remote-access status Settings → Machines reads: a build with neither
-  // device sign-in nor a relay configured.
-  await page.route("**/api/claxedo/remote-access**", (r) =>
-    api(r)
-      ? json(r, {
-        enabled: false,
-        hostedSignedIn: false,
-        relayConfigured: false,
-        deviceLoginConfigured: false,
-        secondDeviceOpen: false,
-      })
-      : r.continue(),
+  const remoteAccess = options.remoteAccess
+    ?? unconfiguredRemoteAccessDeployment(bootstrapDeployment(options.issuesSessions).issuesSessions)
+  await contractRoute(page, "**/api/claxedo/remote-access**", (r) =>
+    api(r) ? fulfillRemoteAccessRoute(r, remoteAccess) : r.continue(),
   )
 
   const runtimeDiffHandler = async (r: Route) => {

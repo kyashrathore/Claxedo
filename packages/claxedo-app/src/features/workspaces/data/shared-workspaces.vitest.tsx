@@ -1,6 +1,7 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { IdentityProvider, type Principal } from "@/platform/auth/identity-provider"
 import { useSharedWorkspaceIds } from "./shared-workspaces"
 
 const bound = vi.hoisted(() => ({ port: undefined as unknown }))
@@ -9,16 +10,18 @@ vi.mock("@/platform/remote-access/machine-remote-access", () => ({
   machineRemoteAccess: () => bound.port,
 }))
 
-function read() {
+function read(principal: Principal = { kind: "signed", userId: "user_1" }) {
   let query!: ReturnType<typeof useSharedWorkspaceIds>
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(() => (
-    <QueryClientProvider client={client}>
-      {(() => {
-        query = useSharedWorkspaceIds()
-        return null
-      })()}
-    </QueryClientProvider>
+    <IdentityProvider principal={principal}>
+      <QueryClientProvider client={client}>
+        {(() => {
+          query = useSharedWorkspaceIds()
+          return null
+        })()}
+      </QueryClientProvider>
+    </IdentityProvider>
   ))
   return () => query
 }
@@ -92,6 +95,21 @@ describe("which workspaces this account publishes", () => {
 
     await waitFor(() => expect(query().publishing()).toBe(false))
     expect(query().ids()).toEqual([])
+  })
+
+  test("a caller with no account reads nothing published without asking the server", async () => {
+    const devices = vi.fn(async () => [])
+    bound.port = {
+      status: async () => {
+        throw new Error("status must not be read without an account")
+      },
+      devices,
+    }
+    const query = read({ kind: "local", deviceId: "device_1" })
+
+    await waitFor(() => expect(query().publishing()).toBe(false))
+    expect(query().ids()).toEqual([])
+    expect(devices).not.toHaveBeenCalled()
   })
 
   test("no port at all reads as nothing published, and stays distinguishable from 'not asked yet'", async () => {
