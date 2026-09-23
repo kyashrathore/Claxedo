@@ -221,7 +221,7 @@ index e40c1d0..3b81313 100644
        }
      }
 diff --git a/src/lib/rollout.js b/src/lib/rollout.js
-index 5db1e6a..d9c3d1c 100644
+index 5db1e6a..a2f9198 100644
 --- a/src/lib/rollout.js
 +++ b/src/lib/rollout.js
 @@ -3,6 +3,7 @@ const fssync = require("node:fs");
@@ -863,7 +863,7 @@ index 5db1e6a..d9c3d1c 100644
 +  const totalBuckets = new Map();
 +  const coverage = [];
 +  let classified_claxedo = 0;
-+  let unclassified = 0;
++  let unclassified_requests = 0;
 +  for (const source of sources) {
 +    if (!EMBEDDED_SOURCES.has(source)) {
 +      coverage.push({ source, status: "unsupported", error: "scanner has no privacy-reviewed parser" });
@@ -880,13 +880,13 @@ index 5db1e6a..d9c3d1c 100644
 +      const classification = await options.classify({ source: event.source, nativeSessionId: event.native_session_id, observedAt: event.observed_at });
 +      const eventCount = Number(event.event_count ?? 1);
 +      if (classification === "claxedo") { classified_claxedo += eventCount; continue; }
-+      if (classification !== "external") { unclassified += eventCount; continue; }
++      if (classification !== "external") { unclassified_requests += 1; continue; }
 +      embeddedBucketEvent(buckets, source, event);
 +    }
 +  }
 +  cursorState.updatedAt = Date.now();
 +  embeddedWriteHistoryCursors(options.stateDir, cursorState);
-+  return { rows: [...buckets.values()], total_rows: [...totalBuckets.values()], coverage, classified_claxedo, unclassified };
++  return { rows: [...buckets.values()], total_rows: [...totalBuckets.values()], coverage, classified_claxedo, unclassified_requests };
 +}
 +
  module.exports = {

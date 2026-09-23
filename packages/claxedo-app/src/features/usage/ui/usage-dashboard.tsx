@@ -101,7 +101,7 @@ export function UsageDashboard(props: {
     if (!breakdown || breakdown.dimension !== data()?.chart?.dimension) return undefined
     return new Set(breakdown.rows.filter((row) => row.status === "unavailable").map((row) => row.value))
   })
-  const unclassified = () => data()?.externalLocal.unclassified ?? 0
+  const unclassified = () => data()?.externalLocal.unclassifiedRequests ?? 0
   const metricRows = createMemo(() => {
     const values = activeSeries().totals
     return [
@@ -396,8 +396,8 @@ export function UsageDashboard(props: {
           <span>{totalTokens(claxedo()).toLocaleString()} Claxedo tokens in range</span>
           <Show when={selected() === "total" && unclassified() > 0}>
             <span class="usage-coverage-warning">
-              {unclassified().toLocaleString()} {unclassified() === 1 ? "turn" : "turns"} of this machine's history
-              {unclassified() === 1 ? " is" : " are"} counted in Total without knowing whether Claxedo ran{" "}
+              {unclassified().toLocaleString()} {unclassified() === 1 ? "request" : "requests"} in this machine's history
+              {unclassified() === 1 ? " is" : " are"} counted in Total without knowing whether Claxedo made{" "}
               {unclassified() === 1 ? "it" : "them"}.
             </span>
           </Show>

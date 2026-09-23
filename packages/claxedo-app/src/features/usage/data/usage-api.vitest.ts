@@ -52,7 +52,7 @@ function unifiedUsageResponse() {
       cost: usageCost(),
       status: "available",
       coverage: [],
-      unclassified: 0,
+      unclassifiedRequests: 0,
     },
     total: usageSeries(),
     totalCost: usageCost(),

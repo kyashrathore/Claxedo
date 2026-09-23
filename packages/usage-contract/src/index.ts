@@ -174,10 +174,12 @@ export type UnifiedUsageResponse = {
       error?: string
     }>
     /**
-     * Turns in this machine's CLI history that can be neither attributed to
-     * Claxedo nor ruled out, and so count in Total as history of their own.
+     * Requests in this machine's CLI history that can be neither attributed
+     * to Claxedo nor ruled out, and so count in Total as history of their
+     * own. Requests, not turns: most requests open no turn, so a turn count
+     * would read zero while their tokens still count.
      */
-    unclassified: number
+    unclassifiedRequests: number
     /**
      * Epoch ms of the transcript walk these rows came from. Absent when no
      * walk has produced them (a view that does not read local history, or a

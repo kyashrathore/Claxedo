@@ -22,11 +22,12 @@ export type LocalHistorySnapshot = {
   totalRows: ExternalUsageBucket[]
   coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string }>
   classifiedClaxedo: number
-  unclassified: number
+  /** Requests counted in Total whose native session no window could place inside or outside Claxedo. */
+  unclassifiedRequests: number
   scannedAt: number
 }
 
-const CACHE_VERSION = 11
+const CACHE_VERSION = 12
 const CACHE_FILE = `local-history-v${CACHE_VERSION}.json`
 const CACHE_FILE_PATTERN = /^local-history-v\d+\.json$/
 const scans = new Map<string, Promise<LocalHistorySnapshot>>()
@@ -61,7 +62,7 @@ type TokenTrackerHistoryModule = {
     total_rows: EmbeddedHistoryRow[]
     coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string | null }>
     classified_claxedo: number
-    unclassified: number
+    unclassified_requests: number
   }>
 }
 
@@ -183,7 +184,7 @@ export async function scanTokenTrackerLocalHistory(input: {
         ...(item.error ? { error: item.error } : {}),
       })),
       classifiedClaxedo: result.classified_claxedo,
-      unclassified: result.unclassified,
+      unclassifiedRequests: result.unclassified_requests,
       scannedAt: Date.now(),
     }
     await writeCached(input.stateDir, { version: CACHE_VERSION, key, since: input.since, until: input.until, snapshot })

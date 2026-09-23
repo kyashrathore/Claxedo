@@ -440,7 +440,7 @@ describe("local unified usage route", () => {
         totalRows: rows,
         coverage: [],
         classifiedClaxedo: 0,
-        unclassified: 0,
+        unclassifiedRequests: 0,
       }),
     })
 
@@ -489,7 +489,7 @@ describe("local unified usage route", () => {
           totalRows: [direct, throughClaxedo],
           coverage: [{ source: "claude", status: "available" }],
           classifiedClaxedo: 1,
-          unclassified: 0,
+          unclassifiedRequests: 0,
         }
       },
     })
@@ -533,7 +533,7 @@ describe("local unified usage route", () => {
         totalRows: [row],
         coverage: [{ source: "codex", status: "available" }],
         classifiedClaxedo: 0,
-        unclassified: 1,
+        unclassifiedRequests: 1,
       }),
     })
 
@@ -547,7 +547,7 @@ describe("local unified usage route", () => {
     expect(body.chart.series).toEqual([
       expect.objectContaining({ value: "openai", daily: [expect.objectContaining({ input: 50 })] }),
     ])
-    expect(body.externalLocal.unclassified).toBe(1)
+    expect(body.externalLocal.unclassifiedRequests).toBe(1)
   })
 
   test("anonymous requests stay local and source failures do not zero Claxedo", async () => {
@@ -592,7 +592,7 @@ describe("local unified usage route", () => {
         ],
         coverage: [{ source: "codex", status: "available" }],
         classifiedClaxedo: 0,
-        unclassified: 0,
+        unclassifiedRequests: 0,
       })
       .mockRejectedValueOnce(new Error("scanner offline"))
     const app = LocalUsageRoutes({
@@ -645,7 +645,7 @@ describe("local unified usage route", () => {
         ],
         coverage: [{ source: "codex", status: "available" }],
         classifiedClaxedo: 0,
-        unclassified: 0,
+        unclassifiedRequests: 0,
       })
       .mockRejectedValueOnce(new Error("scanner offline"))
     const app = LocalUsageRoutes({
@@ -712,7 +712,7 @@ describe("local unified usage route", () => {
       totalRows: [],
       coverage: [],
       classifiedClaxedo: 0,
-      unclassified: 0,
+      unclassifiedRequests: 0,
       refresh,
     }))
     const app = LocalUsageRoutes({
@@ -738,7 +738,7 @@ describe("local unified usage route", () => {
       totalRows: [],
       coverage: [],
       classifiedClaxedo: 0,
-      unclassified: 0,
+      unclassifiedRequests: 0,
     }))
     const quota = vi.fn(async () => ({ status: "unavailable" as const }))
     const app = LocalUsageRoutes({
@@ -834,7 +834,7 @@ describe("local unified usage route", () => {
         ],
         coverage: [],
         classifiedClaxedo: 0,
-        unclassified: 0,
+        unclassifiedRequests: 0,
       }),
     })
 
@@ -918,7 +918,7 @@ describe("local unified usage route", () => {
   })
 
   test("denies machine history and quota to a signed caller who is not the machine operator", async () => {
-    const history = vi.fn(async () => ({ rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0 }))
+    const history = vi.fn(async () => ({ rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassifiedRequests: 0 }))
     const quota = vi.fn(async () => ({ status: "available" as const, snapshot: { accounts: [] } }))
     const app = LocalUsageRoutes({
       pricing,
@@ -970,7 +970,7 @@ describe("local unified usage route", () => {
       pricing,
       local: { current: async () => [], ownedBy: async () => [] },
       identity: async () => undefined,
-      history: async () => ({ rows: [direct], totalRows: [direct], coverage: [], classifiedClaxedo: 0, unclassified: 0 }),
+      history: async () => ({ rows: [direct], totalRows: [direct], coverage: [], classifiedClaxedo: 0, unclassifiedRequests: 0 }),
     })
     for (const group of ["harness", "session", "workspace"]) {
       const body = await (await app.request(

@@ -150,7 +150,7 @@ const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
       status: z.enum(["available", "degraded", "unavailable", "unsupported"]),
       error: z.string().optional(),
     })),
-    unclassified: z.number(),
+    unclassifiedRequests: z.number(),
     scannedAt: z.number().optional(),
     error: z.string().optional(),
   }),

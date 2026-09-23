@@ -42,7 +42,7 @@ describe("local usage routes, quota view", () => {
 })
 
 describe("local usage routes, total view", () => {
-  const empty = { rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0, scannedAt: 1_234 }
+  const empty = { rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassifiedRequests: 0, scannedAt: 1_234 }
   function withHistory(history: NonNullable<Parameters<typeof LocalUsageRoutes>[0]["history"]>) {
     return LocalUsageRoutes({
       local: { current: async () => [], ownedBy: async () => [] },

@@ -74,7 +74,7 @@ describe("TokenTracker embedded local history", () => {
     ]))
     expect(snapshot.totalRows).toHaveLength(2)
     expect(snapshot.classifiedClaxedo).toBe(1)
-    expect(snapshot.unclassified).toBe(0)
+    expect(snapshot.unclassifiedRequests).toBe(0)
     expect(JSON.stringify(snapshot)).not.toContain("secret-project")
     expect(JSON.stringify(snapshot)).not.toContain("private response")
     expect(fetchSpy).not.toHaveBeenCalled()
@@ -94,7 +94,49 @@ describe("TokenTracker embedded local history", () => {
 
     expect(snapshot.rows).toEqual([])
     expect(snapshot.totalRows).toHaveLength(2)
-    expect(snapshot.unclassified).toBe(2)
+    expect(snapshot.unclassifiedRequests).toBe(2)
+  })
+
+  test("counts each unattributed request, not each prompt, so a turn of many requests is not hidden", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-history-"))
+    roots.push(root)
+    const project = path.join(root, ".claude", "projects", "fixture")
+    await fs.mkdir(project, { recursive: true })
+    const observedAt = Date.UTC(2026, 7, 8, 12)
+    const prompt = JSON.stringify({
+      type: "user",
+      sessionId: "multi",
+      timestamp: new Date(observedAt - 1).toISOString(),
+      message: { role: "user", content: "one prompt" },
+    })
+    const response = (id: string, offset: number) => JSON.stringify({
+      type: "assistant",
+      sessionId: "multi",
+      requestId: `req_${id}`,
+      timestamp: new Date(observedAt + offset).toISOString(),
+      message: {
+        id,
+        role: "assistant",
+        model: "claude-sonnet-4-5",
+        stop_reason: "tool_use",
+        usage: { input_tokens: 10, output_tokens: 5 },
+      },
+    })
+    await fs.writeFile(
+      path.join(project, "multi.jsonl"),
+      [prompt, response("msg_1", 0), response("msg_2", 1), response("msg_3", 2)].join("\n") + "\n",
+    )
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 1_000,
+      until: observedAt + 1_000,
+      sources: ["claude"],
+      classify: () => "unclassified",
+    })
+
+    expect(snapshot.totalRows.reduce((turns, row) => turns + row.turnCount, 0)).toBe(1)
+    expect(snapshot.unclassifiedRequests).toBe(3)
   })
 
   test("serializes identical scans and reuses the Claxedo-owned cache", async () => {
@@ -195,7 +237,7 @@ describe("TokenTracker embedded local history", () => {
     // the file holds exactly one snapshot: the widest walk, not the latest read.
     await expect(scanTokenTrackerLocalHistory(input)).resolves.toEqual(wider)
     expect(classify).not.toHaveBeenCalled()
-    const stored = JSON.parse(await fs.readFile(path.join(stateDir, "local-history-v11.json"), "utf8")) as { since: number; until: number }
+    const stored = JSON.parse(await fs.readFile(path.join(stateDir, "local-history-v12.json"), "utf8")) as { since: number; until: number }
     expect(stored).toMatchObject({ since: observedAt - 1_000, until: observedAt + 2_000 })
   })
 
@@ -585,7 +627,7 @@ describe("TokenTracker embedded local history", () => {
     const { root, observedAt } = await fixture()
     const stateDir = path.join(root, "state")
     await fs.mkdir(stateDir, { recursive: true })
-    const stale = ["embedded-history-cursors-v8.json.gz", "embedded-history-cursors-v9.json.gz", "local-history-v9.json", "local-history-v10.json"]
+    const stale = ["embedded-history-cursors-v8.json.gz", "embedded-history-cursors-v9.json.gz", "local-history-v9.json", "local-history-v10.json", "local-history-v11.json"]
     for (const name of [...stale, "unrelated.json"]) await fs.writeFile(path.join(stateDir, name), "{}")
 
     await scanTokenTrackerLocalHistory({
@@ -599,7 +641,7 @@ describe("TokenTracker embedded local history", () => {
 
     expect((await fs.readdir(stateDir)).toSorted()).toEqual([
       "embedded-history-cursors-v10.json.gz",
-      "local-history-v11.json",
+      "local-history-v12.json",
       "unrelated.json",
     ])
   })

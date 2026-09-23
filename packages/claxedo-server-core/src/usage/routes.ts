@@ -47,7 +47,7 @@ type LocalHistorySnapshot = {
   totalRows: ExternalUsageBucket[]
   coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string }>
   classifiedClaxedo: number
-  unclassified: number
+  unclassifiedRequests: number
   scannedAt?: number
 }
 
@@ -772,7 +772,7 @@ export function UsageRoutes(input: {
             cost: emptyCost(),
             status: "unavailable" as const,
             coverage: [],
-            unclassified: 0,
+            unclassifiedRequests: 0,
           },
           total: series,
           totalCost: emptyCost(),
@@ -829,7 +829,7 @@ export function UsageRoutes(input: {
           ...usageSeriesFromExternal({ rows: [], since, until, timeZone: "UTC" }),
           status: "unavailable" as const,
           coverage: [],
-          unclassified: 0,
+          unclassifiedRequests: 0,
           cost: emptyCost(),
         },
         total: claxedo,
@@ -1043,7 +1043,7 @@ const emptyHistory = (): LocalHistorySnapshot => ({
   totalRows: [],
   coverage: [],
   classifiedClaxedo: 0,
-  unclassified: 0,
+  unclassifiedRequests: 0,
 })
 
 export function LocalUsageRoutes(input: {
@@ -1166,7 +1166,7 @@ export function LocalUsageRoutes(input: {
           cost: emptyCost(),
           status: "unavailable",
           coverage: [],
-          unclassified: 0,
+          unclassifiedRequests: 0,
         },
         total: series,
         totalCost: emptyCost(),
@@ -1180,7 +1180,7 @@ export function LocalUsageRoutes(input: {
         externalStatus: response.externalLocal.status,
         quotaStatus: response.quota.status,
         scannerDegraded: 0,
-        unclassified: 0,
+        unclassifiedRequests: 0,
         pricedTokens: 0,
         unpricedTokens: 0,
       })
@@ -1281,7 +1281,7 @@ export function LocalUsageRoutes(input: {
         cost: externalCost,
         status: historyError ? "degraded" : view === "total" && input.history ? "available" : "unavailable",
         coverage: history.coverage,
-        unclassified: history.unclassified,
+        unclassifiedRequests: history.unclassifiedRequests,
         ...(history.scannedAt === undefined ? {} : { scannedAt: history.scannedAt }),
         ...(historyError ? { error: historyError } : {}),
       },
@@ -1304,7 +1304,7 @@ export function LocalUsageRoutes(input: {
       externalStatus: response.externalLocal.status,
       quotaStatus: response.quota.status,
       scannerDegraded: response.externalLocal.coverage.filter((source) => source.status !== "available").length,
-      unclassified: response.externalLocal.unclassified,
+      unclassifiedRequests: response.externalLocal.unclassifiedRequests,
       pricedTokens: response.totalCost.pricedTokens,
       unpricedTokens: response.totalCost.unpricedTokens,
     })

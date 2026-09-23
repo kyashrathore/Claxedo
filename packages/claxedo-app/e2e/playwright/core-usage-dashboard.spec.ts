@@ -98,7 +98,7 @@ function response(url: URL) {
       cost: cost(0.003),
       status: "available",
       coverage: [{ source: "claude", status: "available" }],
-      unclassified: 1,
+      unclassifiedRequests: 1,
     },
     total: {
       totals: totals(10, 1_200, 1_100),

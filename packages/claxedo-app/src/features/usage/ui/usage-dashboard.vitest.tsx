@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => ({
       },
       status: "available" as const,
       coverage: [],
-      unclassified: 0,
+      unclassifiedRequests: 0,
     },
     total: {
       totals: { turnCount: 2, input: 100, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 0, unknownCategories: 1 },
@@ -251,17 +251,17 @@ describe("UsageDashboard", () => {
     }
   })
 
-  test("Total says how many turns of this machine's history it cannot attribute, in turns", async () => {
+  test("Total says how many requests of this machine's history it cannot attribute", async () => {
     const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
     mocks.fetchUnifiedUsage.mockImplementation(async (request) => {
       const response = await answer(request)
-      return { ...response, externalLocal: { ...response.externalLocal, unclassified: 4 } }
+      return { ...response, externalLocal: { ...response.externalLocal, unclassifiedRequests: 4 } }
     })
     try {
       renderDashboard()
       fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
       expect(await screen.findByText(
-        "4 turns of this machine's history are counted in Total without knowing whether Claxedo ran them.",
+        "4 requests in this machine's history are counted in Total without knowing whether Claxedo made them.",
       )).toBeVisible()
       expect(screen.queryByText(/local events/)).not.toBeInTheDocument()
     } finally {
