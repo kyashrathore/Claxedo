@@ -121,10 +121,11 @@ const sqls = [
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_workspace_idx` ON `claxedo_usage_turn_current` (`workspace_id`, `observed_at`)",
   `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_owner\` (
     \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`message_id\` text NOT NULL,
-    \`org_id\` text NOT NULL, \`user_id\` text NOT NULL,
+    \`org_id\` text NOT NULL, \`user_id\` text NOT NULL, \`turn_id\` text,
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`)
   )`,
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_owner_account_idx` ON `claxedo_usage_turn_owner` (`org_id`, `user_id`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_owner_turn_idx` ON `claxedo_usage_turn_owner` (`host_id`, `session_ref`, `turn_id`)",
   `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_meter_state\` (
     \`session_id\` text NOT NULL, \`message_id\` text NOT NULL,
     \`streams_json\` text NOT NULL, \`observation_keys_json\` text NOT NULL,

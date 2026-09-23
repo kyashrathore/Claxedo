@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, test } from "vitest"
-import { LocalUsageRoutes, createUsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
+import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
-import type { UsageReportFact, UsageReportRevision } from "@claxedo/server-core/usage/usage-report"
+import {
+  USAGE_REPORT_CLOCK_SKEW_MS,
+  USAGE_REPORT_MAX_FACT_AGE_MS,
+  USAGE_REPORT_MAX_FACTS,
+  USAGE_REPORT_MAX_ID_LENGTH,
+  USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH,
+  type UsageReportFact,
+  type UsageReportRevision,
+} from "@claxedo/server-core/usage/usage-report"
 import { usageReportPlane, type UsageReportPlane } from "../test-support/usage-report-plane"
 
 const planes: UsageReportPlane[] = []
@@ -10,13 +18,13 @@ afterEach(() => {
   for (const plane of planes.splice(0)) plane.close()
 })
 
-async function plane(input: { usageWriter?: boolean } = {}) {
+async function plane(input: Parameters<typeof usageReportPlane>[0] = {}) {
   const created = await usageReportPlane(input)
   planes.push(created)
   return created
 }
 
-const OBSERVED_AT = Date.parse("2026-09-20T10:00:00Z")
+const OBSERVED_AT = Date.now() - 60_000
 
 const REVISION: UsageReportRevision = {
   messageId: "msg_assistant_1",
@@ -37,7 +45,7 @@ function reported(input: Partial<UsageReportFact> = {}): UsageReportFact {
 }
 
 async function filedFor(target: UsageReportPlane, userId: "owner" | "member") {
-  const filed = await target.ledger.pendingOutbox({ all: true, owner: { org_id: target.orgId, user_id: userId } })
+  const filed = await target.ledger.ownedBy({ org_id: target.orgId, user_id: userId })
   return filed.map((fact) => fact.messageId)
 }
 
@@ -192,6 +200,107 @@ describe("usage reports over the runtime session authority", () => {
     expect(await target.ledger.current({ sessionId: "ses_forged" })).toEqual([])
   })
 
+  test("refuses, fact by fact, a fact past an id cap or observed outside the report's window, and files the rest", async () => {
+    const target = await plane()
+    await target.session("ses_bounds")
+    const lease = await target.acquire(target.owner, "ses_bounds", "msg_user_1")
+    const now = Date.now()
+    const long = (length: number) => "x".repeat(length)
+    const quality = (key: string) => ({ ...REVISION.quality, providerObservationKey: key })
+
+    const answer = await report(target, lease, [
+      reported({ messageId: long(USAGE_REPORT_MAX_ID_LENGTH), modelId: long(USAGE_REPORT_MAX_ID_LENGTH), quality: quality(long(USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH)) }),
+      reported({ messageId: long(USAGE_REPORT_MAX_ID_LENGTH + 1) }),
+      reported({ messageId: "msg_long_model", modelId: long(USAGE_REPORT_MAX_ID_LENGTH + 1) }),
+      reported({ messageId: "msg_long_native", nativeSessionId: long(USAGE_REPORT_MAX_ID_LENGTH + 1) }),
+      reported({ messageId: "msg_long_key", quality: quality(long(USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH + 1)) }),
+      reported({ messageId: "msg_ancient", observedAt: now - USAGE_REPORT_MAX_FACT_AGE_MS - 3_600_000, completedAt: undefined }),
+      reported({ messageId: "msg_future", observedAt: now + USAGE_REPORT_CLOCK_SKEW_MS + 3_600_000, completedAt: undefined }),
+      reported({ messageId: "msg_completes_later", completedAt: now + USAGE_REPORT_CLOCK_SKEW_MS + 3_600_000 }),
+      reported({ messageId: "msg_in_bounds" }),
+    ])
+    expect(answer.status).toBe(200)
+    const results = (await answer.json() as { results: Array<{ messageId: string; status: string; code?: string }> }).results
+    expect(results.map(({ messageId, status, code }) => [messageId.length > 32 ? `x*${messageId.length}` : messageId, status, code])).toEqual([
+      [`x*${USAGE_REPORT_MAX_ID_LENGTH}`, "accepted", undefined],
+      [`x*${USAGE_REPORT_MAX_ID_LENGTH + 1}`, "refused", "usage_fact_out_of_bounds"],
+      ["msg_long_model", "refused", "usage_fact_out_of_bounds"],
+      ["msg_long_native", "refused", "usage_fact_out_of_bounds"],
+      ["msg_long_key", "refused", "usage_fact_out_of_bounds"],
+      ["msg_ancient", "refused", "usage_fact_out_of_bounds"],
+      ["msg_future", "refused", "usage_fact_out_of_bounds"],
+      ["msg_completes_later", "refused", "usage_fact_out_of_bounds"],
+      ["msg_in_bounds", "accepted", undefined],
+    ])
+    expect((await target.ledger.current({ sessionId: "ses_bounds" })).map((fact) => fact.messageId.length > 32 ? "long" : fact.messageId).sort())
+      .toEqual(["long", "msg_in_bounds"])
+  })
+
+  test("refuses a report carrying more facts than one report may, and stores none of them", async () => {
+    const target = await plane()
+    await target.session("ses_many")
+    const lease = await target.acquire(target.owner, "ses_many", "msg_user_1")
+    const facts = (count: number) => Array.from({ length: count }, (_, index) => ({
+      turnId: "msg_user_1", messageId: `m${index}`, revision: 1, observedAt: OBSERVED_AT, settlement: "final", status: "completed",
+      harness: "h", providerId: "p", modelId: "m", tokens: { input: 1, output: 1, reasoning: null, cache: { read: null, write: null } },
+      quality: { source: "provider", knownCategories: [] },
+    }))
+
+    const refused = await report(target, lease, facts(USAGE_REPORT_MAX_FACTS + 1))
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toMatchObject({ error: { code: "usage_report_invalid" } })
+    expect(await target.ledger.current({ sessionId: "ses_many" })).toEqual([])
+
+    const carried = await report(target, lease, facts(USAGE_REPORT_MAX_FACTS))
+    expect(carried.status).toBe(200)
+    expect(await target.ledger.current({ sessionId: "ses_many" })).toHaveLength(USAGE_REPORT_MAX_FACTS)
+  })
+
+  test("refuses every fact a machine's turn lease reports, so a machine never files cloud usage", async () => {
+    const target = await plane()
+    await target.session("ses_laptop", "ws_machine")
+    const lease = await target.acquire(target.member, "ses_laptop", "msg_user_1", "ws_machine")
+
+    const answer = await report(target, lease, [reported({ messageId: "msg_laptop_1" }), reported({ messageId: "msg_laptop_2" })])
+    expect(answer.status).toBe(200)
+    expect(await answer.json()).toEqual({ results: [
+      { messageId: "msg_laptop_1", revision: 2, status: "refused", code: "usage_owner_unresolved" },
+      { messageId: "msg_laptop_2", revision: 2, status: "refused", code: "usage_owner_unresolved" },
+    ] })
+    expect(await target.ledger.current({ sessionId: "ses_laptop" })).toEqual([])
+    expect(await filedFor(target, "member")).toEqual([])
+    expect(await filedFor(target, "owner")).toEqual([])
+  })
+
+  test("files each fact under the turn it names, and answers a store's per-turn refusal fact by fact", async () => {
+    const filings: Array<{ messageId: string; turnId: string; user: string }> = []
+    const target = await plane({
+      usageWriter: {
+        async writeRevision(fact, filing) {
+          filings.push({ messageId: fact.messageId, turnId: filing.turnId, user: filing.owner.user_id })
+          return fact.messageId === "msg_over_cap" ? { status: "refused", code: "usage_turn_full" } : { status: "accepted" }
+        },
+      },
+    })
+    await target.session("ses_filed")
+    const ownerTurn = await target.acquire(target.owner, "ses_filed", "msg_user_owner")
+    expect((await target.post({ action: "turn_release", ...ownerTurn })).status).toBe(200)
+    const memberTurn = await target.acquire(target.member, "ses_filed", "msg_user_member")
+
+    const answer = await report(target, memberTurn, [
+      reported({ messageId: "msg_by_owner", turnId: "msg_user_owner" }),
+      reported({ messageId: "msg_over_cap", turnId: "msg_user_member" }),
+    ])
+    expect(await answer.json()).toEqual({ results: [
+      { messageId: "msg_by_owner", revision: 2, status: "accepted" },
+      { messageId: "msg_over_cap", revision: 2, status: "refused", code: "usage_turn_full" },
+    ] })
+    expect(filings).toEqual([
+      { messageId: "msg_by_owner", turnId: "msg_user_owner", user: "owner" },
+      { messageId: "msg_over_cap", turnId: "msg_user_member", user: "member" },
+    ])
+  })
+
   test("a plane with no usage store answers a verified report as unavailable", async () => {
     const target = await plane({ usageWriter: false })
     await target.session("ses_unstored")
@@ -226,7 +335,6 @@ describe("the self-hosted usage view over reported cloud turns", () => {
     }
     const routes = LocalUsageRoutes({
       local: target.ledger,
-      outbox: createUsageOutboxSync({ local: target.ledger }),
       identity: async (request) => identities[request.headers.get("x-test-user") ?? ""],
       machineOperator: () => false,
       pricing: tokenTrackerPricing("refreshed"),

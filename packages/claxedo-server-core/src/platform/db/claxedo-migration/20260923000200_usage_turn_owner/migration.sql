@@ -4,10 +4,13 @@ CREATE TABLE `claxedo_usage_turn_owner` (
   `message_id` text NOT NULL,
   `org_id` text NOT NULL,
   `user_id` text NOT NULL,
+  `turn_id` text,
   PRIMARY KEY (`host_id`, `session_ref`, `message_id`)
 );
 --> statement-breakpoint
 CREATE INDEX `claxedo_usage_turn_owner_account_idx` ON `claxedo_usage_turn_owner` (`org_id`, `user_id`);
+--> statement-breakpoint
+CREATE INDEX `claxedo_usage_turn_owner_turn_idx` ON `claxedo_usage_turn_owner` (`host_id`, `session_ref`, `turn_id`);
 --> statement-breakpoint
 -- A turn belongs to the account its latest stamped revision named. A turn no
 -- revision named an account for is the machine's, and gets no row.

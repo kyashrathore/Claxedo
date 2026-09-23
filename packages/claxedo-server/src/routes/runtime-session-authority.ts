@@ -30,12 +30,15 @@ import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceAuthority, WorkspaceOwnerIdentity } from "@claxedo/server-core/platform/auth/authority"
 import type { SessionWriteClass } from "@claxedo/server-core/platform/auth/private-session-authority"
-import type { TurnUsageRevision, UsageOwner, UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
+import type { TurnUsageRevision, UsageOwner } from "@claxedo/server-core/usage/contracts"
 import {
   cloudWorkspaceUsageRevision,
   readUsageReportFacts,
+  usageReportFactInBounds,
   USAGE_REPORT_ACTION,
+  type UsageReportFact,
   type UsageReportResult,
+  type UsageReportWriter,
 } from "@claxedo/server-core/usage/usage-report"
 import type { ConnectionTurnCredentials } from "../connections/turn-credentials"
 import {
@@ -75,7 +78,7 @@ type RuntimeSessionAuthorityPort = Pick<
   /** Absent on a plane that records no host enrollments; `adopt` then answers 503. */
   adoptRuntimeSession?: PrivateSessionAuthority["adoptRuntimeSession"]
   /** Absent on a plane that records no turn producers; a usage report then answers 503. */
-  resolveSessionUsageOwner?: WorkspaceAuthority["resolveSessionUsageOwner"]
+  resolveCloudTurnUsageOwner?: WorkspaceAuthority["resolveCloudTurnUsageOwner"]
 }
 
 /** The workspace's owner as the authority records them now, or nothing for a workspace that has none. */
@@ -274,7 +277,7 @@ export type RuntimeSessionAuthorityOptions = {
   mintTurnLease?: (claims: TurnLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyTurnLease?: (lease: string) => Promise<TurnLeaseClaims>
   /** Where a cloud workspace's usage reports are filed; absent, a report answers 503. */
-  usageWriter?: UsageRevisionWriter
+  usageWriter?: UsageReportWriter
 }
 
 const USAGE_REPORT_KEYS: ReadonlySet<string> = new Set(["action", "sessionId", "turnId", "leaseId", "fencingToken", "facts"])
@@ -410,8 +413,10 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
    * lease, location and host from the plane; the report names none of them.
    * Each fact names the turn it was metered under and is owned by that turn's
    * recorded producer, so a fact retried under a later turn's lease stays its
-   * own turn's. A turn the session never admitted, or one no account
-   * produced, refuses that fact alone.
+   * own turn's. A fact is refused alone when it is out of bounds, when its
+   * turn is not one a cloud workspace's session admitted for an account, or
+   * when its turn already holds the most messages one turn files; a malformed
+   * fact, or too many of them, refuses the report.
    * The lease may already be released: it proves the turn was admitted, and
    * its own expiry bounds how late a report can arrive.
    */
@@ -434,9 +439,9 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         401,
       )
     }
-    let revisions: Array<{ turnId: string; revision: TurnUsageRevision }>
+    let revisions: Array<{ fact: UsageReportFact; revision: TurnUsageRevision }>
     try {
-      revisions = facts.map((fact) => ({ turnId: fact.turnId, revision: cloudWorkspaceUsageRevision(fact, lease) }))
+      revisions = facts.map((fact) => ({ fact, revision: cloudWorkspaceUsageRevision(fact, lease) }))
     } catch {
       return context.json({ error: { code: "usage_report_invalid", message: "A reported usage revision is malformed" } }, 400)
     }
@@ -445,20 +450,23 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       if (denial) return context.json({ error: denial }, 401)
       const writer = options.usageWriter
       const authority = options.authority
-      if (!writer || !authority.resolveSessionUsageOwner) {
+      if (!writer || !authority.resolveCloudTurnUsageOwner) {
         return context.json({ error: { code: "usage_report_unavailable", message: "Usage reporting is not configured" } }, 503)
       }
+      const window = { admittedAt: lease.acquiredAt, now: Date.now() }
+      const inBounds = revisions.filter(({ fact }) => usageReportFactInBounds(fact, window))
       const owners = new Map<string, UsageOwner | undefined>()
-      for (const factTurnId of new Set(revisions.map((item) => item.turnId))) {
-        owners.set(factTurnId, await authority.resolveSessionUsageOwner({ sessionId, turnId: factTurnId }))
+      for (const factTurnId of new Set(inBounds.map(({ fact }) => fact.turnId))) {
+        owners.set(factTurnId, await authority.resolveCloudTurnUsageOwner({ sessionId, turnId: factTurnId }))
       }
       const results: UsageReportResult[] = []
-      for (const { turnId: factTurnId, revision } of revisions) {
-        const owner = owners.get(factTurnId)
+      for (const item of revisions) {
+        const { fact, revision } = item
         const reported = { messageId: revision.messageId, revision: revision.revision }
-        results.push(owner
-          ? { ...reported, ...await writer.writeRevision(revision, { owner }) }
-          : { ...reported, status: "refused", code: "usage_owner_unresolved" })
+        const owner = owners.get(fact.turnId)
+        if (!inBounds.includes(item)) results.push({ ...reported, status: "refused", code: "usage_fact_out_of_bounds" })
+        else if (!owner) results.push({ ...reported, status: "refused", code: "usage_owner_unresolved" })
+        else results.push({ ...reported, ...await writer.writeRevision(revision, { owner, turnId: fact.turnId }) })
       }
       return context.json({ results })
     } catch {

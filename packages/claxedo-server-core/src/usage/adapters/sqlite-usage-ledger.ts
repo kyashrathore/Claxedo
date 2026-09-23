@@ -7,10 +7,13 @@ import {
   type TurnUsageQuality,
   type TurnUsageRevision,
   type UsageOwnedTurnReader,
+  type UsageOwner,
   type UsageRevisionReader,
+  type UsageRevisionWriteResult,
   type UsageRevisionWriter,
 } from "../contracts"
 import type { LocalTurnSpan } from "../local-history-classifier"
+import { USAGE_REPORT_MAX_MESSAGES_PER_TURN, type UsageReportWriter } from "../usage-report"
 import { ClaxedoUsageTurnCurrentTable, ClaxedoUsageTurnOwnerTable, ClaxedoUsageTurnRevisionTable } from "../usage.sql"
 
 type Database = {
@@ -88,7 +91,11 @@ export type SqliteUsageLedger = UsageRevisionWriter &
   UsageOwnedTurnReader & {
     /** The latest revision of every turn metered on this machine, with when its first revision was observed. */
     localTurnSpans(): Promise<LocalTurnSpan[]>
+    /** Where the plane files what a cloud sandbox this machine provisions reports, each turn up to its message cap. */
+    reports: UsageReportWriter
   }
+
+type TurnFull = { status: "refused"; code: "usage_turn_full" }
 
 export function createSqliteUsageLedger(
   input: {
@@ -96,72 +103,87 @@ export function createSqliteUsageLedger(
   } = {},
 ): SqliteUsageLedger {
   const database = input.database ?? ClaxedoDB
-  return {
-    async writeRevision(item, options) {
-      assertTurnUsageRevision(item)
-      const hash = await usageRevisionHash(item)
-      return database.transaction((db) => {
-        const current = db
-          .select({
-            revision: ClaxedoUsageTurnCurrentTable.revision,
-            payload_hash: ClaxedoUsageTurnCurrentTable.payload_hash,
-          })
-          .from(ClaxedoUsageTurnCurrentTable)
+  function write(item: TurnUsageRevision, filing: { owner?: UsageOwner }): Promise<UsageRevisionWriteResult>
+  function write(item: TurnUsageRevision, filing: { owner: UsageOwner; turnId: string }): Promise<UsageRevisionWriteResult | TurnFull>
+  async function write(item: TurnUsageRevision, filing: { owner?: UsageOwner; turnId?: string }) {
+    assertTurnUsageRevision(item)
+    const hash = await usageRevisionHash(item)
+    return database.transaction((db) => {
+      const current = db
+        .select({
+          revision: ClaxedoUsageTurnCurrentTable.revision,
+          payload_hash: ClaxedoUsageTurnCurrentTable.payload_hash,
+        })
+        .from(ClaxedoUsageTurnCurrentTable)
+        .where(
+          and(
+            eq(ClaxedoUsageTurnCurrentTable.host_id, item.hostId),
+            eq(ClaxedoUsageTurnCurrentTable.session_ref, item.sessionRef),
+            eq(ClaxedoUsageTurnCurrentTable.message_id, item.messageId),
+          ),
+        )
+        .get()
+      if (current) {
+        if (item.revision < current.revision) return { status: "stale", currentRevision: current.revision } as const
+        if (item.revision === current.revision) {
+          return current.payload_hash === hash
+            ? ({ status: "duplicate" } as const)
+            : ({ status: "conflict", currentRevision: current.revision } as const)
+        }
+      } else if (filing.turnId !== undefined) {
+        const filed = db
+          .select({ messages: sql<number>`count(*)` })
+          .from(ClaxedoUsageTurnOwnerTable)
           .where(
             and(
-              eq(ClaxedoUsageTurnCurrentTable.host_id, item.hostId),
-              eq(ClaxedoUsageTurnCurrentTable.session_ref, item.sessionRef),
-              eq(ClaxedoUsageTurnCurrentTable.message_id, item.messageId),
+              eq(ClaxedoUsageTurnOwnerTable.host_id, item.hostId),
+              eq(ClaxedoUsageTurnOwnerTable.session_ref, item.sessionRef),
+              eq(ClaxedoUsageTurnOwnerTable.turn_id, filing.turnId),
             ),
           )
           .get()
-        if (current) {
-          if (item.revision < current.revision) return { status: "stale", currentRevision: current.revision } as const
-          if (item.revision === current.revision) {
-            return current.payload_hash === hash
-              ? ({ status: "duplicate" } as const)
-              : ({ status: "conflict", currentRevision: current.revision } as const)
-          }
+        if ((filed?.messages ?? 0) >= USAGE_REPORT_MAX_MESSAGES_PER_TURN) {
+          return { status: "refused", code: "usage_turn_full" } as const
         }
+      }
 
-        const row = values(item, hash)
-        db.insert(ClaxedoUsageTurnRevisionTable).values(row).run()
-        db.insert(ClaxedoUsageTurnCurrentTable)
-          .values(row)
+      const row = values(item, hash)
+      db.insert(ClaxedoUsageTurnRevisionTable).values(row).run()
+      db.insert(ClaxedoUsageTurnCurrentTable)
+        .values(row)
+        .onConflictDoUpdate({
+          target: [
+            ClaxedoUsageTurnCurrentTable.host_id,
+            ClaxedoUsageTurnCurrentTable.session_ref,
+            ClaxedoUsageTurnCurrentTable.message_id,
+          ],
+          set: row,
+        })
+        .run()
+      // A revision written before its session's producer could be named
+      // leaves the turn's owner as an earlier revision stamped it.
+      const { owner, turnId } = filing
+      if (owner) {
+        const stamp = { org_id: owner.org_id, user_id: owner.user_id, ...(turnId === undefined ? {} : { turn_id: turnId }) }
+        db.insert(ClaxedoUsageTurnOwnerTable)
+          .values({ host_id: item.hostId, session_ref: item.sessionRef, message_id: item.messageId, ...stamp })
           .onConflictDoUpdate({
             target: [
-              ClaxedoUsageTurnCurrentTable.host_id,
-              ClaxedoUsageTurnCurrentTable.session_ref,
-              ClaxedoUsageTurnCurrentTable.message_id,
+              ClaxedoUsageTurnOwnerTable.host_id,
+              ClaxedoUsageTurnOwnerTable.session_ref,
+              ClaxedoUsageTurnOwnerTable.message_id,
             ],
-            set: row,
+            set: stamp,
           })
           .run()
-        // A revision written before its session's producer could be named
-        // leaves the turn's owner as an earlier revision stamped it.
-        const owner = options?.owner
-        if (owner) {
-          db.insert(ClaxedoUsageTurnOwnerTable)
-            .values({
-              host_id: item.hostId,
-              session_ref: item.sessionRef,
-              message_id: item.messageId,
-              org_id: owner.org_id,
-              user_id: owner.user_id,
-            })
-            .onConflictDoUpdate({
-              target: [
-                ClaxedoUsageTurnOwnerTable.host_id,
-                ClaxedoUsageTurnOwnerTable.session_ref,
-                ClaxedoUsageTurnOwnerTable.message_id,
-              ],
-              set: { org_id: owner.org_id, user_id: owner.user_id },
-            })
-            .run()
-        }
-        return { status: "accepted" } as const
-      })
-    },
+      }
+      return { status: "accepted" } as const
+    })
+  }
+
+  return {
+    writeRevision: (item, options) => write(item, options?.owner ? { owner: options.owner } : {}),
+    reports: { writeRevision: (item, filing) => write(item, filing) },
 
     async current(filter = {}) {
       return database

@@ -16,7 +16,7 @@ export default {
     if (new URL(request.url).pathname === "/seed") {
       const fact = readTurnUsageRevision(await request.json())
       if (!fact) return new Response("not a usage revision", { status: 400 })
-      return Response.json(await ledger.writeRevision(fact, { owner: OWNER }))
+      return Response.json(await ledger.writeRevision(fact, { owner: OWNER, turnId: "msg_user_seed" }))
     }
     return await UsageRoutes({ ledger, identity: async () => OWNER, pricing: tokenTrackerPricing("bundled") }).fetch(request)
   },

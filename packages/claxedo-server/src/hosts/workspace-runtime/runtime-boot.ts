@@ -164,14 +164,14 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   // A relay-exposed runtime answers to the control plane's session authority,
   // which is also where its turns' usage is reported.
   const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
-  const usage = relayOptions.relayHostAuth && authorityUrl
+  const usageLedger = relayOptions.relayHostAuth && authorityUrl
+    ? createSandboxUsageLedger({ path: path.join(workspaceRuntimeStoreDir(env), "usage.sqlite"), workspaceId: workspaceId(env) })
+    : undefined
+  const usage = usageLedger && authorityUrl
     ? cloudWorkspaceUsage({
         workspaceId: workspaceId(env),
         authorityUrl,
-        ledger: createSandboxUsageLedger({
-          path: path.join(workspaceRuntimeStoreDir(env), "usage.sqlite"),
-          workspaceId: workspaceId(env),
-        }),
+        ledger: usageLedger,
         policy: remoteWorkspaceSessionAccessPolicyFromEnv(env),
       })
     : undefined
@@ -197,6 +197,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
           onTurnOutcome: usage.onTurnOutcome,
           bindSessionConfig: usage.bindSessionConfig,
           bindSessionParents: usage.bindSessionParents,
+          onDrain: async () => {
+            await usage.drain()
+            usageLedger?.close()
+          },
         }
       : {}),
     ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),

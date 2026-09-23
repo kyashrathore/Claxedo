@@ -139,6 +139,12 @@ export type WorkspaceRuntimeServerOptions = {
    * is written only when the session is bound, never on an event.
    */
   bindSessionParents?: (read: Host["parentSessionIdFor"]) => void
+  /**
+   * Host-owned work the process drain awaits last, once the runtime's
+   * sessions, processes and PTYs are disposed: whatever a disposed turn left
+   * behind is still the host's to settle before the process exits.
+   */
+  onDrain?: () => Promise<void> | void
 }
 
 type ListenPolicyEnv = {
@@ -302,6 +308,7 @@ type WorkspaceRuntimeDrainOptions = {
   processDispose?: (directory: string) => Promise<void>
   ptyDispose?: () => Promise<void>
   openCodeDispose?: () => Promise<void>
+  hostDrain?: () => Promise<void> | void
 }
 
 type WorkspaceRuntimeShutdownReason = NodeJS.Signals | "unhandledRejection" | "uncaughtException"
@@ -327,6 +334,7 @@ export async function drainWorkspaceRuntime(options: WorkspaceRuntimeDrainOption
         await drainStep(errors, () => (options.ptyDispose ?? Pty.dispose)())
         await drainStep(errors, () => options.runtime.host.dispose())
         await drainStep(errors, () => options.openCodeDispose?.())
+        await drainStep(errors, () => options.hostDrain?.())
         if (errors.length) {
           throw new AggregateError(errors, "Workspace runtime drain failed")
         }
@@ -751,6 +759,7 @@ export function startServer(
         ...(options.ownsOpenCodeRuntime && options.opencodeRuntime
           ? { openCodeDispose: () => options.opencodeRuntime!.close() }
           : {}),
+        ...(options.onDrain ? { hostDrain: options.onDrain } : {}),
       }),
     exit: (code) => process.exit(code),
   })

@@ -642,6 +642,20 @@ function refuseCloudWorkspace(workspace: { backing?: unknown }) {
   }
 }
 
+/**
+ * The account usage an actor produced on a workspace is filed under, and where
+ * that workspace runs. An agent actor has no account, and a deleted workspace
+ * answers for no one: either leaves the usage unowned rather than guessed.
+ */
+function usageAccount(db: SqliteAuthorityDb, input: { actorId: string; workspaceId: string }) {
+  const user = db.prepare<unknown[], { subject: string | null }>(
+    `SELECT subject FROM users WHERE token_identifier = ?`,
+  ).get(input.actorId)
+  const workspace = workspaceByPublicId(db, input.workspaceId)
+  if (!user?.subject || !workspace || workspace.deleted_at) return undefined
+  return { owner: { org_id: workspace.org_id, user_id: user.subject }, backing: workspace.backing }
+}
+
 // Mirrors `KNOWN_HOME_REGIONS` in the workspace authority: validate only, never default.
 const KNOWN_HOME_REGIONS = ["apac-south", "apac-east", "eu-west", "us-east", "us-west"]
 
@@ -2802,21 +2816,14 @@ export function createSqliteWorkspaceAuthority(
       return { revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [who.token_identifier]) }
     },
 
-    async resolveSessionUsageOwner(args: { sessionId: string; turnId?: string }) {
+    async resolveSessionUsageOwner(args: { sessionId: string }) {
       const db = database()
-      // A named turn's usage is its admitted actor's or nobody's: answering
-      // for a turn this session never admitted would bill whoever drove it
-      // last. Unnamed, the latest turn's actor produced it, and a session
+      // The latest turn's actor produced the session's usage, and a session
       // nobody has driven yet is its creator's.
-      const produced = args.turnId === undefined
-        ? db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
-          SELECT actor_id, workspace_id FROM session_turn_producers
-          WHERE session_id = ? ORDER BY fencing_token DESC LIMIT 1
-        `).get(args.sessionId)
-        : db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
-          SELECT actor_id, workspace_id FROM session_turn_producers WHERE session_id = ? AND turn_id = ?
-        `).get(args.sessionId, args.turnId)
-      if (args.turnId !== undefined && !produced) return undefined
+      const produced = db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
+        SELECT actor_id, workspace_id FROM session_turn_producers
+        WHERE session_id = ? ORDER BY fencing_token DESC LIMIT 1
+      `).get(args.sessionId)
       const registered = db.prepare<unknown[], { creator_actor_id: string; workspace_id: string }>(`
         SELECT creator_actor_id, workspace_id FROM session_history
         WHERE session_id = ? AND deleted_at IS NULL
@@ -2824,12 +2831,17 @@ export function createSqliteWorkspaceAuthority(
       const actorId = produced?.actor_id ?? registered?.creator_actor_id
       const workspaceId = produced?.workspace_id ?? registered?.workspace_id
       if (!actorId || !workspaceId) return undefined
-      const owner = db.prepare<unknown[], { subject: string | null }>(
-        `SELECT subject FROM users WHERE token_identifier = ?`,
-      ).get(actorId)
-      const workspace = workspaceByPublicId(db, workspaceId)
-      if (!owner?.subject || !workspace || workspace.deleted_at) return undefined
-      return { org_id: workspace.org_id, user_id: owner.subject }
+      return usageAccount(db, { actorId, workspaceId })?.owner
+    },
+
+    async resolveCloudTurnUsageOwner(args: { sessionId: string; turnId: string }) {
+      const db = database()
+      const produced = db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
+        SELECT actor_id, workspace_id FROM session_turn_producers WHERE session_id = ? AND turn_id = ?
+      `).get(args.sessionId, args.turnId)
+      if (!produced) return undefined
+      const account = usageAccount(db, { actorId: produced.actor_id, workspaceId: produced.workspace_id })
+      return account?.backing === "cloud-vm" ? account.owner : undefined
     },
 
     async auditDeny(auth, args) {

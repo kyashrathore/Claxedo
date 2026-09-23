@@ -7,6 +7,7 @@ import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 import { CLAXEDO_MIGRATION_JOURNAL } from "@claxedo/server-core/platform/db/journal"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
+import { USAGE_REPORT_MAX_MESSAGES_PER_TURN } from "@claxedo/server-core/usage/usage-report"
 
 /** A database with every migration in the journal applied, the way a booted machine has it. */
 function migrated() {
@@ -161,6 +162,27 @@ describe("sqlite usage ledger", () => {
       expect(await ledger.ownedBy(account)).toEqual([])
     }
     expect(sqlite.prepare("SELECT count(*) AS count FROM claxedo_usage_turn_owner").get()).toEqual({ count: 0 })
+  })
+
+  test("files a reported turn up to its message cap, and still takes a later revision of a message it holds", async () => {
+    const { ledger } = harness()
+    const owner = { org_id: "org-a", user_id: "user-a" }
+    const filing = { owner, turnId: "msg_user_1" }
+    const cloud = (input: Partial<TurnUsageRevision>) => revision({ location: "cloud-workspace", ...input })
+    for (let index = 0; index < USAGE_REPORT_MAX_MESSAGES_PER_TURN; index++) {
+      expect(await ledger.reports.writeRevision(cloud({ messageId: `msg_${index}` }), filing)).toEqual({ status: "accepted" })
+    }
+
+    expect(await ledger.reports.writeRevision(cloud({ messageId: "msg_over" }), filing))
+      .toEqual({ status: "refused", code: "usage_turn_full" })
+    expect(await ledger.reports.writeRevision(cloud({ messageId: "msg_0", revision: 2 }), filing)).toEqual({ status: "accepted" })
+    expect(await ledger.reports.writeRevision(cloud({ messageId: "msg_over" }), { owner, turnId: "msg_user_2" }))
+      .toEqual({ status: "accepted" })
+    expect(await ledger.reports.writeRevision(
+      cloud({ messageId: "msg_over_elsewhere", sessionRef: "workspace:ws_main:session:other" }),
+      filing,
+    )).toEqual({ status: "accepted" })
+    expect(await ledger.ownedBy(owner)).toHaveLength(USAGE_REPORT_MAX_MESSAGES_PER_TURN + 2)
   })
 
   test("rolls back the fact when its owner cannot be filed", async () => {

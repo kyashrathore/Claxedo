@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import { execFileSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -6,7 +6,10 @@ import os from "node:os"
 import path from "node:path"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
+import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
+import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/agent-sdk-runtime/compat-events"
 import { mintOwnerGrant } from "../../session/owner-grant"
+import { usageReportPlane, USAGE_REPORT_URL } from "../../test-support/usage-report-plane"
 import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
 import {
   claxedoCorsOrigin,
@@ -205,32 +208,68 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.hostTunnel).toMatchObject({ relayUrl: "https://relay.example", hostId: "ws-env" })
   })
 
-  test("a relay runtime that answers to a session authority meters its turns into its store and reports through that authority", async () => {
-    const key = await generateKeyPair("EdDSA", { extractable: true })
+  test("a relay runtime that answers to a session authority reports its turns' usage there, and ships what is left when it drains", async () => {
+    const plane = await usageReportPlane()
     const store = await mkdtemp(path.join(os.tmpdir(), "claxedo-runtime-usage-"))
     const relay = {
-      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-usage",
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_real",
       WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
       WORKSPACE_RUNTIME_STORE_DIR: store,
-      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
+      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI((await generateKeyPair("EdDSA", { extractable: true })).publicKey),
       WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
     }
+    vi.stubGlobal("fetch", plane.fetch)
     try {
-      const metered = await claxedoWorkspaceRuntimeBootFromEnv({
-        ...relay,
-        WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://plane.example/api/runtime-authority/session-authorize",
-      })
-      expect(metered.options.onCompatEvent).toBeTypeOf("function")
-      expect(metered.options.onTurnOutcome).toBeTypeOf("function")
-      expect(metered.options.bindSessionConfig).toBeTypeOf("function")
-      expect(metered.options.bindSessionParents).toBeTypeOf("function")
-      expect(metered.options.sessionAccessPolicy?.sessionAuthority).toBe("managed-private")
+      await plane.session("ses_boot")
+      const { options } = await claxedoWorkspaceRuntimeBootFromEnv({ ...relay, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: USAGE_REPORT_URL })
+      options.bindSessionConfig!(() => ({ harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5.4" } }))
+      options.bindSessionParents!(() => undefined)
+      const policy = options.sessionAccessPolicy!
+      const access = {
+        actor: { actorId: plane.member.user.tokenIdentifier, actorKind: "human" as const },
+        authority: { managed: true as const, workspaceId: "ws_real", orgId: plane.orgId, role: "editor" as const },
+        credential: `Bearer ${await plane.relayToken(plane.member)}`,
+        operation: "prompt" as const,
+        sessionId: "ses_boot",
+      }
+      const acquired = await policy.acquireTurn!({ ...access, turnId: "msg_user_1" })
+      if (!acquired.allowed) throw new Error(`turn was refused: ${acquired.code}`)
+      const turn = { ...access, turnId: "msg_user_1", leaseId: acquired.leaseId, fencingToken: acquired.fencingToken }
+      const assistant = (id: string) => envelope(messageUpdated(buildAssistantMessage({
+        id, sessionID: "ses_boot", parentID: "msg_user_1", agent: "build",
+        model: { providerID: "openai", modelID: "gpt-5.4" }, directory: "/workspace", created: 1_000,
+      })))
+      const tokens = { input: 90, output: 9, reasoning: 0, cache: { read: 0, write: 0 } }
+      for (const event of [
+        assistant("msg_reply"),
+        envelope(sessionUsage({
+          sessionID: "ses_boot", messageID: "msg_reply", contextSize: 200_000, contextUsed: 99,
+          observation: { kind: "cumulative", providerObservationId: "obs_reply", observedAt: Date.now(), tokens },
+        })),
+        envelope(messageCompleted("ses_boot", "msg_reply")),
+        assistant("msg_tail"),
+      ]) options.onCompatEvent!(event)
+      await policy.endTurn?.(turn)
+      expect(await policy.releaseTurn!(turn)).toEqual({ released: true })
+      options.onCompatEvent!(envelope(messageCompleted("ses_boot", "msg_tail")))
+
+      await options.onDrain!()
+
+      expect((await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: "member" })).map((fact) => [
+        fact.messageId, fact.location, fact.hostId, fact.settlement, fact.tokens,
+      ])).toEqual([
+        ["msg_reply", "cloud-workspace", "workspace:ws_real", "final", tokens],
+        ["msg_tail", "cloud-workspace", "workspace:ws_real", "unavailable", { input: null, output: null, reasoning: null, cache: { read: null, write: null } }],
+      ])
       expect(existsSync(path.join(store, "usage.sqlite"))).toBe(true)
 
       const unmetered = await claxedoWorkspaceRuntimeBootFromEnv(relay)
       expect(unmetered.options.onCompatEvent).toBeUndefined()
+      expect(unmetered.options.onDrain).toBeUndefined()
       expect(unmetered.options.sessionAccessPolicy).toBeUndefined()
     } finally {
+      vi.unstubAllGlobals()
+      plane.close()
       await rm(store, { recursive: true, force: true })
     }
   })
@@ -305,3 +344,7 @@ describe("claxedo cors policy", () => {
     expect(claxedoCorsOrigin("http://localhost:4444", relay)).toBeUndefined()
   })
 })
+
+function envelope(payload: CompatEnvelope["payload"]): CompatEnvelope {
+  return { directory: "/workspace", payload }
+}

@@ -1,10 +1,12 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { afterEach, describe, expect, test } from "vitest"
+import Database from "better-sqlite3"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { buildAssistantMessage, messageCompleted, messageUpdated, sessionUsage } from "@claxedo/agent-sdk-runtime/compat-events"
 import { remoteWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
+import { USAGE_REPORT_MAX_FACTS } from "@claxedo/server-core/usage/usage-report"
 import { cloudWorkspaceUsage, createSandboxUsageLedger, type SandboxUsageLedger } from "./cloud-usage"
 import { usageReportPlane, USAGE_REPORT_URL, type UsageReportPlane } from "../../test-support/usage-report-plane"
 
@@ -35,13 +37,14 @@ async function openPlane() {
 type Fetch = (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 /** `parents` maps a child session to the session it was filed under. */
-function sandbox(ledger: SandboxUsageLedger, fetch: Fetch, parents: Record<string, string> = {}) {
+function sandbox(ledger: SandboxUsageLedger, fetch: Fetch, parents: Record<string, string> = {}, flushIntervalMs?: number) {
   const usage = cloudWorkspaceUsage({
     workspaceId: "ws_real",
     ledger,
     authorityUrl: USAGE_REPORT_URL,
     policy: remoteWorkspaceSessionAccessPolicy({ url: USAGE_REPORT_URL, fetch }),
     fetch,
+    ...(flushIntervalMs === undefined ? {} : { flushIntervalMs }),
   })
   usage.bindSessionConfig(() => ({
     harness: { id: "codex", access: "native" },
@@ -56,6 +59,7 @@ function envelope(payload: CompatEnvelope["payload"]): CompatEnvelope {
 }
 
 const TOKENS = { input: 1_200, output: 300, reasoning: 40, cache: { read: 500, write: 90 } }
+const OBSERVED_AT = Date.now() - 60_000
 
 function turnEvents(sessionId: string, messageId: string, input: { completed: boolean; tokens?: typeof TOKENS }) {
   const events = [
@@ -76,7 +80,7 @@ function turnEvents(sessionId: string, messageId: string, input: { completed: bo
       observation: {
         kind: "cumulative",
         providerObservationId: `obs_${messageId}`,
-        observedAt: Date.parse("2026-09-20T10:00:00Z"),
+        observedAt: OBSERVED_AT,
         tokens: input.tokens ?? TOKENS,
       },
     })),
@@ -96,23 +100,35 @@ async function turnAccess(plane: UsageReportPlane, sessionId: string, by: Accoun
   }
 }
 
-/** One turn through the runtime's own policy: acquire, the harness's events, release. */
-async function runTurn(
-  plane: UsageReportPlane,
-  usage: ReturnType<typeof sandbox>,
-  input: { by: Account; sessionId: string; turnId: string; events: CompatEnvelope[] },
-) {
+type Usage = ReturnType<typeof sandbox>
+
+async function startTurn(plane: UsageReportPlane, usage: Usage, input: { by: Account; sessionId: string; turnId: string }) {
   const access = await turnAccess(plane, input.sessionId, input.by)
   const acquired = await usage.sessionAccessPolicy.acquireTurn!({ ...access, turnId: input.turnId })
   if (!acquired.allowed) throw new Error(`turn was refused: ${acquired.code}`)
+  return { ...access, turnId: input.turnId, leaseId: acquired.leaseId, fencingToken: acquired.fencingToken }
+}
+
+/**
+ * Ends a turn as the runtime's lease controller does: the policy hears the
+ * turn ended, then the lease is released — unless it was lost, when the
+ * authority is not asked.
+ */
+async function finishTurn(usage: Usage, turn: Awaited<ReturnType<typeof startTurn>>, input: { lost?: boolean } = {}) {
+  await usage.sessionAccessPolicy.endTurn?.(turn)
+  return input.lost ? { released: false } : await usage.sessionAccessPolicy.releaseTurn!(turn)
+}
+
+/** One turn through the runtime's own policy: acquire, the harness's events, end and release. */
+async function runTurn(
+  plane: UsageReportPlane,
+  usage: Usage,
+  input: { by: Account; sessionId: string; turnId: string; events: CompatEnvelope[] },
+) {
+  const turn = await startTurn(plane, usage, input)
   for (const event of input.events) usage.onCompatEvent(event)
-  const released = await usage.sessionAccessPolicy.releaseTurn!({
-    ...access,
-    turnId: input.turnId,
-    leaseId: acquired.leaseId,
-    fencingToken: acquired.fencingToken,
-  })
-  await usage.idle()
+  const released = await finishTurn(usage, turn)
+  await usage.drain()
   return released
 }
 
@@ -125,7 +141,7 @@ function refusingReports(plane: UsageReportPlane, refuse: () => boolean): Fetch 
 }
 
 async function filedFor(plane: UsageReportPlane, userId: "owner" | "member") {
-  const filed = await plane.ledger.pendingOutbox({ all: true, owner: { org_id: plane.orgId, user_id: userId } })
+  const filed = await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: userId })
   return filed.map((fact) => fact.messageId)
 }
 
@@ -136,7 +152,7 @@ describe("cloud workspace usage metering", () => {
     const usage = sandbox(ledger, plane.fetch)
 
     for (const event of turnEvents("ses_metered", "msg_assistant_1", { completed: true })) usage.onCompatEvent(event)
-    await usage.idle()
+    await usage.drain()
 
     expect(await ledger.current({ sessionId: "ses_metered" })).toEqual([expect.objectContaining({
       sessionRef: "workspace:ws_real:session:ses_metered",
@@ -167,7 +183,7 @@ describe("cloud workspace usage metering", () => {
 
     expect(released).toEqual({ released: true })
     expect(ledger.pending("ses_reported")).toEqual([])
-    const filed = await plane.ledger.pendingOutbox({ all: true, owner: { org_id: plane.orgId, user_id: "owner" } })
+    const filed = await plane.ledger.ownedBy({ org_id: plane.orgId, user_id: "owner" })
     expect(filed).toEqual([expect.objectContaining({
       sessionId: "ses_reported",
       messageId: "msg_assistant_1",
@@ -292,7 +308,7 @@ describe("cloud workspace usage metering", () => {
     ])
   })
 
-  test("keeps usage no turn was holding across a restart, and delivers it with the next turn its session or an ancestor ends", async () => {
+  test("keeps usage from a session no turn was admitted on across a restart, and delivers it with the first turn its session or an ancestor ends", async () => {
     const plane = await openPlane()
     await plane.session("ses_unleased_root")
     await plane.session("ses_unrelated")
@@ -305,12 +321,12 @@ describe("cloud workspace usage metering", () => {
       ...turnEvents("ses_unleased_child", "msg_child_unleased", { completed: true }),
       ...turnEvents("ses_unrelated", "msg_unrelated_unleased", { completed: true }),
     ]) idle.onCompatEvent(event)
-    await idle.idle()
+    await idle.drain()
     beforeRestart.close()
 
     const ledger = openLedger(file)
     const usage = sandbox(ledger, plane.fetch, parents)
-    await usage.idle()
+    await usage.drain()
     await runTurn(plane, usage, {
       by: plane.member,
       sessionId: "ses_unleased_root",
@@ -377,7 +393,7 @@ describe("cloud workspace usage metering", () => {
     refuseReports = false
     const afterRestart = openLedger(file)
     const usage = sandbox(afterRestart, flaky)
-    await usage.idle()
+    await usage.drain()
     expect(afterRestart.pending("ses_retried").map(({ fact }) => [fact.settlement, fact.turnId])).toEqual([["partial", "msg_user_1"]])
     await runTurn(plane, usage, { by: plane.member, sessionId: "ses_retried", turnId: "msg_user_2", events: [] })
 
@@ -391,5 +407,229 @@ describe("cloud workspace usage metering", () => {
     })])
     expect(await filedFor(plane, "owner")).toEqual(["msg_assistant_1"])
     expect(await filedFor(plane, "member")).toEqual([])
+  })
+})
+
+async function until(condition: () => Promise<boolean> | boolean, what: string) {
+  for (const deadline = Date.now() + 5_000; Date.now() < deadline;) {
+    if (await condition()) return
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`timed out waiting for ${what}`)
+}
+
+function usageEvent(sessionId: string, messageId: string, scope: string, tokens: typeof TOKENS) {
+  return envelope(sessionUsage({
+    sessionID: sessionId,
+    messageID: messageId,
+    contextSize: 200_000,
+    contextUsed: 1_500,
+    observation: { kind: "cumulative", scope, providerObservationId: `obs_${scope}`, observedAt: OBSERVED_AT, tokens },
+  }))
+}
+
+describe("cloud workspace usage delivery", () => {
+  test("reports a turn whose lease was lost, and files what its harness meters while winding down under that turn", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_lost")
+    const ledger = openLedger(ledgerPath())
+    const usage = sandbox(ledger, plane.fetch)
+
+    const turn = await startTurn(plane, usage, { by: plane.member, sessionId: "ses_lost", turnId: "msg_user_1" })
+    for (const event of turnEvents("ses_lost", "msg_before_loss", { completed: true })) usage.onCompatEvent(event)
+    expect(await finishTurn(usage, turn, { lost: true })).toEqual({ released: false })
+    await until(async () => (await filedFor(plane, "member")).includes("msg_before_loss"), "the lost turn's report")
+    for (const event of turnEvents("ses_lost", "msg_after_loss", { completed: true })) usage.onCompatEvent(event)
+    await usage.drain()
+
+    expect(await filedFor(plane, "member")).toEqual(["msg_before_loss", "msg_after_loss"])
+    expect(ledger.pending("ses_lost")).toEqual([])
+  })
+
+  test("files usage that lands between two turns under the turn that left it, across a restart, when another account's turn ships it", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_between")
+    const file = ledgerPath()
+    const beforeRestart = createSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
+    await runTurn(plane, sandbox(beforeRestart, plane.fetch), {
+      by: plane.owner,
+      sessionId: "ses_between",
+      turnId: "msg_user_1",
+      events: turnEvents("ses_between", "msg_owner_reply", { completed: true }),
+    })
+    beforeRestart.close()
+
+    const ledger = openLedger(file)
+    const usage = sandbox(ledger, plane.fetch)
+    for (const event of turnEvents("ses_between", "msg_owner_tail", { completed: true })) usage.onCompatEvent(event)
+    await runTurn(plane, usage, {
+      by: plane.member,
+      sessionId: "ses_between",
+      turnId: "msg_user_2",
+      events: turnEvents("ses_between", "msg_member_reply", { completed: true }),
+    })
+
+    expect(await filedFor(plane, "owner")).toEqual(["msg_owner_reply", "msg_owner_tail"])
+    expect(await filedFor(plane, "member")).toEqual(["msg_member_reply"])
+    expect(ledger.pending("ses_between")).toEqual([])
+  })
+
+  test("ships a revision written after its turn ended under that turn's unexpired lease, with no later turn", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_tail")
+    const ledger = openLedger(ledgerPath())
+    const usage = sandbox(ledger, plane.fetch, {}, 10)
+
+    const turn = await startTurn(plane, usage, { by: plane.owner, sessionId: "ses_tail", turnId: "msg_user_1" })
+    for (const event of turnEvents("ses_tail", "msg_assistant_1", { completed: false })) usage.onCompatEvent(event)
+    await finishTurn(usage, turn)
+    await until(async () => (await plane.ledger.current({ sessionId: "ses_tail" }))[0]?.settlement === "provisional", "the turn's revision")
+    usage.onCompatEvent(envelope(messageCompleted("ses_tail", "msg_assistant_1")))
+
+    await until(async () => (await plane.ledger.current({ sessionId: "ses_tail" }))[0]?.settlement === "final", "the tail revision")
+    await usage.drain()
+    expect(ledger.pending("ses_tail")).toEqual([])
+    expect(await filedFor(plane, "owner")).toEqual(["msg_assistant_1"])
+  })
+
+  test("a batch the plane cannot read holds back no other batch of the report", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_batches")
+    const ledger = openLedger(ledgerPath())
+    const offered: string[][] = []
+    const unreadable: string[] = []
+    const refusesOneBatch: Fetch = async (url, init) => {
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : {}
+      if (body.action !== "usage_report" || !Array.isArray(body.facts)) return await plane.fetch(url, init)
+      const facts: Array<Record<string, unknown>> = body.facts
+      const batch = facts.map((fact) => String(fact.messageId))
+      offered.push(batch)
+      if (!batch.includes("msg_00")) return await plane.fetch(url, init)
+      unreadable.push(...batch)
+      return Response.json({ error: { code: "usage_report_invalid" } }, { status: 400 })
+    }
+    const usage = sandbox(ledger, refusesOneBatch)
+    const messages = Array.from({ length: USAGE_REPORT_MAX_FACTS + 4 }, (_, index) => `msg_${String(index).padStart(2, "0")}`)
+
+    await runTurn(plane, usage, {
+      by: plane.owner,
+      sessionId: "ses_batches",
+      turnId: "msg_user_1",
+      events: messages.flatMap((messageId) => turnEvents("ses_batches", messageId, { completed: true })),
+    })
+
+    const refused = [...new Set(unreadable)].sort()
+    expect(offered[0]).toContain("msg_00")
+    expect(refused.length).toBeGreaterThan(0)
+    expect((await filedFor(plane, "owner")).sort()).toEqual(messages.filter((messageId) => !refused.includes(messageId)))
+    expect(ledger.pending("ses_batches").map(({ messageId }) => messageId).sort()).toEqual(refused)
+    expect(offered.every((batch) => batch.length <= USAGE_REPORT_MAX_FACTS)).toBe(true)
+  })
+
+  test("admits and releases turns while its store fails, so the session takes its next turn", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_full")
+    const ledger = openLedger(ledgerPath())
+    const full = (): never => { throw Object.assign(new Error("database or disk is full"), { code: "SQLITE_FULL" }) }
+    const failing: SandboxUsageLedger = { ...ledger, recordTurn: full, adoptUnattributed: full, pending: full }
+    const usage = sandbox(failing, plane.fetch)
+
+    const turn = await startTurn(plane, usage, { by: plane.owner, sessionId: "ses_full", turnId: "msg_user_1" })
+    for (const event of turnEvents("ses_full", "msg_assistant_1", { completed: true })) usage.onCompatEvent(event)
+    expect(await finishTurn(usage, turn)).toEqual({ released: true })
+    await usage.drain()
+
+    const next = await startTurn(plane, usage, { by: plane.member, sessionId: "ses_full", turnId: "msg_user_2" })
+    expect(next.fencingToken).toBeGreaterThan(turn.fencingToken)
+    await finishTurn(usage, next)
+    await usage.drain()
+  })
+
+  test("keeps each scope's running usage across a restart, so a later cumulative replaces only its own scope", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_scoped")
+    const file = ledgerPath()
+    const scopeA = { input: 100, output: 10, reasoning: 0, cache: { read: 0, write: 0 } }
+    const scopeB = { input: 40, output: 4, reasoning: 0, cache: { read: 0, write: 0 } }
+    const scopeALater = { input: 150, output: 15, reasoning: 0, cache: { read: 0, write: 0 } }
+    const beforeRestart = createSandboxUsageLedger({ path: file, workspaceId: "ws_real" })
+    const first = sandbox(beforeRestart, plane.fetch)
+    for (const event of [usageEvent("ses_scoped", "msg_scoped", "a", scopeA), usageEvent("ses_scoped", "msg_scoped", "b", scopeB)]) {
+      first.onCompatEvent(event)
+    }
+    await first.drain()
+    beforeRestart.close()
+
+    const ledger = openLedger(file)
+    const usage = sandbox(ledger, plane.fetch)
+    usage.onCompatEvent(usageEvent("ses_scoped", "msg_scoped", "a", scopeALater))
+    await usage.drain()
+
+    expect((await ledger.current({ sessionId: "ses_scoped" }))[0]?.tokens)
+      .toEqual({ input: 190, output: 19, reasoning: 0, cache: { read: 0, write: 0 } })
+  })
+
+  test("keeps only each message's latest revision once the plane has answered for it", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_pruned")
+    const file = ledgerPath()
+    const ledger = openLedger(file)
+    const usage = sandbox(ledger, plane.fetch)
+    const growing = [1, 2, 3].map((step) => usageEvent("ses_pruned", "msg_assistant_1", "", {
+      input: 100 * step, output: 10 * step, reasoning: 0, cache: { read: 0, write: 0 },
+    }))
+
+    await runTurn(plane, usage, {
+      by: plane.owner,
+      sessionId: "ses_pruned",
+      turnId: "msg_user_1",
+      events: [...growing, envelope(messageCompleted("ses_pruned", "msg_assistant_1"))],
+    })
+
+    const inspect = new Database(file, { readonly: true })
+    cleanups.push(() => inspect.close())
+    const rows = inspect.prepare("select revision, delivery from usage_revisions where message_id = 'msg_assistant_1'").all()
+    const [filed] = await plane.ledger.current({ sessionId: "ses_pruned" })
+    expect(rows).toEqual([{ revision: filed?.revision, delivery: "delivered" }])
+  })
+
+  test("answers every read and write of a turn's metering and delivery from an index, not a table scan", async () => {
+    const plane = await openPlane()
+    await plane.session("ses_planned")
+    const file = ledgerPath()
+    const spy = vi.spyOn(Database.prototype, "prepare")
+    cleanups.push(() => spy.mockRestore())
+    const ledger = openLedger(file)
+    const usage = sandbox(ledger, plane.fetch, { ses_planned_child: "ses_planned" })
+    for (const event of turnEvents("ses_planned", "msg_unleased", { completed: true })) usage.onCompatEvent(event)
+    await usage.drain()
+    await runTurn(plane, usage, {
+      by: plane.owner,
+      sessionId: "ses_planned",
+      turnId: "msg_user_1",
+      events: [
+        ...turnEvents("ses_planned", "msg_assistant_1", { completed: true }),
+        ...turnEvents("ses_planned_child", "msg_child_1", { completed: true }),
+        usageEvent("ses_planned", "msg_assistant_2", "a", TOKENS),
+      ],
+    })
+    const statements = new Set(spy.mock.calls.flatMap(([source], index) => {
+      const connection = spy.mock.contexts[index]
+      return connection instanceof Database && connection.name === file ? [source] : []
+    }))
+    spy.mockRestore()
+
+    const inspect = new Database(file, { readonly: true })
+    cleanups.push(() => inspect.close())
+    const planned = [...statements].filter((source) => /^\s*(select|insert|update|delete)/i.test(source))
+    for (const read of [/turn_session_id = \?/, /turn_id is null/, /select max\(revision\)/]) {
+      expect(planned.some((source) => read.test(source)), String(read)).toBe(true)
+    }
+    for (const source of planned) {
+      const parameters = Array.from(source.matchAll(/\?/g), () => "x")
+      const plan = inspect.prepare(`explain query plan ${source}`).all(...parameters) as Array<{ detail: string }>
+      const scans = plan.map(({ detail }) => detail).filter((detail) => detail.startsWith("SCAN ") && !/ USING (COVERING )?INDEX /.test(detail))
+      expect(scans, source).toEqual([])
+    }
   })
 })

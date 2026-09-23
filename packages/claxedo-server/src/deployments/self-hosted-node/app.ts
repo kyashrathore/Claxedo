@@ -1338,7 +1338,7 @@ export function createSelfHostedApp(
     turnCredentials,
     // A cloud sandbox this box provisions reports into the store its own
     // turns meter into, so one usage view answers for both.
-    ...(options.usageRevisionStore ? { usageWriter: options.usageRevisionStore } : {}),
+    ...(options.usageRevisionStore ? { usageWriter: options.usageRevisionStore.reports } : {}),
   }))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))

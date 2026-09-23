@@ -7,11 +7,37 @@ import {
   TURN_USAGE_SETTLEMENTS,
   TURN_USAGE_STATUSES,
   type TurnUsageRevision,
+  type UsageOwner,
   type UsageRevisionWriteResult,
 } from "./contracts"
 
 /** The session-authority action a cloud workspace runtime ships its usage revisions under. */
 export const USAGE_REPORT_ACTION = "usage_report"
+
+/** The most facts one report carries; a report with more is refused whole. */
+export const USAGE_REPORT_MAX_FACTS = 32
+
+/** The longest message, turn, harness, provider, model or native session id a reported fact may carry. */
+export const USAGE_REPORT_MAX_ID_LENGTH = 256
+
+/**
+ * The longest provider observation id or key. The meter keys a cumulative
+ * observation by its spelled-out counters and ids, which runs past 256.
+ */
+export const USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH = 1_024
+
+/**
+ * How long before its lease's admission a reported fact may have been
+ * observed. Usage metered while no turn held its session waits for that
+ * session's next turn, which can come after the runtime slept between them.
+ */
+export const USAGE_REPORT_MAX_FACT_AGE_MS = 30 * 24 * 60 * 60_000
+
+/** How far ahead of the plane's clock a runtime's clock may run. */
+export const USAGE_REPORT_CLOCK_SKEW_MS = 5 * 60_000
+
+/** The most distinct messages the plane files under one turn of one session. */
+export const USAGE_REPORT_MAX_MESSAGES_PER_TURN = 2_048
 
 /**
  * What a runtime says about one revision. Session, workspace, host and
@@ -28,12 +54,20 @@ export type UsageReportRevision = Omit<TurnUsageRevision, "sessionRef" | "sessio
 export type UsageReportFact = UsageReportRevision & { turnId: string }
 
 /**
- * The plane's answer for one fact. `refused` is final: the fact names a turn
- * its session never admitted, or one whose producer has no account.
+ * Why the plane refused one fact, finally:
+ * - `usage_owner_unresolved`: the fact names a turn its session never
+ *   admitted, one whose producer has no account, or one on a workspace that
+ *   is not a cloud workspace — a machine's usage stays on the machine.
+ * - `usage_fact_out_of_bounds`: an id past its length cap, or an observation
+ *   time outside the report's window.
+ * - `usage_turn_full`: its turn already has the most messages one turn files.
  */
+export type UsageReportRefusal = "usage_owner_unresolved" | "usage_fact_out_of_bounds" | "usage_turn_full"
+
+/** The plane's answer for one fact. */
 export type UsageReportResult = { messageId: string; revision: number } & (
   | UsageRevisionWriteResult
-  | { status: "refused"; code: "usage_owner_unresolved" }
+  | { status: "refused"; code: UsageReportRefusal }
 )
 
 export const USAGE_REPORT_RESULT_STATUSES = [
@@ -43,6 +77,18 @@ export const USAGE_REPORT_RESULT_STATUSES = [
   "conflict",
   "refused",
 ] as const satisfies readonly UsageReportResult["status"][]
+
+/**
+ * A central store the plane files reported revisions into, each under the
+ * account and the turn it resolved for it. A store that counts a turn's
+ * messages refuses one past {@link USAGE_REPORT_MAX_MESSAGES_PER_TURN}.
+ */
+export type UsageReportWriter = {
+  writeRevision(
+    fact: TurnUsageRevision,
+    filing: { owner: UsageOwner; turnId: string },
+  ): Promise<UsageRevisionWriteResult | { status: "refused"; code: "usage_turn_full" }>
+}
 
 const REPORT_REVISION_KEYS: ReadonlySet<string> = new Set([
   "messageId",
@@ -108,6 +154,24 @@ export function cloudWorkspaceUsageRevision(
   return revision
 }
 
+/**
+ * Whether a well-formed fact is one the plane stores: every id within its
+ * length cap, and observed — and completed, if it says so — no earlier than
+ * {@link USAGE_REPORT_MAX_FACT_AGE_MS} before the lease carrying it was
+ * admitted and no later than {@link USAGE_REPORT_CLOCK_SKEW_MS} past `now`.
+ */
+export function usageReportFactInBounds(fact: UsageReportFact, window: { admittedAt: number; now: number }) {
+  const ids = [fact.messageId, fact.turnId, fact.harness, fact.providerId, fact.modelId, fact.nativeSessionId ?? ""]
+  const observationIds = [fact.quality.providerObservationId ?? "", fact.quality.providerObservationKey ?? ""]
+  const earliest = window.admittedAt - USAGE_REPORT_MAX_FACT_AGE_MS
+  const latest = window.now + USAGE_REPORT_CLOCK_SKEW_MS
+  const inWindow = (at: number) => at >= earliest && at <= latest
+  return ids.every((id) => id.length <= USAGE_REPORT_MAX_ID_LENGTH)
+    && observationIds.every((id) => id.length <= USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH)
+    && inWindow(fact.observedAt)
+    && (fact.completedAt === undefined || inWindow(fact.completedAt))
+}
+
 /** A reported revision, or nothing when it is malformed or names a field the plane owns. */
 export function readUsageReportRevision(value: unknown): UsageReportRevision | undefined {
   if (!isJsonRecord(value) || Object.keys(value).some((key) => !REPORT_REVISION_KEYS.has(key))) return undefined
@@ -150,9 +214,13 @@ function readUsageReportFact(value: unknown): UsageReportFact | undefined {
   return revision && isNonEmptyString(turnId) ? { ...revision, turnId } : undefined
 }
 
-/** A report's facts, or nothing when any one of them is malformed or names a field the plane owns. */
+/**
+ * A report's facts, or nothing when there are none, more than
+ * {@link USAGE_REPORT_MAX_FACTS}, or any one of them is malformed or names a
+ * field the plane owns.
+ */
 export function readUsageReportFacts(value: unknown): UsageReportFact[] | undefined {
-  if (!Array.isArray(value) || value.length === 0) return undefined
+  if (!Array.isArray(value) || value.length === 0 || value.length > USAGE_REPORT_MAX_FACTS) return undefined
   const facts: UsageReportFact[] = []
   for (const item of value) {
     const fact = readUsageReportFact(item)

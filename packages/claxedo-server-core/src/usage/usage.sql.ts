@@ -42,7 +42,8 @@ export const ClaxedoUsageTurnCurrentTable = sqliteTable("claxedo_usage_turn_curr
 
 /**
  * The account that produced each turn, where one did. A turn with no row is
- * the machine's own, which only the machine's operator reads.
+ * the machine's own, which only the machine's operator reads. `turn_id` is
+ * the admitted session turn a cloud sandbox reported the message under.
  */
 export const ClaxedoUsageTurnOwnerTable = sqliteTable(
   "claxedo_usage_turn_owner",
@@ -52,10 +53,12 @@ export const ClaxedoUsageTurnOwnerTable = sqliteTable(
     message_id: text().notNull(),
     org_id: text().notNull(),
     user_id: text().notNull(),
+    turn_id: text(),
   },
   (table) => [
     primaryKey({ columns: [table.host_id, table.session_ref, table.message_id] }),
     index("claxedo_usage_turn_owner_account_idx").on(table.org_id, table.user_id),
+    index("claxedo_usage_turn_owner_turn_idx").on(table.host_id, table.session_ref, table.turn_id),
   ],
 )
 

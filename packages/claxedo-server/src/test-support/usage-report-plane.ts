@@ -2,6 +2,7 @@
  * A control plane a cloud workspace runtime can report usage to, over the real
  * session-authority route: a SQLite workspace authority that records turn
  * producers, and the process's own SQLite usage store as the report's writer.
+ * `ws_real` is a cloud workspace; `ws_machine` is one a machine serves.
  */
 import fs from "node:fs"
 import os from "node:os"
@@ -13,9 +14,12 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
+import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { RuntimeSessionAuthorityRoutes } from "../routes/runtime-session-authority"
 
 export const USAGE_REPORT_URL = "https://plane.test/api/runtime-authority/session-authorize"
+
+type Workspace = "ws_real" | "ws_machine"
 
 function signed(subject: string): SignedControlPlaneAuth {
   return {
@@ -25,7 +29,7 @@ function signed(subject: string): SignedControlPlaneAuth {
   }
 }
 
-export async function usageReportPlane(input: { usageWriter?: boolean } = {}) {
+export async function usageReportPlane(input: { usageWriter?: boolean | UsageReportWriter } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const env = {
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
@@ -43,10 +47,14 @@ export async function usageReportPlane(input: { usageWriter?: boolean } = {}) {
   await store.usersMe(member)
   const { org_id: outsiderOrgId } = await store.usersMe(outsider) as { org_id: string }
   await store.createCloudWorkspace(owner, { workspaceId: "ws_real", displayName: "Main" })
-  const project = seed().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = 'ws_real'`).get() as { project_id: string }
-  seed().prepare(`
-    INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', 1, 1)
-  `).run(project.project_id, member.user.tokenIdentifier)
+  await store.registerLocalForSharing(owner, { workspaceId: "ws_machine", displayName: "Laptop", remoteDirectory: "/work/laptop" })
+  for (const workspaceId of ["ws_real", "ws_machine"]) {
+    const project = seed().prepare(`SELECT project_id FROM workspaces WHERE workspace_id = ?`).get(workspaceId) as { project_id: string }
+    seed().prepare(`
+      INSERT INTO project_memberships (project_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'editor', 1, 1)
+      ON CONFLICT DO NOTHING
+    `).run(project.project_id, member.user.tokenIdentifier)
+  }
   seed().prepare(`
     INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at) VALUES (?, ?, 'member', 1, 1)
     ON CONFLICT (org_id, token_identifier) DO NOTHING
@@ -63,18 +71,18 @@ export async function usageReportPlane(input: { usageWriter?: boolean } = {}) {
     },
     turnAuthority: store,
     env,
-    ...(input.usageWriter === false ? {} : { usageWriter: ledger }),
+    ...(input.usageWriter === false ? {} : { usageWriter: typeof input.usageWriter === "object" ? input.usageWriter : ledger.reports }),
   }))
 
-  const relayToken = (who: SignedControlPlaneAuth) => mintRelayHostToken({
+  const relayToken = (who: SignedControlPlaneAuth, workspaceId: Workspace = "ws_real") => mintRelayHostToken({
     principalKind: "user",
     actorId: who.user.tokenIdentifier,
     actorKind: "human",
     orgId,
-    workspaceId: "ws_real",
-    hostId: "host_sandbox",
+    workspaceId,
+    hostId: workspaceId === "ws_real" ? "host_sandbox" : "host_laptop",
     role: "editor",
-    backing: "cloud-vm",
+    backing: workspaceId === "ws_real" ? "cloud-vm" : "local-worktree",
     jti: `rht_${who.user.subject}`,
     parentJti: "rat_sandbox",
   }, key.privateKey, "EdDSA")
@@ -86,20 +94,20 @@ export async function usageReportPlane(input: { usageWriter?: boolean } = {}) {
   })
 
   /** A session the owner created and shared with the member for sending. */
-  async function session(sessionId: string) {
+  async function session(sessionId: string, workspaceId: Workspace = "ws_real") {
     const operationId = `op_${sessionId}`
-    await store.reserveSession(owner, { operationId, sessionId, workspaceId: "ws_real", kind: "create" })
+    await store.reserveSession(owner, { operationId, sessionId, workspaceId, kind: "create" })
     await store.registerRuntimeSession({
-      principalKind: "user", actorId: owner.user.tokenIdentifier, actorKind: "human", operationId, sessionId, workspaceId: "ws_real",
+      principalKind: "user", actorId: owner.user.tokenIdentifier, actorKind: "human", operationId, sessionId, workspaceId,
     })
     if (!store.grantSessionShare) throw new Error("the SQLite authority grants session shares")
     await store.grantSessionShare(owner, {
-      sessionId, workspaceId: "ws_real", grantedToTokenIdentifier: member.user.tokenIdentifier, level: "send",
+      sessionId, workspaceId, grantedToTokenIdentifier: member.user.tokenIdentifier, level: "send",
     })
   }
 
-  async function acquire(who: SignedControlPlaneAuth, sessionId: string, turnId: string) {
-    const response = await post({ action: "turn_acquire", sessionId, turnId }, await relayToken(who))
+  async function acquire(who: SignedControlPlaneAuth, sessionId: string, turnId: string, workspaceId: Workspace = "ws_real") {
+    const response = await post({ action: "turn_acquire", sessionId, turnId }, await relayToken(who, workspaceId))
     if (response.status !== 200) throw new Error(`turn_acquire answered ${response.status}: ${await response.text()}`)
     const lease = await response.json() as { leaseId: string; fencingToken: number }
     return { sessionId, turnId, leaseId: lease.leaseId, fencingToken: lease.fencingToken }

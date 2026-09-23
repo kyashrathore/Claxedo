@@ -707,6 +707,9 @@ describe("workspace runtime drain", () => {
           dispose: () => events.push("host.dispose"),
         },
       },
+      hostDrain: async () => {
+        events.push("host.drain")
+      },
     })
 
     expect(events).toEqual([
@@ -715,6 +718,7 @@ describe("workspace runtime drain", () => {
       "process.dispose:/tmp/ws",
       "pty.dispose",
       "host.dispose",
+      "host.drain",
     ])
   })
 

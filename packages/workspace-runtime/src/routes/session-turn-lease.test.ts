@@ -90,6 +90,72 @@ describe("durable session turn lease controller", () => {
     }
   })
 
+  test("ends a turn before releasing its lease, under the lease's current proof", async () => {
+    const started = Date.now()
+    const calls: Array<[string, { turnId: string; leaseId: string; fencingToken: number }]> = []
+    const acquisition = await acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId: "msg_end", leaseId: "proof_end", fencingToken: 3,
+          acquiredAt: started, expiresAt: started + 60_000 }),
+        renewTurn: async () => await new Promise(() => {}),
+        releaseTurn: async ({ turnId, leaseId, fencingToken }) => {
+          calls.push(["release", { turnId, leaseId, fencingToken }])
+          return { released: true }
+        },
+        endTurn: ({ turnId, leaseId, fencingToken }) => { calls.push(["end", { turnId, leaseId, fencingToken }]) },
+      }), access, turnId: "msg_end", onLost: () => contained(),
+    })
+    if (!acquisition.acquired) throw new Error("the fixture admits the turn")
+
+    expect(await acquisition.lease.release()).toEqual({ released: true })
+    expect(await acquisition.lease.release()).toEqual({ released: false })
+    const proof = { turnId: "msg_end", leaseId: "proof_end", fencingToken: 3 }
+    expect(calls).toEqual([["end", proof], ["release", proof]])
+  })
+
+  test("ends a turn whose lease was lost, and asks the authority for no release", async () => {
+    const started = Date.now()
+    let localNow = started
+    const calls: string[] = []
+    const acquisition = await acquireSessionTurnLease({
+      policy: policy({
+        acquireTurn: () => ({ allowed: true, turnId: "msg_lost", leaseId: "proof_lost", fencingToken: 1,
+          acquiredAt: started, expiresAt: started + 60_000 }),
+        renewTurn: async () => await new Promise(() => {}),
+        releaseTurn: async () => { calls.push("release"); return { released: true } },
+        endTurn: () => { calls.push("end") },
+      }), access, turnId: "msg_lost", onLost: () => contained(), now: () => localNow,
+    })
+    if (!acquisition.acquired) throw new Error("the fixture admits the turn")
+
+    localNow = started + SESSION_TURN_LEASE_TTL_MS
+    expect(acquisition.lease.valid()).toBe(false)
+    expect(await acquisition.lease.release()).toEqual({ released: false })
+    expect(calls).toEqual(["end"])
+  })
+
+  test("releases a turn's lease even when ending the turn throws", async () => {
+    const started = Date.now()
+    let released = 0
+    for (const endTurn of [
+      () => { throw new Error("metering store is full") },
+      async () => { throw new Error("metering store is full") },
+    ]) {
+      const acquisition = await acquireSessionTurnLease({
+        policy: policy({
+          acquireTurn: () => ({ allowed: true, turnId: "msg_throws", leaseId: "proof", fencingToken: 1,
+            acquiredAt: started, expiresAt: started + 60_000 }),
+          renewTurn: async () => await new Promise(() => {}),
+          releaseTurn: async () => { released += 1; return { released: true } },
+          endTurn,
+        }), access, turnId: "msg_throws", onLost: () => contained(),
+      })
+      if (!acquisition.acquired) throw new Error("the fixture admits the turn")
+      expect(await acquisition.lease.release()).toEqual({ released: true })
+    }
+    expect(released).toBe(2)
+  })
+
   test("an invalid renewal stops the admitted producer", async () => {
     let lost!: () => void
     const loss = new Promise<void>((resolve) => { lost = resolve })

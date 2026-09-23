@@ -8,10 +8,16 @@ import {
   usageRevisionHash,
   type TurnUsageRevision,
   type UsageRevisionWriteResult,
-  type UsageRevisionWriter,
 } from "@claxedo/server-core/usage/contracts"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
-import { centralUsageProjection } from "@claxedo/server-core/usage/projection"
+import {
+  USAGE_BREAKDOWN_DIMENSIONS,
+  usageDateFormatter,
+  type CentralUsageProjection,
+  type CentralUsageRow,
+  type UsageBreakdownDimension,
+} from "@claxedo/server-core/usage/projection"
+import { USAGE_REPORT_MAX_MESSAGES_PER_TURN, type UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 import { isOneOf, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 
 type FactRow = {
@@ -85,7 +91,142 @@ function against(item: TurnUsageRevision, hash: string, current: CurrentRow | nu
   return current.payload_hash === hash ? { status: "duplicate" } : { status: "conflict", currentRevision: current.revision }
 }
 
-export type D1UsageLedger = UsageRevisionWriter
+const MODEL_SQL = "case when instr(model_id, '/') > 0 then model_id else provider_id || '/' || model_id end"
+const LOCATION_SQL = "case when location = 'local' then 'local' else 'cloud' end"
+
+/** Each dimension as `usageFactDimension` reads it off a revision, spelled over a stored row. */
+const DIMENSION_SQL: Record<UsageBreakdownDimension, string> = {
+  provider: "provider_id",
+  harness: "harness",
+  model: MODEL_SQL,
+  location: LOCATION_SQL,
+  session: "session_ref",
+  workspace: "coalesce(nullif(workspace_id, ''), 'unavailable')",
+}
+
+const METRIC_COLUMNS = [
+  "turn_count",
+  "input_tokens",
+  "output_tokens",
+  "reasoning_tokens",
+  "cache_read_tokens",
+  "cache_write_tokens",
+  "cache_write_1h_tokens",
+  "input_known_count",
+  "output_known_count",
+  "reasoning_known_count",
+  "cache_read_known_count",
+  "cache_write_known_count",
+  "unknown_token_count",
+  "partial_turn_count",
+  "unavailable_turn_count",
+  "error_turn_count",
+] as const
+
+type Metrics = Record<(typeof METRIC_COLUMNS)[number], number>
+
+const noMetrics = (): Metrics => ({
+  turn_count: 0,
+  input_tokens: 0,
+  output_tokens: 0,
+  reasoning_tokens: 0,
+  cache_read_tokens: 0,
+  cache_write_tokens: 0,
+  cache_write_1h_tokens: 0,
+  input_known_count: 0,
+  output_known_count: 0,
+  reasoning_known_count: 0,
+  cache_read_known_count: 0,
+  cache_write_known_count: 0,
+  unknown_token_count: 0,
+  partial_turn_count: 0,
+  unavailable_turn_count: 0,
+  error_turn_count: 0,
+})
+
+const METRICS_SQL = `
+  count(*) as turn_count,
+  coalesce(sum(input_tokens), 0) as input_tokens,
+  coalesce(sum(output_tokens), 0) as output_tokens,
+  coalesce(sum(reasoning_tokens), 0) as reasoning_tokens,
+  coalesce(sum(cache_read_tokens), 0) as cache_read_tokens,
+  coalesce(sum(cache_write_tokens), 0) as cache_write_tokens,
+  coalesce(sum(cache_write_1h_tokens), 0) as cache_write_1h_tokens,
+  count(input_tokens) as input_known_count,
+  count(output_tokens) as output_known_count,
+  count(reasoning_tokens) as reasoning_known_count,
+  count(cache_read_tokens) as cache_read_known_count,
+  count(cache_write_tokens) as cache_write_known_count,
+  sum((input_tokens is null) + (output_tokens is null) + (reasoning_tokens is null)
+    + (cache_read_tokens is null) + (cache_write_tokens is null)) as unknown_token_count,
+  sum(settlement = 'partial') as partial_turn_count,
+  sum(settlement <> 'provisional' and (settlement = 'unavailable' or not exists (
+    select 1 from json_each(quality_json, '$.knownCategories')
+    where value in ('input', 'output', 'reasoning', 'cache_read', 'cache_write')
+  ))) as unavailable_turn_count,
+  sum(status = 'error') as error_turn_count
+`
+
+type GroupRow = Metrics & { date: string; model: string; location: string; dimension: string }
+
+type FilterOptionRow = Record<UsageBreakdownDimension, string>
+
+const HOUR_MS = 3_600_000
+
+/**
+ * The local days `[since, until]` spans in `timeZone`, each as its date and
+ * the half-open millisecond range it covers, dated by the same formatter the
+ * usage series use. A local day is at least 23 hours long, so an hourly probe
+ * crosses each midnight once, and a binary search places it to the
+ * millisecond.
+ */
+function localDays(since: number, until: number, timeZone: string): Array<[date: string, start: number, end: number]> {
+  if (until < since) return []
+  const format = usageDateFormatter(timeZone)
+  const dateOf = (at: number) => format.format(new Date(at))
+  const days: Array<[string, number, number]> = []
+  let day = dateOf(since)
+  let start = since
+  let low = since
+  for (;;) {
+    const probe = Math.min(low + HOUR_MS, until)
+    if (dateOf(probe) !== day) {
+      let high = probe
+      while (high - low > 1) {
+        const middle = Math.floor((low + high) / 2)
+        if (dateOf(middle) === day) low = middle
+        else high = middle
+      }
+      days.push([day, start, high])
+      day = dateOf(high)
+      start = high
+      low = high
+      continue
+    }
+    if (probe === until) {
+      days.push([day, start, until + 1])
+      return days
+    }
+    low = probe
+  }
+}
+
+/** Sums grouped rows into one row per `identity`, ordered by it. */
+function rollUp(rows: readonly GroupRow[], identity: (row: GroupRow) => Record<string, string>): CentralUsageRow[] {
+  const grouped = new Map<string, { fields: Record<string, string>; metrics: Metrics }>()
+  for (const row of rows) {
+    const fields = identity(row)
+    const key = JSON.stringify(Object.values(fields))
+    const existing = grouped.get(key) ?? { fields, metrics: noMetrics() }
+    grouped.set(key, existing)
+    for (const name of METRIC_COLUMNS) existing.metrics[name] += row[name]
+  }
+  return [...grouped]
+    .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([, row]) => ({ ...row.fields, ...row.metrics }))
+}
+
+export type D1UsageLedger = UsageReportWriter
   & Required<Pick<UsageProjectionLedger, "usageDashboard" | "cloudUsageFacts">>
 
 /**
@@ -102,23 +243,29 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
     .bind(item.hostId, item.sessionRef, item.messageId)
     .first<CurrentRow>()
   return {
-    async writeRevision(item, options) {
+    async writeRevision(item, filing) {
       assertTurnUsageRevision(item)
-      const owner = options?.owner
-      if (!owner) throw new Error("A central usage revision requires the account that produced it")
+      if (!filing?.owner || !filing.turnId) throw new Error("A central usage revision requires the account and the turn that produced it")
+      const { owner, turnId } = filing
       const hash = await usageRevisionHash(item)
       const settled = against(item, hash, await current(item))
       if (settled) return settled
+      // One statement, so the count a new message is admitted against is
+      // the one it is inserted under: two reports racing for a turn's last
+      // slot cannot both take it.
       const written = await database.prepare(`
         insert into usage_turn_facts (
-          host_id, session_ref, session_id, message_id, revision, payload_hash, org_id, user_id, workspace_id,
+          host_id, session_ref, session_id, message_id, revision, payload_hash, org_id, user_id, turn_id, workspace_id,
           observed_at, completed_at, settlement, status, location, harness, provider_id, model_id, native_session_id,
           input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, cache_write_1h_tokens,
           quality_json, recorded_at
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        )
+        select ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27
+        where exists (select 1 from usage_turn_facts where host_id = ?1 and session_ref = ?2 and message_id = ?4)
+          or (select count(*) from usage_turn_facts where host_id = ?1 and session_ref = ?2 and turn_id = ?9) < ?28
         on conflict (host_id, session_ref, message_id) do update set
           session_id = excluded.session_id, revision = excluded.revision, payload_hash = excluded.payload_hash,
-          org_id = excluded.org_id, user_id = excluded.user_id, workspace_id = excluded.workspace_id,
+          org_id = excluded.org_id, user_id = excluded.user_id, turn_id = excluded.turn_id, workspace_id = excluded.workspace_id,
           observed_at = excluded.observed_at, completed_at = excluded.completed_at, settlement = excluded.settlement,
           status = excluded.status, location = excluded.location, harness = excluded.harness,
           provider_id = excluded.provider_id, model_id = excluded.model_id, native_session_id = excluded.native_session_id,
@@ -136,6 +283,7 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
         hash,
         owner.org_id,
         owner.user_id,
+        turnId,
         item.workspaceId ?? null,
         item.observedAt,
         item.completedAt ?? null,
@@ -154,28 +302,71 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
         item.tokens.cache.write1h ?? null,
         JSON.stringify(item.quality),
         now(),
+        USAGE_REPORT_MAX_MESSAGES_PER_TURN,
       ).run()
       if (written.meta.changes > 0) return { status: "accepted" }
+      const after = await current(item)
+      if (!after) return { status: "refused", code: "usage_turn_full" }
       // A concurrent report landed between the read and the write; the row it
       // left decides this one.
-      const after = await current(item)
-      return against(item, hash, after) ?? { status: "stale", currentRevision: after?.revision ?? item.revision }
+      return against(item, hash, after) ?? { status: "stale", currentRevision: after.revision }
     },
 
+    /**
+     * Grouped in SQL by local day, model, location and the requested
+     * dimension, so the Worker receives one row per group rather than one per
+     * turn, whatever the range.
+     */
     async usageDashboard(query) {
-      const rows = await database.prepare(`
-        select * from usage_turn_facts
-        where org_id = ? and user_id = ? and observed_at >= ? and observed_at <= ?
-        order by observed_at
-      `).bind(query.org_id, query.user_id, query.since, query.until).all<FactRow>()
-      return centralUsageProjection({
-        facts: rows.results.flatMap((row) => usageFactFromRow(row) ?? []),
-        since: query.since,
-        until: query.until,
-        timeZone: query.timeZone ?? "UTC",
-        ...(query.dimension ? { dimension: query.dimension } : {}),
-        ...(query.filters ? { filters: query.filters } : {}),
-      })
+      const timeZone = query.timeZone ?? "UTC"
+      const dimension = query.dimension
+      const filters = Object.entries(query.filters ?? {}).flatMap(([name, value]) =>
+        value && isOneOf(name, USAGE_BREAKDOWN_DIMENSIONS) ? [[DIMENSION_SQL[name], value] as const] : [])
+      const owned = "org_id = ? and user_id = ? and observed_at >= ? and observed_at <= ?"
+      const range = [query.org_id, query.user_id, query.since, query.until]
+      const [grouped, options] = await Promise.all([
+        database.prepare(`
+          with days (date, start_at, end_at) as (
+            select json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]') from json_each(?)
+          )
+          select days.date as date, ${MODEL_SQL} as model, ${LOCATION_SQL} as location,
+            ${dimension ? DIMENSION_SQL[dimension] : "''"} as dimension, ${METRICS_SQL}
+          from usage_turn_facts
+          join days on observed_at >= days.start_at and observed_at < days.end_at
+          where ${owned}${filters.map(([sql]) => ` and ${sql} = ?`).join("")}
+          group by 1, 2, 3, 4
+        `).bind(JSON.stringify(localDays(query.since, query.until, timeZone)), ...range, ...filters.map(([, value]) => value))
+          .all<GroupRow>(),
+        database.prepare(`
+          select distinct ${USAGE_BREAKDOWN_DIMENSIONS.map((name) => `${DIMENSION_SQL[name]} as ${name}`).join(", ")}
+          from usage_turn_facts where ${owned}
+        `).bind(...range).all<FilterOptionRow>(),
+      ])
+      const rows = grouped.results
+      const values = (name: UsageBreakdownDimension) => [...new Set(options.results.map((row) => row[name]))].toSorted()
+      const projection: CentralUsageProjection = {
+        totals: rollUp(rows, () => ({}))[0] ?? {},
+        daily: rollUp(rows, (row) => ({ date: row.date })),
+        models: rollUp(rows, (row) => ({ value: row.model })),
+        dailyModels: rollUp(rows, (row) => ({ date: row.date, value: row.model })),
+        locations: rollUp(rows, (row) => ({ value: row.location })),
+        ...(dimension
+          ? {
+              breakdown: rollUp(rows, (row) => ({ value: row.dimension })),
+              dailyBreakdown: rollUp(rows, (row) => ({ date: row.date, value: row.dimension })),
+              breakdownModels: rollUp(rows, (row) => ({ group: row.dimension, value: row.model })),
+            }
+          : {}),
+        filters: {
+          provider: values("provider"),
+          harness: values("harness"),
+          model: values("model"),
+          location: values("location"),
+          session: values("session"),
+          workspace: values("workspace"),
+        },
+      }
+      return projection
     },
 
     async cloudUsageFacts(query) {
