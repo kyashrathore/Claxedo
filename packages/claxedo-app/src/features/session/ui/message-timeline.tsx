@@ -320,6 +320,22 @@ export function MessageTimeline(props: MessageTimelineProps) {
       })
     }
     el.addEventListener("claxedo:open-subagent", onOpenSubagent)
+    const onOpenPlan = (event: Event) => {
+      const detail = event instanceof CustomEvent ? asRecord(event.detail) : undefined
+      const sessionId = readString(detail, "sessionId")
+      const planId = readString(detail, "planId")
+      const markdown = readString(detail, "markdown")
+      if (!sessionId || !planId || !markdown) return
+      event.preventDefault()
+      const title = readString(detail, "title")
+      claxedoState.workspacePanel.open({
+        workspaceDir: sdk.directory.replace(/\/$/, ""),
+        targetPaneId: paneId,
+        navigator: null,
+        focus: { kind: "plan", sessionId, planId, markdown, ...(title ? { title } : {}) },
+      })
+    }
+    el.addEventListener("claxedo:open-plan", onOpenPlan)
     const onCapture = (event: MouseEvent) => {
       const externalSourceUrl = timelineExternalSourceClickTarget(event)
       if (externalSourceUrl) {
@@ -338,6 +354,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     onCleanup(() => {
       stopLinkOpen()
       el.removeEventListener("claxedo:open-subagent", onOpenSubagent)
+      el.removeEventListener("claxedo:open-plan", onOpenPlan)
       el.removeEventListener("click", onCapture, { capture: true })
     })
   }

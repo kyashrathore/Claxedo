@@ -2,7 +2,7 @@ import { createComputed, createEffect, createMemo, on, onCleanup, type Accessor 
 
 import {
   REVIEW_TAB_ID,
-  closeSubagentWorkspaceTabsForSession,
+  closeSessionWorkspaceTabs,
   openSubagentWorkspaceTab,
   reviewWorkspaceTabsForSession,
   type ReviewWorkspaceTab,
@@ -68,11 +68,12 @@ export function createSubagentHeadingFocus(input: {
  * The part of the workspace's tab strip that follows the conversation rather than
  * the workspace.
  *
- * Every other tab kind is a property of the workspace and survives a session
- * switch unchanged. A subagent tab is a property of the session that spawned it,
- * so it has to be hidden when another session takes the pane, shown again on the
- * way back, and dropped outright when either end of that parent/child pair is
- * deleted — none of which the workspace-keyed working set can express on its own.
+ * Most tab kinds are properties of the workspace and survive a session switch
+ * unchanged. Subagent and plan tabs are properties of the session that produced
+ * them, so they have to be hidden when another session takes the pane, shown
+ * again on the way back, and dropped outright when that session (or either end of
+ * a parent/child pair) is deleted — none of which the workspace-keyed working set
+ * can express on its own.
  */
 export function createReviewWorkspaceSubagentTabs(input: {
   tabs: Accessor<readonly ReviewWorkspaceTab[]>
@@ -105,7 +106,7 @@ export function createReviewWorkspaceSubagentTabs(input: {
   // deletion arrives in rather than one render behind it.
   createComputed(on(input.deletedSession, (sessionId) => {
     if (!sessionId) return
-    const next = closeSubagentWorkspaceTabsForSession({
+    const next = closeSessionWorkspaceTabs({
       tabs: input.tabs(),
       activeTabId: input.activeTabId(),
       sessionId,

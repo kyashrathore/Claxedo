@@ -62,6 +62,8 @@ function panelFocusTarget(value: WorkspacePanelFocus): string {
     case "context":
     case "subagent":
       return value.sessionId
+    case "plan":
+      return value.planId
     default: {
       // Focus requests are only ever built in-app from `WorkspacePanelFocus`,
       // so an unlisted kind is a programming error rather than bad input.
@@ -218,6 +220,10 @@ export function WorkspacePanelBody(props: {
   const focusSubagentVersion = () => {
     const value = focus()
     return value?.kind === "subagent" ? value.version : 0
+  }
+  const focusPlan = () => {
+    const value = focus()
+    return value?.kind === "plan" ? value : undefined
   }
   const focusContextSessionId = () => {
     const value = focus()
@@ -502,6 +508,7 @@ export function WorkspacePanelBody(props: {
                                   focusSubagentLabel={focusSubagentLabel()}
                                   focusSubagentDescription={focusSubagentDescription()}
                                   focusSubagentVersion={focusSubagentVersion()}
+                                  focusPlan={focusPlan()}
                                   focusContextSessionId={focusContextSessionId()}
                                   focusContextVersion={focusContextVersion()}
                                   focusBrowserUrl={focusBrowserUrl()}

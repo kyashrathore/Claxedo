@@ -154,6 +154,11 @@ vi.mock("@/features/session/ui/session-screen", () => ({
   ),
 }))
 
+vi.mock("@/ui/session-kit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/ui/session-kit")>()),
+  Markdown: (props: { text: string }) => <div data-testid="mock-markdown">{props.text}</div>,
+}))
+
 vi.mock("@/features/documents/data/documents-api", () => ({
   documentsApi: {},
 }))
@@ -486,6 +491,43 @@ describe("subagent focus", () => {
 
     expect(container.querySelectorAll('[data-workspace-tab-kind="subagent"]').length).toBe(1)
     expect(activeTabId(container)).toBe("subagent:ses_child")
+  })
+})
+
+describe("plan focus", () => {
+  const plan = { kind: "plan" as const, sessionId: "ses_parent", planId: "toolu_1", title: "Fix steering", markdown: "# Fix steering\n\nStep one." }
+
+  test("opens the proposed plan as a titled tab rendering its markdown", () => {
+    const [focus, setFocus] = createSignal<typeof plan & { version: number }>()
+    setFocus({ ...plan, version: 1 })
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_parent"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusPlan={focus()}
+        onFocusConsumed={() => setFocus(undefined)}
+      />
+    ))
+    flushFrames()
+
+    expect(activeTabId(container)).toBe("plan:toolu_1")
+    expect(tabButton(container, "plan:toolu_1").textContent).toContain("Fix steering")
+    expect(container.querySelector('[data-testid="workspace-plan-tab"]')?.textContent).toContain("Step one.")
+  })
+
+  test("a plan tab hides while another session holds the pane", () => {
+    const [sessionId, setSessionId] = createSignal("ses_parent")
+    const { container } = render(() => (
+      <ReviewWorkspace sessionId={sessionId()} directory="/repo/main" mode="uncommitted" focusPlan={{ ...plan, version: 1 }} />
+    ))
+    flushFrames()
+    expect(activeTabId(container)).toBe("plan:toolu_1")
+
+    setSessionId("ses_sibling")
+    flushFrames()
+    expect(container.querySelector('[data-workspace-tab-id="plan:toolu_1"]')).toBeNull()
+    expect(activeTabId(container)).toBe("review")
   })
 })
 

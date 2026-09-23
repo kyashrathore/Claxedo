@@ -46,6 +46,8 @@ const SessionPage = lazy(() => import("@/features/session/ui/session-screen"))
 import { ReviewTab } from "@/features/review/ui/review-tab"
 import { peekReviewVcsDiff } from "@/features/review/ui/review-vcs-cache"
 import { isMarkdownPath, TabFile } from "@/app/workbench/content/tab-file"
+import { Markdown } from "@/ui/session-kit"
+import type { WorkspacePanelPlanFocusTarget } from "@/features/workspaces/ui/panel/workspace-panel-state"
 import { useClaxedoState } from "@/app/workbench/state"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { documentsApi } from "@/features/documents/data/documents-api"
@@ -59,6 +61,7 @@ import {
   openBrowserWorkspaceTab,
   openContextWorkspaceTab,
   openFileWorkspaceTab,
+  openPlanWorkspaceTab,
   openProcessWorkspaceTab,
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
@@ -98,6 +101,7 @@ export type ReviewWorkspaceProps = {
   focusSubagentLabel?: string
   focusSubagentDescription?: string
   focusSubagentVersion?: number
+  focusPlan?: WorkspacePanelPlanFocusTarget & { version: number }
   focusContextSessionId?: string
   focusContextVersion?: number
   focusBrowserUrl?: string
@@ -420,6 +424,27 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     },
   ))
 
+  const openPlanTab = (plan: WorkspacePanelPlanFocusTarget) => {
+    const next = openPlanWorkspaceTab({ tabs: store.tabs, ...plan })
+    if (next.added) {
+      const activation = tabActivation.prepare(next.activeTabId)
+      setStore("tabs", next.tabs)
+      activatePreparedTabAfterMount(activation)
+      return
+    }
+    if (next.tabs !== store.tabs) setStore("tabs", next.tabs)
+    activateTab(next.activeTabId)
+  }
+
+  createEffect(on(
+    () => props.focusPlan,
+    (plan) => {
+      if (!plan) return
+      props.onFocusConsumed?.()
+      openPlanTab(plan)
+    },
+  ))
+
   createEffect(on(
     () => [props.focusContextVersion, props.focusContextSessionId] as const,
     ([, sessionId]) => {
@@ -477,6 +502,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           ...(active.description ? { description: active.description } : {}),
         })
         return
+      case "plan":
+        setReviewWorkspaceActiveTab({ kind: "plan", label: active.title ?? language.t("session.tab.plan") })
+        return
     }
   })
 
@@ -507,6 +535,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     contextLabel: () => language.t("session.tab.context"),
     subagentLabel: () => language.t("session.tab.subagent"),
     subagentCloseLabel: () => language.t("session.tab.closeSubagent"),
+    planLabel: () => language.t("session.tab.plan"),
     filePathFromTab: (tabId) => file.pathFromTab(tabId),
     processName: (processId) => processPane.configs().find((item) => item.id === processId)?.name,
   })
@@ -619,6 +648,14 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           </div>
         )
       }
+      case "plan":
+        return (
+          <div data-testid="workspace-plan-tab" class="h-full min-h-0 overflow-y-auto">
+            <div class="px-6 py-4">
+              <Markdown text={tab.markdown} />
+            </div>
+          </div>
+        )
       default:
         return unhandledReviewWorkspaceTab(tab)
     }

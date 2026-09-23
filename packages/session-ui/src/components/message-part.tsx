@@ -42,6 +42,7 @@ import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFold
 import { TurnFoldRow } from "./turn-fold-row"
 import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
 import { SubagentChipRow } from "./subagent-chip"
+import { dispatchPlanOpen, readPlanToolInput } from "./plan-tool"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
@@ -2837,6 +2838,64 @@ ToolRegistry.register({
           <ScrollableOutput component="tool-output" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
             <Markdown text={body()!} />
           </ScrollableOutput>
+        </Show>
+      </BasicTool>
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "enterplanmode",
+  render(props) {
+    const i18n = useI18n()
+    return <BasicTool {...props} icon="checklist" trigger={{ title: i18n.t("ui.tool.plan.entered") }} />
+  },
+})
+
+ToolRegistry.register({
+  name: "exitplanmode",
+  render(props) {
+    const i18n = useI18n()
+    const plan = createMemo(() => readPlanToolInput(props.input))
+    const open = (event: MouseEvent) => {
+      const markdown = plan().markdown
+      if (!markdown || !props.sessionID || !props.toolCallId) return
+      dispatchPlanOpen(event.currentTarget, {
+        sessionId: props.sessionID,
+        planId: props.toolCallId,
+        title: plan().title,
+        markdown,
+      })
+    }
+    return (
+      <BasicTool
+        {...props}
+        icon="checklist"
+        onSubtitleClick={plan().markdown ? open : undefined}
+        trigger={{
+          title: i18n.t("ui.tool.plan.planned"),
+          subtitle: plan().title,
+          action: plan().markdown ? (
+            <IconButton
+              icon="open-file"
+              variant="ghost"
+              size="small"
+              aria-label={i18n.t("ui.tool.plan.open")}
+              title={i18n.t("ui.tool.plan.open")}
+              onClick={(event: MouseEvent) => {
+                event.stopPropagation()
+                open(event)
+              }}
+            />
+          ) : undefined,
+        }}
+      >
+        <Show when={plan().markdown}>
+          {(markdown) => (
+            <ScrollableOutput component="tool-output" revealed={props.revealed} onRevealedChange={props.onRevealedChange}>
+              <Markdown text={markdown()} />
+            </ScrollableOutput>
+          )}
         </Show>
       </BasicTool>
     )

@@ -20,6 +20,7 @@ const TAB_ICON: Record<ReviewWorkspaceTabKind, ClaxedoIconName> = {
   browser: "globe",
   process: "process",
   subagent: "task",
+  plan: "checklist",
 }
 
 // Optical sizing: every icon shares the same 16px slot, but a filled square
@@ -33,6 +34,7 @@ const TAB_ICON_PX: Record<ReviewWorkspaceTabKind, number> = {
   context: 15,
   browser: 15,
   subagent: 14,
+  plan: 14,
 }
 
 const CLOSE_LABEL: Record<Exclude<ReviewWorkspaceTabKind, "file" | "subagent">, string> = {
@@ -40,6 +42,7 @@ const CLOSE_LABEL: Record<Exclude<ReviewWorkspaceTabKind, "file" | "subagent">, 
   context: "Close context",
   browser: "Close browser",
   process: "Close process section",
+  plan: "Close plan",
 }
 
 /**
@@ -54,6 +57,7 @@ export function createReviewWorkspaceTabPresentation(deps: {
   /** Shown when the spawning row gave the tab no agent name. */
   subagentLabel: () => string
   subagentCloseLabel: () => string
+  planLabel: () => string
   filePathFromTab: (tabId: string) => string | undefined
   processName: (processId: string) => string | undefined
 }) {
@@ -71,6 +75,8 @@ export function createReviewWorkspaceTabPresentation(deps: {
         return deps.processName(tab.processId) ?? "Process"
       case "subagent":
         return tab.label ?? deps.subagentLabel()
+      case "plan":
+        return tab.title ?? deps.planLabel()
       default:
         return unhandledReviewWorkspaceTab(tab)
     }

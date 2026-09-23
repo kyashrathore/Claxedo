@@ -22,7 +22,7 @@ import {
   type ReviewWorkspaceWorkingSetStore,
 } from "../review/review-workspace-working-set"
 import { createPathHelpers } from "@/platform/files/path"
-import { closeSubagentWorkspaceTabsForSession } from "@/features/review/ui/review-workspace-tabs"
+import { closeSessionWorkspaceTabs } from "@/features/review/ui/review-workspace-tabs"
 import type { ClaxedoState } from "./types"
 
 // Call sites use two equivalent shapes:
@@ -79,6 +79,12 @@ function sameFocus(left: WorkspacePanelFocus | undefined, right: WorkspacePanelF
     return left.sessionId === right.sessionId &&
       left.label === right.label &&
       left.description === right.description
+  }
+  if (left.kind === "plan" && right.kind === "plan") {
+    return left.sessionId === right.sessionId &&
+      left.planId === right.planId &&
+      left.title === right.title &&
+      left.markdown === right.markdown
   }
   return left.kind === "context" && right.kind === "context" && left.sessionId === right.sessionId
 }
@@ -369,7 +375,7 @@ export function createWorkspacePanelSlice(input: {
     deletedSession,
     noteDeletedSession(sessionId) {
       reviewWorkingSet.rewrite((snapshot) => {
-        const next = closeSubagentWorkspaceTabsForSession({
+        const next = closeSessionWorkspaceTabs({
           tabs: snapshot.tabs,
           activeTabId: snapshot.activeTabId,
           sessionId,

@@ -54,7 +54,7 @@ export interface BasicToolProps {
   defer?: boolean
   locked?: boolean
   animated?: boolean
-  onSubtitleClick?: () => void
+  onSubtitleClick?: (event: MouseEvent) => void
   onTriggerClick?: JSX.EventHandlerUnion<HTMLElement, MouseEvent>
   onTriggerKeyDown?: JSX.EventHandlerUnion<HTMLElement, KeyboardEvent>
   triggerHref?: string
@@ -305,7 +305,7 @@ export function BasicTool(props: BasicToolProps) {
                         onClick={(e) => {
                           if (props.onSubtitleClick) {
                             e.stopPropagation()
-                            props.onSubtitleClick()
+                            props.onSubtitleClick(e)
                           }
                         }}
                       >
