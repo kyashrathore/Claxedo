@@ -205,8 +205,14 @@ export function NavigationStatusMark(props: { status: SwitcherStatus; surface?: 
   return (
     <Switch>
       <Match when={props.status === "working"}>
-        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 items-center justify-center">
-          <span class="size-2.5 rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none" />
+        {/* Sized to the cap height of the title beside it (12px tab title,
+            14px row title) and dropped half a pixel: the text's cap band sits
+            that far below the line box's centre, where flex puts the ring. */}
+        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 translate-y-[0.5px] items-center justify-center">
+          <span
+            class="rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none"
+            classList={{ "size-[8.5px]": props.surface === "switcher", "size-[10px]": props.surface !== "switcher" }}
+          />
         </span>
       </Match>
       <Match when={props.status !== "idle"}>
