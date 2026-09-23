@@ -276,7 +276,6 @@ see "What is deliberately NOT an account operation". Cloud create listens for
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
 | `usage.cloudFacts` | `features/usage/data/usage-api.ts` | `GET /api/claxedo/usage/cloud-facts` | unary | safe | The signed account's own cloud workspace turn revisions in `since`..`until` (both required query keys). The renderer hands them to the local sidecar's `POST /api/claxedo/usage`, which draws the Usage view; the dashboard itself is never read from the hosted plane on desktop. |
-| `usage.sync` | `features/usage/data/usage-api.ts` | `POST /api/claxedo/usage/sync` | unary | safe | |
 
 ### Agent config (extensions marketplace)
 

@@ -330,7 +330,6 @@ export const HOSTED_OPERATIONS = {
   "billing.checkout": { safe: false, decode: object },
   "billing.portal": { safe: true, decode: object },
   "usage.cloudFacts": { safe: true, decode: withArrays("facts") },
-  "usage.sync": { safe: true, decode: object },
 } satisfies Record<HostedOperationName, HostedOperationSpec>
 
 /**

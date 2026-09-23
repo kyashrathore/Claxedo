@@ -4,20 +4,14 @@ import { tokenTrackerPricing } from "./adapters/token-tracker-pricing"
 
 const pricing = tokenTrackerPricing("bundled")
 
-const outbox = {
-  flush: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
-  clearIdentity: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
-}
-
 const snapshot = {
   accounts: [{ harness: "codex", credentialId: "cred_1", label: "a@b.c", inUse: true, windows: [], usageAt: 5 }],
 }
 
 function routes(quota: Parameters<typeof LocalUsageRoutes>[0]["quota"]) {
   return LocalUsageRoutes({
-    local: { current: async () => [], pendingOutbox: async () => [] } as never,
+    local: { current: async () => [], ownedBy: async () => [] },
     identity: async () => undefined,
-    outbox,
     quota,
     pricing,
   })
@@ -51,9 +45,8 @@ describe("local usage routes, total view", () => {
   const empty = { rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0, scannedAt: 1_234 }
   function withHistory(history: NonNullable<Parameters<typeof LocalUsageRoutes>[0]["history"]>) {
     return LocalUsageRoutes({
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] },
       identity: async () => undefined,
-      outbox,
       history,
       pricing,
     })

@@ -74,7 +74,7 @@ import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
-import type { UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
+import type { UsageReportWriter } from "@claxedo/server-core/usage/usage-report"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
@@ -129,7 +129,7 @@ export type HostedCoreAppOptions = {
    * account's usage view reads from. Absent, `/api/claxedo/usage` is not
    * served and a runtime's usage report answers 503.
    */
-  usageLedger?: UsageRevisionWriter & UsageProjectionLedger
+  usageLedger?: UsageReportWriter & UsageProjectionLedger
 }
 
 /**

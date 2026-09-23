@@ -57,7 +57,6 @@ function unifiedUsageResponse() {
     total: usageSeries(),
     totalCost: usageCost(),
     filterOptions: { claxedo: {}, total: {} },
-    sync: { attempted: 0, delivered: 0, conflicts: 0, pending: 0 },
   }
 }
 
@@ -190,28 +189,29 @@ describe("usage API", () => {
     })
   })
 
-  test("wakes durable usage sync through the authenticated local endpoint", async () => {
-    authFetch.mockResolvedValue(new Response(JSON.stringify({ attempted: 1, pending: 0 }), { status: 200 }))
-    const { syncUsageOutbox } = await import("./usage-api")
-    await expect(syncUsageOutbox()).resolves.toMatchObject({ attempted: 1, pending: 0 })
-    expect(new URL(authFetch.mock.calls[0][0]).pathname).toBe("/api/claxedo/usage/sync")
-    expect(authFetch.mock.calls[0][1]).toMatchObject({ method: "POST" })
+  test.each([
+    ["too many cloud turns", 413, { error: { code: "cloud_usage_too_large", message: "At most 10000 cloud revisions are accepted" } }, "At most 10000 cloud revisions are accepted"],
+    ["a body too large to read", 413, "Payload Too Large", "the server refused them (413)"],
+    ["a cloud part it cannot read", 400, { error: { code: "invalid_cloud_usage", message: "cloud must be an object" } }, "cloud must be an object"],
+  ])("a server that refuses %s still draws this machine's usage and says the cloud part is missing", async (_name, status, body, reason) => {
+    installAccountBridge(vi.fn(async () => ({ facts: [{ messageId: "msg_cloud" }] })))
+    authFetch
+      .mockResolvedValueOnce(typeof body === "string" ? new Response(body, { status }) : Response.json(body, { status }))
+      .mockResolvedValueOnce(Response.json(unifiedUsageResponse()))
+    const { fetchUnifiedUsage } = await import("./usage-api")
+
+    const answer = await fetchUnifiedUsage({ since: 1, until: 2, timeZone: "UTC", view: "claxedo" })
+
+    expect(authFetch.mock.calls.map((call) => sentRequest(call).method)).toEqual(["POST", "GET"])
+    expect(answer.claxedo).toMatchObject({ status: "degraded", scope: "local", error: `Cloud usage is unavailable: ${reason}` })
   })
 
-  test("wakes on installation and online events, then detaches on disposal", async () => {
-    authFetch.mockImplementation(async () => Response.json({ attempted: 1, pending: 0 }))
-    const { installUsageOutboxWakeups } = await import("./usage-api")
-    const dispose = installUsageOutboxWakeups()
-    try {
-      await vi.waitFor(() => expect(authFetch).toHaveBeenCalledTimes(1))
-      window.dispatchEvent(new Event("online"))
-      await vi.waitFor(() => expect(authFetch).toHaveBeenCalledTimes(2))
-      dispose()
-      window.dispatchEvent(new Event("online"))
-      expect(authFetch).toHaveBeenCalledTimes(2)
-    } finally {
-      dispose()
-    }
-  })
+  test("a refusal about the read itself fails the read rather than dropping the cloud part", async () => {
+    installAccountBridge(vi.fn(async () => ({ facts: [] })))
+    authFetch.mockResolvedValue(Response.json({ error: "invalid_usage_range" }, { status: 400 }))
+    const { fetchUnifiedUsage } = await import("./usage-api")
 
+    await expect(fetchUnifiedUsage({ since: 1, until: 2, timeZone: "UTC", view: "claxedo" })).rejects.toThrow("invalid_usage_range")
+    expect(authFetch).toHaveBeenCalledTimes(1)
+  })
 })

@@ -584,10 +584,6 @@ async function installCloudRuntimeMock(
       return json(route, { error: "unhandled cloud runtime path", path: runtimePath }, 599)
     }
 
-    // The usage outbox beacon fires on every boot.
-    if (url.pathname === "/api/claxedo/usage/sync") {
-      return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
-    }
     return json(route, { error: "unhandled request in core-cloud-provisioning mock", path: url.pathname }, 598)
   })
 

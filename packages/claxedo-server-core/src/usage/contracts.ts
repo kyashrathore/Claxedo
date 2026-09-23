@@ -83,16 +83,36 @@ export type TurnUsageRevision = {
   quality: TurnUsageQuality
 }
 
-/** The tokens a stored row can give back: a one-hour split that is null has no column value to return. */
-function storedTokens(tokens: TurnUsageRevision["tokens"]): TurnUsageRevision["tokens"] {
-  const { write1h, ...cache } = tokens.cache
-  return { ...tokens, cache: write1h === null || write1h === undefined ? cache : { ...cache, write1h } }
+function canonicalTokens(tokens: TurnUsageRevision["tokens"]): TurnUsageRevision["tokens"] {
+  const write1h = tokens.cache.write1h
+  return {
+    input: tokens.input,
+    output: tokens.output,
+    reasoning: tokens.reasoning,
+    // A one-hour split that is null has no column value a stored row can give back.
+    cache: {
+      read: tokens.cache.read,
+      write: tokens.cache.write,
+      ...(write1h === null || write1h === undefined ? {} : { write1h }),
+    },
+  }
+}
+
+function canonicalQuality(quality: TurnUsageQuality): TurnUsageQuality {
+  return {
+    source: quality.source,
+    ...(quality.observationKind === undefined ? {} : { observationKind: quality.observationKind }),
+    ...(quality.providerObservationId === undefined ? {} : { providerObservationId: quality.providerObservationId }),
+    ...(quality.providerObservationKey === undefined ? {} : { providerObservationKey: quality.providerObservationKey }),
+    knownCategories: TURN_USAGE_TOKEN_CATEGORIES.filter((category) => quality.knownCategories.includes(category)),
+  }
 }
 
 /**
  * The payload identity every usage store compares a replayed revision by.
- * Key order is fixed here, so two stores hashing the same fact agree on
- * `duplicate` versus `conflict`.
+ * Every key, nested ones included, is written in one order here whatever
+ * order the caller built the fact in, so two stores hashing the same fact
+ * agree on `duplicate` versus `conflict`.
  */
 export async function usageRevisionHash(fact: TurnUsageRevision): Promise<string> {
   const canonical = JSON.stringify({
@@ -111,8 +131,8 @@ export async function usageRevisionHash(fact: TurnUsageRevision): Promise<string
     modelId: fact.modelId,
     nativeSessionId: fact.nativeSessionId ?? null,
     workspaceId: fact.workspaceId ?? null,
-    tokens: storedTokens(fact.tokens),
-    quality: fact.quality,
+    tokens: canonicalTokens(fact.tokens),
+    quality: canonicalQuality(fact.quality),
   })
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
@@ -125,10 +145,9 @@ export type UsageRevisionWriteResult =
   | { status: "conflict"; currentRevision: number }
 
 /**
- * The account a fact is attributed to when it uploads. Ownership is outbox
- * routing, not fact content: it is resolved by the composition from the
- * session's producing identity, never from the request that later asks to
- * sync, and it stays out of `TurnUsageRevision` so reattribution can never
+ * The account that produced a turn. It is not fact content: the composition
+ * resolves it from the session's producing identity, never from a later
+ * request, and it stays out of `TurnUsageRevision` so attribution can never
  * collide with the revision's payload hash.
  */
 export type UsageOwner = { org_id: string; user_id: string }
@@ -147,13 +166,11 @@ export type UsageRevisionReader = {
     until?: number
     settlement?: TurnUsageSettlement
   }): Promise<TurnUsageRevision[]>
-  pendingOutbox(input?: {
-    limit?: number
-    all?: boolean
-    since?: number
-    until?: number
-    owner?: UsageOwner
-  }): Promise<TurnUsageRevision[]>
+}
+
+export type UsageOwnedTurnReader = {
+  /** The latest revision of every turn `owner` produced and observed in [since, until]. */
+  ownedBy(owner: UsageOwner, range?: { since?: number; until?: number }): Promise<TurnUsageRevision[]>
 }
 
 export function knownTokenCategories(tokens: TurnUsageRevision["tokens"]): TurnUsageQuality["knownCategories"] {
@@ -242,10 +259,10 @@ const REVISION_KEYS: ReadonlySet<string> = new Set<keyof TurnUsageRevision>([
 ])
 
 /**
- * A revision that crossed a JSON boundary, or nothing when it is not exactly
- * one. A field the contract does not name is refused rather than dropped: the
- * revision is the privacy boundary, so whatever else a sender put in it is
- * not ours to carry.
+ * A revision that crossed a JSON boundary, or nothing when it is not one. The
+ * revision is the privacy boundary, so nothing else a sender put in it is
+ * carried: a top-level field the contract does not name refuses the whole
+ * revision, and inside `tokens` and `quality` only the named fields are read.
  */
 export function readTurnUsageRevision(value: unknown): TurnUsageRevision | undefined {
   if (!isJsonRecord(value) || Object.keys(value).some((key) => !REVISION_KEYS.has(key))) return undefined

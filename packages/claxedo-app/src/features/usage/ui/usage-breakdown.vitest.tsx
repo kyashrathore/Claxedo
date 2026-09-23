@@ -84,4 +84,32 @@ describe("UsageBreakdown", () => {
     expect(screen.getByRole("button", { name: "Previous breakdown page" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Next breakdown page" })).toBeDisabled()
   })
+
+  test("a row whose every turn reported no token usage says so in place of zero tokens and cost", () => {
+    const silent = {
+      value: "connection:cursor-acp",
+      label: "connection:cursor-acp",
+      turnCount: 2,
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      unknownCategories: 10,
+      estimatedUsd: 0,
+      pricedTokens: 0,
+      unpricedTokens: 0,
+      status: "unavailable" as const,
+    }
+    const unbranded = { ...silent, value: "some-agent", label: "some-agent" }
+    render(() => (
+      <UsageBreakdown breakdown={{ dimension: "harness", rows: [silent, unbranded] }} totals={silent} group="harness" />
+    ))
+    const cursor = screen.getByRole("row", { name: /connection:cursor-acp/ })
+    expect(cursor).toHaveTextContent("Cursor doesn't report token usage")
+    expect(cursor).not.toHaveTextContent("$0.00")
+    expect(cursor).not.toHaveTextContent("0%")
+    expect(cursor).toHaveAttribute("title", expect.stringContaining("Cursor doesn't report token usage"))
+    expect(screen.getByRole("row", { name: /some-agent/ })).toHaveTextContent("Doesn't report token usage")
+  })
 })

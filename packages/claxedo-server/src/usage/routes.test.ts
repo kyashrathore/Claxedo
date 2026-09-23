@@ -23,29 +23,26 @@ const identity = async (request: Request) => {
 }
 
 describe("usage routes", () => {
-  test("acknowledges hosted sync wakeups from a signed org with the central empty-outbox state", async () => {
+  test("serves no sync endpoint and answers no sync counters", async () => {
     const app = UsageRoutes({
       pricing,
       identity,
-      ledger: {},
+      ledger: { usageDashboard: async () => ({ totals: {}, daily: [] }) },
     })
+    const headers = { authorization: "Bearer valid" }
 
-    expect((await app.request("/sync", { method: "POST" })).status).toBe(401)
-    const response = await app.request("/sync", {
-      method: "POST",
-      headers: { authorization: "Bearer valid" },
-    })
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+    expect((await app.request("/sync", { method: "POST", headers })).status).toBe(404)
+    const body = await (await app.request("/?since=1&until=2", { headers })).json()
+    expect(body).not.toHaveProperty("sync")
+    expect(await (await app.request("/?since=1&until=2&view=quota", { headers })).json()).not.toHaveProperty("sync")
   })
 
   test("derives tenant from verified auth and never trusts query identity", async () => {
     const usageDashboard = vi.fn(async () => ({ totals: { turn_count: 1 }, daily: [], breakdown: [] }))
-    const usageBreakdown = vi.fn(async () => ({ rows: [], next: undefined }))
     const app = UsageRoutes({
       pricing,
       identity,
-      ledger: { usageDashboard, usageBreakdown },
+      ledger: { usageDashboard },
     })
     const response = await app.request(
       "/?since=1&until=2&view=claxedo&group=model&filter_location=cloud&org_id=attacker",
@@ -63,9 +60,6 @@ describe("usage routes", () => {
       dimension: "model",
       filters: { location: "cloud" },
     })
-    expect(usageBreakdown).toHaveBeenCalledWith(
-      expect.objectContaining({ org_id: "org_from_token", user_id: "user_from_token", dimension: "model" }),
-    )
   })
 
   test("rejects unsigned, invalid ranges, and invalid group dimensions", async () => {
@@ -88,16 +82,16 @@ describe("usage routes", () => {
     ).toBe(400)
   })
 
-  test("refuses a bearer the verifier rejects, on both the read and the sync wakeup", async () => {
+  test("refuses a bearer the verifier rejects, on both the read and the cloud facts", async () => {
     const usageDashboard = vi.fn(async () => ({ totals: {}, daily: [] }))
     const app = UsageRoutes({
       pricing,
       identity,
-      ledger: { usageDashboard },
+      ledger: { usageDashboard, cloudUsageFacts: async () => [] },
     })
     const headers = { authorization: "Bearer forged" }
 
-    for (const request of [app.request("/?since=1&until=2", { headers }), app.request("/sync", { method: "POST", headers })]) {
+    for (const request of [app.request("/?since=1&until=2", { headers }), app.request("/cloud-facts?since=1&until=2", { headers })]) {
       const response = await request
       expect(response.status).toBe(401)
       await expect(response.json()).resolves.toEqual({
@@ -111,13 +105,10 @@ describe("usage routes", () => {
     const usageDashboard = vi.fn(async () => {
       throw new Error("must not run")
     })
-    const usageBreakdown = vi.fn(async () => {
-      throw new Error("must not run")
-    })
     const app = UsageRoutes({
       pricing,
       identity,
-      ledger: { usageDashboard, usageBreakdown },
+      ledger: { usageDashboard },
     })
 
     const response = await app.request("/?since=1&until=2&view=quota", {
@@ -130,7 +121,6 @@ describe("usage routes", () => {
       externalLocal: { status: "unavailable" },
     })
     expect(usageDashboard).not.toHaveBeenCalled()
-    expect(usageBreakdown).not.toHaveBeenCalled()
   })
 
   test("accepts a 90-calendar-day range containing a DST fall-back hour", async () => {
@@ -147,18 +137,19 @@ describe("usage routes", () => {
     expect(response.status).toBe(200)
   })
 
-  test("paginates every model row for cost and returns Claxedo in the app breakdown", async () => {
-    const usageBreakdown = vi.fn(async (input: { after?: string }) =>
-      input.after
-        ? { rows: [{ value: "openai/gpt-5", input_tokens: 7 }], next: undefined }
-        : { rows: [{ value: "anthropic/claude-sonnet-5", input_tokens: 5 }], next: "page-2" },
-    )
+  test("prices Claxedo from the dashboard's own model rows and returns Claxedo in the app breakdown", async () => {
     const app = UsageRoutes({
       pricing,
       identity,
       ledger: {
-        usageDashboard: async () => ({ totals: { turn_count: 2, input_tokens: 12 }, daily: [] }),
-        usageBreakdown,
+        usageDashboard: async () => ({
+          totals: { turn_count: 2, input_tokens: 12 },
+          daily: [],
+          models: [
+            { value: "anthropic/claude-sonnet-5", input_tokens: 5 },
+            { value: "openai/gpt-5", input_tokens: 7 },
+          ],
+        }),
       },
     })
 
@@ -168,7 +159,6 @@ describe("usage routes", () => {
       dimension: "app",
       rows: [expect.objectContaining({ value: "Claxedo", turnCount: 2, input: 12 })],
     })
-    expect(usageBreakdown).toHaveBeenNthCalledWith(2, expect.objectContaining({ after: "page-2" }))
     expect(body.claxedo.cost.pricedTokens + body.claxedo.cost.unpricedTokens).toBe(12)
   })
 
@@ -381,10 +371,6 @@ describe("usage routes", () => {
 })
 
 describe("local unified usage route", () => {
-  const outbox = (result: { attempted: number; delivered: number; conflicts: number; pending: number }) => ({
-    flush: async () => result,
-    clearIdentity: async () => result,
-  })
   const fact = {
     hostId: "h",
     sessionRef: "local:s",
@@ -447,9 +433,8 @@ describe("local unified usage route", () => {
     ]
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       history: async () => ({
         rows,
         totalRows: rows,
@@ -475,12 +460,11 @@ describe("local unified usage route", () => {
   })
 
   test("counts the account's cloud turns in both Claxedo and Total, beside this machine's history", async () => {
-    const local = { current: async () => [fact], pendingOutbox: async () => [fact] } as never
+    const local = { current: async () => [fact], ownedBy: async () => [fact] } as never
     const app = LocalUsageRoutes({
       pricing,
       local,
       identity: async () => ({ org_id: "org", user_id: "user" }),
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 }),
       history: async () => {
         const direct = {
           app: "claude",
@@ -542,9 +526,8 @@ describe("local unified usage route", () => {
     }
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       history: async () => ({
         rows: [],
         totalRows: [row],
@@ -570,9 +553,8 @@ describe("local unified usage route", () => {
   test("anonymous requests stay local and source failures do not zero Claxedo", async () => {
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [fact], pendingOutbox: async () => [fact] } as never,
+      local: { current: async () => [fact], ownedBy: async () => [fact] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 }),
       history: async () => {
         throw new Error("scanner unavailable")
       },
@@ -580,7 +562,6 @@ describe("local unified usage route", () => {
     const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total")).json())
     expect(body.claxedo.totals.input).toBe(10)
     expect(body.externalLocal.status).toBe("degraded")
-    expect(body.sync.pending).toBe(1)
   })
 
   test("retains the last valid local-history snapshot when refresh fails", async () => {
@@ -616,9 +597,8 @@ describe("local unified usage route", () => {
       .mockRejectedValueOnce(new Error("scanner offline"))
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       history,
     })
     const first = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app")).json())
@@ -670,9 +650,8 @@ describe("local unified usage route", () => {
       .mockRejectedValueOnce(new Error("scanner offline"))
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       history,
     })
     await app.request("/?since=0&until=20&timezone=UTC&view=total")
@@ -693,9 +672,8 @@ describe("local unified usage route", () => {
       .mockRejectedValueOnce(new Error("registry offline"))
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       quota,
     })
     const request = "/?since=0&until=20&timezone=UTC&view=quota"
@@ -717,9 +695,8 @@ describe("local unified usage route", () => {
   test("a quota read that fails before any snapshot draws nothing and says why", async () => {
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       quota: async () => {
         throw new Error("registry offline")
       },
@@ -740,9 +717,8 @@ describe("local unified usage route", () => {
     }))
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       history,
     })
 
@@ -756,7 +732,6 @@ describe("local unified usage route", () => {
 
   test("runs only the producers required by the selected usage view", async () => {
     const current = vi.fn(async () => [fact])
-    const pendingOutbox = vi.fn(async () => [fact])
     const identity = vi.fn(async () => undefined)
     const history = vi.fn(async () => ({
       rows: [],
@@ -768,9 +743,8 @@ describe("local unified usage route", () => {
     const quota = vi.fn(async () => ({ status: "unavailable" as const }))
     const app = LocalUsageRoutes({
       pricing,
-      local: { current, pendingOutbox } as never,
+      local: { current, ownedBy: async () => [] } as never,
       identity,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       history,
       quota,
     })
@@ -797,9 +771,8 @@ describe("local unified usage route", () => {
   test("a cloud fetch that failed still answers this machine's usage and says the cloud part is missing", async () => {
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [fact], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [fact], ownedBy: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "user" }),
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
     })
     const response = await app.request(
       "/?since=0&until=20&timezone=UTC&view=claxedo",
@@ -825,9 +798,8 @@ describe("local unified usage route", () => {
     const current = vi.fn(async () => [fact, final])
     const app = LocalUsageRoutes({
       pricing,
-      local: { current, pendingOutbox: async () => [] } as never,
+      local: { current, ownedBy: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "user" }),
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 2 }),
       history: async () => ({
         rows: [
           {
@@ -917,9 +889,8 @@ describe("local unified usage route", () => {
     } as const
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [fact, second], pendingOutbox: async () => [fact, second] } as never,
+      local: { current: async () => [fact, second], ownedBy: async () => [fact, second] } as never,
       identity: async () => undefined,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 2 }),
     })
     const body = (await (
       await app.request("/?since=0&until=20&timezone=UTC&view=claxedo&group=harness&filter_harness=codex&limit=1")
@@ -936,37 +907,14 @@ describe("local unified usage route", () => {
     expect(otherApp.breakdown.rows).toEqual([])
   })
 
-  test("exposes an authenticated sync wakeup without scanning dashboard history", async () => {
-    const flush = vi.fn(async () => ({ attempted: 1, delivered: 1, conflicts: 0, pending: 0 }))
+  test("serves no sync endpoint", async () => {
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] },
       identity: async () => ({ org_id: "org", user_id: "user" }),
-      outbox: { flush, clearIdentity: flush },
     })
-    const response = await app.request("/sync", { method: "POST" })
-    expect(response.status).toBe(200)
-    // No bearer and no machine-operator predicate: the unsigned-local posture
-    // treats the requester as the machine's one user, so unowned facts may be
-    // adopted under this identity.
-    expect(flush).toHaveBeenCalledWith({ org_id: "org", user_id: "user" }, { claimUnowned: true })
-  })
-
-  test("treats an anonymous sync wakeup as a local-only identity transition", async () => {
-    const flush = vi.fn(async () => ({ attempted: 1, delivered: 1, conflicts: 0, pending: 0 }))
-    const clearIdentity = vi.fn(async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 3 }))
-    const app = LocalUsageRoutes({
-      pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
-      identity: async () => undefined,
-      outbox: { flush, clearIdentity },
-    })
-
-    const response = await app.request("/sync", { method: "POST" })
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ attempted: 0, delivered: 0, conflicts: 0, pending: 3 })
-    expect(clearIdentity).toHaveBeenCalledOnce()
-    expect(flush).not.toHaveBeenCalled()
+    expect((await app.request("/sync", { method: "POST" })).status).toBe(404)
+    expect(await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo")).json()).not.toHaveProperty("sync")
   })
 
   test("denies machine history and quota to a signed caller who is not the machine operator", async () => {
@@ -974,10 +922,9 @@ describe("local unified usage route", () => {
     const quota = vi.fn(async () => ({ status: "available" as const, snapshot: { accounts: [] } }))
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "member" }),
       machineOperator: async () => false,
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       history,
       quota,
     })
@@ -997,58 +944,114 @@ describe("local unified usage route", () => {
     expect(quota).not.toHaveBeenCalled()
   })
 
-  test("a non-operator flush delivers only facts that account produced", async () => {
-    const flush = vi.fn(async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 }))
-    const pendingOutbox = vi.fn(async () => [])
+  test("charts Total by harness, session and workspace from the same turns its breakdown counts", async () => {
+    const direct = {
+      app: "claude",
+      provider: "anthropic",
+      model: "m",
+      bucketStart: 10,
+      nativeSessionId: "direct",
+      turnCount: 1,
+      tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
+    }
+    const cloudTurn: TurnUsageRevision = {
+      ...fact,
+      hostId: "workspace:ws_cloud",
+      sessionRef: "workspace:ws_cloud:session:ses_cloud",
+      sessionId: "ses_cloud",
+      workspaceId: "ws_cloud",
+      messageId: "msg_cloud",
+      location: "cloud-workspace",
+      harness: "claude",
+      tokens: { input: 20, output: 4, reasoning: null, cache: { read: 0, write: null } },
+      quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] },
+    }
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox } as never,
+      local: { current: async () => [], ownedBy: async () => [] },
+      identity: async () => undefined,
+      history: async () => ({ rows: [direct], totalRows: [direct], coverage: [], classifiedClaxedo: 0, unclassified: 0 }),
+    })
+    for (const group of ["harness", "session", "workspace"]) {
+      const body = await (await app.request(
+        `/?since=0&until=20&timezone=UTC&view=total&group=${group}`,
+        withCloud({ status: "available", facts: [cloudTurn] }),
+      )).json()
+      const charted = Object.fromEntries(body.chart.series.map((series: { value: string; daily: Array<{ input: number }> }) =>
+        [series.value, series.daily.reduce((sum, point) => sum + point.input, 0)]))
+      const counted = Object.fromEntries(body.breakdown.rows.map((row: { value: string; input: number }) => [row.value, row.input]))
+      expect(charted, group).toEqual(counted)
+      expect(Object.keys(charted), group).toHaveLength(2)
+    }
+  })
+
+  test("marks a row whose every turn reported no token usage, and keeps its turns counted", async () => {
+    const silent = (messageId: string, input: Partial<TurnUsageRevision> = {}): TurnUsageRevision => ({
+      ...fact,
+      messageId,
+      harness: "connection:cursor-acp",
+      providerId: "cursor",
+      settlement: "unavailable",
+      tokens: { input: null, output: null, reasoning: null, cache: { read: null, write: null } },
+      quality: { source: "lifecycle", knownCategories: [] },
+      ...input,
+    })
+    const facts: TurnUsageRevision[] = [
+      silent("msg_silent_1"),
+      // Settled with a usage observation that named no category: still nothing measured.
+      silent("msg_silent_2", { settlement: "final", quality: { source: "provider", knownCategories: [] } }),
+      // Still running: it may yet report, so it does not make its row silent.
+      silent("msg_running", { harness: "claude", providerId: "anthropic", settlement: "provisional", status: "running" }),
+      { ...fact, messageId: "msg_measured", harness: "claude", tokens: { ...fact.tokens }, quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] } },
+    ]
+    const app = LocalUsageRoutes({
+      pricing,
+      local: { current: async () => facts, ownedBy: async () => [] },
+      identity: async () => undefined,
+    })
+    const body = await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo&group=harness")).json()
+    expect(body.claxedo.totals).toMatchObject({ turnCount: 4, unavailableTurnCount: 2 })
+    expect(body.breakdown.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "connection:cursor-acp", turnCount: 2, input: 0, status: "unavailable" }),
+      expect.objectContaining({ value: "claude", turnCount: 2, unavailableTurnCount: 0, status: "partial" }),
+    ]))
+  })
+
+  test("a signed member who is not the operator reads only the turns their account produced", async () => {
+    const current = vi.fn(async () => [fact])
+    const ownedBy = vi.fn(async () => [])
+    const app = LocalUsageRoutes({
+      pricing,
+      local: { current, ownedBy } as never,
       identity: async () => ({ org_id: "org", user_id: "member" }),
       machineOperator: async () => false,
-      outbox: { flush, clearIdentity: vi.fn() },
     })
 
-    await app.request("/sync", { method: "POST", headers: { authorization: "Bearer valid" } })
-    expect(flush).toHaveBeenCalledWith({ org_id: "org", user_id: "member" }, { claimUnowned: false })
-
-    // The member's dashboard is scoped to facts the outbox stamped as theirs;
-    // the machine-wide current table is not theirs to read.
     const response = await app.request("/?since=0&until=20&timezone=UTC&view=claxedo", {
       headers: { authorization: "Bearer valid" },
     })
     expect(response.status).toBe(200)
-    expect(pendingOutbox).toHaveBeenCalledWith({
-      since: 0,
-      until: 20,
-      all: true,
-      owner: { org_id: "org", user_id: "member" },
-    })
-    expect(flush).toHaveBeenLastCalledWith({ org_id: "org", user_id: "member" }, { claimUnowned: false })
+    expect((await response.json()).claxedo.totals.turnCount).toBe(0)
+    expect(ownedBy).toHaveBeenCalledWith({ org_id: "org", user_id: "member" }, { since: 0, until: 20 })
+    expect(current).not.toHaveBeenCalled()
   })
 
-  test("the operator's flush may adopt facts no producer account owns", async () => {
-    const flush = vi.fn(async () => ({ attempted: 1, delivered: 1, conflicts: 0, pending: 0 }))
+  test("preserves control-plane auth errors on the local read", async () => {
     const app = LocalUsageRoutes({
       pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
-      identity: async () => ({ org_id: "org", user_id: "operator" }),
-      machineOperator: async () => true,
-      outbox: { flush, clearIdentity: vi.fn() },
-    })
-    await app.request("/sync", { method: "POST", headers: { authorization: "Bearer valid" } })
-    expect(flush).toHaveBeenCalledWith({ org_id: "org", user_id: "operator" }, { claimUnowned: true })
-  })
-
-  test("preserves control-plane auth errors on local read and sync routes", async () => {
-    const app = LocalUsageRoutes({
-      pricing,
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      local: { current: async () => [], ownedBy: async () => [] } as never,
       identity: async () => {
         throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is invalid")
       },
-      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
     })
-    for (const request of [app.request("/?since=0&until=20&timezone=UTC"), app.request("/sync", { method: "POST" })]) {
+    for (const request of [
+      app.request("/?since=0&until=20&timezone=UTC"),
+      app.request("/?since=0&until=20&timezone=UTC", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cloud: { status: "available", facts: [] } }),
+      }),
+    ]) {
       const response = await request
       expect(response.status).toBe(401)
       await expect(response.json()).resolves.toEqual({
@@ -1059,10 +1062,6 @@ describe("local unified usage route", () => {
 })
 
 describe("local usage route with the account's cloud turns", () => {
-  const outbox = {
-    flush: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
-    clearIdentity: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
-  }
   const local: TurnUsageRevision = {
     hostId: "local_machine",
     sessionRef: "local:/work:session:ses_local",
@@ -1102,10 +1101,9 @@ describe("local usage route with the account's cloud turns", () => {
     local: {
       current: async ({ since = 0, until = Infinity } = {}) =>
         [local].filter((fact) => fact.observedAt >= since && fact.observedAt <= until),
-      pendingOutbox: async () => [],
+      ownedBy: async () => [],
     },
     identity: async () => undefined,
-    outbox,
     ...(machineOperator ? { machineOperator } : {}),
   })
   const post = (routes: ReturnType<typeof app>, query: string, body: unknown) =>
@@ -1184,16 +1182,33 @@ describe("local usage route with the account's cloud turns", () => {
     ["a field the revision does not carry", { ...cloud({ messageId: "m" }), prompt: "secret" }],
     ["negative tokens", cloud({ messageId: "m", tokens: { input: -1, output: 0, reasoning: null, cache: { read: 0, write: 0 } } })],
     ["a revision below one", cloud({ messageId: "m", revision: 0 })],
-  ])("refuses %s posing as a cloud turn", async (_name, fact) => {
-    const response = await post(app(), "view=claxedo", { cloud: { status: "available", facts: [fact] } })
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({
-      error: { code: "invalid_cloud_usage_fact", message: "cloud.facts[0] is not a cloud workspace usage revision" },
+  ])("leaves out %s posing as a cloud turn, counts the rest and says how many it left out", async (_name, fact) => {
+    const response = await post(app(), "view=claxedo", {
+      cloud: { status: "available", facts: [fact, cloud({ messageId: "msg_readable" })] },
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.claxedo).toMatchObject({
+      status: "degraded",
+      error: "1 cloud turn could not be read and is not counted.",
+      scope: "cross-machine",
+      totals: { turnCount: 2, input: 2_000_000 },
+    })
+  })
+
+  test("a cloud read that failed without a reason still answers this machine's usage", async () => {
+    const response = await post(app(), "view=claxedo", { cloud: { status: "unavailable", error: "" } })
+    expect(response.status).toBe(200)
+    expect((await response.json()).claxedo).toMatchObject({
+      status: "degraded",
+      error: "Cloud usage is unavailable.",
+      scope: "local",
+      totals: { turnCount: 1 },
     })
   })
 
   test("refuses a malformed cloud body and more cloud turns than one answer carries", async () => {
-    for (const body of [{}, { cloud: { status: "available" } }, { cloud: { status: "unavailable", error: "" } }, { cloud: [] }]) {
+    for (const body of [{}, { cloud: { status: "available" } }, { cloud: { status: "unavailable" } }, { cloud: [] }]) {
       const response = await post(app(), "view=claxedo", body)
       expect(response.status).toBe(400)
       expect(await response.json()).toMatchObject({ error: { code: "invalid_cloud_usage" } })

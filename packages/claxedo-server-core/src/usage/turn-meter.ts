@@ -10,6 +10,7 @@ import {
   type UsageRevisionReader,
   type UsageRevisionWriter,
 } from "./contracts"
+import type { TurnMeterState, TurnMeterStateStore } from "./turn-meter-state"
 
 type TurnContext = {
   sessionRef: string
@@ -36,6 +37,8 @@ type State = {
   hasUsage: boolean
   providerId?: string
   modelId?: string
+  /** The model a provider observation named as serving the turn, which outranks the configured `modelId`. */
+  servedModelId?: string
   nativeSessionId?: string
   observedAt?: number
   completedAt?: number
@@ -78,6 +81,18 @@ function applyObservation(previous: RuntimeTokenUsage, observation: RuntimeUsage
       ...(write1h === null ? {} : { write1h }),
     },
   }
+}
+
+/**
+ * A scope's one-hour writes are a part of its cache writes. A share reported
+ * above the total, or with no total at all, would make every revision of the
+ * turn fail `assertTurnUsageRevision`.
+ */
+function oneHourWithinWrites(tokens: RuntimeTokenUsage): RuntimeTokenUsage {
+  const { write1h, ...cache } = tokens.cache
+  if (write1h === undefined || write1h === null) return tokens
+  if (cache.write === null) return { ...tokens, cache }
+  return write1h > cache.write ? { ...tokens, cache: { ...cache, write1h: cache.write } } : tokens
 }
 
 function sumStreams(streams: Map<string, RuntimeTokenUsage>): RuntimeTokenUsage {
@@ -141,6 +156,8 @@ export type TurnMeter = {
 export function createTurnMeter(input: {
   writer: UsageRevisionWriter
   reader?: Pick<UsageRevisionReader, "current">
+  /** Where each turn's per-scope streams outlive the process. */
+  state?: TurnMeterStateStore
   currentFilter?: (fact: TurnUsageRevision) => boolean
   reconcileProvisionalOnStart?: boolean
   resolveContext(value: { sessionId: string; messageId: string }): Promise<TurnContext>
@@ -154,29 +171,39 @@ export function createTurnMeter(input: {
   let queue = Promise.resolve()
   let initialized = false
 
-  function hydrate(fact: TurnUsageRevision) {
+  async function hydrate(fact: TurnUsageRevision) {
+    const saved = await input.state?.load({ sessionId: fact.sessionId, messageId: fact.messageId })
+    const streams = saved
+      ? new Map(Object.entries(saved.streams))
+      : new Map(fact.quality.knownCategories.length > 0 ? [["", fact.tokens]] : [])
+    // Saved streams can hold an observation whose revision never landed, so
+    // the turn's usage is their sum, and it is the provider's.
+    const restored = saved !== undefined && streams.size > 0
     const hydrated: State = {
       sessionId: fact.sessionId,
       messageId: fact.messageId,
       revision: fact.revision,
-      tokens: fact.tokens,
-      hasUsage: fact.quality.knownCategories.length > 0,
+      tokens: restored ? sumStreams(streams) : fact.tokens,
+      hasUsage: fact.quality.knownCategories.length > 0 || restored,
       providerId: fact.providerId,
       modelId: fact.modelId,
       ...(fact.nativeSessionId ? { nativeSessionId: fact.nativeSessionId } : {}),
       observedAt: fact.observedAt,
       settlement: fact.settlement,
       status: fact.status,
-      quality: fact.quality,
-      // The stored fact keeps only the sum, so a restored turn is one stream.
-      streams: new Map(fact.quality.knownCategories.length > 0 ? [["", fact.tokens]] : []),
-      lastObservationKeys: new Map(
-        fact.quality.providerObservationKey
-          ? [["", fact.quality.providerObservationKey]]
-          : fact.quality.observationKind === "delta" && fact.quality.providerObservationId
-            ? [["", `provider:${fact.quality.providerObservationId}`]]
-            : [],
-      ),
+      quality: restored ? { ...fact.quality, source: "provider" } : fact.quality,
+      // With no saved state the fact's sum is all there is, filed as the
+      // unscoped stream: a scoped observation replayed onto it is counted twice.
+      streams,
+      lastObservationKeys: saved
+        ? new Map(Object.entries(saved.lastObservationKeys))
+        : new Map(
+            fact.quality.providerObservationKey
+              ? [["", fact.quality.providerObservationKey]]
+              : fact.quality.observationKind === "delta" && fact.quality.providerObservationId
+                ? [["", `provider:${fact.quality.providerObservationId}`]]
+                : [],
+          ),
       ...(fact.completedAt === undefined ? {} : { completedAt: fact.completedAt }),
       context: {
         sessionRef: fact.sessionRef,
@@ -205,11 +232,10 @@ export function createTurnMeter(input: {
       : await input.reader.current()
     for (const fact of current) {
       if (input.currentFilter && !input.currentFilter(fact)) continue
-      hydrate(fact)
+      const hydrated = await hydrate(fact)
       if (fact.settlement === "provisional") {
         activeBySession.set(fact.sessionId, fact.messageId)
-        const current = states.get(key(fact.sessionId, fact.messageId))!
-        recover.push(current)
+        recover.push(hydrated)
       }
     }
     if (input.reconcileProvisionalOnStart) {
@@ -235,7 +261,7 @@ export function createTurnMeter(input: {
           messageId,
         })
       ).find((fact) => !input.currentFilter || input.currentFilter(fact))
-      if (persisted) return hydrate(persisted)
+      if (persisted) return await hydrate(persisted)
     }
     const created: State = {
       sessionId,
@@ -251,11 +277,26 @@ export function createTurnMeter(input: {
     return created
   }
 
+  function savedState(current: State): TurnMeterState {
+    return {
+      streams: Object.fromEntries(current.streams),
+      lastObservationKeys: Object.fromEntries(current.lastObservationKeys),
+    }
+  }
+
   async function persist(
     current: State,
     terminal?: { settlement: TurnUsageRevision["settlement"]; status: TurnUsageStatus; completedAt?: number },
   ) {
     let fact: TurnUsageRevision | undefined
+    // Saved ahead of the revision: a restart between the two then restores an
+    // observation the fact lacks, which the next revision carries, instead of
+    // losing one the fact already counted.
+    if (input.state && current.streams.size > 0) {
+      await input.state
+        .save({ sessionId: current.sessionId, messageId: current.messageId, state: savedState(current) })
+        .catch((error: unknown) => input.onDegraded?.(error))
+    }
     try {
       const context =
         current.context ?? (await input.resolveContext({ sessionId: current.sessionId, messageId: current.messageId }))
@@ -273,9 +314,9 @@ export function createTurnMeter(input: {
         location: context.location,
         harness: context.harness,
         providerId: current.providerId ?? context.providerId ?? "unknown",
-        modelId: current.modelId ?? context.modelId ?? "unknown",
-        ...((current.nativeSessionId ?? context.nativeSessionId)
-          ? { nativeSessionId: current.nativeSessionId ?? context.nativeSessionId }
+        modelId: current.servedModelId ?? current.modelId ?? context.modelId ?? "unknown",
+        ...((context.nativeSessionId ?? current.nativeSessionId)
+          ? { nativeSessionId: context.nativeSessionId ?? current.nativeSessionId }
           : {}),
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
         hostId: context.hostId,
@@ -330,11 +371,17 @@ export function createTurnMeter(input: {
       // Provider observations are canonical: tokens read off an assistant
       // message before the first of them are a fallback, not a stream.
       if (current.quality.source !== "provider") current.streams.clear()
-      current.streams.set(scope, applyObservation(current.streams.get(scope) ?? unknownTokens(), observation))
+      current.streams.set(
+        scope,
+        oneHourWithinWrites(applyObservation(current.streams.get(scope) ?? unknownTokens(), observation)),
+      )
       current.tokens = sumStreams(current.streams)
       current.hasUsage = true
       current.observedAt = observation.observedAt ?? now()
-      current.nativeSessionId = observation.nativeSessionId ?? current.nativeSessionId
+      // The turn's own stream reports first; a child thread's or subagent's
+      // later observation must not rename the thread the fact belongs to.
+      current.nativeSessionId ??= observation.nativeSessionId
+      current.servedModelId ??= observation.model
       current.quality = {
         source: "provider",
         observationKind: observation.kind,

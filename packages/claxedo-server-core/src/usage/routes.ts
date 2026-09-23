@@ -4,10 +4,15 @@ import type { UnifiedUsageResponse, UsageBreakdownRow, UsageFilterDimension } fr
 export type { UnifiedUsageResponse } from "@claxedo/usage-contract"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../platform/auth/auth"
 import type { UsageProjectionLedger } from "./ledger"
-export type { UsageLedger, UsageProjectionLedger } from "./ledger"
+export type { UsageProjectionLedger } from "./ledger"
 import { TOKEN_TRACKER_VERSION, type PricedUsage, type UsagePricing } from "./adapters/token-tracker-pricing"
 import { isJsonRecord } from "../platform/runtime/lib/json"
-import { readTurnUsageRevision, type TurnUsageRevision, type UsageRevisionReader } from "./contracts"
+import {
+  readTurnUsageRevision,
+  type TurnUsageRevision,
+  type UsageOwnedTurnReader,
+  type UsageRevisionReader,
+} from "./contracts"
 import { tokenTrackerSourceForHarness } from "./provenance"
 import { cloudWorkspaceUsageContext } from "./usage-report"
 import {
@@ -44,22 +49,6 @@ type LocalHistorySnapshot = {
   classifiedClaxedo: number
   unclassified: number
   scannedAt?: number
-}
-
-type UsageOutboxResult = {
-  attempted: number
-  delivered: number
-  conflicts: number
-  pending: number
-}
-
-type UsageOutboxSync = {
-  flush(
-    identity: { org_id: string; user_id: string },
-    options?: { claimUnowned?: boolean },
-  ): Promise<UsageOutboxResult>
-  clearIdentity(): Promise<UsageOutboxResult>
-  notify(): Promise<UsageOutboxResult>
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, timeoutError: () => Error) {
@@ -275,74 +264,29 @@ async function priceCentralBreakdown(pricing: UsagePricing, rows: readonly Centr
   return total
 }
 
-async function priceAllCentralModels(
-  pricing: UsagePricing,
-  ledger: UsageProjectionLedger,
-  identity: { org_id: string; user_id: string },
-  range: { since: number; until: number },
-) {
-  const total = emptyCost()
-  if (!ledger.usageBreakdown) return total
-  let after: string | undefined
-  const seen = new Set<string>()
-  do {
-    const page = readCentralUsage(
-      await ledger.usageBreakdown({
-        ...identity,
-        ...range,
-        dimension: "model",
-        limit: 100,
-        ...(after ? { after } : {}),
-      }),
-    )
-    const priced = await priceCentralBreakdown(pricing, page.rows ?? [])
-    total.estimatedUsd += priced.estimatedUsd
-    total.pricedTokens += priced.pricedTokens
-    total.unpricedTokens += priced.unpricedTokens
-    total.catalog = priced.catalog
-    const next = page.next
-    if (next !== undefined && next.length > 0) {
-      if (seen.has(next)) throw new Error("central usage breakdown repeated a cursor")
-      seen.add(next)
-      after = next
-    } else after = undefined
-  } while (after)
-  return total
-}
-
-async function priceCentralProjection(
-  pricing: UsagePricing,
-  ledger: UsageProjectionLedger,
-  identity: { org_id: string; user_id: string },
-  range: { since: number; until: number },
-  projection: CentralUsageProjection,
-) {
-  const models = projection.models
-  if (models) {
-    const total = await priceCentralBreakdown(pricing, models)
-    const daily = new Map<string, PricedUsage>()
-    for (const row of projection.dailyModels ?? []) {
-      const date = rowText(row, "date")
-      if (!date) continue
-      const item = await priceCentralBreakdown(pricing, [row])
-      const current = daily.get(date) ?? emptyCost()
-      current.estimatedUsd += item.estimatedUsd
-      current.pricedTokens += item.pricedTokens
-      current.unpricedTokens += item.unpricedTokens
-      current.catalog = item.catalog
-      daily.set(date, current)
-    }
-    total.daily = [...daily]
-      .map(([date, item]) => ({
-        date,
-        estimatedUsd: item.estimatedUsd,
-        pricedTokens: item.pricedTokens,
-        unpricedTokens: item.unpricedTokens,
-      }))
-      .toSorted((a, b) => a.date.localeCompare(b.date))
-    return total
+async function priceCentralProjection(pricing: UsagePricing, projection: CentralUsageProjection) {
+  const total = await priceCentralBreakdown(pricing, projection.models ?? [])
+  const daily = new Map<string, PricedUsage>()
+  for (const row of projection.dailyModels ?? []) {
+    const date = rowText(row, "date")
+    if (!date) continue
+    const item = await priceCentralBreakdown(pricing, [row])
+    const current = daily.get(date) ?? emptyCost()
+    current.estimatedUsd += item.estimatedUsd
+    current.pricedTokens += item.pricedTokens
+    current.unpricedTokens += item.unpricedTokens
+    current.catalog = item.catalog
+    daily.set(date, current)
   }
-  return await priceAllCentralModels(pricing, ledger, identity, range)
+  total.daily = [...daily]
+    .map(([date, item]) => ({
+      date,
+      estimatedUsd: item.estimatedUsd,
+      pricedTokens: item.pricedTokens,
+      unpricedTokens: item.unpricedTokens,
+    }))
+    .toSorted((a, b) => a.date.localeCompare(b.date))
+  return total
 }
 
 type CanonicalBreakdownTotals = {
@@ -445,13 +389,13 @@ function externalUsageDimension(row: ExternalUsageBucket, dimension: string) {
 
 function chartRowsFromExternal(
   rows: LocalHistorySnapshot["rows"],
-  dimension: "app" | "provider" | "model" | "location",
+  groupOf: (row: ExternalUsageBucket) => string,
   timeZone: string,
 ) {
   const formatDate = usageDateFormatter(timeZone)
   return rows.map((row) => ({
     date: formatDate.format(new Date(row.bucketStart)),
-    value: externalUsageDimension(row, dimension),
+    value: groupOf(row),
     input: row.tokens.input ?? 0,
     output: row.tokens.output ?? 0,
     reasoning: row.tokens.reasoning ?? 0,
@@ -782,22 +726,6 @@ export function UsageRoutes(input: {
       throw error
     }
   })
-  // Hosted callers share the desktop lifecycle wake used by local outboxes,
-  // but the central authority has no outbox of its own: accepted revisions are
-  // already in `ledger`. Authenticate the tenant exactly like the dashboard
-  // read and report that authoritative empty state instead of leaving the
-  // declared hosted operation as a 404.
-  app.post("/sync", async (c) => {
-    try {
-      if (!(await input.identity(c.req.raw))) {
-        return c.json({ error: "signed_org_required", message: "A signed organization session is required" }, 401)
-      }
-      return c.json({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
-    } catch (error) {
-      if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-      throw error
-    }
-  })
   app.get("/", async (c) => {
     const startedAt = Date.now()
     try {
@@ -849,7 +777,6 @@ export function UsageRoutes(input: {
           total: series,
           totalCost: emptyCost(),
           filterOptions: { claxedo: {}, total: {} },
-          sync: { attempted: 0, delivered: 0, conflicts: 0, pending: 0 },
         })
       }
       if (!input.ledger.usageDashboard) {
@@ -873,7 +800,7 @@ export function UsageRoutes(input: {
         ? centralProjectionSeries(summary)
         : usageSeriesFromFacts({ facts: [], since, until, timeZone })
       const claxedoCost = includeClaxedo
-        ? await priceCentralProjection(input.pricing, input.ledger, identity, { since, until }, summary)
+        ? await priceCentralProjection(input.pricing, summary)
         : emptyCost()
       const chart = group
         ? mergeChartSeries(
@@ -911,7 +838,6 @@ export function UsageRoutes(input: {
           claxedo: summary.filters ?? {},
           total: mergeFilterOptions({ app: ["Claxedo"] }, summary.filters),
         },
-        sync: { attempted: 0, delivered: 0, conflicts: 0, pending: 0 },
         ...(chart ? { chart } : {}),
       }
       const captureRequest = () =>
@@ -1018,9 +944,8 @@ async function localUsageBreakdowns(input: {
       }),
       chart: mergeChartSeries(
         group,
-        ...(group === "app" || group === "provider" || group === "model" || group === "location"
-          ? [chartRowsFromExternal(totalRows, group, timeZone), chartRowsFromFacts(totalCloudFacts, groupOfFact, timeZone)]
-          : []),
+        chartRowsFromExternal(totalRows, groupOfRow, timeZone),
+        chartRowsFromFacts(totalCloudFacts, groupOfFact, timeZone),
       ),
     }
   }
@@ -1053,8 +978,12 @@ async function localUsageBreakdowns(input: {
   }
 }
 
-/** What a signed desktop learned of its account's cloud turns before asking this machine for usage. */
-type CloudUsage = { facts: TurnUsageRevision[] } | { error: string }
+/**
+ * What a signed desktop learned of its account's cloud turns before asking
+ * this machine for usage. `dropped` counts the revisions it sent that cannot
+ * be merged: the view names how many rather than refusing the rest with them.
+ */
+type CloudUsage = { facts: TurnUsageRevision[]; dropped: number } | { error: string }
 
 /**
  * Whether a revision is filed the way the plane files a cloud workspace's
@@ -1071,7 +1000,7 @@ function readCloudUsage(body: unknown):
   | { value: CloudUsage }
   | { error: { code: string; message: string }; status: 400 | 413 } {
   const cloud = isJsonRecord(body) && isJsonRecord(body.cloud) ? body.cloud : undefined
-  if (cloud?.status === "unavailable" && typeof cloud.error === "string" && cloud.error.trim()) {
+  if (cloud?.status === "unavailable" && typeof cloud.error === "string") {
     return { value: { error: cloud.error.trim().slice(0, MAX_CLOUD_USAGE_ERROR_LENGTH) } }
   }
   if (cloud?.status !== "available" || !Array.isArray(cloud.facts)) {
@@ -1090,17 +1019,23 @@ function readCloudUsage(body: unknown):
     }
   }
   const facts: TurnUsageRevision[] = []
-  for (const [index, raw] of cloud.facts.entries()) {
+  let dropped = 0
+  for (const raw of cloud.facts) {
     const fact = readTurnUsageRevision(raw)
-    if (!fact || !isCloudWorkspaceFiling(fact)) {
-      return {
-        status: 400,
-        error: { code: "invalid_cloud_usage_fact", message: `cloud.facts[${index}] is not a cloud workspace usage revision` },
-      }
-    }
-    facts.push(fact)
+    if (fact && isCloudWorkspaceFiling(fact)) facts.push(fact)
+    else dropped += 1
   }
-  return { value: { facts } }
+  return { value: { facts, dropped } }
+}
+
+/** Why the account's cloud turns are missing from this answer, or partly so. */
+function cloudUsageNotice(cloud: CloudUsage | undefined) {
+  if (!cloud) return undefined
+  if ("error" in cloud) return cloud.error ? `Cloud usage is unavailable: ${cloud.error}` : "Cloud usage is unavailable."
+  if (cloud.dropped === 0) return undefined
+  return `${cloud.dropped} cloud ${cloud.dropped === 1 ? "turn" : "turns"} could not be read and ${
+    cloud.dropped === 1 ? "is" : "are"
+  } not counted.`
 }
 
 const emptyHistory = (): LocalHistorySnapshot => ({
@@ -1112,16 +1047,15 @@ const emptyHistory = (): LocalHistorySnapshot => ({
 })
 
 export function LocalUsageRoutes(input: {
-  local: UsageRevisionReader
-  outbox: Pick<UsageOutboxSync, "flush" | "clearIdentity">
+  local: UsageRevisionReader & UsageOwnedTurnReader
   identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
   /**
    * Whether this caller stands for the machine itself. Machine-scoped reads
-   * (external history, quota, the account's cloud turns merged into them) and
-   * adoption of facts no producer account owns are operator-only; other signed
-   * callers see only what their identity produced. When absent, a request
-   * without a bearer token counts as the operator — the unsigned-local posture
-   * where the machine has exactly one user.
+   * (external history, quota, turns no producer account owns, the account's
+   * cloud turns merged into them) are operator-only; other signed callers see
+   * only what their identity produced. When absent, a request without a
+   * bearer token counts as the operator — the unsigned-local posture where
+   * the machine has exactly one user.
    */
   machineOperator?: (request: Request) => Promise<boolean> | boolean
   /**
@@ -1171,30 +1105,6 @@ export function LocalUsageRoutes(input: {
     input.machineOperator ? input.machineOperator(request) : !request.headers.get("authorization")
   const operatorRequired = (c: Context) =>
     c.json({ error: { code: "operator_required", message: "Machine operator access is required" } }, 403)
-  app.post("/sync", async (c) => {
-    let identity: Awaited<ReturnType<typeof input.identity>>
-    let operator: boolean
-    try {
-      identity = await input.identity(c.req.raw)
-      operator = await machineOperator(c.req.raw)
-    } catch (error) {
-      if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
-      throw error
-    }
-    // This endpoint is a lifecycle wakeup, so anonymous desktop windows are a
-    // valid caller. They must never upload; clearing any previous tenant
-    // binding is the authoritative unsigned transition and reports the local
-    // pending count without producing a noisy authentication failure.
-    const result = identity
-      ? await input.outbox.flush(identity, { claimUnowned: operator })
-      : await input.outbox.clearIdentity()
-    return c.json({
-      attempted: result.attempted,
-      delivered: result.delivered,
-      conflicts: result.conflicts,
-      pending: result.pending,
-    })
-  })
   const readUsage = async (c: Context, cloud: CloudUsage | undefined) => {
     const startedAt = Date.now()
     const parsed = parseUsageQuery((name) => c.req.query(name))
@@ -1261,7 +1171,6 @@ export function LocalUsageRoutes(input: {
         total: series,
         totalCost: emptyCost(),
         filterOptions: { claxedo: {}, total: {} },
-        sync: { attempted: 0, delivered: 0, conflicts: 0, pending: 0 },
       }
       captureUsage(input.telemetry, {
         deployment: "local",
@@ -1270,9 +1179,6 @@ export function LocalUsageRoutes(input: {
         claxedoStatus: response.claxedo.status,
         externalStatus: response.externalLocal.status,
         quotaStatus: response.quota.status,
-        outboxPending: 0,
-        ingestDelivered: 0,
-        ingestConflicts: 0,
         scannerDegraded: 0,
         unclassified: 0,
         pricedTokens: 0,
@@ -1297,19 +1203,12 @@ export function LocalUsageRoutes(input: {
       if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
       throw error
     }
-    const sync = await (
-      identity ? input.outbox.flush(identity, { claimUnowned: operator }) : input.outbox.clearIdentity()
-    )
-      .then(({ attempted, delivered, conflicts, pending }) => ({ attempted, delivered, conflicts, pending }))
-      .catch(() => ({ attempted: 0, delivered: 0, conflicts: 0, pending: -1 }))
-
     // A signed caller who is not the machine's operator still sees this
-    // node's facts — but only the ones their own account produced. The
-    // machine-wide `current` table carries no owner, so the outbox's
-    // producer-stamped ownership is the only sound local filter for them.
+    // node's facts, but only the turns their own account produced.
     const localFacts = identity && !operator
-      ? await input.local.pendingOutbox({ since, until, all: true, owner: identity })
+      ? await input.local.ownedBy(identity, { since, until })
       : await input.local.current({ since, until })
+    const cloudNotice = cloudUsageNotice(cloud)
     const cloudFacts = cloud && "facts" in cloud
       ? cloud.facts.filter((fact) => fact.observedAt >= since && fact.observedAt <= until)
       : []
@@ -1374,9 +1273,7 @@ export function LocalUsageRoutes(input: {
         ...claxedoSeries,
         cost: claxedoCost,
         locationShare: locationShare(groupUsageFacts(claxedoFacts, "location")),
-        ...(cloud && "error" in cloud
-          ? { status: "degraded" as const, error: `Cloud usage is unavailable: ${cloud.error}` }
-          : { status: "available" as const }),
+        ...(cloudNotice ? { status: "degraded" as const, error: cloudNotice } : { status: "available" as const }),
         scope: (cloud && "facts" in cloud) || cloudRevisions.length > 0 ? "cross-machine" : "local",
       },
       externalLocal: {
@@ -1397,7 +1294,6 @@ export function LocalUsageRoutes(input: {
           totalFactFilterOptions(view === "total" ? cloudRevisions : []),
         ),
       },
-      sync,
       ...breakdowns,
     }
     captureUsage(input.telemetry, {
@@ -1407,9 +1303,6 @@ export function LocalUsageRoutes(input: {
       claxedoStatus: response.claxedo.status,
       externalStatus: response.externalLocal.status,
       quotaStatus: response.quota.status,
-      outboxPending: response.sync.pending,
-      ingestDelivered: response.sync.delivered,
-      ingestConflicts: response.sync.conflicts,
       scannerDegraded: response.externalLocal.coverage.filter((source) => source.status !== "available").length,
       unclassified: response.externalLocal.unclassified,
       pricedTokens: response.totalCost.pricedTokens,

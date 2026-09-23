@@ -1,13 +1,13 @@
 import { For, Show, createMemo } from "solid-js"
 import type { UsageBreakdownPage, UsageBreakdownRow, UsageTotals } from "../data/usage-api"
-import { UsageBrandLabel, usageBrand } from "./usage-brand"
+import { UsageBrandLabel, noReportedUsageLabel, usageBrand } from "./usage-brand"
 
 function tokens(row: Pick<UsageTotals, "input" | "output" | "reasoning" | "cacheRead" | "cacheWrite">) {
   return row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite
 }
 
 function coverage(row: UsageBreakdownRow) {
-  if (row.status === "unavailable") return "Usage unavailable"
+  if (row.status === "unavailable") return noReportedUsageLabel(row.value, row.label)
   if (row.status === "unpriced") return `${row.unpricedTokens.toLocaleString()} tokens unpriced`
   if (row.unknownCategories > 0) return `${row.unknownCategories.toLocaleString()} categories unknown`
   return row.status === "partial" ? "Partial turn coverage" : "All categories measured"
@@ -50,6 +50,7 @@ export function UsageBreakdown(props: {
           <For each={rows()}>
             {(row) => {
               const rowTokens = () => tokens(row)
+              const silent = () => row.status === "unavailable"
               return (
                 <div
                   class={`usage-breakdown-row usage-brand-row-${usageBrand(`${row.value} ${row.label}`)}`}
@@ -65,15 +66,28 @@ export function UsageBreakdown(props: {
                       )}
                     </Show>
                   </span>
-                  <span role="cell">{rowTokens().toLocaleString()}</span>
-                  <span role="cell">
-                    $
-                    {row.estimatedUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                  <span role="cell" class="usage-share">
-                    <i style={{ width: `${Math.min(100, (rowTokens() / total()) * 100)}%` }} />
-                    <b>{Math.round((rowTokens() / total()) * 100)}%</b>
-                  </span>
+                  <Show
+                    when={silent()}
+                    fallback={
+                      <>
+                        <span role="cell">{rowTokens().toLocaleString()}</span>
+                        <span role="cell">
+                          $
+                          {row.estimatedUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        <span role="cell" class="usage-share">
+                          <i style={{ width: `${Math.min(100, (rowTokens() / total()) * 100)}%` }} />
+                          <b>{Math.round((rowTokens() / total()) * 100)}%</b>
+                        </span>
+                      </>
+                    }
+                  >
+                    <span role="cell" class="usage-breakdown-no-usage">
+                      {noReportedUsageLabel(row.value, row.label)}
+                    </span>
+                    <span role="cell">—</span>
+                    <span role="cell">—</span>
+                  </Show>
                 </div>
               )
             }}

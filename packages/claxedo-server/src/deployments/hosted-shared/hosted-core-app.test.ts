@@ -585,7 +585,7 @@ describe("hosted-core usage", () => {
       env,
       runtimeSessionAuthority: {
         ...base.runtimeSessionAuthority,
-        resolveSessionUsageOwner: vi.fn(async () => ({ org_id: "org-1", user_id: "alice" })),
+        resolveCloudTurnUsageOwner: vi.fn(async () => ({ org_id: "org-1", user_id: "alice" })),
       },
     } as unknown as HostedControlPlane
     const usageDashboard = vi.fn(async () => ({
@@ -634,7 +634,7 @@ describe("hosted-core usage", () => {
         action: "usage_report", sessionId: "ses_cloud", turnId: "msg_user_1", leaseId, fencingToken: 4,
         facts: [{
           turnId: "msg_user_1",
-          messageId: "msg_assistant_1", revision: 1, observedAt: 1, settlement: "final", status: "completed",
+          messageId: "msg_assistant_1", revision: 1, observedAt: Date.now(), settlement: "final", status: "completed",
           harness: "claude", providerId: "anthropic", modelId: "claude-sonnet-5",
           tokens: { input: 1, output: 1, reasoning: null, cache: { read: null, write: null } },
           quality: { source: "provider", knownCategories: ["input", "output"] },
@@ -644,7 +644,7 @@ describe("hosted-core usage", () => {
     expect(reported.status).toBe(200)
     expect(writeRevision).toHaveBeenCalledWith(
       expect.objectContaining({ sessionId: "ses_cloud", workspaceId: "ws_cloud", hostId: "workspace:ws_cloud", location: "cloud-workspace" }),
-      { owner: { org_id: "org-1", user_id: "alice" } },
+      { owner: { org_id: "org-1", user_id: "alice" }, turnId: "msg_user_1" },
     )
 
     const bare = createHostedCoreApp(composed, options)

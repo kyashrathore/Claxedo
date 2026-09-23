@@ -460,7 +460,6 @@ export const HOSTED_OPERATIONS = {
     path: "/api/workspace/:id/host-assignment",
   },
   "usage.cloudFacts": { method: "GET", path: "/api/claxedo/usage/cloud-facts", query: ["since", "until"] },
-  "usage.sync": { method: "POST", path: "/api/claxedo/usage/sync" },
   "documents.export": { method: "GET", path: "/documents/:id/export" },
   "documents.agentOpen": {
     method: "POST",

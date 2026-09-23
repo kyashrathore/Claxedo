@@ -32,6 +32,7 @@ export type UsageBreakdownRow = UsageTotals & {
   estimatedUsd: number
   pricedTokens: number
   unpricedTokens: number
+  /** `unavailable`: every turn in the row reported no token usage, so its zero tokens are not a measurement. */
   status: "final" | "partial" | "unavailable" | "unpriced"
   href?: string
 }
@@ -172,6 +173,10 @@ export type UnifiedUsageResponse = {
       status: "available" | "degraded" | "unavailable" | "unsupported"
       error?: string
     }>
+    /**
+     * Turns in this machine's CLI history that can be neither attributed to
+     * Claxedo nor ruled out, and so count in Total as history of their own.
+     */
     unclassified: number
     /**
      * Epoch ms of the transcript walk these rows came from. Absent when no
@@ -186,7 +191,6 @@ export type UnifiedUsageResponse = {
   total: UsageSeries
   totalCost: UsageCost
   filterOptions: { claxedo: UsageFilterOptions; total: UsageFilterOptions }
-  sync: { attempted: number; delivered: number; conflicts: number; pending: number }
   breakdown?: UsageBreakdownPage
   modelBreakdown?: UsageBreakdownPage
   chart?: UsageChartSeries

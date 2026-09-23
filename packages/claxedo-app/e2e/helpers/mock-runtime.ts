@@ -2750,17 +2750,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, { status: "supported", connections })
   })
 
-  // POST /api/claxedo/usage/sync — the usage outbox beacon
-  // (`installUsageOutboxWakeups`, src/features/usage/data/usage-api.ts) fires
-  // once on every app boot and again on `online` events, so it reaches every
-  // spec's page. CONTRACT: `syncUsageOutbox` reads back
-  // `{ attempted, delivered, conflicts, pending }`; an empty outbox syncs to
-  // all zeros.
-  await contractRoute(page, "**/api/claxedo/usage/sync**", (r) => {
-    if (!api(r)) return r.continue()
-    return json(r, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
-  })
-
   await contractRoute(page, "**/api/claxedo/agent-config/harness**", async (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/api/claxedo/agent-config/harness") return r.fallback()

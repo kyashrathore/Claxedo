@@ -1,8 +1,16 @@
+import Database from "better-sqlite3"
+import { drizzle } from "drizzle-orm/better-sqlite3"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
+import path from "node:path"
 import { describe, expect, test, vi } from "vitest"
 import { messageCompleted, messageUpdated, sessionError, sessionUsage } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
+import type { RuntimeUsageObservation } from "@claxedo/agent-event-runtime"
 import { buildAssistantMessage } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { TurnUsageRevision, UsageRevisionWriteResult } from "@claxedo/server-core/usage/contracts"
+import { CLAXEDO_MIGRATION_JOURNAL } from "@claxedo/server-core/platform/db/journal"
+import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
+import { createSqliteTurnMeterStateStore } from "@claxedo/server-core/usage/adapters/sqlite-turn-meter-state"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 
 function harness() {
@@ -638,3 +646,204 @@ function revisionForRecovery(
     },
   }
 }
+
+/**
+ * One machine's usage database, and a meter over it the way the local
+ * compositions build one. `restart` is a new process on the same file.
+ */
+function machine(input: { harness: string; state?: boolean; nativeSessionId?: string; modelId?: string }) {
+  const sqlite = new Database(":memory:")
+  for (const name of readdirSync(CLAXEDO_MIGRATION_JOURNAL).toSorted()) {
+    const file = path.join(CLAXEDO_MIGRATION_JOURNAL, name, "migration.sql")
+    if (existsSync(file)) sqlite.exec(readFileSync(file, "utf8"))
+  }
+  const db = drizzle({ client: sqlite })
+  const database = {
+    use: <T>(callback: (client: typeof db) => T) => callback(db),
+    transaction: <T>(callback: (client: typeof db) => T) =>
+      (db.transaction as unknown as (run: (client: typeof db) => T) => T)(callback),
+  }
+  const ledger = createSqliteUsageLedger({ database: database as never })
+  const facts: TurnUsageRevision[] = []
+  const degraded: unknown[] = []
+  const writes = { failing: false }
+  const boot = () => {
+    const meter = createTurnMeter({
+      writer: {
+        writeRevision: async (fact, options) => {
+          if (writes.failing) throw new Error("usage database is busy")
+          facts.push(structuredClone(fact))
+          return await ledger.writeRevision(fact, options)
+        },
+      },
+      reader: ledger,
+      ...(input.state === false ? {} : { state: createSqliteTurnMeterStateStore({ database: database as never }) }),
+      reconcileProvisionalOnStart: true,
+      resolveContext: async ({ sessionId }) => ({
+        sessionRef: `local:/work:session:${sessionId}`,
+        workspaceId: "ws-1",
+        hostId: "host-1",
+        location: "local",
+        harness: input.harness,
+        providerId: "provider",
+        modelId: input.modelId ?? "configured",
+        ...(input.nativeSessionId ? { nativeSessionId: input.nativeSessionId } : {}),
+      }),
+      onDegraded: (error) => degraded.push(error),
+      now: () => 5_000,
+    })
+    void meter.start()
+    return meter
+  }
+  return { facts, degraded, boot, writes }
+}
+
+function observed(observation: RuntimeUsageObservation) {
+  return envelope(sessionUsage({ sessionID: "s1", messageID: "m1", contextSize: 1, contextUsed: 1, observation }))
+}
+
+const inputTokens = (input: number) => ({ input, output: 0, reasoning: null, cache: { read: null, write: null } })
+
+describe("turn usage meter across a restart", () => {
+  test("a replayed scoped cumulative replaces its own scope rather than adding to the restored sum", async () => {
+    const box = machine({ harness: "codex-app-server" })
+    const turn = (input: number) => observed({
+      kind: "cumulative",
+      scope: "thread-1:turn-1",
+      providerObservationId: "turn-1",
+      nativeSessionId: "thread-1",
+      tokens: inputTokens(input),
+    })
+    await box.boot().consume(turn(100))
+    const restarted = box.boot()
+    await restarted.consume(turn(100))
+    await restarted.consume(turn(150))
+
+    expect(box.facts.map((fact) => [fact.status, fact.tokens.input])).toEqual([
+      ["running", 100],
+      ["process_lost", 100],
+      ["process_lost", 150],
+    ])
+    expect(box.degraded).toEqual([])
+  })
+
+  test("a scoped delta replayed onto a settled turn is not counted twice", async () => {
+    const box = machine({ harness: "claude" })
+    const delta = observed({ kind: "delta", scope: "child:a", providerObservationId: "req-1", tokens: inputTokens(40) })
+    const first = box.boot()
+    await first.consume(delta)
+    await first.consume(envelope(messageCompleted("s1", "m1")))
+    await box.boot().consume(delta)
+
+    expect(box.facts.map((fact) => [fact.settlement, fact.tokens.input])).toEqual([
+      ["provisional", 40],
+      ["final", 40],
+    ])
+  })
+
+  test("the turn's own cumulative replaces only its own stream beside a restored subagent's", async () => {
+    const box = machine({ harness: "claude" })
+    const first = box.boot()
+    await first.consume(observed({ kind: "cumulative", tokens: inputTokens(60) }))
+    await first.consume(observed({ kind: "cumulative", scope: "toolu_sub", tokens: inputTokens(40) }))
+    await box.boot().consume(observed({ kind: "cumulative", tokens: inputTokens(70) }))
+
+    expect(box.facts.at(-1)?.tokens.input).toBe(110)
+  })
+
+  test("an observation whose revision never landed still counts after a restart", async () => {
+    const box = machine({ harness: "claude" })
+    const first = box.boot()
+    await first.consume(envelope(messageUpdated(buildAssistantMessage({
+      id: "m1",
+      sessionID: "s1",
+      parentID: "u1",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude" },
+      directory: "/w",
+      created: 1,
+    }) as never)))
+    box.writes.failing = true
+    await first.consume(observed({ kind: "cumulative", tokens: inputTokens(60) }))
+    box.writes.failing = false
+    await box.boot().consume(observed({ kind: "cumulative", scope: "toolu_sub", tokens: inputTokens(40) }))
+
+    expect(box.degraded).toHaveLength(1)
+    expect(box.facts.map((fact) => [fact.status, fact.tokens.input])).toEqual([
+      ["running", null],
+      ["process_lost", 60],
+      ["process_lost", 100],
+    ])
+  })
+
+  test("without a state store a restored turn keeps metering from its stored sum", async () => {
+    const box = machine({ harness: "claude", state: false })
+    await box.boot().consume(observed({ kind: "delta", providerObservationId: "req-1", tokens: inputTokens(40) }))
+    const restarted = box.boot()
+    await restarted.consume(observed({ kind: "delta", providerObservationId: "req-1", tokens: inputTokens(40) }))
+    await restarted.consume(observed({ kind: "delta", providerObservationId: "req-2", tokens: inputTokens(5) }))
+
+    expect(box.facts.map((fact) => fact.tokens.input)).toEqual([40, 40, 45])
+  })
+})
+
+describe("turn usage meter attribution", () => {
+  test("names the thread of the turn's first observation, not a later child's", async () => {
+    const box = machine({ harness: "codex-app-server" })
+    const meter = box.boot()
+    await meter.consume(observed({ kind: "cumulative", scope: "parent:t1", nativeSessionId: "parent", tokens: inputTokens(10) }))
+    await meter.consume(observed({ kind: "cumulative", scope: "child:t1", nativeSessionId: "child", tokens: inputTokens(5) }))
+
+    expect(box.facts.map((fact) => fact.nativeSessionId)).toEqual(["parent", "parent"])
+  })
+
+  test("a thread the composition names outranks any observation's", async () => {
+    const box = machine({ harness: "pi", nativeSessionId: "s1" })
+    await box.boot().consume(observed({ kind: "delta", nativeSessionId: "provider-side", tokens: inputTokens(1) }))
+
+    expect(box.facts.at(-1)?.nativeSessionId).toBe("s1")
+  })
+
+  test("files the turn under the model the provider served, not the configured alias", async () => {
+    const box = machine({ harness: "claude", modelId: "opus[1m]" })
+    const meter = box.boot()
+    await meter.consume(envelope(messageUpdated(buildAssistantMessage({
+      id: "m1",
+      sessionID: "s1",
+      parentID: "u1",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "opus[1m]" },
+      directory: "/w",
+      created: 1,
+    }) as never)))
+    await meter.consume(observed({ kind: "cumulative", model: "claude-opus-4-5-20251101", tokens: inputTokens(10) }))
+    await meter.consume(envelope(messageUpdated(buildAssistantMessage({
+      id: "m1",
+      sessionID: "s1",
+      parentID: "u1",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "opus[1m]" },
+      directory: "/w",
+      created: 1,
+      completed: 2,
+    }) as never)))
+
+    expect(box.facts.map((fact) => fact.modelId)).toEqual(["opus[1m]", "claude-opus-4-5-20251101", "claude-opus-4-5-20251101"])
+  })
+
+  test("holds each scope's one-hour writes within that scope's writes", async () => {
+    const box = machine({ harness: "claude" })
+    const meter = box.boot()
+    const cache = (write: number | null, write1h: number) => ({ input: 1, output: 1, reasoning: null, cache: { read: null, write, write1h } })
+    await meter.consume(observed({ kind: "cumulative", scope: "a", tokens: cache(10, 10) }))
+    await meter.consume(observed({ kind: "cumulative", scope: "b", tokens: cache(null, 5) }))
+    await meter.consume(observed({ kind: "cumulative", scope: "c", tokens: cache(4, 9) }))
+
+    expect(box.degraded).toEqual([])
+    expect(box.facts.map((fact) => fact.tokens.cache)).toEqual([
+      { read: null, write: 10, write1h: 10 },
+      { read: null, write: 10, write1h: 10 },
+      { read: null, write: 14, write1h: 14 },
+    ])
+  })
+})

@@ -40,33 +40,35 @@ export const ClaxedoUsageTurnCurrentTable = sqliteTable("claxedo_usage_turn_curr
   index("claxedo_usage_turn_current_workspace_idx").on(table.workspace_id, table.observed_at),
 ])
 
-export const ClaxedoUsageOutboxTable = sqliteTable(
-  "claxedo_usage_outbox",
+/**
+ * The account that produced each turn, where one did. A turn with no row is
+ * the machine's own, which only the machine's operator reads.
+ */
+export const ClaxedoUsageTurnOwnerTable = sqliteTable(
+  "claxedo_usage_turn_owner",
   {
     host_id: text().notNull(),
     session_ref: text().notNull(),
     message_id: text().notNull(),
-    revision: integer().notNull(),
-    payload_hash: text().notNull(),
-    org_id: text(),
-    user_id: text(),
-    state: text({ enum: ["pending", "delivered", "conflict"] })
-      .notNull()
-      .default("pending"),
-    attempts: integer().notNull().default(0),
-    created_at: integer().notNull(),
-    updated_at: integer().notNull(),
+    org_id: text().notNull(),
+    user_id: text().notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.host_id, table.session_ref, table.message_id, table.revision] }),
-    index("claxedo_usage_outbox_state_created_idx").on(table.state, table.created_at),
-    index("claxedo_usage_outbox_tenant_state_created_idx").on(
-      table.org_id,
-      table.user_id,
-      table.state,
-      table.created_at,
-    ),
+    primaryKey({ columns: [table.host_id, table.session_ref, table.message_id] }),
+    index("claxedo_usage_turn_owner_account_idx").on(table.org_id, table.user_id),
   ],
+)
+
+/** The turn meter's per-scope streams (`TurnMeterState`), kept beside the facts it sums them into. */
+export const ClaxedoUsageTurnMeterStateTable = sqliteTable(
+  "claxedo_usage_turn_meter_state",
+  {
+    session_id: text().notNull(),
+    message_id: text().notNull(),
+    streams_json: text().notNull(),
+    observation_keys_json: text().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.session_id, table.message_id] })],
 )
 
 /**

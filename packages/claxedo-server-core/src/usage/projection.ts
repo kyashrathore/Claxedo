@@ -62,6 +62,17 @@ export function isUsageBreakdownDimension(value: string): value is UsageBreakdow
   return USAGE_BREAKDOWN_DIMENSIONS.some((dimension) => dimension === value)
 }
 
+/**
+ * A settled turn whose harness reported no token usage for it: it settled
+ * `unavailable`, or every category it carries is unknown. Its zeros are not a
+ * measurement, so a row made only of such turns is labelled, not drawn as 0.
+ * A running turn may still report.
+ */
+export function reportedNoUsage(fact: TurnUsageRevision) {
+  if (fact.settlement === "provisional") return false
+  return fact.settlement === "unavailable" || fact.quality.knownCategories.length === 0
+}
+
 export function usageLocation(value: TurnUsageRevision["location"]) {
   return value === "local" ? "local" : "cloud"
 }
@@ -161,7 +172,7 @@ export function usageSeriesFromFacts(input: {
       cacheWrite: fact.tokens.cache.write ?? 0,
       unknownCategories: values.filter((value) => value === null).length,
       partialTurnCount: fact.settlement === "partial" ? 1 : 0,
-      unavailableTurnCount: fact.settlement === "unavailable" ? 1 : 0,
+      unavailableTurnCount: reportedNoUsage(fact) ? 1 : 0,
       errorTurnCount: fact.status === "error" ? 1 : 0,
     }
     add(totals, contribution)
@@ -296,7 +307,7 @@ export function groupUsageFactsBy(facts: readonly TurnUsageRevision[], groupOf: 
       unknownCategories: [fact.tokens.input, fact.tokens.output, fact.tokens.reasoning, fact.tokens.cache.read, fact.tokens.cache.write]
         .filter((item) => item === null).length,
       partialTurnCount: fact.settlement === "partial" ? 1 : 0,
-      unavailableTurnCount: fact.settlement === "unavailable" ? 1 : 0,
+      unavailableTurnCount: reportedNoUsage(fact) ? 1 : 0,
       errorTurnCount: fact.status === "error" ? 1 : 0,
     })
     grouped.set(value, row)
@@ -305,9 +316,9 @@ export function groupUsageFactsBy(facts: readonly TurnUsageRevision[], groupOf: 
 }
 
 /**
- * `UsageLedger.usageDashboard` and `UsageLedger.usageBreakdown` return the
- * remote control plane's JSON, so their declared type is `unknown`. This is the
- * one boundary it crosses: `readCentralUsage` turns that `unknown` into a typed
+ * `UsageProjectionLedger.usageDashboard` returns the hosted plane's usage
+ * payload, so its declared type is `unknown`. This is the one boundary it
+ * crosses: `readCentralUsage` turns that `unknown` into a typed
  * projection and the row accessors read the individual fields, so the payload's
  * shape is stated once and checked rather than re-described by an inline cast
  * at every consumer.
@@ -340,12 +351,8 @@ export type CentralUsageProjection = {
   dailyModels?: CentralUsageRow[]
   /** Local/cloud split rows. */
   locations?: CentralUsageRow[]
-  /** Rows of a paged breakdown response. */
-  rows?: CentralUsageRow[]
   /** Filter options the server can offer, by dimension. */
   filters?: Record<string, string[]>
-  /** Cursor for the next page of a paged breakdown response. */
-  next?: string
 }
 
 const CENTRAL_ROW_TOTALS = [
@@ -388,7 +395,7 @@ function centralRowTotals(fact: TurnUsageRevision): CentralRowTotals {
     unknown_token_count: [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write]
       .filter((value) => value === null).length,
     partial_turn_count: fact.settlement === "partial" ? 1 : 0,
-    unavailable_turn_count: fact.settlement === "unavailable" ? 1 : 0,
+    unavailable_turn_count: reportedNoUsage(fact) ? 1 : 0,
     error_turn_count: fact.status === "error" ? 1 : 0,
   }
 }
@@ -459,7 +466,6 @@ const ROW_FIELDS = [
   "models",
   "dailyModels",
   "locations",
-  "rows",
 ] as const
 
 function readRows(value: unknown): CentralUsageRow[] | undefined {
@@ -486,7 +492,6 @@ export function readCentralUsage(value: unknown): CentralUsageProjection {
   }
   const filters = readFilterOptions(value.filters)
   if (filters) projection.filters = filters
-  if (typeof value.next === "string") projection.next = value.next
   return projection
 }
 

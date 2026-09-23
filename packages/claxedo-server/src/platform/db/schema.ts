@@ -17,6 +17,7 @@ export { ClaxedoConnectionTable } from "../../connections/connection.sql"
 export {
   ClaxedoUsageTurnRevisionTable,
   ClaxedoUsageTurnCurrentTable,
-  ClaxedoUsageOutboxTable,
+  ClaxedoUsageTurnOwnerTable,
+  ClaxedoUsageTurnMeterStateTable,
   ClaxedoUsageSourceCoverageTable,
 } from "@claxedo/server-core/usage/usage.sql"
