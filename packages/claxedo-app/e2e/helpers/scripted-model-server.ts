@@ -24,8 +24,9 @@
  * harnesses):
  *   - A prompt containing "Reply with exactly this one token …: <MARKER>"
  *     returns exactly <MARKER>. This is the turn-oracle handshake.
- *   - "Generate a title for this conversation" returns a fixed title, so the
- *     engine's title turn never leaks into per-turn call counts.
+ *   - The runtime's title side turn (`SESSION_TITLE_SYSTEM_PROMPT`) returns
+ *     "Session <MARKER>", never the bare marker, so it is never mistaken for a
+ *     turn's reply. It still counts in `counts()`.
  *   - Everything else returns "ok".
  *   - Tool-loop mode is deliberately NOT the default: Tier R smoke turns are
  *     text-only. `scriptTool()` arms a one-shot tool call for specs that need
@@ -41,6 +42,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { asRecord } from "@claxedo/helpers/guards"
+import { SESSION_TITLE_SYSTEM_PROMPT } from "../../../agent-sdk-runtime/src/title-generation"
 import type {
   ContentBlock,
   Message,
@@ -120,7 +122,7 @@ export type ScriptedModelServer = {
   close(): Promise<void>
 }
 
-export const SCRIPTED_TITLE = "Scripted Tier R Session"
+const SCRIPTED_TITLE = "Scripted Tier R Session"
 
 // The prompt is scanned as JSON-flattened text, so the marker capture must
 // stop at token characters — a `\S+` would run into the serialized quote that
@@ -132,7 +134,7 @@ export const SCRIPTED_TITLE = "Scripted Tier R Session"
 // looks exactly like a product bug in a multi-turn spec (the reply renders, it
 // is simply the wrong turn's text) — which is how it was found.
 const MARKER_PROMPT = /reply with exactly this one token[^:]*:\s*\\?"?([A-Za-z0-9._-]+)/gi
-const TITLE_PROMPT = "Generate a title for this conversation"
+const TITLE_INSTRUCTION = JSON.stringify(SESSION_TITLE_SYSTEM_PROMPT).slice(1, -1)
 const GOAL_EVALUATOR_PROMPT = "You are an independent completion evaluator."
 const CLAUDE_GOAL_EVALUATOR_PROMPT = "Based on the conversation transcript above, has the following stopping condition been satisfied?"
 
@@ -186,6 +188,8 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
 
     const prompt = promptText(request)
     const toolResultSeen = hasToolResult(request)
+    const titleRequest = isTitleRequest(body)
+    const marker = [...prompt.matchAll(MARKER_PROMPT)].at(-1)?.[1]
 
     let reply: ScriptedModelRequest["reply"]
     const classifier = request.dialect === "messages" && autoModeCommand !== undefined
@@ -193,12 +197,12 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
         && message.content.some((block) => block.type === "text" && block.text.includes("Respond with <severity>N</severity> ONLY.")))
       && request.body.messages.some((message) => Array.isArray(message.content)
         && message.content.some((block) => block.type === "text" && block.text.trim() === JSON.stringify({ Bash: autoModeCommand })))
-    if (pendingError && (!pendingError.model || body.model === pendingError.model) && prompt.includes(pendingError.marker) && !prompt.includes(TITLE_PROMPT)) {
+    if (pendingError && (!pendingError.model || body.model === pendingError.model) && prompt.includes(pendingError.marker) && !titleRequest) {
       reply = { kind: "error", status: pendingError.status, message: pendingError.message }
     } else if (classifier) {
       reply = { kind: "text", text: "<severity>0</severity>" }
-    } else if (prompt.includes(TITLE_PROMPT)) {
-      reply = { kind: "text", text: SCRIPTED_TITLE }
+    } else if (titleRequest) {
+      reply = { kind: "text", text: marker ? `Session ${marker}` : SCRIPTED_TITLE }
     } else if (isClaudeGoalEvaluatorPrompt(prompt)) {
       goalEvaluationCount += 1
       reply = goalEvaluationCount === 1
@@ -223,7 +227,6 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
       reply = { kind: "text", text: pendingText.text }
       pendingText = undefined
     } else {
-      const marker = [...prompt.matchAll(MARKER_PROMPT)].at(-1)?.[1]
       reply = { kind: "text", text: marker ?? "ok" }
     }
     requests.push({ dialect: request.dialect, path, body, model: body.model ?? "scripted", prompt, reply, tools: modelTools(body) })
@@ -233,7 +236,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
       }))
       return
     }
-    if (reply.kind === "text" && textGate && prompt.includes(textGate.marker) && !prompt.includes(TITLE_PROMPT)) {
+    if (reply.kind === "text" && textGate && prompt.includes(textGate.marker) && !titleRequest) {
       await textGate.promise
     }
 
@@ -755,6 +758,11 @@ function frame(event: string, data: unknown) {
  * plain strings all carry the marker as a substring, and the marker regex
  * needs nothing more.
  */
+/** The instruction lands in `system`, `instructions`, or a system message depending on dialect and harness. */
+function isTitleRequest(body: ScriptedModelBody["body"]) {
+  return JSON.stringify(body).includes(TITLE_INSTRUCTION)
+}
+
 function promptText(request: ScriptedModelBody) {
   const source = request.dialect === "responses" ? request.body.input : request.body.messages
   return JSON.stringify(source ?? request.body)

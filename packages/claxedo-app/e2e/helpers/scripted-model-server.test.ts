@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test"
 import { request as httpRequest } from "node:http"
+import { sessionTitleRequest } from "../../../agent-sdk-runtime/src/title-generation"
 import { startScriptedModelServer } from "./scripted-model-server"
 
 type ObservedStreamFrame = {
@@ -125,3 +126,40 @@ for (const dialect of ["messages", "responses"] as const) {
     }
   })
 }
+
+test("the runtime's title side turn is answered apart from the turn reply in every dialect", async () => {
+  const server = await startScriptedModelServer()
+  const turnPrompt = "Reply with exactly this one token, nothing else: TITLE_MARK"
+  const title = sessionTitleRequest({
+    directory: "/tmp",
+    messages: [
+      { info: { role: "user" }, parts: [{ type: "text", text: turnPrompt }] },
+      { info: { role: "assistant" }, parts: [{ type: "text", text: "TITLE_MARK" }] },
+    ] as unknown as Parameters<typeof sessionTitleRequest>[0]["messages"],
+  })
+  const post = (dialect: "messages" | "responses", body: unknown) => new Promise<void>((resolve, reject) => {
+    const req = httpRequest(`${server.v1Url}/${dialect}`, { method: "POST", headers: { "content-type": "application/json" } }, (response) => {
+      response.resume()
+      response.on("error", reject)
+      response.on("end", () => resolve())
+    })
+    req.on("error", reject)
+    req.end(JSON.stringify(body))
+  })
+  try {
+    await post("messages", { model: "test", max_tokens: 128, messages: [{ role: "user", content: turnPrompt }] })
+    await post("messages", { model: "test", max_tokens: 128, system: title.system, messages: [{ role: "user", content: title.user }] })
+    await post("responses", { model: "test", input: turnPrompt })
+    await post("responses", { model: "test", instructions: title.system, input: [{ role: "user", content: title.user }] })
+    await post("responses", { model: "test", input: [{ role: "developer", content: title.system }, { role: "user", content: title.user }] })
+    expect(server.requests.map(({ dialect, reply }) => [dialect, reply.kind === "text" ? reply.text : reply.kind])).toEqual([
+      ["messages", "TITLE_MARK"],
+      ["messages", "Session TITLE_MARK"],
+      ["responses", "TITLE_MARK"],
+      ["responses", "Session TITLE_MARK"],
+      ["responses", "Session TITLE_MARK"],
+    ])
+  } finally {
+    await server.close()
+  }
+})
