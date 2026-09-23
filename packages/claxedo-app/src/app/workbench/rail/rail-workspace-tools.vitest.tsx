@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
 import { type JSX } from "solid-js"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
@@ -28,6 +28,13 @@ vi.mock("./rail-sidebar", async () => {
 
 vi.mock("../content/index", () => ({
   ContentRenderer: () => <div data-testid="content-renderer" />,
+}))
+
+// The canvas reads pane draggability from the surface registry, which imports
+// SessionContent eagerly; left real, it loads the whole session screen (154
+// modules) behind the content-renderer stub above.
+vi.mock("@/app/integrations/first-party-content-surfaces", () => ({
+  contentSurfacePaneDraggable: () => true,
 }))
 
 vi.mock("../../../features/session/ui/components/session-pane-scope", () => ({
@@ -118,6 +125,14 @@ vi.mock("@/platform/settings/provider", () => ({
   useSettings: () => ({ appearance: { navigatorSide: () => "right" } }),
 }))
 
+// `AppShellLayout` mounts the workbench shell through `lazy()`. Its cold import
+// is 359 modules, about 1.5 s alone and past 3 s under the full vitest run;
+// paid inside a test, it pushed the first test over the 5 s test timeout, and
+// the abandoned test body then went on to click the next test's render.
+beforeAll(async () => {
+  await import("./rail-workbench-shell")
+})
+
 beforeEach(() => {
   processOwnership.providers = 0
 })
@@ -197,8 +212,7 @@ describe("RailLayout workspace tool gates", () => {
     // the creator, because the header's directory is an inferred fallback chain
     // rather than a choice. The surface gate this file is about is the
     // Files/Changes/Processes trio below.
-    // The workbench shell is lazy() — await its arrival.
-    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "New Terminal" })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
@@ -230,8 +244,7 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    // The workbench shell is lazy() since 48f98d84a — await its arrival.
-    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "New Terminal" })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
@@ -263,8 +276,7 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    // The workbench shell is lazy() since 48f98d84a — await its arrival.
-    expect(await screen.findByRole("button", { name: "New Terminal" }, { timeout: 10_000 })).toBeTruthy()
+    expect(await screen.findByRole("button", { name: "New Terminal" })).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open workspace panel" }))
 
@@ -296,8 +308,7 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    // The workbench shell is lazy() since 48f98d84a — await its arrival.
-    fireEvent.click(await screen.findByRole("button", { name: "Open workspace panel" }, { timeout: 10_000 }))
+    fireEvent.click(await screen.findByRole("button", { name: "Open workspace panel" }))
 
     const tabs = [
       { kind: "review", label: "Review" },
@@ -338,8 +349,8 @@ describe("RailLayout workspace tool gates", () => {
       },
     })
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open workspace panel" }, { timeout: 10_000 }))
-    expect(await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })).toBeTruthy()
+    fireEvent.click(await screen.findByRole("button", { name: "Open workspace panel" }))
+    expect(await screen.findByTestId("review-workspace")).toBeTruthy()
 
     fireEvent.click(screen.getByRole("button", { name: "Open Processes" }))
     expect(await screen.findByTestId("workspace-processes-navigator")).toBeTruthy()
@@ -381,7 +392,7 @@ describe("RailLayout workspace tool gates", () => {
     setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
     renderRail(navigatorSurface, { open: true, mode: "review", workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" })
 
-    const review = await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })
+    const review = await screen.findByTestId("review-workspace")
     await waitFor(() => expect(within(filesColumn()).getByTestId("source-control-view")).toBeTruthy())
     expect(filesColumn().getAttribute("data-open")).toBe("true")
     expect(filesColumn().getAttribute("data-navigator-kind")).toBe("changes")
@@ -401,7 +412,7 @@ describe("RailLayout workspace tool gates", () => {
     setReviewWorkspaceActiveTab({ kind: "review", label: "Review" })
     renderRail(navigatorSurface, { open: true, mode: "review", workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "files" })
 
-    const review = await screen.findByTestId("review-workspace", {}, { timeout: 10_000 })
+    const review = await screen.findByTestId("review-workspace")
     await waitFor(() => expect(within(filesColumn()).getByTestId("workspace-files-navigator")).toBeTruthy())
     expect(filesColumn().getAttribute("data-navigator-kind")).toBe("files")
     expect(within(filesColumn()).queryByTestId("source-control-view")).toBeNull()
