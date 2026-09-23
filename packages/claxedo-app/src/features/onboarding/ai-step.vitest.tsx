@@ -38,15 +38,17 @@ vi.mock("@/features/onboarding/app-ports", async () => {
       fixture.setConnected(fixture.connected)
     },
   }),
-  putProviderAuthEntry: async (input: { serverUrl: string; providerId: string; harness: string; key: string }) => {
-    fixture.puts.push({ serverUrl: input.serverUrl, providerId: input.providerId, harness: input.harness, key: input.key })
-    if (fixture.putFailure) throw new Error(fixture.putFailure)
-    fixture.connected = [...fixture.connected, input.providerId]
-  },
   }
 })
 
 vi.mock("@/platform/api/api", () => ({ authFetch: async () => new Response("{}") }))
+vi.mock("@/platform/api/credential-request", () => ({
+  putHostedProviderKey: async (input: { serverUrl: string; providerId: string; harness: string; key: string }) => {
+    fixture.puts.push({ serverUrl: input.serverUrl, providerId: input.providerId, harness: input.harness, key: input.key })
+    if (fixture.putFailure) throw new Error(fixture.putFailure)
+    fixture.connected = [...fixture.connected, input.providerId]
+  },
+}))
 
 const { AiStep } = await import("./ai-step")
 

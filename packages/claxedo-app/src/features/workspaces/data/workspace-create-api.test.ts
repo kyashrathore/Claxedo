@@ -63,6 +63,6 @@ describe("cloudWorkspaceSource", () => {
       connectionId: "conn_1",
       repo: { fullName: "acme/app" },
     })
-    expect(() => cloudWorkspaceSource({ kind: "directory", folder: "/home/me/app" })).toThrow("cannot start a cloud workspace")
+    expect(() => cloudWorkspaceSource({ kind: "directory", folder: "/home/me/app" })).toThrow("a folder on a machine cannot start one")
   })
 })

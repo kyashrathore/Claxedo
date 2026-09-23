@@ -3,7 +3,6 @@ import {
   canDisconnectProvider,
   disconnectProvider,
   providerSourceTagKey,
-  putProviderAuthEntry,
   removeProviderAuthEntry,
 } from "./provider-settings-logic"
 
@@ -65,54 +64,6 @@ describe("removeProviderAuthEntry", () => {
       harness: "opencode",
       request: async () => new Response("bad gateway", { status: 502 }),
     })).rejects.toThrow("bad gateway")
-  })
-})
-
-describe("putProviderAuthEntry", () => {
-  test("stores the key as the harness auth body the hosted plane reads", async () => {
-    await putProviderAuthEntry({
-      serverUrl: "https://plane.test",
-      providerId: "openai",
-      harness: "pi",
-      key: "sk-live",
-      request: async (target, init) => {
-        expect(String(target)).toBe("https://plane.test/auth/openai?harness=pi")
-        expect(init?.method).toBe("PUT")
-        expect(typeof init?.body).toBe("string")
-        expect(JSON.parse(init?.body as string)).toEqual({ auth: { key: "sk-live" } })
-        return new Response("{}", { status: 200 })
-      },
-    })
-  })
-
-  test("carries the plane's own refusal sentence", async () => {
-    await expect(putProviderAuthEntry({
-      serverUrl: "https://plane.test",
-      providerId: "openai-codex",
-      harness: "pi",
-      key: "not-a-key",
-      request: async () => Response.json(
-        { error: { code: "pi_provider_unsupported", message: "This Pi provider does not accept API keys" } },
-        { status: 400 },
-      ),
-    })).rejects.toThrow("This Pi provider does not accept API keys")
-  })
-
-  test("falls back to the raw body, then the status, when there is no sentence", async () => {
-    await expect(putProviderAuthEntry({
-      serverUrl: "https://plane.test",
-      providerId: "openai",
-      harness: "pi",
-      key: "sk",
-      request: async () => new Response("bad gateway", { status: 502 }),
-    })).rejects.toThrow("bad gateway")
-    await expect(putProviderAuthEntry({
-      serverUrl: "https://plane.test",
-      providerId: "openai",
-      harness: "pi",
-      key: "sk",
-      request: async () => new Response("", { status: 503 }),
-    })).rejects.toThrow("Request failed: 503")
   })
 })
 

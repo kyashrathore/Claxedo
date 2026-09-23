@@ -54,7 +54,7 @@ export type CreateCloudWorkspaceInput = {
  * can clone, so it is refused here rather than sent as a body with no source.
  */
 export function cloudWorkspaceSource(source: ProjectSource): Pick<CreateCloudWorkspaceInput, "repoUrl" | "connectionId" | "repo"> {
-  if (source.kind === "directory") throw new Error("A folder on a machine cannot start a cloud workspace")
+  if (source.kind === "directory") throw new Error("A sandbox clones a repository; a folder on a machine cannot start one")
   if ("repoUrl" in source) return { repoUrl: source.repoUrl }
   return { connectionId: source.connectionId, repo: source.repo }
 }

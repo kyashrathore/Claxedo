@@ -34,7 +34,6 @@ import * as ProjectApi from "@/features/workspaces/data/project-api"
 import * as MachineAccounts from "@/features/settings/machine-accounts"
 import * as AgentsSection from "@/features/settings/ui/agents-section"
 import * as HarnessProviders from "@/features/settings/ui/harness-providers-section"
-import * as ProviderSettingsLogic from "@/features/settings/provider-settings-logic"
 import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
 import { DialogConnectIntegration, useOnboardingFunnel } from "./feature-ports"
@@ -116,7 +115,6 @@ configureOnboardingAppPorts({
   AgentHarnessAccounts: AgentsSection.AgentHarnessAccounts,
   HarnessProvidersSection: HarnessProviders.HarnessProvidersSection,
   useProviders: Providers.useProviders,
-  putProviderAuthEntry: ProviderSettingsLogic.putProviderAuthEntry,
   workspaceSandboxDriversUrl: SandboxSectionLogic.workspaceSandboxDriversUrl,
   workspaceSandboxDriverAuthUrl: SandboxSectionLogic.workspaceSandboxDriverAuthUrl,
   SandboxDriverLogo: SandboxDriverLogoModule.SandboxDriverLogo,

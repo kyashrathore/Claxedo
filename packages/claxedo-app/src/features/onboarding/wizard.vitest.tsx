@@ -39,13 +39,13 @@ vi.mock("@/features/onboarding/app-ports", () => ({
     error: () => undefined,
     refresh: async () => undefined,
   }),
-  putProviderAuthEntry: async () => undefined,
   workspaceSandboxDriversUrl: () => "http://server.test/api/workspace/drivers",
   workspaceSandboxDriverAuthUrl: () => "http://server.test/api/workspace/drivers/x/auth",
   SandboxDriverLogo: () => <span />,
 }))
 
 vi.mock("@/platform/api/api", () => ({ authFetch: async () => new Response("{}") }))
+vi.mock("@/platform/api/credential-request", () => ({ putHostedProviderKey: async () => undefined }))
 
 const { OnboardingWizard } = await import("./wizard")
 

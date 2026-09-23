@@ -9,7 +9,6 @@ import type * as ProjectApi from "@/features/workspaces/data/project-api"
 import type * as MachineAccounts from "@/features/settings/machine-accounts"
 import type * as AgentsSection from "@/features/settings/ui/agents-section"
 import type * as HarnessProviders from "@/features/settings/ui/harness-providers-section"
-import type * as ProviderSettingsLogic from "@/features/settings/provider-settings-logic"
 import type * as Providers from "@/app/providers/use-providers"
 import type * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
 import type * as SandboxDriverLogoModule from "@/features/settings/ui/sandbox-driver-logo"
@@ -23,7 +22,6 @@ export type OnboardingAppPorts = {
   AgentHarnessAccounts: typeof AgentsSection.AgentHarnessAccounts
   HarnessProvidersSection: typeof HarnessProviders.HarnessProvidersSection
   useProviders: typeof Providers.useProviders
-  putProviderAuthEntry: typeof ProviderSettingsLogic.putProviderAuthEntry
   workspaceSandboxDriversUrl: typeof SandboxSectionLogic.workspaceSandboxDriversUrl
   workspaceSandboxDriverAuthUrl: typeof SandboxSectionLogic.workspaceSandboxDriverAuthUrl
   /** The same brand marks the Settings provider picker renders. */
@@ -59,7 +57,6 @@ export const useMachineAccounts = bind((ports) => ports.useMachineAccounts)
 export const AgentHarnessAccounts = bind((ports) => ports.AgentHarnessAccounts)
 export const HarnessProvidersSection = bind((ports) => ports.HarnessProvidersSection)
 export const useProviders = bind((ports) => ports.useProviders)
-export const putProviderAuthEntry = bind((ports) => ports.putProviderAuthEntry)
 export const workspaceSandboxDriversUrl = bind((ports) => ports.workspaceSandboxDriversUrl)
 export const workspaceSandboxDriverAuthUrl = bind((ports) => ports.workspaceSandboxDriverAuthUrl)
 export const SandboxDriverLogo = bind((ports) => ports.SandboxDriverLogo)

@@ -390,13 +390,24 @@ describe("workspace runtime route audit", () => {
   })
 
   test("production code stores provider credentials only through Claxedo credential routes", async () => {
+    // The hosted plane keeps harness keys under its own `PUT /auth/:providerID
+    // ?harness=pi` (`routes/hosted/shell.ts` → `credentials/worker/pi.ts`
+    // `putPiCredential` → the plane's per-org credential store) and serves no
+    // `/api/claxedo/credentials`, so that write is a Claxedo credential route
+    // whose body happens to spell `{ auth: { key } }`. Its one owner is the
+    // credential-route boundary module; anywhere else the payload is an
+    // upstream engine write and stays refused.
+    const hostedKeyWriteOwner = "platform/api/credential-request.ts"
     const offenders: string[] = []
     for (const file of await files(root)) {
       const text = await Bun.file(path.join(root, file)).text()
       if (/\b(?:globalSDK\.)?client\.auth\.set\(/.test(text)) offenders.push(`${file}: calls upstream auth.set`)
-      if (/auth:\s*\{[\s\S]{0,160}key:/.test(text)) offenders.push(`${file}: builds upstream API key auth payload`)
+      if (file !== hostedKeyWriteOwner && /auth:\s*\{[\s\S]{0,160}key:/.test(text)) {
+        offenders.push(`${file}: builds upstream API key auth payload`)
+      }
     }
     expect(offenders).toEqual([])
+    expect(await Bun.file(path.join(root, hostedKeyWriteOwner)).text()).toMatch(/auth: \{ key: input\.key \}/)
   })
 
   test("credential entry surfaces do not persist raw secrets client-side", async () => {

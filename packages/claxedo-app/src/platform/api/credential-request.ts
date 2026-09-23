@@ -89,3 +89,32 @@ async function claxedoCredentialErrorMessage(res: Response) {
 
   return text
 }
+
+/**
+ * Store one provider API key on the hosted plane, which keeps harness keys
+ * under its own `PUT /auth/:providerID?harness=<id>` (`HostedShellRoutes` →
+ * `hostedPiCredentials.putPiCredential` → the plane's per-org credential
+ * store) and serves no `/api/claxedo/credentials`. The body is the plane's
+ * `{ auth: { key } }`; the plane refuses with its own sentence — a provider
+ * that signs in rather than taking a key, or a deployment whose credential
+ * store is off — and that sentence is what the thrown error carries.
+ */
+export async function putHostedProviderKey(input: {
+  serverUrl: string
+  providerId: string
+  harness: string
+  key: string
+  directory?: string
+  request: (url: URL, init?: RequestInit) => Promise<Response>
+}) {
+  const url = new URL(`/auth/${encodeURIComponent(input.providerId)}`, input.serverUrl)
+  url.searchParams.set("harness", input.harness)
+  if (input.directory) url.searchParams.set("directory", input.directory)
+  const res = await input.request(url, {
+    method: "PUT",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ auth: { key: input.key } }),
+  })
+  if (!res.ok) throw new Error(await claxedoCredentialErrorMessage(res))
+  await res.text().catch(() => undefined)
+}

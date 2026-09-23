@@ -217,7 +217,6 @@ const onboardingThunks: Thunks<OnboardingAppPorts> = {
   AgentHarnessAccounts: lazy("@/features/settings/ui/agents-section", "AgentHarnessAccounts"),
   HarnessProvidersSection: lazy("@/features/settings/ui/harness-providers-section", "HarnessProvidersSection"),
   useProviders: lazy("@/app/providers/use-providers", "useProviders"),
-  putProviderAuthEntry: lazy("@/features/settings/provider-settings-logic", "putProviderAuthEntry"),
   workspaceSandboxDriversUrl: lazy("@/features/settings/ui/sandbox-section-logic", "workspaceSandboxDriversUrl"),
   workspaceSandboxDriverAuthUrl: lazy("@/features/settings/ui/sandbox-section-logic", "workspaceSandboxDriverAuthUrl"),
   SandboxDriverLogo: lazy("@/features/settings/ui/sandbox-driver-logo", "SandboxDriverLogo"),

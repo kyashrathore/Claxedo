@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, Show, type Component } fro
 import { Button } from "@opencode-ai/ui/button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { authFetch } from "@/platform/api/api"
+import { putHostedProviderKey } from "@/platform/api/credential-request"
 import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
 import { errorText } from "./error-text"
 import { localHarnessChecks } from "./ai-connect-state"
@@ -9,7 +10,6 @@ import {
   AgentHarnessAccounts,
   HarnessProvidersSection,
   MachineAccountsProvider,
-  putProviderAuthEntry,
   useMachineAccounts,
   useProviders,
 } from "./app-ports"
@@ -88,7 +88,7 @@ const HostedPiKeys: Component<{ baseUrl: string; onReady: (ready: boolean) => vo
     setSaving(true)
     setFailure(undefined)
     try {
-      await putProviderAuthEntry({ serverUrl: props.baseUrl, providerId, harness: "pi", key: secret, request: authFetch })
+      await putHostedProviderKey({ serverUrl: props.baseUrl, providerId, harness: "pi", key: secret, request: authFetch })
       await providers.refresh()
       setOpen(undefined)
       setKey("")
