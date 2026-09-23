@@ -36,7 +36,8 @@ import * as AgentsSection from "@/features/settings/ui/agents-section"
 import * as HarnessProviders from "@/features/settings/ui/harness-providers-section"
 import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
-import { DialogConnectIntegration, useOnboardingFunnel } from "./feature-ports"
+import { DialogConnectIntegration } from "./feature-ports"
+import { useOnboardingFunnel } from "./onboarding-funnel"
 
 const DialogConnectProvider = lazyDialog(() =>
   import("@/app/dialogs/connect-provider").then((module) => ({ default: module.DialogConnectProvider })),

@@ -43,7 +43,7 @@ vi.mock("@/app/providers/layout", () => ({
   }),
 }))
 
-vi.mock("@/app/integrations/feature-ports", () => ({
+vi.mock("@/app/integrations/onboarding-funnel", () => ({
   useOnboardingFunnel: () => ({ emit: (event: { name: string }) => funnel.events.push(event.name) }),
 }))
 

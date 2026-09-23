@@ -44,9 +44,7 @@ import * as SessionCache from "@/features/session/data/sync/directory-session-ca
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
-import { usePlatform } from "@/platform/runtime/platform-provider"
-import { createOnboardingFunnel } from "@/features/onboarding"
-import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
+import { useOnboardingFunnel } from "./onboarding-funnel"
 import { lazyDialog } from "@/lib/lazy-dialog"
 
 export const DialogConnectIntegration = lazyDialog(() =>
@@ -69,14 +67,6 @@ const DialogSelectMcp = lazyDialog(() =>
   import("@/app/dialogs/select-mcp").then((module) => ({ default: module.DialogSelectMcp })),
 )
 
-export function useOnboardingFunnel() {
-  const platform = usePlatform()
-  const config = Config.useConfigOptional()
-  return createOnboardingFunnel({
-    deployment: platform.platform === "desktop" || config?.sandboxEnabled ? "hosted" : "self-host",
-    capture: (name, properties) => captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
-  })
-}
 
 configureSessionAppPorts({
   useSDK: SDK.useSDK,
