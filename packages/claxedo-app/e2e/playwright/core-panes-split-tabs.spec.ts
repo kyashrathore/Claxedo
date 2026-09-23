@@ -64,12 +64,22 @@ async function openWorkbench(page: Page, dir: string) {
 /** Mocks the terminal PTY create route `/api/wr/pty` (not `/api/claxedo/pty`,
  * a stale path carried by a retired legacy fixture). Enough for a pane to mount
  * and activate; websocket I/O is not modeled — only `core-terminal` asserts
- * terminal I/O. */
+ * terminal I/O. The creator offers a launcher tile only for an agent named in
+ * `GET /pty/agents`'s `installed`; the catch-all's `true` body reads as nothing
+ * installed, and `startTerminalFromCreator` presses the claude and codex tiles. */
 function installPtyMock(page: Page) {
   let counter = 0
   return page.route("**/api/wr/pty**", async (route) => {
     const request = route.request()
     const url = new URL(request.url())
+    if (request.method() === "GET" && url.pathname.endsWith("/api/wr/pty/agents")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ installed: ["claude", "codex"] }),
+      })
+      return
+    }
     if (request.method() === "POST" && url.pathname.endsWith('/api/wr/pty')) {
       counter += 1
       const body = request.postDataJSON?.() as { title?: string } | undefined
