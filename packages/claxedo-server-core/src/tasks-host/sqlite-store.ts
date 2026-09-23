@@ -595,3 +595,14 @@ const transaction = serializedTransactions(async (work) => {
 })
 
 export const sqliteTasksStore: TasksStorePort = { ...operations, transaction }
+
+/**
+ * Releases the store's connection; the next unit reopens one at the current
+ * path. `ClaxedoDB.close()` does not reach it, because a connection opened
+ * through `connect()` belongs to whoever opened it, and this file stays open
+ * across a data-directory change until the next unit runs.
+ */
+export function closeTasksStore(): void {
+  connected?.connection.close()
+  connected = undefined
+}

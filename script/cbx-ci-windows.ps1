@@ -3,6 +3,9 @@ param(
   [string]$Lane = "unit",
   [string]$Package,
   [switch]$AclAcceptance,
+  # GitHub's unit job builds only the dist-resolved packages before testing;
+  # `package` builds every dependency, which Bun cannot do for local-server on Windows.
+  [switch]$BuildPackages,
   [switch]$CleanInstall,
   [string]$NodeVersion,
   # turbo stops at the first failing package; an inventory run wants them all.
@@ -43,6 +46,10 @@ if ($Lane -eq "package" -or $Lane -eq "package-test") {
   if ($Lane -eq "package") {
     bun turbo build "--filter=$Package..."
     Assert-LastExitCode "bun turbo build --filter=$Package..."
+  }
+  if ($BuildPackages) {
+    bun run build:packages
+    Assert-LastExitCode "bun run build:packages"
   }
   bun turbo test "--filter=$Package" --concurrency=2
   Assert-LastExitCode "bun turbo test --filter=$Package --concurrency=2"
