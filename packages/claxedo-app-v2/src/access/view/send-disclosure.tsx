@@ -1,5 +1,4 @@
-import { Button } from "@/ui/button"
-import { Checkbox } from "@/ui/checkbox"
+import { Button, Checkbox } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { dictionary } from "../i18n"
 import type { ShareFormState } from "../model"
@@ -15,9 +14,11 @@ export function SendDisclosure(props: {
     <div role="alertdialog" aria-label={t("access.share.disclosure.title")} class="share-disclosure">
       <div class="share-title">{t("access.share.disclosure.title")}</div>
       <p class="share-intro">{t("access.share.disclosure.body")}</p>
-      <Checkbox checked={props.state.acknowledged} onChange={(checked: boolean) => props.onAcknowledge(checked)}>
-        {t("access.share.disclosure.acknowledge")}
-      </Checkbox>
+      <Checkbox
+        label={t("access.share.disclosure.acknowledge")}
+        checked={props.state.acknowledged}
+        onChange={(checked: boolean) => props.onAcknowledge(checked)}
+      />
       <div class="share-actions">
         <Button
           size="small"

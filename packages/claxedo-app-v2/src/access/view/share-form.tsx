@@ -1,7 +1,5 @@
 import { createSignal } from "solid-js"
-import { Button } from "@/ui/button"
-import { Select } from "@/ui/select"
-import { TextInput } from "@/ui/text-input"
+import { Button, Select, TextInput } from "@/ui"
 import { useTranslator } from "@/i18n"
 import type { SessionRef } from "@/server"
 import { dictionary } from "../i18n"

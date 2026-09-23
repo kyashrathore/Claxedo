@@ -1,5 +1,5 @@
 import { createSignal, Show } from "solid-js"
-import { Button } from "@/ui/button"
+import { Button } from "@/ui"
 import { useTranslator } from "@/i18n"
 import type { AppError, SessionRef } from "@/server"
 import { dictionary } from "../i18n"
@@ -53,6 +53,14 @@ export function SessionShareControl(props: { readonly ref: SessionRef }) {
   }
 
   const busy = () => form.state().kind === "granting" || form.state().kind === "revoking"
+  const confirming = () => {
+    const state = form.state()
+    return state.kind === "confirmingSend" ? state : undefined
+  }
+  const failure = () => {
+    const state = form.state()
+    return state.kind === "failed" ? state.error : undefined
+  }
 
   return (
     <div data-component="session-share">
@@ -71,7 +79,7 @@ export function SessionShareControl(props: { readonly ref: SessionRef }) {
               <section id="session-share-panel" class="share-panel" aria-label={t("access.share.title")}>
                 <h3 class="share-title">{t("access.share.title")}</h3>
                 <p class="share-intro">{t("access.share.intro")}</p>
-                <Show when={form.state().kind === "confirmingSend" ? form.state() : undefined}>
+                <Show when={confirming()}>
                   {(state) => (
                     <SendDisclosure
                       state={state()}
@@ -83,10 +91,10 @@ export function SessionShareControl(props: { readonly ref: SessionRef }) {
                 </Show>
                 <ShareForm sessionRef={props.ref} busy={busy()} onShare={share} />
                 <ShareRows shares={shares()} busy={busy()} onShare={share} onRevoke={(shareId) => void revoke(shareId)} sessionRef={props.ref} />
-                <Show when={form.state().kind === "failed" ? form.state() : undefined}>
-                  {(state) => (
+                <Show when={failure()}>
+                  {(error) => (
                     <p role="alert" class="share-error">
-                      {t("access.share.failed")}: {state().kind === "failed" ? state().error.message : ""}
+                      {t("access.share.failed")}: {error().message}
                     </p>
                   )}
                 </Show>

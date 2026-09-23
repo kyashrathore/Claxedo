@@ -1,0 +1,229 @@
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 16px 40px;
+}
+
+.settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 0 8px;
+}
+
+.settings-heading-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-title {
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-heading);
+}
+
+.settings-description,
+.settings-row-description,
+.settings-note,
+.settings-empty {
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-muted);
+}
+
+.settings-note[data-tone="danger"] {
+  color: var(--v2-state-fg-danger);
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-group-title {
+  font-size: var(--font-size-compact);
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-list {
+  padding: 0 14px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-lg);
+  background: var(--v2-background-bg-layer-01);
+}
+
+.settings-list[data-variant="outline"] {
+  background: transparent;
+  border-style: dashed;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: var(--touch-target, 44px);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--v2-border-border-muted);
+}
+
+.settings-row:last-child {
+  border-bottom: 0;
+}
+
+.settings-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-row-title {
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-row-control {
+  flex-shrink: 0;
+  max-width: 60%;
+}
+
+.settings-empty {
+  padding: 24px 16px;
+  text-align: center;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-lg);
+  background: var(--v2-background-bg-layer-01);
+}
+
+.settings-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 0;
+  background: var(--v2-background-bg-base);
+}
+
+.settings-keybind {
+  min-height: var(--touch-target, 44px);
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+
+.settings-keybind[data-recording] {
+  border: 1px solid var(--v2-border-border-strong);
+  color: var(--v2-text-text-base);
+}
+
+.settings-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.settings-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--touch-target, 44px);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--v2-border-border-muted);
+}
+
+.settings-account:last-child {
+  border-bottom: 0;
+}
+
+.settings-account-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+}
+
+.settings-account[data-refused] .settings-account-text {
+  color: var(--v2-state-fg-danger);
+}
+
+.settings-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: var(--radius-md);
+  background: var(--v2-background-bg-layer-02);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-x-small);
+}
+
+.settings-code code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: var(--v2-icon-icon-muted);
+}
+
+.settings-dot[data-tone="success"] {
+  background: var(--v2-state-fg-success);
+}
+
+.settings-dot[data-tone="warning"] {
+  background: var(--v2-state-fg-warning);
+}
+
+.settings-dot[data-tone="danger"] {
+  background: var(--v2-state-fg-danger);
+}
+
+@media (max-width: 640px) {
+  .settings-row {
+    flex-wrap: wrap;
+  }
+
+  .settings-row-control {
+    max-width: 100%;
+    width: 100%;
+  }
+}

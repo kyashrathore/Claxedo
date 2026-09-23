@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js"
-import { Button } from "@/ui/button"
+import { Button } from "@/ui"
 import { useTranslator } from "@/i18n"
 import type { SessionRef } from "@/server"
 import { dictionary } from "../i18n"

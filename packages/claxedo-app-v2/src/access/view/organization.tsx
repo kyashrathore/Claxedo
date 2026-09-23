@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js"
-import { Tag } from "@/ui/tag"
+import { Tag } from "@/ui"
 import { useTranslator } from "@/i18n"
 import type { OrgRole } from "@/server"
 import { dictionary } from "../i18n"
