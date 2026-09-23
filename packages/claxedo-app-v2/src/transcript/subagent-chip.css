@@ -1,0 +1,104 @@
+/* Delegated work as glyph pills, one per subagent. */
+[data-component="subagent-chip-row"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
+[data-component="subagent-chip"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  min-width: 0;
+  max-width: min(28rem, 100%);
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius-pill);
+  border: 0.5px solid var(--border-weak-base);
+  background: color-mix(in srgb, var(--background-stronger) 88%, transparent);
+  cursor: pointer;
+  color: var(--text-base);
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+
+  /* Shrink weights are scaled by each slot's width, so the summary and detail
+     carry weights large enough to empty out before the name gives up any. */
+  [data-slot="subagent-chip-name"] {
+    flex: 0 1 auto;
+    min-width: 2.5rem;
+    max-width: 10rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-family-sans);
+    font-size: var(--transcript-compact-size, var(--font-size-compact));
+    font-weight: var(--font-weight-medium);
+    text-transform: capitalize;
+  }
+
+  /* The configuration and model sit beside the name at the summary's size and one step
+     dimmer, so the chip still reads name-first. */
+  [data-slot="subagent-chip-detail"] {
+    flex: 0 100 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-family-sans);
+    font-size: var(--transcript-meta-size, var(--font-size-small));
+    color: var(--text-weaker);
+  }
+
+  [data-slot="subagent-chip-summary"] {
+    min-width: 0;
+    flex-shrink: 10000;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-family-sans);
+    font-size: var(--transcript-meta-size, var(--font-size-small));
+    color: var(--text-weak);
+  }
+
+  [data-slot="subagent-chip-status"] {
+    flex-shrink: 0;
+    font-size: var(--transcript-meta-size, var(--font-size-small));
+    color: var(--text-weaker);
+  }
+
+  &:hover,
+  &:focus-visible {
+    outline: none;
+    color: var(--text-strong);
+    border-color: var(--border-base, var(--border-weak-base));
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+span[data-component="subagent-chip"] {
+  cursor: default;
+
+  &:hover {
+    color: var(--text-base);
+    border-color: var(--border-weak-base);
+  }
+}
+
+[data-slot="subagent-chip-overflow"] {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--transcript-compact-size, var(--font-size-compact));
+  color: var(--text-weak);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
