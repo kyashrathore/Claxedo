@@ -36,7 +36,7 @@ import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtim
 import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/http-machine-remote-access-binding"
 import { hostedServiceContributionLoaders } from "@/app/composition/hosted-contribution-loader"
 import { startBrowserAuth } from "./browser-auth-startup"
-import { resolveDeploymentPosture } from "@/app/boot/data/deployment-posture"
+import { declaredDeploymentPosture, resolveDeploymentPosture } from "@/app/boot/data/deployment-posture"
 
 const OAuthConsentPage = lazy(() => import("@/app/routes/oauth-consent"))
 const HostedOAuthConsentRoute = () => (
@@ -206,7 +206,7 @@ async function startApp() {
   // Nothing here waits for it, and nothing here can fail because of it — see
   // `browser-auth-startup.ts`.
   startBrowserAuth({
-    issuesSessions,
+    issuesSessions: declaredDeploymentPosture({ baseUrl: getClaxedoServerUrl() }),
     adapter: browserAuthAdapter,
     apiOrigin: getClaxedoServerUrl(),
     appOrigin: window.location.origin,

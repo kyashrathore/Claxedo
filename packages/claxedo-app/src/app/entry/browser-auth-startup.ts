@@ -18,10 +18,15 @@ import type { BrowserAuthAdapter } from "@/platform/auth/browser-auth"
  * session signals, and this function only has to start it and get out of the
  * way.
  *
- * `issuesSessions` is the server's own declaration, resolved by the caller
- * before this runs and handed to `CloudAuthGate` as well, so the gate and the
- * adapter cannot disagree about which deployment this is. A server that
- * declared nothing is treated as one that issues no sessions.
+ * `issuesSessions` is the server's own declaration, the same request
+ * `CloudAuthGate` reads, so the gate and the adapter cannot disagree about
+ * which deployment this is. The adapter starts when it settles rather than at
+ * the render deadline: a slow answer read as "no sessions" there would settle
+ * the adapter as unavailable for good while the gate, reading the late answer,
+ * sends the visitor to a /login that cannot sign in. The gate holds while the
+ * declaration is pending, and `initialize` marks the session loading before
+ * the gate's query observer hears the answer. A server that declared nothing
+ * is treated as one that issues no sessions.
  *
  * The adapter is started in every case rather than only where a session can
  * exist: `initialize` settles a deployment with no sign-in flow without a
@@ -35,14 +40,16 @@ import type { BrowserAuthAdapter } from "@/platform/auth/browser-auth"
  * a `/login` redirect.
  */
 export function startBrowserAuth(input: {
-  issuesSessions: boolean | undefined
+  issuesSessions: Promise<boolean | undefined>
   adapter: Pick<BrowserAuthAdapter, "initialize">
   apiOrigin: string
   appOrigin: string
 }): void {
-  void input.adapter.initialize({
-    apiOrigin: input.apiOrigin,
-    appOrigin: input.appOrigin,
-    issuesSessions: input.issuesSessions === true,
-  })
+  void input.issuesSessions.then((declared) =>
+    input.adapter.initialize({
+      apiOrigin: input.apiOrigin,
+      appOrigin: input.appOrigin,
+      issuesSessions: declared === true,
+    }),
+  )
 }

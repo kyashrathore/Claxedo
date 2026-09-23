@@ -32,7 +32,7 @@ export async function resolveDeploymentPosture(input: {
   baseUrl: string | undefined
   request?: typeof globalThis.fetch
 }): Promise<boolean | undefined> {
-  const declared = queryClient.fetchQuery(deploymentPostureQuery(input)).catch(() => undefined)
+  const declared = declaredDeploymentPosture(input)
   let expire: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<undefined>((resolve) => {
     expire = setTimeout(() => resolve(undefined), RENDER_DEADLINE_MS)
@@ -42,4 +42,17 @@ export async function resolveDeploymentPosture(input: {
   } finally {
     clearTimeout(expire)
   }
+}
+
+/**
+ * The server's own answer, however long it takes, or undefined when it could
+ * not be read. The same request {@link resolveDeploymentPosture} races, so a
+ * reader that must act on the declaration rather than on the render deadline
+ * does not start a second one.
+ */
+export function declaredDeploymentPosture(input: {
+  baseUrl: string | undefined
+  request?: typeof globalThis.fetch
+}): Promise<boolean | undefined> {
+  return queryClient.fetchQuery(deploymentPostureQuery(input)).catch(() => undefined)
 }
