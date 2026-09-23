@@ -50,13 +50,19 @@ export function FirstProjectCanvas(props: {
   // Nothing back means "the product this mode has always been", which is what
   // the composer's Project chip resolves too.
   const localExecution = () => health.data?.localExecution ?? !signedControlPlane()
+  // The wizard opens on the server's answer, never on the guess. On a signed
+  // local server the guess is the other product, and a form that mounts as the
+  // hosted product and then switches drops its in-flight code-host fetch.
+  // solid-js 1.9 leaves that fetch registered with the transition that mounted
+  // the canvas (Remove project runs one), so that transition never commits.
+  const productKnown = () => !health.isLoading
 
   // "New Project" in the rail and the desktop menu raise an intent rather than
   // opening anything; with no project this screen is the only surface that can
   // answer it, and the wizard's leading control is where the answer starts.
   onCleanup(layout.projects.registerCreateSurface())
   createEffect(() => {
-    if (!layout.projects.createPending()) return
+    if (!layout.projects.createPending() || !productKnown()) return
     leadField?.focus()
     layout.projects.answerCreate()
   })
@@ -67,40 +73,42 @@ export function FirstProjectCanvas(props: {
       <div class="first-project-glow" aria-hidden="true" />
       <div class="first-project-vignette" aria-hidden="true" />
       <div class="first-project-content">
-        <OnboardingWizard
-          baseUrl={server.url}
-          localExecution={localExecution()}
-          pickFolder={pickProjectFolderWith(dialog)}
-          emit={(event) => funnel.emit(event)}
-          leadField={(element) => (leadField = element)}
-          onProjectCreated={(project) => props.onProjectCreated?.({ id: project.id, worktree: project.worktree })}
-          createCloudWorkspace={async (input) => {
-            // The hosted plane's project is its first cloud workspace; the
-            // route it lands on shows the sandbox coming up.
-            const created = await createCloudWorkspace({
-              baseUrl: server.url,
-              projectName: input.projectName,
-              ...cloudWorkspaceSource(input.source),
-            })
-            await refreshProjectInventory(queryOptions.projects()).catch(() => undefined)
-            navigate(workspaceSessionRoute(created.workspaceId))
-          }}
-          footer={
-            <Show when={props.onDiagnostics}>
-              {(onDiagnostics) => (
-                <button
-                  type="button"
-                  data-testid="empty-diagnostics-trigger"
-                  class="first-project-diagnostics first-project-reveal"
-                  style={{ "--first-project-delay": "200ms" }}
-                  onClick={onDiagnostics()}
-                >
-                  Diagnostics
-                </button>
-              )}
-            </Show>
-          }
-        />
+        <Show when={productKnown()}>
+          <OnboardingWizard
+            baseUrl={server.url}
+            localExecution={localExecution()}
+            pickFolder={pickProjectFolderWith(dialog)}
+            emit={(event) => funnel.emit(event)}
+            leadField={(element) => (leadField = element)}
+            onProjectCreated={(project) => props.onProjectCreated?.({ id: project.id, worktree: project.worktree })}
+            createCloudWorkspace={async (input) => {
+              // The hosted plane's project is its first cloud workspace; the
+              // route it lands on shows the sandbox coming up.
+              const created = await createCloudWorkspace({
+                baseUrl: server.url,
+                projectName: input.projectName,
+                ...cloudWorkspaceSource(input.source),
+              })
+              await refreshProjectInventory(queryOptions.projects()).catch(() => undefined)
+              navigate(workspaceSessionRoute(created.workspaceId))
+            }}
+            footer={
+              <Show when={props.onDiagnostics}>
+                {(onDiagnostics) => (
+                  <button
+                    type="button"
+                    data-testid="empty-diagnostics-trigger"
+                    class="first-project-diagnostics first-project-reveal"
+                    style={{ "--first-project-delay": "200ms" }}
+                    onClick={onDiagnostics()}
+                  >
+                    Diagnostics
+                  </button>
+                )}
+              </Show>
+            }
+          />
+        </Show>
       </div>
     </div>
   )

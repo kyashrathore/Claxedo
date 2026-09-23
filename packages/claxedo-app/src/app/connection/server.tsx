@@ -233,12 +233,15 @@ const serverContextInput = {
       }
       return {
         queryKey: serverHealthQueryKey(server),
+        // `serverHealthQueryOptions` observers share this key and read the
+        // whole health document from it: the first-project canvas picks its
+        // product from `localExecution`.
         queryFn: async () => {
           if (!u) return { url: u, healthy: false }
           const quietDelay = fastSessionSwitchAnyQuietDelay()
           if (quietDelay > 0) await wait(quietDelay)
           const result = await checkServerHealthCached(server, platform.fetch ?? globalThis.fetch)
-          return { url: u, healthy: result.healthy }
+          return { ...result, url: u }
         },
         enabled: isReady() && !!u && !props.disableHealthCheck,
         staleTime: 750,

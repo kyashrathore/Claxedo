@@ -7,7 +7,11 @@ import type { OnboardingWizard } from "@/features/onboarding/wizard"
 
 type WizardProps = Parameters<typeof OnboardingWizard>[0]
 
-const health = vi.hoisted(() => ({ localExecution: true as boolean | undefined }))
+const health = vi.hoisted(() => ({
+  localExecution: true as boolean | undefined,
+  held: false,
+  release: undefined as (() => void) | undefined,
+}))
 const posture = vi.hoisted(() => ({ issuesSessions: false as boolean | undefined }))
 const createIntent = vi.hoisted(() => ({ pending: false, bump: () => {}, answer: () => {} }))
 const wizard = vi.hoisted(() => ({ props: undefined as WizardProps | undefined }))
@@ -25,7 +29,10 @@ vi.mock("@/app/connection/server", () => ({
 vi.mock("@/app/connection/server-health", () => ({
   serverHealthQueryOptions: () => ({
     queryKey: ["server", "health", "test"],
-    queryFn: async () => ({ healthy: true, localExecution: health.localExecution }),
+    queryFn: async () => {
+      if (health.held) await new Promise<void>((resolve) => (health.release = resolve))
+      return { healthy: true, localExecution: health.localExecution }
+    },
   }),
 }))
 
@@ -114,6 +121,8 @@ const renderCanvas = (props: Parameters<typeof FirstProjectCanvas>[0] = {}) =>
 
 afterEach(() => {
   health.localExecution = true
+  health.held = false
+  health.release = undefined
   posture.issuesSessions = false
   wizard.props = undefined
   funnel.events = []
@@ -155,15 +164,31 @@ describe("FirstProjectCanvas", () => {
     await waitFor(() => expect(wizard.props?.localExecution).toBe(true))
   })
 
-  test("funnel events pass through the app's funnel", () => {
+  test("on a signed local server the wizard waits for the server's answer instead of opening on the hosted guess", async () => {
+    health.held = true
+    posture.issuesSessions = true
     renderCanvas()
+    expect(screen.getByTestId("first-project-canvas")).toBeTruthy()
+    await waitFor(() => expect(health.release).toBeDefined())
+    expect(screen.queryByTestId("onboarding-wizard-fake")).toBeNull()
+    expect(wizard.props).toBeUndefined()
+
+    health.release?.()
+    await waitFor(() => expect(screen.getByTestId("onboarding-wizard-fake")).toBeTruthy())
+    expect(wizard.props?.localExecution).toBe(true)
+  })
+
+  test("funnel events pass through the app's funnel", async () => {
+    renderCanvas()
+    await waitFor(() => expect(wizard.props).toBeTruthy())
     wizard.props?.emit({ name: "setup_form_shown" })
     expect(funnel.events).toEqual(["setup_form_shown"])
   })
 
-  test("a created project reaches onProjectCreated as the record the shell opens", () => {
+  test("a created project reaches onProjectCreated as the record the shell opens", async () => {
     const opened: NewSessionProjectSelection[] = []
     renderCanvas({ onProjectCreated: (project) => opened.push(project) })
+    await waitFor(() => expect(wizard.props).toBeTruthy())
     wizard.props?.onProjectCreated({ id: "prj_1", worktree: "/home/me/demo" })
     expect(opened).toEqual([{ id: "prj_1", worktree: "/home/me/demo" }])
   })
@@ -185,21 +210,36 @@ describe("FirstProjectCanvas", () => {
 
   test("answers the shell's create-project intent by focusing the wizard's leading control", async () => {
     renderCanvas()
-    const lead = screen.getByRole("button", { name: "lead" })
+    const lead = await screen.findByRole("button", { name: "lead" })
     lead.blur()
     createIntent.bump()
     await waitFor(() => expect(document.activeElement).toBe(lead))
     expect(pending()).toBe(false)
   })
 
-  test("Diagnostics appears only when the shell supplies it", () => {
+  test("a create-project intent raised before the server answers stays pending until the wizard's leading control exists", async () => {
+    health.held = true
     renderCanvas()
+    await waitFor(() => expect(health.release).toBeDefined())
+    createIntent.bump()
+    await Promise.resolve()
+    expect(pending()).toBe(true)
+
+    health.release?.()
+    const lead = await screen.findByRole("button", { name: "lead" })
+    await waitFor(() => expect(document.activeElement).toBe(lead))
+    expect(pending()).toBe(false)
+  })
+
+  test("Diagnostics appears only when the shell supplies it", async () => {
+    renderCanvas()
+    await screen.findByTestId("onboarding-wizard-fake")
     expect(screen.queryByTestId("empty-diagnostics-trigger")).toBeNull()
     cleanup()
 
     let diagnostics = 0
     renderCanvas({ onDiagnostics: () => (diagnostics += 1) })
-    fireEvent.click(screen.getByTestId("empty-diagnostics-trigger"))
+    fireEvent.click(await screen.findByTestId("empty-diagnostics-trigger"))
     expect(diagnostics).toBe(1)
   })
 })
