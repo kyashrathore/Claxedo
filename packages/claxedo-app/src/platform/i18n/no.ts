@@ -471,6 +471,7 @@ export const dict = {
   "session.todo.expand": "Utvid",
   "session.timeline.previousMessages.one": "{{count}} tidligere melding",
   "session.timeline.previousMessages.other": "{{count}} tidligere meldinger",
+  "session.timeline.previousMessages.earlier": "Vis tidligere meldinger",
   "session.timeline.collapseTranscript": "Skjul utskrift",
   "session.followupDock.summary.one": "{{count}} melding i kø",
   "session.followupDock.summary.other": "{{count}} meldinger i kø",

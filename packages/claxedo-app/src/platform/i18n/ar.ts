@@ -412,6 +412,7 @@ export const dict = {
   "session.todo.expand": "توسيع",
   "session.timeline.previousMessages.one": "{{count}} رسالة سابقة",
   "session.timeline.previousMessages.other": "{{count}} رسائل سابقة",
+  "session.timeline.previousMessages.earlier": "عرض الرسائل السابقة",
   "session.timeline.collapseTranscript": "طي النص",
   "session.followupDock.summary.one": "{{count}} رسالة في الانتظار",
   "session.followupDock.summary.other": "{{count}} رسائل في الانتظار",

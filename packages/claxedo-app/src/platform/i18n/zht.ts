@@ -466,6 +466,7 @@ export const dict = {
   "session.todo.expand": "展開",
   "session.timeline.previousMessages.one": "{{count}} 則較早的訊息",
   "session.timeline.previousMessages.other": "{{count}} 則較早的訊息",
+  "session.timeline.previousMessages.earlier": "顯示較早的訊息",
   "session.timeline.collapseTranscript": "收合對話記錄",
   "session.followupDock.summary.one": "{{count}} 則佇列訊息",
   "session.followupDock.summary.other": "{{count}} 則佇列訊息",

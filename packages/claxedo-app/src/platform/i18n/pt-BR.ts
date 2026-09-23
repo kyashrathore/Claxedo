@@ -415,6 +415,7 @@ export const dict = {
   "session.todo.expand": "Expandir",
   "session.timeline.previousMessages.one": "{{count}} mensagem anterior",
   "session.timeline.previousMessages.other": "{{count}} mensagens anteriores",
+  "session.timeline.previousMessages.earlier": "Mostrar mensagens anteriores",
   "session.timeline.collapseTranscript": "Recolher transcrição",
   "session.followupDock.summary.one": "{{count}} mensagem na fila",
   "session.followupDock.summary.other": "{{count}} mensagens na fila",

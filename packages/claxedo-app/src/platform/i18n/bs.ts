@@ -470,6 +470,7 @@ export const dict = {
   "session.todo.expand": "Proširi",
   "session.timeline.previousMessages.one": "{{count}} prethodna poruka",
   "session.timeline.previousMessages.other": "{{count}} prethodnih poruka",
+  "session.timeline.previousMessages.earlier": "Prikaži ranije poruke",
   "session.timeline.collapseTranscript": "Sažmi transkript",
   "session.followupDock.summary.one": "{{count}} poruka na čekanju",
   "session.followupDock.summary.other": "{{count}} poruka na čekanju",

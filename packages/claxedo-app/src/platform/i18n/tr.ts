@@ -476,6 +476,7 @@ export const dict = {
   "session.todo.expand": "Genişlet",
   "session.timeline.previousMessages.one": "{{count}} önceki mesaj",
   "session.timeline.previousMessages.other": "{{count}} önceki mesaj",
+  "session.timeline.previousMessages.earlier": "Önceki mesajları göster",
   "session.timeline.collapseTranscript": "Dökümü daralt",
   "session.followupDock.summary.one": "{{count}} sıradaki mesaj",
   "session.followupDock.summary.other": "{{count}} sıradaki mesaj",

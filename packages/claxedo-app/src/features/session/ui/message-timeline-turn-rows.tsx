@@ -53,10 +53,12 @@ export function PreviousMessagesRow(props: {
   const label = () =>
     props.expanded
       ? language.t("session.timeline.collapseTranscript")
-      : language.t(
-          props.count === 1 ? "session.timeline.previousMessages.one" : "session.timeline.previousMessages.other",
-          { count: props.count },
-        )
+      : props.count === 0
+        ? language.t("session.timeline.previousMessages.earlier")
+        : language.t(
+            props.count === 1 ? "session.timeline.previousMessages.one" : "session.timeline.previousMessages.other",
+            { count: props.count },
+          )
   return (
     <div data-component="previous-messages" class="w-full">
       <button

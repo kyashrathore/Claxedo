@@ -1335,6 +1335,7 @@ export default function SessionPage(props: {
                           historyShift={false}
                           userMessages={historyWindow.renderedUserMessages()}
                           hiddenTurnCount={historyWindow.hiddenTurnCount}
+                          historyMore={historyMore}
                           hideTitle={() => floating() || readOnly()}
                           onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
                           navMessages={visibleUserMessages()}

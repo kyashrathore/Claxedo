@@ -26,7 +26,14 @@ export async function expectLiveUserRowCount(page: Page, count: number) {
  * that clean response, so the check is both valid and load-bearing there.
  */
 export async function expectLiveTurnsSettledAfterReload(page: Page, markers: string[]) {
-  await expectLiveUserRowCount(page, markers.length)
+  // A reload paints the latest turn first; older turns arrive through the
+  // reveal row, the way a reader reaches them in a list too short to scroll.
+  const reveal = page.locator('button[data-testid="timeline-previous-messages"]')
+  await expect(async () => {
+    if (await reveal.count()) await reveal.first().click()
+    await expect(page.locator(SELECTORS.userMessageContent)).toHaveCount(markers.length, { timeout: 2_000 })
+  }, `expected exactly ${markers.length} user row(s) after revealing earlier turns`).toPass({ timeout: 30_000 })
+  await expect(reveal).toHaveCount(0)
   for (const marker of markers) {
     await expect(
       page.locator(SELECTORS.assistantContentVisible).filter({ hasText: new RegExp(marker) }),

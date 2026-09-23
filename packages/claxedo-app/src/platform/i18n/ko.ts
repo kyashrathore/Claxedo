@@ -412,6 +412,7 @@ export const dict = {
   "session.todo.expand": "펼치기",
   "session.timeline.previousMessages.one": "{{count}}개의 이전 메시지",
   "session.timeline.previousMessages.other": "{{count}}개의 이전 메시지",
+  "session.timeline.previousMessages.earlier": "이전 메시지 보기",
   "session.timeline.collapseTranscript": "대화 기록 접기",
   "session.followupDock.summary.one": "{{count}}개의 대기 중인 메시지",
   "session.followupDock.summary.other": "{{count}}개의 대기 중인 메시지",

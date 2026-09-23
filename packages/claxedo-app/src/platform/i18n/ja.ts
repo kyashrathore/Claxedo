@@ -414,6 +414,7 @@ export const dict = {
   "session.todo.expand": "展開",
   "session.timeline.previousMessages.one": "{{count}} 件の以前のメッセージ",
   "session.timeline.previousMessages.other": "{{count}} 件の以前のメッセージ",
+  "session.timeline.previousMessages.earlier": "以前のメッセージを表示",
   "session.timeline.collapseTranscript": "トランスクリプトを折りたたむ",
   "session.followupDock.summary.one": "{{count}} 件のメッセージが待機中",
   "session.followupDock.summary.other": "{{count}} 件のメッセージが待機中",

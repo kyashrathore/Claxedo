@@ -424,6 +424,7 @@ export const dict = {
   "session.todo.expand": "Ausklappen",
   "session.timeline.previousMessages.one": "{{count}} vorherige Nachricht",
   "session.timeline.previousMessages.other": "{{count}} vorherige Nachrichten",
+  "session.timeline.previousMessages.earlier": "Frühere Nachrichten anzeigen",
   "session.timeline.collapseTranscript": "Verlauf einklappen",
   "session.followupDock.summary.one": "{{count}} Nachricht in der Warteschlange",
   "session.followupDock.summary.other": "{{count}} Nachrichten in der Warteschlange",

@@ -28,6 +28,12 @@ describe("PreviousMessagesRow", () => {
     expect(screen.getByTestId("timeline-previous-messages")).toHaveTextContent("1 previous message")
   })
 
+  test("reads as earlier messages when the older turns are still on the server", () => {
+    render(() => <PreviousMessagesRow count={0} onReveal={() => {}} />)
+
+    expect(screen.getByTestId("timeline-previous-messages")).toHaveTextContent("Show earlier messages")
+  })
+
   test("click reveals through the handler and does not bubble to the timeline", () => {
     const onReveal = vi.fn()
     const onOuterClick = vi.fn()

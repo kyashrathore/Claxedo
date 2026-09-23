@@ -596,8 +596,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const hiddenTurnsRow = () => {
     const count = props.hiddenTurnCount?.() ?? 0
     const head = props.userMessages[0]
-    if (count <= 0 || !head) return undefined
-    return TimelineRow.PreviousMessages({ userMessageID: head.id, count })
+    if (!head || (count <= 0 && !props.historyMore?.())) return undefined
+    return TimelineRow.PreviousMessages({ userMessageID: head.id, count: Math.max(count, 0) })
   }
 
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {

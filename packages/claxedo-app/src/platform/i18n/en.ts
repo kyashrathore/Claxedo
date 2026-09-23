@@ -490,6 +490,7 @@ export const dict = {
   "session.question.expand": "Expand question",
   "session.timeline.previousMessages.one": "{{count}} previous message",
   "session.timeline.previousMessages.other": "{{count}} previous messages",
+  "session.timeline.previousMessages.earlier": "Show earlier messages",
   "session.timeline.collapseTranscript": "Collapse transcript",
   "session.followupDock.summary.one": "{{count}} queued message",
   "session.followupDock.summary.other": "{{count}} queued messages",
