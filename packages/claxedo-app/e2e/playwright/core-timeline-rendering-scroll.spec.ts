@@ -944,7 +944,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       )
       for (let pass = 0; pass < 20 && (await closed.count()) > 0; pass++) await closed.first().click()
       await expect(closed).toHaveCount(0)
-      for (const card of cards) await expect(page.locator(`[data-timeline-part-id="${card.id}"]`)).toBeVisible()
+      for (const card of cards) await expect(page.locator(`[data-timeline-part-id="${String(card.id)}"]`)).toBeVisible()
       await expect(page.locator('[data-timeline-part-id="card_bash"] [data-slot="bash-scroll"]')).toContainText("readable line 100")
 
       await expect(page.locator("html")).toHaveAttribute("data-color-scheme", os === "dark" && stored === "system" ? "dark" : stored)
@@ -993,7 +993,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
             const bg = luminance(backdrop(element))
             const ratio = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)
             checked++
-            if (ratio < 3) failures.push(`${card.getAttribute("data-timeline-part-id") ?? "work-group"} ${element.tagName} "${element.textContent!.trim().slice(0, 30)}" ${style.color} ratio ${ratio.toFixed(2)}`)
+            if (ratio < 3) failures.push(`${card.getAttribute("data-timeline-part-id") ?? "work-group"} ${element.tagName} "${element.textContent.trim().slice(0, 30)}" ${style.color} ratio ${ratio.toFixed(2)}`)
           }
         }
         const root = getComputedStyle(document.documentElement)
