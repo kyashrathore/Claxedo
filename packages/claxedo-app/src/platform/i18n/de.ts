@@ -416,6 +416,7 @@ export const dict = {
   "session.tab.review": "Überprüfung",
   "session.tab.context": "Kontext",
   "session.tab.subagent": "Subagent",
+  "session.tab.plan": "Plan",
   "session.tab.closeSubagent": "Subagent schließen",
   "session.messages.loading": "Lade Nachrichten...",
   "session.todo.title": "Aufgaben",

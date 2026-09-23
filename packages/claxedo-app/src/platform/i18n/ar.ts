@@ -404,6 +404,7 @@ export const dict = {
   "session.tab.review": "مراجعة",
   "session.tab.context": "سياق",
   "session.tab.subagent": "وكيل فرعي",
+  "session.tab.plan": "الخطة",
   "session.tab.closeSubagent": "إغلاق الوكيل الفرعي",
   "session.messages.loading": "جارٍ تحميل الرسائل...",
   "session.todo.title": "المهام",

@@ -455,6 +455,7 @@ export const dict = {
   "session.tab.review": "ตรวจสอบ",
   "session.tab.context": "บริบท",
   "session.tab.subagent": "เอเจนต์ย่อย",
+  "session.tab.plan": "แผน",
   "session.tab.closeSubagent": "ปิดเอเจนต์ย่อย",
 
 

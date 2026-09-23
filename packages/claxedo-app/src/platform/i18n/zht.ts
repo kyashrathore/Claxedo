@@ -457,6 +457,7 @@ export const dict = {
   "session.tab.review": "審查",
   "session.tab.context": "上下文",
   "session.tab.subagent": "子代理",
+  "session.tab.plan": "計劃",
   "session.tab.closeSubagent": "關閉子代理",
   "session.messages.loading": "正在載入訊息...",
 

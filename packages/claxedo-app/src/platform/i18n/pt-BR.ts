@@ -407,6 +407,7 @@ export const dict = {
   "session.tab.review": "Revisão",
   "session.tab.context": "Contexto",
   "session.tab.subagent": "Subagente",
+  "session.tab.plan": "Plano",
   "session.tab.closeSubagent": "Fechar subagente",
   "session.messages.loading": "Carregando mensagens...",
   "session.todo.title": "Tarefas",

@@ -465,6 +465,7 @@ export const dict = {
   "session.tab.review": "İnceleme",
   "session.tab.context": "Bağlam",
   "session.tab.subagent": "Alt ajan",
+  "session.tab.plan": "Plan",
   "session.tab.closeSubagent": "Alt ajanı kapat",
 
 

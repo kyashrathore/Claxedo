@@ -460,6 +460,7 @@ export const dict = {
   "session.tab.review": "Обзор",
   "session.tab.context": "Контекст",
   "session.tab.subagent": "Субагент",
+  "session.tab.plan": "План",
   "session.tab.closeSubagent": "Закрыть субагент",
   "session.messages.loading": "Загрузка сообщений...",
 

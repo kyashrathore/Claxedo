@@ -463,6 +463,7 @@ export const dict = {
   "session.tab.review": "审查",
   "session.tab.context": "上下文",
   "session.tab.subagent": "子代理",
+  "session.tab.plan": "计划",
   "session.tab.closeSubagent": "关闭子代理",
   "session.messages.loading": "正在加载消息...",
   "session.todo.title": "待办事项",
