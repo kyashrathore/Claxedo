@@ -149,6 +149,26 @@ describe("folder source", () => {
 
     expect(screen.getByRole<HTMLButtonElement>("button", { name: "Create project" }).disabled).toBe(true)
   })
+
+  test("the code host is read on the first switch to a repository and survives every later switch", async () => {
+    const host = fakeCodeHost({ connected: true, repositories: [repository("me/app")] })
+    renderForm({ localExecution: true, pickFolder: async () => undefined, codeHost: host.request })
+
+    fireEvent.click(screen.getByRole("button", { name: "Clone a repository instead" }))
+    fireEvent.click(screen.getByRole("button", { name: "Select a folder instead" }))
+    for (let round = 0; round < 3; round++) {
+      fireEvent.click(screen.getByRole("button", { name: "Clone a repository instead" }))
+      await waitFor(() => expect(screen.getByText("me/app")).toBeTruthy())
+      fireEvent.click(screen.getByRole("button", { name: "Select a folder instead" }))
+      fireEvent.click(screen.getByRole("button", { name: "Clone a repository instead" }))
+      expect(screen.queryByText("Checking connected accounts…")).toBeNull()
+      expect(screen.getByText("me/app")).toBeTruthy()
+      fireEvent.click(screen.getByRole("button", { name: "Select a folder instead" }))
+    }
+
+    expect(host.requests.filter((request) => request.path === "")).toHaveLength(1)
+    expect(host.requests.filter((request) => request.path === "/connections/conn-1/repositories")).toHaveLength(1)
+  })
 })
 
 describe("repository from the connected code host", () => {

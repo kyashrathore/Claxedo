@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, getOwner, onCleanup, runWithOwner, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { CodeHostIntegration, CodeHostRepositoryList, CodeHostRequest, CodeHostStatus } from "@/features/onboarding/code-host-api"
@@ -96,9 +96,16 @@ export function ProjectCreateForm(
       .finally(() => current && busy(false))
   }
   const refetchStatus = () => settled(() => readCodeHostStatus(codeHost()), setStatus, setChecking)
+  // The first switch to a repository reads the code host and the answer is
+  // kept: a read per switch blanks the panel to "Checking…" on every toggle.
+  // The read belongs to the form, not the effect, so switching back to the
+  // folder while it is in flight does not discard it.
+  const owner = getOwner()
+  let statusRequested = false
   createEffect(() => {
-    if (mode() !== "repository") return
-    refetchStatus()
+    if (mode() !== "repository" || statusRequested) return
+    statusRequested = true
+    runWithOwner(owner, refetchStatus)
   })
   const integration = () => status()?.integrations[0]
   const connection = () => {
