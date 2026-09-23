@@ -414,6 +414,11 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   const upgraded = new Set<Duplex>()
   server.on("upgrade", (_request: unknown, socket: Duplex) => {
     upgraded.add(socket)
+    // @hono/node-ws answers a refused upgrade with `socket.end(...)` and only
+    // an accepted one gets `ws`'s error listener. A client that resets during
+    // auth or after a refusal otherwise emits an unhandled 'error' (ECONNRESET)
+    // that exits the daemon and every terminal it holds.
+    socket.on("error", (error) => log.info("websocket upgrade socket error", { error: String(error) }))
     socket.once("close", () => upgraded.delete(socket))
   })
 
@@ -474,6 +479,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   log.info("local server listening", {
     port,
     hostname,
+    pid: process.pid,
     opencode: "embedded-sdk",
     // Stated at boot: a supervisor here would mean cloud provisioning, which
     // this product does not do.

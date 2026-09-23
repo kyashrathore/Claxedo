@@ -817,7 +817,13 @@ export namespace Pty {
     } else if (!env.LANG) {
       env.LANG = getLocale(process.env)
     }
-    log.info("creating session", { id, cmd: command, args, cwd })
+    log.info("creating session", {
+      id,
+      cmd: command,
+      args,
+      cwd,
+      ...(input.env?.previousPtyId ? { restoring: input.env.previousPtyId } : {}),
+    })
 
     const t2 = performance.now()
     const spawn = await getSpawn()
@@ -953,6 +959,7 @@ export namespace Pty {
     // Adding it on attach would place it after an already-drawn prompt, where
     // the shell's next redraw can erase it or overwrite user input.
     if (notice) history.append(notice)
+    if (previousPtyId) log.info("pty history restored", { id, previousPtyId, restoredChars: restored.length })
     const restoredBuffer = restored + notice
     const initialCommand = input.initialCommand?.trim() ? agentInitialCommand(input.initialCommand) : undefined
     let initialCommandSent = false

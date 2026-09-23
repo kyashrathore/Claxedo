@@ -14,6 +14,7 @@ import { preparePersistBuffer, prepareRestoreBuffer, readTerminalSnapshot } from
 import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "@/features/terminal/core/terminal-geometry"
 import {
   sigwinchToggleSize,
+  PtyGoneError,
   WebSocketCloseError,
   reconnectDelay,
   MAX_RECONNECT_ATTEMPTS,
@@ -32,7 +33,7 @@ import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-re
 import { isRelayHostKind } from "@/platform/runtime/placement-wire"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./pty-key-migration"
 import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./restore"
-import { classifyTerminalClose } from "./close"
+import { classifyTerminalClose, terminalRecoveryAction } from "./close"
 import { MIN_CONTAINER_PX, TERMINAL_OPTIONS } from "../core/config"
 import { scheduleFontSettleRefit } from "../core/font-settle"
 import { terminalBenchmarkBackendObservers } from "../core/benchmark-observer"
@@ -708,6 +709,34 @@ export const Terminal = (props: TerminalProps) => {
         }, delay)
       }
 
+      const failConnection = (error: unknown) => {
+        if (once.value) return
+        once.value = true
+        local.onConnectError?.(error)
+      }
+
+      const recover = async (cause: Error) => {
+        if (disposed || overload) return
+        const ptyId = local.pty.id
+        const presence = await ptyClient()
+          .then((client) => client.presence(ptyId))
+          .catch(() => "unreachable" as const)
+        if (disposed || overload) return
+        const action = terminalRecoveryAction({ presence, reconnectAttempt, maxAttempts: MAX_RECONNECT_ATTEMPTS })
+        switch (action.kind) {
+          case "reconnect":
+            scheduleReconnect()
+            return
+          case "restore":
+            failConnection(new PtyGoneError(ptyId))
+            return
+          case "give-up":
+            try { b.write(reconnectFailedMessage()) } catch {}
+            failConnection(cause)
+            return
+        }
+      }
+
       const connectSocket = async () => {
         if (disposed || overload) return
 
@@ -719,15 +748,21 @@ export const Terminal = (props: TerminalProps) => {
           try { prev.close() } catch {}
         }
 
-        const ws = await openTerminalWebSocket({
-          serverUrl: claxedoServerUrl,
-          ptyId: local.pty.id,
-          cursor,
-          workspaceId: await terminalWorkspaceId(),
-          directory: sdk.directory,
-          request: ptyRequest,
-          locationProtocol: window.location.protocol,
-        })
+        let ws: WebSocket
+        try {
+          ws = await openTerminalWebSocket({
+            serverUrl: claxedoServerUrl,
+            ptyId: local.pty.id,
+            cursor,
+            workspaceId: await terminalWorkspaceId(),
+            directory: sdk.directory,
+            request: ptyRequest,
+            locationProtocol: window.location.protocol,
+          })
+        } catch (error) {
+          await recover(error instanceof Error ? error : new Error(String(error)))
+          return
+        }
         ws.binaryType = "arraybuffer"
         socketRef.current = ws
         once.value = false
@@ -902,34 +937,19 @@ export const Terminal = (props: TerminalProps) => {
         const handleClose = (event: CloseEvent) => {
           if (disposed) return
 
-          const action = classifyTerminalClose({
-            code: event.code,
-            reconnectAttempt,
-            maxAttempts: MAX_RECONNECT_ATTEMPTS,
-          })
+          const action = classifyTerminalClose({ code: event.code })
           switch (action.kind) {
-            // Normal close (1000) or non-error — do nothing
             case "ignore":
               return
-            // Session not found (1008) — PTY is gone, delegate to clone-on-reconnect
             case "session-gone":
-              if (once.value) return
-              once.value = true
-              local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
+              failConnection(new PtyGoneError(local.pty.id))
               return
-            // Retriable error under the limit — schedule reconnect
-            case "reconnect":
+            case "recover":
               cleanupSocket()
-              scheduleReconnect()
+              void recover(new WebSocketCloseError(event.code, event.reason))
               return
-            // Exhausted retries or non-retriable code
             case "fail":
-              if (once.value) return
-              once.value = true
-              if (action.exhausted) {
-                try { b.write(reconnectFailedMessage()) } catch {}
-              }
-              local.onConnectError?.(new WebSocketCloseError(event.code, event.reason))
+              failConnection(new WebSocketCloseError(event.code, event.reason))
               return
           }
         }

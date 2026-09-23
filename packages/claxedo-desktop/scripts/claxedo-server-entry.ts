@@ -9,6 +9,7 @@ import { createLocalAgentPluginsComposition } from "@claxedo/local-server/agent-
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
 import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
 import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
@@ -52,13 +53,18 @@ const transport = binding && parent
   : undefined
 parent?.listen((message) => void transport?.onMessage(message))
 
+const log = Log.create({ service: "daemon" })
+
 let requestStop: () => void | Promise<unknown> = () => {}
-let requestExit = () => {}
+let requestExit = (_trigger: string) => {}
 const lifecycle = createLocalDaemonLifecycle({
   // Resolves only when the server has actually released its owners, so the
   // receipt this stop earns is written against what stopping reached.
-  onStop: () => requestStop(),
-  onStopped: () => requestExit(),
+  onStop: (reason) => {
+    log.info("daemon stopping", { ...reason, pid: process.pid })
+    return requestStop()
+  },
+  onStopped: () => requestExit("lifecycle"),
   machine: {
     machineId: "local",
     generation: startup.daemonGeneration,
@@ -161,7 +167,8 @@ const stop = () => {
   return stopping
 }
 
-const exit = () => {
+const exit = (trigger: string) => {
+  log.info("daemon exit requested", { trigger, pid: process.pid })
   void stop().then((code) => {
     clearDiscovery()
     process.exit(code)
@@ -169,8 +176,12 @@ const exit = () => {
 }
 requestStop = stop
 requestExit = exit
-process.once("SIGTERM", exit)
-process.once("SIGINT", exit)
+process.once("SIGTERM", () => exit("SIGTERM"))
+process.once("SIGINT", () => exit("SIGINT"))
+// An uncaught exception still logs here with code 1. SIGKILL, or any signal
+// left at its default action, does not: a pid with no "daemon exited" line was
+// killed from outside.
+process.once("exit", (code) => log.info("daemon exited", { code, pid: process.pid }))
 
 void server.ready.then(async () => {
   // FIRST, before this port is announced to anyone: start() is what closes

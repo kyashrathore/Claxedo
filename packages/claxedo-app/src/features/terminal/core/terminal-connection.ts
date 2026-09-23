@@ -14,6 +14,23 @@ export class WebSocketCloseError extends Error {
   }
 }
 
+/**
+ * The server no longer holds this PTY: it exited, or the process that owned it
+ * is gone. Its scrollback survives on disk, so the owner replaces it instead of
+ * reconnecting to it.
+ */
+export class PtyGoneError extends Error {
+  public readonly ptyId: string
+
+  constructor(ptyId: string) {
+    super(`Terminal ${ptyId} no longer exists on the server`)
+    this.ptyId = ptyId
+    this.name = "PtyGoneError"
+  }
+}
+
+export type PtyPresence = "live" | "gone" | "unreachable"
+
 export function socketCloseIsError(code: number) {
   return code !== 1000
 }
@@ -55,7 +72,7 @@ export function reconnectedMessage(): string {
 
 /** ANSI status message shown in terminal when all reconnect attempts are exhausted. */
 export function reconnectFailedMessage(): string {
-  return `\r\n\x1b[31;1m[Connection lost. Terminal will recover when server restarts.]\x1b[0m\r\n`
+  return `\r\n\x1b[31;1m[Connection lost. The terminal server did not answer; reopen the terminal to try again.]\x1b[0m\r\n`
 }
 
 type WebSocketCtor = typeof WebSocket
@@ -149,6 +166,21 @@ export function createTerminalPtyClient(input: {
   }
 
   return {
+    /**
+     * A socket close cannot answer whether the PTY still exists: a refused
+     * upgrade reaches the browser as 1006 whatever HTTP status the server sent.
+     * Only the PTY route's own not-found code counts as gone, so a 404 from a
+     * proxy or relay that never reached the PTY table reads as unreachable.
+     */
+    presence: async (ptyId: string): Promise<PtyPresence> => {
+      const res = await ptyFetch(`/${encodeURIComponent(ptyId)}`, { method: "GET" }).catch(() => undefined)
+      if (!res) return "unreachable"
+      if (res.ok) return "live"
+      if (res.status !== 404) return "unreachable"
+      const body: unknown = await res.json().catch(() => undefined)
+      const error = isRecord(body) ? body.error : undefined
+      return isRecord(error) && error.code === "pty_session_not_found" ? "gone" : "unreachable"
+    },
     update: (ptyId: string, body: unknown) =>
       ptyFetch(`/${encodeURIComponent(ptyId)}`, {
         method: "PUT",
