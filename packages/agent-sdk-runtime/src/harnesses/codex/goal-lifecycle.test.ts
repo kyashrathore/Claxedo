@@ -130,7 +130,7 @@ function goalControllerHarness() {
     lease: () => ({ release: () => {} }),
     threadConfig: () => ({}),
     activeThreads,
-    projectThreadNotification: async (_input, threadId, method, params) => {
+    threadProjection: (_input, threadId) => async (method, params) => {
       projected.push({ threadId, method, payload: params })
     },
   }
@@ -406,6 +406,41 @@ describe("Codex Goal lifecycle", () => {
       "item/agentMessage/delta",
       "turn/completed",
     ])
+  })
+
+  test("routes a thread started beneath a Goal turn's child into that Goal turn", async () => {
+    const harness = goalControllerHarness()
+    const controller = new CodexGoalController(harness.host)
+    expect(await controller.resource.start("session-nested-frames", { objective: "Ship" }, harness.directory))
+      .toMatchObject({ ok: true, goal: { status: "active" } })
+
+    controller.handleProcessMessage({
+      method: "turn/started",
+      params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "inProgress" } },
+    })
+    controller.handleProcessMessage({
+      method: "thread/started",
+      params: { thread: { id: "child-1", parentThreadId: THREAD_ID, status: { type: "active" } } },
+    })
+    controller.handleProcessMessage({
+      method: "thread/started",
+      params: { thread: { id: "grandchild-1", parentThreadId: "child-1", status: { type: "active" } } },
+    })
+    controller.handleProcessMessage({
+      method: "item/agentMessage/delta",
+      params: { threadId: "grandchild-1", turnId: "grandchild-turn-1", itemId: "item-2", delta: "from the grandchild" },
+    })
+    controller.handleProcessMessage({
+      method: "turn/completed",
+      params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "completed" } },
+    })
+    await harness.settle()
+
+    expect(harness.projected).toContainEqual(expect.objectContaining({
+      threadId: THREAD_ID,
+      method: "item/agentMessage/delta",
+      payload: expect.objectContaining({ threadId: "grandchild-1" }),
+    }))
   })
 
   test("reconciles Goal routing for a live thread no goals call has armed", async () => {

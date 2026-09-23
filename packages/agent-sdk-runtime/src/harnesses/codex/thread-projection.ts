@@ -75,14 +75,70 @@ export function createCodexThreadOwnership(activeThreads: ReadonlyMap<string, un
 }
 
 /**
- * Turns one app-server notification into the subagent observations and the
- * routed transcript event it carries.
+ * A descendant folded into its first-level ancestor has no session of its
+ * own, so the frames that start, end, fail, name or plan one would restate
+ * the ancestor's session instead.
+ */
+const DESCENDANT_SESSION_LIFECYCLE = new Set([
+  "turn/started",
+  "turn/completed",
+  "turn/plan/updated",
+  "thread/status/changed",
+  "thread/closed",
+  "thread/name/updated",
+  "error",
+])
+
+/**
+ * Projects one turn's app-server notifications: the subagent observations
+ * each carries and the routed transcript event.
+ *
+ * Only the turn thread's direct children are subagents with sessions of
+ * their own. A thread started beneath one of them, at any depth, is folded
+ * into that first-level child: its frames route under the child's thread id,
+ * and its usage keeps its own thread's scope, so it adds to the child's.
  *
  * `parentOwned` is what the caller acts on: a notification naming another
  * thread belongs to a child of this turn, and routing it to the parent would
  * put a subagent's output in the user's transcript.
  */
-export async function projectCodexThreadNotification(
+export function createCodexThreadProjection(input: SdkRuntimeTurnInput, threadId: string) {
+  const firstLevelByThread = new Map<string, string>()
+
+  const recordLineage = (method: string, params: JsonRecord) => {
+    const spawned = subagentThreads(method, params)
+    if (!spawned) return
+    const firstLevel = spawned.parentThreadId === threadId ? undefined : firstLevelByThread.get(spawned.parentThreadId)
+    if (spawned.parentThreadId !== threadId && !firstLevel) return
+    // A thread keeps the ancestor it was first seen under: a later message
+    // sent to it by another subagent does not move its transcript.
+    for (const spawnedThreadId of spawned.threadIds) {
+      if (spawnedThreadId === threadId || firstLevelByThread.has(spawnedThreadId)) continue
+      firstLevelByThread.set(spawnedThreadId, firstLevel ?? spawnedThreadId)
+    }
+  }
+
+  return async (method: string, params: JsonRecord, frame: unknown) => {
+    recordLineage(method, params)
+    await observeFirstLevelSubagents(input, threadId, method, params, frame)
+    const eventThreadId = notificationThreadId(params)
+    const raw = { source: CODEX_SOURCE, method, payload: params }
+    const source = { dir: "in" as const, method, frame }
+    if (!eventThreadId || eventThreadId === threadId) {
+      input.ingest(raw, source, { kind: "parent" })
+      return { parentOwned: true, eventThreadId }
+    }
+    const firstLevel = firstLevelByThread.get(eventThreadId) ?? eventThreadId
+    if (firstLevel === eventThreadId || !DESCENDANT_SESSION_LIFECYCLE.has(method)) {
+      input.ingest(raw, source, { kind: "child", correlationKey: firstLevel })
+    }
+    return { parentOwned: false, eventThreadId }
+  }
+}
+
+export type CodexThreadProjection = ReturnType<typeof createCodexThreadProjection>
+
+async function observeFirstLevelSubagents(
   input: SdkRuntimeTurnInput,
   threadId: string,
   method: string,
@@ -152,13 +208,4 @@ export async function projectCodexThreadNotification(
   }
   const hostSpawn = method === "item/completed" ? codexHostSubagentObservation(threadId, asRecord(params.item)) : undefined
   if (hostSpawn) await input.observeSubagent({ observation: hostSpawn, correlationKeys: [], source: { dir: "in", method, frame } })
-  const eventThreadId = notificationThreadId(params)
-  const parentOwned = !eventThreadId || eventThreadId === threadId
-  input.ingest({ source: CODEX_SOURCE, method, payload: params }, {
-    dir: "in",
-    method,
-    frame,
-  }, parentOwned ? { kind: "parent" } : { kind: "child", correlationKey: eventThreadId })
-  return { parentOwned, eventThreadId }
 }
-

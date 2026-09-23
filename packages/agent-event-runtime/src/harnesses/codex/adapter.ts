@@ -15,6 +15,8 @@ import { codexMcpApproval } from "./mcp-elicitation"
 type CodexAppServerProtocolEvent = ServerNotification | ServerRequest
 
 export type CodexTurnUsageState = {
+  /** The Codex turn the accumulator sums; a thread's next turn starts its own. */
+  turnId?: string
   /** The thread's lifetime totals at its previous tokenUsage event, for in-turn delta recovery. */
   previousTotals?: Record<string, unknown>
   previousTotalsSignature?: string
@@ -300,11 +302,18 @@ function addNullable(previous: number | null, delta: number | undefined) {
   return (previous ?? 0) + delta
 }
 
+/**
+ * Each Codex turn of each thread is its own usage scope: a thread reports one
+ * turn's running total at a time, and a Claxedo turn can span several of them
+ * — a subagent's second turn, a nested subagent folded into its ancestor.
+ */
 function usage(
   row: Record<string, unknown>,
-  turnUsage: CodexTurnUsageState | undefined,
-  nativeSessionId?: string,
+  previous: CodexTurnUsageState | undefined,
+  threadId: string,
 ): { event: AgentRuntimeEvent; turnUsage: CodexTurnUsageState } | undefined {
+  const turnId = text(row.turnId)
+  const turnUsage = previous?.turnId === turnId ? previous : undefined
   const tokenUsage = asRecord(row.tokenUsage) ?? row
   const total = asRecord(tokenUsage.total)
   const last = asRecord(tokenUsage.last) ?? {}
@@ -348,8 +357,9 @@ function usage(
   return {
     event: usageEvent({
       kind: "cumulative",
-      ...(nativeSessionId ? { nativeSessionId } : {}),
-      ...(text(row.turnId) ? { providerObservationId: text(row.turnId) } : {}),
+      scope: turnId ? `${threadId}:${turnId}` : threadId,
+      ...(threadId ? { nativeSessionId: threadId } : {}),
+      ...(turnId ? { providerObservationId: turnId } : {}),
       tokens: {
         // Codex reports input inclusive of cached input, and output inclusive
         // of reasoning; our schema tracks the disjoint categories.
@@ -364,6 +374,7 @@ function usage(
       },
     }),
     turnUsage: {
+      ...(turnId ? { turnId } : {}),
       ...(total ? { previousTotals: total } : {}),
       ...(totalsSignature === undefined ? {} : { previousTotalsSignature: totalsSignature }),
       accumulated,

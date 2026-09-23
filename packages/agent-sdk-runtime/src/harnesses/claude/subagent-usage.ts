@@ -14,8 +14,12 @@ type UnjoinedUsage = Omit<ClaudeSubagentUsage, "parent_tool_use_id">
  * transcript the CLI mirrors through `sessionStore.append`. Those entries name
  * no tool call; the child is the one whose frame shares the entry's message
  * id. The mirror flushes on its own schedule, so either side can come first.
+ *
+ * An entry whose frame never arrives is still a request the turn paid for:
+ * `meterUnjoined` hands each one to the main thread (`correlationKey`
+ * undefined) once, when no frame is left to join it.
  */
-export function createClaudeSubagentUsage(deliver: (correlationKey: string, usage: ClaudeSubagentUsage) => void) {
+export function createClaudeSubagentUsage(deliver: (correlationKey: string | undefined, usage: ClaudeSubagentUsage) => void) {
   const childByMessageId = new Map<string, string>()
   const unjoined = new Map<string, UnjoinedUsage[]>()
   return {
@@ -43,6 +47,11 @@ export function createClaudeSubagentUsage(deliver: (correlationKey: string, usag
         if (correlationKey) deliver(correlationKey, { ...found, parent_tool_use_id: correlationKey })
         else unjoined.set(id, [...(unjoined.get(id) ?? []), found])
       }
+    },
+    meterUnjoined() {
+      const orphans = [...unjoined.values()].flat()
+      unjoined.clear()
+      for (const usage of orphans) deliver(undefined, { ...usage, parent_tool_use_id: null })
     },
   }
 }

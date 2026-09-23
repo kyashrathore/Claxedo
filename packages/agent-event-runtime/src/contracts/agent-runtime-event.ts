@@ -45,8 +45,16 @@ export type RuntimeTokenUsage = {
 }
 
 export type RuntimeUsageObservation = {
-  /** Whether this observation replaces prior turn usage or adds to it. */
+  /** Whether this observation replaces prior usage in its scope or adds to it. */
   kind: "cumulative" | "delta"
+  /**
+   * One independent stream of usage within the turn — a provider thread's own
+   * turn, a subagent's requests. A cumulative observation replaces only its
+   * scope's running total, and the turn's usage is the sum over every scope,
+   * so two streams that land on one turn never overwrite each other. Absent is
+   * the turn's own stream.
+   */
+  scope?: string
   tokens: RuntimeTokenUsage
   /** Provider-native ordering data when the source exposes it. */
   sequence?: number

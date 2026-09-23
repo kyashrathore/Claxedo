@@ -10,6 +10,7 @@ import {
   claudeSdkAdapter,
   claudeSubagentObservations,
   createClaudeTaskLedger,
+  foldNestedSubagentFrame,
   type ClaudeTaskLedger,
 } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { randomUUID } from "crypto"
@@ -461,7 +462,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       dir: "in",
       method: "claude.sessionStore",
       frame: usage,
-    }, { kind: "child", correlationKey }))
+    }, correlationKey ? { kind: "child", correlationKey } : { kind: "parent" }))
     /**
      * A WRITE-ONLY observer, not a storage adapter: `append` is the only
      * channel on which the CLI reports Goal progress, its own session title
@@ -693,9 +694,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           result = message
           continue
         }
-        await ingestClaudeSdkMessage(input, message, tasks)
-        subagentUsage.observeFrame(message)
+        subagentUsage.observeFrame(await ingestClaudeSdkMessage(input, message, tasks))
       }
+      // Ahead of the result, whose `session.idle` ends the turn's event stream.
+      subagentUsage.meterUnjoined()
       if (result) await ingestClaudeSdkMessage(input, result, tasks)
     } catch (cause) {
       // This query carried the Goal: if it died, no iteration is left to report
@@ -710,6 +712,8 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       )
       if (settled) applyGoal(settled)
       throw cause
+    } finally {
+      subagentUsage.meterUnjoined()
     }
   }
 
@@ -792,6 +796,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 }
 
+/** Returns the frame as it was ingested: a nested subagent's frame names its first-level subagent. */
 export async function ingestClaudeSdkMessage(
   input: Pick<SdkRuntimeTurnInput, "ingest" | "observeSubagent" | "rebindAgentSession">,
   message: SDKMessage,
@@ -799,7 +804,9 @@ export async function ingestClaudeSdkMessage(
 ) {
   const sdkSessionId = text(asRecord(message)?.session_id)
   if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
-  await Promise.all(claudeSubagentObservations(message, tasks).map((observation) => input.observeSubagent({
+  const folded = foldNestedSubagentFrame(message, tasks)
+  const correlationKey = claudeChildCorrelationKey(folded)
+  await Promise.all(claudeSubagentObservations(folded, tasks).map((observation) => input.observeSubagent({
     observation,
     correlationKeys: [observation.stableCorrelationId, observation.toolCallId]
       .filter((key): key is string => !!key),
@@ -812,14 +819,13 @@ export async function ingestClaudeSdkMessage(
   input.ingest({
     source: "claude.sdk",
     method: `claude/${message.type}`,
-    payload: message,
+    payload: folded,
   }, {
     dir: "in",
     method: `claude.${message.type}`,
     frame: message,
-  }, claudeChildCorrelationKey(message)
-    ? { kind: "child", correlationKey: claudeChildCorrelationKey(message) }
-    : { kind: "parent" })
+  }, correlationKey ? { kind: "child", correlationKey } : { kind: "parent" })
+  return folded
 }
 
 export function claudeSpawnEnv(input: Record<string, string | undefined>) {

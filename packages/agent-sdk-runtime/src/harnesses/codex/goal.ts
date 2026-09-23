@@ -48,13 +48,11 @@ export type CodexGoalControllerHost = {
   threadConfig(sessionId: string): { config?: JsonRecord }
   /** Shared with the driver: a thread with a live prompt turn owns its frames. */
   activeThreads: Map<string, CodexActiveThread>
-  projectThreadNotification(
+  /** One provider turn's notification projector; it holds that turn's subagent lineage. */
+  threadProjection(
     input: SdkRuntimeTurnInput,
     threadId: string,
-    method: string,
-    params: JsonRecord,
-    frame: unknown,
-  ): Promise<unknown>
+  ): (method: string, params: JsonRecord, frame: unknown) => Promise<unknown>
 }
 
 /**
@@ -311,9 +309,10 @@ export class CodexGoalController {
     const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
     // A child only needs an owner while that owner has a Goal turn to route
     // its frames into; recording every parented thread grew the map for the
-    // driver's whole life.
-    if (startedSubagent?.parentThreadId && this.turnQueues.has(startedSubagent.parentThreadId)) {
-      this.childOwners.set(startedSubagent.id, startedSubagent.parentThreadId)
+    // driver's whole life. A descendant routes wherever its parent does.
+    if (startedSubagent) {
+      const ownerThreadId = this.childOwners.get(startedSubagent.parentThreadId) ?? startedSubagent.parentThreadId
+      if (this.turnQueues.has(ownerThreadId)) this.childOwners.set(startedSubagent.id, ownerThreadId)
     }
     const threadId = this.childOwners.get(directThreadId) ?? directThreadId
     if (this.host.activeThreads.has(threadId) && !this.turnQueues.has(threadId)) return
@@ -336,6 +335,7 @@ export class CodexGoalController {
         const proc = await this.host.ensureProcess(binding.directory)
         const stops = createTurnStopRecord()
         const cancellation = createCodexTurnStop({ process: proc, threadId, record: stops, turnId: () => turnId })
+        const projectNotification = this.host.threadProjection(input, threadId)
         const project = (eventMethod: string, payload: JsonRecord, frame: unknown) => input.ingest({
           source: CODEX_SOURCE,
           method: eventMethod,
@@ -363,13 +363,7 @@ export class CodexGoalController {
           for await (const event of queue) {
             cancellation.observe(event.method ?? "codex.goal-turn", asRecord(event.payload) ?? {})
             const eventMethod = event.method ?? "codex.goal-turn"
-            await this.host.projectThreadNotification(
-              input,
-              threadId,
-              eventMethod,
-              asRecord(event.payload) ?? {},
-              event,
-            )
+            await projectNotification(eventMethod, asRecord(event.payload) ?? {}, event)
           }
         } finally {
           try {

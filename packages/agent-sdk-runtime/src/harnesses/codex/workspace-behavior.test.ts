@@ -86,6 +86,7 @@ async function makeFakeCodex(options: {
   models?: unknown[]
   subagent?: boolean
   subagentActivity?: boolean
+  nestedSubagent?: boolean
   foreignSession?: boolean
   initializeDelayMs?: number
   loginDelayMs?: number
@@ -104,6 +105,7 @@ const mcpConsent = ${JSON.stringify(options.mcpConsent === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
 const subagent = ${JSON.stringify(options.subagent === true)}
 const subagentActivity = ${JSON.stringify(options.subagentActivity === true)}
+const nestedSubagent = ${JSON.stringify(options.nestedSubagent === true)}
 const foreignSession = ${JSON.stringify(options.foreignSession === true)}
 const initializeDelayMs = ${JSON.stringify(options.initializeDelayMs ?? 0)}
 const loginDelayMs = ${JSON.stringify(options.loginDelayMs ?? 0)}
@@ -200,6 +202,31 @@ process.stdin.on("data", (chunk) => {
         write({ method: "item/completed", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "spawn-1", type: "collabAgentToolCall", tool: "spawnAgent", status: "completed", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-1", "thread-child-2"], prompt: "Research both", model: "gpt-5.5", agentsStates: { "thread-child-1": { status: "running", message: null }, "thread-child-2": { status: "running", message: null } } } } })
         write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "send-1", type: "collabAgentToolCall", tool: "sendInput", status: "inProgress", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-1"], prompt: "Continue", model: null, agentsStates: { "thread-child-1": { status: "completed", message: null } } } } })
         write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "close-1", type: "collabAgentToolCall", tool: "closeAgent", status: "completed", senderThreadId: "thread-1", receiverThreadIds: ["thread-child-2"], prompt: null, model: null, agentsStates: { "thread-child-2": { status: "shutdown", message: null } } } } })
+      }
+      if (nestedSubagent) {
+        const usage = (threadId, turnId, total, last) => write({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total, last, modelContextWindow: 258400 } } })
+        const started = (id, parentThreadId) => write({ method: "thread/started", params: { thread: { id, parentThreadId, status: { type: "active", activeFlags: [] } } } })
+        const turn = (method, threadId, id) => write({ method, params: { threadId, turn: { id, status: method === "turn/started" ? "inProgress" : "completed" } } })
+        const grandchildUsage = { inputTokens: 40, cachedInputTokens: 0, outputTokens: 8, reasoningOutputTokens: 0 }
+        const deepestUsage = { inputTokens: 20, cachedInputTokens: 0, outputTokens: 4, reasoningOutputTokens: 0 }
+        const childFirstTurn = { inputTokens: 100, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 }
+        started("thread-child-1", "thread-1")
+        turn("turn/started", "thread-child-1", "child-turn-1")
+        write({ method: "item/started", params: { threadId: "thread-child-1", turnId: "child-turn-1", item: { id: "nested-spawn", type: "collabAgentToolCall", tool: "spawnAgent", status: "inProgress", senderThreadId: "thread-child-1", receiverThreadIds: ["thread-grandchild-1"], prompt: "Dig deeper", model: "gpt-5.5", agentsStates: {} } } })
+        started("thread-grandchild-1", "thread-child-1")
+        turn("turn/started", "thread-grandchild-1", "grandchild-turn-1")
+        write({ method: "item/agentMessage/delta", params: { threadId: "thread-grandchild-1", turnId: "grandchild-turn-1", itemId: "grandchild-message", delta: "GRANDCHILD-ONLY" } })
+        usage("thread-grandchild-1", "grandchild-turn-1", grandchildUsage, grandchildUsage)
+        started("thread-deepest-1", "thread-grandchild-1")
+        write({ method: "item/agentMessage/delta", params: { threadId: "thread-deepest-1", turnId: "deepest-turn-1", itemId: "deepest-message", delta: "DEEPEST-ONLY" } })
+        usage("thread-deepest-1", "deepest-turn-1", deepestUsage, deepestUsage)
+        turn("turn/completed", "thread-grandchild-1", "grandchild-turn-1")
+        write({ method: "item/agentMessage/delta", params: { threadId: "thread-child-1", turnId: "child-turn-1", itemId: "child-message-1", delta: "AFTER-GRANDCHILD" } })
+        usage("thread-child-1", "child-turn-1", childFirstTurn, childFirstTurn)
+        turn("turn/completed", "thread-child-1", "child-turn-1")
+        turn("turn/started", "thread-child-1", "child-turn-2")
+        usage("thread-child-1", "child-turn-2", { inputTokens: 160, cachedInputTokens: 10, outputTokens: 22, reasoningOutputTokens: 2 }, { inputTokens: 60, cachedInputTokens: 10, outputTokens: 12, reasoningOutputTokens: 2 })
+        turn("turn/completed", "thread-child-1", "child-turn-2")
       }
       if (foreignSession) {
         const usage = (threadId, turnId, total, last) => write({ method: "thread/tokenUsage/updated", params: { threadId, turnId, tokenUsage: { total, last, modelContextWindow: 258400 } } })
@@ -912,6 +939,50 @@ describe("CodexHarnessAdapter", () => {
     expect(childSessions.some((item) => JSON.stringify(store.getMessages(item.id)).includes("CHILD-ONLY"))).toBe(true)
     expect(childSessions.some((item) => JSON.stringify(store.getMessages(item.id)).includes("SECOND-CHILD-ONLY"))).toBe(true)
     expect(runtimeEvents.filter((event) => event.payload.type === "text-delta").map((event) => event.sessionId)).toEqual(expect.arrayContaining(childSessions.map((item) => item.id)))
+  })
+
+  test("folds a thread started beneath a subagent, at any depth, into that first-level subagent's session", async () => {
+    const fake = await makeFakeCodex({ nestedSubagent: true })
+    const store = createMemoryRuntimeStore()
+    const appended: Array<Parameters<typeof store.appendEvent>[0]> = []
+    const append = store.appendEvent.bind(store)
+    store.appendEvent = (input) => {
+      appended.push(input)
+      return append(input)
+    }
+    const adapter = new CodexHarnessAdapter({ binary: fake.binary, eventHub: createRuntimeEventHub(), store, storeRoot: path.join(fake.dir, "store") })
+    adapter.setModel("gpt-5.5")
+    try {
+      const session = await adapter.createSession(fake.dir)
+      for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
+
+      const children = (store.listSessions(fake.dir) as Array<{ id: string; parentID?: string; agent_session_id?: string }>)
+        .filter((item) => item.parentID === session.id)
+      expect(children.map((item) => item.agent_session_id)).toEqual(["thread-child-1"])
+      const child = children[0].id
+      const childMessages = JSON.stringify(store.getMessages(child))
+      expect(childMessages).toContain("GRANDCHILD-ONLY")
+      expect(childMessages).toContain("DEEPEST-ONLY")
+      expect(JSON.stringify(store.getMessages(session.id))).not.toMatch(/GRANDCHILD-ONLY|DEEPEST-ONLY/)
+
+      const childEvents = appended.filter((row) => row.sessionId === child)
+      const firstIdle = childEvents.findIndex((row) => row.payload.type === "session.idle")
+      const afterGrandchild = childEvents.findIndex((row) => JSON.stringify(row.payload).includes("AFTER-GRANDCHILD"))
+      expect(afterGrandchild).toBeGreaterThan(-1)
+      expect(firstIdle).toBeGreaterThan(afterGrandchild)
+
+      const metered = childEvents.flatMap(({ payload }) => payload.type === "session.usage" && payload.properties.observation
+        ? [{ scope: asRecord(payload.properties.observation)?.scope, tokens: payload.properties.observation.tokens }]
+        : [])
+      expect(metered).toEqual([
+        { scope: "thread-grandchild-1:grandchild-turn-1", tokens: { input: 40, output: 8, reasoning: 0, cache: { read: 0, write: null } } },
+        { scope: "thread-deepest-1:deepest-turn-1", tokens: { input: 20, output: 4, reasoning: 0, cache: { read: 0, write: null } } },
+        { scope: "thread-child-1:child-turn-1", tokens: { input: 100, output: 10, reasoning: 0, cache: { read: 0, write: null } } },
+        { scope: "thread-child-1:child-turn-2", tokens: { input: 50, output: 10, reasoning: 2, cache: { read: 10, write: null } } },
+      ])
+    } finally {
+      await adapter.dispose()
+    }
   })
 
   test("meters each Codex thread on its own session while another session's turn shares the app-server", async () => {

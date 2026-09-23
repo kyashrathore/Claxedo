@@ -8,7 +8,7 @@ import {
 import {
   codexAppServerAdapter,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
-import { createCodexThreadOwnership, projectCodexThreadNotification } from "./thread-projection"
+import { createCodexThreadOwnership, createCodexThreadProjection } from "./thread-projection"
 import type { AgentConfigOption } from "../../index"
 import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
@@ -134,7 +134,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       lease: () => this.idle.lease(),
       threadConfig: (sessionId) => this.threadConfig(sessionId),
       activeThreads: this.activeThreads,
-      projectThreadNotification: projectCodexThreadNotification,
+      threadProjection: createCodexThreadProjection,
     })
     this.goals = this.goalController.resource
   }
@@ -341,6 +341,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       observeSubagent: input.observeSubagent,
     })
     const ownership = this.threadOwnership.track(threadId)
+    const projectNotification = createCodexThreadProjection(input, threadId)
     let messageQueue = Promise.resolve()
     const unsubscribe = proc.onMessage((message) => {
       const method = text(message.method)
@@ -350,7 +351,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
       if (ownership.belongsElsewhere(method, params)) return
       messageQueue = messageQueue.then(async () => {
-        const { parentOwned } = await projectCodexThreadNotification(input, threadId, method, params, message)
+        const { parentOwned } = await projectNotification(method, params, message)
         if (method === "turn/started" && parentOwned) {
           turnId = text(asRecord(params.turn)?.id) ?? turnId
           const active = this.host.lifecycle().get(input.sessionId)

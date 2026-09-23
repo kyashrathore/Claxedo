@@ -71,10 +71,12 @@ export type ClaudeSdkAdapterState = {
 /**
  * A subagent request's usage as the Claude driver reads it from the subagent
  * transcript the CLI mirrors through `sessionStore`, ingested under
- * {@link CLAUDE_SUBAGENT_USAGE_METHOD} and routed to that child.
+ * {@link CLAUDE_SUBAGENT_USAGE_METHOD}. It is routed to the child whose frame
+ * carried the same message id; `null` names the main thread, which meters a
+ * request whose frame never arrived.
  */
 export type ClaudeSubagentUsage = {
-  parent_tool_use_id: string
+  parent_tool_use_id: string | null
   session_id?: string
   message: { id: string; usage: Record<string, unknown> }
 }
@@ -433,6 +435,24 @@ function reconcileAssistantSnapshot(shown: string, snapshot: string): { delta: s
   return { delta: snapshot.slice(shared), divergedAt: shared }
 }
 
+/**
+ * The frame as the first-level subagent it runs under owns it. An Agent call
+ * in a subagent's own message is recorded as nested first, so every frame of
+ * that nested subagent, at any depth, names the first-level key instead.
+ */
+export function foldNestedSubagentFrame(frame: unknown, ledger: ClaudeTaskLedger): unknown {
+  const message = asRecord(frame)
+  const owner = claudeChildCorrelationKey(message)
+  if (!message || !owner) return frame
+  const firstLevel = ledger.firstLevelSubagent(owner)
+  if (message.type === "assistant") {
+    for (const { tool } of assistantToolBlocks(message)) {
+      if (isTaskTool(tool.toolName) && !isHostSubagentTool(tool.toolName)) ledger.nestSubagentCall(tool.toolCallId, firstLevel)
+    }
+  }
+  return firstLevel === owner ? frame : { ...message, parent_tool_use_id: firstLevel }
+}
+
 export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLedger): ClaudeSubagentObservation[] {
   const message = asRecord(value)
   if (!message) return []
@@ -470,6 +490,8 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
     const result = asRecord(message.tool_use_result)
     const agentId = text(result?.agentId)
     if (!agentId) return claudeHostSubagentObservations(message, wrapperId, harnessExecutionId, ledger)
+    // A subagent's own Agent result reports a nested subagent, which has no row.
+    if (claudeChildCorrelationKey(message)) return []
     // `SDKUserMessage.tool_use_result` is one tool's Output, and `AgentOutput`
     // names no tool call, so the agent it reports can only be attributed when
     // the message carries a single tool_result block. Stamping every block of
@@ -513,12 +535,18 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
       const taskId = text(message.task_id)
       if (!taskId) return []
       const toolUseId = text(message.tool_use_id)
+      // Claude Code 2.1.280 sends `spawn_depth` (the pinned SDK types predate
+      // it), which marks a nested task even before the subagent frame that made
+      // its call has arrived.
+      const nested = (toolUseId !== undefined && ledger.isNestedSubagentCall(toolUseId)) ||
+        (asFiniteNumber(message.spawn_depth) ?? 0) > 1
       const record: ClaudeTaskRecord = {
         taskId,
         ...(toolUseId ? { toolUseId } : {}),
         ...(harnessExecutionId ? { harnessExecutionId } : {}),
         isAgentTask: !!text(message.subagent_type),
         skipTranscript: message.skip_transcript === true,
+        ...(nested ? { nested } : {}),
       }
       ledger.start(record)
       if (!admittedTask(record)) return []
@@ -572,7 +600,7 @@ export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLed
 }
 
 function admittedTask(record: ClaudeTaskRecord | undefined) {
-  return record?.isAgentTask && !record.skipTranscript ? record : undefined
+  return record?.isAgentTask && !record.skipTranscript && !record.nested ? record : undefined
 }
 
 function liveTaskIds(message: Record<string, unknown>) {
@@ -729,6 +757,7 @@ function ownerUsageEvent(state: ClaudeSdkAdapterState, owner: string, request: C
     contextUsed: Math.min(requestTotal, contextSize),
     observation: {
       kind: "cumulative",
+      ...(owner ? { scope: owner } : {}),
       ...(nativeSessionId ? { nativeSessionId } : {}),
       tokens: runtimeTokenUsage(sumRequestUsage(ownerRequests(state, owner))),
     },
@@ -768,9 +797,14 @@ function meteredResult(state: ClaudeSdkAdapterState, metered: ReturnType<typeof 
  * `message_delta` events this adapter meters, but only for the CLI turn that
  * result ends, and one query can end several — a steer answered after a
  * reply, each Goal iteration.
+ *
+ * The context gauge reads the request the main thread streamed last: a
+ * mirrored subagent request metered here was sent with that subagent's context.
  */
 function resultUsageEvent(state: ClaudeSdkAdapterState, nativeSessionId?: string) {
-  const latest = Object.values(ownerRequests(state, "")).at(-1)
+  const requests = ownerRequests(state, "")
+  const streamed = own(state.streamingRequestByOwner ?? {}, "")
+  const latest = (streamed ? own(requests, streamed) : undefined) ?? Object.values(requests).at(-1)
   return latest ? ownerUsageEvent(state, "", latest, nativeSessionId) : undefined
 }
 
@@ -930,11 +964,10 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
       if (event.method === "claude/session-store") return claudeTranscriptTitle(rawMessage)
 
       if (event.method === CLAUDE_SUBAGENT_USAGE_METHOD) {
-        const owner = claudeChildCorrelationKey(rawMessage)
         const request = asRecord(rawMessage.message)
         const requestId = text(request?.id)
-        if (!owner || !requestId) return []
-        return meteredResult(state, meterRequest(state, owner, requestId, asRecord(request?.usage), text(rawMessage.session_id)))
+        if (!requestId) return []
+        return meteredResult(state, meterRequest(state, claudeStreamOwner(rawMessage), requestId, asRecord(request?.usage), text(rawMessage.session_id)))
       }
 
       if (!isSdkMessage(rawMessage)) {
