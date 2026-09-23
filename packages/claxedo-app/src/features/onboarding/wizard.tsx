@@ -1,5 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show, type Component, type JSX } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
+import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { validWorktree } from "@/platform/sync/worktree"
 import { animateHeightChanges } from "@/ui/controls/animate-height"
 import { createProject, projectByCheckout, projectRequestCode, projectRequestMessage } from "./app-ports"
@@ -195,7 +196,7 @@ export const OnboardingWizard: Component<{
         {current().lede({ localExecution: props.localExecution })}
       </p>
       <div class="first-project-card first-project-reveal" style={{ "--first-project-delay": "80ms" }} ref={card}>
-        <div class="first-project-card-body" data-scrollable-pane data-slot="onboarding-card-body">
+        <ScrollView class="first-project-card-body" data-slot="onboarding-card-body">
           <div data-slot="onboarding-card-steps" ref={steps}>
             <div hidden={step() !== "project"} data-step-panel="project">
               <ProjectStep
@@ -226,7 +227,7 @@ export const OnboardingWizard: Component<{
               </div>
             </Show>
           </div>
-        </div>
+        </ScrollView>
         <Show when={step() !== "project"}>
           <div
             class="mt-5 flex shrink-0 flex-wrap items-center gap-3 border-t border-border-weak-base pt-4"

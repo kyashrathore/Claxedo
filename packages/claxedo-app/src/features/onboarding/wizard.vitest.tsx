@@ -118,8 +118,8 @@ describe("OnboardingWizard on a desktop", () => {
     // The rows scroll inside the card; the reason and the buttons are the
     // card's footer, outside the scroll region, so they never leave the screen.
     const body = document.querySelector('[data-slot="onboarding-card-body"]')!
-    expect(body.hasAttribute("data-scrollable-pane")).toBe(true)
-    expect(body.querySelector('[data-harness-row="claude"]')).toBeTruthy()
+    expect(body.classList.contains("scroll-view")).toBe(true)
+    expect(body.querySelector('.scroll-view__viewport [data-harness-row="claude"]')).toBeTruthy()
     const footer = body.nextElementSibling!
     expect(footer.getAttribute("data-slot")).toBe("onboarding-card-footer")
     expect(footer.contains(screen.getByRole("button", { name: "Next" }))).toBe(true)

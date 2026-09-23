@@ -12,7 +12,7 @@ export async function wizardOverflow(page: Page) {
     return {
       page: overflow(document.scrollingElement),
       canvas: overflow(document.querySelector('[data-testid="first-project-canvas"]')),
-      body: overflow(document.querySelector('[data-slot="onboarding-card-body"]')),
+      body: overflow(document.querySelector('[data-slot="onboarding-card-body"] > .scroll-view__viewport')),
     }
   })
 }

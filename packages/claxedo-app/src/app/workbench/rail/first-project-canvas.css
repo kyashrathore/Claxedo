@@ -217,8 +217,10 @@
   min-height: 8rem;
   flex: 0 1 auto;
   margin-inline: -1.5rem;
+}
+
+.first-project-card-body > .scroll-view__viewport {
   padding-inline: 1.5rem;
-  overflow-y: auto;
   overscroll-behavior: contain;
 }
 
