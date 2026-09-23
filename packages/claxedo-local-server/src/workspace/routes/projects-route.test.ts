@@ -10,8 +10,9 @@ const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-projects-route-"))
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { LocalProjectRoutes, projectsDirectory, projectSlug } = await import("./projects-route")
+const { LocalProjectRoutes, githubCloneAuthorization, projectsDirectory, projectSlug } = await import("./projects-route")
 const { vi } = await import("vitest")
+type RepositoryAccessResult = import("./projects-route").RepositoryAccessResult
 
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
@@ -122,6 +123,64 @@ describe("local project routes", () => {
     expect((await fs.stat(path.join(project.directory, ".git"))).isDirectory()).toBe(true)
   })
 
+  test("a folder sent without a name is named by its origin remote, else by its folder", async () => {
+    const withRemote = await gitRepository("named-")
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/widgets.git"], { cwd: withRemote, stdio: "ignore" })
+    const named = await app.request("http://localhost/", json({ source: { kind: "directory", directory: withRemote } }))
+    expect(named.status).toBe(201)
+    expect(((await named.json()) as { project: { name: string } }).project.name).toBe("widgets")
+
+    const scpRemote = await gitRepository("scp-")
+    execFileSync("git", ["remote", "add", "origin", "git@github.com:acme/gizmos.git"], { cwd: scpRemote, stdio: "ignore" })
+    const scp = await app.request("http://localhost/", json({ source: { kind: "directory", directory: scpRemote } }))
+    expect(((await scp.json()) as { project: { name: string } }).project.name).toBe("gizmos")
+
+    const bare = await gitRepository("bare-")
+    const byFolder = await app.request("http://localhost/", json({ source: { kind: "directory", directory: bare } }))
+    expect(byFolder.status).toBe(201)
+    expect(((await byFolder.json()) as { project: { name: string } }).project.name).toBe(path.basename(bare))
+  })
+
+  test("a derived name that another project bears takes the first free -2, -3 suffix; a sent one still 409s", async () => {
+    for (const [remote, expected] of [
+      ["https://github.com/acme/gadgets.git", "gadgets"],
+      ["https://github.com/other/Gadgets", "Gadgets-2"],
+      ["git@example.com:third/gadgets.git", "gadgets-3"],
+    ]) {
+      const directory = await gitRepository("clash-")
+      execFileSync("git", ["remote", "add", "origin", remote], { cwd: directory, stdio: "ignore" })
+      const res = await app.request("http://localhost/", json({ source: { kind: "directory", directory } }))
+      expect(res.status).toBe(201)
+      expect(((await res.json()) as { project: { name: string } }).project.name).toBe(expected)
+    }
+    const sent = await app.request("http://localhost/", json({ name: "Gadgets", source: { kind: "directory", directory: await gitRepository("sent-") } }))
+    expect(sent.status).toBe(409)
+    expect(await sent.json()).toMatchObject({ error: { code: "project_name_taken" } })
+    const empty = await app.request("http://localhost/", json({ name: "  ", source: { kind: "directory", directory: await gitRepository("empty-") } }))
+    expect(empty.status).toBe(400)
+  })
+
+  test("a repository sent without a name is named by the URL's last path segment", async () => {
+    clones.length = 0
+    const res = await app.request("http://localhost/", json({ source: { kind: "repository", repoUrl: "https://gitlab.com/acme/Nameless-Repo.git" } }))
+    expect(res.status).toBe(201)
+    const { project } = await res.json() as { project: { name: string; directory: string } }
+    expect(project.name).toBe("Nameless-Repo")
+    expect(await fs.realpath(project.directory)).toBe(await fs.realpath(path.join(projectsDirectory(), "nameless-repo")))
+    expect(clones).toEqual([{ repoUrl: "https://gitlab.com/acme/Nameless-Repo.git", options: {} }])
+  })
+
+  test("the unsigned local product has no connections to clone through", async () => {
+    const clone = vi.fn(fakeClone)
+    const app = LocalProjectRoutes({}, { clone })
+    const res = await app.request("http://localhost/", json({
+      source: { kind: "repository", connectionId: "conn_1", repo: { fullName: "acme/widgets" } },
+    }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "project_connection_requires_signin" } })
+    expect(clone).not.toHaveBeenCalled()
+  })
+
   test("refuses a repository source it cannot clone, and cleans up a failed clone", async () => {
     const invalid = await app.request("http://localhost/", json({ name: "Bad URL", source: { kind: "repository", repoUrl: "not a url" } }))
     expect(invalid.status).toBe(400)
@@ -221,21 +280,29 @@ describe("local project routes on a signed server", () => {
     expect(listed.projects.map((item) => item.name)).not.toContain("Denied Folder")
   })
 
-  test("clones a GitHub repository with the caller's connected-account credential, off argv", async () => {
-    const { githubCloneAuthorization } = await import("./projects-route")
-    const app = LocalProjectRoutes(options, {
-      ...signedDeps,
-      registerWorkspace: claiming,
-      cloneCredential: async (auth, repoUrl) =>
-        auth.user.subject === "usr_1" && repoUrl.startsWith("https://github.com/")
-          ? { authorization: githubCloneAuthorization("gho_secret") }
-          : undefined,
-    })
+  /** What the self-hosted composition answers: the connection's repository row and the token that clones it. */
+  const readable = (fullName: string, token: string) => ({
+    ok: true as const,
+    repository: {
+      id: "1",
+      name: fullName.split("/")[1] ?? fullName,
+      fullName,
+      cloneUrl: `https://github.com/${fullName}.git`,
+      private: true,
+      permissions: { read: true, write: false },
+    },
+    token,
+  })
+  const noConnection: RepositoryAccessResult = { ok: false, status: 404, code: "connection_not_found" }
+
+  test("a pasted GitHub URL clones with the caller's connected account when it lists the repository as readable, off argv", async () => {
+    const repositoryForAuth = vi.fn(async (auth: SignedControlPlaneAuth, connectionId: string | undefined, fullName: string) =>
+      auth.user.subject === "usr_1" && connectionId === undefined && fullName === "acme/private"
+        ? readable(fullName, "gho_secret")
+        : noConnection)
+    const app = LocalProjectRoutes(options, { ...signedDeps, registerWorkspace: claiming, repositoryForAuth })
     clones.length = 0
-    const res = await app.request("http://localhost/", {
-      ...json({ name: "Private Clone", source: { kind: "repository", repoUrl: "https://github.com/acme/private" } }),
-      headers: { "content-type": "application/json", ...bearer },
-    })
+    const res = await app.request("http://localhost/", post({ name: "Private Clone", source: { kind: "repository", repoUrl: "https://github.com/acme/private" } }, bearer))
     expect(res.status).toBe(201)
     expect(clones).toEqual([
       {
@@ -243,12 +310,129 @@ describe("local project routes on a signed server", () => {
         options: { authorization: githubCloneAuthorization("gho_secret"), host: "github.com" },
       },
     ])
-    const other = await app.request("http://localhost/", {
-      ...json({ name: "Elsewhere Clone", source: { kind: "repository", repoUrl: "https://gitlab.com/acme/public" } }),
-      headers: { "content-type": "application/json", ...bearer },
-    })
+    expect(repositoryForAuth).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ subject: "usr_1" }) }), undefined, "acme/private")
+
+    // A repository the connection does not list — a public one that is not
+    // theirs — clones anonymously, as does one on a host they connected nothing for.
+    const unlisted = await app.request("http://localhost/", post({ name: "Public Clone", source: { kind: "repository", repoUrl: "https://github.com/someone/public.git" } }, bearer))
+    expect(unlisted.status).toBe(201)
+    expect(clones[1]).toEqual({ repoUrl: "https://github.com/someone/public.git", options: {} })
+    const other = await app.request("http://localhost/", post({ name: "Elsewhere Clone", source: { kind: "repository", repoUrl: "https://gitlab.com/acme/public" } }, bearer))
     expect(other.status).toBe(201)
-    expect(clones[1]).toEqual({ repoUrl: "https://gitlab.com/acme/public", options: {} })
+    expect(clones[2]).toEqual({ repoUrl: "https://gitlab.com/acme/public", options: {} })
+  })
+
+  test("a GitHub token never rides to another host that happens to carry the same owner/repo", async () => {
+    const app = LocalProjectRoutes(options, {
+      ...signedDeps,
+      registerWorkspace: claiming,
+      repositoryForAuth: async (_auth, _connectionId, fullName) => readable(fullName, "gho_secret"),
+    })
+    clones.length = 0
+    const res = await app.request("http://localhost/", post({ name: "Same Name Elsewhere", source: { kind: "repository", repoUrl: "https://gitlab.com/acme/private" } }, bearer))
+    expect(res.status).toBe(201)
+    expect(clones).toEqual([{ repoUrl: "https://gitlab.com/acme/private", options: {} }])
+  })
+
+  test("a connections host that fails on a pasted URL is reported, not cloned around", async () => {
+    const clone = vi.fn(fakeClone)
+    const app = LocalProjectRoutes(options, {
+      ...signedDeps,
+      clone,
+      registerWorkspace: claiming,
+      repositoryForAuth: async () => ({ ok: false, status: 502, code: "repository_provider_unavailable" }),
+    })
+    const res = await app.request("http://localhost/", post({ name: "Host Down", source: { kind: "repository", repoUrl: "https://github.com/acme/down" } }, bearer))
+    expect(res.status).toBe(502)
+    expect(await res.json()).toMatchObject({ error: { code: "repository_provider_unavailable", message: expect.stringContaining("not available") } })
+    expect(clone).not.toHaveBeenCalled()
+  })
+
+  test("a chosen connection resolves the clone URL and the token, and names the project by the repository", async () => {
+    const repositoryForAuth = vi.fn(async (_auth: SignedControlPlaneAuth, connectionId: string | undefined, fullName: string) =>
+      connectionId === "conn_1" ? readable(fullName, "gho_connection") : noConnection)
+    const registerWorkspace = vi.fn(claiming)
+    const app = LocalProjectRoutes(options, { ...signedDeps, registerWorkspace, repositoryForAuth })
+    clones.length = 0
+    const res = await app.request("http://localhost/", post({
+      source: { kind: "repository", connectionId: "conn_1", repo: { fullName: "acme/sprockets" } },
+    }, bearer))
+    expect(res.status).toBe(201)
+    const { project } = await res.json() as { project: { name: string; repoUrl: string; directory: string } }
+    expect(project.name).toBe("sprockets")
+    expect(project.repoUrl).toBe("https://github.com/acme/sprockets.git")
+    expect(await fs.realpath(project.directory)).toBe(await fs.realpath(path.join(projectsDirectory(), "sprockets")))
+    expect(repositoryForAuth).toHaveBeenCalledTimes(1)
+    expect(repositoryForAuth).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ subject: "usr_1" }) }), "conn_1", "acme/sprockets")
+    expect(clones).toEqual([
+      {
+        repoUrl: "https://github.com/acme/sprockets.git",
+        options: { authorization: githubCloneAuthorization("gho_connection"), host: "github.com" },
+      },
+    ])
+    expect(registerWorkspace.mock.calls[0]?.[1]).toMatchObject({ displayName: "sprockets", repoUrl: "https://github.com/acme/sprockets.git" })
+  })
+
+  test("a connection that refuses the repository refuses the project, with nothing cloned or written", async () => {
+    const clone = vi.fn(fakeClone)
+    const refusing = LocalProjectRoutes(options, {
+      ...signedDeps,
+      clone,
+      registerWorkspace: claiming,
+      repositoryForAuth: async () => ({ ok: false, status: 403, code: "repository_read_required" }),
+    })
+    const source = { kind: "repository" as const, connectionId: "conn_1", repo: { fullName: "acme/forbidden" } }
+    const refused = await refusing.request("http://localhost/", post({ source }, bearer))
+    expect(refused.status).toBe(403)
+    expect(await refused.json()).toMatchObject({ error: { code: "repository_read_required", message: expect.any(String) } })
+
+    const throwing = LocalProjectRoutes(options, {
+      ...signedDeps,
+      clone,
+      registerWorkspace: claiming,
+      repositoryForAuth: async () => {
+        throw new Error("connections store is offline")
+      },
+    })
+    const failed = await throwing.request("http://localhost/", post({ source }, bearer))
+    expect(failed.status).toBe(502)
+    expect(await failed.json()).toMatchObject({ error: { code: "project_repository_unavailable", message: expect.stringContaining("connections store is offline") } })
+
+    expect(clone).not.toHaveBeenCalled()
+    await expect(fs.stat(path.join(projectsDirectory(), "forbidden"))).rejects.toThrow()
+    const listed = await (await refusing.request("http://localhost/", { headers: bearer })).json() as { projects: Array<{ name: string }> }
+    expect(listed.projects.map((item) => item.name)).not.toContain("forbidden")
+  })
+
+  test("a connection's clone URL is held to the same destination rule as a pasted one", async () => {
+    const clone = vi.fn(fakeClone)
+    const app = LocalProjectRoutes(options, {
+      ...signedDeps,
+      clone,
+      registerWorkspace: claiming,
+      resolveRepoAddresses: async () => ["10.0.0.5"],
+      repositoryForAuth: async () => ({
+        ...readable("acme/inside", "gho_secret"),
+        repository: { ...readable("acme/inside", "gho_secret").repository, cloneUrl: "https://git.internal/acme/inside.git" },
+      }),
+    })
+    const res = await app.request("http://localhost/", post({
+      source: { kind: "repository", connectionId: "conn_1", repo: { fullName: "acme/inside" } },
+    }, bearer))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "project_repository_refused" } })
+    expect(clone).not.toHaveBeenCalled()
+  })
+
+  test("a signed composition without connections cannot clone through one", async () => {
+    const clone = vi.fn(fakeClone)
+    const app = LocalProjectRoutes(options, { ...signedDeps, clone, registerWorkspace: claiming })
+    const res = await app.request("http://localhost/", post({
+      source: { kind: "repository", connectionId: "conn_1", repo: { fullName: "acme/widgets" } },
+    }, bearer))
+    expect(res.status).toBe(501)
+    expect(await res.json()).toMatchObject({ error: { code: "repository_connections_unavailable" } })
+    expect(clone).not.toHaveBeenCalled()
   })
 
   test("a signed caller cannot clone into the server's own addresses", async () => {

@@ -53,7 +53,7 @@ import { documentGit } from "@claxedo/local-server/self-hosted-execution"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
-import { LocalProjectRoutes, ShellRoutes, githubCloneAuthorization } from "@claxedo/local-server/self-hosted-execution"
+import { LocalProjectRoutes, ShellRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
@@ -1286,9 +1286,10 @@ export function createSelfHostedApp(
   // org, so `resolveRelayActor` above can authorise engine calls against it.
   // The row is filed under the local store's project id: the signed `/project`
   // list and every project-scoped authorisation name the project by that id.
-  // A private GitHub repository clones with the caller's connected GitHub
-  // account — the same token `repositoryForAuth` hands the cloud clone — and
-  // anonymously when they have none.
+  // A repository clones through the same `repositoryForAuth` the hosted
+  // workspace create resolves with: the connection the caller chose, or for a
+  // pasted URL the GitHub account they connected, whose token the route uses
+  // only when that connection lists the repository as readable.
   // Naming a folder that already exists here is a read of a caller-chosen path
   // on this machine, so it takes the same deployment-operator authority the
   // plugin and enrollment gates above use; the project store itself is
@@ -1301,13 +1302,12 @@ export function createSelfHostedApp(
       authorizeLocalDirectoryImport: authorizeOperator,
       privateRepoHosts: selfHostedPrivateRepoHosts(),
       ...(projectAuthority ? { authority: projectAuthority } : {}),
-      cloneCredential: async (auth, repoUrl) => {
-        if (!repoUrl.startsWith("https://github.com/")) return undefined
-        const connections = await connectionsHost.service.list({ owner: auth.user.subject })
-        const github = connections.find((row) => row.integrationId === "github" && row.status === "connected")
-        if (!github) return undefined
-        const token = await connectionsHost.service.getToken(github.id, "code-host")
-        return token.ok ? { authorization: githubCloneAuthorization(token.response.token) } : undefined
+      repositoryForAuth: async (auth, connectionId, fullName) => {
+        const id = connectionId
+          ?? (await connectionsHost.service.list({ owner: auth.user.subject }))
+            .find((row) => row.integrationId === "github" && row.status === "connected")?.id
+        if (!id) return { ok: false, status: 404, code: "connection_not_found" }
+        return connectionsHost.repositoryForAuth(auth, id, fullName)
       },
       ...(projectAuthority
         ? {
