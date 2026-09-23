@@ -1,5 +1,5 @@
 diff --git a/src/lib/pricing/curated-overrides.json b/src/lib/pricing/curated-overrides.json
-index de647e6..1795261 100644
+index de647e6..3d343c1 100644
 --- a/src/lib/pricing/curated-overrides.json
 +++ b/src/lib/pricing/curated-overrides.json
 @@ -12,6 +12,13 @@
@@ -54,6 +54,34 @@ index de647e6..1795261 100644
      },
      "claude-haiku-4-5": {
        "input": 1,
+@@ -68,6 +89,27 @@
+       "cache_write": 0.25,
+       "note": "GPT-5.6 lightweight tier. Official short-context rates: $0.20/$1.20 per MTok (previous curated values $1/$6 overcounted 5x). See gpt-5.6-sol."
+     },
++    "gpt-6-astra": {
++      "input": 10,
++      "output": 50,
++      "cache_read": 1,
++      "cache_write": 12.5,
++      "note": "GPT-6 top tier. Rates from LiteLLM's model_prices_and_context_window.json as cached on 2026-09-23 (input 1e-5, output 5e-5, cache read 1e-6, cache write 1.25e-5 per token). The bundled seed snapshot (2026-08-18) predates GPT-6, so without this entry a Worker leaves it unpriced."
++    },
++    "gpt-6-sol": {
++      "input": 2,
++      "output": 10,
++      "cache_read": 0.2,
++      "cache_write": 2.5,
++      "note": "GPT-6 middle tier. Rates from LiteLLM's model_prices_and_context_window.json as cached on 2026-09-23 (input 2e-6, output 1e-5, cache read 2e-7, cache write 2.5e-6 per token). See gpt-6-astra."
++    },
++    "gpt-6-luna": {
++      "input": 0.1,
++      "output": 0.5,
++      "cache_read": 0.01,
++      "cache_write": 0.125,
++      "note": "GPT-6 lightweight tier. Rates from LiteLLM's model_prices_and_context_window.json as cached on 2026-09-23 (input 1e-7, output 5e-7, cache read 1e-8, cache write 1.25e-7 per token). See gpt-6-astra."
++    },
+     "kiro-agent": {
+       "input": 3,
+       "output": 15,
 diff --git a/src/lib/pricing/index.js b/src/lib/pricing/index.js
 index 0a61c52..0b58238 100644
 --- a/src/lib/pricing/index.js
@@ -142,8 +170,58 @@ index 5b6bec2..302275f 100644
  }
  
  async function fetchUpstream({ url = LITELLM_PRICING_URL, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS } = {}) {
+diff --git a/src/lib/pricing/matcher.js b/src/lib/pricing/matcher.js
+index e40c1d0..3b81313 100644
+--- a/src/lib/pricing/matcher.js
++++ b/src/lib/pricing/matcher.js
+@@ -207,12 +207,22 @@ function lookupExactCaseInsensitive(table, model) {
+   return null;
+ }
+ 
++// A key followed by a numeric segment (`-6`, `.6`, `-20260915`) names another
++// version of the key, not a variant of it: `claude-opus-5-6` must stay unpriced
++// rather than price as `claude-opus-5`. `-fast` or `-1m` is still a variant.
++function containsModelKey(model, key) {
++  for (let index = model.indexOf(key); index !== -1; index = model.indexOf(key, index + 1)) {
++    if (!/^[-.]\d+(?![a-z0-9])/i.test(model.slice(index + key.length))) return true;
++  }
++  return false;
++}
++
+ function lookupContainedExactCaseInsensitive(table, model) {
+   if (!table || !model) return null;
+   const lower = model.toLowerCase();
+   const keys = Object.keys(table).sort((a, b) => b.length - a.length);
+   for (const key of keys) {
+-    if (lower.includes(key.toLowerCase())) return table[key];
++    if (containsModelKey(lower, key.toLowerCase())) return table[key];
+   }
+   return null;
+ }
+@@ -270,10 +280,10 @@ function lookupPricing(model, { curated, litellm, source } = {}) {
+       if (!match || !ref) continue;
+       const needle = match.toLowerCase();
+       if (!curated.exact[ref]) continue;
+-      if (lower.includes(needle)) {
++      if (containsModelKey(lower, needle)) {
+         return { hit: true, source: "curated:fuzzy", value: curated.exact[ref] };
+       }
+-      if (dotForm && dotForm.includes(needle)) {
++      if (dotForm && containsModelKey(dotForm, needle)) {
+         return { hit: true, source: "curated:fuzzy", value: curated.exact[ref] };
+       }
+     }
+@@ -313,7 +323,7 @@ function lookupPricing(model, { curated, litellm, source } = {}) {
+       const keyLower = key.toLowerCase();
+       // Only accept if model is a superset of key (model contains key), to
+       // avoid e.g. "gpt-5" matching "gpt-5-pro" in the wrong direction.
+-      if (lower.includes(keyLower) || (dotForm && dotForm.includes(keyLower))) {
++      if (containsModelKey(lower, keyLower) || (dotForm && containsModelKey(dotForm, keyLower))) {
+         return { hit: true, source: "litellm:fuzzy", value: litellm[key] };
+       }
+     }
 diff --git a/src/lib/rollout.js b/src/lib/rollout.js
-index 5db1e6a..d299226 100644
+index 5db1e6a..d9c3d1c 100644
 --- a/src/lib/rollout.js
 +++ b/src/lib/rollout.js
 @@ -3,6 +3,7 @@ const fssync = require("node:fs");
@@ -154,7 +232,7 @@ index 5db1e6a..d299226 100644
  
  const crypto = require("node:crypto");
  const { ensureDir, writeJson, chmod600IfPossible } = require("./fs");
-@@ -17156,6 +17157,566 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
+@@ -17156,6 +17157,659 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
  }
  
  
@@ -260,16 +338,64 @@ index 5db1e6a..d299226 100644
 +  };
 +}
 +
-+// A row a person typed. Claude Code also writes tool results, local-command
-+// caveats and compaction summaries as `user` rows; Pi keeps tool results in a
-+// role of their own.
-+function embeddedIsUserPrompt(source, row) {
-+  if (source === "pi") return row.type === "message" && row.message?.role === "user";
-+  if (source !== "claude" || row.type !== "user") return false;
-+  if (row.isMeta || row.isCompactSummary || row.toolUseResult !== undefined) return false;
++// Claude Code writes tool results, reminders, local-command caveats and
++// compaction summaries as `user` rows no person typed, and a task
++// notification or other system-sourced row as one no person sent. A slash
++// command's `<command-name>` row is a prompt when the model answers it; a
++// local command is answered by a `<local-command-stdout>` row instead.
++function embeddedClaudeRowKind(row) {
++  if (row.type !== "user" || row.isMeta || row.isCompactSummary || row.toolUseResult !== undefined) return null;
 +  const content = row.message?.content;
-+  if (typeof content === "string") return content.trim().length > 0;
-+  return Array.isArray(content) && content.some((block) => block?.type !== "tool_result");
++  const typed = typeof content === "string"
++    ? content.trim().length > 0
++    : Array.isArray(content) && content.some((block) => block?.type !== "tool_result");
++  if (!typed) return null;
++  const text = (typeof content === "string" ? content : content.find((block) => block?.type === "text")?.text ?? "").trimStart();
++  if (/^<local-command-(?:stdout|stderr)>/.test(text)) return "local-command-output";
++  if ((row.origin?.kind ?? "human") !== "human" || row.promptSource === "system") return null;
++  return text.startsWith("<command-name>") ? "command" : "prompt";
++}
++
++// One prompt a person sent is one turn however many requests answer it, so a
++// turn is counted on the first usage row after its prompt. A Claude Code
++// subagent transcript (`isSidechain` rows) is one turn of its own. Pi keeps
++// tool results in a role of their own, and a Pi file's first request opens a
++// turn even when its prompt was never written.
++function embeddedTurnOpener(source) {
++  let pending = source === "pi";
++  let pendingBeforeCommand;
++  let sidechainOpened = false;
++  return {
++    see(row) {
++      if (source === "pi") {
++        if (row.type === "message" && row.message?.role === "user") pending = true;
++        return;
++      }
++      if (row.isSidechain) return;
++      const kind = embeddedClaudeRowKind(row);
++      if (kind === "prompt") {
++        pending = true;
++        pendingBeforeCommand = undefined;
++      } else if (kind === "command") {
++        pendingBeforeCommand ??= pending;
++        pending = true;
++      } else if (kind === "local-command-output" && pendingBeforeCommand !== undefined) {
++        pending = pendingBeforeCommand;
++        pendingBeforeCommand = undefined;
++      }
++    },
++    opens(row) {
++      if (source === "claude" && row.isSidechain) {
++        const opened = !sidechainOpened;
++        sidechainOpened = true;
++        return opened;
++      }
++      const opened = pending;
++      pending = false;
++      pendingBeforeCommand = undefined;
++      return opened;
++    },
++  };
 +}
 +
 +function embeddedResult(events, malformed) {
@@ -280,8 +406,9 @@ index 5db1e6a..d299226 100644
 +  };
 +}
 +
-+const EMBEDDED_HISTORY_CURSOR_VERSION = 9;
-+const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v9.json.gz";
++const EMBEDDED_HISTORY_CURSOR_VERSION = 10;
++const EMBEDDED_HISTORY_CURSOR_FILE = `embedded-history-cursors-v${EMBEDDED_HISTORY_CURSOR_VERSION}.json.gz`;
++const EMBEDDED_HISTORY_CURSOR_FILE_PATTERN = /^embedded-history-cursors-v\d+\.json\.gz$/;
 +const EMBEDDED_CODEX_CURSOR_BUCKET_MS = 60_000;
 +const EMBEDDED_FORK_COPY_MAX_GAP_MS = 1_000;
 +
@@ -309,6 +436,11 @@ index 5db1e6a..d299226 100644
 +  const temporary = `${target}.${process.pid}.tmp`;
 +  fssync.writeFileSync(temporary, zlib.gzipSync(JSON.stringify(state), { level: 6 }), { mode: 0o600 });
 +  fssync.renameSync(temporary, target);
++  for (const name of fssync.readdirSync(stateDir)) {
++    if (name !== EMBEDDED_HISTORY_CURSOR_FILE && EMBEDDED_HISTORY_CURSOR_FILE_PATTERN.test(name)) {
++      fssync.rmSync(path.join(stateDir, name), { force: true });
++    }
++  }
 +}
 +
 +function embeddedFileSignature(stat) {
@@ -353,11 +485,30 @@ index 5db1e6a..d299226 100644
 +  return output;
 +}
 +
++// Codex's output includes its reasoning, and the canonical categories are
++// disjoint. `usage` comes from `pickDelta`, which has already taken cached
++// input out of input.
++function embeddedCodexTokens(usage) {
++  const tokens = embeddedUsage(usage);
++  if (tokens.output_tokens !== null && tokens.reasoning_output_tokens !== null) {
++    tokens.output_tokens = Math.max(0, tokens.output_tokens - tokens.reasoning_output_tokens);
++  }
++  return tokens;
++}
++
++// A rollout that writes `token_usage_record` rows is metered from them, one per
++// response. `token_count` is a cumulative snapshot: the request that produces a
++// compaction is never in a later total, and a snapshot can land a day after the
++// response it counts. Rollouts from Codex versions without records fall back
++// to the snapshots' deltas.
 +async function embeddedCodexEvents(filePath, stat) {
 +  const { pickDelta } = require("./codex-rollout-parser");
 +  const stream = fssync.createReadStream(filePath, { encoding: "utf8" });
 +  const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
-+  const events = [];
++  const recordEvents = [];
++  const meteredResponses = new Set();
++  let sawRecords = false;
++  const snapshotEvents = [];
 +  const completedTurns = [];
 +  let malformed = 0;
 +  let sessionId = path.basename(filePath, ".jsonl");
@@ -397,6 +548,26 @@ index 5db1e6a..d299226 100644
 +      } else if (row.type === "event_msg" && (row.payload?.type === "task_complete" || row.payload?.type === "turn_aborted") && model) {
 +        const observedAt = embeddedTimestamp(row.timestamp, stat.mtimeMs);
 +        if (!isForkCopy(observedAt)) completedTurns.push({ model, observed_at: observedAt });
++      } else if (row.type === "token_usage_record") {
++        sawRecords = true;
++        const observedAt = embeddedTimestamp(row.timestamp, stat.mtimeMs);
++        // A fork copies its parent's records, which carry the parent's thread.
++        if (isForkCopy(observedAt) || row.payload?.thread_id !== sessionId || !model) continue;
++        const responseId = typeof row.payload.response_id === "string" ? row.payload.response_id : "";
++        if (responseId && meteredResponses.has(responseId)) continue;
++        if (responseId) meteredResponses.add(responseId);
++        const usage = pickDelta(row.payload.usage, null, null);
++        if (!usage || usage.total_tokens <= 0) continue;
++        recordEvents.push({
++          source: "codex",
++          provider: "openai",
++          event_id: responseId || `${String(row.timestamp || "unknown")}:${recordEvents.length}`,
++          native_session_id: sessionId,
++          model,
++          observed_at: observedAt,
++          tokens: embeddedCodexTokens(usage),
++        });
++        continue;
 +      }
 +      if (row.type !== "event_msg" || row.payload?.type !== "token_count") continue;
 +      const info = row.payload?.info;
@@ -420,24 +591,21 @@ index 5db1e6a..d299226 100644
 +      const delta = pickDelta(lastUsage, totalUsage, previousTotals);
 +      if (totalUsage && typeof totalUsage === "object") previousTotals = totalUsage;
 +      if (!delta || delta.total_tokens <= 0) continue;
-+      const tokens = embeddedUsage(delta);
-+      if (tokens.output_tokens !== null && tokens.reasoning_output_tokens !== null) {
-+        tokens.output_tokens = Math.max(0, tokens.output_tokens - tokens.reasoning_output_tokens);
-+      }
-+      events.push({
++      snapshotEvents.push({
 +        source: "codex",
 +        provider: "openai",
-+        event_id: `${String(row.timestamp || "unknown")}:${events.length}`,
++        event_id: `${String(row.timestamp || "unknown")}:${snapshotEvents.length}`,
 +        native_session_id: sessionId,
 +        model,
 +        observed_at: observedAt,
-+        tokens,
++        tokens: embeddedCodexTokens(delta),
 +      });
 +    }
 +  } finally {
 +    lines.close();
 +    stream.close?.();
 +  }
++  const events = sawRecords ? recordEvents : snapshotEvents;
 +  const eventsByModel = new Map();
 +  for (const event of events) {
 +    event.event_count = 0;
@@ -471,7 +639,7 @@ index 5db1e6a..d299226 100644
 +    .filter((root, index, all) => all.indexOf(root) === index)
 +    .filter((root) => fssync.existsSync(root));
 +  if (roots.length === 0) return { events: [], status: "unavailable", error: null };
-+  const events = [];
++  const steps = [];
 +  let malformed = 0;
 +  for (const root of roots) {
 +    const legacyRoot = path.join(root, "storage", "message");
@@ -480,7 +648,7 @@ index 5db1e6a..d299226 100644
 +      malformed += result.malformed;
 +      if (!result.row) continue;
 +      const event = embeddedEvent("opencode", filePath, result.row, fssync.statSync(filePath).mtimeMs);
-+      if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
++      if (event) steps.push({ event, prompt: result.row.parentID });
 +    }
 +    for (const dbPath of embeddedWalk(root, (_file, name) => /^opencode(?:[-._].*)?\.db$/.test(name), 1)) {
 +      const result = embeddedSqliteRows(dbPath, "SELECT id, session_id, time_updated, data FROM message WHERE json_extract(data, '$.role') = 'assistant' ORDER BY time_created ASC");
@@ -489,10 +657,20 @@ index 5db1e6a..d299226 100644
 +        let data;
 +        try { data = JSON.parse(row.data); } catch { malformed += 1; continue; }
 +        const event = embeddedEvent("opencode", dbPath, { id: row.id, session_id: row.session_id, timeUpdated: row.time_updated, data }, fssync.statSync(dbPath).mtimeMs);
-+        if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
++        if (event) steps.push({ event, prompt: data.parentID });
 +      }
 +    }
 +  }
++  // Each OpenCode assistant message is one step of a turn, and its parentID is
++  // the user message that opened the turn. Turns are counted before the range
++  // filter so a step inside the range never reopens a turn that began before it.
++  const openedTurns = new Set();
++  for (const { event, prompt } of steps.sort((left, right) => left.event.observed_at - right.event.observed_at)) {
++    const turn = typeof prompt === "string" && prompt ? `${event.native_session_id}\0${prompt}` : null;
++    event.event_count = turn && openedTurns.has(turn) ? 0 : 1;
++    if (turn) openedTurns.add(turn);
++  }
++  const events = steps.map((step) => step.event).filter((event) => event.observed_at >= since && event.observed_at <= until);
 +  return embeddedResult(events, malformed);
 +}
 +
@@ -590,17 +768,11 @@ index 5db1e6a..d299226 100644
 +      catch { result = { events: [], malformed: 1 }; }
 +    } else {
 +      const parsed = embeddedJsonLines(filePath);
-+      // One user prompt is one turn however many requests answer it, so the
-+      // turn is counted on the first usage row after the prompt. A file's
-+      // first request opens a turn even when its prompt was never written.
-+      let promptPending = true;
++      const turns = embeddedTurnOpener(source);
 +      result = {
 +        malformed: parsed.malformed,
 +        events: parsed.rows.flatMap((row) => {
-+          if (embeddedIsUserPrompt(source, row)) {
-+            promptPending = true;
-+            return [];
-+          }
++          turns.see(row);
 +          const event = embeddedEvent(source, filePath, row, stat.mtimeMs);
 +          if (!event) return [];
 +          if (source === "claude") {
@@ -608,8 +780,7 @@ index 5db1e6a..d299226 100644
 +            const requestId = typeof row.requestId === "string" ? row.requestId : "";
 +            event.event_id = messageId || requestId ? `${messageId}:${requestId}` : "";
 +          }
-+          event.event_count = promptPending ? 1 : 0;
-+          promptPending = false;
++          event.event_count = turns.opens(row) ? 1 : 0;
 +          return [event];
 +        }),
 +      };
@@ -721,7 +892,7 @@ index 5db1e6a..d299226 100644
  module.exports = {
    listRolloutFiles,
    listRolloutFilesDeep,
-@@ -17347,4 +17908,5 @@ module.exports = {
+@@ -17347,4 +18001,5 @@ module.exports = {
    dshUsageToTotals,
    extractDshSessionUsage,
    parseDshIncremental,

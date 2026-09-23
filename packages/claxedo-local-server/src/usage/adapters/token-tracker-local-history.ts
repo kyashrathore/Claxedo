@@ -26,8 +26,9 @@ export type LocalHistorySnapshot = {
   scannedAt: number
 }
 
-const CACHE_VERSION = 10
-const CACHE_FILE = "local-history-v10.json"
+const CACHE_VERSION = 11
+const CACHE_FILE = `local-history-v${CACHE_VERSION}.json`
+const CACHE_FILE_PATTERN = /^local-history-v\d+\.json$/
 const scans = new Map<string, Promise<LocalHistorySnapshot>>()
 
 type EmbeddedHistoryRow = {
@@ -117,6 +118,9 @@ async function writeCached(stateDir: string, cached: CachedLocalHistory) {
   const temporary = `${target}.${process.pid}.${cached.key}.tmp`
   await fs.writeFile(temporary, JSON.stringify(cached), { mode: 0o600 })
   await fs.rename(temporary, target)
+  for (const name of await fs.readdir(stateDir)) {
+    if (name !== CACHE_FILE && CACHE_FILE_PATTERN.test(name)) await fs.rm(path.join(stateDir, name), { force: true })
+  }
 }
 
 export async function scanTokenTrackerLocalHistory(input: {

@@ -73,6 +73,66 @@ describe("TokenTracker pricing adapter, bundled catalog", () => {
     }
   })
 
+  const rateOf = async (source: string, model: string, category: "input" | "output" | "cacheRead" | "cacheWrite") =>
+    (await price({ source, model, tokens: { ...none, [category]: 1_000_000 } })).estimatedUsd
+
+  test.each([
+    ["claude-fable-5-1[1m]", "claude-fable-5-1"],
+    ["claude-opus-5-5-20260915", "claude-opus-5-5"],
+    ["claude-opus-5-5-20260915[1m]", "claude-opus-5-5"],
+  ])("prices %s at %s's rates", async (model, base) => {
+    for (const source of ["claude", "anthropic"]) {
+      for (const category of ["input", "output", "cacheRead", "cacheWrite"] as const) {
+        const baseUsd = await rateOf(source, base, category)
+        expect(baseUsd).toBeGreaterThan(0)
+        expect({ source, category, usd: await rateOf(source, model, category) }).toEqual({ source, category, usd: baseUsd })
+      }
+    }
+  })
+
+  test.each(["claude-opus-5-6", "claude-opus-5-6[1m]", "claude-fable-5-2", "claude-sonnet-5-1"])(
+    "leaves the unreleased %s unpriced rather than pricing it as its predecessor",
+    async (model) => {
+      for (const source of ["claude", "anthropic"]) {
+        const result = await price({ source, model, tokens: { ...none, input: 100, output: 20 } })
+        expect({ source, result }).toMatchObject({ source, result: { estimatedUsd: 0, pricedTokens: 0, unpricedTokens: 120 } })
+      }
+    },
+  )
+
+  // Every model the Claude Code and Codex transcripts on the development
+  // machine used from 2026-09-16 to 2026-09-23, and the other two GPT-6 tiers.
+  // A Worker prices from this catalog alone.
+  test.each([
+    ["claude", "claude-opus-5"],
+    ["claude", "claude-opus-5-5"],
+    ["claude", "claude-fable-5-1"],
+    ["claude", "claude-sonnet-5"],
+    ["claude", "claude-sonnet-4-6"],
+    ["claude", "claude-haiku-4-5-20251001"],
+    ["codex", "gpt-6-astra"],
+    ["codex", "gpt-6-sol"],
+    ["codex", "gpt-6-luna"],
+    ["codex", "gpt-5.6-terra"],
+    ["codex", "gpt-5.6-luna"],
+    ["codex", "gpt-5.5"],
+  ])("the bundled catalog prices %s's %s", async (source, model) => {
+    const result = await price({ source, model, tokens: { ...none, input: 1_000_000, output: 1_000_000 } })
+    expect(result).toMatchObject({ pricedTokens: 2_000_000, unpricedTokens: 0 })
+    expect(result.estimatedUsd).toBeGreaterThan(0)
+  })
+
+  // LiteLLM model_prices_and_context_window.json as cached on 2026-09-23T06:46:11Z, in USD per MTok.
+  test.each([
+    ["gpt-6-astra", { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }],
+    ["gpt-6-sol", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
+    ["gpt-6-luna", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }],
+  ] as const)("prices %s at LiteLLM's published rates", async (model, rates) => {
+    for (const [category, rate] of Object.entries(rates)) {
+      expect({ category, usd: await rateOf("codex", model, category as keyof typeof rates) }).toEqual({ category, usd: rate })
+    }
+  })
+
   test("prices one-hour cache writes at twice input and the rest at the five-minute rate", async () => {
     const result = await price({
       source: "claude",

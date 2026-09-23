@@ -95,8 +95,18 @@ export function tokenTrackerPricing(catalog: TokenTrackerCatalog): UsagePricing 
   }
 }
 
+/**
+ * The catalog id a reported model is billed under. A `[1m]` context marker
+ * and a `-YYYYMMDD` snapshot date name the same model at the same rates; left
+ * on, they reach tokentracker's containment match, which prices
+ * `claude-fable-5-1[1m]` as Fable 5.
+ */
+function catalogModelId(model: string) {
+  return model.replace(/\[[^\]]*\]$/, "").replace(/-\d{8}$/, "")
+}
+
 function priceWith(pricing: TokenTrackerPricingModule, source: string, input: UsagePriceInput): PricedUsage {
-  const rates = pricing.getModelPricing(input.model, { source: input.source })
+  const rates = pricing.getModelPricing(catalogModelId(input.model), { source: input.source })
   const { tokens } = input
   const total = [tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite]
     .map((value) => value ?? 0)
