@@ -898,11 +898,11 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await repoUrl.fill(HOSTED_REPO_URL)
       await page.screenshot({ path: "test-results/evidence/core-cloud-provisioning/hosted-create-project-panel.png" })
 
-      // The name defaults to the repository's basename when left blank.
+      // The body carries the source only; the server derives the name from it.
       const inventoryReadsBeforeCreate = inventoryReads
       await form.getByRole("button", { name: "Create project" }).click()
       await expect.poll(() => createBodies.length, { timeout: 30_000 }).toBe(1)
-      expect(createBodies[0]).toEqual({ name: "app", source: { kind: "repository", repoUrl: HOSTED_REPO_URL } })
+      expect(createBodies[0]).toEqual({ source: { kind: "repository", repoUrl: HOSTED_REPO_URL } })
 
       // Success re-lists the inventory. This mock's inventory never carries the project
       // (a repository project has no workspace row), so the form is still the screen;
