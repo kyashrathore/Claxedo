@@ -535,6 +535,8 @@ const ACTION_KEYS: Record<string, string> = {
   sendmessage: "ui.basicTool.action.sendMessage",
   toolsearch: "ui.basicTool.action.searchTools",
   listagents: "ui.basicTool.action.listAgents",
+  enterplanmode: "ui.basicTool.action.enterPlanMode",
+  exitplanmode: "ui.basicTool.action.proposePlan",
 }
 
 /** Input keys that are themselves the preposition joining the action to its object. */
