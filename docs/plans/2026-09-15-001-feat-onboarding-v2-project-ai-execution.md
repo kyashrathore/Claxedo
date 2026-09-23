@@ -1,6 +1,7 @@
 # Onboarding v2: project → AI → where it runs
 
-Status: in progress (2026-09-23). Supersedes and deletes
+Status: built on `feat/onboarding-v2` (2026-09-23), gates green, proofs
+recorded below; awaiting merge to `dev`. Supersedes and deletes
 `2026-09-14-002-feat-onboarding-v1-repair.md`: v1 is not repaired, it is
 removed, with no flag and no compatibility path for its dismissal keys.
 Owner ruling 2026-09-23: v1 goes with no backward compatibility; v2 is the
@@ -195,10 +196,11 @@ switch. The name is derived on the server when the client sends none:
 `projects-route.ts` makes `name` optional and derives it from
 `git remote get-url origin` (`owner/repo` → `repo`), falling back to the
 folder basename (or the repository URL's last path segment for a clone); a
-clash appends `-2`, `-3`. The created name shows in the wizard's step header
-with a Rename affordance that calls the existing
-`PATCH /api/claxedo/projects/:id`. Derivation lives on the server because
-that is the only side that can read the folder's git config.
+clash appends `-2`, `-3`. Derivation lives on the server because that is the
+only side that can read the folder's git config. The wizard heads its later
+steps with the name it can derive itself (`draft.ts::draftProjectName`, the
+same rule minus the remote read); renaming stays the project settings
+dialog's, because the project does not exist until Finish (below).
 
 **Clone (both products).** "Clone a repository" opens the same panel in
 three states, driven by `readCodeHostStatus` over
@@ -212,7 +214,11 @@ three states, driven by `readCodeHostStatus` over
   server's order (GitHub's `updated`), with the search filtering `fullName`.
   Selecting a row is the answer.
 - "Paste a URL instead" stays as a text link for public or non-GitHub
-  repositories — it is the only path that clones anonymously.
+  repositories. A pasted GitHub URL from a signed caller still clones with
+  the account they connected, but only when that connection lists the
+  repository as readable and its clone URL is on the pasted host
+  (`repositoryForAuth(auth, undefined, fullName)`); anything else clones
+  anonymously, which is what a public repository needs.
 - A deployment whose integrations root answers non-200 shows the URL field
   alone, with the reason in one line.
 
@@ -223,10 +229,14 @@ resolves the clone URL and token through the same
 `connections.repositoryForAuth` the hosted create uses, so both products
 authenticate a clone one way.
 
-On web there is no project route: the form hands the choice to its host
-(`onSubmit(source)`) instead of posting, the wizard holds it as the draft
-(`{ connectionId, repo }` or `{ repoUrl }`), and it becomes the
-`projectName` + source of the hosted workspace create in step 3.
+On both products the form hands the choice to its host (`onSubmit(source)`)
+instead of posting, and the wizard holds it as the draft. Nothing is created
+before Finish: the no-project canvas is replaced by the composer the moment
+a project lists, so a desktop project posted at step 1 would take the wizard
+with it; posting at Finish also answers a refused clone or a folder that is
+not a repository on this screen, and leaves nothing behind when the wizard
+is abandoned. On the web the draft becomes the `projectName` + source of the
+hosted workspace create.
 
 ### Step 2 — AI
 
@@ -234,17 +244,17 @@ The step reuses the Models page's data path, not a parallel one. The pieces
 are handed to the wizard through `features/onboarding/app-ports.ts` (the
 feature may not import `@/features/settings/*`).
 
-**Desktop.** The step mounts `SettingsScopeProvider` + `MachineAccountsProvider`
-and renders one `AgentHarnessAccounts` row per machine harness
+**Desktop.** The step sits under the shell's `SettingsScopeProvider`, mounts
+`MachineAccountsProvider`, and renders one `AgentHarnessAccounts` row per machine harness
 (`localHarnessChecks`: Claude Code, Codex, Cursor) and `HarnessProvidersSection`
 for Pi and OpenCode — the same components the Models page draws, with the same
 reach marks, Check, Connect and Add-account affordances. Detection runs on
-mount, unprompted. Next is enabled when at least one harness row lists a
-selected login whose state is not `absent`/`signed_out` or a catalog harness
-reports a connected provider; the footer names the reach of the selected
-login (`local-only`: "runs sessions on this machine only"). With nothing
-found, the rows themselves are the picker. Skip is available: a user may
-prefer to connect at the first send.
+mount, unprompted. Next is enabled when `machine-accounts.ts::runnable`
+answers for a harness (its selected entry is a stored account the provider
+has not refused, or this computer's login signed in and driving every
+binding) or a catalog harness reports a connected provider. With nothing
+found, the rows themselves are the picker and "Skip for now" is offered: a
+user may prefer to connect at the first send.
 
 **Web.** No machine to scan and one harness the plane serves: the screen is
 Pi's provider list, read from `/api/claxedo/agent-config/providers?nativeHarness=pi`
@@ -275,19 +285,20 @@ pair and the P4 gap, below.
   server's `verification.state`). `working` is done; `unknown` (Modal) is
   accepted with its reason shown; `broken` is not.
 - **Another machine (both).** The app cannot mint an invitation (the guard
-  above), so the row shows the same two commands Settings → Machines shows,
-  with the desktop's machine list under it where the port serves one
-  (`useRemoteAccessController().devices`); a machine appearing there is
-  done. On the web there is no list; the row says so and Finish there needs
-  the cloud row.
+  above), so the row shows the same two commands Settings → Machines shows.
+  On a desktop the project still opens on this computer and the row says
+  machines appear in Settings → Machines (the desktop's device list names
+  only the computer the user sits at, so it proves nothing here). On the web
+  the row states the P4 gap and Finish needs the cloud row.
 
 ### Finish
 
-**Desktop.** The project already exists from step 1: the wizard hands
-`onProjectCreated` the same `{ id, worktree }` the canvas hands today, and
-the composer opens on it. Preselecting the environment the user chose in
-step 3 needs a composer seam that does not exist (`handleProjectCreated`
-takes a worktree only); it is recorded below rather than added here.
+**Desktop.** Finish posts the draft to `/api/claxedo/projects` (no name),
+refuses a checkout the app cannot open, and hands `onProjectCreated` the same
+`{ id, worktree }` the canvas handed before; the composer opens on it.
+Preselecting the environment the user chose in step 3 needs a composer seam
+that does not exist (`handleProjectCreated` takes a worktree only); it is
+recorded below rather than added here.
 
 **Web, cloud sandbox.** One call: `createCloudWorkspace` with the step-1
 draft as source and the derived `projectName`. The response's workspace is
@@ -379,40 +390,66 @@ host passes the same inputs it does today.
 
 ## Definition of done
 
-- [ ] On a wiped `CLAXEDO_DATA_DIR` with `dev:local`, the first screen is
+- [x] On a wiped `CLAXEDO_DATA_DIR` with `dev:local`, the first screen is
       the wizard's project step with a folder picker and no Name field;
       picking a folder with a git remote creates a project named after the
       remote's repository, and a folder without one after its basename.
-      Progress:
+      Progress: done. Wizard `adedaf8672`, route `e6fcae96ea`. Proven on a
+      real `claxedo-server` (self-hosted node, wiped `CLAXEDO_DATA_DIR`,
+      port 2597) with `dev:local` on 4447 through the browser pane, in both
+      colour schemes; derivation through the live route: a folder whose
+      `origin` is `kyashrathore/Claxedo.git` → `Claxedo`, a fresh `git init`
+      folder → `plain-folder`, a second such folder → `plain-folder-2`. The
+      folder picker's own dialog was not driven in that run; the clone path
+      was (below). Route tests: `projects-route.test.ts` 30/30.
 - [ ] "Clone a repository" with no GitHub connection shows the connect block
       inline; connecting advances to a searchable list of that account's
       repositories; selecting one creates the project on the local server
       through `connectionId + repo`, and the clone authenticates with the
       connection's token (asserted by the route test, not by a 200).
-      Progress:
-- [ ] "Paste a URL instead" clones a public repository anonymously, as today.
-      Progress:
-- [ ] Step 2 on desktop runs detection without a click, lists each harness
+      Progress: done in code and tests: form `c0c9c81087` (13 vitest cases:
+      connect block, device grant polling, token paste, list search and
+      select, URL link), route `e6fcae96ea` (the credential and host asserted
+      on the fake clone). Not exercised against a live GitHub account.
+- [x] "Paste a URL instead" clones a public repository anonymously, as today.
+      Progress: done. Live: `https://github.com/octocat/Hello-World` cloned
+      into `<dataDir>/projects/hello-world` and opened in the composer as
+      `Hello-World` on "This computer".
+- [x] Step 2 on desktop runs detection without a click, lists each harness
       with its logins and reach marks, and enables Next when one is selected
       and usable; with none it shows the same rows as the picker.
-      Progress:
-- [ ] Step 2 on a hosted stack: the Pi provider list shows; a pasted key is
+      Progress: done (`adedaf8672`). Live: Claude Code, Codex and Cursor rows
+      with this Mac's logins and usage windows, Pi and OpenCode catalogs,
+      Next enabled and no Skip; `ai-step.vitest.tsx` covers the empty case.
+- [x] Step 2 on a hosted stack: the Pi provider list shows; a pasted key is
       stored through `PUT /auth/:providerID?harness=pi` and the provider
       appears connected, enabling Next; a 503 or 400 shows the plane's
       sentence as footer text and Next stays disabled.
-      Progress:
-- [ ] Step 3 on desktop is preselected "Just this machine" and Finish opens
+      Progress: done (`2945e2472e`, `adedaf8672`). Hosted e2e
+      `core-cloud-provisioning.spec.ts` "hosted control plane" walks it
+      through the built app (1 passed); `ai-step.vitest.tsx` covers the
+      refusal sentence. The sentence shows on the row, under the key field,
+      with the footer naming why Next waits.
+- [x] Step 3 on desktop is preselected "Just this machine" and Finish opens
       the composer on the new project; choosing a sandbox provider and saving
       a working key marks the cloud row done.
-      Progress:
-- [ ] Step 3 on hosted: the cloud row names the deployment's driver and
+      Progress: done (`adedaf8672`). Live: preselected, the cloud row listed
+      the real driver catalog with its key field and held Finish;
+      `execution-step.vitest.tsx` covers working / broken / unknown verdicts.
+- [x] Step 3 on hosted: the cloud row names the deployment's driver and
       enables Finish; the machine row shows the CLI pair and states the P4
       gap; no call is made that cannot succeed.
-      Progress:
-- [ ] Web finish with a cloud sandbox creates exactly one hosted workspace
+      Progress: done, with one correction: the plane names its driver
+      nowhere the app reads (`/api/claxedo/health` and `/mode` carry none), so
+      the row says the sandbox is the deployment's without a driver name. The
+      hosted e2e asserts zero drivers and zero project calls.
+- [x] Web finish with a cloud sandbox creates exactly one hosted workspace
       whose project name is the derived repository name and opens it; an
       abandoned wizard creates nothing (asserted against the authority).
-      Progress:
+      Progress: done in the hosted e2e (one `POST /api/workspace/create` with
+      `{ projectName: "app", repoUrl }`, the route `/w/<id>/session` opened)
+      and `wizard.vitest.tsx` (nothing posted before Finish). Not run against
+      the live staging plane: a real create provisions a sandbox.
 - [x] Settings → Machines renders and behaves as before from
       `features/settings/remote-access/`; `app/entry/app.tsx` mounts the
       marker from there. `git grep -n "features/onboarding/remote-access"`
@@ -433,20 +470,32 @@ host passes the same inputs it does today.
       nothing in code. Also gone: the `test:e2e:onboarding` script and its
       CI job, the `onboarding` change-selection output, the `surface` field of
       `step_done`, and the v1 `OnboardingDestination` in `ai-connect-state`.
-- [ ] The composer's Project chip creates a project with no Name field and
+- [x] The composer's Project chip creates a project with no Name field and
       the repository list, through the same `ProjectCreateForm`.
-      Progress:
-- [ ] Funnel: `setup_form_shown`, `step_done` ×3 with the new step ids, and
+      Progress: done (`c0c9c81087`); `core-workspace-lifecycle.spec.ts` asserts
+      the source-only body (`9f2d74f542`).
+- [x] Funnel: `setup_form_shown`, `step_done` ×3 with the new step ids, and
       `first_turn_ok` fire in order in a rendered test.
-      Progress:
-- [ ] Gates: `bun run test:architecture-ratchets`; app vitest + bun test;
+      Progress: `wizard.vitest.tsx` asserts `setup_form_shown`, then
+      `step_done` project/ai/execution in order; `first_turn_ok` is the
+      session screen's and unchanged.
+- [x] Gates: `bun run test:architecture-ratchets`; app vitest + bun test;
       local-server and claxedo-server vitest for the projects route;
       `turbo typecheck`; `bun run lint` on touched files;
       `bun run test:ci-policy`; `cd packages/claxedo-app && bun run build:better-auth`;
       Playwright proof of the desktop path (steps 1–3, folder + clone)
       against a real local stack in both themes, and of the hosted path
       against the signed-web e2e stack.
-      Progress:
+      Progress: `bun run test:architecture-ratchets` holds (app-local 1102,
+      desktop renderer 1146, exact); `bun run test:architecture` 260/0;
+      vitest `src/features/onboarding` + canvas 24/24, `bun test` for
+      draft, code-host-api, workspace-create-api, provider-settings-logic
+      54/0; `npx tsgo -b` exit 0; `bun run lint` on every touched file 0/0;
+      `bun run test:ci-policy` 16/16; `bun run build:better-auth` exit 0;
+      hosted e2e (`e2e-core-repro.sh test-user`) 1 passed; the desktop path
+      was driven against the real local stack in both colour schemes through
+      the browser pane rather than a Playwright spec (the folder picker's
+      dialog excepted).
 - [x] `docs/plans/2026-09-14-002-feat-onboarding-v1-repair.md` is deleted and
       the README entry points here.
       Progress: already true before Lane D (deleted in `e28b0b595b`; the README
@@ -471,6 +520,9 @@ host passes the same inputs it does today.
   503 while `CLAXEDO_HOSTED_CREDENTIALS_ENABLED` is off. Staging's setting
   was not read tonight; the wizard shows the 503 sentence as-is.
 - **Web, another machine.** Connect plan P4; the wizard says so.
+- **Dev's own ratchet.** A clean checkout of `1765147184` measures
+  app-local 1101 and desktop renderer 1145 against ledgers of 1100 / 1144;
+  this branch's ledgers start from the measured figures.
 - **Desktop finish environment preselect.** `handleProjectCreated` takes a
   worktree only; preselecting `cloud` in the composer needs a seam in
   `features/workspaces/actions/project-actions.tsx`. Follow-up in the
@@ -509,3 +561,10 @@ gate before accepting, then runs the Playwright proofs itself.
 
 S1, S2, M and A1 start together; A2 after A1, S2 and M + D; D's residue
 sweep last.
+
+Landed on `feat/onboarding-v2` (rebased onto `dev` 1765147184): S1
+`e6fcae96ea`; S2 `2945e2472e`; A1 `1e897b67dd`, `c0c9c81087`; A2
+`adedaf8672`, `e36c2e3482`, `996d905039`; e2e body `9f2d74f542`; ledgers
+`4606259680`. M and D landed on `dev` (`26e44eeb8a`, `1765147184`). A2's
+residue sweep deleted `credential-query`, `credential-resolution`,
+`credential-sharing` and `sandbox-provider-query`.
