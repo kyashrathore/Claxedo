@@ -16,6 +16,7 @@ import {
 } from "@claxedo/server-core/usage/projection"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { asRecord, numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 const DAY = 86_400_000
@@ -209,6 +210,7 @@ export async function runUsageMeteringSmoke() {
       flush: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       clearIdentity: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
     },
+    pricing: tokenTrackerPricing("refreshed"),
   })
   const routeStarted = performance.now()
   const routeResponse = await route.request(`/?since=${NOW - 90 * DAY}&until=${NOW}&timezone=UTC&view=claxedo&group=provider`)

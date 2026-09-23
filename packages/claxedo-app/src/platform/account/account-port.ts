@@ -160,7 +160,7 @@ export type HostedOperationName =
   | "session.gateway"
   | "billing.checkout"
   | "billing.portal"
-  | "usage.get"
+  | "usage.cloudFacts"
   | "usage.sync"
 
 export type AccountPort = {

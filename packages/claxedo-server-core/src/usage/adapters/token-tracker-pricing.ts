@@ -13,6 +13,7 @@ export type PricedUsage = {
 
 type TokenTrackerPricingModule = {
   ensurePricingLoaded(): Promise<{ source?: string | null }>
+  getPricingRevision(): number
   getModelPricing(model: string, options?: { source?: string }): {
     input: number
     output: number
@@ -24,7 +25,9 @@ type TokenTrackerPricingModule = {
 /** tokentracker-cli ships no types, so its pricing entry point is checked once, here. */
 function isPricingModule(value: unknown): value is TokenTrackerPricingModule {
   if (!isJsonRecord(value)) return false
-  return typeof value.ensurePricingLoaded === "function" && typeof value.getModelPricing === "function"
+  return typeof value.ensurePricingLoaded === "function"
+    && typeof value.getPricingRevision === "function"
+    && typeof value.getModelPricing === "function"
 }
 
 async function loadPricingModule(): Promise<TokenTrackerPricingModule> {
@@ -45,7 +48,7 @@ async function loadPricingModule(): Promise<TokenTrackerPricingModule> {
  */
 const ONE_HOUR_CACHE_WRITE_INPUT_MULTIPLIER = 2
 
-export async function projectTokenTrackerCost(input: {
+export type UsagePriceInput = {
   source: string
   model: string
   tokens: {
@@ -57,9 +60,42 @@ export async function projectTokenTrackerCost(input: {
     /** The part of `cacheWrite` written to the one-hour cache; null where the source reports no split. */
     cacheWrite1h: number | null
   }
-}): Promise<PricedUsage> {
-  const pricing = await loadPricingModule()
-  const catalog = await pricing.ensurePricingLoaded()
+}
+
+/** Prices one model's tokens. The usage routes take one from their composition. */
+export type UsagePricing = (input: UsagePriceInput) => Promise<PricedUsage>
+
+/**
+ * Where the rates come from.
+ *
+ * `bundled` is the curated overrides plus the LiteLLM seed compiled into
+ * tokentracker-cli: no disk and no network, which is all a Worker can run.
+ * `refreshed` is tokentracker's own loader: a 24-hour cache under the home
+ * directory, refreshed from LiteLLM's published list, falling back to the seed.
+ */
+export type TokenTrackerCatalog = "bundled" | "refreshed"
+
+const BUNDLED_CATALOG_SOURCE = "bundled-seed"
+
+async function catalogSource(pricing: TokenTrackerPricingModule, catalog: TokenTrackerCatalog) {
+  if (catalog === "refreshed") return (await pricing.ensurePricingLoaded()).source ?? BUNDLED_CATALOG_SOURCE
+  // tokentracker holds one catalog per process, and ensurePricingLoaded()
+  // replaces the import-time seed in place and bumps the revision. A bundled
+  // price after that would be a refreshed rate carrying the bundled label.
+  if (pricing.getPricingRevision() !== 0) {
+    throw new Error("tokentracker-cli's bundled pricing catalog was replaced by a refresh in this process")
+  }
+  return BUNDLED_CATALOG_SOURCE
+}
+
+export function tokenTrackerPricing(catalog: TokenTrackerCatalog): UsagePricing {
+  return async (input) => {
+    const pricing = await loadPricingModule()
+    return priceWith(pricing, await catalogSource(pricing, catalog), input)
+  }
+}
+
+function priceWith(pricing: TokenTrackerPricingModule, source: string, input: UsagePriceInput): PricedUsage {
   const rates = pricing.getModelPricing(input.model, { source: input.source })
   const { tokens } = input
   const total = [tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite]
@@ -67,7 +103,6 @@ export async function projectTokenTrackerCost(input: {
     .reduce((sum, value) => sum + value, 0)
   const known = [rates.input, rates.output, rates.cache_read, rates.cache_write]
     .some((rate) => typeof rate === "number" && rate > 0)
-  const source = catalog.source ?? "bundled-seed"
   if (!known) {
     return {
       estimatedUsd: 0,

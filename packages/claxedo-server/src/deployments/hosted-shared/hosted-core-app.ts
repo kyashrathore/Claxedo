@@ -72,6 +72,7 @@ import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import type { UsageProjectionLedger } from "@claxedo/server-core/usage/ledger"
 import type { UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
 
@@ -431,6 +432,9 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
         if (!auth?.principal) return undefined
         return { org_id: await requireAuthority(services).resolveOrgId(auth), user_id: auth.principal.userId }
       },
+      // The hosted plane runs in a Worker, which has no home directory for a
+      // refreshed catalog's cache.
+      pricing: tokenTrackerPricing("bundled"),
       telemetry: services.telemetry,
     }))
   }

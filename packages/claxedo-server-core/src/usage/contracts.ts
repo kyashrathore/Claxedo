@@ -1,5 +1,5 @@
 import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
-import { isJsonRecord, isOneOf } from "../platform/runtime/lib/json"
+import { isJsonRecord, isNonEmptyString, isOneOf } from "../platform/runtime/lib/json"
 
 // The runtime lists are the single source for these unions: the SQLite schema
 // declares its columns from them, and boundary parsers narrow against them.
@@ -196,4 +196,106 @@ export function assertTurnUsageRevision(fact: TurnUsageRevision) {
   if (write1h !== null && write1h > (fact.tokens.cache.write ?? 0)) {
     throw new Error("usage one-hour cache writes cannot exceed cache writes")
   }
+}
+
+function tokenCount(value: unknown): number | null | undefined {
+  if (value === null) return null
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+/** A revision's token counts read from JSON, or nothing when one is not a count or `null`. */
+export function readTurnUsageTokens(value: unknown): RuntimeTokenUsage | undefined {
+  if (!isJsonRecord(value) || !isJsonRecord(value.cache)) return undefined
+  const input = tokenCount(value.input)
+  const output = tokenCount(value.output)
+  const reasoning = tokenCount(value.reasoning)
+  const read = tokenCount(value.cache.read)
+  const write = tokenCount(value.cache.write)
+  const write1h = value.cache.write1h === undefined ? null : tokenCount(value.cache.write1h)
+  if ([input, output, reasoning, read, write, write1h].some((count) => count === undefined)) return undefined
+  return {
+    input: input ?? null,
+    output: output ?? null,
+    reasoning: reasoning ?? null,
+    cache: { read: read ?? null, write: write ?? null, ...(write1h === null || write1h === undefined ? {} : { write1h }) },
+  }
+}
+
+const REVISION_KEYS: ReadonlySet<string> = new Set<keyof TurnUsageRevision>([
+  "sessionRef",
+  "sessionId",
+  "messageId",
+  "revision",
+  "observedAt",
+  "completedAt",
+  "settlement",
+  "status",
+  "location",
+  "harness",
+  "providerId",
+  "modelId",
+  "nativeSessionId",
+  "workspaceId",
+  "hostId",
+  "tokens",
+  "quality",
+])
+
+/**
+ * A revision that crossed a JSON boundary, or nothing when it is not exactly
+ * one. A field the contract does not name is refused rather than dropped: the
+ * revision is the privacy boundary, so whatever else a sender put in it is
+ * not ours to carry.
+ */
+export function readTurnUsageRevision(value: unknown): TurnUsageRevision | undefined {
+  if (!isJsonRecord(value) || Object.keys(value).some((key) => !REVISION_KEYS.has(key))) return undefined
+  const tokens = readTurnUsageTokens(value.tokens)
+  const {
+    sessionRef, sessionId, messageId, revision, observedAt, completedAt, settlement, status, location,
+    harness, providerId, modelId, nativeSessionId, workspaceId, hostId,
+  } = value
+  if (
+    !tokens
+    || !isNonEmptyString(sessionRef)
+    || !isNonEmptyString(sessionId)
+    || !isNonEmptyString(messageId)
+    || typeof revision !== "number"
+    || typeof observedAt !== "number"
+    || (completedAt !== undefined && typeof completedAt !== "number")
+    || !isOneOf(settlement, TURN_USAGE_SETTLEMENTS)
+    || !isOneOf(status, TURN_USAGE_STATUSES)
+    || !isOneOf(location, TURN_USAGE_LOCATIONS)
+    || !isNonEmptyString(harness)
+    || !isNonEmptyString(providerId)
+    || !isNonEmptyString(modelId)
+    || (nativeSessionId !== undefined && !isNonEmptyString(nativeSessionId))
+    || (workspaceId !== undefined && !isNonEmptyString(workspaceId))
+    || !isNonEmptyString(hostId)
+    || !isJsonRecord(value.quality)
+  ) return undefined
+  const fact: TurnUsageRevision = {
+    sessionRef,
+    sessionId,
+    messageId,
+    revision,
+    observedAt,
+    ...(completedAt === undefined ? {} : { completedAt }),
+    settlement,
+    status,
+    location,
+    harness,
+    providerId,
+    modelId,
+    ...(nativeSessionId === undefined ? {} : { nativeSessionId }),
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    hostId,
+    tokens,
+    quality: readTurnUsageQuality(value.quality),
+  }
+  try {
+    assertTurnUsageRevision(fact)
+  } catch {
+    return undefined
+  }
+  return fact
 }

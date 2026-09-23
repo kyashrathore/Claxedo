@@ -278,9 +278,13 @@ export function centralProjectionSeries(source: CentralUsageProjection): UsageSe
 }
 
 export function groupUsageFacts(facts: readonly TurnUsageRevision[], dimension: UsageBreakdownDimension) {
+  return groupUsageFactsBy(facts, (fact) => usageFactDimension(fact, dimension))
+}
+
+export function groupUsageFactsBy(facts: readonly TurnUsageRevision[], groupOf: (fact: TurnUsageRevision) => string) {
   const grouped = new Map<string, UsageMetricTotals>()
   for (const fact of facts) {
-    const value = usageFactDimension(fact, dimension)
+    const value = groupOf(fact)
     const row = grouped.get(value) ?? emptyUsageTotals()
     add(row, {
       turnCount: 1,
@@ -336,12 +340,6 @@ export type CentralUsageProjection = {
   dailyModels?: CentralUsageRow[]
   /** Local/cloud split rows. */
   locations?: CentralUsageRow[]
-  /**
-   * The bounded source revisions behind the aggregate. Present only on servers
-   * that publish them; it stays `undefined` otherwise, so a caller can tell
-   * "no facts published" from "published, and empty".
-   */
-  facts?: CentralUsageRow[]
   /** Rows of a paged breakdown response. */
   rows?: CentralUsageRow[]
   /** Filter options the server can offer, by dimension. */
@@ -461,7 +459,6 @@ const ROW_FIELDS = [
   "models",
   "dailyModels",
   "locations",
-  "facts",
   "rows",
 ] as const
 

@@ -1,5 +1,8 @@
 import { describe, expect, test, vi } from "vitest"
 import { LocalUsageRoutes } from "./routes"
+import { tokenTrackerPricing } from "./adapters/token-tracker-pricing"
+
+const pricing = tokenTrackerPricing("bundled")
 
 const outbox = {
   flush: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -16,6 +19,7 @@ function routes(quota: Parameters<typeof LocalUsageRoutes>[0]["quota"]) {
     identity: async () => undefined,
     outbox,
     quota,
+    pricing,
   })
 }
 
@@ -51,6 +55,7 @@ describe("local usage routes, total view", () => {
       identity: async () => undefined,
       outbox,
       history,
+      pricing,
     })
   }
   const RANGE = "since=0&until=20&timezone=UTC"

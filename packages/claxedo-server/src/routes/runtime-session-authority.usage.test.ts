@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest"
 import { LocalUsageRoutes, createUsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import type { UsageReportFact, UsageReportRevision } from "@claxedo/server-core/usage/usage-report"
 import { usageReportPlane, type UsageReportPlane } from "../test-support/usage-report-plane"
 
@@ -228,6 +229,7 @@ describe("the self-hosted usage view over reported cloud turns", () => {
       outbox: createUsageOutboxSync({ local: target.ledger }),
       identity: async (request) => identities[request.headers.get("x-test-user") ?? ""],
       machineOperator: () => false,
+      pricing: tokenTrackerPricing("refreshed"),
     })
     const read = async (user: string) => {
       const since = OBSERVED_AT - 86_400_000

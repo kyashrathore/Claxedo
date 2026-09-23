@@ -180,6 +180,7 @@ import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } f
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { readMachineAgentUsage, scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { usageLocation } from "@claxedo/server-core/usage/projection"
@@ -1446,6 +1447,7 @@ export function createSelfHostedApp(
           classify: createUsageProvenanceClassifier(entries, { completeSources }),
         })
       },
+      pricing: tokenTrackerPricing("refreshed"),
       telemetry: services.telemetry,
     }))
   }

@@ -61,6 +61,7 @@ import { hostProviderConfigProjectAuth } from "@claxedo/server-core/credentials/
 import { hostProviderConfig } from "../workspace/host-provider-config"
 import { requestOrg } from "../credentials/routes/credential"
 import { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
@@ -351,6 +352,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         classify: createUsageProvenanceClassifier(entries, { completeAfter }),
       })
     },
+    pricing: tokenTrackerPricing("refreshed"),
     telemetry: services.telemetry,
   }
   // Both dispatch entrypoints resolve the same verified relay actor: one

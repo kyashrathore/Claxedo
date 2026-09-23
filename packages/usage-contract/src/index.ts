@@ -160,7 +160,7 @@ export type UnifiedUsageResponse = {
   claxedo: UsageSeries & {
     cost: UsageCost
     locationShare: { localTokens: number; cloudTokens: number }
-    status: "available" | "unavailable" | "stale" | "degraded"
+    status: "available" | "unavailable" | "degraded"
     scope: "local" | "cross-machine"
     error?: string
   }

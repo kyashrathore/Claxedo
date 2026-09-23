@@ -54,7 +54,18 @@ export type UsageLedger = {
     after?: string
     limit?: number
   }) => Promise<unknown>
+  /**
+   * The latest revision of every turn this account ran in a cloud workspace
+   * and observed in [since, until], oldest first, at most `limit` of them.
+   */
+  cloudUsageFacts?: (input: {
+    org_id: string
+    user_id: string
+    since: number
+    until: number
+    limit: number
+  }) => Promise<TurnUsageRevision[]>
 }
 
 /** The read half of a central ledger: what the usage routes project a signed account's view from. */
-export type UsageProjectionLedger = Pick<UsageLedger, "usageDashboard" | "usageBreakdown">
+export type UsageProjectionLedger = Pick<UsageLedger, "usageDashboard" | "usageBreakdown" | "cloudUsageFacts">

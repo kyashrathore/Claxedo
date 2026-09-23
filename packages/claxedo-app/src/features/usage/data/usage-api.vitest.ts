@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const { authFetch } = vi.hoisted(() => ({ authFetch: vi.fn() }))
 vi.mock("@/platform/api/api", async (importOriginal) => ({
@@ -61,8 +61,101 @@ function unifiedUsageResponse() {
   }
 }
 
+/** Electron preload's account bridge, as `signedAccountRun` reads it. */
+function installAccountBridge(
+  run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>,
+  status: "signed" | "unsigned" = "signed",
+) {
+  ;(globalThis as { api?: unknown }).api = {
+    account: {
+      run,
+      state: async () => (status === "signed" ? { status, identity: { userId: "user_1" } } : { status }),
+      onState: () => () => undefined,
+      signIn: async () => ({ status: "signed" }),
+      signOut: async () => ({ status: "unsigned" }),
+    },
+  }
+}
+
+function sentRequest(call: unknown[]) {
+  const url = new URL(String(call[0]))
+  const init = call[1] as RequestInit | undefined
+  return {
+    endpoint: `${url.origin}${url.pathname}`,
+    query: Object.fromEntries(url.searchParams),
+    method: init?.method ?? "GET",
+    body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+  }
+}
+
 describe("usage API", () => {
   beforeEach(() => authFetch.mockReset())
+  afterEach(() => {
+    delete (globalThis as { api?: unknown }).api
+  })
+
+  test("a signed desktop reads the Usage view from its own server and brings the account's cloud turns along", async () => {
+    const facts = [{ messageId: "msg_cloud" }]
+    const run = vi.fn(async () => ({ facts }))
+    installAccountBridge(run)
+    authFetch.mockResolvedValue(Response.json(unifiedUsageResponse()))
+    const { fetchUnifiedUsage } = await import("./usage-api")
+
+    await fetchUnifiedUsage({ since: 1, until: 2, timeZone: "UTC", view: "total", group: "provider" })
+
+    expect(run.mock.calls).toEqual([["usage.cloudFacts", { since: 1, until: 2 }]])
+    expect(authFetch).toHaveBeenCalledTimes(1)
+    expect(sentRequest(authFetch.mock.calls[0])).toEqual({
+      endpoint: "http://127.0.0.1:3000/api/claxedo/usage",
+      query: { since: "1", until: "2", timezone: "UTC", view: "total", group: "provider" },
+      method: "POST",
+      body: { cloud: { status: "available", facts } },
+    })
+  })
+
+  test("a failed cloud read still reads this machine's usage and tells its server why the cloud part is missing", async () => {
+    const run = vi.fn(async () => {
+      throw new Error(`HOSTED_HTTP 503 ${JSON.stringify({ detail: 'operation "usage.cloudFacts" failed: 503', body: null })}`)
+    })
+    installAccountBridge(run)
+    const degraded = unifiedUsageResponse()
+    authFetch.mockImplementation(async () => Response.json({
+      ...degraded,
+      claxedo: { ...degraded.claxedo, status: "degraded", error: "Cloud usage is unavailable" },
+    }))
+    const { fetchUnifiedUsage } = await import("./usage-api")
+
+    const answer = await fetchUnifiedUsage({ since: 1, until: 2, timeZone: "UTC", view: "claxedo" })
+
+    expect(sentRequest(authFetch.mock.calls[0]).body).toEqual({
+      cloud: { status: "unavailable", error: 'operation "usage.cloudFacts" failed: 503' },
+    })
+    expect(answer.claxedo).toMatchObject({ status: "degraded", error: "Cloud usage is unavailable" })
+
+    run.mockResolvedValueOnce({ turns: [] } as never)
+    await fetchUnifiedUsage({ since: 1, until: 2, timeZone: "UTC", view: "claxedo" })
+    expect(sentRequest(authFetch.mock.calls[1]).body).toEqual({
+      cloud: { status: "unavailable", error: expect.stringContaining('hosted operation "usage.cloudFacts" returned an unexpected shape') },
+    })
+  })
+
+  test("an unsigned desktop, and the plans view, read with a plain GET and never ask the hosted plane", async () => {
+    const run = vi.fn(async () => ({ facts: [] }))
+    authFetch.mockImplementation(async () => Response.json(unifiedUsageResponse()))
+    const { fetchUnifiedUsage } = await import("./usage-api")
+
+    installAccountBridge(run, "unsigned")
+    await fetchUnifiedUsage({ since: 1, until: 2, timeZone: "UTC", view: "claxedo" })
+    installAccountBridge(run)
+    await fetchUnifiedUsage({ since: 1, until: 2, timeZone: "UTC", view: "quota" })
+
+    expect(run).not.toHaveBeenCalled()
+    expect(authFetch.mock.calls.map((call) => sentRequest(call))).toEqual([
+      expect.objectContaining({ endpoint: "http://127.0.0.1:3000/api/claxedo/usage", method: "GET", body: undefined }),
+      expect.objectContaining({ endpoint: "http://127.0.0.1:3000/api/claxedo/usage", method: "GET", body: undefined }),
+    ])
+  })
+
   test("encodes range, view, group, metric, filters, pagination, and refresh", async () => {
     authFetch.mockResolvedValue(new Response(JSON.stringify(unifiedUsageResponse()), { status: 200 }))
     const { fetchUnifiedUsage } = await import("./usage-api")

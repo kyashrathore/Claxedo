@@ -128,6 +128,15 @@ describe("resolveHostedOperation", () => {
     )
   })
 
+  test("reads the account's cloud usage facts for a range, and has no hosted dashboard read to route to", () => {
+    expect(resolveHostedOperation("usage.cloudFacts", { since: 1, until: 2, timezone: "UTC", view: "total" })).toEqual({
+      method: "GET",
+      path: "/api/claxedo/usage/cloud-facts?since=1&until=2",
+    })
+    expect(() => resolveHostedOperation("usage.cloudFacts", { since: 1 })).toThrow(MissingOperationParameter)
+    expect(() => resolveHostedOperation("usage.get", { since: 1, until: 2 })).toThrow(UnknownHostedOperation)
+  })
+
   test("workspace.resolve omits empty optional query keys", () => {
     expect(resolveHostedOperation("workspace.resolve", { workspaceId: "ws_1" })).toEqual({
       method: "GET",

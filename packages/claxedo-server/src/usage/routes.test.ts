@@ -2,7 +2,10 @@ import { describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError, controlPlaneAuthContext, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
+import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 
+const pricing = tokenTrackerPricing("bundled")
 const authConfig = { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" }
 // Only "valid" verifies. A fake that answers for every token cannot tell a
 // route that authenticates from one that reads the bearer and trusts it.
@@ -22,6 +25,7 @@ const identity = async (request: Request) => {
 describe("usage routes", () => {
   test("acknowledges hosted sync wakeups from a signed org with the central empty-outbox state", async () => {
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: {},
     })
@@ -39,6 +43,7 @@ describe("usage routes", () => {
     const usageDashboard = vi.fn(async () => ({ totals: { turn_count: 1 }, daily: [], breakdown: [] }))
     const usageBreakdown = vi.fn(async () => ({ rows: [], next: undefined }))
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: { usageDashboard, usageBreakdown },
     })
@@ -65,7 +70,7 @@ describe("usage routes", () => {
 
   test("rejects unsigned, invalid ranges, and invalid group dimensions", async () => {
     const ledger = { usageDashboard: async () => ({}) }
-    const app = UsageRoutes({ identity, ledger })
+    const app = UsageRoutes({ identity, ledger, pricing })
     expect((await app.request("/?since=1&until=2")).status).toBe(401)
     expect((await app.request("/?since=2&until=1", { headers: { authorization: "Bearer valid" } })).status).toBe(400)
     expect(
@@ -86,6 +91,7 @@ describe("usage routes", () => {
   test("refuses a bearer the verifier rejects, on both the read and the sync wakeup", async () => {
     const usageDashboard = vi.fn(async () => ({ totals: {}, daily: [] }))
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: { usageDashboard },
     })
@@ -109,6 +115,7 @@ describe("usage routes", () => {
       throw new Error("must not run")
     })
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: { usageDashboard, usageBreakdown },
     })
@@ -128,6 +135,7 @@ describe("usage routes", () => {
 
   test("accepts a 90-calendar-day range containing a DST fall-back hour", async () => {
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: {
         usageDashboard: async () => ({ totals: {}, daily: [] }),
@@ -146,6 +154,7 @@ describe("usage routes", () => {
         : { rows: [{ value: "anthropic/claude-sonnet-5", input_tokens: 5 }], next: "page-2" },
     )
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: {
         usageDashboard: async () => ({ totals: { turn_count: 2, input_tokens: 12 }, daily: [] }),
@@ -165,6 +174,7 @@ describe("usage routes", () => {
 
   test("returns a canonical priced breakdown page from the exact dashboard projection", async () => {
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: {
         usageDashboard: async () => ({
@@ -226,6 +236,7 @@ describe("usage routes", () => {
       input_tokens: index + 1,
     }))
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: {
         usageDashboard: async () => ({
@@ -252,6 +263,7 @@ describe("usage routes", () => {
 
   test("sorts breakdown pages by the selected usage metric", async () => {
     const app = UsageRoutes({
+      pricing,
       identity,
       ledger: {
         usageDashboard: async () => ({
@@ -299,9 +311,49 @@ describe("usage routes", () => {
     expect(excluded.breakdown.rows).toEqual([])
   })
 
+  test("answers cloud facts for the verified account only, never the one a query names", async () => {
+    const cloudUsageFacts = vi.fn(async () => [])
+    const app = UsageRoutes({ pricing, identity, ledger: { cloudUsageFacts } })
+    const headers = { authorization: "Bearer valid" }
+
+    const response = await app.request("/cloud-facts?since=1&until=2&org_id=attacker&user_id=attacker", { headers })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ facts: [] })
+    expect(cloudUsageFacts).toHaveBeenCalledWith({
+      org_id: "org_from_token",
+      user_id: "user_from_token",
+      since: 1,
+      until: 2,
+      limit: 10_001,
+    })
+
+    const unsigned = await app.request("/cloud-facts?since=1&until=2")
+    expect(unsigned.status).toBe(401)
+    expect(await unsigned.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
+    expect((await app.request("/cloud-facts?since=1&until=2", { headers: { authorization: "Bearer forged" } })).status)
+      .toBe(401)
+    expect((await app.request(`/cloud-facts?since=0&until=${91 * 86_400_000}`, { headers })).status).toBe(400)
+    expect(cloudUsageFacts).toHaveBeenCalledTimes(1)
+  })
+
+  test("refuses a cloud-facts range that holds more turns than one answer carries", async () => {
+    const turn = { messageId: "m" } as TurnUsageRevision
+    const app = UsageRoutes({
+      pricing,
+      identity,
+      ledger: { cloudUsageFacts: async ({ limit }) => Array.from({ length: limit }, () => turn) },
+    })
+    const response = await app.request("/cloud-facts?since=1&until=2", { headers: { authorization: "Bearer valid" } })
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({ error: { code: "cloud_usage_range_too_large" } })
+    expect((await UsageRoutes({ pricing, identity, ledger: {} })
+      .request("/cloud-facts?since=1&until=2", { headers: { authorization: "Bearer valid" } })).status).toBe(503)
+  })
+
   test("captures bounded operational evidence without tenant or usage dimensions", async () => {
     const capture = vi.fn()
     const app = UsageRoutes({
+      pricing,
       identity,
       telemetry: { capture },
       ledger: {
@@ -335,7 +387,7 @@ describe("local unified usage route", () => {
   })
   const fact = {
     hostId: "h",
-    sessionRef: "central:s",
+    sessionRef: "local:s",
     sessionId: "s",
     messageId: "m",
     revision: 1,
@@ -349,6 +401,28 @@ describe("local unified usage route", () => {
     tokens: { input: 10, output: 2, reasoning: null, cache: { read: 0, write: null } },
     quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] },
   } as const
+  const cloudFact = (input: Partial<TurnUsageRevision> & { messageId: string }): TurnUsageRevision => ({
+    hostId: "workspace:ws_cloud",
+    sessionRef: "workspace:ws_cloud:session:ses_cloud",
+    sessionId: "ses_cloud",
+    workspaceId: "ws_cloud",
+    revision: 1,
+    observedAt: 12,
+    settlement: "final",
+    status: "completed",
+    location: "cloud-workspace",
+    harness: "claude",
+    providerId: "anthropic",
+    modelId: "claude-sonnet-4-5",
+    tokens: { input: 20, output: 4, reasoning: null, cache: { read: 0, write: null } },
+    quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] },
+    ...input,
+  })
+  const withCloud = (cloud: unknown) => ({
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cloud }),
+  })
 
   test("sorts Total local providers by tokens or cost from the authoritative history", async () => {
     const rows = [
@@ -372,6 +446,7 @@ describe("local unified usage route", () => {
       },
     ]
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -399,16 +474,13 @@ describe("local unified usage route", () => {
     ).toBe(400)
   })
 
-  test("keeps cross-machine Claxedo usage separate from authoritative Total local history", async () => {
+  test("counts the account's cloud turns in both Claxedo and Total, beside this machine's history", async () => {
     const local = { current: async () => [fact], pendingOutbox: async () => [fact] } as never
     const app = LocalUsageRoutes({
+      pricing,
       local,
       identity: async () => ({ org_id: "org", user_id: "user" }),
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 }),
-      central: {
-        recordLlmTurn: async () => ({ activated: false }),
-        usageDashboard: async () => ({ totals: { turn_count: 1, input_tokens: 20 }, daily: [] }),
-      },
       history: async () => {
         const direct = {
           app: "claude",
@@ -437,11 +509,25 @@ describe("local unified usage route", () => {
         }
       },
     })
-    const response = await app.request("/?since=0&until=20&timezone=UTC&view=total")
-    const body = (await response.json())
-    expect(body.claxedo.totals.input).toBe(30)
-    expect(body.total.totals.input).toBe(15)
-    expect(body.claxedo.scope).toBe("cross-machine")
+    const cloud = { status: "available", facts: [cloudFact({ messageId: "msg_cloud" })] }
+
+    const claxedo = await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo", withCloud(cloud))).json()
+    expect(claxedo.claxedo.totals).toMatchObject({ turnCount: 2, input: 30 })
+    expect(claxedo.claxedo.scope).toBe("cross-machine")
+
+    const total = await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app", withCloud(cloud))).json()
+    expect(total.total.totals).toMatchObject({ turnCount: 3, input: 35, output: 6 })
+    expect(total.externalLocal.totals.input).toBe(5)
+    expect(total.breakdown.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "claude", turnCount: 2, input: 25 }),
+      expect.objectContaining({ value: "pi", turnCount: 1, input: 10 }),
+    ]))
+    expect(total.filterOptions.total).toMatchObject({ app: ["claude", "pi"], location: ["cloud", "local"] })
+
+    const cloudOnly = await (
+      await app.request("/?since=0&until=20&timezone=UTC&view=total&filter_location=cloud", withCloud(cloud))
+    ).json()
+    expect(cloudOnly.total.totals).toMatchObject({ turnCount: 1, input: 20 })
   })
 
   test("builds Total local usage from provider history even when attribution is quarantined", async () => {
@@ -455,6 +541,7 @@ describe("local unified usage route", () => {
       tokens: { input: 50, output: 5, reasoning: 2, cacheRead: 100, cacheWrite: 0, cacheWrite1h: null },
     }
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -482,6 +569,7 @@ describe("local unified usage route", () => {
 
   test("anonymous requests stay local and source failures do not zero Claxedo", async () => {
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [fact], pendingOutbox: async () => [fact] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 }),
@@ -527,6 +615,7 @@ describe("local unified usage route", () => {
       })
       .mockRejectedValueOnce(new Error("scanner offline"))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -580,6 +669,7 @@ describe("local unified usage route", () => {
       })
       .mockRejectedValueOnce(new Error("scanner offline"))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -602,6 +692,7 @@ describe("local unified usage route", () => {
       .mockResolvedValueOnce({ status: "available", snapshot })
       .mockRejectedValueOnce(new Error("registry offline"))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -625,6 +716,7 @@ describe("local unified usage route", () => {
 
   test("a quota read that fails before any snapshot draws nothing and says why", async () => {
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -647,6 +739,7 @@ describe("local unified usage route", () => {
       refresh,
     }))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -674,6 +767,7 @@ describe("local unified usage route", () => {
     }))
     const quota = vi.fn(async () => ({ status: "unavailable" as const }))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current, pendingOutbox } as never,
       identity,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
@@ -700,38 +794,40 @@ describe("local unified usage route", () => {
     expect(quota).toHaveBeenCalledTimes(1)
   })
 
-  test("keeps the last tenant-scoped central snapshot when refresh fails", async () => {
-    const usageDashboard = vi
-      .fn()
-      .mockResolvedValueOnce({ totals: { turn_count: 1, input_tokens: 25 }, daily: [], models: [], locations: [] })
-      .mockRejectedValueOnce(new Error("central offline"))
+  test("a cloud fetch that failed still answers this machine's usage and says the cloud part is missing", async () => {
     const app = LocalUsageRoutes({
-      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      pricing,
+      local: { current: async () => [fact], pendingOutbox: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "user" }),
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
-      central: { recordLlmTurn: async () => ({ activated: false }), usageDashboard },
     })
-    const request = "/?since=0&until=20&timezone=UTC&view=claxedo"
-    expect(((await (await app.request(request)).json())).claxedo.totals.input).toBe(25)
-    const stale = (await (await app.request(request)).json())
-    expect(stale.claxedo).toMatchObject({ status: "stale", error: "central offline", totals: { input: 25 } })
+    const response = await app.request(
+      "/?since=0&until=20&timezone=UTC&view=claxedo",
+      withCloud({ status: "unavailable", error: 'operation "usage.cloudFacts" failed: 503' }),
+    )
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.claxedo).toMatchObject({
+      status: "degraded",
+      scope: "local",
+      error: 'Cloud usage is unavailable: operation "usage.cloudFacts" failed: 503',
+      totals: { turnCount: 1, input: 10 },
+      locationShare: { localTokens: 12, cloudTokens: 0 },
+    })
   })
 
-  test("uses one latest pending revision and attributes total usage to its canonical provider", async () => {
+  test("uses one latest revision and attributes total usage to its canonical provider", async () => {
     const final = {
       ...fact,
       revision: 2,
       tokens: { ...fact.tokens, input: 20 },
     } as const
-    const pendingOutbox = vi.fn(async () => [fact, final])
+    const current = vi.fn(async () => [fact, final])
     const app = LocalUsageRoutes({
-      local: { current: async () => [final], pendingOutbox } as never,
+      pricing,
+      local: { current, pendingOutbox: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "user" }),
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 2 }),
-      central: {
-        recordLlmTurn: async () => ({ activated: false }),
-        usageDashboard: async () => ({ totals: { turn_count: 0 }, daily: [] }),
-      },
       history: async () => ({
         rows: [
           {
@@ -771,7 +867,7 @@ describe("local unified usage route", () => {
     })
 
     const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app")).json())
-    expect(pendingOutbox).toHaveBeenCalledWith({ since: 0, until: 20, all: true })
+    expect(current).toHaveBeenCalledWith({ since: 0, until: 20 })
     expect(body.claxedo.totals.input).toBe(20)
     expect(body.breakdown.rows).toEqual(
       expect.arrayContaining([
@@ -811,89 +907,6 @@ describe("local unified usage route", () => {
     expect(model.breakdown.rows).toEqual([expect.objectContaining({ value: "anthropic/m", label: "m", input: 25 })])
   })
 
-  test("replaces an older central fact with its newer pending local revision", async () => {
-    const pending = { ...fact, revision: 2, tokens: { ...fact.tokens, input: 20 } } as const
-    const app = LocalUsageRoutes({
-      local: { current: async () => [pending], pendingOutbox: async () => [pending] } as never,
-      identity: async () => ({ org_id: "org", user_id: "user" }),
-      outbox: outbox({ attempted: 1, delivered: 0, conflicts: 0, pending: 1 }),
-      central: {
-        recordLlmTurn: async () => ({ activated: false }),
-        usageDashboard: async () => ({
-          totals: { turn_count: 1, input_tokens: 10 },
-          daily: [],
-          models: [],
-          locations: [],
-          breakdown: [],
-          dailyBreakdown: [],
-          breakdownModels: [],
-          filters: {},
-          facts: [
-            {
-              host_id: fact.hostId,
-              session_ref: fact.sessionRef,
-              session_id: fact.sessionId,
-              message_id: fact.messageId,
-              revision: fact.revision,
-              observed_at: fact.observedAt,
-              settlement: fact.settlement,
-              status: fact.status,
-              location: fact.location,
-              harness: fact.harness,
-              provider_id: fact.providerId,
-              model_id: fact.modelId,
-              input_tokens: fact.tokens.input,
-              output_tokens: fact.tokens.output,
-              reasoning_tokens: fact.tokens.reasoning,
-              cache_read_tokens: fact.tokens.cache.read,
-              cache_write_tokens: fact.tokens.cache.write,
-            },
-          ],
-        }),
-      },
-    })
-
-    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo&group=model")).json())
-    expect(body.claxedo.totals).toMatchObject({ turnCount: 1, input: 20, output: 2 })
-    expect(body.breakdown.rows).toEqual([
-      expect.objectContaining({ value: "anthropic/m", turnCount: 1, input: 20, output: 2 }),
-    ])
-    expect(body.chart.series).toEqual([
-      expect.objectContaining({ value: "anthropic/m", daily: [expect.objectContaining({ input: 20, output: 2 })] }),
-    ])
-  })
-
-  test("does not add an acknowledged fact when local delivery bookkeeping leaves it pending", async () => {
-    const app = LocalUsageRoutes({
-      local: { current: async () => [fact], pendingOutbox: async () => [fact] } as never,
-      identity: async () => ({ org_id: "org", user_id: "user" }),
-      outbox: {
-        clearIdentity: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 }),
-        flush: async () => ({
-          attempted: 1,
-          delivered: 0,
-          conflicts: 0,
-          pending: 1,
-          acknowledged: [
-            { hostId: fact.hostId, sessionRef: fact.sessionRef, messageId: fact.messageId, revision: fact.revision },
-          ],
-        }),
-      },
-      central: {
-        recordLlmTurn: async () => ({ activated: false }),
-        usageDashboard: async () => ({
-          totals: { turn_count: 1, input_tokens: 10, output_tokens: 2, input_known_count: 1, output_known_count: 1 },
-          daily: [],
-          models: [{ value: "anthropic/m", input_tokens: 10, output_tokens: 2 }],
-          breakdown: [],
-        }),
-      },
-    })
-    const body = (await (await app.request("/?since=0&until=20&timezone=UTC")).json())
-    expect(body.claxedo.totals.input).toBe(10)
-    expect(body.sync).toEqual({ attempted: 1, delivered: 0, conflicts: 0, pending: 1 })
-  })
-
   test("filters authoritative local facts before totals and paginates the merged breakdown", async () => {
     const second = {
       ...fact,
@@ -903,6 +916,7 @@ describe("local unified usage route", () => {
       tokens: { ...fact.tokens, input: 30 },
     } as const
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [fact, second], pendingOutbox: async () => [fact, second] } as never,
       identity: async () => undefined,
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 2 }),
@@ -916,11 +930,16 @@ describe("local unified usage route", () => {
       rows: [expect.objectContaining({ value: "codex", input: 30 })],
     })
     expect(body.filterOptions.claxedo.harness).toEqual(["codex", "pi"])
+
+    const otherApp = await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo&group=app&filter_app=claude")).json()
+    expect(otherApp.claxedo.totals.turnCount).toBe(0)
+    expect(otherApp.breakdown.rows).toEqual([])
   })
 
   test("exposes an authenticated sync wakeup without scanning dashboard history", async () => {
     const flush = vi.fn(async () => ({ attempted: 1, delivered: 1, conflicts: 0, pending: 0 }))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "user" }),
       outbox: { flush, clearIdentity: flush },
@@ -937,6 +956,7 @@ describe("local unified usage route", () => {
     const flush = vi.fn(async () => ({ attempted: 1, delivered: 1, conflicts: 0, pending: 0 }))
     const clearIdentity = vi.fn(async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 3 }))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
       outbox: { flush, clearIdentity },
@@ -953,6 +973,7 @@ describe("local unified usage route", () => {
     const history = vi.fn(async () => ({ rows: [], totalRows: [], coverage: [], classifiedClaxedo: 0, unclassified: 0 }))
     const quota = vi.fn(async () => ({ status: "available" as const, snapshot: { accounts: [] } }))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "member" }),
       machineOperator: async () => false,
@@ -980,6 +1001,7 @@ describe("local unified usage route", () => {
     const flush = vi.fn(async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 1 }))
     const pendingOutbox = vi.fn(async () => [])
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox } as never,
       identity: async () => ({ org_id: "org", user_id: "member" }),
       machineOperator: async () => false,
@@ -1007,6 +1029,7 @@ describe("local unified usage route", () => {
   test("the operator's flush may adopt facts no producer account owns", async () => {
     const flush = vi.fn(async () => ({ attempted: 1, delivered: 1, conflicts: 0, pending: 0 }))
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => ({ org_id: "org", user_id: "operator" }),
       machineOperator: async () => true,
@@ -1018,6 +1041,7 @@ describe("local unified usage route", () => {
 
   test("preserves control-plane auth errors on local read and sync routes", async () => {
     const app = LocalUsageRoutes({
+      pricing,
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => {
         throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is invalid")
@@ -1031,5 +1055,169 @@ describe("local unified usage route", () => {
         error: { code: "invalid_bearer_token", message: "Bearer token is invalid" },
       })
     }
+  })
+})
+
+describe("local usage route with the account's cloud turns", () => {
+  const outbox = {
+    flush: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+    clearIdentity: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+  }
+  const local: TurnUsageRevision = {
+    hostId: "local_machine",
+    sessionRef: "local:/work:session:ses_local",
+    sessionId: "ses_local",
+    workspaceId: "wrk_local",
+    messageId: "msg_local",
+    revision: 1,
+    observedAt: 10,
+    settlement: "final",
+    status: "completed",
+    location: "local",
+    harness: "codex",
+    providerId: "openai",
+    modelId: "gpt-5",
+    tokens: { input: 1_000_000, output: 0, reasoning: null, cache: { read: 0, write: null } },
+    quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] },
+  }
+  const cloud = (input: Partial<TurnUsageRevision> & { messageId: string }): TurnUsageRevision => ({
+    hostId: "workspace:ws_cloud",
+    sessionRef: "workspace:ws_cloud:session:ses_cloud",
+    sessionId: "ses_cloud",
+    workspaceId: "ws_cloud",
+    revision: 1,
+    observedAt: 12,
+    settlement: "final",
+    status: "completed",
+    location: "cloud-workspace",
+    harness: "claude",
+    providerId: "anthropic",
+    modelId: "claude-sonnet-4-5",
+    tokens: { input: 1_000_000, output: 1_000_000, reasoning: 0, cache: { read: 0, write: 0 } },
+    quality: { source: "provider", knownCategories: ["input", "output", "reasoning", "cache_read", "cache_write"] },
+    ...input,
+  })
+  const app = (machineOperator?: () => boolean) => LocalUsageRoutes({
+    pricing,
+    local: {
+      current: async ({ since = 0, until = Infinity } = {}) =>
+        [local].filter((fact) => fact.observedAt >= since && fact.observedAt <= until),
+      pendingOutbox: async () => [],
+    },
+    identity: async () => undefined,
+    outbox,
+    ...(machineOperator ? { machineOperator } : {}),
+  })
+  const post = (routes: ReturnType<typeof app>, query: string, body: unknown) =>
+    routes.request(`/?timezone=UTC&${query.includes("since=") ? "" : "since=0&until=20&"}${query}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+
+  test("merges them into one Claxedo projection: totals, cost, location share, breakdowns and filters", async () => {
+    const routes = app()
+    const facts = [
+      cloud({ messageId: "msg_c1", revision: 1, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } } }),
+      cloud({ messageId: "msg_c1", revision: 2 }),
+    ]
+    const response = await post(routes, "view=claxedo&group=location", { cloud: { status: "available", facts } })
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.claxedo).toMatchObject({
+      status: "available",
+      scope: "cross-machine",
+      totals: { turnCount: 2, input: 2_000_000, output: 1_000_000 },
+      locationShare: { localTokens: 1_000_000, cloudTokens: 2_000_000 },
+    })
+    const localUsd = (await pricing({
+      source: "openai",
+      model: "gpt-5",
+      tokens: { input: 1_000_000, output: 0, reasoning: null, cacheRead: 0, cacheWrite: null, cacheWrite1h: null },
+    })).estimatedUsd
+    // Sonnet 4.5: $3 input and $15 output per MTok.
+    expect(body.claxedo.cost.estimatedUsd).toBeCloseTo(localUsd + 18, 10)
+    expect(body.claxedo.cost.unpricedTokens).toBe(0)
+    expect(body.breakdown.rows).toEqual([
+      expect.objectContaining({ value: "cloud", turnCount: 1, input: 1_000_000, output: 1_000_000, status: "final" }),
+      expect.objectContaining({ value: "local", turnCount: 1, input: 1_000_000 }),
+    ])
+    expect(body.breakdown.rows[0].estimatedUsd).toBeCloseTo(18, 10)
+    expect(body.modelBreakdown.rows.find((row: { value: string }) => row.value === "anthropic/claude-sonnet-4-5").estimatedUsd)
+      .toBeCloseTo(18, 10)
+    expect(body.filterOptions.claxedo).toMatchObject({
+      location: ["cloud", "local"],
+      harness: ["claude", "codex"],
+      workspace: ["wrk_local", "ws_cloud"],
+    })
+
+    const onlyCloud = await (await post(routes, "view=claxedo&filter_location=cloud", {
+      cloud: { status: "available", facts },
+    })).json()
+    expect(onlyCloud.claxedo.totals).toMatchObject({ turnCount: 1, input: 1_000_000 })
+    expect(onlyCloud.claxedo.cost.estimatedUsd).toBeCloseTo(18, 10)
+
+    const withoutCloud = await (await routes.request("/?since=0&until=20&timezone=UTC&view=claxedo")).json()
+    expect(withoutCloud.claxedo).toMatchObject({ scope: "local", status: "available", totals: { turnCount: 1 } })
+  })
+
+  test("drops cloud turns outside the requested range", async () => {
+    const body = await (await post(app(), "since=11&until=20&view=claxedo", {
+      cloud: {
+        status: "available",
+        facts: [
+          cloud({ messageId: "msg_early", observedAt: 10 }),
+          cloud({ messageId: "msg_in", observedAt: 12 }),
+          cloud({ messageId: "msg_late", observedAt: 21 }),
+        ],
+      },
+    })).json()
+    expect(body.claxedo.totals.turnCount).toBe(1)
+    expect(body.claxedo.cost.pricedTokens).toBe(2_000_000)
+  })
+
+  test.each([
+    ["a local turn", cloud({ messageId: "m", location: "local" })],
+    ["another host's filing", cloud({ messageId: "m", hostId: "local_machine" })],
+    ["a session filed under another workspace", cloud({ messageId: "m", sessionRef: "workspace:ws_other:session:ses_cloud" })],
+    ["no workspace", { ...cloud({ messageId: "m" }), workspaceId: undefined }],
+    ["a field the revision does not carry", { ...cloud({ messageId: "m" }), prompt: "secret" }],
+    ["negative tokens", cloud({ messageId: "m", tokens: { input: -1, output: 0, reasoning: null, cache: { read: 0, write: 0 } } })],
+    ["a revision below one", cloud({ messageId: "m", revision: 0 })],
+  ])("refuses %s posing as a cloud turn", async (_name, fact) => {
+    const response = await post(app(), "view=claxedo", { cloud: { status: "available", facts: [fact] } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: { code: "invalid_cloud_usage_fact", message: "cloud.facts[0] is not a cloud workspace usage revision" },
+    })
+  })
+
+  test("refuses a malformed cloud body and more cloud turns than one answer carries", async () => {
+    for (const body of [{}, { cloud: { status: "available" } }, { cloud: { status: "unavailable", error: "" } }, { cloud: [] }]) {
+      const response = await post(app(), "view=claxedo", body)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ error: { code: "invalid_cloud_usage" } })
+    }
+    const tooMany = Array.from({ length: 10_001 }, (_, index) => cloud({ messageId: `m${index}` }))
+    const response = await post(app(), "view=claxedo", { cloud: { status: "available", facts: tooMany } })
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ error: { code: "cloud_usage_too_large" } })
+
+    const oversized = await app().request("/?since=0&until=20&timezone=UTC", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cloud: { status: "unavailable", error: "x".repeat(16 * 1024 * 1024) } }),
+    })
+    expect(oversized.status).toBe(413)
+  })
+
+  test("only the machine's operator may bring cloud turns into this machine's view", async () => {
+    const response = await post(app(() => false), "view=claxedo", {
+      cloud: { status: "available", facts: [cloud({ messageId: "m" })] },
+    })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({
+      error: { code: "operator_required", message: "Machine operator access is required" },
+    })
   })
 })

@@ -1,19 +1,15 @@
 import { Hono, type Context } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import type { UnifiedUsageResponse, UsageBreakdownRow, UsageFilterDimension } from "@claxedo/usage-contract"
 export type { UnifiedUsageResponse } from "@claxedo/usage-contract"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../platform/auth/auth"
-import type { UsageLedger, UsageProjectionLedger } from "./ledger"
+import type { UsageProjectionLedger } from "./ledger"
 export type { UsageLedger, UsageProjectionLedger } from "./ledger"
-import { projectTokenTrackerCost, TOKEN_TRACKER_VERSION, type PricedUsage } from "./adapters/token-tracker-pricing"
-import { isNonEmptyString, isOneOf, jsonRecord } from "../platform/runtime/lib/json"
-import {
-  knownTokenCategories,
-  TURN_USAGE_LOCATIONS,
-  TURN_USAGE_SETTLEMENTS,
-  TURN_USAGE_STATUSES,
-  type TurnUsageRevision,
-  type UsageRevisionReader,
-} from "./contracts"
+import { TOKEN_TRACKER_VERSION, type PricedUsage, type UsagePricing } from "./adapters/token-tracker-pricing"
+import { isJsonRecord } from "../platform/runtime/lib/json"
+import { readTurnUsageRevision, type TurnUsageRevision, type UsageRevisionReader } from "./contracts"
+import { tokenTrackerSourceForHarness } from "./provenance"
+import { cloudWorkspaceUsageContext } from "./usage-report"
 import {
   centralProjectionSeries,
   readCentralUsage,
@@ -22,6 +18,7 @@ import {
   type CentralUsageProjection,
   type CentralUsageRow,
   groupUsageFacts,
+  groupUsageFactsBy,
   isUsageFilterDimension,
   latestUsageFacts,
   mergeUsageSeries,
@@ -30,11 +27,11 @@ import {
   usageFactFilterOptions,
   usageFactMatches,
   usageFactDimension,
+  usageLocation,
   usageModelKey,
   usageDateFormatter,
   USAGE_FILTER_DIMENSIONS,
   type ExternalUsageBucket,
-  type UsageBreakdownDimension,
   type UsageFilters,
   type UsageSeries,
 } from "./projection"
@@ -54,7 +51,6 @@ type UsageOutboxResult = {
   delivered: number
   conflicts: number
   pending: number
-  acknowledged?: Array<Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">>
 }
 
 type UsageOutboxSync = {
@@ -156,12 +152,16 @@ function filtersFromQuery(query: (name: string) => string | undefined): UsageFil
   return filters
 }
 
-async function priceFacts(facts: readonly TurnUsageRevision[], timeZone = "UTC"): Promise<CostWithDaily> {
+async function priceFacts(
+  pricing: UsagePricing,
+  facts: readonly TurnUsageRevision[],
+  timeZone = "UTC",
+): Promise<CostWithDaily> {
   const total = emptyCost()
   const days = new Map<string, PricedUsage>()
   const formatDate = usageDateFormatter(timeZone)
   for (const fact of facts) {
-    const item = await projectTokenTrackerCost({
+    const item = await pricing({
       source: fact.providerId,
       model: fact.modelId,
       tokens: {
@@ -196,12 +196,16 @@ async function priceFacts(facts: readonly TurnUsageRevision[], timeZone = "UTC")
   return total
 }
 
-async function priceExternal(rows: LocalHistorySnapshot["rows"], timeZone = "UTC"): Promise<CostWithDaily> {
+async function priceExternal(
+  pricing: UsagePricing,
+  rows: LocalHistorySnapshot["rows"],
+  timeZone = "UTC",
+): Promise<CostWithDaily> {
   const total = emptyCost()
   const days = new Map<string, PricedUsage>()
   const formatDate = usageDateFormatter(timeZone)
   for (const row of rows) {
-    const item = await projectTokenTrackerCost({ source: row.app, model: row.model, tokens: row.tokens })
+    const item = await pricing({ source: row.app, model: row.model, tokens: row.tokens })
     total.estimatedUsd += item.estimatedUsd
     total.pricedTokens += item.pricedTokens
     total.unpricedTokens += item.unpricedTokens
@@ -245,29 +249,24 @@ function mergeCost(...costs: CostWithDaily[]) {
   return total
 }
 
-async function priceCentralBreakdown(rows: readonly CentralUsageRow[]) {
+async function priceCentralBreakdown(pricing: UsagePricing, rows: readonly CentralUsageRow[]) {
   const total = emptyCost()
   for (const row of rows) {
     const [source, ...modelParts] = rowText(row, "value").split("/")
     const model = modelParts.join("/")
     if (!source || !model) continue
-    const tokens = {
-      input: rowNumber(row, "input_tokens"),
-      output: rowNumber(row, "output_tokens"),
-      reasoning: rowNumber(row, "reasoning_tokens"),
-      cacheRead: rowNumber(row, "cache_read_tokens"),
-      cacheWrite: rowNumber(row, "cache_write_tokens"),
-      cacheWrite1h: rowNumber(row, "cache_write_1h_tokens"),
-    }
-    // The tokentracker catalog loads through node:fs and __dirname, so on the
-    // hosted Worker it throws before pricing anything. There every model's
-    // price is unknown, which is exactly what an unpriced token says; the
-    // token counts are still the account's usage.
-    const item = await projectTokenTrackerCost({ source, model, tokens }).catch(() => undefined)
-    if (!item) {
-      total.unpricedTokens += tokens.input + tokens.output + tokens.reasoning + tokens.cacheRead + tokens.cacheWrite
-      continue
-    }
+    const item = await pricing({
+      source,
+      model,
+      tokens: {
+        input: rowNumber(row, "input_tokens"),
+        output: rowNumber(row, "output_tokens"),
+        reasoning: rowNumber(row, "reasoning_tokens"),
+        cacheRead: rowNumber(row, "cache_read_tokens"),
+        cacheWrite: rowNumber(row, "cache_write_tokens"),
+        cacheWrite1h: rowNumber(row, "cache_write_1h_tokens"),
+      },
+    })
     total.estimatedUsd += item.estimatedUsd
     total.pricedTokens += item.pricedTokens
     total.unpricedTokens += item.unpricedTokens
@@ -277,6 +276,7 @@ async function priceCentralBreakdown(rows: readonly CentralUsageRow[]) {
 }
 
 async function priceAllCentralModels(
+  pricing: UsagePricing,
   ledger: UsageProjectionLedger,
   identity: { org_id: string; user_id: string },
   range: { since: number; until: number },
@@ -295,7 +295,7 @@ async function priceAllCentralModels(
         ...(after ? { after } : {}),
       }),
     )
-    const priced = await priceCentralBreakdown(page.rows ?? [])
+    const priced = await priceCentralBreakdown(pricing, page.rows ?? [])
     total.estimatedUsd += priced.estimatedUsd
     total.pricedTokens += priced.pricedTokens
     total.unpricedTokens += priced.unpricedTokens
@@ -311,6 +311,7 @@ async function priceAllCentralModels(
 }
 
 async function priceCentralProjection(
+  pricing: UsagePricing,
   ledger: UsageProjectionLedger,
   identity: { org_id: string; user_id: string },
   range: { since: number; until: number },
@@ -318,12 +319,12 @@ async function priceCentralProjection(
 ) {
   const models = projection.models
   if (models) {
-    const total = await priceCentralBreakdown(models)
+    const total = await priceCentralBreakdown(pricing, models)
     const daily = new Map<string, PricedUsage>()
     for (const row of projection.dailyModels ?? []) {
       const date = rowText(row, "date")
       if (!date) continue
-      const item = await priceCentralBreakdown([row])
+      const item = await priceCentralBreakdown(pricing, [row])
       const current = daily.get(date) ?? emptyCost()
       current.estimatedUsd += item.estimatedUsd
       current.pricedTokens += item.pricedTokens
@@ -341,7 +342,7 @@ async function priceCentralProjection(
       .toSorted((a, b) => a.date.localeCompare(b.date))
     return total
   }
-  return await priceAllCentralModels(ledger, identity, range)
+  return await priceAllCentralModels(pricing, ledger, identity, range)
 }
 
 type CanonicalBreakdownTotals = {
@@ -420,13 +421,13 @@ function mergeChartSeries(dimension: string, ...sources: Array<readonly CentralU
 
 function chartRowsFromFacts(
   facts: readonly TurnUsageRevision[],
-  dimension: UsageBreakdownDimension,
+  groupOf: (fact: TurnUsageRevision) => string,
   timeZone: string,
 ) {
   const formatDate = usageDateFormatter(timeZone)
   return latestUsageFacts(facts).map((fact) => ({
     date: formatDate.format(new Date(fact.observedAt)),
-    value: usageFactDimension(fact, dimension),
+    value: groupOf(fact),
     input: fact.tokens.input ?? 0,
     output: fact.tokens.output ?? 0,
     reasoning: fact.tokens.reasoning ?? 0,
@@ -450,8 +451,7 @@ function chartRowsFromExternal(
   const formatDate = usageDateFormatter(timeZone)
   return rows.map((row) => ({
     date: formatDate.format(new Date(row.bucketStart)),
-    value:
-      externalUsageDimension(row, dimension),
+    value: externalUsageDimension(row, dimension),
     input: row.tokens.input ?? 0,
     output: row.tokens.output ?? 0,
     reasoning: row.tokens.reasoning ?? 0,
@@ -525,15 +525,47 @@ function mergeBreakdownRows(...sources: Array<readonly CentralUsageRow[] | undef
   return [...merged.values()]
 }
 
-function modelBreakdownFromFacts(facts: readonly TurnUsageRevision[], dimension: UsageBreakdownDimension) {
+/** One priced model row per fact, filed under the breakdown group it counts toward. */
+function modelRowsFromFacts(facts: readonly TurnUsageRevision[], groupOf: (fact: TurnUsageRevision) => string) {
   return facts.map((fact) => ({
-    group: usageFactDimension(fact, dimension),
+    group: groupOf(fact),
     value: usageModelKey(fact.providerId, fact.modelId),
     input_tokens: fact.tokens.input ?? 0,
     output_tokens: fact.tokens.output ?? 0,
     reasoning_tokens: fact.tokens.reasoning ?? 0,
     cache_read_tokens: fact.tokens.cache.read ?? 0,
     cache_write_tokens: fact.tokens.cache.write ?? 0,
+    cache_write_1h_tokens: fact.tokens.cache.write1h ?? 0,
+  }))
+}
+
+/** One priced model row per history bucket, filed under the breakdown group it counts toward. */
+function modelRowsFromExternal(rows: readonly ExternalUsageBucket[], groupOf: (row: ExternalUsageBucket) => string) {
+  return rows.map((row) => ({
+    group: groupOf(row),
+    value: usageModelKey(row.provider, row.model),
+    input_tokens: row.tokens.input ?? 0,
+    output_tokens: row.tokens.output ?? 0,
+    reasoning_tokens: row.tokens.reasoning ?? 0,
+    cache_read_tokens: row.tokens.cacheRead ?? 0,
+    cache_write_tokens: row.tokens.cacheWrite ?? 0,
+    cache_write_1h_tokens: row.tokens.cacheWrite1h ?? 0,
+  }))
+}
+
+/** History buckets as breakdown totals, grouped the way `groupOf` names them. */
+function breakdownRowsFromExternal(rows: readonly ExternalUsageBucket[], groupOf: (row: ExternalUsageBucket) => string) {
+  return rows.map((row) => ({
+    value: groupOf(row),
+    turnCount: row.turnCount,
+    ...row.tokens,
+    unknownCategories: [
+      row.tokens.input,
+      row.tokens.output,
+      row.tokens.reasoning,
+      row.tokens.cacheRead,
+      row.tokens.cacheWrite,
+    ].filter((value) => value === null).length,
   }))
 }
 
@@ -551,6 +583,7 @@ function breakdownLabel(value: string, dimension?: string) {
 }
 
 async function canonicalBreakdownPage(input: {
+  pricing: UsagePricing
   dimension: UsageFilterDimension
   rows: CanonicalBreakdownTotals[]
   modelRows?: readonly CentralUsageRow[]
@@ -567,10 +600,7 @@ async function canonicalBreakdownPage(input: {
     modelRowsByGroup.set(group, rows)
   }
   const priceRow = async (row: CanonicalBreakdownTotals) => {
-    const modelRows = modelRowsByGroup.get(row.value) ?? []
-    const priced = await priceCentralBreakdown(
-      modelRows.length > 0 ? modelRows : input.dimension === "model" ? [{ ...row }] : [],
-    )
+    const priced = await priceCentralBreakdown(input.pricing, modelRowsByGroup.get(row.value) ?? [])
     const measuredTokens = row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite
     if (priced.pricedTokens + priced.unpricedTokens < measuredTokens)
       priced.unpricedTokens += measuredTokens - priced.pricedTokens - priced.unpricedTokens
@@ -627,6 +657,39 @@ function externalFilterOptions(rows: LocalHistorySnapshot["rows"]) {
   }
 }
 
+/**
+ * The tool a cloud turn counts toward in Total, where this machine's own
+ * turns are filed under the CLI whose transcript recorded them.
+ */
+function totalFactApp(fact: TurnUsageRevision) {
+  return tokenTrackerSourceForHarness(fact.harness) ?? fact.harness
+}
+
+function totalFactDimension(fact: TurnUsageRevision, dimension: UsageFilterDimension) {
+  return dimension === "app" ? totalFactApp(fact) : usageFactDimension(fact, dimension)
+}
+
+/** The Total filters `externalMatches` applies, asked of a cloud turn. */
+function totalFactMatches(fact: TurnUsageRevision, filters: UsageFilters) {
+  const model = usageModelKey(fact.providerId, fact.modelId)
+  return (
+    (!filters.app || totalFactApp(fact) === filters.app) &&
+    (!filters.provider || fact.providerId === filters.provider) &&
+    (!filters.model || model === filters.model || fact.modelId === filters.model) &&
+    (!filters.location || filters.location === usageLocation(fact.location))
+  )
+}
+
+function totalFactFilterOptions(facts: readonly TurnUsageRevision[]) {
+  const values = (value: (fact: TurnUsageRevision) => string) => [...new Set(facts.map(value))].toSorted()
+  return {
+    app: values(totalFactApp),
+    provider: values((fact) => fact.providerId),
+    model: values((fact) => usageModelKey(fact.providerId, fact.modelId)),
+    location: values((fact) => usageLocation(fact.location)),
+  }
+}
+
 function mergeFilterOptions(...values: Array<Record<string, string[]> | undefined>) {
   const merged = new Map<string, Set<string>>()
   for (const value of values)
@@ -652,88 +715,19 @@ function appBreakdownRow(series: UsageSeries) {
   return { value: "Claxedo", ...series.totals }
 }
 
-function revisionKey(value: Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">) {
-  return `${value.hostId}\u0000${value.sessionRef}\u0000${value.messageId}\u0000${value.revision}`
+/** Rows priced per model, each filed under the model it names. */
+function modelRowsByModel(rows: readonly CentralUsageRow[] | undefined) {
+  return (rows ?? []).map((row) => ({ ...row, group: rowText(row, "value") }))
 }
 
-/** One published central revision, or nothing when the row is not a well-formed fact. */
-function centralUsageFact(row: CentralUsageRow): TurnUsageRevision | undefined {
-  const sessionRef = row.session_ref
-  const sessionId = row.session_id
-  const messageId = row.message_id
-  const harness = row.harness
-  const providerId = row.provider_id
-  const modelId = row.model_id
-  if (
-    !isNonEmptyString(sessionRef) ||
-    !isNonEmptyString(sessionId) ||
-    !isNonEmptyString(messageId) ||
-    !isNonEmptyString(harness) ||
-    !isNonEmptyString(providerId) ||
-    !isNonEmptyString(modelId)
-  )
-    return undefined
-  const revision = Number(row.revision)
-  const observedAt = Number(row.observed_at)
-  const settlement = row.settlement
-  const status = row.status
-  const location = row.location
-  if (
-    !Number.isSafeInteger(revision) ||
-    revision < 1 ||
-    !Number.isFinite(observedAt) ||
-    !isOneOf(settlement, TURN_USAGE_SETTLEMENTS) ||
-    !isOneOf(status, TURN_USAGE_STATUSES) ||
-    !isOneOf(location, TURN_USAGE_LOCATIONS)
-  )
-    return undefined
-  const token = (name: string) => {
-    const raw = row[name]
-    if (raw === null || raw === undefined) return null
-    const value = Number(raw)
-    return Number.isFinite(value) && value >= 0 ? value : Number.NaN
-  }
-  const tokens = {
-    input: token("input_tokens"),
-    output: token("output_tokens"),
-    reasoning: token("reasoning_tokens"),
-    cache: { read: token("cache_read_tokens"), write: token("cache_write_tokens") },
-  }
-  if (
-    [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write].some(
-      (value) => value !== null && !Number.isFinite(value),
-    )
-  )
-    return undefined
-  return {
-    hostId: isNonEmptyString(row.host_id) ? row.host_id : "central",
-    sessionRef,
-    sessionId,
-    messageId,
-    revision,
-    observedAt,
-    ...(typeof row.completed_at === "number" ? { completedAt: row.completed_at } : {}),
-    settlement,
-    status,
-    location,
-    harness,
-    providerId,
-    modelId,
-    ...(typeof row.native_session_id === "string" ? { nativeSessionId: row.native_session_id } : {}),
-    ...(typeof row.workspace_id === "string" ? { workspaceId: row.workspace_id } : {}),
-    tokens,
-    quality: { source: "provider", knownCategories: knownTokenCategories(tokens) },
-  }
-}
-
-function centralUsageFacts(projection: CentralUsageProjection | undefined): {
-  available: boolean
-  facts: TurnUsageRevision[]
-} {
-  const rows = projection?.facts
-  if (!rows) return { available: false, facts: [] }
-  return { available: true, facts: rows.flatMap((row) => centralUsageFact(row) ?? []) }
-}
+/**
+ * The most cloud revisions one usage answer carries. A revision serializes to
+ * about 1 KB (994 bytes with ULID ids and a full quality block), so the hosted
+ * answer, the desktop's IPC hop and the sidecar request stay near 10 MB.
+ */
+const MAX_CLOUD_USAGE_FACTS = 10_000
+const MAX_CLOUD_USAGE_BODY_BYTES = 16 * 1024 * 1024
+const MAX_CLOUD_USAGE_ERROR_LENGTH = 500
 
 export function UsageRoutes(input: {
   ledger: UsageProjectionLedger
@@ -743,9 +737,51 @@ export function UsageRoutes(input: {
    * throws the `ControlPlaneAuthError` its verifier raised.
    */
   identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
+  pricing: UsagePricing
   telemetry?: UsageTelemetry
 }) {
   const app = new Hono()
+  // A signed desktop draws its Usage view from its own sidecar, which holds no
+  // account credential; Electron main fetches the account's cloud turns here
+  // and the renderer hands them to the sidecar with the usage request.
+  app.get("/cloud-facts", async (c) => {
+    try {
+      const identity = await input.identity(c.req.raw)
+      if (!identity) {
+        return c.json(
+          { error: { code: "signed_org_required", message: "A signed organization session is required" } },
+          401,
+        )
+      }
+      const since = Number(c.req.query("since"))
+      const until = Number(c.req.query("until"))
+      if (!validRange(since, until)) {
+        return c.json(
+          { error: { code: "invalid_usage_range", message: "since and until must define a range of at most 90 days" } },
+          400,
+        )
+      }
+      if (!input.ledger.cloudUsageFacts) {
+        return c.json({ error: { code: "usage_projection_unavailable", message: "Cloud usage is not stored here" } }, 503)
+      }
+      const facts = await input.ledger.cloudUsageFacts({ ...identity, since, until, limit: MAX_CLOUD_USAGE_FACTS + 1 })
+      if (facts.length > MAX_CLOUD_USAGE_FACTS) {
+        return c.json(
+          {
+            error: {
+              code: "cloud_usage_range_too_large",
+              message: `More than ${MAX_CLOUD_USAGE_FACTS} cloud turns fall in this range; choose a shorter one`,
+            },
+          },
+          422,
+        )
+      }
+      return c.json({ facts })
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+      throw error
+    }
+  })
   // Hosted callers share the desktop lifecycle wake used by local outboxes,
   // but the central authority has no outbox of its own: accepted revisions are
   // already in `ledger`. Authenticate the tenant exactly like the dashboard
@@ -837,7 +873,7 @@ export function UsageRoutes(input: {
         ? centralProjectionSeries(summary)
         : usageSeriesFromFacts({ facts: [], since, until, timeZone })
       const claxedoCost = includeClaxedo
-        ? await priceCentralProjection(input.ledger, identity, { since, until }, summary)
+        ? await priceCentralProjection(input.pricing, input.ledger, identity, { since, until }, summary)
         : emptyCost()
       const chart = group
         ? mergeChartSeries(
@@ -904,6 +940,7 @@ export function UsageRoutes(input: {
             ? summary.breakdownModels
             : []
       const breakdown = await canonicalBreakdownPage({
+        pricing: input.pricing,
         dimension: group,
         rows,
         modelRows,
@@ -912,8 +949,10 @@ export function UsageRoutes(input: {
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
       })
       const modelBreakdown = await canonicalBreakdownPage({
+        pricing: input.pricing,
         dimension: "model",
         rows: mergeBreakdownRows(includeClaxedo ? summary.models : []),
+        modelRows: includeClaxedo ? modelRowsByModel(summary.models) : [],
         metric,
         ...(c.req.query("model_after") ? { after: c.req.query("model_after") } : {}),
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
@@ -931,166 +970,158 @@ export function UsageRoutes(input: {
 }
 
 async function localUsageBreakdowns(input: {
-  central: CentralUsageProjection | undefined
-  centralFactsAvailable: boolean
-  localFacts: TurnUsageRevision[]
-  totalRows: ExternalUsageBucket[]
-  claxedoSeries: UsageSeries
+  pricing: UsagePricing
   includeClaxedo: boolean
-  group: UsageFilterDimension | undefined
-  view: "quota" | "claxedo" | "total"
+  claxedoFacts: TurnUsageRevision[]
+  claxedoSeries: UsageSeries
+  totalRows: ExternalUsageBucket[]
+  totalCloudFacts: TurnUsageRevision[]
+  group: UsageFilterDimension
+  view: "claxedo" | "total"
   metric: "tokens" | "cost"
   timeZone: string
   requestedLimit: number | undefined
   after: string | undefined
   modelAfter: string | undefined
 }) {
-  const {
-    central,
-    centralFactsAvailable,
-    localFacts,
-    totalRows,
-    claxedoSeries,
-    includeClaxedo,
-    group,
-    view,
+  const { pricing, claxedoFacts, claxedoSeries, totalRows, totalCloudFacts, group, view, metric, timeZone } = input
+  const page = {
+    pricing,
     metric,
-    timeZone,
-    requestedLimit,
-    after,
-    modelAfter,
-  } = input
-  const aggregateCentralSource = centralFactsAvailable ? undefined : central
-  let breakdown: Awaited<ReturnType<typeof canonicalBreakdownPage>> | undefined
-  let modelBreakdown: Awaited<ReturnType<typeof canonicalBreakdownPage>> | undefined
-  if (group) {
-    const dimension = group === "app" ? undefined : group
-    const localHistoryBreakdownRows =
-      view === "total"
-        ? totalRows.map((row) => ({
-            value: externalUsageDimension(row, group),
-            turnCount: row.turnCount,
-            ...row.tokens,
-            unknownCategories: [
-              row.tokens.input,
-              row.tokens.output,
-              row.tokens.reasoning,
-              row.tokens.cacheRead,
-              row.tokens.cacheWrite,
-            ].filter((value) => value === null).length,
-          }))
-        : []
-    const rows =
-      view === "total"
-        ? mergeBreakdownRows(localHistoryBreakdownRows)
-        : group === "app"
-          ? mergeBreakdownRows(includeClaxedo ? [appBreakdownRow(claxedoSeries)] : [])
-          : mergeBreakdownRows(
-              includeClaxedo ? aggregateCentralSource?.breakdown : [],
-              includeClaxedo && dimension ? groupUsageFacts(localFacts, dimension) : [],
-            )
-    const centralModelRows =
-      group === "app"
-        ? (aggregateCentralSource?.models ?? []).map((row) => ({ ...row, group: "Claxedo" }))
-        : (aggregateCentralSource?.breakdownModels ?? [])
-    const localModelRows =
-      group === "app"
-        ? localFacts.map((fact) => ({
-            group: "Claxedo",
-            value: usageModelKey(fact.providerId, fact.modelId),
-            input_tokens: fact.tokens.input ?? 0,
-            output_tokens: fact.tokens.output ?? 0,
-            reasoning_tokens: fact.tokens.reasoning ?? 0,
-            cache_read_tokens: fact.tokens.cache.read ?? 0,
-            cache_write_tokens: fact.tokens.cache.write ?? 0,
-          }))
-        : dimension
-          ? modelBreakdownFromFacts(localFacts, dimension)
-          : []
-    const localHistoryModelRows =
-      view === "total"
-        ? totalRows.map((row) => ({
-            group: externalUsageDimension(row, group),
-            value: usageModelKey(row.provider, row.model),
-            input_tokens: row.tokens.input ?? 0,
-            output_tokens: row.tokens.output ?? 0,
-            reasoning_tokens: row.tokens.reasoning ?? 0,
-            cache_read_tokens: row.tokens.cacheRead ?? 0,
-            cache_write_tokens: row.tokens.cacheWrite ?? 0,
-          }))
-        : []
-    breakdown = await canonicalBreakdownPage({
-      dimension: group,
-      rows,
-      modelRows: view === "total" ? localHistoryModelRows : [...centralModelRows, ...localModelRows],
-      metric,
-      ...(after ? { after: after } : {}),
-      ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
-    })
-    const localHistoryModels =
-      view === "total"
-        ? totalRows.map((row) => ({
-            value: usageModelKey(row.provider, row.model),
-            turnCount: row.turnCount,
-            ...row.tokens,
-            unknownCategories: [
-              row.tokens.input,
-              row.tokens.output,
-              row.tokens.reasoning,
-              row.tokens.cacheRead,
-              row.tokens.cacheWrite,
-            ].filter((value) => value === null).length,
-          }))
-        : []
-    modelBreakdown = await canonicalBreakdownPage({
-      dimension: "model",
-      rows:
-        view === "total"
-          ? mergeBreakdownRows(localHistoryModels)
-          : mergeBreakdownRows(
-              includeClaxedo ? aggregateCentralSource?.models : [],
-              includeClaxedo ? groupUsageFacts(localFacts, "model") : [],
-            ),
-      metric,
-      ...(modelAfter ? { after: modelAfter } : {}),
-      ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
-    })
+    ...(input.requestedLimit === undefined ? {} : { limit: input.requestedLimit }),
   }
-  const chart = group
-    ? view === "total"
-      ? mergeChartSeries(
-          group,
-          group === "app" || group === "provider" || group === "model" || group === "location"
-            ? chartRowsFromExternal(totalRows, group, timeZone)
+  const model = (fact: TurnUsageRevision) => usageModelKey(fact.providerId, fact.modelId)
+  const externalModel = (row: ExternalUsageBucket) => usageModelKey(row.provider, row.model)
+  if (view === "total") {
+    const groupOfRow = (row: ExternalUsageBucket) => externalUsageDimension(row, group)
+    const groupOfFact = (fact: TurnUsageRevision) => totalFactDimension(fact, group)
+    return {
+      breakdown: await canonicalBreakdownPage({
+        ...page,
+        dimension: group,
+        rows: mergeBreakdownRows(
+          breakdownRowsFromExternal(totalRows, groupOfRow),
+          groupUsageFactsBy(totalCloudFacts, groupOfFact),
+        ),
+        modelRows: [...modelRowsFromExternal(totalRows, groupOfRow), ...modelRowsFromFacts(totalCloudFacts, groupOfFact)],
+        ...(input.after ? { after: input.after } : {}),
+      }),
+      modelBreakdown: await canonicalBreakdownPage({
+        ...page,
+        dimension: "model",
+        rows: mergeBreakdownRows(
+          breakdownRowsFromExternal(totalRows, externalModel),
+          groupUsageFactsBy(totalCloudFacts, model),
+        ),
+        modelRows: [...modelRowsFromExternal(totalRows, externalModel), ...modelRowsFromFacts(totalCloudFacts, model)],
+        ...(input.modelAfter ? { after: input.modelAfter } : {}),
+      }),
+      chart: mergeChartSeries(
+        group,
+        ...(group === "app" || group === "provider" || group === "model" || group === "location"
+          ? [chartRowsFromExternal(totalRows, group, timeZone), chartRowsFromFacts(totalCloudFacts, groupOfFact, timeZone)]
+          : []),
+      ),
+    }
+  }
+  const groupOf = (fact: TurnUsageRevision) => (group === "app" ? "Claxedo" : usageFactDimension(fact, group))
+  return {
+    breakdown: await canonicalBreakdownPage({
+      ...page,
+      dimension: group,
+      rows: mergeBreakdownRows(
+        group !== "app"
+          ? groupUsageFactsBy(claxedoFacts, groupOf)
+          : input.includeClaxedo
+            ? [appBreakdownRow(claxedoSeries)]
             : [],
-        )
-      : mergeChartSeries(
-          group,
-          group === "app"
-            ? includeClaxedo
-              ? chartRowsFromSeries("Claxedo", claxedoSeries)
-              : []
-            : includeClaxedo
-              ? aggregateCentralSource?.dailyBreakdown
-              : [],
-          group !== "app" && includeClaxedo ? chartRowsFromFacts(localFacts, group, timeZone) : [],
-        )
-    : undefined
-  return { breakdown, modelBreakdown, chart }
+      ),
+      modelRows: modelRowsFromFacts(claxedoFacts, groupOf),
+      ...(input.after ? { after: input.after } : {}),
+    }),
+    modelBreakdown: await canonicalBreakdownPage({
+      ...page,
+      dimension: "model",
+      rows: mergeBreakdownRows(groupUsageFacts(claxedoFacts, "model")),
+      modelRows: modelRowsFromFacts(claxedoFacts, model),
+      ...(input.modelAfter ? { after: input.modelAfter } : {}),
+    }),
+    chart: mergeChartSeries(
+      group,
+      group === "app" ? chartRowsFromSeries("Claxedo", claxedoSeries) : chartRowsFromFacts(claxedoFacts, groupOf, timeZone),
+    ),
+  }
 }
+
+/** What a signed desktop learned of its account's cloud turns before asking this machine for usage. */
+type CloudUsage = { facts: TurnUsageRevision[] } | { error: string }
+
+/**
+ * Whether a revision is filed the way the plane files a cloud workspace's
+ * turn. Such a revision can never share a key with one this machine metered,
+ * so merging it cannot stand in for a local turn.
+ */
+function isCloudWorkspaceFiling(fact: TurnUsageRevision) {
+  if (fact.location !== "cloud-workspace" || !fact.workspaceId) return false
+  const filing = cloudWorkspaceUsageContext({ workspaceId: fact.workspaceId, sessionId: fact.sessionId })
+  return fact.hostId === filing.hostId && fact.sessionRef === filing.sessionRef
+}
+
+function readCloudUsage(body: unknown):
+  | { value: CloudUsage }
+  | { error: { code: string; message: string }; status: 400 | 413 } {
+  const cloud = isJsonRecord(body) && isJsonRecord(body.cloud) ? body.cloud : undefined
+  if (cloud?.status === "unavailable" && typeof cloud.error === "string" && cloud.error.trim()) {
+    return { value: { error: cloud.error.trim().slice(0, MAX_CLOUD_USAGE_ERROR_LENGTH) } }
+  }
+  if (cloud?.status !== "available" || !Array.isArray(cloud.facts)) {
+    return {
+      status: 400,
+      error: {
+        code: "invalid_cloud_usage",
+        message: 'cloud must be { status: "available", facts } or { status: "unavailable", error }',
+      },
+    }
+  }
+  if (cloud.facts.length > MAX_CLOUD_USAGE_FACTS) {
+    return {
+      status: 413,
+      error: { code: "cloud_usage_too_large", message: `At most ${MAX_CLOUD_USAGE_FACTS} cloud revisions are accepted` },
+    }
+  }
+  const facts: TurnUsageRevision[] = []
+  for (const [index, raw] of cloud.facts.entries()) {
+    const fact = readTurnUsageRevision(raw)
+    if (!fact || !isCloudWorkspaceFiling(fact)) {
+      return {
+        status: 400,
+        error: { code: "invalid_cloud_usage_fact", message: `cloud.facts[${index}] is not a cloud workspace usage revision` },
+      }
+    }
+    facts.push(fact)
+  }
+  return { value: { facts } }
+}
+
+const emptyHistory = (): LocalHistorySnapshot => ({
+  rows: [],
+  totalRows: [],
+  coverage: [],
+  classifiedClaxedo: 0,
+  unclassified: 0,
+})
 
 export function LocalUsageRoutes(input: {
   local: UsageRevisionReader
-  central?: UsageLedger
   outbox: Pick<UsageOutboxSync, "flush" | "clearIdentity">
   identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
   /**
    * Whether this caller stands for the machine itself. Machine-scoped reads
-   * (external history, quota) and adoption of facts no producer account owns
-   * are operator-only; other signed callers see only what their identity
-   * produced. When absent, a request without a bearer token counts as the
-   * operator — the unsigned-local posture where the machine has exactly one
-   * user.
+   * (external history, quota, the account's cloud turns merged into them) and
+   * adoption of facts no producer account owns are operator-only; other signed
+   * callers see only what their identity produced. When absent, a request
+   * without a bearer token counts as the operator — the unsigned-local posture
+   * where the machine has exactly one user.
    */
   machineOperator?: (request: Request) => Promise<boolean> | boolean
   /**
@@ -1100,6 +1131,7 @@ export function LocalUsageRoutes(input: {
    */
   quota?: (input: { request: Request; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
   history?: (range: { since: number; until: number; refresh: boolean }) => Promise<LocalHistorySnapshot>
+  pricing: UsagePricing
   telemetry?: UsageTelemetry
 }) {
   // Precommitted above the 35s representative cold-scan budget. Warm and
@@ -1107,17 +1139,11 @@ export function LocalUsageRoutes(input: {
   // for a first scan competing with desktop startup I/O.
   const LOCAL_HISTORY_DEADLINE_MS = 40_000
   const app = new Hono()
-  const centralCache = new Map<string, CentralUsageProjection>()
   const historyCache = new Map<string, LocalHistorySnapshot>()
   const quotaCache = new Map<string, UnifiedUsageResponse["quota"]>()
   const consumedRefreshNonces = new Set<number>()
   const deadline = <T>(promise: Promise<T>, label: string, timeoutMs = 8_000) =>
     withTimeout(promise, timeoutMs, () => new Error(`${label} timed out`))
-  const rememberCentral = (key: string, value: CentralUsageProjection) => {
-    centralCache.delete(key)
-    centralCache.set(key, value)
-    while (centralCache.size > 32) centralCache.delete(centralCache.keys().next().value!)
-  }
   const rememberHistory = (key: string, value: LocalHistorySnapshot) => {
     historyCache.delete(key)
     historyCache.set(key, value)
@@ -1169,7 +1195,7 @@ export function LocalUsageRoutes(input: {
       pending: result.pending,
     })
   })
-  app.get("/", async (c) => {
+  const readUsage = async (c: Context, cloud: CloudUsage | undefined) => {
     const startedAt = Date.now()
     const parsed = parseUsageQuery((name) => c.req.query(name))
     if (parsed.error) return c.json({ error: parsed.error }, 400)
@@ -1263,15 +1289,7 @@ export function LocalUsageRoutes(input: {
         ? deadline(input.history({ since, until, refresh }), "local usage scan", LOCAL_HISTORY_DEADLINE_MS)
             .then((value) => ({ value }))
             .catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
-        : Promise.resolve({
-            value: {
-              rows: [],
-              totalRows: [],
-              coverage: [],
-              classifiedClaxedo: 0,
-              unclassified: 0,
-            } as LocalHistorySnapshot,
-          })
+        : Promise.resolve({ value: emptyHistory() })
     let identity: Awaited<ReturnType<typeof input.identity>>
     try {
       identity = await input.identity(c.req.raw)
@@ -1279,103 +1297,27 @@ export function LocalUsageRoutes(input: {
       if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
       throw error
     }
-    const syncResult = await (
+    const sync = await (
       identity ? input.outbox.flush(identity, { claimUnowned: operator }) : input.outbox.clearIdentity()
-    ).catch(() => ({
-      attempted: 0,
-      delivered: 0,
-      conflicts: 0,
-      pending: -1,
-      acknowledged: undefined,
-    }))
-    const acknowledged = new Set(syncResult.acknowledged?.map(revisionKey) ?? [])
-    const sync = {
-      attempted: syncResult.attempted,
-      delivered: syncResult.delivered,
-      conflicts: syncResult.conflicts,
-      pending: syncResult.pending,
-    }
+    )
+      .then(({ attempted, delivered, conflicts, pending }) => ({ attempted, delivered, conflicts, pending }))
+      .catch(() => ({ attempted: 0, delivered: 0, conflicts: 0, pending: -1 }))
 
-    let central: CentralUsageProjection | undefined
-    let centralError: string | undefined
-    if (identity && input.central?.usageDashboard) {
-      const dimension = group && group !== "app" ? group : undefined
-      const centralFilters = Object.fromEntries(Object.entries(filters).filter(([key]) => key !== "app"))
-      const centralKey = JSON.stringify([
-        identity.org_id,
-        identity.user_id,
-        since,
-        until,
-        timeZone,
-        dimension,
-        centralFilters,
-      ])
-      try {
-        const payload = jsonRecord(
-          await deadline(
-            input.central.usageDashboard({
-              ...identity,
-              since,
-              until,
-              timeZone,
-              ...(dimension ? { dimension } : {}),
-              ...(Object.keys(centralFilters).length ? { filters: centralFilters } : {}),
-            }),
-            "central usage",
-          ),
-        )
-        // A control plane that answers without an object body counts as no
-        // central data at all, exactly like an unreachable one: the response
-        // stays local-scoped rather than claiming an empty cross-machine total.
-        central = payload && readCentralUsage(payload)
-        if (central) rememberCentral(centralKey, central)
-      } catch (error) {
-        centralError = error instanceof Error ? error.message : String(error)
-        central = centralCache.get(centralKey)
-      }
-    }
     // A signed caller who is not the machine's operator still sees this
     // node's facts — but only the ones their own account produced. The
     // machine-wide `current` table carries no owner, so the outbox's
     // producer-stamped ownership is the only sound local filter for them.
-    const allLocalFacts = latestUsageFacts(
-      (identity && !operator
-        ? await input.local.pendingOutbox({ since, until, all: true, owner: identity })
-        : central
-          ? await input.local.pendingOutbox({ since, until, all: true })
-          : await input.local.current({ since, until })
-      ).filter((fact) => !central || !acknowledged.has(revisionKey(fact))),
-    )
-    const centralFactProjection = centralUsageFacts(central)
-    // When the central projection carries its bounded source facts, compose at
-    // the revision boundary. This lets a newer pending local revision replace
-    // its older central revision instead of adding both snapshots together.
-    // Older servers omit `facts`; keep their aggregate composition compatible.
-    const allClaxedoFacts = centralFactProjection.available
-      ? latestUsageFacts([...centralFactProjection.facts, ...allLocalFacts])
-      : allLocalFacts
+    const localFacts = identity && !operator
+      ? await input.local.pendingOutbox({ since, until, all: true, owner: identity })
+      : await input.local.current({ since, until })
+    const cloudFacts = cloud && "facts" in cloud
+      ? cloud.facts.filter((fact) => fact.observedAt >= since && fact.observedAt <= until)
+      : []
+    const allClaxedoFacts = latestUsageFacts([...localFacts, ...cloudFacts])
     const includeClaxedo = !filters.app || filters.app.toLowerCase() === "claxedo"
-    const localFacts = includeClaxedo ? allClaxedoFacts.filter((fact) => usageFactMatches(fact, filters)) : []
-    const localSeries = usageSeriesFromFacts({ facts: localFacts, since, until, timeZone })
-    const centralSeries =
-      central && includeClaxedo
-        ? centralProjectionSeries(central)
-        : usageSeriesFromFacts({ facts: [], since, until, timeZone })
-    const claxedoSeries = centralFactProjection.available
-      ? localSeries
-      : central
-        ? mergeUsageSeries(centralSeries, localSeries)
-        : localSeries
-    const localCost = await priceFacts(localFacts, timeZone)
-    let centralCost = emptyCost()
-    if (!centralFactProjection.available && central && includeClaxedo && identity && input.central) {
-      try {
-        centralCost = await priceCentralProjection(input.central, identity, { since, until }, central)
-      } catch {
-        /* cost coverage remains explicit and does not drop token totals */
-      }
-    }
-    const claxedoCost = mergeCost(centralCost, localCost)
+    const claxedoFacts = includeClaxedo ? allClaxedoFacts.filter((fact) => usageFactMatches(fact, filters)) : []
+    const claxedoSeries = usageSeriesFromFacts({ facts: claxedoFacts, since, until, timeZone })
+    const claxedoCost = await priceFacts(input.pricing, claxedoFacts, timeZone)
 
     const historyResult = await historyTask
     // A local-history snapshot is bounded by the exact requested instants.
@@ -1383,16 +1325,7 @@ export function LocalUsageRoutes(input: {
     // request after a scanner failure.
     const historyKey = JSON.stringify([since, until, timeZone])
     if ("value" in historyResult) rememberHistory(historyKey, historyResult.value)
-    const history =
-      "value" in historyResult
-        ? historyResult.value
-        : (historyCache.get(historyKey) ?? {
-            rows: [],
-            totalRows: [],
-            coverage: [],
-            classifiedClaxedo: 0,
-            unclassified: 0,
-          })
+    const history = "value" in historyResult ? historyResult.value : (historyCache.get(historyKey) ?? emptyHistory())
     const historyError = "error" in historyResult ? historyResult.error : undefined
     // Keep the range boundary authoritative even for cached or future scanner
     // implementations; every downstream total, price, chart and option uses
@@ -1402,15 +1335,37 @@ export function LocalUsageRoutes(input: {
     const totalRows = history.totalRows
       .filter((row) => row.bucketStart >= since && row.bucketStart <= until)
       .filter((row) => externalMatches(row, filters))
+    // A cloud turn's transcript lives in its sandbox, never in this machine's
+    // history, so Total takes it from the revisions instead.
+    const cloudRevisions = allClaxedoFacts.filter((fact) => fact.location === "cloud-workspace")
+    const totalCloudFacts = view === "total" ? cloudRevisions.filter((fact) => totalFactMatches(fact, filters)) : []
     const externalSeries = usageSeriesFromExternal({ rows: externalRows, since, until, timeZone })
-    const externalCost = await priceExternal(externalRows, timeZone)
-    const totalSeries = usageSeriesFromExternal({ rows: totalRows, since, until, timeZone })
-    const totalCost = await priceExternal(totalRows, timeZone)
-    const { breakdown, modelBreakdown, chart } = await localUsageBreakdowns({
-      central, centralFactsAvailable: centralFactProjection.available, localFacts, totalRows,
-      claxedoSeries, includeClaxedo, group, view, metric, timeZone, requestedLimit,
-      after: c.req.query("after"), modelAfter: c.req.query("model_after"),
-    })
+    const externalCost = await priceExternal(input.pricing, externalRows, timeZone)
+    const totalSeries = mergeUsageSeries(
+      usageSeriesFromExternal({ rows: totalRows, since, until, timeZone }),
+      usageSeriesFromFacts({ facts: totalCloudFacts, since, until, timeZone }),
+    )
+    const totalCost = mergeCost(
+      await priceExternal(input.pricing, totalRows, timeZone),
+      await priceFacts(input.pricing, totalCloudFacts, timeZone),
+    )
+    const breakdowns = group
+      ? await localUsageBreakdowns({
+          pricing: input.pricing,
+          includeClaxedo,
+          claxedoFacts,
+          claxedoSeries,
+          totalRows,
+          totalCloudFacts,
+          group,
+          view,
+          metric,
+          timeZone,
+          requestedLimit,
+          after: c.req.query("after"),
+          modelAfter: c.req.query("model_after"),
+        })
+      : undefined
     const response: UnifiedUsageResponse = {
       version: 1,
       range: { since, until, timeZone },
@@ -1418,15 +1373,11 @@ export function LocalUsageRoutes(input: {
       claxedo: {
         ...claxedoSeries,
         cost: claxedoCost,
-        locationShare: locationShare(
-          includeClaxedo && !centralFactProjection.available
-            ? central?.locations
-            : [],
-          includeClaxedo ? groupUsageFacts(localFacts, "location") : [],
-        ),
-        status: centralError ? "stale" : "available",
-        scope: central ? "cross-machine" : "local",
-        ...(centralError ? { error: centralError } : {}),
+        locationShare: locationShare(groupUsageFacts(claxedoFacts, "location")),
+        ...(cloud && "error" in cloud
+          ? { status: "degraded" as const, error: `Cloud usage is unavailable: ${cloud.error}` }
+          : { status: "available" as const }),
+        scope: (cloud && "facts" in cloud) || cloudRevisions.length > 0 ? "cross-machine" : "local",
       },
       externalLocal: {
         ...externalSeries,
@@ -1440,16 +1391,14 @@ export function LocalUsageRoutes(input: {
       total: totalSeries,
       totalCost,
       filterOptions: {
-        claxedo: mergeFilterOptions(
-          central?.filters,
-          usageFactFilterOptions(allClaxedoFacts),
+        claxedo: usageFactFilterOptions(allClaxedoFacts),
+        total: mergeFilterOptions(
+          externalFilterOptions(history.totalRows),
+          totalFactFilterOptions(view === "total" ? cloudRevisions : []),
         ),
-        total: externalFilterOptions(history.totalRows),
       },
       sync,
-      ...(breakdown ? { breakdown } : {}),
-      ...(modelBreakdown ? { modelBreakdown } : {}),
-      ...(chart ? { chart } : {}),
+      ...breakdowns,
     }
     captureUsage(input.telemetry, {
       deployment: "local",
@@ -1467,6 +1416,39 @@ export function LocalUsageRoutes(input: {
       unpricedTokens: response.totalCost.unpricedTokens,
     })
     return c.json(response)
-  })
+  }
+  app.get("/", (c) => readUsage(c, undefined))
+  // The same read, carrying the cloud turns a signed desktop fetched from its
+  // hosted plane. They are the operator's account's, merged into this
+  // machine's view, so only the operator may bring them.
+  app.post(
+    "/",
+    bodyLimit({
+      maxSize: MAX_CLOUD_USAGE_BODY_BYTES,
+      onError: (c) =>
+        c.json(
+          {
+            error: {
+              code: "cloud_usage_too_large",
+              message: `Request body exceeds the ${MAX_CLOUD_USAGE_BODY_BYTES}-byte limit`,
+            },
+          },
+          413,
+        ),
+    }),
+    async (c) => {
+      let operator: boolean
+      try {
+        operator = await machineOperator(c.req.raw)
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        throw error
+      }
+      if (!operator) return operatorRequired(c)
+      const cloud = readCloudUsage(await c.req.json().catch(() => undefined))
+      if ("error" in cloud) return c.json({ error: cloud.error }, cloud.status)
+      return readUsage(c, cloud.value)
+    },
+  )
   return app
 }

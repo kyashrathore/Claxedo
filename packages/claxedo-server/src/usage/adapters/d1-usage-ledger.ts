@@ -85,7 +85,8 @@ function against(item: TurnUsageRevision, hash: string, current: CurrentRow | nu
   return current.payload_hash === hash ? { status: "duplicate" } : { status: "conflict", currentRevision: current.revision }
 }
 
-export type D1UsageLedger = UsageRevisionWriter & Required<Pick<UsageProjectionLedger, "usageDashboard">>
+export type D1UsageLedger = UsageRevisionWriter
+  & Required<Pick<UsageProjectionLedger, "usageDashboard" | "cloudUsageFacts">>
 
 /**
  * The hosted plane's usage store: the latest revision of every reported turn,
@@ -175,6 +176,16 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
         ...(query.dimension ? { dimension: query.dimension } : {}),
         ...(query.filters ? { filters: query.filters } : {}),
       })
+    },
+
+    async cloudUsageFacts(query) {
+      const rows = await database.prepare(`
+        select * from usage_turn_facts
+        where org_id = ? and user_id = ? and location = 'cloud-workspace' and observed_at >= ? and observed_at <= ?
+        order by observed_at
+        limit ?
+      `).bind(query.org_id, query.user_id, query.since, query.until, query.limit).all<FactRow>()
+      return rows.results.flatMap((row) => usageFactFromRow(row) ?? [])
     },
   }
 }

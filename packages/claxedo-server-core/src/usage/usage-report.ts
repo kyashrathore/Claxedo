@@ -1,9 +1,9 @@
-import type { RuntimeTokenUsage } from "@claxedo/agent-event-runtime"
 import { isJsonRecord, isNonEmptyString, isOneOf } from "../platform/runtime/lib/json"
 import { storedSessionRef } from "../session/meta/shape"
 import {
   assertTurnUsageRevision,
   readTurnUsageQuality,
+  readTurnUsageTokens,
   TURN_USAGE_SETTLEMENTS,
   TURN_USAGE_STATUSES,
   type TurnUsageRevision,
@@ -108,32 +108,10 @@ export function cloudWorkspaceUsageRevision(
   return revision
 }
 
-function tokenCount(value: unknown): number | null | undefined {
-  if (value === null) return null
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
-}
-
-function readTokens(value: unknown): RuntimeTokenUsage | undefined {
-  if (!isJsonRecord(value) || !isJsonRecord(value.cache)) return undefined
-  const input = tokenCount(value.input)
-  const output = tokenCount(value.output)
-  const reasoning = tokenCount(value.reasoning)
-  const read = tokenCount(value.cache.read)
-  const write = tokenCount(value.cache.write)
-  const write1h = value.cache.write1h === undefined ? null : tokenCount(value.cache.write1h)
-  if ([input, output, reasoning, read, write, write1h].some((count) => count === undefined)) return undefined
-  return {
-    input: input ?? null,
-    output: output ?? null,
-    reasoning: reasoning ?? null,
-    cache: { read: read ?? null, write: write ?? null, ...(write1h === null || write1h === undefined ? {} : { write1h }) },
-  }
-}
-
 /** A reported revision, or nothing when it is malformed or names a field the plane owns. */
 export function readUsageReportRevision(value: unknown): UsageReportRevision | undefined {
   if (!isJsonRecord(value) || Object.keys(value).some((key) => !REPORT_REVISION_KEYS.has(key))) return undefined
-  const tokens = readTokens(value.tokens)
+  const tokens = readTurnUsageTokens(value.tokens)
   const { messageId, revision, observedAt, completedAt, settlement, status, harness, providerId, modelId, nativeSessionId } = value
   if (
     !tokens

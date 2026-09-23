@@ -1,6 +1,9 @@
 import z from "zod"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { hostedControlCall } from "@/platform/account/hosted-control-call"
+import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
+import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { readArray } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 import type { UnifiedUsageResponse, UsageFilters } from "@claxedo/usage-contract"
 export type {
   UnifiedUsageResponse,
@@ -18,15 +21,11 @@ export type {
 /**
  * The wire schema for `@claxedo/usage-contract`'s `UnifiedUsageResponse`.
  *
- * `fetchUnifiedUsage` answers through `hostedControlCall`, which has two
- * producers, and neither one established this shape: `usage.get`'s decoder in
- * `HOSTED_OPERATIONS` proves object-ness, and the HTTP branch annotated
- * `await response.json()` — which is `any` — with the contract type. The whole
- * usage dashboard then indexed nested fields on that claim.
- *
- * The `z.ZodType<UnifiedUsageResponse>` annotation is what keeps this honest
- * over time: the schema lives here while the type lives in the contract
- * package, so a field added there and not here stops compiling.
+ * `await response.json()` is `any`, and the whole usage dashboard indexes
+ * nested fields of what it returns, so the answer is parsed here rather than
+ * claimed. The `z.ZodType<UnifiedUsageResponse>` annotation keeps the two in
+ * step: the schema lives here while the type lives in the contract package,
+ * so a field added there and not here stops compiling.
  */
 const UsageTotalsShape = {
   turnCount: z.number(),
@@ -138,7 +137,7 @@ const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
     ...UsageSeriesShape,
     cost: UsageCostSchema,
     locationShare: z.object({ localTokens: z.number(), cloudTokens: z.number() }),
-    status: z.enum(["available", "unavailable", "stale", "degraded"]),
+    status: z.enum(["available", "unavailable", "degraded"]),
     scope: z.enum(["local", "cross-machine"]),
     error: z.string().optional(),
   }),
@@ -217,21 +216,50 @@ function usageQuery(input: UsageRequest): Record<string, string | number> {
   return query
 }
 
+type SignedAccountRun = NonNullable<Awaited<ReturnType<typeof signedAccountRun>>>
+
+/**
+ * The signed account's cloud workspace turns in the range, or why they could
+ * not be read. A failure is part of the answer rather than the request's: the
+ * machine's own usage is still worth drawing without them.
+ */
+async function cloudUsage(run: SignedAccountRun, input: UsageRequest) {
+  try {
+    const answer = decodeHostedResult("usage.cloudFacts", await run("usage.cloudFacts", {
+      since: input.since,
+      until: input.until,
+    }))
+    return { status: "available" as const, facts: readArray(answer, "facts") ?? [] }
+  } catch (error) {
+    return { status: "unavailable" as const, error: parseHostedHttpError(error)?.detail ?? errorMessage(error) }
+  }
+}
+
+/**
+ * Everything the Usage view draws lives with the server this app talks to:
+ * the machine's own plans, transcripts and turns on desktop, the account's
+ * cloud turns on the hosted web app. A signed desktop's sidecar holds no
+ * account credential, so the account's cloud turns ride along with its request.
+ */
 export async function fetchUnifiedUsage(input: UsageRequest): Promise<UnifiedUsageResponse> {
-  return UnifiedUsageResponseSchema.parse(await hostedControlCall(
-    "usage.get",
-    usageQuery(input),
-    async () => {
-      const serverUrl = getClaxedoServerUrl()
-      const target = new URL("/api/claxedo/usage", normalizeUrl(serverUrl) ?? serverUrl)
-      for (const [key, value] of Object.entries(usageQuery(input))) {
-        target.searchParams.set(key, String(value))
-      }
-      const response = await authFetch(String(target))
-      if (!response.ok) throw new Error((await response.text()) || `Usage request failed: ${response.status}`)
-      return await response.json()
-    },
-  ))
+  const serverUrl = getClaxedoServerUrl()
+  const target = new URL("/api/claxedo/usage", normalizeUrl(serverUrl) ?? serverUrl)
+  for (const [key, value] of Object.entries(usageQuery(input))) {
+    target.searchParams.set(key, String(value))
+  }
+  const run = input.view === "quota" ? undefined : await signedAccountRun()
+  const response = await authFetch(
+    String(target),
+    run
+      ? {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ cloud: await cloudUsage(run, input) }),
+        }
+      : undefined,
+  )
+  if (!response.ok) throw new Error((await response.text()) || `Usage request failed: ${response.status}`)
+  return UnifiedUsageResponseSchema.parse(await response.json())
 }
 
 export async function syncUsageOutbox(): Promise<{

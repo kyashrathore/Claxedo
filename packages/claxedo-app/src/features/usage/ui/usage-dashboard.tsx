@@ -167,13 +167,16 @@ export function UsageDashboard(props: {
       <Show when={selected() !== "quota" && data()} keyed>
         {(snapshot) => (
           <div class="workspace-page-notices usage-source-notices" aria-live="polite">
-            <Show when={snapshot.claxedo.status !== "available" || snapshot.claxedo.scope === "local"}>
-              <p>
-                {snapshot.claxedo.error ??
-                  (snapshot.claxedo.scope === "local"
-                    ? "Local Claxedo usage is available. Sign in and reconnect to add cross-machine history."
-                    : "Cross-machine usage is stale; the last valid snapshot remains visible.")}
-              </p>
+            <Show
+              when={
+                snapshot.claxedo.error ??
+                (snapshot.claxedo.scope === "local"
+                  ? "Claxedo usage from this machine. Sign in to include your cloud usage."
+                  : undefined)
+              }
+              keyed
+            >
+              {(notice) => <p>{notice}</p>}
             </Show>
             <Show when={selected() === "total" && snapshot.externalLocal.status !== "available"}>
               <p>

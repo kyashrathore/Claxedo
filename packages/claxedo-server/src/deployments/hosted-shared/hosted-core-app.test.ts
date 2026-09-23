@@ -588,17 +588,39 @@ describe("hosted-core usage", () => {
         resolveSessionUsageOwner: vi.fn(async () => ({ org_id: "org-1", user_id: "alice" })),
       },
     } as unknown as HostedControlPlane
-    const usageDashboard = vi.fn(async () => ({ totals: { turn_count: 3 }, daily: [], models: [], locations: [] }))
+    const usageDashboard = vi.fn(async () => ({
+      totals: { turn_count: 3 },
+      daily: [],
+      models: [{ value: "anthropic/claude-sonnet-4-5", input_tokens: 1_000_000 }],
+      locations: [],
+    }))
+    const cloudUsageFacts = vi.fn(async () => [])
     const writeRevision = vi.fn(async () => ({ status: "accepted" as const }))
-    const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard } })
+    const app = createHostedCoreApp(composed, { ...options, usageLedger: { writeRevision, usageDashboard, cloudUsageFacts } })
 
     const view = await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2", {
       headers: { authorization: "Bearer alice" },
     }))
     expect(view.status).toBe(200)
-    expect(await view.json()).toMatchObject({ claxedo: { totals: { turnCount: 3 }, scope: "cross-machine" } })
+    // The hosted plane prices from the catalog compiled into the Worker, never
+    // one refreshed from disk or the network.
+    expect(await view.json()).toMatchObject({
+      claxedo: {
+        totals: { turnCount: 3 },
+        scope: "cross-machine",
+        cost: { estimatedUsd: 3, pricedTokens: 1_000_000, catalog: { source: "bundled-seed" } },
+      },
+    })
     expect(usageDashboard).toHaveBeenCalledWith(expect.objectContaining({ org_id: "org-1", user_id: "alice" }))
     expect((await app.fetch(new Request("https://core.test/api/claxedo/usage?since=1&until=2"))).status).toBe(401)
+
+    const facts = await app.fetch(new Request("https://core.test/api/claxedo/usage/cloud-facts?since=1&until=2", {
+      headers: { authorization: "Bearer alice" },
+    }))
+    expect(facts.status).toBe(200)
+    expect(await facts.json()).toEqual({ facts: [] })
+    expect(cloudUsageFacts).toHaveBeenCalledWith({ org_id: "org-1", user_id: "alice", since: 1, until: 2, limit: 10_001 })
+    expect((await app.fetch(new Request("https://core.test/api/claxedo/usage/cloud-facts?since=1&until=2"))).status).toBe(401)
 
     const leaseId = await signedTurnLease(env, {
       principal_kind: "user", actor_id: "actor:alice", actor_kind: "human", org_id: "org-1", workspace_id: "ws_cloud",
@@ -611,6 +633,7 @@ describe("hosted-core usage", () => {
       body: JSON.stringify({
         action: "usage_report", sessionId: "ses_cloud", turnId: "msg_user_1", leaseId, fencingToken: 4,
         facts: [{
+          turnId: "msg_user_1",
           messageId: "msg_assistant_1", revision: 1, observedAt: 1, settlement: "final", status: "completed",
           harness: "claude", providerId: "anthropic", modelId: "claude-sonnet-5",
           tokens: { input: 1, output: 1, reasoning: null, cache: { read: null, write: null } },

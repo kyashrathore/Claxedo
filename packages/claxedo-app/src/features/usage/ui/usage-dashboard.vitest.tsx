@@ -158,6 +158,43 @@ describe("UsageDashboard", () => {
     }
   })
 
+  test("a view drawn without the account's cloud turns says why in one line, and a complete one says nothing", async () => {
+    const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
+    const unavailable = 'Cloud usage is unavailable: operation "usage.cloudFacts" failed: 503'
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => {
+      const response = await answer(request)
+      return { ...response, claxedo: { ...response.claxedo, status: "degraded" as const, scope: "local" as const, error: unavailable } }
+    })
+    try {
+      renderDashboard()
+      fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+      expect(await screen.findByText(unavailable)).toBeVisible()
+      expect(screen.queryByText(/Sign in to include/)).not.toBeInTheDocument()
+      expect(screen.getByText("128 Claxedo tokens in range")).toBeVisible()
+    } finally {
+      mocks.fetchUnifiedUsage.mockImplementation(answer)
+    }
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => {
+      const response = await answer(request)
+      return { ...response, claxedo: { ...response.claxedo, scope: "local" as const } }
+    })
+    try {
+      cleanup()
+      renderDashboard()
+      fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+      expect(await screen.findByText("Claxedo usage from this machine. Sign in to include your cloud usage."))
+        .toBeVisible()
+    } finally {
+      mocks.fetchUnifiedUsage.mockImplementation(answer)
+    }
+    cleanup()
+    renderDashboard()
+    fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+    await screen.findByRole("heading", { name: "By provider" })
+    expect(screen.queryByText(/Cloud usage/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Sign in to include/)).not.toBeInTheDocument()
+  })
+
   test("sends a distinct nonce for a manual refresh", async () => {
     renderDashboard()
     fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))

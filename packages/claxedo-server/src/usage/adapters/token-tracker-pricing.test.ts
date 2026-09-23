@@ -1,11 +1,26 @@
 import { describe, expect, test } from "vitest"
-import { projectTokenTrackerCost } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 
 const none = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null }
+const price = tokenTrackerPricing("bundled")
 
-describe("TokenTracker pricing adapter", () => {
+describe("TokenTracker pricing adapter, bundled catalog", () => {
+  test("prices a model only the LiteLLM seed carries without loading anything", async () => {
+    const result = await price({
+      source: "anthropic",
+      model: "claude-sonnet-4-5",
+      tokens: { ...none, input: 1_000_000, cacheRead: 1_000_000 },
+    })
+    expect(result).toEqual({
+      estimatedUsd: 3.3,
+      pricedTokens: 2_000_000,
+      unpricedTokens: 0,
+      catalog: { adapter: "tokentracker-cli", version: "0.91.0", source: "bundled-seed" },
+    })
+  })
+
   test("prices known categories with versioned catalog metadata", async () => {
-    const result = await projectTokenTrackerCost({
+    const result = await price({
       source: "claude",
       model: "claude-sonnet-4-5",
       tokens: { ...none, input: 1_000_000, output: 1_000_000 },
@@ -19,7 +34,7 @@ describe("TokenTracker pricing adapter", () => {
   })
 
   test("unknown models remain explicitly unpriced rather than fabricated free", async () => {
-    const result = await projectTokenTrackerCost({
+    const result = await price({
       source: "claude",
       model: "definitely-not-a-model",
       tokens: { ...none, input: 100, output: 20 },
@@ -28,12 +43,12 @@ describe("TokenTracker pricing adapter", () => {
   })
 
   test("prices disjoint Codex reasoning at the output rate", async () => {
-    const withoutReasoning = await projectTokenTrackerCost({
+    const withoutReasoning = await price({
       source: "codex",
       model: "gpt-5",
       tokens: { ...none, output: 1_000_000 },
     })
-    const withReasoning = await projectTokenTrackerCost({
+    const withReasoning = await price({
       source: "codex",
       model: "gpt-5",
       tokens: { ...none, output: 1_000_000, reasoning: 1_000_000 },
@@ -49,7 +64,7 @@ describe("TokenTracker pricing adapter", () => {
     ["claude-sonnet-5", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
   ] as const)("prices %s at Anthropic's published rates", async (model, rates) => {
     for (const [category, rate] of Object.entries(rates)) {
-      const result = await projectTokenTrackerCost({
+      const result = await price({
         source: "claude",
         model,
         tokens: { ...none, [category]: 1_000_000 },
@@ -59,7 +74,7 @@ describe("TokenTracker pricing adapter", () => {
   })
 
   test("prices one-hour cache writes at twice input and the rest at the five-minute rate", async () => {
-    const result = await projectTokenTrackerCost({
+    const result = await price({
       source: "claude",
       model: "claude-opus-5",
       tokens: { ...none, cacheWrite: 3_000_000, cacheWrite1h: 1_000_000 },

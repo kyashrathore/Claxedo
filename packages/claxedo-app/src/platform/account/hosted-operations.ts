@@ -329,7 +329,7 @@ export const HOSTED_OPERATIONS = {
   "session.gateway": { safe: true, decode: object },
   "billing.checkout": { safe: false, decode: object },
   "billing.portal": { safe: true, decode: object },
-  "usage.get": { safe: true, decode: object },
+  "usage.cloudFacts": { safe: true, decode: withArrays("facts") },
   "usage.sync": { safe: true, decode: object },
 } satisfies Record<HostedOperationName, HostedOperationSpec>
 
