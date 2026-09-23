@@ -101,8 +101,8 @@ export async function writePrivateFileAtomic(
  */
 export async function isOwnerOnlyFile(file: string): Promise<boolean> {
   if (process.platform !== "win32") return ((await stat(file)).mode & 0o077) === 0
-  const { sid, descriptor } = await readWindowsFileProtection(file)
-  return isOwnerOnlyDescriptor(descriptor, sid)
+  const { user, descriptor } = await readWindowsFileProtection(file)
+  return isOwnerOnlyDescriptor(descriptor, user)
 }
 
 /**

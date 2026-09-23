@@ -9,12 +9,27 @@ import { parseSddl } from "./windows-private-file"
  * `protectWindowsPath` checks.
  */
 
-/** `whoami /user`, so the expectation does not come from the descriptor being tested. */
-export function currentWindowsSid(): string {
+/**
+ * `whoami /user`, so the expectation does not come from the descriptor being
+ * tested, spelled as SDDL renders that SID: SYSTEM is `SY` and a built-in
+ * Administrator `LA`, never their numeric form.
+ */
+export function currentWindowsSddlUser(): string {
   const line = execFileSync("whoami.exe", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8" }).trim()
   const sid = line.split(",").at(-1)?.replaceAll('"', "").trim()
   if (!sid?.startsWith("S-1-")) throw new Error(`whoami did not report a SID: ${line}`)
-  return sid
+  const owner = execFileSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "(New-Object System.Security.AccessControl.RawSecurityDescriptor ('O:' + $env:CLAXEDO_TEST_SID)).GetSddlForm('Owner')",
+    ],
+    { encoding: "utf8", env: { ...process.env, CLAXEDO_TEST_SID: sid } },
+  ).trim()
+  if (!owner.startsWith("O:")) throw new Error(`SDDL did not spell ${sid}: ${owner}`)
+  return owner.slice("O:".length)
 }
 
 export function windowsSddl(path: string): string {
@@ -65,6 +80,6 @@ export function ownerOnlyDescription(path: string): string {
 
 export function expectedOwnerOnlyDescription(): string {
   if (process.platform !== "win32") return "mode=600"
-  const sid = currentWindowsSid()
-  return `owner=${sid} inheritance-blocked=true entries=A;;FA;;;${sid}`
+  const user = currentWindowsSddlUser()
+  return `owner=${user} inheritance-blocked=true entries=A;;FA;;;${user}`
 }

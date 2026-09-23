@@ -330,27 +330,34 @@ export function parseSddl(sddl: string): WindowsDescriptor {
   }
 }
 
-/** The shape {@link writeWindowsPrivateFile} creates: `sid` owns the file and is the only principal granted anything. */
-export function isOwnerOnlyDescriptor(descriptor: WindowsDescriptor, sid: string) {
-  return descriptor.owner === sid
+/**
+ * The shape {@link writeWindowsPrivateFile} creates: `user` owns the file and is
+ * the only principal granted anything. `user` must be spelled the way the
+ * descriptor's SDDL spells it, which is not always the SID: SDDL abbreviates
+ * well-known accounts, so SYSTEM reads back as `SY` and a machine's built-in
+ * Administrator (RID 500) as `LA`.
+ */
+export function isOwnerOnlyDescriptor(descriptor: WindowsDescriptor, user: string) {
+  return descriptor.owner === user
     && descriptor.inheritanceBlocked
     && descriptor.entries.length === 1
-    && descriptor.entries[0] === `A;;FA;;;${sid}`
+    && descriptor.entries[0] === `A;;FA;;;${user}`
 }
 
 /**
- * The current user's SID and a file's stored descriptor, from one interpreter
- * run. The path travels in the environment so no quoting rule of PowerShell's
- * can turn it into code.
+ * The current user as SDDL spells it and a file's stored descriptor, from one
+ * interpreter run. The path travels in the environment so no quoting rule of
+ * PowerShell's can turn it into code.
  */
-export function readWindowsFileProtection(file: string): Promise<{ sid: string; descriptor: WindowsDescriptor }> {
+export function readWindowsFileProtection(file: string): Promise<{ user: string; descriptor: WindowsDescriptor }> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       powershellPath(),
       [
         "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
         "$ErrorActionPreference = 'Stop'; " +
-        "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; " +
+        "(New-Object System.Security.AccessControl.RawSecurityDescriptor " +
+        "('O:' + [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value)).GetSddlForm('Owner'); " +
         `(Get-Acl -LiteralPath $env:${TARGET_VARIABLE}).GetSecurityDescriptorSddlForm('Access,Owner')`,
       ],
       { env: environment({ [TARGET_VARIABLE]: file }), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
@@ -361,12 +368,13 @@ export function readWindowsFileProtection(file: string): Promise<{ sid: string; 
     child.stderr.on("data", (chunk: Buffer) => { diagnostics = `${diagnostics}${chunk.toString()}`.slice(0, 2_000) })
     child.on("error", (error) => reject(new Error(`Could not read the protection of ${file}: ${error.message}`, { cause: error })))
     child.on("close", (code) => {
-      const [sid, sddl] = out.trim().split(/\r?\n/)
-      if (code !== 0 || !sid?.startsWith("S-1-") || !sddl) {
+      const [owner, sddl] = out.trim().split(/\r?\n/)
+      const user = owner?.startsWith("O:") ? owner.slice("O:".length).trim() : undefined
+      if (code !== 0 || !user || !sddl) {
         return reject(new Error(`Could not read the protection of ${file}: ${diagnostics.trim() || `the interpreter exited with ${code}`}`))
       }
       try {
-        resolve({ sid, descriptor: parseSddl(sddl.trim()) })
+        resolve({ user, descriptor: parseSddl(sddl.trim()) })
       } catch (error) {
         reject(error)
       }
