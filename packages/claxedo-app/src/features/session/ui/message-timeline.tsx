@@ -1755,7 +1755,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
         onPointerDown={listGestures.onPointerDown}
         onPointerMove={listGestures.onPointerMove}
         onScroll={listGestures.onScroll}
-        onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
         style={{
           ...transcriptStyle(),

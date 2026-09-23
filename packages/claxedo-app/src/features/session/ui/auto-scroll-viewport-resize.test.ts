@@ -188,6 +188,45 @@ describe("createAutoScroll viewport resizes", () => {
     expect(scroller.element.scrollTop).toBe(640)
   })
 
+  const mountSettling = (scroller: ReturnType<typeof createFakeScroller>, content: HTMLElement) => {
+    const [working, setWorking] = createSignal(true)
+    createRoot((disposeRoot) => {
+      dispose = disposeRoot
+      const autoScroll = createAutoScroll({ working, overflowAnchor: "none" })
+      autoScroll.scrollRef(scroller.element)
+      autoScroll.contentRef(content)
+    })
+    setWorking(false)
+  }
+
+  test("follows the finished turn's trailing growth", () => {
+    const scroller = createFakeScroller({ scrollHeight: 642, clientHeight: 642 })
+    const content = document.createElement("div")
+    mountSettling(scroller, content)
+
+    scroller.setContentHeight(751)
+    deliverResize(content, 751)
+
+    expect(scroller.distanceFromBottom()).toBe(0)
+  })
+
+  test("leaves growth from a reader's click after the turn in place", () => {
+    const scroller = createFakeScroller({ scrollHeight: 642, clientHeight: 642 })
+    const content = document.createElement("div")
+    const trigger = document.createElement("button")
+    // A row control that keeps its click from bubbling still counts as the reader acting.
+    trigger.addEventListener("click", (event) => event.stopPropagation())
+    content.append(trigger)
+    scroller.element.append(content)
+    mountSettling(scroller, content)
+
+    trigger.click()
+    scroller.setContentHeight(751)
+    deliverResize(content, 751)
+
+    expect(scroller.element.scrollTop).toBe(0)
+  })
+
   test("still follows content growth", () => {
     const scroller = createFakeScroller({ scrollHeight: 600, clientHeight: 415 })
     const content = document.createElement("div")
