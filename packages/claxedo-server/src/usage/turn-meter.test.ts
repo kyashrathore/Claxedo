@@ -264,6 +264,31 @@ describe("turn usage meter", () => {
     ])
   })
 
+  test("usage that lands on a finished turn does not make it the turn a later session error settles", async () => {
+    const { meter, facts } = harness()
+    const usage = (scope: string, input: number) =>
+      envelope(
+        sessionUsage({
+          sessionID: "session-1",
+          messageID: "msg-1",
+          contextSize: 100,
+          contextUsed: 1,
+          observation: {
+            kind: "cumulative",
+            scope,
+            tokens: { input, output: 1, reasoning: null, cache: { read: null, write: null } },
+          },
+        }),
+      )
+    await meter.consume(usage("own", 10))
+    await meter.consume(envelope(messageUpdated(assistant({ completed: 2_000 }) as never)))
+    await meter.consume(usage("title:thread-t", 3))
+    await meter.consume(envelope(sessionError("next turn failed before it began", "session-1")))
+
+    expect(facts.at(-1)).toMatchObject({ messageId: "msg-1", status: "completed", settlement: "final", tokens: { input: 13 } })
+    expect(facts.some((fact) => fact.status === "error")).toBe(false)
+  })
+
   test("provider error settles known usage and terminal-without-usage is unavailable", async () => {
     const known = harness()
     await known.meter.consume(
