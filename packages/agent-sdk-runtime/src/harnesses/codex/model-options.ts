@@ -4,8 +4,10 @@ import type { AgentProcessObserver } from "../../process-observer"
 import { observeAgentProcess } from "../../process-observer"
 import {
   modelConfigOption,
+  serviceTierConfigOption,
   thoughtLevelConfigOption,
   type SdkModelEntry,
+  type SdkServiceTier,
 } from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
 import { controlRequestDeadline } from "../shared/request-deadline"
@@ -15,10 +17,23 @@ import { codexAppServerModel } from "./protocol"
 
 export function codexConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOption[] {
   if (models.length === 0) return []
-  const effort = thoughtLevelConfigOption(models, codexAppServerModel(currentModel), undefined)
-  return effort
-    ? [modelConfigOption(models, currentModel), effort]
-    : [modelConfigOption(models, currentModel)]
+  const modelId = codexAppServerModel(currentModel)
+  return [
+    modelConfigOption(models, currentModel),
+    thoughtLevelConfigOption(models, modelId),
+    serviceTierConfigOption(models, modelId),
+  ].filter((option): option is AgentConfigOption => !!option)
+}
+
+function codexServiceTiers(value: unknown): SdkServiceTier[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const tier = asRecord(entry)
+    const id = text(tier?.id)
+    if (!id) return []
+    const description = text(tier?.description)
+    return [{ id, name: text(tier?.name) ?? id, ...(description ? { description } : {}) }]
+  })
 }
 
 export async function fetchCodexModels(input: {
@@ -49,7 +64,7 @@ export async function fetchCodexModels(input: {
       const data = Array.isArray(result.data) ? result.data : []
       for (const item of data) {
         const row = asRecord(item)
-        if (!row || row.hidden === true) continue
+        if (!row) continue
         const id = text(row.model) ?? text(row.id)
         if (!id || models.has(id)) continue
         const supportedEffortLevels = Array.isArray(row.supportedReasoningEfforts)
@@ -57,13 +72,16 @@ export async function fetchCodexModels(input: {
             .map((option) => text(asRecord(option)?.reasoningEffort))
             .filter((effort): effort is string => !!effort)
           : []
+        const serviceTiers = codexServiceTiers(row.serviceTiers)
         models.set(id, {
           id,
           name: text(row.displayName) ?? id,
           ...(text(row.description) ? { description: text(row.description)! } : {}),
           ...(row.isDefault === true ? { isDefault: true } : {}),
+          ...(row.hidden === true ? { hidden: true } : {}),
           ...(supportedEffortLevels.length ? { supportsEffort: true, supportedEffortLevels } : {}),
           ...(text(row.defaultReasoningEffort) ? { defaultEffort: text(row.defaultReasoningEffort)! } : {}),
+          ...(serviceTiers.length ? { serviceTiers } : {}),
         })
       }
       cursor = text(result.nextCursor)

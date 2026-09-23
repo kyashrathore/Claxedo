@@ -1942,7 +1942,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               },
             }, 404)
           }
-          return c.json(await adapter.probeConfigOptions(directory))
+          return c.json(await adapter.probeConfigOptions(directory, undefined, c.req.query("model") || undefined))
         } catch (cause) {
           return c.json({
             ok: false,

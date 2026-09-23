@@ -164,7 +164,10 @@ export type AgentRuntimePromptPayload = {
   model?: { providerID: string; modelID: string }
   messageID: string
   parts: PromptInput["parts"]
-  variant?: string
+  /** `null` asks for the harness's default effort, overriding a level the session saved. */
+  variant?: string | null
+  /** A faster tier the selected model offers; absent runs the standard tier. */
+  serviceTier?: string
   system?: string
   format?: PromptInput["format"]
   /**

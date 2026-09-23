@@ -49,7 +49,23 @@ function isApiRequest(route: import("@playwright/test").Route) {
   return type === "fetch" || type === "xhr"
 }
 
+/** Every model here is one the engine runs, flagged the way the real catalog flags it. */
 function paidProviderBody() {
+  const body = paidProviderCatalog()
+  return {
+    ...body,
+    all: body.all.map((provider) => ({
+      ...provider,
+      models: Object.fromEntries(Object.entries(provider.models).map(([id, model]) => [id, {
+        ...model,
+        connected: true,
+        free: model.cost.input === 0 && model.cost.output === 0,
+      }])),
+    })),
+  }
+}
+
+function paidProviderCatalog() {
   return {
     all: [
       {
@@ -234,31 +250,34 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     expect(mock.requests.promptBodies[0]?.modelID).toBe("claude-sonnet-4-6")
   })
 
-  test("the Effort section only renders for a multi-variant model, and the pick reaches the payload", async ({ page }) => {
+  test("the effort slider only steps for a multi-variant model, and the pick reaches the payload", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installPaidProviderFixture(page, mock)
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
 
-    // Big Pickle has zero variants configured in the bootstrap index — no effort section.
+    // Big Pickle has zero variants configured in the bootstrap index — the row is an empty well.
     await pickModelFromPopover(page, "Big Pickle")
     await expect(modelTrigger(page)).toContainText("Big Pickle", { timeout: 10_000 })
     await modelTrigger(page).click()
     const opusPicker = page.locator('[data-component="harness-model-picker"]')
-    await expect(opusPicker.locator('[data-slot="harness-picker-section"]', { hasText: /^Effort/ })).toHaveCount(0)
+    await expect(opusPicker.locator('[data-slot="harness-picker-effort"][data-supported="false"]')).toBeVisible()
+    await expect(opusPicker.getByRole("slider", { name: "Effort" })).toHaveCount(0)
     await page.keyboard.press("Escape")
 
-    // Sonnet has {high, low} — the effort section appears once it's current.
+    // Sonnet has {high, low} — the slider steps once it's current.
     await pickModelFromPopover(page, "Sonnet 4.6")
     await expect(modelTrigger(page)).toContainText("Sonnet 4.6", { timeout: 10_000 })
     await modelTrigger(page).click()
     const picker = page.locator('[data-component="harness-model-picker"]')
-    const effortSection = picker.locator('[data-slot="harness-picker-section"]', { hasText: /^Effort/ })
-    await expect(effortSection).toContainText(/Default/i)
-    await effortSection.click()
-    const highOption = picker.getByRole("button", { name: /^high$/i })
-    await expect(highOption).toBeVisible({ timeout: 10_000 })
-    await highOption.click()
+    const slider = picker.getByRole("slider", { name: "Effort" })
+    await expect(slider).toHaveAttribute("aria-valuetext", /Default/i)
+    await slider.focus()
+    for (let step = 0; step < 3 && (await slider.getAttribute("aria-valuetext")) !== "high"; step++) {
+      await page.keyboard.press("ArrowRight")
+    }
+    await expect(slider).toHaveAttribute("aria-valuetext", "high")
+    await page.keyboard.press("Escape")
     await expect(modelTrigger(page)).toContainText(/high/i, { timeout: 10_000 })
 
     const promptText = "how hard did you think about this"

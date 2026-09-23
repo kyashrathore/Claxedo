@@ -1409,6 +1409,50 @@ describe("createAgentRuntime", () => {
     await runtime.dispose()
   })
 
+  test("a turn that asks for no effort overrides the level the session saved", async () => {
+    const variants: Array<string | undefined> = []
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        sendMessage: async function* (_id, input) {
+          variants.push(input.variant)
+          yield { type: "finish", sessionId: _id }
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" }, variant: "high" })
+
+    await runtime.turns.start({ sessionId: session.id, text: "none", variant: null })
+    await tick()
+    await runtime.turns.start({ sessionId: session.id, text: "saved" })
+    await tick()
+
+    expect(variants).toEqual([undefined, "high"])
+    await runtime.dispose()
+  })
+
+  test("carries a turn service tier into the harness prompt and omits it when absent", async () => {
+    const tiers: Array<string | undefined> = []
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        sendMessage: async function* (_id, input) {
+          tiers.push(input.serviceTier)
+          yield { type: "finish", sessionId: _id }
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await runtime.turns.start({ sessionId: session.id, text: "fast", serviceTier: "priority" })
+    await tick()
+    await runtime.turns.start({ sessionId: session.id, text: "standard" })
+    await tick()
+
+    expect(tiers).toEqual(["priority", undefined])
+    await runtime.dispose()
+  })
+
   test("carries the turn author into the harness prompt and omits it when absent", async () => {
     const authors: Array<unknown> = []
     const runtime = createAgentRuntime({
@@ -1471,6 +1515,26 @@ describe("createAgentRuntime", () => {
     })
 
     expect(calls).toEqual(["setModel:gpt-5.5", "createSession"])
+    await runtime.dispose()
+  })
+
+  test("a create that names no model clears the previous create's model", async () => {
+    const calls: string[] = []
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({ runtimeConfigCalls: calls })],
+    })
+    const create = (model?: { providerID: string; modelID: string }) => runtime.sessions.create({
+      workspaceId: "workspace-test",
+      directory: "/workspace",
+      harness: { id: "pi", access: "native" },
+      ...(model ? { model } : {}),
+    })
+
+    await create({ providerID: "pi", modelID: "gpt-5.5" })
+    await create()
+
+    expect(calls).toEqual(["setModel:gpt-5.5", "createSession", "setModel:", "createSession"])
     await runtime.dispose()
   })
 

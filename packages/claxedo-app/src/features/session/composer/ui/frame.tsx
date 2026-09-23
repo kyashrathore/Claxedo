@@ -112,11 +112,6 @@ export const PromptInputFrame: Component<{
   providerLoading: Accessor<boolean>
   modelLabel: Accessor<string>
   model: Accessor<PickerState>
-  showVariantSelector: Accessor<boolean>
-  variants: Accessor<string[]>
-  currentVariant: Accessor<string | undefined>
-  variantLabel: (value: string) => string
-  onVariantSelect: (value: string) => void
   statusStage: Accessor<SessionStatusStageValue>
   stoppable: Accessor<boolean>
   abort: VoidFunction
@@ -390,13 +385,6 @@ export const PromptInputFrame: Component<{
           providerLoading={props.providerLoading}
           modelLabel={props.modelLabel}
           model={props.model}
-          showVariantSelector={props.showVariantSelector}
-          variantTitle={props.t("command.model.variant.cycle")}
-          variantKeybind={props.commandKeybind("model.variant.cycle") ?? ""}
-          variants={props.variants}
-          currentVariant={props.currentVariant}
-          variantLabel={props.variantLabel}
-          onVariantSelect={props.onVariantSelect}
         />
         <PromptSubmitControl
           stage={props.statusStage}

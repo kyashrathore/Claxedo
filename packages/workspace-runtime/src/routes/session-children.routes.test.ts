@@ -889,7 +889,8 @@ describe("a child created in-process under managed registration", () => {
 
     expect(other.status).toBe(403)
     expect(await other.text()).not.toContain(first.subagentKey)
-    expect(item.calls.models).toEqual([])
+    // Only the admitted create reached the adapter, clearing the model it names none of.
+    expect(item.calls.models).toEqual([""])
     expect(calls.reserved).toHaveLength(1)
     expect(item.calls.created).toEqual([first.id])
   })

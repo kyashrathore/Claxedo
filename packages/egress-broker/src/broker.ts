@@ -1,5 +1,5 @@
 import type { CredentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
-import { sameRuntime, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
+import { sameRuntime, secureOrLoopback, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
 import { brokerErrorBody } from "./errors.js"
 import type { RuntimeTokenClaims } from "./token.js"
 
@@ -246,7 +246,7 @@ export function createEgressBroker(options: BrokerOptions) {
         || !await authority.currentRuntime(claims)) return brokerErrorResponse(403, "binding_unavailable")
       if (!Number.isSafeInteger(binding.revision) || binding.revision < 1 || !value) return brokerErrorResponse(503, "credential_unavailable")
       const origin = new URL(binding.destination.origin)
-      if (origin.protocol !== "https:" || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
+      if (!secureOrLoopback(origin) || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) {
         return brokerErrorResponse(503, "binding_destination_invalid")
       }
       const pathname = route[2] ?? "/"

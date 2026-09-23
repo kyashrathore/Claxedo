@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { afterAll, afterEach, describe, expect, test } from "vitest"
-import type { CatalogFetch } from "./opencode-provider-catalog"
+import type { CatalogFetch, OpenCodeEngineModel } from "./opencode-provider-catalog"
 
-// The catalog reads the credential registry, so importing it opens a database.
+// The catalog reads the custom-provider table, so importing it opens a database.
 // Point that at a scratch directory BEFORE the import or the suite migrates and
 // writes the developer's real `~/.claxedo/claxedo.db`.
 const dataDir = mkdtempSync(path.join(os.tmpdir(), "claxedo-catalog-data-"))
@@ -13,15 +13,11 @@ process.env.CLAXEDO_DATA_DIR = dataDir
 const [
   { opencodeProviderCatalog, OpenCodeCatalogUnavailableError, resolveModelsDevCatalog },
   { putCustomProvider },
-  { deleteCredential, listCredentials, putCredential },
-  { createTestBackend, setBackendOverride },
   { ClaxedoDB },
   { ClaxedoCustomProviderTable },
 ] = await Promise.all([
   import("./opencode-provider-catalog"),
   import("./custom-provider"),
-  import("./registry"),
-  import("./backend-registry"),
   import("../platform/db/index"),
   import("./custom-provider.sql"),
 ])
@@ -58,6 +54,23 @@ function fetchFails(): CatalogFetch {
   return async () => new Response("nope", { status: 503 })
 }
 
+function engine(...models: OpenCodeEngineModel[]) {
+  return async () => models
+}
+
+const ZEN_CATALOG = {
+  ...CATALOG,
+  opencode: {
+    id: "opencode",
+    name: "OpenCode Zen",
+    env: ["OPENCODE_API_KEY"],
+    models: {
+      "deepseek-paid": { id: "deepseek-paid", name: "DeepSeek", cost: { input: 0.3, output: 1.2 } },
+      "pickle-free": { id: "pickle-free", name: "Pickle", cost: { input: 0, output: 0 } },
+    },
+  },
+}
+
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
@@ -71,145 +84,139 @@ afterAll(() => {
 
 describe("opencodeProviderCatalog", () => {
   test("maps models.dev providers and models", async () => {
-    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk() })
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), engineModels: engine() })
     const anthropic = catalog.all.find((p) => p.id === "anthropic")
     expect(anthropic?.name).toBe("Anthropic")
     expect(Object.keys(anthropic!.models).sort()).toEqual(["claude-a", "claude-b"])
     expect(anthropic!.models["claude-b"]).toMatchObject({ reasoning: true, attachment: true, tool_call: true })
   })
 
-  test("drops providers with no models rather than listing an empty one", async () => {
-    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk() })
-    expect(catalog.all.some((p) => p.id === "empty")).toBe(false)
+  test("a model is connected exactly when the engine runs it, whatever keys the environment holds", async () => {
+    const catalog = await opencodeProviderCatalog({
+      env: env(cacheFile(), { ANTHROPIC_API_KEY: "sk-test", OPENCODE_API_KEY: "sk-zen" }),
+      fetchImpl: fetchOk(ZEN_CATALOG),
+      engineModels: engine({ providerID: "opencode", id: "pickle-free", cost: [{ input: 0, output: 0 }] }),
+    })
+    const zen = catalog.all.find((p) => p.id === "opencode")!.models
+    expect(zen["pickle-free"]).toMatchObject({ connected: true, free: true })
+    expect(zen["deepseek-paid"]).toMatchObject({ connected: false, free: false })
+    expect(catalog.connected).toEqual(["opencode"])
+    const anthropic = catalog.all.find((p) => p.id === "anthropic")!.models
+    expect(Object.values(anthropic).every((model) => !model.connected)).toBe(true)
   })
 
-  test("default model is deterministic, not whichever key came first", async () => {
-    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk() })
-    // models.dev key order is not guaranteed; "claude-a" sorts first.
+  test("free is the engine's price for every tier being zero, never a missing price", async () => {
+    const catalog = await opencodeProviderCatalog({
+      env: env(cacheFile()),
+      fetchImpl: fetchOk(ZEN_CATALOG),
+      engineModels: engine(
+        { providerID: "opencode", id: "pickle-free", cost: [{ input: 0, output: 0 }, { input: 0, output: 0.5 }] },
+        { providerID: "opencode", id: "deepseek-paid", cost: [] },
+      ),
+    })
+    const zen = catalog.all.find((p) => p.id === "opencode")!.models
+    expect(zen["pickle-free"].free).toBe(false)
+    expect(zen["deepseek-paid"]).toMatchObject({ connected: true, free: false })
+  })
+
+  test("a provider defaults to its first runnable model, not its first model", async () => {
+    const catalog = await opencodeProviderCatalog({
+      env: env(cacheFile()),
+      fetchImpl: fetchOk(ZEN_CATALOG),
+      engineModels: engine({ providerID: "opencode", id: "pickle-free", cost: [{ input: 0, output: 0 }] }),
+    })
+    expect(catalog.default.opencode).toBe("pickle-free")
     expect(catalog.default.anthropic).toBe("claude-a")
   })
 
-  test("a provider is connected when its models.dev env key is present", async () => {
-    const cache = cacheFile()
-    const without = await opencodeProviderCatalog({ env: env(cache), fetchImpl: fetchOk() })
-    expect(without.connected).not.toContain("anthropic")
-
-    const with_ = await opencodeProviderCatalog({
-      env: env(cacheFile(), { ANTHROPIC_API_KEY: "sk-test" }),
+  test("a model the engine runs that models.dev does not list is still offered", async () => {
+    const catalog = await opencodeProviderCatalog({
+      env: env(cacheFile()),
       fetchImpl: fetchOk(),
+      engineModels: engine(
+        { providerID: "anthropic", id: "claude-z", name: "Z", cost: [] },
+        { providerID: "ollama", id: "llama", name: "Llama", cost: [{ input: 0, output: 0 }] },
+      ),
     })
-    expect(with_.connected).toContain("anthropic")
+    expect(catalog.all.find((p) => p.id === "anthropic")!.models["claude-z"]).toMatchObject({ name: "Z", connected: true })
+    expect(catalog.all.find((p) => p.id === "ollama")!.models.llama).toMatchObject({ name: "Llama", connected: true, free: true })
+    expect(catalog.connected.sort()).toEqual(["anthropic", "ollama"])
   })
 
-  test("a stored sandbox driver token does not connect the model provider that shares its id", async () => {
-    // `putCredential` upserts on (org, provider_id, kind, account_id), so one
-    // id legitimately holds a deploy token and a model key at once. Reading
-    // whichever row sorts first answered the catalog with the deploy token.
-    setBackendOverride(createTestBackend())
-    const driver = await putCredential({
-      provider_id: "vercel",
-      kind: "sandbox_driver",
-      source: "managed",
-      secret: JSON.stringify({ access_token: "vc", team_id: "t", project_id: "p" }),
+  test("carries the engine's effort variants onto the catalog rows it resolves", async () => {
+    const catalog = await opencodeProviderCatalog({
+      env: env(cacheFile()),
+      fetchImpl: fetchOk(),
+      engineModels: engine(
+        { providerID: "anthropic", id: "claude-b", variants: ["high", "max"], cost: [] },
+        { providerID: "anthropic", id: "claude-a", cost: [] },
+      ),
     })
-    try {
-      const catalog = await opencodeProviderCatalog({
-        env: env(cacheFile()),
-        fetchImpl: fetchOk({
-          vercel: {
-            id: "vercel",
-            name: "Vercel",
-            env: ["VERCEL_API_KEY"],
-            models: { "v0-md": { id: "v0-md", name: "v0" } },
-          },
-        }),
-      })
-      expect(catalog.connected).not.toContain("vercel")
-    } finally {
-      await deleteCredential(driver.id)
-      for (const row of listCredentials()) await deleteCredential(row.id)
-      setBackendOverride(undefined)
-    }
+    const models = catalog.all.find((p) => p.id === "anthropic")!.models
+    expect(models["claude-b"].variants).toEqual({ high: {}, max: {} })
+    expect(models["claude-a"]).not.toHaveProperty("variants")
   })
 
-  test("a Claude Code login connects the engine's Anthropic provider, which is the one it binds", async () => {
-    // `reconcileCredentialsIntoSdk` binds a `claude-sdk` row to the engine's
-    // `anthropic` provider, so a catalog that asked only for `anthropic`
-    // called that provider unconnected while turns were already running on it.
-    setBackendOverride(createTestBackend())
-    const login = await putCredential({
-      provider_id: "claude-sdk",
-      kind: "oauth_token",
-      source: "managed",
-      secret: JSON.stringify({ access_token: "plan-token" }),
-    })
-    try {
-      const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk() })
-      expect(catalog.connected).toContain("anthropic")
-    } finally {
-      for (const row of listCredentials()) await deleteCredential(row.id)
-      setBackendOverride(undefined)
-    }
-    void login
+  test("an engine that cannot list its models makes the catalog unavailable rather than disconnected", async () => {
+    await expect(opencodeProviderCatalog({
+      env: env(cacheFile()),
+      fetchImpl: fetchOk(),
+      engineModels: async () => { throw new Error("engine not ready") },
+    })).rejects.toBeInstanceOf(OpenCodeCatalogUnavailableError)
   })
 
-  test("a harness login for one vendor does not connect another vendor's provider", async () => {
-    setBackendOverride(createTestBackend())
-    await putCredential({
-      provider_id: "codex-app-server",
-      kind: "oauth_token",
-      source: "managed",
-      secret: JSON.stringify({ access_token: "plan-token" }),
-    })
-    try {
-      const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk() })
-      expect(catalog.connected).not.toContain("anthropic")
-    } finally {
-      for (const row of listCredentials()) await deleteCredential(row.id)
-      setBackendOverride(undefined)
-    }
+  test("drops providers with no models rather than listing an empty one", async () => {
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), engineModels: engine() })
+    expect(catalog.all.some((p) => p.id === "empty")).toBe(false)
   })
 
-  test("OpenCode Zen and providers with no env requirement are connected without credentials", async () => {
+  test("deprecated models are not listed and cannot become the default", async () => {
     const catalog = await opencodeProviderCatalog({
       env: env(cacheFile()),
       fetchImpl: fetchOk({
-        ...CATALOG,
         opencode: {
           id: "opencode",
           name: "OpenCode Zen",
-          env: ["OPENCODE_API_KEY"],
-          models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
-        },
-        ollama: {
-          id: "ollama",
-          name: "Ollama",
           env: [],
-          models: { llama: { id: "llama", name: "Llama" } },
+          models: {
+            "a-retired-free": { id: "a-retired-free", name: "Retired", status: "deprecated" },
+            "b-live-free": { id: "b-live-free", name: "Live", status: "beta" },
+          },
         },
+        gone: { id: "gone", name: "Gone", env: [], models: { old: { id: "old", status: "deprecated" } } },
       }),
+      engineModels: engine(),
     })
-    expect(catalog.connected).toEqual(["opencode", "ollama"])
-    expect(catalog.connected).not.toContain("anthropic")
+    const zen = catalog.all.find((p) => p.id === "opencode")!
+    expect(Object.keys(zen.models)).toEqual(["b-live-free"])
+    expect(catalog.default.opencode).toBe("b-live-free")
+    expect(catalog.all.some((p) => p.id === "gone")).toBe(false)
+  })
+
+  test("default model is deterministic, not whichever key came first", async () => {
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), engineModels: engine() })
+    // models.dev key order is not guaranteed; "claude-a" sorts first.
+    expect(catalog.default.anthropic).toBe("claude-a")
   })
 
   test("an unavailable catalog with nothing cached throws instead of returning empty", async () => {
     // "we cannot reach the catalog" is a different fact from "you have no
     // providers"; collapsing them would show an outage as an empty picker.
     await expect(
-      opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchFails() }),
+      opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchFails(), engineModels: engine() }),
     ).rejects.toBeInstanceOf(OpenCodeCatalogUnavailableError)
   })
 
   test("a stale cache is served when the network is down", async () => {
     const cache = cacheFile()
-    await opencodeProviderCatalog({ env: env(cache), fetchImpl: fetchOk() })
+    await opencodeProviderCatalog({ env: env(cache), fetchImpl: fetchOk(), engineModels: engine() })
     // Well past the TTL, and the network now fails: a day-old model list still
     // beats an empty picker.
     const catalog = await opencodeProviderCatalog({
       env: env(cache),
       fetchImpl: fetchFails(),
       now: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      engineModels: engine(),
     })
     expect(catalog.all.some((p) => p.id === "anthropic")).toBe(true)
   })
@@ -231,7 +238,7 @@ describe("opencodeProviderCatalog", () => {
   test("a corrupt cache is refetched, not fatal", async () => {
     const cache = cacheFile()
     writeFileSync(cache, "{ not json")
-    const catalog = await opencodeProviderCatalog({ env: env(cache), fetchImpl: fetchOk() })
+    const catalog = await opencodeProviderCatalog({ env: env(cache), fetchImpl: fetchOk(), engineModels: engine() })
     expect(catalog.all.length).toBeGreaterThan(0)
   })
 })
@@ -248,7 +255,7 @@ describe("operator-declared providers in the OpenCode catalog", () => {
 
   test("a custom provider joins models.dev's rows with its base URL, headers and models", async () => {
     putCustomProvider(acme, "org_custom")
-    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom" })
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom", engineModels: engine() })
 
     const entry = catalog.all.find((provider) => provider.id === "acme")
     expect(entry).toMatchObject({ name: "Acme", source: "custom", options: { baseURL: acme.baseURL, headers: acme.headers } })
@@ -259,21 +266,28 @@ describe("operator-declared providers in the OpenCode catalog", () => {
 
   test("another org's catalog does not carry it", async () => {
     putCustomProvider(acme, "org_custom")
-    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_other" })
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_other", engineModels: engine() })
     expect(catalog.all.some((provider) => provider.id === "acme")).toBe(false)
   })
 
-  test("it is connected exactly when its own environment variable is set", async () => {
+  test("it is connected only when the engine runs it, not when its environment variable is set", async () => {
     putCustomProvider(acme, "org_custom")
-    const without = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom" })
-    expect(without.connected).not.toContain("acme")
-
-    const with_ = await opencodeProviderCatalog({
+    const keyed = await opencodeProviderCatalog({
       env: env(cacheFile(), { CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY: "sk-test" }),
       fetchImpl: fetchOk(),
       org: "org_custom",
+      engineModels: engine(),
     })
-    expect(with_.connected).toContain("acme")
+    expect(keyed.connected).not.toContain("acme")
+
+    const run = await opencodeProviderCatalog({
+      env: env(cacheFile()),
+      fetchImpl: fetchOk(),
+      org: "org_custom",
+      engineModels: engine({ providerID: "acme", id: "acme-b", cost: [] }),
+    })
+    expect(run.connected).toContain("acme")
+    expect(run.default.acme).toBe("acme-b")
   })
 
   test("a process secret named on a stored row never connects or ships in the catalog", async () => {
@@ -301,16 +315,17 @@ describe("operator-declared providers in the OpenCode catalog", () => {
       env: env(cacheFile(), { CLAXEDO_CREDENTIALS_TOKEN: "internal-secret" }),
       fetchImpl: fetchOk(),
       org: "org_secret_env",
+      engineModels: engine(),
     })
     const entry = catalog.all.find((provider) => provider.id === "acme")
     expect(entry?.env).toEqual([])
-    expect(catalog.connected).toContain("acme")
+    expect(catalog.connected).not.toContain("acme")
     expect(JSON.stringify(catalog)).not.toContain("CLAXEDO_CREDENTIALS_TOKEN")
   })
 
   test("a custom provider replaces the models.dev row it shadows", async () => {
     putCustomProvider({ ...acme, providerID: "anthropic", name: "Local Anthropic", env: ["CLAXEDO_CUSTOM_PROVIDER_ANTHROPIC_API_KEY"] }, "org_shadow")
-    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_shadow" })
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_shadow", engineModels: engine() })
     const rows = catalog.all.filter((provider) => provider.id === "anthropic")
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ name: "Local Anthropic", source: "custom" })
@@ -318,7 +333,7 @@ describe("operator-declared providers in the OpenCode catalog", () => {
 
   test("no configured secret reaches the served catalog", async () => {
     putCustomProvider(acme, "org_custom")
-    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom" })
+    const catalog = await opencodeProviderCatalog({ env: env(cacheFile()), fetchImpl: fetchOk(), org: "org_custom", engineModels: engine() })
     expect(JSON.stringify(catalog)).not.toContain("sk-")
   })
 })

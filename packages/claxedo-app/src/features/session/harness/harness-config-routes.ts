@@ -11,12 +11,14 @@ function harnessConfigPath(input: {
   workspaceId?: string
   sessionId?: string
   selection?: HarnessSelection
+  model?: string
 }) {
   const url = new URL(`/api/claxedo/agent-config/${input.resource ?? "harness"}`, "http://claxedo.local")
   if (input.directory) url.searchParams.set("directory", input.directory)
   if (input.workspaceId) url.searchParams.set("workspaceId", input.workspaceId)
   if (input.sessionId && input.sessionId !== "new") url.searchParams.set("sessionId", input.sessionId)
   appendSelection(url, input.selection)
+  if (input.model) url.searchParams.set("model", input.model)
   return `${url.pathname}${url.search}`
 }
 
@@ -48,10 +50,12 @@ export function workspaceRuntimeAgentConfigPath(input: {
   directory: HarnessDirectory
   selection?: HarnessSelection
   sessionId?: string
+  model?: string
 }) {
   const url = new URL(input.sessionId && input.sessionId !== "new" ? `/session/${encodeURIComponent(input.sessionId)}/config-options` : `/${input.resource}`, "http://claxedo.local")
   url.searchParams.set("directory", input.directory)
   appendSelection(url, input.selection)
+  if (input.model) url.searchParams.set("model", input.model)
   return `${url.pathname}${url.search}`
 }
 

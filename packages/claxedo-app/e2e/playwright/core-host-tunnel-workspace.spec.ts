@@ -538,7 +538,7 @@ async function installHostTunnelRuntimeMock(
       if (runtimePath === "/question") return json(route, [])
       if (runtimePath === "/provider") {
         return json(route, {
-          all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }],
+          all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {}, connected: true, free: true } } }],
           default: { opencode: BIG_PICKLE.id },
           connected: ["opencode"],
         })
@@ -733,7 +733,7 @@ async function installHostTunnelRuntimeMock(
       const harness = url.searchParams.get("nativeHarness") ?? url.searchParams.get("harness")
       if (harness === "pi" || harness === "opencode") {
         return json(route, {
-          all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }],
+          all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {}, connected: true, free: true } } }],
           default: { opencode: BIG_PICKLE.id },
           connected: ["opencode"],
         })
@@ -1024,7 +1024,7 @@ test.describe("core machine-placed workspace @core", () => {
           events: { hostAggregate: true },
           deployment: bootstrapDeployment(true),
           project: [{ id: PROJECT_ID, worktree: DIR, name: "core-host-tunnel-workspace", time: { created: Date.now(), updated: Date.now() } }],
-          provider: { all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }], default: { opencode: BIG_PICKLE.id }, connected: ["opencode"] },
+          provider: { all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {}, connected: true, free: true } } }], default: { opencode: BIG_PICKLE.id }, connected: ["opencode"] },
           provider_auth: {},
           config: { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } },
         })

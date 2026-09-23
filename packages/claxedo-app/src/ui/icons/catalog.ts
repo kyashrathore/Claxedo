@@ -5,6 +5,7 @@ export const APP_ICONS = {
   "arrow-right": true,
   "arrow-undo-down": true,
   "arrow-up": true,
+  bolt: true,
   archive: true,
   brain: true,
   branch: true,

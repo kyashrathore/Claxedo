@@ -101,6 +101,10 @@ export type ClaxedoProviderModel = {
   headers: Record<string, string>
   release_date: string
   variants?: Record<string, Record<string, unknown>>
+  /** Whether the engine can run a turn on this model now. */
+  connected: boolean
+  /** Whether the engine prices every tier of this model at zero. */
+  free: boolean
 }
 
 export type ClaxedoProvider = {

@@ -34,6 +34,7 @@ function recordingAdapter(configurations: Record<string, unknown>[]): AgentHarne
   return {
     adapterCapabilities: ["runtime-config"] as const,
     setAuth() {},
+    setModel() {},
     async applyConfig(config: Record<string, unknown>) { configurations.push(config) },
     async createSession(directory: string, _title?: string, id = "session") {
       sessions.set(id, { id, directory, time: { created: 1, updated: 1 } })

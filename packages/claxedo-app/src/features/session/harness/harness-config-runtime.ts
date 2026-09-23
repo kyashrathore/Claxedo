@@ -155,7 +155,7 @@ export function createHarnessConfigRuntime(input: {
     return harnessWorkspaceRuntimeRef(params, input.projects())
   }
 
-  async function configOptionsFetch(type: HarnessType, params?: HarnessScopeInput) {
+  async function configOptionsFetch(type: HarnessType, params?: HarnessScopeInput, model?: string) {
     if (useLocalHarnessConfig(params)) {
       return await localHarnessConfigFetch(params)(
         harnessConfigUrl({
@@ -164,6 +164,7 @@ export function createHarnessConfigRuntime(input: {
           directory: params?.directory,
           sessionId: params?.sessionId,
           selection: type,
+          model,
         }),
       )
     }
@@ -175,6 +176,7 @@ export function createHarnessConfigRuntime(input: {
       directory: params.directory,
       sessionId: params.sessionId,
       selection: type,
+      model,
     }))
   }
 

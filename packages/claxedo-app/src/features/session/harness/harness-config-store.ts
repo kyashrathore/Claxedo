@@ -23,7 +23,7 @@ import {
   harnessWorkspaceRuntimeRef,
   type HarnessScopeInput,
 } from "./store-policy"
-import { decodeHarnessState } from "./profile"
+import { decodeHarnessState, isCatalogHarness } from "./profile"
 import { harnessHealthReadiness } from "./store-state"
 import type {
   HarnessType,
@@ -104,6 +104,7 @@ export function createHarnessConfigStore() {
     fetch: harnessRuntime.configOptionsFetch,
     currentHarness: (scope) => harnessStore.state(scope)?.harness,
     selectedModel: (scope) => harnessStore.state(scope)?.selectedModel,
+    selectedThoughtLevel: (scope) => harnessStore.state(scope)?.selectedThoughtLevel,
     modelOptional: harnessStore.canOmitModel,
     preserveSelectedModel: harnessStore.protectDraftModel,
     seed: harnessStore.seed,
@@ -182,7 +183,18 @@ export function createHarnessConfigStore() {
     base,
     seed: harnessStore.seed,
     acceptsDraftModel: harnessStore.acceptsDraftModel,
+    currentModel: (scope) => {
+      const state = harnessStore.state(scope)
+      return state?.selectedModel && state.selectedModelProvider
+        ? { providerID: state.selectedModelProvider, modelID: state.selectedModel }
+        : undefined
+    },
     setSelectedModel: harnessStore.setSelectedModel,
+    reloadOptions: async (scope, params) => {
+      const harness = harnessStore.state(scope)?.harness
+      if (!harness || isCatalogHarness(harness) || !await hasConfigOptions(harness)) return
+      await fetchConfigOptions(scope, harness, params)
+    },
     rememberDraftModel: (scope, model, input, labels) => {
       rememberDraftModel(scope, model, input, labels)
     },
@@ -312,6 +324,9 @@ export function createHarnessConfigStore() {
     thoughtLevels: harnessStore.thoughtLevels,
     setThoughtLevel: harnessStore.setThoughtLevel,
     selectedThoughtLevel: harnessStore.selectedThoughtLevel,
+    serviceTiers: harnessStore.serviceTiers,
+    setServiceTier: harnessStore.setServiceTier,
+    selectedServiceTier: harnessStore.selectedServiceTier,
     displayName: harnessStore.displayName,
     isHarnessMode: harnessStore.isHarnessMode,
     readiness: (scope: string) => harnessStore.read(scope).readiness,
@@ -325,6 +340,8 @@ export function createHarnessConfigStore() {
     draftDefaultModel: harnessStore.draftDefaultModel,
     draftDefaultAuthority: harnessStore.draftDefaultAuthority,
     harnessModelKeyForSubmit: harnessStore.harnessModelKeyForSubmit,
+    settledModel: modelWriter.settledModel,
+    harnessServiceTierForSubmit: harnessStore.harnessServiceTierForSubmit,
     harnessModelNameForSubmit: harnessStore.harnessModelNameForSubmit,
     harnessReadyForSubmit: harnessStore.harnessReadyForSubmit,
   }

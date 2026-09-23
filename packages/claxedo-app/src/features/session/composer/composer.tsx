@@ -484,11 +484,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       workspace: !props.hostKind?.(),
     }),
   })
-  const setScopedVariant = (value: string | undefined) => {
-    local.model.variant.set(value)
-    const model = selectedModelKey()
-    if (isNewSessionVariant() && model) harnessSelectionController?.rememberDraftModel(scope(), { ...model, variant: value }, { directory: harnessDirectory() })
-  }
   const composerBootScope = createMemo(() => [
     props.variant ?? "dock",
     resolvedSessionDirectory() ?? sdk.directory,
@@ -759,14 +754,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       providerLoading={providers.loading}
       modelLabel={() => toolbarState.readiness().label ?? language.t("dialog.model.select.title")}
       model={pickerModel}
-      showVariantSelector={() => !toolbarHarnessMode(scope()) && toolbarState.variants().length > 1}
-      variants={toolbarState.variants}
-      currentVariant={toolbarState.currentVariant}
-      variantLabel={(x) => (x === "default" ? language.t("common.default") : x)}
-      onVariantSelect={(x) => {
-        setScopedVariant(x === "default" ? undefined : x)
-        restoreFocus()
-      }}
       statusStage={statusStage}
       stoppable={stoppable}
       abort={() => abort()}

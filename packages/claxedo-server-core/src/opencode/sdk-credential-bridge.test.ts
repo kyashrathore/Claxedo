@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ProviderProjection } from "@claxedo/agent-sdk-runtime"
+import type { CustomProviderConfig } from "../credentials/custom-provider"
 import { configureAgentConfig, disposeAgentConfig } from "../agent-config/index"
 import { reconcileCredentialsIntoSdk, renewSdkCredentialsIfDue, syncCredentialsToSdk } from "./sdk-credential-bridge"
 
@@ -8,6 +9,10 @@ const construct = vi.fn(() => { throw new Error("a credential write must not boo
 vi.mock("./sdk-runtime", () => ({
   openCodeSdkRuntimeLoaded: () => loaded(),
   openCodeSdkRuntime: () => construct(),
+}))
+const customProviders = vi.fn((): CustomProviderConfig[] => [])
+vi.mock("../credentials/custom-provider", () => ({
+  listCustomProviders: () => customProviders(),
 }))
 
 const brokerProjection = {
@@ -22,9 +27,11 @@ const brokerProjection = {
 function fakeRuntime(connections: { id: string; label: string }[] = []) {
   const removed: string[] = []
   const bound: Record<string, unknown>[] = []
+  const defined: unknown[][] = []
   return {
     removed,
     bound,
+    defined,
     runtime: {
       configuration: {
         integrations: async () => [{
@@ -36,11 +43,12 @@ function fakeRuntime(connections: { id: string; label: string }[] = []) {
         removeCredential: async (id: string) => { removed.push(id) },
       },
       bindProviders: async (overlays: Record<string, unknown>) => { bound.push(overlays) },
+      defineProviders: async (definitions: unknown[]) => { defined.push(definitions) },
     },
   }
 }
 
-const PROVIDER_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY"] as const
+const PROVIDER_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"] as const
 const savedEnv = Object.fromEntries(PROVIDER_ENV.map((name) => [name, process.env[name]]))
 
 describe("OpenCode SDK credential bridge", () => {
@@ -53,6 +61,8 @@ describe("OpenCode SDK credential bridge", () => {
     loaded.mockReset()
     construct.mockReset()
     loaded.mockReturnValue(false)
+    customProviders.mockReset()
+    customProviders.mockReturnValue([])
   })
 
   test("a credential write against a cold SDK host is deferred to the boot reconcile", async () => {
@@ -262,6 +272,100 @@ describe("OpenCode SDK credential bridge", () => {
 
     await renewSdkCredentialsIfDue({ at: projectedAt + 31 * 60 * 1000 })
     expect(fake.bound).toHaveLength(2)
+  })
+
+  const acme: CustomProviderConfig = {
+    providerID: "acme",
+    name: "Acme",
+    baseURL: "https://api.acme.test/v1",
+    env: [],
+    headers: { "X-Acme-Tenant": "prod" },
+    models: { "acme-1": { name: "Acme One" } },
+  }
+
+  test("a custom provider with a chosen account is declared on and routed through the broker", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    customProviders.mockReturnValue([acme])
+    configureAgentConfig({ projectAuth: async () => ({ acme: brokerProjection }) })
+
+    await expect(reconcileCredentialsIntoSdk()).resolves.toEqual({ bound: ["acme"], removed: [] })
+
+    expect(fake.defined).toEqual([[{
+      id: "acme",
+      name: "Acme",
+      baseURL: "https://api.acme.test/v1",
+      headers: { "X-Acme-Tenant": "prod" },
+      models: { "acme-1": { name: "Acme One" } },
+      env: [],
+      enabled: true,
+    }]])
+    expect(fake.bound).toEqual([{ acme: { baseURL: "http://127.0.0.1:2595/bindings/aa11/v1", apiKey: "signed-placeholder" } }])
+  })
+
+  test("a custom provider's unusable account switches it off rather than leaving it keyless", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    customProviders.mockReturnValue([acme])
+    configureAgentConfig({ projectAuth: async () => ({ acme: { unavailable: true, reason: "auth_failed" } }) })
+
+    await reconcileCredentialsIntoSdk()
+
+    expect(fake.defined[0]).toMatchObject([{ id: "acme", enabled: false }])
+    expect(fake.bound).toEqual([{ acme: { unavailable: true, reason: "auth_failed" } }])
+  })
+
+  test("with no account chosen, a custom provider is on when keyless or while its own variable holds a value", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    const keyed = { ...acme, providerID: "keyed", env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"] }
+    customProviders.mockReturnValue([acme, keyed])
+
+    await reconcileCredentialsIntoSdk()
+    process.env.CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY = "sk-env"
+    await reconcileCredentialsIntoSdk()
+
+    expect(fake.defined.map((set) => set.map((definition) => (definition as { enabled: boolean }).enabled)))
+      .toEqual([[true, false], [true, true]])
+  })
+
+  test("a bound custom provider's own variable is withheld from the engine, and returned when unbound", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    customProviders.mockReturnValue([{ ...acme, env: ["CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY"] }])
+    process.env.CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY = "sk-env"
+    let projected: Record<string, ProviderProjection> = { acme: brokerProjection }
+    configureAgentConfig({ projectAuth: async () => projected })
+
+    await reconcileCredentialsIntoSdk()
+    expect(process.env.CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY).toBeUndefined()
+
+    projected = {}
+    await reconcileCredentialsIntoSdk()
+    expect(process.env.CLAXEDO_CUSTOM_PROVIDER_ACME_API_KEY).toBe("sk-env")
+  })
+
+  test("a custom provider replaces a vendor's binding of the same id", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    customProviders.mockReturnValue([{ ...acme, providerID: "anthropic" }])
+    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+
+    await reconcileCredentialsIntoSdk()
+
+    expect(fake.bound).toEqual([{}])
+    expect(fake.defined[0]).toMatchObject([{ id: "anthropic", enabled: true }])
+  })
+
+  test("a credential write to a custom provider's id reaches the running engine", async () => {
+    const fake = fakeRuntime()
+    loaded.mockReturnValue(true)
+    construct.mockImplementation(() => fake.runtime as never)
+    customProviders.mockReturnValue([acme])
+    configureAgentConfig({ projectAuth: async () => ({ acme: brokerProjection }) })
+
+    await expect(syncCredentialsToSdk(undefined, ["acme"])).resolves.toEqual({ bound: ["acme"], removed: [] })
+    await expect(syncCredentialsToSdk(undefined, ["cursor-sdk"])).resolves.toEqual({ bound: [], removed: [] })
   })
 
   test("a cold engine holds no placeholder and is never renewed", async () => {

@@ -1,7 +1,17 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+
+const engineSync = vi.hoisted(() => ({ calls: [] as unknown[][], fail: undefined as Error | undefined }))
+vi.mock("@claxedo/server-core/opencode/sdk-credential-bridge", async (original) => ({
+  ...await original<typeof import("@claxedo/server-core/opencode/sdk-credential-bridge")>(),
+  syncCredentialsToSdk: async (...args: unknown[]) => {
+    engineSync.calls.push(args)
+    if (engineSync.fail) throw engineSync.fail
+    return { bound: [], removed: [] }
+  },
+}))
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-provider-route-"))
 const previous = process.env.CLAXEDO_DATA_DIR
@@ -175,6 +185,29 @@ describe("declaring a custom OpenAI-compatible provider", () => {
     expect(await response.json()).toEqual(ACME)
     expect(listCustomProviders("org_custom")).toEqual([ACME])
     expect(listCustomProviders("org_a")).toEqual([])
+  })
+
+  test("a saved provider is carried into the running engine for its tenant", async () => {
+    engineSync.calls.length = 0
+    const response = await putCustom("org_custom", ACME)
+    expect(response.status).toBe(200)
+    expect(engineSync.calls).toEqual([["org_custom", ["acme"]]])
+  })
+
+  test("a provider the store took and the engine did not is answered by name, not as a failed save", async () => {
+    const { SdkCredentialSyncError } = await import("@claxedo/server-core/opencode/sdk-credential-bridge")
+    engineSync.fail = new SdkCredentialSyncError(new Error("engine down"))
+    try {
+      const response = await putCustom("org_custom", { ...ACME, name: "Acme Renamed" })
+      expect(response.status).toBe(500)
+      expect((await response.json()).error).toEqual({
+        code: "engine_credential_sync_failed",
+        message: "Stored, but the running engine could not be updated: engine down",
+      })
+      expect(listCustomProviders("org_custom")[0]?.name).toBe("Acme Renamed")
+    } finally {
+      engineSync.fail = undefined
+    }
   })
 
   test("refuses a body carrying secret material instead of storing it", async () => {

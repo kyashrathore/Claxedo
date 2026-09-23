@@ -163,7 +163,7 @@ export const state: {
   runtimeSessionUrl: string | null
   harnessMode: boolean
   harnessClaimSession: { id: string } | Promise<{ id: string } | undefined> | undefined
-  harnessSubmitModel: { key: { providerID: string; modelID: string }; name: string } | undefined
+  harnessSubmitModel: { key: { providerID: string; modelID: string; variant?: string }; name: string } | undefined
   piSubmitModel: { key: { providerID: string; modelID: string }; name: string } | undefined
   transportGetSession: boolean
   transportPromptAsyncError: Error | undefined
@@ -279,6 +279,8 @@ export function testHarnessController(): HarnessSubmitController {
     canCreateWithoutModel: () => false,
     readyForSubmit: () => !!(state.harnessMode ? state.harnessSubmitModel : state.piSubmitModel),
     modelKeyForSubmit: () => (state.harnessMode ? state.harnessSubmitModel?.key : state.piSubmitModel?.key),
+    settledModel: async () => undefined,
+    serviceTierForSubmit: () => undefined,
     claimSession: async (_scope, input) => {
       harnessClaimCalls.push(input)
       if (state.sessionConfigSaveError) throw new Error(state.sessionConfigSaveError)

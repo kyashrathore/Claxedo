@@ -7,8 +7,8 @@
  *
  * Provider/model identity for the picker is not here — Claxedo owns that
  * catalog through `opencodeProviderCatalog` (models.dev backed). `models()`
- * reports what the running host can resolve for a workspace, a different
- * question with a different authority.
+ * reports the models the running host can run a turn on, with their effort
+ * variants and cost, which that catalog reads from here.
  */
 import { engineRead } from "./engine-read"
 import type { OpenCodeHost } from "./host"
@@ -34,6 +34,10 @@ export type ModelEntry = Readonly<{
   providerID: string
   id: string
   name?: string
+  /** The effort variants the engine applies for this model, by id. */
+  variants?: readonly string[]
+  /** USD per million tokens, one entry per pricing tier. */
+  cost: readonly Readonly<{ input: number; output: number }>[]
 }>
 
 export type OpenCodeCatalogPort = Readonly<{
@@ -96,7 +100,18 @@ export function createCatalogPort(host: OpenCodeHost): OpenCodeCatalogPort {
       return rows(response).flatMap((row) => {
         const ref = modelRef(row)
         if (ref === undefined) return []
-        return [{ ...ref, ...(typeof row.name === "string" ? { name: row.name } : {}) }]
+        const variants = (arr(row.variants) ?? []).flatMap((variant) => str(rec(variant)?.id) ?? [])
+        const cost = (arr(row.cost) ?? []).flatMap((tier) => {
+          const input = rec(tier)?.input
+          const output = rec(tier)?.output
+          return typeof input === "number" && typeof output === "number" ? [{ input, output }] : []
+        })
+        return [{
+          ...ref,
+          ...(typeof row.name === "string" ? { name: row.name } : {}),
+          ...(variants.length ? { variants } : {}),
+          cost,
+        }]
       })
     },
   }

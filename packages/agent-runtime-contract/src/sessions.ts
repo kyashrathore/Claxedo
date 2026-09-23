@@ -155,6 +155,11 @@ export type PromptInput = {
   format?: PromptFormat
   system?: string
   variant?: string
+  /**
+   * A faster tier the selected model advertises (Codex `priority`, "Fast").
+   * Absent runs the standard tier; a harness drops a tier the model lacks.
+   */
+  serviceTier?: string
   permissionMode?: string
   /**
    * What to do when the session is already running a turn. `steer` hands this

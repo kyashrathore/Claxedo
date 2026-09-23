@@ -42,7 +42,9 @@ export type SessionPromptBody = {
   tools?: Record<string, boolean>
   format?: PromptInput["format"]
   system?: string
-  variant?: string
+  /** `null` asks for the harness's default effort, overriding a level the session saved. */
+  variant?: string | null
+  serviceTier?: string
   /**
    * The permission mode this turn should run under, applied BEFORE the prompt
    * reaches the harness.
@@ -123,7 +125,8 @@ export function parseSessionPromptBody(input: unknown): SessionPromptBody {
     tools: promptTools(body.tools),
     format: format && formatType !== undefined ? { ...format, type: formatType } : undefined,
     system: str(body.system),
-    variant: str(body.variant),
+    variant: body.variant === null ? null : str(body.variant),
+    serviceTier: str(body.serviceTier),
     permissionMode: str(body.permissionMode),
     delivery: promptDelivery(body.delivery),
   }
@@ -280,8 +283,15 @@ function prompt(adapter: AgentHarnessAdapter, body: SessionPromptBody, config?: 
     ...(body.format ? { format: body.format } : {}),
     ...(system ? { system } : {}),
     ...(body.permissionMode ? { permissionMode: body.permissionMode } : {}),
-    ...(body.variant !== undefined ? { variant: body.variant } : config?.variant ? { variant: config.variant } : {}),
+    ...effortFor(body.variant, config?.variant),
+    ...(body.serviceTier ? { serviceTier: body.serviceTier } : {}),
   }
+}
+
+/** The turn's own level, none when it asked for none, and the saved one only when it said nothing. */
+function effortFor(requested: string | null | undefined, saved: string | null | undefined) {
+  const variant = requested === undefined ? saved : requested
+  return variant ? { variant } : {}
 }
 
 export type SessionTurnRefusalCode = "session_configuration_unavailable"
@@ -464,6 +474,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.system ? { system: input.body.system } : {}),
       ...(input.body.permissionMode ? { permissionMode: input.body.permissionMode } : {}),
       ...(input.body.variant !== undefined ? { variant: input.body.variant } : {}),
+      ...(input.body.serviceTier ? { serviceTier: input.body.serviceTier } : {}),
       ...(input.body.delivery ? { delivery: input.body.delivery } : {}),
       ...(input.author ? { author: input.author } : {}),
       ...(input.turnAdmission ? { admission: input.turnAdmission } : {}),

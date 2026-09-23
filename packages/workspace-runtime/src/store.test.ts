@@ -629,6 +629,26 @@ void describe("RuntimeStore", () => {
     reopened.close()
   })
 
+  void it("keeps a queued prompt's service tier across reopen, including on a queue table created before the column", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "s1", directory: "/workspace", agentSessionId: "a1" })
+    db(store).exec("ALTER TABLE runtime_delivery DROP COLUMN service_tier")
+    store.close()
+
+    const upgraded = new RuntimeStore(root)
+    upgraded.queuePrompt({ sessionId: "s1", messageId: "fast", parts: [], delivery: "queue", serviceTier: "priority" })
+    upgraded.queuePrompt({ sessionId: "s1", messageId: "standard", parts: [], delivery: "queue" })
+    upgraded.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(
+      reopened.listQueuedPrompts().map((row) => [row.messageId, row.serviceTier]),
+      [["fast", "priority"], ["standard", undefined]],
+    )
+    reopened.close()
+  })
+
   void it("routes an observation carrying an already-owned child session to the owning row (claude dual-channel split)", () => {
     // Repro of the live crash "UNIQUE constraint failed:
     // session_subagent.child_session_id": the claude harness reports one Task

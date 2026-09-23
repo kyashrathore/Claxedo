@@ -543,9 +543,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         if (create.id) assertCreateBindingScope(create.id, create)
         const adapter = await adapterFor(create.harness)
-        if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
-          adapter.setModel(create.model.modelID === DEFAULT_MODEL_ID ? "" : create.model.modelID)
-        }
+        // "" when the create names none: a skipped call keeps the previous create's model.
+        if (hasAdapterCapability(adapter, "runtime-config")) adapter.setModel(create.model?.modelID === DEFAULT_MODEL_ID ? "" : create.model?.modelID ?? "")
         const refusal = admitSessionInstructions({
           harness: create.harness.id,
           channel: adapter.instructionChannel,

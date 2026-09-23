@@ -211,7 +211,8 @@ function queuedPromptColumns(body: SessionPromptBody): Omit<QueuedPromptRecord, 
     ...(body.tools ? { tools: body.tools } : {}),
     ...(body.format ? { format: body.format } : {}),
     ...(body.system ? { system: body.system } : {}),
-    ...(body.variant === undefined ? {} : { variant: body.variant }),
+    ...(body.variant ? { variant: body.variant } : {}),
+    ...(body.serviceTier ? { serviceTier: body.serviceTier } : {}),
     ...(body.permissionMode ? { permissionMode: body.permissionMode } : {}),
     delivery: body.delivery ?? "queue",
   }
@@ -238,6 +239,7 @@ function queuedPromptBody(row: QueuedPromptRecord): SessionPromptBody {
     ...(row.format ? { format: row.format } : {}),
     ...(row.system ? { system: row.system } : {}),
     ...(row.variant === undefined ? {} : { variant: row.variant }),
+    ...(row.serviceTier ? { serviceTier: row.serviceTier } : {}),
     ...(row.permissionMode ? { permissionMode: row.permissionMode } : {}),
     delivery: row.delivery,
   }

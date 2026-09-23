@@ -203,6 +203,13 @@ describe("harness store state projectors", () => {
     expect(harnessHealthReadiness({ harness: codex, current: "ready" })).toBeUndefined()
   })
 
+  test("a session's saved effort becomes the selected level, and a status without one leaves it alone", () => {
+    const current = { ...initialHarnessStoreState({ scope: "session:ses_1" }), selectedThoughtLevel: "low" }
+    const codex = { kind: "native", harnessId: "codex" } as const
+    expect(harnessStatusPatch({ data: { type: codex, ready: true, thoughtLevel: "xhigh" }, current }).selectedThoughtLevel).toBe("xhigh")
+    expect(harnessStatusPatch({ data: { type: codex, ready: true }, current })).not.toHaveProperty("selectedThoughtLevel")
+  })
+
   test("keeps hydration and switch patches aligned with options policy", () => {
     expect(readyHarnessHydrationPatch({ kind: "connection", connectionId: "acp:claude" })).toEqual({
       harness: { kind: "connection", connectionId: "acp:claude" },
@@ -218,6 +225,8 @@ describe("harness store state projectors", () => {
       dynamicModels: null,
       thoughtLevels: null,
       selectedThoughtLevel: undefined,
+      serviceTiers: null,
+      selectedServiceTier: undefined,
       readiness: "polling",
       optionsSource: "empty",
       optionsStale: false,

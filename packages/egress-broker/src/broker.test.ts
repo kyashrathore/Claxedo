@@ -73,6 +73,20 @@ describe("binding broker HTTP entrypoint", () => {
     expect(f.upstream).toHaveLength(0)
   })
 
+  test.each([
+    ["http://127.0.0.1:11434", 200],
+    ["http://localhost:11434", 200],
+    ["http://[::1]:11434", 200],
+    ["http://10.0.0.5:11434", 503],
+    ["http://api.anthropic.com", 503],
+  ] as const)("a %s destination is %s: plain HTTP only to this machine's loopback", async (origin, status) => {
+    const f = await fixture()
+    f.update({ destination: { origin, methods: ["POST"], pathPrefixes: ["/v1/messages"] } })
+    const response = await f.request()
+    expect(response.status).toBe(status)
+    expect(f.upstream).toHaveLength(status === 200 ? 1 : 0)
+  })
+
   test("refuses methods outside policy", async () => {
     const f = await fixture()
     expect((await f.request("/v1/messages", { method: "DELETE" })).status).toBe(403)

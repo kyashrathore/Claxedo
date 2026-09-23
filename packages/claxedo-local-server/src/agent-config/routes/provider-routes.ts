@@ -6,6 +6,8 @@ import {
   readCustomProvider,
 } from "@claxedo/server-core/credentials/custom-provider"
 import { opencodeProviderCatalog } from "@claxedo/server-core/credentials/opencode-provider-catalog"
+import { openCodeEngineModels } from "@claxedo/server-core/opencode/sdk-runtime"
+import { SdkCredentialSyncError, syncCredentialsToSdk } from "@claxedo/server-core/opencode/sdk-credential-bridge"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
@@ -42,13 +44,13 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
     .get("/providers", requireCatalogHarness, async (c) => {
       try {
         const org = await requestOrg(c.req.raw, authOptions)
-        // Signed callers see only their credential partition, never the host's local OAuth or environment.
-        const env = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled ? process.env : {}
         if (c.req.query("nativeHarness") === "opencode") {
           // An unavailable catalog is a different fact from "no providers", so
           // it surfaces as a failure rather than an empty picker.
-          return c.json(await opencodeProviderCatalog({ env, org }))
+          return c.json(await opencodeProviderCatalog({ org, engineModels: openCodeEngineModels }))
         }
+        // Signed callers see only their credential partition, never the host's local OAuth or environment.
+        const env = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled ? process.env : {}
         return c.json(piProviderCatalog(env, org))
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
@@ -87,13 +89,20 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
       try {
         const org = await requestOrg(c.req.raw, authOptions)
         const body = await c.req.json().catch(() => undefined)
-        // Plaintext loopback destinations are a local-only allowance: a signed
-        // tenant's base URL must be HTTPS, the same rule the catalog GET uses
-        // to decide whose environment it may consult.
+        // Plaintext loopback destinations are a local-only allowance: on a
+        // signed server the loopback a tenant's base URL names is this
+        // server's own, so it must be HTTPS.
         const allowInsecureLoopback = org === SINGLE_TENANT_ORG && !authOptions.authConfig.enabled
-        return c.json(putCustomProvider(readCustomProvider(body, { allowInsecureLoopback }), org))
+        const provider = putCustomProvider(readCustomProvider(body, { allowInsecureLoopback }), org)
+        await syncCredentialsToSdk(org, [provider.providerID])
+        return c.json(provider)
       } catch (error) {
         if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        if (error instanceof SdkCredentialSyncError) {
+          return c.json({
+            error: { code: "engine_credential_sync_failed", message: `Stored, but the running engine could not be updated: ${error.message}` },
+          }, 500)
+        }
         if (error instanceof CustomProviderInvalidError) {
           return c.json({ error: { code: error.code, message: error.message } }, 400)
         }

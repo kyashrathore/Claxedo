@@ -29,6 +29,7 @@ export type CodexCustomGlyph =
   | "codex-custom-magnifying-glass-menu"
   | "codex-custom-marketplace"
   | "codex-custom-mcp"
+  | "codex-custom-bolt"
   | "codex-custom-models"
   | "codex-custom-three-dots"
   | "codex-custom-openai"
@@ -142,6 +143,7 @@ export const CODEX_ICON_ALIASES = {
   // node-graph glyph as `link`, which is why MCP tool rows read as graph
   // nodes. Drawn locally instead, like the other vendor marks.
   mcp: "codex-custom-mcp",
+  bolt: "codex-custom-bolt",
   models: "codex-custom-models",
   // Accepted as-is for now (user review, 2026-09-09).
   monitor: "codex-20-101",

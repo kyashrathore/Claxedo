@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { resolveTurnEffort, thoughtLevelConfigOption } from "./sdk-model-options"
+import { requireTurnEffort, thoughtLevelConfigOption } from "./sdk-model-options"
 
 /**
  * Shapes transcribed from the Claude Agent SDK's `ModelInfo` (sdk.d.ts):
@@ -14,8 +14,8 @@ describe("thoughtLevelConfigOption", () => {
     { id: "haiku", name: "Haiku", supportsEffort: false },
   ]
 
-  test("builds a thought_level select from the current model's levels", () => {
-    expect(thoughtLevelConfigOption(models, "opus", "high")).toEqual({
+  test("builds a thought_level select from the current model's levels, current at its declared default", () => {
+    expect(thoughtLevelConfigOption([{ ...models[0], defaultEffort: "high" }, models[1]], "opus")).toEqual({
       id: "effort",
       name: "Effort",
       description: "How much reasoning effort the model should use",
@@ -31,49 +31,44 @@ describe("thoughtLevelConfigOption", () => {
   })
 
   test("is undefined for a model that does not support effort", () => {
-    expect(thoughtLevelConfigOption(models, "haiku", "high")).toBeUndefined()
+    expect(thoughtLevelConfigOption(models, "haiku")).toBeUndefined()
   })
 
   test("is undefined when the model is unknown", () => {
-    expect(thoughtLevelConfigOption(models, "sonnet", undefined)).toBeUndefined()
+    expect(thoughtLevelConfigOption(models, "sonnet")).toBeUndefined()
   })
 
-  test("leaves the current level unset when it is not offered", () => {
-    expect(thoughtLevelConfigOption(models, "opus", "xhigh")?.currentValue).toBeUndefined()
+  test("leaves the current level unset when the model declares no default", () => {
+    expect(thoughtLevelConfigOption(models, "opus")?.currentValue).toBeUndefined()
   })
 })
 
-/**
- * The SDK types `effort` as a closed union and silently downgrades a level the
- * chosen model does not support. Both make a blind cast the wrong move: the
- * turn would run at a different effort than the UI reports. Resolve against the
- * model's own `supportedEffortLevels` instead, and send nothing when it does
- * not match — "unset" is a real state (the model decides).
- */
-describe("resolveTurnEffort", () => {
+describe("requireTurnEffort", () => {
   const models = [
-    { id: "opus", name: "Opus", supportsEffort: true, supportedEffortLevels: ["low", "high", "max"] },
+    { id: "opus", name: "Opus", supportsEffort: true, supportedEffortLevels: ["low", "high", "max"], resolvedModel: "claude-opus-5-5" },
     { id: "haiku", name: "Haiku", supportsEffort: false },
   ]
+  const turn = (modelId: string | undefined, requested: string | undefined, catalog = models) =>
+    () => requireTurnEffort({ harness: "Claude", models: catalog, modelId, requested })
 
-  test("passes a level the current model supports", () => {
-    expect(resolveTurnEffort(models, "opus", "high")).toBe("high")
+  test("passes a level the model supports, including under its full model id", () => {
+    expect(turn("opus", "high")()).toBe("high")
+    expect(turn("claude-opus-5-5", "max")()).toBe("max")
   })
 
-  test("drops a level the current model does not offer", () => {
-    expect(resolveTurnEffort(models, "opus", "medium")).toBeUndefined()
+  test("sends nothing when nothing was requested", () => {
+    expect(turn("opus", undefined)()).toBeUndefined()
+    expect(turn("opus", undefined, [])()).toBeUndefined()
   })
 
-  test("drops anything for a model without effort support", () => {
-    expect(resolveTurnEffort(models, "haiku", "high")).toBeUndefined()
+  test("refuses rather than drops a level the model does not offer", () => {
+    expect(turn("opus", "medium")).toThrow("does not run opus at effort medium; it accepts low, high, max")
+    expect(turn("haiku", "high")).toThrow("it accepts no effort for that model")
+    expect(turn("unknown-model", "high")).toThrow("does not run unknown-model at effort high")
   })
 
-  test("drops a value that is not an SDK effort level at all", () => {
-    expect(resolveTurnEffort(models, "opus", "turbo")).toBeUndefined()
-  })
-
-  test("is undefined when nothing was requested", () => {
-    expect(resolveTurnEffort(models, "opus", undefined)).toBeUndefined()
+  test("refuses when no catalog is loaded to confirm the level", () => {
+    expect(turn("opus", "high", [])).toThrow("The Claude model list is unavailable, so effort high cannot be confirmed")
   })
 })
 
@@ -84,17 +79,17 @@ describe("thoughtLevelConfigOption — default model resolution", () => {
   ]
 
   test("uses the advertised default model when the current one is empty", () => {
-    expect(thoughtLevelConfigOption(models, "", undefined)?.selectOptions).toEqual([
+    expect(thoughtLevelConfigOption(models, "")?.selectOptions).toEqual([
       { id: "low", name: "Low" },
       { id: "high", name: "High" },
     ])
   })
 
   test("uses the advertised default model when the current one is undefined", () => {
-    expect(thoughtLevelConfigOption(models, undefined, undefined)).toBeDefined()
+    expect(thoughtLevelConfigOption(models, undefined)).toBeDefined()
   })
 
   test("still honours an explicitly selected model over the default", () => {
-    expect(thoughtLevelConfigOption(models, "haiku", undefined)).toBeUndefined()
+    expect(thoughtLevelConfigOption(models, "haiku")).toBeUndefined()
   })
 })

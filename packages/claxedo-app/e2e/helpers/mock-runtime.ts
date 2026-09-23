@@ -205,7 +205,7 @@ export type PromptBody = {
   agent?: string
   providerID?: string
   modelID?: string
-  variant?: string
+  variant?: string | null
   /**
    * The permission mode this turn asked to run under.
    *
@@ -1377,6 +1377,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
                 limit: { context: 200000, output: 8192 },
                 cost: { input: 0, output: 0 },
                 options: {},
+                connected: true,
+                free: activeProviderID === "opencode",
               },
             ]),
           ),

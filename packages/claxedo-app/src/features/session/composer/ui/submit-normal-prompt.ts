@@ -46,7 +46,8 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly provisionalTitle?: string
   readonly agent: string
   readonly model?: { providerID: string; modelID: string }
-  readonly variant?: string
+  readonly variant?: string | null
+  readonly serviceTier?: string
   /**
    * The permission mode this turn runs under, sent WITH the prompt.
    *
@@ -107,7 +108,7 @@ export async function dispatchNormalPromptSubmit(input: {
       sessionDirectory: input.conversationDirectory,
       agent: input.agent,
       model: input.model,
-      variant: input.variant,
+      variant: input.variant ?? undefined,
     })
     return timeline
   }
@@ -199,6 +200,7 @@ export async function dispatchNormalPromptSubmit(input: {
     messageID: promptRequest.messageID,
     parts: promptRequest.requestParts,
     variant: input.variant,
+    ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
     ...(input.system ? { system: input.system } : {}),
     ...(input.format ? { format: input.format } : {}),

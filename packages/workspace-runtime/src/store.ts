@@ -288,6 +288,7 @@ export type QueuedPromptRecord = {
   format?: PromptFormat
   system?: string
   variant?: string
+  serviceTier?: string
   permissionMode?: string
   delivery: "steer" | "queue"
   actor?: { actorId: string; actorKind: "human" | "agent" }
@@ -307,6 +308,7 @@ type QueuedPromptRow = {
   authority_json: string | null
   origin_provenance: string | null
   turn_grant: string | null
+  service_tier: string | null
   held: number
   steering_json: string | null
   session_id: string
@@ -398,6 +400,7 @@ function queuedPrompt(row: QueuedPromptRow): QueuedPromptRecord {
     ...(format === undefined ? {} : { format }),
     ...(row.system === null ? {} : { system: row.system }),
     ...(row.variant === null ? {} : { variant: row.variant }),
+    ...(row.service_tier === null ? {} : { serviceTier: row.service_tier }),
     ...(row.permission_mode === null ? {} : { permissionMode: row.permission_mode }),
     delivery: row.delivery === "steer" ? "steer" : "queue",
     ...(row.actor_id === null || kind === undefined ? {} : { actor: { actorId: row.actor_id, actorKind: kind } }),
@@ -1045,10 +1048,11 @@ export class RuntimeStore {
           authority_json TEXT,
           origin_provenance TEXT,
           turn_grant TEXT,
+          service_tier TEXT,
           PRIMARY KEY (session_id, seq)
         )
       `)
-      for (const column of ["origin_provenance", "turn_grant"]) {
+      for (const column of ["origin_provenance", "turn_grant", "service_tier"]) {
         if (!hasColumn(this.db, "runtime_delivery", column)) {
           this.db.exec(`ALTER TABLE runtime_delivery ADD COLUMN ${column} TEXT`)
         }
@@ -2196,8 +2200,9 @@ export class RuntimeStore {
           queued_at,
           authority_json,
           origin_provenance,
-          turn_grant
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          turn_grant,
+          service_tier
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         )
         .run(
@@ -2224,6 +2229,7 @@ export class RuntimeStore {
           record.authority ? JSON.stringify(record.authority) : null,
           record.provenance ?? null,
           record.grant ?? null,
+          record.serviceTier ?? null,
         )
       return record
     }, "immediate")
@@ -2304,6 +2310,7 @@ export class RuntimeStore {
         authority_json,
         origin_provenance,
         turn_grant,
+        service_tier,
         held
       FROM runtime_delivery
       ORDER BY queued_at, session_id, seq

@@ -138,6 +138,21 @@ async function collect(adapter: PiHarnessAdapter, binding: AgentExecutionBinding
 }
 
 describe("native Pi through the shared adapter", () => {
+  test("runs a supported thinking level and refuses one Pi would clamp", async () => {
+    const f = await fixture()
+    try {
+      const run = async (variant: string) => {
+        const events = []
+        for await (const event of f.adapter.executeTurn(f.binding, { ...prompt("think"), variant })) events.push(event)
+        return JSON.stringify(events)
+      }
+      expect(await run("high")).not.toContain("does not run")
+      expect(await run("xhigh")).toContain("Pi does not run test/model at thinking level xhigh; it kept high")
+    } finally {
+      await f.cleanup()
+    }
+  })
+
   test("persists distinct product/native identity, reconciles deltas and resumes the native file", async () => {
     const f = await fixture()
     try {

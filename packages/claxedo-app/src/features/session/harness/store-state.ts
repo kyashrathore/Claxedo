@@ -24,6 +24,9 @@ export type HarnessStoreState = {
   /** Reasoning/thinking levels the harness offers; `[]` = none, `null` = unknown. */
   thoughtLevels: HarnessModelOption[] | null
   selectedThoughtLevel: string | undefined
+  /** Faster tiers the selected model offers; `[]` = none, `null` = unknown. */
+  serviceTiers: HarnessModelOption[] | null
+  selectedServiceTier: string | undefined
   readiness: HarnessReadiness
   connectionDeclaration?: HarnessConnectionRef
   connectionState?: HarnessConnectionState
@@ -61,6 +64,8 @@ export function initialHarnessStoreState(input: {
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
+    serviceTiers: null,
+    selectedServiceTier: undefined,
     readiness: "unresolved",
     optionsSource: "empty",
     optionsStale: false,
@@ -122,6 +127,7 @@ export function harnessStatusPatch(input: {
       : want.kind === "connection" && input.current?.connectionState?.connectionId === want.connectionId ? input.current.connectionState : undefined,
     configError: input.data.error ?? undefined,
     workspaceId: input.data.workspaceId ?? input.current?.workspaceId,
+    ...(input.data.thoughtLevel ? { selectedThoughtLevel: input.data.thoughtLevel } : {}),
   }
 }
 
@@ -145,6 +151,8 @@ export function pollingHarnessHydrationPatch(type?: HarnessType): HarnessStorePa
           dynamicModels: null,
           thoughtLevels: null,
           selectedThoughtLevel: undefined,
+          serviceTiers: null,
+          selectedServiceTier: undefined,
           optionsSource: "empty" as const,
           optionsStale: false,
           optionsLoading: false,
@@ -167,6 +175,8 @@ export function harnessSwitchStartPatch(input: {
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
+    serviceTiers: null,
+    selectedServiceTier: undefined,
     configError: undefined,
     readiness: "ready",
     optionsSource: "empty",
@@ -210,6 +220,8 @@ function emptyOptionsPatch(type: HarnessType) {
     dynamicModels: type.kind === "connection" ? [] : null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
+    serviceTiers: null,
+    selectedServiceTier: undefined,
     optionsSource: "empty" as const,
     optionsStale: false,
     optionsLoading: false,

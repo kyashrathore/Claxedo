@@ -10,6 +10,8 @@ function controller(): HarnessSubmitController {
     readiness: () => "ready",
     readyForSubmit: () => true,
     modelKeyForSubmit: () => ({ providerID: "codex", modelID: "gpt-5.5" }),
+    settledModel: async () => undefined,
+    serviceTierForSubmit: () => undefined,
     claimSession: async () => undefined,
     setHarness: async () => undefined,
     promote: () => undefined,

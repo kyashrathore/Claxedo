@@ -60,7 +60,7 @@ type SessionConfigPayload = {
   readonly harnessType: HarnessType
   readonly agent?: string
   readonly model?: { providerID: string; modelID: string }
-  readonly variant?: string
+  readonly variant?: string | null
 }
 
 export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
@@ -291,7 +291,7 @@ function sessionConfigBody(input: SessionConfigPayload) {
     harness: sessionHarnessIdentity(input.harnessType),
     ...(input.agent ? { agent: input.agent } : {}),
     ...(input.model ? { model: input.model } : {}),
-    ...(input.variant ? { variant: input.variant } : {}),
+    ...(input.variant !== undefined ? { variant: input.variant } : {}),
   }
 }
 

@@ -46,6 +46,8 @@ export type CodexGoalControllerHost = {
    * that omits this leaves the Goal running without Claxedo's own tools.
    */
   threadConfig(sessionId: string): { config?: JsonRecord }
+  /** The session's saved model and effort, resolved as a prompt turn resolves them. */
+  threadSettings(sessionId: string, directory: string): Promise<{ model?: string; effort?: string }>
   /** Shared with the driver: a thread with a live prompt turn owns its frames. */
   activeThreads: Map<string, CodexActiveThread>
   projectThreadNotification(
@@ -153,6 +155,17 @@ export class CodexGoalController {
       requestedThread = threadId
       if (userMessage) this.pendingGoalRequests.set(threadId, userMessage)
       const proc = await this.host.ensureProcess(directory)
+      if (update.objective !== undefined) {
+        // Goal turns are started by Codex, not by a prompt, so they carry no
+        // model or effort of their own and run whatever the thread last had.
+        // Naming the session's saved ones first is what the UI labels them with.
+        const settings = await this.host.threadSettings(sessionId, directory)
+        await this.requestWithThreadRecovery(proc, sessionId, threadId, directory, "thread/settings/update", {
+          threadId,
+          ...(settings.model ? { model: settings.model } : {}),
+          ...(settings.effort ? { effort: settings.effort } : {}),
+        })
+      }
       const result = await this.requestWithThreadRecovery(
         proc,
         sessionId,
