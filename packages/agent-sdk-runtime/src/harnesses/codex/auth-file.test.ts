@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { isOwnerOnlyFile } from "@claxedo/helpers/fs"
 import { readCodexAuthFile, writeCodexAuthFile } from "./auth-file"
 
 const roots: string[] = []
@@ -21,7 +22,7 @@ describe("Codex auth file", () => {
     const home = temporaryRoot()
     await writeCodexAuthFile(home, { type: "codex_auth", access: "token-1" })
     const file = path.join(home, "auth.json")
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600)
+    expect(await isOwnerOnlyFile(file)).toBe(true)
     expect(readCodexAuthFile(home)).toMatchObject({ access: "token-1" })
   })
 

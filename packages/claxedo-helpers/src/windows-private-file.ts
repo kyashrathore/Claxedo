@@ -304,8 +304,74 @@ const COMMAND =
   "[Console]::Error.WriteLine($reason.Message); exit 1 }"
 
 /** Absolute, so `PATH` cannot decide which interpreter enforces the permissions. */
-function powershellPath() {
+export function powershellPath() {
   return join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+}
+
+export type WindowsDescriptor = {
+  owner: string
+  inheritanceBlocked: boolean
+  /** Each ACE as SDDL spells it, e.g. `A;;FA;;;S-1-5-21-...`. */
+  entries: string[]
+}
+
+/**
+ * Owner, protection flag and entries read out of SDDL text. Windows renders
+ * the descriptor it stored, not the one requested: a DACL set as `D:P` reads
+ * back as `D:PAI`, so the flag is tested for `P` rather than compared as text.
+ */
+export function parseSddl(sddl: string): WindowsDescriptor {
+  const parsed = /^O:(\S+?)D:([A-Z]*)((?:\([^()]*\))*)$/.exec(sddl)
+  if (!parsed) throw new Error(`no descriptor could be read from ${sddl}`)
+  return {
+    owner: parsed[1]!,
+    inheritanceBlocked: parsed[2]!.includes("P"),
+    entries: [...parsed[3]!.matchAll(/\(([^()]*)\)/g)].map((match) => match[1]!),
+  }
+}
+
+/** The shape {@link writeWindowsPrivateFile} creates: `sid` owns the file and is the only principal granted anything. */
+export function isOwnerOnlyDescriptor(descriptor: WindowsDescriptor, sid: string) {
+  return descriptor.owner === sid
+    && descriptor.inheritanceBlocked
+    && descriptor.entries.length === 1
+    && descriptor.entries[0] === `A;;FA;;;${sid}`
+}
+
+/**
+ * The current user's SID and a file's stored descriptor, from one interpreter
+ * run. The path travels in the environment so no quoting rule of PowerShell's
+ * can turn it into code.
+ */
+export function readWindowsFileProtection(file: string): Promise<{ sid: string; descriptor: WindowsDescriptor }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      powershellPath(),
+      [
+        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+        "$ErrorActionPreference = 'Stop'; " +
+        "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; " +
+        `(Get-Acl -LiteralPath $env:${TARGET_VARIABLE}).GetSecurityDescriptorSddlForm('Access,Owner')`,
+      ],
+      { env: environment({ [TARGET_VARIABLE]: file }), windowsHide: true, stdio: ["ignore", "pipe", "pipe"] },
+    )
+    let out = ""
+    let diagnostics = ""
+    child.stdout.on("data", (chunk: Buffer) => { out += chunk.toString() })
+    child.stderr.on("data", (chunk: Buffer) => { diagnostics = `${diagnostics}${chunk.toString()}`.slice(0, 2_000) })
+    child.on("error", (error) => reject(new Error(`Could not read the protection of ${file}: ${error.message}`, { cause: error })))
+    child.on("close", (code) => {
+      const [sid, sddl] = out.trim().split(/\r?\n/)
+      if (code !== 0 || !sid?.startsWith("S-1-") || !sddl) {
+        return reject(new Error(`Could not read the protection of ${file}: ${diagnostics.trim() || `the interpreter exited with ${code}`}`))
+      }
+      try {
+        resolve({ sid, descriptor: parseSddl(sddl.trim()) })
+      } catch (error) {
+        reject(error)
+      }
+    })
+  })
 }
 
 /**
@@ -314,12 +380,8 @@ function powershellPath() {
  * exists to keep out of child processes. The secret is not among them — it
  * travels on stdin and appears in no argument, variable or diagnostic.
  */
-function environment(staging: string, target: string) {
-  const env: NodeJS.ProcessEnv = {
-    [STAGING_VARIABLE]: staging,
-    [TARGET_VARIABLE]: target,
-    [SOURCE_VARIABLE]: RUNNER_SOURCE,
-  }
+function environment(variables: NodeJS.ProcessEnv) {
+  const env: NodeJS.ProcessEnv = { ...variables }
   for (const name of ["SystemRoot", "windir", "PATH", "PATHEXT", "TEMP", "TMP", "COMSPEC"]) {
     const value = process.env[name]
     if (value !== undefined) env[name] = value
@@ -402,7 +464,11 @@ export function writeWindowsPrivateFile(input: WindowsPrivateFileInput): Promise
     const child = spawn(
       powershellPath(),
       ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", COMMAND],
-      { env: environment(input.staging, input.target), windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
+      {
+        env: environment({ [STAGING_VARIABLE]: input.staging, [TARGET_VARIABLE]: input.target, [SOURCE_VARIABLE]: RUNNER_SOURCE }),
+        windowsHide: true,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
     )
 
     let out = ""

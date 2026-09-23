@@ -1,10 +1,15 @@
-import { expect, spyOn, test } from "bun:test"
+import { expect, setDefaultTimeout, spyOn, test } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
+import { isOwnerOnlyFile } from "@claxedo/helpers/fs"
 import { retainPiAuth } from "./auth"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
+import { privateWriteBudgetMs } from "../../test-utils/private-write-budget"
 import { PiHarnessAdapter } from "./index"
 import { createMemoryRuntimeStore } from "../../stores/memory"
+
+// Every `applyConfig` and `write` below replaces `auth.json` and `models.json`; the widest test does two.
+setDefaultTimeout(privateWriteBudgetMs(4))
 
 test("a profile reacquired during cleanup serializes its new credential write after removal", async () => {
   const f = await installFakePiRpc()
@@ -91,7 +96,7 @@ test("the first sync revokes a stale profile left on disk", async () => {
   try {
     await adapter.applyConfig({ auth: {} })
     expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
+    expect(await isOwnerOnlyFile(file)).toBe(true)
   } finally {
     await adapter.dispose()
     await f.dispose()
@@ -124,7 +129,7 @@ test("a bound account reaches Pi as a models.json overlay and never as a key", a
         openai: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d/v1", apiKey: "signed-placeholder" },
       },
     })
-    expect((await fs.stat(models)).mode & 0o777).toBe(0o600)
+    expect(await isOwnerOnlyFile(models)).toBe(true)
     // A login Pi stored for itself resolves ahead of the overlay, so the
     // profile's own credential file has to be empty for the placeholder to be
     // the only credential the process can send.

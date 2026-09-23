@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process"
 import { statSync } from "node:fs"
+import { parseSddl } from "./windows-private-file"
 
 /**
  * What "owner-only" is asserted to mean on each platform, read back through a
@@ -52,18 +53,9 @@ export function widenWindowsPath(path: string, sddl = "D:(A;;FA;;;WD)(A;;FA;;;BA
   )
 }
 
-/**
- * Owner, whether inheritance is blocked, and the entries themselves — read out
- * of the SDDL rather than compared as text. Windows renders the descriptor it
- * stored, not the one requested: a DACL set as `D:P` reads back as `D:PAI`,
- * and a string comparison would fail on a flag that changes nothing about who
- * can open the file.
- */
 export function describeSddl(sddl: string): string {
-  const parsed = /^O:(\S+?)D:([A-Z]*)((?:\([^()]*\))*)$/.exec(sddl)
-  if (!parsed) throw new Error(`no descriptor could be read from ${sddl}`)
-  const entries = [...parsed[3]!.matchAll(/\(([^()]*)\)/g)].map((match) => match[1])
-  return `owner=${parsed[1]} inheritance-blocked=${parsed[2]!.includes("P")} entries=${entries.join("|")}`
+  const { owner, inheritanceBlocked, entries } = parseSddl(sddl)
+  return `owner=${owner} inheritance-blocked=${inheritanceBlocked} entries=${entries.join("|")}`
 }
 
 export function ownerOnlyDescription(path: string): string {

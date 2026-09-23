@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { randomUUID } from "node:crypto"
 import { piCredentialProviderIDs } from "@claxedo/agent-runtime-contract"
+import { writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { isProviderUnavailable, providerBinding, type ProviderProjection } from "../../provider-projection"
 
 /** One `models.json` overlay per provider, merged onto Pi's own built-in definition. */
@@ -108,14 +108,7 @@ export function piSpawnEnv(
 
 async function writeManaged(agentDir: string, name: string, content: unknown) {
   await fs.mkdir(agentDir, { recursive: true, mode: 0o700 })
-  const file = path.join(agentDir, name)
-  const temporary = `${file}.${randomUUID()}.tmp`
-  try {
-    await fs.writeFile(temporary, JSON.stringify(content), { mode: 0o600, flag: "wx" })
-    await fs.rename(temporary, file)
-  } finally {
-    await fs.rm(temporary, { force: true })
-  }
+  await writePrivateFileAtomic(path.join(agentDir, name), JSON.stringify(content))
 }
 
 /**

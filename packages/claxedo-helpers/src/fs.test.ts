@@ -14,7 +14,7 @@ import {
 } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { PrivateFileError, readJsonFile, resolvePem, writeFileAtomic, writeFileAtomicSync, writePrivateFileAtomic } from "./fs"
+import { isOwnerOnlyFile, PrivateFileError, readJsonFile, resolvePem, writeFileAtomic, writeFileAtomicSync, writePrivateFileAtomic } from "./fs"
 import { expectedOwnerOnlyDescription, ownerOnlyDescription, widenWindowsPath, windowsSddl } from "./private-file.test-support"
 
 let dir: string
@@ -274,6 +274,25 @@ describe("writePrivateFileAtomic", () => {
 
     expect(readdirSync(dir)).toEqual([])
     expect(() => statSync(file)).toThrow()
+  })
+})
+
+describe("isOwnerOnlyFile", () => {
+  test("a file writePrivateFileAtomic created is owner-only", async () => {
+    const file = join(dir, "credentials.json")
+    await writePrivateFileAtomic(file, "secret")
+    expect(await isOwnerOnlyFile(file)).toBe(true)
+  })
+
+  test("a file other accounts can open is not", async () => {
+    const file = join(dir, "shared.json")
+    writeFileSync(file, "{}", { mode: 0o644 })
+    if (onWindows) widenWindowsPath(file)
+    expect(await isOwnerOnlyFile(file)).toBe(false)
+  })
+
+  test("a missing file surfaces the read error", async () => {
+    await expect(isOwnerOnlyFile(join(dir, "missing.json"))).rejects.toThrow()
   })
 })
 

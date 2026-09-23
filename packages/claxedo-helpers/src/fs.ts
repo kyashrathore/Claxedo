@@ -2,12 +2,12 @@ import { Buffer } from "node:buffer"
 import { randomUUID } from "node:crypto"
 import { readFileSync } from "node:fs"
 import { mkdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync } from "node:fs"
-import { mkdir, open, readFile, rename, unlink } from "node:fs/promises"
+import { mkdir, open, readFile, rename, stat, unlink } from "node:fs/promises"
 import { basename, dirname, join } from "node:path"
 
 import { sleep } from "./async"
 import { isRecord } from "./guards"
-import { writeWindowsPrivateFile } from "./windows-private-file"
+import { isOwnerOnlyDescriptor, readWindowsFileProtection, writeWindowsPrivateFile } from "./windows-private-file"
 
 export { PrivateFileError } from "./windows-private-file"
 
@@ -89,6 +89,20 @@ export async function writePrivateFileAtomic(
     fsync: options?.fsync,
     protect: true,
   })
+}
+
+/**
+ * Whether a file is readable by its owner alone, judged by the protection the
+ * platform actually stores: POSIX mode bits granting nothing to group or
+ * others, or on Windows a descriptor that {@link writePrivateFileAtomic}
+ * would have created — owned by the current user, inheritance blocked, and
+ * that user the only principal granted anything. `stat().mode` on Windows is
+ * a synthesized 0o666 that says nothing about who can open the file.
+ */
+export async function isOwnerOnlyFile(file: string): Promise<boolean> {
+  if (process.platform !== "win32") return ((await stat(file)).mode & 0o077) === 0
+  const { sid, descriptor } = await readWindowsFileProtection(file)
+  return isOwnerOnlyDescriptor(descriptor, sid)
 }
 
 /**
