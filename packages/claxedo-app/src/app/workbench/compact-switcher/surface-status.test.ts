@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest } from "@claxedo/agent-runtime-contract"
-import { nextUnseenDone, sessionSurfaceActive, sessionSurfaceStatus, terminalSurfaceStatus } from "./surface-status"
+import { nextUnseenDone, sessionSurfaceActive, sessionSurfaceStatus, surfaceStatusForMeta, terminalSurfaceStatus } from "./surface-status"
 
 const permission = (id: string, sessionID = "ses_1"): PermissionRequest => ({
   id,
@@ -67,4 +67,19 @@ describe("compact switcher surface status", () => {
     expect(sessionSurfaceStatus({ statusType: "idle", unseenDone: true })).toBe("done")
     expect(nextUnseenDone({ previousActive: true, active: false, focused: true })).toBe(false)
   })
+
+  test("a failed turn marks the session only until it is seen", () => {
+    expect(sessionSurfaceStatus({ statusType: "idle", failed: true, unseenDone: true })).toBe("error")
+    expect(sessionSurfaceStatus({ statusType: "idle", failed: true, unseenDone: false })).toBe("idle")
+    expect(sessionSurfaceStatus({ statusType: "busy", failed: true, unseenDone: true })).toBe("working")
+    expect(sessionSurfaceStatus({ statusType: "idle", failed: true, requests: { questions: [question("q1")] } })).toBe("permission")
+    expect(sessionSurfaceStatus({ statusType: "idle", failed: false, unseenDone: true })).toBe("done")
+  })
+
+  test("a failed turn reaches a session tab but never a draft", () => {
+    const session = { type: "session", sessionId: "ses_1", directory: "/work" }
+    expect(surfaceStatusForMeta({ meta: session, sessionStatusType: "idle", sessionFailed: true, sessionUnseenDone: true })).toBe("error")
+    expect(surfaceStatusForMeta({ meta: { ...session, sessionId: "new" }, sessionFailed: true })).toBe("idle")
+  })
 })
+

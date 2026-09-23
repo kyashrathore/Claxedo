@@ -1,4 +1,4 @@
-import { Show, createEffect, on, onCleanup, type JSX } from "solid-js"
+import { Match, Show, Switch, createEffect, on, onCleanup, type JSX } from "solid-js"
 import { createHoverEngagement } from "../rail/rail-hover-engagement"
 import { useDragSource } from "../workbench/index"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
@@ -172,7 +172,7 @@ export function NavigationRowGlyph(props: { children: JSX.Element }) {
 }
 
 /**
- * The status dot in that glyph column. Separate from {@link NavigationRowGlyph}
+ * The status mark in that glyph column. Separate from {@link NavigationRowGlyph}
  * so a terminal row can put its own icon in the same column when idle.
  */
 export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
@@ -180,42 +180,52 @@ export function NavigationRowStatusGutter(props: { status: SwitcherStatus }) {
   // component body runs exactly once, so an early return would capture whatever
   // status the row had at mount — idle, for every row that has not started work
   // yet — and the glyph would never appear when that row later went busy.
-  // `NavigationStatusDot` has the same early-return shape and survives it only
-  // because every caller already wraps it in its own `<Show>`.
   return (
     <Show when={props.status !== "idle"}>
       <NavigationRowGlyph>
-        <NavigationStatusDot status={props.status} />
+        <NavigationStatusMark status={props.status} />
       </NavigationRowGlyph>
     </Show>
   )
 }
 
 /**
- * Sidebar status indicator dot shared by both navigation islands. `working`
- * renders a pulsing ringed dot; every other lifecycle state renders a solid
- * dot colored by status. `aria-hidden` because the surrounding row already
- * conveys status textually.
+ * The one status mark for a session or terminal, drawn by the sidebar rows and
+ * the compact tab alike so the two never disagree:
+ *   working          → a grey ring spinner
+ *   permission/error → a blue dot: the session needs you
+ *   done             → a grey dot
+ *   idle             → nothing
+ * `surface` picks the data attribute each surface's e2e oracle reads.
  */
-export function NavigationStatusDot(props: { status: SwitcherStatus }) {
-  // Status is conveyed by a single small dot, identical to the tab/compact-
-  // switcher StatusDot (keep the two in sync). Palette is deliberately minimal —
-  // grey for working/done, red only for "needs you", nothing for idle:
-  //   working    → pulsing grey (in progress)
-  //   done       → solid grey   (finished)
-  //   permission → solid red    (needs you)
-  //   idle       → no dot
-  if (props.status === "idle") return null
+export function NavigationStatusMark(props: { status: SwitcherStatus; surface?: "sidebar" | "switcher" }) {
+  const data = () => props.surface === "switcher"
+    ? { "data-switcher-status": props.status }
+    : { "data-sidebar-status": props.status }
   return (
-    <span
-      aria-hidden="true"
-      data-sidebar-status={props.status}
-      class="size-1.5 shrink-0 rounded-full"
-      classList={{
-        "bg-text-weak": props.status === "working" || props.status === "done",
-        "animate-pulse": props.status === "working",
-        "bg-icon-critical-base": props.status === "permission",
-      }}
-    />
+    <Switch>
+      <Match when={props.status === "working"}>
+        {/* Sized to the cap height of the title beside it (12px tab title,
+            14px row title) and dropped half a pixel: the text's cap band sits
+            that far below the line box's centre, where flex puts the ring. */}
+        <span aria-hidden="true" {...data()} class="flex size-4 shrink-0 translate-y-[0.5px] items-center justify-center">
+          <span
+            class="rounded-full border-[1.5px] border-icon-weak-base border-t-transparent animate-spin motion-reduce:animate-none"
+            classList={{ "size-[8.5px]": props.surface === "switcher", "size-[10px]": props.surface !== "switcher" }}
+          />
+        </span>
+      </Match>
+      <Match when={props.status !== "idle"}>
+        <span
+          aria-hidden="true"
+          {...data()}
+          class="size-1.5 shrink-0 rounded-full"
+          classList={{
+            "bg-icon-interactive-base": props.status === "permission" || props.status === "error",
+            "bg-text-weak": props.status === "done",
+          }}
+        />
+      </Match>
+    </Switch>
   )
 }

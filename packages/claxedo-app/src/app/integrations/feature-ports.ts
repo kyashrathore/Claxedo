@@ -104,7 +104,7 @@ configureSessionAppPorts({
   DirectoryScope: DirectoryScopeModule.DirectoryScope,
   terminalSurfaceStatus: SurfaceStatus.terminalSurfaceStatus,
   NavigationRow: Navigation.NavigationRow,
-  NavigationStatusDot: Navigation.NavigationStatusDot,
+  NavigationStatusMark: Navigation.NavigationStatusMark,
   NavigationRowStatusGutter: Navigation.NavigationRowStatusGutter,
   NavigationRowGlyph: Navigation.NavigationRowGlyph,
   ensureActionDirectorySessionCache: LayoutActions.ensureDirectorySessionCache,

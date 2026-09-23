@@ -275,6 +275,14 @@ export function setDirectorySessionMetaQueryData(input: {
   setShellQueryData(input)
 }
 
+export function setSessionTurnFailedQueryData(input: {
+  queryClient: ShellQueryDataWriter
+  sessionId: string
+  failed: boolean
+}) {
+  setSessionQueryData({ ...input, resource: "turn-failed", value: input.failed })
+}
+
 export function setSessionTodoQueryData(input: {
   queryClient: ShellQueryDataWriter
   sessionId: string

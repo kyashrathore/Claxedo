@@ -308,6 +308,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
       props.activeDirectory ? sessionWorkspaceRuntimeRef({ directory: props.activeDirectory })?.workspaceId : undefined,
     )),
     sidebarDir: sidebarSelection.sidebarDir,
+    projects: () => props.projects,
     state: claxedoState,
     workspacePanelFullWidth,
     workspacePanelWidth,

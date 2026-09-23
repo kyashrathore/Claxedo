@@ -44,7 +44,6 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-session-retry"
 import { TimelineErrorPresentation } from "@/features/session/onboarding/first-turn-recovery-card"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
@@ -1809,23 +1808,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
                       /
                     </span>
                   </Show>
-                  <div
-                    class="shrink-0 flex items-center justify-center overflow-hidden transition-[width,margin] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
-                    style={{
-                      width: workingStatus() !== "hidden" ? "16px" : "0px",
-                      "margin-right": workingStatus() !== "hidden" ? "8px" : "0px",
-                    }}
-                    aria-hidden="true"
-                  >
-                    <Show when={workingStatus() !== "hidden"}>
-                      <div
-                        class="transition-opacity duration-200 ease-out"
-                        classList={{ "opacity-0": workingStatus() === "hiding" }}
-                      >
-                        <Spinner class="size-4" style={{ color: tint() ?? "var(--icon-interactive-base)" }} />
-                      </div>
-                    </Show>
-                  </div>
                   <Show when={childTitle() || title.editing}>
                     <Show
                       when={title.editing}

@@ -61,7 +61,7 @@ configureTerminalAppPorts({
   useClaxedoState: State.useClaxedoState,
   SessionPaneScope: SessionScope.SessionPaneScope,
   NavigationRow: Navigation.NavigationRow,
-  NavigationStatusDot: Navigation.NavigationStatusDot,
+  NavigationStatusMark: Navigation.NavigationStatusMark,
   NavigationRowStatusGutter: Navigation.NavigationRowStatusGutter,
   NavigationRowGlyph: Navigation.NavigationRowGlyph,
   workspacePlacement: WorkspaceConnection.workspaceRelayPlacement,

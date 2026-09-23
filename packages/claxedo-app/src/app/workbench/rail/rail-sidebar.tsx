@@ -89,7 +89,7 @@ import {
   railSessionStatusTarget,
   railSessionStatusTargetChain,
 } from "./rail-session-status-target"
-import { promptSessionStatusMeta, subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
+import { promptSessionStatusMeta, sessionTurnFailed, subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
 import { focusComposerWhenReady } from "@/features/session/composer/ui/composer-focus"
 import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
 import { useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
@@ -756,6 +756,7 @@ export function RailSidebar(props: RailSidebarProps) {
     liveStatusType: (sessionID) =>
       queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(sessionID, "status"))?.type,
     optimisticStartedAt: (sessionID) => promptSessionStatusMeta(sessionID)?.started,
+    turnFailed: sessionTurnFailed,
     autoResponds: (request, directory) => permission.autoResponds(request, directory),
   })
   const sidebarSessionStatusInputs = railSessionActivity.rowInputs
@@ -935,6 +936,7 @@ export function RailSidebar(props: RailSidebarProps) {
       requests: input?.requests,
       directory: input?.directory ?? directory,
       unseenDone: !!sidebarSessionUnseenDone()[key],
+      failed: input?.failed,
       autoResponds: (request, dir) => permission.autoResponds(request, dir),
     })
   }

@@ -17,7 +17,7 @@ export type TerminalAppPorts = {
   useClaxedoState: typeof State.useClaxedoState
   SessionPaneScope: typeof SessionScope.SessionPaneScope
   NavigationRow: typeof Navigation.NavigationRow
-  NavigationStatusDot: typeof Navigation.NavigationStatusDot
+  NavigationStatusMark: typeof Navigation.NavigationStatusMark
   NavigationRowGlyph: typeof Navigation.NavigationRowGlyph
   NavigationRowStatusGutter: typeof Navigation.NavigationRowStatusGutter
   workspacePlacement: typeof WorkspaceConnection.workspaceRelayPlacement
@@ -59,7 +59,7 @@ export type PaneCtx = Workbench.PaneCtx
 export const SessionPaneScope = bind((ports) => ports.SessionPaneScope)
 export type SwitcherStatus = SwitcherItems.SwitcherStatus
 export const NavigationRow = bind((ports) => ports.NavigationRow)
-export const NavigationStatusDot = bind((ports) => ports.NavigationStatusDot)
+export const NavigationStatusMark = bind((ports) => ports.NavigationStatusMark)
 export const NavigationRowGlyph = bind((ports) => ports.NavigationRowGlyph)
 export const NavigationRowStatusGutter = bind((ports) => ports.NavigationRowStatusGutter)
 export type NavigationDragStart = SessionNavigation.NavigationDragStart

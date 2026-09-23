@@ -5,6 +5,7 @@ import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxed
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
 import { NUMBERED_SURFACE_SHORTCUTS } from "../rail/rail-keyboard-shortcuts"
+import { NavigationStatusMark } from "../navigation/navigation-row"
 
 const ACTIVE_SCROLL_DELAY_MS = 120
 const SWITCH_COMMIT_DELAY_MS = 48
@@ -23,94 +24,115 @@ function fallback(value: string | undefined, empty = "Not available") {
   return value?.trim() || empty
 }
 
-function hasVisibleStatus(item: SwitcherItem) {
-  return !!item.status && item.status !== "idle"
-}
-
-function StatusDot(props: { status?: SwitcherItem["status"] }) {
-  const visible = () => (props.status && props.status !== "idle" ? props.status : undefined)
-  return (
-    <Show when={visible()}>
-      {(status) => (
-        <span
-          aria-hidden="true"
-          data-switcher-status={status()}
-          class="inline-flex size-1.5 shrink-0 rounded-full"
-          classList={{
-            "bg-text-weak": status() === "working" || status() === "done",
-            "animate-pulse": status() === "working",
-            "bg-icon-critical-base": status() === "permission",
-          }}
-        />
-      )}
-    </Show>
-  )
-}
-
 function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; status: Accessor<SwitcherItem["status"]> }) {
-  const status = createMemo(() => props.status())
+  const status = createMemo(() => props.status() ?? "idle")
   return (
     <span
       aria-hidden="true"
       data-testid="switcher-identity"
       class="relative flex h-full w-5 shrink-0 items-center justify-center text-text-weaker transition-opacity duration-100"
       classList={{
-        "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
-        "opacity-100": props.active,
+        "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100":
+          !props.active && status() === "idle",
+        "opacity-100": props.active || status() !== "idle",
       }}
     >
-      <ProjectAvatar
-        data-switcher-project-avatar
-        fallback={fallback(props.item.projectLabel, "Global")}
-        variant="outline"
-        class="size-4 shrink-0"
-      />
-      <Show when={hasVisibleStatus({ ...props.item, status: status() })}>
-        <span class="absolute bottom-[3px] right-0 flex rounded-full bg-background-base p-px">
-          <StatusDot status={status()} />
-        </span>
+      {/* Working replaces the avatar: it is what the tab is about right now.
+          Every other state is a dot on the avatar's corner. */}
+      <Show
+        when={status() === "working"}
+        fallback={
+          <>
+            <ProjectAvatar
+              data-switcher-project-avatar
+              fallback={fallback(props.item.projectLabel, "Global")}
+              variant="outline"
+              class="size-4 shrink-0"
+            />
+            <Show when={status() !== "idle"}>
+              <span class="absolute bottom-[3px] right-0 flex rounded-full bg-background-base p-px">
+                <NavigationStatusMark status={status()} surface="switcher" />
+              </span>
+            </Show>
+          </>
+        }
+      >
+        <NavigationStatusMark status="working" surface="switcher" />
       </Show>
     </span>
   )
 }
 
-function MetadataRow(props: { icon: ClaxedoIconProps["name"]; label: string; value?: string }) {
+function MetadataRow(props: {
+  icon: ClaxedoIconProps["name"]
+  label: string
+  value?: string
+  detail?: string
+  tone?: "attention"
+}) {
   const value = () => props.value?.trim()
+  // A row with nothing to say is left out rather than drawn as a placeholder:
+  // the card is a glance, and an empty row is a row the eye still has to read.
   return (
-    <div class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
-      {/*
-        No chip behind the glyph. Five filled squares stacked down a 320px card
-        were the loudest thing in it, and they encode what the label beside them
-        already says — the icon is here to help the eye find a row, not to be a
-        second label.
-      */}
-      <span class="flex items-center justify-center text-icon-weak-base">
-        <Icon name={props.icon} size="small" />
-      </span>
-      {/*
-        Sentence case, not tracked micro-caps. At 10px with 0.08em tracking
-        "WORKSPACE" only just cleared its 76px column — one longer word, or any
-        of the other fifteen locales, and it truncated. Sentence case at 11px is
-        narrower, quieter, and leaves the value as the thing being read.
-      */}
-      <span class="text-xs text-text-weaker">{props.label}</span>
-      <span
-        class="min-w-0 truncate text-sm"
-        classList={{
-          "text-text-base": !!value(),
-          // Absence is not a value. An em dash says "nothing here" without
-          // spending a full phrase on it, twice, in a five-row card.
-          "text-text-weaker": !value(),
-        }}
-        title={value() || undefined}
-      >
-        {value() || "—"}
-      </span>
-    </div>
+    <Show when={value()}>
+      {(text) => (
+        <div data-slot="switcher-metadata-row" class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
+          {/*
+            No chip behind the glyph. Five filled squares stacked down a 320px card
+            were the loudest thing in it, and they encode what the label beside them
+            already says — the icon is here to help the eye find a row, not to be a
+            second label.
+          */}
+          <span class="flex items-center justify-center text-icon-weak-base">
+            <Icon name={props.icon} size="small" />
+          </span>
+          {/*
+            Sentence case, not tracked micro-caps. At 10px with 0.08em tracking
+            "WORKSPACE" only just cleared its 76px column — one longer word, or any
+            of the other fifteen locales, and it truncated. Sentence case at 11px is
+            narrower, quieter, and leaves the value as the thing being read.
+          */}
+          <span class="text-xs text-text-weaker">{props.label}</span>
+          <span
+            class="min-w-0 truncate text-sm"
+            classList={{
+              "text-text-base": !props.tone,
+              "text-text-interactive-base": props.tone === "attention",
+            }}
+            title={props.detail ? `${text()} ${props.detail}` : text()}
+          >
+            {text()}
+            <Show when={props.detail}>
+              {(detail) => <span class="text-text-weaker"> {detail()}</span>}
+            </Show>
+          </span>
+        </div>
+      )}
+    </Show>
   )
 }
 
+function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`
+}
+
 function SwitcherMetadataCard(props: { item: SwitcherItem }) {
+  const details = props.item.details?.()
+  const session = () => props.item.kind === "session"
+  const todo = () => {
+    const current = details?.todo()
+    if (!current) return undefined
+    const count = `${current.done}/${current.total}`
+    return current.text ? { value: current.text, detail: count } : { value: `${count} done` }
+  }
+  const changes = () => {
+    const current = details?.changes()
+    if (!current) return undefined
+    return { value: plural(current.files, "file", "files"), detail: `+${current.added} −${current.removed}` }
+  }
+  const worktree = () => props.item.workspaceDir ?? props.item.projectWorktree
+  const hasLiveRows = () => !!(details?.status() || todo() || changes())
+  const hasPlaceRows = () => !!(props.item.gitRepo || details?.gitBranch() || worktree())
   return (
     <div
       data-slot="switcher-metadata-card"
@@ -147,13 +169,56 @@ function SwitcherMetadataCard(props: { item: SwitcherItem }) {
         so an even, tight rhythm reads as one block; 8px gaps made five short
         rows look like five separate things.
       */}
-      <div class="grid gap-y-0.5">
-        <MetadataRow icon="folder" label="Project" value={fallback(props.item.projectLabel, "Global")} />
-        <MetadataRow icon="link" label="Git repo" value={props.item.gitRepo} />
-        <MetadataRow icon="branch" label="Branch" value={props.item.gitBranch} />
-        <MetadataRow icon="worktree" label="Worktree" value={props.item.workspaceDir ?? props.item.projectWorktree} />
-        <MetadataRow icon="monitor" label="Workspace" value={fallback(props.item.workspaceLabel, "Global")} />
-      </div>
+      <Show
+        when={session()}
+        fallback={
+          <div class="grid gap-y-0.5">
+            <MetadataRow icon="folder" label="Project" value={props.item.projectLabel} />
+            <MetadataRow icon="link" label="Git repo" value={props.item.gitRepo} />
+            <MetadataRow icon="branch" label="Branch" value={details?.gitBranch()} />
+            <MetadataRow icon="worktree" label="Worktree" value={worktree()} />
+            <MetadataRow icon="monitor" label="Workspace" value={props.item.workspaceLabel} />
+          </div>
+        }
+      >
+        <Show when={hasLiveRows()}>
+          <div class="grid gap-y-0.5">
+            <MetadataRow
+              icon="circle-half"
+              label="Status"
+              value={details?.status()?.text}
+              tone={details?.status()?.tone}
+            />
+            <Show when={details?.question()}>
+              {(question) => (
+                <p data-slot="switcher-metadata-question" class="mb-1 mt-0.5 line-clamp-3 text-xs leading-snug text-text-base">
+                  {question()}
+                </p>
+              )}
+            </Show>
+            <MetadataRow
+              icon="checklist"
+              label="Todo"
+              value={todo()?.value}
+              detail={todo()?.detail}
+            />
+            <MetadataRow
+              icon="changes"
+              label="Changes"
+              value={changes()?.value}
+              detail={changes()?.detail}
+            />
+          </div>
+        </Show>
+        <Show when={hasLiveRows() && hasPlaceRows()}>
+          <div aria-hidden="true" class="my-2 h-px bg-border-weak-base" />
+        </Show>
+        <div class="grid gap-y-0.5">
+          <MetadataRow icon="link" label="Git repo" value={props.item.gitRepo} />
+          <MetadataRow icon="branch" label="Branch" value={details?.gitBranch()} />
+          <MetadataRow icon="worktree" label="Worktree" value={worktree()} />
+        </div>
+      </Show>
     </div>
   )
 }
@@ -387,7 +452,11 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                         gradient that dissolves the last 16px reads as a render
                         glitch at that width — the reader cannot tell a clipped
                         title from a faint one. `truncate` ends it on a glyph. */}
-                    <span data-testid="switcher-title" class="min-w-0 flex-1 truncate">
+                    <span
+                      data-testid="switcher-title"
+                      class="min-w-0 flex-1 truncate"
+                      classList={{ "font-medium text-text-base": item().status === "done" }}
+                    >
                       {item().title}
                     </span>
                   </button>

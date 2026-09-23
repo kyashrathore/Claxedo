@@ -25,11 +25,15 @@ export function sessionSurfaceStatus(input: {
   requests?: SurfaceSessionRequests
   directory?: string
   unseenDone?: boolean
+  /** The last turn ended in an error; cleared by the owner when the next turn starts. */
+  failed?: boolean
   autoResponds?: (request: PermissionRequest, directory: string) => boolean
 }): SwitcherStatus {
   if (hasBlockingSessionRequest(input)) return "permission"
   if (input.statusType === "busy" || input.statusType === "retry") return "working"
-  if (input.unseenDone) return "done"
+  // A failure is news only until it is seen, the same as a finished turn: one
+  // that ends in the pane the user is looking at never marks the tab.
+  if (input.unseenDone) return input.failed ? "error" : "done"
   return "idle"
 }
 
@@ -63,6 +67,7 @@ export function surfaceStatusForMeta(input: {
   sessionStatusType?: string
   sessionRequests?: SurfaceSessionRequests
   sessionUnseenDone?: boolean
+  sessionFailed?: boolean
   autoResponds?: (request: PermissionRequest, directory: string) => boolean
 }): SwitcherStatus {
   const meta = input.meta
@@ -82,6 +87,7 @@ export function surfaceStatusForMeta(input: {
       requests: input.sessionRequests,
       directory: meta.directory,
       unseenDone: input.sessionUnseenDone,
+      failed: input.sessionFailed,
       autoResponds: input.autoResponds,
     })
   }

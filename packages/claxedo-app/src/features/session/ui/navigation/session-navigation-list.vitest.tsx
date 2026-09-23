@@ -6,7 +6,7 @@ import {
   NavigationRow,
   NavigationRowGlyph,
   NavigationRowStatusGutter,
-  NavigationStatusDot,
+  NavigationStatusMark,
 } from "@/app/workbench/navigation/navigation-row"
 import { workbenchDrag } from "@/app/workbench/workbench"
 import { SessionNavigation, type SessionNavigationDisplayRow } from "./session-navigation-list"
@@ -19,8 +19,8 @@ import type { TerminalSurfaceRow } from "./session-navigation"
 // collects. Configuring the ports supplies the real components without one.
 beforeAll(() => {
   configureAppPortsForTest({
-    session: { NavigationRow, NavigationRowGlyph, NavigationRowStatusGutter, NavigationStatusDot },
-    terminal: { NavigationRow, NavigationRowGlyph, NavigationStatusDot },
+    session: { NavigationRow, NavigationRowGlyph, NavigationRowStatusGutter, NavigationStatusMark },
+    terminal: { NavigationRow, NavigationRowGlyph, NavigationStatusMark },
   })
 })
 

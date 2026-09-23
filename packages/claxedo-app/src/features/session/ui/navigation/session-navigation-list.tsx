@@ -5,7 +5,7 @@ import {
   NavigationRow,
   NavigationRowGlyph,
   NavigationRowStatusGutter,
-  NavigationStatusDot,
+  NavigationStatusMark,
   type SwitcherStatus,
 } from "@/features/session/app-ports"
 import {
@@ -167,7 +167,7 @@ function SessionNavigationItem(props: {
               compete for this slot. Top-level rows have no gutter to move
               into and keep the old in-place swap. */}
           <Show when={props.row.nested || status() === "idle"} fallback={
-            <NavigationStatusDot status={status()} />
+            <NavigationStatusMark status={status()} />
           }>
             {props.row.timeLabel}
           </Show>

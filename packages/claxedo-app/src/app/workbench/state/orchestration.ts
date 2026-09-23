@@ -155,6 +155,20 @@ export function createLayoutOrchestration(input: {
     })
   }
 
+  // Marketplace and Tasks are places you visit, not work you keep open: both
+  // span every project, so they share one global tab that shows whichever was
+  // opened last.
+  const utilityTab = () => meta.find((m) => m.type === "marketplace" || m.type === "tasks")
+
+  const patchSessionRouteId = (id: string, workspaceRouteId: string | undefined) => {
+    const current = meta.get(id)?.content
+    if (!workspaceRouteId || current?.type !== "session" || current.workspaceRouteId) return
+    meta.patch(id, { content: { ...current, workspaceRouteId } })
+  }
+
+  // Half the openers (session screen, timeline, page links) do not know the
+  // workspace route id, so an absent id on either side cannot prove the tabs
+  // are different workspaces.
   const sameWorkspaceSession = (
     m: ContentMeta,
     directory: string,
@@ -163,9 +177,10 @@ export function createLayoutOrchestration(input: {
     workspaceRouteId: string | undefined,
   ) => {
     if (m.type !== "session" || !m.directory || m.sessionId !== sessionId) return false
-    if (workspaceRouteId && m.content?.workspaceRouteId !== workspaceRouteId) return false
-    if (sessionId === "new") return m.directory === directory
+    const storedRouteId = m.content?.workspaceRouteId
+    if (workspaceRouteId && storedRouteId && storedRouteId !== workspaceRouteId) return false
     if (sameWorkspaceDirectory(m.directory, directory)) return true
+    if (sessionId === "new") return false
     return !!sessionRef && !!m.content?.sessionRef && sameSessionRef(m.content.sessionRef, sessionRef)
   }
 
@@ -225,6 +240,7 @@ export function createLayoutOrchestration(input: {
           title,
           opts?.sessionRef,
         )
+        patchSessionRouteId(existing.id, opts?.workspaceRouteId)
       }
       const contentId = showOrCreate(
         existing,
@@ -251,9 +267,15 @@ export function createLayoutOrchestration(input: {
         },
         opts,
       )
+      // A tab that already names a workspace merges only into that same
+      // workspace; the kept tab's own id stands in when the caller has none.
+      const keptRouteId = meta.get(contentId)?.content?.workspaceRouteId
       for (const duplicate of meta.findAll((m) =>
         m.id !== contentId && (
-          sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef, opts?.workspaceRouteId) ||
+          (
+            sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef, keptRouteId) &&
+            (!m.content?.workspaceRouteId || m.content.workspaceRouteId === keptRouteId)
+          ) ||
           (
             sessionId !== "new" &&
             m.type === "session" &&
@@ -482,11 +504,19 @@ export function createLayoutOrchestration(input: {
     },
 
     openPagesIndex(directory, opts) {
-      const existing = meta.find((m) =>
-        m.type === "pages-index" &&
-        m.directory === directory &&
-        (!opts?.workspaceRouteId || m.content?.workspaceRouteId === opts.workspaceRouteId)
-      )
+      // Pinned, so a duplicate index could never be closed: an absent route id
+      // on either side is the same workspace, as for sessions.
+      const requestedRouteId = opts?.workspaceRouteId
+      const existing = meta.find((m) => {
+        if (m.type !== "pages-index" || m.directory !== directory) return false
+        const storedRouteId = m.content?.workspaceRouteId
+        return !requestedRouteId || !storedRouteId || storedRouteId === requestedRouteId
+      })
+      if (existing && requestedRouteId && !existing.content?.workspaceRouteId) {
+        meta.patch(existing.id, {
+          content: { ...existing.content, type: "pages-index", workspaceRouteId: requestedRouteId },
+        })
+      }
       return showOrCreate(existing, () => {
         const id = newId("pages-index")
         return {
@@ -506,8 +536,10 @@ export function createLayoutOrchestration(input: {
     },
 
     openMarketplace() {
-      // Marketplace is a single global tab — workspace-independent.
-      const existing = meta.find((m) => m.type === "marketplace")
+      const existing = utilityTab()
+      if (existing && existing.type !== "marketplace") {
+        meta.patch(existing.id, { type: "marketplace", content: { type: "marketplace", title: "Marketplace" } })
+      }
       return showOrCreate(existing, () => {
         const id = newId("marketplace")
         return {
@@ -525,13 +557,14 @@ export function createLayoutOrchestration(input: {
     },
 
     openTasks(page) {
-      // Tasks is a single global tab: the catalog spans every project the
-      // account can reach, so it is not scoped to a workspace. A nested page
-      // moves that one tab rather than opening a second, so the reuse path
-      // has to carry the page the caller asked for.
-      const existing = meta.find((m) => m.type === "tasks")
+      // A nested page moves the tab rather than opening a second, so the reuse
+      // path has to carry the page the caller asked for.
+      const existing = utilityTab()
       if (existing) {
-        meta.patch(existing.id, { content: { ...existing.content, type: "tasks", page } })
+        meta.patch(existing.id, {
+          type: "tasks",
+          content: { ...(existing.type === "tasks" ? existing.content : {}), type: "tasks", title: "Tasks", page },
+        })
       }
       return showOrCreate(existing, () => {
         const id = newId("tasks")

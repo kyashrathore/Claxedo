@@ -3,7 +3,7 @@ import type { ContentMeta, ContentType } from "../state/types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { SessionTitleTarget } from "@/features/session/store/session-title-projection"
 
-export type SwitcherStatus = "idle" | "working" | "permission" | "done"
+export type SwitcherStatus = "idle" | "working" | "permission" | "error" | "done"
 export type SwitcherKind = "session" | "terminal" | "page" | "marketplace" | "tasks"
 
 export type SwitcherItem = {
@@ -14,12 +14,24 @@ export type SwitcherItem = {
   projectLabel?: string
   projectWorktree?: string
   gitRepo?: string
-  gitBranch?: string
-  gitRemote?: string
   workspaceLabel?: string
   active: boolean
   closable?: boolean
   status?: SwitcherStatus
+  /**
+   * The hover card's live rows. A hook: call it only from the card's body, so
+   * its reads start when the card opens and stop when it closes.
+   */
+  details?: () => SwitcherCardDetails
+}
+
+export type SwitcherCardDetails = {
+  status: () => { text: string; tone?: "attention" } | undefined
+  /** The question a session is waiting on, when it is waiting on one. */
+  question: () => string | undefined
+  todo: () => { text?: string; done: number; total: number } | undefined
+  changes: () => { files: number; added: number; removed: number } | undefined
+  gitBranch: () => string | undefined
 }
 
 export type SwitcherItemOptions = {

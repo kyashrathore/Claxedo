@@ -34,6 +34,7 @@ export function useRailWorkbenchController(input: {
   workspacePanelFullWidth: Accessor<boolean>
   workspacePanelWidth: Accessor<number>
   worktreeInfo: (workspaceDir: string) => RailWorktreeInfo | undefined
+  projects: HeaderSurfaceInput["projects"]
 }) {
   const panelTarget = useRailWorkspacePanelTarget({
     state: input.state,
@@ -44,6 +45,7 @@ export function useRailWorkbenchController(input: {
     state: input.state,
     canUseDocuments: input.canUseDocuments,
     worktreeInfo: input.worktreeInfo,
+    projects: input.projects,
     autoResponds: input.autoResponds,
     closeTerminal: input.closeTerminal,
     onTabSelect: input.onTabSelect,

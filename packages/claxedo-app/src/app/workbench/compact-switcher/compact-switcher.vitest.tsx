@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { createSignal } from "solid-js"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { CompactSwitcher } from "./compact-switcher"
-import type { SwitcherItem } from "./switcher-items"
+import type { SwitcherCardDetails, SwitcherItem } from "./switcher-items"
 import { workbenchDrag } from "../workbench/index"
 
 function dispatchPointer(
@@ -71,23 +72,138 @@ describe("CompactSwitcher", () => {
     )
   })
 
-  test("renders item status dots", () => {
+  const identity = (index: number) => {
+    const element = screen.getAllByTestId("switcher-identity")[index]
+    if (!element) throw new Error(`no tab at ${index}`)
+    return element
+  }
+  const statusOf = (index: number) =>
+    identity(index).querySelector<HTMLElement>("[data-switcher-status]")?.dataset.switcherStatus ?? "idle"
+  const hasAvatar = (index: number) => !!identity(index).querySelector("[data-switcher-project-avatar]")
+
+  test("a working tab shows the spinner in place of the avatar; other states dot the avatar", () => {
     render(() => (
       <CompactSwitcher
         items={[
-          { ...items[0], status: "working" },
-          { ...items[1], status: "permission" },
+          { ...items[0], contentId: "a", title: "A", status: "working" },
+          { ...items[0], contentId: "b", title: "B", status: "permission" },
+          { ...items[0], contentId: "c", title: "C", status: "error" },
+          { ...items[0], contentId: "d", title: "D", status: "done" },
         ]}
       />
     ))
 
-    expect(
-      screen.getAllByTestId("switcher-prefix-trigger")[0].querySelector("[data-switcher-status='working']"),
-    ).toBeInTheDocument()
-    expect(
-      screen.getAllByTestId("switcher-prefix-trigger")[1].querySelector("[data-switcher-status='permission']"),
-    ).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Build fix" }).querySelector("[data-switcher-status]")).toBeNull()
+    expect([0, 1, 2, 3].map(statusOf)).toEqual(["working", "permission", "error", "done"])
+    expect([0, 1, 2, 3].map(hasAvatar)).toEqual([false, true, true, true])
+    // Status is a signal, not chrome: it is not dimmed on an inactive tab.
+    expect([0, 1, 2, 3].map((index) => identity(index).classList.contains("opacity-55"))).toEqual([false, false, false, false])
+    expect(screen.getByRole("button", { name: "A" }).querySelector("[data-switcher-status]")).toBeNull()
+  })
+
+  test("a finished tab nobody has looked at brightens its title; an idle tab stays dimmed with no dot", () => {
+    render(() => (
+      <CompactSwitcher
+        items={[
+          { ...items[0], contentId: "done", title: "Done", status: "done" },
+          { ...items[0], contentId: "idle", title: "Idle", status: "idle" },
+        ]}
+      />
+    ))
+
+    const title = (name: string) => screen.getByRole("button", { name }).querySelector("[data-testid='switcher-title']")
+    expect(title("Done")?.classList.contains("font-medium")).toBe(true)
+    expect(statusOf(1)).toBe("idle")
+    expect(identity(1).classList.contains("opacity-55")).toBe(true)
+    expect(title("Idle")?.classList.contains("font-medium")).toBe(false)
+  })
+
+  test("a mounted tab swaps between avatar and status as its session moves through a turn", () => {
+    const [status, setStatus] = createSignal<SwitcherItem["status"]>("idle")
+    render(() => <CompactSwitcher items={[{ ...items[0], get status() { return status() } }]} />)
+
+    const seen = (["working", "permission", "working", "error", "done", "idle"] as const).map((next) => {
+      setStatus(next)
+      return [statusOf(0), hasAvatar(0)]
+    })
+    expect(seen).toEqual([
+      ["working", false],
+      ["permission", true],
+      ["working", false],
+      ["error", true],
+      ["done", true],
+      ["idle", true],
+    ])
+  })
+
+  describe("hover card", () => {
+    const openCard = async () => {
+      const trigger = screen.getByTestId("switcher-prefix-trigger").closest('[data-component="tooltip-trigger"]')
+      if (!trigger) throw new Error("no tooltip trigger")
+      fireEvent.pointerEnter(trigger, { pointerType: "mouse" })
+      await vi.advanceTimersByTimeAsync(300)
+      const card = document.querySelector<HTMLElement>('[data-slot="switcher-metadata-card"]')
+      if (!card) throw new Error("card did not open")
+      return card
+    }
+    const rows = (card: HTMLElement) =>
+      [...card.querySelectorAll('[data-slot="switcher-metadata-row"]')].map((row) =>
+        [...row.children].slice(1).map((cell) => cell.textContent?.trim()).join(" "))
+
+    const details = (overrides: Partial<SwitcherCardDetails> = {}): SwitcherCardDetails => ({
+      status: () => ({ text: "Waiting for you · 12m", tone: "attention" }),
+      question: () => "Reuse the dev server on the same port?",
+      todo: () => ({ text: "Prune idle tabs on load", done: 3, total: 5 }),
+      changes: () => ({ files: 3, added: 84, removed: 12 }),
+      gitBranch: () => "main",
+      ...overrides,
+    })
+
+    test("reads the session's details only once the card opens", async () => {
+      vi.useFakeTimers()
+      const read = vi.fn(() => details())
+      render(() => <CompactSwitcher items={[{ ...items[0], gitRepo: "owner/repo", details: read }]} />)
+      expect(read).not.toHaveBeenCalled()
+
+      await openCard()
+      expect(read).toHaveBeenCalledTimes(1)
+    })
+
+    test("a waiting session shows its status, question, todo and changes above the place rows", async () => {
+      vi.useFakeTimers()
+      render(() => <CompactSwitcher items={[{ ...items[0], gitRepo: "owner/repo", details: () => details() }]} />)
+      const card = await openCard()
+
+      expect(rows(card)).toEqual([
+        "Status Waiting for you · 12m",
+        "Todo Prune idle tabs on load 3/5",
+        "Changes 3 files +84 −12",
+        "Git repo owner/repo",
+        "Branch main",
+        "Worktree /workspace",
+      ])
+      expect(card.querySelector('[data-slot="switcher-metadata-question"]')?.textContent).toBe("Reuse the dev server on the same port?")
+      expect(card.textContent).not.toContain("—")
+      expect(card.textContent).not.toContain("Project")
+    })
+
+    test("a quiet session hides the rows it has no data for, and the divider with them", async () => {
+      vi.useFakeTimers()
+      const quiet = details({ status: () => undefined, question: () => undefined, todo: () => undefined, changes: () => undefined, gitBranch: () => undefined })
+      render(() => <CompactSwitcher items={[{ ...items[0], details: () => quiet }]} />)
+      const card = await openCard()
+
+      expect(rows(card)).toEqual(["Worktree /workspace"])
+      expect(card.querySelector(".h-px")).toBeNull()
+      expect(card.textContent).not.toContain("—")
+    })
+
+    test("a terminal tab keeps its project and workspace rows", async () => {
+      vi.useFakeTimers()
+      render(() => <CompactSwitcher items={[{ ...items[1], active: false }]} />)
+      const card = await openCard()
+
+      expect(rows(card)).toEqual(["Project Claxedo", "Worktree /workspace", "Workspace main"])
+    })
   })
 
   test("keeps collapsed tab controls constrained to one row", () => {

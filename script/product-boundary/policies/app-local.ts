@@ -584,7 +584,21 @@ export const appLocal: Policy = {
   // The composer, the request builder and the transcript's comment strip all
   // read them, so they sit beside those owners rather than inside the
   // composer. Owner: `features/session/image-marks`. No new package edge.
-  ceilings: { modules: 1107, packages: 58 },
+  // +1 module (2026-09-23): `app/workbench/state/surface-activity.ts` — the
+  // slice that records when each tab was last opened or focused and whether
+  // its agent holds it, read on launch to close tabs idle for a day. It sits
+  // beside the other state slices and reaches only solid-js/store, which this
+  // entry already carries. Owner: `app/workbench/state`. No new package edge.
+  // +1 module (2026-09-23): `app/workbench/rail/rail-switcher-card-details.ts`
+  // — the compact tab hover card's status, todo, changes and branch reads,
+  // which run only while the card is open. It sits beside the header surfaces
+  // that attach it to each tab and reaches the session caches, the vcs query
+  // and the global SDK this entry already carries. Owner:
+  // `app/workbench/rail`. No new package edge.
+  // Both ledgers above landed in one merge on 2026-09-23; the closure was
+  // re-measured over the merged tree. Exact measured 1109 modules /
+  // 58 packages, with no headroom.
+  ceilings: { modules: 1109, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

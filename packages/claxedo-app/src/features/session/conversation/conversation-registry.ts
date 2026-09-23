@@ -212,6 +212,16 @@ export function registeredConversationUserMessages(directory: ConversationDirect
   return [...messages.values()].sort((a, b) => a.id.localeCompare(b.id))
 }
 
+/** When the session's latest user message was sent: the start of its current or last turn. */
+export function registeredConversationLastUserMessageAt(directory: ConversationDirectory, sessionID: string | undefined) {
+  const messages = conversationMessages(directory, sessionID)
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message?.role === "user") return message.createdAt?.getTime()
+  }
+  return undefined
+}
+
 export function registeredConversationSnapshot(directory: ConversationDirectory, sessionID: string | undefined) {
   const messages = conversationMessages(directory, sessionID)
   const cached = projectedSnapshots.get(messages)
