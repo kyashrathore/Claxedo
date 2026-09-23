@@ -615,9 +615,13 @@ export const appLocal: Policy = {
   // content-driven height changes animate, which the first-run wizard's card
   // is. It reaches only the reduced-motion read this entry already carries.
   // Owner: `ui/controls`. No new package edge.
+  // +1 module (2026-09-23): `app/workbench/review/review-workspace-subagent-session.tsx`
+  // — the subagent tab's docked session, split out of `review-workspace.tsx`
+  // to keep it under the 800-line budget. It imports only what that file
+  // already carried. Owner: `app/workbench/review`. No new package edge.
   //
-  // Exact measured 1111 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1111, packages: 58 },
+  // Exact measured 1112 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1112, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

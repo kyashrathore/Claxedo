@@ -682,9 +682,13 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-23): `ui/controls/animate-height.ts` — the animated
   // card height the app entry's first-run wizard gained, carried here through
   // the same wizard. Owner: `ui/controls`. No new package edge.
+  // +1 module (2026-09-23): `app/workbench/review/review-workspace-subagent-session.tsx`
+  // — the subagent tab's docked session, split out of the review workspace
+  // this entry already carries. Owner: `app/workbench/review`. No new package
+  // edge.
   //
-  // Exact measured 1155 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1155, packages: 58 },
+  // Exact measured 1156 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1156, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
