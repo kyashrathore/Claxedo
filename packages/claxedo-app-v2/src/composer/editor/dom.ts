@@ -27,24 +27,14 @@ export function createTextFragment(content: string): DocumentFragment {
   return fragment
 }
 
-/**
- * The prompt editor's `Node` narrowings, in one place.
- *
- * Every caller used to pair `nodeType === Node.ELEMENT_NODE` with an
- * `as HTMLElement` assertion \u2014 which is also wrong for an SVG element, whose
- * nodeType is ELEMENT_NODE but which has no `dataset`. `instanceof HTMLElement`
- * states the real test and narrows, so no assertion is needed.
- */
 export function asElement(node: Node | null | undefined): HTMLElement | undefined {
   return node instanceof HTMLElement ? node : undefined
 }
 
-/** The editor's hard line break. */
 export function isBreakNode(node: Node | null | undefined): boolean {
   return asElement(node)?.tagName === "BR"
 }
 
-/** A file or agent pill: one atomic character to the caret model. */
 export function isPillNode(node: Node | null | undefined): boolean {
   const type = asElement(node)?.dataset.type
   return type === "file" || type === "agent"
@@ -52,11 +42,11 @@ export function isPillNode(node: Node | null | undefined): boolean {
 
 export function getNodeLength(node: Node): number {
   if (isBreakNode(node)) return 1
-  return (node.textContent ?? "").replace(/\u200B/g, "").length
+  return (node.textContent ?? "").replace(/​/g, "").length
 }
 
 export function getTextLength(node: Node): number {
-  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? "").replace(/\u200B/g, "").length
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? "").replace(/​/g, "").length
   if (isBreakNode(node)) return 1
   let length = 0
   for (const child of Array.from(node.childNodes)) {
@@ -104,6 +94,22 @@ export function scrollPromptCursorIntoView(input: {
   }
 }
 
+function placeCaret(range: Range) {
+  range.collapse(true)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
+function caretAfterBreak(range: Range, node: Node) {
+  const next = node.nextSibling
+  if (next && next.nodeType === Node.TEXT_NODE) {
+    range.setStart(next, 0)
+    return
+  }
+  range.setStartAfter(node)
+}
+
 export function setCursorPosition(parent: HTMLElement, position: number) {
   let remaining = position
   let node = parent.firstChild
@@ -115,35 +121,17 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
 
     if (isText && remaining <= length) {
       const range = document.createRange()
-      const selection = window.getSelection()
       range.setStart(node, remaining)
-      range.collapse(true)
-      selection?.removeAllRanges()
-      selection?.addRange(range)
+      placeCaret(range)
       return
     }
 
     if ((isPill || isBreak) && remaining <= length) {
       const range = document.createRange()
-      const selection = window.getSelection()
-      if (remaining === 0) {
-        range.setStartBefore(node)
-      }
-      if (remaining > 0 && isPill) {
-        range.setStartAfter(node)
-      }
-      if (remaining > 0 && isBreak) {
-        const next = node.nextSibling
-        if (next && next.nodeType === Node.TEXT_NODE) {
-          range.setStart(next, 0)
-        }
-        if (!next || next.nodeType !== Node.TEXT_NODE) {
-          range.setStartAfter(node)
-        }
-      }
-      range.collapse(true)
-      selection?.removeAllRanges()
-      selection?.addRange(range)
+      if (remaining === 0) range.setStartBefore(node)
+      if (remaining > 0 && isPill) range.setStartAfter(node)
+      if (remaining > 0 && isBreak) caretAfterBreak(range, node)
+      placeCaret(range)
       return
     }
 
@@ -152,18 +140,17 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
   }
 
   const fallbackRange = document.createRange()
-  const fallbackSelection = window.getSelection()
   const last = parent.lastChild
   if (last && last.nodeType === Node.TEXT_NODE) {
-    const len = last.textContent ? last.textContent.length : 0
-    fallbackRange.setStart(last, len)
+    fallbackRange.setStart(last, last.textContent ? last.textContent.length : 0)
   }
   if (!last || last.nodeType !== Node.TEXT_NODE) {
     fallbackRange.selectNodeContents(parent)
   }
   fallbackRange.collapse(false)
-  fallbackSelection?.removeAllRanges()
-  fallbackSelection?.addRange(fallbackRange)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(fallbackRange)
 }
 
 export function setRangeEdge(parent: HTMLElement, range: Range, edge: "start" | "end", offset: number) {

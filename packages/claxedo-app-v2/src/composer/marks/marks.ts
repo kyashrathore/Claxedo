@@ -1,4 +1,4 @@
-import type { ImageAttachmentPart, ImageMark } from "@/features/session/providers/prompt"
+import type { ImageMark, ImagePart } from "../model"
 
 export type Point = { x: number; y: number }
 export type Size = { width: number; height: number }
@@ -14,8 +14,7 @@ export type NumberedImageMark = {
 export const MARK_COLOR = "#e5484d"
 export const MARK_TEXT_COLOR = "#ffffff"
 
-/** Numbers run through every image in draft order, so two marked images never both show a 1. */
-export function numberImageMarks(images: readonly Pick<ImageAttachmentPart, "id" | "filename" | "marks">[]) {
+export function numberImageMarks(images: readonly Pick<ImagePart, "id" | "filename" | "marks">[]) {
   const result: NumberedImageMark[] = []
   for (const image of images) {
     for (const [index, mark] of (image.marks ?? []).entries()) {
@@ -25,7 +24,7 @@ export function numberImageMarks(images: readonly Pick<ImageAttachmentPart, "id"
   return result
 }
 
-export function firstMarkNumber(images: readonly Pick<ImageAttachmentPart, "id" | "marks">[], imageId: string) {
+export function firstMarkNumber(images: readonly Pick<ImagePart, "id" | "marks">[], imageId: string) {
   let next = 1
   for (const image of images) {
     if (image.id === imageId) return next
@@ -34,11 +33,6 @@ export function firstMarkNumber(images: readonly Pick<ImageAttachmentPart, "id" 
   return next
 }
 
-/**
- * Sized from the image rather than the screen: the editor preview and the
- * flattened image the model receives draw the same geometry, and a badge
- * must stay legible on a 3000px retina screenshot the model sees at full size.
- */
 export function markStyle(size: Size) {
   const radius = Math.max(12, Math.round(Math.max(size.width, size.height) * 0.012))
   return {
@@ -62,7 +56,6 @@ export function badgeCenter(mark: ImageMark, size: Size): Point {
   }
 }
 
-/** A drag shorter than `pinBelow` on both axes is a click, which drops a pin where it started. */
 export function markFromDrag(start: Point, end: Point, size: Size, pinBelow: number): ImageMark {
   const from = { x: clamp(start.x, 0, size.width), y: clamp(start.y, 0, size.height) }
   const to = { x: clamp(end.x, 0, size.width), y: clamp(end.y, 0, size.height) }

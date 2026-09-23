@@ -1,13 +1,8 @@
-import {
-  DEFAULT_PROMPT,
-  type AgentPart,
-  type FileAttachmentPart,
-  type Prompt,
-} from "@/features/session/providers/prompt"
-import type { FileSelection } from "@/platform/files/types"
-import { asElement, createTextFragment, isBreakNode } from "@/features/session/composer/ui/editor-dom"
+import type { AgentPart, FilePart, FileSelection, Prompt } from "../model"
+import { emptyPrompt } from "../model"
+import { asElement, createTextFragment, isBreakNode } from "./dom"
 
-export function createPromptPill(part: FileAttachmentPart | AgentPart) {
+export function createPromptPill(part: FilePart | AgentPart) {
   const pill = document.createElement("span")
   pill.textContent = part.content
   pill.setAttribute("data-type", part.type)
@@ -31,8 +26,8 @@ export function isNormalizedPromptEditor(editor: HTMLElement) {
   return Array.from(editor.childNodes).every((node) => {
     if (node.nodeType === Node.TEXT_NODE) {
       const text = node.textContent ?? ""
-      if (!text.includes("\u200B")) return true
-      if (text !== "\u200B") return false
+      if (!text.includes("​")) return true
+      if (text !== "​") return false
 
       const prev = node.previousSibling
       const next = node.nextSibling
@@ -59,7 +54,7 @@ export function renderPromptEditor(editor: HTMLElement, parts: Prompt) {
   }
 
   if (isBreakNode(editor.lastChild)) {
-    editor.appendChild(document.createTextNode("\u200B"))
+    editor.appendChild(document.createTextNode("​"))
   }
 }
 
@@ -71,7 +66,7 @@ export function parsePromptEditor(editor: HTMLElement): Prompt {
   const flushText = () => {
     let content = buffer
     if (content.includes("\r")) content = content.replace(/\r\n?/g, "\n")
-    if (content.includes("\u200B")) content = content.replace(/\u200B/g, "")
+    if (content.includes("​")) content = content.replace(/​/g, "")
     buffer = ""
     if (!content) return
     parts.push({ type: "text", content, start: position, end: position + content.length })
@@ -82,7 +77,7 @@ export function parsePromptEditor(editor: HTMLElement): Prompt {
     const content = file.textContent ?? ""
     parts.push({
       type: "file",
-      path: file.dataset.path!,
+      path: file.dataset.path ?? "",
       selection: readFileSelection(file),
       content,
       start: position,
@@ -95,7 +90,7 @@ export function parsePromptEditor(editor: HTMLElement): Prompt {
     const content = agent.textContent ?? ""
     parts.push({
       type: "agent",
-      name: agent.dataset.name!,
+      name: agent.dataset.name ?? "",
       content,
       start: position,
       end: position + content.length,
@@ -142,7 +137,7 @@ export function parsePromptEditor(editor: HTMLElement): Prompt {
 
   flushText()
 
-  if (parts.length === 0) parts.push(...DEFAULT_PROMPT)
+  if (parts.length === 0) return emptyPrompt()
   return parts
 }
 

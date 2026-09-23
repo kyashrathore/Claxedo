@@ -1,8 +1,7 @@
 import { For, Show } from "solid-js"
-import type { ImageMark } from "@/features/session/providers/prompt"
+import type { ImageMark } from "../model"
 import { MARK_COLOR, MARK_TEXT_COLOR, badgeCenter, isPin, markStyle, type Size } from "./marks"
 
-/** SVG children in the image's own pixel space; the parent `<svg>` owns the viewBox. */
 export function ImageMarkLayer(props: {
   size: Size
   marks: ImageMark[]

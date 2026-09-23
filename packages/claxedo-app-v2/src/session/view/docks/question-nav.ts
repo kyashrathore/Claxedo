@@ -1,18 +1,7 @@
-// Pure keyboard-navigation and answer-merge logic for the question dock. The
-// component keeps the store, refs, and `el.focus()` side effects; the decision
-// of *which* option index to focus and *what* a keypress means lives here so
-// the interaction contract is testable without mounting the dock.
-
-/** Clamp a focus index into `[0, count - 1]` (the "+1" custom row included). */
 export function clampFocus(index: number, count: number): number {
   return Math.max(0, Math.min(count - 1, index))
 }
 
-/**
- * The initial/roving focus index for a tab: the custom row (== options.length)
- * when the custom answer is active, otherwise the first option already present
- * in `answers` (or 0 when none match).
- */
 export function focusIndexForTab(input: {
   options: readonly { label: string }[]
   answers: readonly string[] | undefined
@@ -26,7 +15,6 @@ export function focusIndexForTab(input: {
   )
 }
 
-/** Whether a tab has a usable answer (a picked option, or non-empty custom text). */
 export function isAnswered(input: {
   answers: readonly string[] | undefined
   customOn: boolean | undefined
@@ -36,13 +24,6 @@ export function isAnswered(input: {
   return input.customOn === true && (input.custom ?? "").trim().length > 0
 }
 
-/**
- * Recompute a tab's answer list when the custom text changes.
- *
- * Single-choice: the custom text replaces the answer (empty clears it).
- * Multi-choice: remove the previous custom value, then add the new one unless
- * it is empty or already present.
- */
 export function mergeCustomAnswer(input: {
   multi: boolean
   current: readonly string[] | undefined
@@ -68,16 +49,6 @@ export type QuestionKeyAction =
   | { type: "move"; step: 1 | -1 }
   | { type: "focus"; index: number }
 
-/**
- * Classify a keydown on the question dock.
- *
- * - already handled → none
- * - Escape → reject the request
- * - Cmd/Ctrl+Enter (non-repeat, no Alt) → submit ("next")
- * - Arrow/Home/End, only when focus is inside the options group, not editing,
- *   and with no modifier keys → roving focus movement
- * - anything else → none
- */
 export function classifyQuestionKey(
   event: {
     key: string
@@ -113,16 +84,6 @@ export function classifyQuestionKey(
 
 type Edges = { top: number; bottom: number }
 
-/**
- * The tallest the question prompt may grow, in px, or undefined when nothing
- * bounds it.
- *
- * Docked, the dock sits below the timeline, so the prompt may grow up to the
- * sticky timeline head; without a head there is no bound. Floating, the whole
- * stack is anchored to the bottom of `floatingArea` and grows upward over the
- * timeline, so the bound is the area minus the dock's other chrome: the head
- * no longer says anything about the room above the dock.
- */
 export function questionPromptMaxHeight(input: {
   stickyHeadBottom: number
   dock: Edges

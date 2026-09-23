@@ -1,4 +1,4 @@
-import type { ImageAttachmentPart } from "@/features/session/providers/prompt"
+import type { ImagePart } from "../model"
 import { MARK_COLOR, MARK_TEXT_COLOR, badgeCenter, firstMarkNumber, isPin, markStyle } from "./marks"
 
 async function loadImage(src: string) {
@@ -8,7 +8,7 @@ async function loadImage(src: string) {
   return image
 }
 
-async function flattenImage(image: ImageAttachmentPart, firstNumber: number): Promise<ImageAttachmentPart> {
+async function flattenImage(image: ImagePart, firstNumber: number): Promise<ImagePart> {
   const marks = image.marks ?? []
   const source = await loadImage(image.dataUrl)
   const size = { width: source.naturalWidth, height: source.naturalHeight }
@@ -46,8 +46,7 @@ async function flattenImage(image: ImageAttachmentPart, firstNumber: number): Pr
   return { ...image, mime: "image/png", dataUrl: canvas.toDataURL("image/png") }
 }
 
-/** The images as the model should see them: each marked image replaced by a PNG with its boxes and numbers drawn in. */
-export async function flattenMarkedImages(images: ImageAttachmentPart[]) {
+export async function flattenMarkedImages(images: ImagePart[]) {
   return Promise.all(
     images.map((image) =>
       image.marks?.length ? flattenImage(image, firstMarkNumber(images, image.id)) : Promise.resolve(image),
@@ -55,6 +54,6 @@ export async function flattenMarkedImages(images: ImageAttachmentPart[]) {
   )
 }
 
-export function hasImageMarks(images: readonly ImageAttachmentPart[]) {
+export function hasImageMarks(images: readonly ImagePart[]) {
   return images.some((image) => (image.marks?.length ?? 0) > 0)
 }
