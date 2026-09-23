@@ -120,6 +120,11 @@ async function openSettings(page: Page) {
   await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
   const surface = page.locator('[data-component="settings-content"]')
   await expect(surface).toBeVisible({ timeout: 10_000 })
+  // The menu that opened the surface keeps its items mounted through its exit
+  // animation, outside every landmark; an axe scan that lands in that window
+  // reports `region` on the document root, so the surface is settled only
+  // once the menu has left the DOM.
+  await expect(page.locator('[data-component="dropdown-menu-content"]')).toHaveCount(0, { timeout: 10_000 })
   return surface
 }
 
