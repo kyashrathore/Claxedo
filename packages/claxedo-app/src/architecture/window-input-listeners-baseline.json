@@ -33,12 +33,12 @@
     "reason": "Stands in for a workbench slot while there is no content; it is the only surface on screen, so its `PaneCtx.onKeyDown` binds to `document` directly."
   },
   {
-    "file": "app/workbench/review/review-workspace.tsx",
+    "file": "app/workbench/review/review-workspace-subagent-session.tsx",
     "events": {
       "keydown": 1
     },
     "owner": "workspace-panel subagent tab host",
-    "reason": "The review panel is the workbench for its subagent session tabs: it hands each one a PaneCtx whose onKeyDown binds to document and forwards only while that tab is the shown one."
+    "reason": "The review panel is the workbench for its subagent session tabs: this host hands each one a PaneCtx whose onKeyDown binds to document and forwards only while that tab is the shown one."
   },
   {
     "file": "app/workbench/compact-switcher/compact-switcher.tsx",

@@ -3,18 +3,19 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { PaneCtxProvider } from "@/app/workbench/context/pane-ctx"
 import type { PaneCtx } from "@/app/workbench/workbench/index"
 import { SessionPaneScope } from "@/features/session/ui/components/session-pane-scope"
+import type { ReviewWorkspaceProps } from "./review-workspace"
 
 // Lazy so a workspace that never opens a subagent does not pull the session
 // screen into the panel's chunk.
 const SessionPage = lazy(() => import("@/features/session/ui/session-screen"))
 
-export function ReviewWorkspaceSubagentSession(props: {
-  directory: string
-  sessionId: string
-  tabId: string
-  leafId?: string
-  shown: () => boolean
-}) {
+export function ReviewWorkspaceSubagentSession(
+  props: Pick<ReviewWorkspaceProps, "directory" | "leafId"> & {
+    sessionId: string
+    tabId: string
+    shown: () => boolean
+  },
+) {
   let tabEl: HTMLDivElement | undefined
   // The panel is this tab's workbench: it hands the session the slot the
   // workbench would — its element as the drop zone, and window keys only
