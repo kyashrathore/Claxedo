@@ -60,7 +60,7 @@ describe("TokenTracker embedded local history", () => {
     expect(snapshot.rows).toEqual([expect.objectContaining({
       app: "claude",
       nativeSessionId: "direct",
-      tokens: { input: 10, output: 20, reasoning: null, cacheRead: 3, cacheWrite: null },
+      tokens: { input: 10, output: 20, reasoning: null, cacheRead: 3, cacheWrite: null, cacheWrite1h: null },
     })])
     expect(snapshot.totalRows).toEqual(expect.arrayContaining([
       expect.objectContaining({ nativeSessionId: "direct" }),
@@ -119,9 +119,9 @@ describe("TokenTracker embedded local history", () => {
     expect(refreshed.scannedAt).toBeGreaterThanOrEqual(first.scannedAt)
     expect(classify).toHaveBeenCalledTimes(2)
 
-    const cursorText = gunzipSync(await fs.readFile(path.join(stateDir, "embedded-history-cursors-v8.json.gz"))).toString("utf8")
+    const cursorText = gunzipSync(await fs.readFile(path.join(stateDir, "embedded-history-cursors-v9.json.gz"))).toString("utf8")
     const cursor = JSON.parse(cursorText) as { version: number; files: Record<string, unknown> }
-    expect(cursor.version).toBe(8)
+    expect(cursor.version).toBe(9)
     expect(Object.keys(cursor.files)).toHaveLength(2)
     expect(Object.keys(cursor.files).every((key) => /^[a-f0-9]{64}$/.test(key))).toBe(true)
     expect(cursorText).not.toContain(root)
@@ -141,7 +141,7 @@ describe("TokenTracker embedded local history", () => {
       classify: vi.fn(() => "external" as const),
     }
     const first = await scanTokenTrackerLocalHistory(input)
-    const cursors = path.join(stateDir, "embedded-history-cursors-v8.json.gz")
+    const cursors = path.join(stateDir, "embedded-history-cursors-v9.json.gz")
     const cursorsBefore = await fs.stat(cursors)
 
     // A transcript that grows, a fact set that changes what "Claxedo" means,
@@ -189,7 +189,7 @@ describe("TokenTracker embedded local history", () => {
     // the file holds exactly one snapshot: the widest walk, not the latest read.
     await expect(scanTokenTrackerLocalHistory(input)).resolves.toEqual(wider)
     expect(classify).not.toHaveBeenCalled()
-    const stored = JSON.parse(await fs.readFile(path.join(stateDir, "local-history-v9.json"), "utf8")) as { since: number; until: number }
+    const stored = JSON.parse(await fs.readFile(path.join(stateDir, "local-history-v10.json"), "utf8")) as { since: number; until: number }
     expect(stored).toMatchObject({ since: observedAt - 1_000, until: observedAt + 2_000 })
   })
 
@@ -283,7 +283,7 @@ describe("TokenTracker embedded local history", () => {
       provider: "openai",
       nativeSessionId: "codex-direct",
       model: "gpt-5.6-sol",
-      tokens: { input: 70, output: 22, reasoning: 8, cacheRead: 80, cacheWrite: 0 },
+      tokens: { input: 70, output: 22, reasoning: 8, cacheRead: 80, cacheWrite: 0, cacheWrite1h: null },
     })])
     const totals = snapshot.rows[0].tokens
     expect((totals.input ?? 0) + (totals.output ?? 0) + (totals.reasoning ?? 0) + (totals.cacheRead ?? 0) + (totals.cacheWrite ?? 0)).toBe(180)
@@ -327,7 +327,7 @@ describe("TokenTracker embedded local history", () => {
     const completed = (timestamp: number) => JSON.stringify({
       timestamp: new Date(timestamp).toISOString(),
       type: "event_msg",
-      payload: { type: "agent_message", message: "done" },
+      payload: { type: "task_complete", last_agent_message: "done" },
     })
     const context = (timestamp: number) => JSON.stringify({
       timestamp: new Date(timestamp).toISOString(),
@@ -378,18 +378,18 @@ describe("TokenTracker embedded local history", () => {
       expect.objectContaining({
         nativeSessionId: "codex-parent",
         turnCount: 1,
-        tokens: { input: 40, output: 20, reasoning: 0, cacheRead: 60, cacheWrite: 0 },
+        tokens: { input: 40, output: 20, reasoning: 0, cacheRead: 60, cacheWrite: 0, cacheWrite1h: null },
       }),
       expect.objectContaining({
         nativeSessionId: "codex-child",
         turnCount: 1,
-        tokens: { input: 30, output: 10, reasoning: 0, cacheRead: 20, cacheWrite: 0 },
+        tokens: { input: 30, output: 10, reasoning: 0, cacheRead: 20, cacheWrite: 0, cacheWrite1h: null },
       }),
     ]))
     expect(snapshot.totalRows).toHaveLength(2)
   })
 
-  test("counts completed Codex responses instead of intermediate token snapshots", async () => {
+  test("counts a completed Codex turn once however many token snapshots it emits", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-codex-identical-turns-"))
     roots.push(root)
     const sessions = path.join(root, ".codex", "sessions", "2026", "08", "08")
@@ -413,9 +413,14 @@ describe("TokenTracker embedded local history", () => {
         reasoning_output_tokens: 12, total_tokens: 240,
       }),
       JSON.stringify({
-        timestamp: new Date(observedAt + 2_000).toISOString(),
+        timestamp: new Date(observedAt + 1_500).toISOString(),
         type: "event_msg",
         payload: { type: "agent_message", message: "done" },
+      }),
+      JSON.stringify({
+        timestamp: new Date(observedAt + 2_000).toISOString(),
+        type: "event_msg",
+        payload: { type: "task_complete", turn_id: "turn-1", last_agent_message: "done" },
       }),
     ].join("\n"))
 
@@ -431,8 +436,40 @@ describe("TokenTracker embedded local history", () => {
     expect(snapshot.rows).toEqual([expect.objectContaining({
       nativeSessionId: "codex-identical",
       turnCount: 1,
-      tokens: { input: 80, output: 28, reasoning: 12, cacheRead: 120, cacheWrite: 0 },
+      tokens: { input: 80, output: 28, reasoning: 12, cacheRead: 120, cacheWrite: 0, cacheWrite1h: null },
     })])
+  })
+
+  test("counts aborted Codex turns, which write no task_complete", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-codex-aborted-"))
+    roots.push(root)
+    const sessions = path.join(root, ".codex", "sessions", "2026", "09", "20")
+    await fs.mkdir(sessions, { recursive: true })
+    const observedAt = Date.UTC(2026, 8, 20, 8, 0, 0)
+    const at = (offset: number) => new Date(observedAt + offset).toISOString()
+    const usage = (input: number) => ({ input_tokens: input, cached_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0, total_tokens: input + 1 })
+    await fs.writeFile(path.join(sessions, "rollout.jsonl"), [
+      JSON.stringify({ type: "session_meta", payload: { id: "codex-aborted", model_provider: "openai" } }),
+      JSON.stringify({ type: "turn_context", payload: { model: "gpt-6-astra" } }),
+      JSON.stringify({ timestamp: at(0), type: "event_msg", payload: { type: "task_started", turn_id: "t1" } }),
+      JSON.stringify({ timestamp: at(1_000), type: "event_msg", payload: { type: "token_count", info: { last_token_usage: usage(10), total_token_usage: usage(10) } } }),
+      JSON.stringify({ timestamp: at(2_000), type: "event_msg", payload: { type: "turn_aborted", reason: "interrupted" } }),
+      JSON.stringify({ timestamp: at(3_000), type: "event_msg", payload: { type: "task_started", turn_id: "t2" } }),
+      JSON.stringify({ timestamp: at(4_000), type: "event_msg", payload: { type: "token_count", info: { last_token_usage: usage(20), total_token_usage: usage(30) } } }),
+      JSON.stringify({ timestamp: at(5_000), type: "event_msg", payload: { type: "task_complete", turn_id: "t2" } }),
+    ].join("\n"))
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 60_000,
+      until: observedAt + 60_000,
+      sources: ["codex"],
+      classify: () => "external",
+    })
+
+    expect(snapshot.rows.reduce((sum, row) => sum + row.turnCount, 0)).toBe(2)
+    expect(snapshot.rows.reduce((sum, row) => sum + (row.tokens.input ?? 0), 0)).toBe(30)
   })
 
   test("deduplicates copied Claude messages globally across resumed transcripts", async () => {
@@ -471,6 +508,130 @@ describe("TokenTracker embedded local history", () => {
     expect(snapshot.rows[0]?.tokens).toMatchObject({ input: 10, output: 2, cacheRead: 100 })
   })
 
+  test("keeps each Claude response's final output count, not its streaming snapshot", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-claude-final-line-"))
+    roots.push(root)
+    const project = path.join(root, ".claude", "projects", "fixture")
+    await fs.mkdir(project, { recursive: true })
+    const observedAt = Date.UTC(2026, 8, 22, 22, 44, 18)
+    // Claude Code writes one row per content block of a response; only the
+    // row that carries stop_reason holds the final output_tokens.
+    const block = (offset: number, type: string, output: number, stopReason: string | null) => JSON.stringify({
+      type: "assistant",
+      sessionId: "session-final",
+      requestId: "req_1",
+      timestamp: new Date(observedAt + offset).toISOString(),
+      message: {
+        id: "msg_1",
+        role: "assistant",
+        model: "claude-fable-5-1",
+        stop_reason: stopReason,
+        content: [{ type }],
+        usage: { input_tokens: 2, output_tokens: output, cache_read_input_tokens: 500, cache_creation_input_tokens: 40 },
+      },
+    })
+    await fs.writeFile(path.join(project, "session-final.jsonl"), [
+      JSON.stringify({ type: "user", sessionId: "session-final", timestamp: new Date(observedAt - 1_000).toISOString(), message: { role: "user", content: "fix it" } }),
+      block(0, "thinking", 2, null),
+      block(1_000, "tool_use", 2, null),
+      block(9_000, "tool_use", 1_066, "tool_use"),
+    ].join("\n"))
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 60_000,
+      until: observedAt + 60_000,
+      sources: ["claude"],
+      classify: () => "external",
+    })
+
+    expect(snapshot.rows).toHaveLength(1)
+    expect(snapshot.rows[0]).toMatchObject({
+      turnCount: 1,
+      tokens: { input: 2, output: 1_066, cacheRead: 500, cacheWrite: 40 },
+    })
+  })
+
+  test("counts one Claude turn per typed prompt however many requests answer it", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-claude-turns-"))
+    roots.push(root)
+    const project = path.join(root, ".claude", "projects", "fixture")
+    await fs.mkdir(project, { recursive: true })
+    const observedAt = Date.UTC(2026, 8, 23, 3, 0, 0)
+    const at = (offset: number) => new Date(observedAt + offset).toISOString()
+    const user = (offset: number, content: unknown, extra: Record<string, unknown> = {}) =>
+      JSON.stringify({ type: "user", sessionId: "session-turns", timestamp: at(offset), message: { role: "user", content }, ...extra })
+    const response = (offset: number, id: string, model = "claude-opus-5-5") => JSON.stringify({
+      type: "assistant",
+      sessionId: "session-turns",
+      requestId: `req_${id}`,
+      timestamp: at(offset),
+      message: { id, role: "assistant", model, stop_reason: "end_turn", content: [{ type: "text" }], usage: { input_tokens: 1, output_tokens: 10 } },
+    })
+    await fs.writeFile(path.join(project, "session-turns.jsonl"), [
+      user(0, "first prompt"),
+      response(1_000, "msg_a"),
+      user(2_000, [{ type: "tool_result", tool_use_id: "t" }], { toolUseResult: { stdout: "" } }),
+      response(3_000, "msg_b"),
+      user(4_000, "Caveat: local command output follows", { isMeta: true }),
+      user(5_000, "second prompt"),
+      JSON.stringify({
+        type: "assistant", sessionId: "session-turns", timestamp: at(6_000),
+        message: { id: "msg_synthetic", role: "assistant", model: "<synthetic>", content: [{ type: "text" }], usage: { input_tokens: 0, output_tokens: 0 } },
+      }),
+      response(7_000, "msg_c"),
+    ].join("\n"))
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 60_000,
+      until: observedAt + 60_000,
+      sources: ["claude"],
+      classify: () => "external",
+    })
+
+    expect(snapshot.rows.map((row) => row.model)).toEqual(["claude-opus-5-5"])
+    expect(snapshot.rows[0]).toMatchObject({ turnCount: 2, tokens: { input: 3, output: 30 } })
+  })
+
+  test("carries the one-hour share of Claude cache writes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-claude-cache-ttl-"))
+    roots.push(root)
+    const project = path.join(root, ".claude", "projects", "fixture")
+    await fs.mkdir(project, { recursive: true })
+    const observedAt = Date.UTC(2026, 8, 23, 4, 0, 0)
+    await fs.writeFile(path.join(project, "session-ttl.jsonl"), JSON.stringify({
+      type: "assistant",
+      sessionId: "session-ttl",
+      requestId: "req_ttl",
+      timestamp: new Date(observedAt).toISOString(),
+      message: {
+        id: "msg_ttl",
+        role: "assistant",
+        model: "claude-opus-5",
+        usage: {
+          input_tokens: 5,
+          output_tokens: 7,
+          cache_creation_input_tokens: 100,
+          cache_creation: { ephemeral_5m_input_tokens: 30, ephemeral_1h_input_tokens: 70 },
+        },
+      },
+    }))
+
+    const snapshot = await scanTokenTrackerLocalHistory({
+      sourceHome: root,
+      stateDir: path.join(root, "state"),
+      since: observedAt - 1,
+      until: observedAt + 1,
+      sources: ["claude"],
+      classify: () => "external",
+    })
+
+    expect(snapshot.rows[0]?.tokens).toMatchObject({ cacheWrite: 100, cacheWrite1h: 70 })
+  })
+
   test("reads Cursor SDK run stores and excludes Claxedo-launched agent ids", async () => {
     const { root, observedAt } = await fixture()
     const cursorRoot = path.join(root, ".cursor", "sdk")
@@ -503,7 +664,7 @@ describe("TokenTracker embedded local history", () => {
       app: "cursor",
       nativeSessionId: "cursor-direct",
       model: "cursor-fast",
-      tokens: { input: 13, output: 5, reasoning: null, cacheRead: 2, cacheWrite: 1 },
+      tokens: { input: 13, output: 5, reasoning: null, cacheRead: 2, cacheWrite: 1, cacheWrite1h: null },
     })])
     expect(snapshot.classifiedClaxedo).toBe(1)
     expect(snapshot.coverage).toEqual([{ source: "cursor", status: "available" }])

@@ -78,6 +78,19 @@ describe("machine login report", () => {
     expect(reported?.usage).toBeUndefined()
   })
 
+  test("a login whose CLI names no plan takes the probe's name for it, and one that names its own keeps it", async () => {
+    const { credentials } = store({
+      logins: [login({ harness: "cursor", email: undefined }), login({ plan: "max" })],
+    })
+    const agentUsage = probe([
+      { agent: "cursor", harness: "cursor", label: "Cursor", plan: "Pro Plus", windows: PROBED, at: 9 },
+      { agent: "claude", harness: "claude", label: "Claude Code", plan: "Max", windows: PROBED, at: 9 },
+    ])
+
+    const reported = await machineLoginsWithUsage(credentials, { fresh: false, now: () => 1_000, agentUsage })
+    expect(reported.map((row) => [row.harness, row.plan])).toEqual([["cursor", "Pro Plus"], ["claude", "max"]])
+  })
+
   test("a probe that cannot reach a vendor still leaves every login listed", async () => {
     const { credentials } = store({ logins: [login(), login({ harness: "codex", email: "b@example.com" })] })
     const agentUsage: MachineAgentUsageReader = vi.fn(async () => {

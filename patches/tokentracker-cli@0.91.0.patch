@@ -1,5 +1,61 @@
+diff --git a/src/lib/pricing/curated-overrides.json b/src/lib/pricing/curated-overrides.json
+index de647e6..1795261 100644
+--- a/src/lib/pricing/curated-overrides.json
++++ b/src/lib/pricing/curated-overrides.json
+@@ -12,6 +12,13 @@
+       "cache_write": 12.5,
+       "note": "Fable 5 \u2014 Anthropic's top tier above Opus. Not yet in LiteLLM. $10/$50 per MTok; cache_read 0.1x, cache_write 1.25x. Remove once LiteLLM carries it."
+     },
++    "claude-fable-5-1": {
++      "input": 10,
++      "output": 50,
++      "cache_read": 0.25,
++      "cache_write": 12.5,
++      "note": "Fable 5.1: $10/$50 per MTok like Fable 5, but cache hits are 0.025x input ($0.25), not 0.1x (platform.claude.com/docs/en/about-claude/pricing, 2026-09-23). Without this key the curated containment match on claude-fable-5 wins over LiteLLM's own claude-fable-5-1 entry and cache reads price 4x high."
++    },
+     "claude-opus-5": {
+       "input": 5,
+       "output": 25,
+@@ -26,6 +33,20 @@
+       "cache_write": 12.5,
+       "note": "Opus 5 fast mode (speed=\"fast\", beta fast-mode-2026-02-01) is priced at $10/$50 per MTok \u2014 2x standard Opus. Kept separate so a -fast model id is not silently priced at the standard tier. See claude-opus-5."
+     },
++    "claude-opus-5-5": {
++      "input": 4,
++      "output": 20,
++      "cache_read": 0.2,
++      "cache_write": 5,
++      "note": "Opus 5.5: $4/$20 per MTok, cache hits 0.05x input ($0.20), cache_write 1.25x (platform.claude.com/docs/en/about-claude/pricing, 2026-09-23). Without this key the curated containment match on claude-opus-5 wins over LiteLLM's own claude-opus-5-5 entry and prices it at the Opus 5 tier."
++    },
++    "claude-opus-5-5-fast": {
++      "input": 8,
++      "output": 40,
++      "cache_read": 0.4,
++      "cache_write": 10,
++      "note": "Opus 5.5 fast mode is $8/$40 per MTok, 2x standard Opus 5.5, with the caching multipliers applied on top. See claude-opus-5-5."
++    },
+     "claude-opus-4-8": {
+       "input": 5,
+       "output": 25,
+@@ -34,11 +55,11 @@
+       "note": "Opus 4.8 not yet in LiteLLM. Pin to the standard Opus tier (same as 4.6/4.7); remove once LiteLLM carries it."
+     },
+     "claude-sonnet-5": {
+-      "input": 3,
+-      "output": 15,
+-      "cache_read": 0.3,
+-      "cache_write": 3.75,
+-      "note": "Sonnet 5. LiteLLM added this model on ~2026-06-30 with matching rates, but pin explicitly so pricing is correct immediately rather than depending on the 24h local pricing-cache refresh cycle."
++      "input": 2,
++      "output": 10,
++      "cache_read": 0.2,
++      "cache_write": 2.5,
++      "note": "Sonnet 5: the $2/$10 launch price is the standard price; the increase to $3/$15 scheduled for 2026-09-01 was cancelled (platform.claude.com/docs/en/about-claude/pricing, 2026-09-23)."
+     },
+     "claude-haiku-4-5": {
+       "input": 1,
 diff --git a/src/lib/rollout.js b/src/lib/rollout.js
-index 5db1e6a..e3c513c 100644
+index 5db1e6a..d299226 100644
 --- a/src/lib/rollout.js
 +++ b/src/lib/rollout.js
 @@ -3,6 +3,7 @@ const fssync = require("node:fs");
@@ -10,7 +66,7 @@ index 5db1e6a..e3c513c 100644
  
  const crypto = require("node:crypto");
  const { ensureDir, writeJson, chmod600IfPossible } = require("./fs");
-@@ -17156,6 +17157,512 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
+@@ -17156,6 +17157,566 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
  }
  
  
@@ -19,9 +75,12 @@ index 5db1e6a..e3c513c 100644
 +// TokenTracker Cloud. It reads provider-owned history only and deliberately
 +// has no command, queue, telemetry, device-id, credential, or upload imports.
 +const EMBEDDED_SOURCES = new Set(["claude", "codex", "cursor", "opencode", "pi"]);
++// `cache_creation_1h_input_tokens` is the part of `cache_creation_input_tokens`
++// written to the one-hour cache, which Anthropic bills at 2x input rather than
++// the five-minute 1.25x. It is a subset, not a sixth category.
 +const EMBEDDED_TOKEN_KEYS = [
 +  "input_tokens", "output_tokens", "reasoning_output_tokens",
-+  "cached_input_tokens", "cache_creation_input_tokens",
++  "cached_input_tokens", "cache_creation_input_tokens", "cache_creation_1h_input_tokens",
 +];
 +
 +function embeddedFiniteToken(value) {
@@ -38,6 +97,7 @@ index 5db1e6a..e3c513c 100644
 +    reasoning_output_tokens: embeddedFiniteToken(input.reasoning_output_tokens ?? input.reasoningTokens ?? input.reasoning),
 +    cached_input_tokens: embeddedFiniteToken(input.cached_input_tokens ?? input.cache_read_input_tokens ?? input.cacheReadTokens ?? cache.read),
 +    cache_creation_input_tokens: embeddedFiniteToken(input.cache_creation_input_tokens ?? input.cache_creation ?? input.cacheWriteTokens ?? cache.write),
++    cache_creation_1h_input_tokens: embeddedFiniteToken(input.cache_creation?.ephemeral_1h_input_tokens),
 +  };
 +}
 +
@@ -98,6 +158,9 @@ index 5db1e6a..e3c513c 100644
 +  if (role !== "assistant" && row.type !== "message") return null;
 +  const tokens = message.usage || message.tokens || row.usage || row.tokens;
 +  if (!tokens || typeof tokens !== "object") return null;
++  // Claude Code writes its own error and placeholder replies as assistant
++  // rows with this model; no request reached the provider.
++  if (message.model === "<synthetic>") return null;
 +  return {
 +    source,
 +    provider: embeddedProvider(source, message, row),
@@ -109,6 +172,18 @@ index 5db1e6a..e3c513c 100644
 +  };
 +}
 +
++// A row a person typed. Claude Code also writes tool results, local-command
++// caveats and compaction summaries as `user` rows; Pi keeps tool results in a
++// role of their own.
++function embeddedIsUserPrompt(source, row) {
++  if (source === "pi") return row.type === "message" && row.message?.role === "user";
++  if (source !== "claude" || row.type !== "user") return false;
++  if (row.isMeta || row.isCompactSummary || row.toolUseResult !== undefined) return false;
++  const content = row.message?.content;
++  if (typeof content === "string") return content.trim().length > 0;
++  return Array.isArray(content) && content.some((block) => block?.type !== "tool_result");
++}
++
 +function embeddedResult(events, malformed) {
 +  return {
 +    events,
@@ -117,8 +192,8 @@ index 5db1e6a..e3c513c 100644
 +  };
 +}
 +
-+const EMBEDDED_HISTORY_CURSOR_VERSION = 8;
-+const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v8.json.gz";
++const EMBEDDED_HISTORY_CURSOR_VERSION = 9;
++const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v9.json.gz";
 +const EMBEDDED_CODEX_CURSOR_BUCKET_MS = 60_000;
 +const EMBEDDED_FORK_COPY_MAX_GAP_MS = 1_000;
 +
@@ -231,7 +306,7 @@ index 5db1e6a..e3c513c 100644
 +        }
 +      } else if (row.type === "turn_context") {
 +        model = String(row.payload?.model || model);
-+      } else if (row.type === "event_msg" && row.payload?.type === "agent_message" && model) {
++      } else if (row.type === "event_msg" && (row.payload?.type === "task_complete" || row.payload?.type === "turn_aborted") && model) {
 +        const observedAt = embeddedTimestamp(row.timestamp, stat.mtimeMs);
 +        if (!isForkCopy(observedAt)) completedTurns.push({ model, observed_at: observedAt });
 +      }
@@ -427,16 +502,27 @@ index 5db1e6a..e3c513c 100644
 +      catch { result = { events: [], malformed: 1 }; }
 +    } else {
 +      const parsed = embeddedJsonLines(filePath);
++      // One user prompt is one turn however many requests answer it, so the
++      // turn is counted on the first usage row after the prompt. A file's
++      // first request opens a turn even when its prompt was never written.
++      let promptPending = true;
 +      result = {
 +        malformed: parsed.malformed,
 +        events: parsed.rows.flatMap((row) => {
++          if (embeddedIsUserPrompt(source, row)) {
++            promptPending = true;
++            return [];
++          }
 +          const event = embeddedEvent(source, filePath, row, stat.mtimeMs);
-+          if (event && source === "claude") {
++          if (!event) return [];
++          if (source === "claude") {
 +            const messageId = typeof row.message?.id === "string" ? row.message.id : "";
 +            const requestId = typeof row.requestId === "string" ? row.requestId : "";
 +            event.event_id = messageId || requestId ? `${messageId}:${requestId}` : "";
 +          }
-+          return event ? [event] : [];
++          event.event_count = promptPending ? 1 : 0;
++          promptPending = false;
++          return [event];
 +        }),
 +      };
 +    }
@@ -453,6 +539,34 @@ index 5db1e6a..e3c513c 100644
 +  return embeddedResult(events, malformed);
 +}
 +
++// One event per identity. Claude Code writes a row per content block of one
++// response under a single message.id + requestId, and a resumed transcript
++// copies earlier rows again: every copy repeats the input and cache counts,
++// but output_tokens is a streaming snapshot on all rows but the last, so the
++// largest is the response's final count. Events are copied because the
++// per-file cursor store holds the originals.
++function embeddedFinalEvents(source, events) {
++  const kept = new Map();
++  const out = [];
++  for (const event of events) {
++    if (!event.event_id) {
++      out.push(event);
++      continue;
++    }
++    const key = source === "claude" ? event.event_id : `${event.native_session_id}\0${event.event_id}`;
++    const held = kept.get(key);
++    if (!held) {
++      const copy = { ...event };
++      kept.set(key, copy);
++      out.push(copy);
++      continue;
++    }
++    if ((event.tokens.output_tokens ?? 0) > (held.tokens.output_tokens ?? 0)) held.tokens = event.tokens;
++    held.event_count = Math.max(Number(held.event_count ?? 1), Number(event.event_count ?? 1));
++  }
++  return out;
++}
++
 +function embeddedAdd(target, value) {
 +  for (const key of EMBEDDED_TOKEN_KEYS) if (value[key] !== null) target[key] = (target[key] ?? 0) + value[key];
 +}
@@ -467,7 +581,7 @@ index 5db1e6a..e3c513c 100644
 +      native_session_id: event.native_session_id,
 +      event_count: 0,
 +      input_tokens: null, output_tokens: null, reasoning_output_tokens: null,
-+      cached_input_tokens: null, cache_creation_input_tokens: null,
++      cached_input_tokens: null, cache_creation_input_tokens: null, cache_creation_1h_input_tokens: null,
 +    };
 +    buckets.set(key, bucket);
 +  }
@@ -502,11 +616,7 @@ index 5db1e6a..e3c513c 100644
 +        ? embeddedScanCursor(options.sourceHome, since, until)
 +        : await embeddedScanJson(options.sourceHome, source, since, until, cursorState);
 +    coverage.push({ source, status: scan.status, ...(scan.error ? { error: scan.error } : {}) });
-+    const seen = new Set();
-+    for (const event of scan.events) {
-+      const eventKey = source === "claude" ? event.event_id : `${event.native_session_id}\0${event.event_id}`;
-+      if (event.event_id && seen.has(eventKey)) continue;
-+      if (event.event_id) seen.add(eventKey);
++    for (const event of embeddedFinalEvents(source, scan.events)) {
 +      embeddedBucketEvent(totalBuckets, source, event);
 +      const classification = await options.classify({ source: event.source, nativeSessionId: event.native_session_id, observedAt: event.observed_at });
 +      const eventCount = Number(event.event_count ?? 1);
@@ -523,7 +633,7 @@ index 5db1e6a..e3c513c 100644
  module.exports = {
    listRolloutFiles,
    listRolloutFilesDeep,
-@@ -17347,4 +17835,5 @@ module.exports = {
+@@ -17347,4 +17908,5 @@ module.exports = {
    dshUsageToTotals,
    extractDshSessionUsage,
    parseDshIncremental,

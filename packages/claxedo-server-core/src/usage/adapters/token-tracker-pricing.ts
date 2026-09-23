@@ -39,17 +39,30 @@ async function loadPricingModule(): Promise<TokenTrackerPricingModule> {
   return loaded
 }
 
+/**
+ * Anthropic bills a one-hour cache write at twice the input rate for every
+ * model; the catalog carries only the five-minute rate.
+ */
+const ONE_HOUR_CACHE_WRITE_INPUT_MULTIPLIER = 2
+
 export async function projectTokenTrackerCost(input: {
   source: string
   model: string
-  tokens: { input: number | null; output: number | null; reasoning: number | null; cacheRead: number | null; cacheWrite: number | null }
+  tokens: {
+    input: number | null
+    output: number | null
+    reasoning: number | null
+    cacheRead: number | null
+    cacheWrite: number | null
+    /** The part of `cacheWrite` written to the one-hour cache; null where the source reports no split. */
+    cacheWrite1h: number | null
+  }
 }): Promise<PricedUsage> {
   const pricing = await loadPricingModule()
   const catalog = await pricing.ensurePricingLoaded()
   const rates = pricing.getModelPricing(input.model, { source: input.source })
-  // Resolve the unknown categories to zero before summing: reducing over
-  // `(number | null)[]` selects the same-type overload and infers `number | null`.
-  const total = Object.values(input.tokens)
+  const { tokens } = input
+  const total = [tokens.input, tokens.output, tokens.reasoning, tokens.cacheRead, tokens.cacheWrite]
     .map((value) => value ?? 0)
     .reduce((sum, value) => sum + value, 0)
   const known = [rates.input, rates.output, rates.cache_read, rates.cache_write]
@@ -70,12 +83,15 @@ export async function projectTokenTrackerCost(input: {
   // Canonical usage categories are disjoint: Codex scanner/live adapters
   // subtract reasoning from output before this boundary.
   const reasoningRate = outputRate
+  const cacheWrite = tokens.cacheWrite ?? 0
+  const cacheWrite1h = Math.min(tokens.cacheWrite1h ?? 0, cacheWrite)
   const estimatedUsd = (
-    (input.tokens.input ?? 0) * inputRate
-    + (input.tokens.output ?? 0) * outputRate
-    + (input.tokens.reasoning ?? 0) * reasoningRate
-    + (input.tokens.cacheRead ?? 0) * cacheReadRate
-    + (input.tokens.cacheWrite ?? 0) * cacheWriteRate
+    (tokens.input ?? 0) * inputRate
+    + (tokens.output ?? 0) * outputRate
+    + (tokens.reasoning ?? 0) * reasoningRate
+    + (tokens.cacheRead ?? 0) * cacheReadRate
+    + (cacheWrite - cacheWrite1h) * cacheWriteRate
+    + cacheWrite1h * inputRate * ONE_HOUR_CACHE_WRITE_INPUT_MULTIPLIER
   ) / 1_000_000
   return {
     estimatedUsd,

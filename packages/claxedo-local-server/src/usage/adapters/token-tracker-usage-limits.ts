@@ -62,14 +62,15 @@ function slotName(agent: string, field: string) {
   return named === field ? field.replace(/_window$/, "") : named
 }
 
-function windowAt(agent: string, field: string, value: unknown): CredentialUsageWindow | undefined {
+function windowAt(agent: string, field: string, value: unknown, period?: string): CredentialUsageWindow | undefined {
   const window = record(value)
   const percent = window === undefined ? undefined : num(window.utilization) ?? num(window.used_percent)
   if (window === undefined || percent === undefined) return undefined
   // The probe labels some slots itself, and that label is the vendor's own word
-  // for a window Claxedo has no name for, so it wins over the fallback.
+  // for a window Claxedo has no name for, so it wins over the fallback. An agent
+  // that bills by one period (Grok's `period_type`) names its primary slot that way.
   return {
-    window: text(window.label) ?? slotName(agent, field),
+    window: text(window.label) ?? (field === "primary_window" ? period : undefined) ?? slotName(agent, field),
     usedPercent: clampPercent(percent),
     resetsAt: usageResetMs(window.reset_at ?? window.resets_at),
   }
@@ -83,6 +84,7 @@ function windowAt(agent: string, field: string, value: unknown): CredentialUsage
  * no percentage — provenance, service status, plan labels — are not windows.
  */
 function windowsOf(agent: string, reported: Record<string, unknown>): CredentialUsageWindow[] {
+  const period = text(reported.period_type)
   return Object.entries(reported).flatMap(([field, value]) => {
     if (Array.isArray(value)) {
       return value.flatMap((entry) => {
@@ -90,7 +92,7 @@ function windowsOf(agent: string, reported: Record<string, unknown>): Credential
         return window ? [window] : []
       })
     }
-    const window = windowAt(agent, field, value)
+    const window = windowAt(agent, field, value, period)
     return window ? [window] : []
   })
 }

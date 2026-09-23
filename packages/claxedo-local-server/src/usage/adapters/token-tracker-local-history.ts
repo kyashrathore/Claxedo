@@ -23,7 +23,15 @@ export type ExternalUsageBucket = {
   bucketStart: number
   nativeSessionId: string
   turnCount: number
-  tokens: { input: number | null; output: number | null; reasoning: number | null; cacheRead: number | null; cacheWrite: number | null }
+  tokens: {
+    input: number | null
+    output: number | null
+    reasoning: number | null
+    cacheRead: number | null
+    cacheWrite: number | null
+    /** The part of `cacheWrite` written to the one-hour cache. */
+    cacheWrite1h: number | null
+  }
 }
 
 export type LocalHistorySnapshot = {
@@ -35,8 +43,8 @@ export type LocalHistorySnapshot = {
   scannedAt: number
 }
 
-const CACHE_VERSION = 9
-const CACHE_FILE = "local-history-v9.json"
+const CACHE_VERSION = 10
+const CACHE_FILE = "local-history-v10.json"
 const scans = new Map<string, Promise<LocalHistorySnapshot>>()
 
 type EmbeddedHistoryRow = {
@@ -51,6 +59,7 @@ type EmbeddedHistoryRow = {
   reasoning_output_tokens: number | null
   cached_input_tokens: number | null
   cache_creation_input_tokens: number | null
+  cache_creation_1h_input_tokens: number | null
 }
 
 type TokenTrackerHistoryModule = {
@@ -175,6 +184,7 @@ export async function scanTokenTrackerLocalHistory(input: {
         reasoning: row.reasoning_output_tokens,
         cacheRead: row.cached_input_tokens,
         cacheWrite: row.cache_creation_input_tokens,
+        cacheWrite1h: row.cache_creation_1h_input_tokens,
       },
     })
     const snapshot: LocalHistorySnapshot = {
