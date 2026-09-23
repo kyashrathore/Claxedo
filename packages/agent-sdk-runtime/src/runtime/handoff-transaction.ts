@@ -4,7 +4,7 @@ import {
   sameSessionHarness,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
-import type { AgentHarnessAdapter } from "../adapter-contract"
+import type { AgentHarnessAdapter, AgentPreparedHandoffSession } from "../adapter-contract"
 import { messagePartUpdated, type CompatEvent } from "../compat-events"
 import type { SessionConfig, SessionConfigUpdate, SessionHandoff, SessionHandoffSource, SessionHarness } from "../index"
 import { renderSessionHandoff } from "../session-handoff"
@@ -70,7 +70,7 @@ async function releaseNativeSession(input: {
 
 async function rollbackHandoff(
   input: HandoffTransactionInput,
-  prepared: Awaited<ReturnType<NonNullable<AgentHarnessAdapter["createHandoffSession"]>>> | undefined,
+  prepared: AgentPreparedHandoffSession | undefined,
   previous: NativeSession,
   handoffError: unknown,
 ) {
@@ -145,15 +145,56 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
 }
 
 /**
- * The native session being left is kept on the pending handoff until a message
- * is sent on the new harness. Picking it back before then resumes it under the
- * config it had; a harness picked in between carried nothing and is released.
+ * A harness whose pick no message crossed is released only after the switch
+ * has landed, so a switch that fails leaves both native sessions as they were.
  */
 async function switchHarness(input: HandoffTransactionInput): Promise<SessionConfig> {
   const agentSessionId = input.store.getAgentSessionId(input.sessionId)
   if (!agentSessionId) throw new Error(`Session ${input.sessionId} has no native harness session`)
   const previous: NativeSession = { agentSessionId, ownerKey: input.store.getSessionOwnerKey?.(input.sessionId) ?? null }
   const targetDirectory = input.directory ?? input.session.directory
+  const departure = handoffDeparture(input, previous)
+  if (!departure.resumed && !input.target.createHandoffSession) {
+    throw new Error(`Harness ${input.update.harness.id} does not support conversation handoff`)
+  }
+
+  let target: TargetSession | undefined
+  try {
+    target = await acquireTargetSession(input, departure, targetDirectory)
+    const binding = bindTargetSession(input, target.native, targetDirectory)
+    const next = await configureTargetSession(input, departure, target, binding)
+    if (departure.unsent) {
+      await releaseNativeSession({
+        adapter: input.source,
+        harness: input.current.harness,
+        sessionId: input.sessionId,
+        session: previous,
+        directory: input.session.directory ?? targetDirectory,
+        diagnose: input.diagnose,
+      })
+    }
+    return next
+  } catch (error) {
+    await rollbackHandoff(input, target?.prepared, previous, error)
+    throw error
+  }
+}
+
+/**
+ * Where a switch leaves from. `from` is the harness the conversation left and
+ * `source` the native session the pending handoff keeps for it. `unsent` is a
+ * pending handoff no message has crossed: the harness it switched to carried
+ * nothing. Picking `from` back while its session is kept resumes that session
+ * (`resumed`) under the config it ran with instead of a transcript copy.
+ */
+type Departure = {
+  from: SessionHarness
+  source: SessionHandoffSource | undefined
+  resumed: SessionHandoffSource | undefined
+  unsent: SessionHandoff | undefined
+}
+
+function handoffDeparture(input: HandoffTransactionInput, previous: NativeSession): Departure {
   const pending = input.current.handoff
   const unsent = pending?.pending && !pending.announced && !pending.reason ? pending : undefined
   const from = unsent?.from ?? input.current.harness
@@ -166,72 +207,74 @@ async function switchHarness(input: HandoffTransactionInput): Promise<SessionCon
     ...(input.current.handoff ? { handoff: withoutSource(input.current.handoff) } : {}),
   }
   const resumed = unsent?.source && sameSessionHarness(from, input.update.harness) ? unsent.source : undefined
-  if (!resumed && !input.target.createHandoffSession) {
-    throw new Error(`Harness ${input.update.harness.id} does not support conversation handoff`)
-  }
+  return { from, source, resumed, unsent }
+}
 
-  let prepared: Awaited<ReturnType<NonNullable<AgentHarnessAdapter["createHandoffSession"]>>> | undefined
-  try {
-    let native: Pick<SessionHandoffSource, "agentSessionId" | "upstreamSessionId" | "ownerKey"> | undefined = resumed
-    let transcript: string | undefined
-    if (!native) {
-      transcript = renderSessionHandoff(input.store.getMessages(input.sessionId), from)
-      prepared = await input.target.createHandoffSession!(
-        targetDirectory,
-        input.session.title ?? undefined,
-        input.sessionId,
-        { system: transcript },
-      )
-      const id = prepared.agentSessionId ?? prepared.id
-      native = { agentSessionId: id, upstreamSessionId: id, ownerKey: prepared.ownerKey ?? null }
-    }
-    input.store.bindSession({
-      scope: input.binding.scope,
-      sessionId: input.sessionId,
-      workspaceId: input.binding.workspaceId,
-      directory: targetDirectory ?? "",
-      connectionId: connectionIdForHarness(input.update.harness),
-      upstreamSessionId: native.upstreamSessionId,
-      title: input.session.title ?? undefined,
-      agentSessionId: native.agentSessionId,
-      ownerKey: native.ownerKey,
-    })
-    const targetBinding: AgentExecutionBinding = {
-      ...input.binding, directory: targetDirectory ?? "",
-      connectionId: connectionIdForHarness(input.update.harness),
-      upstreamSessionId: native.upstreamSessionId,
-    }
-    const configured = await input.target.updateSessionConfig(targetBinding, {
-      ...input.update,
-      ...(input.update.model === undefined ? { model: resumed?.model ?? null } : {}),
-      ...(input.update.variant === undefined ? { variant: resumed?.variant ?? null } : {}),
-      ...(input.update.agent === undefined ? { agent: resumed?.agent ?? null } : {}),
-    })
-    const next = input.store.updateSessionConfig(input.sessionId, {
-      ...configured,
-      harness: input.update.harness,
-      model: configured.model ?? null,
-      variant: configured.variant ?? null,
-      agent: configured.agent ?? null,
-      handoff: transcript === undefined
-        ? resumed?.handoff ?? null
-        : { from, pending: true, transcript, ...(source ? { source } : {}) },
-    })!
-    if (unsent) {
-      await releaseNativeSession({
-        adapter: input.source,
-        harness: input.current.harness,
-        sessionId: input.sessionId,
-        session: previous,
-        directory: input.session.directory ?? targetDirectory,
-        diagnose: input.diagnose,
-      })
-    }
-    return next
-  } catch (error) {
-    await rollbackHandoff(input, prepared, previous, error)
-    throw error
-  }
+type TargetSession = { native: Pick<SessionHandoffSource, "agentSessionId" | "upstreamSessionId" | "ownerKey"> } & (
+  | { transcript?: undefined; prepared?: undefined }
+  | { transcript: string; prepared: AgentPreparedHandoffSession }
+)
+
+async function acquireTargetSession(
+  input: HandoffTransactionInput,
+  departure: Departure,
+  directory: string | undefined,
+): Promise<TargetSession> {
+  if (departure.resumed) return { native: departure.resumed }
+  const transcript = renderSessionHandoff(input.store.getMessages(input.sessionId), departure.from)
+  const prepared = await input.target.createHandoffSession!(
+    directory,
+    input.session.title ?? undefined,
+    input.sessionId,
+    { system: transcript },
+  )
+  const id = prepared.agentSessionId ?? prepared.id
+  return { native: { agentSessionId: id, upstreamSessionId: id, ownerKey: prepared.ownerKey ?? null }, transcript, prepared }
+}
+
+function bindTargetSession(
+  input: HandoffTransactionInput,
+  native: TargetSession["native"],
+  directory: string | undefined,
+): AgentExecutionBinding {
+  const connectionId = connectionIdForHarness(input.update.harness)
+  input.store.bindSession({
+    scope: input.binding.scope,
+    sessionId: input.sessionId,
+    workspaceId: input.binding.workspaceId,
+    directory: directory ?? "",
+    connectionId,
+    upstreamSessionId: native.upstreamSessionId,
+    title: input.session.title ?? undefined,
+    agentSessionId: native.agentSessionId,
+    ownerKey: native.ownerKey,
+  })
+  return { ...input.binding, directory: directory ?? "", connectionId, upstreamSessionId: native.upstreamSessionId }
+}
+
+async function configureTargetSession(
+  input: HandoffTransactionInput,
+  departure: Departure,
+  target: TargetSession,
+  binding: AgentExecutionBinding,
+): Promise<SessionConfig> {
+  const { resumed } = departure
+  const configured = await input.target.updateSessionConfig(binding, {
+    ...input.update,
+    ...(input.update.model === undefined ? { model: resumed?.model ?? null } : {}),
+    ...(input.update.variant === undefined ? { variant: resumed?.variant ?? null } : {}),
+    ...(input.update.agent === undefined ? { agent: resumed?.agent ?? null } : {}),
+  })
+  return input.store.updateSessionConfig(input.sessionId, {
+    ...configured,
+    harness: input.update.harness,
+    model: configured.model ?? null,
+    variant: configured.variant ?? null,
+    agent: configured.agent ?? null,
+    handoff: target.transcript === undefined
+      ? resumed?.handoff ?? null
+      : { from: departure.from, pending: true, transcript: target.transcript, ...(departure.source ? { source: departure.source } : {}) },
+  })!
 }
 
 type KeptSourceInput = {
