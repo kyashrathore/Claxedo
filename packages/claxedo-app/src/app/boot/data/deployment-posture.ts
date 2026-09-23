@@ -28,11 +28,13 @@ const RENDER_DEADLINE_MS = 1_500
  * running under the same key, so the in-tree reader adopts the same request
  * rather than starting a second one.
  */
-export async function resolveDeploymentPosture(input: {
-  baseUrl: string | undefined
-  request?: typeof globalThis.fetch
-}): Promise<boolean | undefined> {
-  const declared = declaredDeploymentPosture(input)
+export async function resolveDeploymentPosture(
+  input: {
+    baseUrl: string | undefined
+    request?: typeof globalThis.fetch
+  },
+  declared: Promise<boolean | undefined> = declaredDeploymentPosture(input),
+): Promise<boolean | undefined> {
   let expire: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<undefined>((resolve) => {
     expire = setTimeout(() => resolve(undefined), RENDER_DEADLINE_MS)
@@ -46,9 +48,9 @@ export async function resolveDeploymentPosture(input: {
 
 /**
  * The server's own answer, however long it takes, or undefined when it could
- * not be read. The same request {@link resolveDeploymentPosture} races, so a
- * reader that must act on the declaration rather than on the render deadline
- * does not start a second one.
+ * not be read. Take it once and hand the same promise to every reader, the
+ * render-deadline race included: a second call refetches a declaration that
+ * failed or declared nothing, and waits on that request instead.
  */
 export function declaredDeploymentPosture(input: {
   baseUrl: string | undefined

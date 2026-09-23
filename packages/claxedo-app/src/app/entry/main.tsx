@@ -201,12 +201,14 @@ async function startApp() {
   // `CloudAuthGate` must not paint an anonymous shell on one that does, so the
   // declaration is resolved here and the whole tree below reads the same
   // cached answer on its first render.
-  const issuesSessions = await resolveDeploymentPosture({ baseUrl: getClaxedoServerUrl() })
+  const declaration = declaredDeploymentPosture({ baseUrl: getClaxedoServerUrl() })
+  const issuesSessions = await resolveDeploymentPosture({ baseUrl: getClaxedoServerUrl() }, declaration)
 
   // Nothing here waits for it, and nothing here can fail because of it — see
   // `browser-auth-startup.ts`.
   startBrowserAuth({
-    issuesSessions: declaredDeploymentPosture({ baseUrl: getClaxedoServerUrl() }),
+    issuesSessions,
+    declaration,
     adapter: browserAuthAdapter,
     apiOrigin: getClaxedoServerUrl(),
     appOrigin: window.location.origin,

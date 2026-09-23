@@ -5,6 +5,8 @@ import { startBrowserAuth } from "./browser-auth-startup"
 
 const HOSTED = { apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test" }
 
+const pending = new Promise<boolean | undefined>(() => {})
+
 function recordingAdapter(initialize: () => Promise<void> = async () => {}) {
   const calls: BrowserAuthDeployment[] = []
   return {
@@ -24,12 +26,11 @@ describe("startBrowserAuth", () => {
     // entry that awaited this held a blank page with an empty `#root` forever.
     const { calls, adapter } = recordingAdapter(() => new Promise<void>(() => {}))
 
-    const result = startBrowserAuth({ issuesSessions: Promise.resolve(true), adapter, ...HOSTED })
+    const result = startBrowserAuth({ issuesSessions: true, declaration: pending, adapter, ...HOSTED })
 
     // A returned Promise would allow an entrypoint to await a stalled adapter.
     // Checking only `calls` also passed for an async implementation.
     expect(result).toBeUndefined()
-    await Promise.resolve()
     expect(calls).toEqual([{ ...HOSTED, issuesSessions: true }])
   })
 
@@ -39,37 +40,45 @@ describe("startBrowserAuth", () => {
     // e2e harness's injected principal is read.
     const { calls, adapter } = recordingAdapter()
 
-    startBrowserAuth({ issuesSessions: Promise.resolve(false), adapter, ...HOSTED })
+    startBrowserAuth({ issuesSessions: false, declaration: pending, adapter, ...HOSTED })
 
-    await Promise.resolve()
     expect(calls).toEqual([{ ...HOSTED, issuesSessions: false }])
   })
 
   test("a server that declared no posture is not one that issues sessions", async () => {
     const { calls, adapter } = recordingAdapter()
 
-    startBrowserAuth({ issuesSessions: Promise.resolve(undefined), adapter, ...HOSTED })
+    startBrowserAuth({ issuesSessions: undefined, declaration: pending, adapter, ...HOSTED })
 
-    await Promise.resolve()
     expect(calls).toEqual([{ ...HOSTED, issuesSessions: false }])
   })
 
-  test("a declaration slower than the render deadline still starts sign-in", async () => {
-    // The render deadline reads a slow answer as undeclared; starting the
-    // adapter from that reading settled it as "issues no sessions" for good.
+  test("a declaration that lands after the render deadline starts sign-in again", async () => {
+    // Read at the deadline as undeclared, the adapter settles as "issues no
+    // sessions"; without a second start, the /login the gate then sends the
+    // visitor to could never sign in.
     const { calls, adapter } = recordingAdapter()
     let settle!: (issuesSessions: boolean) => void
     const declaration = new Promise<boolean>((resolve) => {
       settle = resolve
     })
 
-    startBrowserAuth({ issuesSessions: declaration, adapter, ...HOSTED })
-    expect(calls).toEqual([])
+    startBrowserAuth({ issuesSessions: undefined, declaration, adapter, ...HOSTED })
+    expect(calls).toEqual([{ ...HOSTED, issuesSessions: false }])
 
     settle(true)
     await declaration
-    await Promise.resolve()
-    expect(calls).toEqual([{ ...HOSTED, issuesSessions: true }])
+    expect(calls).toEqual([{ ...HOSTED, issuesSessions: false }, { ...HOSTED, issuesSessions: true }])
+  })
+
+  test("a late declaration of no sessions leaves the settled adapter alone", async () => {
+    const { calls, adapter } = recordingAdapter()
+    const declaration = Promise.resolve(false)
+
+    startBrowserAuth({ issuesSessions: undefined, declaration, adapter, ...HOSTED })
+    await declaration
+
+    expect(calls).toEqual([{ ...HOSTED, issuesSessions: false }])
   })
 
   test.each([
@@ -82,9 +91,8 @@ describe("startBrowserAuth", () => {
     // disagree — the adapter is told, it does not go and find out.
     const { calls, adapter } = recordingAdapter()
 
-    startBrowserAuth({ issuesSessions: Promise.resolve(true), adapter, apiOrigin, appOrigin: "http://localhost:4455" })
+    startBrowserAuth({ issuesSessions: true, declaration: pending, adapter, apiOrigin, appOrigin: "http://localhost:4455" })
 
-    await Promise.resolve()
     expect(calls).toEqual([{ apiOrigin, appOrigin: "http://localhost:4455", issuesSessions: true }])
   })
 })

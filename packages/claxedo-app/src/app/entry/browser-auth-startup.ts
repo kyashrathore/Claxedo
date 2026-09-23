@@ -18,15 +18,15 @@ import type { BrowserAuthAdapter } from "@/platform/auth/browser-auth"
  * session signals, and this function only has to start it and get out of the
  * way.
  *
- * `issuesSessions` is the server's own declaration, the same request
- * `CloudAuthGate` reads, so the gate and the adapter cannot disagree about
- * which deployment this is. The adapter starts when it settles rather than at
- * the render deadline: a slow answer read as "no sessions" there would settle
- * the adapter as unavailable for good while the gate, reading the late answer,
- * sends the visitor to a /login that cannot sign in. The gate holds while the
- * declaration is pending, and `initialize` marks the session loading before
- * the gate's query observer hears the answer. A server that declared nothing
- * is treated as one that issues no sessions.
+ * `issuesSessions` is the server's own declaration as it stood at the render
+ * deadline, the same request `CloudAuthGate` reads, so the gate and the
+ * adapter cannot disagree about which deployment this is. A server that
+ * declared nothing is treated as one that issues no sessions, so the adapter
+ * never waits on a server that does not answer. When the deadline passed
+ * before the answer did, `declaration` is that same request still running: a
+ * late "issues sessions" starts the adapter again, since the gate reading the
+ * late answer sends the visitor to /login, where an adapter settled as
+ * unavailable could never sign in.
  *
  * The adapter is started in every case rather than only where a session can
  * exist: `initialize` settles a deployment with no sign-in flow without a
@@ -40,16 +40,17 @@ import type { BrowserAuthAdapter } from "@/platform/auth/browser-auth"
  * a `/login` redirect.
  */
 export function startBrowserAuth(input: {
-  issuesSessions: Promise<boolean | undefined>
+  issuesSessions: boolean | undefined
+  declaration: Promise<boolean | undefined>
   adapter: Pick<BrowserAuthAdapter, "initialize">
   apiOrigin: string
   appOrigin: string
 }): void {
-  void input.issuesSessions.then((declared) =>
-    input.adapter.initialize({
-      apiOrigin: input.apiOrigin,
-      appOrigin: input.appOrigin,
-      issuesSessions: declared === true,
-    }),
-  )
+  const start = (issuesSessions: boolean) =>
+    void input.adapter.initialize({ apiOrigin: input.apiOrigin, appOrigin: input.appOrigin, issuesSessions })
+  start(input.issuesSessions === true)
+  if (input.issuesSessions !== undefined) return
+  void input.declaration.then((declared) => {
+    if (declared === true) start(true)
+  })
 }
