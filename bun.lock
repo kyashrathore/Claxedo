@@ -467,6 +467,22 @@
         "vitest": "2.1.9",
       },
     },
+    "packages/claxedo-plugin-api": {
+      "name": "@claxedo/plugin-api",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "4.4.3",
+      },
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "@types/bun": "catalog:",
+        "solid-js": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "solid-js": "^1.9.12",
+      },
+    },
     "packages/claxedo-server": {
       "name": "@claxedo/server",
       "version": "1.0.0",
@@ -1339,6 +1355,8 @@
     "@claxedo/mcp": ["@claxedo/mcp@workspace:packages/claxedo-mcp"],
 
     "@claxedo/opencode-server-adapter": ["@claxedo/opencode-server-adapter@workspace:packages/opencode-server-adapter"],
+
+    "@claxedo/plugin-api": ["@claxedo/plugin-api@workspace:packages/claxedo-plugin-api"],
 
     "@claxedo/sandbox-contract": ["@claxedo/sandbox-contract@workspace:packages/sandbox-contract"],
 
