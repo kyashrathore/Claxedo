@@ -23,6 +23,7 @@
   5. Use the user's configured `sans` font-feature-settings by default.
   6. Use the user's configured `sans` font-variation-settings by default.
   7. Disable tap highlights on iOS.
+  8. Paint text in the theme's color, not the UA's CanvasText, which follows `color-scheme`.
 */
 
 html,
@@ -34,6 +35,7 @@ html,
   font-feature-settings: var(--font-family-sans--font-feature-settings, normal); /* 5 */
   font-variation-settings: var(--font-family-sans--font-variation-settings, normal); /* 6 */
   -webkit-tap-highlight-color: transparent; /* 7 */
+  color: var(--text-base); /* 8 */
 }
 
 /*

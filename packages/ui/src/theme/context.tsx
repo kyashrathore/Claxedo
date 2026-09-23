@@ -151,6 +151,9 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   ensureThemeStyleElement(THEME_STYLE_ID).textContent = fullCss
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
+  // oc-theme-preload.js sets this inline for the first frame, and an inline
+  // declaration outranks the `:root` rule above, so it must follow every switch.
+  document.documentElement.style.colorScheme = mode
   const chromeColor = tokens["background-base"]
   document.documentElement.style.backgroundColor = chromeColor
 
