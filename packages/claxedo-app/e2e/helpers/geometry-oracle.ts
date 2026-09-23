@@ -17,6 +17,21 @@ export async function scrollTimelineToTop(page: Page) {
   }
 }
 
+/**
+ * The timeline mounts only the rows near the viewport (one row of overscan until a
+ * scroll gesture, six after), so a row at the end of a turn that grew above the
+ * viewport is not in the DOM until the reader scrolls down to it.
+ */
+export async function scrollTimelineToEnd(page: Page) {
+  const scroller = timelineScroller(page)
+  await scroller.hover()
+  for (let attempt = 0; attempt < 40; attempt++) {
+    await page.mouse.wheel(0, 500)
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    if (await scroller.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop) < 100) break
+  }
+}
+
 export async function readPaintGeometry(locator: Locator) {
   return locator.evaluate(element => {
     const { x, y, width, height } = element.getBoundingClientRect()

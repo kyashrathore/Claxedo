@@ -43,8 +43,8 @@
  *   `[data-testid="empty-draft-session-composer"]` — the workbench-empty draft
  *     composer, rendered only when a fallback directory exists
  *     (`src/app/workbench/rail/rail-workbench-canvas.tsx`); its absence is the
- *     zero-workspace state. That state has TWO settled surfaces: the "No projects
- *     yet. Create one to get started." onboarding placeholder on routes that own no
+ *     zero-workspace state. That state has TWO settled surfaces: the first-run wizard
+ *     (`[data-testid="first-project-canvas"]`, `FirstProjectCanvas`) on routes that own no
  *     workbench content (e.g. `/`), and `[data-testid="session-content-missing-workspace"]`
  *     ("Missing workspace", `src/features/session/ui/content/session-content.tsx`)
  *     on routes that DO own one (e.g. `/s/new`, whose unresolvable session id the
@@ -65,10 +65,10 @@
  *   5. With zero projects ever registered (no directory resolvable anywhere, not even
  *      as a fallback), no route offers a composer and zero sessions are created:
  *      submission is impossible, not merely rejected. A route that owns no workbench
- *      content (`/`) settles on the "No projects yet" onboarding placeholder; the
- *      directory-less draft route (`/s/new`) settles on the session pane's "Missing
- *      workspace" surface. Each surface is asserted on the route where it is the
- *      SETTLED render — the placeholder is only transiently reachable on `/s/new`
+ *      content (`/`) settles on the first-run wizard; the directory-less draft route
+ *      (`/s/new`) settles on the session pane's "Missing workspace" surface. Each
+ *      surface is asserted on the route where it is the SETTLED render — the wizard
+ *      is only transiently reachable on `/s/new`
  *      (it survives just until the session inventory loads), so asserting it there
  *      passes only on a slow runner. (The code-level reactive guard is
  *      `resolveSubmitDirectory`'s `showMissingWorkspace()` toast in
@@ -407,15 +407,15 @@ test.describe("core first prompt (local) @core", () => {
     // (a) Shell root, the workbench-empty path. `routeOwnsInitialSurface("/")` is false
     // (`src/app/workbench/state/provider.tsx`) and `receive()` in `route-intent.ts` returns
     // immediately for an intent carrying neither workspaceId nor sessionId, so the
-    // workbench never gains a content and the "No projects yet" placeholder is permanent
-    // rather than a frame on the way somewhere.
+    // workbench never gains a content and the first-run wizard (`FirstProjectCanvas`) is
+    // permanent rather than a frame on the way somewhere.
     await page.goto("/")
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
-    // The placeholder's own New Project affordance is painted first, so "no composer"
-    // below is a statement about a rendered surface rather than an unpainted app.
-    await expect(page.getByRole("button", { name: "New Project" }).first()).toBeVisible({ timeout: 20_000 })
+    // The wizard's first step is painted before "no composer" is read below, so that is
+    // a statement about a rendered surface rather than an unpainted app.
+    await expect(page.getByTestId("first-project-canvas")).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId("empty-draft-session-composer")).toHaveCount(0)
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
 

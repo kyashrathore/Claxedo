@@ -20,7 +20,7 @@ import {
   type MockRuntimeSubagentRow,
 } from "../helpers/mock-runtime"
 import { ensureComposerModelSelected, expectAssistantReplyVisible, expectAssistantTextOccurrences, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
-import { sampleElementDuringAction, scrollTimelineToTop } from "../helpers/geometry-oracle"
+import { sampleElementDuringAction, scrollTimelineToEnd, scrollTimelineToTop } from "../helpers/geometry-oracle"
 import { expectRailRowVisible } from "../helpers/rail-oracle"
 import { writeFile } from "node:fs/promises"
 
@@ -704,6 +704,8 @@ test.describe("core harness rendering matrix @core", () => {
     // An unregistered tool name falls back to GenericTool, which reads the row as a
     // sentence (`humanizeTool`): the name becomes the action, the first matching input
     // field the subtitle. It is the tool name that survives, not its raw punctuation.
+    // The row is the turn's last, below the groups just opened, so it mounts on scroll.
+    await scrollTimelineToEnd(page)
     await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "Custom mcp tool" })).toBeVisible()
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "vector search" })).toBeVisible()
   })
@@ -743,8 +745,10 @@ test.describe("core harness rendering matrix @core", () => {
     const fixture = loadFixtureFile("opencode", assistantId) as { questionAnswered: Envelope }
     mock.emit(fixture.questionAnswered.payload as never, fixture.questionAnswered.directory || dir)
 
-    // The answer mounts as a new part, which can re-cross the fold threshold.
+    // The answer mounts as a new part, which can re-cross the fold threshold. It is the
+    // turn's last row, below the groups just opened, so it mounts on scroll.
     await revealTurn(page)
+    await scrollTimelineToEnd(page)
     await expect(content.getByText(questionText)).toBeVisible({ timeout: 45_000 })
     await expect(content.locator('[data-component="question-answers"]')).toBeVisible()
     await expect(content.locator('[data-slot="answer-text"]', { hasText: "staging" })).toBeVisible()
@@ -918,6 +922,8 @@ test.describe("core harness rendering matrix @core", () => {
     await seedOneProject(page, dir)
     await page.goto(`/${slug(dir)}/session/${sessionId}`)
     const row = page.locator(SELECTORS.toolPart(part.id))
+    // A settled turn paints folded, its tool rows behind the "Worked for" row.
+    await revealTurn(page)
     await expect(row).toBeVisible()
     await expect(row).toContainText(/Failed|Interrupted/)
     await page.screenshot({ path: testInfo.outputPath("interrupted-before-replay.png") })
@@ -933,6 +939,7 @@ test.describe("core harness rendering matrix @core", () => {
       && response.status() === 200)
     await page.reload()
     await refetched
+    await revealTurn(page)
     await expect(row).toBeVisible()
     await expect(row).toContainText(/Failed|Interrupted/)
     // A projection restarted for the turn re-emits its start frames: the
@@ -952,6 +959,10 @@ test.describe("core harness rendering matrix @core", () => {
     completeSubagent(mock, dir, sessionId, scenario.subagentKey)
     await expect(page.locator(`[data-component="subagent-chip"][data-subagent-key="${scenario.subagentKey}"]`)).toHaveAttribute("data-status", "completed")
     await page.screenshot({ path: testInfo.outputPath("interrupted-after-replay.png") })
+    // The verdict below reads the row's text, so the row has to be on screen for it to
+    // mean anything: a fold closed by the replay would hide a regression as a pass.
+    await revealTurn(page)
+    await expect(row).toBeVisible()
     const sawRunning = await expect
       .poll(async () => (await row.textContent())?.includes("Running"), { timeout: 5_000 })
       .toBe(true)
@@ -1201,9 +1212,10 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(page.locator('[data-slot="permission-header-title"]')).toBeVisible({ timeout: 45_000 })
     const content = page.locator(assistantContent())
 
-    // apply_patch->edit and bash are consecutive work tools, so they share one group.
-    await expect(content.locator('[data-component="work-group-trigger"]')).toBeVisible({ timeout: 45_000 })
+    // A settled turn paints folded; apply_patch->edit and bash are consecutive work
+    // tools, so once unfolded they share one group.
     await revealTurn(page)
+    await expect(content.locator('[data-component="work-group-trigger"]')).toBeVisible()
 
     await expect(content.locator('[data-slot="message-part-title-filename"]', { hasText: "app.ts" })).toBeVisible()
     await expect(page.locator('[data-component="apply-patch-tool"]')).toHaveCount(0)
@@ -1270,15 +1282,15 @@ test.describe("core harness rendering matrix @core", () => {
     const trace = loadTrace("claude-sdk", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
+    // A folded turn renders no tool rows at all, so every assertion below has to be
+    // read off an unfolded one or it is measuring an empty container.
+    await revealTurn(page)
+
     // The trace's three capitalised calls reach the real renderer and fold into one
     // context group like their lowercase peers: the projection canonicalises the name
     // at tool-start, and the grouping and the registry canonicalise again on read, so
     // this proves the observable outcome, not which layer produced it.
-    await expect(content.locator('[data-component="context-tool-group-trigger"]')).toBeVisible({ timeout: 45_000 })
-
-    // A folded turn renders no tool rows at all, so the absence below has to be read
-    // off an unfolded one or it is measuring an empty container.
-    await revealTurn(page)
+    await expect(content.locator('[data-component="context-tool-group-trigger"]')).toBeVisible()
     await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(1)
     // The distinguishing assertion: an unregistered name falls through to GenericTool.
     // Its title is prose ("Called `Grep`") that a locale spells its own way and that
@@ -1334,7 +1346,9 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("run suite")).toBeVisible()
 
     // The native `command` tool name normalizes into the shell renderer, so the literal
-    // command lands in `shell-submessage-value` and no title carries the raw name.
+    // command lands in `shell-submessage-value` and no title carries the raw name. The
+    // settled turn paints folded, so the row is read off the unfolded turn.
+    await revealTurn(page)
     await expect(content.locator('[data-slot="shell-submessage-value"]', { hasText: "git status" })).toBeVisible()
     await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "command" })).toHaveCount(0)
   })
@@ -1352,7 +1366,9 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("HelHello")).toHaveCount(0)
 
     // The native `shell` tool name normalizes into the shell renderer, so the literal
-    // command lands in `shell-submessage-value` and no title carries the raw name.
+    // command lands in `shell-submessage-value` and no title carries the raw name. The
+    // settled turn paints folded, so the row is read off the unfolded turn.
+    await revealTurn(page)
     await expect(content.locator('[data-slot="shell-submessage-value"]', { hasText: "bun test" })).toBeVisible()
     await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "shell" })).toHaveCount(0)
 
