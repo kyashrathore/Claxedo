@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { projectAccess } from "./project-access"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { WorkspaceAuthority } from "../platform/auth/authority"
+import { projectAccess } from "./access"
 
 const signed: SignedControlPlaneAuth = {
   mode: "signed",

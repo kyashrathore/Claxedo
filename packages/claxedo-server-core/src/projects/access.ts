@@ -1,9 +1,9 @@
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority, type ProjectAction, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
+import type { SignedControlPlaneAuth } from "../platform/auth/auth"
+import { requireAuthority, type ProjectAction, type WorkspaceAuthority } from "../platform/auth/authority"
+import { asProjectId } from "../platform/auth/branded-id"
 
 /**
- * One caller's reach over the projects this server stores.
+ * One caller's reach over the projects a server stores.
  *
  * `local` is the unsigned local product rather than a permission: the shell's
  * `/project/current` creates a workspace for a directory only there, because
@@ -15,10 +15,10 @@ export type ProjectAccess = {
 }
 
 /**
- * The one authorization operation for this server's projects. Each route family
- * extracts the caller its own way — the shell routes authenticate the request
- * inline, the `/api/claxedo/projects` router reads the context its per-route
- * bearer gate already verified — and both decide reach here.
+ * The one authorization operation for a server's projects. Each route family
+ * extracts the caller its own way — the local shell routes authenticate the
+ * request inline, `/api/claxedo/projects` through its `authenticate` option —
+ * and both decide reach here.
  *
  * No signed caller is the unsigned local product: one person at the keyboard,
  * no authority to ask and no account to ask about, so every project is theirs.
