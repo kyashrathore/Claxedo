@@ -2707,6 +2707,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(type, model)))
   })
 
+  // The code-host catalog the first-run wizard's project form reads on a
+  // server with no filesystem: this mock offers no host, so the form shows the
+  // URL field alone. A spec that models a connected host registers its own
+  // handler later, which Playwright consults first.
+  await page.route("**/api/claxedo/integrations", (r) => {
+    if (!api(r) || r.request().method() !== "GET") return r.fallback()
+    return json(r, { integrations: [], connections: [] })
+  })
+
   // Sanitized generic agent-connection discovery for the Connections screen.
   await contractRoute(page, "**/api/claxedo/agent-config/connections**", (r) => {
     if (!api(r)) return r.continue()

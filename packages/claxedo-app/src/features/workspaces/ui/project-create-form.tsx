@@ -1,7 +1,7 @@
-import { createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import type { CodeHostIntegration, CodeHostRepositoryList, CodeHostRequest } from "@/features/onboarding/code-host-api"
+import type { CodeHostIntegration, CodeHostRepositoryList, CodeHostRequest, CodeHostStatus } from "@/features/onboarding/code-host-api"
 import { createIntegrationsRequest } from "@/platform/account/integrations-request"
 import {
   connectCodeHost,
@@ -77,21 +77,41 @@ export function ProjectCreateForm(
   const mode = () => (offersFolder() ? source() : "repository")
 
   const codeHost = createMemo(() => props.codeHost ?? createIntegrationsRequest(props.baseUrl))
-  const [status, { refetch: refetchStatus }] = createResource(
-    () => (mode() === "repository" ? codeHost() : false),
-    (request) => readCodeHostStatus(request),
-  )
+  // Signals rather than resources: a resource suspends every `Suspense` above
+  // it, and this form is the no-project screen under the shell's own boundary,
+  // so a code-host read that hangs would hold the whole app on its fallback.
+  const [status, setStatus] = createSignal<CodeHostStatus>()
+  const [checking, setChecking] = createSignal(false)
+  const [repositories, setRepositories] = createSignal<CodeHostRepositoryList>()
+  const [listing, setListing] = createSignal(false)
+  const settled = <T,>(read: () => Promise<T>, apply: (value: T | undefined) => void, busy: (value: boolean) => void) => {
+    let current = true
+    onCleanup(() => {
+      current = false
+    })
+    busy(true)
+    void read()
+      .then((value) => current && apply(value))
+      .catch(() => current && apply(undefined))
+      .finally(() => current && busy(false))
+  }
+  const refetchStatus = () => settled(() => readCodeHostStatus(codeHost()), setStatus, setChecking)
+  createEffect(() => {
+    if (mode() !== "repository") return
+    refetchStatus()
+  })
   const integration = () => status()?.integrations[0]
   const connection = () => {
     const current = status()
     return current ? connectedCodeHosts(current)[0] : undefined
   }
-  const [repositories] = createResource(
-    () => connection()?.id,
-    (connectionId) => listCodeHostRepositories(codeHost(), connectionId),
-  )
+  createEffect(() => {
+    const connectionId = connection()?.id
+    if (!connectionId) return
+    settled(() => listCodeHostRepositories(codeHost(), connectionId), setRepositories, setListing)
+  })
   const repositoryView = (): "checking" | "url" | "connect" | "list" => {
-    if (status.loading) return "checking"
+    if (checking()) return "checking"
     if (!integration() || entry() === "url") return "url"
     return connection() ? "list" : "connect"
   }
@@ -207,14 +227,14 @@ export function ProjectCreateForm(
                   integration={host()}
                   request={codeHost()}
                   comfortable={comfortable()}
-                  onConnected={() => void refetchStatus()}
+                  onConnected={refetchStatus}
                 />
               )}
             </Show>
             <Show when={repositoryView() === "list"}>
               <RepositoryList
                 list={repositories()}
-                loading={repositories.loading}
+                loading={listing()}
                 query={query()}
                 onQuery={setQuery}
                 selected={selected()}

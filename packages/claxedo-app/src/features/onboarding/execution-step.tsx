@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, For, Show, type Component } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onMount, Show, type Component } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { SandboxDriverLogo, workspaceSandboxDriverAuthUrl } from "./app-ports"
@@ -6,6 +6,7 @@ import {
   canSaveSandboxProvider,
   readSandboxProviderCatalog,
   saveSandboxProviderKey,
+  type SandboxProviderCatalog,
   type SandboxProviderOption,
   type SandboxProviderVerification,
 } from "./sandbox-provider-api"
@@ -118,7 +119,17 @@ export const ExecutionStep: Component<{
  * cannot be asked) count as done; `broken` does not.
  */
 const SandboxProviderKey: Component<{ baseUrl: string; onReady: (ready: boolean) => void }> = (props) => {
-  const [catalog, { mutate }] = createResource(() => readSandboxProviderCatalog({ baseUrl: props.baseUrl }))
+  // A signal, not a resource: a resource would suspend the shell's boundary
+  // above the no-project screen while the driver route answers.
+  const [catalog, setCatalog] = createSignal<SandboxProviderCatalog>()
+  const [loading, setLoading] = createSignal(true)
+  const [unavailable, setUnavailable] = createSignal(false)
+  onMount(() => {
+    void readSandboxProviderCatalog({ baseUrl: props.baseUrl })
+      .then(setCatalog)
+      .catch(() => setUnavailable(true))
+      .finally(() => setLoading(false))
+  })
   const [picked, setPicked] = createSignal<string>()
   const [values, setValues] = createSignal<Record<string, string>>({})
   const [busy, setBusy] = createSignal(false)
@@ -157,17 +168,17 @@ const SandboxProviderKey: Component<{ baseUrl: string; onReady: (ready: boolean)
       setFailure(outcome.reason)
       return
     }
-    mutate(outcome.catalog)
+    setCatalog(outcome.catalog)
     setSaved(outcome.verification ?? { state: "unknown" })
     setValues({})
   }
 
   return (
     <div class="flex flex-col gap-3" data-slot="onboarding-sandbox-key">
-      <Show when={catalog.loading}>
+      <Show when={loading()}>
         <span class="text-12-regular text-text-weak">Loading sandbox providers…</span>
       </Show>
-      <Show when={catalog.error}>
+      <Show when={unavailable()}>
         <p class="text-12-regular text-icon-warning-base" role="alert">
           This server can't manage sandbox provider keys. Add the key where the server runs.
         </p>
