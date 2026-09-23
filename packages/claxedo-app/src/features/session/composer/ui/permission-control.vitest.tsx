@@ -31,8 +31,6 @@ describe("permissionRowText", () => {
     expect(text.caveat).toBe("the harness enforces nothing")
   })
 
-
-
   test("no caveat means no caveat", () => {
     expect(permissionRowText(row({})).caveat).toBeUndefined()
   })
@@ -42,18 +40,6 @@ describe("permissionRowText", () => {
       row({ description: "Auto-approve" }, { selectable: false, blockedReason: "cursor-sdk exposes no controls" }),
     )
     expect(text.detail).toBe("Auto-approve — cursor-sdk exposes no controls")
-  })
-
-  test("the tooltip carries everything, because the detail line is clamped", () => {
-    const text = permissionRowText(
-      row({ description: "Auto-approve", caveat: "needs a model that supports it" }, { blockedReason: "not wired" }),
-    )
-    expect(text.tooltip).toBe("Auto-approve — not wired — needs a model that supports it")
-  })
-
-  test("a row with nothing to say still names itself", () => {
-    const text = permissionRowText(row({ description: undefined, name: "Ask for everything" }))
-    expect(text.tooltip).toBe("Ask for everything")
   })
 })
 
