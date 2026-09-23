@@ -693,7 +693,13 @@ function sessionHandoff(input: string | null | undefined): SessionConfig["handof
     if (!value || !value.pending || !value.from?.id || typeof value.transcript !== "string") return undefined
     const from = normalizeHarnessIdentity(value.from)
     if (!from) return undefined
-    return { from, pending: true, transcript: value.transcript }
+    return {
+      from,
+      pending: true,
+      transcript: value.transcript,
+      ...(value.reason === "missing-session" ? { reason: value.reason } : {}),
+      ...(value.announced === true ? { announced: true } : {}),
+    }
   } catch {
     return undefined
   }

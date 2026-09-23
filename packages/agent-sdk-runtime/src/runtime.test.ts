@@ -212,8 +212,12 @@ function goalPayloads(events: Array<{ type: string }>) {
   return events.filter((payload) => payload.type === "goal-updated" || payload.type === "goal-cleared")
 }
 
+function handoffParts(messages: AgentMessage[]) {
+  return messages.flatMap((message) => message.parts.filter((part) => part.type === "handoff"))
+}
+
 function handoffHarness(input: {
-  id: "pi" | "claude"
+  id: "pi" | "claude" | "codex"
   prompts?: string[]
   handoffs?: string[]
   handoffSystems?: string[]
@@ -1082,21 +1086,18 @@ describe("createAgentRuntime", () => {
       harness: { id: "claude", access: "native" },
       model: { providerID: "claude", modelID: "sonnet" },
     }, "/repo")
+    expect(handoffParts(rows.getMessages(session.id))).toEqual([])
     const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
 
     expect(handoffs).toEqual(["ses_cross"])
     expect(handoffSystems).toHaveLength(1)
     expect(handoffSystems[0]).toContain("User:\ninspect the bug")
     expect(handoffSystems[0]).toContain("Assistant:\nreply from pi")
-    expect(rows.getMessages(session.id)).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        parts: [expect.objectContaining({
-          type: "handoff",
-          from: { id: "pi", access: "native" },
-          to: { id: "claude", access: "native" },
-        })],
-      }),
-    ]))
+    expect(handoffParts(rows.getMessages(session.id))).toEqual([expect.objectContaining({
+      messageID: "u2",
+      from: { id: "pi", access: "native" },
+      to: { id: "claude", access: "native" },
+    })])
     expect(continued.prompt.system).toContain('<session-handoff from="pi">')
     expect(continued.prompt.system).toContain("User:\ninspect the bug")
     expect(continued.prompt.system).toContain("Assistant:\nreply from pi")
@@ -1146,9 +1147,6 @@ describe("createAgentRuntime", () => {
     })
 
     await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
-    expect(rows.getMessages(session.id).at(-1)).toEqual(
-      expect.objectContaining({ parts: [expect.objectContaining({ type: "handoff" })] }),
-    )
     const pending = rows.getSessionConfig(session.id)?.handoff
     expect(pending).toMatchObject({
       from: { id: "pi", access: "native" },
@@ -1184,8 +1182,64 @@ describe("createAgentRuntime", () => {
     expect(pending).toMatchObject({
       from: { id: "pi", access: "native" },
       pending: true,
+      announced: true,
     })
     expect(pending?.transcript).toContain('<session-handoff from="pi">')
+
+    const retried = await runtime.turns.start({ sessionId: session.id, messageId: "u3", text: "continue" })
+    await tick()
+
+    expect(retried.prompt.system).toContain('<session-handoff from="pi">')
+    expect(handoffParts(rows.getMessages(session.id))).toEqual([expect.objectContaining({ messageID: "u2" })])
+    await runtime.dispose()
+  })
+
+  test("marks one handoff from the last harness used when several are picked before a message is sent", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = store
+    const handoffSystems: string[] = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude" }), handoffHarness({ id: "codex", handoffSystems })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", id: "ses_chain", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect" })
+    await tick()
+
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "codex", access: "native" } }, "/repo")
+    const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
+    await tick()
+
+    expect(handoffSystems[0]).toContain('<session-handoff from="pi">')
+    expect(continued.prompt.system).toContain('<session-handoff from="pi">')
+    expect(handoffParts(rows.getMessages(session.id))).toEqual([expect.objectContaining({
+      messageID: "u2",
+      from: { id: "pi", access: "native" },
+      to: { id: "codex", access: "native" },
+    })])
+    await runtime.dispose()
+  })
+
+  test("marks no handoff when the picks return to the harness the conversation left", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = store
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude" })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", id: "ses_return", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect" })
+    await tick()
+
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "pi", access: "native" } }, "/repo")
+    const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
+    await tick()
+
+    expect(continued.prompt.system).toContain("User:\ninspect")
+    expect(handoffParts(rows.getMessages(session.id))).toEqual([])
+    expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
     await runtime.dispose()
   })
 

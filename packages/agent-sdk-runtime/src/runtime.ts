@@ -33,7 +33,7 @@ import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./ru
 import { createTurnPublication } from "./runtime/turn-publication"
 import { turnPrompt, turnStartRecord } from "./runtime/turn-record"
 import { assertSessionCreateBindingScope, normalizeDirectory as runtimeDirectory, requireExecutionBinding } from "./runtime/execution-binding"
-import { executeHandoffTransaction } from "./runtime/handoff-transaction"
+import { announceHandoff, executeHandoffTransaction } from "./runtime/handoff-transaction"
 import { createRuntimeLifecycle } from "./runtime/lifecycle"
 import { createRuntimeGoalController } from "./runtime/goal-controller"
 import { createRuntimeRecovery } from "./runtime/recovery"
@@ -500,9 +500,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       store,
       source,
       target,
-      commit: (event) => {
-        commitAndPublish(sessionId, targetDirectory, event, { dir: "out", method: "session/handoff" })
-      },
       diagnose: (payload) => publish({ sessionId, directory: targetDirectory, payload }),
     })
   }
@@ -690,6 +687,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
+          announceHandoff({ sessionId: turn.sessionId, userMessageId, config, store,
+            commit: (event) => commitAndPublish(turn.sessionId, directory, event, { dir: "out", method: "session/handoff" }, turn.admission) })
           // This promise is detached, so a rejection has no caller to reach.
           // The failure is retained against the session instead, and the turn
           // keeps its admission and its lease until something clears it.

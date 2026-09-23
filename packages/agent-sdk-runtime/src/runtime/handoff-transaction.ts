@@ -1,11 +1,10 @@
-import { randomUUID } from "crypto"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import {
   connectionIdForHarness,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "../adapter-contract"
-import { buildUserMessage, messagePartUpdated, messageUpdated, type CompatEvent } from "../compat-events"
+import { messagePartUpdated, type CompatEvent } from "../compat-events"
 import type { SessionConfig, SessionConfigUpdate, SessionHarness } from "../index"
 import { renderSessionHandoff } from "../session-handoff"
 import type { AgentRuntimeStoreWithRecovery } from "../harnesses/shared/runtime-store"
@@ -25,7 +24,6 @@ export type HandoffTransactionInput = {
   source: AgentHarnessAdapter
   target: AgentHarnessAdapter
   binding: AgentExecutionBinding
-  commit(event: CompatEvent): void
   diagnose(event: AgentRuntimeEvent): void
 }
 
@@ -129,10 +127,12 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
   if (!previousAgentSessionId) throw new Error(`Session ${input.sessionId} has no native harness session`)
   const previousOwnerKey = input.store.getSessionOwnerKey?.(input.sessionId) ?? null
   const targetDirectory = input.directory ?? input.session.directory
-  const transcript = renderSessionHandoff(
-    input.store.getMessages(input.sessionId),
-    input.current.harness,
-  )
+  // Harnesses picked in turn without a message sent between them are one
+  // handoff from the harness the conversation last ran on.
+  const from = input.current.handoff?.pending && !input.current.handoff.announced
+    ? input.current.handoff.from
+    : input.current.harness
+  const transcript = renderSessionHandoff(input.store.getMessages(input.sessionId), from)
   if (!input.target.createHandoffSession) {
     throw new Error(`Harness ${input.update.harness.id} does not support conversation handoff`)
   }
@@ -173,30 +173,41 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
       model: configured.model ?? null,
       variant: configured.variant ?? null,
       agent: configured.agent ?? null,
-      handoff: { from: input.current.harness, pending: true, transcript },
+      handoff: { from, pending: true, transcript },
     })!
-    const markerId = `handoff-${randomUUID()}`
-    const createdAt = Date.now()
-    const markerModel = configured.model ?? { providerID: input.update.harness.id, modelID: "default" }
-    input.commit(messageUpdated(buildUserMessage({
-      id: markerId,
-      sessionID: input.sessionId,
-      agent: configured.agent ?? "build",
-      model: markerModel,
-      created: createdAt,
-    })))
-    input.commit(messagePartUpdated({
-      id: `${markerId}-part`,
-      sessionID: input.sessionId,
-      messageID: markerId,
-      type: "handoff",
-      from: input.current.harness,
-      to: input.update.harness,
-    }))
     await releaseSource(input, previousAgentSessionId, previousOwnerKey, targetDirectory)
     return next
   } catch (error) {
     await rollbackHandoff(input, prepared, previousAgentSessionId, previousOwnerKey, error)
     throw error
   }
+}
+
+/**
+ * Writes the handoff part owed to the user message that opens a turn on a
+ * switched harness, once. Nothing is owed when the harnesses picked since the
+ * last sent message came back to the one the conversation left.
+ */
+export function announceHandoff(input: {
+  sessionId: string
+  userMessageId: string
+  config: SessionConfig | undefined
+  store: Pick<AgentRuntimeStoreWithRecovery, "updateSessionConfig">
+  commit(event: CompatEvent): void
+}) {
+  const { config } = input
+  if (!config?.handoff?.pending || config.handoff.announced) return
+  const handoff = config.handoff
+  const from = { id: handoff.from.id, access: handoff.from.access }
+  const to = { id: config.harness.id, access: config.harness.access }
+  if (from.id === to.id && from.access === to.access) return
+  input.commit(messagePartUpdated({
+    id: `${input.userMessageId}-handoff`,
+    sessionID: input.sessionId,
+    messageID: input.userMessageId,
+    type: "handoff",
+    from,
+    to,
+  }))
+  input.store.updateSessionConfig(input.sessionId, { handoff: { ...handoff, announced: true } })
 }
