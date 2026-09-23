@@ -43,12 +43,15 @@ Project / boot-splash fix (`31ea96947b`), and the merges of other sessions' dev 
 ## Background work still running (do not duplicate)
 
 - **Windows lane A** (worktree `.claude/worktrees/agent-a3e806aa951b7a24d`, branch
-  `fix/windows-rest-2`, crabbox lease `quick-hermit`): cli, host-connector, ui committed;
-  desktop (all 4 stages pass), app, workspace-relay (`.resolves` → await-then-expect in
-  `src/bun.test.ts`), mcp in progress; then server shards 1/3/4. Also: `claxedo connect`
-  refuses on win32 (folder serving is POSIX-only; rename-EPERM and private-key DACL are
-  recorded as prerequisites in the connect docs); `cbx-ci-windows.ps1` to install
-  perf-harness deps like test.yml.
+  `fix/windows-rest-2`, base `4208b4c1b8`, 9 commits): proven on Windows — cli,
+  host-connector, ui, desktop (4 stages), workspace-relay (3 stages, process exits), app
+  (bun 5927/0, vitest, tooling, deployed-acceptance), server shard 1/4 (774 tests). Also the
+  Bun Windows bundler panic fix (`script/published-exports-plugin.ts`) and
+  `cbx-ci-windows.ps1` installing perf-harness deps. Lease `quick-hermit` expired and is
+  stopped; lease `blue-crayfish` is running server shards 3/4 and 4/4 (~70 min). Left for
+  lane B: mcp `processes.test.ts` and 7 perf-harness EBUSY. `claxedo connect` refuses on
+  win32 (folder serving is POSIX-only; rename-EPERM and private-key DACL recorded as
+  prerequisites in the connect docs).
 - **Windows lane B** (worktree `.claude/worktrees/agent-a2aace8da91c231e9`, branch
   `fix/win-workspace-runtime`, lease `pearl-crayfish`): ~68 workspace-runtime failures.
   Known leads: PTYs record no creation identity on Windows (every stop `unresolved` /
