@@ -22,6 +22,7 @@ import type { AgentExecutionBinding, AgentSessionStartBinding, AgentSessionStart
 import {
   parseRecoveryRequest,
   RecoveryContractError,
+  sameSessionHarness,
   serializeRecoveryOutcome,
   type RecoveryOutcome,
   type RecoveryRefusal,
@@ -1094,10 +1095,6 @@ async function unsupportedIfUnavailable(
     reason: "adapter_method_unavailable",
     message: `${caps.harness} advertised ${key} but did not provide ${method}`,
   })
-}
-
-function sameSessionHarness(a: SessionConfig["harness"], b: SessionConfig["harness"]) {
-  return a.id === b.id && a.access === b.access
 }
 
 function harnessSwitchUnsupported(

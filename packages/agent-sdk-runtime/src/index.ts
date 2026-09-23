@@ -255,6 +255,22 @@ export type SessionHandoff = {
   transcript: string
   reason?: "missing-session"
   announced?: true
+  source?: SessionHandoffSource
+}
+
+/**
+ * The native session of the harness a handoff left, and the config it ran
+ * under. It is kept until a message is sent on the new harness, so picking the
+ * left harness back resumes its own thread instead of a transcript copy.
+ */
+export type SessionHandoffSource = {
+  agentSessionId: string
+  upstreamSessionId: string
+  ownerKey: string | null
+  model?: PromptModel
+  variant?: string | null
+  agent?: string | null
+  handoff?: Omit<SessionHandoff, "source">
 }
 
 export type SessionConfig = {

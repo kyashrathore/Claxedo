@@ -104,6 +104,10 @@ export function harnessKey(input: { id: SessionHarnessId; access: AgentHarnessAc
   return undefined
 }
 
+export function sameSessionHarness(a: SessionHarness, b: SessionHarness) {
+  return a.id === b.id && a.access === b.access
+}
+
 export function normalizeHarnessIdentity(input: unknown): { id: SessionHarnessId; access: AgentHarnessAccess } | undefined {
   if (typeof input === "string") {
     if (isAgentHarnessId(input)) return { id: input, access: "native" }

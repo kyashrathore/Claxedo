@@ -2849,7 +2849,7 @@ void describe("RuntimeStore", () => {
     assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.handoff, undefined)
   })
 
-  void it("persists why a handoff is pending and whether a sent message already marked it", () => {
+  void it("persists why a handoff is pending, whether a sent message marked it, and the session it kept", () => {
     const root = tmp()
     const first = new RuntimeStore(root)
     first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
@@ -2863,9 +2863,22 @@ void describe("RuntimeStore", () => {
       harness: { id: "codex", access: "native" },
       handoff: { from, pending: true, transcript: "switched", announced: true },
     })
+    const kept = {
+      agentSessionId: "a1",
+      upstreamSessionId: "a1",
+      ownerKey: "proc:/work",
+      model: { providerID: "anthropic", modelID: "opus" },
+      variant: "high",
+      agent: null,
+      handoff: { from, pending: true, transcript: "rebuilt", reason: "missing-session" },
+    } as const
+    first.updateSessionConfig("s1", {
+      harness: { id: "codex", access: "native" },
+      handoff: { from, pending: true, transcript: "picked", source: kept },
+    })
 
     const replayed = new RuntimeStore(root)
-    assert.deepEqual(replayed.getSessionConfig("s1")?.handoff, { from, pending: true, transcript: "rebuilt", reason: "missing-session" })
+    assert.deepEqual(replayed.getSessionConfig("s1")?.handoff, { from, pending: true, transcript: "picked", source: kept })
     assert.deepEqual(replayed.getSessionConfig("s2")?.handoff, { from, pending: true, transcript: "switched", announced: true })
   })
 
