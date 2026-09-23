@@ -54,7 +54,9 @@ import { documentGit } from "@claxedo/local-server/self-hosted-execution"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
-import { LocalProjectRoutes, ShellRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { requireSignedControlPlaneRoute, ShellRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
+import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { isSandboxDriverID } from "@claxedo/sandbox-contract"
 import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
@@ -1269,13 +1271,16 @@ export function createSelfHostedApp(
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
   app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
-  // Projects on this server's filesystem: a folder here, or a repository cloned
-  // under the data directory. The same routes the desktop's server mounts.
+  // The shared projects route over this server's filesystem store: a folder
+  // here, or a repository cloned under the data directory. The desktop's
+  // server mounts the same module over the same store.
   // A folder project on a signed server is a local worktree this server hosts:
   // the same authority row the desktop's sharing flow creates, in the caller's
   // org, so `resolveRelayActor` above can authorise engine calls against it.
   // The row is filed under the local store's project id: the signed `/project`
-  // list and every project-scoped authorisation name the project by that id.
+  // list and every project-scoped authorisation name the project by that id,
+  // and removing the project retires that row with its placements so the id
+  // cannot be handed to the next project made for the same folder.
   // A repository clones through the same `repositoryForAuth` the hosted
   // workspace create resolves with: the connection the caller chose, or for a
   // pasted URL the GitHub account they connected, whose token the route uses
@@ -1288,32 +1293,41 @@ export function createSelfHostedApp(
   const projectAuthority = services.authority
   app.route(
     "/api/claxedo/projects",
-    LocalProjectRoutes(authRouteOptions(services), {
-      authorizeLocalDirectoryImport: authorizeOperator,
-      privateRepoHosts: selfHostedPrivateRepoHosts(),
+    ProjectRoutes({
+      store: localProjectStore(
+        projectAuthority
+          ? {
+              registerWorkspace: async (auth, workspace) => {
+                const known = await projectAuthority.openWorkspace(auth, { workspaceId: workspace.workspaceId }).catch(() => undefined)
+                if (known?.allowed) return
+                await projectAuthority.registerLocalForSharing(auth, {
+                  workspaceId: workspace.workspaceId,
+                  projectId: workspace.projectId,
+                  displayName: workspace.displayName,
+                  remoteDirectory: workspace.directory,
+                  ...(workspace.repoUrl ? { repoUrl: workspace.repoUrl } : {}),
+                })
+              },
+              unregisterProject: async (auth, project) => {
+                if (!projectAuthority.deleteProject) throw new Error("The workspace authority cannot retire projects")
+                await projectAuthority.deleteProject(auth, { projectId: project.projectId })
+              },
+            }
+          : {},
+      ),
+      authenticate: (request) => requireSignedControlPlaneRoute(request, authRouteOptions(services)),
       ...(projectAuthority ? { authority: projectAuthority } : {}),
-      repositoryForAuth: async (auth, connectionId, fullName) => {
-        const id = connectionId
-          ?? (await connectionsHost.service.list({ owner: auth.user.subject }))
-            .find((row) => row.integrationId === "github" && row.status === "connected")?.id
-        if (!id) return { ok: false, status: 404, code: "connection_not_found" }
-        return connectionsHost.repositoryForAuth(auth, id, fullName)
+      authorizeFolderSource: authorizeOperator,
+      repositories: {
+        admission: { resolve: systemRepoAddresses, privateHosts: selfHostedPrivateRepoHosts() },
+        repositoryForAuth: async (auth, connectionId, fullName) => {
+          const id = connectionId
+            ?? (await connectionsHost.service.list({ owner: auth.user.subject }))
+              .find((row) => row.integrationId === "github" && row.status === "connected")?.id
+          if (!id) return { ok: false, status: 404, code: "connection_not_found" }
+          return connectionsHost.repositoryForAuth(auth, id, fullName)
+        },
       },
-      ...(projectAuthority
-        ? {
-            registerWorkspace: async (auth, workspace) => {
-              const known = await projectAuthority.openWorkspace(auth, { workspaceId: workspace.workspaceId }).catch(() => undefined)
-              if (known?.allowed) return
-              await projectAuthority.registerLocalForSharing(auth, {
-                workspaceId: workspace.workspaceId,
-                projectId: workspace.projectId,
-                displayName: workspace.displayName,
-                remoteDirectory: workspace.directory,
-                ...(workspace.repoUrl ? { repoUrl: workspace.repoUrl } : {}),
-              })
-            },
-          }
-        : {}),
     }),
   )
   app.route("/api/workspace", WorkspaceRoutes(

@@ -1,18 +1,49 @@
-import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
 import fs from "node:fs/promises"
 import { execFileSync } from "node:child_process"
 import os from "node:os"
 import path from "node:path"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { WorkspaceAuthority } from "../platform/auth/authority"
+import { ensureWorkspace, listWorkspaces } from "../workspace/store/index"
+import { localProjectStore, projectsDirectory, type LocalProjectStoreDeps } from "./local-store"
+import { githubCloneAuthorization, type RepositoryAccessResult, type RepositorySourceDeps } from "./repository-source"
+import { ProjectRoutes, type ProjectRouteOptions } from "./routes"
+import { projectSlug } from "./store"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "local-projects-route-"))
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
-const { LocalProjectRoutes, githubCloneAuthorization, projectsDirectory, projectSlug } = await import("./projects-route")
-const { vi } = await import("vitest")
-type RepositoryAccessResult = import("./projects-route").RepositoryAccessResult
+type Deps = LocalProjectStoreDeps & Pick<ProjectRouteOptions, "authority" | "authorizeFolderSource"> & RepositorySourceDeps
+
+/** The route over the local store, composed as the desktop's and the self-hosted server compose it. */
+function routes(authenticate: ProjectRouteOptions["authenticate"], deps: Deps = {}) {
+  const { clone, registerWorkspace, unregisterProject, authority, authorizeFolderSource, ...repositories } = deps
+  return ProjectRoutes({
+    store: localProjectStore({
+      ...(clone ? { clone } : {}),
+      ...(registerWorkspace ? { registerWorkspace } : {}),
+      ...(unregisterProject ? { unregisterProject } : {}),
+    }),
+    authenticate,
+    ...(authority ? { authority } : {}),
+    ...(authorizeFolderSource ? { authorizeFolderSource } : {}),
+    repositories,
+  })
+}
+
+/** The unsigned local product: no caller identity at all. */
+const unsigned: ProjectRouteOptions["authenticate"] = async () => undefined
+
+/** A signed server: every request carries a bearer the verifier knows. */
+function signedBy(verifier: (token: string) => Promise<SignedControlPlaneAuth>): ProjectRouteOptions["authenticate"] {
+  return async (request) => {
+    const token = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") ?? "")?.[1]
+    if (!token) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+    return verifier(token)
+  }
+}
 
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
@@ -65,7 +96,7 @@ function operatorOnly(subjects: string[]) {
 }
 
 describe("local project routes", () => {
-  const app = LocalProjectRoutes({}, { clone: fakeClone })
+  const app = routes(unsigned, { clone: fakeClone })
 
   test("a folder that already is a project is refused rather than renamed", async () => {
     const directory = await gitRepository("owned-")
@@ -172,7 +203,7 @@ describe("local project routes", () => {
 
   test("the unsigned local product has no connections to clone through", async () => {
     const clone = vi.fn(fakeClone)
-    const app = LocalProjectRoutes({}, { clone })
+    const app = routes(unsigned, { clone })
     const res = await app.request("http://localhost/", json({
       source: { kind: "repository", connectionId: "conn_1", repo: { fullName: "acme/widgets" } },
     }))
@@ -184,7 +215,7 @@ describe("local project routes", () => {
   test("refuses a repository source it cannot clone, and cleans up a failed clone", async () => {
     const invalid = await app.request("http://localhost/", json({ name: "Bad URL", source: { kind: "repository", repoUrl: "not a url" } }))
     expect(invalid.status).toBe(400)
-    const failing = LocalProjectRoutes({}, { clone: async () => { throw new Error("fatal: repository not found") } })
+    const failing = routes(unsigned, { clone: async () => { throw new Error("fatal: repository not found") } })
     const failed = await failing.request("http://localhost/", json({ name: "Gone", source: { kind: "repository", repoUrl: "https://github.com/acme/gone.git" } }))
     expect(failed.status).toBe(502)
     expect(((await failed.json()) as { error: { message: string } }).error.message).toContain("repository not found")
@@ -210,6 +241,45 @@ describe("local project routes", () => {
     const renamed = await app.request(`http://localhost/${id}`, { ...json({ name: "Env Project 2" }), method: "PATCH" })
     expect(((await renamed.json()) as { project: { name: string } }).project.name).toBe("Env Project 2")
   })
+
+  test("reads one project by id, and answers 404 for an id it does not hold", async () => {
+    const directory = await gitRepository("read-")
+    const { project } = await (await app.request("http://localhost/", json({ name: "Read Me", source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+    const found = await app.request(`http://localhost/${project.id}`)
+    expect(found.status).toBe(200)
+    expect(((await found.json()) as { project: { name: string; directory: string } }).project).toMatchObject({ name: "Read Me", directory })
+    const missing = await app.request("http://localhost/prj_nowhere")
+    expect(missing.status).toBe(404)
+    expect(await missing.json()).toMatchObject({ error: { code: "project_not_found" } })
+  })
+
+  test("removing a project forgets it and its placements, and leaves the folder on disk", async () => {
+    const directory = await gitRepository("remove-")
+    const { project } = await (await app.request("http://localhost/", json({ name: "Removed", source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+    expect((await listWorkspaces()).some((workspace) => workspace.project_id === project.id)).toBe(true)
+    const removed = await app.request(`http://localhost/${project.id}`, { method: "DELETE" })
+    expect(removed.status).toBe(200)
+    expect(await removed.json()).toEqual({ deleted: true })
+    expect((await app.request(`http://localhost/${project.id}`)).status).toBe(404)
+    expect((await app.request(`http://localhost/${project.id}`, { method: "DELETE" })).status).toBe(404)
+    expect((await listWorkspaces()).some((workspace) => workspace.project_id === project.id)).toBe(false)
+    expect((await fs.stat(path.join(directory, ".git"))).isDirectory()).toBe(true)
+    // The folder is free to become a project again, under a new id.
+    const again = await app.request("http://localhost/", json({ name: "Removed", source: { kind: "directory", directory } }))
+    expect(again.status).toBe(201)
+    expect(((await again.json()) as { project: { id: string } }).project.id).not.toBe(project.id)
+  })
+
+  test("a project with a cloud workspace is kept until that workspace is deleted", async () => {
+    const directory = await gitRepository("cloudy-")
+    const { project } = await (await app.request("http://localhost/", json({ name: "Cloudy", source: { kind: "directory", directory } }))).json() as { project: { id: string } }
+    const cloud = await ensureWorkspace({ kind: "cloud", driver: "daytona", project_id: project.id, directory: "/workspace", repo_url: "https://github.com/acme/cloudy.git" })
+    expect(cloud?.project_id).toBe(project.id)
+    const refused = await app.request(`http://localhost/${project.id}`, { method: "DELETE" })
+    expect(refused.status).toBe(409)
+    expect(await refused.json()).toMatchObject({ error: { code: "project_has_cloud_workspaces" } })
+    expect((await app.request(`http://localhost/${project.id}`)).status).toBe(200)
+  })
 })
 
 /**
@@ -222,19 +292,16 @@ describe("local project routes on a signed server", () => {
     mode: "signed" as const,
     user: { subject: "usr_1", tokenIdentifier: "tok_1", issuer: "https://issuer.test" },
   }
-  const options = {
-    authConfig: { enabled: true as const, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" },
-    verifier: async () => signed,
-  }
+  const authenticate = signedBy(async () => signed)
   const bearer = { authorization: "Bearer session-token" }
   const owners = ownerAuthority()
   /** What a signed composition must supply for a folder import; `usr_1` is this deployment's operator. */
   const signedDeps = {
     clone: fakeClone,
     authority: owners.authority,
-    authorizeLocalDirectoryImport: operatorOnly(["usr_1"]),
+    authorizeFolderSource: operatorOnly(["usr_1"]),
     // No real DNS in tests: clone admission resolves through this stub.
-    resolveRepoAddresses: async () => ["140.82.112.3"],
+    admission: { resolve: async () => ["140.82.112.3"] },
   }
   const claiming = async (auth: SignedControlPlaneAuth, workspace: { projectId: string }) => {
     owners.claim(workspace.projectId, auth.user.subject)
@@ -242,7 +309,7 @@ describe("local project routes on a signed server", () => {
 
   test("registers the folder project's workspace for the signed caller", async () => {
     const registerWorkspace = vi.fn(claiming)
-    const app = LocalProjectRoutes(options, { ...signedDeps, registerWorkspace })
+    const app = routes(authenticate, { ...signedDeps, registerWorkspace })
     const directory = await gitRepository("signed-")
     const res = await app.request("http://localhost/", {
       ...json({ name: "Signed Folder", source: { kind: "directory", directory } }),
@@ -261,11 +328,11 @@ describe("local project routes on a signed server", () => {
   })
 
   test("a registration failure refuses the project instead of leaving it unreachable", async () => {
-    const kept = LocalProjectRoutes(options, { ...signedDeps, registerWorkspace: claiming })
+    const kept = routes(authenticate, { ...signedDeps, registerWorkspace: claiming })
     const keptDirectory = await gitRepository("kept-")
     expect((await kept.request("http://localhost/", post({ name: "Kept Folder", source: { kind: "directory", directory: keptDirectory } }, bearer))).status).toBe(201)
 
-    const app = LocalProjectRoutes(options, {
+    const app = routes(authenticate, {
       ...signedDeps,
       registerWorkspace: async () => {
         throw new Error("Workspace creation authority was denied")
@@ -300,7 +367,7 @@ describe("local project routes on a signed server", () => {
       auth.user.subject === "usr_1" && connectionId === undefined && fullName === "acme/private"
         ? readable(fullName, "gho_secret")
         : noConnection)
-    const app = LocalProjectRoutes(options, { ...signedDeps, registerWorkspace: claiming, repositoryForAuth })
+    const app = routes(authenticate, { ...signedDeps, registerWorkspace: claiming, repositoryForAuth })
     clones.length = 0
     const res = await app.request("http://localhost/", post({ name: "Private Clone", source: { kind: "repository", repoUrl: "https://github.com/acme/private" } }, bearer))
     expect(res.status).toBe(201)
@@ -323,7 +390,7 @@ describe("local project routes on a signed server", () => {
   })
 
   test("a GitHub token never rides to another host that happens to carry the same owner/repo", async () => {
-    const app = LocalProjectRoutes(options, {
+    const app = routes(authenticate, {
       ...signedDeps,
       registerWorkspace: claiming,
       repositoryForAuth: async (_auth, _connectionId, fullName) => readable(fullName, "gho_secret"),
@@ -336,7 +403,7 @@ describe("local project routes on a signed server", () => {
 
   test("a connections host that fails on a pasted URL is reported, not cloned around", async () => {
     const clone = vi.fn(fakeClone)
-    const app = LocalProjectRoutes(options, {
+    const app = routes(authenticate, {
       ...signedDeps,
       clone,
       registerWorkspace: claiming,
@@ -352,7 +419,7 @@ describe("local project routes on a signed server", () => {
     const repositoryForAuth = vi.fn(async (_auth: SignedControlPlaneAuth, connectionId: string | undefined, fullName: string) =>
       connectionId === "conn_1" ? readable(fullName, "gho_connection") : noConnection)
     const registerWorkspace = vi.fn(claiming)
-    const app = LocalProjectRoutes(options, { ...signedDeps, registerWorkspace, repositoryForAuth })
+    const app = routes(authenticate, { ...signedDeps, registerWorkspace, repositoryForAuth })
     clones.length = 0
     const res = await app.request("http://localhost/", post({
       source: { kind: "repository", connectionId: "conn_1", repo: { fullName: "acme/sprockets" } },
@@ -375,7 +442,7 @@ describe("local project routes on a signed server", () => {
 
   test("a connection that refuses the repository refuses the project, with nothing cloned or written", async () => {
     const clone = vi.fn(fakeClone)
-    const refusing = LocalProjectRoutes(options, {
+    const refusing = routes(authenticate, {
       ...signedDeps,
       clone,
       registerWorkspace: claiming,
@@ -386,7 +453,7 @@ describe("local project routes on a signed server", () => {
     expect(refused.status).toBe(403)
     expect(await refused.json()).toMatchObject({ error: { code: "repository_read_required", message: expect.any(String) } })
 
-    const throwing = LocalProjectRoutes(options, {
+    const throwing = routes(authenticate, {
       ...signedDeps,
       clone,
       registerWorkspace: claiming,
@@ -406,11 +473,11 @@ describe("local project routes on a signed server", () => {
 
   test("a connection's clone URL is held to the same destination rule as a pasted one", async () => {
     const clone = vi.fn(fakeClone)
-    const app = LocalProjectRoutes(options, {
+    const app = routes(authenticate, {
       ...signedDeps,
       clone,
       registerWorkspace: claiming,
-      resolveRepoAddresses: async () => ["10.0.0.5"],
+      admission: { resolve: async () => ["10.0.0.5"] },
       repositoryForAuth: async () => ({
         ...readable("acme/inside", "gho_secret"),
         repository: { ...readable("acme/inside", "gho_secret").repository, cloneUrl: "https://git.internal/acme/inside.git" },
@@ -426,7 +493,7 @@ describe("local project routes on a signed server", () => {
 
   test("a signed composition without connections cannot clone through one", async () => {
     const clone = vi.fn(fakeClone)
-    const app = LocalProjectRoutes(options, { ...signedDeps, clone, registerWorkspace: claiming })
+    const app = routes(authenticate, { ...signedDeps, clone, registerWorkspace: claiming })
     const res = await app.request("http://localhost/", post({
       source: { kind: "repository", connectionId: "conn_1", repo: { fullName: "acme/widgets" } },
     }, bearer))
@@ -442,7 +509,7 @@ describe("local project routes on a signed server", () => {
     const clone = vi.fn(fakeClone)
     const resolveRepoAddresses = vi.fn(async (hostname: string) =>
       hostname === "private.internal" ? ["10.0.0.5"] : hostname === "nowhere.internal" ? [] : ["140.82.112.3"])
-    const app = LocalProjectRoutes(options, { ...signedDeps, clone, resolveRepoAddresses, registerWorkspace: claiming })
+    const app = routes(authenticate, { ...signedDeps, clone, admission: { resolve: resolveRepoAddresses }, registerWorkspace: claiming })
 
     for (const repoUrl of [
       "http://169.254.169.254/latest/meta-data",
@@ -465,11 +532,10 @@ describe("local project routes on a signed server", () => {
   test("a signed caller may clone a private host the operator explicitly approved", async () => {
     const clone = vi.fn(fakeClone)
     const resolveRepoAddresses = vi.fn(async () => ["10.0.0.5"])
-    const app = LocalProjectRoutes(options, {
+    const app = routes(authenticate, {
       ...signedDeps,
       clone,
-      resolveRepoAddresses,
-      privateRepoHosts: ["git.corp.internal"],
+      admission: { resolve: resolveRepoAddresses, privateHosts: ["git.corp.internal"] },
       registerWorkspace: claiming,
     })
     const approved = await app.request("http://localhost/", post({
@@ -484,11 +550,37 @@ describe("local project routes on a signed server", () => {
 
   test("the unsigned local product never registers", async () => {
     const registerWorkspace = vi.fn(async () => undefined)
-    const app = LocalProjectRoutes({}, { clone: fakeClone, registerWorkspace })
+    const app = routes(unsigned, { clone: fakeClone, registerWorkspace })
     const directory = await gitRepository("unsigned-")
     const res = await app.request("http://localhost/", json({ name: "Unsigned Folder", source: { kind: "directory", directory } }))
     expect(res.status).toBe(201)
     expect(registerWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("removing a signed caller's project retires it in their authority first", async () => {
+    const unregisterProject = vi.fn(async () => undefined)
+    const app = routes(authenticate, { ...signedDeps, registerWorkspace: claiming, unregisterProject })
+    const directory = await gitRepository("signed-remove-")
+    const { project } = await (await app.request("http://localhost/", post({ name: "Signed Removed", source: { kind: "directory", directory } }, bearer))).json() as { project: { id: string } }
+    const workspaceIds = (await listWorkspaces()).filter((workspace) => workspace.project_id === project.id).map((workspace) => workspace.id)
+    expect(workspaceIds).toHaveLength(1)
+    const removed = await app.request(`http://localhost/${project.id}`, { method: "DELETE", headers: bearer })
+    expect(removed.status).toBe(200)
+    expect(unregisterProject).toHaveBeenCalledWith(
+      expect.objectContaining({ user: expect.objectContaining({ subject: "usr_1" }) }),
+      { projectId: project.id, workspaceIds },
+    )
+    expect((await app.request(`http://localhost/${project.id}`, { headers: bearer })).status).toBe(404)
+  })
+
+  test("a signed composition that cannot retire the project in the authority refuses to remove it", async () => {
+    const app = routes(authenticate, { ...signedDeps, registerWorkspace: claiming })
+    const directory = await gitRepository("signed-kept-")
+    const { project } = await (await app.request("http://localhost/", post({ name: "Signed Kept", source: { kind: "directory", directory } }, bearer))).json() as { project: { id: string } }
+    const refused = await app.request(`http://localhost/${project.id}`, { method: "DELETE", headers: bearer })
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toMatchObject({ error: { code: "authority_unavailable" } })
+    expect((await app.request(`http://localhost/${project.id}`, { headers: bearer })).status).toBe(200)
   })
 })
 
@@ -504,22 +596,19 @@ describe("project authorization between two unrelated signed accounts", () => {
     "operator-token": { mode: "signed", user: { subject: "usr_operator", tokenIdentifier: "tok_operator", issuer: "https://issuer.test" } },
     "stranger-token": { mode: "signed", user: { subject: "usr_stranger", tokenIdentifier: "tok_stranger", issuer: "https://issuer.test" } },
   }
-  const options = {
-    authConfig: { enabled: true as const, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" },
-    verifier: async (token: string) => {
-      const account = accounts[token]
-      if (!account) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Unknown session token")
-      return account
-    },
-  }
+  const authenticate = signedBy(async (token) => {
+    const account = accounts[token]
+    if (!account) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Unknown session token")
+    return account
+  })
   const asOperator = { authorization: "Bearer operator-token" }
   const asStranger = { authorization: "Bearer stranger-token" }
   const owners = ownerAuthority()
-  const app = LocalProjectRoutes(options, {
+  const app = routes(authenticate, {
     clone: fakeClone,
     authority: owners.authority,
-    authorizeLocalDirectoryImport: operatorOnly(["usr_operator"]),
-    resolveRepoAddresses: async () => ["140.82.112.3"],
+    authorizeFolderSource: operatorOnly(["usr_operator"]),
+    admission: { resolve: async () => ["140.82.112.3"] },
     registerWorkspace: async (auth, workspace) => {
       owners.claim(workspace.projectId, auth.user.subject)
     },
@@ -576,12 +665,12 @@ describe("project authorization between two unrelated signed accounts", () => {
 
   test("a signed composition missing its authorization dependencies reads nothing", async () => {
     const directory = await gitRepository("failclosed-read-")
-    const bare = LocalProjectRoutes(options, { clone: fakeClone })
+    const bare = routes(authenticate, { clone: fakeClone })
     expect((await bare.request("http://localhost/", { headers: asOperator })).status).toBe(503)
     expect((await bare.request(`http://localhost/by-directory?directory=${encodeURIComponent(directory)}`, { headers: asOperator })).status).toBe(503)
     expect((await bare.request(`http://localhost/prj_1`, { ...post({ name: "Renamed" }, asOperator), method: "PATCH" })).status).toBe(503)
 
-    const withoutOperator = LocalProjectRoutes(options, { clone: fakeClone, authority: owners.authority })
+    const withoutOperator = routes(authenticate, { clone: fakeClone, authority: owners.authority })
     const importAttempt = await withoutOperator.request("http://localhost/", post({ name: "Fail Closed", source: { kind: "directory", directory } }, asOperator))
     expect(importAttempt.status).toBe(503)
     expect(await importAttempt.json()).toMatchObject({ error: { code: "authority_unavailable" } })
@@ -596,19 +685,19 @@ describe("project authorization between two unrelated signed accounts", () => {
     const cases = [
       // No authority: the workspace would belong to no account at all.
       ["workspace_authority_unavailable", {
-        authorizeLocalDirectoryImport: operatorOnly(["usr_operator"]),
+        authorizeFolderSource: operatorOnly(["usr_operator"]),
         registerWorkspace: async () => undefined,
       }],
       // An authority, but nothing that files the new workspace under the caller.
       ["authority_unavailable", {
         authority: owners.authority,
-        authorizeLocalDirectoryImport: operatorOnly(["usr_operator"]),
+        authorizeFolderSource: operatorOnly(["usr_operator"]),
       }],
     ] as const
 
     for (const [code, deps] of cases) {
       const clone = vi.fn(fakeClone)
-      const app = LocalProjectRoutes(options, { clone, ...deps })
+      const app = routes(authenticate, { clone, ...deps })
       for (const source of [{ kind: "repository" as const, repoUrl }, { kind: "directory" as const, directory }]) {
         const refused = await app.request("http://localhost/", post({ name, source }, asOperator))
         expect(refused.status).toBe(503)
@@ -620,10 +709,10 @@ describe("project authorization between two unrelated signed accounts", () => {
 
     // Nothing above was persisted: a fully composed server still takes that
     // name and that folder, which a stored project would answer 409 to.
-    const composed = LocalProjectRoutes(options, {
+    const composed = routes(authenticate, {
       clone: fakeClone,
       authority: owners.authority,
-      authorizeLocalDirectoryImport: operatorOnly(["usr_operator"]),
+      authorizeFolderSource: operatorOnly(["usr_operator"]),
       registerWorkspace: async (auth, workspace) => {
         owners.claim(workspace.projectId, auth.user.subject)
       },
@@ -633,12 +722,21 @@ describe("project authorization between two unrelated signed accounts", () => {
   })
 
   test("the unsigned local product still creates projects with none of those dependencies", async () => {
-    const app = LocalProjectRoutes({}, { clone: fakeClone })
+    const app = routes(unsigned, { clone: fakeClone })
     const directory = await gitRepository("unsigned-create-")
     expect((await app.request("http://localhost/", json({ name: "Unsigned Directory", source: { kind: "directory", directory } }))).status).toBe(201)
     expect((await app.request("http://localhost/", json({ name: "Unsigned Repository", source: { kind: "repository", repoUrl: "https://github.com/acme/unsigned" } }))).status).toBe(201)
     const listed = await (await app.request("http://localhost/")).json() as { projects: Array<{ name: string }> }
     expect(listed.projects.map((item) => item.name)).toEqual(expect.arrayContaining(["Unsigned Directory", "Unsigned Repository"]))
+  })
+
+  test("only the owner removes a project; a stranger's delete changes nothing", async () => {
+    const directory = await gitRepository("operator-remove-")
+    const { project } = await (await app.request("http://localhost/", post({ name: "Operator Kept", source: { kind: "directory", directory } }, asOperator))).json() as { project: { id: string } }
+    const denied = await app.request(`http://localhost/${project.id}`, { method: "DELETE", headers: asStranger })
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: { code: "project_access_denied" } })
+    expect((await app.request(`http://localhost/${project.id}`, { headers: asOperator })).status).toBe(200)
   })
 })
 
@@ -686,7 +784,7 @@ describe("the clone this server really runs", () => {
 
   test("fetches the repository into the project's folder and sends no credential it was not given", async () => {
     requests = []
-    const app = LocalProjectRoutes({}, {})
+    const app = routes(unsigned, {})
     const created = await app.request("http://localhost/", json({ name: "Served Clone", source: { kind: "repository", repoUrl: origin } }))
     expect(created.status).toBe(201)
     const { project } = await created.json() as { project: { directory: string; repoUrl: string } }
@@ -697,7 +795,7 @@ describe("the clone this server really runs", () => {
   })
 
   test("reports the git child's own failure when the repository is not there", async () => {
-    const app = LocalProjectRoutes({}, {})
+    const app = routes(unsigned, {})
     const failed = await app.request("http://localhost/", json({
       name: "Served Missing",
       source: { kind: "repository", repoUrl: origin.replace("/served.git", "/absent.git") },

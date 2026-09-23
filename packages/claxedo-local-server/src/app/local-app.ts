@@ -45,7 +45,9 @@ import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
 import { ShellRoutes } from "../shell/routes"
 import { createHostAggregateEventsHandler } from "../shell/host-events"
 import { onEmbeddedWorkspaceRuntime } from "../deployments/local/embedded-workspace-runtime"
-import { LocalProjectRoutes } from "../workspace/routes/projects-route"
+import { ProjectRoutes } from "@claxedo/server-core/projects/routes"
+import { localProjectStore, systemRepoAddresses } from "@claxedo/server-core/projects/local-store"
+import { requireSignedControlPlaneRoute } from "../platform/http/control-plane-route-auth"
 import { CredentialRoutes } from "../credentials/routes/credential"
 import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
@@ -500,7 +502,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   })
   app.route("/api/claxedo/workspace", localWorkspaceRoutes)
   app.route("/api/claxedo/workspace", sandboxDriverSettingsRoutes)
-  app.route("/api/claxedo/projects", LocalProjectRoutes(authRouteOptions(services)))
+  app.route("/api/claxedo/projects", ProjectRoutes({
+    store: localProjectStore(),
+    authenticate: (request) => requireSignedControlPlaneRoute(request, authRouteOptions(services)),
+    repositories: { admission: { resolve: systemRepoAddresses } },
+  }))
   app.route(LIVE_PLUGINS_ROUTE_PATH, LivePluginRoutes(authRouteOptions(services)))
   // The renderer's inventory contract uses the hosted-compatible list path in
   // every product. On desktop, the authoritative local workspace store answers
