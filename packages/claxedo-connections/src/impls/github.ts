@@ -149,7 +149,12 @@ export function githubIntegration(options: GitHubIntegrationOptions = {}): {
       // and the pasted token stays as the fallback that always works.
       methods: clientId ? ["oauth", "key"] : ["key"],
       keyTokenType: "bearer",
-      prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
+      prompts: [{
+        id: "token",
+        label: "Fine-grained personal access token",
+        createUrl: "https://github.com/settings/personal-access-tokens/new",
+        secret: true,
+      }],
     },
     impl: {
       actions: {

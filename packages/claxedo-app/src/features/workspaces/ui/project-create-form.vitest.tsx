@@ -45,7 +45,12 @@ const github = (methods: ("key" | "oauth")[]) => ({
   name: "GitHub",
   methods,
   capabilities: ["code-host"],
-  prompts: [{ id: "token", label: "Fine-grained personal access token", secret: true }],
+  prompts: [{
+    id: "token",
+    label: "Fine-grained personal access token",
+    createUrl: "https://github.com/settings/personal-access-tokens/new",
+    secret: true,
+  }],
 })
 
 const repository = (fullName: string, isPrivate = false) => ({
@@ -251,8 +256,10 @@ describe("no connection yet", () => {
 
     const token = await screen.findByLabelText("Fine-grained personal access token")
     expect(screen.queryByRole("searchbox", { name: "Search repositories" })).toBeNull()
-    const connect = screen.getByRole("button", { name: "Connect GitHub" }) as HTMLButtonElement
+    const connect = screen.getByRole("button", { name: "Connect with token" }) as HTMLButtonElement
     expect(connect.disabled).toBe(true)
+    expect(screen.getByRole<HTMLAnchorElement>("link", { name: "Create a token on GitHub" }).href)
+      .toBe("https://github.com/settings/personal-access-tokens/new")
 
     fireEvent.input(token, { target: { value: "github_pat_abc" } })
     fireEvent.click(connect)
@@ -287,7 +294,7 @@ describe("no connection yet", () => {
     fireEvent.input(await screen.findByLabelText("Fine-grained personal access token"), {
       target: { value: "bad" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }))
+    fireEvent.click(screen.getByRole("button", { name: "Connect with token" }))
 
     const alert = await screen.findByRole("alert")
     expect(alert.textContent).toContain("token was rejected")

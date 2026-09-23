@@ -13,6 +13,8 @@ export type IntegrationPrompt = {
   id: string
   label: string
   placeholder?: string
+  // The provider's page that issues this value, for someone who has none yet.
+  createUrl?: string
   // Exactly one prompt per key method carries secret: true. Secret values are
   // never stored on the connection row and never echoed by any route.
   secret?: boolean

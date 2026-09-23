@@ -51,7 +51,7 @@ export function atlassianIntegration(options: IntegrationFetchOptions = {}): {
       prompts: [
         { id: "site_url", label: "Site URL", placeholder: "https://your-team.atlassian.net" },
         { id: "email", label: "Account email" },
-        { id: "token", label: "API token", secret: true },
+        { id: "token", label: "API token", createUrl: "https://id.atlassian.com/manage-profile/security/api-tokens", secret: true },
       ],
     },
     impl: {

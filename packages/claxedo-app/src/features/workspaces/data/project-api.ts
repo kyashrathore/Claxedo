@@ -91,7 +91,7 @@ export async function updateProject(input: {
   return fromWire(project)
 }
 
-/** The `{ error: { code, message } }` envelope a refused project request carries in its thrown text. */
+/** The `{ error: { code, message } }` envelope (or a bare `{ code, message }`) a refused project request carries in its thrown text. */
 function projectRequestFailure(error: unknown): { text: string; code?: string; message?: string } {
   const text = error instanceof Error ? error.message : String(error)
   let body: unknown
@@ -101,8 +101,8 @@ function projectRequestFailure(error: unknown): { text: string; code?: string; m
     return { text }
   }
   const envelope = readField(body, "error")
-  const code = readString(envelope, "code")
-  const message = readString(envelope, "message")
+  const code = readString(envelope, "code") ?? readString(body, "code")
+  const message = readString(envelope, "message") ?? readString(body, "message")
   return { text, ...(code === undefined ? {} : { code }), ...(message === undefined ? {} : { message }) }
 }
 

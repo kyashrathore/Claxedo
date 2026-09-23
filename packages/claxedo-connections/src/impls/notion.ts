@@ -14,7 +14,7 @@ export function notionIntegration(options: IntegrationFetchOptions = {}): {
       name: "Notion",
       methods: ["key"],
       keyTokenType: "bearer",
-      prompts: [{ id: "token", label: "Internal integration token", secret: true }],
+      prompts: [{ id: "token", label: "Internal integration token", createUrl: "https://www.notion.so/profile/integrations", secret: true }],
     },
     impl: {
       actions: { docs: docsPort },

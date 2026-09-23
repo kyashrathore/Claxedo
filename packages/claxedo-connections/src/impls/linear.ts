@@ -14,7 +14,7 @@ export function linearIntegration(options: IntegrationFetchOptions = {}): {
       name: "Linear",
       methods: ["key"],
       keyTokenType: "bearer",
-      prompts: [{ id: "token", label: "Personal API key", secret: true }],
+      prompts: [{ id: "token", label: "Personal API key", createUrl: "https://linear.app/settings/account/security", secret: true }],
     },
     impl: {
       actions: { "work-source": workSourcePort },

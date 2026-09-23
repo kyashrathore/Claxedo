@@ -18,7 +18,7 @@ describe("notion integration", () => {
       name: "Notion",
       methods: ["key"],
       keyTokenType: "bearer",
-      prompts: [{ id: "token", label: "Internal integration token", secret: true }],
+      prompts: [{ id: "token", label: "Internal integration token", createUrl: "https://www.notion.so/profile/integrations", secret: true }],
     })
     // The capability is served rather than declared, so it is asserted on the
     // ports the impl provides.

@@ -21,7 +21,7 @@ export type CodeHostConnection = {
 }
 
 /** One field the connect form asks for before a key-based host can be connected. */
-export type CodeHostPrompt = { id: string; label: string; placeholder?: string; secret: boolean }
+export type CodeHostPrompt = { id: string; label: string; placeholder?: string; createUrl?: string; secret: boolean }
 
 export type CodeHostIntegration = {
   id: string
@@ -89,14 +89,26 @@ function parseIntegration(value: unknown): CodeHostIntegration[] {
   }]
 }
 
+/** Only a link a page may open: the server's catalog is data, not a place to smuggle a scheme through. */
+function catalogLink(value: string | undefined) {
+  if (!value) return undefined
+  try {
+    return new URL(value).protocol === "https:" ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function parsePrompt(value: unknown): CodeHostPrompt[] {
   const id = readString(value, "id")
   if (id === undefined) return []
   const placeholder = readString(value, "placeholder")
+  const createUrl = catalogLink(readString(value, "createUrl"))
   return [{
     id,
     label: readString(value, "label") ?? id,
     ...(placeholder === undefined ? {} : { placeholder }),
+    ...(createUrl === undefined ? {} : { createUrl }),
     secret: readBoolean(value, "secret") === true,
   }]
 }

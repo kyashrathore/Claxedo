@@ -433,16 +433,30 @@ function ConnectBlock(props: {
                   spellcheck={false}
                   class={`${box()} w-full min-w-0 text-text-strong placeholder:text-text-weak/60 focus:outline-none focus:border-border-interactive-base`}
                 />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size={props.comfortable ? "normal" : "small"}
-                  class="self-start"
-                  disabled={busy() || !secret().trim()}
-                  onClick={() => void connect("key")}
-                >
-                  {busy() ? "Connecting…" : `Connect ${props.integration.name}`}
-                </Button>
+                <div class="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size={props.comfortable ? "normal" : "small"}
+                    disabled={busy() || !secret().trim()}
+                    onClick={() => void connect("key")}
+                  >
+                    {busy() ? "Connecting…" : "Connect with token"}
+                  </Button>
+                  <Show when={prompt()?.createUrl}>
+                    {(href) => (
+                      <a
+                        href={href()}
+                        target="_blank"
+                        rel="noreferrer"
+                        class={`${text()} text-text-weak underline underline-offset-2 hover:text-text-strong`}
+                        data-slot="project-create-token-link"
+                      >
+                        Create a token on {props.integration.name}
+                      </a>
+                    )}
+                  </Show>
+                </div>
               </div>
             }
           >
