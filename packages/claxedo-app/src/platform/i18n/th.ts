@@ -630,6 +630,7 @@ export const dict = {
   "settings.providers.window.session": "เซสชัน",
   "settings.providers.window.weekly": "รายสัปดาห์",
   "settings.providers.window.weeklyOpus": "รายสัปดาห์ · Opus",
+  "usage.quota.checking": "กำลังตรวจสอบเอเจนต์ของคุณ…",
   "usage.quota.notChecked": "ยังไม่ได้ตรวจสอบ",
   "usage.quota.check": "ตรวจสอบ",
   "usage.quota.reconnect": "เชื่อมต่ออีกครั้งในการตั้งค่า",

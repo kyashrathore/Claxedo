@@ -630,6 +630,7 @@ export const dict = {
   "settings.providers.window.session": "会话",
   "settings.providers.window.weekly": "每周",
   "settings.providers.window.weeklyOpus": "每周 · Opus",
+  "usage.quota.checking": "正在检查你的智能体…",
   "usage.quota.notChecked": "尚未检查",
   "usage.quota.check": "检查",
   "usage.quota.reconnect": "在设置中重新连接",

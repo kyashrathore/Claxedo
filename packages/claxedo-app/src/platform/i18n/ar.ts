@@ -560,6 +560,7 @@ export const dict = {
   "settings.providers.window.session": "الجلسة",
   "settings.providers.window.weekly": "أسبوعي",
   "settings.providers.window.weeklyOpus": "أسبوعي · Opus",
+  "usage.quota.checking": "جارٍ التحقق من وكلائك…",
   "usage.quota.notChecked": "لم يتم الفحص بعد",
   "usage.quota.check": "افحص",
   "usage.quota.reconnect": "أعد الاتصال من الإعدادات",

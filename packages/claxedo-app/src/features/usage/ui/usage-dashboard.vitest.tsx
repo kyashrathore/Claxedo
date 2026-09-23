@@ -85,15 +85,21 @@ afterEach(() => {
   mocks.fetchUnifiedUsage.mockClear()
 })
 
+function renderDashboard(props: Parameters<typeof UsageDashboard>[0] = {}) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  clients.add(client)
+  return render(() => (
+    <QueryClientProvider client={client}>
+      <LanguageProvider locale="en">
+        <UsageDashboard {...props} />
+      </LanguageProvider>
+    </QueryClientProvider>
+  ))
+}
+
 describe("UsageDashboard", () => {
   test("defaults to Usage limits, 7 days, and Tokens; compact switchers select one detail surface", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  clients.add(client)
-    render(() => (
-      <QueryClientProvider client={client}>
-        <UsageDashboard />
-      </QueryClientProvider>
-    ))
+    renderDashboard()
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true"),
     )
@@ -141,15 +147,7 @@ describe("UsageDashboard", () => {
       },
     }))
     try {
-      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      clients.add(client)
-      const { container } = render(() => (
-        <QueryClientProvider client={client}>
-          <LanguageProvider locale="en">
-            <UsageDashboard />
-          </LanguageProvider>
-        </QueryClientProvider>
-      ))
+      const { container } = renderDashboard()
       await waitFor(() =>
         expect(container.querySelector('[data-component="usage-quota-throttled"]')?.textContent)
           .toBe("Refreshed 1m ago · next refresh in 46s"),
@@ -161,13 +159,7 @@ describe("UsageDashboard", () => {
   })
 
   test("sends a distinct nonce for a manual refresh", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  clients.add(client)
-    render(() => (
-      <QueryClientProvider client={client}>
-        <UsageDashboard />
-      </QueryClientProvider>
-    ))
+    renderDashboard()
     fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
     await screen.findByRole("heading", { name: "By provider" })
     const time = vi.spyOn(Date, "now").mockReturnValue(100_000)
@@ -191,13 +183,7 @@ describe("UsageDashboard", () => {
       const response = await answer(request)
       return { ...response, externalLocal: { ...response.externalLocal, scannedAt: Date.now() - 3 * 3_600_000 } }
     })
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    clients.add(client)
-    render(() => (
-      <QueryClientProvider client={client}>
-        <UsageDashboard />
-      </QueryClientProvider>
-    ))
+    renderDashboard()
     fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
     expect(await screen.findByText("Local history scanned 3 hours ago. Refresh to scan again.")).toBeVisible()
     fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
@@ -209,13 +195,7 @@ describe("UsageDashboard", () => {
   })
 
   test("requests the selected sort metric from the first breakdown page", async () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  clients.add(client)
-    render(() => (
-      <QueryClientProvider client={client}>
-        <UsageDashboard />
-      </QueryClientProvider>
-    ))
+    renderDashboard()
     fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
     await screen.findByRole("heading", { name: "By provider" })
     expect(mocks.fetchUnifiedUsage.mock.calls.at(-1)?.[0]).toMatchObject({ metric: "tokens", after: undefined })
@@ -241,13 +221,7 @@ describe("UsageDashboard", () => {
       request.view === "claxedo" ? pendingClaxedo : original(request),
     )
     try {
-      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  clients.add(client)
-      render(() => (
-        <QueryClientProvider client={client}>
-          <UsageDashboard />
-        </QueryClientProvider>
-      ))
+      renderDashboard()
       fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
       await screen.findByRole("heading", { name: "By provider" })
       fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
@@ -262,16 +236,59 @@ describe("UsageDashboard", () => {
 
   test("shows an unavailable state instead of zero-valued usage after an initial failure", async () => {
     mocks.fetchUnifiedUsage.mockRejectedValueOnce(new Error("scanner offline"))
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  clients.add(client)
-    render(() => (
-      <QueryClientProvider client={client}>
-        <UsageDashboard />
-      </QueryClientProvider>
-    ))
+    renderDashboard()
     expect(await screen.findByText("Usage unavailable · scanner offline")).toBeVisible()
     expect(screen.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "Usage limits" })).not.toHaveTextContent("—")
     expect(screen.queryByLabelText("Token category totals")).not.toBeInTheDocument()
+  })
+
+  test("the Usage limits tab draws no page loader, and says it is checking while nothing has landed", async () => {
+    mocks.fetchUnifiedUsage.mockImplementationOnce(() => new Promise(() => {}))
+    renderDashboard()
+    expect(await screen.findByText("Checking your agents…")).toBeVisible()
+    expect(screen.queryByText("Reading usage limits…")).not.toBeInTheDocument()
+    expect(screen.getByRole("heading", { name: "Quota windows" })).toBeVisible()
+  })
+
+  test("a quota doorbell re-reads the cards in place and dates them just now", async () => {
+    const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
+    const account = (usageAt: number) => ({
+      harness: "claude",
+      credentialId: "cred_work",
+      label: "work@example.com",
+      inUse: true,
+      windows: [{ window: "session", usedPercent: 25, resetsAt: null }],
+      usageAt,
+    })
+    let landed = false
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => ({
+      ...(await answer(request)),
+      quota: landed
+        ? { status: "available" as const, snapshot: { accounts: [account(Date.now())] } }
+        : { status: "available" as const, refreshing: true as const, snapshot: { accounts: [account(Date.now() - 5 * 3_600_000)] } },
+    }))
+    let notify: (() => void) | undefined
+    const stop = vi.fn()
+    try {
+      const { container } = renderDashboard({
+        quotaChanges: (next) => {
+          notify = next
+          return stop
+        },
+      })
+      const age = () => container.querySelector('[data-component="usage-quota-as-of"]')?.textContent
+      await waitFor(() => expect(age()).toBe("5h"))
+      expect(screen.queryByText("Reading usage limits…")).not.toBeInTheDocument()
+
+      landed = true
+      notify!()
+      await waitFor(() => expect(age()).toBe("just now"))
+      expect(mocks.fetchUnifiedUsage.mock.calls.filter(([request]) => request.view === "quota")).toHaveLength(2)
+      cleanup()
+      expect(stop).toHaveBeenCalledTimes(1)
+    } finally {
+      mocks.fetchUnifiedUsage.mockImplementation(answer)
+    }
   })
 })

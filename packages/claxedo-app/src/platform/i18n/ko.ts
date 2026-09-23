@@ -560,6 +560,7 @@ export const dict = {
   "settings.providers.window.session": "세션",
   "settings.providers.window.weekly": "주간",
   "settings.providers.window.weeklyOpus": "주간 · Opus",
+  "usage.quota.checking": "에이전트를 확인하는 중…",
   "usage.quota.notChecked": "아직 확인하지 않음",
   "usage.quota.check": "확인",
   "usage.quota.reconnect": "설정에서 다시 연결",

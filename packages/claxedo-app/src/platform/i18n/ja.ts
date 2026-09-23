@@ -564,6 +564,7 @@ export const dict = {
   "settings.providers.window.session": "セッション",
   "settings.providers.window.weekly": "週間",
   "settings.providers.window.weeklyOpus": "週間 · Opus",
+  "usage.quota.checking": "エージェントを確認しています…",
   "usage.quota.notChecked": "まだ確認していません",
   "usage.quota.check": "確認",
   "usage.quota.reconnect": "設定で再接続",

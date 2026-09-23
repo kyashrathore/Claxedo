@@ -628,6 +628,7 @@ export const dict = {
   "settings.providers.window.session": "工作階段",
   "settings.providers.window.weekly": "每週",
   "settings.providers.window.weeklyOpus": "每週 · Opus",
+  "usage.quota.checking": "正在檢查你的代理…",
   "usage.quota.notChecked": "尚未檢查",
   "usage.quota.check": "檢查",
   "usage.quota.reconnect": "在設定中重新連線",

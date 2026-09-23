@@ -637,6 +637,7 @@ export const dict = {
   "settings.providers.window.session": "Sesija",
   "settings.providers.window.weekly": "Sedmično",
   "settings.providers.window.weeklyOpus": "Sedmično · Opus",
+  "usage.quota.checking": "Provjeravamo vaše agente…",
   "usage.quota.notChecked": "Još nije provjereno",
   "usage.quota.check": "Provjeri",
   "usage.quota.reconnect": "Ponovo poveži u Postavkama",

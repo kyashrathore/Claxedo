@@ -635,6 +635,7 @@ export const dict = {
   "settings.providers.window.session": "Økt",
   "settings.providers.window.weekly": "Ukentlig",
   "settings.providers.window.weeklyOpus": "Ukentlig · Opus",
+  "usage.quota.checking": "Sjekker agentene dine…",
   "usage.quota.notChecked": "Ikke sjekket ennå",
   "usage.quota.check": "Sjekk",
   "usage.quota.reconnect": "Koble til på nytt i Innstillinger",

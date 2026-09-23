@@ -16,8 +16,8 @@ const UNITS: Array<[Intl.RelativeTimeFormatUnit, number, string]> = [
 ]
 
 /** luxon `DateTime.fromMillis(ms).toRelative()`: "2 days ago", "in 3 hours". */
-export function formatRelativeTime(ms: number, locale?: string): string {
-  const diff = ms - Date.now()
+export function formatRelativeTime(ms: number, locale?: string, now = Date.now()): string {
+  const diff = ms - now
   const magnitude = Math.abs(diff)
   const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "always" })
   for (const [unit, span] of UNITS) {
@@ -32,8 +32,8 @@ export function formatRelativeTime(ms: number, locale?: string): string {
  * worth showing, so the caller supplies the word that belongs there; the digits
  * are language-independent but that word is not.
  */
-export function formatCompactAge(ms: number): string | undefined {
-  const magnitude = Math.abs(ms - Date.now())
+export function formatCompactAge(ms: number, now = Date.now()): string | undefined {
+  const magnitude = Math.abs(ms - now)
   for (const [, span, suffix] of UNITS) {
     if (magnitude >= span) return `${Math.trunc(magnitude / span)}${suffix}`
   }

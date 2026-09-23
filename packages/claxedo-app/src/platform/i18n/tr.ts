@@ -647,6 +647,7 @@ export const dict = {
   "settings.providers.window.session": "Oturum",
   "settings.providers.window.weekly": "Haftalık",
   "settings.providers.window.weeklyOpus": "Haftalık · Opus",
+  "usage.quota.checking": "Ajanların kontrol ediliyor…",
   "usage.quota.notChecked": "Henüz kontrol edilmedi",
   "usage.quota.check": "Kontrol et",
   "usage.quota.reconnect": "Ayarlar'dan yeniden bağlan",

@@ -567,6 +567,7 @@ export const dict = {
   "settings.providers.window.session": "Sessão",
   "settings.providers.window.weekly": "Semanal",
   "settings.providers.window.weeklyOpus": "Semanal · Opus",
+  "usage.quota.checking": "Verificando seus agentes…",
   "usage.quota.notChecked": "Ainda não verificado",
   "usage.quota.check": "Verificar",
   "usage.quota.reconnect": "Reconectar em Configurações",

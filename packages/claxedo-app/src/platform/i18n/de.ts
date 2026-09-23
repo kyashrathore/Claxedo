@@ -578,6 +578,7 @@ export const dict = {
   "settings.providers.window.session": "Sitzung",
   "settings.providers.window.weekly": "Wöchentlich",
   "settings.providers.window.weeklyOpus": "Wöchentlich · Opus",
+  "usage.quota.checking": "Deine Agenten werden geprüft…",
   "usage.quota.notChecked": "Noch nicht geprüft",
   "usage.quota.check": "Prüfen",
   "usage.quota.reconnect": "In den Einstellungen neu verbinden",

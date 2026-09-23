@@ -1,4 +1,4 @@
-import { For, type Component } from "solid-js"
+import { For, createSignal, onCleanup, type Component } from "solid-js"
 import type { QuotaWindow } from "@claxedo/usage-contract"
 import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { formatCompactAge, formatRelativeTime } from "@/lib/relative-time"
@@ -162,14 +162,18 @@ export const AccountReachMarks: Component<{
 )
 
 /** The whole sentence the compact age stands for, for readers who cannot see it. */
-export function lastCheckedSentence(t: Translate, at: number, locale?: string) {
-  return t("common.lastChecked", { ago: formatRelativeTime(at, locale) })
+export function lastCheckedSentence(t: Translate, at: number, locale?: string, now = Date.now()) {
+  return t("common.lastChecked", { ago: formatRelativeTime(at, locale, now) })
 }
+
+/** The smallest bucket the compact age moves by. */
+const AGE_TICK_MS = 60_000
 
 /**
  * When the figures on one row were read, in the one unit a narrow column has
  * room for. Below the smallest bucket there is no figure worth showing, so the
- * column says the word instead.
+ * column says the word instead. The row stays open while its figures age, so
+ * the age is re-read once per bucket rather than only when the figures change.
  */
 export const CheckedAge: Component<{
   at: number
@@ -177,12 +181,23 @@ export const CheckedAge: Component<{
   t: Translate
   locale?: string
   class?: string
-}> = (props) => (
-  <span
-    class={props.class}
-    data-component={props.component}
-    aria-label={lastCheckedSentence(props.t, props.at, props.locale)}
-  >
-    {formatCompactAge(props.at) ?? props.t("common.justNow")}
-  </span>
-)
+}> = (props) => {
+  const [tick, setTick] = createSignal(0)
+  const timer = setInterval(() => setTick((value) => value + 1), AGE_TICK_MS)
+  onCleanup(() => clearInterval(timer))
+  // The tick only schedules the re-read. The time itself is taken fresh, so
+  // figures read since the last tick are not dated ahead of it.
+  const now = () => {
+    tick()
+    return Date.now()
+  }
+  return (
+    <span
+      class={props.class}
+      data-component={props.component}
+      aria-label={lastCheckedSentence(props.t, props.at, props.locale, now())}
+    >
+      {formatCompactAge(props.at, now()) ?? props.t("common.justNow")}
+    </span>
+  )
+}

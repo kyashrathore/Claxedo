@@ -16,5 +16,11 @@
     "count": 3,
     "owner": "workbench mount idle governor",
     "reason": "Idle detection is inherently time-based: one poll observes input silence (absence of events has no event), one paces the post-idle remount backfill, one is the injectable default clock. No data source is polled."
+  },
+  {
+    "file": "ui/controls/account-status.tsx",
+    "count": 1,
+    "owner": "account checked-age label",
+    "reason": "Visible age tick: re-reads a row's last-checked age once a minute while it stays open. No data source is polled."
   }
 ]
