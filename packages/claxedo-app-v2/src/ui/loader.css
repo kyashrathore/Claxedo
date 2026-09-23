@@ -1,0 +1,35 @@
+@layer components {
+  .ui-loader {
+    --_duration: 900ms;
+    display: block;
+    flex-shrink: 0;
+    color: var(--v2-icon-icon-muted);
+    animation: loader-spin var(--_duration) linear infinite;
+    transform-origin: center;
+  }
+
+  [data-component="loader"] [data-slot="loader-background"] {
+    stroke: currentColor;
+    opacity: 0.2;
+  }
+
+  [data-component="loader"] [data-slot="loader-progress"] {
+    stroke: currentColor;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: center;
+  }
+
+  @keyframes loader-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-loader {
+      animation: none;
+    }
+  }
+
+}

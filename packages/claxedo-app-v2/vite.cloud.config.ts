@@ -219,7 +219,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         },
         {
           find: "lru_map",
-          replacement: normalizePath(fileURLToPath(new URL("./src/legacy/lib/lru-map.ts", import.meta.url))),
+          replacement: normalizePath(fileURLToPath(new URL("./src/transcript/diff/lru-map.ts", import.meta.url))),
         },
         // General @/ alias (lowest priority) — resolves to claxedo's own src
         // (upstream packages/app fully vendored; divorce plan 006)
