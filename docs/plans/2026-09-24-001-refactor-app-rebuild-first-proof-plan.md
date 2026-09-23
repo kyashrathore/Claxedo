@@ -705,12 +705,13 @@ A plugin is a package with a small manifest and an app entry: `activate(api)` re
 | `overlays.register`: a keyboard-invoked overlay | Compact tabs |
 | `commands.register`, with keybindings | all |
 | `mentions.register`: items in the composer's `@` menu | Tasks, Pages |
-| `workbench`: list tabs with status, activate, close, move | Compact tabs |
+| `workbench`: list tabs with status, activate, close, move; open a pane of a registered kind | Compact tabs, Pages |
 | `themes.register`, `icons.registerSkin` | Codex theme |
 | `sessions`: create with a prompt and attachments, status, open | Tasks |
 | `projects`: list, and the current project's id | Tasks, Pages |
 | `server`: authenticated calls through the adapter, limited to what the manifest names. That is route prefixes on the Claxedo server (Tasks: `/api/claxedo/tasks`) and control-plane operations (Pages: `documents.*`, which the adapter sends to the control plane when signed and to the daemon's `/documents` routes when not, as today). | Tasks, Pages |
-| `context`, `ui` (toast, confirm), `i18n.t` | all |
+| `context`, `ui` (toast, confirm, the kit components), `i18n.t` | all |
+| `preferences.persisted`: a per-user, per-plugin persisted value; `navigate` | Tasks, Pages |
 
 Every contribution renders inside the plugin's error boundary, so a failing plugin can't take down the app, and it gets the shell's phone behavior.
 

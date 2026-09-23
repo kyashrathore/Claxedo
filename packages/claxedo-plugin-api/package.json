@@ -1,0 +1,28 @@
+{
+  "name": "@claxedo/plugin-api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "The Claxedo app plugin API: the manifest, the primitives a plugin activates against, and the live-plugin listing shapes",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "solid-js": "1.9.12",
+    "typescript": "catalog:"
+  }
+}

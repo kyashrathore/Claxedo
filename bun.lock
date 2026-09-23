@@ -185,6 +185,11 @@
         "@claxedo/agent-event-runtime": "workspace:*",
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
+        "@claxedo/plugin-api": "workspace:*",
+        "@claxedo/plugin-codex-theme": "workspace:*",
+        "@claxedo/plugin-compact-tabs": "workspace:*",
+        "@claxedo/plugin-pages": "workspace:*",
+        "@claxedo/plugin-tasks": "workspace:*",
         "@claxedo/service-contract": "workspace:*",
         "@claxedo/tasks": "workspace:*",
         "@claxedo/usage-contract": "workspace:*",
@@ -465,6 +470,18 @@
         "@types/node": "24.12.2",
         "typescript": "catalog:",
         "vitest": "2.1.9",
+      },
+    },
+    "packages/claxedo-plugin-api": {
+      "name": "@claxedo/plugin-api",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "solid-js": "1.9.12",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "solid-js": "1.9.12",
       },
     },
     "packages/claxedo-server": {
@@ -904,6 +921,67 @@
         "typescript": "5.8.2",
       },
     },
+    "plugins/codex-theme": {
+      "name": "@claxedo/plugin-codex-theme",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/plugin-api": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "solid-js": "1.9.12",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "solid-js": "1.9.12",
+      },
+    },
+    "plugins/compact-tabs": {
+      "name": "@claxedo/plugin-compact-tabs",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/plugin-api": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "solid-js": "1.9.12",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "solid-js": "1.9.12",
+      },
+    },
+    "plugins/pages": {
+      "name": "@claxedo/plugin-pages",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/plugin-api": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "solid-js": "1.9.12",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "solid-js": "1.9.12",
+      },
+    },
+    "plugins/tasks": {
+      "name": "@claxedo/plugin-tasks",
+      "version": "0.1.0",
+      "dependencies": {
+        "@claxedo/plugin-api": "workspace:*",
+        "@claxedo/tasks": "workspace:*",
+      },
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "solid-js": "1.9.12",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "solid-js": "1.9.12",
+      },
+    },
   },
   "trustedDependencies": [
     "esbuild",
@@ -1339,6 +1417,16 @@
     "@claxedo/mcp": ["@claxedo/mcp@workspace:packages/claxedo-mcp"],
 
     "@claxedo/opencode-server-adapter": ["@claxedo/opencode-server-adapter@workspace:packages/opencode-server-adapter"],
+
+    "@claxedo/plugin-api": ["@claxedo/plugin-api@workspace:packages/claxedo-plugin-api"],
+
+    "@claxedo/plugin-codex-theme": ["@claxedo/plugin-codex-theme@workspace:plugins/codex-theme"],
+
+    "@claxedo/plugin-compact-tabs": ["@claxedo/plugin-compact-tabs@workspace:plugins/compact-tabs"],
+
+    "@claxedo/plugin-pages": ["@claxedo/plugin-pages@workspace:plugins/pages"],
+
+    "@claxedo/plugin-tasks": ["@claxedo/plugin-tasks@workspace:plugins/tasks"],
 
     "@claxedo/sandbox-contract": ["@claxedo/sandbox-contract@workspace:packages/sandbox-contract"],
 
