@@ -274,22 +274,27 @@ test.describe("core busy / abort / errors @core", () => {
       page.locator(SELECTORS.assistantContent).filter({ hasText: "previous completed reply" }),
     ).toHaveCount(1)
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
-    let submitAt = 0
-    const samples = await sampleElementDuringAction(page, SELECTORS.thinkingRow, async () => {
+    // A prompt sent into a busy session is queued behind the running turn, so
+    // it enters the transcript only when the runtime starts it: the samples
+    // record the user rows as well, to find that moment.
+    const samples = await sampleElementDuringAction(page, `${SELECTORS.thinkingRow}, ${SELECTORS.userMessageContent}`, async () => {
       await ensureComposerModelSelected(page)
       await input.fill("Thinking ownership probe")
       await page.locator(SELECTORS.submitControl).last().click()
-      submitAt = await page.evaluate(() => performance.now())
-      await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible()
+      await expect.poll(() => mock.requests.promptBodies[0]?.delivery).toBe("queue")
       await expectAssistantReplyVisible(page, "ack 1: Thinking ownership probe")
     })
     expect(mock.requests.promptCount).toBe(1)
     const messageID = mock.requests.promptBodies[0]?.messageID
     expect(messageID).toBeTruthy()
-    await writeFile(testInfo.outputPath("thinking-ownership-tail.json"), JSON.stringify({ messageID, prevUserId, submitAt, samples }, null, 2))
-    const afterSubmit = samples.filter(sample => sample.time >= submitAt)
-    expect(afterSubmit.some(sample => sample.messageIDs.includes(messageID ?? null))).toBe(true)
-    expect(afterSubmit.flatMap(sample => sample.messageIDs).filter(owner => owner !== messageID)).toEqual([])
+    const admitted = samples.findIndex(sample => sample.elements.some(element =>
+      element.messageID === messageID && element.slot === "session-turn-message-content"))
+    await writeFile(testInfo.outputPath("thinking-ownership-tail.json"), JSON.stringify({ messageID, prevUserId, admitted, samples }, null, 2))
+    expect(admitted, "the queued prompt never entered the transcript").toBeGreaterThanOrEqual(0)
+    const thinkingOwners = (from: number) => samples.slice(from).flatMap(sample =>
+      sample.elements.filter(element => element.slot === "session-turn-thinking").map(element => element.messageID))
+    expect(thinkingOwners(admitted)).toContain(messageID)
+    expect(thinkingOwners(admitted).filter(owner => owner !== messageID)).toEqual([])
   })
 
   test("Thinking renders while busy, then gives way to the visible reply", async ({ page }) => {
@@ -373,7 +378,16 @@ test.describe("core busy / abort / errors @core", () => {
     mock.releaseAbort()
   })
 
-  test("a cancellation the harness never answered leaves the turn running and offers recovery", async ({ page }) => {
+  // A Stop that did not stop the turn is reported to error tracking with the
+  // owner's facts, never to the person who pressed it: the turn's own status is
+  // what they see, so Stop stays offered and no toast, panel or divider appears.
+  const noStopFailureSurface = async (page: Page) => {
+    await expect(page.locator('[data-slot="toast-title"]')).toHaveCount(0)
+    await expect(page.getByRole("region", { name: /Session recovery/i })).toHaveCount(0)
+    await expect(page.locator('[data-slot="compaction-part-label"]').filter({ hasText: /You stopped after/ })).toHaveCount(0)
+  }
+
+  test("a cancellation the harness never answered leaves the turn running, and Stop stays offered", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -395,21 +409,13 @@ test.describe("core busy / abort / errors @core", () => {
     await submitIcon(page).click()
 
     await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBe(1)
-    const panel = page.getByRole("region", { name: /Session recovery/i })
-    await expect(panel, "an unanswered cancellation offers no way to inspect or retry").toBeVisible({ timeout: 15_000 })
-    await expect(panel).toContainText(/still running/i)
-
-    // Retry is a new attempt against the same turn, linked to the one it follows,
-    // not a re-read of the attempt that already ran out.
-    await panel.getByRole("button", { name: /Try stopping again/i }).click()
-    await expect.poll(() => mock.requests.recoveryRequests.length, { timeout: 15_000 }).toBe(2)
-    const [first, retry] = mock.requests.recoveryRequests
-    expect(retry.requestId).not.toBe(first.requestId)
-    expect(retry.attempt).toBe(2)
-    expect(retry.linkedOperationId).toBe("op_1")
+    await expect.poll(() => mock.requests.recoveryInspectCount, { timeout: 15_000 }).toBeGreaterThan(0)
+    await expect(page.locator(SELECTORS.thinkingRow), "the turn the owner could not stop is still running").toBeVisible()
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop")
+    await noStopFailureSurface(page)
   })
 
-  test("a turn that ended but was never written down says so, and does not claim the transcript changed", async ({ page }) => {
+  test("a turn that ended but was never written down does not claim the transcript changed", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -431,16 +437,13 @@ test.describe("core busy / abort / errors @core", () => {
     await submitIcon(page).click()
 
     await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBe(1)
-    const panel = page.getByRole("region", { name: /Session recovery/i })
-    await expect(panel).toBeVisible({ timeout: 15_000 })
-    await expect(panel, "a failed save must be named as one, not as a turn still running").toContainText(/not saved/i)
-    // The store never accepted the interruption, so no divider may claim it did.
-    await expect(
-      page.locator('[data-slot="compaction-part-label"]').filter({ hasText: /You stopped after/ }),
-    ).toHaveCount(0)
+    // The runtime ended the turn and said so; the store never accepted the
+    // interruption, so no divider may claim it did.
+    await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+    await noStopFailureSurface(page)
   })
 
-  test("a Stop whose response is lost is still an operation the owner holds", async ({ page }) => {
+  test("a Stop whose response is lost takes the runtime's own idle and shows no failure surface", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -459,27 +462,16 @@ test.describe("core busy / abort / errors @core", () => {
     mock.setRunningTurn(promptState.lastMessageID)
     await submitIcon(page).click()
 
-    // The owner created and recorded the operation; only the answer was lost, so
-    // the client must show a Stop it cannot account for rather than a stopped turn.
+    // The owner cancelled the turn and published its idle; only the Stop's own
+    // answer was lost. The runtime's status is what the reader sees, and the
+    // lost answer goes to error tracking, not to them.
     await expect.poll(() => mock.requests.abortCount, { timeout: 15_000 }).toBe(1)
-    const panel = page.getByRole("region", { name: /Session recovery/i })
-    await expect(panel).toBeVisible({ timeout: 15_000 })
-    await expect(panel, "a Stop whose answer never arrived must not read as a stopped turn")
-      .toContainText(/did not reach the session/i)
-
-    // Inspecting reaches the owner, which still holds the operation that request
-    // opened — the receipt outlived the response.
-    await panel.getByRole("button", { name: /^Inspect$/i }).click()
-    await expect.poll(() => mock.requests.recoveryInspectCount, { timeout: 15_000 }).toBeGreaterThan(1)
-    // The operation reads as words, not as the contract's enum.
-    await expect(panel).toContainText(/Stop the turn/i)
-
-    // No coverage read is expected here: this session's only turn is the one it
-    // is still running, which a rebuild deliberately leaves alone.
-    expect(mock.requests.coverageReads).toEqual([])
+    await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+    await expect(page.locator(SELECTORS.thinkingRow)).toHaveCount(0)
+    await noStopFailureSurface(page)
   })
 
-  test("a machine that cannot answer is named as that, and the panel stays usable", async ({ page }) => {
+  test("a machine that cannot answer a Stop leaves the composer usable", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -500,16 +492,20 @@ test.describe("core busy / abort / errors @core", () => {
     mock.setRunningTurn(promptState.lastMessageID)
     await submitIcon(page).click()
 
-    const panel = page.getByRole("region", { name: /Session recovery/i })
-    await expect(panel).toBeVisible({ timeout: 20_000 })
-    await expect(panel.getByRole("alert")).toContainText(/machine is unavailable/i)
+    await expect.poll(() => mock.requests.recoveryInspectCount, { timeout: 15_000 }).toBeGreaterThan(0)
+    expect(mock.requests.abortCount, "an owner that cannot be asked is never sent a cancellation").toBe(0)
+    await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible()
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop")
+    await noStopFailureSurface(page)
 
-    // Reachable by keyboard while the composer refuses new turns.
-    const inspect = panel.getByRole("button", { name: /^Inspect$/i })
-    await inspect.focus()
-    await expect(inspect).toBeFocused()
+    // The composer is still the reader's: a draft can be written, and Stop can
+    // be asked again.
+    await input.click()
+    await input.fill("still typing")
+    await expect(input).toContainText("still typing")
+    await input.fill("")
     const before = mock.requests.recoveryInspectCount
-    await page.keyboard.press("Enter")
+    await submitIcon(page).click()
     await expect.poll(() => mock.requests.recoveryInspectCount, { timeout: 15_000 }).toBeGreaterThan(before)
   })
 
@@ -642,7 +638,7 @@ test.describe("core busy / abort / errors @core", () => {
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
   })
 
-  test("a message sent mid-turn joins the running turn instead of stopping it", async ({ page }) => {
+  test("a message sent mid-turn is queued behind the running turn instead of stopping it", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -660,19 +656,23 @@ test.describe("core busy / abort / errors @core", () => {
     await waitForDispatchReceived({ get count() { return mock.requests.promptCount } })
     await expect(input).toHaveText("", { timeout: 20_000 })
 
-    const steered = "also update the readme"
+    const queued = "also update the readme"
     await input.click()
-    await input.fill(steered)
+    await input.fill(queued)
     // A draft written mid-turn turns the control back into Send: there is
     // something to send, so the primary control is not Stop.
     await expect(submitIcon(page)).toHaveAttribute("data-icon", "send", { timeout: 15_000 })
     await page.keyboard.press("Enter")
 
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(2)
-    expect(mock.requests.promptBodies[1]?.delivery, "the second message must ask to steer the running turn").toBe("steer")
+    expect(mock.requests.promptBodies[1]?.delivery, "the second message must ask the runtime to queue it behind the running turn").toBe("queue")
     expect(mock.requests.abortCount, "sending mid-turn must not stop the running turn").toBe(0)
-    await expect(page.getByText(steered).last(), "the steered message never reached the transcript")
+    // The runtime holds the message as a queue record, not a transcript row,
+    // and the timeline renders that record as a queued bubble after the last row.
+    await expect(page.locator("[data-queued-message]").filter({ hasText: queued }), "the queued message never rendered as a queued bubble")
       .toBeVisible({ timeout: 20_000 })
+    await expect(page.locator(SELECTORS.userMessageContent).filter({ hasText: queued }), "a queued message is not a transcript row")
+      .toHaveCount(0)
     await expect(page.locator(SELECTORS.thinkingRow), "the running turn must still be running")
       .toBeVisible({ timeout: 5_000 })
   })

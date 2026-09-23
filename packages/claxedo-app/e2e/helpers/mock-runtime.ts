@@ -1105,6 +1105,20 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // The user message id of the turn the mock is driving, which is what a scoped
   // Stop names and what a steered prompt joins.
   let runningTurn: string | undefined
+  // CONTRACT (workspace-runtime/src/session/delivery-owner.ts): a prompt sent
+  // with `delivery: "queue"` is a durable record served by `GET /session/:id/queue`,
+  // not a transcript row; the owner starts it as the next turn once the session
+  // is idle, and only that start commits its user message.
+  type QueuedPrompt = {
+    seq: number
+    messageId: string
+    parts: Array<{ type: string; text?: string; filename?: string }>
+    queuedAt: number
+    held: boolean
+    turn: { userID: string; assistantID: string; text: string; agent: string; providerID: string; modelID: string; turn: number }
+  }
+  const queuedPrompts: QueuedPrompt[] = []
+  let queuedPromptSeq = 0
   /** The owner generation every recovery target and fact in this mock is stamped with. */
   const OWNER_GENERATION = "lease_e2e"
   const recoveryOperations = new Map<string, Record<string, unknown>>()
@@ -1520,6 +1534,26 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // Turn driver — runs the busy -> pending message -> deltas -> completed ->
   // idle sequence over real ticks, per the "How streaming works" note above.
   // ------------------------------------------------------------------------
+  // A queued prompt has no optimistic row in the client, so its admission is
+  // announced the way the runtime announces one: the user message rides the
+  // stream before the turn's first status frame.
+  function startQueuedTurn(record: QueuedPrompt) {
+    const { turn } = record
+    const userRow = userMessage({ id: turn.userID, text: turn.text, agent: turn.agent, providerID: turn.providerID, modelID: turn.modelID })
+    messages = [...messages, userRow]
+    emit({ type: "message.updated", properties: { sessionID: SESSION_ID, info: userRow.info } })
+    runningTurn = turn.userID
+    void driveTurn(turn)
+  }
+
+  function drainQueuedPrompts() {
+    if (runningTurn) return
+    const index = queuedPrompts.findIndex((record) => !record.held)
+    if (index === -1) return
+    const [record] = queuedPrompts.splice(index, 1)
+    startQueuedTurn(record)
+  }
+
   async function driveTurn(input: {
     userID: string
     assistantID: string
@@ -1570,6 +1604,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       runningTurn = undefined
       setSessionStatus(SESSION_ID)
       emit({ type: "agent.lifecycle", tabId: SESSION_ID, sessionId: SESSION_ID, eventType: "Idle" })
+      drainQueuedPrompts()
       return
     }
     if (options.errorMidTurn) {
@@ -1645,6 +1680,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     runningTurn = undefined
     setSessionStatus(SESSION_ID)
     emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
+    drainQueuedPrompts()
   }
 
   // ------------------------------------------------------------------------
@@ -2886,7 +2922,50 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, sessionConfig())
   })
 
-  await page.route("**/session/*/queue**", (r) => (api(r) ? json(r, []) : r.continue()))
+  // CONTRACT (workspace-runtime `session-core.ts` `GET /session/:id/queue` and
+  // `POST /session/:id/queue/:seq/:action`): the list is what a reader may see
+  // of the owner's records; a control answers `{ ok: true }` once applied.
+  await page.route("**/session/*/queue**", async (r) => {
+    if (!api(r)) return r.continue()
+    const url = new URL(r.request().url())
+    const action = url.pathname.match(/\/queue\/(\d+)\/(cancel|steer|replace|hold|release)$/)
+    if (!action) {
+      return json(r, queuedPrompts.map(({ seq, parts, messageId, queuedAt, held }) => ({ seq, parts, messageId, queuedAt, held })))
+    }
+    const seq = Number(action[1])
+    const index = queuedPrompts.findIndex((record) => record.seq === seq)
+    if (index === -1) return json(r, { ok: false, status: "conflict", error: "Queued message is not available" }, 409)
+    const record = queuedPrompts[index]
+    switch (action[2]) {
+      case "cancel":
+        queuedPrompts.splice(index, 1)
+        break
+      case "hold":
+      case "release":
+        record.held = action[2] === "hold"
+        break
+      case "replace": {
+        const body = r.request().postDataJSON() as { parts?: QueuedPrompt["parts"] }
+        record.parts = body?.parts ?? []
+        record.turn.text = textOf(record.parts) || record.turn.text
+        record.held = false
+        break
+      }
+      case "steer": {
+        queuedPrompts.splice(index, 1)
+        if (runningTurn) {
+          const userRow = userMessage({ id: record.turn.userID, text: record.turn.text, agent: record.turn.agent, providerID: record.turn.providerID, modelID: record.turn.modelID })
+          messages = [...messages, userRow]
+          emit({ type: "message.updated", properties: { sessionID: SESSION_ID, info: userRow.info } })
+        } else {
+          startQueuedTurn(record)
+        }
+        break
+      }
+    }
+    if (action[2] !== "steer") drainQueuedPrompts()
+    return json(r, { ok: true })
+  })
   await page.route("**/session/*/todo**", (r) => (api(r) ? json(r, sessionTodos) : r.continue()))
 
   await page.route("**/session/*/capabilities**", (r) =>
@@ -2955,6 +3034,20 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       ...(typeof body?.permissionMode === "string" ? { permissionMode: body.permissionMode } : {}),
       ...(body?.delivery ? { delivery: body.delivery } : {}),
     })
+
+    if (body?.delivery === "queue") {
+      queuedPrompts.push({
+        seq: ++queuedPromptSeq,
+        messageId: userID,
+        parts: Array.isArray(body?.parts) ? (body.parts as QueuedPrompt["parts"]) : [{ type: "text", text }],
+        queuedAt: Date.now(),
+        held: false,
+        turn: { userID, assistantID, text, agent, providerID, modelID, turn: requests.promptCount },
+      })
+      await route.fulfill({ ...sessionPromptDelivered("queue") })
+      drainQueuedPrompts()
+      return
+    }
 
     const userRow = userMessage({ id: userID, text, agent, providerID, modelID })
     messages = [...messages, userRow]
@@ -3096,6 +3189,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
       }
       runningTurn = undefined
+      drainQueuedPrompts()
     }
 
     const unresolved = options.recoveryExecutionUnresolved === true
