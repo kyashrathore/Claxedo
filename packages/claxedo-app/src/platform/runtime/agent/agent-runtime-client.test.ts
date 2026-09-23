@@ -39,6 +39,16 @@ describe("AgentRuntimeClient", () => {
     })
     expect(await client.controlQueuedMessage({ directory: "/repo", sessionID: "session-1", seq: 1, action: "steer" })).toEqual(outcome)
   })
+  it("surfaces a refused steer by its message, not the response body", async () => {
+    const message = "Claude can't take a message while it is working. It will send when the current turn ends."
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001",
+      request: async () => ok({ ok: false, status: "rejected", message, error: { code: "queue_rejected", message } }, { status: 409 }),
+    })
+    const error = await client.controlQueuedMessage({ directory: "/repo", sessionID: "session-1", seq: 1, action: "steer" }).catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(AgentRuntimeRequestError)
+    expect(error).toMatchObject({ message, status: 409, code: "queue_rejected" })
+  })
   it("uses the session's permission owner and disambiguates native versus connection drafts", async () => {
     const calls: URL[] = []
     const client = createAgentRuntimeClient({
