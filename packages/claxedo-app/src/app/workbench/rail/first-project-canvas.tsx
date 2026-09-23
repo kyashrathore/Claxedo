@@ -16,9 +16,11 @@ import { workspaceSessionRoute } from "@/platform/identity/route"
 import "./first-project-canvas.css"
 
 /**
- * The canvas with no project on the server: the first-run wizard, as the
- * whole screen. Every later project is created from the composer's Project
- * chip; this host is the one case where there is no composer to hang it off.
+ * Project creation where there is no composer to hang it off: the first-run
+ * wizard, as the whole canvas. It fills the empty workbench when the server
+ * lists no project, and a pane whose workspace cannot mount a composer (see
+ * `WorkspaceUnavailableSurface`). Everywhere else a project is created from
+ * the composer's Project chip.
  */
 export function FirstProjectCanvas(props: {
   onDiagnostics?: () => void
@@ -42,7 +44,7 @@ export function FirstProjectCanvas(props: {
   let leadField: HTMLElement | undefined
 
   // "New Project" in the rail and the desktop menu raise an intent rather than
-  // opening anything; with no project this screen is the only surface that can
+  // opening anything; where this canvas shows, it is the only surface that can
   // answer it, and the wizard's leading control is where the answer starts.
   onCleanup(layout.projects.registerCreateSurface())
   createEffect(() => {

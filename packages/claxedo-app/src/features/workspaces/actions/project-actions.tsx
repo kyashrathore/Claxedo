@@ -161,7 +161,9 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
    * chip, so this raises the intent and the mounted composer (a draft's, or the
    * empty canvas's) opens its create panel. A route with no composer — Tasks,
    * the home list — has nothing to answer, so a draft is opened on the active
-   * project first; the intent stays pending until that composer mounts.
+   * project first; the intent stays pending until that composer mounts, or
+   * until that workspace proves unavailable and its pane answers with the
+   * first-project canvas instead.
    */
   const handleNewProject = async () => {
     props.layout.projects.requestCreate()

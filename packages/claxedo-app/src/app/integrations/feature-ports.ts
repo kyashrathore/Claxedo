@@ -44,6 +44,7 @@ import * as SessionCache from "@/features/session/data/sync/directory-session-ca
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
+import * as WorkspaceUnavailable from "@/app/workbench/rail/workspace-unavailable-surface"
 import { useOnboardingFunnel } from "./onboarding-funnel"
 import { lazyDialog } from "@/lib/lazy-dialog"
 
@@ -151,6 +152,7 @@ configureWorkspacesAppPorts({
   useDirectorySessionCacheActions: SessionCache.useDirectorySessionCacheActions,
   CloudStartupView: CloudStartup.CloudStartupView,
   WorkspaceAccessDeniedView: CloudStartup.WorkspaceAccessDeniedView,
+  WorkspaceUnavailableSurface: WorkspaceUnavailable.WorkspaceUnavailableSurface,
   WorkspaceStateShell: CloudStartup.WorkspaceStateShell,
   WorkspaceStateNote: CloudStartup.WorkspaceStateNote,
   WorkspaceStateButton: CloudStartup.WorkspaceStateButton,

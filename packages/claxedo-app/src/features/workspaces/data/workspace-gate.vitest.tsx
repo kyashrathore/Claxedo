@@ -1,6 +1,8 @@
 import { cleanup, render, screen } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal } from "solid-js"
+import { createLayoutProjectsApi } from "@/app/providers/layout-projects"
+import { ProjectCreateCanvasProvider } from "@/app/workbench/rail/workspace-unavailable-surface"
 import { WorkspaceGate } from "./workspace-gate"
 
 const calls = vi.hoisted(() => ({
@@ -11,12 +13,18 @@ const calls = vi.hoisted(() => ({
   retainConnection: vi.fn(),
   workspaceRegistry: undefined as undefined | { retainConnection: (input: unknown) => boolean },
 }))
+const layout = vi.hoisted(() => ({ projects: undefined as unknown }))
+
+vi.mock("@/app/providers/layout", () => ({
+  useLayout: () => layout,
+}))
 
 vi.mock("../../../app/integrations/claxedo-events", () => ({
   useClaxedoEventsOptional: () => undefined,
 }))
 
-vi.mock("@/features/workspaces/app-ports", () => ({
+vi.mock("@/features/workspaces/app-ports", async () => ({
+  WorkspaceUnavailableSurface: (await import("@/app/workbench/rail/workspace-unavailable-surface")).WorkspaceUnavailableSurface,
   CloudStartupView: () => <div data-testid="workspace-connecting" />,
   WorkspaceAccessDeniedView: () => <div data-testid="workspace-offline" />,
   // The offline view composes these three, so the mock has to carry them or the
@@ -65,7 +73,20 @@ beforeEach(() => {
   calls.retainConnection.mockReset()
   calls.workspaceRegistry = undefined
   calls.acquire.mockReturnValue({ release: vi.fn() })
+  layout.projects = createLayoutProjectsApi({
+    list: () => [],
+    server: { projects: {} as never },
+    rootFor: (directory) => directory,
+    validProjectRef: () => true,
+    ensureDirectorySessionCache: () => {},
+    sidebarProjects: () => [],
+  })
+  window.__claxedoMainContentReady = undefined
 })
+
+function projects() {
+  return layout.projects as ReturnType<typeof createLayoutProjectsApi>
+}
 
 describe("WorkspaceGate", () => {
   test("renders a session-shaped fallback while a workspace-backed session connects", () => {
@@ -249,6 +270,57 @@ describe("WorkspaceGate", () => {
       workspaceId: "ws_1",
       kind: "provisioner",
       directory: "workspace:ws_1",
+    })
+  })
+
+  // A workspace that cannot mount its surface still leaves the pane settled:
+  // the boot splash has no composer to wait for, and "New Project" has no
+  // composer to open its panel in.
+  describe("an unavailable workspace", () => {
+    test.each([
+      ["offline", { status: { offline: "no-host" }, terminal: false }, "no-host"],
+      ["forbidden", { status: { offline: "forbidden" }, terminal: true }, "forbidden"],
+    ] as const)("%s: releases the boot splash and answers New Project with the create canvas", (_label, connection, reason) => {
+      calls.connection.mockReturnValue(connection)
+      calls.offline.mockReturnValue(reason)
+
+      render(() => (
+        <ProjectCreateCanvasProvider value={() => <div data-testid="create-canvas" />}>
+          <WorkspaceGate workspaceId="ws_machine" kind="machine">
+            <div data-testid="ready-session" />
+          </WorkspaceGate>
+        </ProjectCreateCanvasProvider>
+      ))
+
+      expect(screen.getByTestId("workspace-offline")).toBeTruthy()
+      expect(window.__claxedoMainContentReady).toBe(true)
+      expect(projects().hasCreateSurface()).toBe(true)
+
+      projects().requestCreate()
+
+      expect(screen.getByTestId("create-canvas")).toBeTruthy()
+      expect(screen.queryByTestId("workspace-offline")).toBeNull()
+    })
+
+    test.each([
+      ["connecting", { status: "connecting", phase: "connecting_workspace" }],
+      ["ready", { status: "ready" }],
+    ] as const)("%s: leaves both to the composer", (_label, connection) => {
+      calls.connection.mockReturnValue(connection)
+      calls.offline.mockReturnValue(undefined)
+
+      render(() => (
+        <ProjectCreateCanvasProvider value={() => <div data-testid="create-canvas" />}>
+          <WorkspaceGate workspaceId="ws_machine" kind="machine">
+            <div data-testid="ready-session" />
+          </WorkspaceGate>
+        </ProjectCreateCanvasProvider>
+      ))
+
+      expect(window.__claxedoMainContentReady).toBeUndefined()
+      expect(projects().hasCreateSurface()).toBe(false)
+      projects().requestCreate()
+      expect(screen.queryByTestId("create-canvas")).toBeNull()
     })
   })
 })

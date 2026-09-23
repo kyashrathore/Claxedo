@@ -619,9 +619,16 @@ export const appLocal: Policy = {
   // — the subagent tab's docked session, split out of `review-workspace.tsx`
   // to keep it under the 800-line budget. It imports only what that file
   // already carried. Owner: `app/workbench/review`. No new package edge.
+  // +1 module (2026-09-23): `app/workbench/rail/workspace-unavailable-surface.tsx`
+  // — what a pane shows where a workspace cannot mount (host offline, access
+  // refused): it releases the boot splash and answers "New Project" with the
+  // first-project canvas. The workspace gate reaches it through the
+  // workspaces feature port. It imports only the layout, pane context and
+  // shell-revealed modules this entry already carries. Owner:
+  // `app/workbench/rail`. No new package edge.
   //
-  // Exact measured 1112 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1112, packages: 58 },
+  // Exact measured 1113 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1113, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

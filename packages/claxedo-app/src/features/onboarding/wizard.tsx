@@ -46,10 +46,11 @@ const STEPS: ReadonlyArray<{
 ]
 
 /**
- * The no-project screen: three questions, in the order they become
- * answerable, ending in a working session. It is the only first run on both
- * products and shows for one reason, that the server lists no project; once
- * one exists every later change is a Settings page.
+ * Project creation with no composer to hang it off: three questions, in the
+ * order they become answerable, ending in a working session. It is the only
+ * first run on both products, shown when the server lists no project, and it
+ * is also where "New Project" lands when the focused workspace cannot mount a
+ * composer. Past the first project, every other change is a Settings page.
  *
  * Nothing is created before Finish. A desktop's project is posted then, so a
  * clone that fails or a folder that is not a repository is answered on this

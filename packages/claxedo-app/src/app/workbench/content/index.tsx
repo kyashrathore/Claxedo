@@ -73,8 +73,10 @@ export function ContentRenderer(props: ContentRendererProps): JSX.Element {
               <>
                 {/* Session surfaces hold the boot splash until their composer
                     actually paints — the poll in `BootSplashOverlay` owns that
-                    release; every other surface's content IS the readiness. The
-                    draft's registry type is `draft-session`, not `session`. */}
+                    release, and `WorkspaceUnavailableSurface` stands in for a
+                    workspace that cannot mount one; every other surface's
+                    content IS the readiness. The draft's registry type is
+                    `draft-session`, not `session`. */}
                 <Show when={m().type !== "session" && m().type !== "draft-session"}>
                   <MainContentReady />
                 </Show>

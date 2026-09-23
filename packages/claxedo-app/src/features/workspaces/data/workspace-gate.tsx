@@ -6,6 +6,7 @@ import {
   WorkspaceStateButton,
   WorkspaceStateNote,
   WorkspaceStateShell,
+  WorkspaceUnavailableSurface,
   useClaxedoEventsOptional,
 } from "@/features/workspaces/app-ports"
 import {
@@ -197,7 +198,9 @@ export function WorkspaceGate(
       <Switch>
         <Match when={conn()?.status === "ready"}>{props.children}</Match>
         <Match when={offline() === "forbidden"}>
-          <WorkspaceAccessDeniedView onGoToWorkspaces={props.onGoToWorkspaces} />
+          <WorkspaceUnavailableSurface>
+            <WorkspaceAccessDeniedView onGoToWorkspaces={props.onGoToWorkspaces} />
+          </WorkspaceUnavailableSurface>
         </Match>
         {/* An EXISTING provisioned session's history lives in the control
             plane, so a dead sandbox renders the surface instead of the offline
@@ -211,12 +214,14 @@ export function WorkspaceGate(
         </Match>
         <Match when={offline()}>
           {(reason) => (
-            <WorkspaceOfflineView
-              reason={reason()}
-              terminal={conn()?.terminal}
-              err={conn()?.err}
-              onRetry={() => retryWorkspaceConnection(props.workspaceId)}
-            />
+            <WorkspaceUnavailableSurface>
+              <WorkspaceOfflineView
+                reason={reason()}
+                terminal={conn()?.terminal}
+                err={conn()?.err}
+                onRetry={() => retryWorkspaceConnection(props.workspaceId)}
+              />
+            </WorkspaceUnavailableSurface>
           )}
         </Match>
         <Match when={true}>

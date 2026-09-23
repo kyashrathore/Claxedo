@@ -958,6 +958,40 @@ test.describe("core machine-placed workspace @core", () => {
     await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
   })
 
+  // The boot splash waits for a composer, or for a surface that says none is
+  // coming. Its own fallback releases it after 600 frames, about 10s at 60Hz,
+  // so the bound here sits well under that.
+  test("an offline host's workspace releases the boot splash as soon as its offline view mounts", async ({ page }) => {
+    test.setTimeout(120_000)
+    await installHostTunnelRuntimeMock(page, { health: [503] })
+    await seedProject(page, { registerWorkspace: true })
+
+    await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
+
+    await expect(page.getByTestId("workspace-offline")).toBeAttached({ timeout: 40_000 })
+    await expect(page.locator('[data-component="claxedo-splash"]')).toHaveCount(0, { timeout: 2_000 })
+  })
+
+  // The only project lives on the offline host, so no pane can mount the
+  // composer whose Project chip normally answers "New Project".
+  test("New Project with every project on an offline host opens the first-project canvas", async ({ page }) => {
+    test.setTimeout(120_000)
+    await installHostTunnelRuntimeMock(page, { health: [503] })
+    await seedProject(page, { registerWorkspace: true })
+
+    await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
+    const offline = page.getByTestId("workspace-offline")
+    await expect(offline).toBeVisible({ timeout: 40_000 })
+    await expect(page.locator('[data-component="claxedo-splash"]')).toHaveCount(0, { timeout: 15_000 })
+
+    await page.getByRole("button", { name: "New Project", exact: true }).click()
+
+    const canvas = page.getByTestId("first-project-canvas")
+    await expect(canvas).toBeVisible({ timeout: 10_000 })
+    await expect(canvas.getByTestId("onboarding-wizard")).toHaveAttribute("data-step", "project")
+    await expect(offline).toHaveCount(0)
+  })
+
   test("transient 409/503 health hiccups still reach ready", async ({ page }) => {
     test.setTimeout(120_000)
     await installHostTunnelRuntimeMock(page, { health: [409, 503, 200] })

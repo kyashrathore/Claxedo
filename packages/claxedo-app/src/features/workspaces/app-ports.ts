@@ -14,6 +14,7 @@ import type * as State from "@/app/workbench/state"
 import type * as SessionCache from "@/features/session/data/sync/directory-session-cache"
 import type * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
 import type * as CodeHost from "@/features/onboarding/code-host-api"
+import type * as WorkspaceUnavailable from "@/app/workbench/rail/workspace-unavailable-surface"
 
 export type WorkspacesAppPorts = {
   useServer: typeof Server.useServer
@@ -37,6 +38,7 @@ export type WorkspacesAppPorts = {
   useDirectorySessionCacheActions: typeof SessionCache.useDirectorySessionCacheActions
   CloudStartupView: typeof CloudStartup.CloudStartupView
   WorkspaceAccessDeniedView: typeof CloudStartup.WorkspaceAccessDeniedView
+  WorkspaceUnavailableSurface: typeof WorkspaceUnavailable.WorkspaceUnavailableSurface
   WorkspaceStateShell: typeof CloudStartup.WorkspaceStateShell
   WorkspaceStateNote: typeof CloudStartup.WorkspaceStateNote
   WorkspaceStateButton: typeof CloudStartup.WorkspaceStateButton
@@ -90,6 +92,7 @@ export const realDirectory = bind((ports) => ports.realDirectory)
 export const useDirectorySessionCacheActions = bind((ports) => ports.useDirectorySessionCacheActions)
 export const CloudStartupView = bind((ports) => ports.CloudStartupView)
 export const WorkspaceAccessDeniedView = bind((ports) => ports.WorkspaceAccessDeniedView)
+export const WorkspaceUnavailableSurface = bind((ports) => ports.WorkspaceUnavailableSurface)
 export const WorkspaceStateShell = bind((ports) => ports.WorkspaceStateShell)
 export const WorkspaceStateNote = bind((ports) => ports.WorkspaceStateNote)
 export const WorkspaceStateButton = bind((ports) => ports.WorkspaceStateButton)

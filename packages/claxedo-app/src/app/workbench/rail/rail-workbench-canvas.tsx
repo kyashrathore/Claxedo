@@ -10,6 +10,7 @@ import { ContentRenderer } from "../content/index"
 import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
 import { FirstProjectCanvas } from "./first-project-canvas"
+import { ProjectCreateCanvasProvider } from "./workspace-unavailable-surface"
 import { MainContentReady } from "../../shell-revealed"
 
 const SessionContent = lazy(() =>
@@ -44,48 +45,55 @@ export function RailWorkbenchCanvas(props: {
   // switch budget. Visible split panes and terminals remain exempt. After a few
   // idle minutes even these three unload, then refill one slot at a time.
   const retainedHiddenLimit = createMountIdleGovernor({ baseLimit: 3, idleAfterMs: 180_000 })
+  const createCanvas = () => (
+    <FirstProjectCanvas onDiagnostics={props.onDiagnostics} onProjectCreated={props.onProjectCreated} />
+  )
 
   return (
-    <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <Workbench
-        renderContent={(id, ctx) => (
-          <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
-        )}
-        maxMountedContents={4}
-        mountPolicy="visible-once"
-        mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
-        paneDraggable={(id) => contentSurfacePaneDraggable(props.state.meta.get(id)?.type)}
-        retainedHiddenLimit={retainedHiddenLimit}
-        onCloseFocusedPane={props.onCloseFocusedPane}
-        renderEmpty={() => (
-          <Show
-            when={props.emptyDraftDirectory()}
-            fallback={
-              <>
-                {/* The empty states carry no composer; their mount is the
-                    readiness the boot splash waits on. The draft session's
-                    release is the composer poll in `BootSplashOverlay`. */}
-                <MainContentReady />
-                <FirstProjectCanvas onDiagnostics={props.onDiagnostics} onProjectCreated={props.onProjectCreated} />
-              </>
-            }
-          >
-            {(workspaceDir) => (
-              <EmptyDraftSessionComposer
-                workspaceDir={workspaceDir()}
-                paneId={props.state.wb.state.focusedPaneId ?? undefined}
-              />
-            )}
-          </Show>
-        )}
-        onPaneResize={() => {
-          emitTerminalFit()
-        }}
-        onContentClose={(id, reason) => {
-          props.state.layout._cleanupOnClose(id, reason === "stale" ? "panic" : "user")
-        }}
-      />
-    </div>
+    <ProjectCreateCanvasProvider value={createCanvas}>
+      <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <Workbench
+          renderContent={(id, ctx) => (
+            <ContentRenderer id={id} ctx={ctx} fallbackDirectory={props.emptyDraftDirectory} />
+          )}
+          maxMountedContents={4}
+          mountPolicy="visible-once"
+          mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
+          paneDraggable={(id) => contentSurfacePaneDraggable(props.state.meta.get(id)?.type)}
+          retainedHiddenLimit={retainedHiddenLimit}
+          onCloseFocusedPane={props.onCloseFocusedPane}
+          renderEmpty={() => (
+            <Show
+              when={props.emptyDraftDirectory()}
+              fallback={
+                <>
+                  {/* The empty states carry no composer; their mount is the
+                      readiness the boot splash waits on. The draft session's
+                      release is the composer poll in `BootSplashOverlay`, or
+                      `WorkspaceUnavailableSurface` when its workspace cannot
+                      mount one. */}
+                  <MainContentReady />
+                  {createCanvas()}
+                </>
+              }
+            >
+              {(workspaceDir) => (
+                <EmptyDraftSessionComposer
+                  workspaceDir={workspaceDir()}
+                  paneId={props.state.wb.state.focusedPaneId ?? undefined}
+                />
+              )}
+            </Show>
+          )}
+          onPaneResize={() => {
+            emitTerminalFit()
+          }}
+          onContentClose={(id, reason) => {
+            props.state.layout._cleanupOnClose(id, reason === "stale" ? "panic" : "user")
+          }}
+        />
+      </div>
+    </ProjectCreateCanvasProvider>
   )
 }
 

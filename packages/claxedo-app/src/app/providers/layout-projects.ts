@@ -286,8 +286,9 @@ export type LayoutProjectsServer = Pick<ReturnType<typeof useServer>, "projects"
 /**
  * The layout's `projects` API: the sidebar list, the open/close/expand
  * operations the rail delegates to the server, and the "create a project"
- * intent. Creation itself lives in the composer's Project chip and, with no
- * project, the first-project canvas; "New Project" only raises the intent.
+ * intent. Creation itself lives in the composer's Project chip and, where no
+ * composer can mount, the first-project canvas; "New Project" only raises the
+ * intent.
  * A request stays pending until a surface answers it, so one raised while no
  * surface is mounted is answered by the next one to mount rather than lost.
  * `hasCreateSurface` is how a caller knows whether to mount one first.
