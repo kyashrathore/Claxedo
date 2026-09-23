@@ -5,6 +5,7 @@
  */
 import { expect, type Page } from "@playwright/test"
 import { SELECTORS } from "./turn-oracle"
+import { timelineScroller } from "./geometry-oracle"
 
 /** Exactly one user row per turn — the count real multi-part replies can't distort. */
 export async function expectLiveUserRowCount(page: Page, count: number) {
@@ -26,14 +27,14 @@ export async function expectLiveUserRowCount(page: Page, count: number) {
  * that clean response, so the check is both valid and load-bearing there.
  */
 export async function expectLiveTurnsSettledAfterReload(page: Page, markers: string[]) {
-  // A reload paints the latest turn first; older turns arrive through the
-  // reveal row, the way a reader reaches them in a list too short to scroll.
-  const reveal = page.locator('button[data-testid="timeline-previous-messages"]')
+  // A reload paints the latest turn first. The reader reaches the older turns
+  // by scrolling up, which on a list too short to scroll is a wheel at the top.
+  const box = await timelineScroller(page).boundingBox()
+  if (box) await page.mouse.move(box.x + box.width / 2, box.y + 40)
   await expect(async () => {
-    if (await reveal.count()) await reveal.first().click()
+    await page.mouse.wheel(0, -400)
     await expect(page.locator(SELECTORS.userMessageContent)).toHaveCount(markers.length, { timeout: 2_000 })
-  }, `expected exactly ${markers.length} user row(s) after revealing earlier turns`).toPass({ timeout: 30_000 })
-  await expect(reveal).toHaveCount(0)
+  }, `expected exactly ${markers.length} user row(s) after scrolling up to the earlier turns`).toPass({ timeout: 30_000 })
   for (const marker of markers) {
     await expect(
       page.locator(SELECTORS.assistantContentVisible).filter({ hasText: new RegExp(marker) }),

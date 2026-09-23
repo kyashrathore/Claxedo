@@ -59,6 +59,12 @@ export function createTimelineListGestures(input: {
       onMarkScrollGesture: input.props.onMarkScrollGesture,
     })
 
+  const pullAtTop = (event: { currentTarget: HTMLDivElement; target: EventTarget | null }, delta: number) => {
+    if (delta >= 0 || event.currentTarget.scrollTop > 0) return
+    if (boundaryTarget(event.currentTarget, event.target) !== event.currentTarget) return
+    input.props.onHistoryPull?.()
+  }
+
   const onWheel = (event: WheelEvent & { currentTarget: HTMLDivElement }) => {
     input.prepareInteractionScroll()
     const delta = normalizeWheelDelta({
@@ -68,6 +74,7 @@ export function createTimelineListGestures(input: {
     })
     if (!delta) return
     boundaryGesture(event, delta)
+    pullAtTop(event, delta)
   }
 
   const onTouchStart = (event: TouchEvent) => {
@@ -85,6 +92,7 @@ export function createTimelineListGestures(input: {
     if (!delta) return
 
     boundaryGesture(event, delta)
+    pullAtTop(event, delta)
   }
 
   const onTouchEnd = () => {

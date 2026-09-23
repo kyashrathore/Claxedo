@@ -420,7 +420,6 @@ export const dict = {
   "session.todo.expand": "Développer",
   "session.timeline.previousMessages.one": "{{count}} message précédent",
   "session.timeline.previousMessages.other": "{{count}} messages précédents",
-  "session.timeline.previousMessages.earlier": "Afficher les messages précédents",
   "session.timeline.collapseTranscript": "Réduire la transcription",
   "session.followupDock.summary.one": "{{count}} message en file d'attente",
   "session.followupDock.summary.other": "{{count}} messages en file d'attente",

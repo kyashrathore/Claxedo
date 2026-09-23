@@ -481,6 +481,41 @@ describe("createSessionHistoryWindow", () => {
     root.dispose()
   })
 
+  test("a pull at the top pages server history in a list that never scrolled", () => {
+    const loadCalls: string[] = []
+    const scroller = document.createElement("div")
+    const root = createRoot((dispose) => {
+      const [messages] = createSignal(userMessages(1))
+      return {
+        dispose,
+        historyWindow: createSessionHistoryWindow({
+          sessionID: () => "s-1",
+          messagesReady: () => true,
+          visibleUserMessages: messages,
+          historyMore: () => true,
+          historyLoading: () => false,
+          loadMore: async (sessionID) => {
+            loadCalls.push(sessionID)
+          },
+          userScrolled: () => false,
+          scroller: () => scroller,
+        }),
+      }
+    })
+
+    root.historyWindow.onScrollerScroll()
+    expect(loadCalls).toEqual([])
+
+    root.historyWindow.onScrollerPull()
+    expect(loadCalls).toEqual(["s-1"])
+
+    Object.defineProperty(scroller, "scrollTop", { value: 40, configurable: true })
+    root.historyWindow.onScrollerPull()
+    expect(loadCalls).toEqual(["s-1"])
+
+    root.dispose()
+  })
+
   test("autoFill false leaves hidden turns to the explicit reveal but still pages once nothing is hidden", () => {
     const loadCalls: string[] = []
     const root = createRoot((dispose) => {

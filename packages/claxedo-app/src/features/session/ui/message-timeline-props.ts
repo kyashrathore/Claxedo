@@ -20,6 +20,8 @@ export type MessageTimelineProps = {
   hasScrollGesture: () => boolean
   onUserScroll: () => void
   onHistoryScroll: () => void
+  /** An upward wheel or swipe on the list itself while it is at its top. */
+  onHistoryPull?: () => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
   hasScrollTarget: () => boolean
@@ -30,12 +32,6 @@ export type MessageTimelineProps = {
   userMessages: UserMessage[]
   /** Turns above `userMessages[0]` that the history window keeps off-screen; > 0 adds the reveal row. */
   hiddenTurnCount?: Accessor<number>
-  /**
-   * The server holds turns older than any loaded. The first paint after a load
-   * carries only the latest turn, so with nothing hidden locally the reveal row
-   * is the only way to reach them: a short list cannot scroll to the loader.
-   */
-  historyMore?: Accessor<boolean>
   /** Suppresses the sticky session title; a floating card shows only the turn. */
   hideTitle?: Accessor<boolean>
   onRevealPreviousMessages?: () => void

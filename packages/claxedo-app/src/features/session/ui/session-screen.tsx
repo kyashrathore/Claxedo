@@ -1318,6 +1318,7 @@ export default function SessionPage(props: {
                           hasScrollGesture={scrollGesture.active}
                           onUserScroll={markUserScroll}
                           onHistoryScroll={historyWindow.onScrollerScroll}
+                          onHistoryPull={historyWindow.onScrollerPull}
                           onAutoScrollInteraction={autoScroll.handleInteraction}
                           shouldAnchorBottom={() =>
                             !paneLocation().hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
@@ -1335,7 +1336,6 @@ export default function SessionPage(props: {
                           historyShift={false}
                           userMessages={historyWindow.renderedUserMessages()}
                           hiddenTurnCount={historyWindow.hiddenTurnCount}
-                          historyMore={historyMore}
                           hideTitle={() => floating() || readOnly()}
                           onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
                           navMessages={visibleUserMessages()}

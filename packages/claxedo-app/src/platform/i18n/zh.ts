@@ -471,7 +471,6 @@ export const dict = {
   "session.todo.expand": "展开",
   "session.timeline.previousMessages.one": "{{count}} 条较早的消息",
   "session.timeline.previousMessages.other": "{{count}} 条较早的消息",
-  "session.timeline.previousMessages.earlier": "显示较早的消息",
   "session.timeline.collapseTranscript": "收起对话记录",
   "session.followupDock.summary.one": "{{count}} 条排队消息",
   "session.followupDock.summary.other": "{{count}} 条排队消息",

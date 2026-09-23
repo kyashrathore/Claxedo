@@ -469,7 +469,6 @@ export const dict = {
   "session.todo.expand": "Развернуть",
   "session.timeline.previousMessages.one": "{{count}} предыдущее сообщение",
   "session.timeline.previousMessages.other": "{{count}} предыдущих сообщений",
-  "session.timeline.previousMessages.earlier": "Показать предыдущие сообщения",
   "session.timeline.collapseTranscript": "Свернуть стенограмму",
   "session.followupDock.summary.one": "{{count}} сообщение в очереди",
   "session.followupDock.summary.other": "{{count}} сообщений в очереди",

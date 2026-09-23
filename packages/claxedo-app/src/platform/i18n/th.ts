@@ -466,7 +466,6 @@ export const dict = {
   "session.todo.expand": "ขยาย",
   "session.timeline.previousMessages.one": "{{count}} ข้อความก่อนหน้า",
   "session.timeline.previousMessages.other": "{{count}} ข้อความก่อนหน้า",
-  "session.timeline.previousMessages.earlier": "แสดงข้อความก่อนหน้า",
   "session.timeline.collapseTranscript": "ย่อบันทึกการสนทนา",
   "session.followupDock.summary.one": "{{count}} ข้อความในคิว",
   "session.followupDock.summary.other": "{{count}} ข้อความในคิว",

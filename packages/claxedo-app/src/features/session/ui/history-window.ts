@@ -268,12 +268,7 @@ export function createSessionHistoryWindow(input: Input) {
     preserveScroll(() => setTurnStart(nextStart))
   }
 
-  const onScrollerScroll = () => {
-    if (!input.userScrolled()) return
-    const el = input.scroller()
-    if (!el) return
-    if (el.scrollTop >= turnScrollThreshold) return
-
+  const pageTowardHead = () => {
     const start = turnStart()
     if (start > 0) {
       if (!autoFill()) return
@@ -285,6 +280,25 @@ export function createSessionHistoryWindow(input: Input) {
     }
 
     void fetchOlderMessages()
+  }
+
+  const onScrollerScroll = () => {
+    if (!input.userScrolled()) return
+    const el = input.scroller()
+    if (!el) return
+    if (el.scrollTop >= turnScrollThreshold) return
+    pageTowardHead()
+  }
+
+  /**
+   * An upward wheel or swipe that lands on the list's top. A list shorter than
+   * its viewport never scrolls, so this is how it reaches older turns: a reload
+   * paints only the latest turn, and the rest stays on the server.
+   */
+  const onScrollerPull = () => {
+    const el = input.scroller()
+    if (!el || el.scrollTop > 0) return
+    pageTowardHead()
   }
 
   const revealTurn = (id: string) => {
@@ -344,5 +358,6 @@ export function createSessionHistoryWindow(input: Input) {
     revealTurn,
     loadAndReveal,
     onScrollerScroll,
+    onScrollerPull,
   }
 }
