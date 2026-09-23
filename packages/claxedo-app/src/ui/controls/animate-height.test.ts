@@ -41,12 +41,15 @@ function stubBox() {
     const listeners: Array<() => void> = []
     const record = { from: keyframes[0].height, to: keyframes[1].height, cancelled: false, finish: () => listeners.forEach((fn) => fn()) }
     animations.push(record)
-    return {
+    const animation: Pick<Animation, "cancel" | "addEventListener"> = {
       cancel: () => {
         record.cancelled = true
       },
-      addEventListener: (_: string, listener: () => void) => listeners.push(listener),
-    } as unknown as Animation
+      addEventListener: (_: string, listener: EventListenerOrEventListenerObject | null) => {
+        if (typeof listener === "function") listeners.push(() => listener(new Event("finish")))
+      },
+    }
+    return animation
   }) as typeof box.animate
   return {
     box,

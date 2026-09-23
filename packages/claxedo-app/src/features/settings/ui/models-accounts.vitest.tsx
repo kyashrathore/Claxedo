@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vit
 import { createSignal, type JSX } from "solid-js"
 import { harnessBindingIds, HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import { readField, readStringArray } from "@/lib/record"
+import { queryClient } from "@/platform/query/query-client"
 
 type CatalogProject = {
   id: string
@@ -456,6 +457,9 @@ afterEach(() => {
   cleanup()
   for (const client of clients) client.clear()
   clients.clear()
+  // The machine read is held ten minutes on the app's own query client, which
+  // is not one of the clients above; each test starts with no held read.
+  queryClient.clear()
 })
 
 describe("Settings → Providers reads both credential stores for the workspace in view", () => {
