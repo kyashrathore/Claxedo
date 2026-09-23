@@ -2,7 +2,7 @@ import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { isRecord } from "@claxedo/helpers/guards"
 import { GATE_EXIT, type GatePayload } from "./launch-gate"
-import { readCreationIdentity } from "./identity"
+import { launchErrorText, readCreationIdentity, type CreationIdentity } from "./identity"
 
 type Activation =
   | { outcome: "activate"; payload: GatePayload }
@@ -21,7 +21,14 @@ export async function runLaunchGateChild(): Promise<never> {
 
   const activationDeadlineMs = Number(argument("--activation-deadline-ms") ?? "10000")
 
-  const identity = await readCreationIdentity(process.pid)
+  let identity: CreationIdentity | undefined
+  try {
+    identity = await readCreationIdentity(process.pid)
+  } catch (error) {
+    // The host reads this stream until the identity frame arrives, so the
+    // reason travels as one line rather than as an uncaught-exception dump.
+    process.stderr.write(`${launchErrorText(error)}\n`)
+  }
   if (!identity) process.exit(GATE_EXIT.identityUnavailable)
 
   // Minted here and delivered only over the private channel, so activation

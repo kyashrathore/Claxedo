@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import type { RecoveryBudgets, RecoveryErrorCode } from "@claxedo/agent-runtime-contract"
 import { isRecord } from "@claxedo/helpers/guards"
-import { launchErrorText, verifyCreationIdentity, type CreationIdentity } from "./identity"
+import { launchErrorText, verifyCreationIdentity, windowsSystemTool, type CreationIdentity } from "./identity"
 
 export type SignalRefusal =
   | "exited"
@@ -108,7 +108,7 @@ async function retireOwned(target: RetirementTarget, budgets: RetirementBudgets)
     // Closing the native handle is a hangup the program may act on, so the
     // group can empty during it. Signalling a group id nobody holds any more
     // is how an unrelated process gets killed.
-    if ((await descendantsAfterExit(identity)) === "owned") {
+    if (await stillOwned(identity)) {
       signals.push(await deliver(identity, "SIGKILL"))
       await awaitGroupEmpty(identity, budgets.killVerifyMs)
     }
@@ -143,10 +143,21 @@ async function leaderState(identity: CreationIdentity): Promise<RetirementResult
 async function awaitGroupEmpty(identity: CreationIdentity, budgetMs: number) {
   const deadline = Date.now() + budgetMs
   for (;;) {
-    if ((await descendantsAfterExit(identity)) !== "owned") return true
+    if (!(await stillOwned(identity))) return true
     if (Date.now() >= deadline) return false
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
+}
+
+/**
+ * Whether anything this launch owns is still running. Windows cannot enumerate
+ * a group, so the leader that `taskkill /T` answers for is what is watched;
+ * reading "unknown" as "empty" there would skip the KILL step and leave the
+ * leader alive.
+ */
+async function stillOwned(identity: CreationIdentity) {
+  if (process.platform === "win32") return (await leaderState(identity)) === "alive"
+  return (await descendantsAfterExit(identity)) === "owned"
 }
 
 function scopeOf(): SignalOutcome["scope"] {
@@ -176,17 +187,21 @@ async function deliver(identity: CreationIdentity, signal: NodeJS.Signals): Prom
 }
 
 /**
- * Unverified: no Windows machine was available to this change. Windows has no
- * signals and no process groups, so the containment on offer is whatever tree
- * `taskkill /T` resolves from the live process table at the moment it runs.
+ * Windows has no signals and no process groups, so the containment on offer is
+ * whatever tree `taskkill /T` resolves from the live process table at the
+ * moment it runs. Both steps terminate forcefully: without `/F`, taskkill only
+ * posts WM_CLOSE, which a console process such as every harness never
+ * receives, and Node's own `kill()` on this platform is TerminateProcess too.
+ * The second step exists for a tree the first resolved incompletely. A pid
+ * nobody holds exits 128.
  */
 function deliverWindowsTree(identity: CreationIdentity, signal: NodeJS.Signals): Promise<SignalOutcome> {
   return new Promise((resolve) => {
-    const killer = spawn("taskkill", ["/pid", String(identity.pid), "/T", ...(signal === "SIGKILL" ? ["/F"] : [])], { stdio: "ignore" })
+    const killer = spawn(windowsSystemTool("taskkill.exe"), ["/pid", String(identity.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true })
     killer.once("error", () => resolve({ signal, scope: "tree", delivered: false, refusal: "identity_unverifiable" }))
     killer.once("exit", (code) => resolve(code === 0
       ? { signal, scope: "tree", delivered: true }
-      : { signal, scope: "tree", delivered: false, refusal: "permission_denied" }))
+      : { signal, scope: "tree", delivered: false, refusal: code === 128 ? "exited" : "permission_denied" }))
   })
 }
 

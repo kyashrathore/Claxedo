@@ -1,16 +1,33 @@
 import { execFile } from "node:child_process"
 import { promises as fs } from "node:fs"
+import path from "node:path"
 import { promisify } from "node:util"
 import { isRecord } from "@claxedo/helpers/guards"
 
 const execFileAsync = promisify(execFile)
 
 /**
- * `ps`, `sysctl` and PowerShell are all reachable from a wedged machine, and a
- * probe that never returns makes every signal wait on it. A timed-out probe is
- * an unknown identity, which refuses to signal — never an assumed exit.
+ * `ps`, `sysctl`, procfs and `reg.exe` are all reachable from a wedged machine,
+ * and a probe that never returns makes every signal wait on it. A timed-out
+ * probe is an unknown identity, which refuses to signal — never an assumed exit.
  */
 const PROBE_TIMEOUT_MS = 2_000
+
+/**
+ * PowerShell answers in 250 ms on an 8-core box and took over 2 s to start on
+ * GitHub's 2-core windows-latest runner (unit run 35787260714), so its budget
+ * is its own.
+ */
+const POWERSHELL_PROBE_TIMEOUT_MS = 15_000
+
+/** Absolute, so the caller's `PATH` cannot decide which program reads or signals the process table. */
+export function windowsSystemTool(name: string) {
+  return path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", name)
+}
+
+function windowsPowerShell() {
+  return path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+}
 
 const CREATION_IDENTITY_SOURCES = ["darwin-ps", "linux-procfs", "win32-cim"] as const
 export type CreationIdentitySource = (typeof CREATION_IDENTITY_SOURCES)[number]
@@ -91,16 +108,20 @@ async function probeBootTime(): Promise<string> {
     if (btime === undefined) throw new Error("/proc/stat carries no btime line")
     return btime
   }
-  // Unverified: no Windows machine was available to this change. The CIM
-  // datetime is local-time with an offset suffix, which is stable within one
-  // boot and is compared only against itself.
-  const { stdout } = await execFileAsync("powershell", [
-    "-NoProfile", "-NonInteractive", "-Command",
-    "(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToString('o')",
+  // The kernel counts boots in this value; `reg.exe` reads it in 23 ms with no
+  // interpreter and no WMI service in the way, which is what makes it usable
+  // from the gate child of every launch.
+  const { stdout } = await execFileAsync(windowsSystemTool("reg.exe"), [
+    "query", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters", "/v", "BootId",
   ], { timeout: PROBE_TIMEOUT_MS })
-  const value = stdout.trim()
-  if (!value) throw new Error("Win32_OperatingSystem reported no LastBootUpTime")
-  return value
+  return windowsBootId(stdout)
+}
+
+/** The `BootId` value out of `reg query` output, as a decimal string. */
+export function windowsBootId(registryQuery: string): string {
+  const hex = /\bBootId\s+REG_DWORD\s+0x([0-9A-Fa-f]+)/.exec(registryQuery)?.[1]
+  if (hex === undefined) throw new Error(`PrefetchParameters carries no BootId: ${registryQuery.trim()}`)
+  return String(parseInt(hex, 16))
 }
 
 export async function readCreationIdentity(pid: number): Promise<CreationIdentity | undefined> {
@@ -165,18 +186,18 @@ async function readLinuxCreationIdentity(pid: number, boot: string): Promise<Cre
 }
 
 /**
- * Unverified: no Windows machine was available to this change. Windows has no
- * process groups, so `processGroupId` repeats the pid and the group-leader
- * check in `retirement.ts` is satisfied vacuously; containment there is the
- * `taskkill /T` tree, not a group signal.
+ * Windows has no process groups, so `processGroupId` repeats the pid and the
+ * group-leader check in `retirement.ts` is satisfied vacuously; containment
+ * there is the `taskkill /T` tree, not a group signal. `CreationDate` has 100 ns
+ * resolution, so `startSecond` alone already tells two holders of one pid apart.
  */
 async function readWindowsCreationIdentity(pid: number, boot: string): Promise<CreationIdentity | undefined> {
   let stdout: string
   try {
-    ;({ stdout } = await execFileAsync("powershell", [
-      "-NoProfile", "-NonInteractive", "-Command",
+    ;({ stdout } = await execFileAsync(windowsPowerShell(), [
+      "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
       `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { $p.CreationDate.ToString('o') + ' ' + $p.ParentProcessId }`,
-    ], { timeout: PROBE_TIMEOUT_MS }))
+    ], { timeout: POWERSHELL_PROBE_TIMEOUT_MS, windowsHide: true }))
   } catch (error) {
     throw new Error(`Could not read creation identity for pid ${pid}: ${launchErrorText(error)}`, { cause: error })
   }

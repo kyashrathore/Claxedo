@@ -2,7 +2,22 @@ import { describe, expect, spyOn, test } from "bun:test"
 import { promises as fs } from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { identityFromSpawn, isCreationIdentity, readCreationIdentity, verifyCreationIdentity, type CreationIdentity } from "./identity"
+import { identityFromSpawn, isCreationIdentity, readCreationIdentity, verifyCreationIdentity, windowsBootId, type CreationIdentity } from "./identity"
+
+describe("the Windows boot token", () => {
+  test("is the BootId value as reg.exe prints it, in decimal", () => {
+    expect(windowsBootId([
+      "",
+      "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters",
+      "    BootId    REG_DWORD    0x29b",
+      "",
+    ].join("\r\n"))).toBe("667")
+  })
+
+  test("a query that names no BootId is a failure, never an empty token", () => {
+    expect(() => windowsBootId("ERROR: The system was unable to find the specified registry key or value.")).toThrow("BootId")
+  })
+})
 
 const identity = (over: Record<string, unknown> = {}): unknown => ({
   pid: 4321,

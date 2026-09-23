@@ -156,6 +156,7 @@ function gateIdentity(frame: unknown, child: ChildProcess): CreationIdentity | u
 }
 
 function gatePhase(code: number | null) {
+  if (code === GATE_EXIT.identityUnavailable) return "its own creation identity"
   if (code === GATE_EXIT.activationDeadline) return "activation within its deadline"
   if (code === GATE_EXIT.channelLostBeforeActivation) return "activation: the private channel closed"
   if (code === GATE_EXIT.nonceMismatch) return "activation: the nonce did not match"
