@@ -36,7 +36,7 @@ export function overheadMs(relayed: readonly Sample[], direct: readonly Sample[]
 // report the same PASS/FAIL. p99 relay overhead under 100ms; zero relayed-WS
 // message loss.
 //
-// These are the RUNBOOK numbers and the default everywhere. The env overrides
+// These are the default everywhere. The env overrides
 // below exist for ONE case: a shared CI runner, whose scheduling jitter is not a
 // property of the relay. Overriding is a deliberate, commented act in the
 // workflow file — never a way to make a red local gate go green. Loss gates have

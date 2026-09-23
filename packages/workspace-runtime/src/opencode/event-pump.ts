@@ -5,8 +5,7 @@
  * Claxedo's hub, never on this stream — a UI tab disconnecting must not stop
  * the pump or another workspace's turn.
  *
- * Durability is not uniform, and this module's shape follows that fact
- * (docs/architecture/opencode-embedded-sdk-contract.md §5):
+ * Durability is not uniform, and this module's shape follows that fact:
  *
  *   - Every event carries `id`.
  *   - SOME events carry `durable: { aggregateID, seq }` — an ordered,

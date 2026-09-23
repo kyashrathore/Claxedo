@@ -1,12 +1,11 @@
 /**
  * The closed set of authenticated calls Electron main will make.
  *
- * This is the table `docs/tech-docs/desktop-hosted-operation-matrix.md`
- * describes, expressed as code. Every entry fixes a METHOD and a PATH in main.
- * The renderer supplies an operation NAME and parameters; it never supplies a
- * url, a method, or a header, because if it could, a renderer compromise would
- * be able to spend main's credential on any route the server exposes rather
- * than the ones written down here.
+ * Every entry fixes a METHOD and a PATH in main. The renderer supplies an
+ * operation NAME and parameters; it never supplies a url, a method, or a
+ * header, because if it could, a renderer compromise would be able to spend
+ * main's credential on any route the server exposes rather than the ones
+ * written down here.
  *
  * Parameters are substituted into the path by name and encoded. They cannot
  * introduce a new segment: `:id` is replaced by one `encodeURIComponent`d
@@ -20,8 +19,9 @@
  * and then the set of calls main can make is no longer the set written down
  * here. `hosted-operations.test.ts` holds that property.
  *
- * Adding an operation means adding a matrix row AND an entry here.
- * `hosted-operations.test.ts` holds the two equal.
+ * Adding an operation means adding it to the renderer's `HostedOperationName`,
+ * its decoder in the app's `HOSTED_OPERATIONS`, AND an entry here;
+ * `claxedo-app`'s `account-port.guard.test.ts` holds the three equal.
  */
 
 export type HostedOperation = {

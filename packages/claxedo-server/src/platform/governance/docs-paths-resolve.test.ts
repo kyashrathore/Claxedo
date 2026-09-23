@@ -1,12 +1,9 @@
 /**
  * Every path a README under `src/` names must exist.
  *
- * Docs that describe structure decay silently through exactly the kind of moves
- * this reorg made: nothing type-checks a README, so a file reference survives
- * long after its target has been renamed or deleted, and the next reader trusts
- * it. `authority/README.md` cited four modules that moved to `platform/auth/`,
- * and `src/README.md` pointed at `adapters/storage/`, a directory that has
- * never existed in this tree.
+ * Docs that describe structure decay silently: nothing type-checks a README,
+ * so a file reference survives long after its target has been renamed or
+ * deleted, and the next reader trusts it.
  *
  * Scope is deliberately narrow — backtick-quoted things that LOOK like paths in
  * this package. Prose, package names and URLs are not checked, because a guard

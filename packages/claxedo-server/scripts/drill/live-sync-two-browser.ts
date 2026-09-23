@@ -1,14 +1,14 @@
 /**
- * `live-sync-two-browser` — the W7.3 / W5.4 vision-verified two-browser
- * live-sync drill on the CF composition.
+ * `live-sync-two-browser` — a vision-verified two-browser live-sync drill on
+ * the CF composition.
  *
- * WHY THIS EXISTS: finding B3 of `docs/cf-reliability-scalability-review-2026-07-28.md`
- * is marked FIXED on the strength of unit tests alone, and the review says so
- * itself: *"recovered without user interaction" is asserted in tests, not yet
- * proven against a real pair of browsers.* Per the repo's standing rule that
- * green tests are claims rather than proof, this harness is the proof. Two real
- * Chromium browsers subscribe to one org's stream; one publishes; the other must
- * update with ZERO interaction.
+ * Live sync once dropped events two ways: publishers rang a room named in a
+ * different identity namespace than the one subscribers joined (problem 1),
+ * and the stream emitted no `id:` lines, so a reconnecting client had no
+ * cursor to resume from (problem 2). Unit tests assert both fixes; this drill
+ * proves them against real browsers. Two real Chromium browsers subscribe to
+ * one org's stream; one publishes; the other must update with ZERO
+ * interaction.
  *
  * ## What is real here
  *
@@ -21,7 +21,7 @@
  *   `routes/hosted/shell.ts`, mounted on a real Hono app at the real
  *   `/api/cp/events` path. This matters: the route, not the DO, is what resolves
  *   the authority-internal org id at connect and hands it to the room, which is
- *   exactly the namespace half of B3 (problem 1). Tests that call
+ *   exactly the namespace half (problem 1). Tests that call
  *   `connectLiveSyncRoom` directly skip it.
  * - **The real publishers' room derivation** — `liveSyncRoomNameForPrincipal`,
  *   the single derivation `hosted-core-app.ts` uses for the owner-scoped
@@ -230,7 +230,7 @@ async function bundleWorker() {
                       ts: Date.now(),
                     }
                 // The publisher-side derivation under test. Never a
-                // hand-composed \`org:\${orgId}\` — that is the B3 problem-1 bug.
+                // hand-composed \`org:\${orgId}\` — that is the problem-1 bug.
                 const roomName = kind === "session.share.changed"
                   ? liveSyncRoomNameForPrincipal({ ownerUserId: owner, orgId: org })
                   : liveSyncRoomNameForPrincipal({ orgId: org })
@@ -442,7 +442,7 @@ async function main() {
         ? `B received document.changed id=${liveFrame?.id}, room held ${live.last.held} / delivered ${live.last.delivered}; B's frame count ${bobBaseline} → ${bobFrames.length}, zero clicks`
         : "B never received the frame",
     )
-    // The `id:` line is the whole of B3 problem 2 — without it the cursor never
+    // The `id:` line is the whole of problem 2 — without it the cursor never
     // advances and there is nothing to resume from.
     const bobCursor = await bob.cursor()
     record(
@@ -547,7 +547,7 @@ async function main() {
       !leaked && controlAfter === controlBefore,
       leaked
         ? "LEAKED: a frame published to another org's room reached B — the drill's other assertions are meaningless"
-        : `B's document.changed count stayed ${controlBefore} for 10s; the wrong-room nudge reported held=${wrongRoom.last.held} delivered=${wrongRoom.last.delivered} (an empty room, i.e. the B3 problem-1 failure mode reproduced on demand)`,
+        : `B's document.changed count stayed ${controlBefore} for 10s; the wrong-room nudge reported held=${wrongRoom.last.held} delivered=${wrongRoom.last.delivered} (an empty room, i.e. the problem-1 failure mode reproduced on demand)`,
     )
     // The control must also demonstrate that this is the SAME publish path that
     // works when the room is right — otherwise it only proves the harness broke.

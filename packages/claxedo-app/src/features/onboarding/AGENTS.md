@@ -9,14 +9,6 @@ the steps report (`funnel`). The wizard draws the Models page's own account
 rows and provider sections and the workspaces feature's create form through
 `app-ports`; it owns no surface those pages do not.
 
-```json
-{
-  "owns": "First-run wizard (project → AI → where it runs), its draft, and the code-host, sandbox-provider, AI-connect and funnel data paths",
-  "writerOf": [],
-  "mustNotImport": ["@/app/*", "@/features/browser/*", "@/features/documents/*", "@/features/extensions/*", "@/features/processes/*", "@/features/review/*", "@/features/session/*", "@/features/settings/*", "@/features/terminal/*", "@/features/workspaces/*", "@/shell/*", "@/context/*", "@/components/*", "@/pages/*", "@/claxedo-ui/*", "@/pane/*", "@/shared/*"]
-}
-```
-
 ## Design rationale
 
 - **One reason to show, none to dismiss.** The wizard is the screen a server

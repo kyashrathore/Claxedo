@@ -7,12 +7,12 @@ import { HOSTED_OPERATIONS as mainOperations } from "../../../claxedo-desktop/sr
 /**
  * GUARD: the account boundary stays a closed, credential-free operation set.
  *
- * Four artefacts describe the same set of hosted operations — the renderer
- * port's `HostedOperationName` union, the app's decoder registry, Electron
- * main's route table, and the reviewed matrix document. Each can drift on its
- * own, and the port can quietly regain a request-shaped escape hatch
- * (`run(url, method, body)`) that turns the closed set into decoration. This
- * guard holds all four in agreement and refuses the escape hatches.
+ * Three artefacts describe the same set of hosted operations — the renderer
+ * port's `HostedOperationName` union, the app's decoder registry, and Electron
+ * main's route table. Each can drift on its own, and the port can quietly
+ * regain a request-shaped escape hatch (`run(url, method, body)`) that turns
+ * the closed set into decoration. This guard holds all three in agreement and
+ * refuses the escape hatches.
  *
  * The port is read syntactically rather than by spelling: comments, quote
  * style and layout are normalized away before the union and object members are
@@ -25,13 +25,6 @@ import { HOSTED_OPERATIONS as mainOperations } from "../../../claxedo-desktop/sr
  */
 
 const source = readFileSync(path.join(import.meta.dir, "../platform/account/account-port.ts"), "utf8")
-const matrix = readFileSync(
-  path.resolve(import.meta.dir, "../../../../docs/tech-docs/desktop-hosted-operation-matrix.md"),
-  "utf8",
-)
-const matrixNames = [
-  ...new Set([...matrix.matchAll(/^\| `([a-zA-Z][\w.]*\.[\w.]*)` \|/gm)].map((match) => match[1])),
-].toSorted()
 
 /** Strips comments and normalizes quotes so only syntax is left to read. */
 function normalize(text: string) {
@@ -129,13 +122,33 @@ function mutate(before: string, after: string) {
 }
 
 describe("the reviewed account boundary", () => {
-  test("the closed port, app decoders, main routes and reviewed matrix name the same operations", () => {
+  test("the closed port, app decoders and main routes name the same operations", () => {
     const result = inspectPort(source)
     expect(result.problems).toEqual([])
-    expect(matrixNames.length).toBeGreaterThan(0)
-    expect(result.operations).toEqual(matrixNames)
-    expect(Object.keys(appOperations).toSorted()).toEqual(matrixNames)
-    expect(Object.keys(mainOperations).toSorted()).toEqual(matrixNames)
+    expect(Object.keys(appOperations).toSorted()).toEqual(result.operations)
+    expect(Object.keys(mainOperations).toSorted()).toEqual(result.operations)
+  })
+
+  test("no operation reads or routes to an address of the machine a workspace runs on", () => {
+    // The connection mint answers `relayUrl` and a scoped Runtime Access Token
+    // (`hostTunnelConnectionInfo`). An operation that returned the serving
+    // machine's own address would make it a direct client target and bypass
+    // every relay authorization gate.
+    const tables = [
+      readFileSync(path.join(import.meta.dir, "../platform/account/hosted-operations.ts"), "utf8"),
+      readFileSync(path.join(import.meta.dir, "../../../claxedo-desktop/src/main/account/hosted-operations.ts"), "utf8"),
+    ].map(normalize)
+    const machineAddressSpellings = [
+      "directRuntimeUrl",
+      "runtimeUrl",
+      "hostUrl",
+      "machineUrl",
+      "laptopUrl",
+      "tunnelUrl",
+      "127.0.0.1",
+      "localhost",
+    ]
+    expect(machineAddressSpellings.filter((spelling) => tables.some((table) => table.includes(spelling)))).toEqual([])
   })
 
   test("app registry rows express decoding and retry safety only", () => {
@@ -154,10 +167,10 @@ describe("the reviewed account boundary", () => {
     },
   )
 
-  test("detects a new closed operation absent from the reviewed matrix", () => {
+  test("detects a new closed operation absent from the app registry", () => {
     const result = inspectPort(mutate('  | "account.mode"', '  | "account.mode"\n  | "hostedFetch.any"'))
     expect(result.problems).toEqual([])
-    expect(result.operations.filter((name) => !matrixNames.includes(name))).toEqual(["hostedFetch.any"])
+    expect(result.operations.filter((name) => !Object.hasOwn(appOperations, name))).toEqual(["hostedFetch.any"])
   })
 
   test("runs the credential guard on same-line port and identity additions", () => {

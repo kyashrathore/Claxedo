@@ -39,9 +39,8 @@ green output alone.
    terminal*, not from watching it boot. A "shell renders" assertion would have stayed
    green through the entire period. Coverage must sit on the first server-touching
    mutation (`POST /session`, terminal creation, a real send) — never on the shell having
-   rendered. See `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`, scenario
-   A1, which keeps exactly this kind of assertion but demotes it explicitly: "A1 is
-   explicitly demoted... It stays only because it fails earlier and more legibly than B1."
+   rendered. A boot assertion may stay only as a diagnostic that fails earlier and more
+   legibly than the first server-touching one, never as the proof.
 
 ## The Oracle
 
@@ -189,8 +188,7 @@ failure may appear only as the clause explaining why a guard exists.
    origin, a workspace on this machine opening no event stream at all). "On units it's working" was
    true and useless. A transport-dependent proof goes through `mock.emit()` (served by
    the real `**/api/wr/events` route) or a real Tier R/L lane; the direct-bus seam may
-   still be used for setup/scaffolding that is not itself the thing under test. See
-   `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`.
+   still be used for setup/scaffolding that is not itself the thing under test.
 
 ## Spec index
 

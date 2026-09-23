@@ -2,7 +2,11 @@
 
 Status: implemented with recorded gaps.
 
-Defined on 2026-09-20 against HEAD `e06522f6e6092f90c549815edb33b37264759b20` and implemented on `refactor/runtime-recovery`. What holds and what does not is in `docs/verification/runtime-recovery-implementation-2026-09-21.md`, which names four acceptance rows the packaged desktop flow has not answered, the platforms other than macOS that were never measured, and the providers that were driven only through fakes. Read a rule here as delivered only where that record says so.
+Defined on 2026-09-20 against HEAD `e06522f6e6092f90c549815edb33b37264759b20` and implemented on `refactor/runtime-recovery`. Read a rule here as delivered except where it depends on what has not been verified:
+
+- The packaged desktop acceptance flow has never run. Three scenarios are therefore unmet — an emergency stop with a blocked daemon and storage unavailable, a synchronous daemon event-loop stall, and healthy silent/background/approval work — and the packaged halves of a Stop during daemon drain, re-identifying an adopted daemon on macOS, and stale PID discovery after restart are unverified. The smoke that would answer them is `packages/claxedo-desktop/scripts/runtime-recovery-smoke.ts`.
+- Every harness test drives a fake; no real provider's cancellation (Codex, Claude, Pi, ACP, Cursor) was measured.
+- Process ownership was measured on macOS only; Linux and Windows are unqualified. On macOS a descendant that called `setsid` cannot be found again, so retirement reports `descendants: "unknown"` and the owner keeps the obligation.
 
 ## 1. Objective
 

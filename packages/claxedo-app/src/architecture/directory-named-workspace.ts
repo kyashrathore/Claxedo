@@ -1,9 +1,9 @@
 import { walkProdSources, walkTestSources, type SourceFile } from "./scanners"
 
 /**
- * Retired identifiers that named a directory path a "workspace(Id)" (see
- * VOCABULARY.md), now `activeDirectory`, `routeDirectory`,
- * `resolveActiveDirectory`, `shellRouteDirectory`. A `workspaceId`-named symbol
+ * Retired identifiers that named a directory path a "workspace(Id)", now
+ * `activeDirectory`, `routeDirectory`, `resolveActiveDirectory`,
+ * `shellRouteDirectory`. A `workspaceId`-named symbol
  * holding a directory is the conflation the `DirectoryRef` / `WorkspaceId`
  * brands exist to prevent, so these may not reappear as whole-word identifiers
  * in prod or test sources.

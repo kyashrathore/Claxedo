@@ -34,7 +34,7 @@ Use these packages when you want to:
 - host a team app on your own system, backed by local worktrees, containers, or
   cloud VMs
 - let authorized teammates reach a workspace on one of your machines through Relay
-- add MCP tools that orchestrate the runtime/server API stack
+- drive a running Claxedo from any MCP client through its `/api/claxedo/mcp` endpoint
 
 The practical shape is:
 
@@ -42,7 +42,6 @@ The practical shape is:
 your product
    |
    v
-@claxedo/mcp
 @claxedo/workspace-relay
 @claxedo/workspace-relay-protocol
 @claxedo/workspace-runtime
@@ -65,18 +64,18 @@ artifacts, and projection are product features, not public runtime-package APIs.
 | `@claxedo/agent-event-runtime` | Normalize raw harness events into a canonical `AgentRuntimeEvent` stream and project them into compatibility formats. |
 | `@claxedo/workspace-relay-protocol` | Use tunnel wire types and token verifier contracts without pulling in Hono or server code. |
 | `@claxedo/workspace-relay` | Run the relay process that connects browsers/gateways to workspace-runtime hosts. |
-| `@claxedo/mcp` | Expose Claxedo runtime tools to any MCP client. |
 
 ## Start Here
 
-- [See It All In Action](./see-it-all-in-action.md): how the packages compose
-  into a full coding-agent app.
 - [Workspace Runtime](./workspace-runtime.md): what the Workspace Host is,
   what it owns, how to run it, and how to embed it.
-- [Agent SDK Runtime](./agent-sdk-runtime.md): the `createAgentRuntime()`
-  facade, first-party stores, and supported harness factories.
-- [Agent Event Runtime](./agent-event-runtime.md): event normalization and
-  projections.
+- [Agent SDK Runtime](../packages/agent-sdk-runtime/README.md): the
+  `createAgentRuntime()` facade, first-party stores, and supported harness
+  factories.
+- [Agent Event Runtime](../packages/agent-event-runtime/README.md): event
+  normalization and projections.
+- [Machines, Workspaces and Sessions](./machines-and-sessions.md): working with
+  your own machines, cloud environments and the sessions that run on them.
 - [Using an ACP Agent](./using-agent-connections.md): add an external agent
   such as Cursor over ACP, choose when it runs, what a turn carries, what it
   cannot do, and what each error means.
@@ -95,5 +94,4 @@ artifacts, and projection are product features, not public runtime-package APIs.
   third-party identity provider or database plugs in — the injected ports, the
   conformance suites that prove an implementation, and the static entrypoint
   that selects it.
-- [MCP](./mcp.md): current MCP server tools and environment variables.
-- [Supported Surfaces](./supported-surfaces.md): source-grounded status table.
+- [MCP](./mcp.md): the `/api/claxedo/mcp` endpoint, its tools, and how to connect.

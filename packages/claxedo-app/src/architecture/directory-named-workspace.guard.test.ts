@@ -20,7 +20,7 @@ describe("directory-named-workspace guard", () => {
       (file) =>
         `${file}: reintroduces a retired conflation name -- a directory path must not be named ` +
         `workspaceId; use activeDirectory / routeDirectory / resolveActiveDirectory / shellRouteDirectory ` +
-        `(see src/VOCABULARY.md sense 1 and src/platform/identity/brand.ts)`,
+        `(see src/platform/identity/brand.ts)`,
     )
 
     expect(offenders).toEqual([])

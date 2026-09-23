@@ -5,9 +5,8 @@
  *
  * `account-port.ts` says the renderer names an operation rather than building a
  * request. This says what each name means to the renderer: what it takes, and
- * what comes back. Electron main holds the matching method-and-path table; the
- * two are held equal to
- * `docs/tech-docs/desktop-hosted-operation-matrix.md` from both sides.
+ * what comes back. Electron main holds the matching method-and-path table;
+ * `architecture/account-port.guard.test.ts` holds the two equal.
  *
  * Deliberately contains no transport. No bearer, no URL, no method, no fetch —
  * not because those are inconvenient here, but because a registry that could

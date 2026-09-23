@@ -30,9 +30,8 @@ resolveE2EAuthMode()
 //               committed assets.
 //   all       — no tag filter; includes the lanes CI cannot run. Local/nightly only.
 // The `@documents-*-canary` tags are sub-selectors inside `core`.
-// `@surface-desktop` / `@surface-web` are sub-selectors of the same kind, added for
-// `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`'s lane x scenario
-// matrix: every spec that drives the packaged Electron app carries `@surface-desktop`,
+// `@surface-desktop` / `@surface-web` are sub-selectors of the same kind: every spec
+// that drives the packaged Electron app carries `@surface-desktop`,
 // every spec that drives a browser surface carries `@surface-web`, so a spec can be
 // selected by WHICH SURFACE it exercises independent of which suite (core/live) or
 // which other sub-selector (`@tier-real`) it also carries.

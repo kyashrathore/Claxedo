@@ -21,7 +21,7 @@ This file defines product terms independently of their UI placement.
 ## Sessions and execution
 
 - **Session**: a durable conversation identified by a session ID and represented across query caches and feature state.
-- **SessionRef**: the canonical typed identity that combines a session ID with its host/backing information. It determines whether a session is local, central, or workspace-backed.
+- **SessionRef**: the canonical typed identity that combines a session ID with its host/backing information. It determines whether a session is local or workspace-backed.
 - **Harness**: the selected agent execution integration, such as OpenCode or an ACP-backed runner.
 - **Agent**: the behavioral profile selected within a harness.
 - **Model**: the provider/model selection used for a provider turn.

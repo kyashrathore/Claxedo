@@ -11,16 +11,8 @@ feature is present in a build.
   detail pane. `directory/data.ts` owns the sources and machine-installed reads
   that live beside the catalog; `directory/view.ts` holds the pure derivations
   (section membership, category chips, status lines, search) the surface and its
-  tests share; `directory/confirm.tsx` is the one confirm every destructive
-  action goes through.
+  tests share. Every destructive action confirms through `requestConfirm` from
+  `@/ui/dialogs/confirm`.
 - `install/` — the install sheet the Directory opens on `Add`.
 - `mcp/` — `catalog-dialog.tsx`, the MCP half of the same catalog in a dialog:
   the composer's `/mcp` surface, composed by `app/dialogs/select-mcp.tsx`.
-
-```json
-{
-  "owns": "Agent Plugins catalog transport, Directory surface, and install flow",
-  "writerOf": [],
-  "mustNotImport": ["@/features/browser/*", "@/features/extensions/*", "@/features/processes/*", "@/features/session/*", "@/features/terminal/*", "@/app/*"]
-}
-```

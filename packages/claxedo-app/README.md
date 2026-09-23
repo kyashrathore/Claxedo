@@ -165,11 +165,9 @@ orphan-module detector, and retired-vocabulary guard all live here. Run them wit
 - **`src/ARCHITECTURE.md`** — charter for every top-level directory in `src/`
   (what each owns and "where do I add X"), verified against the live tree.
 - **`src/VOCABULARY.md`** — the canonical noun list. Read this before naming
-  anything "workspace" — it has five distinct meanings in this codebase.
-- **`CONTRIBUTING.md`** — the tests-as-specs standard, test-location
-  conventions, and fork history.
-- **`src/ui/controls/README.md`** — the admission rule for reusable UI
-  primitives (`ui/`) vs feature-owned widgets.
+  anything "workspace", "directory" or "project".
+- **`CONTRIBUTING.md`** — development commands, where new code goes, and the
+  bun:test vs vitest runner convention.
 
 ## License
 

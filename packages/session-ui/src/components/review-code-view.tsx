@@ -29,6 +29,12 @@ import { createDefaultOptions, styleVariables } from "../pierre"
 import { getWorkerPool } from "../pierre/worker"
 import { createReviewCodeViewItems } from "./review-code-view-items"
 
+// CodeView never measures a collapsed file: its height IS `diffHeaderHeight`
+// (44 by default). The rendered header must match it exactly, or every
+// collapsed row reserves the difference and the sticky header stack floats
+// down by the sum, leaving an empty band above the list.
+const FILE_HEADER_HEIGHT = 30
+
 export type ReviewCodeViewDiff = {
   file: string
   additions?: number
@@ -348,6 +354,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
       // The engine's own 8px gap and document padding read as loose next to the
       // review list this replaces, whose rows sit 2px apart.
       layout: { paddingTop: 0, paddingBottom: 8, gap: 2 },
+      itemMetrics: { diffHeaderHeight: FILE_HEADER_HEIGHT },
       renderCustomItem: (item) => acquireCustomHost(item.id),
       // Keyed by the item id, never `fileDiff.name`: Pierre names a parsed
       // patch from its `+++` header, so a bare `--- a/x` / `+++ b/x` diff is
@@ -513,6 +520,7 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
             type="button"
             data-slot="accordion-trigger"
             class="ui-accordion-trigger"
+            style={{ height: `${FILE_HEADER_HEIGHT}px` }}
             data-testid={props.headerTestId?.(header.file)}
             data-hovered={headerActive(header.file) ? "" : undefined}
             aria-expanded={expanded(header.file) ? "true" : "false"}

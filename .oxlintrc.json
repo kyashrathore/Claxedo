@@ -166,9 +166,8 @@
       // The app-side nominal-brand mint, and nothing else — the same concession
       // as `branded-id.ts` above, in the package that must not depend on it.
       // These brands are a different vocabulary: `DirectoryRef` is a filesystem
-      // path and `WorkspaceId` is a control-plane id, the sense-1/sense-2 split
-      // `VOCABULARY.md` names and `architecture/directory-named-workspace.guard.test.ts`
-      // pins. Server-core's identically-named `WorkspaceId` is the control-plane
+      // path and `WorkspaceId` is a control-plane id, the split
+      // `architecture/directory-named-workspace.guard.test.ts` pins. Server-core's identically-named `WorkspaceId` is the control-plane
       // port's, and the dependency direction between the two packages runs the
       // other way, so merging them to save an override would be the trap a sweep
       // like this manufactures, not a consolidation.

@@ -150,11 +150,6 @@ export const SettingsGeneral: Component = () => {
       label: language.label(locale),
     })),
   )
-  const followupOptions = createMemo((): { value: "queue" | "steer"; label: string }[] => [
-    { value: "queue", label: language.t("settings.general.row.followup.option.queue") },
-    { value: "steer", label: language.t("settings.general.row.followup.option.steer") },
-  ])
-
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
     { value: "system", label: language.t("theme.scheme.system") },
@@ -261,29 +256,6 @@ export const SettingsGeneral: Component = () => {
                   {language.t("settings.general.row.editToolPartsExpanded.title")}
                 </Switch>
               </div>
-            </SettingsRow>
-
-            <SettingsRow
-              title={language.t("settings.general.row.followup.title")}
-              description={language.t("settings.general.row.followup.description")}
-            >
-              <Select
-                data-action="settings-followup"
-                placeholder={language.t("settings.general.row.followup.title")}
-                options={followupOptions()}
-                current={followupOptions().find((o) => o.value === settings.general.followup())}
-                value={(o) => o.value}
-                label={(o) => o.label}
-                onSelect={(option) => {
-                  if (!option) return
-                  phCapture("setting_changed", { ...identityProps(), surface: "settings", setting: "followup", value: option.value })
-                  settings.general.setFollowup(option.value)
-                }}
-                variant="secondary"
-                size="small"
-                triggerVariant="settings"
-                triggerStyle={{ "min-width": "180px" }}
-              />
             </SettingsRow>
           </SettingsList>
         </div>

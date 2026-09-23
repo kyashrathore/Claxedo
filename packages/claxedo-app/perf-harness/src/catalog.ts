@@ -28,7 +28,7 @@ export const PERFORMANCE_CATALOG: CatalogEntry[] = [
   { id: "app/recorder", owner: "claxedo-app", kind: "regression", entrypoint: "bun test --conditions=browser --preload ./happydom.ts src/platform/performance/session-perf.test.ts", purpose: "Bounded recorder storage, User Timing cleanup and recorder isolation" },
   { id: "app/diagnostics", owner: "claxedo-app", kind: "regression", entrypoint: "bun run test:diagnostics-release", purpose: "Diagnostics UI, data and transport contracts" },
   { id: "runtime/store", owner: "workspace-runtime", kind: "regression", entrypoint: "bun run test:performance", purpose: "RuntimeStore cold/hot persistence cost" },
-  { id: "relay/load", owner: "workspace-relay", kind: "measurement", entrypoint: "bench/RUNBOOK.md", purpose: "Relay throughput and tail latency; local, multi-tunnel and deployed targets" },
+  { id: "relay/load", owner: "workspace-relay", kind: "measurement", entrypoint: "bun run bench:gate", purpose: "Relay throughput and tail latency; local, multi-tunnel and deployed targets" },
   { id: "server/live-sync", owner: "claxedo-server", kind: "measurement", entrypoint: "scripts/bench/live-sync-capacity.ts", purpose: "Live sync capacity across scoped clients" },
 ]
 

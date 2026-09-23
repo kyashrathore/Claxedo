@@ -550,24 +550,6 @@ Claxedo deployments translate any product-specific environment outside this
 package before launching the runtime. Runtime library APIs and examples use the
 neutral `WORKSPACE_RUNTIME_*` names.
 
-## Runtime-only example
-
-The runnable example lives in the repo-root [`claxedo-cookbook`](../../claxedo-cookbook),
-not inside this package. Recipe 05 boots a loopback Workspace Host
-(`createWorkspaceRuntimeApp`) over a sandboxed temp directory and tours the
-file, git/diff, managed-process, and event-stream route families over plain
-`fetch` — no `claxedo-app`, `claxedo-server`, identity provider, agent CLI, or
-control plane involved:
-
-```sh
-cd claxedo-cookbook
-bun install
-bun run recipe:05-workspace-host
-```
-
-See [`claxedo-cookbook/README.md`](../../claxedo-cookbook/README.md) for the
-full recipe ladder and what each recipe needs.
-
 ## Boundary rule
 
 `grep -rn "claxedo-app" packages/workspace-runtime/src` must return

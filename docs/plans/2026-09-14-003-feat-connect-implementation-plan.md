@@ -1,10 +1,8 @@
-> Status note (2026-09-20): P1–P3 landed on dev `8bdd4bdbff` and stand. P7 (desktop beats as a machine; provenance-scoped authorization on the daemon) is superseded by slices 1 and 2 of `docs/plans/2026-09-19-001-refactor-host-is-a-machine.md`, the provider-configuration gap by its slice 6, and the `user-hosted` workspace kind this plan assumes by its §2; P4–P6 are unchanged by that plan. The rest is the record of what was planned.
+> Status note (2026-09-20): P1–P3 landed on dev `8bdd4bdbff` and stand. P7 (desktop beats as a machine; provenance-scoped authorization on the daemon) is superseded by the host-is-a-machine refactor (`docs/tech-docs/workspaces-on-a-host.md` describes the result), which also closed the provider-configuration gap and replaced the `user-hosted` workspace kind this plan assumes; P4–P6 are unchanged by it. The rest is the record of what was planned.
 
 # Remote machine connection: implementation plan
 
-Status: P1–P3 implemented on branch `feat/connect` (2026-09-14–15), reviewed twice (Fable + Codex) with every finding fixed, live-proven on the fixture (12/12 + 1 fixme) and on real EC2; P4–P6 not started. Revision 4. Builds on the investigation
-(`2026-09-14-001-feat-connect-enrollment-foundation-proposal.md`) and the
-component map (`2026-09-14-002-feat-connect-components-and-flows.md`). Nothing
+Status: P1–P3 implemented on branch `feat/connect` (2026-09-14–15), reviewed twice (Fable + Codex) with every finding fixed, live-proven on the fixture (12/12 + 1 fixme) and on real EC2; P4–P6 not started. Revision 4. Nothing
 here is authorized until the product questions in §0 are answered.
 
 ## 0. Decisions this plan assumes (answer before phase 1)
@@ -603,7 +601,7 @@ by it as is; Lane H builds these fixture capabilities as named deliverables:
 - [x] P3.5 items 1–11 green with commands and output recorded (item 11 = service-managed lifecycle; item 8 has partial and full resolver-outage variants). Progress: third pass 2026-09-15 — 12 passed, 1 skipped (5b), done 2026-09-14 — `bun run test:e2e:connect-host`: 10 passed, 1 skipped (`5b` fixme: no provider credential delivery to a connect runtime — out of slice), 4.2–5.5 min, 5 consecutive green runs (c9f41e1e62, then through the self-hosted node's own routes after c6648f2483)
 - [x] `claxedo host invite/list/assign/unassign/scope/revoke` implemented against the account routes and used by the fixture. Progress: done 2026-09-14 — `cli/src/commands/host.ts`; the fixture drives owner actions through these commands, not DB writes
 - [x] Manual proof on one real VPS: `--token-file` from cloud-init, systemd unit, reboot resumes, `status` truthful, no `credentials.json` on the box. Progress: done 2026-09-14 on EC2 ap-south-1 — real self-hosted Node control plane + real Bun relay on one t3.medium, host on a second with no ingress except SSH from the operator; cloud-init token file → enrolled, `~/.claxedo` held only `connect/state.json`; assign → served in 6.4 s; file read through the relay 258 ms; `sudo reboot` → same enrollment, generation 1→2, served 9 s after kernel up; revoke → 403 → exit 78, `NRestarts=0`; both instances terminated and confirmed. Deterministic twin: `packages/cli/src/connect/machine-lifecycle.test.ts` (fake systemd parsing the real unit, cloud-init provisioner, reboot, revoke-no-restart, crash restart, linger-off refusal) and Tier R item 11 (real CLI installed as a service on the fixture box)
-- [x] `up/down/host` removed; CLI tests green; README updated. Progress: done 2026-09-14 — `up/down/host/register/runtime/state` deleted; no stub (036e65cc12); no CLI README exists; `docs/tech-docs/user-hosted-workspaces.md` updated
+- [x] `up/down/host` removed; CLI tests green; README updated. Progress: done 2026-09-14 — `up/down/host/register/runtime/state` deleted; no stub (036e65cc12); no CLI README exists
 
 ---
 
@@ -775,8 +773,8 @@ Definition of done:
 
 ## Open gap carried out of the first slice: provider configuration on a connect host
 
-CLOSED by slice 6 of `2026-09-19-001-refactor-host-is-a-machine.md`, and not
-the way this section guessed: the host composes its own runtime, so it applies
+CLOSED by the host-is-a-machine refactor, and not the way this section
+guessed: the host composes its own runtime, so it applies
 `createClaxedoAppliedRuntimeConfig` in process and `POST /api/wr/config` is not
 on the path at all. The owner pushes with
 `POST /api/claxedo/host/enrollments/:id/provider-config`; the control plane

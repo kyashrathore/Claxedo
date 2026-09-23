@@ -74,10 +74,11 @@ describe("Windows CI contract", () => {
     expect(prepare).toContain('throw "Windows process-tree native dependency was not installed"')
   })
 
-  // The embedded-OpenCode step is where the Windows leg died for three weeks
-  // (docs/verification/windows-unit-opencode-node-2026-09-22.md). The crabbox
-  // lane is the only way to reproduce it, and it can only do that while it
-  // runs the same command in the same position the workflow does.
+  // On the Windows runner %TEMP% is 8.3-spelled (`RUNNER~1`), and libuv's
+  // fs-event watcher asserts in `uv__relative_path` on the first change under a
+  // watched short-form directory, aborting the embedded-OpenCode step. The
+  // crabbox lane is the only way to reproduce it, and it can only do that while
+  // it runs the same command in the same position the workflow does.
   test("the crabbox unit lane replays the workflow's embedded-OpenCode step", () => {
     const step = "bun run --cwd packages/workspace-runtime test:opencode-node"
     expect(workflow).toContain(step)

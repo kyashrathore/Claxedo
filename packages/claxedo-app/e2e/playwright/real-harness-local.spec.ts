@@ -709,6 +709,11 @@ async function runCursorHarnessBoundary(page: Page) {
 const CURSOR_SDK_GOAL_UNAVAILABLE =
   "Cursor SDK requires an explicit cursor API key. Cursor ACP can use the local Cursor login."
 
+const PI_SCRIPTED_MODEL_UNREACHABLE =
+  "The scripted model cannot reach Pi: the harness rewrites the Pi profile's models.json from the credential broker, " +
+  "which sends the openai key to https://api.openai.com. Unblocked by a first-class custom OpenAI-compatible provider " +
+  "for Pi (custom-provider.ts), bound by the broker to its declared base URL, with the scripted server declared as one."
+
 async function runCursorGoalUnavailableJourney(page: Page, entry: GoalEntry) {
   scripted?.resetCounts()
   const dir = await makeWorkspace(`cursor-goal-unavailable-${entry}`, "cursor")
@@ -963,7 +968,7 @@ test.describe("real harness journeys @core @tier-real", () => {
   })
 
   test("pi-workspace harness completes exact turns, reload, and visible usage", async ({ page }) => {
-    test.fixme(true, "Pi first send fails because the newly created native session file is missing")
+    test.fixme(true, PI_SCRIPTED_MODEL_UNREACHABLE)
     const dir = await makeWorkspace("pi-workspace")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, { id: "pi-workspace", dialect: "responses" })
@@ -1215,7 +1220,7 @@ test.describe("real harness journeys @core @tier-real", () => {
   })
 
   test("local new-worktree session receives its first reply", async ({ page }) => {
-    test.fixme(true, "The scripted Pi double cannot reach Pi in a local workspace; e2e/e2e-decisions.md #81")
+    test.fixme(true, PI_SCRIPTED_MODEL_UNREACHABLE)
     scripted?.resetCounts()
     const dir = await makeWorkspace("new-local-worktree")
     await seedOneProject(page, dir)

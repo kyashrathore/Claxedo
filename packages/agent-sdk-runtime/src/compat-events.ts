@@ -271,6 +271,15 @@ export function messageUpdated(info: EventMessageUpdated["properties"]["info"]):
  * fall back on — a file part recorded as a serialized string once, which
  * nothing on the client read back and every history read then carried.
  */
+/** A submitted prompt as it enters the transcript: its user message, then its parts. */
+export function userPromptEvents(input: Parameters<typeof buildUserMessage>[0] & { parts: PromptInput["parts"] }): CompatEvent[] {
+  const { parts, ...message } = input
+  return [
+    messageUpdated(buildUserMessage(message)),
+    ...buildUserPromptParts(input.sessionID, input.id, parts).map(messagePartUpdated),
+  ]
+}
+
 export function buildUserPromptParts(sessionID: string, messageID: string, parts: PromptInput["parts"]): CompatPart[] {
   return parts.map((part, index): CompatPart => ({
     ...part,

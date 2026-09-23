@@ -19,7 +19,7 @@
   // `typecheck` covers `src` only), so it has drifted. `setup-separate.ts` is
   // the one file that does not compile — 12 errors, all implicit-`any` and
   // Daytona SDK signature drift in a densely-written cloud PROVISIONING script
-  // that needs `DAYTONA_API_KEY` and is only ever run by hand from the RUNBOOK.
+  // that needs `DAYTONA_API_KEY` and is only ever run by hand.
   //
   // Excluded rather than fixed, deliberately: the point of this ticket is to get
   // the credential-free CI gate typechecked and enforced, and rewriting an

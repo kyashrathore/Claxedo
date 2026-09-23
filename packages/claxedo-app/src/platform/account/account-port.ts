@@ -13,8 +13,10 @@
  * ones no product surface uses. The whole value of this port is that the set of
  * things it can be asked to do is CLOSED and reviewable.
  *
- * `docs/tech-docs/desktop-hosted-operation-matrix.md` is that set, and
- * `architecture/hosted-operation-inventory.test.ts` holds the two in step.
+ * `HostedOperationName` is that set. `architecture/account-port.guard.test.ts`
+ * holds it equal to the app registry and Electron main's route table, and
+ * `architecture/hosted-operation-inventory.test.ts` requires every module that
+ * reaches authenticated transport to be declared.
  *
  * The browser binds this port to its own session; Electron binds it to IPC.
  * Neither implementation hands a token, a cookie, a URL, or a method back to

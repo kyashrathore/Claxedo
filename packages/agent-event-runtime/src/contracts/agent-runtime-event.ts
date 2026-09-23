@@ -103,6 +103,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "tool-error"; toolCallId: string; error: string; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "file-diff"; toolCallId?: string; path: string; oldText?: string; newText: string }
   | { type: "step-start"; newMessageId: string }
+  /** The provider took this submitted message into its conversation; `messageId` is the id Claxedo submitted it under. */
+  | { type: "input-incorporated"; messageId: string }
   | { type: "permission-request"; requestId: string; tool: string; paths: string[]; details?: { command?: string; reason?: string }; options?: { id: string; label: string; description?: string }[] }
   | { type: "question"; requestId: string; questions: RuntimeQuestion[] }
   | { type: "question-answered"; requestId: string; answers: Record<string, string | string[]> }
@@ -170,6 +172,7 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "tool-error": true,
   "file-diff": true,
   "step-start": true,
+  "input-incorporated": true,
   "permission-request": true,
   question: true,
   "question-answered": true,
@@ -224,6 +227,7 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   toolError: "tool-error",
   fileDiff: "file-diff",
   stepStart: "step-start",
+  inputIncorporated: "input-incorporated",
   permissionRequest: "permission-request",
   question: "question",
   questionAnswered: "question-answered",
@@ -285,6 +289,7 @@ export const agentRuntimeEvent = {
   toolError: (input) => ({ type: "tool-error", ...input }),
   fileDiff: (input) => ({ type: "file-diff", ...input }),
   stepStart: (input) => ({ type: "step-start", ...input }),
+  inputIncorporated: (input) => ({ type: "input-incorporated", ...input }),
   permissionRequest: (input) => ({ type: "permission-request", ...input }),
   question: (input) => ({ type: "question", ...input }),
   questionAnswered: (input) => ({ type: "question-answered", ...input }),

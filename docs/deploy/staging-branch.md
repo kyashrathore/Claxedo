@@ -25,9 +25,8 @@ with `linux-unit-only`: the whole unit suite on Linux, no Windows leg and no
 e2e. Every e2e job now reaches real Playwright results and every one of them
 has failing tests (run 35737110865 on 2026-09-22: 12 core shards, both
 onboarding legs and tier-real), and the Windows leg is still red in package
-suites after its embedded OpenCode verification step (fixed 2026-09-22, see
-[the Windows unit record](../verification/windows-unit-opencode-node-2026-09-22.md)),
-so a gate that required them would never open. They still run on every push to
+suites after its embedded OpenCode verification step (fixed 2026-09-22), so a
+gate that required them would never open. They still run on every push to
 `dev` through `test.yml` itself; once they are green, drop the input here and
 in `deploy-staging.yml`. `staging` is deliberately absent
 from `test.yml`'s `push.branches`: a push trigger would run the same suite a

@@ -1,9 +1,8 @@
 # Onboarding v2: project → AI → where it runs
 
 Status: built on `feat/onboarding-v2` (2026-09-23), gates green, proofs
-recorded below; awaiting merge to `dev`. Supersedes and deletes
-`2026-09-14-002-feat-onboarding-v1-repair.md`: v1 is not repaired, it is
-removed, with no flag and no compatibility path for its dismissal keys.
+recorded below; awaiting merge to `dev`. v1 is not repaired, it is removed,
+with no flag and no compatibility path for its dismissal keys.
 Owner ruling 2026-09-23: v1 goes with no backward compatibility; v2 is the
 only first run, on by default in every build, no flag.
 
@@ -496,20 +495,16 @@ host passes the same inputs it does today.
       was driven against the real local stack in both colour schemes through
       the browser pane rather than a Playwright spec (the folder picker's
       dialog excepted).
-- [x] `docs/plans/2026-09-14-002-feat-onboarding-v1-repair.md` is deleted and
-      the README entry points here.
-      Progress: already true before Lane D (deleted in `e28b0b595b`; the README
-      carries only this plan's entry).
 
 ## Recorded gaps (evidence, owner, follow-up)
 
 - **Invitation minting from the app.** Blocked by
-  `architecture/hosted-operation-inventory.test.ts` (NON_ACCOUNT_ROUTES +
-  the "never promoted into an AccountPort row" assertion). Owner: the
-  desktop hosted-operation matrix. Follow-up: an owner ruling to add
-  `host.invitations.create/list` to `desktop-hosted-operation-matrix.md`,
-  `claxedo-desktop/src/main/account/hosted-operations.ts` and the app
-  registry in one commit, moving the two routes out of NON_ACCOUNT_ROUTES.
+  `claxedo-desktop/src/main/account/hosted-operations.test.ts`, which refuses
+  any account operation that reaches `/host/invitations`. Owner: the desktop
+  hosted-operation set. Follow-up: an owner ruling to add
+  `host.invitations.create/list` to the port's `HostedOperationName`, the app
+  registry and `claxedo-desktop/src/main/account/hosted-operations.ts` in one
+  commit, dropping `/host/invitations` from that test's refusals.
   Until then the wizard shows the CLI pair.
 - **Hosted AI verification.** The plane has no `/credentials/:id/verify`;
   the wizard's "done" is the catalog's `connected` set after the PUT, not a

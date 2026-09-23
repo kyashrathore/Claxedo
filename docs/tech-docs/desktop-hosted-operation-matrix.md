@@ -1,13 +1,12 @@
 # Desktop hosted-operation matrix
 
-Status: **reviewed baseline**. Enforced by
-`packages/claxedo-app/src/architecture/hosted-operation-inventory.test.ts`
-(owners, non-account routes, no laptop target) and
-`packages/claxedo-desktop/src/main/account/hosted-operations.test.ts`, which
-holds every entry of `HOSTED_OPERATIONS` in
-`packages/claxedo-desktop/src/main/account/hosted-operations.ts` equal to a
-row here by name, method and path. The table in that file is the authority
-for the rows; this document is what a reviewer reads.
+Status: **reviewed baseline**. The operation set lives in code:
+`HostedOperationName` in `packages/claxedo-app/src/platform/account/account-port.ts`,
+the app's `HOSTED_OPERATIONS` decoder registry beside it, and Electron main's
+method-and-path table in
+`packages/claxedo-desktop/src/main/account/hosted-operations.ts`. Tests hold
+those three equal; nothing reads this document. It records why the set is
+closed and what each row is for, and drifts unless it is updated with them.
 
 ## Why this document exists
 
@@ -72,8 +71,7 @@ Also excluded from AccountPort (intentional non-rows):
   `document.changed` doorbell on `controlPlane.events`.
 - **Machine-signed and invitation routes** — a `claxedo connect` host has no
   account on the box, so nothing below is an AccountPort operation. Listed here
-  so the closed set stays complete; `hosted-operation-inventory.test.ts`
-  requires every one of these paths to be recorded in this section.
+  so the closed set stays complete.
 
   | Method + path | Caller | Auth | Budget | Notes |
   |---|---|---|---|---|
@@ -148,10 +146,10 @@ is the authoritative source for this column.
 | `workspace.list.machine` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?host=machine` | unary | safe | Workspaces placed on an enrolled machine: the hosted handler filters the authority's rows to `backing: local-worktree`. A caller wanting the whole picture runs both operations and merges, which is what `controlPlaneCatalog` already does. |
 | `workspace.resolve` | `platform/runtime/workspace-runtime-record.ts` | `GET /api/workspace/resolve` | unary | safe | Optional query: `workspaceId`, `directory`. Desktop signed mode calls through AccountPort. |
 | `workspace.create` | `features/workspaces/data/workspace-create-api.ts`, `platform/runtime/agent/workspace-create-authority.ts` (bound in `app/composition/workspace-connection-authority-sync.tsx`) | `POST /api/workspace/create` | unary | unsafe | Provisions a cloud VM. Without a key, an uncertain response creates a second VM — and there is no key to replay. `createCloudBody` in `claxedo-server/src/routes/hosted/workspace.ts` is `.strict()` with no idempotency field, so a key sent from a client 400s the whole request. Classified `unsafe` until the route accepts one; an uncertain response must be surfaced, never retried. TWO owners today, which is the open question on this row: the create authority (composer + cloud-project dialog) reaches AccountPort only, and `workspace-create-api.ts` (project actions) prefers AccountPort and falls back to HTTP so it also serves unsigned and browser callers. Either way the connected-repository source travels as the declared `repoFullName` scalar and main re-nests it into `repo: { fullName }`. |
-| `workspace.lifecycle` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | unsafe | Stop/replace/cleanup/destroy. The route reads only `approved` and `checkpointId` and accepts no key. `stop`, `cleanup` and `destroy` converge on a state and tolerate a retry; `replace` provisions, so it does not — classified by its worst member. Every operation but `stop` refuses with 409 unless `approved: true` is in the body. |
-| `workspace.checkpoints.list` | `features/workspaces/actions/project-actions.tsx` | `GET /api/workspace/:id/checkpoints` | unary | safe | |
-| `workspace.checkpoints.create` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/checkpoints` | unary | unsafe | Creates a checkpoint snapshot. |
-| `workspace.checkpoints.restore` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/checkpoints/:checkpointId/restore` | unary | unsafe | Destructive to working state. |
+| `workspace.lifecycle` | `features/workspaces/ui/panel/workspace-panel.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | unsafe | Stop/replace/cleanup/destroy. The route reads only `approved` and `checkpointId` and accepts no key. `stop`, `cleanup` and `destroy` converge on a state and tolerate a retry; `replace` provisions, so it does not — classified by its worst member. Every operation but `stop` refuses with 409 unless `approved: true` is in the body. |
+| `workspace.checkpoints.list` | `features/workspaces/ui/panel/workspace-panel.tsx` | `GET /api/workspace/:id/checkpoints` | unary | safe | |
+| `workspace.checkpoints.create` | `features/workspaces/ui/panel/workspace-panel.tsx` | `POST /api/workspace/:id/checkpoints` | unary | unsafe | Creates a checkpoint snapshot. |
+| `workspace.checkpoints.restore` | `features/workspaces/ui/panel/workspace-panel.tsx` | `POST /api/workspace/:id/checkpoints/:checkpointId/restore` | unary | unsafe | Destructive to working state. |
 | `workspace.connection.mint` | `platform/runtime/agent/workspace-relay-connection.ts` | `POST /api/workspace/:id/connection` | unary | safe | Mints the connection and may start compute; the GET on the same path is the read-only status form. Returns `relayUrl` plus a scoped Runtime Access Token, and no laptop address. Desktop signed mode calls through AccountPort (`id` path param). |
 | `workspace.connection.refresh` | `platform/runtime/agent/workspace-relay-connection.ts` | `POST /api/workspace/:id/connection/refresh` | unary | safe | Called before expiry and after a Relay 401. Desktop signed mode calls through AccountPort (`id` + optional `previousJti`). |
 
@@ -318,18 +316,20 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
 
 ## Enforcement
 
-`hosted-operation-inventory.test.ts` asserts:
+- `packages/claxedo-app/src/architecture/account-port.guard.test.ts` holds the
+  port union, the app registry and Electron main's table to the same names,
+  refuses request-shaped escape hatches on the port, and refuses any
+  machine-address spelling in either table.
+- `packages/claxedo-app/src/architecture/hosted-operation-inventory.test.ts`
+  requires every module in `features/documents`, `platform/runtime/cloud`,
+  `features/workspaces`, `features/settings`, `features/onboarding` and
+  `app/routes` that reaches authenticated transport to be declared, either as
+  the owner of the hosted operations it names or with the reason its calls are
+  not account operations.
+- `packages/claxedo-desktop/src/main/account/hosted-operations.test.ts` refuses
+  a generic proxy, a caller-selected query, a parameter that adds a path
+  segment, and any entry that reaches a machine-signed, invitation or
+  relay-fence route.
 
-1. Every module in `features/documents`,
-   `platform/runtime/cloud`, and the hosted subsets of `features/workspaces`,
-   `features/settings`, `features/onboarding`, and `app/routes` that reaches
-   authenticated transport is named as an owner in this file.
-2. Every owner named here still exists and still reaches authenticated
-   transport, so retired rows do not accumulate.
-3. Every path in this file is a route the hosted app actually mounts, or is
-   explicitly recorded as local-only.
-4. No row promises a runtime target on the machine itself: a machine-placed
-   workspace is reached at the relay, under the Runtime Access Token.
-5. Every machine-signed, invitation and relay-fence route is recorded in the
-   "not an account operation" section, and none of them appears as an
-   AccountPort row.
+No test checks that each path in main's table is a route the hosted app
+mounts.

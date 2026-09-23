@@ -11,11 +11,3 @@ An open owns its uniquely named User Timing entries; eviction and `clear()` must
 release them without clearing other recorders' entries. Callers own session
 starts; recording a phase must not synthesize a missing start. Runtime requests
 use the recorder's span API so the console request filter reads the same records.
-
-```json
-{
-  "owns": "renderer-phase measurement wrappers and bounded session diagnostics",
-  "writerOf": [],
-  "mustNotImport": ["solid-js", "@tanstack/*", "@opencode-ai/sdk*", "@/components/*", "@/features/*", "@/app/*"]
-}
-```

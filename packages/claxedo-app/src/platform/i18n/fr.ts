@@ -480,11 +480,6 @@ export const dict = {
     "Exposez un tampon de lecteur d'écran accessible dans les nouveaux terminaux",
   "settings.general.row.uiFont.title": "Police de l'interface",
   "settings.general.row.uiFont.description": "Personnaliser la police utilisée dans toute l'interface",
-  "settings.general.row.followup.title": "Comportement de suivi",
-  "settings.general.row.followup.description":
-    "Choisissez si les messages de suivi dirigent immédiatement ou attendent dans une file d'attente",
-  "settings.general.row.followup.option.queue": "File d'attente",
-  "settings.general.row.followup.option.steer": "Diriger",
   "settings.general.row.reasoningSummaries.title": "Afficher les résumés de raisonnement",
   "settings.general.row.reasoningSummaries.description":
     "Afficher les résumés de raisonnement du modèle dans la chronologie",

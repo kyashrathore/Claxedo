@@ -34,3 +34,12 @@ describe("settings sound migration", () => {
     expect(migrateSettings(value)).toEqual(value)
   })
 })
+
+describe("settings follow-up migration", () => {
+  test("drops a stored follow-up choice and keeps the rest of general", () => {
+    expect(migrateSettings({ general: { autoSave: false, followup: "queue" }, keybinds: {} })).toEqual({
+      general: { autoSave: false },
+      keybinds: {},
+    })
+  })
+})

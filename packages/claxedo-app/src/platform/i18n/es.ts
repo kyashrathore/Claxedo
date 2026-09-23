@@ -541,11 +541,6 @@ export const dict = {
     "Expón un búfer accesible de lector de pantalla en las terminales nuevas",
   "settings.general.row.uiFont.title": "Fuente de la interfaz",
   "settings.general.row.uiFont.description": "Personaliza la fuente usada en toda la interfaz",
-  "settings.general.row.followup.title": "Comportamiento de seguimiento",
-  "settings.general.row.followup.description":
-    "Elige si los prompts de seguimiento se dirigen inmediatamente o esperan en una cola",
-  "settings.general.row.followup.option.queue": "Cola",
-  "settings.general.row.followup.option.steer": "Dirigir",
   "settings.general.row.reasoningSummaries.title": "Mostrar resúmenes de razonamiento",
   "settings.general.row.reasoningSummaries.description":
     "Mostrar resúmenes del razonamiento del modelo en la línea de tiempo",

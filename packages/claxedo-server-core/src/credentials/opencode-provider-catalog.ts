@@ -1,8 +1,7 @@
 /**
  * The OpenCode provider/model catalog, owned by Claxedo rather than read from
  * the engine: `provider.list` returns 500 on an embedded host, whose default
- * workspace driver is `registryNode({})`, an empty provider registry
- * (`docs/architecture/opencode-embedded-sdk-contract.md`).
+ * workspace driver is `registryNode({})`, an empty provider registry.
  *
  * Source: models.dev, the same catalog the engine reads, overlaid with the
  * caller's org-scoped custom providers. Which models can run is the running

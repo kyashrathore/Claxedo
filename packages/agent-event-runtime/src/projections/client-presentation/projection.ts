@@ -1600,6 +1600,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     case "goal-updated":
     case "goal-cleared":
     case "subagent-updated":
+    case "input-incorporated":
       return []
 
     default: {

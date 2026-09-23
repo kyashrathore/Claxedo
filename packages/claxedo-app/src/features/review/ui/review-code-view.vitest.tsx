@@ -21,6 +21,7 @@ const engine = vi.hoisted(() => {
     enableLineSelection?: boolean
     enableGutterUtility?: boolean
     controlledSelection?: boolean
+    itemMetrics?: { diffHeaderHeight?: number }
     renderCustomHeader?: (diff: { name: string }, context: { item: Item }) => HTMLElement
     renderCustomItem?: (item: Item) => HTMLElement
     onPostRender?: () => void
@@ -140,6 +141,14 @@ describe("ReviewCodeView rendered item ownership", () => {
     }
     cleanup()
     expect(live.size).toBe(0)
+  })
+
+  it("renders each file header at exactly the height the engine reserves for a collapsed row", () => {
+    const screen = render(() => <ReviewCodeView diffs={diffs} open={[]} diffStyle="unified" renderHeader={(file) => <span>{file}</span>} />)
+    const reserved = engine.Viewer.current.options.itemMetrics?.diffHeaderHeight
+    expect(reserved).toBeGreaterThan(0)
+    const trigger = screen.getByRole("button", { name: "Toggle diff for 0.ts" })
+    expect(trigger.style.height).toBe(`${reserved}px`)
   })
 
   it("a header is keyed by the review file even when the parsed patch names it differently", () => {

@@ -1,31 +1,28 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
+import { HOSTED_OPERATIONS } from "../platform/account/hosted-operations"
 
-const appRoot = path.resolve(import.meta.dir, "../..")
-const srcRoot = path.join(appRoot, "src")
-const matrixPath = path.resolve(appRoot, "../../docs/tech-docs/desktop-hosted-operation-matrix.md")
+const srcRoot = path.resolve(import.meta.dir, "..")
 
 /**
  * Hosted-operation inventory gate.
  *
- * `docs/tech-docs/desktop-hosted-operation-matrix.md` is the closed set of
- * authenticated calls a signed desktop may make. A stale matrix would silently
- * narrow the desktop's capabilities, or silently widen its IPC surface, with
- * a green build either way.
+ * A signed desktop may only make the closed set of authenticated calls in
+ * `HOSTED_OPERATIONS`. A module that reaches authenticated transport without
+ * going through that set would silently widen the desktop's IPC surface, or
+ * silently lose its capability on desktop, with a green build either way.
  *
- * A prose document cannot notice a new `authFetch` call. This test can. It
- * scans the hosted-contribution candidate modules for authenticated transport
- * and requires every module it finds to be named as an owner in the matrix —
- * and requires every owner named there to still exist and still be
- * authenticated, so retired rows do not pile up unread.
+ * This scans the hosted-contribution candidate modules for authenticated
+ * transport and requires every module it finds to be declared: either as the
+ * owner of named hosted operations, or as a module whose authenticated calls
+ * never reach Hosted Server's account surface. Every declaration must still
+ * exist and still be authenticated, so retired entries do not pile up unread.
  *
  * It deliberately does NOT try to resolve URLs statically. Paths here are built
  * through helpers (`documentsUrl({ id, path })`, `url("/commands")`), so a
  * regex that claimed to extract them would report a confident subset and miss
  * the rest — worse than not checking, because it would look like coverage.
- * Method/path fidelity is checked against the real hosted route table in
- * `hosted-shared/hosted-core-app.test.ts`.
  */
 
 /** Hosted feature roots scanned for authenticated transport. */
@@ -39,12 +36,53 @@ const HOSTED_CANDIDATE_ROOTS = [
 ]
 
 /**
+ * Modules that reach Hosted Server through named operations, and the
+ * operations each one names. On desktop these calls cross the account port by
+ * name; in the browser the same module calls the route directly.
+ */
+const HOSTED_OPERATION_OWNERS: Record<string, readonly string[]> = {
+  "features/documents/data/documents-api.ts": [
+    "documents.list",
+    "documents.get",
+    "documents.create",
+    "documents.content.get",
+    "documents.content.put",
+    "documents.export",
+    "documents.agentOpen",
+    "documents.runtimeConflictResolve",
+    "documents.moveToRepository",
+    "documents.fromRepo",
+    "documents.snapshots",
+    "documents.snapshots.restore",
+    "documents.statuses",
+  ],
+  "features/settings/data/org-team-api.ts": [
+    "org.list",
+    "org.create",
+    "org.teams.list",
+    "org.teams.create",
+    "org.ensureDefaultTeam",
+    "team.members.list",
+    "team.members.add",
+    "team.members.remove",
+    "team.projects.grant",
+  ],
+  "features/workspaces/actions/project-actions.tsx": ["workspace.resolve"],
+  "features/workspaces/data/workspace-catalog.ts": ["workspace.list.provisioner", "workspace.list.machine"],
+  "features/workspaces/data/workspace-create-api.ts": ["workspace.create"],
+}
+
+/**
  * Modules that reach authenticated transport but stay in `@claxedo/app`.
  *
  * Each needs a reason, because "it is exempt" is how an inventory rots: the
  * reason names the local route the module actually calls.
  */
 const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
+  "app/routes/bootstrap-owner.tsx":
+    "The one-time user-deployed owner claim sends a transient password to `POST /api/claxedo/auth/bootstrap-owner` on the browser's own signed session. Desktop is not an owner-provisioning surface, and Electron main must never receive or retain this one-use secret, so it is deliberately not an AccountPort operation.",
+  "platform/runtime/cloud/workspace-runtime-store.ts":
+    "Default request for `createTransport` Workspace Runtime calls (`/api/wr/health`, `/api/wr/worktrees`) over the relay or loopback. Workspace Runtime traffic is data plane and never crosses the account port.",
   "app/routes/directory-layout.tsx":
     "Local route shell: resolves a directory route against the local server's `workspaceResolveUrl` through `platform.fetch` (authFetch only when the platform injects no transport); never calls Hosted Server.",
   "features/workspaces/ui/panel/workspace-panel.tsx":
@@ -62,7 +100,7 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
   "features/settings/data/connected-apps-api.ts":
     "Connected applications read and revoke OAuth consents at the authorization server's own `/api/auth/oauth2/*` endpoints, which authenticate a BROWSER session (cookie, or the bearer plugin's session token). The desktop's AccountPort credential is an OAuth access token for the control-plane resource, which those endpoints do not accept, so this is not a Hosted Server AccountPort surface.",
   "features/workspaces/data/share-workspace.ts":
-    "Desktop sharing goes through the machine remote-access port (Host Connector owns the machine key — the `workspace.assignHost` row in the matrix). The remaining authFetch is the self-hosted server's own local host-assignment route, which performs that flow server-side.",
+    "Desktop sharing goes through the machine remote-access port (Host Connector owns the machine key — the `workspace.assignHost` operation). The remaining authFetch is the self-hosted server's own local host-assignment route, which performs that flow server-side.",
   "features/settings/data/agent-settings-api.ts":
     "Agent settings read and write `/api/account/agent-settings` on the local or self-hosted server; the hosted plane has no such route, so this is not a Hosted Server AccountPort surface.",
 }
@@ -114,92 +152,24 @@ function authenticatedModules() {
     .toSorted()
 }
 
-const matrix = readFileSync(matrixPath, "utf8")
-
-/** Owner modules named in the matrix's `Owner module` column. */
-function matrixOwners() {
-  return [...new Set([...matrix.matchAll(/`((?:app|features|platform)\/[^`]+\.tsx?)`/g)].map((match) => match[1]))]
-    .toSorted()
-}
-
-/**
- * Control-plane routes a machine or the relay calls with no account credential.
- * They are not AccountPort operations, so the four-way guard does not see
- * them; this list is what keeps the matrix complete for them instead. A route
- * added to `routes/hosted/host-enrollment.ts` or the relay resolver lands here
- * and in the matrix in the same commit.
- */
-const NON_ACCOUNT_ROUTES = [
-  "POST /api/claxedo/host/enrollments/redeem",
-  "POST /api/claxedo/host/enrollments/acquire",
-  "POST /api/claxedo/host/enrollments/heartbeat",
-  "PATCH /api/claxedo/host/enrollments/:id/scope",
-  "GET /api/claxedo/host/enrollments",
-  "POST /api/claxedo/host/invitations",
-  "GET /api/claxedo/host/invitations",
-  "DELETE /api/claxedo/host/invitations/:id",
-  "GET /internal/relay/host-generation?enrollmentId=",
-]
-
-describe("hosted operation matrix", () => {
-  test("records every machine-signed, invitation and relay-fence route outside the account operations", () => {
-    for (const route of NON_ACCOUNT_ROUTES) {
-      expect(matrix, `matrix must record ${route}`).toContain(`| \`${route}\``)
-    }
-    // A machine route must never be promoted into an AccountPort row by accident.
-    const accountRows = matrix.split("\n").filter((line) => /^\| `[a-zA-Z][\w.]*\.[\w.]*` \|/.test(line))
-    for (const forbidden of ["/redeem", "/acquire", "/host-generation", "/invitations"]) {
-      expect(accountRows.filter((row) => row.includes(forbidden))).toEqual([])
-    }
-  })
-
-  test("names an owner module for at least every hosted capability group", () => {
-    for (const group of ["Documents", "Billing", "Connections", "Workspace authority", "Sessions"]) {
-      expect(matrix, `matrix must cover ${group}`).toContain(`### ${group}`)
-    }
-  })
-
-  test("no row returns an address of the machine a workspace runs on", () => {
-    // The connection mint answers `relayUrl` and a scoped Runtime Access Token
-    // (`hostTunnelConnectionInfo`). A row that returned the serving machine's
-    // own address would make it a direct client target and bypass every relay
-    // authorization gate, so the spellings such an address takes are refused
-    // in the table rather than in prose, which cannot fail a build.
-    const machineAddressSpellings = [
-      "directRuntimeUrl",
-      "runtimeUrl",
-      "hostUrl",
-      "machineUrl",
-      "laptopUrl",
-      "tunnelUrl",
-      "127.0.0.1",
-      "localhost",
-    ]
-    const rows = matrix.split("\n").filter((line) => line.trimStart().startsWith("| `"))
-    for (const spelling of machineAddressSpellings) {
-      expect(
-        rows.filter((row) => row.includes(spelling)),
-        `a matrix row names \`${spelling}\``,
-      ).toEqual([])
-    }
-  })
-
-  test("declares no generic authenticated proxy operation", () => {
-    // The confused-deputy shape this whole document exists to prevent.
-    for (const forbidden of ["hostedFetch", "authenticatedRequest", "proxyRequest"]) {
-      expect(matrix, `matrix must not offer a generic ${forbidden} operation`).not.toContain(`\`${forbidden}\``)
-    }
-  })
-})
-
 describe("hosted operation inventory", () => {
   test("every authenticated hosted-candidate module is declared", () => {
-    const declared = new Set([...matrixOwners(), ...Object.keys(LOCAL_AUTHENTICATED_MODULES)])
+    const declared = new Set([...Object.keys(HOSTED_OPERATION_OWNERS), ...Object.keys(LOCAL_AUTHENTICATED_MODULES)])
     expect(authenticatedModules().filter((module) => !declared.has(module))).toEqual([])
   })
 
-  test("every declared owner still exists", () => {
-    expect(matrixOwners().filter((module) => !existsSync(path.join(srcRoot, module)))).toEqual([])
+  test("every hosted operation owner still exists, is still authenticated, and names only real operations", () => {
+    const problems = Object.entries(HOSTED_OPERATION_OWNERS).flatMap(([module, operations]) => {
+      const file = path.join(srcRoot, module)
+      if (!existsSync(file)) return [`${module}: missing`]
+      const text = readFileSync(file, "utf8")
+      return [
+        ...(authenticatedMarkers(text).length === 0 ? [`${module}: no longer authenticated`] : []),
+        ...operations.filter((name) => !Object.hasOwn(HOSTED_OPERATIONS, name)).map((name) => `${module}: ${name} is not a hosted operation`),
+        ...operations.filter((name) => !text.includes(`"${name}"`)).map((name) => `${module}: no longer names ${name}`),
+      ]
+    })
+    expect(problems).toEqual([])
   })
 
   test("every locally exempted module still exists and is still authenticated", () => {

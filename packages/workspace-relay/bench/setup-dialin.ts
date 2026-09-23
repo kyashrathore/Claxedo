@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
-// Orchestrator for the DIAL-IN cloud path (docs/tech-docs/cloudflare-relay-
-// evaluation.md "Inbound-rendezvous", "Dial-in auth flow"). It bundles the
+// Orchestrator for the DIAL-IN cloud path. It bundles the
 // sandbox-side dial-in agent to a single node .cjs, mints a Host Tunnel Token,
 // uploads both into an existing Daytona sandbox, starts the agent in a
 // background session, and verifies the tunnel registered — either by observing

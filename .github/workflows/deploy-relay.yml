@@ -34,7 +34,7 @@ name: deploy-relay
 # Variables on the `production` environment:
 #   CLAXEDO_RELAY_FLY_APP — Fly app name (claxedo-workspace-relay)
 #
-# Relay observability (D12; plan 2026-07-28-001) — PostHog carries both
+# Relay observability — PostHog carries both
 # product analytics and error tracking for the relay. These are Fly runtime
 # secrets (`fly secrets set NAME=value --app <app>`), not GitHub Actions
 # secrets — this workflow has no need for their values and does not plumb

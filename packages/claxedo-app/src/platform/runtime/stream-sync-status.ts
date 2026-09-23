@@ -22,8 +22,7 @@
 import { createStore, produce } from "solid-js/store"
 // Type-only edge to the pure FSM's state alphabet. platform never imports app
 // VALUE symbols; a type-only import carries no runtime dependency and no import
-// graph edge (see the AGENTS.md/layering guards, which exclude type-only
-// specifiers).
+// graph edge (the layering guards exclude type-only specifiers).
 import type { StreamSyncLifecycleState } from "@/app/connection/stream-sync-lifecycle"
 
 /** One entry per `ClaxedoEventStreamTarget`: a control plane's stream (the server's own, or the account bridge's), or the routed workspace's own stream. */

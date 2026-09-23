@@ -176,8 +176,7 @@ the same role hosted. Slow, dumb, cannot miss.
     What is not yet shown: D1 parity rests on the shared
     `session-turn-authority.conformance.ts` run rather than a live hosted
     deployment, and the hosted worker composition has not been exercised end
-    to end. P-92 and P-93 in
-    `docs/security-audit-revalidation-2026-09-20.md`.
+    to end (P-93 in `docs/security-open-findings.md`).
 
 ## Deployment cheat sheet
 

@@ -29,10 +29,6 @@
  *
  * The server never holds the host key. It stores the public half and verifies;
  * `@claxedo/host-connector` holds the private half on the user's machine.
- *
- * The operation matrix names the account rows; the machine and invitation
- * routes are its "not an account operation" section — see
- * `docs/tech-docs/desktop-hosted-operation-matrix.md`.
  */
 
 import { Hono, type Context } from "hono"

@@ -1,15 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { existsSync } from "node:fs"
 
-// Replaces the former `override-batch-contract.test.ts`, a 331-line suite of
-// raw-source-text `.toContain` assertions across ~25 files. Per the pages
-// audit those content greps were snapshot theater (they broke on harmless
-// renames and taught nothing about behavior) and the behavior they nominally
-// guarded is covered by real `*.test.ts` siblings elsewhere. The ONE genuine
-// invariant they encoded — that the pre-fork "overrides" resolution system no
-// longer exists (see CONTRIBUTING.md "History: the override system") — is kept
-// here as a lightweight fixture-presence check, with no source-text grepping.
-
 const srcRoot = new URL("../../", import.meta.url)
 
 describe("no upstream override system", () => {
@@ -18,9 +9,6 @@ describe("no upstream override system", () => {
   })
 
   test("route-owning pages resolve to first-party files, not override shadows", async () => {
-    // The former suite asserted, per file, that an `overrides/<path>` shadow was
-    // absent. Collapsed here to the canonical route pages: each real source
-    // exists and no parallel override copy does.
     const routeOwners = [
       "app/entry/app.tsx",
       "features/session/ui/session-screen.tsx",

@@ -70,6 +70,8 @@ packages/claxedo-app/dev-docs/
 .claxedo/
 .opencode/processes.jsonc
 
+.lane-reports/
+
 # Playwright test artifacts
 docs/screenshots/
 docs/verification/**/*.png

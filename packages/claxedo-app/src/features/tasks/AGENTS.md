@@ -17,11 +17,3 @@ The harness/model/effort control, the installed plugin and skill catalog, the
 project list and canonical session navigation arrive through `app-ports.ts`.
 Their owners are other features, which a feature may not import at runtime;
 `app/integrations/tasks` binds them.
-
-```json
-{
-  "owns": "Tasks and presets catalog data, filter and draft state, the Tasks view-model, and every Tasks and Presets surface",
-  "writerOf": [],
-  "mustNotImport": ["@/app/*", "@/features/agent-plugins/*", "@/features/browser/*", "@/features/documents/*", "@/features/extensions/*", "@/features/processes/*", "@/features/review/*", "@/features/session/*", "@/features/settings/*", "@/features/terminal/*", "@/features/usage/*", "@/features/workspaces/*", "@/shell/*", "@/context/*", "@/components/*", "@/pages/*", "@/claxedo-ui/*", "@/pane/*", "@/shared/*"]
-}
-```

@@ -13,7 +13,7 @@
 // resolver are bench-provided, mirroring how the control plane would supply
 // them in production.
 //
-// Usage (see bench/RUNBOOK.md for full phase recipes):
+// Usage:
 //   bun bench/loadgen.ts \
 //     --relay ws://127.0.0.1:7777 --relay-http http://127.0.0.1:7777 \
 //     --direct-ws ws://127.0.0.1:9001 --direct-http http://127.0.0.1:9001 \

@@ -80,12 +80,11 @@ function readLines(file: string): string[] {
   return lines
 }
 
-/** Hits inside this package's own docs/tests, which must NAME the hazard. */
+/** Hits inside this package's own guard and contract probes, which must NAME the hazard. */
 function isSelfReference(line: string): boolean {
   return (
     line.includes("packages/workspace-runtime/src/opencode/sdk-boundary.guard.test.ts") ||
-    line.includes("packages/workspace-runtime/contract/opencode/") ||
-    line.includes("docs/architecture/opencode-embedded-sdk-contract.md")
+    line.includes("packages/workspace-runtime/contract/opencode/")
   )
 }
 

@@ -48,8 +48,7 @@ export function newSessionEnvironmentOptions(input: {
 
 /**
  * "owner/repo" from a git remote. Mirrors `app/workbench/rail/rail-git-remote.ts`
- * — inlined because `features/session` may not import `@/app/*`
- * (src/features/session/AGENTS.md).
+ * — inlined because a feature may not import `@/app/*` (`architecture/ownership.ts`).
  */
 export function ownerRepoFromRemote(remote: string | null | undefined) {
   if (!remote) return undefined

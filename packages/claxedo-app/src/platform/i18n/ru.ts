@@ -539,11 +539,6 @@ export const dict = {
     "Предоставьте доступный буфер экранного диктора в новых терминалах",
   "settings.general.row.uiFont.title": "Шрифт интерфейса",
   "settings.general.row.uiFont.description": "Настройте шрифт, используемый во всем интерфейсе",
-  "settings.general.row.followup.title": "Поведение уточняющих вопросов",
-  "settings.general.row.followup.description":
-    "Выберите, отправлять ли уточняющие вопросы сразу или помещать их в очередь",
-  "settings.general.row.followup.option.queue": "Очередь",
-  "settings.general.row.followup.option.steer": "Направлять",
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
 

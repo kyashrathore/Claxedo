@@ -322,12 +322,9 @@ describe("createProjectActions New Project", () => {
 })
 
 describe("createProjectActions", () => {
-  // NOTE: handleNewWorkspace (the Local/Cloud picker behind onNewWorkspace) was
-  // deleted as dead code — see e2e/e2e-decisions.md #16. It had zero reachable
-  // UI trigger; the live workspace-creation surface is
-  // handleNewLocalWorkspace/handleNewCloudWorkspace below, exercised by the
-  // session composer's environment selector (see core-cloud-provisioning.spec.ts
-  // and core-workspace-lifecycle.spec.ts).
+  // handleNewLocalWorkspace/handleNewCloudWorkspace are driven end to end by the
+  // session composer's environment selector (core-cloud-provisioning.spec.ts,
+  // core-workspace-lifecycle.spec.ts).
   test("creating a workspace on this machine warms the directory session cache before opening a session", async () => {
     const dir = `/workspace/feature-${Date.now().toString(36)}-direct`
     const { props, adds, navs, nav, cacheEnsures, order } = make(dir)

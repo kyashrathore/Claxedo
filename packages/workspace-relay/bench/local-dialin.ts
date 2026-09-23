@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
-// Local-first proof of the DIAL-IN cloud path — the gate the RUNBOOK requires
-// before touching cloud. Boots the FULL dial-in topology on localhost with the
+// Local-first proof of the DIAL-IN cloud path, run before touching cloud. Boots the FULL dial-in topology on localhost with the
 // real shipping relay process (no mocks):
 //
 //   echo target (localhost) ─┐

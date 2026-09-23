@@ -4,7 +4,6 @@ name: deploy-staging
 # image. The browser app is not a job — the control-plane release publishes it
 # (release-better-auth-d1.ts `publishBrowser`). The desktop app is not either —
 # it is tag-driven (`claxedo-v*` -> release-claxedo.yml).
-# See docs/deploy/staging-branch.md.
 
 on:
   push:

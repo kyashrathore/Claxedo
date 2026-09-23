@@ -672,13 +672,9 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
   test("repository index is metadata-only and edits file in place without a managed copy", async ({
     page,
   }, testInfo) => {
-    // The Documents-index repository importer this behavior originally drove was
-    // intentionally removed (commit 76953781d7; document-index.vitest.tsx now
-    // asserts the index "does not carry a repository importer"). The contract it
-    // proved is unchanged — repository docs are metadata-only, edits land on the
-    // real file, never a managed copy — but the entry point moved to the repo
-    // file's own tab: open it, then use its "Add to Documents" icon
-    // (src/app/workbench/content/tab-file.tsx). See e2e/e2e-decisions.md #5.
+    // Repository docs are metadata-only: edits land on the real file, never a
+    // managed copy. The entry point is the repository file's own tab and its
+    // "Add to Documents" icon (src/app/workbench/content/tab-file.tsx).
     annotate(testInfo, "repository filesystem is simulated")
     const runtime = new DocumentRuntime()
     runtime.repositoryFiles.set("repository.md", "Heading\n=======\n\nrepository original\n")

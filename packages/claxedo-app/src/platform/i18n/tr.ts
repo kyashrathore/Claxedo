@@ -547,11 +547,6 @@ export const dict = {
     "Yeni terminallerde erişilebilir bir ekran okuyucu arabelleği sunun",
   "settings.general.row.uiFont.title": "Arayüz Yazı Tipi",
   "settings.general.row.uiFont.description": "Arayüz genelinde kullanılan yazı tipini özelleştirin",
-  "settings.general.row.followup.title": "Takip davranışı",
-  "settings.general.row.followup.description":
-    "Takip komutlarının hemen yönlendirilmesini mi yoksa sırada beklemesini mi istediğinizi seçin",
-  "settings.general.row.followup.option.queue": "Sıra",
-  "settings.general.row.followup.option.steer": "Yönlendir",
   "settings.general.row.reasoningSummaries.title": "Akıl yürütme özetlerini göster",
   "settings.general.row.reasoningSummaries.description": "Zaman çizelgesinde model akıl yürütme özetlerini görüntüle",
   "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",

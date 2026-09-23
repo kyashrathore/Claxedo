@@ -3,11 +3,10 @@
  *
  * Why this exists, concretely: the pinned SDK performs NO location
  * authorization. `sessions.get({ sessionID })` returns any session to any
- * caller, including the owning workspace's directory
- * (docs/architecture/opencode-embedded-sdk-contract.md §4, asserted in the
- * contract probe). One process shares one host across every local workspace,
- * so Claxedo's scope check is the ONLY barrier between workspaces — not
- * defence-in-depth.
+ * caller, including the owning workspace's directory (asserted by the
+ * `isolation` checks in `contract/opencode/contract.mjs`). One process shares
+ * one host across every local workspace, so Claxedo's scope check is the ONLY
+ * barrier between workspaces — not defence-in-depth.
  *
  * Two rules follow, and both are enforced by construction rather than by
  * convention:

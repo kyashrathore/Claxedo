@@ -475,11 +475,6 @@ export const dict = {
     "Exponha um buffer acessível de leitor de tela em novos terminais",
   "settings.general.row.uiFont.title": "Fonte da interface",
   "settings.general.row.uiFont.description": "Personalize a fonte usada em toda a interface",
-  "settings.general.row.followup.title": "Comportamento de acompanhamento",
-  "settings.general.row.followup.description":
-    "Escolha se os prompts de acompanhamento orientam imediatamente ou esperam na fila",
-  "settings.general.row.followup.option.queue": "Fila",
-  "settings.general.row.followup.option.steer": "Orientar",
   "settings.general.row.reasoningSummaries.title": "Mostrar resumos de raciocínio",
   "settings.general.row.reasoningSummaries.description": "Exibir resumos de raciocínio do modelo na linha do tempo",
   "settings.general.row.shellToolPartsExpanded.title": "Expandir partes da ferramenta shell",

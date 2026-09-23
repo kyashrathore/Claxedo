@@ -116,9 +116,7 @@
  *   18. A prompt with only image attachments (no text) is a valid, submittable turn —
  *       oracle-proven.
  *   19. Context chips linked to a code-review comment (`item.comment` truthy) are hidden
- *       while shell mode is active (`composer.tsx`'s `contextItems` memo). NOT COVERED
- *       here: the test was deleted (not fixme'd) per e2e/e2e-decisions.md #15 — see the
- *       standing comment where it used to live, below behavior 18's test.
+ *       while shell mode is active (`composer.tsx`'s `contextItems` memo). NOT COVERED.
  *   20. Composer draft text, an inline pill, and an image attachment together survive a
  *       full page reload.
  *   21. A composer draft survives navigating away to a different workspace and back.

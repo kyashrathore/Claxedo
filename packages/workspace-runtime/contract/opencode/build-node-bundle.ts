@@ -1,5 +1,5 @@
 /**
- * §2 resolution probe: produce a Node-loadable bundle of the pinned public SDK.
+ * Resolution probe: produce a Node-loadable bundle of the pinned public SDK.
  *
  * The published package cannot be imported by Node directly (extensionless
  * relative ESM specifiers). Claxedo already bundles its server with Bun.build

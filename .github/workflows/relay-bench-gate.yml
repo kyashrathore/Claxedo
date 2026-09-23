@@ -26,7 +26,7 @@
 #   HTTP p99 overhead:  7.58 – 9.96 ms   vs a 100 ms gate  → ~10x headroom
 #   WS-message p99:     1.73 – 2.18 ms   vs a 100 ms gate  → ~46x headroom
 #
-# WS keeps the strict RUNBOOK gate: 46x is far outside any plausible runner
+# WS keeps the strict default gate: 46x is far outside any plausible runner
 # jitter. HTTP sits at only ~10x, and a GitHub-hosted runner sharing a host can
 # add tens of milliseconds to a request percentile, so the HTTP gate — and ONLY
 # the HTTP gate — is raised to 250 ms for the CI copy. That is still ~25x the
@@ -34,7 +34,7 @@
 # while ignoring scheduling noise.
 #
 # The override is per-gate on purpose: one shared knob would have relaxed the
-# 46x-headroom gate to accommodate the 10x one. The RUNBOOK gates themselves are
+# 46x-headroom gate to accommodate the 10x one. The default gates themselves are
 # untouched — `bench/lib/stats.ts` defaults to 100/100 and a local `bun run
 # bench:gate` is unaffected by anything here. Message-loss gates have no override
 # at all: "zero loss" does not degrade with runner noise.

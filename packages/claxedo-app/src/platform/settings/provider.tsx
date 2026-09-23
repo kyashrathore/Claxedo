@@ -30,7 +30,6 @@ export interface Settings {
   general: {
     autoSave: boolean
     releaseNotes: boolean
-    followup: "queue" | "steer"
     showNavigation: boolean
     showSearch: boolean
     showReasoningSummaries: boolean
@@ -116,7 +115,6 @@ const defaultSettings: Settings = {
   general: {
     autoSave: true,
     releaseNotes: true,
-    followup: "steer",
     showNavigation: false,
     showSearch: false,
     showReasoningSummaries: false,
@@ -157,13 +155,31 @@ const defaultSettings: Settings = {
 export function migrateSettings(value: unknown) {
   const settings = asRecord(value)
   if (!settings) return value
+  return withShippedSounds(withoutFollowup(settings))
+}
+
+/**
+ * The runtime's queue decides follow-up behavior, so a stored choice is removed.
+ * `persisted` keeps keys the defaults do not know, so omitting it from the
+ * defaults alone would keep it in storage.
+ */
+function withoutFollowup(settings: Record<string, unknown>) {
+  const general = asRecord(settings.general)
+  if (!general || !("followup" in general)) return settings
+  return {
+    ...settings,
+    general: Object.fromEntries(Object.entries(general).filter(([key]) => key !== "followup")),
+  }
+}
+
+function withShippedSounds(settings: Record<string, unknown>) {
   const stored = asRecord(settings.sounds)
-  if (!stored) return value
+  if (!stored) return settings
 
   const invalid = (["agent", "permissions", "errors"] as const).filter(
     (key) => key in stored && !isSoundID(stored[key]),
   )
-  if (invalid.length === 0) return value
+  if (invalid.length === 0) return settings
 
   return {
     ...settings,
@@ -201,11 +217,6 @@ const settingsContextInput = {
       write("--font-family-sans", store.appearance?.sans, sansFontFamily)
     })
 
-    createEffect(() => {
-      if (store.general?.followup !== "queue") return
-      setStore("general", "followup", "steer")
-    })
-
     const transcript = createMemo(() => normalizeTranscriptTypography(store.appearance?.transcript))
     // A plain object write merges into the stored record, so knob overrides an
     // earlier build persisted would outlive a pairing change.
@@ -224,13 +235,6 @@ const settingsContextInput = {
         releaseNotes: withFallback(() => store.general?.releaseNotes, defaultSettings.general.releaseNotes),
         setReleaseNotes(value: boolean) {
           setStore("general", "releaseNotes", value)
-        },
-        followup: withFallback(
-          () => (store.general?.followup === "queue" ? "steer" : store.general?.followup),
-          defaultSettings.general.followup,
-        ),
-        setFollowup(value: "queue" | "steer") {
-          setStore("general", "followup", value === "queue" ? "steer" : value)
         },
         showNavigation: withFallback(() => store.general?.showNavigation, defaultSettings.general.showNavigation),
         setShowNavigation(value: boolean) {

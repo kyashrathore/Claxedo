@@ -85,24 +85,15 @@ output.
 
 Start here before making a nontrivial change in this package:
 
-- `src/VOCABULARY.md` — canonical noun list (session, host, toolSandbox,
-  harness, the five senses of "workspace", directory, project, pane/tab/
-  panel/group, `opencode`). Read this before naming anything.
+- `src/VOCABULARY.md` — canonical nouns (surface, project, workspace,
+  directory, session, harness, pane/tab/panel). Read this before naming
+  anything.
 - `src/ARCHITECTURE.md` — charter for every top-level `src/` directory and
-  "where do I add X" for the five commonest contribution types.
-- `CONTRIBUTING.md`'s "History: the override system" section — why there is
-  no `packages/app` and no override scanner post-hard-fork (the former
-  `src/overrides/` tombstone directory was deleted; that history now lives
-  in CONTRIBUTING.md, not in a standalone README).
-- `CONTRIBUTING.md` — the tests-as-specs merge bar, bun:test vs vitest
-  runner convention, test-location/colocation standard, and PR checklist.
+  "where do I add X" for the commonest contribution types.
+- `CONTRIBUTING.md` — development commands, where new code goes, the bun:test
+  vs vitest runner convention, and test location.
 - `docs/perf/AGENTS.md` — performance attempts that already failed, and the
-  conditions under which they would be worth retrying. Do not reconstruct the
-  retired experiment logs.
-- Per-directory `AGENTS.md` notes — several source directories carry their
-  own scoped `AGENTS.md` with local rules (`src/architecture/`,
-  `src/features/browser/`, `src/features/extensions/`,
-  `src/features/processes/`, `src/platform/runtime/agent/`,
-  `src/platform/runtime/cloud/`, and most other `features/*` and `platform/*`
-  roots — `find src -name AGENTS.md` lists them). Read the one covering the
-  directory you are editing before changing files there.
+  conditions under which they would be worth retrying.
+- Directory notes: `src/features/{agent-plugins,documents,onboarding,tasks}/AGENTS.md`
+  and `src/platform/{account,performance,remote-access}/AGENTS.md` carry rules
+  the code cannot state. Read the one covering the directory you are editing.

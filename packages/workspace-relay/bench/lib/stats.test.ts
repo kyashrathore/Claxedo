@@ -145,7 +145,7 @@ describe("bench gate env overrides", () => {
     return JSON.parse(out.trim())
   }
 
-  test("with no override the RUNBOOK gates apply", async () => {
+  test("with no override the default gates apply", async () => {
     expect(await gatesUnder({
       CLAXEDO_BENCH_HTTP_P99_GATE_MS: "",
       CLAXEDO_BENCH_WS_P99_GATE_MS: "",

@@ -1,11 +1,9 @@
 import {
   buildAssistantMessage,
-  buildUserMessage,
-  buildUserPromptParts,
-  messagePartUpdated,
   messageUpdated,
   sessionError,
   sessionStatus,
+  userPromptEvents,
   type CompatEvent,
 } from "../compat-events"
 import type {
@@ -327,21 +325,19 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const events: CompatEvent[] = [
       sessionStatus(input.sessionId, { type: "busy" }),
       ...(input.userMessageId
-        ? [
-            messageUpdated(buildUserMessage({
-              id: input.userMessageId,
-              sessionID: input.sessionId,
-              agent: input.agent,
-              model: input.model,
-              created: createdAt,
-              ...(input.tools ? { tools: input.tools } : {}),
-              ...(input.format ? { format: input.format } : {}),
-              ...(input.system ? { system: input.system } : {}),
-              ...(input.variant ? { variant: input.variant } : {}),
-              ...(input.author ? { author: input.author } : {}),
-            })),
-            ...buildUserPromptParts(input.sessionId, input.userMessageId, input.parts).map(messagePartUpdated),
-          ]
+        ? userPromptEvents({
+            id: input.userMessageId,
+            sessionID: input.sessionId,
+            agent: input.agent,
+            model: input.model,
+            created: createdAt,
+            parts: input.parts,
+            ...(input.tools ? { tools: input.tools } : {}),
+            ...(input.format ? { format: input.format } : {}),
+            ...(input.system ? { system: input.system } : {}),
+            ...(input.variant ? { variant: input.variant } : {}),
+            ...(input.author ? { author: input.author } : {}),
+          })
         : []),
       messageUpdated(buildAssistantMessage({
         id: input.assistantMessageId,

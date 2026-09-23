@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
-import path from "node:path"
 import {
   HOSTED_OPERATIONS,
   MissingOperationParameter,
@@ -12,45 +10,21 @@ import {
 /**
  * The table is a security control, so it is tested like one.
  *
- * Two ways it stops working: it drifts from the reviewed matrix, or a
- * parameter turns out to be able to change the request rather than fill it in.
- * Round-tripping the happy path catches neither.
+ * Two ways it stops working: it grows an entry that reaches past the account
+ * surface, or a parameter turns out to be able to change the request rather
+ * than fill it in. Round-tripping the happy path catches neither.
  */
 
-const matrix = readFileSync(
-  path.resolve(import.meta.dir, "../../../../../docs/tech-docs/desktop-hosted-operation-matrix.md"),
-  "utf8",
-)
-
-/** `| \`name\` | owner | \`METHOD /path\` |` rows from the matrix. */
-function matrixRows() {
-  return [...matrix.matchAll(/^\| `([a-zA-Z][\w.]*)` \|[^|]*\| `(GET|POST|PUT|PATCH|DELETE) ([^`]+)` \|/gm)].map(
-    (match) => ({ name: match[1], method: match[2], path: match[3] }),
-  )
-}
-
 describe("HOSTED_OPERATIONS", () => {
-  test("every entry matches the matrix's method and path", () => {
-    // Drift is the failure mode: the matrix is what a reviewer reads, and this
-    // table is what actually runs. A mismatch means the review covered a
-    // different system.
-    const rows = new Map(matrixRows().map((row) => [row.name, row]))
-    const mismatched = Object.entries(HOSTED_OPERATIONS).flatMap(([name, operation]) => {
-      const row = rows.get(name)
-      if (!row) return [`${name}: not declared in the matrix`]
-      if (row.method !== operation.method) return [`${name}: matrix says ${row.method}, table says ${operation.method}`]
-      if (row.path !== operation.path) return [`${name}: matrix says ${row.path}, table says ${operation.path}`]
-      return []
-    })
+  test("reaches no machine-signed, invitation or relay-fence route", () => {
+    // Those routes authenticate a machine or an invitation secret, never an
+    // account. An entry here would spend the account credential on them.
+    const forbidden = ["/enrollments/redeem", "/enrollments/acquire", "/enrollments/heartbeat", "/host/invitations", "/internal/relay/"]
+    const reached = Object.entries(HOSTED_OPERATIONS)
+      .filter(([, operation]) => forbidden.some((fragment) => operation.path.includes(fragment)))
+      .map(([name]) => name)
 
-    expect(mismatched).toEqual([])
-  })
-
-  test("the matrix parse actually found rows", () => {
-    // Positive control: a regex that matched nothing would make the assertion
-    // above pass with no coverage at all.
-    expect(matrixRows().length).toBeGreaterThan(20)
-    expect(matrixRows().map((row) => row.name)).toContain("host.enrollCurrentMachine")
+    expect(reached).toEqual([])
   })
 
   test("declares no generic proxy", () => {
@@ -84,9 +58,8 @@ describe("HOSTED_OPERATIONS", () => {
   test("lists workspaces per host, with the host fixed in the path", () => {
     // The defect this pair replaced: `GET /api/workspace` with no `host`
     // answers `{ workspaces: [] }` unconditionally, so the single host-less row
-    // could never return a workspace. Pinned here as well as in the matrix
-    // because the value is load-bearing — `provisioner` and `machine` are the
-    // only two the hosted handler acts on.
+    // could never return a workspace. Pinned because the value is load-bearing:
+    // `provisioner` and `machine` are the only two the hosted handler acts on.
     expect(resolveHostedOperation("workspace.list.provisioner")).toEqual({
       method: "GET",
       path: "/api/workspace?host=provisioner",
