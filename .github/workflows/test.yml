@@ -601,6 +601,11 @@ jobs:
             exit 1
           fi
 
+      # The org-team multiplayer spec composes its proof video with ffmpeg's
+      # libx264, and the ubuntu-24.04 runner image ships no ffmpeg.
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+
       # These specs own their real hosted-node/relay fixtures and production
       # web builds, so the config-level webServer must stay disabled. Run them
       # together on one worker: their fixed port blocks and output directories
