@@ -247,19 +247,25 @@ export async function journeyB7(ctx: JourneyCtx) {
     "session A picked up a stray status dot while session B was being seeded",
   ).toHaveCount(0, { timeout: 15_000 })
 
-  await expectRailStatus({
-    page,
-    sessionId: sessionA,
-    driveWorking: async () => {
-      await rowA.click()
-      await composeText(page, composerInput(page), "Reply with exactly this one token, nothing else: B7_A2")
-      await sendSubsequentMessage(page)
-      await page.locator(RAIL_SELECTORS.sessionRow(sessionB)).click()
-    },
-    driveDone: async () => {
-      // No action: the turn completes server-side regardless of focus.
-    },
-  })
+  // A scripted turn settles about 100ms after the send, before the click on B
+  // has moved focus, so the reply is held until the unfocused row has been
+  // seen working.
+  const releaseReply = scripted.holdTextReplies("B7_A2")
+  try {
+    await expectRailStatus({
+      page,
+      sessionId: sessionA,
+      driveWorking: async () => {
+        await rowA.click()
+        await composeText(page, composerInput(page), "Reply with exactly this one token, nothing else: B7_A2")
+        await sendSubsequentMessage(page)
+        await page.locator(RAIL_SELECTORS.sessionRow(sessionB)).click()
+      },
+      driveDone: releaseReply,
+    })
+  } finally {
+    releaseReply()
+  }
 }
 
 /** Reload preserves rail title, order, and status. */
