@@ -10,7 +10,7 @@
 /* The overlay is rendered by the dialog host as the previous sibling of the
    layer that holds the dialog, so the dialog can only reach it through `:has`. */
 .ui-dialog-overlay:has(+ [data-dialog-layer] [data-component="dialog"][data-scrim="strong"]) {
-  background-color: hsl(0 0% 0% / 0.6);
+  background-color: var(--overlay-scrim-strong);
 }
 
 [data-component="dialog"] {

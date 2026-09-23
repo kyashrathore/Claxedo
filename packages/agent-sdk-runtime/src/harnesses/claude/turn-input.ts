@@ -101,7 +101,7 @@ export function createClaudeTurnInput(opening: ClaudeTurnPrompt): ClaudeTurnInpu
       return await replayed
     },
     observe(message) {
-      if (message.type !== "user" || !("isReplay" in message) || message.isReplay !== true) return false
+      if (message.type !== "user" || !("isReplay" in message) || !message.isReplay) return false
       for (const steer of steers) {
         if (!steer.unreplayed.delete(message.uuid) || steer.unreplayed.size) continue
         steers.delete(steer)
