@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 const clients = new Set<QueryClient>()
 import { createEffect, createMemo, createSignal, type Accessor } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { IdentityProvider } from "@/platform/auth/identity-provider"
 import {
   LocalWorkspaceAutoShareProvider,
   localWorkspaceShareCandidates,
@@ -93,11 +94,13 @@ function mount(input: { projects: Accessor<readonly Project[] | undefined> }) {
     return null
   }
   render(() => (
-    <QueryClientProvider client={client}>
-      <LocalWorkspaceAutoShareProvider projects={input.projects}>
-        <Probe />
-      </LocalWorkspaceAutoShareProvider>
-    </QueryClientProvider>
+    <IdentityProvider principal={{ kind: "signed", userId: "user_1" }}>
+      <QueryClientProvider client={client}>
+        <LocalWorkspaceAutoShareProvider projects={input.projects}>
+          <Probe />
+        </LocalWorkspaceAutoShareProvider>
+      </QueryClientProvider>
+    </IdentityProvider>
   ))
   return () => latest
 }

@@ -243,6 +243,20 @@ export {
   type AgentProcessRole,
 } from "./process-observer"
 
+/**
+ * Conversation context owed to a session's fresh native thread, carried on
+ * every turn until one completes. `announced` records that the harness change
+ * was written onto a sent user message, so a retried first turn does not mark
+ * it again.
+ */
+export type SessionHandoff = {
+  from: SessionHarness
+  pending: true
+  transcript: string
+  reason?: "missing-session"
+  announced?: true
+}
+
 export type SessionConfig = {
   /** Host-owned maximum permission level, retained across harness changes. */
   permissionCeiling?: import("./adapter-contract").AutoLevel
@@ -268,7 +282,7 @@ export type SessionConfig = {
    * instruction prose the group was also rendered into.
    */
   group?: SessionModelGroup | null
-  handoff?: { from: SessionHarness; pending: true; transcript: string; reason?: "missing-session" } | null
+  handoff?: SessionHandoff | null
 }
 
 /**
@@ -290,7 +304,7 @@ export type SessionConfigUpdate = {
   agent?: string | null
   instructions?: string | null
   group?: SessionModelGroup | null
-  handoff?: { from: SessionHarness; pending: true; transcript: string; reason?: "missing-session" } | null
+  handoff?: SessionHandoff | null
 }
 
 /**

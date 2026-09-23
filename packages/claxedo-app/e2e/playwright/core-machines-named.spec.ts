@@ -20,7 +20,9 @@
 // Source, not the package specifier: Playwright resolves with Node conditions
 // and would take the published `dist` entry, which a source checkout has not built.
 import { machineDisplayName } from "../../../claxedo-helpers/src/machine-name"
-import { expect, test, type Page, type Route } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
+import type { RemoteAccessService } from "../../../claxedo-server/src/routes/remote-access"
+import { emptyRemoteAccessService, type RemoteAccessDeployment } from "../helpers/contracts/remote-access"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { stampTestAuth } from "../playwright-global-setup"
 
@@ -33,12 +35,7 @@ const DESKTOP_NAME = machineDisplayName("darwin", {
 })
 const CONNECT_HOST_NAME = "build-box"
 
-type Machine = {
-  host_id: string
-  display_name: string
-  last_seen_at: number
-  workspace_ids: string[]
-}
+type Machine = Awaited<ReturnType<RemoteAccessService["devices"]>>[number]
 
 /**
  * The machines half of the control plane: the fleet, and the one write that
@@ -47,44 +44,29 @@ type Machine = {
 function machineStore(initial: Machine[]) {
   const machines = [...initial]
   const renames: Array<{ hostId: string; displayName: string }> = []
+  const deployment: RemoteAccessDeployment = {
+    signed: true,
+    deviceLoginConfigured: true,
+    relayConfigured: true,
+    service: {
+      ...emptyRemoteAccessService(),
+      status: async () => ({ enrolled: true, enabled: true, secondDeviceOpen: false }),
+      devices: async () => machines.map((machine) => ({ ...machine, workspaceIds: [...machine.workspaceIds] })),
+      rename: async (_auth, { hostId, displayName }) => {
+        const machine = machines.find((entry) => entry.hostId === hostId)
+        if (!machine) return undefined
+        renames.push({ hostId, displayName })
+        machine.displayName = displayName
+        return { displayName }
+      },
+    },
+  }
 
   return {
-    machines,
     renames,
+    deployment,
     add(machine: Machine) {
       machines.push(machine)
-    },
-    async handle(route: Route) {
-      const request = route.request()
-      const url = new URL(request.url())
-      const json = (body: unknown, status = 200) =>
-        route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) })
-
-      if (url.pathname === "/api/claxedo/remote-access") {
-        return json({
-          device_login_configured: true,
-          relay_configured: true,
-          hosted_signed_in: true,
-          enabled: true,
-          enrolled: true,
-          second_device_open: false,
-        })
-      }
-      if (url.pathname === "/api/claxedo/remote-access/devices") return json({ devices: machines })
-      const rename = /^\/api\/claxedo\/remote-access\/devices\/([^/]+)$/.exec(url.pathname)
-      if (rename && request.method() === "PATCH") {
-        const hostId = decodeURIComponent(rename[1] ?? "")
-        const body = (request.postDataJSON?.() ?? {}) as Record<string, unknown>
-        const displayName = typeof body.display_name === "string" ? body.display_name : ""
-        const machine = machines.find((entry) => entry.host_id === hostId)
-        if (!machine || !displayName) {
-          return json({ error: { code: "host_enrollment_not_found", message: "That machine is not enrolled" } }, 404)
-        }
-        renames.push({ hostId, displayName })
-        machine.display_name = displayName
-        return json({ display_name: displayName })
-      }
-      return route.fallback()
     },
   }
 }
@@ -97,11 +79,8 @@ async function openMachines(page: Page, store: ReturnType<typeof machineStore>) 
     sessionId: SESSION_ID,
     projectId: PROJECT_ID,
     projectName: "machines-named",
+    remoteAccess: store.deployment,
   })
-  // Registered AFTER the shared mock: it carries its own remote-access stub,
-  // and Playwright runs the last-registered matching handler first, so an
-  // earlier route here would never be reached.
-  await page.route("**/api/claxedo/remote-access**", (route) => void store.handle(route))
   // The per-machine provider configuration the same panel lists; no owner has
   // pushed any.
   await page.route("**/api/claxedo/host/enrollments**", (route) =>
@@ -131,10 +110,10 @@ function machineRow(page: Page, displayName: string) {
 
 function desktop(): Machine {
   return {
-    host_id: "host_desktop",
-    display_name: DESKTOP_NAME,
-    last_seen_at: Date.now(),
-    workspace_ids: ["ws_one", "ws_two"],
+    hostId: "host_desktop",
+    displayName: DESKTOP_NAME,
+    lastSeenAt: Date.now(),
+    workspaceIds: ["ws_one", "ws_two"],
   }
 }
 
@@ -196,10 +175,10 @@ test.describe("core machines are named @core @surface-web", () => {
     await expect(page.locator('[data-slot="add-connect-host"]')).toContainText("claxedo connect")
 
     store.add({
-      host_id: "host_build",
-      display_name: CONNECT_HOST_NAME,
-      last_seen_at: Date.now(),
-      workspace_ids: ["ws_api"],
+      hostId: "host_build",
+      displayName: CONNECT_HOST_NAME,
+      lastSeenAt: Date.now(),
+      workspaceIds: ["ws_api"],
     })
     // The panel re-reads the fleet on every open, so reopening it is what a
     // user does after the enrollment lands on the other machine.

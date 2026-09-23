@@ -45,8 +45,17 @@ export type CodeHostStatus = {
  */
 const CODE_HOST_CAPABILITY = "code-host"
 
+/**
+ * A request that never lands reads the same as a server with no code host:
+ * the caller's only answer to either is the URL field, which clones without one.
+ */
 export async function readCodeHostStatus(request: CodeHostRequest): Promise<CodeHostStatus> {
-  const response = await request("")
+  let response: Response
+  try {
+    response = await request("")
+  } catch {
+    return { integrations: [], connections: [] }
+  }
   if (!response.ok) return { integrations: [], connections: [] }
   const body = asRecord(await response.json().catch(() => undefined))
   if (!body) return { integrations: [], connections: [] }

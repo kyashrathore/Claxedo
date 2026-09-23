@@ -46,6 +46,13 @@ import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "../../src/platform/api/local-s
 import { eventStream, lastEventId } from "../helpers/sse-route"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 import { bootstrapDeployment } from "../helpers/mock-runtime"
+import {
+  emptyRemoteAccessService,
+  fulfillRemoteAccessRoute,
+  isRemoteAccessPath,
+  unconfiguredRemoteAccessDeployment,
+  type RemoteAccessDeployment,
+} from "../helpers/contracts/remote-access"
 
 const PROJECT_ID = "proj_core_host_tunnel_workspace"
 const WORKSPACE_ID = "ws_core_host_tunnel_workspace"
@@ -762,8 +769,10 @@ async function installHostTunnelRuntimeMock(
     // it offers — a central read, and one this loopback central answers with
     // `localExecution: true` exactly as the real local server does.
     if (url.pathname === "/api/claxedo/health") return json(route, { healthy: true, version: "1.0.0-test", localExecution: true })
-    // The central is up; nothing has been published from this surface.
-    if (url.pathname === "/api/claxedo/remote-access/devices") return json(route, { devices: [] })
+    // An account with no enrolled machine; an unsigned central refuses the read.
+    if (isRemoteAccessPath(url.pathname)) {
+      return fulfillRemoteAccessRoute(route, unconfiguredRemoteAccessDeployment(bootstrapDeployment().issuesSessions))
+    }
     // An empty outbox syncs to zeros. Same contract mock-runtime serves.
     if (url.pathname === "/api/claxedo/usage/sync") {
       return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
@@ -1010,6 +1019,25 @@ test.describe("core machine-placed workspace @core", () => {
     const assignments: string[] = []
     // The machine's own publication state, as the control plane would hold it.
     const machine = { enabled: false, workspaceIds: [] as string[] }
+    const remoteAccess: RemoteAccessDeployment = {
+      signed: true,
+      deviceLoginConfigured: true,
+      relayConfigured: true,
+      service: {
+        ...emptyRemoteAccessService(),
+        status: async () => ({ enrolled: machine.enabled, enabled: machine.enabled, secondDeviceOpen: false }),
+        enable: async () => {
+          machine.enabled = true
+          return { hostId: "host_1", workspaceIds: [...machine.workspaceIds], connectionCount: 0 }
+        },
+        // This machine's own row is where the panel's served count and the
+        // reconciler's "already published" set both come from, so the two can
+        // never disagree in this test.
+        devices: async () => machine.enabled
+          ? [{ hostId: "host_1", displayName: "Yashvardhan's MacBook Pro", lastSeenAt: Date.now(), workspaceIds: [...machine.workspaceIds] }]
+          : [],
+      },
+    }
 
     await page.route("**/*", async (route) => {
       if (!api(route)) return route.continue()
@@ -1067,31 +1095,7 @@ test.describe("core machine-placed workspace @core", () => {
       if (url.pathname === "/api/control/orgs") return json(route, [])
       if (url.pathname.startsWith("/api/control/orgs/")) return json(route, [])
 
-      // The three remote-access routes the browser product's port speaks. The
-      // devices list is this machine's own row, which is where the panel's
-      // served count and the reconciler's "already published" set both come
-      // from — so the two can never disagree in this test.
-      if (url.pathname === "/api/claxedo/remote-access/devices") {
-        return json(route, {
-          devices: machine.enabled
-            ? [{ host_id: "host_1", display_name: "Yashvardhan's MacBook Pro", last_seen_at: Date.now(), workspace_ids: machine.workspaceIds }]
-            : [],
-        })
-      }
-      if (url.pathname === "/api/claxedo/remote-access/enable" && method === "POST") {
-        machine.enabled = true
-        return json(route, { host_id: "host_1", connection_count: 0 })
-      }
-      if (url.pathname === "/api/claxedo/remote-access") {
-        return json(route, {
-          device_login_configured: true,
-          relay_configured: true,
-          hosted_signed_in: true,
-          enabled: machine.enabled,
-          enrolled: machine.enabled,
-          second_device_open: false,
-        })
-      }
+      if (isRemoteAccessPath(url.pathname)) return fulfillRemoteAccessRoute(route, remoteAccess)
       if (url.pathname === `/api/workspace/${encodeURIComponent(PROJECT_ID)}/host-assignment` && method === "POST") {
         assignments.push(`${method} ${url.pathname}`)
         if (!machine.workspaceIds.includes(PROJECT_ID)) machine.workspaceIds.push(PROJECT_ID)

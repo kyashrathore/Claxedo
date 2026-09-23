@@ -1,5 +1,6 @@
 import type { AccountPort } from "@/platform/account/account-port"
 import { AccountPortProvider } from "@/platform/account/account-provider"
+import { IdentityProvider } from "@/platform/auth/identity-provider"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { MemoryRouter, Route } from "@solidjs/router"
@@ -184,13 +185,15 @@ function renderInRouter(component: () => JSX.Element) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   sidebarClients.push(client)
   return render(() => (
-    <QueryClientProvider client={client}>
-      <AccountPortProvider port={stubAccountPort}>
-        <MemoryRouter>
-          <Route path="*" component={component} />
-        </MemoryRouter>
-      </AccountPortProvider>
-    </QueryClientProvider>
+    <IdentityProvider principal={{ kind: "anonymous" }}>
+      <QueryClientProvider client={client}>
+        <AccountPortProvider port={stubAccountPort}>
+          <MemoryRouter>
+            <Route path="*" component={component} />
+          </MemoryRouter>
+        </AccountPortProvider>
+      </QueryClientProvider>
+    </IdentityProvider>
   ))
 }
 

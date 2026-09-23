@@ -30,6 +30,12 @@ export function createAutoScroll(options: AutoScrollOptions) {
 
   const active = () => options.working() || settling
 
+  const endSettle = () => {
+    settling = false
+    if (settleTimer) clearTimeout(settleTimer)
+    settleTimer = undefined
+  }
+
   const distanceFromBottom = (el: HTMLElement) => {
     return el.scrollHeight - el.clientHeight - el.scrollTop
   }
@@ -151,12 +157,15 @@ export function createAutoScroll(options: AutoScrollOptions) {
     stop()
   }
 
-  const handleInteraction = () => {
+  // The settle window follows the finished turn's own trailing layout; growth
+  // after the reader acts on the transcript (opening a row) is theirs.
+  const handleClick = () => {
     if (!active()) return
     const selection = window.getSelection()
     if (selection && selection.toString().length > 0) {
       stop()
     }
+    endSettle()
   }
 
   const updateOverflowAnchor = (el: HTMLElement) => {
@@ -203,9 +212,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
 
   createEffect(
     on(options.working, (working: boolean) => {
-      settling = false
-      if (settleTimer) clearTimeout(settleTimer)
-      settleTimer = undefined
+      endSettle()
 
       if (working) {
         if (!store.userScrolled) scrollToBottom(true)
@@ -229,6 +236,8 @@ export function createAutoScroll(options: AutoScrollOptions) {
   })
 
   createEventListener(() => store.scrollRef, "wheel", handleWheel, { passive: true })
+  // Capture: row controls stop their clicks from bubbling.
+  createEventListener(() => store.scrollRef, "click", handleClick, { capture: true })
 
   onCleanup(() => {
     if (settleTimer) clearTimeout(settleTimer)
@@ -239,7 +248,6 @@ export function createAutoScroll(options: AutoScrollOptions) {
     scrollRef: (el: HTMLElement | undefined) => setStore("scrollRef", el),
     contentRef: (el: HTMLElement | undefined) => setStore("contentRef", el),
     handleScroll,
-    handleInteraction,
     pause: stop,
     // Restore intent before a remounted scroller has measurable content.
     // `pause` handles a gesture and deliberately requires scrollable geometry.

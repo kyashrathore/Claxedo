@@ -1,9 +1,8 @@
 import fs from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import { inside } from "@claxedo/helpers/path"
 import { runGit } from "./git"
-import { runtimeEnvText, workspaceRuntimeStoreDir } from "./env"
+import { workspaceRuntimeStoreDir, workspaceRuntimeWorkspacesDir } from "./env"
 import { RuntimeStore, type WorkspaceWorktreeRecord } from "./store"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, WorkspaceTargetError } from "./target"
 
@@ -13,10 +12,7 @@ type WorktreeStore = Pick<RuntimeStore, "getWorktree" | "listWorktrees" | "putWo
 
 export function workspaceStorageRoot(workspaceId: string, env: NodeJS.ProcessEnv = process.env) {
   if (!SEGMENT.test(workspaceId)) throw new WorkspaceTargetError("workspace id is not path-safe")
-  return path.join(
-    runtimeEnvText(env, "WORKSPACE_RUNTIME_WORKSPACES_DIR") ?? path.join(os.homedir(), ".claxedo", "workspaces"),
-    workspaceId,
-  )
+  return path.join(workspaceRuntimeWorkspacesDir(env), workspaceId)
 }
 
 function requireSessionId(sessionId: string) {

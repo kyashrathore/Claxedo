@@ -2869,6 +2869,26 @@ void describe("RuntimeStore", () => {
     assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.handoff, undefined)
   })
 
+  void it("persists why a handoff is pending and whether a sent message already marked it", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.bindSession({ sessionId: "s2", directory: "/work", agentSessionId: "a2", createdAt: 1 })
+    const from = { id: "claude", access: "native" } as const
+    first.updateSessionConfig("s1", {
+      harness: from,
+      handoff: { from, pending: true, transcript: "rebuilt", reason: "missing-session" },
+    })
+    first.updateSessionConfig("s2", {
+      harness: { id: "codex", access: "native" },
+      handoff: { from, pending: true, transcript: "switched", announced: true },
+    })
+
+    const replayed = new RuntimeStore(root)
+    assert.deepEqual(replayed.getSessionConfig("s1")?.handoff, { from, pending: true, transcript: "rebuilt", reason: "missing-session" })
+    assert.deepEqual(replayed.getSessionConfig("s2")?.handoff, { from, pending: true, transcript: "switched", announced: true })
+  })
+
 })
 
 void describe("RuntimeStore session projection cost", () => {
