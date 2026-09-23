@@ -40,6 +40,7 @@
     "openai": "6.26.0",
     "playwright-core": "1.61.1",
     "sharp": "0.34.5",
+    "tailwindcss": "4.1.11",
     "typescript": "catalog:",
     "vite": "7.1.4",
     "vite-plugin-solid": "2.11.10",
