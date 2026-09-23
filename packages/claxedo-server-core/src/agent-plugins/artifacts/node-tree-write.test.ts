@@ -19,7 +19,8 @@ describe("portable Agent Plugin tree materialization", () => {
       { path: "plugin.json", kind: "file", bytes: new TextEncoder().encode("{}"), executableMode: 0 },
     ]), destination)
     expect(await fs.readFile(path.join(destination, "bin/run"), "utf8")).toBe("#!/bin/sh\n")
-    expect((await fs.stat(path.join(destination, "bin/run"))).mode & 0o111).toBe(0o111)
+    // NTFS has no executable bits; libuv reports every regular file without them.
+    expect((await fs.stat(path.join(destination, "bin/run"))).mode & 0o111).toBe(process.platform === "win32" ? 0 : 0o111)
   })
 
   test("removes a partial destination if an invalid entry is encountered", async () => {
