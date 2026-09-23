@@ -181,11 +181,33 @@ describe("OpenCode server provider trust boundary", () => {
     expect(() => descriptor("https://opencode.example.test", {
       workspacePaths: [{ sourceDirectory: "relative", targetDirectory: TARGET }],
     })).toThrow("absolute")
+    for (const sourceDirectory of ["C:\\repo\\..\\other", "C:\\repo\\", "C:\\repo/sub", "C:repo"]) {
+      expect(() => descriptor("https://opencode.example.test", {
+        workspacePaths: [{ sourceDirectory, targetDirectory: TARGET }],
+      })).toThrow(expect.objectContaining({ code: "invalid_config" }))
+    }
+    expect(() => descriptor("https://opencode.example.test", {
+      workspacePaths: [{ sourceDirectory: SOURCE, targetDirectory: "C:\\remote" }],
+    })).toThrow("absolute POSIX path")
     expect(() => provider.resolve({
       descriptor: descriptor("https://opencode.example.test"),
       directory: "/local/other",
       secrets: {},
     })).toThrow(expect.objectContaining({ code: "invalid_directory" }))
+  })
+
+  test("maps a Windows workspace directory spelled as that machine spells it", async () => {
+    const provider = createOpenCodeServerConnectionProvider()
+    const windows = "C:\\Users\\dev\\repo"
+    const mapped = descriptor("https://opencode.example.test", {
+      workspacePaths: [{ sourceDirectory: windows, targetDirectory: TARGET }],
+    })
+
+    const { config } = await provider.resolve({ descriptor: mapped, directory: windows, secrets: {} })
+
+    expect(config).toMatchObject({ sourceDirectory: windows, targetDirectory: TARGET })
+    expect(() => provider.resolve({ descriptor: mapped, directory: "C:\\Users\\dev\\other", secrets: {} }))
+      .toThrow(expect.objectContaining({ code: "invalid_directory" }))
   })
 
   test.each([".", "..", "../", "%2e%2e", "a/b", "a b", "a?b", "a#b", "a\\b", "ses\tid", "ses\0id", "", "x".repeat(257)])(

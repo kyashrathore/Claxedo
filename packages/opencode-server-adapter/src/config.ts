@@ -174,7 +174,7 @@ function parseWorkspacePaths(input: unknown) {
   const seen = new Set<string>()
   return input.map((value, index) => {
     const row = object(value, `workspacePaths.${index}`)
-    const sourceDirectory = absolutePath(row.sourceDirectory, `workspacePaths.${index}.sourceDirectory`)
+    const sourceDirectory = localDirectory(row.sourceDirectory, `workspacePaths.${index}.sourceDirectory`)
     const targetDirectory = absolutePath(row.targetDirectory, `workspacePaths.${index}.targetDirectory`)
     if (seen.has(sourceDirectory)) throw invalid(`workspacePaths repeats sourceDirectory ${sourceDirectory}`)
     seen.add(sourceDirectory)
@@ -185,9 +185,31 @@ function parseWorkspacePaths(input: unknown) {
 function absolutePath(input: unknown, field: string) {
   const value = text(input, field)
   if (!value.startsWith("/")) throw invalid(`${field} must be an absolute POSIX path`)
-  if (value.includes("\0") || value.includes("\\")) throw invalid(`${field} is invalid`)
-  const parts = value.split("/")
-  if (parts.some((part) => part === "." || part === "..") || value.includes("//") || (value.length > 1 && value.endsWith("/"))) {
+  return assertNormalizedPath(value, "/", field)
+}
+
+/**
+ * The workspace directory as this machine names it, which a session's
+ * directory is compared to byte for byte: a POSIX path, or on Windows a
+ * drive path.
+ */
+function localDirectory(input: unknown, field: string) {
+  const value = text(input, field)
+  if (value.startsWith("/")) return assertNormalizedPath(value, "/", field)
+  if (!/^[A-Za-z]:\\/.test(value)) throw invalid(`${field} must be an absolute path`)
+  assertNormalizedPath(value.slice(2), "\\", field)
+  return value
+}
+
+function assertNormalizedPath(value: string, separator: "/" | "\\", field: string) {
+  const foreign = separator === "/" ? "\\" : "/"
+  if (value.includes("\0") || value.includes(foreign)) throw invalid(`${field} is invalid`)
+  const parts = value.split(separator)
+  if (
+    parts.some((part) => part === "." || part === "..")
+    || value.includes(separator + separator)
+    || (value.length > 1 && value.endsWith(separator))
+  ) {
     throw invalid(`${field} must be normalized`)
   }
   return value
