@@ -782,6 +782,7 @@ describe("DirectoryScope bootstrap gating", () => {
     render(() => (
       <DirectoryScope {...directoryScopeProps}
         directory="workspace:ws_1"
+        harnessType={() => "opencode"}
         sessionId={() => "ses_shared"}
         surfaceId={() => state.surfaceId}
       >
@@ -798,6 +799,29 @@ describe("DirectoryScope bootstrap gating", () => {
       expect(state.dataProviderProps?.data.part).toEqual({})
     })
     expect(state.refreshDirectory).not.toHaveBeenCalled()
+  })
+
+  test("reads no agent list until the pane's harness resolves", async () => {
+    const directory = "/repo/draft"
+    state.agentRows = [{ name: "reviewer", mode: "subagent" }]
+    const [harness, setHarness] = createSignal<string | undefined>(undefined)
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory={directory}
+        harnessType={harness}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>draft pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => expect(state.dataProviderProps).toBeDefined())
+    expect(state.dataProviderProps?.data.agent).toEqual([])
+    expect(state.agentQueryOptions).toMatchObject({ enabled: false })
+
+    setHarness("opencode")
+    await waitFor(() => expect(state.dataProviderProps?.data.agent).toEqual(state.agentRows))
   })
 
   test("owns one workspace-aware agents request for a cloud directory", async () => {

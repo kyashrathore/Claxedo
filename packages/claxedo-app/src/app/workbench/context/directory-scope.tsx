@@ -165,6 +165,9 @@ function DirectoryDataProvider(props: ParentProps<{
     return `${base}/file/raw?directory=${encodeURIComponent(props.directory)}&path=${encodeURIComponent(path)}`
   }
 
+  // An unresolved harness is unknown, not OpenCode. The harness-less key holds
+  // the server's default harness's agents (boot warms it), and reading it let
+  // the `@` list paint those agents and then empty out as the harness resolved.
   const agentQuery = useWorkspaceQuery(() => ({
     ...agentListQuery({
       baseUrl: sdk.url,
@@ -174,8 +177,9 @@ function DirectoryDataProvider(props: ParentProps<{
       workspace: sdk.workspace(props.directory),
     }),
     workspaceId: sdk.workspace(props.directory)?.workspaceId,
-    enabled: hydrateDirectoryAgents(),
+    enabled: hydrateDirectoryAgents() && Boolean(props.harnessType?.()),
   }))
+  const agents = createMemo(() => (props.harnessType?.() ? agentQuery.data ?? [] : []))
   // The persisted model store belongs to this pane's (server, workspace) and
   // keys its maps by harness — the pane's own harness id, the same one Settings
   // names when it edits the store for this workspace.
@@ -215,7 +219,7 @@ function DirectoryDataProvider(props: ParentProps<{
 
   return (
     <DataProvider
-      data={{ ...props.data, agent: agentQuery.data ?? [], session_status: sessionStatus(), session_diff: {}, message: {}, part: {} }}
+      data={{ ...props.data, agent: agents(), session_status: sessionStatus(), session_diff: {}, message: {}, part: {} }}
       directory={props.directory}
       onNavigateToSession={navigateToSession}
       onSessionHref={sessionHref}
@@ -246,7 +250,7 @@ function DirectoryDataProvider(props: ParentProps<{
           sessionId={props.sessionId}
           sessionRef={props.sessionRef}
           active={props.active}
-          agents={() => agentQuery.data ?? []}
+          agents={agents}
         >
           <SessionSyncProvider syncSession={syncSession}>
             {props.children}
