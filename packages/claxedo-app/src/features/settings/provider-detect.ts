@@ -1,4 +1,6 @@
+import { getClaxedoServerUrl } from "@/platform/api/api"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
+import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { loadMachineLogins, useMachineLogin, type MachineLogin } from "@/features/settings/app-ports"
 import type { QuotaWindow } from "@claxedo/usage-contract"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
@@ -221,14 +223,45 @@ export type ProviderDetectResult = {
   effective: ReadonlyMap<string, EffectiveCredential> | undefined
   /** What each harness on this machine says about the login it would run on. */
   machineLogins: MachineLogin[]
+  /** When the harnesses were asked; a reused read keeps the time of the read it reuses. */
+  at: number
 }
 
-/** One read of this machine's harnesses, with the store read alongside it. */
-export async function runProviderDetect(): Promise<ProviderDetectResult> {
-  const [machineLogins, stored, effective] = await Promise.all([
-    loadMachineLogins({}),
-    listStoredCredentials(),
-    listEffectiveCredentials(),
-  ])
-  return { stored, effective, machineLogins }
+/** How long one read of this machine answers for every surface that asks. */
+export const PROVIDER_DETECT_FRESH_MS = 10 * 60_000
+
+function providerDetectQueryKey() {
+  return ["machine-accounts", getClaxedoServerUrl()] as const
+}
+
+/**
+ * One read of this machine's harnesses, with the store read alongside it.
+ *
+ * Asking a harness is not free — Codex answers through its app-server, which
+ * reads the plan windows from the vendor — so the read is held for ten minutes
+ * and every surface that mounts in that window, the first-run wizard's step
+ * and Settings → Models, shows the same answer. `fresh` asks again: a Rescan,
+ * and every write that changes what a harness would run on.
+ */
+export async function runProviderDetect(input: { fresh?: boolean } = {}): Promise<ProviderDetectResult> {
+  const queryKey = providerDetectQueryKey()
+  const result = await queryClient.fetchQuery({
+    queryKey,
+    queryFn: async () => {
+      const [machineLogins, stored, effective] = await Promise.all([
+        loadMachineLogins({}),
+        listStoredCredentials(),
+        listEffectiveCredentials(),
+      ])
+      return { stored, effective, machineLogins }
+    },
+    staleTime: input.fresh ? 0 : PROVIDER_DETECT_FRESH_MS,
+    gcTime: PROVIDER_DETECT_FRESH_MS,
+  })
+  return { ...result, at: queryClient.getQueryState(queryKey)?.dataUpdatedAt ?? Date.now() }
+}
+
+/** Drop the held read, so the next surface to mount asks the machine again. */
+export function forgetProviderDetect() {
+  removeExactQuery(providerDetectQueryKey())
 }

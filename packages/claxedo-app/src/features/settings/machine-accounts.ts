@@ -14,6 +14,7 @@ import {
   activateCredential,
   activateMachineLogin,
   agentInUse,
+  forgetProviderDetect,
   harnessAccounts,
   listEffectiveCredentials,
   listStoredCredentials,
@@ -332,20 +333,19 @@ const machineAccountsInput = {
 
     /**
      * One round of asking every harness on this machine what it is signed in as,
-     * plus a fresh read of the store. Everything that changes what is stored ends
+     * plus a read of the store. Everything that changes what is stored ends
      * here, so the machine-login entry appears and disappears from the same read
-     * the header is derived from. Asking a harness is not free — Codex answers
-     * through its app-server, which reads the plan windows from the vendor — so
-     * this runs on mount, on Rescan, and after a write, never on a render.
+     * the header is derived from. A mount takes the read the last surface made
+     * while it is fresh; Rescan and every write ask again.
      */
-    const scan = async () => {
+    const scan = async (input: { fresh?: boolean } = {}) => {
       setScanning(true)
       try {
-        const result = await runProviderDetect()
+        const result = await runProviderDetect(input)
         setStored(result.stored)
         setEffective(result.effective)
         setMachineLogins(result.machineLogins)
-        setScannedAt(Date.now())
+        setScannedAt(result.at)
         setAccountChecks({})
         await props.onConnected?.()
       } catch (err: unknown) {
@@ -368,7 +368,7 @@ const machineAccountsInput = {
         // stored account of its providers carries the mark.
         if (machine) await activateMachineLogin(machine.providerIds)
         else if (!account.machine) await activateCredential(account.ids)
-        await scan()
+        await scan({ fresh: true })
       } catch (err: unknown) {
         fail(err)
       } finally {
@@ -382,7 +382,7 @@ const machineAccountsInput = {
       setRemoving(first)
       try {
         await removeCredential(ids)
-        await scan()
+        await scan({ fresh: true })
       } catch (err: unknown) {
         fail(err)
       } finally {
@@ -403,6 +403,8 @@ const machineAccountsInput = {
         try {
           const reread = await loadMachineLogins({ serverUrl: globalSDK.url, harness: harness.id, fresh: true })
           setMachineLogins((prev) => [...prev.filter((login) => login.harness !== harness.id), ...reread])
+          // The held read now names a login this harness no longer reports.
+          forgetProviderDetect()
         } catch (err: unknown) {
           fail(err)
         } finally {

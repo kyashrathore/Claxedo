@@ -43,7 +43,7 @@ export const MachineScanStatus: Component = () => {
           type="button"
           class="border-none bg-transparent p-0 text-12-regular text-text-interactive-base"
           data-action="settings-providers-rescan"
-          onClick={() => void machine.scan()}
+          onClick={() => void machine.scan({ fresh: true })}
         >
           {language.t("settings.providers.agents.rescan")}
         </button>
@@ -77,7 +77,7 @@ export const AgentHarnessAccounts: Component<{
           checking={machine.checking()}
           onRemove={(ids) => machine.remove(ids)}
           removing={machine.removing()}
-          onConnected={() => machine.scan()}
+          onConnected={() => machine.scan({ fresh: true })}
         />
       </SettingsList>
     </Show>

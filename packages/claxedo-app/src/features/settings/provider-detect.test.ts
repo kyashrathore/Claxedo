@@ -1,18 +1,21 @@
-import { afterEach, beforeAll, describe, expect, test } from "bun:test"
+import { afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test"
 import {
   accountIdentity,
   activateCredential,
   activateMachineLogin,
   agentInUse,
+  forgetProviderDetect,
   harnessAccounts,
   listEffectiveCredentials,
   listStoredCredentials,
+  PROVIDER_DETECT_FRESH_MS,
   removeCredential,
   runProviderDetect,
   type StoredCredential,
 } from "./provider-detect"
 import { localHarnessChecks } from "@/features/settings/app-ports"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+import { queryClient } from "@/platform/query/query-client"
 
 beforeAll(() => configureAppPortsForTest())
 
@@ -23,6 +26,7 @@ const codex = () => check("codex")
 const realFetch = globalThis.fetch
 
 afterEach(() => {
+  queryClient.clear()
   globalThis.fetch = realFetch
 })
 
@@ -330,6 +334,50 @@ describe("runProviderDetect", () => {
       { harness: "cursor", state: "signed_out" },
     ])
     expect(result.machineLogins[0]).toMatchObject({ email: "person@acme.com", plan: "max" })
+  })
+
+  const emptyMachine = () => ({
+    "/api/claxedo/credentials": { credentials: [] },
+    "/api/claxedo/credentials/effective": { scope: "local", credentials: [] },
+    "/api/claxedo/credentials/machine-logins": { machine_logins: [] },
+  })
+
+  test("a second surface within ten minutes takes the read the first one made, timed as that read", async () => {
+    const now = spyOn(Date, "now").mockReturnValue(1_000_000)
+    try {
+      const calls = stubNetwork(emptyMachine())
+      const first = await runProviderDetect()
+      now.mockReturnValue(1_000_000 + PROVIDER_DETECT_FRESH_MS - 1)
+      const second = await runProviderDetect()
+      expect(calls).toHaveLength(3)
+      expect(first.at).toBe(1_000_000)
+      expect(second.at).toBe(1_000_000)
+
+      now.mockReturnValue(1_000_000 + PROVIDER_DETECT_FRESH_MS)
+      const third = await runProviderDetect()
+      expect(calls).toHaveLength(6)
+      expect(third.at).toBe(1_000_000 + PROVIDER_DETECT_FRESH_MS)
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  test("a fresh read asks the machine again inside the window, and a forgotten one is asked on the next mount", async () => {
+    const calls = stubNetwork(emptyMachine())
+    await runProviderDetect()
+    await runProviderDetect({ fresh: true })
+    expect(calls).toHaveLength(6)
+
+    forgetProviderDetect()
+    await runProviderDetect()
+    expect(calls).toHaveLength(9)
+  })
+
+  test("a failed read is not held: the next surface asks again", async () => {
+    const calls = stubNetwork({ ...emptyMachine(), "/api/claxedo/credentials": new Response("no", { status: 500 }) })
+    await expect(runProviderDetect()).rejects.toThrow()
+    await expect(runProviderDetect()).rejects.toThrow()
+    expect(calls.filter((path) => path === "/api/claxedo/credentials")).toHaveLength(2)
   })
 })
 
