@@ -275,7 +275,9 @@ describe("stopping the app-server", () => {
     const signal = await new Promise<string | null>((resolve) => {
       stubborn.once("exit", (_code, exitSignal) => resolve(exitSignal))
     })
-    expect(signal).toBe("SIGKILL")
+    // Windows has no catchable SIGTERM: kill() is TerminateProcess, so the
+    // handler never runs and the first signal is the one that ends the child.
+    expect(signal).toBe(process.platform === "win32" ? "SIGTERM" : "SIGKILL")
   }, 10_000)
 
   test("a child that stops on its own is not killed", async () => {
