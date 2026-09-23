@@ -45,6 +45,12 @@ export type RuntimeUsageObservation = {
    */
   scope?: string
   tokens: RuntimeTokenUsage
+  /**
+   * The model id the provider reports having served these requests with, where
+   * it names one. A session's configured model can be an alias (`opus[1m]`)
+   * that no price list carries.
+   */
+  model?: string
   /** Provider-native ordering data when the source exposes it. */
   sequence?: number
   providerObservationId?: string
