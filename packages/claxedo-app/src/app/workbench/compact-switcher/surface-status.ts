@@ -31,8 +31,9 @@ export function sessionSurfaceStatus(input: {
 }): SwitcherStatus {
   if (hasBlockingSessionRequest(input)) return "permission"
   if (input.statusType === "busy" || input.statusType === "retry") return "working"
-  if (input.failed) return "error"
-  if (input.unseenDone) return "done"
+  // A failure is news only until it is seen, the same as a finished turn: one
+  // that ends in the pane the user is looking at never marks the tab.
+  if (input.unseenDone) return input.failed ? "error" : "done"
   return "idle"
 }
 

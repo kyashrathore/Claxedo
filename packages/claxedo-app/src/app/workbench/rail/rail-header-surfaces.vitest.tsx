@@ -115,7 +115,7 @@ describe("rail header surface ownership", () => {
     }
   })
 
-  test("a background session's failed turn shows as error on its tab until the next turn starts", () => {
+  test("a background session's failed turn shows as error on its tab until it is seen", () => {
     const { state, header } = mountHeader()
     const alpha = state.layout.openSession(directory, "ses_alpha", "Alpha")
     state.wb.navigation.show(state.layout.openSession(directory, "ses_bravo", "Bravo"))
@@ -126,8 +126,23 @@ describe("rail header surface ownership", () => {
     dispatchSessionStatusEvent({ event: { type: "session.idle", source: "server", sessionID: "ses_alpha" } })
     expect(row.status).toBe("error")
 
+    header.selectSurface(alpha)
+    expect(row.status).toBe("idle")
+
     dispatchSessionStatusEvent({ event: { type: "session.status", source: "optimistic", sessionID: "ses_alpha", status: { type: "busy" } } })
     expect(row.status).toBe("working")
+  })
+
+  test("a turn that fails in the focused pane never marks its tab", () => {
+    const { state, header } = mountHeader()
+    const alpha = state.layout.openSession(directory, "ses_alpha", "Alpha")
+    const row = header.switcherItems().find((item) => item.contentId === alpha)!
+
+    dispatchSessionStatusEvent({ event: { type: "session.status", source: "server", sessionID: "ses_alpha", status: { type: "busy" } } })
+    expect(row.status).toBe("working")
+    dispatchSessionStatusEvent({ event: { type: "session.error", source: "server", sessionID: "ses_alpha" } })
+    dispatchSessionStatusEvent({ event: { type: "session.idle", source: "server", sessionID: "ses_alpha" } })
+    expect(row.status).toBe("idle")
   })
 
   test("terminal status is read from its state owner without leaking to another terminal", () => {
