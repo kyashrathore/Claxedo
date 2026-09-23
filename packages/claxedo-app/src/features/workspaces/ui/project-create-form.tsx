@@ -84,7 +84,7 @@ export function ProjectCreateForm(
   const [checking, setChecking] = createSignal(false)
   const [repositories, setRepositories] = createSignal<CodeHostRepositoryList>()
   const [listing, setListing] = createSignal(false)
-  const settled = <T,>(read: () => Promise<T>, apply: (value: T | undefined) => void, busy: (value: boolean) => void) => {
+  const settled = <T,>(read: () => Promise<T>, apply: (value: T) => void, busy: (value: boolean) => void) => {
     let current = true
     onCleanup(() => {
       current = false
@@ -92,7 +92,6 @@ export function ProjectCreateForm(
     busy(true)
     void read()
       .then((value) => current && apply(value))
-      .catch(() => current && apply(undefined))
       .finally(() => current && busy(false))
   }
   const refetchStatus = () => settled(() => readCodeHostStatus(codeHost()), setStatus, setChecking)
