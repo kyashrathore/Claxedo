@@ -12,7 +12,6 @@ export const subSelectorTags = [
   "documents-rich-canary",
   "documents-unsigned-local-canary",
   "first-interaction",
-  "onboarding-enabled",
   "surface-desktop",
   "surface-web",
 ] as const

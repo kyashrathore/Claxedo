@@ -134,7 +134,7 @@ export const appLocal: Policy = {
   // list; reviewed owner is the workspaces data domain, which already owns both
   // halves (`share-workspace` decides what is local, `shared-workspaces` reads
   // what is published) and is the only layer allowed to import them —
-  // `features/onboarding` may not.
+  // `features/settings` may not.
   // Session open/switch instrumentation (`platform/performance/session-perf.ts`
   // and its screen-side owner `features/session/ui/session-open-perf.ts`)
   // adds two modules and no package edge.
@@ -465,7 +465,7 @@ export const appLocal: Policy = {
   // with its reconnect policy in `app/providers/claxedo-events-reconnect.ts`;
   // the global-sdk provider consumes its frames and opens nothing of its own.
   //
-  // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
+  // +1 module (2026-09-20): `features/settings/remote-access/machine-provider-config.tsx`
   // — the owner's push/clear of sealed provider credentials for one enrolled
   // machine, rendered under each row of the Machines list by
   // `remote-access-surface.tsx`. It reaches the control plane only through
@@ -558,13 +558,33 @@ export const appLocal: Policy = {
   // under the 800-line budget when the pane hit test was bounded to the
   // workbench root. It sits beside the drag helpers it already used and
   // reaches nothing new. Owner: `app/workbench/workbench`. No new package edge.
+  // -13 modules (2026-09-23): onboarding v1 is gone. The rail no longer
+  // reaches `app/workbench/rail/onboarding-empty-state.tsx`, and with it
+  // `features/onboarding/{registry,setup-shell-state,setup-page,dismissals,
+  // go-further,home-view,navigation,state,destination,destination-surface,
+  // ai-connect-surface}`; the no-project screen is `first-project-canvas.tsx`
+  // alone. No package edge changes. Exact measured 1100 modules / 58 packages,
+  // with no headroom.
+  // Re-measured (2026-09-23) on a clean checkout of that removal: 1101
+  // modules, one more than it recorded; the ledger below starts from the
+  // measured figure.
+  // +5 modules (2026-09-23): the first-run wizard,
+  // `features/onboarding/{wizard,project-step,ai-step,execution-step}.tsx`
+  // and `draft.ts`, hosted by `first-project-canvas.tsx`. It draws the Models
+  // page's account rows and provider sections and the workspaces form through
+  // `features/onboarding/app-ports.ts`, so nothing outside the feature is
+  // newly reached. Owner: `features/onboarding`. No new package edge.
+  // -4 modules (2026-09-23): `features/onboarding/{credential-query,
+  // credential-resolution,credential-sharing,sandbox-provider-query}.ts`, kept
+  // for a wizard that turned out not to read them, are gone. Exact measured
+  // 1102 modules / 58 packages, with no headroom.
   // +5 modules (2026-09-23): `features/session/image-marks/{marks,flatten}.ts`,
   // `mark-layer.tsx`, `mark-badge.tsx` and the lazily imported
   // `image-mark-editor.tsx` — numbered marks and comments on a pasted image.
   // The composer, the request builder and the transcript's comment strip all
   // read them, so they sit beside those owners rather than inside the
   // composer. Owner: `features/session/image-marks`. No new package edge.
-  ceilings: { modules: 1136, packages: 58 },
+  ceilings: { modules: 1107, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

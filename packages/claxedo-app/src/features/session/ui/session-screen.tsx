@@ -118,6 +118,7 @@ import { createActivePaneProjection } from "@/features/session/store/active-pane
 import { createSessionScreenCacheProjection } from "@/features/session/ui/session-screen-cache-projection"
 import { createParentSessionNavigation } from "@/features/session/ui/session-parent-navigation"
 import { createNewSessionBranchSource } from "@/features/session/ui/components/session-new-branch-source"
+import { newSessionProjectRoot } from "@/features/session/ui/components/session-new-view-root"
 import { useMarked } from "@opencode-ai/ui/context/marked"
 import {
   firstFoldMarkdownBodies,
@@ -689,8 +690,13 @@ export default function SessionPage(props: {
     composerState.requestReadError() || composerState.questionRequest()
   ))
 
-  const newSessionBranchSource = createNewSessionBranchSource({ enabled: newSession, directory: () => activeProject()?.worktree ?? dir(), worktree: newSessionWorktree,
-    touch: () => setStore("newSessionControlsTouched", true), setWorktree: (value) => setStore("newSessionWorktree", value) })
+  const newSessionBranchSource = createNewSessionBranchSource({
+    enabled: newSession,
+    directory: () => newSessionProjectRoot({ sdkDirectory: dir(), projectWorktree: activeProject()?.worktree }),
+    worktree: newSessionWorktree,
+    touch: () => setStore("newSessionControlsTouched", true),
+    setWorktree: (value) => setStore("newSessionWorktree", value),
+  })
   const newSessionBranch = newSessionBranchSource.selected, newSessionBaseRef = () => newSessionBranch()?.gitRef,
     newSessionSourceBranch = () => newSessionBranch()?.sourceBranch
   createEffect(

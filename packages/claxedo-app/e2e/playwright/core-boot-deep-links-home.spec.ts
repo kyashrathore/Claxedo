@@ -65,8 +65,8 @@
  *     available (`RailWorkbenchShell` wraps all routed page content in
  *     `<div class="hidden">`, `src/app/workbench/rail/rail-workbench-shell.tsx:129`).
  *     The visible zero-project surface is `RailWorkbenchCanvas`'s
- *     `OnboardingEmptyState`: a four-step setup shell whose project action delegates to
- *     the existing `handleNewProject`. With ≥1 project registered,
+ *     `FirstProjectCanvas` (`data-testid="first-project-canvas"`): the project create
+ *     form rendered as the screen. With ≥1 project registered,
  *     `useRailEmptyDraftController`'s `emptyDraftDirectory` memo
  *     (`src/app/workbench/rail/rail-empty-draft-controller.ts:40`) resolves to
  *     `activeDirectory() ?? projects()[0]?.worktree`, so the canvas instead renders a
@@ -128,18 +128,6 @@
  *  10. An unreachable server shows the `ConnectionError` screen, and once
  *      `/api/claxedo/health` starts succeeding again the app auto-recovers to normal
  *      content with no user action (no retry button to click).
- *  11. [`VITE_CLAXEDO_ONBOARDING_V1=true` + `CLAXEDO_ONBOARDING_DESKTOP_E2E=1` only]
- *      Desktop-style ramp: with a project already registered, the flagged onboarding
- *      owner opens in `data-mode="form"` at the "Connect your AI" step, credential
- *      discovery/selection saves only the CHECKED items, and once a saved credential
- *      verifies the owner flips to `data-mode="hidden"` and hands off to the real draft
- *      composer — which then sends a normal first prompt.
- *  12. [`VITE_CLAXEDO_ONBOARDING_V1=true`, non-desktop surface only] `/?onboarding=…`
- *      is an honored deep link into a specific setup step, resolved against reality
- *      rather than taken on faith: a step that does not apply on this surface
- *      (`remote-access` on web) or that is not yet reachable (`ai` while the cloud
- *      answer still owes a provider key) lands on the first thing worth doing
- *      instead of on a screen the user cannot act on.
  *
  * INVARIANTS —
  *   - A fresh app mount at a session-owning URL always discards any workbench state
@@ -173,7 +161,6 @@ import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } f
 
 const DIR = "/tmp/e2e-core-boot-deep-links-home"
 const PROJECT_ID = "project_core_boot_deep_links_home"
-const ONBOARDING_V1 = process.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
 const SESSION_ID = "ses_core_boot_deep_links_home"
 
 function slug(value: string) {
@@ -204,18 +191,10 @@ async function seedOneProject(page: Page, dir: string) {
   }, { dir, projectId: PROJECT_ID })
 }
 
-/** Pre-answers setup's destination question so a test can start at a later step. */
-async function seedDestination(page: Page, destination: "local" | "cloud" | "both") {
-  await page.addInitScript((value: string) => {
-    localStorage.setItem("claxedo.global.dat:onboarding.destination.v1", JSON.stringify({ destination: value }))
-  }, destination)
-}
-
 /**
  * No `localStorage.clear()` here: a test's context starts empty, and an init
  * script re-runs on every document including `page.reload()`, so a clear would
- * erase the answer setup persisted — the reload in the cloud-hold test exists
- * to prove that answer survives.
+ * erase whatever the app persisted before a reload.
  */
 async function seedNoProjects(page: Page) {
   await page.addInitScript(() => {
@@ -393,21 +372,9 @@ test.describe("core boot, deep links, and home @core", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    if (ONBOARDING_V1) {
-      await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
-      // Without a sandbox provider token the two cloud steps do not apply, so the counter reads 2.
-      await expect(page.locator("header").getByText("Step 1 of 2")).toBeVisible()
-      await expect(page.getByRole("heading", { name: "Choose where your first task runs" })).toBeVisible()
-      // Scoped to the setup page: the shell's own "Skip to composer" link is not a setup affordance.
-      const setupPage = page.locator('[data-component="setup-page"]')
-      await expect(setupPage.getByRole("button", { name: /^Skip/ })).toHaveCount(0)
-      await expect(setupPage.getByRole("button", { name: "Back" })).toHaveCount(0)
-      await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-empty.png", fullPage: true })
-    } else {
-      await expect(page.getByTestId("first-project-canvas")).toBeVisible({ timeout: 20_000 })
-      await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
-      await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
-    }
+    await expect(page.getByTestId("first-project-canvas")).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByRole("heading", { name: "Start with a project" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
     // `not.toBeVisible`, not `toHaveCount(0)`: the home route stays mounted in a hidden subtree.
     await expect(page.getByText("Recent projects")).not.toBeVisible()
 
@@ -417,168 +384,6 @@ test.describe("core boot, deep links, and home @core", () => {
     expect(nonProviderBadResponses(mock.requests.badResponses)).toEqual([])
     expect(mock.requests.unhandled).toEqual([])
     expectConsoleMirrorsAreAccountedFor(mock.requests)
-  })
-
-  test("the local-only onboarding ramp hands off from AI verification to the real draft composer @onboarding-enabled", async ({ page }) => {
-    const mock = await installMockRuntime(page, {
-      dir: DIR,
-      sessionId: SESSION_ID,
-      projectName: "core-boot-onboarding",
-      harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
-    })
-    let savedSelection: unknown
-    let credentialRequests = 0
-    await page.route("**/api/claxedo/credentials**", async (route) => {
-      credentialRequests += 1
-      const pathname = new URL(route.request().url()).pathname
-      if (pathname.endsWith("/machine-logins")) {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            machine_logins: [
-              { harness: "claude", providerIds: ["anthropic"], state: "signed_out" },
-              { harness: "codex", providerIds: ["openai"], state: "signed_in", email: "dev@example.com" },
-            ],
-          }),
-        })
-        return
-      }
-      if (pathname.endsWith("/save-discovered")) {
-        savedSelection = route.request().postDataJSON()
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ saved: [{ credential_id: "cred_onboarding", provider_id: "anthropic" }] }),
-        })
-        return
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ credentials: [] }),
-      })
-    })
-
-    await seedOneProject(page, DIR)
-    await seedDestination(page, "local")
-    await page.goto("/", { waitUntil: "domcontentloaded" })
-    await expect.poll(() => credentialRequests, { timeout: 20_000 }).toBeGreaterThan(0)
-    expect(await page.evaluate(() => localStorage.getItem("claxedo.global.dat:onboarding.dismissals.v1"))).toBeNull()
-    await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "form")
-    await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
-    // Web has no remote-access step, so with a project present this is the final step.
-    await expect(page.locator("header").getByText("Step 2 of 2")).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Your logins" })).toBeVisible()
-
-    await page.getByRole("button", { name: "Check my logins" }).click()
-
-    await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "hidden")
-    await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
-    expect(credentialRequests).toBeGreaterThanOrEqual(2)
-    expect(savedSelection).toBeUndefined()
-    await page.screenshot({ path: "../../docs/plans/evidence/onboarding-project-ai-handoff.png", fullPage: true })
-
-    const firstPrompt = "inspect this repository and suggest a first task"
-    const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
-    await ensureComposerModelSelected(page)
-    await composer.fill(firstPrompt)
-    await page.locator(SELECTORS.submitControl).last().click()
-    await expectAssistantReplyVisible(page, `ack 1: ${firstPrompt}`)
-    expect(mock.requests.promptCount).toBe(1)
-  })
-
-  test("the remote-access deep link is honoured once earlier steps are proven @onboarding-enabled", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
-    await page.route("**/api/claxedo/credentials**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          credentials: [{
-            id: "cred_web_onboarding",
-            provider_id: "anthropic",
-            scope: "shared",
-            health: "ok",
-          }],
-        }),
-      })
-    })
-
-    // A configured driver satisfies the cloud step, so the flow may move past it.
-    await page.route("**/api/workspace/drivers**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          default_driver: "daytona",
-          drivers: [{ id: "daytona", label: "Daytona", fields: [], configured: true, source: "local", default: true }],
-        }),
-      })
-    })
-
-    await seedOneProject(page, DIR)
-    await seedDestination(page, "both")
-    await page.goto("/?onboarding=remote-access", { waitUntil: "domcontentloaded" })
-
-    await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "form")
-    // Web has no remote-access step, so the deep link lands on the next applicable one.
-    await expect(page.getByRole("heading", { name: "Reach this machine from anywhere" })).toHaveCount(0)
-    await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
-  })
-
-  test("saying yes to the cloud holds the user until the cloud can actually run @onboarding-enabled", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
-    await page.route("**/project**", (route) => {
-      const type = route.request().resourceType()
-      if (type !== "fetch" && type !== "xhr") return route.continue()
-      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
-    })
-    await page.route("**/api/claxedo/credentials**", async (route) => {
-      if (new URL(route.request().url()).pathname.endsWith("/machine-logins")) {
-        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ machine_logins: [] }) })
-        return
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          credentials: [{ id: "cred_web", provider_id: "anthropic", scope: "shared", health: "ok" }],
-        }),
-      })
-    })
-    await page.route("**/api/workspace/drivers**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          default_driver: "daytona",
-          drivers: [{ id: "daytona", label: "Daytona", fields: [], configured: false, source: "local", default: true }],
-        }),
-      })
-    })
-
-    await seedNoProjects(page)
-    await page.goto("/", { waitUntil: "domcontentloaded" })
-
-    await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByText("Sandbox provider", { exact: true })).toHaveCount(0)
-    await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
-    const cloudChoice = page.getByRole("button", { name: /^Yes, run cloud sessions too/ })
-    await cloudChoice.click()
-    await expect(cloudChoice).toHaveAttribute("aria-pressed", "true")
-
-    // An unconfigured driver keeps the cloud question open; its form is where the key gets saved.
-    await expect(page.getByText("Sandbox provider", { exact: true })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Save key" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
-
-    await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(cloudChoice).toHaveAttribute("aria-pressed", "true")
-    await expect(page.getByText("Sandbox provider", { exact: true })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Save key" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
   })
 
   test("workspace-scoped deep link materializes the pane and a fresh nav discards stale tabs", async ({ page }) => {

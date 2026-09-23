@@ -1,7 +1,7 @@
 // Claxedo routes provider selection to Claxedo-owned connect/custom dialogs instead of upstream global-sync store dialogs.
 //
-// The catalog itself lives in `ProviderList`, shared with the onboarding setup
-// page. This file is the dialog shell and the selection routing.
+// The catalog itself lives in `ProviderList`; this file is the dialog shell
+// and the selection routing.
 import { type Component } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"

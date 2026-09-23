@@ -61,7 +61,7 @@ import { accountBridge, electronAccountPort } from "@/platform/account/electron-
 import { queryClient } from "@/platform/query/query-client"
 import { installSessionStatusTelemetryDevtools } from "../../features/session/store/session-status-telemetry"
 import { getExtensions } from "@/features/extensions"
-import { RemoteAccessMarkerRecorder } from "@/features/onboarding/remote-access-marker"
+import { RemoteAccessMarkerRecorder } from "@/features/settings/remote-access/remote-access-marker"
 import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity"
 import { HostedContributionSync } from "@/app/composition/hosted-contribution-sync"
 import { WorkspaceConnectionAuthoritySync } from "@/app/composition/workspace-connection-authority-sync"

@@ -14,7 +14,7 @@ on:
       linux-unit-only:
         description: >-
           Run the whole unit suite on Linux and nothing else: no Windows leg, no
-          e2e. Every e2e shard, both onboarding legs and tier-real reach real
+          e2e. Every e2e shard and tier-real reach real
           Playwright results and every one of them has failing tests (run
           35737110865), and the Windows leg is still red in package suites
           after its embedded OpenCode verification step, so a release gate that
@@ -51,7 +51,6 @@ jobs:
       boundary_host_connector: ${{ steps.changed.outputs.boundary_host_connector }}
       boundary_server: ${{ steps.changed.outputs.boundary_server }}
       core_e2e: ${{ inputs.linux-unit-only && 'false' || steps.changed.outputs.core_e2e }}
-      onboarding: ${{ inputs.linux-unit-only && 'false' || steps.changed.outputs.onboarding }}
       tier_real: ${{ inputs.linux-unit-only && 'false' || steps.changed.outputs.tier_real }}
     steps:
       - name: Checkout repository history
@@ -300,10 +299,10 @@ jobs:
     # this in one job avoids adding another setup-dominated dependency stage.
     name: e2e reusable builds
     needs: changes
-    # Serves every e2e lane: the core shards, onboarding and tier-real all
-    # consume the workspace dist artifact this job uploads, so the dist-resolved
-    # packages build once per run instead of once per job.
-    if: needs.changes.outputs.core_e2e == 'true' || needs.changes.outputs.onboarding == 'true' || needs.changes.outputs.tier_real == 'true'
+    # Serves every e2e lane: the core shards and tier-real both consume the
+    # workspace dist artifact this job uploads, so the dist-resolved packages
+    # build once per run instead of once per job.
+    if: needs.changes.outputs.core_e2e == 'true' || needs.changes.outputs.tier_real == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -476,82 +475,6 @@ jobs:
             packages/claxedo-app/e2e/playwright/test-results
             packages/claxedo-app/e2e/playwright/report
 
-  e2e-onboarding:
-    name: e2e (onboarding, ${{ matrix.auth-mode }})
-    needs: [changes, e2e-build]
-    if: needs.changes.outputs.onboarding == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        auth-mode: [test-user, local-unsigned]
-    runs-on: ubuntu-latest
-    env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
-      CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
-          node-version: "24.15"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          install-flags: --frozen-lockfile
-
-      - name: Read Playwright version
-        id: playwright-version
-        run: |
-          version=$(node -e 'const p=require("./packages/claxedo-app/package.json");console.log((p.devDependencies??{})["@playwright/test"]??p.dependencies["@playwright/test"])')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ github.workspace }}/.playwright-browsers
-          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
-      - name: Download reusable workspace dist
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
-          path: packages
-
-      - name: Install Playwright Chromium
-        working-directory: packages/claxedo-app
-        run: npx playwright install chromium
-
-      - name: Run onboarding-enabled e2e
-        working-directory: packages/claxedo-app
-        timeout-minutes: 15
-        run: bun run test:e2e:onboarding
-        env:
-          CLAXEDO_E2E_SERVE_MODE: build-preview
-          PLAYWRIGHT_VIDEO: "0"
-          VITE_CLAXEDO_SERVER_URL: "http://127.0.0.1:3001"
-          VITE_CLAXEDO_E2E: "1"
-
-      - name: Upload Playwright artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: playwright-onboarding-${{ matrix.auth-mode }}-${{ github.run_attempt }}
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            packages/claxedo-app/e2e/playwright/test-results
-            packages/claxedo-app/e2e/playwright/report
-
   # Tier R: real claxedo-server + real embedded engine + real harness binaries,
   # with ONLY the model endpoint scripted (e2e/helpers/scripted-model-server.ts).
   # Its own job because the app build bakes VITE_CLAXEDO_SERVER_URL for this
@@ -710,7 +633,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, docs, unit, e2e-build, e2e, e2e-onboarding, e2e-tier-real]
+    needs: [changes, docs, unit, e2e-build, e2e, e2e-tier-real]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected gate to pass
@@ -720,12 +643,10 @@ jobs:
           UNIT_RESULT: ${{ needs.unit.result }}
           E2E_BUILD_RESULT: ${{ needs.e2e-build.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
-          ONBOARDING_RESULT: ${{ needs.e2e-onboarding.result }}
           TIER_REAL_RESULT: ${{ needs.e2e-tier-real.result }}
           DOCS_SELECTED: ${{ needs.changes.outputs.docs }}
           UNIT_SELECTED: ${{ needs.changes.outputs.unit }}
           CORE_E2E_SELECTED: ${{ needs.changes.outputs.core_e2e }}
-          ONBOARDING_SELECTED: ${{ needs.changes.outputs.onboarding }}
           TIER_REAL_SELECTED: ${{ needs.changes.outputs.tier_real }}
         run: |
           require_gate() {
@@ -750,5 +671,4 @@ jobs:
           require_gate "Unit" "$UNIT_SELECTED" "$UNIT_RESULT"
           require_gate "E2E build" "$CORE_E2E_SELECTED" "$E2E_BUILD_RESULT"
           require_gate "Core E2E" "$CORE_E2E_SELECTED" "$E2E_RESULT"
-          require_gate "Onboarding E2E" "$ONBOARDING_SELECTED" "$ONBOARDING_RESULT"
           require_gate "Tier-real E2E" "$TIER_REAL_SELECTED" "$TIER_REAL_RESULT"

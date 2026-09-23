@@ -444,11 +444,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
       if (message && message.role === "user" && index >= lastUserIndex) return message.id
     }
 
-    const status = sessionStatus()
-    if (status.type !== "idle" && lastUserIndex >= 0) {
-      return messages[lastUserIndex].id
-    }
-
+    if (lastUserIndex < 0) return undefined
+    const newest = messages[lastUserIndex].id
+    // An idle that lands before the turn's transcript read keeps the newest
+    // turn active: its reply is still owed, and letting go of it here drops
+    // the Thinking row with nothing to take its place.
+    if (sessionStatus().type !== "idle" || turnSettleRefreshPending(newest)) return newest
     return undefined
   })
   const info = createMemo(() => {
@@ -720,6 +721,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     shouldAnchorBottom: followsEnd,
     hasScrollGesture: props.hasScrollGesture,
     onInViewInsert: () => props.onMarkScrollGesture(),
+    followsInsertBeside: TimelineRow.keyIsThinking,
   })
   const scrollMemory = createTimelineScrollMemory({
     initial: savedScroll, active: props.active, root: listRoot,

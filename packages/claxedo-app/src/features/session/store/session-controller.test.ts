@@ -4,7 +4,6 @@ import {
   ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
   ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
   activeSessionStatusPollingDecision,
-  activeTurnTransition,
   conversationHasAssistantMessage,
   conversationHasTurnReply,
   fetchTransportSession,
@@ -14,13 +13,14 @@ import {
   firstFoldSessionPrefetch,
   removeDirectorySessionCacheRow,
   resolveStoredMessages,
-  sessionHistoryKey,
   shouldStartActiveSessionStatusPolling,
   shouldHydrateSession,
   shouldReuseSessionHistory,
   syncSessionMeta,
   waitForFirstActiveSessionStatusPoll,
 } from "./session-controller"
+import { sessionHistoryKey } from "./history-pagination"
+import { activeTurnTransition } from "./latest-turn-history"
 import { sessionHydrationAuthorityKey } from "./session-resource-authority"
 import {
   createActivationSessionReadEpoch,

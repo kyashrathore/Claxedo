@@ -83,10 +83,11 @@ export function NewSessionDesignView(props: {
   onProjectChange?: (directory: string, project: NewSessionProjectSelection) => void
   /**
    * Creation lives in the Project chip itself: its footer opens a panel with
-   * `ProjectCreateForm` (name, then a folder on this machine or a repository
-   * URL). The folder source needs the directory-picker dialog, which lives in
-   * `app/` — a path `features/session` may not import — so the owner of this
-   * surface passes the picker in; without it the form offers repositories only.
+   * `ProjectCreateForm` (a folder on this machine, or a repository of the
+   * connected code host or by URL). The folder source needs the
+   * directory-picker dialog, which lives in `app/` — a path `features/session`
+   * may not import — so the owner of this surface passes the picker in;
+   * without it the form offers repositories only.
    */
   pickProjectFolder?: () => Promise<string | undefined>
   /**
@@ -304,8 +305,8 @@ export function NewSessionDesignView(props: {
         })),
         onSelect: openProject,
         // Create project lives in the chip, like "Create new worktree" lives
-        // in the Workspace chip: a name, then where the repository is. Where
-        // it runs is the Environment chip's question, asked later.
+        // in the Workspace chip: only where the repository is. Where it runs
+        // is the Environment chip's question, asked later.
         panel: {
           label: "Create project…",
           render: ({ close, back, hold }) => (

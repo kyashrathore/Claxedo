@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 
-import { claxedoCredentialRequest } from "./credential-request"
+import { claxedoCredentialRequest, putHostedProviderKey } from "./credential-request"
 import { requestUrl } from "@/lib/url"
 
 const originalFetch = globalThis.fetch
@@ -76,5 +76,36 @@ describe("claxedoCredentialRequest", () => {
 
     await expect(claxedoCredentialRequest({ credentialId: "cred_1" }, { method: "DELETE" }))
       .rejects.toThrow("Credential not found")
+  })
+})
+
+describe("putHostedProviderKey", () => {
+  test("stores the key as the harness auth body the hosted plane reads", async () => {
+    const seen: Array<{ url: string; method?: string; body: unknown }> = []
+    await putHostedProviderKey({
+      serverUrl: "https://plane.test",
+      providerId: "openai",
+      harness: "pi",
+      key: "sk-live",
+      request: async (target, init) => {
+        seen.push({ url: String(target), method: init?.method, body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body })
+        return Response.json({})
+      },
+    })
+    expect(seen).toEqual([{ url: "https://plane.test/auth/openai?harness=pi", method: "PUT", body: { auth: { key: "sk-live" } } }])
+  })
+
+  test("carries the plane's own refusal sentence, then the raw body, then the status", async () => {
+    const refused = (body: BodyInit | null, status: number) => putHostedProviderKey({
+      serverUrl: "https://plane.test",
+      providerId: "openai-codex",
+      harness: "pi",
+      key: "x",
+      request: async () => new Response(body, { status }),
+    })
+    await expect(refused(JSON.stringify({ error: { code: "pi_provider_unsupported", message: "This Pi provider does not accept API keys" } }), 400))
+      .rejects.toThrow("This Pi provider does not accept API keys")
+    await expect(refused("bad gateway", 502)).rejects.toThrow("bad gateway")
+    await expect(refused("", 503)).rejects.toThrow("Request failed: 503")
   })
 })

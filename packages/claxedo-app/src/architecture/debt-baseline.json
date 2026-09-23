@@ -6,7 +6,7 @@
   "directoryStringParams": 296,
   "effectStateWrites": 88,
   "filesystemShapeRegexClones": 2,
-  "hostKindComparisons": 105,
+  "hostKindComparisons": 104,
   "isFilesystemDirectory": 12,
   "isLoopbackHttpUrl": 4,
   "isSignedInGates": 0,

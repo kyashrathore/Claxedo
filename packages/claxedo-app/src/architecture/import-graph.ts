@@ -46,8 +46,8 @@ const typeContractCandidates = new Set([
   "platform/account/account-port.ts",
   // The machine remote-access port: what "publish this machine" means, with no
   // opinion on whether it is an HTTP call or Electron IPC. Same shape as the
-  // account port above — the binder, both implementations and the onboarding
-  // controller import it type-only.
+  // account port above — the binder, both implementations and the Settings
+  // remote-access controller import it type-only.
   "platform/remote-access/machine-remote-access-port.ts",
   "platform/query/project-meta.ts",
 ])

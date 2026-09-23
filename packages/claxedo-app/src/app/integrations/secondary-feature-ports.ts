@@ -28,9 +28,16 @@ import * as SessionModels from "@/features/session/providers/models"
 import * as HarnessModelOptions from "@/features/session/harness/harness-model-options"
 import * as LinkModule from "@/app/controls/link"
 import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
+import * as SandboxDriverLogoModule from "@/features/settings/ui/sandbox-driver-logo"
+import * as ProjectCreateFormModule from "@/features/workspaces/ui/project-create-form"
+import * as ProjectApi from "@/features/workspaces/data/project-api"
+import * as MachineAccounts from "@/features/settings/machine-accounts"
+import * as AgentsSection from "@/features/settings/ui/agents-section"
+import * as HarnessProviders from "@/features/settings/ui/harness-providers-section"
 import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
-import { DialogConnectIntegration, useOnboardingFunnel } from "./feature-ports"
+import { DialogConnectIntegration } from "./feature-ports"
+import { useOnboardingFunnel } from "./onboarding-funnel"
 
 const DialogConnectProvider = lazyDialog(() =>
   import("@/app/dialogs/connect-provider").then((module) => ({ default: module.DialogConnectProvider })),
@@ -41,14 +48,8 @@ const DialogSelectProvider = lazyDialog(() =>
 const DialogCustomProvider = lazyDialog(() =>
   import("@/app/dialogs/custom-provider").then((module) => ({ default: module.DialogCustomProvider })),
 )
-const ProviderList = lazy(() =>
-  import("@/app/dialogs/provider-list").then((module) => ({ default: module.ProviderList })),
-)
 const ProviderConnectForm = lazy(() =>
   import("@/app/dialogs/provider-connect-form").then((module) => ({ default: module.ProviderConnectForm })),
-)
-const SandboxDriverLogo = lazy(() =>
-  import("@/features/settings/ui/sandbox-driver-logo").then((module) => ({ default: module.SandboxDriverLogo })),
 )
 const DialogReleaseNotes = lazyDialog(() =>
   import("@/app/dialogs/release-notes").then((module) => ({ default: module.DialogReleaseNotes })),
@@ -107,11 +108,17 @@ configureSettingsAppPorts({
 })
 
 configureOnboardingAppPorts({
-  ProviderList,
-  ProviderConnectForm,
+  ProjectCreateForm: ProjectCreateFormModule.ProjectCreateForm,
+  createProject: ProjectApi.createProject,
+  projectRequestMessage: ProjectApi.projectRequestMessage,
+  MachineAccountsProvider: MachineAccounts.MachineAccountsProvider,
+  useMachineAccounts: MachineAccounts.useMachineAccounts,
+  AgentHarnessAccounts: AgentsSection.AgentHarnessAccounts,
+  HarnessProvidersSection: HarnessProviders.HarnessProvidersSection,
+  useProviders: Providers.useProviders,
   workspaceSandboxDriversUrl: SandboxSectionLogic.workspaceSandboxDriversUrl,
   workspaceSandboxDriverAuthUrl: SandboxSectionLogic.workspaceSandboxDriverAuthUrl,
-  SandboxDriverLogo,
+  SandboxDriverLogo: SandboxDriverLogoModule.SandboxDriverLogo,
 })
 
 configureReviewAppPorts({

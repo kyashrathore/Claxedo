@@ -157,7 +157,7 @@ describe("mock-runtime canonical route bindings", () => {
       "https://relay.test/workspaces/ws_1/api/wr/diff/targets",
     )).resolves.toEqual({
       status: 200,
-      body: { defaultRef: "HEAD", candidates: ["HEAD"] },
+      body: { candidates: ["HEAD"] },
     })
     await expect(driveEmptyRuntimeDiffRoute(
       "https://relay.test/workspaces/ws_1/api/wr/diff/vcs/file",

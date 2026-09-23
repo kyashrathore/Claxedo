@@ -132,14 +132,6 @@ function isCoreE2ERelevant(file) {
   return true
 }
 
-function isOnboardingRelevant(file) {
-  return startsWithAny(file, [
-    "packages/claxedo-app/e2e/playwright/onboarding",
-    "packages/claxedo-app/src/features/onboarding/",
-    "packages/claxedo-app/src/features/session/onboarding/",
-  ])
-}
-
 function isTierRealRelevant(file) {
   return startsWithAny(file, [...SERVER_DEPENDENCY_PREFIXES, ...TIER_REAL_APP_PREFIXES])
 }
@@ -200,7 +192,6 @@ function resultFor(files, forceFull, reason) {
     boundary_host_connector: boundaryHostConnector,
     boundary_server: boundaryServer,
     core_e2e: full || codeFiles.some(isCoreE2ERelevant),
-    onboarding: full || codeFiles.some(isOnboardingRelevant),
     tier_real: full || codeFiles.some(isTierRealRelevant),
     sandbox_image: full || codeFiles.some(isSandboxImageRelevant),
     reason,
@@ -241,7 +232,6 @@ function writeGitHubOutputs(result, outputFile) {
     "boundary_host_connector",
     "boundary_server",
     "core_e2e",
-    "onboarding",
     "tier_real",
     "sandbox_image",
   ]

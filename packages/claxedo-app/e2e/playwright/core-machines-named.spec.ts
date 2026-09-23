@@ -102,19 +102,31 @@ async function openMachines(page: Page, store: ReturnType<typeof machineStore>) 
   // and Playwright runs the last-registered matching handler first, so an
   // earlier route here would never be reached.
   await page.route("**/api/claxedo/remote-access**", (route) => void store.handle(route))
+  // The per-machine provider configuration the same panel lists; no owner has
+  // pushed any.
+  await page.route("**/api/claxedo/host/enrollments**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ machines: [] }) }))
   await page.route("**/api/control/orgs**", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: "[]" }))
   await page.goto("/s/new", { waitUntil: "domcontentloaded", timeout: 90_000 })
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-  await page.getByTestId("rail-account-trigger").click()
-  await page.getByRole("menuitem", { name: /settings/i }).click()
-  await page.getByRole("tab", { name: "Machines" }).click()
-  await expect(page.getByRole("heading", { name: "Machines" })).toBeVisible({ timeout: 30_000 })
+  await openMachinesPanel(page)
 }
 
-/** The row a machine occupies, found by the one control that names it. */
+/** Settings is a surface on a route; its sections are the rail's own rows. */
+async function openMachinesPanel(page: Page) {
+  await page.getByTestId("rail-account-trigger").click()
+  await page.getByRole("menuitem", { name: /settings/i }).click()
+  await page.locator('[data-component="settings-nav-item"][data-section="devices"]').click()
+  await expect(page.getByRole("heading", { name: "Machines", level: 1 })).toBeVisible({ timeout: 30_000 })
+}
+
+/**
+ * The row a machine occupies, found by the one control that names it. The
+ * control sits in the row's `role="group"`, whose parent is the row.
+ */
 function machineRow(page: Page, displayName: string) {
-  return page.getByRole("button", { name: `Revoke ${displayName}` }).locator("xpath=ancestor::div[1]")
+  return page.getByRole("button", { name: `Revoke ${displayName}` }).locator('xpath=ancestor::div[@role="group"]/..')
 }
 
 function desktop(): Machine {
@@ -178,6 +190,9 @@ test.describe("core machines are named @core @surface-web", () => {
     const store = machineStore([desktop()])
     await openMachines(page, store)
 
+    // The account already has a machine, so the instructions fold behind one
+    // line until asked for.
+    await page.locator('[data-action="add-machine"]').click()
     await expect(page.locator('[data-slot="add-connect-host"]')).toContainText("claxedo connect")
 
     store.add({
@@ -190,9 +205,7 @@ test.describe("core machines are named @core @surface-web", () => {
     // user does after the enrollment lands on the other machine.
     await page.reload({ waitUntil: "domcontentloaded", timeout: 90_000 })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    await page.getByTestId("rail-account-trigger").click()
-    await page.getByRole("menuitem", { name: /settings/i }).click()
-    await page.getByRole("tab", { name: "Machines" }).click()
+    await openMachinesPanel(page)
 
     await expect(machineRow(page, CONNECT_HOST_NAME)).toContainText(CONNECT_HOST_NAME, { timeout: 30_000 })
     await expect(machineRow(page, CONNECT_HOST_NAME)).toContainText("1 workspace")

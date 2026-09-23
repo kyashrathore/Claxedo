@@ -3,8 +3,8 @@ import path from "node:path"
 import { lookup } from "node:dns/promises"
 import { Hono } from "hono"
 import { z } from "zod"
-import { createBoundedGit } from "@claxedo/workspace-runtime/host"
-import { admittedRepoUrl, safeRepoUrl, type RepoAddressResolver } from "@claxedo/sandbox-contract"
+import { createBoundedGit, runGit, type GitHttpCredential } from "@claxedo/workspace-runtime/host"
+import { admittedRepoUrl, repoUrlHost, safeRepoUrl, type RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { projectEnvProblem } from "@claxedo/server-core/workspace/project-env"
 import {
@@ -46,20 +46,34 @@ import { projectAccess } from "../../platform/auth/project-access"
 const CLONE_TIMEOUT_MS = 30 * 60_000
 const cloneGit = createBoundedGit({ timeoutMs: CLONE_TIMEOUT_MS })
 
+const PROJECT_NAME_MAX = 120
+
+const repositoryUrlSource = z.object({ kind: z.literal("repository"), repoUrl: z.string().trim().min(1) }).strict()
+const repositoryConnectionSource = z
+  .object({
+    kind: z.literal("repository"),
+    connectionId: z.string().trim().min(1),
+    repo: z.object({ fullName: z.string().trim().min(1) }).strict(),
+  })
+  .strict()
+
 const createBody = z
   .object({
-    name: z.string().trim().min(1).max(120),
-    source: z.discriminatedUnion("kind", [
+    name: z.string().trim().min(1).max(PROJECT_NAME_MAX).optional(),
+    source: z.union([
       z.object({ kind: z.literal("directory"), directory: z.string().trim().min(1) }).strict(),
-      z.object({ kind: z.literal("repository"), repoUrl: z.string().trim().min(1) }).strict(),
+      repositoryUrlSource,
+      repositoryConnectionSource,
     ]),
     env: z.record(z.string(), z.string()).optional(),
   })
   .strict()
 
+type RepositorySource = z.infer<typeof repositoryUrlSource> | z.infer<typeof repositoryConnectionSource>
+
 const updateBody = z
   .object({
-    name: z.string().trim().min(1).max(120).optional(),
+    name: z.string().trim().min(1).max(PROJECT_NAME_MAX).optional(),
     env: z.record(z.string(), z.string()).optional(),
   })
   .strict()
@@ -97,11 +111,44 @@ export function githubCloneAuthorization(token: string) {
   return `Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`
 }
 
-function repositoryHost(repoUrl: string) {
-  try {
-    return new URL(repoUrl).hostname || undefined
-  } catch {
-    return undefined
+/** The `owner/repo` a clone URL names: its last two path segments, `.git` stripped. */
+function repositoryFullName(repoUrl: string) {
+  const repoPath = (() => {
+    try {
+      return new URL(repoUrl).pathname
+    } catch {
+      return repoUrl.slice(repoUrl.indexOf(":") + 1)
+    }
+  })()
+  const segments = repoPath.replace(/\.git$/, "").split("/").filter(Boolean)
+  return segments.length >= 2 ? segments.slice(-2).join("/") : undefined
+}
+
+function lastPathSegment(value: string) {
+  return value.replace(/\/+$/, "").split("/").pop() ?? ""
+}
+
+/** The repository's name by its `origin` remote; `undefined` when the folder has none or is not a repository. */
+async function originRepositoryName(directory: string) {
+  const remote = await runGit(["remote", "get-url", "origin"], directory).catch(() => "")
+  return trimmedName(lastPathSegment(remote.trim()).replace(/\.git$/, ""))
+}
+
+function trimmedName(value: string) {
+  const name = value.trim().slice(0, PROJECT_NAME_MAX)
+  return name || undefined
+}
+
+/**
+ * `base` when no project bears it, else the first of `base-2`, `base-3`, … that
+ * none does. The comparison is the store's own case-insensitive one, so a
+ * derived name never lands on a 409 the caller had no name to change.
+ */
+async function freeProjectName(base: string) {
+  if (!(await findProjectRecordByName(base))) return base
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base}-${n}`
+    if (!(await findProjectRecordByName(candidate))) return candidate
   }
 }
 
@@ -153,6 +200,15 @@ export type LocalProjectWorkspaceRegistration = {
   repoUrl?: string
 }
 
+/**
+ * The shape `claxedo-server`'s connections host answers with; declared here
+ * because this package sits below it. The failure statuses are the ones that
+ * host can return, so a refusal is relayed with its own status.
+ */
+export type RepositoryAccessResult =
+  | { ok: true; repository: { cloneUrl: string }; token: string }
+  | { ok: false; status: 401 | 402 | 403 | 404 | 409 | 501 | 502 | 503; code: string }
+
 export type LocalProjectRouteDeps = {
   clone?: typeof cloneRepository
   /**
@@ -178,11 +234,18 @@ export type LocalProjectRouteDeps = {
    */
   registerWorkspace?: (auth: SignedControlPlaneAuth, workspace: LocalProjectWorkspaceRegistration) => Promise<void>
   /**
-   * A credential for cloning `repoUrl` as the signed caller — the token of
-   * their connected GitHub account, say — or `undefined` to clone anonymously.
-   * Signed compositions supply it from the connections host.
+   * The repository `fullName` (`owner/repo`) as the signed caller's connection
+   * sees it, and the token that clones it: the hosted workspace create's
+   * `connections.repositoryForAuth`. `connectionId` is the connection the
+   * caller chose; `undefined` asks for the connected account they hold for the
+   * repository's host, which is how a pasted GitHub URL still clones a private
+   * repository. Signed compositions supply it from the connections host.
    */
-  cloneCredential?: (auth: SignedControlPlaneAuth, repoUrl: string) => Promise<{ authorization: string } | undefined>
+  repositoryForAuth?: (
+    auth: SignedControlPlaneAuth,
+    connectionId: string | undefined,
+    fullName: string,
+  ) => Promise<RepositoryAccessResult>
   /**
    * DNS answers behind a clone host — the port a signed caller's destination
    * refusal resolves through. Defaults to the system resolver; a composition
@@ -226,6 +289,107 @@ function callerRegistration(request: Request, deps: LocalProjectRouteDeps) {
   return { auth, register: (workspace: LocalProjectWorkspaceRegistration) => register(auth, workspace) }
 }
 
+type RepositoryRefusalStatus = 400 | Extract<RepositoryAccessResult, { ok: false }>["status"]
+
+type ResolvedRepository =
+  | { ok: true; repoUrl: string; name: string; credential?: GitHttpCredential }
+  | { ok: false; status: RepositoryRefusalStatus; code: string; message: string }
+
+function repositoryRefusal(status: RepositoryRefusalStatus, code: string, message: string): ResolvedRepository {
+  return { ok: false, status, code, message }
+}
+
+/**
+ * The URL this server will clone, the name the project takes when the caller
+ * sent none, and the credential the clone carries. A signed caller drives this
+ * server's network remotely, so the clone must not become a reachability oracle
+ * into the deployment's own addresses: their URL is admitted before anything
+ * else reads it. The unsigned local product's operator keeps loopback and LAN
+ * repositories, which are legitimate clone sources on one's own machine.
+ */
+async function resolveRepository(
+  source: RepositorySource,
+  caller: SignedControlPlaneAuth | undefined,
+  deps: LocalProjectRouteDeps,
+): Promise<ResolvedRepository> {
+  const admitted = (repoUrl: string) =>
+    admittedRepoUrl(repoUrl, {
+      resolve: deps.resolveRepoAddresses ?? systemRepoAddresses,
+      ...(deps.privateRepoHosts ? { privateHosts: deps.privateRepoHosts } : {}),
+    })
+  const refusedDestination = () =>
+    repositoryRefusal(400, "project_repository_refused", "That repository is not a destination this server may clone")
+  const invalid = () => repositoryRefusal(400, "project_repository_invalid", "That is not a repository URL this server can clone")
+
+  if ("repoUrl" in source) {
+    const repoUrl = safeRepoUrl(source.repoUrl)
+    if (!repoUrl) return invalid()
+    if (caller && !(await admitted(repoUrl))) return refusedDestination()
+    const name = trimmedName(lastPathSegment(repoUrl).replace(/\.git$/, ""))
+    if (!name) return invalid()
+    const credential = await connectedCredential(repoUrl, caller, deps)
+    if ("ok" in credential) return credential
+    return { ok: true, repoUrl, name, ...credential }
+  }
+
+  if (!caller) {
+    return repositoryRefusal(400, "project_connection_requires_signin", "Cloning through a connected account needs a signed-in deployment")
+  }
+  if (!deps.repositoryForAuth) return repositoryRefusal(501, "repository_connections_unavailable", "Repository connections are unavailable")
+  const access = await repositoryAccess(deps.repositoryForAuth, caller, source.connectionId, source.repo.fullName)
+  if (!access.ok) return repositoryRefusal(access.status, access.code, access.message)
+  const repoUrl = safeRepoUrl(access.repository.cloneUrl)
+  const host = repoUrl && repoUrlHost(repoUrl)
+  if (!repoUrl || !host) return invalid()
+  if (!(await admitted(repoUrl))) return refusedDestination()
+  const name = trimmedName(lastPathSegment(source.repo.fullName))
+  if (!name) return invalid()
+  return { ok: true, repoUrl, name, credential: { host, authorization: githubCloneAuthorization(access.token) } }
+}
+
+type RepositoryAccess =
+  | Extract<RepositoryAccessResult, { ok: true }>
+  | { ok: false; status: RepositoryRefusalStatus; code: string; message: string }
+
+/** A resolver that throws is a connections host this server could not reach, not a refusal it answered. */
+async function repositoryAccess(
+  resolve: NonNullable<LocalProjectRouteDeps["repositoryForAuth"]>,
+  auth: SignedControlPlaneAuth,
+  connectionId: string | undefined,
+  fullName: string,
+): Promise<RepositoryAccess> {
+  try {
+    const access = await resolve(auth, connectionId, fullName)
+    return access.ok ? access : { ...access, message: "Repository connection is not available" }
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    return { ok: false, status: 502, code: "project_repository_unavailable", message: `Repository connection failed: ${message}` }
+  }
+}
+
+/**
+ * The credential for a URL the signed caller pasted: the token of the account
+ * they connected for that host, when the connection proves they can read the
+ * repository. A connection that answers no — none connected, the repository
+ * not among theirs, read denied — clones anonymously, as a public repository
+ * needs; a connections host that failed is reported instead. The token only
+ * ever travels to the host the connection answered with: a name that happens
+ * to exist on GitHub must not send a GitHub token to some other server.
+ */
+async function connectedCredential(
+  repoUrl: string,
+  caller: SignedControlPlaneAuth | undefined,
+  deps: LocalProjectRouteDeps,
+): Promise<{ credential?: GitHttpCredential } | Extract<ResolvedRepository, { ok: false }>> {
+  const fullName = repositoryFullName(repoUrl)
+  const host = repoUrlHost(repoUrl)
+  if (!caller || !deps.repositoryForAuth || !fullName || !host) return {}
+  const access = await repositoryAccess(deps.repositoryForAuth, caller, undefined, fullName)
+  if (!access.ok) return access.status >= 500 ? repositoryRefusal(access.status, access.code, access.message) : {}
+  if (repoUrlHost(access.repository.cloneUrl) !== host) return {}
+  return { credential: { host, authorization: githubCloneAuthorization(access.token) } }
+}
+
 export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, deps: LocalProjectRouteDeps = {}) {
   const clone = deps.clone ?? cloneRepository
   return new Hono()
@@ -246,7 +410,7 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
     })
     .post("/", controlPlaneRouteAuth(options), async (c) => {
       const parsed = createBody.safeParse(await c.req.json().catch(() => undefined))
-      if (!parsed.success) return c.json(apiError("project_invalid", "name and a directory or repository source are required"), 400)
+      if (!parsed.success) return c.json(apiError("project_invalid", "a directory or repository source is required"), 400)
       const body = parsed.data
       const importer = body.source.kind === "directory" ? signedRouteAuth(c.req.raw) : undefined
       if (importer) {
@@ -258,12 +422,13 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
       const caller = callerRegistration(c.req.raw, deps)
       const envProblem = projectEnvProblem(body.env)
       if (envProblem) return c.json(apiError("project_env_invalid", envProblem), 400)
-      if (await findProjectRecordByName(body.name)) {
+      if (body.name && await findProjectRecordByName(body.name)) {
         return c.json(apiError("project_name_taken", `A project named "${body.name}" already exists`), 409)
       }
 
       let directory: string
       let repoUrl: string | undefined
+      let name: string
       if (body.source.kind === "directory") {
         directory = body.source.directory
         const stat = await fs.stat(directory).catch(() => undefined)
@@ -273,34 +438,20 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
         if (owner) {
           return c.json(apiError("project_directory_taken", `That folder is already the project "${owner.name}"`), 409)
         }
+        name = body.name ?? await freeProjectName(await originRepositoryName(directory) ?? path.basename(directory))
       } else {
-        repoUrl = safeRepoUrl(body.source.repoUrl)
-        if (!repoUrl) return c.json(apiError("project_repository_invalid", "That is not a repository URL this server can clone"), 400)
-        // A signed caller drives this server's network remotely: the clone
-        // must not become a reachability oracle into the deployment's own
-        // addresses. `caller` exists exactly for a verified signed request;
-        // the unsigned local product's operator keeps loopback and LAN
-        // repositories, which are legitimate clone sources on one's own
-        // machine.
-        if (caller) {
-          const admitted = await admittedRepoUrl(repoUrl, {
-            resolve: deps.resolveRepoAddresses ?? systemRepoAddresses,
-            ...(deps.privateRepoHosts ? { privateHosts: deps.privateRepoHosts } : {}),
-          })
-          if (!admitted) {
-            return c.json(apiError("project_repository_refused", "That repository is not a destination this server may clone"), 400)
-          }
-        }
-        const slug = projectSlug(body.name)
+        const resolved = await resolveRepository(body.source, caller?.auth, deps)
+        if (!resolved.ok) return c.json(apiError(resolved.code, resolved.message), resolved.status)
+        repoUrl = resolved.repoUrl
+        name = body.name ?? await freeProjectName(resolved.name)
+        const slug = projectSlug(name)
         if (!slug) return c.json(apiError("project_invalid", "name must contain a letter or digit"), 400)
         directory = path.join(projectsDirectory(), slug)
         if (await fs.stat(directory).catch(() => undefined)) {
           return c.json(apiError("project_directory_taken", `${directory} already exists on this server`), 409)
         }
         try {
-          const credential = caller && deps.cloneCredential ? await deps.cloneCredential(caller.auth, repoUrl) : undefined
-          const host = repositoryHost(repoUrl)
-          await clone(repoUrl, directory, credential && host ? { authorization: credential.authorization, host } : {})
+          await clone(repoUrl, directory, resolved.credential ?? {})
         } catch (cause) {
           await fs.rm(directory, { recursive: true, force: true }).catch(() => undefined)
           const message = cause instanceof Error ? cause.message : String(cause)
@@ -308,7 +459,7 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
         }
       }
 
-      const workspace = await ensureWorkspace({ directory, kind: "local", project_name: body.name, ...(repoUrl ? { repo_url: repoUrl } : {}) })
+      const workspace = await ensureWorkspace({ directory, kind: "local", project_name: name, ...(repoUrl ? { repo_url: repoUrl } : {}) })
       if (!workspace?.project_id) {
         return c.json(apiError("project_not_git", "Only git repositories can be projects; that folder is not one"), 400)
       }
@@ -317,7 +468,7 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
           await caller.register({
             workspaceId: workspace.id,
             projectId: workspace.project_id,
-            displayName: body.name,
+            displayName: name,
             directory,
             ...(repoUrl ? { repoUrl } : {}),
           })
@@ -326,7 +477,7 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
           return c.json(apiError("project_register_failed", `The project could not be registered for your account: ${message}`), 502)
         }
       }
-      const record = await upsertProjectRecord({ id: workspace.project_id, name: body.name, env: body.env ?? {} })
+      const record = await upsertProjectRecord({ id: workspace.project_id, name, env: body.env ?? {} })
       return c.json({ project: await projectView(record.id) }, 201)
     })
     .get("/by-directory", controlPlaneRouteAuth(options), async (c) => {

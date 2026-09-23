@@ -155,6 +155,8 @@ export namespace TimelineRow {
     | TurnLoading
     | TurnFold
 
+  export const keyIsThinking = (key: string) => key.startsWith("thinking:")
+
   export const key = (row: TimelineRow) => {
     switch (row._tag) {
       case "PreviousMessages":

@@ -392,7 +392,7 @@ test.describe("core workspace lifecycle @core", () => {
 
     await form.getByRole("button", { name: "Create project" }).click()
     await expect.poll(() => createBodies.length, { timeout: 10_000 }).toBe(1)
-    expect(createBodies[0]).toEqual({ name: "workspace", source: { kind: "directory", directory: "/workspace" } })
+    expect(createBodies[0]).toEqual({ source: { kind: "directory", directory: "/workspace" } })
 
     await expect(toastTitle(page)).toHaveText("Invalid project path", { timeout: 10_000 })
     await expect(page.getByText("/workspace", { exact: true }).last()).toBeVisible()

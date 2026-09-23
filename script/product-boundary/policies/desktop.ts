@@ -554,7 +554,7 @@ export const desktopRendererUnsigned: Policy = {
   // -4 modules (2026-09-17): the second stream reader — see the app-local
   // ledger.
   //
-  // +1 module (2026-09-20): `features/onboarding/machine-provider-config.tsx`
+  // +1 module (2026-09-20): `features/settings/remote-access/machine-provider-config.tsx`
   // — see the app-local ledger. The renderer's port leaves `providerConfig`
   // absent, so the control never renders here; the module rides in with the
   // shared surface.
@@ -635,13 +635,33 @@ export const desktopRendererUnsigned: Policy = {
   // under the 800-line budget when the pane hit test was bounded to the
   // workbench root. It sits beside the drag helpers it already used and
   // reaches nothing new. Owner: `app/workbench/workbench`. No new package edge.
+  // -13 modules (2026-09-23): onboarding v1 is gone. The rail no longer
+  // reaches `app/workbench/rail/onboarding-empty-state.tsx`, and with it
+  // `features/onboarding/{registry,setup-shell-state,setup-page,dismissals,
+  // go-further,home-view,navigation,state,destination,destination-surface,
+  // ai-connect-surface}`; the no-project screen is `first-project-canvas.tsx`
+  // alone. No package edge changes. Exact measured 1144 modules / 58 packages,
+  // with no headroom.
+  // Re-measured (2026-09-23) on a clean checkout of that removal: 1145
+  // modules, one more than it recorded; the ledger below starts from the
+  // measured figure.
+  // +5 modules (2026-09-23): the first-run wizard,
+  // `features/onboarding/{wizard,project-step,ai-step,execution-step}.tsx`
+  // and `draft.ts`, hosted by `first-project-canvas.tsx`. It draws the Models
+  // page's account rows and provider sections and the workspaces form through
+  // `features/onboarding/app-ports.ts`, so nothing outside the feature is
+  // newly reached. Owner: `features/onboarding`. No new package edge.
+  // -4 modules (2026-09-23): `features/onboarding/{credential-query,
+  // credential-resolution,credential-sharing,sandbox-provider-query}.ts`, kept
+  // for a wizard that turned out not to read them, are gone. Exact measured
+  // 1146 modules / 58 packages, with no headroom.
   // +5 modules (2026-09-23): `features/session/image-marks/{marks,flatten}.ts`,
   // `mark-layer.tsx`, `mark-badge.tsx` and the lazily imported
   // `image-mark-editor.tsx` — numbered marks and comments on a pasted image.
   // The composer, the request builder and the transcript's comment strip all
   // read them, so they sit beside those owners rather than inside the
   // composer. Owner: `features/session/image-marks`. No new package edge.
-  ceilings: { modules: 1180, packages: 58 },
+  ceilings: { modules: 1151, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

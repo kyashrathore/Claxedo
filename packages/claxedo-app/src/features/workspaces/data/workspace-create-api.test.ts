@@ -54,3 +54,15 @@ describe("createCloudWorkspace", () => {
     expect(message).not.toContain("{")
   })
 })
+
+describe("cloudWorkspaceSource", () => {
+  test("a URL clones by URL, a connected repository by connection, and a folder cannot", async () => {
+    const { cloudWorkspaceSource } = await import("./workspace-create-api")
+    expect(cloudWorkspaceSource({ kind: "repository", repoUrl: "https://github.com/acme/app" })).toEqual({ repoUrl: "https://github.com/acme/app" })
+    expect(cloudWorkspaceSource({ kind: "repository", connectionId: "conn_1", repo: { fullName: "acme/app" } })).toEqual({
+      connectionId: "conn_1",
+      repo: { fullName: "acme/app" },
+    })
+    expect(() => cloudWorkspaceSource({ kind: "directory", folder: "/home/me/app" })).toThrow("a folder on a machine cannot start one")
+  })
+})

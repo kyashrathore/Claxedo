@@ -57,8 +57,8 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest, and the harness auth entry is dropped through the local server's own `/auth/:providerId`; hosted account identity stays on account-section.",
   "features/settings/ui/sandbox-section.tsx":
     "Sandbox driver settings talk only to the local sidecar `/api/workspace/drivers*`; not a Hosted Server AccountPort surface.",
-  "features/onboarding/sandbox-provider-query.ts":
-    "Onboarding sandbox read path is local-sidecar drivers; credentials never leave the laptop via AccountPort.",
+  "features/onboarding/ai-step.tsx":
+    "The wizard's hosted AI step stores a Pi key through `putHostedProviderKey` (the credential-route boundary), the plane's own `PUT /auth/:providerID?harness=pi`, which the browser session authenticates; a signed desktop never renders that branch (its server has a filesystem and the machine scan). Not a Hosted Server AccountPort surface.",
   "features/onboarding/sandbox-provider-api.ts":
     "Onboarding sandbox write path is local-sidecar drivers; Hosted Server does not own these credentials.",
   "features/settings/data/connected-apps-api.ts":

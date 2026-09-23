@@ -137,9 +137,8 @@ const notificationContext = "app/providers/notification.tsx"
 const localContextOwner = "features/session/providers/session-selection.tsx"
 const settingsSandboxSection = "features/settings/ui/sandbox-section.tsx"
 const networkPolicySettings = "features/settings/ui/network-policy.tsx"
-// The connect flow and provider catalog live outside the dialogs so the
-// onboarding setup page renders the same surfaces; the dialogs are shells, so
-// these invariants target the files that hold the logic.
+// The connect flow and provider catalog live outside the dialogs; the dialogs
+// are shells, so these invariants target the files that hold the logic.
 const dialogConnectProvider = "app/dialogs/provider-connect-form.tsx"
 const promptModelStrategy = "features/session/composer/model-strategy.ts"
 const promptToolbarState = "features/session/composer/toolbar-state.ts"
@@ -391,13 +390,24 @@ describe("workspace runtime route audit", () => {
   })
 
   test("production code stores provider credentials only through Claxedo credential routes", async () => {
+    // The hosted plane keeps harness keys under its own `PUT /auth/:providerID
+    // ?harness=pi` (`routes/hosted/shell.ts` → `credentials/worker/pi.ts`
+    // `putPiCredential` → the plane's per-org credential store) and serves no
+    // `/api/claxedo/credentials`, so that write is a Claxedo credential route
+    // whose body happens to spell `{ auth: { key } }`. Its one owner is the
+    // credential-route boundary module; anywhere else the payload is an
+    // upstream engine write and stays refused.
+    const hostedKeyWriteOwner = "platform/api/credential-request.ts"
     const offenders: string[] = []
     for (const file of await files(root)) {
       const text = await Bun.file(path.join(root, file)).text()
       if (/\b(?:globalSDK\.)?client\.auth\.set\(/.test(text)) offenders.push(`${file}: calls upstream auth.set`)
-      if (/auth:\s*\{[\s\S]{0,160}key:/.test(text)) offenders.push(`${file}: builds upstream API key auth payload`)
+      if (file !== hostedKeyWriteOwner && /auth:\s*\{[\s\S]{0,160}key:/.test(text)) {
+        offenders.push(`${file}: builds upstream API key auth payload`)
+      }
     }
     expect(offenders).toEqual([])
+    expect(await Bun.file(path.join(root, hostedKeyWriteOwner)).text()).toMatch(/auth: \{ key: input\.key \}/)
   })
 
   test("credential entry surfaces do not persist raw secrets client-side", async () => {

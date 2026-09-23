@@ -47,6 +47,13 @@ type TimelineResizeAnchorInput = {
   shouldAnchorBottom: () => boolean
   hasScrollGesture: () => boolean
   onInViewInsert?: () => void
+  /**
+   * Whether an insert beside the row with this key is content the reader was
+   * waiting on — a reply landing under a turn's Thinking row — so the hold's
+   * deferred follow runs even when the turn's idle landed in the same batch
+   * and the timeline no longer reads as working.
+   */
+  followsInsertBeside?: (displacedKey: string) => boolean
 }
 
 export function estimateTimelineRowSize(input: {
@@ -108,23 +115,29 @@ export function createTimelineResizeAnchor() {
       let index = 0
       while (index < previous.length && previous[index] === keys[index]) index += 1
       if (index >= keys.length) return
-      // The insert lands where the row it displaced used to start — look the
-      // displaced row up by key, since index-keyed measurements are mid-flush
-      // here.
-      const displaced = input.virtualizer.measurementsCache.find((item) => item.key === previous[index])
-      // Only a near-tail insert that displaces a visible row can push the
-      // anchored tail — a pure append reveals by following, and history
-      // prepends land far above with their own above-fold compensation.
+      // The insert lands where the row it displaced used to start, or after the
+      // tail when it is an append — look that row up by key, since index-keyed
+      // measurements are mid-flush here.
+      const anchorKey = index < previous.length ? previous[index] : previous[index - 1]
+      const displaced = input.virtualizer.measurementsCache.find((item) => item.key === anchorKey)
+      // Only a near-tail insert beside a visible row can push the anchored
+      // tail; history prepends land far above with their own above-fold
+      // compensation. An append is held the same way: the reader at the end of
+      // a working turn is reading its last row, and the first reply row that
+      // lands under it must not scroll that row away.
       if (displaced && index >= previous.length - 2 && displaced.start < root.scrollTop + root.clientHeight - 1) {
         insertHoldUntil = performance.now() + 250
         input.onInViewInsert?.()
         // The hold only covers the insert's own measure pass. When it lifts,
         // follow once if the insert pushed the tail row below the fold — the
-        // reader is anchored to the tail, not to a fixed document offset.
+        // reader is anchored to the tail, not to a fixed document offset. The
+        // promise is made now: a reply whose rows land in the same batch as
+        // the turn's idle has already stopped reading as working.
+        const anchored = input.shouldAnchorBottom() || (input.followsInsertBeside?.(anchorKey) ?? false)
         setTimeout(() => {
           const current = installed
           const el = current?.root()
-          if (disposed || !current || !el || !current.displayed() || !current.shouldAnchorBottom() || current.hasScrollGesture()) return
+          if (disposed || !current || !el || !current.displayed() || !anchored || current.hasScrollGesture()) return
           // measurementsCache is memoized — materialize it before reading the
           // tail, or the pre-insert positions make the overflow check miss.
           current.virtualizer.getTotalSize()

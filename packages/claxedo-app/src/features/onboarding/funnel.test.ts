@@ -4,18 +4,13 @@ import { createOnboardingFunnel, type OnboardingFunnelEvent } from "./funnel"
 const events: OnboardingFunnelEvent[] = [
   { name: "signup" },
   { name: "setup_form_shown" },
-  { name: "setup_form_dismissed" },
-  { name: "step_done", step: "ai", surface: "desktop" },
+  { name: "step_done", step: "ai" },
   { name: "step_verify_failed", step: "ai", class: "auth_failed" },
   { name: "provider_connected", provider: "anthropic" },
   { name: "first_turn_ok" },
   { name: "first_turn_failed", class: "model" },
   { name: "sandbox_provider_configured", provider: "daytona" },
   { name: "first_cloud_turn_ok" },
-  { name: "remote_access_enabled" },
-  { name: "second_device_open" },
-  { name: "gofurther_card_clicked", card: "harnesses" },
-  { name: "gofurther_card_dismissed", card: "harnesses" },
 ]
 
 describe("onboarding funnel telemetry", () => {
@@ -27,7 +22,8 @@ describe("onboarding funnel telemetry", () => {
     })
     events.forEach((event) => funnel.emit(event))
     expect(captured.map((event) => event.name)).toEqual(events.map((event) => event.name))
-    expect(captured[3]).toEqual({ name: "step_done", properties: { step: "ai", surface: "desktop" } })
+    expect(captured[2]).toEqual({ name: "step_done", properties: { step: "ai" } })
+    expect(captured[5]).toEqual({ name: "first_turn_ok", properties: undefined })
   })
 
   test("defaults self-host and OSS builds off until explicit opt-in", () => {

@@ -233,20 +233,23 @@ export namespace Timeline {
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
     const partsPending = assistantMessages.some((message) => partsFragment(message.id))
+    const working = isActive && (status === "busy" || status === "retry" || settlePending)
     const fold = turnFoldDecision({
       foldableCount,
       settled,
       interrupted,
       errored: !!error,
-      busy: isActive && (status === "busy" || status === "retry" || settlePending),
+      busy: working,
       partsPending,
       userChoice: isFoldedChoice(userMessage.id),
     })
-    // A turn that would paint open from the first-paint surface — interrupted,
-    // failed, or unfolded by the reader — holds its body until the full read:
-    // painting the surface's texts and then the tools under them moves what the
-    // reader was given. A folded turn paints now; its answer is the surface.
-    if (partsPending && !fold.folded) {
+    // A settled turn that would paint open from the first-paint surface —
+    // interrupted, failed, or unfolded by the reader — holds its body until the
+    // full read: painting the surface's texts and then the tools under them
+    // moves what the reader was given. A folded turn paints now; its answer is
+    // the surface. A working turn paints now too: its rows grow as the harness
+    // writes them, and a loader in place of its Thinking row reads as a stop.
+    if (partsPending && !fold.folded && !working) {
       rows.push(TimelineRow.TurnLoading({ userMessageID: userMessage.id }))
       return rows
     }

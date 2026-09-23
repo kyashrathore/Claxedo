@@ -363,19 +363,6 @@ run_e2e_core() {
   )
 }
 
-run_e2e_onboarding() {
-  prepare_e2e
-  install_app_server_native_dependencies
-  (
-    cd packages/claxedo-app
-    CLAXEDO_E2E_SERVE_MODE=build-preview \
-    PLAYWRIGHT_VIDEO=0 \
-    VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 \
-    VITE_CLAXEDO_E2E=1 \
-      bun run test:e2e:onboarding
-  )
-}
-
 prepare_e2e_tier_real() {
   install_root
   install_app_server_native_dependencies
@@ -516,7 +503,6 @@ case "$LANE" in
   workspace-files-linux) run_workspace_files ;;
   typecheck-linux) run_typecheck ;;
   e2e-core) run_e2e_core "$@" ;;
-  e2e-onboarding) run_e2e_onboarding ;;
   e2e-tier-real) run_e2e_tier_real ;;
   e2e-tier-real-scenario) run_e2e_tier_real_scenario "$@" ;;
   e2e-tier-real-web) run_e2e_tier_real_web ;;

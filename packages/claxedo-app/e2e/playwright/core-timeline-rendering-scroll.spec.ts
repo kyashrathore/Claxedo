@@ -242,13 +242,13 @@ function collapsibleContent(page: Page, partId: string) {
   return page.locator(`[data-timeline-part-id="${partId}"] [data-slot="collapsible-content"]`)
 }
 
-// A settled turn whose tool activity produces >=2 "foldable" rows (work groups, context
-// groups, or standalone tool parts) folds behind one "Worked for Xs" `TurnFold` divider
-// by default (`canFoldSettled`/`shouldFold` in `message-timeline.data.ts`) — its
-// `Collapsible.Content`, and therefore every row underneath including nested group/tool
-// wrappers that otherwise stay mounted regardless of THEIR OWN open state, is
-// presence-unmounted until unfolded. Any scenario seeding >=2 foldable rows for one turn
-// must unfold it before asserting on anything nested inside.
+// A settled turn folds its machinery — every group before the answer, `FOLD_MINIMUM`
+// (2) of them or a first paint whose parts are still pending — behind one "Worked for
+// Xs" `TurnFold` divider by default (`turnFoldDecision` in session-ui `turn-fold.ts`).
+// Its `Collapsible.Content`, and therefore every row underneath including nested
+// group/tool wrappers that otherwise stay mounted regardless of THEIR OWN open state,
+// is presence-unmounted until unfolded. Any scenario asserting on something nested
+// inside a settled turn unfolds it first; this is a no-op when the turn has no fold.
 async function unfoldTurnIfNeeded(page: Page, userMessageID: string) {
   const trigger = page.locator(`[data-message-id="${userMessageID}"][data-timeline-row="TurnFold"] button`)
   if ((await trigger.count()) === 0) return
@@ -275,6 +275,14 @@ async function openSettings(page: Page) {
   await page.getByTestId("rail-account-trigger").click()
   await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
   await expect(page.locator('[data-action="settings-feed-shell-tool-parts-expanded"]')).toBeVisible({ timeout: 10_000 })
+}
+
+// Settings is a surface on a route that replaces the rail's content and the
+// workbench column; Escape closes nothing, and the rail's own back row is the way
+// out. The session behind it was never unmounted.
+async function closeSettings(page: Page) {
+  await page.locator('[data-action="settings-nav-back"]').click()
+  await expect(page.locator('[data-component="settings-content"]')).toHaveCount(0, { timeout: 5_000 })
 }
 
 async function setSwitch(page: Page, dataAction: string, checked: boolean) {
@@ -390,6 +398,21 @@ async function installSeededSession(page: Page, rows: Array<{ info: AnyInfo; par
   await page.route(`**/session/${SESSION_ID}?**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
   await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: messageBody }))
   return mock
+}
+
+// Scrolling near the top of a loaded session reveals the next batch of cached
+// turns on its own; the "N previous messages" row is the click that reveals a
+// batch when the scroll did not, and it is gone once nothing is left to reveal.
+async function revealAllTurns(page: Page, count: number) {
+  const root = page.locator('[data-testid="session-page-root"]')
+  const rendered = () => root.getAttribute("data-session-rendered-user-count")
+  for (let attempt = 0; attempt < 20 && (await rendered()) !== String(count); attempt++) {
+    await scrollTimelineToTop(page)
+    if ((await rendered()) === String(count)) break
+    const button = page.getByRole("button", { name: /^\d+ previous messages$/ })
+    if ((await button.count()) > 0) await button.click()
+  }
+  await expect(root).toHaveAttribute("data-session-rendered-user-count", String(count))
 }
 
 async function gotoSession(page: Page, hash?: string) {
@@ -519,12 +542,11 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "turn done")
 
-    // The 3 consecutive work-type tool parts (bash, edit,
-    // webfetch) fold into ONE `WorkGroup` (`groupParts` in message-timeline.data.ts —
-    // a work run merges once it has >=2 members). The turn itself has only that single
-    // foldable row, so it stays un-turn-folded (`canFoldSettled` needs >=2 foldable
-    // rows) — but the WorkGroup's own collapsible must be expanded before any member's
-    // nested collapsible-content can be asserted on, same presence-unmount mechanism.
+    // The 3 consecutive work-type tool parts (bash, edit, webfetch) fold into ONE
+    // `WorkGroup` (`groupParts` in message-timeline.data.ts — a work run merges once it
+    // has >=2 members). The WorkGroup's own collapsible must be expanded before any
+    // member's nested collapsible-content can be asserted on, same presence-unmount
+    // mechanism as the turn fold.
     await unfoldTurnIfNeeded(page, userID)
     const workGroupPartIds = "tools_bash,tools_edit,tools_web"
     await expandWorkGroupIfPresent(page, workGroupPartIds)
@@ -538,7 +560,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await openSettings(page)
     await setSwitch(page, "settings-feed-shell-tool-parts-expanded", true)
     await setSwitch(page, "settings-feed-edit-tool-parts-expanded", true)
-    await page.keyboard.press("Escape")
+    await closeSettings(page)
+    await unfoldTurnIfNeeded(page, userID)
+    await expandWorkGroupIfPresent(page, workGroupPartIds)
 
     await expect(collapsibleContent(page, "tools_bash")).toHaveCount(1)
     await expect(collapsibleContent(page, "tools_edit")).toHaveCount(1)
@@ -574,6 +598,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     ])
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "question handled")
+    await unfoldTurnIfNeeded(page, userID)
 
     // A pending question renders no row at all, not a collapsed one.
     await expect(page.locator('[data-timeline-part-id="q_pending"]')).toHaveCount(0)
@@ -605,6 +630,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     ])
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "context gathered")
+    await unfoldTurnIfNeeded(page, userID)
 
     const group = page.locator('[data-timeline-part-ids="ctx1_read,ctx2_glob,ctx3_grep,ctx4_list"]')
     await expect(group).toHaveCount(1)
@@ -659,11 +685,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await gotoSession(page)
     await expectAssistantReplyVisible(page, "split done")
 
-    // This turn has 3 foldable rows (the 2-read context
-    // group, the standalone bash part, the standalone trailing read) — >=2, so it
-    // auto-folds behind a "Worked for Xs" `TurnFold` divider that presence-unmounts
-    // everything below it until unfolded (unlike behavior 3's single-group turn, which
-    // stays under the foldable-row threshold and needs no unfold).
+    // This turn has 3 foldable rows (the 2-read context group, the standalone bash
+    // part, the standalone trailing read), so it auto-folds behind a "Worked for Xs"
+    // `TurnFold` divider that presence-unmounts everything below it until unfolded.
     await unfoldTurnIfNeeded(page, userID)
 
     await expect(page.locator('[data-timeline-part-ids="split1_read,split2_read"]')).toHaveCount(1)
@@ -886,6 +910,10 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       })
       await seedOneProject(page, DIR, scheme)
       await gotoSession(page)
+      // The fold and group helpers below decide on the rows present at that
+      // moment; the answer's visibility is what proves the turn has rendered.
+      await expectAssistantReplyVisible(page, "Reply 1. A short acknowledgement for turn 1.")
+      await unfoldTurnIfNeeded(page, "msg_user_01")
       await expandWorkGroupIfPresent(page, "readable_output,readable_web")
       await expect(page.locator("html")).toHaveAttribute("data-color-scheme", scheme)
       const group = page.locator('[data-component="work-group-list"]')
@@ -941,6 +969,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await sendAndProve(page, "output reading probe", "ack 1: output reading probe")
     const scroller = timelineScroller(page)
     await scroller.evaluate(element => { element.scrollTop = 0 })
+    await unfoldTurnIfNeeded(page, "msg_user_01")
     const tool = page.locator('[data-timeline-part-id="reading_output"]')
     const trigger = tool.locator('[data-slot="collapsible-trigger"]')
     await expect(trigger).toBeVisible()
@@ -982,15 +1011,10 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await seedOneProject(page, DIR)
     await gotoSession(page)
     await sendAndProve(page, "output retention probe", "ack 1: output retention probe")
-    const root = page.locator('[data-testid="session-page-root"]')
-    for (let attempt = 0; attempt < 20; attempt++) {
-      if (await root.getAttribute("data-session-rendered-user-count") === "31") break
-      await scrollTimelineToTop(page)
-      await page.getByRole("button", { name: /^\d+ previous messages$/ }).click()
-    }
-    await expect(root).toHaveAttribute("data-session-rendered-user-count", "31")
+    await revealAllTurns(page, 31)
     const scroller = timelineScroller(page)
     await scroller.evaluate(element => { element.scrollTop = 0 })
+    await unfoldTurnIfNeeded(page, "msg_user_01")
     const tool = page.locator('[data-timeline-part-id="retained_output"]')
     await expect(tool).toBeVisible()
     const trigger = tool.locator('[data-slot="collapsible-trigger"]')
@@ -1022,19 +1046,15 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await seedOneProject(page, DIR)
     await gotoSession(page)
     await sendAndProve(page, "keyboard endpoint probe", "ack 1: keyboard endpoint probe")
-    const root = page.locator('[data-testid="session-page-root"]')
-    for (let attempt = 0; attempt < 20; attempt++) {
-      if (await root.getAttribute("data-session-rendered-user-count") === "61") break
-      await scrollTimelineToTop(page)
-      await page.getByRole("button", { name: /^\d+ previous messages$/ }).click()
-    }
-    await expect(root).toHaveAttribute("data-session-rendered-user-count", "61")
+    await revealAllTurns(page, 61)
     const scroller = timelineScroller(page)
     await scroller.hover()
     await page.mouse.wheel(0, (await readScrollPosition(scroller)).max / 2)
+    // `mouse.wheel` returns once the event is dispatched; the list's wheel
+    // handler is not passive, so the browser applies the scroll a frame later.
+    await expect.poll(async () => (await readScrollPosition(scroller)).top).toBeGreaterThan(1000)
     const before = await readScrollPosition(scroller)
     expect(before.max).toBeGreaterThan(5000)
-    expect(before.top).toBeGreaterThan(1000)
     await scroller.focus()
     await expect(scroller).toBeFocused()
     await page.keyboard.press("Home")
@@ -1078,13 +1098,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       runningAssistant = body.messages?.find((row: MockMessageRow) => row.info.id === mock.requests.promptBodies[0]?.assistantID)?.info ?? {}
       return runningAssistant.id
     }).toBeTruthy()
-    const root = page.locator('[data-testid="session-page-root"]')
-    for (let attempt = 0; attempt < 20; attempt++) {
-      if (await root.getAttribute("data-session-rendered-user-count") === "61") break
-      await scrollTimelineToTop(page)
-      await page.getByRole("button", { name: /^\d+ previous messages$/ }).click()
-    }
-    await expect(root).toHaveAttribute("data-session-rendered-user-count", "61")
+    await revealAllTurns(page, 61)
     const scroller = timelineScroller(page)
     await scroller.hover()
     await page.mouse.wheel(0, (await readScrollPosition(scroller)).max / 2)
@@ -1226,7 +1240,9 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
         state.__cachedTurnAnchor = undefined
         viewport.addEventListener("scroll", () => {
           const view = viewport.getBoundingClientRect()
-          const anchor = [...viewport.querySelectorAll<HTMLElement>("[data-timeline-key]")]
+          // The same rows the product's own prepend anchor may hold: a row that
+          // the reveal re-keys or removes cannot prove anything about the reveal.
+          const anchor = [...viewport.querySelectorAll<HTMLElement>('[data-timeline-key]:not([data-timeline-anchor="none"])')]
             .map((element) => ({ element, rect: element.getBoundingClientRect() }))
             .filter((item) => item.rect.bottom > view.top && item.rect.top < view.bottom)
             .sort((a, b) => a.rect.top - b.rect.top)[0]
@@ -1637,17 +1653,25 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await openSessionWithFirstSend(page, { replyText: longReply, harnessModels: HARNESS_MODELS })
     // Overflow the timeline before the final, observed turn streams in.
     await sendAndProve(page, "second timeline message", "ack 2: second timeline message")
-    await sendAndProve(page, "third timeline message", "ack 3: third timeline message")
+    const input = composer(page)
+    await input.click()
+    await input.fill("third timeline message")
+    await submitControl(page).click()
 
     const scroller = timelineScroller(page)
+    const reply = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: "ack 3: third timeline message" })
+    await expect(reply).toHaveCount(1, { timeout: 20_000 })
     await expect.poll(async () => scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 50), { timeout: 30_000 }).toBe(true)
 
-    // Nothing scrolls manually here. Polled rather than sampled once: auto-follow settles
-    // asynchronously after the last content lands, so an immediate read catches a mid-scroll
-    // offset. What matters is that it arrives, and a scroller that never does still fails.
+    // Nothing scrolls manually here — the oracle's own scroll-into-view comes only
+    // after the follow is proven. Polled rather than sampled once: auto-follow settles
+    // asynchronously after the last content lands, so an immediate read catches a
+    // mid-scroll offset. What matters is that it arrives, and a scroller that never
+    // does still fails.
     await expect
       .poll(async () => scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop), { timeout: 10_000 })
       .toBeLessThan(20)
+    await expectAssistantReplyVisible(page, "ack 3: third timeline message")
   })
 
   test("a #message-<id> hash deep-link scrolls to the target message, including the comment-strip case", async ({ page }) => {

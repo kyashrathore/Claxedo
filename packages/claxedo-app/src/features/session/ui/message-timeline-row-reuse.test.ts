@@ -216,6 +216,31 @@ describe("timeline row reuse", () => {
       expect(fold(interrupted(full, false))?.folded).toBe(false)
     })
 
+    test("a working turn paints its fragment instead of holding it", () => {
+      const build = (assistant: AssistantMessage, status: "busy" | "idle", settlePending: boolean) =>
+        Timeline.constructMessageRows(
+          userMessage("msg_user"),
+          (messageID) => (messageID === "msg_assistant" ? [textPart("p1", "msg_assistant", "Let me look.")] : []),
+          [assistant],
+          0,
+          false,
+          status,
+          true,
+          false,
+          () => undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          settlePending,
+          () => true,
+        ).map((row) => row._tag)
+      const open = assistantMessage("msg_assistant", "msg_user", { created: 10 })
+      expect(build(open, "busy", false)).toEqual(["UserMessage", "AssistantPart", "Thinking"])
+      const settledAwaitingRead = assistantMessage("msg_assistant", "msg_user", { completed: 20 })
+      expect(build(settledAwaitingRead, "idle", true)).toEqual(["UserMessage", "AssistantPart"])
+    })
+
     test("a turn the reader unfolded holds its body the same way", () => {
       const unfolded = Timeline.constructMessageRows(
         userMessage("msg_user"),

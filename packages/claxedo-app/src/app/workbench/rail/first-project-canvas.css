@@ -15,8 +15,6 @@
 
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
   height: 100%;
   min-height: 0;
   overflow-y: auto;
@@ -25,12 +23,19 @@
   isolation: isolate;
 }
 
+/*
+ * Centred by auto margins rather than the container's alignment: a flex item
+ * centred by `justify-content` overflows its container on both ends when it
+ * is taller, and the top end cannot be scrolled to. Margins keep a short card
+ * centred and let a tall one start at the top.
+ */
 .first-project-content {
   position: relative;
   z-index: 1;
   display: flex;
   width: 100%;
   max-width: 35rem;
+  margin: auto;
   flex-direction: column;
 }
 
@@ -95,6 +100,54 @@
   background-image: radial-gradient(115% 92% at 50% 40%, transparent 38%, var(--background-base) 100%);
 }
 
+.first-project-steps {
+  display: flex;
+  gap: 1.25rem;
+  margin: 0 0 1.1rem;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+}
+
+.first-project-step {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.first-project-step[aria-current="step"] {
+  color: var(--text-strong);
+}
+
+.first-project-step-index {
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-x-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.first-project-step[aria-current="step"] .first-project-step-index {
+  border-color: var(--first-project-edge);
+  color: var(--text-strong);
+}
+
+.first-project-step[data-done="true"] .first-project-step-index {
+  background-color: var(--first-project-edge);
+  border-color: transparent;
+  color: var(--background-base);
+}
+
+.first-project-project {
+  color: var(--text-strong);
+  font-weight: var(--font-weight-medium);
+}
+
 .first-project-headline {
   margin: 0;
   font-size: var(--font-size-3x-large);
@@ -147,8 +200,8 @@
 
 /*
  * Opacity and transform only, so every control is hit-testable and focusable
- * from the first frame — the name field's autofocus lands while the card is
- * still rising.
+ * from the first frame — focus lands on the step's leading control while the
+ * card is still rising.
  */
 .first-project-reveal {
   animation: first-project-rise 420ms cubic-bezier(0.2, 0, 0, 1) both;

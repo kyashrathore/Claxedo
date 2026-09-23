@@ -13,10 +13,12 @@ import {
   registeredConversationSnapshot,
 } from "../conversation/conversation-registry"
 import { Timeline } from "../ui/message-timeline.data"
-import { syncLatestTurnHistory, syncSettledTurnHistory, type LatestTurnRead } from "./session-controller"
+import { syncLatestTurnHistory, syncSettledTurnHistory, type LatestTurnRead } from "./latest-turn-history"
 
 const directory = "/repo"
 const sessionID = "ses_child"
+
+const conversation = () => registeredConversationSnapshot(directory, sessionID)
 
 afterEach(() => {
   clearConversationChatRegistryForTest()
@@ -57,9 +59,9 @@ function runtime(initial: Row[]) {
     readLatestTurn,
     activate: async () => {
       await readSurface()
-      await syncLatestTurnHistory({ directory, sessionID, read: readLatestTurn })
+      await syncLatestTurnHistory({ conversation, read: readLatestTurn })
     },
-    settle: () => syncSettledTurnHistory({ directory, sessionID, readSurface, readLatestTurn }),
+    settle: () => syncSettledTurnHistory({ conversation, readSurface, readLatestTurn }),
   }
 }
 
@@ -151,8 +153,7 @@ describe("a subagent turn that fails with no parts paints its error", () => {
     messageUpdated(assistant(true))
     let canonicalReads = 0
     await syncSettledTurnHistory({
-      directory,
-      sessionID,
+      conversation,
       readSurface: server.readSurface,
       readLatestTurn: async (request) => {
         canonicalReads += 1

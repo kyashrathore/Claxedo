@@ -62,10 +62,10 @@ await test("cross-platform process runtime changes retain the Windows unit leg",
   assert.equal(result.core_e2e, false)
 })
 
-await test("onboarding changes add the dedicated onboarding composition", () => {
-  const result = classifyChangedFiles(["packages/claxedo-app/src/features/onboarding/setup-page.tsx"])
+await test("onboarding feature changes run the core browser matrix and select no lane of their own", () => {
+  const result = classifyChangedFiles(["packages/claxedo-app/src/features/onboarding/funnel.ts"])
   assert.equal(result.core_e2e, true)
-  assert.equal(result.onboarding, true)
+  assert.equal("onboarding" in result, false)
 })
 
 await test("desktop source changes run source tests but never request a regular desktop build", () => {
@@ -88,7 +88,6 @@ await test("CI foundations fail open to the complete non-release suite", () => {
   assert.equal(result.windows, true)
   assert.equal(result.mermaid, true)
   assert.equal(result.core_e2e, true)
-  assert.equal(result.onboarding, true)
   assert.equal(result.tier_real, true)
 })
 

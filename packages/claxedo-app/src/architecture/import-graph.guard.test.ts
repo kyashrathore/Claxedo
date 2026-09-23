@@ -34,7 +34,7 @@ const liveTypeContracts = [
   "platform/query/project-meta.ts",
   "platform/account/account-port.ts",
   // The machine remote-access port. Type-only from its binder, both
-  // implementations and the onboarding controller — the port declares what may
+  // implementations and the Settings remote-access controller — the port declares what may
   // be asked for, and each product binds one implementation of it.
   "platform/remote-access/machine-remote-access-port.ts",
 ]
