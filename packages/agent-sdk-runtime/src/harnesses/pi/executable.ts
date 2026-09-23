@@ -113,8 +113,15 @@ export function unpinnedPiReason(): string | undefined {
   return `Pi ${installed} is installed, pinned ${PI_VERSION}`
 }
 
+/**
+ * A JavaScript entry runs under Node, the interpreter Pi's npm shim and POSIX
+ * shebang both name. Bun 1.3.14 cannot load Pi 0.85.1's bundle (its undici
+ * calls `webidl.util.markAsUncloneable`, which Bun leaves undefined), so a
+ * Bun host hands the entry to `node` on PATH instead of to itself.
+ */
 export function piCommand(binary: string, args: string[]) {
-  return /\.(?:cjs|mjs|js)$/.test(binary) ? { file: process.execPath, args: [binary, ...args] } : { file: binary, args }
+  if (!/\.(?:cjs|mjs|js)$/.test(binary)) return { file: binary, args }
+  return { file: process.versions.bun ? "node" : process.execPath, args: [binary, ...args] }
 }
 
 const verified = new Map<string, Promise<void>>()

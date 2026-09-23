@@ -59,3 +59,14 @@ test("accepts a readable pinned JavaScript entry and rejects a different protoco
     await fs.rm(root, { recursive: true, force: true })
   }
 })
+
+test("a JavaScript entry runs under Node, not under the Bun process that launches it", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-node-entry-"))
+  try {
+    const entry = path.join(root, "cli.mjs")
+    await fs.writeFile(entry, 'console.log(process.versions.bun ? "bun" : "0.85.1")', { mode: 0o600 })
+    await verifyPiExecutable(entry)
+  } finally {
+    await fs.rm(root, { recursive: true, force: true })
+  }
+})
