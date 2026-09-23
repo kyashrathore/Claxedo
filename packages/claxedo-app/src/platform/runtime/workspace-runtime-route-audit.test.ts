@@ -137,9 +137,8 @@ const notificationContext = "app/providers/notification.tsx"
 const localContextOwner = "features/session/providers/session-selection.tsx"
 const settingsSandboxSection = "features/settings/ui/sandbox-section.tsx"
 const networkPolicySettings = "features/settings/ui/network-policy.tsx"
-// The connect flow and provider catalog live outside the dialogs so the
-// onboarding setup page renders the same surfaces; the dialogs are shells, so
-// these invariants target the files that hold the logic.
+// The connect flow and provider catalog live outside the dialogs; the dialogs
+// are shells, so these invariants target the files that hold the logic.
 const dialogConnectProvider = "app/dialogs/provider-connect-form.tsx"
 const promptModelStrategy = "features/session/composer/model-strategy.ts"
 const promptToolbarState = "features/session/composer/toolbar-state.ts"

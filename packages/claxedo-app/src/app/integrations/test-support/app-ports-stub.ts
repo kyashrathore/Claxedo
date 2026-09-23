@@ -204,11 +204,7 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
 }
 
 const onboardingThunks: Thunks<OnboardingAppPorts> = {
-  ProviderList: lazy("@/app/dialogs/provider-list", "ProviderList"),
-  ProviderConnectForm: lazy("@/app/dialogs/provider-connect-form", "ProviderConnectForm"),
   workspaceSandboxDriversUrl: lazy("@/features/settings/ui/sandbox-section-logic", "workspaceSandboxDriversUrl"),
-  workspaceSandboxDriverAuthUrl: lazy("@/features/settings/ui/sandbox-section-logic", "workspaceSandboxDriverAuthUrl"),
-  SandboxDriverLogo: lazy("@/features/settings/ui/sandbox-driver-logo", "SandboxDriverLogo"),
 }
 
 const tasksThunks: Thunks<TasksAppPorts> = {

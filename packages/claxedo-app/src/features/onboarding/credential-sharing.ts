@@ -1,4 +1,4 @@
-import type { OnboardingCredential } from "./state"
+import type { OnboardingCredential } from "./credential-query"
 
 export type CloudShareBlock = {
   /** Why this credential cannot go to the cloud, in the user's terms. */

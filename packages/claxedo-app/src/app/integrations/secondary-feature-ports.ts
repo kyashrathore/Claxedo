@@ -41,14 +41,8 @@ const DialogSelectProvider = lazyDialog(() =>
 const DialogCustomProvider = lazyDialog(() =>
   import("@/app/dialogs/custom-provider").then((module) => ({ default: module.DialogCustomProvider })),
 )
-const ProviderList = lazy(() =>
-  import("@/app/dialogs/provider-list").then((module) => ({ default: module.ProviderList })),
-)
 const ProviderConnectForm = lazy(() =>
   import("@/app/dialogs/provider-connect-form").then((module) => ({ default: module.ProviderConnectForm })),
-)
-const SandboxDriverLogo = lazy(() =>
-  import("@/features/settings/ui/sandbox-driver-logo").then((module) => ({ default: module.SandboxDriverLogo })),
 )
 const DialogReleaseNotes = lazyDialog(() =>
   import("@/app/dialogs/release-notes").then((module) => ({ default: module.DialogReleaseNotes })),
@@ -107,11 +101,7 @@ configureSettingsAppPorts({
 })
 
 configureOnboardingAppPorts({
-  ProviderList,
-  ProviderConnectForm,
   workspaceSandboxDriversUrl: SandboxSectionLogic.workspaceSandboxDriversUrl,
-  workspaceSandboxDriverAuthUrl: SandboxSectionLogic.workspaceSandboxDriverAuthUrl,
-  SandboxDriverLogo,
 })
 
 configureReviewAppPorts({

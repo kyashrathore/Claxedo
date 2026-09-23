@@ -1,20 +1,11 @@
-// Onboarding renders two surfaces the app shell owns — the provider catalog and
-// the provider connect form — and reads the sandbox driver route that settings
-// owns. Features may not import `app/` or each other directly, so the shell
-// injects them here and onboarding depends only on this contract.
+// The sandbox provider reads and writes go to the driver routes whose URL
+// builder settings owns. Features may not import each other directly, so the
+// shell injects it here and onboarding depends only on this contract.
 
-import type * as ProviderListModule from "@/app/dialogs/provider-list"
-import type * as ProviderConnectFormModule from "@/app/dialogs/provider-connect-form"
 import type * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
-import type * as SandboxDriverLogoModule from "@/features/settings/ui/sandbox-driver-logo"
 
 export type OnboardingAppPorts = {
-  ProviderList: typeof ProviderListModule.ProviderList
-  ProviderConnectForm: typeof ProviderConnectFormModule.ProviderConnectForm
   workspaceSandboxDriversUrl: typeof SandboxSectionLogic.workspaceSandboxDriversUrl
-  workspaceSandboxDriverAuthUrl: typeof SandboxSectionLogic.workspaceSandboxDriverAuthUrl
-  /** The same brand marks the Settings provider picker renders. */
-  SandboxDriverLogo: typeof SandboxDriverLogoModule.SandboxDriverLogo
 }
 
 let ports: OnboardingAppPorts | undefined
@@ -38,8 +29,4 @@ function bind<A extends unknown[], R>(select: (ports: OnboardingAppPorts) => (..
   return (...args: A) => select(required())(...args)
 }
 
-export const ProviderList = bind((ports) => ports.ProviderList)
-export const ProviderConnectForm = bind((ports) => ports.ProviderConnectForm)
 export const workspaceSandboxDriversUrl = bind((ports) => ports.workspaceSandboxDriversUrl)
-export const workspaceSandboxDriverAuthUrl = bind((ports) => ports.workspaceSandboxDriverAuthUrl)
-export const SandboxDriverLogo = bind((ports) => ports.SandboxDriverLogo)

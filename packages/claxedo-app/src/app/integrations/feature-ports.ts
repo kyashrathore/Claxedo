@@ -73,7 +73,6 @@ export function useOnboardingFunnel() {
   const config = Config.useConfigOptional()
   return createOnboardingFunnel({
     deployment: platform.platform === "desktop" || config?.sandboxEnabled ? "hosted" : "self-host",
-    // `step_done` carries its own `surface` and overrides the default below.
     capture: (name, properties) => captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
   })
 }

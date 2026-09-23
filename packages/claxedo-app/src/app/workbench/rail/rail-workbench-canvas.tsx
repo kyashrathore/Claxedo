@@ -10,10 +10,7 @@ import { ContentRenderer } from "../content/index"
 import type { ContentMeta } from "../state/index"
 import { emitTerminalFit } from "../../../features/terminal/workbench/terminal-fit"
 import { FirstProjectCanvas } from "./first-project-canvas"
-import { OnboardingEmptyState } from "./onboarding-empty-state"
 import { MainContentReady } from "../../shell-revealed"
-
-const ONBOARDING_V1 = import.meta.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
 
 const SessionContent = lazy(() =>
   import("../../../features/session/ui/content/session-content").then((m) => ({ default: m.SessionContent })),
@@ -23,9 +20,6 @@ type RailWorkbenchState = {
   wb: {
     state: {
       focusedPaneId?: string | null
-    }
-    selectors: {
-      focusedContent: () => string | null | undefined
     }
   }
   meta: {
@@ -41,31 +35,9 @@ export function RailWorkbenchCanvas(props: {
   emptyDraftDirectory: Accessor<string | undefined>
   onCloseFocusedPane: (paneId: string, contentId: string | null) => void
   onDiagnostics?: () => void
-  onNewProject?: () => void
   /** A project the first-project canvas just created; the shell opens it. */
   onProjectCreated?: (project: NewSessionProjectSelection) => void
 }) {
-  /**
-   * With no project on the server there is one screen to show, and under
-   * onboarding v1 `OnboardingEmptyState` is the single owner of the choice
-   * between its setup steps and that screen. This canvas owns only which
-   * screen that is, and whether onboarding is consulted at all.
-   */
-  const firstProject = () => (
-    <FirstProjectCanvas onDiagnostics={props.onDiagnostics} onProjectCreated={props.onProjectCreated} />
-  )
-
-  const onboardingOverlayDirectory = createMemo(() => {
-    if (!ONBOARDING_V1) return undefined
-    const projectDirectory = props.emptyDraftDirectory()
-    if (!projectDirectory) return undefined
-    const contentId = props.state.wb.selectors.focusedContent()
-    if (!contentId) return projectDirectory
-    const content = props.state.meta.get(contentId)
-    if (content?.type === "session" && content.sessionId === "new") return projectDirectory
-    return undefined
-  })
-
   // Keep only the three most-recent hidden sessions mounted. The bounded
   // latest-surface hydrate makes a remount cheap; retaining 23 hidden pages made
   // Solid and layout work grow with browsing history and broke the 50 ms cold
@@ -94,15 +66,7 @@ export function RailWorkbenchCanvas(props: {
                     readiness the boot splash waits on. The draft session's
                     release is the composer poll in `BootSplashOverlay`. */}
                 <MainContentReady />
-                {ONBOARDING_V1
-                  ? (
-                    <OnboardingEmptyState
-                      onDiagnostics={props.onDiagnostics}
-                      onNewProject={props.onNewProject}
-                      fallback={firstProject()}
-                    />
-                  )
-                  : firstProject()}
+                <FirstProjectCanvas onDiagnostics={props.onDiagnostics} onProjectCreated={props.onProjectCreated} />
               </>
             }
           >
@@ -121,17 +85,6 @@ export function RailWorkbenchCanvas(props: {
           props.state.layout._cleanupOnClose(id, reason === "stale" ? "panic" : "user")
         }}
       />
-      <Show when={onboardingOverlayDirectory()}>
-        {(projectDirectory) => (
-          <OnboardingEmptyState
-            projectDirectory={projectDirectory()}
-            overlay
-            fallback={false}
-            onDiagnostics={props.onDiagnostics}
-            onNewProject={props.onNewProject}
-          />
-        )}
-      </Show>
     </div>
   )
 }

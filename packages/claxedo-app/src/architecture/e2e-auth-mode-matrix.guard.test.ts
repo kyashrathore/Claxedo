@@ -31,7 +31,7 @@ const viteLaunchers = Object.fromEntries(
 const packageJson = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
   scripts: Record<string, string>
 }
-const coreE2EJob = workflow.slice(workflow.indexOf("\n  e2e:\n"), workflow.indexOf("\n  e2e-onboarding:\n"))
+const coreE2EJob = workflow.slice(workflow.indexOf("\n  e2e:\n"), workflow.indexOf("\n  e2e-tier-real:\n"))
 const reusableE2EBuildJob = workflow.slice(workflow.indexOf("\n  e2e-build:\n"), workflow.indexOf("\n  e2e:\n"))
 
 describe("e2e auth mode matrix", () => {
@@ -81,7 +81,6 @@ describe("e2e auth mode matrix", () => {
     expect(workflow).toContain("auth-mode: [test-user, local-unsigned]")
     expect(workflow).toContain("CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}")
     expect(workflow).toContain("playwright-linux-${{ matrix.auth-mode }}-shard${{ matrix.shard }}")
-    expect(workflow).toContain("playwright-onboarding-${{ matrix.auth-mode }}")
   })
 
   test("CI builds each auth composition once and six shards preview its exact artifact", () => {
@@ -103,7 +102,7 @@ describe("e2e auth mode matrix", () => {
     expect(crabboxShard).toContain("CLAXEDO_E2E_SERVE_MODE=build-preview")
     expect(coreE2EJob).toContain("Download reusable workspace dist")
     expect(coreE2EJob).not.toContain("bun turbo build")
-    expect(packageJson.scripts["test:e2e"]).toContain("test:e2e:core:base test:e2e:onboarding")
+    expect(packageJson.scripts["test:e2e"]).toContain("test:e2e:core:base")
 
     expect(buildApp).toContain("e2eAppViteEnvironment(authMode)")
     expect(buildApp).toContain("claxedo-e2e-build.json")

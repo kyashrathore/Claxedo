@@ -2472,18 +2472,16 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/api/workspace/resolve**", localWorkspaceResolve)
   await contractRoute(page, "**/api/claxedo/workspace/resolve**", localWorkspaceResolve)
 
-  // Onboarding reads the sandbox driver catalog on every boot to decide whether
-  // the cloud steps apply at all. The default is "no provider configured", which
-  // is the honest zero state: a local-only machine has no cloud, so setup is the
-  // two required steps. Specs that exercise the cloud steps override this.
+  // The default driver catalog is "no provider configured", the zero state of a
+  // local-only machine. Specs that exercise a sandbox provider override this.
   await contractRoute(page, "**/api/workspace/drivers**", (r) =>
     api(r)
       ? json(r, unconfiguredWorkspaceDriversResponse())
       : r.continue(),
   )
 
-  // Remote access left the setup flow (it needs a sign-in), but the controller
-  // still reports availability for the home-surface card.
+  // The remote-access status Settings → Machines reads: a build with neither
+  // device sign-in nor a relay configured.
   await page.route("**/api/claxedo/remote-access**", (r) =>
     api(r)
       ? json(r, {

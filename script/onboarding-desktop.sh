@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Launch the desktop app in a throwaway profile with onboarding v1 enabled.
+# Launch the desktop app in a throwaway profile, so the first run starts from
+# zero.
 #
-# Everything the onboarding flow reads lives in two places, and both are
-# redirected here so a reset never touches your real state:
+# Everything the first run reads lives in two places, and both are redirected
+# here so a reset never touches your real state:
 #
 #   CLAXEDO_DESKTOP_USER_DATA_DIR -> Electron userData: renderer localStorage
-#     (all `opencode.*` persisted UI state, incl. onboarding dismissals),
+#     (all `opencode.*` persisted UI state),
 #     window state, caches.
 #   CLAXEDO_DATA_DIR              -> embedded claxedo-server state: claxedo.db,
 #     authority.db, credentials/, workspaces.json,
@@ -24,14 +25,13 @@
 #   script/onboarding-desktop.sh --no-credentials # also fake $HOME (see below)
 #   script/onboarding-desktop.sh --force          # skip the running-app guard
 #
-# --no-credentials: the server discovers provider logins from your real home
+# --no-credentials: the server discovers harness logins from your real home
 # dir (~/.local/share/opencode/auth.json, ~/.codex/auth.json + accounts/,
-# ~/.claude/.credentials.json) when you press Discover in the Connect-AI step.
-# A fresh profile already starts with zero *saved* credentials, so you only
-# need this to test the "nothing found" path. It points $HOME at the profile,
-# which also hides ~/.gitconfig, ~/.ssh and every CLI's own config from any
-# agent you run inside the app — use it for the Connect-AI step, not for a
-# full end-to-end session run.
+# ~/.claude/.credentials.json). A fresh profile already starts with zero
+# *saved* credentials, so you only need this to test the "nothing found" path.
+# It points $HOME at the profile, which also hides ~/.gitconfig, ~/.ssh and
+# every CLI's own config from any agent you run inside the app — use it for
+# the AI step, not for a full end-to-end session run.
 set -euo pipefail
 
 PROFILE_NAME="default"
@@ -83,7 +83,6 @@ if [ "$PRINT_ENV" = 1 ]; then
   echo "CLAXEDO_DESKTOP_USER_DATA_DIR=$USER_DATA_DIR"
   echo "CLAXEDO_DATA_DIR=$DATA_DIR"
   echo "CLAXEDO_STATE_DIR=$DATA_DIR/state"
-  echo "VITE_CLAXEDO_ONBOARDING_V1=true"
   [ "$NO_CREDENTIALS" = 1 ] && echo "HOME=$FAKE_HOME"
   exit 0
 fi
@@ -131,7 +130,6 @@ claxedo_load_server_env "$REPO_ROOT"
 export CLAXEDO_DESKTOP_USER_DATA_DIR="$USER_DATA_DIR"
 export CLAXEDO_DATA_DIR="$DATA_DIR"
 export CLAXEDO_STATE_DIR="$DATA_DIR/state"
-export VITE_CLAXEDO_ONBOARDING_V1=true
 
 # A server URL/token inherited from the shell would point the desktop app at an
 # already-onboarded control plane instead of its own embedded one.
@@ -147,7 +145,6 @@ fi
 echo "profile:   $PROFILE"
 echo "userData:  $USER_DATA_DIR"
 echo "data dir:  $DATA_DIR"
-echo "onboarding v1: on"
 echo
 
 # Run from inside the package: `bun run dev` triggers the predev build (patched

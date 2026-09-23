@@ -38,8 +38,6 @@ outputs:
     value: ${{ steps.detect.outputs.boundary_server }}
   core_e2e:
     value: ${{ steps.detect.outputs.core_e2e }}
-  onboarding:
-    value: ${{ steps.detect.outputs.onboarding }}
   tier_real:
     value: ${{ steps.detect.outputs.tier_real }}
   sandbox_image:

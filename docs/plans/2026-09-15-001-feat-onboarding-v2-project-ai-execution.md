@@ -326,15 +326,26 @@ passes the same ports the wizard does.
 - [ ] Web finish with a connected machine opens the workspace list and states
       the P4 gap in the wizard copy; no call is made that cannot succeed.
       Progress:
-- [ ] Settings → Remote access renders and behaves as before from
+- [x] Settings → Remote access renders and behaves as before from
       `features/settings/remote-access/`; `app/entry/app.tsx` mounts the
       marker from there. `git grep -n "features/onboarding/remote-access"`
       returns nothing.
-      Progress:
-- [ ] `git grep -n "ONBOARDING_V1\|onboardingOverlayDirectory\|OnboardingEmptyState\|setupShellMode"`
+      Progress: done 2026-09-23 (Lane M). `machine-provider-config.tsx` moved
+      with them, its only caller being the same Machines panel; the controller
+      lost its funnel `emit`, which only the deleted v1 step passed. The grep
+      matches this plan's own text and nothing else.
+- [x] `git grep -n "ONBOARDING_V1\|onboardingOverlayDirectory\|OnboardingEmptyState\|setupShellMode"`
       returns nothing; every deleted module's test is deleted with it; no
       kept module in `features/onboarding` lacks a production importer.
-      Progress:
+      Progress: done 2026-09-23 (Lane D) except the last clause, which waits
+      on the wizard: `code-host-api`, `sandbox-provider-api`,
+      `sandbox-provider-query`, `credential-query`, `credential-resolution`,
+      `credential-sharing` and `error-text` are kept for lanes A2/S1 with no
+      production importer today. The grep matches this plan's own text and a
+      recorded transcript in `session-ui/src/components/transcript-lab-fixture.json`,
+      nothing in code. Also gone: the `test:e2e:onboarding` script and its
+      CI job, the `onboarding` change-selection output, the `surface` field of
+      `step_done`, and the v1 `OnboardingDestination` in `ai-connect-state`.
 - [ ] The composer's Project chip creates a project with no Name field and
       the repository list, through the same `ProjectCreateForm`.
       Progress:
@@ -347,9 +358,10 @@ passes the same ports the wizard does.
       desktop path (steps 1–3, folder + clone) against a real local stack in
       both themes, and of the hosted path against the signed-web e2e stack.
       Progress:
-- [ ] `docs/plans/2026-09-14-002-feat-onboarding-v1-repair.md` is deleted and
+- [x] `docs/plans/2026-09-14-002-feat-onboarding-v1-repair.md` is deleted and
       the README entry points here.
-      Progress:
+      Progress: already true before Lane D (deleted in `e28b0b595b`; the README
+      carries only this plan's entry).
 
 ## Execution: parallel lanes with disjoint ownership
 

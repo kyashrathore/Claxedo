@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { cloudShareBlock, isCloudRelevantCredential, isCloudShareable } from "./credential-sharing"
-import type { OnboardingCredential } from "./state"
+import type { OnboardingCredential } from "./credential-query"
 
 function credential(overrides: Partial<OnboardingCredential> = {}): OnboardingCredential {
   return {

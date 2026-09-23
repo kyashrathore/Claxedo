@@ -143,7 +143,6 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
           emptyDraftDirectory={props.emptyDraftDirectory}
           onCloseFocusedPane={props.onCloseFocusedPane}
           onDiagnostics={props.onDiagnostics}
-          onNewProject={props.onNewProject}
           onProjectCreated={props.onProjectCreated}
         />
       </div>

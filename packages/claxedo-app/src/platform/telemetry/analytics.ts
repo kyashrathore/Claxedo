@@ -13,10 +13,6 @@ export type DeploymentMode = "cloud" | "self-host" | "desktop-local"
 /**
  * The product surface an event was emitted from. Tight by construction: a new
  * surface must be added here before it can be captured.
- *
- * The last three entries are the onboarding funnel's own `surface` property
- * (`features/onboarding/funnel.ts` `step_done`), which travels under this key
- * and overrides the funnel adapter's "onboarding" default.
  */
 export type Surface =
   | "app_shell"
@@ -31,8 +27,6 @@ export type Surface =
   | "error_page"
   | "error_page_harness"
   | "desktop"
-  | "web"
-  | "self-host"
 
 /**
  * Required properties on every product-plane event. The index signature keeps

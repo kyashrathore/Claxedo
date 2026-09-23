@@ -1,11 +1,15 @@
 # Onboarding Feature
 
-Pure setup derivation, step definitions, dismissal state, onboarding shell, and
-the shared setup surfaces that render those contracts.
+The data paths a first run is built from: AI login discovery and verification
+(`ai-connect-*`), the credential rows the server holds and which of them a
+cloud sandbox may use (`credential-*`), GitHub connection (`code-host-api`),
+sandbox provider catalog and keys (`sandbox-provider-*`), and the funnel events
+those steps report (`funnel`). No first-run surface lives here yet; with no
+project on the server the app shows `app/workbench/rail/first-project-canvas.tsx`.
 
 ```json
 {
-  "owns": "Onboarding derivation, registry, dismissals, setup shell, and setup UI",
+  "owns": "First-run data paths: AI connect, credential query and cloud-sharing rules, code-host connection, sandbox provider catalog and keys, funnel telemetry",
   "writerOf": [],
   "mustNotImport": ["@/app/*", "@/features/browser/*", "@/features/documents/*", "@/features/extensions/*", "@/features/processes/*", "@/features/review/*", "@/features/session/*", "@/features/settings/*", "@/features/terminal/*", "@/features/workspaces/*", "@/shell/*", "@/context/*", "@/components/*", "@/pages/*", "@/claxedo-ui/*", "@/pane/*", "@/shared/*"]
 }
@@ -13,30 +17,13 @@ the shared setup surfaces that render those contracts.
 
 ## Design rationale
 
-Carried forward from the retired onboarding product/UX plan before it was
-deleted, so the reasoning behind a few non-obvious choices in this feature
-isn't lost:
-
-- **Funnel-leak reasoning behind "proven, not saved" checkmarks.** The
-  largest silent funnel leak is `provider_connected` → `first_turn_ok`: a
-  credential that saved but can't actually work (no billing, org rate cap,
-  stale OAuth token) is the common case, not the edge case. That's why every
-  step's done-state is a real verification operation (a test call, a test
-  clone, an actual provision) rather than a row-exists query.
-- **Why remote-access-as-education failed.** An earlier design pitched
-  "access remotely" as a pure education step pre-first-turn; it landed flat
-  in the first stress test and was cut. Reframed as an action instead — scan
-  a QR, watch the agent work from your phone — it became the cheapest wow in
-  the funnel and the moment Ramp 2 (cloud/detached sessions) stops being
-  abstract.
-- **The Ramp-2 pull-not-push strategy.** Ramp 2 (graduating to cloud/detached
-  sessions) is the product's real differentiator, but it sells itself best
-  right after the user has felt Ramp 1 (first local turn) rather than being
-  pushed in front of it — its education cards ("Go further": any
-  harness, deploy on your own infra) appear only after the first successful
-  turn, and land better there than any pre-first-turn tutorial could.
-- **Self-host signed-in trust motivation.** Today's `claxedo deploy` ends
-  with a warning that anyone with the URL can use the instance. Self-host is
-  the same product as hosted, so its first minute must carry the same trust
-  bar: deploy ends authenticated, with a first-admin claim step, not an
-  open door.
+- **Proven, not saved.** The largest silent funnel leak is
+  `provider_connected` → `first_turn_ok`: a credential that saved but cannot
+  actually work (no billing, org rate cap, stale OAuth token) is the common
+  case, not the edge case. So a step's done-state is a real verification
+  operation (a probe, a test clone, an actual provision), never a row-exists
+  query.
+- **Pull, not push, for the cloud.** Cloud and detached sessions are the
+  product's differentiator, but they sell best right after the user has felt a
+  first local turn. Anything that teaches them belongs after that turn, not in
+  front of it.

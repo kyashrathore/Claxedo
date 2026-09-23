@@ -3,7 +3,6 @@ import {
   aiConnectFailureCopy,
   aiConnectTransition,
   connectionDisplayName,
-  destinationStoresCredentials,
   discoveryRows,
   initialAIConnectState,
   localHarnessChecks,
@@ -94,7 +93,7 @@ describe("AI connect state", () => {
     expect(JSON.stringify(confirmed)).not.toContain("discovery-1")
   })
 
-  test.each(["cloud", "both"] as const)("a %s destination still collects, because a sandbox has no login of its own", (destination) => {
+  test("a successful discovery lands in preview under its discovery id", () => {
     const state = aiConnectTransition({ phase: "discovering" }, {
       type: "discovery-succeeded",
       discoveryId: "discovery-1",
@@ -102,23 +101,6 @@ describe("AI connect state", () => {
     })
 
     expect(state).toMatchObject({ phase: "preview", discoveryId: "discovery-1" })
-    expect(destinationStoresCredentials(destination)).toBe(true)
-  })
-
-  test("an unset destination collects exactly as before, so the flow that has no question yet is unchanged", () => {
-    const state = aiConnectTransition({ phase: "discovering" }, {
-      type: "discovery-succeeded",
-      discoveryId: "discovery-1",
-      items: claudeToken,
-    })
-
-    expect(state.phase).toBe("preview")
-  })
-
-  test("only a local destination declines to store", () => {
-    expect(destinationStoresCredentials("local")).toBe(false)
-    expect(destinationStoresCredentials("cloud")).toBe(true)
-    expect(destinationStoresCredentials("both")).toBe(true)
   })
 
   test("one discovered login is one row, saved under the provider it arrived as", () => {

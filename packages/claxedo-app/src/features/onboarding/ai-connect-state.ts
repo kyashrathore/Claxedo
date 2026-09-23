@@ -28,22 +28,6 @@ export type AIDiscoveryItem = {
   probe?: AIDiscoveryProbe
 }
 
-/**
- * Where this user's agents will run. Set by the destination question; until that
- * ships, callers leave it unset and get `both`, which collects exactly as before.
- */
-export type OnboardingDestination = "local" | "cloud" | "both"
-
-/**
- * A local-only run stores nothing: the harness spawns the user's own binary and
- * inherits the login already on the machine. So the AI step's job is to confirm
- * a usable login exists, not to take a copy of one — a copy Claude Code would
- * rotate out from under us within hours.
- */
-export function destinationStoresCredentials(destination: OnboardingDestination) {
-  return destination !== "local"
-}
-
 const connectionNames: Record<string, string> = {
   "claude-acp": "Claude Code login",
   "claude-sdk": "Claude Code login",

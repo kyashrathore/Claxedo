@@ -558,7 +558,14 @@ export const appLocal: Policy = {
   // under the 800-line budget when the pane hit test was bounded to the
   // workbench root. It sits beside the drag helpers it already used and
   // reaches nothing new. Owner: `app/workbench/workbench`. No new package edge.
-  ceilings: { modules: 1131, packages: 58 },
+  // -13 modules (2026-09-23): onboarding v1 is gone. The rail no longer
+  // reaches `app/workbench/rail/onboarding-empty-state.tsx`, and with it
+  // `features/onboarding/{registry,setup-shell-state,setup-page,dismissals,
+  // go-further,home-view,navigation,state,destination,destination-surface,
+  // ai-connect-surface}`; the no-project screen is `first-project-canvas.tsx`
+  // alone. No package edge changes. Exact measured 1100 modules / 58 packages,
+  // with no headroom.
+  ceilings: { modules: 1100, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
