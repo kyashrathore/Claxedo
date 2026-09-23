@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { isOwnerOnlyFile, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 
 import {
   HostedMcpUrlError,
@@ -61,11 +62,22 @@ describe("installing the hosted entry", () => {
 
   test("preserves restrictive permissions when replacing harness configuration", async () => {
     const box = await machine()
+    const file = path.join(box.paths.home, ".claude.json")
+    await writePrivateFileAtomic(file, '{}\n')
+    await installHostedMcpEntry({ controlPlaneUrl: "https://api.claxedo.com", ...box })
+    expect(JSON.parse(await box.read(".claude.json")).mcpServers.claxedo).toBeDefined()
+    expect(await isOwnerOnlyFile(file)).toBe(true)
+  })
+
+  test("keeps a shared config's mode when replacing it", async () => {
+    const box = await machine()
     await box.write(".claude.json", '{}\n')
     const file = path.join(box.paths.home, ".claude.json")
-    await fs.chmod(file, 0o600)
+    await fs.chmod(file, 0o644)
     await installHostedMcpEntry({ controlPlaneUrl: "https://api.claxedo.com", ...box })
-    expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
+    expect(await isOwnerOnlyFile(file)).toBe(false)
+    // NT reports a synthesized mode that no chmod changes.
+    if (process.platform !== "win32") expect((await fs.stat(file)).mode & 0o777).toBe(0o644)
   })
 
   test("writes one http entry into Claude Code, Cursor and Codex", async () => {

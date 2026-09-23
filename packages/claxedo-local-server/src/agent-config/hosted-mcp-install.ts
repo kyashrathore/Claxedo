@@ -1,7 +1,7 @@
-import crypto from "node:crypto"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { isOwnerOnlyFile, writeFileAtomic, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import { asRecord } from "@claxedo/helpers/guards"
 import { parse as parseToml } from "smol-toml"
 
@@ -78,20 +78,23 @@ async function readIfPresent(file: string) {
   })
 }
 
-/** Replaces the file only after it is fully written, so a crash cannot leave a harness with half a config. */
+/**
+ * Replaces the file only after it is fully written, so a crash cannot leave a
+ * harness with half a config.
+ *
+ * The replacement is a new file, so it carries only the protection given to
+ * it here. A config readable by its owner alone, or one this creates, is
+ * written that way; on NT that is a descriptor of its own, because a mode
+ * never reaches the filesystem there. Any other config keeps its mode.
+ */
 async function replaceFileAtomically(file: string, contents: string) {
   await fs.mkdir(path.dirname(file), { recursive: true })
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.claxedo-${crypto.randomUUID()}`)
-  const mode = await fs.stat(file).then((stat) => stat.mode & 0o777, (error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return 0o600
+  const current = await fs.stat(file).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return undefined
     throw error
   })
-  try {
-    await fs.writeFile(temporary, contents, { mode })
-    await fs.rename(temporary, file)
-  } finally {
-    await fs.rm(temporary, { force: true })
-  }
+  if (!current || await isOwnerOnlyFile(file)) await writePrivateFileAtomic(file, contents)
+  else await writeFileAtomic(file, contents, { mode: current.mode & 0o777 })
 }
 
 async function prepareJsonConfig(file: string, url: string | undefined): Promise<{ state: HostedMcpInstallResult["state"]; contents?: string }> {
