@@ -92,6 +92,7 @@ import {
 } from "./subagent-transcript"
 import { acceptedSessionConfig, acceptedSessionUpdate } from "./accepted-session-mutation"
 import { SdkRuntimeInteractions } from "./sdk-runtime-interactions"
+import { recordOutsideTurnUsage } from "./outside-turn-usage"
 import { sdkConfigOptions, sdkHarnessCapabilities } from "./sdk-runtime-capabilities"
 
 export type {
@@ -180,6 +181,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       },
       publishGoal: (input) => this.goalSurface().publishGoal(input.sessionId, input.directory, input.goal),
       runProviderTurn: (input, execute) => this.goalSurface().runProviderTurn(input.sessionId, input.directory, execute, input.userMessage),
+      meterUsage: (input) => recordOutsideTurnUsage({ store: this.store, ...(this.options.eventHub ? { eventHub: this.options.eventHub } : {}) }, input),
     })
     this.instructionChannel = this.driver.instructionChannel
     this.goals = this.goalSurface().resource()
@@ -449,7 +451,16 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
     abort.signal.addEventListener("abort", cancelInteractions, { once: true })
 
+    // Once the loop below stops reading — the turn settled, or its consumer
+    // returned early — nothing yields what the projector commits, so the
+    // parent's events reach the hub directly, as a child's always do.
+    let consumerReading = true
+    const publishDirect = (event: CompatEvent) => this.options.eventHub?.publishGlobal({ directory, payload: event })
     const push = (event: CompatEvent) => {
+      if (!consumerReading) {
+        publishDirect(event)
+        return
+      }
       queue.push(event)
       for (const resolve of resolvers.splice(0)) resolve()
     }
@@ -604,14 +615,13 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         if (promptDone) break
       }
     } finally {
+      consumerReading = false
+      for (const event of queue.splice(0)) publishDirect(event)
       await run
       await subagentChildren.settleOpen(`turn-end:${id}:${input.assistantMessageId}`, (observation) =>
         observeSubagent({ observation, source: { dir: "in", method: "subagent/turn-end" } }))
       router.dispose()
     }
-    // Settling open subagents and disposing the router project after the loop
-    // stopped reading the queue; their usage reaches the meter only if yielded.
-    yield* queue.splice(0)
 
     const terminalIdentity = () => ({
       assistantMessageId: router.assistantMessageId(),
@@ -638,11 +648,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         source: { dir: "in", method: "prompt.aborted" },
       })
       yield updated
-      // Provider-originated Goal turns have no ordinary turn subscriber to
-      // publish their cancellation. Settle through the same projector so the
-      // persisted status and the native runtime feed both observe idle.
+      // Settled through the same projector so the persisted status and the
+      // native runtime feed both observe idle.
       parentProjector.project({ type: "session-status", status: "idle" }, source)
-      yield* queue.splice(0)
       return
     }
     if (!promptError) return

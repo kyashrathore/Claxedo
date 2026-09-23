@@ -471,7 +471,7 @@ describe("createChildEventRouter", () => {
       item.router.project({ type: "text-delta", delta: "lost" }, source, { kind: "child" })
 
       expect(meteredOn(item.parentCompat)).toEqual([
-        { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated", input: 5 },
+        { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:unknown", input: 5 },
       ])
       expect(JSON.stringify(item.journal)).not.toContain("lost")
       expect(diagnosticCodes(item.diagnostics)).toEqual([
@@ -479,6 +479,21 @@ describe("createChildEventRouter", () => {
         "child_event_route_missing_correlation",
       ])
       expect(diagnosticDetails(item.diagnostics)).toEqual([{ eventType: "usage", rolledUpUsage: 1 }, { eventType: "text-delta" }])
+      item.router.dispose()
+    })
+
+    test("keeps two uncorrelated children apart by the provider session each reports from", () => {
+      const item = fixture()
+
+      item.router.project(usage(5, { nativeSessionId: "child-a" }), source, { kind: "child" })
+      item.router.project(usage(7, { nativeSessionId: "child-b" }), source, { kind: "child" })
+      item.router.project(usage(9, { nativeSessionId: "child-a" }), source, { kind: "child" })
+
+      expect(meteredOn(item.parentCompat)).toEqual([
+        { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:child-a", input: 5 },
+        { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:child-b", input: 7 },
+        { sessionID: "parent-1", kind: "cumulative", scope: "child:uncorrelated:child-a", input: 9 },
+      ])
       item.router.dispose()
     })
   })

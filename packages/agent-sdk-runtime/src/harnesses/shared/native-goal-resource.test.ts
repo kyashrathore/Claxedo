@@ -22,7 +22,7 @@ function resource(input: {
     publishGoal() {},
     sessionConfig: async () => ({}) as never,
     defaultModelId: () => "default",
-    streamTurn: () => ({ async *[Symbol.asyncIterator]() {} }) as never,
+    runTurn: async () => {},
   } satisfies NativeGoalResourceHost)
 }
 

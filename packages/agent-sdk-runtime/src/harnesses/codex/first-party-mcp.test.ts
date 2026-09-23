@@ -92,6 +92,7 @@ function driverFor(binary: string, codexHome: string) {
     getSessionConfig: () => null,
     publishGoal() {},
     async runProviderTurn() { return true },
+    meterUsage() {},
   }, { binary, codexHome })
 }
 

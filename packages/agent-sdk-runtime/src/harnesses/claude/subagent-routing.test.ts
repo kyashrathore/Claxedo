@@ -1,6 +1,7 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import { executeTestTurn } from "../../test-utils/execution-binding"
+import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
+import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { claudeSdkAdapter, createClaudeTaskLedger } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
@@ -972,6 +973,99 @@ describe("Claude subagent usage", () => {
       cache: { read: 1000 + orphan.cache_read_input_tokens, write: 200, write1h: 0 },
     })
     expect(turn.parentUsage.at(-1)?.contextUsed).toBe(3 + 120 + 1000 + 200)
+  })
+
+  test("does not meter again the main thread's earlier requests a forked subagent's transcript copies", async () => {
+    const copied = {
+      type: "assistant",
+      uuid: "entry-copied-main",
+      timestamp: "2000-01-01T00:00:00.000Z",
+      sessionId: "claude-parent-thread",
+      message: { id: "msg-earlier-main", role: "assistant", content: [], usage: { input_tokens: 9000, output_tokens: 900 } },
+    }
+    async function* forkedTurn(sessionStore: SessionStore) {
+      yield stream({ type: "message_start", message: { id: "msg-parent-1", type: "message", role: "assistant", content: [], usage: PARENT_REQUEST } })
+      yield stream({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { ...PARENT_REQUEST, output_tokens: 120 } })
+      yield stream({ type: "message_stop" })
+      const current = transcriptEntries(CHILD_REQUESTS[1]).map((entry) => ({ ...entry, timestamp: new Date().toISOString() }))
+      await sessionStore.append(subagentTranscript, [copied, ...current])
+      yield {
+        type: "result",
+        subtype: "success",
+        uuid: "turn-result-1",
+        session_id: "claude-parent-thread",
+        is_error: false,
+        usage: { ...PARENT_REQUEST, output_tokens: 120 },
+        modelUsage: { test: { contextWindow: 200000 } },
+      }
+    }
+    const turn = await runScriptedTurn(forkedTurn)
+
+    const orphan = CHILD_REQUESTS[1].opening
+    expect(turn.parentUsage.at(-1)?.observation?.tokens).toEqual({
+      input: 3 + orphan.input_tokens,
+      output: 120 + CHILD_REQUESTS[1].finalOutput,
+      reasoning: null,
+      cache: { read: 1000 + orphan.cache_read_input_tokens, write: 200, write1h: 0 },
+    })
+  })
+
+  test("meters a subagent's final usage mirrored after its turn was aborted", async () => {
+    let resume!: () => void
+    const abortObserved = new Promise<void>((resolve) => { resume = resolve })
+    let childFrameRead!: () => void
+    const childFrameSeen = new Promise<void>((resolve) => { childFrameRead = resolve })
+    async function* abortedDelegation(sessionStore: SessionStore) {
+      yield stream({ type: "message_start", message: { id: "msg-parent-1", type: "message", role: "assistant", content: [], usage: PARENT_REQUEST } })
+      yield {
+        type: "assistant",
+        uuid: "parent-agent-call",
+        session_id: "claude-parent-thread",
+        parent_tool_use_id: null,
+        message: { id: "msg-parent-1", content: [agentCall("tool-agent-1", "Review auth")], usage: PARENT_REQUEST },
+      }
+      yield childFrame(CHILD_REQUESTS[0])
+      childFrameRead()
+      await abortObserved
+      await sessionStore.append(subagentTranscript, transcriptEntries(CHILD_REQUESTS[0]))
+    }
+    const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const childUsage: Array<{ sessionID: string; observation?: { tokens: { output: number | null } } }> = []
+    eventHub.subscribeGlobal((envelope) => {
+      if (envelope.payload.type === "session.usage") childUsage.push(envelope.payload.properties)
+    })
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: (host) => createClaudeSdkDriver(host, {
+        executable: () => "/fake/claude",
+        query: ((request: { options: { sessionStore: SessionStore } }) => Object.assign(abortedDelegation(request.options.sessionStore), {
+          close() {},
+          supportedModels: async () => [],
+        })) as never,
+      }),
+    })
+    const directory = path.resolve("/repo")
+    const parent = await adapter.createSession(directory)
+    const turn = (async () => {
+      for await (const _event of executeTestTurn(adapter, parent.id, {
+        parts: [{ type: "text", text: "Delegate review" }],
+        userMessageId: "parent-user",
+        assistantMessageId: "parent-assistant",
+        agent: "build",
+        model: { providerID: "claude", modelID: "test" },
+      }, directory)) {}
+    })()
+    await childFrameSeen
+    const cancelled = cancelAdapterTurn(adapter, executionBinding(parent.id, directory))
+    resume()
+    await turn
+    await cancelled
+
+    const child = (store.listSessions(directory) as Array<{ id: string }>).find((session) => session.id !== parent.id)
+    expect(childUsage.filter((usage) => usage.sessionID === child!.id).at(-1)?.observation?.tokens.output).toBe(CHILD_REQUESTS[0].finalOutput)
+    await adapter.dispose()
   })
 
   test("meters a subagent's requests on its child session from its mirrored transcript, whichever arrives first", async () => {

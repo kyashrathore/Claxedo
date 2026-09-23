@@ -107,7 +107,8 @@ test("a two-step turn meters each step in disjoint categories and closes on thei
     const ids = usage.map((event) => event.observation?.providerObservationId)
     expect(new Set(ids).size).toBe(3)
     for (const observationId of ids) expect(observationId).toMatch(new RegExp(`^${id}:\\d+$`))
-    const observation = (kind: "delta" | "cumulative", tokens: Tokens) => ({ kind, providerObservationId: expect.any(String), nativeSessionId: id, tokens })
+    // The engine records the model each step ran on; every step here ran on `proof/proof`.
+    const observation = (kind: "delta" | "cumulative", tokens: Tokens) => ({ kind, providerObservationId: expect.any(String), nativeSessionId: id, model: "proof", tokens })
     expect(usage).toEqual([
       {
         type: "usage",

@@ -40,6 +40,9 @@ function input(process: FakeDynamicProcess, observations: JsonRecord[]) {
         observations.push(item.observation)
         return { event: { type: "subagent.updated", properties: item.observation } as never }
       },
+      adoptSubagent(threadId: string) {
+        process.requests.push({ method: "adopt", params: threadId })
+      },
     },
     params: { callId: "call-1", arguments: { task_name: "review", message: "Inspect this" } },
     frame: { id: "request-1" },
@@ -57,6 +60,8 @@ describe("spawnDynamicCodexAgent", () => {
       success: true,
     })
     expect(observations.map((row) => row.status)).toEqual(["running", "completed"])
+    expect(process.requests.map((request) => request.method)).toEqual(["thread/start", "adopt", "turn/start"])
+    expect(process.requests[1]?.params).toBe("child-1")
   })
 
   test("observes a child turn failure", async () => {

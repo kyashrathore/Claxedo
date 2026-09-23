@@ -11,4 +11,6 @@ export type CodexActiveThread = {
   process: CodexAppServerProcess
   project: (method: string, payload: JsonRecord, frame: unknown) => void
   observeSubagent: SdkRuntimeTurnInput["observeSubagent"]
+  /** Files a thread this turn started for a subagent as the turn's own. */
+  adoptSubagent(threadId: string): void
 }

@@ -46,6 +46,8 @@ export type ClaudeRequestUsage = {
   cacheRead: number | null
   cacheWrite: number | null
   cacheWrite1h: number | null
+  /** The model the request's first report named; it decides the usage stream the request adds to. */
+  model?: string
 }
 
 export type ClaudeSdkAdapterState = {
@@ -64,8 +66,10 @@ export type ClaudeSdkAdapterState = {
    * child's usage is summed apart from the parent's.
    */
   requestUsageByOwner?: Record<string, Record<string, ClaudeRequestUsage>>
-  /** The request each owner is streaming: `message_delta` names none. */
+  /** The request each owner is streaming, until its `message_stop`: `message_delta` names none. */
   streamingRequestByOwner?: Record<string, string>
+  /** The request the main thread streamed last, which the context gauge reads. */
+  lastMainRequest?: string
 }
 
 /**
@@ -78,7 +82,7 @@ export type ClaudeSdkAdapterState = {
 export type ClaudeSubagentUsage = {
   parent_tool_use_id: string | null
   session_id?: string
-  message: { id: string; usage: Record<string, unknown> }
+  message: { id: string; usage: Record<string, unknown>; model?: string }
 }
 
 export const CLAUDE_SUBAGENT_USAGE_METHOD = "claude/subagent-usage"
@@ -666,9 +670,9 @@ function slashCommandEvents(message: Record<string, unknown>) {
     : []
 }
 
-function requestUsage(usage: Record<string, unknown> | undefined): ClaudeRequestUsage | undefined {
+function requestUsage(usage: Record<string, unknown> | undefined, model: string | undefined): ClaudeRequestUsage | undefined {
   if (!usage) return undefined
-  const tokens: ClaudeRequestUsage = {
+  const tokens = {
     input: asFiniteNumber(usage.input_tokens) ?? null,
     output: asFiniteNumber(usage.output_tokens) ?? null,
     reasoning: asFiniteNumber(usage.thinking_tokens) ?? null,
@@ -676,7 +680,8 @@ function requestUsage(usage: Record<string, unknown> | undefined): ClaudeRequest
     cacheWrite: asFiniteNumber(usage.cache_creation_input_tokens) ?? null,
     cacheWrite1h: asFiniteNumber(asRecord(usage.cache_creation)?.ephemeral_1h_input_tokens) ?? null,
   }
-  return Object.values(tokens).some((value) => value !== null && value > 0) ? tokens : undefined
+  if (!Object.values(tokens).some((value) => value !== null && value > 0)) return undefined
+  return model ? { ...tokens, model } : tokens
 }
 
 function larger(previous: number | null, next: number | null) {
@@ -700,6 +705,9 @@ function mergeRequestUsage(previous: ClaudeRequestUsage | undefined, next: Claud
     cacheRead: larger(previous.cacheRead, next.cacheRead),
     cacheWrite: larger(previous.cacheWrite, next.cacheWrite),
     cacheWrite1h: larger(previous.cacheWrite1h, next.cacheWrite1h),
+    // Fixed at the first report: moving a request to another model's stream
+    // would leave its tokens in the cumulative that stream already reported.
+    ...(previous.model ? { model: previous.model } : {}),
   }
 }
 
@@ -747,19 +755,34 @@ function ownerRequests(state: ClaudeSdkAdapterState, owner: string) {
   return own(state.requestUsageByOwner ?? {}, owner) ?? {}
 }
 
-/** The owner's whole-turn usage. The context gauge reads `request` alone: every request resends the whole context. */
+/**
+ * The stream an owner's requests on one model add to. An owner's requests are
+ * summed per model, so every observation names the one model that served it:
+ * the model of the owner's first request keeps the owner's own scope (none on
+ * the main thread), and each other model a request names gets one beside it.
+ */
+function modelScope(requests: Record<string, ClaudeRequestUsage>, owner: string, model: string | undefined) {
+  if (Object.values(requests)[0]?.model === model) return owner || undefined
+  return `${owner || "main"}@${model ?? "unknown"}`
+}
+
+/** The owner's whole-turn usage on `request`'s model. The context gauge reads `request` alone: every request resends the whole context. */
 function ownerUsageEvent(state: ClaudeSdkAdapterState, owner: string, request: ClaudeRequestUsage, nativeSessionId?: string) {
   const requestTotal = (request.input ?? 0) + (request.output ?? 0) + (request.cacheRead ?? 0) + (request.cacheWrite ?? 0)
   const contextSize = state.lastKnownContextWindow ?? requestTotal
+  const requests = ownerRequests(state, owner)
+  const scope = modelScope(requests, owner, request.model)
+  const sameModel = Object.fromEntries(Object.entries(requests).filter(([, tokens]) => tokens.model === request.model))
   return {
     type: "usage",
     contextSize,
     contextUsed: Math.min(requestTotal, contextSize),
     observation: {
       kind: "cumulative",
-      ...(owner ? { scope: owner } : {}),
+      ...(scope ? { scope } : {}),
       ...(nativeSessionId ? { nativeSessionId } : {}),
-      tokens: runtimeTokenUsage(sumRequestUsage(ownerRequests(state, owner))),
+      ...(request.model ? { model: request.model } : {}),
+      tokens: runtimeTokenUsage(sumRequestUsage(sameModel)),
     },
   } satisfies AgentRuntimeEvent
 }
@@ -771,8 +794,9 @@ function meterRequest(
   requestId: string,
   usage: Record<string, unknown> | undefined,
   nativeSessionId: string | undefined,
+  model: string | undefined,
 ) {
-  const tokens = requestUsage(usage)
+  const tokens = requestUsage(usage, model)
   if (!tokens) return undefined
   const requests = ownerRequests(state, owner)
   const previous = own(requests, requestId)
@@ -803,8 +827,7 @@ function meteredResult(state: ClaudeSdkAdapterState, metered: ReturnType<typeof 
  */
 function resultUsageEvent(state: ClaudeSdkAdapterState, nativeSessionId?: string) {
   const requests = ownerRequests(state, "")
-  const streamed = own(state.streamingRequestByOwner ?? {}, "")
-  const latest = (streamed ? own(requests, streamed) : undefined) ?? Object.values(requests).at(-1)
+  const latest = (state.lastMainRequest ? own(requests, state.lastMainRequest) : undefined) ?? Object.values(requests).at(-1)
   return latest ? ownerUsageEvent(state, "", latest, nativeSessionId) : undefined
 }
 
@@ -967,7 +990,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
         const request = asRecord(rawMessage.message)
         const requestId = text(request?.id)
         if (!requestId) return []
-        return meteredResult(state, meterRequest(state, claudeStreamOwner(rawMessage), requestId, asRecord(request?.usage), text(rawMessage.session_id)))
+        return meteredResult(state, meterRequest(state, claudeStreamOwner(rawMessage), requestId, asRecord(request?.usage), text(rawMessage.session_id), text(request?.model)))
       }
 
       if (!isSdkMessage(rawMessage)) {
@@ -1180,18 +1203,22 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
               const owner = claudeStreamOwner(rawMessage)
               const requestId = text(stream.message.id)
               if (!requestId) return []
-              const streaming = { ...state, streamingRequestByOwner: { ...state.streamingRequestByOwner, [owner]: requestId } }
-              const metered = meterRequest(streaming, owner, requestId, asRecord(stream.message.usage), text(rawMessage.session_id))
+              const streaming = {
+                ...state,
+                streamingRequestByOwner: { ...state.streamingRequestByOwner, [owner]: requestId },
+                ...(owner ? {} : { lastMainRequest: requestId }),
+              }
+              const metered = meterRequest(streaming, owner, requestId, asRecord(stream.message.usage), text(rawMessage.session_id), text(stream.message.model))
               return metered ? meteredResult(streaming, metered) : { state: streaming, events: [] }
             }
             case "message_delta": {
               const owner = claudeStreamOwner(rawMessage)
               const requestId = own(state.streamingRequestByOwner ?? {}, owner)
               if (!requestId) return []
-              return meteredResult(state, meterRequest(state, owner, requestId, asRecord(stream.usage), text(rawMessage.session_id)))
+              return meteredResult(state, meterRequest(state, owner, requestId, asRecord(stream.usage), text(rawMessage.session_id), undefined))
             }
             case "message_stop":
-              return []
+              return { state: { ...state, streamingRequestByOwner: withoutKey(state.streamingRequestByOwner ?? {}, claudeStreamOwner(rawMessage)) }, events: [] }
             default:
               return assertNever(stream)
           }
@@ -1270,7 +1297,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
           const shown = `${(messageId ? own(state.reconciledAssistantTextByMessageId, messageId) : undefined) ?? ""}${own(state.streamedAssistantTextByOwner, owner) ?? ""}`
           const reconciliation = snapshot ? reconcileAssistantSnapshot(shown, snapshot) : undefined
           const metered = messageId
-            ? meterRequest(state, owner, messageId, asRecord(message.message.usage), text(rawMessage.session_id))
+            ? meterRequest(state, owner, messageId, asRecord(message.message.usage), text(rawMessage.session_id), text(message.message.model))
             : undefined
           return {
             state: {

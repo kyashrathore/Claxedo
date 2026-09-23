@@ -454,7 +454,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       onGoal?.(goal)
       this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal })
     }
-    const subagentUsage = createClaudeSubagentUsage((correlationKey, usage) => input.ingest({
+    const subagentUsage = createClaudeSubagentUsage(Date.now(), (correlationKey, usage) => input.ingest({
       source: "claude.sdk",
       method: CLAUDE_SUBAGENT_USAGE_METHOD,
       payload: usage,
@@ -477,10 +477,13 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
      * CLAUDE_CONFIG_DIR and resumes the CLI from INSTEAD of that local
      * transcript. Answering with nothing keeps the CLI on its own history.
      */
+    // A subagent's final usage mirrored after an abort was still spent; only
+    // the query settling ends what this turn can meter.
+    let querySettled = false
     const sessionStore: SessionStore = {
       append: async (key, entries) => {
+        if (!querySettled) subagentUsage.observeEntries(key, entries)
         if (input.abort.signal.aborted) return
-        subagentUsage.observeEntries(key, entries)
         for (const entry of entries) {
           const row = asRecord(entry)
           if (row?.type === "ai-title" || row?.type === "custom-title") {
@@ -714,6 +717,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       throw cause
     } finally {
       subagentUsage.meterUnjoined()
+      querySettled = true
     }
   }
 

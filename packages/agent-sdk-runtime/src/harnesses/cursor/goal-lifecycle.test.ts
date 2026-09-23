@@ -55,6 +55,7 @@ describe("Cursor native Goal lifecycle", () => {
         published.push(input.goal)
       },
       async runProviderTurn() { return true },
+      meterUsage() {},
     }, {
       loadAgent: async () => ({
         Agent: { resume: async () => agent } as never,
@@ -135,6 +136,7 @@ describe("Cursor native Goal lifecycle", () => {
         published.push(input.goal)
       },
       async runProviderTurn() { return true },
+      meterUsage() {},
     }, {
       loadAgent: async () => ({
         Agent: { resume: async () => agent } as never,
@@ -189,6 +191,7 @@ describe("Cursor native Goal lifecycle", () => {
     getSessionConfig: () => null,
       publishGoal() {},
       async runProviderTurn() { return true },
+      meterUsage() {},
     })
 
     expect(driver.nativeGoal!.capabilities("session-1", "/repo")).toMatchObject({

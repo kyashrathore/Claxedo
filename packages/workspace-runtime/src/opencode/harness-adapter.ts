@@ -22,7 +22,7 @@ import type { OpenCodeRuntime } from "./runtime"
 import { WorkspaceScope } from "./scope"
 import type { ProjectedEvent } from "./event-pump"
 import { openCodePartId, type SessionMessage, type SessionSummary } from "./session-port"
-import { createTurnUsage } from "./turn-usage"
+import { createTurnUsage, readSessionTotal } from "./turn-usage"
 import { errorMessage } from "../error-message"
 import { rec, str } from "../json-value"
 
@@ -495,10 +495,8 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     try {
       await runtime.events.ready()
       // Read before the prompt is admitted: the total's growth from here to
-      // the terminal is this turn's usage. A failed read costs the turn its
-      // reconciliation, not the turn.
-      const opened = await runtime.sessions.get(scope, id).then((session) => session.tokens, () => undefined)
-      const usage = createTurnUsage(id, opened)
+      // the terminal is this turn's usage.
+      const usage = createTurnUsage(id, await readSessionTotal(async () => (await runtime.sessions.get(scope, id)).tokens))
       await runtime.sessions.switchAgent(scope, id, input.agent)
       await runtime.sessions.switchModel(scope, id, input.model)
       this.streaming.set(id, scope)
@@ -513,7 +511,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
         if (ended) {
           // The engine commits a durable event's projection before publishing
           // it, so the total read after the terminal holds every step before it.
-          const closing = await usage.close(async () => (await runtime.sessions.get(scope, id)).tokens, event)
+          const closing = usage.close(await readSessionTotal(async () => (await runtime.sessions.get(scope, id)).tokens), event)
           if (closing) yield closing
           yield ended
           return

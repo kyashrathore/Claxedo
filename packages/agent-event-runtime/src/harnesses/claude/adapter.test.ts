@@ -1504,6 +1504,47 @@ describe("claudeSdkAdapter", () => {
     expect(meteredTokens(closing)).toEqual({ input: 3, output: 900, reasoning: null, cache: { read: 1000, write: 200, write1h: 200 } })
   })
 
+  test("each observation names the model that served its requests, one stream per model", () => {
+    const agent = runtime()
+    const start = (id: string, model: string, usage: Record<string, unknown>) =>
+      sdkFrame(agent, streamFrame({ type: "message_start", message: { id, type: "message", role: "assistant", model, content: [], usage } }))
+    const observed = (events: AgentRuntimeEvent[]) => events.flatMap((event) => event.type === "usage" && event.observation
+      ? [{ scope: event.observation.scope, model: event.observation.model, input: event.observation.tokens.input }]
+      : [])
+
+    expect(observed(start("req-1", "claude-opus-4-6", { input_tokens: 10, output_tokens: 1 }))).toEqual([
+      { scope: undefined, model: "claude-opus-4-6", input: 10 },
+    ])
+    expect(observed(start("req-2", "claude-sonnet-4-5", { input_tokens: 20, output_tokens: 1 }))).toEqual([
+      { scope: "main@claude-sonnet-4-5", model: "claude-sonnet-4-5", input: 20 },
+    ])
+    expect(observed(start("req-3", "claude-opus-4-6", { input_tokens: 30, output_tokens: 1 }))).toEqual([
+      { scope: undefined, model: "claude-opus-4-6", input: 40 },
+    ])
+    expect(observed(sdkFrame(agent, {
+      type: "assistant",
+      uuid: "assistant-child",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: "tool-agent-1",
+      message: { id: "req-child", model: "claude-haiku-4-5", content: [], usage: { input_tokens: 7, output_tokens: 1 } },
+    }))).toEqual([{ scope: "tool-agent-1", model: "claude-haiku-4-5", input: 7 }])
+    expect(observed(agent.ingest({
+      source: "claude.sdk",
+      method: CLAUDE_SUBAGENT_USAGE_METHOD,
+      payload: { parent_tool_use_id: "tool-agent-2", session_id: "sdk-session-1", message: { id: "req-mirrored", usage: { input_tokens: 9 }, model: "claude-haiku-4-5" } } satisfies ClaudeSubagentUsage,
+    }).events)).toEqual([{ scope: "tool-agent-2", model: "claude-haiku-4-5", input: 9 }])
+  })
+
+  test("a message_delta after its request stopped merges into no request", () => {
+    const agent = runtime()
+    for (const payload of streamedRequest("req-1", FIRST_REQUEST, 900)) sdkFrame(agent, payload)
+
+    expect(sdkFrame(agent, messageDelta({ output_tokens: 5000 }))).toEqual([])
+
+    const closing = sdkFrame(agent, resultFrame({}))
+    expect(meteredTokens(closing)).toEqual({ input: 3, output: 900, reasoning: null, cache: { read: 1000, write: 200, write1h: 200 } })
+  })
+
   test("treats user-aborted results as idle without a runtime error", () => {
     const agent = runtime()
 

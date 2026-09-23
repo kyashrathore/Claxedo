@@ -20,6 +20,7 @@ import type {
 import type { CodexAppServerProcess } from "./app-server-process"
 import { CodexGoalController, type CodexGoalControllerHost } from "./goal"
 import type { CodexActiveThread } from "./protocol"
+import { createCodexThreadRegistry, type CodexUnclaimedUsage } from "./thread-registry"
 import { CodexHarnessAdapter } from "./index"
 import type { PromptInput } from "../../index"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
@@ -63,7 +64,8 @@ function goalControllerHarness() {
   const published: Array<{ sessionId: string; directory: string; goal: RuntimeGoalSnapshot | null }> = []
   const projected: Array<{ threadId: string; method: string; payload: JsonRecord }> = []
   const providerTurns: Array<Promise<boolean>> = []
-  const activeThreads = new Map<string, CodexActiveThread>()
+  const metered: CodexUnclaimedUsage[] = []
+  const threads = createCodexThreadRegistry({ meter: (usage) => metered.push(usage) })
   let goal: JsonRecord | null = null
   const proc = {
     alive: true,
@@ -106,6 +108,7 @@ function goalControllerHarness() {
     updatePermissionState() {},
     getSessionConfig: () => null,
     publishGoal: (input) => published.push(input),
+    meterUsage() {},
     runProviderTurn: (binding, execute) => {
       const turn = execute({
         sessionId: binding.sessionId,
@@ -129,17 +132,25 @@ function goalControllerHarness() {
     liveProcess: () => appServer,
     lease: () => ({ release: () => {} }),
     threadConfig: () => ({}),
-    activeThreads,
-    threadProjection: (_input, threadId) => async (method, params) => {
-      projected.push({ threadId, method, payload: params })
-    },
+    threads,
+    threadProjection: (_input, claim) => ({
+      project: async (method: string, params: JsonRecord) => {
+        projected.push({ threadId: claim.threadId, method, payload: params })
+      },
+    }),
   }
   return {
     directory,
     published,
     projected,
-    activeThreads,
+    threads,
+    metered,
     sessionByThread,
+    /** What the app-server does with a frame: the registry files it before any listener reads it. */
+    deliver(controller: CodexGoalController, message: JsonRecord) {
+      threads.observe(message)
+      controller.handleProcessMessage(message)
+    },
     activeThread: (sessionId: string): CodexActiveThread => ({
       sessionId,
       agentSessionId: THREAD_ID,
@@ -147,6 +158,7 @@ function goalControllerHarness() {
       process: appServer,
       project: () => {},
       observeSubagent: unusedSubagent,
+      adoptSubagent: () => {},
     }),
     host,
     settle: () => Promise.all(providerTurns),
@@ -377,23 +389,23 @@ describe("Codex Goal lifecycle", () => {
     expect(await controller.resource.start("session-child-frames", { objective: "Ship" }, harness.directory))
       .toMatchObject({ ok: true, goal: { status: "active" } })
 
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "turn/started",
       params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "inProgress" } },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "thread/started",
       params: { thread: { id: "child-1", parentThreadId: THREAD_ID, status: { type: "active" } } },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "turn/completed",
       params: { threadId: "child-1", turn: { id: "child-turn-1", status: "completed" } },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "item/agentMessage/delta",
       params: { threadId: THREAD_ID, turnId: "goal-turn-1", itemId: "item-1", delta: "after the child" },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "turn/completed",
       params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "completed" } },
     })
@@ -414,23 +426,23 @@ describe("Codex Goal lifecycle", () => {
     expect(await controller.resource.start("session-nested-frames", { objective: "Ship" }, harness.directory))
       .toMatchObject({ ok: true, goal: { status: "active" } })
 
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "turn/started",
       params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "inProgress" } },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "thread/started",
       params: { thread: { id: "child-1", parentThreadId: THREAD_ID, status: { type: "active" } } },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "thread/started",
       params: { thread: { id: "grandchild-1", parentThreadId: "child-1", status: { type: "active" } } },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "item/agentMessage/delta",
       params: { threadId: "grandchild-1", turnId: "grandchild-turn-1", itemId: "item-2", delta: "from the grandchild" },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "turn/completed",
       params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "completed" } },
     })
@@ -448,9 +460,9 @@ describe("Codex Goal lifecycle", () => {
     const controller = new CodexGoalController(harness.host)
     // A restarted driver holds no Goal binding: the thread it resumed for a
     // turn is the only thing that still identifies the session.
-    harness.activeThreads.set(THREAD_ID, harness.activeThread("session-restarted"))
+    harness.threads.beginTurn(THREAD_ID, "prompt").attach(harness.activeThread("session-restarted"), "assistant-live")
 
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "thread/goal/updated",
       params: {
         threadId: THREAD_ID,
@@ -476,7 +488,7 @@ describe("Codex Goal lifecycle", () => {
     // ended, so only the runtime's session index still identifies the session.
     harness.sessionByThread.set(THREAD_ID, { sessionId: "session-restarted", directory: harness.directory })
 
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "thread/goal/updated",
       params: {
         threadId: THREAD_ID,
@@ -484,11 +496,11 @@ describe("Codex Goal lifecycle", () => {
       },
     })
     // The Goal's next autonomous turn must project through the same binding.
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "turn/started",
       params: { threadId: THREAD_ID, turn: { id: "goal-turn-1" } },
     })
-    controller.handleProcessMessage({
+    harness.deliver(controller, {
       method: "turn/completed",
       params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "completed" } },
     })

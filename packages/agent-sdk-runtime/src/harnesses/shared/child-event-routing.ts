@@ -280,11 +280,14 @@ function isMeteredUsage(event: AgentRuntimeEvent): event is MeteredUsage {
 /**
  * Tokens a child spent are still the turn's when the child's transcript is
  * lost, so its usage lands on the parent's turn in a scope of its own and adds
- * to the parent's usage instead of replacing it.
+ * to the parent's usage instead of replacing it. A child with no correlation
+ * key is told apart by the provider session it reports from, so two such
+ * children's cumulative totals do not replace each other.
  */
 function parentScoped(event: MeteredUsage, correlationKey: string | undefined): MeteredUsage {
   if (event.observation.scope) return event
-  return { ...event, observation: { ...event.observation, scope: `child:${correlationKey ?? "uncorrelated"}` } }
+  const stream = correlationKey ?? `uncorrelated:${event.observation.nativeSessionId ?? event.observation.providerObservationId ?? "unknown"}`
+  return { ...event, observation: { ...event.observation, scope: `child:${stream}` } }
 }
 
 /** Every delta survives, and each scope's latest cumulative, which replaces the ones before it. */

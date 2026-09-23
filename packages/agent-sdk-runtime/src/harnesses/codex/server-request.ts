@@ -14,7 +14,7 @@ type RefreshedTokens = { access: string; accountId?: string; planType?: string }
 
 export async function handleCodexServerRequest(input: {
   message: JsonRecord
-  activeThreads: Map<string, CodexActiveThread>
+  activeThreads: ReadonlyMap<string, CodexActiveThread>
   host: SdkRuntimeDriverHost
   permissionModeId(sessionId: string): string | undefined
   refreshTokens(): Promise<RefreshedTokens>

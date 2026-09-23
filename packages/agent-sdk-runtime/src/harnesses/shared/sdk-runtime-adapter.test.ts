@@ -11,6 +11,7 @@ import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } f
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { createCodexAppServerDriver } from "../codex/driver"
 import type { CodexGoalController } from "../codex/goal"
+import type { CodexThreadRegistry } from "../codex/thread-registry"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeStreamEvent } from "../../index"
@@ -567,16 +568,22 @@ describe("SdkRuntimeAdapter", () => {
     await adapter.dispose()
   })
 
-  test("usage of a child that never bound reaches the parent stream when the turn ends", async () => {
-    const store = createMemoryRuntimeStore()
+  describe("usage of a child that never bound, rolled up after the turn stops reading", () => {
     const observation = {
       kind: "cumulative" as const,
       scope: "unbound-child",
       tokens: { input: 5, output: 7, reasoning: null, cache: { read: 11, write: null } },
     }
-    const adapter = new SdkRuntimeAdapter({
-      store,
-      eventHub: createRuntimeEventHub(),
+    const prompt = {
+      parts: [{ type: "text" as const, text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "general",
+      model: { providerID: "codex", modelID: "test" },
+    }
+    const unboundChildAdapter = (eventHub: ReturnType<typeof createRuntimeEventHub>) => new SdkRuntimeAdapter({
+      store: createMemoryRuntimeStore(),
+      eventHub,
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
         createRuntime: () => ({
@@ -591,22 +598,117 @@ describe("SdkRuntimeAdapter", () => {
         },
       }),
     })
-    const session = await adapter.createSession(path.resolve("/repo"))
-    const yielded: AgentRuntimeStreamEvent[] = []
+    const usageOn = (events: Array<{ type: string }>) => events.filter((event) => event.type === "session.usage")
 
-    for await (const event of executeTestTurn(adapter, session.id, {
-      parts: [{ type: "text", text: "delegate" }],
-      userMessageId: "parent-user",
-      assistantMessageId: "parent-assistant",
-      agent: "general",
-      model: { providerID: "codex", modelID: "test" },
-    }, path.resolve("/repo"))) yielded.push(event)
+    test("reaches the hub once, not the consumer", async () => {
+      const eventHub = createRuntimeEventHub()
+      const published: CompatEnvelope["payload"][] = []
+      eventHub.subscribeGlobal((event) => published.push(event.payload))
+      const adapter = unboundChildAdapter(eventHub)
+      const session = await adapter.createSession(path.resolve("/repo"))
+      const yielded: AgentRuntimeStreamEvent[] = []
 
-    expect(yielded).toContainEqual(expect.objectContaining({
-      type: "session.usage",
-      properties: expect.objectContaining({ sessionID: session.id, messageID: "parent-assistant", observation }),
-    }))
-    await adapter.dispose()
+      for await (const event of executeTestTurn(adapter, session.id, prompt, path.resolve("/repo"))) yielded.push(event)
+
+      expect(usageOn(published)).toEqual([expect.objectContaining({
+        properties: expect.objectContaining({ sessionID: session.id, messageID: "parent-assistant", observation }),
+      })])
+      expect(usageOn(yielded)).toEqual([])
+      await adapter.dispose()
+    })
+
+    test("reaches the hub when the consumer returns before the turn ends", async () => {
+      const eventHub = createRuntimeEventHub()
+      const published: CompatEnvelope["payload"][] = []
+      eventHub.subscribeGlobal((event) => published.push(event.payload))
+      const adapter = unboundChildAdapter(eventHub)
+      const session = await adapter.createSession(path.resolve("/repo"))
+      const read: AgentRuntimeStreamEvent[] = []
+
+      for await (const event of executeTestTurn(adapter, session.id, prompt, path.resolve("/repo"))) {
+        read.push(event)
+        break
+      }
+
+      expect(read).toHaveLength(1)
+      expect(usageOn(published)).toEqual([expect.objectContaining({
+        properties: expect.objectContaining({ sessionID: session.id, messageID: "parent-assistant", observation }),
+      })])
+      await adapter.dispose()
+    })
+  })
+
+  describe("a Goal turn's usage reaches the global hub the meters read", () => {
+    const observation = { kind: "cumulative" as const, tokens: { input: 5, output: 7, reasoning: null, cache: { read: 11, write: null } } }
+    /** A driver whose every ingested frame is one usage report. */
+    const usageDriver = (): SdkRuntimeDriver => ({
+      ...minimalSdkRuntimeDriver(),
+      createRuntime: () => {
+        const snapshot = () => runtimeSnapshot({ harness: "codex", threadId: "thread-1", adapterState: {} })
+        return {
+          ingest: () => ({ state: {}, events: [{ type: "usage", contextSize: 0, contextUsed: 0, observation }], snapshot: snapshot() }),
+          snapshot,
+        } as never
+      },
+    })
+    const hubUsage = (eventHub: ReturnType<typeof createRuntimeEventHub>) => {
+      const usage: CompatEnvelope["payload"][] = []
+      eventHub.subscribeGlobal((event) => {
+        if (event.payload.type === "session.usage") usage.push(event.payload)
+      })
+      return usage
+    }
+
+    test("from a provider-started Goal iteration", async () => {
+      const eventHub = createRuntimeEventHub()
+      const usage = hubUsage(eventHub)
+      let host!: SdkRuntimeDriverHost
+      const adapter = new SdkRuntimeAdapter({
+        store: createMemoryRuntimeStore(),
+        eventHub,
+        driver: (value) => {
+          host = value
+          return usageDriver()
+        },
+      })
+      const directory = path.resolve("/repo")
+      const session = await adapter.createSession(directory)
+
+      expect(await host.runProviderTurn({ sessionId: session.id, directory, userMessage: { id: "goal-request", text: "Ship" } }, async (turn) => {
+        turn.ingest({ source: "test", payload: {} }, { dir: "in", method: "test" })
+      })).toBe(true)
+
+      expect(usage).toEqual([expect.objectContaining({ properties: expect.objectContaining({ sessionID: session.id, observation }) })])
+      await adapter.dispose()
+    })
+
+    test("from the turn a native Goal runs in", async () => {
+      const eventHub = createRuntimeEventHub()
+      const usage = hubUsage(eventHub)
+      const goal = { sessionId: "session-1", objective: "Ship", status: "active" as const, createdAt: 1, updatedAt: 1 }
+      const adapter = new SdkRuntimeAdapter({
+        store: createMemoryRuntimeStore(),
+        eventHub,
+        driver: () => ({
+          ...usageDriver(),
+          nativeGoal: {
+            ...nativeGoalStub(),
+            run: async (turn, _objective, onGoal) => {
+              onGoal(goal)
+              turn.ingest({ source: "test", payload: {} }, { dir: "in", method: "test" })
+            },
+          },
+        }),
+      })
+      const directory = path.resolve("/repo")
+      const session = await adapter.createSession(directory, undefined, "session-1")
+
+      expect(await adapter.goals?.start(session.id, { objective: "Ship" }, directory)).toMatchObject({ ok: true })
+      for (let attempt = 0; attempt < 100 && usage.length === 0; attempt++) await Bun.sleep(5)
+
+      expect(usage).toEqual([expect.objectContaining({ properties: expect.objectContaining({ sessionID: session.id, observation }) })])
+      await adapter.dispose()
+    })
   })
 
   test("adopts a requested deterministic Session without creating a second agent thread", async () => {
@@ -652,10 +754,10 @@ describe("SdkRuntimeAdapter", () => {
     host.pendingPermissions = new Map([["perm-1", { resolve: (decision) => decisions.push(decision) }]])
     host.pendingQuestions = new Map([["question-1", { reject: () => { rejected = true } }]])
     const driver = createCodexAppServerDriver(host as never) as WithInternals<SdkRuntimeDriver, {
-      activeThreads: Map<string, unknown>
+      threads: CodexThreadRegistry
       failInteractiveState: (err: Error) => void
     }>
-    driver.activeThreads.set("thread-1", {})
+    driver.threads.beginTurn("thread-1", "prompt")
 
     driver.failInteractiveState(new Error("process exited"))
 
@@ -665,7 +767,7 @@ describe("SdkRuntimeAdapter", () => {
     expect(lifecycle.activeTurns.size).toBe(0)
     expect(host.pendingPermissions.size).toBe(0)
     expect(host.pendingQuestions.size).toBe(0)
-    expect(driver.activeThreads.size).toBe(0)
+    expect(driver.threads.busy()).toBe(false)
     expect(driver.readRuntimeHealth(path.resolve("/work"))).toEqual({
       status: "degraded",
       reason: "harness_process_lost",

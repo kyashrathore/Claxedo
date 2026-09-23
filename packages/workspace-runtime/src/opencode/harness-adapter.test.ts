@@ -1,9 +1,10 @@
 import { mkdtempSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, mock, test } from "bun:test"
+import { describe, expect, jest, mock, test } from "bun:test"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { OpenCodeSdkHarnessAdapter } from "./harness-adapter"
+import { SESSION_TOTAL_READ_MS } from "./turn-usage"
 import { createEventPump, type ProjectedEvent } from "./event-pump"
 import type { OpenCodeHost } from "./host"
 import type { OpenCodeRuntime } from "./runtime"
@@ -753,6 +754,147 @@ describe("OpenCode turn usage", () => {
         harness: "opencode",
       },
       FINISHED,
+    ])
+  })
+
+  /** Runs the event loop's queued work, which fake timers leave alone, until `condition` holds. */
+  async function settleUntil(condition: () => boolean) {
+    for (let attempt = 0; attempt < 1000 && !condition(); attempt++) await Promise.resolve()
+    if (!condition()) throw new Error("condition never held")
+  }
+
+  test("a session total the engine never reports at the terminal ends the turn within the deadline and says so", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+    fake.sessions.get.mockImplementationOnce(() => new Promise(() => {}))
+    jest.useFakeTimers()
+    try {
+      fake.emit(recorded("session.step.ended", "ses_1", 12, FIRST_STEP))
+      fake.finish("ses_1", "msg_a", 13)
+      await settleUntil(() => fake.sessions.get.mock.calls.length === 2)
+      jest.advanceTimersByTime(SESSION_TOTAL_READ_MS - 1)
+      await settleUntil(() => true)
+      expect(turn.events).toEqual([usageEvent("delta", "ses_1", 12, FIRST_STEP, 1 + 8 + 16)])
+      jest.advanceTimersByTime(1)
+    } finally {
+      jest.useRealTimers()
+    }
+    await turn.done
+
+    expect(turn.events).toEqual([
+      usageEvent("delta", "ses_1", 12, FIRST_STEP, 1 + 8 + 16),
+      {
+        type: "diagnostic",
+        diagnostic: {
+          code: "opencode_turn_usage_unreconciled",
+          message: expect.stringContaining(`within ${SESSION_TOTAL_READ_MS}ms`),
+          severity: "warn",
+          source: "opencode-adapter",
+        },
+        harness: "opencode",
+      },
+      FINISHED,
+    ])
+  })
+
+  test("a session total the engine never reports before the prompt still runs the turn after the deadline", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    fake.sessions.get.mockImplementationOnce(() => new Promise(() => {}))
+    jest.useFakeTimers()
+    let turn: ReturnType<typeof startTurn>
+    try {
+      turn = startTurn(adapterFor(fake, directory), directory)
+      await settleUntil(() => fake.sessions.get.mock.calls.length === 1)
+      expect(fake.sessions.prompt.mock.calls).toHaveLength(0)
+      jest.advanceTimersByTime(SESSION_TOTAL_READ_MS)
+    } finally {
+      jest.useRealTimers()
+    }
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    fake.emit(recorded("session.step.ended", "ses_1", 12, FIRST_STEP))
+    fake.totals.set("ses_1", FIRST_STEP)
+    fake.finish("ses_1", "msg_a", 13)
+    await turn.done
+
+    expect(turn.events).toEqual([
+      usageEvent("delta", "ses_1", 12, FIRST_STEP, 1 + 8 + 16),
+      expect.objectContaining({
+        type: "diagnostic",
+        diagnostic: expect.objectContaining({
+          code: "opencode_turn_usage_unreconciled",
+          message: expect.stringContaining(`the session total before the prompt was not read: the engine did not report the session total within ${SESSION_TOTAL_READ_MS}ms`),
+        }),
+      }),
+      FINISHED,
+    ])
+  })
+
+  test("each step names the model it started on, and the turn's total names one only when every request did", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+    const model = { id: "claude-sonnet-4-5", providerID: "anthropic" }
+
+    fake.emit(recorded("session.step.started", "ses_1", 11, undefined, { assistantMessageID: "msg_step", model }))
+    fake.emit(recorded("session.step.ended", "ses_1", 12, FIRST_STEP, { assistantMessageID: "msg_step" }))
+    fake.emit(recorded("session.usage.recorded", "ses_1", 13, SECOND_STEP, { source: "compaction" }))
+    fake.totals.set("ses_1", plus(FIRST_STEP, SECOND_STEP))
+    fake.finish("ses_1", "msg_a", 14)
+    await turn.done
+
+    const observations = turn.events.flatMap((event) => (event as { type?: string }).type === "usage" ? [(event as { observation: { kind: string; model?: string } }).observation] : [])
+    expect(observations.map((observation) => [observation.kind, observation.model])).toEqual([
+      ["delta", "claude-sonnet-4-5"],
+      ["delta", undefined],
+      ["cumulative", undefined],
+    ])
+  })
+
+  test("a turn whose every step ran on one model names it on the closing total", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+    const model = { id: "gpt-5.5", providerID: "openai" }
+
+    fake.emit(recorded("session.step.started", "ses_1", 11, undefined, { assistantMessageID: "msg_one", model }))
+    fake.emit(recorded("session.step.ended", "ses_1", 12, FIRST_STEP, { assistantMessageID: "msg_one" }))
+    fake.emit(recorded("session.step.started", "ses_1", 16, undefined, { assistantMessageID: "msg_two", model }))
+    fake.emit(recorded("session.step.ended", "ses_1", 17, SECOND_STEP, { assistantMessageID: "msg_two" }))
+    fake.totals.set("ses_1", plus(FIRST_STEP, SECOND_STEP))
+    fake.finish("ses_1", "msg_a", 18)
+    await turn.done
+
+    const observations = turn.events.flatMap((event) => (event as { type?: string }).type === "usage" ? [(event as { observation: { kind: string; model?: string } }).observation] : [])
+    expect(observations.map((observation) => [observation.kind, observation.model])).toEqual([
+      ["delta", "gpt-5.5"],
+      ["delta", "gpt-5.5"],
+      ["cumulative", "gpt-5.5"],
+    ])
+  })
+
+  test("a closing total that holds a step the stream missed names no model", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const turn = startTurn(adapterFor(fake, directory), directory)
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+    const model = { id: "gpt-5.5", providerID: "openai" }
+
+    fake.emit(recorded("session.step.started", "ses_1", 16, undefined, { assistantMessageID: "msg_two", model }))
+    fake.emit(recorded("session.step.ended", "ses_1", 17, SECOND_STEP, { assistantMessageID: "msg_two" }))
+    fake.totals.set("ses_1", plus(FIRST_STEP, SECOND_STEP))
+    fake.finish("ses_1", "msg_a", 18)
+    await turn.done
+
+    const observations = turn.events.flatMap((event) => (event as { type?: string }).type === "usage" ? [(event as { observation: { kind: string; model?: string } }).observation] : [])
+    expect(observations.map((observation) => [observation.kind, observation.model])).toEqual([
+      ["delta", "gpt-5.5"],
+      ["cumulative", undefined],
     ])
   })
 
