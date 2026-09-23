@@ -11,11 +11,14 @@ export type UsageSessionManifestEntry = {
 export type UsageProvenance = "claxedo" | "external" | "unclassified"
 
 export function tokenTrackerSourceForHarness(harness: string) {
-  if (harness === "pi") return "pi"
-  if (harness === "opencode") return "opencode"
-  if (harness.startsWith("claude")) return "claude"
-  if (harness.startsWith("codex")) return "codex"
-  if (harness.startsWith("cursor")) return "cursor"
+  // An ACP connection is metered as `connection:<agent id>`; the agent it runs,
+  // not the rail, is what writes the native history.
+  const agent = harness.startsWith("connection:") ? harness.slice("connection:".length) : harness
+  if (agent === "pi") return "pi"
+  if (agent === "opencode") return "opencode"
+  if (agent.startsWith("claude")) return "claude"
+  if (agent.startsWith("codex")) return "codex"
+  if (agent.startsWith("cursor")) return "cursor"
   return undefined
 }
 

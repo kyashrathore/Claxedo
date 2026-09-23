@@ -39,4 +39,9 @@ describe("usage provenance", () => {
     expect(["claude-sdk", "codex-app-server", "cursor-sdk", "pi", "connection"].map(tokenTrackerSourceForHarness))
       .toEqual(["claude", "codex", "cursor", "pi", undefined])
   })
+
+  test("maps an ACP connection to the agent it runs", () => {
+    expect(["connection:cursor-acp", "connection:claude-acp", "connection:gemini"].map(tokenTrackerSourceForHarness))
+      .toEqual(["cursor", "claude", undefined])
+  })
 })
