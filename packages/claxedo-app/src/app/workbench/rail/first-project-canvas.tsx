@@ -34,7 +34,7 @@ export function FirstProjectCanvas(props: {
   const layout = useLayout()
   const platform = usePlatform()
   const queryOptions = useShellQueryOptions()
-  let nameField: HTMLInputElement | undefined
+  let leadField: HTMLElement | undefined
 
   const signedControlPlane = createMemo(() => posture.issuesSessions() === true)
   const health = useQuery(() =>
@@ -51,11 +51,11 @@ export function FirstProjectCanvas(props: {
 
   // "New Project" in the rail and the desktop menu raise an intent rather than
   // opening anything; with no project this screen is the only surface that can
-  // answer it, and the name field is where the answer starts.
+  // answer it, and the form's leading control is where the answer starts.
   onCleanup(layout.projects.registerCreateSurface())
   createEffect(() => {
     if (!layout.projects.createPending()) return
-    nameField?.focus()
+    leadField?.focus()
     layout.projects.answerCreate()
   })
 
@@ -73,7 +73,7 @@ export function FirstProjectCanvas(props: {
         <div class="first-project-card first-project-reveal" style={{ "--first-project-delay": "80ms" }}>
           <ProjectCreateForm
             size="comfortable"
-            nameField={(element) => (nameField = element)}
+            leadField={(element) => (leadField = element)}
             baseUrl={server.url}
             localExecution={localExecution()}
             pickFolder={pickProjectFolderWith(dialog)}

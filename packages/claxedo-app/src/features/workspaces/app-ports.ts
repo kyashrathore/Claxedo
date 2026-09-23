@@ -13,6 +13,7 @@ import type * as SessionQueries from "@/features/session/data/sync/queries"
 import type * as State from "@/app/workbench/state"
 import type * as SessionCache from "@/features/session/data/sync/directory-session-cache"
 import type * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
+import type * as CodeHost from "@/features/onboarding/code-host-api"
 
 export type WorkspacesAppPorts = {
   useServer: typeof Server.useServer
@@ -40,6 +41,11 @@ export type WorkspacesAppPorts = {
   WorkspaceStateNote: typeof CloudStartup.WorkspaceStateNote
   WorkspaceStateButton: typeof CloudStartup.WorkspaceStateButton
   isForbiddenConnectionError: typeof CloudStartup.isForbiddenConnectionError
+  readCodeHostStatus: typeof CodeHost.readCodeHostStatus
+  connectedCodeHosts: typeof CodeHost.connectedCodeHosts
+  connectCodeHost: typeof CodeHost.connectCodeHost
+  readCodeHostAttempt: typeof CodeHost.readCodeHostAttempt
+  listCodeHostRepositories: typeof CodeHost.listCodeHostRepositories
 }
 
 let ports: WorkspacesAppPorts | undefined
@@ -88,3 +94,8 @@ export const WorkspaceStateShell = bind((ports) => ports.WorkspaceStateShell)
 export const WorkspaceStateNote = bind((ports) => ports.WorkspaceStateNote)
 export const WorkspaceStateButton = bind((ports) => ports.WorkspaceStateButton)
 export const isForbiddenConnectionError = bind((ports) => ports.isForbiddenConnectionError)
+export const readCodeHostStatus = bind((ports) => ports.readCodeHostStatus)
+export const connectedCodeHosts = bind((ports) => ports.connectedCodeHosts)
+export const connectCodeHost = bind((ports) => ports.connectCodeHost)
+export const readCodeHostAttempt = bind((ports) => ports.readCodeHostAttempt)
+export const listCodeHostRepositories = bind((ports) => ports.listCodeHostRepositories)

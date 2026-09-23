@@ -27,6 +27,7 @@ import * as WorkspaceConnection from "@/features/workspaces/data/workspace-conne
 import * as WorkspaceCreate from "@/features/workspaces/data/workspace-create-api"
 import * as WorkspaceGateModule from "@/features/workspaces/data/workspace-gate"
 import * as WorkspaceScope from "@/features/workspaces/data/workspace-scope"
+import * as CodeHost from "@/features/onboarding/code-host-api"
 import * as DirectoryScopeModule from "@/app/workbench/context/directory-scope"
 import * as SurfaceStatus from "@/app/workbench/compact-switcher/surface-status"
 import * as Navigation from "@/app/workbench/navigation/navigation-row"
@@ -164,6 +165,11 @@ configureWorkspacesAppPorts({
   WorkspaceStateNote: CloudStartup.WorkspaceStateNote,
   WorkspaceStateButton: CloudStartup.WorkspaceStateButton,
   isForbiddenConnectionError: CloudStartup.isForbiddenConnectionError,
+  readCodeHostStatus: CodeHost.readCodeHostStatus,
+  connectedCodeHosts: CodeHost.connectedCodeHosts,
+  connectCodeHost: CodeHost.connectCodeHost,
+  readCodeHostAttempt: CodeHost.readCodeHostAttempt,
+  listCodeHostRepositories: CodeHost.listCodeHostRepositories,
 })
 
 if (rendererTraceEnabled()) {

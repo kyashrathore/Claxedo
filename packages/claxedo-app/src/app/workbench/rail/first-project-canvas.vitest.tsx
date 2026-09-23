@@ -1,7 +1,9 @@
 import { createSignal } from "solid-js"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest"
+import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
+import * as codeHostApi from "@/features/onboarding/code-host-api"
 import type { NewSessionProjectSelection } from "@/features/session/ui/components/session-new-design-view"
 import { FirstProjectCanvas } from "./first-project-canvas"
 
@@ -9,7 +11,7 @@ const health = vi.hoisted(() => ({ localExecution: true as boolean | undefined }
 const posture = vi.hoisted(() => ({ issuesSessions: false as boolean | undefined }))
 const createIntent = vi.hoisted(() => ({ pending: false, bump: () => {}, answer: () => {} }))
 const created = vi.hoisted(() => ({
-  calls: [] as { baseUrl?: string; name: string; source: unknown }[],
+  calls: [] as { baseUrl?: string; source: unknown }[],
   checkoutDirectory: "/home/me/demo" as string | null,
 }))
 
@@ -60,12 +62,18 @@ vi.mock("@/features/session/ui/components/session-pick-project-folder", () => ({
   pickProjectFolderWith: () => async () => "/home/me/demo",
 }))
 
+// The repository source asks the code host which account is connected; this
+// screen's own contract is the folder, so the host answers "none".
+vi.mock("@/platform/account/integrations-request", () => ({
+  createIntegrationsRequest: () => async () => new Response(JSON.stringify({ integrations: [], connections: [] })),
+}))
+
 vi.mock("@/features/workspaces/data/project-api", () => ({
-  createProject: async (input: { baseUrl?: string; name: string; source: unknown }) => {
+  createProject: async (input: { baseUrl?: string; source: unknown }) => {
     created.calls.push(input)
     return {
       id: "prj_1",
-      name: input.name,
+      name: "demo",
       env: {},
       checkoutDirectory: created.checkoutDirectory,
       repoUrl: null,
@@ -82,6 +90,8 @@ const [pending, setPending] = createSignal(false)
 createIntent.bump = () => setPending(true)
 createIntent.answer = () => setPending(false)
 Object.defineProperty(createIntent, "pending", { get: () => pending() })
+
+beforeAll(() => configureAppPortsForTest({ workspaces: codeHostApi }))
 
 const renderCanvas = (props: Parameters<typeof FirstProjectCanvas>[0] = {}) =>
   render(() => (
@@ -103,8 +113,8 @@ describe("FirstProjectCanvas", () => {
     renderCanvas()
 
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Start with a project")
-    expect(screen.getByRole("textbox", { name: "Project name" })).toBeTruthy()
     await waitFor(() => expect(screen.getByRole("button", { name: "Choose folder" })).toBeTruthy())
+    expect(screen.queryByRole("textbox", { name: "Project name" })).toBeNull()
     expect(screen.getByRole("button", { name: "Create project" })).toBeTruthy()
     expect(screen.queryByRole("button", { name: "Select project" })).toBeNull()
     expect(screen.queryByRole("button", { name: "New Project" })).toBeNull()
@@ -150,7 +160,7 @@ describe("FirstProjectCanvas", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create project" }))
     await waitFor(() => expect(opened).toEqual([{ id: "prj_1", worktree: "/home/me/demo" }]))
     expect(created.calls).toEqual([
-      { baseUrl: "http://server.test", name: "demo", source: { kind: "directory", folder: "/home/me/demo" } },
+      { baseUrl: "http://server.test", source: { kind: "directory", folder: "/home/me/demo" } },
     ])
   })
 
@@ -168,23 +178,21 @@ describe("FirstProjectCanvas", () => {
     expect(opened).toEqual([])
   })
 
-  test("answers the shell's create-project intent by focusing the name field", async () => {
+  test("answers the shell's create-project intent by focusing the folder button", async () => {
     renderCanvas()
-    const name = screen.getByRole("textbox", { name: "Project name" })
-    // The field carries `autofocus`, so in a browser it already holds the
-    // caret: what an intent has to do is put it back after it has moved.
-    name.blur()
+    const folder = await screen.findByRole("button", { name: "Choose folder" })
+    folder.blur()
 
     createIntent.bump()
-    await waitFor(() => expect(document.activeElement).toBe(name))
+    await waitFor(() => expect(document.activeElement).toBe(folder))
     expect(pending()).toBe(false)
   })
 
   test("a request raised before this canvas mounted is answered on mount", async () => {
     createIntent.bump()
     renderCanvas()
-    const name = await screen.findByRole("textbox", { name: "Project name" })
-    await waitFor(() => expect(document.activeElement).toBe(name))
+    const folder = await screen.findByRole("button", { name: "Choose folder" })
+    await waitFor(() => expect(document.activeElement).toBe(folder))
     expect(pending()).toBe(false)
   })
 

@@ -201,6 +201,11 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   WorkspaceStateNote: lazy("@/features/session/ui/components/cloud-startup-view", "WorkspaceStateNote"),
   WorkspaceStateButton: lazy("@/features/session/ui/components/cloud-startup-view", "WorkspaceStateButton"),
   isForbiddenConnectionError: lazy("@/features/session/ui/components/cloud-startup-view", "isForbiddenConnectionError"),
+  readCodeHostStatus: lazy("@/features/onboarding/code-host-api", "readCodeHostStatus"),
+  connectedCodeHosts: lazy("@/features/onboarding/code-host-api", "connectedCodeHosts"),
+  connectCodeHost: lazy("@/features/onboarding/code-host-api", "connectCodeHost"),
+  readCodeHostAttempt: lazy("@/features/onboarding/code-host-api", "readCodeHostAttempt"),
+  listCodeHostRepositories: lazy("@/features/onboarding/code-host-api", "listCodeHostRepositories"),
 }
 
 const onboardingThunks: Thunks<OnboardingAppPorts> = {
