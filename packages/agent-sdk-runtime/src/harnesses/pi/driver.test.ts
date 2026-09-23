@@ -378,6 +378,8 @@ test("a deferred auth release is retried by the retirement that settles the laun
     entries: Map<string, { process: { dispose(): Promise<RetirementResult> }; idle?: ReturnType<typeof setTimeout> }>
     blockers: Map<string, RetirementResult>
     authProfile: { release(): Promise<void> }
+    goalController: { dispose(): Promise<void> }
+    dispose(): Promise<void>
     retire(id: string, entry: unknown): Promise<RetirementResult>
     readRuntimeHealth(): { status: string; reason?: string }
     processError?: string
@@ -385,6 +387,7 @@ test("a deferred auth release is retried by the retirement that settles the laun
   driver.entries = new Map()
   driver.blockers = new Map()
   driver.authProfile = { release: async () => { released.push("released") } }
+  driver.goalController = { dispose: async () => {} }
 
   // The real transition: one launch whose first retirement establishes
   // nothing, and whose second settles it.
@@ -398,7 +401,7 @@ test("a deferred auth release is retried by the retirement that settles the laun
   }
   driver.entries.set("agent-1", entry as never)
 
-  await driver.retire("agent-1", entry)
+  await driver.dispose()
   expect(driver.blockers.size).toBe(1)
   expect(released).toHaveLength(0)
   expect(driver.readRuntimeHealth()).toMatchObject({ status: "unavailable", reason: "harness_retirement_unresolved" })

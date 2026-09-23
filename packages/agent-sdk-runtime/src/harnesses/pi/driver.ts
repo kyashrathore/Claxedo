@@ -82,6 +82,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
   private processError?: string
   /** Retirements that did not establish an exit; they defer the auth profile's release. */
   private readonly blockers = new Map<string, RetirementResult>()
+  private disposing = false
   private readonly agentDir: string
   private readonly authProfile: ReturnType<typeof retainPiAuth>
 
@@ -343,9 +344,11 @@ export class PiRpcDriver implements SdkRuntimeDriver {
       delete entry.retiring
       // A retirement result is a snapshot and never becomes settled on its
       // own, so the blocker is dropped by the retirement that settled it —
-      // this one — and the release it deferred is retried here.
+      // this one — and a release that `dispose` deferred is retried here. An
+      // idle reap settles here too, on a live driver whose next launch still
+      // reads the profile.
       this.blockers.delete(id)
-      await this.releaseWhenUnblocked()
+      if (this.disposing) await this.releaseWhenUnblocked()
       return result
     }
     entry.retiring = result
@@ -661,6 +664,7 @@ export class PiRpcDriver implements SdkRuntimeDriver {
    * would pull that process's credentials out from under work still running.
    */
   async dispose() {
+    this.disposing = true
     await this.goalController.dispose()
     await this.closeProcesses()
     await this.releaseWhenUnblocked()

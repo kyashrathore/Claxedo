@@ -6,6 +6,7 @@ import { retainPiAuth } from "./auth"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
 import { privateWriteBudgetMs } from "../../test-utils/private-write-budget"
 import { PiHarnessAdapter } from "./index"
+import { PiRpcProcess } from "./rpc-process"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 
 // Every `applyConfig` and `write` below replaces `auth.json` and `models.json`; the widest test does two.
@@ -141,6 +142,42 @@ test("a bound account reaches Pi as a models.json overlay and never as a key", a
       expect(launched).not.toHaveProperty(name)
     }
   } finally {
+    await adapter.dispose()
+    await f.dispose()
+  }
+})
+
+test("an idle reap on a live adapter leaves the account overlay for its next launch", async () => {
+  const f = await installFakePiRpc()
+  const adapter = new PiHarnessAdapter({
+    binary: f.binary,
+    agentDir: f.agentDir,
+    store: createMemoryRuntimeStore(),
+    idleMs: 10,
+  })
+  const models = path.join(f.agentDir, "models.json")
+  const unspied: Pick<PiRpcProcess, "dispose"> = Object.create(
+    null,
+    Object.getOwnPropertyDescriptors(PiRpcProcess.prototype),
+  )
+  const reaped = Promise.withResolvers<void>()
+  const disposal = spyOn(PiRpcProcess.prototype, "dispose").mockImplementation(function (this: PiRpcProcess) {
+    const result = unspied.dispose.call(this)
+    void result.then(() => reaped.resolve())
+    return result
+  })
+  try {
+    await adapter.applyConfig({ auth: { openai: piProjection } })
+    const overlay = JSON.parse(await fs.readFile(models, "utf8"))
+
+    await adapter.createSession(f.agentDir)
+    await reaped.promise
+    await adapter.createSession(f.agentDir)
+
+    expect(JSON.parse(await fs.readFile(models, "utf8"))).toEqual(overlay)
+    expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "launch-env.json"), "utf8"))).not.toHaveProperty("OPENAI_API_KEY")
+  } finally {
+    disposal.mockRestore()
     await adapter.dispose()
     await f.dispose()
   }
