@@ -17,6 +17,7 @@
 import { createHash, randomBytes } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
+import { isOwnerOnlyFile, writePrivateFileAtomic } from "@claxedo/helpers/fs"
 import {
   bindingBaseUrl,
   createEgressBroker,
@@ -77,12 +78,13 @@ function credentialsDir(dataDir: string) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
   // `mkdirSync` applies its mode only when it creates the directory, so a
   // directory that already existed — or one an umask widened — still holds the
-  // signing key at whatever mode it had.
-  if (fs.statSync(dir).mode & 0o077) fs.chmodSync(dir, 0o700)
+  // signing key at whatever mode it had. NT stores no mode on a directory; the
+  // key's own descriptor is what protects it there.
+  if (process.platform !== "win32" && fs.statSync(dir).mode & 0o077) fs.chmodSync(dir, 0o700)
   return dir
 }
 
-function loadSigningKey(dir: string): Uint8Array {
+async function loadSigningKey(dir: string): Promise<Uint8Array> {
   const file = path.join(dir, "broker.key")
   const existing = fs.existsSync(file) ? fs.readFileSync(file) : undefined
   if (existing) {
@@ -91,11 +93,11 @@ function loadSigningKey(dir: string): Uint8Array {
     // repairable state into turns that fail authentication for no visible
     // reason.
     if (existing.byteLength < 32) throw new Error(`Broker signing key at ${file} is shorter than 32 bytes`)
-    if (fs.statSync(file).mode & 0o177) fs.chmodSync(file, 0o600)
+    if (!(await isOwnerOnlyFile(file))) await writePrivateFileAtomic(file, existing)
     return new Uint8Array(existing)
   }
   const key = randomBytes(32)
-  fs.writeFileSync(file, key, { mode: 0o600 })
+  await writePrivateFileAtomic(file, key)
   return new Uint8Array(key)
 }
 
@@ -120,6 +122,15 @@ function openGenerationCounter(dir: string, now: () => number) {
   }
 }
 
+type BrokerState = { signingKey: Uint8Array; bootGeneration: number; issueGeneration: () => number }
+
+async function openBrokerState(dataDir: string, now: () => number): Promise<BrokerState> {
+  const dir = credentialsDir(dataDir)
+  const issueGeneration = openGenerationCounter(dir, now)
+  const signingKey = await loadSigningKey(dir)
+  return { signingKey, bootGeneration: issueGeneration(), issueGeneration }
+}
+
 export type ProjectAuthInput = {
   scope?: SecretScope
   orgId?: string
@@ -135,7 +146,7 @@ export type LocalCredentialBroker = {
   authority: BindingAuthority
   projectAuth: (input: ProjectAuthInput) => Promise<Record<string, ProviderProjectionSource>>
   /** The identity this server minted for a workspace, once it has projected one. */
-  runtimeIdentity: (workspaceId: string, orgId?: string) => RuntimeIdentity
+  runtimeIdentity: (workspaceId: string, orgId?: string) => Promise<RuntimeIdentity>
 }
 
 /**
@@ -187,15 +198,17 @@ export function createLocalCredentialBroker(input: {
    * A data directory this process cannot write is a fault on the operator's
    * machine, and opening it at construction would take the whole server down
    * with the credential authority. Opened here, the same fault reaches them as
-   * a provider that says it is unavailable and why.
+   * a provider that says it is unavailable and why. A failed open is not
+   * remembered, so a directory the operator repairs is opened by the next
+   * caller without a restart.
    */
-  let opened: { signingKey: Uint8Array; bootGeneration: number; issueGeneration: () => number } | undefined
+  let opening: Promise<BrokerState> | undefined
   function brokerState() {
-    if (opened) return opened
-    const dir = credentialsDir(input.dataDir)
-    const issueGeneration = openGenerationCounter(dir, now)
-    opened = { signingKey: loadSigningKey(dir), bootGeneration: issueGeneration(), issueGeneration }
-    return opened
+    opening ??= openBrokerState(input.dataDir, now).catch((error: unknown) => {
+      opening = undefined
+      throw error
+    })
+    return opening
   }
 
   function leaseKey(orgId: string, workspaceId: string) {
@@ -208,8 +221,7 @@ export function createLocalCredentialBroker(input: {
    * from the caller rather than from this module, so a composition that
    * resolves a real tenant does not mint bindings in another one's name.
    */
-  function runtimeIdentity(workspaceId: string, orgId = defaultOrg): RuntimeIdentity {
-    const state = brokerState()
+  function identityIn(state: BrokerState, workspaceId: string, orgId: string): RuntimeIdentity {
     return {
       userId: "operator",
       orgId,
@@ -218,6 +230,10 @@ export function createLocalCredentialBroker(input: {
       leaseGeneration: leaseGenerations.get(leaseKey(orgId, workspaceId)) ?? state.bootGeneration,
       runtimeId: `embedded:${workspaceId}`,
     }
+  }
+
+  async function runtimeIdentity(workspaceId: string, orgId = defaultOrg): Promise<RuntimeIdentity> {
+    return identityIn(await brokerState(), workspaceId, orgId)
   }
 
   function bindingId(orgId: string, workspaceId: string, providerId: string) {
@@ -230,11 +246,11 @@ export function createLocalCredentialBroker(input: {
    * placeholder the workspace holds names the old generation and is refused
    * until the next projection re-mints them.
    */
-  function bindCurrentAccount(id: string, entry: MintedBinding, credential: CredentialMetadata) {
+  function bindCurrentAccount(state: BrokerState, id: string, entry: MintedBinding, credential: CredentialMetadata) {
     if (entry.credentialId === credential.id) return false
     entry.credentialId = credential.id
     usedAt.delete(id)
-    leaseGenerations.set(leaseKey(entry.orgId, entry.workspaceId), brokerState().issueGeneration())
+    leaseGenerations.set(leaseKey(entry.orgId, entry.workspaceId), state.issueGeneration())
     return true
   }
 
@@ -303,15 +319,16 @@ export function createLocalCredentialBroker(input: {
       if (!row || row.unavailable) return undefined
       const destination = await destinationFor(row.credential, entry.orgId)
       if (!destination) return undefined
-      bindCurrentAccount(id, entry, row.credential)
+      const state = await brokerState()
+      bindCurrentAccount(state, id, entry, row.credential)
       return {
-        binding: binding(id, runtimeIdentity(entry.workspaceId, entry.orgId), row.credential, destination),
+        binding: binding(id, identityIn(state, entry.workspaceId, entry.orgId), row.credential, destination),
         value: destination.value,
       }
     },
     async currentRuntime(identity) {
       return projected.has(leaseKey(identity.orgId, identity.workspaceId))
-        && sameRuntime(runtimeIdentity(identity.workspaceId, identity.orgId), identity)
+        && sameRuntime(await runtimeIdentity(identity.workspaceId, identity.orgId), identity)
     },
     async markUsed(id) {
       const entry = minted.get(id)
@@ -376,7 +393,7 @@ export function createLocalCredentialBroker(input: {
     // through the projection instead.
     verifyToken: async (token) => {
       try {
-        return await verifyRuntimeToken(token, brokerState().signingKey)
+        return await verifyRuntimeToken(token, (await brokerState()).signingKey)
       } catch {
         return undefined
       }
@@ -404,9 +421,9 @@ export function createLocalCredentialBroker(input: {
       }
       const selection = selectedCredentials(scope, org)
       const rows: Record<string, ProviderProjectionSource> = {}
-      let state: { signingKey: Uint8Array }
+      let state: BrokerState
       try {
-        state = brokerState()
+        state = await brokerState()
       } catch (error) {
         for (const { credential } of selection) {
           rows[credential.provider_id] = { unavailable: true, reason: `broker_unavailable: ${String(error)}` }
@@ -434,7 +451,7 @@ export function createLocalCredentialBroker(input: {
         }
         const id = bindingId(org, workspaceId, credential.provider_id)
         let entry = minted.get(id)
-        if (entry) bindCurrentAccount(id, entry, credential)
+        if (entry) bindCurrentAccount(state, id, entry, credential)
         else {
           entry = { providerId: credential.provider_id, workspaceId, orgId: org, scope, credentialId: credential.id }
           minted.set(id, entry)
@@ -443,7 +460,7 @@ export function createLocalCredentialBroker(input: {
       }
       // Read after every switch above has moved the lease on, so one projection
       // mints every placeholder under the same generation.
-      const identity = runtimeIdentity(workspaceId, org)
+      const identity = identityIn(state, workspaceId, org)
       const at = now()
       for (const { id, entry, credential, destination } of bindable) {
         // The destination is read live on every projection: a rotation that

@@ -1,9 +1,10 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
+import { isOwnerOnlyFile } from "@claxedo/helpers/fs"
 
 const root = path.join(realpathSync(os.tmpdir()), `local-broker-test-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -92,7 +93,7 @@ afterAll(async () => {
 })
 
 describe("local binding authority", () => {
-  test("mints a signing key and a newer lease generation on each boot", () => {
+  test("mints a signing key and a newer lease generation on each boot", async () => {
     const dataDir = path.join(root, `boot-${randomUUID().slice(0, 8)}`)
     const keyFile = path.join(dataDir, "credentials", "broker.key")
     const first = broker(dataDir)
@@ -100,13 +101,13 @@ describe("local binding authority", () => {
     // it cannot open is not a boot failure.
     expect(existsSync(keyFile)).toBe(false)
 
-    const generation = first.runtimeIdentity(workspaceId).leaseGeneration
+    const generation = (await first.runtimeIdentity(workspaceId)).leaseGeneration
     const second = broker(dataDir)
 
     expect(readFileSync(keyFile).byteLength).toBe(32)
-    expect(statSync(keyFile).mode & 0o777).toBe(0o600)
-    expect(second.runtimeIdentity(workspaceId).leaseGeneration).toBe(generation + 1)
-    expect(second.runtimeIdentity(workspaceId)).toMatchObject({
+    expect(await isOwnerOnlyFile(keyFile)).toBe(true)
+    expect((await second.runtimeIdentity(workspaceId)).leaseGeneration).toBe(generation + 1)
+    expect(await second.runtimeIdentity(workspaceId)).toMatchObject({
       userId: "operator",
       orgId: "__local__",
       leaseId: `local:${workspaceId}`,
@@ -134,7 +135,7 @@ describe("local binding authority", () => {
       },
       injection: { header: "x-api-key" },
     })
-    expect(await local.authority.currentRuntime(local.runtimeIdentity(workspaceId))).toBe(true)
+    expect(await local.authority.currentRuntime(await local.runtimeIdentity(workspaceId))).toBe(true)
   })
 
   test("a renewal re-projects onto the binding this broker already minted", async () => {
@@ -194,7 +195,7 @@ describe("local binding authority", () => {
 
     const other = broker()
     expect(await other.authority.resolve(id)).toBeUndefined()
-    expect(await other.authority.currentRuntime(projecting.runtimeIdentity(workspaceId))).toBe(false)
+    expect(await other.authority.currentRuntime(await projecting.runtimeIdentity(workspaceId))).toBe(false)
   })
 
   test("a provider with no destination policy is reported, never dropped", async () => {
@@ -626,7 +627,7 @@ describe("local binding authority", () => {
     const local = broker()
     const projection = bound((await local.projectAuth({ workspaceId, orgId: "__local__", scope: "local" }))["claude-sdk"])
 
-    expect(local.runtimeIdentity(workspaceId, "__local__")).toMatchObject({ userId: "operator", orgId: "__local__" })
+    expect(await local.runtimeIdentity(workspaceId, "__local__")).toMatchObject({ userId: "operator", orgId: "__local__" })
     expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.binding)
       .toMatchObject({ orgId: "__local__", credentialId: credential.id })
     // Another tenant's projection of the same workspace derives different
@@ -671,15 +672,17 @@ describe("local binding authority", () => {
       .toEqual({ unavailable: true, reason: "no_destination" })
   })
 
-  test("a data directory that becomes writable is opened on the next projection", async () => {
+  test("a credentials directory that can be created later is opened on the next projection", async () => {
     const dataDir = path.join(root, `reopen-${randomUUID().slice(0, 8)}`)
-    mkdirSync(dataDir, { recursive: true, mode: 0o500 })
+    const blocker = path.join(dataDir, "credentials")
+    mkdirSync(dataDir, { recursive: true })
+    writeFileSync(blocker, "")
     await activeRow("sk-ant-api03-reopen")
     const local = createLocalCredentialBroker({ dataDir, brokerOrigin })
     const refused = (await local.projectAuth({ workspaceId }))["claude-sdk"]
     expect(refused).toMatchObject({ unavailable: true })
 
-    chmodSync(dataDir, 0o700)
+    rmSync(blocker)
 
     // The fault was the operator's to fix, and they fixed it; a broker that
     // remembers the first failure for the life of the process makes every
@@ -756,13 +759,13 @@ describe("local binding authority", () => {
     await activeRow("sk-ant-api03-switch-first")
     const local = broker()
     const first = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
-    const before = local.runtimeIdentity(workspaceId).leaseGeneration
+    const before = (await local.runtimeIdentity(workspaceId)).leaseGeneration
 
     await activeRow("sk-ant-api03-switch-second")
     const second = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
 
     expect(second.baseUrl).toBe(first.baseUrl)
-    expect(local.runtimeIdentity(workspaceId).leaseGeneration).toBeGreaterThan(before)
+    expect((await local.runtimeIdentity(workspaceId)).leaseGeneration).toBeGreaterThan(before)
     const realFetch = globalThis.fetch
     globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
     try {
@@ -867,13 +870,13 @@ describe("local binding authority", () => {
 
     await activeRow("sk-ant-api03-lease-second")
     const renewed = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
-    const generation = local.runtimeIdentity(workspaceId).leaseGeneration
+    const generation = (await local.runtimeIdentity(workspaceId)).leaseGeneration
     // One generation for the whole process would move this workspace on a
     // second time here, refusing the placeholder it was just handed.
     await local.projectAuth({ workspaceId: other })
     await local.authority.resolve(bindingIdOf(renewed.baseUrl))
 
-    expect(local.runtimeIdentity(workspaceId).leaseGeneration).toBe(generation)
+    expect((await local.runtimeIdentity(workspaceId)).leaseGeneration).toBe(generation)
     const realFetch = globalThis.fetch
     globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
     try {
@@ -894,11 +897,11 @@ describe("local binding authority", () => {
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
     await activeRow("sk-ant-api03-boot-second")
     await local.authority.resolve(id)
-    const switched = local.runtimeIdentity(workspaceId).leaseGeneration
+    const switched = (await local.runtimeIdentity(workspaceId)).leaseGeneration
 
     // A boot that counted only boots would hand out the switched generation
     // again, and the placeholder that generation refused would validate.
-    expect(broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration).toBeGreaterThan(switched)
+    expect((await broker(dataDir).runtimeIdentity(workspaceId)).leaseGeneration).toBeGreaterThan(switched)
   })
 
   test("a withdrawn account stops the running turn on its binding", async () => {
@@ -1023,42 +1026,45 @@ describe("local binding authority", () => {
   test("a key file and directory left readable by others are narrowed on open", async () => {
     const dataDir = path.join(root, `wide-${randomUUID().slice(0, 8)}`)
     const dir = path.join(dataDir, "credentials")
+    const keyFile = path.join(dir, "broker.key")
     mkdirSync(dir, { recursive: true, mode: 0o755 })
-    await fs.writeFile(path.join(dir, "broker.key"), Buffer.alloc(32, 3), { mode: 0o644 })
+    // On NT the key takes its directory's inherited entries, which already
+    // grant it to more principals than its owner, and the directory carries no
+    // mode to narrow.
+    await fs.writeFile(keyFile, Buffer.alloc(32, 3), { mode: 0o644 })
+    expect(await isOwnerOnlyFile(keyFile)).toBe(false)
 
-    broker(dataDir).runtimeIdentity(workspaceId)
+    await broker(dataDir).runtimeIdentity(workspaceId)
 
-    expect(statSync(dir).mode & 0o777).toBe(0o700)
-    expect(statSync(path.join(dir, "broker.key")).mode & 0o777).toBe(0o600)
+    expect(await isOwnerOnlyFile(keyFile)).toBe(true)
+    expect(readFileSync(keyFile)).toEqual(Buffer.alloc(32, 3))
+    if (process.platform !== "win32") expect(statSync(dir).mode & 0o777).toBe(0o700)
   })
 
-  test("a data directory this process cannot write reports unavailable rather than failing to boot", async () => {
-    const parent = path.join(root, `locked-${randomUUID().slice(0, 8)}`)
-    mkdirSync(parent, { recursive: true })
-    await fs.chmod(parent, 0o500)
+  test("a credentials directory this process cannot create reports unavailable rather than failing to boot", async () => {
+    const dataDir = path.join(root, `locked-${randomUUID().slice(0, 8)}`)
+    mkdirSync(dataDir, { recursive: true })
+    // A path already taken, not a permission: an elevated Windows token, which
+    // CI runs under, opens through backup semantics and passes any deny entry.
+    writeFileSync(path.join(dataDir, "credentials"), "")
     await activeRow("sk-ant-api03-locked")
-    try {
-      const local = broker(path.join(parent, "data"))
-      const rows = await local.projectAuth({ workspaceId })
+    const rows = await broker(dataDir).projectAuth({ workspaceId })
 
-      expect(rows["claude-sdk"]).toMatchObject({ unavailable: true })
-      expect((rows["claude-sdk"] as { reason: string }).reason).toContain("broker_unavailable")
-    } finally {
-      await fs.chmod(parent, 0o700)
-    }
+    expect(rows["claude-sdk"]).toMatchObject({ unavailable: true })
+    expect((rows["claude-sdk"] as { reason: string }).reason).toContain("broker_unavailable")
   })
 
   test("a lost generation counter starts past every generation this machine minted", async () => {
     const dataDir = path.join(root, `generation-${randomUUID().slice(0, 8)}`)
     const booted = Date.parse("2026-09-13T00:00:00.000Z")
     const counter = path.join(dataDir, "credentials", "broker-generation")
-    const first = createLocalCredentialBroker({ dataDir, brokerOrigin, now: () => booted })
-      .runtimeIdentity(workspaceId).leaseGeneration
+    const first = (await createLocalCredentialBroker({ dataDir, brokerOrigin, now: () => booted })
+      .runtimeIdentity(workspaceId)).leaseGeneration
     expect(first).toBe(booted)
 
     await fs.rm(counter)
-    const relaunched = createLocalCredentialBroker({ dataDir, brokerOrigin, now: () => booted + 5_000 })
-      .runtimeIdentity(workspaceId).leaseGeneration
+    const relaunched = (await createLocalCredentialBroker({ dataDir, brokerOrigin, now: () => booted + 5_000 })
+      .runtimeIdentity(workspaceId)).leaseGeneration
 
     // Counting from 1 again would re-issue a generation an old placeholder
     // already names, and that placeholder would validate a second time.
