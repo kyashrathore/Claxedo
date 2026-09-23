@@ -1,8 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test"
 import fs from "fs"
 import os from "os"
 import path from "path"
+import { privateWriteBudgetMs } from "../../test-utils/private-write-budget"
 import { removeTestTempDir } from "./test-temp-dir"
+
+// Each attachment is a private write; the widest test materializes two.
+setDefaultTimeout(privateWriteBudgetMs(2))
 import {
   attachmentPathLines,
   deliverPromptAttachments,

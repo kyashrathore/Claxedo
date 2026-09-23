@@ -1,12 +1,13 @@
 import { afterEach, expect, test } from "bun:test"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { removeTestTempDir } from "../harnesses/shared/test-temp-dir"
 import { MemoryRuntimeStore } from "./memory"
 import { SqliteRuntimeStore } from "./sqlite"
 
 const roots: string[] = []
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+afterEach(() => { for (const root of roots.splice(0)) removeTestTempDir(root) })
 const binding = { sessionId: "starting", workspaceId: "workspace", directory: "/work", connectionId: "connection:agent", operationId: "creation" }
 
 test("pending creation has immutable ownership but no executable or visible session", () => {

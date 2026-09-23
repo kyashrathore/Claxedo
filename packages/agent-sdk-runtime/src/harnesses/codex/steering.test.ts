@@ -6,6 +6,7 @@ import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-server"
 import { CodexHarnessAdapter } from "./index"
+import { removeTestTempDir } from "../shared/test-temp-dir"
 
 const prompt = (text: string, id: string) => ({
   parts: [{ type: "text" as const, text }],
@@ -47,7 +48,7 @@ test("a prompt sent mid-turn is steered into the running turn by its own id", as
     await turn
   } finally {
     await adapter.dispose()
-    await fs.rm(fake.directory, { recursive: true, force: true })
+    removeTestTempDir(fake.directory)
   }
 })
 
@@ -66,7 +67,7 @@ test("steering a session with no running turn is refused rather than starting on
     expect((await requests(fake.log)).map((request) => request.method)).not.toContain("turn/steer")
   } finally {
     await adapter.dispose()
-    await fs.rm(fake.directory, { recursive: true, force: true })
+    removeTestTempDir(fake.directory)
   }
 })
 

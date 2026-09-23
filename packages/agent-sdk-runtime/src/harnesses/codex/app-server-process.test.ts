@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import { LaunchRefusedError, volatileLaunchOwnership } from "../../launch"
+import { removeTestTempDir } from "../shared/test-temp-dir"
 
 /** This suite asserts protocol and retirement, not record durability. */
 const volatile = volatileLaunchOwnership()
@@ -81,7 +82,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     expect(await server.request("test/next", {}, soon())).toEqual({})
   } finally {
     await server?.dispose()
-    await fs.rm(dir, { recursive: true, force: true })
+    removeTestTempDir(dir)
   }
 }, 10_000)
 
@@ -124,7 +125,7 @@ readline.createInterface({ input: process.stdin }).on('line', async line => {
       try { process.kill(descendant, "SIGKILL") } catch {}
     }
     await server?.dispose()
-    await fs.rm(dir, { recursive: true, force: true })
+    removeTestTempDir(dir)
   }
 }, 10_000)
 
@@ -147,7 +148,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     expect(await server.request("test/after", {}, soon())).toEqual({ ok: true })
   } finally {
     await server?.dispose()
-    await fs.rm(dir, { recursive: true, force: true })
+    removeTestTempDir(dir)
   }
 }, 10_000)
 
@@ -163,7 +164,7 @@ test.skipIf(process.platform === "win32")("a launch is refused when ownership ca
     }).catch((error: unknown) => error)
     expect(failure).toBeInstanceOf(LaunchRefusedError)
   } finally {
-    await fs.rm(dir, { recursive: true, force: true })
+    removeTestTempDir(dir)
   }
 }, 10_000)
 
@@ -187,7 +188,7 @@ test("a request to an app-server that already exited is refused, not left to its
     // nobody can satisfy.
     expect(Date.now() - started).toBeLessThan(1_000)
   } finally {
-    await fs.rm(fake.directory, { recursive: true, force: true })
+    removeTestTempDir(fake.directory)
   }
 })
 
@@ -224,11 +225,12 @@ test("a retained unresolved launch stops refusing once its recorded pid is no lo
     expect(codex.readRuntimeHealth()).toMatchObject({ status: "ok" })
   } finally {
     await (driver as unknown as { dispose(): Promise<void> }).dispose()
-    await fs.rm(fake.directory, { recursive: true, force: true })
+    removeTestTempDir(fake.directory)
   }
 })
 
-test("a request during the TERM grace is still sent, because a signalled process can still answer", async () => {
+// Windows has no signal that marks a child killed without terminating it, so there is no graceful window to be inside.
+test.skipIf(process.platform === "win32")("a request during the TERM grace is still sent, because a signalled process can still answer", async () => {
   const fake = await installFakeCodexAppServer()
   const server = await CodexAppServerProcess.start({
     binary: fake.binary,
@@ -246,6 +248,6 @@ test("a request during the TERM grace is still sent, because a signalled process
     await expect(server.request("model/list", {}, soon())).resolves.toBeDefined()
   } finally {
     await server.dispose()
-    await fs.rm(fake.directory, { recursive: true, force: true })
+    removeTestTempDir(fake.directory)
   }
 })

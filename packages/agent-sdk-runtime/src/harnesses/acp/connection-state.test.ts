@@ -3,29 +3,32 @@ import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { createACPConnectionObservations } from "./connection-state"
 import { AcpHarnessAdapter } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
+import { workspaceDirectory } from "../../test-utils/workspace-directory"
+
+const WORK = workspaceDirectory("work")
 
 test("observations fence old generations, isolate directories, and never promote discovery readiness", () => {
   const observations = createACPConnectionObservations()
-  expect(observations.read("/work")).toEqual({ state: "configured", processes: [] })
-  observations.begin("probe", "/work", "discovery")({ state: "ready" })
-  expect(observations.read("/work").state).toBe("configured")
-  const old = observations.begin("main", "/work", "execution")
+  expect(observations.read(WORK)).toEqual({ state: "configured", processes: [] })
+  observations.begin("probe", WORK, "discovery")({ state: "ready" })
+  expect(observations.read(WORK).state).toBe("configured")
+  const old = observations.begin("main", WORK, "execution")
   old({ state: "ready" })
-  const oldGeneration = observations.read("/work", "main").processes[0].generation
-  const current = observations.begin("main", "/work", "execution")
+  const oldGeneration = observations.read(WORK, "main").processes[0].generation
+  const current = observations.begin("main", WORK, "execution")
   old({ state: "disconnected" })
-  expect(observations.read("/work", "main").state).toBe("connecting")
-  expect(observations.read("/work", "main").processes[0].generation).not.toBe(oldGeneration)
+  expect(observations.read(WORK, "main").state).toBe("connecting")
+  expect(observations.read(WORK, "main").processes[0].generation).not.toBe(oldGeneration)
   current({ state: "ready" })
-  observations.begin("sibling", "/work", "execution")({ state: "failed", reason: "initialization_failed" })
-  expect(observations.read("/work").state).toBe("ready")
+  observations.begin("sibling", WORK, "execution")({ state: "failed", reason: "initialization_failed" })
+  expect(observations.read(WORK).state).toBe("ready")
   expect(observations.read("/other").state).toBe("configured")
   observations.associate("main", "/other")
   expect(observations.read("/other").state).toBe("ready")
   current({ state: "disconnected", reason: "disposed" })
-  expect(observations.read("/work", "main").state).toBe("configured")
+  expect(observations.read(WORK, "main").state).toBe("configured")
   current({ state: "ready" })
-  expect(observations.read("/work", "main").state).toBe("configured")
+  expect(observations.read(WORK, "main").state).toBe("configured")
 })
 
 class ObservedAdapter extends AcpHarnessAdapter {
@@ -70,33 +73,33 @@ test("read-only adapter state observes real wire handshake, auth, loss and retir
   for (const authRequired of [false, true]) {
     const f = fixture({ authRequired })
     try {
-      expect(f.adapter.readConnectionState("/work").state).toBe("configured")
+      expect(f.adapter.readConnectionState(WORK).state).toBe("configured")
       expect(f.launches()).toBe(0)
-      const session = f.adapter.createSession("/work", undefined, "local").catch(error => error)
+      const session = f.adapter.createSession(WORK, undefined, "local").catch(error => error)
       await new Promise(resolve => setTimeout(resolve, 0))
-      expect(f.adapter.readConnectionState("/work").state).toBe("connecting")
+      expect(f.adapter.readConnectionState(WORK).state).toBe("connecting")
       await handshake(f)
       const result = await session
       expect(result instanceof Error).toBe(authRequired)
-      expect(f.adapter.readConnectionState("/work").state).toBe(authRequired ? "auth-required" : "ready")
+      expect(f.adapter.readConnectionState(WORK).state).toBe(authRequired ? "auth-required" : "ready")
       expect(f.launches()).toBe(1)
       if (!authRequired) {
-        expect(f.adapter.readConnectionState("/work", { sessionId: "local" }).state).toBe("ready")
-        expect(f.adapter.readConnectionState("/work", { sessionId: "unknown" })).toEqual({ state: "configured", processes: [] })
+        expect(f.adapter.readConnectionState(WORK, { sessionId: "local" }).state).toBe("ready")
+        expect(f.adapter.readConnectionState(WORK, { sessionId: "unknown" })).toEqual({ state: "configured", processes: [] })
         f.disconnect()
         await new Promise(resolve => setTimeout(resolve, 0))
-        expect(f.adapter.readConnectionState("/work").state).toBe("disconnected")
+        expect(f.adapter.readConnectionState(WORK).state).toBe("disconnected")
       }
     } finally { f.adapter.dispose() }
   }
   const f = fixture()
   try {
-    const session = f.adapter.createSession("/work", undefined, "local")
+    const session = f.adapter.createSession(WORK, undefined, "local")
     await handshake(f)
     await session
     f.adapter.dispose()
-    expect(f.adapter.readConnectionState("/work").state).toBe("configured")
-    expect(f.adapter.readConnectionState("/work").processes[0]?.state).toBe("disconnected")
+    expect(f.adapter.readConnectionState(WORK).state).toBe("configured")
+    expect(f.adapter.readConnectionState(WORK).processes[0]?.state).toBe("disconnected")
   } finally { f.adapter.dispose() }
 })
 
@@ -104,10 +107,10 @@ test("launch and initialization failures remain observed failures", async () => 
   for (const options of [{ launchFailure: true }, { initFailure: true }]) {
     const f = fixture(options)
     try {
-      const creation = f.adapter.createSession("/work", undefined, "local").catch(error => error)
+      const creation = f.adapter.createSession(WORK, undefined, "local").catch(error => error)
       if (!options.launchFailure) await handshake(f)
       expect(await creation).toBeInstanceOf(Error)
-      expect(f.adapter.readConnectionState("/work").state).toBe("failed")
+      expect(f.adapter.readConnectionState(WORK).state).toBe("failed")
     } finally { f.adapter.dispose() }
   }
 })
@@ -118,8 +121,8 @@ test("handshake timeout reports a failed generation", async () => {
   process.env.CLAXEDO_ACP_INITIALIZE_TIMEOUT_MS = "10"
   const f = fixture()
   try {
-    await expect(f.adapter.createSession("/work", undefined, "local")).rejects.toThrow("timed out")
-    expect(f.adapter.readConnectionState("/work")).toMatchObject({ state: "failed", processes: [{ reason: "initialize_timeout" }] })
+    await expect(f.adapter.createSession(WORK, undefined, "local")).rejects.toThrow("timed out")
+    expect(f.adapter.readConnectionState(WORK)).toMatchObject({ state: "failed", processes: [{ reason: "initialize_timeout" }] })
   } finally {
     f.adapter.dispose()
     if (previous === undefined) delete process.env.CLAXEDO_ACP_INITIALIZE_TIMEOUT_MS

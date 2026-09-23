@@ -26,12 +26,16 @@ import { claude } from "../harness-factories/claude"
 import { codex } from "../harness-factories/codex"
 import { cursor } from "../harness-factories/cursor"
 import { pi } from "../harness-factories/pi"
-import { rm } from "node:fs/promises"
+import { removeTestTempDir } from "./shared/test-temp-dir"
 import { installFakeCodexAppServer } from "../test-utils/fake-codex-app-server"
 import { cancelAdapterTurn } from "../test-utils/cancel-turn"
 import { installFakePiRpc } from "../test-utils/fake-pi-rpc.mjs"
 import { executeTestTurn, executionBinding } from "../test-utils/execution-binding"
 import { questionAsked } from "../compat-events"
+import { workspaceDirectory } from "../test-utils/workspace-directory"
+
+const WORK = workspaceDirectory("work")
+const REPO = workspaceDirectory("repo")
 
 /**
  * What each harness can actually establish about a turn it was asked to stop.
@@ -266,7 +270,7 @@ describe("per-harness recovery capability matrix", () => {
       }
     } finally {
       await adapter.dispose()
-      await rm(fake.directory, { recursive: true, force: true })
+      removeTestTempDir(fake.directory)
     }
   })
 
@@ -423,7 +427,7 @@ describe("per-harness recovery capability matrix", () => {
       reportOwnerFailure: (sessionId, error) => failures.push({ sessionId, error }),
     })
     const session = "s1"
-    store.bindSession({ sessionId: session, directory: "/work", agentSessionId: "agent-1" })
+    store.bindSession({ sessionId: session, directory: WORK, agentSessionId: "agent-1" })
     let decided: string | undefined
     interactions.permissions.set("perm-1", {
       sessionId: session,
@@ -436,7 +440,7 @@ describe("per-harness recovery capability matrix", () => {
     // The turn that raised it ends and the session is admitted to another.
     generation = {}
     expect(() => interactions.respondPermission(
-      { workspaceId: "ws", directory: "/work", sessionId: session, connectionId: "native:codex", upstreamSessionId: session },
+      { workspaceId: "ws", directory: WORK, sessionId: session, connectionId: "native:codex", upstreamSessionId: session },
       "perm-1",
       "allow_once",
     )).toThrow("no longer running")
@@ -463,7 +467,7 @@ describe("per-harness recovery capability matrix", () => {
       reportOwnerFailure: (_sessionId, error) => failures.push(error),
     })
     const session = "s2"
-    store.bindSession({ sessionId: session, directory: "/work", agentSessionId: "agent-1" })
+    store.bindSession({ sessionId: session, directory: WORK, agentSessionId: "agent-1" })
     interactions.questions.set("q-1", {
       sessionId: session,
       agentSessionId: "agent-1",
@@ -479,7 +483,7 @@ describe("per-harness recovery capability matrix", () => {
     })
 
     expect(() => interactions.replyQuestion(
-      { workspaceId: "ws", directory: "/work", sessionId: session, connectionId: "native:codex", upstreamSessionId: session },
+      { workspaceId: "ws", directory: WORK, sessionId: session, connectionId: "native:codex", upstreamSessionId: session },
       "q-1",
       [],
     )).toThrow("journal is unavailable")
@@ -518,7 +522,7 @@ describe("per-harness recovery capability matrix", () => {
     const created = await runtime.sessions.create({
       id: "ses_1",
       workspaceId: "ws",
-      directory: "/repo",
+      directory: REPO,
       harness: { id: "pi", access: "native" },
     })
 
@@ -606,7 +610,7 @@ describe("per-harness recovery capability matrix", () => {
       expect(outcome.cleanup).not.toBe("verified_clear")
     } finally {
       await adapter.dispose()
-      await rm(fake.directory, { recursive: true, force: true })
+      removeTestTempDir(fake.directory)
     }
   })
 

@@ -2,6 +2,10 @@ import { expect, test } from "bun:test"
 import { SdkRuntimeInteractions } from "./sdk-runtime-interactions"
 import type { SdkRuntimeStore } from "./sdk-runtime-driver"
 import { executionBinding } from "../../test-utils/execution-binding"
+import { workspaceDirectory } from "../../test-utils/workspace-directory"
+
+const WORK = workspaceDirectory("work")
+const OTHER_WORKSPACE = workspaceDirectory("other-workspace")
 
 function rejectingStore(): SdkRuntimeStore {
   return {
@@ -21,10 +25,10 @@ test("question replies remain retryable when persistence fails", () => {
     reject() {},
   })
 
-  expect(() => interactions.replyQuestion(executionBinding("session-1", "/work"), "question-1", [["answer"]]))
+  expect(() => interactions.replyQuestion(executionBinding("session-1", WORK), "question-1", [["answer"]]))
     .toThrow("durable write failed")
   expect(interactions.questions.has("question-1")).toBe(true)
-  expect(interactions.listQuestions("/work")).toHaveLength(1)
+  expect(interactions.listQuestions(WORK)).toHaveLength(1)
 })
 
 test("permission cancellation remains retryable when persistence fails", () => {
@@ -39,15 +43,15 @@ test("permission cancellation remains retryable when persistence fails", () => {
 
   expect(() => interactions.resolvePermissions("session-1")).toThrow("durable write failed")
   expect(interactions.permissions.has("permission-1")).toBe(true)
-  expect(interactions.listPermissions("/work")).toHaveLength(1)
+  expect(interactions.listPermissions(WORK)).toHaveLength(1)
 })
 
-for (const [sessionId, directory] of [["other-session", "/work"], ["session-1", "/other-workspace"]]) {
+for (const [sessionId, directory] of [["other-session", WORK], ["session-1", OTHER_WORKSPACE]]) {
   test(`permission replies from ${sessionId} in ${directory} cannot consume another pending request`, () => {
     const decisions: string[] = []
     const committed: unknown[] = []
     const store = {
-      listPermissions: (dir: string) => dir === "/work" ? [{ id: "permission-1", sessionID: "session-1" }] : [],
+      listPermissions: (dir: string) => dir === WORK ? [{ id: "permission-1", sessionID: "session-1" }] : [],
       appendEvent: (input: { payload: unknown }) => { committed.push(input); return input },
     } as unknown as SdkRuntimeStore
     const interactions = new SdkRuntimeInteractions(store)
@@ -60,7 +64,7 @@ for (const [sessionId, directory] of [["other-session", "/work"], ["session-1", 
     expect(decisions).toEqual([])
     expect(committed).toEqual([])
     expect(interactions.permissions.has("permission-1")).toBe(true)
-    interactions.respondPermission(executionBinding("session-1", "/work"), "permission-1", "allow_once")
+    interactions.respondPermission(executionBinding("session-1", WORK), "permission-1", "allow_once")
     expect(decisions).toEqual(["allow_once"])
     expect(committed).toHaveLength(1)
     expect(interactions.permissions.has("permission-1")).toBe(false)
@@ -74,7 +78,7 @@ test("permission approval remains pending when the reply cannot be committed", (
     sessionId: "session-1", agentSessionId: "agent-1", method: "permission", params: {},
     resolve() { resolved = true },
   })
-  expect(() => interactions.respondPermission(executionBinding("session-1", "/work"), "permission-1", "allow_always"))
+  expect(() => interactions.respondPermission(executionBinding("session-1", WORK), "permission-1", "allow_always"))
     .toThrow("durable write failed")
   expect(resolved).toBe(false)
   expect(interactions.permissions.has("permission-1")).toBe(true)
@@ -112,12 +116,12 @@ test("question cancellation preserves a pending request when persistence fails",
 })
 
 for (const operation of ["reply", "reject"] as const) {
-  for (const [sessionId, directory] of [["other-session", "/work"], ["session-1", "/other-workspace"]]) {
+  for (const [sessionId, directory] of [["other-session", WORK], ["session-1", OTHER_WORKSPACE]]) {
     test(`question ${operation} from ${sessionId} in ${directory} preserves another owner's request`, () => {
       const decisions: string[] = []
       const committed: unknown[] = []
       const interactions = new SdkRuntimeInteractions({
-        listQuestions: (dir: string) => dir === "/work" ? [{ id: "question-1", sessionID: "session-1", questions: [] }] : [],
+        listQuestions: (dir: string) => dir === WORK ? [{ id: "question-1", sessionID: "session-1", questions: [] }] : [],
         appendEvent: (event: { payload: unknown }) => { committed.push(event); return event },
       } as unknown as SdkRuntimeStore)
       interactions.questions.set("question-1", {
@@ -131,7 +135,7 @@ for (const operation of ["reply", "reject"] as const) {
       expect(decisions).toEqual([])
       expect(committed).toEqual([])
       expect(interactions.questions.has("question-1")).toBe(true)
-      respond(executionBinding("session-1", "/work"))
+      respond(executionBinding("session-1", WORK))
       expect(decisions).toEqual([operation])
       expect(committed).toHaveLength(1)
       expect(interactions.questions.has("question-1")).toBe(false)
@@ -151,7 +155,7 @@ for (const options of [undefined, [], [{ id: "provider-specific", label: "Rememb
       sessionId: "session-1", agentSessionId: "agent-1", method: "permission", params: {},
       resolve: (decision, optionId) => decisions.push({ decision, optionId }),
     })
-    const binding = executionBinding("session-1", "/work")
+    const binding = executionBinding("session-1", WORK)
     expect(() => interactions.respondPermission(binding, "permission-1", "allow_once", "unknown")).toThrow()
     if (options !== undefined) {
       expect(() => interactions.respondPermission(binding, "permission-1", "allow_once")).toThrow()

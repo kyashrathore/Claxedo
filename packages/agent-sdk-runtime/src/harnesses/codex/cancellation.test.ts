@@ -7,6 +7,7 @@ import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-server"
 import { CodexHarnessAdapter } from "./index"
+import { removeTestTempDir } from "../shared/test-temp-dir"
 
 for (const terminateFails of [false, true]) {
   for (const goalMode of [false, true]) {
@@ -71,7 +72,7 @@ for (const terminateFails of [false, true]) {
         .toEqual([{ method: "thread/backgroundTerminals/terminate", processId: "process-current" }])
     } finally {
       await adapter.dispose()
-      await fs.rm(fake.directory, { recursive: true, force: true })
+      removeTestTempDir(fake.directory)
     }
   })
   }
@@ -109,7 +110,7 @@ test("a terminal Codex acknowledged terminating and still lists is owned, not cl
     await turn
   } finally {
     await adapter.dispose()
-    await fs.rm(fake.directory, { recursive: true, force: true })
+    removeTestTempDir(fake.directory)
   }
 })
 
@@ -147,7 +148,7 @@ async function stopTurnOn(options: Parameters<typeof installFakeCodexAppServer>[
     return outcome
   } finally {
     await adapter.dispose()
-    await fs.rm(fake.directory, { recursive: true, force: true })
+    removeTestTempDir(fake.directory)
   }
 }
 

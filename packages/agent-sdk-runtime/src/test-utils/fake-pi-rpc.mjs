@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { removeTestTempDir } from "../harnesses/shared/test-temp-dir"
 
 /** Scripted wire peer for lifecycle failures; real Pi is exercised separately. */
 export async function installFakePiRpc() {
@@ -69,6 +70,7 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
     directory,
     binary,
     agentDir: path.join(directory, "agent"),
-    dispose: () => fs.rm(directory, { recursive: true, force: true }),
+    // The scripted Pi ran with this directory as its cwd; a just-killed child keeps it locked briefly on Windows.
+    dispose: async () => removeTestTempDir(directory),
   }
 }

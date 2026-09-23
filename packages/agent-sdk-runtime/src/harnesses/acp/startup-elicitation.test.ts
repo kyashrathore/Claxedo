@@ -3,6 +3,9 @@ import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { AcpHarnessAdapter } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import type { AgentSessionStartBinding } from "@claxedo/agent-runtime-contract"
+import { workspaceDirectory } from "../../test-utils/workspace-directory"
+
+const WORK = workspaceDirectory("work")
 
 function fixture(holdInitialize = false) {
   const initializes: Array<string | number> = []
@@ -23,7 +26,7 @@ function fixture(holdInitialize = false) {
     } })
     return { kind: "stdio", stream: { readable, writable }, metadata: {}, get alive() { return alive }, dispose() { if (alive) disposals++; alive = false } }
   } })
-  const start = (id: string): AgentSessionStartBinding => ({ sessionId: id, operationId: `operation-${id}`, workspaceId: "workspace", directory: "/work", connectionId: "startup" })
+  const start = (id: string): AgentSessionStartBinding => ({ sessionId: id, operationId: `operation-${id}`, workspaceId: "workspace", directory: WORK, connectionId: "startup" })
   const begin = (binding: AgentSessionStartBinding) => {
     store.sessionStarts.begin(binding)
     return adapter.createSession(binding.directory, undefined, binding.sessionId, { start: binding })
@@ -47,16 +50,16 @@ test("concurrent session/new requests own isolated durable questions before upst
     await f.wait(() => f.creates.length === 2)
     f.elicit("question-b", f.creates[1])
     f.elicit("question-a", f.creates[0])
-    await f.wait(() => f.store.listQuestions("/work").length === 2)
-    const qa = f.store.listQuestions("/work").find((row) => row.sessionID === "a")!
-    const qb = f.store.listQuestions("/work").find((row) => row.sessionID === "b")!
+    await f.wait(() => f.store.listQuestions(WORK).length === 2)
+    const qa = f.store.listQuestions(WORK).find((row) => row.sessionID === "a")!
+    const qb = f.store.listQuestions(WORK).find((row) => row.sessionID === "b")!
     expect(f.store.getSession("a")).toBeNull()
     expect(f.store.getAgentSessionId("a")).toBeNull()
     await expect(f.adapter.replySessionStartQuestion(b, qa.id, [['{"label":"bad"}']])).rejects.toThrow("does not belong")
     for (const field of ["workspaceId", "directory", "connectionId", "operationId"] as const) {
       await expect(f.adapter.replySessionStartQuestion({ ...a, [field]: "other" }, qa.id, [])).rejects.toThrow("reservation")
     }
-    await expect(f.adapter.replyQuestion({ sessionId: "a", upstreamSessionId: "invented", workspaceId: "workspace", directory: "/work", connectionId: "startup" }, qa.id, [])).rejects.toThrow("does not belong")
+    await expect(f.adapter.replyQuestion({ sessionId: "a", upstreamSessionId: "invented", workspaceId: "workspace", directory: WORK, connectionId: "startup" }, qa.id, [])).rejects.toThrow("does not belong")
     await f.adapter.replySessionStartQuestion(a, qa.id, [['{"label":"first"}']])
     await f.adapter.replySessionStartQuestion(b, qb.id, [['{"label":"second"}']])
     await f.wait(() => f.responses.has("question-a") && f.responses.has("question-b"))
@@ -66,7 +69,7 @@ test("concurrent session/new requests own isolated durable questions before upst
     await Promise.all([creatingA, creatingB])
     expect(f.store.getAgentSessionId("a")).toBe("upstream-a")
     expect(f.store.getAgentSessionId("b")).toBe("upstream-b")
-    expect(f.store.listQuestions("/work")).toEqual([])
+    expect(f.store.listQuestions(WORK)).toEqual([])
     f.elicit("late", f.creates[0])
     await f.wait(() => f.responses.has("late"))
     expect(f.responses.get("late")).toMatchObject({ error: { code: -32602 } })
@@ -82,10 +85,10 @@ test("newSession countdown pauses while the human considers startup elicitation"
     const creating = f.begin(start)
     await f.wait(() => f.creates.length === 1)
     f.elicit("held-question", f.creates[0])
-    await f.wait(() => f.store.listQuestions("/work").length === 1)
+    await f.wait(() => f.store.listQuestions(WORK).length === 1)
     await Bun.sleep(120)
     expect(f.store.getSession("held")).toBeNull()
-    await f.adapter.replySessionStartQuestion(start, f.store.listQuestions("/work")[0].id, [['{"label":"accepted"}']])
+    await f.adapter.replySessionStartQuestion(start, f.store.listQuestions(WORK)[0].id, [['{"label":"accepted"}']])
     f.finish(f.creates[0], "created")
     await expect(creating).resolves.toEqual({ id: "held" })
   } finally { f.adapter.dispose(); if (previous === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS; else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = previous }
@@ -100,13 +103,13 @@ test("failed startup cancels its question without stopping an independent start"
     const second = f.begin(b)
     await f.wait(() => f.creates.length === 2)
     f.elicit("orphan-question", f.creates[0])
-    await f.wait(() => f.store.listQuestions("/work").length === 1)
-    const question = f.store.listQuestions("/work")[0]
+    await f.wait(() => f.store.listQuestions(WORK).length === 1)
+    const question = f.store.listQuestions(WORK)[0]
     f.fail(f.creates[0])
     expect(String(await first)).toContain("Creation refused")
     await f.wait(() => f.responses.has("orphan-question"))
     expect(f.responses.get("orphan-question")).toMatchObject({ result: { action: "cancel" } })
-    expect(f.store.listQuestions("/work")).toEqual([])
+    expect(f.store.listQuestions(WORK)).toEqual([])
     await expect(f.adapter.replySessionStartQuestion(a, question.id, [])).rejects.toThrow("no longer connected")
     f.finish(f.creates[1], "healthy-upstream")
     await expect(second).resolves.toEqual({ id: "healthy" })
@@ -120,11 +123,11 @@ test("process loss retires startup questions and never revives their resolvers",
   const creating = f.begin(start).catch((error: unknown) => error)
   await f.wait(() => f.creates.length === 1)
   f.elicit("lost-question", f.creates[0])
-  await f.wait(() => f.store.listQuestions("/work").length === 1)
-  const question = f.store.listQuestions("/work")[0]
+  await f.wait(() => f.store.listQuestions(WORK).length === 1)
+  const question = f.store.listQuestions(WORK)[0]
   f.adapter.dispose()
   expect(await creating).toBeInstanceOf(Error)
-  expect(f.store.listQuestions("/work")).toEqual([])
+  expect(f.store.listQuestions(WORK)).toEqual([])
   expect(f.store.getSession("lost")).toBeNull()
   await expect(f.adapter.replySessionStartQuestion(start, question.id, [])).rejects.toThrow("no longer connected")
 })
@@ -140,7 +143,7 @@ test("unattended startup still times out without inventing an executable session
     f.elicit("after-timeout", f.creates[0])
     await f.wait(() => f.responses.has("after-timeout"))
     expect(f.responses.get("after-timeout")).toMatchObject({ result: { action: "cancel" } })
-    expect(f.store.listQuestions("/work")).toEqual([])
+    expect(f.store.listQuestions(WORK)).toEqual([])
   } finally { f.adapter.dispose(); if (previous === undefined) delete process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS; else process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = previous }
 })
 
@@ -164,20 +167,20 @@ test("startup process idle lifetime survives human wait and releases after final
     const second = f.begin(b)
     await f.wait(() => f.creates.length === 2)
     f.elicit("human-question", f.creates[0])
-    await f.wait(() => f.store.listQuestions("/work").length === 1)
+    await f.wait(() => f.store.listQuestions(WORK).length === 1)
     f.finish(f.creates[1], "sibling-upstream")
     await second
     await Bun.sleep(140)
     expect(f.disposals()).toBe(0)
-    expect(f.store.listQuestions("/work")).toHaveLength(1)
-    await f.adapter.replySessionStartQuestion(a, f.store.listQuestions("/work")[0].id, [['{"label":"accepted"}']])
+    expect(f.store.listQuestions(WORK)).toHaveLength(1)
+    await f.adapter.replySessionStartQuestion(a, f.store.listQuestions(WORK)[0].id, [['{"label":"accepted"}']])
     // session/new still owns the process after its question resolver settles.
     await Bun.sleep(100)
     expect(f.disposals()).toBe(0)
     f.finish(f.creates[0], "human-upstream")
     await first
     await f.wait(() => f.disposals() === 1)
-    expect(f.store.listQuestions("/work")).toEqual([])
+    expect(f.store.listQuestions(WORK)).toEqual([])
     expect(f.store.getAgentSessionId("sibling")).toBe("sibling-upstream")
   } finally { f.adapter.dispose() }
 })
@@ -191,12 +194,12 @@ test("initialize questions use the reserved creation owner and suspend its deadl
     const creating = f.begin(start)
     await f.wait(() => f.initializes.length === 1)
     f.elicit("init-question", f.initializes[0])
-    await f.wait(() => f.store.listQuestions("/work").length === 1)
+    await f.wait(() => f.store.listQuestions(WORK).length === 1)
     await Bun.sleep(130)
     expect(f.store.getSession(start.sessionId)).toBeNull()
     expect(f.disposals()).toBe(0)
     await expect(f.begin(f.start("competing"))).rejects.toThrow("already owned")
-    const question = f.store.listQuestions("/work")[0]
+    const question = f.store.listQuestions(WORK)[0]
     expect(question.sessionID).toBe(start.sessionId)
     expect(question.questions[0]).toMatchObject({ custom: true, question: expect.stringContaining("requested schema") })
     expect(question.questions[0]).not.toHaveProperty("elicitation")
@@ -217,12 +220,12 @@ test("initialize questions use the reserved creation owner and suspend its deadl
 test("unowned initialization cannot publish a question", async () => {
   const f = fixture(true)
   try {
-    const creating = f.adapter.createSession("/work", undefined, "direct")
+    const creating = f.adapter.createSession(WORK, undefined, "direct")
     await f.wait(() => f.initializes.length === 1)
     f.elicit("unowned", f.initializes[0])
     await f.wait(() => f.responses.has("unowned"))
     expect(f.responses.get("unowned")).toHaveProperty("error")
-    expect(f.store.listQuestions("/work")).toEqual([])
+    expect(f.store.listQuestions(WORK)).toEqual([])
     f.initialized()
     await f.wait(() => f.creates.length === 1)
     f.finish(f.creates[0], "direct-upstream")
@@ -236,9 +239,9 @@ test("disposing initialization cancels its question without fabricating a sessio
   const failed = creating.then(() => undefined, error => error)
   await f.wait(() => f.initializes.length === 1)
   f.elicit("lost", f.initializes[0])
-  await f.wait(() => f.store.listQuestions("/work").length === 1)
+  await f.wait(() => f.store.listQuestions(WORK).length === 1)
   f.adapter.dispose()
   expect(await failed).toBeInstanceOf(Error)
-  expect(f.store.listQuestions("/work")).toEqual([])
+  expect(f.store.listQuestions(WORK)).toEqual([])
   expect(f.store.getSession(start.sessionId)).toBeNull()
 })

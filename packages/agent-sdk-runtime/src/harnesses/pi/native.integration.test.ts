@@ -13,6 +13,7 @@ import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { pinnedPiExecutable } from "../../test-utils/pinned-pi"
 import { PiHarnessAdapter } from "./index"
 import { piProviderOverrides, retainPiAuth } from "./auth"
+import { removeTestTempDir } from "../shared/test-temp-dir"
 
 const binary = pinnedPiExecutable()
 /** A groq model Pi 0.85.1 defines with image input over chat completions. */
@@ -207,7 +208,7 @@ test(
     } finally {
       await runtime.dispose()
       await server.stop(true)
-      await fs.rm(directory, { recursive: true, force: true })
+      removeTestTempDir(directory)
     }
   },
   30_000,
@@ -294,7 +295,7 @@ test(
       await answeredTurn
     } finally {
       await adapter.dispose()
-      await fs.rm(directory, { recursive: true, force: true })
+      removeTestTempDir(directory)
     }
   },
   15_000,
@@ -367,7 +368,7 @@ test(
       else process.env.GROQ_API_KEY = previousKey
       await adapter.dispose()
       await server.stop(true)
-      await fs.rm(directory, { recursive: true, force: true })
+      removeTestTempDir(directory)
     }
   },
   30_000,

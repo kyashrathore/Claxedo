@@ -4,32 +4,35 @@ import { createMemoryRuntimeStore } from "../../stores/memory"
 import { createAgentSessionIndex } from "./agent-session-index"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } from "./sdk-runtime-adapter"
 import { executionBinding } from "../../test-utils/execution-binding"
+import { workspaceDirectory } from "../../test-utils/workspace-directory"
+
+const WORK = workspaceDirectory("work")
 
 describe("agent session index", () => {
   test("a provider session resolves back to its runtime session and scope", () => {
     const index = createAgentSessionIndex()
-    index.remember({ sessionId: "session-1", directory: "/work", agentSessionId: "thread-1" })
-    expect(index.get("thread-1")).toEqual({ sessionId: "session-1", directory: "/work" })
+    index.remember({ sessionId: "session-1", directory: WORK, agentSessionId: "thread-1" })
+    expect(index.get("thread-1")).toEqual({ sessionId: "session-1", directory: WORK })
     expect(index.get("thread-unknown")).toBeNull()
   })
 
   test("a session without a provider id records nothing", () => {
     const index = createAgentSessionIndex()
-    index.remember({ sessionId: "session-1", directory: "/work", agentSessionId: null })
+    index.remember({ sessionId: "session-1", directory: WORK, agentSessionId: null })
     expect(index.get("")).toBeNull()
   })
 
   test("rebinding a session retires its previous provider id", () => {
     const index = createAgentSessionIndex()
-    index.remember({ sessionId: "session-1", directory: "/work", agentSessionId: "thread-1" })
-    index.remember({ sessionId: "session-1", directory: "/work", agentSessionId: "thread-2" })
+    index.remember({ sessionId: "session-1", directory: WORK, agentSessionId: "thread-1" })
+    index.remember({ sessionId: "session-1", directory: WORK, agentSessionId: "thread-2" })
     expect(index.get("thread-1")).toBeNull()
-    expect(index.get("thread-2")).toEqual({ sessionId: "session-1", directory: "/work" })
+    expect(index.get("thread-2")).toEqual({ sessionId: "session-1", directory: WORK })
   })
 
   test("forgetting a session drops the provider id that pointed at it", () => {
     const index = createAgentSessionIndex()
-    index.remember({ sessionId: "session-1", directory: "/work", agentSessionId: "thread-1" })
+    index.remember({ sessionId: "session-1", directory: WORK, agentSessionId: "thread-1" })
     index.forget("session-1")
     expect(index.get("thread-1")).toBeNull()
   })
@@ -67,10 +70,10 @@ describe("SdkRuntimeAdapter provider-id reverse lookup", () => {
     })
     expect(host?.getSessionForAgentSession?.("thread-1")).toBeNull()
 
-    await adapter.createSession("/work", "Ship", "session-1")
-    expect(host?.getSessionForAgentSession?.("thread-1")).toEqual({ sessionId: "session-1", directory: "/work" })
+    await adapter.createSession(WORK, "Ship", "session-1")
+    expect(host?.getSessionForAgentSession?.("thread-1")).toEqual({ sessionId: "session-1", directory: WORK })
 
-    await adapter.deleteSession(executionBinding("session-1", "/work", "native:codex"))
+    await adapter.deleteSession(executionBinding("session-1", WORK, "native:codex"))
     expect(host?.getSessionForAgentSession?.("thread-1")).toBeNull()
     await adapter.dispose()
   })

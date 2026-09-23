@@ -4,6 +4,9 @@ import { AcpHarnessAdapter, type ACPTransport } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
+import { workspaceDirectory } from "../../test-utils/workspace-directory"
+
+const REPO = workspaceDirectory("repo")
 
 function fixture(store = new MemoryRuntimeStore()) {
   const responses = new Map<string | number | null, AnyMessage>()
@@ -46,31 +49,31 @@ function fixture(store = new MemoryRuntimeStore()) {
 test("real ACP JSON-RPC elicitation persists a form and returns accepted content", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/repo", undefined, "local")
+    await f.adapter.createSession(REPO, undefined, "local")
     f.elicit("question-one", { sessionId: "remote" })
-    await f.wait(() => f.store.listQuestions("/repo").length === 1)
-    const question = f.store.listQuestions("/repo")[0]
-    await f.adapter.replyQuestion({ ...executionBinding("local", "/repo"), upstreamSessionId: "remote" }, question.id, [[JSON.stringify({ name: "Alice" })]])
+    await f.wait(() => f.store.listQuestions(REPO).length === 1)
+    const question = f.store.listQuestions(REPO)[0]
+    await f.adapter.replyQuestion({ ...executionBinding("local", REPO), upstreamSessionId: "remote" }, question.id, [[JSON.stringify({ name: "Alice" })]])
     await f.wait(() => f.responses.has("question-one"))
     expect(f.responses.get("question-one")).toMatchObject({ result: { action: "accept", content: { name: "Alice" } } })
-    expect(f.store.listQuestions("/repo")).toEqual([])
+    expect(f.store.listQuestions(REPO)).toEqual([])
   } finally { f.adapter.dispose() }
 })
 
 test("request-scoped elicitation uses an actual outstanding prompt ID and rejects unknown IDs", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/repo", undefined, "local")
+    await f.adapter.createSession(REPO, undefined, "local")
     f.elicit("unowned", { requestId: "not-a-request" })
     await f.wait(() => f.responses.has("unowned"))
     expect(f.responses.get("unowned")).toMatchObject({ error: { code: -32602 } })
     const turn = (async () => { for await (const _ of executeTestTurn(f.adapter, "local", {
       parts: [{ type: "text", text: "hello" }], assistantMessageId: "assistant", agent: "build", model: { providerID: "elicitation-agent", modelID: "default" },
-    }, "/repo")) {} })()
+    }, REPO)) {} })()
     await f.wait(() => f.promptId() !== undefined)
     f.elicit("owned", { requestId: f.promptId() }, "url")
-    await f.wait(() => f.store.listQuestions("/repo").length === 1)
-    await f.adapter.rejectQuestion({ ...executionBinding("local", "/repo"), upstreamSessionId: "remote" }, f.store.listQuestions("/repo")[0].id)
+    await f.wait(() => f.store.listQuestions(REPO).length === 1)
+    await f.adapter.rejectQuestion({ ...executionBinding("local", REPO), upstreamSessionId: "remote" }, f.store.listQuestions(REPO)[0].id)
     await f.wait(() => f.responses.has("owned"))
     expect(f.responses.get("owned")).toMatchObject({ result: { action: "decline" } })
     f.finish()
@@ -85,27 +88,27 @@ test("a sibling adapter cannot retire a live question, but disposal clears the p
   const f = fixture()
   const sibling = fixture(f.store)
   try {
-    await f.adapter.createSession("/repo", undefined, "local")
+    await f.adapter.createSession(REPO, undefined, "local")
     f.elicit("pending", { sessionId: "remote" })
-    await f.wait(() => f.store.listQuestions("/repo").length === 1)
-    expect(await sibling.adapter.listQuestions("/repo")).toEqual([])
-    expect(f.store.listQuestions("/repo")).toHaveLength(1)
+    await f.wait(() => f.store.listQuestions(REPO).length === 1)
+    expect(await sibling.adapter.listQuestions(REPO)).toEqual([])
+    expect(f.store.listQuestions(REPO)).toHaveLength(1)
     f.adapter.dispose()
-    expect(f.store.listQuestions("/repo")).toEqual([])
+    expect(f.store.listQuestions(REPO)).toEqual([])
   } finally { f.adapter.dispose(); sibling.adapter.dispose() }
 })
 
 test("a cold adapter retires durable questions whose process resolver was lost", async () => {
   const f = fixture()
   try {
-    f.store.bindSession({ sessionId: "old", directory: "/repo", agentSessionId: "old-agent" })
+    f.store.bindSession({ sessionId: "old", directory: REPO, agentSessionId: "old-agent" })
     f.store.appendEvent({ sessionId: "old", payload: { id: "question.asked:old", type: "question.asked", properties: {
       id: "old-question", sessionID: "old", questions: [{ header: "Agent", question: "Connect", options: [] }], harnessPayload: { acpHarness: "elicitation-agent" },
     } } })
-    expect(f.store.listQuestions("/repo")).toHaveLength(1)
-    expect(await f.adapter.listQuestions("/repo")).toEqual([])
-    expect(f.store.listQuestions("/repo")).toEqual([])
-    await expect(f.adapter.replyQuestion({ ...executionBinding("old", "/repo"), upstreamSessionId: "old-agent" }, "old-question", [["accept"]])).rejects.toThrow("no longer connected")
+    expect(f.store.listQuestions(REPO)).toHaveLength(1)
+    expect(await f.adapter.listQuestions(REPO)).toEqual([])
+    expect(f.store.listQuestions(REPO)).toEqual([])
+    await expect(f.adapter.replyQuestion({ ...executionBinding("old", REPO), upstreamSessionId: "old-agent" }, "old-question", [["accept"]])).rejects.toThrow("no longer connected")
   } finally { f.adapter.dispose() }
 })
 
@@ -113,25 +116,25 @@ test("a cold adapter retires durable questions whose process resolver was lost",
 test("stopping a parent cancels descendant elicitations and preserves another session's question", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/repo", undefined, "local")
-    await f.adapter.createSession("/repo", undefined, "other")
+    await f.adapter.createSession(REPO, undefined, "local")
+    await f.adapter.createSession(REPO, undefined, "other")
     const turn = (async () => { for await (const _ of executeTestTurn(f.adapter, "local", {
       parts: [{ type: "text", text: "hello" }], assistantMessageId: "assistant", agent: "build", model: { providerID: "elicitation-agent", modelID: "default" },
-    }, "/repo")) {} })()
+    }, REPO)) {} })()
     await f.wait(() => f.promptId() !== undefined)
     f.spawn("remote", "child")
     f.spawn("child", "grandchild")
-    await f.wait(() => f.store.listSessions("/repo").length === 4)
+    await f.wait(() => f.store.listSessions(REPO).length === 4)
     f.elicit("child-question", { sessionId: "child" })
     f.elicit("grandchild-question", { sessionId: "grandchild" })
     f.elicit("sibling-question", { sessionId: "sibling" })
-    await f.wait(() => f.store.listQuestions("/repo").length === 3)
-    await cancelAdapterTurn(f.adapter, { ...executionBinding("local", "/repo"), upstreamSessionId: "remote" })
+    await f.wait(() => f.store.listQuestions(REPO).length === 3)
+    await cancelAdapterTurn(f.adapter, { ...executionBinding("local", REPO), upstreamSessionId: "remote" })
     await turn
     await f.wait(() => f.responses.has("child-question") && f.responses.has("grandchild-question"))
     expect(f.responses.get("child-question")).toMatchObject({ result: { action: "cancel" } })
     expect(f.responses.get("grandchild-question")).toMatchObject({ result: { action: "cancel" } })
     expect(f.responses.has("sibling-question")).toBe(false)
-    expect(f.store.listQuestions("/repo").map((row) => row.sessionID)).toEqual(["other"])
+    expect(f.store.listQuestions(REPO).map((row) => row.sessionID)).toEqual(["other"])
   } finally { f.adapter.dispose() }
 })

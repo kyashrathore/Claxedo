@@ -4,6 +4,9 @@ import { AcpHarnessAdapter, type ACPTransport } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { cancelAdapterTurn } from "../../test-utils/cancel-turn"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
+import { workspaceDirectory } from "../../test-utils/workspace-directory"
+
+const WORK = workspaceDirectory("work")
 
 function fixture() {
   const store = new MemoryRuntimeStore()
@@ -92,7 +95,7 @@ function fixture() {
     for await (const event of executeTestTurn(adapter, id, {
       parts: [{ type: "text", text: "/command" }], assistantMessageId: `reply-${id}-${turnId}`, userMessageId: `user-${id}-${turnId}`,
       agent: "build", model: { providerID: "test-acp", modelID: modelID },
-    }, "/work")) events.push(event)
+    }, WORK)) events.push(event)
     return events
   }
   const waitFor = async (predicate: () => boolean) => {
@@ -106,9 +109,9 @@ function fixture() {
 test("simultaneous session options and prompt share one authoritative restoration", async () => {
   const f = fixture()
   try {
-    f.store.bindSession({ sessionId: "a", directory: "/work", agentSessionId: "agent-saved" })
+    f.store.bindSession({ sessionId: "a", directory: WORK, agentSessionId: "agent-saved" })
     f.holdResume.add("agent-saved")
-    const options = f.adapter.probeConfigOptions("/work", executionBinding("a", "/work"))
+    const options = f.adapter.probeConfigOptions(WORK, executionBinding("a", WORK))
     await f.waitFor(() => f.resumeReplies.has("agent-saved"))
     const turn = f.turn("a")
     await Bun.sleep(5)
@@ -126,18 +129,18 @@ test("simultaneous session options and prompt share one authoritative restoratio
 test("config options are exact-session state and new-session discovery uses an isolated directory-scoped probe", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
-    await f.adapter.createSession("/work", undefined, "b")
-    await f.adapter.updateSessionConfig(executionBinding("b", "/work"), { model: { providerID: "test-acp", modelID: "two" } })
-    expect(await f.adapter.probeConfigOptions("/work", executionBinding("a", "/work"))).toMatchObject({ resolvedModel: { id: "one" } })
-    expect(await f.adapter.probeConfigOptions("/work", executionBinding("b", "/work"))).toMatchObject({ resolvedModel: { id: "two" } })
+    await f.adapter.createSession(WORK, undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "b")
+    await f.adapter.updateSessionConfig(executionBinding("b", WORK), { model: { providerID: "test-acp", modelID: "two" } })
+    expect(await f.adapter.probeConfigOptions(WORK, executionBinding("a", WORK))).toMatchObject({ resolvedModel: { id: "one" } })
+    expect(await f.adapter.probeConfigOptions(WORK, executionBinding("b", WORK))).toMatchObject({ resolvedModel: { id: "two" } })
     f.clearOptions("agent-2")
-    await f.waitFor(() => f.adapter.peekConfigOptions("/work", executionBinding("b", "/work"))?.options.length === 0)
-    expect(await f.adapter.probeConfigOptions("/work", executionBinding("b", "/work"))).toEqual({ options: [] })
-    expect(await f.adapter.probeConfigOptions("/work", executionBinding("a", "/work"))).toMatchObject({ resolvedModel: { id: "one" } })
+    await f.waitFor(() => f.adapter.peekConfigOptions(WORK, executionBinding("b", WORK))?.options.length === 0)
+    expect(await f.adapter.probeConfigOptions(WORK, executionBinding("b", WORK))).toEqual({ options: [] })
+    expect(await f.adapter.probeConfigOptions(WORK, executionBinding("a", WORK))).toMatchObject({ resolvedModel: { id: "one" } })
     const active = f.turn("a")
     await f.waitFor(() => f.prompts.has("agent-1"))
-    expect(await f.adapter.probeConfigOptions("/work")).toMatchObject({ resolvedModel: { id: "one" } })
+    expect(await f.adapter.probeConfigOptions(WORK)).toMatchObject({ resolvedModel: { id: "one" } })
     expect(f.transports).toHaveLength(2)
     expect(f.adapter.peekConfigOptions("/another-workspace")).toBeNull()
     expect(await f.adapter.probeConfigOptions("/another-workspace")).toMatchObject({ resolvedModel: { id: "one" } })
@@ -150,8 +153,8 @@ test("config options are exact-session state and new-session discovery uses an i
 test("a rejected prompt or configuration leaves a healthy sibling running on the same connection", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
-    await f.adapter.createSession("/work", undefined, "b")
+    await f.adapter.createSession(WORK, undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "b")
     const a = f.turn("a")
     const b = f.turn("b")
     await f.waitFor(() => f.prompts.size === 2)
@@ -176,7 +179,7 @@ test("a crash after recovery binding preserves context and repairs a missing div
   try {
     // Rehydrate the durable state after replacement binding committed but before
     // its divider or initial prompt could be delivered.
-    f.store.bindSession({ sessionId: "a", directory: "/work", agentSessionId: "agent-replacement" })
+    f.store.bindSession({ sessionId: "a", directory: WORK, agentSessionId: "agent-replacement" })
     f.store.updateSessionConfig("a", { harness: { id: "test-acp", access: "native" },
       handoff: { from: { id: "test-acp", access: "native" }, pending: true, transcript, reason: "missing-session" } })
     const first = f.turn("a")
@@ -203,7 +206,7 @@ test("a crash after recovery binding preserves context and repairs a missing div
 test("a lost transport records uncertain prompt outcome without resubmitting it", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "a")
     const turn = f.turn("a")
     await f.waitFor(() => f.prompts.has("agent-1"))
     f.disconnect()
@@ -220,8 +223,8 @@ test("an unresolved configuration quarantines only its session until the origina
   process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "15"
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
-    await f.adapter.createSession("/work", undefined, "b")
+    await f.adapter.createSession(WORK, undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "b")
     f.holdConfig.add("agent-1")
     const failed = await f.turn("a", "two")
     expect(failed.find((event) => event.type === "session.error")?.properties.error?.data.acpOutcome).toBe("uncertain")
@@ -250,15 +253,15 @@ test("an unresolved configuration quarantines only its session until the origina
 test("acknowledged cancellation settles one session while its sibling continues", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
-    await f.adapter.createSession("/work", undefined, "b")
+    await f.adapter.createSession(WORK, undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "b")
     const a = f.turn("a")
     const b = f.turn("b")
     await f.waitFor(() => f.prompts.size === 2)
     f.cancelPrompts.set("agent-1", () => f.prompts.get("agent-1")!("cancelled"))
     // The local agent acknowledged the cancel AND its prompt settled, which is
     // the only combination that makes a stdio ACP turn terminal.
-    expect(await cancelAdapterTurn(f.adapter, executionBinding("a", "/work"))).toEqual({ execution: "terminal", cleanup: "unknown" })
+    expect(await cancelAdapterTurn(f.adapter, executionBinding("a", WORK))).toEqual({ execution: "terminal", cleanup: "unknown" })
     await a
     expect(f.store.getMessages("b").some((row) => row.info.error)).toBe(false)
     f.prompts.get("agent-2")!()
@@ -272,12 +275,12 @@ test("unacknowledged cancellation does not dispose a healthy sibling or replay t
   process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "15"
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
-    await f.adapter.createSession("/work", undefined, "b")
+    await f.adapter.createSession(WORK, undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "b")
     const a = f.turn("a")
     const b = f.turn("b")
     await f.waitFor(() => f.prompts.size === 2)
-    expect(await cancelAdapterTurn(f.adapter, executionBinding("a", "/work"))).toMatchObject({ error: { code: "provider_unreachable" } })
+    expect(await cancelAdapterTurn(f.adapter, executionBinding("a", WORK))).toMatchObject({ error: { code: "provider_unreachable" } })
     f.prompts.get("agent-2")!()
     expect((await b).some((event) => event.type === "session.idle")).toBe(true)
     expect(f.transports).toHaveLength(1)
@@ -297,13 +300,13 @@ test("unacknowledged cancellation does not dispose a healthy sibling or replay t
 test("two sessions on one ACP process reach the agent concurrently and changing one model does not restart it", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
-    await f.adapter.createSession("/work", undefined, "b")
+    await f.adapter.createSession(WORK, undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "b")
     const a = f.turn("a")
     const b = f.turn("b")
     await f.waitFor(() => f.prompts.size === 2)
     expect(f.transports).toHaveLength(1)
-    await f.adapter.updateSessionConfig(executionBinding("b", "/work"), { model: { providerID: "test-acp", modelID: "two" } })
+    await f.adapter.updateSessionConfig(executionBinding("b", WORK), { model: { providerID: "test-acp", modelID: "two" } })
     expect(f.requests.filter((r) => r.method === "session/set_config_option").at(-1)).toMatchObject({ sessionId: "agent-2", value: "two" })
     expect(f.transports).toHaveLength(1)
     f.prompts.get("agent-2")!()
@@ -317,8 +320,8 @@ test("two sessions on one ACP process reach the agent concurrently and changing 
 test("command discovery before session/new response persists per session and idle updates can clear it", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
-    await f.adapter.createSession("/work", undefined, "b")
+    await f.adapter.createSession(WORK, undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "b")
     expect(f.store.getSession("a")?.commands?.map((c) => c.name)).toEqual(["command-1"])
     expect(f.store.getSession("b")?.commands?.map((c) => c.name)).toEqual(["command-2"])
     f.notify("agent-1", [])
@@ -330,20 +333,20 @@ test("command discovery before session/new response persists per session and idl
 test("negotiated fork support survives idle process disposal and cold discovery does not steal session restoration", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "a")
     const internals = f.adapter as unknown as { processes: Map<string, { proc: { dispose(): void } | null }> }
     const entry = [...internals.processes.values()][0]
     entry.proc!.dispose()
-    expect((await f.adapter.readHarnessCapabilities("/work", { sessionId: "a" })).fork).toBe(true)
+    expect((await f.adapter.readHarnessCapabilities(WORK, { sessionId: "a" })).fork).toBe(true)
     expect(f.transports).toHaveLength(1)
     // A fresh adapter has no cached negotiation. Probe discovery must not count
     // as restoring the actual agent session before the next prompt.
     f.adapter.dispose()
     const cold = fixture()
     try {
-      cold.store.bindSession({ sessionId: "a", directory: "/work", agentSessionId: "agent-saved" })
-      cold.store.bindSession({ sessionId: "b", directory: "/work", agentSessionId: "agent-sibling" })
-      expect((await cold.adapter.readHarnessCapabilities("/work", { sessionId: "a" })).fork).toBe(true)
+      cold.store.bindSession({ sessionId: "a", directory: WORK, agentSessionId: "agent-saved" })
+      cold.store.bindSession({ sessionId: "b", directory: WORK, agentSessionId: "agent-sibling" })
+      expect((await cold.adapter.readHarnessCapabilities(WORK, { sessionId: "a" })).fork).toBe(true)
       const turn = cold.turn("a")
       await cold.waitFor(() => cold.prompts.has("agent-saved"))
       expect(cold.requests.some((r) => r.method === "session/resume" && r.sessionId === "agent-saved")).toBe(true)
@@ -367,8 +370,8 @@ test("an unacknowledged cancellation retains the original turn and records late 
   process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "20"
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
-    await f.adapter.createSession("/work", undefined, "b")
+    await f.adapter.createSession(WORK, undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "b")
     let settled = false
     const turn = f.turn("a").then((events) => { settled = true; return events })
     await f.waitFor(() => f.store.getSession("a")?.status === "recovering")
@@ -400,18 +403,18 @@ test("an unacknowledged cancellation retains the original turn and records late 
 test("permission wire input preserves command, paths and complete agent details in the durable request", async () => {
   const f = fixture()
   try {
-    await f.adapter.createSession("/work", undefined, "a")
+    await f.adapter.createSession(WORK, undefined, "a")
     const turn = f.turn("a")
     await f.waitFor(() => f.prompts.has("agent-1"))
-    const toolCall = { toolCallId: "call-1", title: "Run command", kind: "execute", rawInput: { command: "printf '<script>data</script>' > /work/result", cwd: "/work" }, locations: [{ path: "/work/result" }], content: [{ type: "content", content: { type: "text", text: "Additional agent detail" } }] }
+    const toolCall = { toolCallId: "call-1", title: "Run command", kind: "execute", rawInput: { command: "printf '<script>data</script>' > /work/result", cwd: WORK }, locations: [{ path: "/work/result" }], content: [{ type: "content", content: { type: "text", text: "Additional agent detail" } }] }
     f.permission("agent-1", toolCall)
-    await f.waitFor(() => f.store.listPermissions("/work").length === 1)
-    const row = f.store.listPermissions("/work")[0]
+    await f.waitFor(() => f.store.listPermissions(WORK).length === 1)
+    const row = f.store.listPermissions(WORK)[0]
     expect(row.metadata.command).toBe(toolCall.rawInput.command)
     expect(row.metadata.acpToolCall).toEqual(toolCall)
     expect(row.metadata.acpRequestMeta).toEqual({ permission: { version: 1, description: "Write requested file" } })
     expect(row.patterns).toEqual(["/work/result"])
-    await f.adapter.respondPermission(executionBinding("a", "/work"), row.id, "allow_once")
+    await f.adapter.respondPermission(executionBinding("a", WORK), row.id, "allow_once")
     f.prompts.get("agent-1")!()
     await turn
   } finally { f.adapter.dispose() }
@@ -421,8 +424,8 @@ test("permission wire input preserves command, paths and complete agent details 
 test("cold permission reads and writes restore the owned session without creating a replacement", async () => {
   const f = fixture()
   try {
-    f.store.bindSession({ sessionId: "saved", directory: "/work", agentSessionId: "agent-saved" })
-    const binding = { ...executionBinding("saved", "/work"), upstreamSessionId: "agent-saved" }
+    f.store.bindSession({ sessionId: "saved", directory: WORK, agentSessionId: "agent-saved" })
+    const binding = { ...executionBinding("saved", WORK), upstreamSessionId: "agent-saved" }
     expect(await f.adapter.listPermissionModes(binding)).toMatchObject({ currentModeId: "ask" })
     expect(await f.adapter.setPermissionMode(binding, "auto")).toMatchObject({ currentModeId: "auto" })
     expect(f.requests.filter((row) => row.method === "session/resume")).toHaveLength(1)

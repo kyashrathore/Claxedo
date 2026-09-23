@@ -3,6 +3,9 @@ import type { AnyMessage } from "@agentclientprotocol/sdk"
 import { AcpHarnessAdapter } from "./index"
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
+import { workspaceDirectory } from "../../test-utils/workspace-directory"
+
+const WORK = workspaceDirectory("work")
 
 test("negotiated children traverse ACP wire and isolated child transcripts", async () => {
   const store = new MemoryRuntimeStore()
@@ -47,12 +50,12 @@ test("negotiated children traverse ACP wire and isolated child transcripts", asy
     },
   })
   try {
-    await adapter.createSession("/work", "Root", "root-local")
+    await adapter.createSession(WORK, "Root", "root-local")
     const events = []
-    for await (const event of executeTestTurn(adapter, "root-local", { parts: [{ type: "text", text: "review" }], agent: "build", model: { providerID: "children-test", modelID: "default" }, assistantMessageId: "assistant", userMessageId: "user" }, "/work")) events.push(event)
+    for await (const event of executeTestTurn(adapter, "root-local", { parts: [{ type: "text", text: "review" }], agent: "build", model: { providerID: "children-test", modelID: "default" }, assistantMessageId: "assistant", userMessageId: "user" }, WORK)) events.push(event)
     expect(JSON.stringify(advertised)).toContain("nativeSubagentSessions")
     expect(events.some((event) => event.type === "session.error")).toBe(false)
-    const sessions = store.listSessions("/work")
+    const sessions = store.listSessions(WORK)
     const child = sessions.find((session) => session.parentID === "root-local")!
     expect(child).toBeDefined()
     const grandchild = sessions.find((session) => session.parentID === child.id)!
@@ -71,24 +74,24 @@ test("negotiated children traverse ACP wire and isolated child transcripts", asy
       for (let i = 0; i < 100 && !predicate(); i++) await Bun.sleep(5)
       expect(predicate()).toBe(true)
     }
-    await waitFor(() => store.listSessions("/work").some((session) => store.getAgentSessionId(session.id) === "late-child" && JSON.stringify(store.getMessages(session.id)).includes("After parent completion")))
+    await waitFor(() => store.listSessions(WORK).some((session) => store.getAgentSessionId(session.id) === "late-child" && JSON.stringify(store.getMessages(session.id)).includes("After parent completion")))
     sendLate({ jsonrpc: "2.0", id: "child-permission", method: "session/request_permission", params: {
       sessionId: "late-child", toolCall: { toolCallId: "child-tool", title: "Read project", kind: "read" },
       options: [{ optionId: "allow", kind: "allow_once", name: "Allow" }],
     } })
-    await waitFor(() => store.listPermissions("/work").length === 1)
-    const permission = store.listPermissions("/work")[0]
+    await waitFor(() => store.listPermissions(WORK).length === 1)
+    const permission = store.listPermissions(WORK)[0]
     expect(permission.sessionID).toBe("root-local")
-    await adapter.respondPermission(executionBinding("root-local", "/work"), permission.id, "allow_once")
+    await adapter.respondPermission(executionBinding("root-local", WORK), permission.id, "allow_once")
     await waitFor(() => replies.some((reply) => JSON.stringify(reply).includes("child-permission")))
     expect(JSON.stringify(replies)).toContain('"optionId":"allow"')
     disconnect()
     await waitFor(() => store.listSubagents("root-local").some((row) => row.providerId === "late-child" && row.status === "interrupted"))
     expect(store.listSubagents("root-local").find((row) => row.providerId === "child-agent")?.status).toBe("completed")
     const beforeResume = JSON.stringify(store.getMessages(child.id))
-    for await (const _event of executeTestTurn(adapter, "root-local", { parts: [{ type: "text", text: "resume" }], agent: "build", model: { providerID: "children-test", modelID: "default" }, assistantMessageId: "assistant-2", userMessageId: "user-2" }, "/work")) {}
+    for await (const _event of executeTestTurn(adapter, "root-local", { parts: [{ type: "text", text: "resume" }], agent: "build", model: { providerID: "children-test", modelID: "default" }, assistantMessageId: "assistant-2", userMessageId: "user-2" }, WORK)) {}
     expect(JSON.stringify(store.getMessages(child.id))).toBe(beforeResume)
-    expect(store.listSessions("/work").filter((session) => store.getAgentSessionId(session.id) === "child-agent")).toHaveLength(1)
+    expect(store.listSessions(WORK).filter((session) => store.getAgentSessionId(session.id) === "child-agent")).toHaveLength(1)
 
 
   } finally { await adapter.dispose() }
@@ -113,11 +116,11 @@ test.each([true, false])("subagent negotiation=%s rejects spoofed lineage withou
       reply({ stopReason: "end_turn" })
     } else reply({})
   } })
-  const proc = new ACPProcess("/work", "test", [], "default", () => [], () => {}, () => ({ kind: "stdio", stream: { readable, writable }, metadata: {}, alive: true, dispose() {} }), () => ({}))
+  const proc = new ACPProcess(WORK, "test", [], "default", () => [], () => {}, () => ({ kind: "stdio", stream: { readable, writable }, metadata: {}, alive: true, dispose() {} }), () => ({}))
   try {
     await proc.initialize()
     proc.listenSubagents("root", async (event) => { received.push(event) })
-    await proc.prompt("root", { parts: [{ type: "text", text: "go" }], assistantMessageId: "a", agent: "build", model: { providerID: "test", modelID: "default" } }, () => {}, "/work")
+    await proc.prompt("root", { parts: [{ type: "text", text: "go" }], assistantMessageId: "a", agent: "build", model: { providerID: "test", modelID: "default" } }, () => {}, WORK)
     expect(received).toHaveLength(negotiated ? 2 : 0)
     expect(proc.alive).toBe(true)
     if (negotiated) expect(proc.rootAgentSessionId("child")).toBe("root")

@@ -1,9 +1,13 @@
-import { afterEach, expect, spyOn, test } from "bun:test"
+import { afterEach, expect, setDefaultTimeout, spyOn, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { PiHarnessAdapter } from "./index"
 import { createMemoryRuntimeStore } from "../../stores/memory"
+import { privateWriteBudgetMs } from "../../test-utils/private-write-budget"
+
+// `applyConfig` replaces `auth.json` and `models.json`.
+setDefaultTimeout(privateWriteBudgetMs(2))
 
 /**
  * Pi's profile holds `models.json`, and that file carries the broker
@@ -70,28 +74,25 @@ test("two workspaces with their own store roots never share a models.json", asyn
 
 test("two workspaces with no store root are separated by their workspace ids", async () => {
   delete process.env.PI_CODING_AGENT_DIR
-  // Observed rather than written: the fallback is rooted at the operator's own
-  // home directory, and a test must not write a placeholder into it.
-  const written: string[] = []
-  const mkdir = spyOn(fs, "mkdir").mockImplementation(async () => undefined)
-  const writeFile = spyOn(fs, "writeFile").mockImplementation(async () => undefined)
-  const rename = spyOn(fs, "rename").mockImplementation(async (_from, to) => { written.push(String(to)) })
-  const rm = spyOn(fs, "rm").mockImplementation(async () => undefined)
+  // The fallback is rooted at the operator's own home directory, which the
+  // test points at scratch space rather than writing a placeholder into. Bun's
+  // `os.homedir()` does not read `HOME`, so the function itself is replaced.
+  root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-profile-home-"))
+  const homedir = spyOn(os, "homedir").mockReturnValue(root)
   try {
     const first = await applied({ workspaceId: "ws_a" }, "http://127.0.0.1:2595/bindings/aaa", "placeholder-a")
     const second = await applied({ workspaceId: "ws_b" }, "http://127.0.0.1:2595/bindings/bbb", "placeholder-b")
-    await first.dispose()
-    await second.dispose()
+    try {
+      const models = await modelsFileUnder(path.join(root, ".claxedo", "pi", "agent"))
+      expect(models).toHaveLength(2)
+      expect(new Set(models.map((file) => path.dirname(file))).size).toBe(2)
+    } finally {
+      await first.dispose()
+      await second.dispose()
+    }
   } finally {
-    mkdir.mockRestore()
-    writeFile.mockRestore()
-    rename.mockRestore()
-    rm.mockRestore()
+    homedir.mockRestore()
   }
-
-  const models = [...new Set(written.filter((file) => file.endsWith("models.json")))]
-  expect(models).toHaveLength(2)
-  for (const file of models) expect(file).toContain(path.join(".claxedo", "pi", "agent"))
 })
 
 test("a store root outranks PI_CODING_AGENT_DIR, so env cannot un-scope a workspace", async () => {
