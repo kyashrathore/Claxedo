@@ -63,6 +63,16 @@ const env = {
   CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_NAME: "claxedo-control-plane-staging",
 }
 
+/**
+ * A test's time for its private-file operations: on Windows each
+ * `writePrivateFileAtomic` and each `isOwnerOnlyFile` starts its own PowerShell,
+ * and one write plus one check took 49 s on GitHub's Windows runner. Elsewhere
+ * each is a syscall.
+ */
+function privateFileBudgetMs(operations: number) {
+  return 20_000 + operations * (process.platform === "win32" ? 30_000 : 0)
+}
+
 describe("single-artifact Better Auth D1 release", () => {
   test("accepts only a future millisecond timestamp for the deployed auth descriptor", () => {
     expect(futureUnixMilliseconds({ EXPIRY: "2000" }, "EXPIRY", 1000)).toBe("2000")
@@ -283,7 +293,7 @@ describe("single-artifact Better Auth D1 release", () => {
       requireSecretInventory(inventory, ["BETTER_AUTH_SECRET", "CLOUDFLARE_SANDBOX_API_TOKEN"].filter((name) => !resolved?.names.includes(name))),
     ).not.toThrow()
     expect(() => requireSecretInventory(inventory, ["BETTER_AUTH_SECRET", "CLOUDFLARE_SANDBOX_API_TOKEN"])).toThrow(/missing remote Worker secrets/)
-  })
+  }, privateFileBudgetMs(2))
 
   test("passes the paired recovery epoch to its migration subprocess", () => {
     const release = betterAuthD1ReleaseInputs(env, "staging")
@@ -375,7 +385,7 @@ describe("single-artifact Better Auth D1 release", () => {
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
-  })
+  }, privateFileBudgetMs(3))
 
   test("binds candidate recovery to the exact browser artifact", () => {
     const workerBuildId = `sha256:${"a".repeat(64)}`
