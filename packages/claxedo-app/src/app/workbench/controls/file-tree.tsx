@@ -18,6 +18,7 @@ import {
   type ParentProps,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { DelayedLoading } from "@/ui/controls/delayed-loading"
 import type { WorkspaceFileNode as FileNode } from "@claxedo/workspace-runtime/client"
 import {
   buildAllowedFilter,
@@ -187,6 +188,8 @@ export default function FileTree(props: {
   kinds?: ReadonlyMap<string, Kind>
   draggable?: boolean
   visibleLimit?: number
+  /** Loading episode of the placeholder this tree replaces, so its own placeholder continues that wait. */
+  loadingEpisode?: string
   onFileClick?: (file: FileNode) => void
   onFilePointerEnter?: (file: FileNode) => void
   onFilePointerLeave?: (file: FileNode) => void
@@ -453,17 +456,19 @@ export default function FileTree(props: {
     >
       <Show when={loadingEmpty()}>
         <div data-file-tree-loading class="flex flex-col gap-0.5 p-1" aria-label="Loading files">
-          <For each={Array.from({ length: level === 0 ? 8 : 3 })}>
-            {(_, index) => (
-              <div
-                class="h-6 rounded-md bg-surface-base"
-                style={{
-                  "margin-left": `${Math.max(0, 8 + level * 12)}px`,
-                  width: `${Math.max(46, 82 - index() * 5)}%`,
-                }}
-              />
-            )}
-          </For>
+          <DelayedLoading episode={props.loadingEpisode}>
+            <For each={Array.from({ length: level === 0 ? 8 : 3 })}>
+              {(_, index) => (
+                <div
+                  class="h-6 rounded-md bg-surface-base"
+                  style={{
+                    "margin-left": `${Math.max(0, 8 + level * 12)}px`,
+                    width: `${Math.max(46, 82 - index() * 5)}%`,
+                  }}
+                />
+              )}
+            </For>
+          </DelayedLoading>
         </div>
       </Show>
       <Show when={hiddenBefore() > 0}>

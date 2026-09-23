@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { newSessionProjectRoot } from "./session-new-view-root"
+import { newSessionProjectRoot } from "./session-new-project-root"
 
 describe("newSessionProjectRoot", () => {
   test("keeps synthetic provisioner-placed workspace sessions on the active workspace selector", () => {

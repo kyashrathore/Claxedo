@@ -483,11 +483,6 @@ export const dict = {
   "session.revertDock.expand": "Expandir mensajes revertidos",
   "session.revertDock.restore": "Restaurar mensaje",
 
-  "session.new.title": "Construye lo que quieras",
-  "session.new.worktree.main": "Rama principal",
-  "session.new.worktree.mainWithBranch": "Rama principal ({{branch}})",
-  "session.new.worktree.create": "Crear nuevo árbol de trabajo",
-  "session.new.lastModified": "Última modificación",
 
   "session.header.search.placeholder": "Buscar {{project}}",
   "session.header.searchFiles": "Buscar archivos",

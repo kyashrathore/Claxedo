@@ -668,8 +668,13 @@ export const desktopRendererUnsigned: Policy = {
   // — the compact tab hover card's reads the app entry gained, carried here
   // through the same rail. Owner: `app/workbench/rail`. No new package edge.
   // Both ledgers above landed in one merge on 2026-09-23; the closure was
-  // re-measured over the merged tree. Exact measured 1153 modules /
-  // 58 packages, with no headroom.
+  // re-measured over the merged tree.
+  // -1 module (2026-09-23): `features/session/ui/components/session-new-view.tsx`,
+  // the unrendered empty-session view the app entry dropped.
+  // +1 module (2026-09-23): `ui/controls/delayed-loading.tsx` — the shared
+  // loading-indicator grace and episode provider the app entry gained,
+  // carried here through `AppBaseProviders`. Owner: `ui/controls`. No new
+  // package edge. Exact measured 1153 modules / 58 packages, with no headroom.
   ceilings: { modules: 1153, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",

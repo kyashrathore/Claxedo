@@ -44,7 +44,7 @@ export function SessionLoadingRoot(props: {
       data-session-rendered-user-count="0"
       data-session-info-title={props.title ?? ""}
     >
-      <SessionTimelineSkeleton />
+      <SessionTimelineSkeleton sessionId={props.sessionId} />
     </div>
   )
 }
