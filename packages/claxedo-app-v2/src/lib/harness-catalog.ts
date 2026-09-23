@@ -4,7 +4,7 @@ import {
   isHarnessId,
   HARNESS_TABLE,
 } from "@claxedo/agent-runtime-contract"
-import type { NativeHarnessId } from "@/platform/identity/harness-selection"
+import type { NativeHarnessId } from "@/lib/harness-selection"
 
 /** One harness as this app draws it: the shared record, plus its brand mark. */
 type HarnessEntry = {

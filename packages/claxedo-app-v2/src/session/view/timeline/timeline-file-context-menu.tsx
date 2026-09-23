@@ -1,7 +1,7 @@
 // Pure overlay UI over injected callbacks: path resolution and panel opening
 // stay with the timeline that owns them.
 import { Show } from "solid-js"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { Icon } from "@/ui"
 
 export function TimelineFileContextMenu(props: {
   menu: { x: number; y: number; path: string }

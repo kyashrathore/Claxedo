@@ -1,4 +1,4 @@
-import { isSubagentHostPart } from "@/ui/session-kit"
+import { isSubagentHostPart } from "@/transcript"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 
 /**

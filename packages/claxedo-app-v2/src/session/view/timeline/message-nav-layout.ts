@@ -1,13 +1,13 @@
 import { createSignal, onCleanup, onMount, type Accessor } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
-import { BP_2XL } from "@/ui/controls/breakpoints"
 
+const WIDE_VIEWPORT_MIN_WIDTH = 1536
 const COMPACT_NAV_SAFE_GUTTER = 60
 const TIMELINE_COLUMN_WIDTH = 768
 const TIMELINE_COLUMN_WIDTH_2XL = 880
 
 export const messageNavFits = (paneWidth: number, viewportWidth: number) => {
-  const columnWidth = viewportWidth >= BP_2XL ? TIMELINE_COLUMN_WIDTH_2XL : TIMELINE_COLUMN_WIDTH
+  const columnWidth = viewportWidth >= WIDE_VIEWPORT_MIN_WIDTH ? TIMELINE_COLUMN_WIDTH_2XL : TIMELINE_COLUMN_WIDTH
   return paneWidth >= columnWidth + 2 * COMPACT_NAV_SAFE_GUTTER
 }
 

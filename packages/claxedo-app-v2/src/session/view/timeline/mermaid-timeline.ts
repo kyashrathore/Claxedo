@@ -1,5 +1,5 @@
-import { sanitizeSvg, setMermaidRenderer, setMermaidViewer } from "@/ui/session-kit"
-import { mermaidThemeVariables, renderMermaidSvg } from "@/ui/mermaid"
+import { sanitizeSvg, setMermaidRenderer, setMermaidViewer } from "@/transcript"
+import { mermaidThemeVariables, renderMermaidSvg } from "@/transcript"
 import { createMermaidBackend } from "./mermaid-backend"
 import { openMermaidViewer } from "./markdown-viewer"
 

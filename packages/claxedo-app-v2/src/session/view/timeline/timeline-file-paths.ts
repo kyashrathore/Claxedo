@@ -1,7 +1,7 @@
 import {
   resolveWorkspaceFileFocus,
   type WorkspaceFileFocusTarget,
-} from "@/platform/files/workspace-file-focus"
+} from "@/lib/workspace-file-focus"
 
 // Path chips render opencode mentions as `@path`; strip the mention sigil
 // before resolving. (A path literally starting with `@` — e.g. an npm scope

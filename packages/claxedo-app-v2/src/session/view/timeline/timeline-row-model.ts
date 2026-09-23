@@ -4,8 +4,8 @@
 // message-timeline.data.ts's Timeline.constructMessageRows, alongside the
 // SummaryDiff type referenced here; that import is type-only, so no runtime
 // cycle exists).
-import type { PartGroup } from "@/ui/session-kit"
-import type { SessionErrorClass } from "../onboarding/first-turn-recovery"
+import type { PartGroup } from "@/transcript"
+import type { SessionErrorClass } from "./turn-recovery"
 import type { SummaryDiff } from "./message-timeline.data"
 
 export type TimelineRowMap = {

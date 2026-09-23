@@ -1,6 +1,5 @@
 import { asRecord, readString } from "@/lib/record"
-import type { Platform } from "@/platform/runtime/platform-provider"
-import type { useClaxedoState, usePaneId, useSDK } from "@/features/session/app-ports"
+import type { TimelineFocus, TimelinePlatform } from "./model"
 
 /**
  * A dev server the agent just started is work in progress, not somewhere else:
@@ -10,11 +9,8 @@ import type { useClaxedoState, usePaneId, useSDK } from "@/features/session/app-
 const loopbackHosts: readonly string[] = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]
 
 export type TimelineLinkHost = {
-  workspacePanel: Pick<ReturnType<typeof useClaxedoState>["workspacePanel"], "open">
-  /** Read per open, so a retargeted pane opens against the directory it now holds. */
-  sdk: Pick<ReturnType<typeof useSDK>, "directory">
-  paneId: ReturnType<typeof usePaneId>
-  platform: Pick<Platform, "openLink" | "openPath">
+  openFocus: (focus: TimelineFocus) => void
+  platform: Pick<TimelinePlatform, "openLink" | "openPath">
 }
 
 function osPath(url: URL) {
@@ -30,12 +26,7 @@ function osPath(url: URL) {
  */
 export function createTimelineLinkOpen(host: TimelineLinkHost) {
   const openBrowserTab = (url: string) => {
-    host.workspacePanel.open({
-      workspaceDir: host.sdk.directory.replace(/\/$/, ""),
-      targetPaneId: host.paneId,
-      navigator: null,
-      focus: { kind: "browser", url },
-    })
+    host.openFocus({ kind: "browser", url })
   }
 
   const onOpenLink = (event: Event) => {

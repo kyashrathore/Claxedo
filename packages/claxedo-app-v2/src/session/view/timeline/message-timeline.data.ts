@@ -4,17 +4,17 @@ import {
   parseImageMarkNote,
   readCommentMetadata,
   readImageMarkMetadata,
-} from "@/features/session/data/comment-note"
+} from "@/lib/comment-note"
 import type {
   AgentAssistantMessage as AssistantMessage,
   AgentContentPart as Part,
-  AgentRuntimeStatus as SessionStatus,
   AgentSnapshotFileDiff as SnapshotFileDiff,
 } from "@claxedo/agent-runtime-contract"
+import type { SessionStatus } from "@/server"
 // The row builder reads a user message's `id`, `time` and optional `summary`,
 // all of which the optimistic stub carries, so it takes the projected row and
 // the just-typed turn renders before the runtime echoes it back.
-import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
+import type { TranscriptUserMessage as UserMessage } from "@/transcript"
 import {
   FOLD_MINIMUM,
   assistantMessageSettled,
@@ -26,14 +26,14 @@ import {
   isSubagentToolPart,
   turnFoldDecision,
   type PartRef,
-} from "@/ui/session-kit"
+} from "@/transcript"
 import {
   isTurnAdmissionConflict,
   sessionRecoveryClass,
   sessionRecoveryDescription,
-} from "../onboarding/first-turn-recovery"
-import { stripRelayPrefix } from "../onboarding/provider-error-detail"
-import type { SessionTurnOutcome } from "../data/session-types"
+} from "./turn-recovery"
+import { stripRelayPrefix } from "./provider-error-detail"
+import type { TurnOutcome } from "./model"
 import { TimelineRow } from "./timeline-row-model"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
@@ -101,11 +101,11 @@ export namespace Timeline {
     assistantMessages: AssistantMessage[],
     index: number,
     showReasoning: boolean,
-    status: SessionStatus["type"],
+    status: SessionStatus["kind"],
     isActive: boolean,
     firstTurnRecovery = index === 0,
     isFoldedChoice: (userMessageID: string) => boolean | undefined = () => undefined,
-    lastTurn?: SessionTurnOutcome,
+    lastTurn?: TurnOutcome,
     visibleAssistantMessageIDs?: ReadonlySet<string>,
     priorFoldableCount: (userMessageID: string) => number | undefined = () => undefined,
     isPartExpanded: (partID: string) => boolean = () => false,
@@ -233,7 +233,7 @@ export namespace Timeline {
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
     const partsPending = assistantMessages.some((message) => partsFragment(message.id))
-    const working = isActive && (status === "busy" || status === "retry" || settlePending)
+    const working = isActive && (status === "working" || status === "retrying" || settlePending)
     const fold = turnFoldDecision({
       foldableCount,
       settled,
@@ -330,7 +330,7 @@ export namespace Timeline {
       trailingRef?.messageID === lastAssistantMessage?.id &&
       (trailingGroup.type !== "part" || trailingPart?.type === "tool" || trailingPart?.type === "reasoning")
     const newestOpen = !lastAssistantMessage || !assistantMessageSettled(lastAssistantMessage)
-    if (isActive && (status === "busy" || settlePending) && newestOpen && !error && !trailingGroupIsLive) {
+    if (isActive && (status === "working" || settlePending) && newestOpen && !error && !trailingGroupIsLive) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))
         .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
@@ -344,7 +344,7 @@ export namespace Timeline {
       )
     }
 
-    if (isActive && status === "retry") rows.push(TimelineRow.Retry({ userMessageID: userMessage.id }))
+    if (isActive && status === "retrying") rows.push(TimelineRow.Retry({ userMessageID: userMessage.id }))
 
     const diffs = uniqueSummaryDiffs(userMessage.summary?.diffs)
     if (diffs.length > 0 && (status === "idle" || !isActive)) {
@@ -506,7 +506,7 @@ export namespace Timeline {
 
   export function turnInterrupted(
     assistantMessages: AssistantMessage[],
-    lastTurn?: SessionTurnOutcome,
+    lastTurn?: TurnOutcome,
   ) {
     if (assistantMessages.some(assistantMessageInterrupted)) return true
     if (lastTurn?.status !== "cancelled" || !lastTurn.assistantMessageId) return false
