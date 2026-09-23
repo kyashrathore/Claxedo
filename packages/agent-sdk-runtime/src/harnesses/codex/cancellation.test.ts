@@ -46,18 +46,22 @@ for (const terminateFails of [false, true]) {
         }
       })()
       await started
-      const stopping = goalMode ? adapter.goals!.stop(session.id, fake.directory) : cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex"))
+      // Awaited before `expect`, never through `expect(...).resolves`: on Windows,
+      // Bun 1.3.14's `.resolves` runs timers but not the app-server's stdout pipe
+      // while the promise is pending, so a stop that needs Codex's reply sits
+      // until its deadline (10.0 s measured; 0.2 s under a plain await).
+      const stopped = await (goalMode ? adapter.goals!.stop(session.id, fake.directory) : cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex")))
       if (terminateFails) {
         // Codex named a live terminal for this turn and then refused to
         // terminate it, so the turn's fate upstream is unknown and the
         // terminal is still owned.
-        await expect(stopping).resolves.toMatchObject(goalMode
+        expect(stopped).toMatchObject(goalMode
           ? { ok: false, status: "failed", message: expect.stringContaining("terminal cleanup failed") }
           : { execution: "unknown", cleanup: "owned", error: { code: "provider_unreachable", message: "terminal cleanup failed" } })
       } else {
         // Codex's terminal inventory no longer lists this turn's command, and
         // Codex runs its tools nowhere else, so the turn's resources are clear.
-        await expect(stopping).resolves.toMatchObject(goalMode ? { ok: true, goal: { status: "paused" } } : { execution: "terminal", cleanup: "verified_clear" })
+        expect(stopped).toMatchObject(goalMode ? { ok: true, goal: { status: "paused" } } : { execution: "terminal", cleanup: "verified_clear" })
         expect(await fs.readFile(fake.goalFile + ".terminated", "utf8")).toBe("process-current")
       }
       await turn
@@ -105,8 +109,8 @@ test("a terminal Codex acknowledged terminating and still lists is owned, not cl
     await started
     // Every terminate was acknowledged, so nothing failed — and Codex's own
     // inventory still lists this turn's process, which is what decides.
-    await expect(cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex")))
-      .resolves.toMatchObject({ execution: "terminal", cleanup: "owned" })
+    expect(await cancelAdapterTurn(adapter, executionBinding(session.id, fake.directory, "native:codex")))
+      .toMatchObject({ execution: "terminal", cleanup: "owned" })
     await turn
   } finally {
     await adapter.dispose()
