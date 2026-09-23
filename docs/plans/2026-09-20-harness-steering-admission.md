@@ -11,7 +11,7 @@ Implemented in the current checkout:
 - Direct asynchronous steering also requires a durable queue record. Prompt identities are allocated before admission so recovery keeps the original ID.
 - Runtime publication sends committed turn projections through the shared event hub, independent of the HTTP observer. The HTTP observer no longer republishes the stream. Cancellation retains the runtime subscription contract and publishes its idle status to the shared hub.
 - Removed synthetic user transcript creation on adapter acceptance. Accepted inputs stay pending with an explicitly unconfirmed transcript position. The UI distinguishes dispatching, accepted, and unknown, and disables unsafe controls while preserving hover behavior.
-- Codex sends `clientUserMessageId`. Claude explicitly refuses steering until a correlated provider acknowledgement is implemented. Cursor and ACP return unsupported. Pi acceptance still proves only queue ownership. OpenCode engine-queued input is treated as engine-owned, preventing a second execution by the outer queue.
+- Codex sends `clientUserMessageId`. Claude writes the steer into the held-open stdin with a fresh `uuid` and reports acceptance only when the CLI echoes it back under `--replay-user-messages` (passed through the SDK's `extraArgs`, owned by `harnesses/claude/turn-input.ts`); a query that ends or is aborted without the echo declines it, and one that fails leaves it unknown. Cursor and ACP return unsupported. Pi acceptance still proves only queue ownership. OpenCode engine-queued input is treated as engine-owned, preventing a second execution by the outer queue.
 
 ### Queue identity and turn-fencing sub-slice
 
@@ -69,7 +69,7 @@ Still required (implementation owner: the runtime/adapters/UI work in this propo
 1. The workspace runtime executor migration is complete as described above. Extending the standalone `AgentRuntime` facade and its memory/SQLite stores with the same delivery API remains outside this workspace slice; it must reuse this owner rather than introduce a second executor.
 2. Persist provider receipts, execution identities, revisions, and incorporation evidence atomically with transcript placement. Wire provider replay/reconciliation, including incorporation before acknowledgement and late evidence after execution completion. Current pending states do not yet reconcile themselves from provider evidence.
 3. Preserve native assistant item boundaries, normalize authoritative ordering, and use one revision-aware reconciler for live view, snapshots, pagination, and reconnect. **Exact X → Y → S placement is not implemented.** Accepted rows can remain pending until this work is completed.
-4. Complete Claude receipt handling and Pi correlation support, Codex user-item ingestion/order verification, and OpenCode inbox event ingestion. No provider-specific live acceptance claim has been made.
+4. Complete Pi correlation support, Codex user-item ingestion/order verification, and OpenCode inbox event ingestion. No provider-specific live acceptance claim has been made.
 5. Run the full failure/recovery matrix through real providers and the live UI. Automated transport/runtime fixtures are not live provider proof.
 
 Verification checkpoint:

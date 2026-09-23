@@ -31,6 +31,18 @@ export type WorkspacePanelFocus =
   | { kind: "process"; processId: string; version: number }
   | { kind: "context"; sessionId: string; version: number }
   | { kind: "subagent"; sessionId: string; label?: string; description?: string; version: number }
+  | (WorkspacePanelPlanFocusTarget & { version: number })
+/**
+ * A plan the agent proposed, carried whole: its file sits in the harness's own
+ * config directory, which no workspace file read can reach.
+ */
+export type WorkspacePanelPlanFocusTarget = {
+  kind: "plan"
+  sessionId: string
+  planId: string
+  title?: string
+  markdown: string
+}
 export type WorkspacePanelFocusTarget =
   | { kind: "review" }
   | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number; reviewMode?: ReviewMode }
@@ -38,6 +50,7 @@ export type WorkspacePanelFocusTarget =
   | { kind: "process"; processId: string }
   | { kind: "context"; sessionId: string }
   | { kind: "subagent"; sessionId: string; label?: string; description?: string }
+  | WorkspacePanelPlanFocusTarget
 export type WorkspacePanelActivityTarget = {
   subjectType: string
   subjectId: string

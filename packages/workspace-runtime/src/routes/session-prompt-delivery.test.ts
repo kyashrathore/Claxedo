@@ -314,7 +314,12 @@ test("an explicit refusal reaches HTTP and preserves the queue", async () => {
   const seq = queue.host.list("session_1")[0].seq
   const response = await app.request(`http://localhost/session/session_1/queue/${seq}/steer`, { method: "POST" })
   expect(response.status).toBe(409)
-  expect(await response.json()).toMatchObject({ ok: false, status: "rejected", message: "Provider declined steering" })
+  expect(await response.json()).toMatchObject({
+    ok: false,
+    status: "rejected",
+    message: "Provider declined steering",
+    error: { code: "queue_rejected", message: "Provider declined steering" },
+  })
   expect(queue.host.list("session_1")[0].messageId).toBe("refused")
 })
 

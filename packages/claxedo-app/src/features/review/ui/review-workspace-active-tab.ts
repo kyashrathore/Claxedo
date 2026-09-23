@@ -7,6 +7,7 @@ export type ReviewWorkspaceActiveTab =
   | { kind: "context"; label: string }
   | { kind: "process"; label: string }
   | { kind: "subagent"; label: string; description?: string }
+  | { kind: "plan"; label: string }
 
 const [activeTab, setActiveTabInternal] = createSignal<ReviewWorkspaceActiveTab | undefined>()
 

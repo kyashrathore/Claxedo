@@ -1,5 +1,6 @@
 const PROCESS_SECTION_PREFIX = "process:"
 const SUBAGENT_SECTION_PREFIX = "subagent:"
+const PLAN_SECTION_PREFIX = "plan:"
 
 export type ReviewWorkspaceTab =
   | { id: "review"; kind: "review" }
@@ -25,6 +26,8 @@ export type ReviewWorkspaceTab =
     label?: string
     description?: string
   }
+  /** A plan the agent proposed in `sessionId`; it belongs to that conversation as a subagent tab does. */
+  | { id: string; kind: "plan"; sessionId: string; planId: string; title?: string; markdown: string }
 
 export const REVIEW_TAB_ID = "review"
 export const CONTEXT_TAB_ID = "context"
@@ -92,27 +95,61 @@ export function openSubagentWorkspaceTab(input: {
   }
 }
 
+export function planTabId(planId: string) {
+  return `${PLAN_SECTION_PREFIX}${planId}`
+}
+
+export function openPlanWorkspaceTab(input: {
+  tabs: readonly ReviewWorkspaceTab[]
+  sessionId: string
+  planId: string
+  title?: string
+  markdown: string
+}) {
+  const id = planTabId(input.planId)
+  const tab = {
+    id,
+    kind: "plan",
+    sessionId: input.sessionId,
+    planId: input.planId,
+    ...(input.title ? { title: input.title } : {}),
+    markdown: input.markdown,
+  } satisfies ReviewWorkspaceTab
+  const index = input.tabs.findIndex((item) => item.id === id)
+  if (index === -1) return { tabs: [...input.tabs, tab], activeTabId: id, added: true }
+  const existing = input.tabs[index]
+  if (existing?.kind === "plan" && existing.markdown === tab.markdown && existing.title === tab.title) {
+    return { tabs: input.tabs, activeTabId: id, added: false }
+  }
+  return { tabs: input.tabs.map((item, itemIndex) => (itemIndex === index ? tab : item)), activeTabId: id, added: false }
+}
+
 /**
- * The tabs the pane may show for `sessionId`. Every kind but `subagent` belongs to
- * the workspace and always shows; a subagent tab belongs to the conversation that
- * spawned it, so it is retained but hidden while another session holds the pane.
+ * The tabs the pane may show for `sessionId`. Subagent and plan tabs belong to the
+ * conversation that produced them, so they are retained but hidden while another
+ * session holds the pane; every other kind belongs to the workspace and always shows.
  */
 export function reviewWorkspaceTabsForSession(input: {
   tabs: readonly ReviewWorkspaceTab[]
   sessionId: string
 }): ReviewWorkspaceTab[] {
-  return input.tabs.filter((tab) => tab.kind !== "subagent" || tab.parentSessionId === input.sessionId)
+  return input.tabs.filter((tab) => {
+    if (tab.kind === "subagent") return tab.parentSessionId === input.sessionId
+    if (tab.kind === "plan") return tab.sessionId === input.sessionId
+    return true
+  })
 }
 
-/** Drop the deleted session's own transcript tab and every transcript it spawned. */
-export function closeSubagentWorkspaceTabsForSession(input: {
+/** Drop the deleted session's own transcript tab, every transcript it spawned, and its plans. */
+export function closeSessionWorkspaceTabs(input: {
   tabs: readonly ReviewWorkspaceTab[]
   activeTabId: string
   sessionId: string
 }) {
-  const doomed = input.tabs.filter((tab) =>
-    tab.kind === "subagent" && (tab.sessionId === input.sessionId || tab.parentSessionId === input.sessionId)
-  )
+  const doomed = input.tabs.filter((tab) => {
+    if (tab.kind === "subagent") return tab.sessionId === input.sessionId || tab.parentSessionId === input.sessionId
+    return tab.kind === "plan" && tab.sessionId === input.sessionId
+  })
   if (doomed.length === 0) return { tabs: input.tabs, activeTabId: input.activeTabId, removed: false }
   let tabs = input.tabs
   let activeTabId = input.activeTabId

@@ -2642,11 +2642,11 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, id, "prompt")
       if (guarded) return guarded
       const action = queuedPromptAction(c.req.param("action"), await boundedJsonBody(c))
-      if (!action) return c.json({ error: "Unknown queue action" }, 400)
+      if (!action) return c.json(errorBody("queue_action_unknown", "Unknown queue action"), 400)
       const result = await opts.queuedPrompts?.control(id, Number(c.req.param("seq")), action)
-      if (!result) return c.json({ error: "Queue is unavailable" }, 409)
+      if (!result) return c.json(errorBody("queue_unavailable", "Queue is unavailable"), 409)
       if (result.ok) return c.json(result)
-      return c.json({ ...result, error: result.message }, result.status === "pending" || result.status === "unknown" ? 202 : result.status === "provider_owned" ? 423 : 409)
+      return c.json({ ...result, ...errorBody(`queue_${result.status}`, result.message) }, result.status === "pending" || result.status === "unknown" ? 202 : result.status === "provider_owned" ? 423 : 409)
     })
     .post("/session/:id/prompt_async", async (c) => {
       const id = c.req.param("id")

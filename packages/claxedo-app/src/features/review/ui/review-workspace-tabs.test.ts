@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   REVIEW_TAB,
-  closeSubagentWorkspaceTabsForSession,
+  closeSessionWorkspaceTabs,
+  openPlanWorkspaceTab,
   closeWorkspaceTab,
   openBrowserWorkspaceTab,
   openFileWorkspaceTab,
@@ -184,7 +185,7 @@ describe("review workspace tabs", () => {
       { id: "src/a.ts", kind: "file", tabId: "src/a.ts" },
     ]
 
-    const result = closeSubagentWorkspaceTabsForSession({
+    const result = closeSessionWorkspaceTabs({
       tabs,
       activeTabId: "subagent:ses_a",
       sessionId: "ses_parent",
@@ -201,11 +202,36 @@ describe("review workspace tabs", () => {
       { id: "subagent:ses_a", kind: "subagent", sessionId: "ses_a", parentSessionId: "ses_parent" },
     ]
 
-    const result = closeSubagentWorkspaceTabsForSession({ tabs, activeTabId: "review", sessionId: "ses_zzz" })
+    const result = closeSessionWorkspaceTabs({ tabs, activeTabId: "review", sessionId: "ses_zzz" })
 
     expect(result.removed).toBe(false)
     expect(result.tabs).toBe(tabs)
     expect(result.activeTabId).toBe("review")
+  })
+
+  test("opening a plan adds one tab per plan and refreshes it when the plan is reopened with new text", () => {
+    const first = openPlanWorkspaceTab({ tabs: [REVIEW_TAB], sessionId: "ses_a", planId: "toolu_1", title: "Fix", markdown: "# Fix" })
+    expect(first.added).toBe(true)
+    expect(first.activeTabId).toBe("plan:toolu_1")
+
+    const same = openPlanWorkspaceTab({ tabs: first.tabs, sessionId: "ses_a", planId: "toolu_1", title: "Fix", markdown: "# Fix" })
+    expect(same).toEqual({ tabs: first.tabs, activeTabId: "plan:toolu_1", added: false })
+
+    const edited = openPlanWorkspaceTab({ tabs: first.tabs, sessionId: "ses_a", planId: "toolu_1", title: "Fix", markdown: "# Fix\n\nmore" })
+    expect(edited.added).toBe(false)
+    expect(edited.tabs).toHaveLength(2)
+    expect(edited.tabs[1]).toMatchObject({ kind: "plan", markdown: "# Fix\n\nmore" })
+  })
+
+  test("a plan tab shows only for its own session and closes with it", () => {
+    const tabs = openPlanWorkspaceTab({ tabs: [REVIEW_TAB], sessionId: "ses_a", planId: "toolu_1", markdown: "# P" }).tabs
+
+    expect(reviewWorkspaceTabsForSession({ tabs, sessionId: "ses_a" }).map((tab) => tab.id)).toEqual(["review", "plan:toolu_1"])
+    expect(reviewWorkspaceTabsForSession({ tabs, sessionId: "ses_b" }).map((tab) => tab.id)).toEqual(["review"])
+
+    const closed = closeSessionWorkspaceTabs({ tabs, activeTabId: "plan:toolu_1", sessionId: "ses_a" })
+    expect(closed.tabs.map((tab) => tab.id)).toEqual(["review"])
+    expect(closed.activeTabId).toBe("review")
   })
 
   test("a subagent tab id cannot collide with a file tab for a path of the same name", () => {

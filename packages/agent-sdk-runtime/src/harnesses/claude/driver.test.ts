@@ -107,48 +107,24 @@ describe("Claude SDK driver", () => {
     }
   })
 
-  test("refuses a mid-turn steer rather than writing a second message into the open query", async () => {
-    const prompts: unknown[] = []
-    const lifecycle = createSessionTurnLifecycle<ActiveTurn>()
-    let endTurn!: () => void
-    const turnClosed = new Promise<void>((resolve) => { endTurn = resolve })
-    const host = {
-      lifecycle: () => lifecycle, pendingPermissions: new Map(), pendingQuestions: new Map(),
-      bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
-      getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
-      getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
-      updatePermissionState() {},
-    } as unknown as SdkRuntimeDriverHost
-    const running = createClaudeSdkDriver(host, {
-      executable: () => "/fake/claude",
-      query: ((request: { prompt: unknown }) => {
-        prompts.push(request.prompt)
-        const stream = (async function* () {
-          await turnClosed
-          yield {
-            type: "result", subtype: "success", uuid: "result-1", session_id: "claude-sdk:session-1",
-            is_error: false, usage: { input_tokens: 1, output_tokens: 1 }, modelUsage: {},
-          }
-        })()
-        return Object.assign(stream, { close() {} }) as unknown as Query
-      }) as never,
-    }).runTurn({
-      sessionId: "session-1",
-      getAgentSessionId: () => "claude-sdk:session-1",
-      input: { parts: [{ type: "text", text: "start the work" }], assistantMessageId: "assistant-1", agent: "build", model: { providerID: "claude", modelID: "opus" } },
-      directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
-      observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
-    } as unknown as SdkRuntimeTurnInput)
+  test("accepts a mid-turn steer only once the CLI replays it", async () => {
+    const turn = steeringTurn({ replay: true })
+    const steer = await waitForSteer(turn.lifecycle, "session-1")
+    expect(await steer(steeredPrompt)).toEqual({ ok: true })
+    expect(turn.seen.options).toMatchObject({ extraArgs: { "replay-user-messages": null } })
+    expect(turn.seen.steered.map((message) => message.uuid)).toHaveLength(1)
+    turn.end()
+    await turn.running
+  })
 
-    const steer = await waitForSteer(lifecycle, "session-1")
-    expect(await steer({ parts: [{ type: "text", text: "also update the readme" }], assistantMessageId: "assistant-2", agent: "build", model: { providerID: "claude", modelID: "opus" } }))
-      .toMatchObject({ ok: false, status: "unsupported" })
-
-    const input = (prompts[0] as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
-    expect(await promptedText(input)).toBe("start the work")
-    endTurn()
-    await running
-    expect(await input.next()).toMatchObject({ done: true })
+  test("declines a steer the CLI took from stdin but never replayed before the query ended", async () => {
+    const turn = steeringTurn({ replay: false })
+    const steer = await waitForSteer(turn.lifecycle, "session-1")
+    const answer = steer(steeredPrompt)
+    await turn.written
+    turn.end()
+    await turn.running
+    expect(await answer).toMatchObject({ ok: false, status: "declined" })
   })
 
   test("keeps a prompt with no attachments a plain string", () => {
@@ -551,6 +527,54 @@ async function turnModelOption(modelID: string) {
   return calls.at(-1)!.options!.model
 }
 
+const steeredPrompt = { parts: [{ type: "text" as const, text: "also update the readme" }], assistantMessageId: "assistant-2", agent: "build", model: { providerID: "claude", modelID: "opus" } }
+
+/** A query that reads the opening and one steered message, echoing the steer as the CLI's replay when asked to. */
+function steeringTurn(opts: { replay: boolean }) {
+  const lifecycle = createSessionTurnLifecycle<ActiveTurn>()
+  const seen: { options?: unknown; steered: SDKUserMessage[] } = { steered: [] }
+  let end!: () => void
+  const turnClosed = new Promise<void>((resolve) => { end = resolve })
+  let markWritten!: () => void
+  const written = new Promise<void>((resolve) => { markWritten = resolve })
+  const host = {
+    lifecycle: () => lifecycle, pendingPermissions: new Map(), pendingQuestions: new Map(),
+    bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
+    getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+    getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+    updatePermissionState() {},
+  } as unknown as SdkRuntimeDriverHost
+  const running = createClaudeSdkDriver(host, {
+    executable: () => "/fake/claude",
+    query: ((request: { prompt: AsyncIterable<SDKUserMessage>; options: unknown }) => {
+      seen.options = request.options
+      const input = request.prompt[Symbol.asyncIterator]()
+      const stream = (async function* () {
+        await input.next()
+        const steered = await input.next()
+        if (!steered.done) {
+          seen.steered.push(steered.value)
+          markWritten()
+          if (opts.replay) yield { ...steered.value, session_id: "claude-sdk:session-1", isReplay: true }
+        }
+        await turnClosed
+        yield {
+          type: "result", subtype: "success", uuid: "result-1", session_id: "claude-sdk:session-1",
+          is_error: false, usage: { input_tokens: 1, output_tokens: 1 }, modelUsage: {},
+        }
+      })()
+      return Object.assign(stream, { close() {} }) as unknown as Query
+    }) as never,
+  }).runTurn({
+    sessionId: "session-1",
+    getAgentSessionId: () => "claude-sdk:session-1",
+    input: { parts: [{ type: "text", text: "start the work" }], assistantMessageId: "assistant-1", agent: "build", model: { providerID: "claude", modelID: "opus" } },
+    directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+    observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
+  } as unknown as SdkRuntimeTurnInput)
+  return { lifecycle, seen, written, running, end }
+}
+
 async function waitForSteer(lifecycle: ReturnType<typeof createSessionTurnLifecycle<ActiveTurn>>, sessionId: string) {
   for (let attempt = 0; attempt < 200; attempt++) {
     const steer = lifecycle.get(sessionId)?.steer
@@ -558,14 +582,6 @@ async function waitForSteer(lifecycle: ReturnType<typeof createSessionTurnLifecy
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
   throw new Error("the turn never accepted steering")
-}
-
-async function promptedText(input: AsyncIterator<SDKUserMessage>) {
-  const next: IteratorResult<SDKUserMessage> = await input.next()
-  const content = next.value?.message.content
-  if (typeof content === "string") return content
-  const block = content?.find((part: { type: string }) => part.type === "text")
-  return block?.type === "text" ? block.text : undefined
 }
 
 const brokerProjection = {
