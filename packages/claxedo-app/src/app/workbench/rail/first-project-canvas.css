@@ -15,8 +15,6 @@
 
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
   height: 100%;
   min-height: 0;
   overflow-y: auto;
@@ -25,12 +23,19 @@
   isolation: isolate;
 }
 
+/*
+ * Centred by auto margins rather than the container's alignment: a flex item
+ * centred by `justify-content` overflows its container on both ends when it
+ * is taller, and the top end cannot be scrolled to. Margins keep a short card
+ * centred and let a tall one start at the top.
+ */
 .first-project-content {
   position: relative;
   z-index: 1;
   display: flex;
   width: 100%;
   max-width: 35rem;
+  margin: auto;
   flex-direction: column;
 }
 
