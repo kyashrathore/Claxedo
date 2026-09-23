@@ -6,7 +6,7 @@ import { columnInfo, hasColumn, hasIndex, hasTable, type SqliteSchemaReader } fr
  * stored fingerprint and forces one full repair pass per database even when
  * the schema itself has not changed.
  */
-export const REPAIR_VERSION = 5
+export const REPAIR_VERSION = 7
 
 type SqliteInstance = SqliteSchemaReader & {
   exec(sql: string): unknown
@@ -101,7 +101,8 @@ const sqls = [
     \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
     \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`native_session_id\` text, \`workspace_id\` text,
     \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
-    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`quality_json\` text NOT NULL,
+    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`cache_write_1h_tokens\` integer,
+    \`quality_json\` text NOT NULL,
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
   )`,
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_revision_observed_idx` ON `claxedo_usage_turn_revision` (`observed_at`)",
@@ -112,20 +113,24 @@ const sqls = [
     \`status\` text NOT NULL, \`location\` text NOT NULL, \`harness\` text NOT NULL,
     \`provider_id\` text NOT NULL, \`model_id\` text NOT NULL, \`native_session_id\` text, \`workspace_id\` text,
     \`input_tokens\` integer, \`output_tokens\` integer, \`reasoning_tokens\` integer,
-    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`quality_json\` text NOT NULL,
+    \`cache_read_tokens\` integer, \`cache_write_tokens\` integer, \`cache_write_1h_tokens\` integer,
+    \`quality_json\` text NOT NULL,
     PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`)
   )`,
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_observed_idx` ON `claxedo_usage_turn_current` (`observed_at`)",
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_current_workspace_idx` ON `claxedo_usage_turn_current` (`workspace_id`, `observed_at`)",
-  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_outbox\` (
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_owner\` (
     \`host_id\` text NOT NULL, \`session_ref\` text NOT NULL, \`message_id\` text NOT NULL,
-    \`revision\` integer NOT NULL, \`payload_hash\` text NOT NULL, \`org_id\` text, \`user_id\` text,
-    \`state\` text NOT NULL DEFAULT 'pending', \`attempts\` integer NOT NULL DEFAULT 0,
-    \`created_at\` integer NOT NULL, \`updated_at\` integer NOT NULL,
-    PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`, \`revision\`)
+    \`org_id\` text NOT NULL, \`user_id\` text NOT NULL, \`turn_id\` text,
+    PRIMARY KEY (\`host_id\`, \`session_ref\`, \`message_id\`)
   )`,
-  "CREATE INDEX IF NOT EXISTS `claxedo_usage_outbox_state_created_idx` ON `claxedo_usage_outbox` (`state`, `created_at`)",
-  "CREATE INDEX IF NOT EXISTS `claxedo_usage_outbox_tenant_state_created_idx` ON `claxedo_usage_outbox` (`org_id`, `user_id`, `state`, `created_at`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_owner_account_idx` ON `claxedo_usage_turn_owner` (`org_id`, `user_id`)",
+  "CREATE INDEX IF NOT EXISTS `claxedo_usage_turn_owner_turn_idx` ON `claxedo_usage_turn_owner` (`host_id`, `session_ref`, `turn_id`)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_usage_turn_meter_state\` (
+    \`session_id\` text NOT NULL, \`message_id\` text NOT NULL,
+    \`streams_json\` text NOT NULL, \`observation_keys_json\` text NOT NULL,
+    PRIMARY KEY (\`session_id\`, \`message_id\`)
+  )`,
   "CREATE TABLE IF NOT EXISTS `claxedo_usage_source_coverage` (`source` text PRIMARY KEY NOT NULL, `started_at` integer NOT NULL)",
   `CREATE TABLE IF NOT EXISTS \`claxedo_machine_login_usage\` (
     \`harness\` text NOT NULL, \`account\` text NOT NULL,
@@ -144,7 +149,8 @@ const tabs = [
   "claxedo_channel_run_audit",
   "claxedo_usage_turn_revision",
   "claxedo_usage_turn_current",
-  "claxedo_usage_outbox",
+  "claxedo_usage_turn_owner",
+  "claxedo_usage_turn_meter_state",
   "claxedo_usage_source_coverage",
   "claxedo_machine_login_usage",
 ] as const
@@ -485,12 +491,44 @@ function ensureChannelIdentityVersionColumns(db: SqliteInstance, out: string[]) 
   }
 }
 
-function ensureUsageNativeSessionColumns(db: SqliteInstance, out: string[]) {
+function ensureUsageColumns(db: SqliteInstance, out: string[]) {
   for (const table of ["claxedo_usage_turn_revision", "claxedo_usage_turn_current"] as const) {
-    if (!hasTable(db, table) || hasColumn(db, table, "native_session_id")) continue
-    db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`native_session_id\` text`)
-    out.push(`${table}.native_session_id`)
+    if (!hasTable(db, table)) continue
+    for (const [column, type] of [["native_session_id", "text"], ["cache_write_1h_tokens", "integer"]] as const) {
+      if (hasColumn(db, table, column)) continue
+      db.exec(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${type}`)
+      out.push(`${table}.${column}`)
+    }
   }
+}
+
+/**
+ * Carry the owners a surviving `claxedo_usage_outbox` stamped into
+ * `claxedo_usage_turn_owner`, then drop it, the way the migration that
+ * introduced the owner table does. Without this a database whose journal
+ * marked that migration applied while the old table lived on would read every
+ * signed member's turns as the machine's.
+ */
+function retireUsageOutbox(db: SqliteInstance, out: string[]) {
+  if (!hasTable(db, "claxedo_usage_outbox")) return
+  if (hasColumn(db, "claxedo_usage_outbox", "org_id") && hasColumn(db, "claxedo_usage_outbox", "user_id")) {
+    db.exec(`
+      INSERT OR IGNORE INTO \`claxedo_usage_turn_owner\` (\`host_id\`, \`session_ref\`, \`message_id\`, \`org_id\`, \`user_id\`)
+      SELECT \`host_id\`, \`session_ref\`, \`message_id\`, \`org_id\`, \`user_id\`
+      FROM \`claxedo_usage_outbox\` AS \`stamped\`
+      WHERE \`org_id\` IS NOT NULL AND \`user_id\` IS NOT NULL
+        AND \`revision\` = (
+          SELECT max(\`revision\`) FROM \`claxedo_usage_outbox\` AS \`later\`
+          WHERE \`later\`.\`host_id\` = \`stamped\`.\`host_id\`
+            AND \`later\`.\`session_ref\` = \`stamped\`.\`session_ref\`
+            AND \`later\`.\`message_id\` = \`stamped\`.\`message_id\`
+            AND \`later\`.\`org_id\` IS NOT NULL
+            AND \`later\`.\`user_id\` IS NOT NULL
+        )
+    `)
+  }
+  db.exec("DROP TABLE `claxedo_usage_outbox`")
+  out.push("claxedo_usage_outbox.retired")
 }
 
 export function repair(db: SqliteInstance) {
@@ -526,7 +564,8 @@ export function repair(db: SqliteInstance) {
   ensureNetworkPolicyHarnessColumn(db, out)
   ensureProviderCredentialColumns(db, out)
   ensureWorkspaceLeaseDriverColumns(db, out)
-  ensureUsageNativeSessionColumns(db, out)
+  ensureUsageColumns(db, out)
+  retireUsageOutbox(db, out)
   ensureChannelIdentityVersionColumns(db, out)
   return out
 }

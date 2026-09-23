@@ -1,7 +1,7 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { monotonePath } from "@/ui/charts/monotone-path"
 import type { UnifiedUsageResponse, UsageChartSeries, UsageCost, UsageSeries } from "../data/usage-api"
-import { UsageBrandLabel, usageBrand } from "./usage-brand"
+import { UsageBrandLabel, noReportedUsageLabel, usageBrand } from "./usage-brand"
 
 const WIDTH = 960
 const HEIGHT = 260
@@ -45,6 +45,8 @@ export function UsageChart(props: {
   cost?: UsageCost
   metric: "tokens" | "cost"
   range: UnifiedUsageResponse["range"]
+  /** Series whose every turn reported no token usage, which the legend labels instead of drawing as zero. */
+  silentSeries?: ReadonlySet<string>
 }) {
   const [activeIndex, setActiveIndex] = createSignal<number>()
   const rows = createMemo(() => {
@@ -200,7 +202,16 @@ export function UsageChart(props: {
           </h3>
         </div>
         <div class="workspace-data-legend usage-chart-series" aria-label="Chart series">
-          <For each={rows()}>{(row) => <UsageBrandLabel value={row.value} label={row.label} />}</For>
+          <For each={rows()}>
+            {(row) => (
+              <Show when={props.silentSeries?.has(row.value)} fallback={<UsageBrandLabel value={row.value} label={row.label} />}>
+                <span class="usage-chart-series-silent">
+                  <UsageBrandLabel value={row.value} label={row.label} />
+                  <small>{noReportedUsageLabel(row.value, row.label)}</small>
+                </span>
+              </Show>
+            )}
+          </For>
         </div>
       </div>
       <Show when={dates().length > 0} fallback={<div class="usage-chart-empty">No measured usage in this range.</div>}>

@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => ({
       },
       status: "available" as const,
       coverage: [],
-      unclassified: 0,
+      unclassifiedRequests: 0,
     },
     total: {
       totals: { turnCount: 2, input: 100, output: 20, reasoning: 5, cacheRead: 3, cacheWrite: 0, unknownCategories: 1 },
@@ -66,7 +66,6 @@ const mocks = vi.hoisted(() => ({
       next: "provider-next",
     },
     modelBreakdown: { dimension: "model", rows: [] },
-    sync: { attempted: 0, delivered: 0, conflicts: 0, pending: 0 },
   })),
 }))
 
@@ -154,6 +153,118 @@ describe("UsageDashboard", () => {
       )
     } finally {
       vi.useRealTimers()
+      mocks.fetchUnifiedUsage.mockImplementation(answer)
+    }
+  })
+
+  test("a view drawn without the account's cloud turns says why in one line, and a complete one says nothing", async () => {
+    const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
+    const unavailable = 'Cloud usage is unavailable: operation "usage.cloudFacts" failed: 503'
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => {
+      const response = await answer(request)
+      return { ...response, claxedo: { ...response.claxedo, status: "degraded" as const, scope: "local" as const, error: unavailable } }
+    })
+    try {
+      renderDashboard()
+      fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+      expect(await screen.findByText(unavailable)).toBeVisible()
+      expect(screen.queryByText(/Sign in to include/)).not.toBeInTheDocument()
+      expect(screen.getByText("128 Claxedo tokens in range")).toBeVisible()
+    } finally {
+      mocks.fetchUnifiedUsage.mockImplementation(answer)
+    }
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => {
+      const response = await answer(request)
+      return { ...response, claxedo: { ...response.claxedo, scope: "local" as const } }
+    })
+    try {
+      cleanup()
+      renderDashboard({ offerCloudSignIn: true })
+      fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+      expect(await screen.findByText("Claxedo usage from this machine. Sign in to include your cloud usage."))
+        .toBeVisible()
+      // A browser, a self-hosted server, or a build with no account client:
+      // signing in cannot bring cloud turns, so nothing suggests it.
+      cleanup()
+      renderDashboard()
+      fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+      await screen.findByRole("heading", { name: "By provider" })
+      expect(screen.queryByText(/Sign in to include/)).not.toBeInTheDocument()
+    } finally {
+      mocks.fetchUnifiedUsage.mockImplementation(answer)
+    }
+    cleanup()
+    renderDashboard()
+    fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+    await screen.findByRole("heading", { name: "By provider" })
+    expect(screen.queryByText(/Cloud usage/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Sign in to include/)).not.toBeInTheDocument()
+  })
+
+  test("a row of turns that reported no token usage names its agent instead of drawing zero, and its turns still count", async () => {
+    const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => {
+      const response = await answer(request)
+      const silent = {
+        value: "cursor",
+        label: "cursor",
+        turnCount: 3,
+        input: 0,
+        output: 0,
+        reasoning: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        unknownCategories: 15,
+        unavailableTurnCount: 3,
+        estimatedUsd: 0,
+        pricedTokens: 0,
+        unpricedTokens: 0,
+        status: "unavailable" as const,
+      }
+      const daily = (input: number) => [{ date: "2026-09-23", input, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 }]
+      return {
+        ...response,
+        claxedo: { ...response.claxedo, totals: { ...response.claxedo.totals, turnCount: 5 } },
+        breakdown: { dimension: "provider" as const, rows: [...response.breakdown.rows, silent] },
+        chart: {
+          dimension: "provider",
+          series: [
+            { value: "openai", label: "OpenAI", daily: daily(100) },
+            { value: "cursor", label: "cursor", daily: daily(0) },
+          ],
+        },
+      }
+    })
+    try {
+      renderDashboard()
+      fireEvent.click(screen.getByRole("button", { name: "Usage through Claxedo" }))
+      const table = await screen.findByRole("table", { name: "Usage grouped by provider" })
+      const row = [...table.querySelectorAll('[role="row"]')].find((item) => item.textContent?.includes("cursor"))!
+      expect(row).toHaveTextContent("Cursor doesn't report token usage")
+      expect(row).not.toHaveTextContent("$0.00")
+      expect(screen.getByLabelText("Chart series")).toHaveTextContent("Cursor doesn't report token usage")
+      expect(screen.getByText("Cursor doesn't report token usage · 3 turns")).toBeVisible()
+      const turns = [...screen.getByLabelText("Token category totals").children].find((item) => item.textContent?.startsWith("Turns"))
+      expect(turns).toHaveTextContent("5")
+    } finally {
+      mocks.fetchUnifiedUsage.mockImplementation(answer)
+    }
+  })
+
+  test("Total says how many requests of this machine's history it cannot attribute", async () => {
+    const answer = mocks.fetchUnifiedUsage.getMockImplementation()!
+    mocks.fetchUnifiedUsage.mockImplementation(async (request) => {
+      const response = await answer(request)
+      return { ...response, externalLocal: { ...response.externalLocal, unclassifiedRequests: 4 } }
+    })
+    try {
+      renderDashboard()
+      fireEvent.click(screen.getByRole("button", { name: "Total local usage" }))
+      expect(await screen.findByText(
+        "4 requests in this machine's history are counted in Total without knowing whether Claxedo made them.",
+      )).toBeVisible()
+      expect(screen.queryByText(/local events/)).not.toBeInTheDocument()
+    } finally {
       mocks.fetchUnifiedUsage.mockImplementation(answer)
     }
   })

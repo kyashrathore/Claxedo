@@ -82,11 +82,11 @@ describe("repair gate", () => {
   test("schema drift re-runs repair in full", () => {
     const first = boot()
     plantDriftedCredential(first)
-    first.exec("DROP TABLE claxedo_usage_outbox")
+    first.exec("DROP TABLE claxedo_usage_turn_owner")
 
     const second = reboot()
 
-    expect(hasTable(second, "claxedo_usage_outbox")).toBe(true)
+    expect(hasTable(second, "claxedo_usage_turn_owner")).toBe(true)
     expect(credentialOrg(second)).toBe("__local__")
   })
 

@@ -4,6 +4,8 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { UsageDashboard } from "@/features/usage/ui/usage-dashboard"
 import { useClaxedoEventsOptional } from "@/app/integrations/claxedo-events"
+import { useAccountSignInOffered } from "@/app/composition/product-ui-flags"
+import { usePlatform } from "@/platform/runtime/platform-provider"
 
 /**
  * The control-plane news the Usage-limits view re-reads on: the quota doorbell
@@ -33,6 +35,8 @@ function useQuotaChanges() {
 export const DialogUsage: Component = () => {
   const dialog = useDialog()
   const quotaChanges = useQuotaChanges()
+  const platform = usePlatform()
+  const signInOffered = useAccountSignInOffered()
   return (
     <Dialog
       size="x-large"
@@ -46,7 +50,7 @@ export const DialogUsage: Component = () => {
         <span>Usage</span>
         <button type="button" aria-label="Close usage" onClick={() => dialog.close()}><Icon name="close" size="small" /></button>
       </div>
-      <UsageDashboard quotaChanges={quotaChanges} />
+      <UsageDashboard quotaChanges={quotaChanges} offerCloudSignIn={platform.platform === "desktop" && signInOffered()} />
     </Dialog>
   )
 }

@@ -28,6 +28,19 @@ export function openCodePartId(messageID: string, role: string, content: { id?: 
   return typeof content.id === "string" ? content.id : `${messageID}:${String(ordinal).padStart(6, "0")}`
 }
 
+/**
+ * The engine's `TokenUsageInfo`. Its categories are disjoint: `input` is the
+ * prompt without cache reads or writes, and `output` excludes `reasoning`. The
+ * engine writes 0 for a category the provider did not report, so a zero here
+ * cannot be told apart from an unreported category.
+ */
+export type TokenUsage = Readonly<{
+  input: number
+  output: number
+  reasoning: number
+  cache: Readonly<{ read: number; write: number }>
+}>
+
 export type SessionSummary = Readonly<{
   id: string
   title?: string
@@ -35,7 +48,23 @@ export type SessionSummary = Readonly<{
   directory: string
   createdAt: number
   updatedAt: number
+  /** The sum of every usage the engine has recorded against this session. */
+  tokens?: TokenUsage
 }>
+
+export function tokenUsage(input: unknown): TokenUsage | undefined {
+  const row = rec(input)
+  const cache = rec(row?.cache)
+  const prompt = num(row?.input)
+  const output = num(row?.output)
+  const reasoning = num(row?.reasoning)
+  const read = num(cache?.read)
+  const write = num(cache?.write)
+  if (prompt === undefined || output === undefined || reasoning === undefined || read === undefined || write === undefined) {
+    return undefined
+  }
+  return { input: prompt, output, reasoning, cache: { read, write } }
+}
 
 /**
  * Paging is bidirectional in V2: `SessionsResponse.cursor` is
@@ -165,6 +194,7 @@ function project(scope: WorkspaceScope, input: unknown): SessionSummary {
   assertLocationInScope(scope, str(rec(row.location)?.directory))
   const title = str(row.title)
   const parentID = str(row.parentID)
+  const tokens = tokenUsage(row.tokens)
   return {
     id: str(row.id) ?? "",
     ...(title === undefined ? {} : { title }),
@@ -172,6 +202,7 @@ function project(scope: WorkspaceScope, input: unknown): SessionSummary {
     directory: scope.directory,
     createdAt: num(time?.created) ?? 0,
     updatedAt: num(time?.updated) ?? 0,
+    ...(tokens === undefined ? {} : { tokens }),
   }
 }
 

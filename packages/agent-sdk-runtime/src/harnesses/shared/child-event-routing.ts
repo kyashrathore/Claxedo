@@ -1,4 +1,4 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeEvent, AgentRuntimeEventOf, RuntimeUsageObservation } from "@claxedo/agent-event-runtime"
 import type { PromptInput } from "../../index"
 import type { RuntimeAppendSource, TurnEventProjector } from "./turn-projection"
 
@@ -24,6 +24,8 @@ type BufferedChildEvent = {
   sequence: number
   bytes: number
 }
+
+type MeteredUsage = AgentRuntimeEventOf<"usage"> & { observation: RuntimeUsageObservation }
 
 type BufferedCorrelation = {
   events: BufferedChildEvent[]
@@ -58,6 +60,9 @@ export function createChildEventRouter(options: {
   const projectors = new Map<string, { target: ChildProjectionTarget; projector: TurnEventProjector }>()
   const buffers = new Map<string, BufferedCorrelation>()
   const poisoned = new Set<string>()
+  // A correlation whose usage reached the parent keeps metering there after it
+  // binds: its later cumulative totals include what the parent already holds.
+  const usageOnParent = new Set<string>()
   let bufferedCount = 0
   let bufferedBytes = 0
   let sequence = 0
@@ -86,16 +91,26 @@ export function createChildEventRouter(options: {
     return buffer.events
   }
 
+  const meterOnParent = (event: MeteredUsage, source: RuntimeAppendSource, correlationKey?: string) => {
+    if (correlationKey) usageOnParent.add(correlationKey)
+    options.parent.project(parentScoped(event, correlationKey), source)
+  }
+
   const dropBuffer = (
     correlationKey: string,
     code: ChildEventRoutingDiagnosticCode,
     message: string,
+    offending?: BufferedChildEvent,
   ) => {
-    const events = removeBuffer(correlationKey)
+    const events = [...removeBuffer(correlationKey), ...(offending ? [offending] : [])]
     poisoned.add(correlationKey)
-    diagnose(code, message, {
+    const usage = survivingUsage(events)
+    for (const item of usage) meterOnParent(item.event, item.source, correlationKey)
+    const dropped = events.filter((item) => !isMeteredUsage(item.event)).length
+    diagnose(code, usage.length ? `${message}; metered ${usage.length} usage observation(s) on the parent turn` : message, {
       correlationKey,
-      droppedEvents: events.length,
+      droppedEvents: dropped,
+      rolledUpUsage: usage.length,
     })
   }
 
@@ -114,6 +129,15 @@ export function createChildEventRouter(options: {
 
   const routeChild = (event: AgentRuntimeEvent, source: RuntimeAppendSource, correlationKey?: string) => {
     if (!correlationKey) {
+      if (isMeteredUsage(event)) {
+        meterOnParent(event, source)
+        diagnose(
+          "child_event_route_missing_correlation",
+          "Metered a child-owned usage observation without a stable correlation key on the parent turn",
+          { eventType: event.type, rolledUpUsage: 1 },
+        )
+        return
+      }
       diagnose(
         "child_event_route_missing_correlation",
         "Dropped a child-owned runtime event without a stable correlation key",
@@ -122,12 +146,19 @@ export function createChildEventRouter(options: {
       return
     }
 
+    if (usageOnParent.has(correlationKey) && isMeteredUsage(event)) {
+      meterOnParent(event, source, correlationKey)
+      return
+    }
     const target = bindings.get(correlationKey)
     if (target) {
       childProjector(target).project(event, source)
       return
     }
-    if (poisoned.has(correlationKey)) return
+    if (poisoned.has(correlationKey)) {
+      if (isMeteredUsage(event)) meterOnParent(event, source, correlationKey)
+      return
+    }
 
     const bytes = serializedBytes({ event, source })
     if (bytes === undefined) {
@@ -143,6 +174,7 @@ export function createChildEventRouter(options: {
         correlationKey,
         "child_event_route_buffer_count_exceeded",
         `Dropped unresolved child events after the ${maxCount}-event routing limit was reached`,
+        { event, source, sequence: sequence++, bytes },
       )
       return
     }
@@ -151,6 +183,7 @@ export function createChildEventRouter(options: {
         correlationKey,
         "child_event_route_buffer_bytes_exceeded",
         `Dropped unresolved child events after the ${maxBytes}-byte routing limit was reached`,
+        { event, source, sequence: sequence++, bytes },
       )
       return
     }
@@ -238,6 +271,35 @@ export function createChildEventRouter(options: {
       }
     },
   }
+}
+
+function isMeteredUsage(event: AgentRuntimeEvent): event is MeteredUsage {
+  return event.type === "usage" && event.observation !== undefined
+}
+
+/**
+ * Tokens a child spent are still the turn's when the child's transcript is
+ * lost, so its usage lands on the parent's turn in a scope of its own and adds
+ * to the parent's usage instead of replacing it. A child with no correlation
+ * key is told apart by the provider session it reports from, so two such
+ * children's cumulative totals do not replace each other.
+ */
+function parentScoped(event: MeteredUsage, correlationKey: string | undefined): MeteredUsage {
+  if (event.observation.scope) return event
+  const stream = correlationKey ?? `uncorrelated:${event.observation.nativeSessionId ?? event.observation.providerObservationId ?? "unknown"}`
+  return { ...event, observation: { ...event.observation, scope: `child:${stream}` } }
+}
+
+/** Every delta survives, and each scope's latest cumulative, which replaces the ones before it. */
+function survivingUsage(events: readonly BufferedChildEvent[]) {
+  const metered = events.flatMap((item) => isMeteredUsage(item.event) ? [{ ...item, event: item.event }] : [])
+  const latestCumulative = new Map<string | undefined, number>()
+  for (const item of metered) {
+    if (item.event.observation.kind === "cumulative") latestCumulative.set(item.event.observation.scope, item.sequence)
+  }
+  return metered
+    .filter((item) => item.event.observation.kind === "delta" || latestCumulative.get(item.event.observation.scope) === item.sequence)
+    .sort((left, right) => left.sequence - right.sequence)
 }
 
 function sameTarget(left: ChildProjectionTarget, right: ChildProjectionTarget) {

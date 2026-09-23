@@ -160,8 +160,7 @@ export type HostedOperationName =
   | "session.gateway"
   | "billing.checkout"
   | "billing.portal"
-  | "usage.get"
-  | "usage.sync"
+  | "usage.cloudFacts"
 
 export type AccountPort = {
   /** Current account state. Reactive in the renderer; a snapshot here. */

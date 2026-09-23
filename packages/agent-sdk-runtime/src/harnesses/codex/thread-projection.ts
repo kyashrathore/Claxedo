@@ -1,23 +1,80 @@
+import { CODEX_DESCENDANT_ERROR_METHOD } from "@claxedo/agent-event-runtime/harnesses/codex"
 import {
   codexCollabAgentCall,
   codexSubagentActivity,
   codexStartedSubagent,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
 import { asRecord } from "@claxedo/helpers/guards"
-import { text, type JsonRecord, type SdkRuntimeTurnInput } from "../shared/sdk-runtime-adapter"
+import type { JsonRecord, SdkRuntimeTurnInput } from "../shared/sdk-runtime-adapter"
 import { codexHostSubagentObservation } from "./host-subagent"
+import { codexNotificationThreadId, type CodexThreadRegistry, type CodexTurnClaim } from "./thread-registry"
 
 const CODEX_SOURCE = "codex.app-server"
 
 /**
- * Turns one app-server notification into the subagent observations and the
- * routed transcript event it carries.
+ * A descendant folded into its first-level ancestor has no session of its
+ * own, so the frames that start, end, name or plan one would restate the
+ * ancestor's session instead.
+ */
+const DESCENDANT_SESSION_LIFECYCLE = new Set([
+  "turn/started",
+  "turn/completed",
+  "turn/plan/updated",
+  "thread/status/changed",
+  "thread/closed",
+  "thread/name/updated",
+])
+
+/**
+ * Projects the app-server notifications of one running turn: the subagent
+ * observations each carries and the routed transcript event.
+ *
+ * Only the turn thread's direct children are subagents with sessions of
+ * their own. A thread started beneath one of them, at any depth, is folded
+ * into that first-level child: its frames route under the child's thread id,
+ * and its usage keeps its own thread's scope, so it adds to the child's.
  *
  * `parentOwned` is what the caller acts on: a notification naming another
  * thread belongs to a child of this turn, and routing it to the parent would
  * put a subagent's output in the user's transcript.
  */
-export async function projectCodexThreadNotification(
+export function createCodexThreadProjection(
+  input: SdkRuntimeTurnInput,
+  claim: CodexTurnClaim,
+  threads: Pick<CodexThreadRegistry, "ownerOf" | "firstLevel">,
+) {
+  const threadId = claim.threadId
+  return {
+    /**
+     * Whether this turn answers for a notification, decided as it arrives: a
+     * frame naming no thread reaches every turn, and one naming a thread is
+     * projected only by the turn the registry says owns that thread.
+     */
+    owns(params: JsonRecord) {
+      const eventThreadId = codexNotificationThreadId(params)
+      return !eventThreadId || threads.ownerOf(eventThreadId) === claim
+    },
+
+    async project(method: string, params: JsonRecord, frame: unknown) {
+      await observeFirstLevelSubagents(input, threadId, method, params, frame)
+      const eventThreadId = codexNotificationThreadId(params)
+      const raw = { source: CODEX_SOURCE, method, payload: params }
+      const source = { dir: "in" as const, method, frame }
+      if (!eventThreadId || eventThreadId === threadId) {
+        input.ingest(raw, source, { kind: "parent" })
+        return { parentOwned: true, eventThreadId }
+      }
+      const firstLevel = threads.firstLevel(eventThreadId) ?? eventThreadId
+      const route = { kind: "child" as const, correlationKey: firstLevel }
+      if (firstLevel === eventThreadId) input.ingest(raw, source, route)
+      else if (method === "error") input.ingest({ ...raw, method: CODEX_DESCENDANT_ERROR_METHOD }, source, route)
+      else if (!DESCENDANT_SESSION_LIFECYCLE.has(method)) input.ingest(raw, source, route)
+      return { parentOwned: false, eventThreadId }
+    },
+  }
+}
+
+async function observeFirstLevelSubagents(
   input: SdkRuntimeTurnInput,
   threadId: string,
   method: string,
@@ -87,13 +144,4 @@ export async function projectCodexThreadNotification(
   }
   const hostSpawn = method === "item/completed" ? codexHostSubagentObservation(threadId, asRecord(params.item)) : undefined
   if (hostSpawn) await input.observeSubagent({ observation: hostSpawn, correlationKeys: [], source: { dir: "in", method, frame } })
-  const eventThreadId = text(params.threadId) ?? text(asRecord(params.thread)?.id)
-  const parentOwned = !eventThreadId || eventThreadId === threadId
-  input.ingest({ source: CODEX_SOURCE, method, payload: params }, {
-    dir: "in",
-    method,
-    frame,
-  }, parentOwned ? { kind: "parent" } : { kind: "child", correlationKey: eventThreadId })
-  return { parentOwned, eventThreadId }
 }
-

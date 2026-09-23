@@ -1,6 +1,5 @@
 import type { PromptInput } from "../../index"
 import { isRuntimeGoalStatus, type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import { codexStartedSubagent } from "@claxedo/agent-event-runtime/harnesses/codex"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
@@ -40,21 +39,21 @@ export function createCodexTurnStop(input: {
   threadId: string
   turnId: () => Promise<string> | string
   record: TurnStopRecord
+  /**
+   * The subagent threads started beneath this turn, which it is answerable
+   * for besides its own. A command on an unrelated thread belongs to whoever
+   * started it.
+   */
+  subagentThreads: () => readonly string[]
 }): CodexTurnStop {
   const commandProcesses = new Map<string, Set<string>>()
-  /**
-   * The threads this turn is answerable for: its own, and every subagent
-   * thread started beneath one of them. A command on an unrelated thread
-   * belongs to whoever started it.
-   */
-  const ownedThreads = new Set([input.threadId])
 
   const attempt = async (parent: RequestDeadline | undefined) => {
     const turnId = await input.turnId()
     if (!turnId) return
     await input.process.request("turn/interrupt", { threadId: input.threadId, turnId }, controlRequestDeadline(parent))
     const ours = commandProcesses.get(turnId) ?? new Set<string>()
-    const children = [...ownedThreads].filter((threadId) => threadId !== input.threadId)
+    const children = [...input.subagentThreads()]
     if (!ours.size && !children.length) {
       // This turn started no command and spawned no thread, so Codex holds
       // nothing of its own to enumerate.
@@ -124,11 +123,6 @@ export function createCodexTurnStop(input: {
   return {
     record: input.record,
     observe(method: string, params: JsonRecord) {
-      if (method === "thread/started") {
-        const started = codexStartedSubagent(params)
-        if (started && ownedThreads.has(started.parentThreadId)) ownedThreads.add(started.id)
-        return
-      }
       const item = asRecord(params.item)
       if (item?.type !== "commandExecution") return
       const processId = text(item.processId)

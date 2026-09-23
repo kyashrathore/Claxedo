@@ -269,11 +269,6 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (pathName === "/api/claxedo/session") {
     return { sessions: localSessionMetas(fixture, url.searchParams.get("directory")) }
   }
-  // Usage outbox sync (features/usage/data/usage-api.ts `syncUsageOutbox`),
-  // fired on boot by `installUsageOutboxWakeups`. Contract: the four counters.
-  if (pathName === "/api/claxedo/usage/sync") {
-    return { attempted: 0, delivered: 0, conflicts: 0, pending: 0 }
-  }
   // Sanitized generic agent-connection discovery.
   if (pathName === "/api/claxedo/agent-config/connections" && method === "GET") return { status: "supported", connections: [] }
   // Remote-access device inventory is independent of local workspace/session

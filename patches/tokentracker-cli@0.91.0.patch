@@ -1,5 +1,227 @@
+diff --git a/src/lib/pricing/curated-overrides.json b/src/lib/pricing/curated-overrides.json
+index de647e6..3d343c1 100644
+--- a/src/lib/pricing/curated-overrides.json
++++ b/src/lib/pricing/curated-overrides.json
+@@ -12,6 +12,13 @@
+       "cache_write": 12.5,
+       "note": "Fable 5 \u2014 Anthropic's top tier above Opus. Not yet in LiteLLM. $10/$50 per MTok; cache_read 0.1x, cache_write 1.25x. Remove once LiteLLM carries it."
+     },
++    "claude-fable-5-1": {
++      "input": 10,
++      "output": 50,
++      "cache_read": 0.25,
++      "cache_write": 12.5,
++      "note": "Fable 5.1: $10/$50 per MTok like Fable 5, but cache hits are 0.025x input ($0.25), not 0.1x (platform.claude.com/docs/en/about-claude/pricing, 2026-09-23). Without this key the curated containment match on claude-fable-5 wins over LiteLLM's own claude-fable-5-1 entry and cache reads price 4x high."
++    },
+     "claude-opus-5": {
+       "input": 5,
+       "output": 25,
+@@ -26,6 +33,20 @@
+       "cache_write": 12.5,
+       "note": "Opus 5 fast mode (speed=\"fast\", beta fast-mode-2026-02-01) is priced at $10/$50 per MTok \u2014 2x standard Opus. Kept separate so a -fast model id is not silently priced at the standard tier. See claude-opus-5."
+     },
++    "claude-opus-5-5": {
++      "input": 4,
++      "output": 20,
++      "cache_read": 0.2,
++      "cache_write": 5,
++      "note": "Opus 5.5: $4/$20 per MTok, cache hits 0.05x input ($0.20), cache_write 1.25x (platform.claude.com/docs/en/about-claude/pricing, 2026-09-23). Without this key the curated containment match on claude-opus-5 wins over LiteLLM's own claude-opus-5-5 entry and prices it at the Opus 5 tier."
++    },
++    "claude-opus-5-5-fast": {
++      "input": 8,
++      "output": 40,
++      "cache_read": 0.4,
++      "cache_write": 10,
++      "note": "Opus 5.5 fast mode is $8/$40 per MTok, 2x standard Opus 5.5, with the caching multipliers applied on top. See claude-opus-5-5."
++    },
+     "claude-opus-4-8": {
+       "input": 5,
+       "output": 25,
+@@ -34,11 +55,11 @@
+       "note": "Opus 4.8 not yet in LiteLLM. Pin to the standard Opus tier (same as 4.6/4.7); remove once LiteLLM carries it."
+     },
+     "claude-sonnet-5": {
+-      "input": 3,
+-      "output": 15,
+-      "cache_read": 0.3,
+-      "cache_write": 3.75,
+-      "note": "Sonnet 5. LiteLLM added this model on ~2026-06-30 with matching rates, but pin explicitly so pricing is correct immediately rather than depending on the 24h local pricing-cache refresh cycle."
++      "input": 2,
++      "output": 10,
++      "cache_read": 0.2,
++      "cache_write": 2.5,
++      "note": "Sonnet 5: the $2/$10 launch price is the standard price; the increase to $3/$15 scheduled for 2026-09-01 was cancelled (platform.claude.com/docs/en/about-claude/pricing, 2026-09-23)."
+     },
+     "claude-haiku-4-5": {
+       "input": 1,
+@@ -68,6 +89,27 @@
+       "cache_write": 0.25,
+       "note": "GPT-5.6 lightweight tier. Official short-context rates: $0.20/$1.20 per MTok (previous curated values $1/$6 overcounted 5x). See gpt-5.6-sol."
+     },
++    "gpt-6-astra": {
++      "input": 10,
++      "output": 50,
++      "cache_read": 1,
++      "cache_write": 12.5,
++      "note": "GPT-6 top tier. Rates from LiteLLM's model_prices_and_context_window.json as cached on 2026-09-23 (input 1e-5, output 5e-5, cache read 1e-6, cache write 1.25e-5 per token). The bundled seed snapshot (2026-08-18) predates GPT-6, so without this entry a Worker leaves it unpriced."
++    },
++    "gpt-6-sol": {
++      "input": 2,
++      "output": 10,
++      "cache_read": 0.2,
++      "cache_write": 2.5,
++      "note": "GPT-6 middle tier. Rates from LiteLLM's model_prices_and_context_window.json as cached on 2026-09-23 (input 2e-6, output 1e-5, cache read 2e-7, cache write 2.5e-6 per token). See gpt-6-astra."
++    },
++    "gpt-6-luna": {
++      "input": 0.1,
++      "output": 0.5,
++      "cache_read": 0.01,
++      "cache_write": 0.125,
++      "note": "GPT-6 lightweight tier. Rates from LiteLLM's model_prices_and_context_window.json as cached on 2026-09-23 (input 1e-7, output 5e-7, cache read 1e-8, cache write 1.25e-7 per token). See gpt-6-astra."
++    },
+     "kiro-agent": {
+       "input": 3,
+       "output": 15,
+diff --git a/src/lib/pricing/index.js b/src/lib/pricing/index.js
+index 0a61c52..0b58238 100644
+--- a/src/lib/pricing/index.js
++++ b/src/lib/pricing/index.js
+@@ -3,7 +3,6 @@
+ // existing callers (computeRowCost, /functions/* handlers, tests) work
+ // unchanged after `await ensurePricingLoaded()` is awaited once at startup.
+ 
+-const fs = require("node:fs");
+ const path = require("node:path");
+ const os = require("node:os");
+ 
+@@ -21,24 +20,10 @@ const PI_SUBSCRIPTION_SOURCES = new Set([
+   "prime-agent-github-copilot",
+   "prime-agent-copilot",
+ ]);
+-const SEED_SNAPSHOT_PATH = path.resolve(__dirname, "seed-snapshot.json");
+-
+-// Sync seed load. Done at require-time so callers that haven't awaited
+-// ensurePricingLoaded() (e.g. tests, vite mock startup, edge functions) still
+-// get LiteLLM-backed pricing instead of all-zero. ensurePricingLoaded() will
+-// later upgrade this to fresh disk cache or upstream data.
+-function loadSeedSync() {
+-  try {
+-    const raw = fs.readFileSync(SEED_SNAPSHOT_PATH, "utf8");
+-    const parsed = JSON.parse(raw);
+-    delete parsed._meta;
+-    return parsed;
+-  } catch (e) {
+-    return {};
+-  }
+-}
+-
+-const seedRaw = loadSeedSync();
++// A require, so a bundler inlines the snapshot: a Worker has neither __dirname
++// nor a package directory to read it from. ensurePricingLoaded() later
++// upgrades this to fresh disk cache or upstream data.
++const { _meta: _seedMeta, ...seedRaw } = require("./seed-snapshot.json");
+ 
+ const state = {
+   loaded: false,
+diff --git a/src/lib/pricing/litellm-fetcher.js b/src/lib/pricing/litellm-fetcher.js
+index 5b6bec2..302275f 100644
+--- a/src/lib/pricing/litellm-fetcher.js
++++ b/src/lib/pricing/litellm-fetcher.js
+@@ -3,7 +3,6 @@
+ // per-process in-memory map. fetchModelPricing() is async; subsequent reads
+ // (lookupPricing in matcher.js) operate on the in-memory map synchronously.
+ 
+-const fs = require("node:fs");
+ const fsp = require("node:fs/promises");
+ const path = require("node:path");
+ 
+@@ -11,12 +10,6 @@ const LITELLM_PRICING_URL =
+   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
+ const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+ const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+-const SEED_SNAPSHOT_PATH = path.resolve(__dirname, "seed-snapshot.json");
+-
+-function readJsonSync(p) {
+-  const raw = fs.readFileSync(p, "utf8");
+-  return JSON.parse(raw);
+-}
+ 
+ async function readJsonAsync(p) {
+   const raw = await fsp.readFile(p, "utf8");
+@@ -37,18 +30,10 @@ async function statSafe(p) {
+   }
+ }
+ 
++// A copy: the caller deletes `_meta`, and the required module object is shared
++// with pricing/index.js.
+ async function loadSeedSnapshot() {
+-  // Sync read is fine — file is bundled and small (~250KB). Falling back to
+-  // sync avoids a race with caller's synchronous lookup if seed must answer
+-  // immediately.
+-  try {
+-    return readJsonSync(SEED_SNAPSHOT_PATH);
+-  } catch (e) {
+-    // Tolerate missing seed in dev environments where the build script
+-    // hasn't run yet. Empty data = LiteLLM lookup miss = falls back to
+-    // CURATED only.
+-    return {};
+-  }
++  return { ...require("./seed-snapshot.json") };
+ }
+ 
+ async function fetchUpstream({ url = LITELLM_PRICING_URL, timeoutMs = DEFAULT_FETCH_TIMEOUT_MS } = {}) {
+diff --git a/src/lib/pricing/matcher.js b/src/lib/pricing/matcher.js
+index e40c1d0..3b81313 100644
+--- a/src/lib/pricing/matcher.js
++++ b/src/lib/pricing/matcher.js
+@@ -207,12 +207,22 @@ function lookupExactCaseInsensitive(table, model) {
+   return null;
+ }
+ 
++// A key followed by a numeric segment (`-6`, `.6`, `-20260915`) names another
++// version of the key, not a variant of it: `claude-opus-5-6` must stay unpriced
++// rather than price as `claude-opus-5`. `-fast` or `-1m` is still a variant.
++function containsModelKey(model, key) {
++  for (let index = model.indexOf(key); index !== -1; index = model.indexOf(key, index + 1)) {
++    if (!/^[-.]\d+(?![a-z0-9])/i.test(model.slice(index + key.length))) return true;
++  }
++  return false;
++}
++
+ function lookupContainedExactCaseInsensitive(table, model) {
+   if (!table || !model) return null;
+   const lower = model.toLowerCase();
+   const keys = Object.keys(table).sort((a, b) => b.length - a.length);
+   for (const key of keys) {
+-    if (lower.includes(key.toLowerCase())) return table[key];
++    if (containsModelKey(lower, key.toLowerCase())) return table[key];
+   }
+   return null;
+ }
+@@ -270,10 +280,10 @@ function lookupPricing(model, { curated, litellm, source } = {}) {
+       if (!match || !ref) continue;
+       const needle = match.toLowerCase();
+       if (!curated.exact[ref]) continue;
+-      if (lower.includes(needle)) {
++      if (containsModelKey(lower, needle)) {
+         return { hit: true, source: "curated:fuzzy", value: curated.exact[ref] };
+       }
+-      if (dotForm && dotForm.includes(needle)) {
++      if (dotForm && containsModelKey(dotForm, needle)) {
+         return { hit: true, source: "curated:fuzzy", value: curated.exact[ref] };
+       }
+     }
+@@ -313,7 +323,7 @@ function lookupPricing(model, { curated, litellm, source } = {}) {
+       const keyLower = key.toLowerCase();
+       // Only accept if model is a superset of key (model contains key), to
+       // avoid e.g. "gpt-5" matching "gpt-5-pro" in the wrong direction.
+-      if (lower.includes(keyLower) || (dotForm && dotForm.includes(keyLower))) {
++      if (containsModelKey(lower, keyLower) || (dotForm && containsModelKey(dotForm, keyLower))) {
+         return { hit: true, source: "litellm:fuzzy", value: litellm[key] };
+       }
+     }
 diff --git a/src/lib/rollout.js b/src/lib/rollout.js
-index 5db1e6a..e3c513c 100644
+index 5db1e6a..a2f9198 100644
 --- a/src/lib/rollout.js
 +++ b/src/lib/rollout.js
 @@ -3,6 +3,7 @@ const fssync = require("node:fs");
@@ -10,7 +232,7 @@ index 5db1e6a..e3c513c 100644
  
  const crypto = require("node:crypto");
  const { ensureDir, writeJson, chmod600IfPossible } = require("./fs");
-@@ -17156,6 +17157,512 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
+@@ -17156,6 +17157,659 @@ async function parseDshIncremental({ sessionFiles, cursors, queuePath, onProgres
  }
  
  
@@ -19,9 +241,12 @@ index 5db1e6a..e3c513c 100644
 +// TokenTracker Cloud. It reads provider-owned history only and deliberately
 +// has no command, queue, telemetry, device-id, credential, or upload imports.
 +const EMBEDDED_SOURCES = new Set(["claude", "codex", "cursor", "opencode", "pi"]);
++// `cache_creation_1h_input_tokens` is the part of `cache_creation_input_tokens`
++// written to the one-hour cache, which Anthropic bills at 2x input rather than
++// the five-minute 1.25x. It is a subset, not a sixth category.
 +const EMBEDDED_TOKEN_KEYS = [
 +  "input_tokens", "output_tokens", "reasoning_output_tokens",
-+  "cached_input_tokens", "cache_creation_input_tokens",
++  "cached_input_tokens", "cache_creation_input_tokens", "cache_creation_1h_input_tokens",
 +];
 +
 +function embeddedFiniteToken(value) {
@@ -38,6 +263,7 @@ index 5db1e6a..e3c513c 100644
 +    reasoning_output_tokens: embeddedFiniteToken(input.reasoning_output_tokens ?? input.reasoningTokens ?? input.reasoning),
 +    cached_input_tokens: embeddedFiniteToken(input.cached_input_tokens ?? input.cache_read_input_tokens ?? input.cacheReadTokens ?? cache.read),
 +    cache_creation_input_tokens: embeddedFiniteToken(input.cache_creation_input_tokens ?? input.cache_creation ?? input.cacheWriteTokens ?? cache.write),
++    cache_creation_1h_input_tokens: embeddedFiniteToken(input.cache_creation?.ephemeral_1h_input_tokens),
 +  };
 +}
 +
@@ -98,6 +324,9 @@ index 5db1e6a..e3c513c 100644
 +  if (role !== "assistant" && row.type !== "message") return null;
 +  const tokens = message.usage || message.tokens || row.usage || row.tokens;
 +  if (!tokens || typeof tokens !== "object") return null;
++  // Claude Code writes its own error and placeholder replies as assistant
++  // rows with this model; no request reached the provider.
++  if (message.model === "<synthetic>") return null;
 +  return {
 +    source,
 +    provider: embeddedProvider(source, message, row),
@@ -109,6 +338,66 @@ index 5db1e6a..e3c513c 100644
 +  };
 +}
 +
++// Claude Code writes tool results, reminders, local-command caveats and
++// compaction summaries as `user` rows no person typed, and a task
++// notification or other system-sourced row as one no person sent. A slash
++// command's `<command-name>` row is a prompt when the model answers it; a
++// local command is answered by a `<local-command-stdout>` row instead.
++function embeddedClaudeRowKind(row) {
++  if (row.type !== "user" || row.isMeta || row.isCompactSummary || row.toolUseResult !== undefined) return null;
++  const content = row.message?.content;
++  const typed = typeof content === "string"
++    ? content.trim().length > 0
++    : Array.isArray(content) && content.some((block) => block?.type !== "tool_result");
++  if (!typed) return null;
++  const text = (typeof content === "string" ? content : content.find((block) => block?.type === "text")?.text ?? "").trimStart();
++  if (/^<local-command-(?:stdout|stderr)>/.test(text)) return "local-command-output";
++  if ((row.origin?.kind ?? "human") !== "human" || row.promptSource === "system") return null;
++  return text.startsWith("<command-name>") ? "command" : "prompt";
++}
++
++// One prompt a person sent is one turn however many requests answer it, so a
++// turn is counted on the first usage row after its prompt. A Claude Code
++// subagent transcript (`isSidechain` rows) is one turn of its own. Pi keeps
++// tool results in a role of their own, and a Pi file's first request opens a
++// turn even when its prompt was never written.
++function embeddedTurnOpener(source) {
++  let pending = source === "pi";
++  let pendingBeforeCommand;
++  let sidechainOpened = false;
++  return {
++    see(row) {
++      if (source === "pi") {
++        if (row.type === "message" && row.message?.role === "user") pending = true;
++        return;
++      }
++      if (row.isSidechain) return;
++      const kind = embeddedClaudeRowKind(row);
++      if (kind === "prompt") {
++        pending = true;
++        pendingBeforeCommand = undefined;
++      } else if (kind === "command") {
++        pendingBeforeCommand ??= pending;
++        pending = true;
++      } else if (kind === "local-command-output" && pendingBeforeCommand !== undefined) {
++        pending = pendingBeforeCommand;
++        pendingBeforeCommand = undefined;
++      }
++    },
++    opens(row) {
++      if (source === "claude" && row.isSidechain) {
++        const opened = !sidechainOpened;
++        sidechainOpened = true;
++        return opened;
++      }
++      const opened = pending;
++      pending = false;
++      pendingBeforeCommand = undefined;
++      return opened;
++    },
++  };
++}
++
 +function embeddedResult(events, malformed) {
 +  return {
 +    events,
@@ -117,8 +406,9 @@ index 5db1e6a..e3c513c 100644
 +  };
 +}
 +
-+const EMBEDDED_HISTORY_CURSOR_VERSION = 8;
-+const EMBEDDED_HISTORY_CURSOR_FILE = "embedded-history-cursors-v8.json.gz";
++const EMBEDDED_HISTORY_CURSOR_VERSION = 10;
++const EMBEDDED_HISTORY_CURSOR_FILE = `embedded-history-cursors-v${EMBEDDED_HISTORY_CURSOR_VERSION}.json.gz`;
++const EMBEDDED_HISTORY_CURSOR_FILE_PATTERN = /^embedded-history-cursors-v\d+\.json\.gz$/;
 +const EMBEDDED_CODEX_CURSOR_BUCKET_MS = 60_000;
 +const EMBEDDED_FORK_COPY_MAX_GAP_MS = 1_000;
 +
@@ -146,6 +436,11 @@ index 5db1e6a..e3c513c 100644
 +  const temporary = `${target}.${process.pid}.tmp`;
 +  fssync.writeFileSync(temporary, zlib.gzipSync(JSON.stringify(state), { level: 6 }), { mode: 0o600 });
 +  fssync.renameSync(temporary, target);
++  for (const name of fssync.readdirSync(stateDir)) {
++    if (name !== EMBEDDED_HISTORY_CURSOR_FILE && EMBEDDED_HISTORY_CURSOR_FILE_PATTERN.test(name)) {
++      fssync.rmSync(path.join(stateDir, name), { force: true });
++    }
++  }
 +}
 +
 +function embeddedFileSignature(stat) {
@@ -190,11 +485,30 @@ index 5db1e6a..e3c513c 100644
 +  return output;
 +}
 +
++// Codex's output includes its reasoning, and the canonical categories are
++// disjoint. `usage` comes from `pickDelta`, which has already taken cached
++// input out of input.
++function embeddedCodexTokens(usage) {
++  const tokens = embeddedUsage(usage);
++  if (tokens.output_tokens !== null && tokens.reasoning_output_tokens !== null) {
++    tokens.output_tokens = Math.max(0, tokens.output_tokens - tokens.reasoning_output_tokens);
++  }
++  return tokens;
++}
++
++// A rollout that writes `token_usage_record` rows is metered from them, one per
++// response. `token_count` is a cumulative snapshot: the request that produces a
++// compaction is never in a later total, and a snapshot can land a day after the
++// response it counts. Rollouts from Codex versions without records fall back
++// to the snapshots' deltas.
 +async function embeddedCodexEvents(filePath, stat) {
 +  const { pickDelta } = require("./codex-rollout-parser");
 +  const stream = fssync.createReadStream(filePath, { encoding: "utf8" });
 +  const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
-+  const events = [];
++  const recordEvents = [];
++  const meteredResponses = new Set();
++  let sawRecords = false;
++  const snapshotEvents = [];
 +  const completedTurns = [];
 +  let malformed = 0;
 +  let sessionId = path.basename(filePath, ".jsonl");
@@ -231,9 +545,29 @@ index 5db1e6a..e3c513c 100644
 +        }
 +      } else if (row.type === "turn_context") {
 +        model = String(row.payload?.model || model);
-+      } else if (row.type === "event_msg" && row.payload?.type === "agent_message" && model) {
++      } else if (row.type === "event_msg" && (row.payload?.type === "task_complete" || row.payload?.type === "turn_aborted") && model) {
 +        const observedAt = embeddedTimestamp(row.timestamp, stat.mtimeMs);
 +        if (!isForkCopy(observedAt)) completedTurns.push({ model, observed_at: observedAt });
++      } else if (row.type === "token_usage_record") {
++        sawRecords = true;
++        const observedAt = embeddedTimestamp(row.timestamp, stat.mtimeMs);
++        // A fork copies its parent's records, which carry the parent's thread.
++        if (isForkCopy(observedAt) || row.payload?.thread_id !== sessionId || !model) continue;
++        const responseId = typeof row.payload.response_id === "string" ? row.payload.response_id : "";
++        if (responseId && meteredResponses.has(responseId)) continue;
++        if (responseId) meteredResponses.add(responseId);
++        const usage = pickDelta(row.payload.usage, null, null);
++        if (!usage || usage.total_tokens <= 0) continue;
++        recordEvents.push({
++          source: "codex",
++          provider: "openai",
++          event_id: responseId || `${String(row.timestamp || "unknown")}:${recordEvents.length}`,
++          native_session_id: sessionId,
++          model,
++          observed_at: observedAt,
++          tokens: embeddedCodexTokens(usage),
++        });
++        continue;
 +      }
 +      if (row.type !== "event_msg" || row.payload?.type !== "token_count") continue;
 +      const info = row.payload?.info;
@@ -257,24 +591,21 @@ index 5db1e6a..e3c513c 100644
 +      const delta = pickDelta(lastUsage, totalUsage, previousTotals);
 +      if (totalUsage && typeof totalUsage === "object") previousTotals = totalUsage;
 +      if (!delta || delta.total_tokens <= 0) continue;
-+      const tokens = embeddedUsage(delta);
-+      if (tokens.output_tokens !== null && tokens.reasoning_output_tokens !== null) {
-+        tokens.output_tokens = Math.max(0, tokens.output_tokens - tokens.reasoning_output_tokens);
-+      }
-+      events.push({
++      snapshotEvents.push({
 +        source: "codex",
 +        provider: "openai",
-+        event_id: `${String(row.timestamp || "unknown")}:${events.length}`,
++        event_id: `${String(row.timestamp || "unknown")}:${snapshotEvents.length}`,
 +        native_session_id: sessionId,
 +        model,
 +        observed_at: observedAt,
-+        tokens,
++        tokens: embeddedCodexTokens(delta),
 +      });
 +    }
 +  } finally {
 +    lines.close();
 +    stream.close?.();
 +  }
++  const events = sawRecords ? recordEvents : snapshotEvents;
 +  const eventsByModel = new Map();
 +  for (const event of events) {
 +    event.event_count = 0;
@@ -308,7 +639,7 @@ index 5db1e6a..e3c513c 100644
 +    .filter((root, index, all) => all.indexOf(root) === index)
 +    .filter((root) => fssync.existsSync(root));
 +  if (roots.length === 0) return { events: [], status: "unavailable", error: null };
-+  const events = [];
++  const steps = [];
 +  let malformed = 0;
 +  for (const root of roots) {
 +    const legacyRoot = path.join(root, "storage", "message");
@@ -317,7 +648,7 @@ index 5db1e6a..e3c513c 100644
 +      malformed += result.malformed;
 +      if (!result.row) continue;
 +      const event = embeddedEvent("opencode", filePath, result.row, fssync.statSync(filePath).mtimeMs);
-+      if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
++      if (event) steps.push({ event, prompt: result.row.parentID });
 +    }
 +    for (const dbPath of embeddedWalk(root, (_file, name) => /^opencode(?:[-._].*)?\.db$/.test(name), 1)) {
 +      const result = embeddedSqliteRows(dbPath, "SELECT id, session_id, time_updated, data FROM message WHERE json_extract(data, '$.role') = 'assistant' ORDER BY time_created ASC");
@@ -326,10 +657,20 @@ index 5db1e6a..e3c513c 100644
 +        let data;
 +        try { data = JSON.parse(row.data); } catch { malformed += 1; continue; }
 +        const event = embeddedEvent("opencode", dbPath, { id: row.id, session_id: row.session_id, timeUpdated: row.time_updated, data }, fssync.statSync(dbPath).mtimeMs);
-+        if (event && event.observed_at >= since && event.observed_at <= until) events.push(event);
++        if (event) steps.push({ event, prompt: data.parentID });
 +      }
 +    }
 +  }
++  // Each OpenCode assistant message is one step of a turn, and its parentID is
++  // the user message that opened the turn. Turns are counted before the range
++  // filter so a step inside the range never reopens a turn that began before it.
++  const openedTurns = new Set();
++  for (const { event, prompt } of steps.sort((left, right) => left.event.observed_at - right.event.observed_at)) {
++    const turn = typeof prompt === "string" && prompt ? `${event.native_session_id}\0${prompt}` : null;
++    event.event_count = turn && openedTurns.has(turn) ? 0 : 1;
++    if (turn) openedTurns.add(turn);
++  }
++  const events = steps.map((step) => step.event).filter((event) => event.observed_at >= since && event.observed_at <= until);
 +  return embeddedResult(events, malformed);
 +}
 +
@@ -427,16 +768,20 @@ index 5db1e6a..e3c513c 100644
 +      catch { result = { events: [], malformed: 1 }; }
 +    } else {
 +      const parsed = embeddedJsonLines(filePath);
++      const turns = embeddedTurnOpener(source);
 +      result = {
 +        malformed: parsed.malformed,
 +        events: parsed.rows.flatMap((row) => {
++          turns.see(row);
 +          const event = embeddedEvent(source, filePath, row, stat.mtimeMs);
-+          if (event && source === "claude") {
++          if (!event) return [];
++          if (source === "claude") {
 +            const messageId = typeof row.message?.id === "string" ? row.message.id : "";
 +            const requestId = typeof row.requestId === "string" ? row.requestId : "";
 +            event.event_id = messageId || requestId ? `${messageId}:${requestId}` : "";
 +          }
-+          return event ? [event] : [];
++          event.event_count = turns.opens(row) ? 1 : 0;
++          return [event];
 +        }),
 +      };
 +    }
@@ -453,6 +798,34 @@ index 5db1e6a..e3c513c 100644
 +  return embeddedResult(events, malformed);
 +}
 +
++// One event per identity. Claude Code writes a row per content block of one
++// response under a single message.id + requestId, and a resumed transcript
++// copies earlier rows again: every copy repeats the input and cache counts,
++// but output_tokens is a streaming snapshot on all rows but the last, so the
++// largest is the response's final count. Events are copied because the
++// per-file cursor store holds the originals.
++function embeddedFinalEvents(source, events) {
++  const kept = new Map();
++  const out = [];
++  for (const event of events) {
++    if (!event.event_id) {
++      out.push(event);
++      continue;
++    }
++    const key = source === "claude" ? event.event_id : `${event.native_session_id}\0${event.event_id}`;
++    const held = kept.get(key);
++    if (!held) {
++      const copy = { ...event };
++      kept.set(key, copy);
++      out.push(copy);
++      continue;
++    }
++    if ((event.tokens.output_tokens ?? 0) > (held.tokens.output_tokens ?? 0)) held.tokens = event.tokens;
++    held.event_count = Math.max(Number(held.event_count ?? 1), Number(event.event_count ?? 1));
++  }
++  return out;
++}
++
 +function embeddedAdd(target, value) {
 +  for (const key of EMBEDDED_TOKEN_KEYS) if (value[key] !== null) target[key] = (target[key] ?? 0) + value[key];
 +}
@@ -467,7 +840,7 @@ index 5db1e6a..e3c513c 100644
 +      native_session_id: event.native_session_id,
 +      event_count: 0,
 +      input_tokens: null, output_tokens: null, reasoning_output_tokens: null,
-+      cached_input_tokens: null, cache_creation_input_tokens: null,
++      cached_input_tokens: null, cache_creation_input_tokens: null, cache_creation_1h_input_tokens: null,
 +    };
 +    buckets.set(key, bucket);
 +  }
@@ -490,7 +863,7 @@ index 5db1e6a..e3c513c 100644
 +  const totalBuckets = new Map();
 +  const coverage = [];
 +  let classified_claxedo = 0;
-+  let unclassified = 0;
++  let unclassified_requests = 0;
 +  for (const source of sources) {
 +    if (!EMBEDDED_SOURCES.has(source)) {
 +      coverage.push({ source, status: "unsupported", error: "scanner has no privacy-reviewed parser" });
@@ -502,28 +875,24 @@ index 5db1e6a..e3c513c 100644
 +        ? embeddedScanCursor(options.sourceHome, since, until)
 +        : await embeddedScanJson(options.sourceHome, source, since, until, cursorState);
 +    coverage.push({ source, status: scan.status, ...(scan.error ? { error: scan.error } : {}) });
-+    const seen = new Set();
-+    for (const event of scan.events) {
-+      const eventKey = source === "claude" ? event.event_id : `${event.native_session_id}\0${event.event_id}`;
-+      if (event.event_id && seen.has(eventKey)) continue;
-+      if (event.event_id) seen.add(eventKey);
++    for (const event of embeddedFinalEvents(source, scan.events)) {
 +      embeddedBucketEvent(totalBuckets, source, event);
 +      const classification = await options.classify({ source: event.source, nativeSessionId: event.native_session_id, observedAt: event.observed_at });
 +      const eventCount = Number(event.event_count ?? 1);
 +      if (classification === "claxedo") { classified_claxedo += eventCount; continue; }
-+      if (classification !== "external") { unclassified += eventCount; continue; }
++      if (classification !== "external") { unclassified_requests += 1; continue; }
 +      embeddedBucketEvent(buckets, source, event);
 +    }
 +  }
 +  cursorState.updatedAt = Date.now();
 +  embeddedWriteHistoryCursors(options.stateDir, cursorState);
-+  return { rows: [...buckets.values()], total_rows: [...totalBuckets.values()], coverage, classified_claxedo, unclassified };
++  return { rows: [...buckets.values()], total_rows: [...totalBuckets.values()], coverage, classified_claxedo, unclassified_requests };
 +}
 +
  module.exports = {
    listRolloutFiles,
    listRolloutFilesDeep,
-@@ -17347,4 +17835,5 @@ module.exports = {
+@@ -17347,4 +18001,5 @@ module.exports = {
    dshUsageToTotals,
    extractDshSessionUsage,
    parseDshIncremental,

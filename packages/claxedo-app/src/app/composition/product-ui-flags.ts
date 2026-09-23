@@ -1,3 +1,8 @@
+import { createMemo } from "solid-js"
+import { useDeploymentPosture } from "@/app/connection/deployment-posture"
+import { useConfigOptional } from "@/app/providers/config"
+import { useAccountPort } from "@/platform/account/account-provider"
+
 /**
  * Build-configured product UI switches.
  *
@@ -39,4 +44,25 @@ export function productUiFlagConfigFromEnv(env: Readonly<Record<string, unknown>
     settingsConnectionsEnabled: env.VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED === "true",
     settingsSandboxProvidersEnabled: env.VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED === "true",
   }
+}
+
+/**
+ * Whether this app offers its reader a sign-in right now: the build shows the
+ * entry, an account can exist here — a deployment that issues sessions, or a
+ * desktop build whose hosted loader proves Electron main holds a configured
+ * account client — and the account is neither signed nor signing in.
+ */
+export function useAccountSignInOffered() {
+  const account = useAccountPort()
+  const config = useConfigOptional()
+  const posture = useDeploymentPosture()
+  return createMemo(() => {
+    const status = account.state().status
+    return (
+      resolveProductUiFlags(config).accountSignIn &&
+      (posture.issuesSessions() === true || config?.loadHostedContributions !== undefined) &&
+      status !== "pending" &&
+      status !== "signed"
+    )
+  })
 }

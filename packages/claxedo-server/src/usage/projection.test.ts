@@ -24,7 +24,7 @@ describe("usage projection", () => {
   test("composes independent usage series without changing token totals", () => {
     const claxedo = usageSeriesFromFacts({ facts: [fact(1, 10)], since: 0, until: Number.MAX_SAFE_INTEGER, timeZone: "UTC" })
     const external = usageSeriesFromExternal({
-      rows: [{ app: "claude", provider: "anthropic", model: "m", bucketStart: Date.UTC(2026, 7, 8), nativeSessionId: "direct", turnCount: 1, tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 } }],
+      rows: [{ app: "claude", provider: "anthropic", model: "m", bucketStart: Date.UTC(2026, 7, 8), nativeSessionId: "direct", turnCount: 1, tokens: { input: 5, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null } }],
       since: 0, until: Number.MAX_SAFE_INTEGER, timeZone: "UTC",
     })
     expect(mergeUsageSeries(claxedo, external).totals.input).toBe(15)
@@ -34,7 +34,7 @@ describe("usage projection", () => {
     const external = usageSeriesFromExternal({
       rows: [{
         app: "claude", provider: "anthropic", model: "m", bucketStart: Date.UTC(2026, 7, 8), nativeSessionId: "direct", turnCount: 1,
-        tokens: { input: 5, output: 2, reasoning: null, cacheRead: null, cacheWrite: null },
+        tokens: { input: 5, output: 2, reasoning: null, cacheRead: null, cacheWrite: null, cacheWrite1h: null },
       }],
       since: 0, until: Number.MAX_SAFE_INTEGER, timeZone: "UTC",
     })
@@ -45,8 +45,8 @@ describe("usage projection", () => {
     const bucketStart = Date.UTC(2026, 7, 8)
     const external = usageSeriesFromExternal({
       rows: [
-        { app: "codex", provider: "openai", model: "gpt-a", bucketStart, nativeSessionId: "direct", turnCount: 3, tokens: { input: 5, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0 } },
-        { app: "codex", provider: "openai", model: "gpt-b", bucketStart, nativeSessionId: "direct", turnCount: 4, tokens: { input: 7, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0 } },
+        { app: "codex", provider: "openai", model: "gpt-a", bucketStart, nativeSessionId: "direct", turnCount: 3, tokens: { input: 5, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null } },
+        { app: "codex", provider: "openai", model: "gpt-b", bucketStart, nativeSessionId: "direct", turnCount: 4, tokens: { input: 7, output: 2, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null } },
       ],
       since: 0,
       until: Number.MAX_SAFE_INTEGER,
@@ -60,8 +60,8 @@ describe("usage projection", () => {
     const included = Date.UTC(2026, 7, 8)
     const external = usageSeriesFromExternal({
       rows: [
-        { app: "codex", provider: "openai", model: "gpt-a", bucketStart: included, nativeSessionId: "included", turnCount: 3, tokens: { input: 5, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0 } },
-        { app: "codex", provider: "openai", model: "gpt-a", bucketStart: Date.UTC(2026, 7, 7), nativeSessionId: "excluded", turnCount: 99, tokens: { input: 100, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0 } },
+        { app: "codex", provider: "openai", model: "gpt-a", bucketStart: included, nativeSessionId: "included", turnCount: 3, tokens: { input: 5, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null } },
+        { app: "codex", provider: "openai", model: "gpt-a", bucketStart: Date.UTC(2026, 7, 7), nativeSessionId: "excluded", turnCount: 99, tokens: { input: 100, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null } },
       ],
       since: included,
       until: included,

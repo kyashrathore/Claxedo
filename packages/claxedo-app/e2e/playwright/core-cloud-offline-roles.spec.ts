@@ -316,8 +316,6 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // Boot-time central calls the app tolerates failing; answering them keeps the
     // unhandled ledger clean.
     if (url.pathname === "/api/claxedo/session") return json(route, { sessions: [] })
-    if (url.pathname === "/api/claxedo/usage/sync")
-      return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     // The app boot's `ConnectionGate` (src/app.tsx) polls `GET /api/claxedo/health`
     // (src/utils/server-health.ts's `checkServerHealth` -> `claxedoHealthUrl`), NOT
     // `/health` — a bare `/health`/`/global/health` match here left that request
@@ -368,9 +366,6 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     }
     if (url.pathname === "/api/control/sessions") return json(route, [])
     if (isSessionListPath(url.pathname)) return json(route, { sessions: [], nextCursor: null })
-    if (url.pathname === "/api/claxedo/usage/sync") {
-      return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
-    }
 
     // With the query persister installed eagerly, boot fires the signed
     // workspace inventory sync, the harness-scoped central

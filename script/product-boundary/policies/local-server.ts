@@ -67,7 +67,7 @@ export const localServer: Policy = {
   // packages. What the desktop entry reaches beyond the composition and the
   // workspace routes, and why each owner is this product's:
   //  - the local usage pipeline (route, durable ports, scanner, pricing port,
-  //    outbox, host identity, composition) and the tenant-aware sandbox fetch
+  //    host identity, composition) and the tenant-aware sandbox fetch
   //    options: local workspace owners with no hosted capability package.
   //  - `embedded-relay-host-auth.ts`: the verified actor hop stamp for
   //    in-process embedded prompts (`claxedo.author` without managed authority).
@@ -177,8 +177,8 @@ export const localServer: Policy = {
   //    destinations through the system resolver, because getaddrinfo honours
   //    /etc/hosts, mDNS and split-horizon DNS — the answers `git` will dial —
   //    and only a Node runtime has it (the hosted Worker resolves over DoH).
-  //    70/29, no headroom.
-  ceilings: { modules: 70, packages: 29 },
+  //    69/29, no headroom.
+  ceilings: { modules: 69, packages: 29 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

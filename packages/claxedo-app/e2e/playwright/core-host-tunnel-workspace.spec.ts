@@ -752,10 +752,9 @@ async function installHostTunnelRuntimeMock(
     // ---- Central boot reads (bare origin, always) ----
     // Each of these is issued by a mount, not by a workspace: the shell's home-directory
     // read (`pathQuery` via `queryOptions.path(null)`), the central connection's health
-    // probe (`checkOpenCodeServerHealthCached`), this machine's remote-access device list
-    // and the usage outbox beacon (`installUsageOutboxWakeups`). They belong with the
-    // bootstrap/inventory block above — central discovery, never the per-workspace
-    // runtime lane — and answering them here is what keeps the routing oracle meaning "no
+    // probe (`checkOpenCodeServerHealthCached`) and this machine's remote-access device
+    // list. They belong with the bootstrap/inventory block above — central discovery,
+    // never the per-workspace runtime lane — and answering them here is what keeps the routing oracle meaning "no
     // bare runtime equivalent". They are issued concurrently with the first
     // `/api/wr/health` probe, i.e. with the very request that flips `ready`, so an
     // unmodeled one falls through to the counter below on whichever side of that race it
@@ -772,10 +771,6 @@ async function installHostTunnelRuntimeMock(
     // An account with no enrolled machine; an unsigned central refuses the read.
     if (isRemoteAccessPath(url.pathname)) {
       return fulfillRemoteAccessRoute(route, unconfiguredRemoteAccessDeployment(bootstrapDeployment().issuesSessions))
-    }
-    // An empty outbox syncs to zeros. Same contract mock-runtime serves.
-    if (url.pathname === "/api/claxedo/usage/sync") {
-      return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     }
 
     if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)

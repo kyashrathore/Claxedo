@@ -23,6 +23,21 @@ describe("usage provenance", () => {
     expect(classify({ source: "codex", nativeSessionId: "native-1", observedAt: 201 })).toBe("external")
   })
 
+  test("classifies every turn of a multi-turn session, and only its turns", () => {
+    const turn = (startedAt: number, endedAt: number) => ({
+      source: "claude",
+      nativeSessionId: "native-multi",
+      sessionRef: "workspace:ws-1:session:s-2",
+      harness: "claude-sdk",
+      startedAt,
+      endedAt,
+    })
+    const multi = createUsageProvenanceClassifier([turn(100, 200), turn(300, 400), turn(500, 600)], { completeSources: ["claude"] })
+    const at = (observedAt: number) => multi({ source: "claude", nativeSessionId: "native-multi", observedAt })
+    expect([100, 150, 200, 300, 350, 400, 500, 600].map(at)).toEqual(Array(8).fill("claxedo"))
+    expect([99, 250, 450, 601].map(at)).toEqual(Array(4).fill("external"))
+  })
+
   test("fails closed while a source manifest is incomplete", () => {
     const incomplete = createUsageProvenanceClassifier([])
     expect(incomplete({ source: "codex", nativeSessionId: "direct", observedAt: 150 })).toBe("unclassified")
@@ -38,5 +53,10 @@ describe("usage provenance", () => {
   test("maps every TokenTracker-backed Claxedo harness family to its native source", () => {
     expect(["claude-sdk", "codex-app-server", "cursor-sdk", "pi", "connection"].map(tokenTrackerSourceForHarness))
       .toEqual(["claude", "codex", "cursor", "pi", undefined])
+  })
+
+  test("maps an ACP connection to the agent it runs", () => {
+    expect(["connection:cursor-acp", "connection:claude-acp", "connection:gemini"].map(tokenTrackerSourceForHarness))
+      .toEqual(["cursor", "claude", undefined])
   })
 })

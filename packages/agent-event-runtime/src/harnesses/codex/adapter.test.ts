@@ -658,6 +658,106 @@ describe("codexAppServerAdapter", () => {
     }])
   })
 
+  test("meters each thread against its own totals while another thread's usage and completion interleave", () => {
+    const agent = runtime()
+    const observed = (threadId: string, turnId: string, total: Record<string, number>, last: Record<string, number>) =>
+      agent.ingest({
+        source: "codex.app-server",
+        method: "thread/tokenUsage/updated",
+        payload: { threadId, turnId, tokenUsage: { total, last, modelContextWindow: 258400 } },
+      }).events.map((event) => event.type === "usage" ? event.observation : event)
+    const ownSecondTotal = { inputTokens: 10200, cachedInputTokens: 7150, outputTokens: 1250, reasoningOutputTokens: 612 }
+    const ownSecondLast = { inputTokens: 200, cachedInputTokens: 150, outputTokens: 50, reasoningOutputTokens: 12 }
+
+    expect(observed(
+      "thread-1",
+      "turn-1",
+      { inputTokens: 10000, cachedInputTokens: 7000, outputTokens: 1200, reasoningOutputTokens: 600 },
+      { inputTokens: 100, cachedInputTokens: 60, outputTokens: 20, reasoningOutputTokens: 6 },
+    )).toEqual([{
+      kind: "cumulative",
+      scope: "thread-1:turn-1",
+      nativeSessionId: "thread-1",
+      providerObservationId: "turn-1",
+      tokens: { input: 40, output: 14, reasoning: 6, cache: { read: 60, write: null } },
+    }])
+
+    expect(observed(
+      "thread-2",
+      "turn-2",
+      { inputTokens: 50, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 },
+      { inputTokens: 50, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 },
+    )).toEqual([{
+      kind: "cumulative",
+      scope: "thread-2:turn-2",
+      nativeSessionId: "thread-2",
+      providerObservationId: "turn-2",
+      tokens: { input: 50, output: 10, reasoning: 0, cache: { read: 0, write: null } },
+    }])
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { threadId: "thread-2", turn: { id: "turn-2", status: "completed" } },
+    }).events).toMatchObject([
+      { type: "session-status", status: "idle" },
+      { type: "finish", sessionId: "thread-2" },
+    ])
+
+    expect(observed("thread-1", "turn-1", ownSecondTotal, ownSecondLast)).toEqual([{
+      kind: "cumulative",
+      scope: "thread-1:turn-1",
+      nativeSessionId: "thread-1",
+      providerObservationId: "turn-1",
+      tokens: { input: 90, output: 52, reasoning: 18, cache: { read: 210, write: null } },
+    }])
+
+    expect(observed(
+      "thread-2",
+      "turn-3",
+      { inputTokens: 130, cachedInputTokens: 40, outputTokens: 25, reasoningOutputTokens: 5 },
+      { inputTokens: 80, cachedInputTokens: 40, outputTokens: 15, reasoningOutputTokens: 5 },
+    )).toEqual([{
+      kind: "cumulative",
+      scope: "thread-2:turn-3",
+      nativeSessionId: "thread-2",
+      providerObservationId: "turn-3",
+      tokens: { input: 40, output: 10, reasoning: 5, cache: { read: 40, write: null } },
+    }])
+
+    expect(observed("thread-1", "turn-1", ownSecondTotal, ownSecondLast)).toEqual([undefined])
+  })
+
+  test("meters each Codex turn of a thread in its own scope, so a second turn neither replaces nor re-counts the first", () => {
+    const agent = runtime()
+    const observed = (turnId: string, total: Record<string, number>, last: Record<string, number>) =>
+      agent.ingest({
+        source: "codex.app-server",
+        method: "thread/tokenUsage/updated",
+        payload: { threadId: "thread-child", turnId, tokenUsage: { total, last, modelContextWindow: 258400 } },
+      }).events.map((event) => event.type === "usage" ? event.observation : event)
+    const firstTurn = { inputTokens: 100, cachedInputTokens: 0, outputTokens: 10, reasoningOutputTokens: 0 }
+
+    expect(observed("turn-a", firstTurn, firstTurn)).toEqual([{
+      kind: "cumulative",
+      scope: "thread-child:turn-a",
+      nativeSessionId: "thread-child",
+      providerObservationId: "turn-a",
+      tokens: { input: 100, output: 10, reasoning: 0, cache: { read: 0, write: null } },
+    }])
+    expect(observed(
+      "turn-b",
+      { inputTokens: 180, cachedInputTokens: 20, outputTokens: 25, reasoningOutputTokens: 5 },
+      { inputTokens: 80, cachedInputTokens: 20, outputTokens: 15, reasoningOutputTokens: 5 },
+    )).toEqual([{
+      kind: "cumulative",
+      scope: "thread-child:turn-b",
+      nativeSessionId: "thread-child",
+      providerObservationId: "turn-b",
+      tokens: { input: 60, output: 10, reasoning: 5, cache: { read: 20, write: null } },
+    }])
+  })
+
   test("prunes turn-scoped resume state on terminal turn events", () => {
     const agent = runtime()
 

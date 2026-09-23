@@ -10,7 +10,7 @@ function fakeProcess(options: { reply?: string; failTurn?: boolean; startTurn?: 
   const proc: CodexTitleProcess = {
     async request(method, params) {
       calls.push({ method, params: params as JsonRecord })
-      if (method === "thread/start") return { thread: { id: "title-thread" } }
+      if (method === "thread/start") return { thread: { id: "title-thread" }, model: "gpt-5.5-title" }
       if (method === "turn/start") {
         if (options.startTurn) return await options.startTurn()
         queueMicrotask(() => {
@@ -36,13 +36,17 @@ function request(signal = new AbortController().signal): SessionTitleRequest {
   return { directory: "/work", system: "Name it", user: "User: add leap-year tests", model: { providerID: "codex", modelID: "gpt-5.5" }, signal }
 }
 
-function input(proc: CodexTitleProcess, released: string[], req = request()) {
+function input(proc: CodexTitleProcess, released: string[], req = request(), attributions: string[] = []) {
   return {
     request: req,
     process: async () => proc,
     lease: () => ({ release: () => { released.push("released") } }),
     model: "gpt-5.5",
     config: { features: { default_mode_request_user_input: true } },
+    attributeThread: (threadId: string, model: unknown) => {
+      attributions.push(`attributed:${threadId}:${String(model)}`)
+      return () => { attributions.push(`released:${threadId}`) }
+    },
   }
 }
 
@@ -51,9 +55,12 @@ describe("generateCodexTitle", () => {
     const { proc, calls, listeners } = fakeProcess({ reply: JSON.stringify({ title: "Add leap-year tests" }) })
     const released: string[] = []
 
-    await expect(generateCodexTitle(input(proc, released))).resolves.toBe("Add leap-year tests")
+    const attributions: string[] = []
+
+    await expect(generateCodexTitle(input(proc, released, request(), attributions))).resolves.toBe("Add leap-year tests")
 
     expect(calls.map((call) => call.method)).toEqual(["thread/start", "turn/start", "thread/archive"])
+    expect(attributions).toEqual(["attributed:title-thread:gpt-5.5-title", "released:title-thread"])
     expect(calls[0]?.params).toMatchObject({ cwd: "/work", ephemeral: true, sandbox: "read-only", approvalPolicy: "never", developerInstructions: "Name it", model: "gpt-5.5", config: { features: { default_mode_request_user_input: true } } })
     expect(calls[1]?.params).toMatchObject({
       threadId: "title-thread",

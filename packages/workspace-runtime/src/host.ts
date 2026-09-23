@@ -45,6 +45,7 @@ export {
   assertTarget,
   registeredWorkspaceDirectory,
 } from "./target"
+export { workspaceRuntimeStoreDir } from "./env"
 export { WorkspaceWorktreeManager, workspaceStorageRoot } from "./worktree"
 export { createBoundedGit, optionalGit, runGit, GitCredentialError, GitEnvironmentError, GitTimeoutError } from "./git"
 export { buildSafeEnv } from "./pty/env"

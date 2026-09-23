@@ -13,30 +13,23 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { createHash } from "node:crypto"
+import type { ExternalUsageBucket } from "@claxedo/server-core/usage/projection"
 import type { UsageProvenance } from "@claxedo/server-core/usage/provenance"
 import { record } from "../../platform/json"
-
-export type ExternalUsageBucket = {
-  app: string
-  provider: string
-  model: string
-  bucketStart: number
-  nativeSessionId: string
-  turnCount: number
-  tokens: { input: number | null; output: number | null; reasoning: number | null; cacheRead: number | null; cacheWrite: number | null }
-}
 
 export type LocalHistorySnapshot = {
   rows: ExternalUsageBucket[]
   totalRows: ExternalUsageBucket[]
   coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string }>
   classifiedClaxedo: number
-  unclassified: number
+  /** Requests counted in Total whose native session no window could place inside or outside Claxedo. */
+  unclassifiedRequests: number
   scannedAt: number
 }
 
-const CACHE_VERSION = 9
-const CACHE_FILE = "local-history-v9.json"
+const CACHE_VERSION = 12
+const CACHE_FILE = `local-history-v${CACHE_VERSION}.json`
+const CACHE_FILE_PATTERN = /^local-history-v\d+\.json$/
 const scans = new Map<string, Promise<LocalHistorySnapshot>>()
 
 type EmbeddedHistoryRow = {
@@ -51,6 +44,7 @@ type EmbeddedHistoryRow = {
   reasoning_output_tokens: number | null
   cached_input_tokens: number | null
   cache_creation_input_tokens: number | null
+  cache_creation_1h_input_tokens: number | null
 }
 
 type TokenTrackerHistoryModule = {
@@ -68,7 +62,7 @@ type TokenTrackerHistoryModule = {
     total_rows: EmbeddedHistoryRow[]
     coverage: Array<{ source: string; status: "available" | "degraded" | "unavailable" | "unsupported"; error?: string | null }>
     classified_claxedo: number
-    unclassified: number
+    unclassified_requests: number
   }>
 }
 
@@ -125,6 +119,9 @@ async function writeCached(stateDir: string, cached: CachedLocalHistory) {
   const temporary = `${target}.${process.pid}.${cached.key}.tmp`
   await fs.writeFile(temporary, JSON.stringify(cached), { mode: 0o600 })
   await fs.rename(temporary, target)
+  for (const name of await fs.readdir(stateDir)) {
+    if (name !== CACHE_FILE && CACHE_FILE_PATTERN.test(name)) await fs.rm(path.join(stateDir, name), { force: true })
+  }
 }
 
 export async function scanTokenTrackerLocalHistory(input: {
@@ -175,6 +172,7 @@ export async function scanTokenTrackerLocalHistory(input: {
         reasoning: row.reasoning_output_tokens,
         cacheRead: row.cached_input_tokens,
         cacheWrite: row.cache_creation_input_tokens,
+        cacheWrite1h: row.cache_creation_1h_input_tokens,
       },
     })
     const snapshot: LocalHistorySnapshot = {
@@ -186,7 +184,7 @@ export async function scanTokenTrackerLocalHistory(input: {
         ...(item.error ? { error: item.error } : {}),
       })),
       classifiedClaxedo: result.classified_claxedo,
-      unclassified: result.unclassified,
+      unclassifiedRequests: result.unclassified_requests,
       scannedAt: Date.now(),
     }
     await writeCached(input.stateDir, { version: CACHE_VERSION, key, since: input.since, until: input.until, snapshot })

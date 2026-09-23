@@ -10,7 +10,7 @@ import type { CodexActiveThread } from "./active-thread"
 
 type DynamicCodexThread = Pick<
   CodexActiveThread,
-  "sessionId" | "agentSessionId" | "directory" | "model" | "effort" | "serviceTier" | "observeSubagent"
+  "sessionId" | "agentSessionId" | "directory" | "model" | "effort" | "serviceTier" | "observeSubagent" | "adoptSubagent"
 > & { process: Pick<CodexAppServerProcess, "request" | "onMessage"> }
 
 export async function spawnDynamicCodexAgent(input: {
@@ -43,6 +43,7 @@ export async function spawnDynamicCodexAgent(input: {
     }, controlRequestDeadline()))
     childThreadId = text(asRecord(result?.thread)?.id) ?? ""
     if (!childThreadId) throw new Error("Codex app-server did not return a child thread id")
+    input.active.adoptSubagent(childThreadId)
     await observe(input, childThreadId, callId, prompt, label, "running")
     await runDynamicCodexChild(input.active, childThreadId, prompt, input.permissionModeId)
     await observe(input, childThreadId, callId, prompt, label, "completed")

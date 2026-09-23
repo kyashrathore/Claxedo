@@ -4,11 +4,10 @@
  * No provider, network, transcript, or developer home is touched. The fixture
  * starts at the canonical revision contract, then proves latest-revision
  * projection, cross-host aggregation, provenance-first overlap removal,
- * offline outbox convergence, privacy, and the committed 7/30/90-day budgets.
+ * privacy, and the committed 7/30/90-day budgets.
  */
 import { performance } from "node:perf_hooks"
 import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
-import { createUsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
 import {
   mergeUsageSeries,
   usageSeriesFromExternal,
@@ -16,6 +15,7 @@ import {
 } from "@claxedo/server-core/usage/projection"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
+import { tokenTrackerPricing } from "@claxedo/server-core/usage/adapters/token-tracker-pricing"
 import { asRecord, numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 const DAY = 86_400_000
@@ -100,27 +100,6 @@ function assertPrivacy(rows: readonly TurnUsageRevision[]) {
   }
 }
 
-async function assertOfflineConvergence(revision: TurnUsageRevision) {
-  let pending = [revision]
-  let delivered = 0
-  const local = {
-    pendingOutbox: async () => pending,
-    claimPending: async () => pending,
-    markDelivered: async () => { pending = []; delivered += 1 },
-    markConflict: async () => { throw new Error("unexpected conflict") },
-  }
-  const central = {
-    recordLlmTurn: async () => ({ activated: false }),
-    recordTurnUsageBatch: async ({ revisions }: { revisions: TurnUsageRevision[] }) =>
-      revisions.map(() => ({ status: "accepted" as const, activated: false })),
-  }
-  const sync = createUsageOutboxSync({ local, central, limit: 100 })
-  const offline = await sync.clearIdentity()
-  invariant(offline.pending === 1 && offline.delivered === 0, "offline fact did not remain pending")
-  const online = await sync.flush({ org_id: "org-1", user_id: "user-1" })
-  invariant(online.delivered === 1 && delivered === 1 && pending.length === 0, "reconnect did not converge exactly once")
-}
-
 export async function runUsageMeteringSmoke() {
   const exact = HARNESSES.map((harness, index) => fact({
     harness,
@@ -133,7 +112,7 @@ export async function runUsageMeteringSmoke() {
   }))
   const revised = fact({
     harness: "codex-app-server",
-    hostId: "host-a",
+    hostId: "host-b",
     messageId: "exact-codex-app-server",
     nativeSessionId: "native-codex-app-server",
     observedAt: NOW - 4_000,
@@ -172,7 +151,7 @@ export async function runUsageMeteringSmoke() {
       bucketStart: NOW - 500,
       nativeSessionId: "direct-claude",
       turnCount: 1,
-      tokens: { input: 40, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+      tokens: { input: 40, output: 10, reasoning: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: null },
     }],
     since: NOW - 30 * DAY,
     until: NOW,
@@ -183,7 +162,6 @@ export async function runUsageMeteringSmoke() {
   invariant(total.totals.turnCount === projection.totals.turnCount + 1, "Total double-counted a Claxedo history event")
   invariant(new Set(exact.map((row) => row.hostId)).size === 2, "cross-machine fixture lost a host")
 
-  await assertOfflineConvergence(exact[0])
   assertPrivacy(exact)
 
   const rows = benchmarkFacts()
@@ -202,13 +180,10 @@ export async function runUsageMeteringSmoke() {
   const route = LocalUsageRoutes({
     local: {
       current: async () => rows,
-      pendingOutbox: async () => rows,
+      ownedBy: async () => rows,
     },
     identity: async () => undefined,
-    outbox: {
-      flush: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
-      clearIdentity: async () => ({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
-    },
+    pricing: tokenTrackerPricing("refreshed"),
   })
   const routeStarted = performance.now()
   const routeResponse = await route.request(`/?since=${NOW - 90 * DAY}&until=${NOW}&timezone=UTC&view=claxedo&group=provider`)
@@ -227,7 +202,7 @@ export async function runUsageMeteringSmoke() {
     projectionBudgetMs: PROJECTION_BUDGET_MS,
     projectionObservedMs: timings,
     productionRouteObservedMs: Number(routeElapsed.toFixed(2)),
-    checks: ["revision-idempotency", "cross-machine", "overlap", "offline-recovery", "privacy", "7-30-90-budgets", "production-route"],
+    checks: ["revision-idempotency", "cross-machine", "overlap", "privacy", "7-30-90-budgets", "production-route"],
   }
 }
 

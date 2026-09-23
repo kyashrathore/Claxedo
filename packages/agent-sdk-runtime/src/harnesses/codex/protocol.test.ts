@@ -108,7 +108,7 @@ test("every inventory read carries its own budget, so a paged stop cannot expire
     },
   } as unknown as Pick<CodexAppServerProcess, "request">
 
-  const stop = createCodexTurnStop({ process, threadId: "thread-1", turnId: () => "turn-1", record })
+  const stop = createCodexTurnStop({ process, threadId: "thread-1", turnId: () => "turn-1", record, subagentThreads: () => [] })
   stop.observe("item/started", { threadId: "thread-1", turnId: "turn-1", item: { type: "commandExecution", processId: "p1" } })
   await stop.stop()
 
