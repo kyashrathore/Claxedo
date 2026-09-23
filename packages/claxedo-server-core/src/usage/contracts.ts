@@ -83,6 +83,41 @@ export type TurnUsageRevision = {
   quality: TurnUsageQuality
 }
 
+/** The tokens a stored row can give back: a one-hour split that is null has no column value to return. */
+function storedTokens(tokens: TurnUsageRevision["tokens"]): TurnUsageRevision["tokens"] {
+  const { write1h, ...cache } = tokens.cache
+  return { ...tokens, cache: write1h === null || write1h === undefined ? cache : { ...cache, write1h } }
+}
+
+/**
+ * The payload identity every usage store compares a replayed revision by.
+ * Key order is fixed here, so two stores hashing the same fact agree on
+ * `duplicate` versus `conflict`.
+ */
+export async function usageRevisionHash(fact: TurnUsageRevision): Promise<string> {
+  const canonical = JSON.stringify({
+    hostId: fact.hostId,
+    sessionRef: fact.sessionRef,
+    sessionId: fact.sessionId,
+    messageId: fact.messageId,
+    revision: fact.revision,
+    observedAt: fact.observedAt,
+    completedAt: fact.completedAt ?? null,
+    settlement: fact.settlement,
+    status: fact.status,
+    location: fact.location,
+    harness: fact.harness,
+    providerId: fact.providerId,
+    modelId: fact.modelId,
+    nativeSessionId: fact.nativeSessionId ?? null,
+    workspaceId: fact.workspaceId ?? null,
+    tokens: storedTokens(fact.tokens),
+    quality: fact.quality,
+  })
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
 export type UsageRevisionWriteResult =
   | { status: "accepted" }
   | { status: "duplicate" }

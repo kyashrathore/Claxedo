@@ -56,6 +56,7 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "listSessionShares",
   "listSessions",
   "resolveSession",
+  "resolveSessionUsageOwner",
   "readSessionMessages",
   "syncSessionMessages",
   "upsertSessionVisibility",
@@ -1478,6 +1479,32 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       throw error
     }
     return { ...sessionJson(session), workspace_id: session.workspace_id }
+  }
+
+  async resolveSessionUsageOwner(args: { sessionId: string; turnId?: string }) {
+    const sessionId = requireText(args.sessionId, "sessionId")
+    // An agent actor has no account, and a deleted workspace answers for no
+    // one: either leaves the usage unowned rather than guessed.
+    const owned = `
+      join actors actor on actor.actor_id = source.actor_id and actor.user_id is not null
+      join workspaces workspace on workspace.workspace_id = source.workspace_id and workspace.deleted_at is null
+    `
+    const turn = args.turnId === undefined ? null : await this.database.prepare(`
+      select source.org_id, actor.user_id from session_turn_producers source ${owned}
+      where source.session_id = ? and source.turn_id = ?
+    `).bind(sessionId, args.turnId).first<{ org_id: string; user_id: string }>()
+    if (turn) return turn
+    const latest = await this.database.prepare(`
+      select source.org_id, actor.user_id from session_turn_producers source ${owned}
+      where source.session_id = ? order by source.fencing_token desc limit 1
+    `).bind(sessionId).first<{ org_id: string; user_id: string }>()
+    if (latest) return latest
+    const created = await this.database.prepare(`
+      select source.org_id, actor.user_id
+      from (select org_id, workspace_id, creator_actor_id as actor_id from sessions where session_id = ? and deleted_at is null) source
+      ${owned}
+    `).bind(sessionId).first<{ org_id: string; user_id: string }>()
+    return created ?? undefined
   }
 
   async readSessionMessages(

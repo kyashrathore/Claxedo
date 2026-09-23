@@ -178,7 +178,6 @@ import {
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
-import type { UsageLedger } from "../../platform/telemetry/product/metering"
 import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { readMachineAgentUsage, scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
@@ -820,7 +819,6 @@ export function createSelfHostedApp(
     usageRevisionStore?: ReturnType<typeof createSqliteUsageLedger>
     usageSourceCoverage?: UsageSourceCoverageStore
     usageSourceCoverageReady?: Promise<void>
-    usageLedger?: UsageLedger
     usageOutbox?: UsageOutboxSync
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
     /** Composition seam for tests/load fixtures; production keeps the default limiter. */
@@ -988,7 +986,6 @@ export function createSelfHostedApp(
   const usageOutbox = options.usageOutbox ?? (options.usageRevisionStore
       ? createUsageOutboxSync({
           local: options.usageRevisionStore,
-          ...(options.usageLedger ? { central: options.usageLedger } : {}),
           telemetry: services.telemetry,
         })
     : undefined)
@@ -996,8 +993,6 @@ export function createSelfHostedApp(
   const controlPlane = createControlPlaneApp(services, {
     ...authRouteOptions(services),
     createMachineSession: machineSessions.create,
-    ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
-    mountPublicUsageRoute: !options.usageRevisionStore,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
     sessionShareChangedSink: (event) => controlBus.publish(event),
   })
@@ -1347,6 +1342,9 @@ export function createSelfHostedApp(
     authority: selfHostedRuntimeAuthority(services.authority),
     turnAuthority: selfHostedTurnAuthority(services.authority),
     turnCredentials,
+    // A cloud sandbox this box provisions reports into the store its own
+    // turns meter into, so one usage view answers for both.
+    ...(options.usageRevisionStore ? { usageWriter: options.usageRevisionStore } : {}),
   }))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
@@ -1396,7 +1394,6 @@ export function createSelfHostedApp(
     const readQuota = createUsageQuotaReader({ credentials: services.credentials, agentUsage: readMachineAgentUsage })
     app.route("/api/claxedo/usage", LocalUsageRoutes({
       local: options.usageRevisionStore,
-      ...(options.usageLedger ? { central: options.usageLedger } : {}),
       outbox: usageOutbox!,
       identity: async (request) => {
         const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
@@ -1420,7 +1417,9 @@ export function createSelfHostedApp(
       },
       quota: async ({ request, refresh }) => await readQuota({ org: await requestOrg(request, {}), refresh }),
       history: async ({ since, until, refresh }) => {
-        const facts = await options.usageRevisionStore!.current()
+        // A cloud workspace's native sessions live in its sandbox's home, never
+        // in this machine's CLI history, so only local facts classify it.
+        const facts = (await options.usageRevisionStore!.current()).filter((fact) => fact.location === "local")
         const incompleteSources = new Set<string>()
         const entries = facts.flatMap((fact) => {
           const source = tokenTrackerSourceForHarness(fact.harness)
@@ -1787,10 +1786,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
   const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
-  const usageLedger: UsageLedger | undefined = undefined
   const usageOutbox = createUsageOutboxSync({
     local: usageRevisionStore,
-    ...(usageLedger ? { central: usageLedger } : {}),
     telemetry: services.telemetry,
   })
   const localUsageHost = localHostIdentity()
@@ -1924,7 +1921,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     usageSourceCoverage,
     usageSourceCoverageReady: usageCoverageReady,
     usageOutbox,
-    ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
     ...(options.tasksGrants ? { tasksGrants: options.tasksGrants } : {}),

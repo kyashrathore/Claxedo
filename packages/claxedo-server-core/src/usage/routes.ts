@@ -1,15 +1,9 @@
 import { Hono, type Context } from "hono"
 import type { UnifiedUsageResponse, UsageBreakdownRow, UsageFilterDimension } from "@claxedo/usage-contract"
 export type { UnifiedUsageResponse } from "@claxedo/usage-contract"
-import {
-  ControlPlaneAuthError,
-  controlPlaneAuthContext,
-  controlPlaneAuthErrorBody,
-  type ControlPlaneTokenVerifier,
-  type ControlPlaneAuthConfig,
-} from "../platform/auth/auth"
-import type { UsageLedger } from "./ledger"
-export type { UsageLedger } from "./ledger"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "../platform/auth/auth"
+import type { UsageLedger, UsageProjectionLedger } from "./ledger"
+export type { UsageLedger, UsageProjectionLedger } from "./ledger"
 import { projectTokenTrackerCost, TOKEN_TRACKER_VERSION, type PricedUsage } from "./adapters/token-tracker-pricing"
 import { isNonEmptyString, isOneOf, jsonRecord } from "../platform/runtime/lib/json"
 import {
@@ -257,18 +251,23 @@ async function priceCentralBreakdown(rows: readonly CentralUsageRow[]) {
     const [source, ...modelParts] = rowText(row, "value").split("/")
     const model = modelParts.join("/")
     if (!source || !model) continue
-    const item = await projectTokenTrackerCost({
-      source,
-      model,
-      tokens: {
-        input: rowNumber(row, "input_tokens"),
-        output: rowNumber(row, "output_tokens"),
-        reasoning: rowNumber(row, "reasoning_tokens"),
-        cacheRead: rowNumber(row, "cache_read_tokens"),
-        cacheWrite: rowNumber(row, "cache_write_tokens"),
-        cacheWrite1h: rowNumber(row, "cache_write_1h_tokens"),
-      },
-    })
+    const tokens = {
+      input: rowNumber(row, "input_tokens"),
+      output: rowNumber(row, "output_tokens"),
+      reasoning: rowNumber(row, "reasoning_tokens"),
+      cacheRead: rowNumber(row, "cache_read_tokens"),
+      cacheWrite: rowNumber(row, "cache_write_tokens"),
+      cacheWrite1h: rowNumber(row, "cache_write_1h_tokens"),
+    }
+    // The tokentracker catalog loads through node:fs and __dirname, so on the
+    // hosted Worker it throws before pricing anything. There every model's
+    // price is unknown, which is exactly what an unpriced token says; the
+    // token counts are still the account's usage.
+    const item = await projectTokenTrackerCost({ source, model, tokens }).catch(() => undefined)
+    if (!item) {
+      total.unpricedTokens += tokens.input + tokens.output + tokens.reasoning + tokens.cacheRead + tokens.cacheWrite
+      continue
+    }
     total.estimatedUsd += item.estimatedUsd
     total.pricedTokens += item.pricedTokens
     total.unpricedTokens += item.unpricedTokens
@@ -278,7 +277,7 @@ async function priceCentralBreakdown(rows: readonly CentralUsageRow[]) {
 }
 
 async function priceAllCentralModels(
-  ledger: UsageLedger,
+  ledger: UsageProjectionLedger,
   identity: { org_id: string; user_id: string },
   range: { since: number; until: number },
 ) {
@@ -312,7 +311,7 @@ async function priceAllCentralModels(
 }
 
 async function priceCentralProjection(
-  ledger: UsageLedger,
+  ledger: UsageProjectionLedger,
   identity: { org_id: string; user_id: string },
   range: { since: number; until: number },
   projection: CentralUsageProjection,
@@ -737,9 +736,13 @@ function centralUsageFacts(projection: CentralUsageProjection | undefined): {
 }
 
 export function UsageRoutes(input: {
-  ledger: UsageLedger
-  authConfig?: ControlPlaneAuthConfig
-  verifier?: ControlPlaneTokenVerifier
+  ledger: UsageProjectionLedger
+  /**
+   * The signed account a request reads as, resolved by the composition that
+   * owns authentication. Nothing for an unsigned caller; a rejected credential
+   * throws the `ControlPlaneAuthError` its verifier raised.
+   */
+  identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
   telemetry?: UsageTelemetry
 }) {
   const app = new Hono()
@@ -750,11 +753,7 @@ export function UsageRoutes(input: {
   // declared hosted operation as a 404.
   app.post("/sync", async (c) => {
     try {
-      const auth = await controlPlaneAuthContext(c.req.raw, {
-        config: input.authConfig,
-        verifier: input.verifier,
-      })
-      if (auth.mode !== "signed" || !auth.user.orgId) {
+      if (!(await input.identity(c.req.raw))) {
         return c.json({ error: "signed_org_required", message: "A signed organization session is required" }, 401)
       }
       return c.json({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
@@ -766,11 +765,8 @@ export function UsageRoutes(input: {
   app.get("/", async (c) => {
     const startedAt = Date.now()
     try {
-      const auth = await controlPlaneAuthContext(c.req.raw, {
-        config: input.authConfig,
-        verifier: input.verifier,
-      })
-      if (auth.mode !== "signed" || !auth.user.orgId) {
+      const identity = await input.identity(c.req.raw)
+      if (!identity) {
         return c.json({ error: "signed_org_required", message: "A signed organization session is required" }, 401)
       }
       const parsed = parseUsageQuery((name) => c.req.query(name))
@@ -784,7 +780,6 @@ export function UsageRoutes(input: {
         return c.json({ error: parsed.error, ...(message ? { message } : {}) }, 400)
       }
       const { since, until, timeZone, group, metric, requestedLimit, view } = parsed.value
-      const identity = { org_id: auth.user.orgId, user_id: auth.user.subject }
       if (view === "quota") {
         const series = usageSeriesFromFacts({ facts: [], since, until, timeZone })
         captureUsage(input.telemetry, {

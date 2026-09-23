@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto"
+import path from "node:path"
 import {
   createRuntimeCredentialIssuer,
   createWorkspaceOpenCodeRuntime,
   isLoopbackHostname,
+  remoteWorkspaceSessionAccessPolicyFromEnv,
+  WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL,
   workspaceRuntimeListenHostname,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
@@ -10,7 +13,7 @@ import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import { workspaceDir, workspaceId } from "@claxedo/workspace-runtime/host"
+import { workspaceDir, workspaceId, workspaceRuntimeStoreDir } from "@claxedo/workspace-runtime/host"
 import {
   loopbackWorkspaceRuntimeExposure,
   privateNetworkDevUnsafeWorkspaceRuntimeExposure,
@@ -22,6 +25,7 @@ import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { configureRuntimeGitAuth } from "./git-auth"
 import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
+import { cloudWorkspaceUsage, createSandboxUsageLedger } from "./cloud-usage"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeMcpToolGroups,
@@ -157,6 +161,20 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   // later moment to start this at, and the timer holds nothing open.
   const tasks = workspaceRuntimeTasksGrant(env, ownerGrant ? { ownerGrant } : {})
   tasks?.start()
+  // A relay-exposed runtime answers to the control plane's session authority,
+  // which is also where its turns' usage is reported.
+  const authorityUrl = text(env, WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL)
+  const usage = relayOptions.relayHostAuth && authorityUrl
+    ? cloudWorkspaceUsage({
+        workspaceId: workspaceId(env),
+        authorityUrl,
+        ledger: createSandboxUsageLedger({
+          path: path.join(workspaceRuntimeStoreDir(env), "usage.sqlite"),
+          workspaceId: workspaceId(env),
+        }),
+        policy: remoteWorkspaceSessionAccessPolicyFromEnv(env),
+      })
+    : undefined
   const options: WorkspaceRuntimeServerOptions = {
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp, enabledToolGroups: () => enabledToolGroups },
@@ -172,6 +190,14 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
           "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK local managed-cloud runtime",
         ),
     ...(harness ? { harness } : {}),
+    ...(usage
+      ? {
+          sessionAccessPolicy: usage.sessionAccessPolicy,
+          onCompatEvent: usage.onCompatEvent,
+          onTurnOutcome: usage.onTurnOutcome,
+          bindSessionConfig: usage.bindSessionConfig,
+        }
+      : {}),
     ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),
     connectionProviders: [createAcpConnectionProvider(), createOpenCodeServerConnectionProvider()],
     corsOrigin: claxedoCorsOrigin,

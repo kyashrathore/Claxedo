@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto"
 import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../../platform/db/index"
 import {
   assertTurnUsageRevision,
   readTurnUsageQuality,
+  usageRevisionHash,
   type TurnUsageQuality,
   type TurnUsageRevision,
   type UsageRevisionReader,
@@ -17,38 +17,6 @@ type Database = {
 }
 
 type UsageRow = typeof ClaxedoUsageTurnRevisionTable.$inferSelect
-
-function canonicalPayload(fact: TurnUsageRevision) {
-  return JSON.stringify({
-    hostId: fact.hostId,
-    sessionRef: fact.sessionRef,
-    sessionId: fact.sessionId,
-    messageId: fact.messageId,
-    revision: fact.revision,
-    observedAt: fact.observedAt,
-    completedAt: fact.completedAt ?? null,
-    settlement: fact.settlement,
-    status: fact.status,
-    location: fact.location,
-    harness: fact.harness,
-    providerId: fact.providerId,
-    modelId: fact.modelId,
-    nativeSessionId: fact.nativeSessionId ?? null,
-    workspaceId: fact.workspaceId ?? null,
-    tokens: storedTokens(fact.tokens),
-    quality: fact.quality,
-  })
-}
-
-/** The tokens a row can give back: a one-hour split that is null has no column value to return. */
-function storedTokens(tokens: TurnUsageRevision["tokens"]): TurnUsageRevision["tokens"] {
-  const { write1h, ...cache } = tokens.cache
-  return { ...tokens, cache: write1h === null || write1h === undefined ? cache : { ...cache, write1h } }
-}
-
-function payloadHash(fact: TurnUsageRevision) {
-  return createHash("sha256").update(canonicalPayload(fact)).digest("hex")
-}
 
 function values(fact: TurnUsageRevision, hash: string): typeof ClaxedoUsageTurnRevisionTable.$inferInsert {
   return {
@@ -140,7 +108,7 @@ export function createSqliteUsageLedger(
   return {
     async writeRevision(item, options) {
       assertTurnUsageRevision(item)
-      const hash = payloadHash(item)
+      const hash = await usageRevisionHash(item)
       return database.transaction((db) => {
         const current = db
           .select({

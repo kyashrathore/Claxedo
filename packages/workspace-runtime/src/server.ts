@@ -127,6 +127,12 @@ export type WorkspaceRuntimeServerOptions = {
    * without a relay host token. Absent, no harness receives the entry.
    */
   firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
+  /**
+   * Receives this runtime's reader of a session's committed configuration once
+   * the host exists, for a composition that attributes a session's work to its
+   * harness and model from outside the runtime.
+   */
+  bindSessionConfig?: (read: Host["getSessionConfig"]) => void
 }
 
 type ListenPolicyEnv = {
@@ -448,6 +454,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),
   })
+  options.bindSessionConfig?.((sessionId) => host.getSessionConfig(sessionId))
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
         workspaceId: options.target.workspaceId,

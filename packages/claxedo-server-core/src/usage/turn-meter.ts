@@ -128,7 +128,7 @@ export type TurnMeter = {
 
 export function createTurnMeter(input: {
   writer: UsageRevisionWriter
-  reader?: UsageRevisionReader
+  reader?: Pick<UsageRevisionReader, "current">
   currentFilter?: (fact: TurnUsageRevision) => boolean
   reconcileProvisionalOnStart?: boolean
   resolveContext(value: { sessionId: string; messageId: string }): Promise<TurnContext>

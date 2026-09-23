@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { execFileSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -202,6 +203,35 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.exposure?.kind).toBe("relay")
     expect(boot.options.relayHostAuth).toBeDefined()
     expect(boot.options.hostTunnel).toMatchObject({ relayUrl: "https://relay.example", hostId: "ws-env" })
+  })
+
+  test("a relay runtime that answers to a session authority meters its turns into its store and reports through that authority", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const store = await mkdtemp(path.join(os.tmpdir(), "claxedo-runtime-usage-"))
+    const relay = {
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-usage",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_STORE_DIR: store,
+      WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey),
+      WORKSPACE_RUNTIME_RELAY_URL: "https://relay.example",
+    }
+    try {
+      const metered = await claxedoWorkspaceRuntimeBootFromEnv({
+        ...relay,
+        WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: "https://plane.example/api/runtime-authority/session-authorize",
+      })
+      expect(metered.options.onCompatEvent).toBeTypeOf("function")
+      expect(metered.options.onTurnOutcome).toBeTypeOf("function")
+      expect(metered.options.bindSessionConfig).toBeTypeOf("function")
+      expect(metered.options.sessionAccessPolicy?.sessionAuthority).toBe("managed-private")
+      expect(existsSync(path.join(store, "usage.sqlite"))).toBe(true)
+
+      const unmetered = await claxedoWorkspaceRuntimeBootFromEnv(relay)
+      expect(unmetered.options.onCompatEvent).toBeUndefined()
+      expect(unmetered.options.sessionAccessPolicy).toBeUndefined()
+    } finally {
+      await rm(store, { recursive: true, force: true })
+    }
   })
 
   test("seeds the first-party issuer with the owner the grant names, and verifies that grant with the management key", async () => {

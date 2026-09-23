@@ -2802,11 +2802,14 @@ export function createSqliteWorkspaceAuthority(
       return { revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [who.token_identifier]) }
     },
 
-    async resolveSessionUsageOwner(args: { sessionId: string }) {
+    async resolveSessionUsageOwner(args: { sessionId: string; turnId?: string }) {
       const db = database()
-      // The actor the runtime admitted for the latest turn produced the
-      // usage; a session nobody has driven yet is its creator's.
-      const produced = db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
+      // The actor the runtime admitted for the turn produced the usage; a
+      // session nobody has driven yet is its creator's.
+      const turn = args.turnId === undefined ? undefined : db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
+        SELECT actor_id, workspace_id FROM session_turn_producers WHERE session_id = ? AND turn_id = ?
+      `).get(args.sessionId, args.turnId)
+      const produced = turn ?? db.prepare<unknown[], { actor_id: string; workspace_id: string }>(`
         SELECT actor_id, workspace_id FROM session_turn_producers
         WHERE session_id = ? ORDER BY fencing_token DESC LIMIT 1
       `).get(args.sessionId)

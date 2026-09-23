@@ -332,7 +332,7 @@ describe("turn usage meter", () => {
           return { status: "accepted" }
         },
       },
-      reader: { current: async () => [current], pendingOutbox: async () => [] },
+      reader: { current: async () => [current] },
       resolveContext: async () => ({
         sessionRef: current.sessionRef,
         workspaceId: "ws-1",
@@ -411,7 +411,6 @@ describe("turn usage meter", () => {
       },
       reader: {
         current: currentReader,
-        pendingOutbox: async () => [],
       },
       resolveContext: async () => {
         throw new Error("session metadata was already removed")
@@ -460,7 +459,6 @@ describe("turn usage meter", () => {
       },
       reader: {
         current: async (filter) => (filter?.settlement === "provisional" ? [] : [current]),
-        pendingOutbox: async () => [],
       },
       resolveContext: async () => {
         throw new Error("settled fact owns its context")
@@ -506,7 +504,7 @@ describe("turn usage meter", () => {
           return { status: "accepted" }
         },
       },
-      reader: { current, pendingOutbox: async () => [] },
+      reader: { current },
       resolveContext: async () => ({
         sessionRef: settled.sessionRef,
         workspaceId: "ws-1",

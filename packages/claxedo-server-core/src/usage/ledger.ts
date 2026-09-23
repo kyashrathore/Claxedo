@@ -55,3 +55,6 @@ export type UsageLedger = {
     limit?: number
   }) => Promise<unknown>
 }
+
+/** The read half of a central ledger: what the usage routes project a signed account's view from. */
+export type UsageProjectionLedger = Pick<UsageLedger, "usageDashboard" | "usageBreakdown">

@@ -608,17 +608,18 @@ export type WorkspaceAuthority = {
   ) => Promise<unknown>
   /**
    * The account a session's usage is attributed to: the actor the runtime
-   * admitted for the session's latest turn, else the creator the session
-   * registered under. The metering path holds no caller auth — this takes
-   * none and answers from the authority's own records — and a session it
-   * cannot place resolves to no owner rather than a guessed one.
+   * admitted for `turnId` when one is named and recorded, else for the
+   * session's latest turn, else the creator the session registered under. The
+   * metering path holds no caller auth — this takes none and answers from the
+   * authority's own records — and a session it cannot place resolves to no
+   * owner rather than a guessed one.
    *
    * Optional because only a deployment whose authority records runtime
    * producers can answer it; a composition without one writes the fact
    * unowned rather than attributing it to whoever asks next.
    */
   resolveSessionUsageOwner?: (
-    args: { sessionId: string },
+    args: { sessionId: string; turnId?: string },
   ) => Promise<{ org_id: string; user_id: string } | undefined>
 
   // runtime tokens

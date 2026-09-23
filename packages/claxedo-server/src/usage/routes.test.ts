@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthContext, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 
@@ -14,13 +14,16 @@ const verifier: ControlPlaneTokenVerifier = async (token) => {
     user: { subject: "user_from_token", orgId: "org_from_token", tokenIdentifier: "token_1", issuer: authConfig.issuer },
   }
 }
+const identity = async (request: Request) => {
+  const auth = await controlPlaneAuthContext(request, { config: authConfig, verifier })
+  return auth.mode === "signed" && auth.user.orgId ? { org_id: auth.user.orgId, user_id: auth.user.subject } : undefined
+}
 
 describe("usage routes", () => {
   test("acknowledges hosted sync wakeups from a signed org with the central empty-outbox state", async () => {
     const app = UsageRoutes({
-      authConfig,
-      verifier,
-      ledger: { recordLlmTurn: async () => ({ activated: false }) },
+      identity,
+      ledger: {},
     })
 
     expect((await app.request("/sync", { method: "POST" })).status).toBe(401)
@@ -36,9 +39,8 @@ describe("usage routes", () => {
     const usageDashboard = vi.fn(async () => ({ totals: { turn_count: 1 }, daily: [], breakdown: [] }))
     const usageBreakdown = vi.fn(async () => ({ rows: [], next: undefined }))
     const app = UsageRoutes({
-      authConfig,
-      verifier,
-      ledger: { recordLlmTurn: async () => ({ activated: false }), usageDashboard, usageBreakdown },
+      identity,
+      ledger: { usageDashboard, usageBreakdown },
     })
     const response = await app.request(
       "/?since=1&until=2&view=claxedo&group=model&filter_location=cloud&org_id=attacker",
@@ -62,8 +64,8 @@ describe("usage routes", () => {
   })
 
   test("rejects unsigned, invalid ranges, and invalid group dimensions", async () => {
-    const ledger = { recordLlmTurn: async () => ({ activated: false }), usageDashboard: async () => ({}) }
-    const app = UsageRoutes({ authConfig, verifier, ledger })
+    const ledger = { usageDashboard: async () => ({}) }
+    const app = UsageRoutes({ identity, ledger })
     expect((await app.request("/?since=1&until=2")).status).toBe(401)
     expect((await app.request("/?since=2&until=1", { headers: { authorization: "Bearer valid" } })).status).toBe(400)
     expect(
@@ -84,9 +86,8 @@ describe("usage routes", () => {
   test("refuses a bearer the verifier rejects, on both the read and the sync wakeup", async () => {
     const usageDashboard = vi.fn(async () => ({ totals: {}, daily: [] }))
     const app = UsageRoutes({
-      authConfig,
-      verifier,
-      ledger: { recordLlmTurn: async () => ({ activated: false }), usageDashboard },
+      identity,
+      ledger: { usageDashboard },
     })
     const headers = { authorization: "Bearer forged" }
 
@@ -108,9 +109,8 @@ describe("usage routes", () => {
       throw new Error("must not run")
     })
     const app = UsageRoutes({
-      authConfig,
-      verifier,
-      ledger: { recordLlmTurn: async () => ({ activated: false }), usageDashboard, usageBreakdown },
+      identity,
+      ledger: { usageDashboard, usageBreakdown },
     })
 
     const response = await app.request("/?since=1&until=2&view=quota", {
@@ -128,10 +128,8 @@ describe("usage routes", () => {
 
   test("accepts a 90-calendar-day range containing a DST fall-back hour", async () => {
     const app = UsageRoutes({
-      authConfig,
-      verifier,
+      identity,
       ledger: {
-        recordLlmTurn: async () => ({ activated: false }),
         usageDashboard: async () => ({ totals: {}, daily: [] }),
       },
     })
@@ -148,10 +146,8 @@ describe("usage routes", () => {
         : { rows: [{ value: "anthropic/claude-sonnet-5", input_tokens: 5 }], next: "page-2" },
     )
     const app = UsageRoutes({
-      authConfig,
-      verifier,
+      identity,
       ledger: {
-        recordLlmTurn: async () => ({ activated: false }),
         usageDashboard: async () => ({ totals: { turn_count: 2, input_tokens: 12 }, daily: [] }),
         usageBreakdown,
       },
@@ -169,10 +165,8 @@ describe("usage routes", () => {
 
   test("returns a canonical priced breakdown page from the exact dashboard projection", async () => {
     const app = UsageRoutes({
-      authConfig,
-      verifier,
+      identity,
       ledger: {
-        recordLlmTurn: async () => ({ activated: false }),
         usageDashboard: async () => ({
           totals: { turn_count: 2, input_tokens: 12, input_known_count: 2 },
           daily: [],
@@ -232,10 +226,8 @@ describe("usage routes", () => {
       input_tokens: index + 1,
     }))
     const app = UsageRoutes({
-      authConfig,
-      verifier,
+      identity,
       ledger: {
-        recordLlmTurn: async () => ({ activated: false }),
         usageDashboard: async () => ({
           totals: { turn_count: 12, input_tokens: 78 },
           daily: [],
@@ -260,10 +252,8 @@ describe("usage routes", () => {
 
   test("sorts breakdown pages by the selected usage metric", async () => {
     const app = UsageRoutes({
-      authConfig,
-      verifier,
+      identity,
       ledger: {
-        recordLlmTurn: async () => ({ activated: false }),
         usageDashboard: async () => ({
           totals: { turn_count: 2, input_tokens: 2_000_000, output_tokens: 1_000_000 },
           daily: [],
@@ -312,11 +302,9 @@ describe("usage routes", () => {
   test("captures bounded operational evidence without tenant or usage dimensions", async () => {
     const capture = vi.fn()
     const app = UsageRoutes({
-      authConfig,
-      verifier,
+      identity,
       telemetry: { capture },
       ledger: {
-        recordLlmTurn: async () => ({ activated: false }),
         usageDashboard: async () => ({ totals: { turn_count: 1, input_tokens: 4 }, daily: [] }),
       },
     })

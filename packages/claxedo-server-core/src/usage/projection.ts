@@ -350,6 +350,108 @@ export type CentralUsageProjection = {
   next?: string
 }
 
+const CENTRAL_ROW_TOTALS = [
+  "turn_count",
+  "input_tokens",
+  "output_tokens",
+  "reasoning_tokens",
+  "cache_read_tokens",
+  "cache_write_tokens",
+  "cache_write_1h_tokens",
+  "input_known_count",
+  "output_known_count",
+  "reasoning_known_count",
+  "cache_read_known_count",
+  "cache_write_known_count",
+  "unknown_token_count",
+  "partial_turn_count",
+  "unavailable_turn_count",
+  "error_turn_count",
+] as const
+
+type CentralRowTotals = Record<(typeof CENTRAL_ROW_TOTALS)[number], number>
+
+function centralRowTotals(fact: TurnUsageRevision): CentralRowTotals {
+  const { tokens } = fact
+  const known = (value: number | null) => (value === null ? 0 : 1)
+  return {
+    turn_count: 1,
+    input_tokens: tokens.input ?? 0,
+    output_tokens: tokens.output ?? 0,
+    reasoning_tokens: tokens.reasoning ?? 0,
+    cache_read_tokens: tokens.cache.read ?? 0,
+    cache_write_tokens: tokens.cache.write ?? 0,
+    cache_write_1h_tokens: tokens.cache.write1h ?? 0,
+    input_known_count: known(tokens.input),
+    output_known_count: known(tokens.output),
+    reasoning_known_count: known(tokens.reasoning),
+    cache_read_known_count: known(tokens.cache.read),
+    cache_write_known_count: known(tokens.cache.write),
+    unknown_token_count: [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write]
+      .filter((value) => value === null).length,
+    partial_turn_count: fact.settlement === "partial" ? 1 : 0,
+    unavailable_turn_count: fact.settlement === "unavailable" ? 1 : 0,
+    error_turn_count: fact.status === "error" ? 1 : 0,
+  }
+}
+
+/** Sums facts into one row per key; `identity` names the row's grouping fields. */
+function centralRows(
+  facts: readonly TurnUsageRevision[],
+  identity: (fact: TurnUsageRevision) => Record<string, string>,
+): CentralUsageRow[] {
+  const rows = new Map<string, { fields: Record<string, string>; totals: CentralRowTotals }>()
+  for (const fact of facts) {
+    const fields = identity(fact)
+    const key = JSON.stringify(fields)
+    const contribution = centralRowTotals(fact)
+    const row = rows.get(key)
+    if (!row) {
+      rows.set(key, { fields, totals: contribution })
+      continue
+    }
+    for (const name of CENTRAL_ROW_TOTALS) row.totals[name] += contribution[name]
+  }
+  return [...rows.values()].map((row) => ({ ...row.fields, ...row.totals }))
+}
+
+/**
+ * The control-plane usage payload for one account's revisions, in the row
+ * spelling `readCentralUsage` and the usage routes read. Rows carry
+ * `cache_write_1h_tokens` because pricing reads the one-hour share per model.
+ */
+export function centralUsageProjection(input: {
+  facts: readonly TurnUsageRevision[]
+  since: number
+  until: number
+  timeZone: string
+  dimension?: UsageBreakdownDimension
+  filters?: UsageFilters
+}): CentralUsageProjection {
+  const formatDate = usageDateFormatter(input.timeZone)
+  const inRange = latestUsageFacts(input.facts)
+    .filter((fact) => fact.observedAt >= input.since && fact.observedAt <= input.until)
+  const facts = inRange.filter((fact) => usageFactMatches(fact, input.filters ?? {}))
+  const date = (fact: TurnUsageRevision) => formatDate.format(new Date(fact.observedAt))
+  const model = (fact: TurnUsageRevision) => usageModelKey(fact.providerId, fact.modelId)
+  const dimension = input.dimension
+  return {
+    totals: centralRows(facts, () => ({}))[0] ?? {},
+    daily: centralRows(facts, (fact) => ({ date: date(fact) })),
+    models: centralRows(facts, (fact) => ({ value: model(fact) })),
+    dailyModels: centralRows(facts, (fact) => ({ date: date(fact), value: model(fact) })),
+    locations: centralRows(facts, (fact) => ({ value: usageLocation(fact.location) })),
+    ...(dimension
+      ? {
+          breakdown: centralRows(facts, (fact) => ({ value: usageFactDimension(fact, dimension) })),
+          dailyBreakdown: centralRows(facts, (fact) => ({ date: date(fact), value: usageFactDimension(fact, dimension) })),
+          breakdownModels: centralRows(facts, (fact) => ({ group: usageFactDimension(fact, dimension), value: model(fact) })),
+        }
+      : {}),
+    filters: usageFactFilterOptions(inRange),
+  }
+}
+
 /** Every payload field that carries a list of rows. */
 const ROW_FIELDS = [
   "daily",
