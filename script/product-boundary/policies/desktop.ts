@@ -642,7 +642,13 @@ export const desktopRendererUnsigned: Policy = {
   // ai-connect-surface}`; the no-project screen is `first-project-canvas.tsx`
   // alone. No package edge changes. Exact measured 1144 modules / 58 packages,
   // with no headroom.
-  ceilings: { modules: 1144, packages: 58 },
+  // +1 module (2026-09-23): `features/onboarding/code-host-api.ts`. The project
+  // form picks a repository from the connected code host, and reaches that
+  // module's status, connect and list reads through `WorkspacesAppPorts`
+  // (wired in `app/integrations/feature-ports.ts`). Owner:
+  // `features/onboarding`. No new package edge. Exact measured 1145 modules /
+  // 58 packages, with no headroom.
+  ceilings: { modules: 1145, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

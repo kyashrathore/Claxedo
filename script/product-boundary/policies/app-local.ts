@@ -565,7 +565,13 @@ export const appLocal: Policy = {
   // ai-connect-surface}`; the no-project screen is `first-project-canvas.tsx`
   // alone. No package edge changes. Exact measured 1100 modules / 58 packages,
   // with no headroom.
-  ceilings: { modules: 1100, packages: 58 },
+  // +1 module (2026-09-23): `features/onboarding/code-host-api.ts`. The project
+  // form picks a repository from the connected code host, and reaches that
+  // module's status, connect and list reads through `WorkspacesAppPorts`
+  // (wired in `app/integrations/feature-ports.ts`). Owner:
+  // `features/onboarding`. No new package edge. Exact measured 1101 modules /
+  // 58 packages, with no headroom.
+  ceilings: { modules: 1101, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
