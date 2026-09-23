@@ -162,6 +162,38 @@ describe("usage routes", () => {
     expect(body.claxedo.cost.pricedTokens + body.claxedo.cost.unpricedTokens).toBe(12)
   })
 
+  test("a row whose model has no price reads as unpriced even when some of its token categories are unknown", async () => {
+    const app = UsageRoutes({
+      pricing,
+      identity,
+      ledger: {
+        usageDashboard: async () => ({
+          totals: { turn_count: 2, input_tokens: 12, input_known_count: 2 },
+          daily: [],
+          models: [
+            { value: "anthropic/claude-sonnet-5", input_tokens: 5 },
+            { value: "nobody/model-with-no-price", input_tokens: 7 },
+          ],
+          breakdown: [
+            { value: "priced", turn_count: 1, input_tokens: 5, known_token_count: 1, unknown_token_count: 4 },
+            { value: "unpriced", turn_count: 1, input_tokens: 7, known_token_count: 1, unknown_token_count: 4 },
+          ],
+          breakdownModels: [
+            { group: "priced", value: "anthropic/claude-sonnet-5", input_tokens: 5 },
+            { group: "unpriced", value: "nobody/model-with-no-price", input_tokens: 7 },
+          ],
+        }),
+      },
+    })
+    const body = (await (
+      await app.request("/?since=1&until=2&view=claxedo&group=harness", { headers: { authorization: "Bearer valid" } })
+    ).json())
+    expect(body.breakdown.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "priced", status: "partial" }),
+      expect.objectContaining({ value: "unpriced", status: "unpriced" }),
+    ]))
+  })
+
   test("returns a canonical priced breakdown page from the exact dashboard projection", async () => {
     const app = UsageRoutes({
       pricing,
@@ -1002,7 +1034,7 @@ describe("local unified usage route", () => {
       silent("msg_silent_2", { settlement: "final", quality: { source: "provider", knownCategories: [] } }),
       // Still running: it may yet report, so it does not make its row silent.
       silent("msg_running", { harness: "claude", providerId: "anthropic", settlement: "provisional", status: "running" }),
-      { ...fact, messageId: "msg_measured", harness: "claude", tokens: { ...fact.tokens }, quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] } },
+      { ...fact, messageId: "msg_measured", harness: "claude", modelId: "claude-sonnet-4-5", tokens: { ...fact.tokens }, quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] } },
     ]
     const app = LocalUsageRoutes({
       pricing,

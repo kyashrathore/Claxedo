@@ -36,6 +36,19 @@ export const USAGE_REPORT_MAX_FACT_AGE_MS = 30 * 24 * 60 * 60_000
 /** How far ahead of the plane's clock a runtime's clock may run. */
 export const USAGE_REPORT_CLOCK_SKEW_MS = 5 * 60_000
 
+/**
+ * The most tokens one reported message may carry in any category. A turn of
+ * 2,000 requests each reading a 1M-token context is 2 x 10^9; a count past
+ * this is not usage, and summed it would overflow the plane's aggregates.
+ */
+export const USAGE_REPORT_MAX_TOKENS_PER_CATEGORY = 10_000_000_000
+
+/**
+ * The highest revision a reported message may carry. A higher one would
+ * leave every later genuine revision of that message answered as stale.
+ */
+export const USAGE_REPORT_MAX_REVISION = 1_000_000
+
 /** The most distinct messages the plane files under one turn of one session. */
 export const USAGE_REPORT_MAX_MESSAGES_PER_TURN = 2_048
 
@@ -58,8 +71,9 @@ export type UsageReportFact = UsageReportRevision & { turnId: string }
  * - `usage_owner_unresolved`: the fact names a turn its session never
  *   admitted, one whose producer has no account, or one on a workspace that
  *   is not a cloud workspace — a machine's usage stays on the machine.
- * - `usage_fact_out_of_bounds`: an id past its length cap, or an observation
- *   time outside the report's window.
+ * - `usage_fact_out_of_bounds`: an id past its length cap, a token count or
+ *   revision past its ceiling, or an observation time outside the report's
+ *   window.
  * - `usage_turn_full`: its turn already has the most messages one turn files.
  */
 export type UsageReportRefusal = "usage_owner_unresolved" | "usage_fact_out_of_bounds" | "usage_turn_full"
@@ -156,18 +170,23 @@ export function cloudWorkspaceUsageRevision(
 
 /**
  * Whether a well-formed fact is one the plane stores: every id within its
- * length cap, and observed — and completed, if it says so — no earlier than
+ * length cap, every token count and the revision within their ceilings, and
+ * observed — and completed, if it says so — no earlier than
  * {@link USAGE_REPORT_MAX_FACT_AGE_MS} before the lease carrying it was
  * admitted and no later than {@link USAGE_REPORT_CLOCK_SKEW_MS} past `now`.
  */
 export function usageReportFactInBounds(fact: UsageReportFact, window: { admittedAt: number; now: number }) {
   const ids = [fact.messageId, fact.turnId, fact.harness, fact.providerId, fact.modelId, fact.nativeSessionId ?? ""]
   const observationIds = [fact.quality.providerObservationId ?? "", fact.quality.providerObservationKey ?? ""]
+  const { tokens } = fact
+  const counts = [tokens.input, tokens.output, tokens.reasoning, tokens.cache.read, tokens.cache.write, tokens.cache.write1h ?? null]
   const earliest = window.admittedAt - USAGE_REPORT_MAX_FACT_AGE_MS
   const latest = window.now + USAGE_REPORT_CLOCK_SKEW_MS
   const inWindow = (at: number) => at >= earliest && at <= latest
   return ids.every((id) => id.length <= USAGE_REPORT_MAX_ID_LENGTH)
     && observationIds.every((id) => id.length <= USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH)
+    && counts.every((count) => count === null || count <= USAGE_REPORT_MAX_TOKENS_PER_CATEGORY)
+    && fact.revision <= USAGE_REPORT_MAX_REVISION
     && inWindow(fact.observedAt)
     && (fact.completedAt === undefined || inWindow(fact.completedAt))
 }

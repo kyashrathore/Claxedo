@@ -161,21 +161,21 @@ export function createSqliteUsageLedger(
         })
         .run()
       // A revision written before its session's producer could be named
-      // leaves the turn's owner as an earlier revision stamped it.
+      // leaves the turn's owner as an earlier revision stamped it. A reported
+      // message keeps the owner and turn it was first filed under: a later
+      // revision names its turn from the sandbox, which could name another.
       const { owner, turnId } = filing
       if (owner) {
         const stamp = { org_id: owner.org_id, user_id: owner.user_id, ...(turnId === undefined ? {} : { turn_id: turnId }) }
-        db.insert(ClaxedoUsageTurnOwnerTable)
+        const target = [
+          ClaxedoUsageTurnOwnerTable.host_id,
+          ClaxedoUsageTurnOwnerTable.session_ref,
+          ClaxedoUsageTurnOwnerTable.message_id,
+        ]
+        const filed = db.insert(ClaxedoUsageTurnOwnerTable)
           .values({ host_id: item.hostId, session_ref: item.sessionRef, message_id: item.messageId, ...stamp })
-          .onConflictDoUpdate({
-            target: [
-              ClaxedoUsageTurnOwnerTable.host_id,
-              ClaxedoUsageTurnOwnerTable.session_ref,
-              ClaxedoUsageTurnOwnerTable.message_id,
-            ],
-            set: stamp,
-          })
-          .run()
+        if (turnId === undefined) filed.onConflictDoUpdate({ target, set: stamp }).run()
+        else filed.onConflictDoNothing({ target }).run()
       }
       return { status: "accepted" } as const
     })

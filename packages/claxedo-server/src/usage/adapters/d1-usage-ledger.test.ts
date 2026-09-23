@@ -66,6 +66,19 @@ function cloud(input: Partial<TurnUsageRevision> & { messageId: string }): TurnU
 }
 
 describe("the D1 usage ledger", () => {
+  test("a later revision updates a message's usage but never refiles it under another member or turn", async () => {
+    const store = await ledger()
+    const range = { since: DAY - 1, until: DAY + 1, limit: 10 }
+    expect(await store.writeRevision(cloud({ messageId: "msg_1", revision: 1 }), { owner: ALICE, turnId: TURN })).toEqual({ status: "accepted" })
+    expect(await store.writeRevision(
+      cloud({ messageId: "msg_1", revision: 2, tokens: { input: 5, output: 1, reasoning: null, cache: { read: null, write: null } } }),
+      { owner: BOB, turnId: "msg_user_bob" },
+    )).toEqual({ status: "accepted" })
+
+    expect(await store.cloudUsageFacts({ ...BOB, ...range })).toEqual([])
+    expect(await store.cloudUsageFacts({ ...ALICE, ...range })).toEqual([expect.objectContaining({ messageId: "msg_1", revision: 2, tokens: expect.objectContaining({ input: 5 }) })])
+  })
+
   test("keeps each turn's latest revision and answers a replay by revision and payload", async () => {
     const store = await ledger()
     const first = cloud({ messageId: "msg_1", revision: 1, settlement: "provisional", status: "running" })
@@ -144,6 +157,22 @@ describe("the D1 usage ledger", () => {
 })
 
 describe("the D1 usage ledger under load", () => {
+  test("answers a dashboard whose token sums pass SQLite's integer range instead of failing it", async () => {
+    const database = await controlPlane()
+    const store = createD1UsageLedger({ database, now: () => 7_000 })
+    const huge = Number.MAX_SAFE_INTEGER
+    await seed(database, Array.from({ length: 1_025 }, (_, index) => ({
+      fact: cloud({ messageId: `msg_${index}`, tokens: { input: huge, output: 1, reasoning: null, cache: { read: null, write: null } } }),
+      owner: ALICE,
+      turnId: `msg_user_${index}`,
+    })))
+
+    const range = { since: DAY - 1, until: DAY + 1, timeZone: "UTC" }
+    const totals = (await store.usageDashboard({ ...ALICE, ...range }) as CentralUsageProjection).totals
+    expect(totals).toMatchObject({ turn_count: 1_025, output_tokens: 1_025 })
+    expect(Number(totals?.input_tokens)).toBeGreaterThan(Number.MAX_SAFE_INTEGER * 1_024)
+  })
+
   test("files at most the per-turn cap of messages under one turn of one session, and still takes a later revision of one it holds", async () => {
     const database = await controlPlane()
     const store = createD1UsageLedger({ database, now: () => 7_000 })

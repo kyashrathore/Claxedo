@@ -168,6 +168,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // workspace runtime this server creates; it is the native `opencode` harness.
   const opencodeRuntime = openCodeSdkRuntime()
 
+  type TurnOutcomeHandler = NonNullable<Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["onTurnOutcome"]>
+  let settleTurnOutcome: TurnOutcomeHandler = () => undefined
   let consumeRuntimeEvent = (event: CompatEnvelope) => {
     if (event.payload.type === "session.updated") {
       void projectLocalSessionMetaFromEvent(services.projectionStore, event)
@@ -203,6 +205,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     // published only on the workspace's own event stream. Without it, titles
     // revert to "Untitled" after a restart.
     onSessionMetaEvent: (event) => consumeRuntimeEvent(event),
+    onTurnOutcome: (outcome) => settleTurnOutcome(outcome),
     onSessionMetaCreated: async (workspace, session) => {
       await services.projectionStore.sync_session_meta(workspace, session)
     },
@@ -287,6 +290,16 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         await turnMeter.consume(event)
       }
     }).catch((error) => log.warn("local runtime event projection degraded", { error: String(error) }))
+  }
+  settleTurnOutcome = ({ sessionId, assistantMessageId, outcome }) => {
+    if (outcome.status !== "cancelled" || !assistantMessageId) return
+    usageEventTail = usageEventTail
+      .then(() => turnMeter.settle({
+        sessionId,
+        messageId: assistantMessageId,
+        status: outcome.reason === "steer" ? "interrupted_by_steer" : "stopped",
+      }))
+      .catch((error) => log.warn("local turn outcome metering degraded", { error: String(error) }))
   }
   // One statement of the signed-auth configuration for both readers below. A
   // quota resolved from an empty one answers the single-tenant partition on a

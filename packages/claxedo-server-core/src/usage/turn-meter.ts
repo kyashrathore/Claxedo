@@ -345,7 +345,7 @@ export function createTurnMeter(input: {
         current.status = fact.status
         current.completedAt = fact.completedAt
         if (fact.settlement !== "provisional") {
-          activeBySession.delete(current.sessionId)
+          if (activeBySession.get(current.sessionId) === current.messageId) activeBySession.delete(current.sessionId)
           await input.onTerminal?.(fact)
         }
       } else {
@@ -390,8 +390,8 @@ export function createTurnMeter(input: {
         knownCategories: knownTokenCategories(current.tokens),
       }
       current.lastObservationKeys.set(scope, signature)
-      activeBySession.set(sessionId, messageId)
       const terminalSettlement = current.settlement
+      if (!terminalSettlement || terminalSettlement === "provisional") activeBySession.set(sessionId, messageId)
       await persist(
         current,
         terminalSettlement && terminalSettlement !== "provisional"

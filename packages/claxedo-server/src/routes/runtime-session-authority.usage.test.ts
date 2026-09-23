@@ -7,6 +7,8 @@ import {
   USAGE_REPORT_MAX_FACTS,
   USAGE_REPORT_MAX_ID_LENGTH,
   USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH,
+  USAGE_REPORT_MAX_REVISION,
+  USAGE_REPORT_MAX_TOKENS_PER_CATEGORY,
   type UsageReportFact,
   type UsageReportRevision,
 } from "@claxedo/server-core/usage/usage-report"
@@ -200,13 +202,14 @@ describe("usage reports over the runtime session authority", () => {
     expect(await target.ledger.current({ sessionId: "ses_forged" })).toEqual([])
   })
 
-  test("refuses, fact by fact, a fact past an id cap or observed outside the report's window, and files the rest", async () => {
+  test("refuses, fact by fact, a fact past an id cap, a token or revision ceiling, or observed outside the report's window, and files the rest", async () => {
     const target = await plane()
     await target.session("ses_bounds")
     const lease = await target.acquire(target.owner, "ses_bounds", "msg_user_1")
     const now = Date.now()
     const long = (length: number) => "x".repeat(length)
     const quality = (key: string) => ({ ...REVISION.quality, providerObservationKey: key })
+    const ceiling = USAGE_REPORT_MAX_TOKENS_PER_CATEGORY
 
     const answer = await report(target, lease, [
       reported({ messageId: long(USAGE_REPORT_MAX_ID_LENGTH), modelId: long(USAGE_REPORT_MAX_ID_LENGTH), quality: quality(long(USAGE_REPORT_MAX_OBSERVATION_KEY_LENGTH)) }),
@@ -217,6 +220,14 @@ describe("usage reports over the runtime session authority", () => {
       reported({ messageId: "msg_ancient", observedAt: now - USAGE_REPORT_MAX_FACT_AGE_MS - 3_600_000, completedAt: undefined }),
       reported({ messageId: "msg_future", observedAt: now + USAGE_REPORT_CLOCK_SKEW_MS + 3_600_000, completedAt: undefined }),
       reported({ messageId: "msg_completes_later", completedAt: now + USAGE_REPORT_CLOCK_SKEW_MS + 3_600_000 }),
+      reported({
+        messageId: "msg_at_ceilings",
+        revision: USAGE_REPORT_MAX_REVISION,
+        tokens: { ...REVISION.tokens, input: ceiling, cache: { read: ceiling, write: ceiling, write1h: ceiling } },
+      }),
+      reported({ messageId: "msg_huge_input", tokens: { ...REVISION.tokens, input: ceiling + 1 } }),
+      reported({ messageId: "msg_huge_cache_read", tokens: { ...REVISION.tokens, cache: { ...REVISION.tokens.cache, read: ceiling + 1 } } }),
+      reported({ messageId: "msg_huge_revision", revision: USAGE_REPORT_MAX_REVISION + 1 }),
       reported({ messageId: "msg_in_bounds" }),
     ])
     expect(answer.status).toBe(200)
@@ -230,10 +241,14 @@ describe("usage reports over the runtime session authority", () => {
       ["msg_ancient", "refused", "usage_fact_out_of_bounds"],
       ["msg_future", "refused", "usage_fact_out_of_bounds"],
       ["msg_completes_later", "refused", "usage_fact_out_of_bounds"],
+      ["msg_at_ceilings", "accepted", undefined],
+      ["msg_huge_input", "refused", "usage_fact_out_of_bounds"],
+      ["msg_huge_cache_read", "refused", "usage_fact_out_of_bounds"],
+      ["msg_huge_revision", "refused", "usage_fact_out_of_bounds"],
       ["msg_in_bounds", "accepted", undefined],
     ])
     expect((await target.ledger.current({ sessionId: "ses_bounds" })).map((fact) => fact.messageId.length > 32 ? "long" : fact.messageId).sort())
-      .toEqual(["long", "msg_in_bounds"])
+      .toEqual(["long", "msg_at_ceilings", "msg_in_bounds"])
   })
 
   test("refuses a report carrying more facts than one report may, and stores none of them", async () => {

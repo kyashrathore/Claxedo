@@ -37,9 +37,9 @@ function envelope(payload: CompatEnvelope["payload"]): CompatEnvelope {
   return { directory: "/private/path-must-not-persist", payload }
 }
 
-function assistant(input: { completed?: number; error?: boolean; tokens?: Record<string, unknown> } = {}) {
+function assistant(input: { id?: string; completed?: number; error?: boolean; tokens?: Record<string, unknown> } = {}) {
   const row = buildAssistantMessage({
-    id: "msg-1",
+    id: input.id ?? "msg-1",
     sessionID: "session-1",
     parentID: "user-1",
     agent: "build",
@@ -287,6 +287,33 @@ describe("turn usage meter", () => {
 
     expect(facts.at(-1)).toMatchObject({ messageId: "msg-1", status: "completed", settlement: "final", tokens: { input: 13 } })
     expect(facts.some((fact) => fact.status === "error")).toBe(false)
+  })
+
+  test("usage that lands on a finished turn leaves a running turn the one a session error settles", async () => {
+    const { meter, facts } = harness()
+    const usage = (messageID: string, scope: string, input: number) =>
+      envelope(
+        sessionUsage({
+          sessionID: "session-1",
+          messageID,
+          contextSize: 100,
+          contextUsed: 1,
+          observation: {
+            kind: "cumulative",
+            scope,
+            tokens: { input, output: 1, reasoning: null, cache: { read: null, write: null } },
+          },
+        }),
+      )
+    await meter.consume(usage("msg-1", "own", 10))
+    await meter.consume(envelope(messageUpdated(assistant({ completed: 2_000 }) as never)))
+    await meter.consume(envelope(messageUpdated(assistant({ id: "msg-2" }) as never)))
+    await meter.consume(usage("msg-2", "own", 20))
+    await meter.consume(usage("msg-1", "title:thread-t", 3))
+    await meter.consume(envelope(sessionError("second turn failed", "session-1")))
+
+    expect(facts.filter((fact) => fact.messageId === "msg-1").at(-1)).toMatchObject({ status: "completed", tokens: { input: 13 } })
+    expect(facts.filter((fact) => fact.messageId === "msg-2").at(-1)).toMatchObject({ status: "error", settlement: "final" })
   })
 
   test("provider error settles known usage and terminal-without-usage is unavailable", async () => {

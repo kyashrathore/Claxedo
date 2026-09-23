@@ -185,6 +185,22 @@ describe("sqlite usage ledger", () => {
     expect(await ledger.ownedBy(owner)).toHaveLength(USAGE_REPORT_MAX_MESSAGES_PER_TURN + 2)
   })
 
+  test("a later reported revision updates a message's usage but never refiles it under another member or turn", async () => {
+    const { sqlite, ledger } = harness()
+    const alice = { org_id: "org-a", user_id: "alice" }
+    const bob = { org_id: "org-a", user_id: "bob" }
+    const cloud = (input: Partial<TurnUsageRevision>) => revision({ location: "cloud-workspace", ...input })
+    expect(await ledger.reports.writeRevision(cloud({}), { owner: alice, turnId: "msg_user_alice" })).toEqual({ status: "accepted" })
+    expect(await ledger.reports.writeRevision(cloud({ revision: 2, tokens: { input: 5, output: 1, reasoning: null, cache: { read: null, write: null } } }), {
+      owner: bob,
+      turnId: "msg_user_bob",
+    })).toEqual({ status: "accepted" })
+
+    expect(await ledger.ownedBy(bob)).toEqual([])
+    expect(await ledger.ownedBy(alice)).toEqual([expect.objectContaining({ revision: 2, tokens: expect.objectContaining({ input: 5 }) })])
+    expect(sqlite.prepare("SELECT user_id, turn_id FROM claxedo_usage_turn_owner").all()).toEqual([{ user_id: "alice", turn_id: "msg_user_alice" }])
+  })
+
   test("rolls back the fact when its owner cannot be filed", async () => {
     const { sqlite, ledger } = harness()
     sqlite.exec(

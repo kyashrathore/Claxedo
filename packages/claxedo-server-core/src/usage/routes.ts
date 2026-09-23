@@ -515,8 +515,10 @@ function breakdownRowsFromExternal(rows: readonly ExternalUsageBucket[], groupOf
 
 function breakdownStatus(row: CanonicalBreakdownTotals, priced: PricedUsage): UsageBreakdownRow["status"] {
   if (row.unavailableTurnCount > 0 && row.unavailableTurnCount === row.turnCount) return "unavailable"
-  if (row.partialTurnCount > 0 || row.unknownCategories > 0) return "partial"
-  return priced.unpricedTokens > 0 ? "unpriced" : "final"
+  // Unpriced outranks partial: every harness leaves some category unreported,
+  // so a partial label would hide that the row's cost is missing from the total.
+  if (priced.unpricedTokens > 0) return "unpriced"
+  return row.partialTurnCount > 0 || row.unknownCategories > 0 ? "partial" : "final"
 }
 
 function breakdownLabel(value: string, dimension?: string) {

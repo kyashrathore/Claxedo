@@ -144,14 +144,16 @@ const noMetrics = (): Metrics => ({
   error_turn_count: 0,
 })
 
+// `total()` rather than `sum()`: SQLite's integer `sum()` throws on overflow,
+// and one account's rows must not be able to fail its whole dashboard.
 const METRICS_SQL = `
   count(*) as turn_count,
-  coalesce(sum(input_tokens), 0) as input_tokens,
-  coalesce(sum(output_tokens), 0) as output_tokens,
-  coalesce(sum(reasoning_tokens), 0) as reasoning_tokens,
-  coalesce(sum(cache_read_tokens), 0) as cache_read_tokens,
-  coalesce(sum(cache_write_tokens), 0) as cache_write_tokens,
-  coalesce(sum(cache_write_1h_tokens), 0) as cache_write_1h_tokens,
+  total(input_tokens) as input_tokens,
+  total(output_tokens) as output_tokens,
+  total(reasoning_tokens) as reasoning_tokens,
+  total(cache_read_tokens) as cache_read_tokens,
+  total(cache_write_tokens) as cache_write_tokens,
+  total(cache_write_1h_tokens) as cache_write_1h_tokens,
   count(input_tokens) as input_known_count,
   count(output_tokens) as output_known_count,
   count(reasoning_tokens) as reasoning_known_count,
@@ -252,7 +254,8 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
       if (settled) return settled
       // One statement, so the count a new message is admitted against is
       // the one it is inserted under: two reports racing for a turn's last
-      // slot cannot both take it.
+      // slot cannot both take it. A later revision never refiles a message:
+      // the sandbox names the turn, and could name another member's.
       const written = await database.prepare(`
         insert into usage_turn_facts (
           host_id, session_ref, session_id, message_id, revision, payload_hash, org_id, user_id, turn_id, workspace_id,
@@ -265,7 +268,7 @@ export function createD1UsageLedger(input: { database: D1Database; now?: () => n
           or (select count(*) from usage_turn_facts where host_id = ?1 and session_ref = ?2 and turn_id = ?9) < ?28
         on conflict (host_id, session_ref, message_id) do update set
           session_id = excluded.session_id, revision = excluded.revision, payload_hash = excluded.payload_hash,
-          org_id = excluded.org_id, user_id = excluded.user_id, turn_id = excluded.turn_id, workspace_id = excluded.workspace_id,
+          workspace_id = excluded.workspace_id,
           observed_at = excluded.observed_at, completed_at = excluded.completed_at, settlement = excluded.settlement,
           status = excluded.status, location = excluded.location, harness = excluded.harness,
           provider_id = excluded.provider_id, model_id = excluded.model_id, native_session_id = excluded.native_session_id,
