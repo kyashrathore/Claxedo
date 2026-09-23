@@ -1,4 +1,4 @@
-import { Message, type UserActions } from "@/ui/session-kit"
+import { Message, type UserActions } from "@/transcript"
 import { MessageAuthorLane } from "./message-author"
 
 type TimelineMessage = Parameters<typeof Message>[0]["message"]

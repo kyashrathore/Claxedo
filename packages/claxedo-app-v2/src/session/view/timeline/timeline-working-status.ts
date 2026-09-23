@@ -1,5 +1,5 @@
 import { createComputed, createMemo, createSignal, onCleanup, type Accessor } from "solid-js"
-import { createActivePaneProjection } from "../store/active-pane-projection"
+import { createActivePaneProjection } from "./active-pane-projection"
 
 export type TimelineWorkingStatus = "hidden" | "showing" | "hiding"
 

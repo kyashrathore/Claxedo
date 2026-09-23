@@ -1,9 +1,10 @@
 import { createResource, onCleanup, type Accessor } from "solid-js"
-import { useSessionParams } from "@/features/session/providers/session-params"
-import { markRendererPhase } from "@/platform/performance/renderer-trace"
 
-export function createMessageNavDeferredMount(revealed: Accessor<boolean>, visible: Accessor<boolean>) {
-  const session = useSessionParams()
+export function createMessageNavDeferredMount(
+  active: Accessor<boolean>,
+  revealed: Accessor<boolean>,
+  visible: Accessor<boolean>,
+) {
   let mounted = false
   let cancelWait: (() => void) | undefined
   const waitForIdle = () => new Promise<boolean>((resolve) => {
@@ -27,12 +28,11 @@ export function createMessageNavDeferredMount(revealed: Accessor<boolean>, visib
   onCleanup(() => cancelWait?.())
 
   const [ready] = createResource(
-    () => session.active() && revealed() && visible() ? "eligible" : "inactive",
+    () => active() && revealed() && visible() ? "eligible" : "inactive",
     async (state) => {
       if (mounted) return true
       cancelWait?.()
-      if (state === "inactive" || !await waitForIdle() || !session.active()) return false
-      markRendererPhase("timeline.messageNav.idleMount")
+      if (state === "inactive" || !await waitForIdle() || !active()) return false
       mounted = true
       return true
     },

@@ -1,10 +1,8 @@
 import { For, Index, Show, type Accessor } from "solid-js"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
-import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
-import { useLanguage } from "@/platform/i18n/provider"
-import type { QueuedMessageRecord } from "@/platform/runtime/agent/agent-runtime-client"
-import { queuedMessageText, type QueuedMessagesController } from "@/features/session/queue/queued-messages-controller"
+import { IconButton } from "@/ui"
+import { Icon } from "@/ui"
+import { queuedMessageText, type QueuedMessage, type QueuedMessages, type TimelineTranslate } from "./model"
 
 /**
  * Prompts the runtime is holding for the next turn, drawn where they will land:
@@ -14,12 +12,12 @@ import { queuedMessageText, type QueuedMessagesController } from "@/features/ses
  * message's copy row.
  */
 export function TimelineQueuedMessages(props: {
-  queued: QueuedMessagesController
+  queued: QueuedMessages
   /** The controller's records minus those the transcript already shows. */
-  items: Accessor<QueuedMessageRecord[]>
+  items: Accessor<readonly QueuedMessage[]>
   centered: boolean
+  t: TimelineTranslate
 }) {
-  const language = useLanguage()
   return (
     <Show when={props.items().length > 0 || props.queued.loadFailed()}>
       <div
@@ -31,14 +29,14 @@ export function TimelineQueuedMessages(props: {
       >
         <Show when={props.queued.loadFailed()}>
           <div role="alert" class="ml-auto text-12-regular text-icon-critical-base">
-            {language.t("ui.message.queued.loadFailed")}{" "}
-            <button type="button" class="underline" onClick={props.queued.reload}>{language.t("ui.message.queued.retry")}</button>
+            {props.t("ui.message.queued.loadFailed")}{" "}
+            <button type="button" class="underline" onClick={props.queued.reload}>{props.t("ui.message.queued.retry")}</button>
           </div>
         </Show>
         {/* Indexed, not keyed: every poll returns fresh record objects, and a
             keyed list would rebuild each bubble every second under the pointer. */}
         <Index each={props.items()}>
-          {(item) => <QueuedMessageBubble item={item()} queued={props.queued} />}
+          {(item) => <QueuedMessageBubble item={item()} queued={props.queued} t={props.t} />}
         </Index>
         <Show when={props.queued.error()}>
           {(message) => <div role="alert" class="ml-auto text-12-regular text-icon-critical-base">{message()}</div>}
@@ -48,16 +46,15 @@ export function TimelineQueuedMessages(props: {
   )
 }
 
-function QueuedMessageBubble(props: { item: QueuedMessageRecord; queued: QueuedMessagesController }) {
-  const language = useLanguage()
+function QueuedMessageBubble(props: { item: QueuedMessage; queued: QueuedMessages; t: TimelineTranslate }) {
   const editing = () => props.queued.editing() === props.item.seq
   // Held by another client's edit: shown as editing, releasable, not editable here.
   const heldElsewhere = () => props.item.held && !editing()
   const busy = () => props.queued.pending() !== undefined || !!props.item.steering && props.item.steering.state !== "rejected"
-  const status = () => props.item.steering?.state === "accepted" ? language.t("ui.message.queued.accepted")
-    : props.item.steering?.state === "dispatching" ? language.t("ui.message.queued.dispatching")
-    : props.item.steering?.state === "unknown" ? language.t("ui.message.queued.unknown")
-    : language.t(editing() || heldElsewhere() ? "ui.message.queued.editing" : "ui.message.queued")
+  const status = () => props.item.steering?.state === "accepted" ? props.t("ui.message.queued.accepted")
+    : props.item.steering?.state === "dispatching" ? props.t("ui.message.queued.dispatching")
+    : props.item.steering?.state === "unknown" ? props.t("ui.message.queued.unknown")
+    : props.t(editing() || heldElsewhere() ? "ui.message.queued.editing" : "ui.message.queued")
   const text = () => queuedMessageText(props.item)
   const attachments = () => props.item.parts.filter((part) => part.type === "file")
   const action = (input: { icon: "arrow-up" | "pencil" | "close-small"; label: string; onClick: () => void }) => (
@@ -68,7 +65,7 @@ function QueuedMessageBubble(props: { item: QueuedMessageRecord; queued: QueuedM
         variant="ghost"
         disabled={busy()}
         aria-label={input.label}
-        onMouseDown={(event) => event.preventDefault()}
+        onMouseDown={(event: MouseEvent) => event.preventDefault()}
         onClick={input.onClick}
       />
     </Tooltip>
@@ -84,7 +81,7 @@ function QueuedMessageBubble(props: { item: QueuedMessageRecord; queued: QueuedM
         <div data-slot="queued-message-text" class="ui-user-message-text opacity-60" data-editing={editing() || heldElsewhere() ? "true" : undefined}>
           {text()}
           <For each={attachments()}>
-            {(part) => <span class="block text-12-regular text-text-weak">{part.filename ?? language.t("ui.message.attachment.alt")}</span>}
+            {(part) => <span class="block text-12-regular text-text-weak">{part.filename ?? props.t("ui.message.attachment.alt")}</span>}
           </For>
         </div>
       </div>
@@ -94,7 +91,7 @@ function QueuedMessageBubble(props: { item: QueuedMessageRecord; queued: QueuedM
         classList={{ "opacity-100! pointer-events-auto!": editing() || heldElsewhere() }}
       >
         <span class="inline-flex items-center gap-1.5 text-12-regular text-text-weak">
-          <ClaxedoIcon name={editing() || heldElsewhere() ? "pencil" : "circle-dashed"} size="small" />
+          <Icon name={editing() || heldElsewhere() ? "pencil" : "circle-dashed"} size="small" />
           {status()}
         </span>
         <Show
@@ -107,16 +104,16 @@ function QueuedMessageBubble(props: { item: QueuedMessageRecord; queued: QueuedM
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => props.queued.cancelEdit(props.item.seq)}
             >
-              {language.t("ui.message.queued.cancelEdit")}
+              {props.t("ui.message.queued.cancelEdit")}
             </button>
           }
         >
           {/* Opts out of the narrow-viewport 40px tap floor: three floored
               ghost buttons read as a toolbar, not a message's hover row. */}
           <span class="inline-flex items-center" data-claxedo-compact-touch>
-            {action({ icon: "pencil", label: language.t("ui.message.queued.edit"), onClick: () => props.queued.beginEdit(props.item) })}
-            {action({ icon: "arrow-up", label: language.t("ui.message.queued.sendNow"), onClick: () => props.queued.sendNow(props.item.seq) })}
-            {action({ icon: "close-small", label: language.t("ui.message.queued.remove"), onClick: () => props.queued.remove(props.item.seq) })}
+            {action({ icon: "pencil", label: props.t("ui.message.queued.edit"), onClick: () => props.queued.beginEdit(props.item) })}
+            {action({ icon: "arrow-up", label: props.t("ui.message.queued.sendNow"), onClick: () => props.queued.sendNow(props.item.seq) })}
+            {action({ icon: "close-small", label: props.t("ui.message.queued.remove"), onClick: () => props.queued.remove(props.item.seq) })}
           </span>
         </Show>
       </div>

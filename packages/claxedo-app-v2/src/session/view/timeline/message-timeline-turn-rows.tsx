@@ -9,23 +9,22 @@ import { Dynamic } from "solid-js/web"
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { Icon } from "@/ui"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
-import { normalize } from "@/ui/session-kit-loaders"
+import { normalize } from "@/transcript"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
-import { useLanguage } from "@/platform/i18n/provider"
 import type { SummaryDiff } from "./message-timeline.data"
+import type { TimelineTranslate } from "./model"
 
-export function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean }) {
-  const language = useLanguage()
+export function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean; t: TimelineTranslate }) {
 
   return (
     <div data-slot="session-turn-thinking">
-      <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
+      <TextShimmer text={props.t("ui.sessionTurn.status.thinking")} />
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
@@ -48,12 +47,12 @@ export function PreviousMessagesRow(props: {
   /** When set, the row is a toggle: `true` shows the collapse label instead of the count. */
   expanded?: boolean
   testId?: string
+  t: TimelineTranslate
 }) {
-  const language = useLanguage()
   const label = () =>
     props.expanded
-      ? language.t("session.timeline.collapseTranscript")
-      : language.t(
+      ? props.t("session.timeline.collapseTranscript")
+      : props.t(
           props.count === 1 ? "session.timeline.previousMessages.one" : "session.timeline.previousMessages.other",
           { count: props.count },
         )
@@ -85,8 +84,7 @@ export function PreviousMessagesRow(props: {
   )
 }
 
-export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: () => Promise<unknown> | void }) {
-  const language = useLanguage()
+export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: () => Promise<unknown> | void; t: TimelineTranslate }) {
   const maxFiles = 3
   const [state, setState] = createStore({
     showAll: false,
@@ -114,8 +112,8 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
     >
       <div data-slot="session-turn-diffs-header">
         <span data-slot="session-turn-diffs-label">
-          {props.diffs.length} {language.t("ui.sessionTurn.diffs.changed")}{" "}
-          {language.t(props.diffs.length === 1 ? "ui.common.file.one" : "ui.common.file.other")}
+          {props.diffs.length} {props.t("ui.sessionTurn.diffs.changed")}{" "}
+          {props.t(props.diffs.length === 1 ? "ui.common.file.one" : "ui.common.file.other")}
         </span>
         <DiffChanges changes={props.diffs} />
         <Show when={props.onUndo}>
@@ -129,12 +127,12 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
               undo()
             }}
           >
-            {language.t("ui.message.revertMessage")}
+            {props.t("ui.message.revertMessage")}
           </button>
         </Show>
         <Show when={overflow() > 0}>
           <span data-slot="session-turn-diffs-toggle" onClick={() => setState("showAll", !showAll())}>
-            {showAll() ? language.t("ui.sessionTurn.diffs.showLess") : language.t("ui.sessionTurn.diffs.showAll")}
+            {showAll() ? props.t("ui.sessionTurn.diffs.showLess") : props.t("ui.sessionTurn.diffs.showAll")}
           </span>
         </Show>
       </div>
@@ -185,7 +183,7 @@ export function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[]; onUndo?: (
         </Accordion>
         <Show when={!showAll() && overflow() > 0}>
           <div data-slot="session-turn-diffs-more" onClick={() => setState("showAll", true)}>
-            {language.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
+            {props.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
           </div>
         </Show>
       </div>

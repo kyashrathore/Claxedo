@@ -1,5 +1,4 @@
 import { observeElementOffset, observeElementRect, type Virtualizer } from "@tanstack/solid-virtual"
-import { markRendererPhase } from "@/platform/performance/renderer-trace"
 
 export const observeElementRectDeduped: typeof observeElementRect = (instance, callback) => {
   return observeElementRect(instance, createObservedRectHandler(instance, callback))
@@ -78,7 +77,6 @@ export function observeElementOffsetReconnectAware<TScrollElement extends Elemen
     frame = undefined
   }
   const startCheck = () => {
-    markRendererPhase("timeline.offsetReconnect.startCheck")
     clearCheck()
     const deadline = targetWindow.performance.now() + instance.options.isScrollingResetDelay
     let framesAfterDeadline = 0

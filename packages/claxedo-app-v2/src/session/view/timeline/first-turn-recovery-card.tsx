@@ -1,10 +1,10 @@
 import { createSignal, Show, type ParentProps } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
+import { Icon } from "@/ui"
+import { IconButton } from "@/ui"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { sessionRecovery, sessionRecoveryDescription, type SessionErrorClass } from "./first-turn-recovery"
+import { sessionRecovery, sessionRecoveryDescription, type SessionErrorClass } from "./turn-recovery"
 
 // Raw-detail disclosure: collapsed by default, chevron-gated, copyable when open.
 // Mirrors the pattern in packages/session-ui/src/components/tool-error-card.tsx:128-149.
@@ -44,8 +44,8 @@ function RawDetail(props: { detail: string }) {
               size="small"
               variant="ghost"
               data-icon-interaction="subdued"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={(e) => {
+              onMouseDown={(e: MouseEvent) => e.preventDefault()}
+              onClick={(e: MouseEvent) => {
                 e.stopPropagation()
                 void copy()
               }}

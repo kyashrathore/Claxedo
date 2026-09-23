@@ -1,4 +1,4 @@
-import { setMarkdownTableViewer } from "@/ui/session-kit"
+import { setMarkdownTableViewer } from "@/transcript"
 import { openTableViewer } from "./markdown-viewer"
 
 let installed = false
