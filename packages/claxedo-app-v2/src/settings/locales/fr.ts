@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "Afficher les parties de l'outil shell développées par défaut dans la chronologie",
   "settings.general.editToolPartsExpanded": "Développer les parties de l'outil edit",
   "settings.general.editToolPartsExpanded.description": "Afficher les parties des outils edit, write et patch développées par défaut dans la chronologie",
+  "settings.appearance.uiFont": "Police de l'interface",
+  "settings.appearance.uiFont.description": "Personnaliser la police utilisée dans toute l'interface",
+  "settings.appearance.codeFont": "Police de code",
+  "settings.appearance.codeFont.description": "Personnaliser la police utilisée dans les blocs de code",
+  "settings.appearance.screenReader": "Mode lecteur d'écran",
+  "settings.appearance.screenReader.description": "Exposez un tampon de lecteur d'écran accessible dans les nouveaux terminaux",
 }

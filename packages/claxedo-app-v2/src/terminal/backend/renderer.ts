@@ -20,6 +20,7 @@ export type TerminalInstance = {
 export type TerminalInstanceOptions = {
   readonly theme: TerminalColors
   readonly fontFamily: string
+  readonly screenReaderMode: boolean
   readonly renderers: RendererBudget
   readonly onFileLinkClick?: FileLinkClick
   readonly onUrlClick: (event: MouseEvent, url: string) => void
@@ -51,7 +52,7 @@ function registerLinks(xterm: XTerm, options: TerminalInstanceOptions): () => vo
 }
 
 export function createTerminalInstance(container: HTMLDivElement, options: TerminalInstanceOptions): TerminalInstance {
-  const xterm = new XTerm({ ...TERMINAL_OPTIONS, theme: options.theme, fontFamily: options.fontFamily })
+  const xterm = new XTerm({ ...TERMINAL_OPTIONS, theme: options.theme, fontFamily: options.fontFamily, screenReaderMode: options.screenReaderMode })
   const fitAddon = new FitAddon()
   const serializeAddon = new SerializeAddon()
   xterm.open(container)

@@ -5,7 +5,7 @@ import { dictionary } from "../i18n"
 import { byOrder, useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
 import { homePath, settingsPath } from "../routes"
-import { Icon } from "@/ui"
+import { ClaxedoIcon as Icon } from "@/ui"
 import type { SettingsSection } from "../types"
 import "./settings.css"
 

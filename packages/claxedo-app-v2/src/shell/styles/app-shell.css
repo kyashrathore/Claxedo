@@ -1,63 +1,32 @@
-/**
- * Claxedo Layout Styles
- *
- * Panel mode visibility:
- * Mode 0: All visible (Messages + Review + Files)
- * Mode 5: Messages collapsed (Review + Files)
- *
- * NOTE: These CSS rules work as a fallback. The session override uses
- * conditional rendering via <Show> for better performance (unmounts DOM).
- */
-
-/*
- * Viewport breakpoint tokens — mirrors src/ui/controls/breakpoints.ts.
- * CSS custom properties CANNOT be interpolated into `@media` conditions, so the
- * `@media` rules below keep the literal pixel number; these variables document
- * the same values for calc()/inline-style use and are welded to the TS
- * constants by src/architecture/breakpoint-token-parity.guard.test.ts.
- */
 :root {
-  --bp-sm: 640px; /* BP_SM */
-  --bp-md: 768px; /* BP_MD */
-  --bp-lg: 1024px; /* BP_LG */
-  --bp-xl: 1280px; /* BP_XL */
-  --bp-2xl: 1536px; /* BP_2XL */
-  --bp-editor-wide: 1200px; /* BP_EDITOR_WIDE */
-  --bp-editor-compact: 900px; /* BP_EDITOR_COMPACT */
-  --bp-xs: 420px; /* BP_XS */
+  --bp-sm: 640px;
+  --bp-md: 768px;
+  --bp-lg: 1024px;
+  --bp-xl: 1280px;
+  --bp-2xl: 1536px;
+  --bp-editor-wide: 1200px;
+  --bp-editor-compact: 900px;
+  --bp-xs: 420px;
 }
 
-/*
- * The app's modal stack, in order. Both layers are portaled to <body>, so
- * nothing about their nesting says which paints over which; only these numbers
- * do, and a layer added above needs a name here rather than a larger literal at
- * its own rule.
- */
 :root {
   --z-modal: 300;
   --z-modal-popover: 320;
 }
 
-/* Keep modal dialogs above Claxedo's floating mobile sidebar and dropdown layers. */
 [data-component="dialog-overlay"],
 [data-component="dialog"] {
   z-index: var(--z-modal) !important;
 }
 
-/* DialogProvider adds an inline layer wrapper around dialogs it owns. Keep that
-   wrapper in the same elevated app-modal stacking context so a dialog opened
-   from another modal appears above its invoker instead of behind it. */
 [data-dialog-layer] {
   z-index: var(--z-modal) !important;
 }
 
-/* A select's list is portaled to <body>, so it has to clear the dialog layer
-   above — a select opened inside a dialog otherwise paints behind it. */
 .ui-select-content {
   z-index: var(--z-modal-popover);
 }
 
-/* --bp-md complement (767 = below BP_MD) + coarse-pointer touch floor. */
 @media (max-width: 767px), (pointer: coarse) {
   [data-claxedo] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
   [data-component="settings-surface"] :is(button, [role="button"], [data-component="icon-button"], [data-component="button"]),
@@ -69,11 +38,6 @@
     transition-timing-function: ease-out;
   }
 
-  /* `data-claxedo-compact-touch` opts out of the 40px floor — on the element
-     itself, or on a container to exempt a whole dense region (e.g. the rail
-     sidebar, whose full-width rows are the real tap targets; flooring their
-     interior glyph spans blows up 16px icons whose svg is absolute inset-0
-     and crushes the row labels). */
   [data-claxedo]
     :is(
       button[aria-label],
@@ -123,25 +87,21 @@
   }
 }
 
-/* Mode 5: Hide messages panel (CSS fallback) */
 .claxedo-session[data-panel-mode="5"] .\@container {
   display: none !important;
 }
 
-/* Mode 5: Hide resize handle between session and review */
 .claxedo-session[data-panel-mode="5"]
   .\@container
   + div[class*="relative"][class*="shrink-0"]:has([class*="ResizeHandle"]) {
   display: none !important;
 }
 
-/* Mode 5: Make the review panel take full width */
 .claxedo-session[data-panel-mode="5"] #review-panel {
   flex: 1 1 100% !important;
   border-left: none !important;
 }
 
-/* ─── Workspace label pop on focus change ─── */
 @keyframes claxedo-pop-bounce {
   0% {
     transform: scale(1);
@@ -174,7 +134,6 @@
   transform: translate3d(0, 0, 0);
 }
 
-/* --bp-md complement (767 = below BP_MD) — mobile rail-drawer transform reset. */
 @media (max-width: 767px) {
   .claxedo-rail-sidebar-panel {
     transform: translate3d(0, 0, 0);
@@ -193,28 +152,13 @@
   }
 }
 
-/* ─── Command palette: gutter + readable backdrop ─── */
-
-/* `.command-palette-dialog` lands on [data-slot="dialog-content"] (Dialog's
-   `class` prop). The shared dialog surface ships with no padding, so the search
-   field and every result row ran the full 640px width and collided with the
-   content box's own rounded corners — the palette read as an unstyled sheet.
-   An 8px inset gives the rows somewhere to sit; the radius is widened to
-   8 + 6 (gutter + the row/search `--radius-md`) so the outer corner stays
-   concentric with the highlighted row inside it. */
 .command-palette-dialog {
   padding: 8px;
   border-radius: var(--radius-3xl);
 }
 
-/* Kobalte portals the overlay as a sibling of the dialog layer, so the palette
-   backdrop is selected from their shared <body> ancestor. The shared 0.2 alpha
-   is invisible against the near-black app chrome; this is a light dim — enough
-   to seat the palette above the workspace without hiding it. */
 body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay {
   background-color: hsl(from var(--background-base) h s l / 0.45);
-  /* Match the dialog's own 150ms in / 100ms out so the backdrop and the palette
-     move as one surface instead of the dim snapping ahead of the box. */
   animation: claxedoPaletteBackdropHide 100ms ease-in forwards;
 }
 
@@ -247,12 +191,6 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   }
 }
 
-/* ─── Workbench dialogs: roomier surface + readable backdrop ─── */
-
-/* Settings, diagnostics, and usage are page-scale workspaces. Their outer box
-   is modal, but the content canvas uses the real page role instead of either
-   the floating overlay role used by compact dialogs or the tinted settings
-   section role. Rebind the latter because Settings' tab content consumes it. */
 .workspace-page-dialog {
   --workspace-page-hairline: color-mix(in srgb, var(--border-weak-base) 68%, transparent);
   --workspace-data-hairline: var(--workspace-page-hairline);
@@ -260,10 +198,6 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   background: var(--background-base);
 }
 
-/* Settings is a shell surface rather than a page-scale dialog, and it consumes
-   the same roles: its canvas is the real page, and every section's cards are
-   rebound off `--settings-surface-content` by the codex theme. Declared here so
-   the panes read the same whichever section is open. */
 [data-component="settings-surface"] {
   --workspace-page-hairline: color-mix(in srgb, var(--border-weak-base) 68%, transparent);
   --workspace-data-hairline: var(--workspace-page-hairline);
@@ -396,9 +330,6 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   margin: 0;
 }
 
-/* Shared analytical primitives for page-scale workspaces. Usage and
-   Diagnostics intentionally consume these same declarations so their visual
-   language cannot drift behind feature-owned card or chart CSS. */
 .workspace-data-heading {
   display: flex;
   align-items: center;
@@ -660,18 +591,12 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   display: none;
 }
 
-/* The shared `x-large` box is shared with other dialogs, so the settings and
-   diagnostics surfaces opt into one larger box instead of widening `x-large`
-   for everyone. The opt-in class lands on [data-slot="dialog-content"] (Dialog's
-   `class` prop), so the container is matched through it. */
 [data-component="dialog"]:has(> [data-slot="dialog-container"] > .workspace-page-dialog-shell)
   > [data-slot="dialog-container"] {
   width: min(calc(100vw - 32px), 1120px);
   height: min(calc(100vh - 72px), 860px);
 }
 
-/* --bp-md complement (767 = below BP_MD) — diagnostics dialog full-viewport.
-   Declared after the shared box so the equal-specificity narrow override wins. */
 @media (max-width: 767px) {
   [data-component="dialog"]:has(> [data-slot="dialog-container"] > .workspace-page-dialog-shell)
     > .ui-dialog-container {
@@ -685,16 +610,10 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   }
 }
 
-/* Kobalte portals the overlay as a sibling of the dialog layer, so the backdrop
-   is selected from their shared <body> ancestor. The shared 0.2 alpha is
-   invisible against the dark app chrome; this dims and blurs enough to read the
-   dialog as modal. */
 body:has([data-slot="dialog-content"].workspace-page-dialog-shell) .ui-dialog-overlay,
 body:has([data-slot="dialog-content"].claxedo-modal-backdrop) .ui-dialog-overlay {
   background-color: hsl(from var(--background-base) h s l / 0.6);
   backdrop-filter: blur(3px);
-  /* Match the dialog's own 150ms in / 100ms out so the backdrop and the panel
-     move as one surface instead of the dim snapping ahead of the box. */
   animation: claxedoDialogBackdropHide 100ms ease-in forwards;
 }
 
@@ -803,18 +722,12 @@ body:has([data-slot="dialog-content"].claxedo-modal-backdrop) .ui-dialog-overlay
   }
 }
 
-/* The floating session stack's `z-index: 40` is trapped inside its pane slot's
-   `contain: strict` stacking context, so it can only reach above the panel
-   (`z-30`, a sibling of this column) when the column itself is a positioned
-   layer above the panel. The column paints and catches nothing of its own;
-   the stack re-enables pointer events for itself (session-presentation.css). */
 [data-floating-host] {
   position: relative;
   z-index: 40;
   background: transparent;
   pointer-events: none;
 }
-/* The workbench root paints its ground inline; the override has to outrank it. */
 [data-floating-host] [data-testid="workbench-root"] {
   background-color: transparent !important;
 }

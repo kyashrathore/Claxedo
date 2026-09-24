@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "在時間軸中預設展開 shell 工具區塊",
   "settings.general.editToolPartsExpanded": "展開 edit 工具區塊",
   "settings.general.editToolPartsExpanded.description": "在時間軸中預設展開 edit、write 和 patch 工具區塊",
+  "settings.appearance.uiFont": "介面字型",
+  "settings.appearance.uiFont.description": "自訂整個介面使用的字型",
+  "settings.appearance.codeFont": "程式碼字型",
+  "settings.appearance.codeFont.description": "自訂程式碼區塊使用的字型",
+  "settings.appearance.screenReader": "螢幕閱讀器模式",
+  "settings.appearance.screenReader.description": "在新終端機中公開可存取的螢幕閱讀器緩衝區",
 }

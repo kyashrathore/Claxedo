@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "타임라인에서 기본적으로 shell 도구 파트를 펼친 상태로 표시합니다",
   "settings.general.editToolPartsExpanded": "edit 도구 파트 펼치기",
   "settings.general.editToolPartsExpanded.description": "타임라인에서 기본적으로 edit, write, patch 도구 파트를 펼친 상태로 표시합니다",
+  "settings.appearance.uiFont": "UI 글꼴",
+  "settings.appearance.uiFont.description": "인터페이스 전반에 사용되는 글꼴을 사용자 지정",
+  "settings.appearance.codeFont": "코드 글꼴",
+  "settings.appearance.codeFont.description": "코드 블록에 사용되는 글꼴을 사용자 지정",
+  "settings.appearance.screenReader": "스크린 리더 모드",
+  "settings.appearance.screenReader.description": "새 터미널에서 접근 가능한 스크린 리더 버퍼를 노출하세요",
 }

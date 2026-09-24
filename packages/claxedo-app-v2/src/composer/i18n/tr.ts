@@ -93,4 +93,7 @@ export const tr: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "Akıl yürütme yok",
   "model.tooltip.context": "Bağlam limiti {{limit}}",
   "model.tooltip.allows": "Kabul eder: {{inputs}}",
+  "dialog.model.select.title": "Model seç",
+  "command.model.choose": "Model seç",
+  "command.model.choose.description": "Farklı bir model seç",
 }

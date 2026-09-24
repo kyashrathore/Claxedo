@@ -86,4 +86,6 @@ export const zht: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.next": "下一則訊息",
   "command.message.next.description": "跳到下一則使用者訊息",
   "sessionScreen.requests.loadFailed": "無法載入待處理的權限要求或問題。請重試以繼續。",
+  "command.session.new": "新增工作階段",
+  "command.category.session": "工作階段",
 }

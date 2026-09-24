@@ -19,7 +19,7 @@ export type CapabilitiesOwner = {
 type Read<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly reason: string }
 type Availability = { readonly available: boolean; readonly reason?: string }
 
-const GOAL_MODES: Readonly<Record<string, HarnessInfo["goalMode"]>> = { claude: "evaluated", codex: "native" }
+const GOAL_MODES: Readonly<Record<string, HarnessInfo["goalMode"]>> = { claude: "evaluated", codex: "native", cursor: "native", pi: "evaluated" }
 const HARNESS_LABELS = HARNESS_TABLE as Readonly<Record<string, { readonly label: string } | undefined>>
 
 async function settle<T>(what: string, read: Promise<T>): Promise<Read<T>> {

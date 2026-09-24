@@ -88,4 +88,8 @@ export const no: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "Ingen resonnering",
   "model.tooltip.context": "Kontekstgrense {{limit}}",
   "model.tooltip.allows": "Tillater: {{inputs}}",
+  "dialog.model.select.title": "Velg modell",
+  "command.model.choose": "Velg modell",
+  "command.model.choose.description": "Velg en annen modell",
+  "command.category.model": "Modell",
 }

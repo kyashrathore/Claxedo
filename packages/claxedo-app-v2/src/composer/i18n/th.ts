@@ -96,4 +96,8 @@ export const th: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "ไม่มีการใช้เหตุผล",
   "model.tooltip.context": "ขีดจำกัดบริบท {{limit}}",
   "model.tooltip.allows": "อนุญาต: {{inputs}}",
+  "dialog.model.select.title": "เลือกโมเดล",
+  "command.model.choose": "เลือกโมเดล",
+  "command.model.choose.description": "เลือกโมเดลอื่น",
+  "command.category.model": "โมเดล",
 }

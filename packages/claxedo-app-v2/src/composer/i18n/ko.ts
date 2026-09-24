@@ -94,4 +94,8 @@ export const ko: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "추론 없음",
   "model.tooltip.context": "컨텍스트 제한 {{limit}}",
   "model.tooltip.allows": "지원: {{inputs}}",
+  "dialog.model.select.title": "모델 선택",
+  "command.model.choose": "모델 선택",
+  "command.model.choose.description": "다른 모델 선택",
+  "command.category.model": "모델",
 }

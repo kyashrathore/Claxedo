@@ -15,7 +15,7 @@ function appV2Aliases(config: UserConfig) {
   if (!Array.isArray(aliases)) throw new Error("claxedo-app-v2's Vite config no longer declares its aliases as a list")
   return [
     { find: /^#app-v2$/, replacement: normalize(path.join(appV2Dir, "src/app.tsx")) },
-    { find: /^#app-v2\/styles$/, replacement: normalize(path.join(appV2Dir, "src/ui/styles.css")) },
+    { find: /^#app-v2\/styles$/, replacement: normalize(path.join(appV2Dir, "src/styles.ts")) },
     ...aliases,
   ]
 }

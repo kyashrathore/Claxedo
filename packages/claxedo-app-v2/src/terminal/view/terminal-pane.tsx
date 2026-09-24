@@ -1,4 +1,5 @@
 import "./terminal-pane.css"
+import { terminalFontFamily, usePreferences } from "@/settings"
 import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { machine } from "@/lib/machine"
@@ -23,6 +24,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const terminals = useTerminalRuntime()
   const t = useTranslator(dictionary)
   const { placementId, terminalId } = props.state
+  const preferences = usePreferences()
   const store = terminals.store(placementId)
   onCleanup(terminals.retain(placementId))
   const row = createMemo(() => store.row(terminalId))
@@ -47,6 +49,8 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
       renderers: terminals.renderers,
       openFile: terminals.openFile,
       onBackend: setBackend,
+      terminalFont: () => (preferences.appearance.terminalFont.trim() ? terminalFontFamily(preferences.appearance.terminalFont) : undefined),
+      screenReaderMode: () => preferences.appearance.terminalScreenReader,
     })
   })
   onCleanup(() => mount?.dispose())

@@ -92,4 +92,8 @@ export const ar: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "بدون استنتاج",
   "model.tooltip.context": "حد السياق {{limit}}",
   "model.tooltip.allows": "يسمح: {{inputs}}",
+  "dialog.model.select.title": "تحديد نموذج",
+  "command.model.choose": "اختيار نموذج",
+  "command.model.choose.description": "حدد نموذجًا مختلفًا",
+  "command.category.model": "نموذج",
 }

@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "إظهار أجزاء أداة shell موسعة بشكل افتراضي في الشريط الزمني",
   "settings.general.editToolPartsExpanded": "توسيع أجزاء أداة edit",
   "settings.general.editToolPartsExpanded.description": "إظهار أجزاء أدوات edit و write و patch موسعة بشكل افتراضي في الشريط الزمني",
+  "settings.appearance.uiFont": "خط الواجهة",
+  "settings.appearance.uiFont.description": "خصّص الخط المستخدم في الواجهة بأكملها",
+  "settings.appearance.codeFont": "خط الكود",
+  "settings.appearance.codeFont.description": "خصّص الخط المستخدم في كتل التعليمات البرمجية",
+  "settings.appearance.screenReader": "وضع قارئ الشاشة",
+  "settings.appearance.screenReader.description": "وفّر مخزنًا مؤقتًا يمكن لقارئ الشاشة الوصول إليه في الطرفيات الجديدة",
 }
