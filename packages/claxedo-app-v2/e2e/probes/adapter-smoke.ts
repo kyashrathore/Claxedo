@@ -128,6 +128,12 @@ async function connectAndPlace(probe: Probe): Promise<Placement> {
     ])
     return `machines=${machines.map((machine) => machine.name).join(",")} codeHosts=${hosts.length} accounts=${accounts.map((account) => account.providerId).join(",")} plugins=${catalog.candidates.length} cloud=${cloud.length}`
   })
+  await check("plugin host calls", async () => {
+    const health = await server.request("/api/claxedo/health")
+    const removal = await server.livePlugins.remove("probe-missing").then(() => "removed", (error: { class?: string }) => error.class)
+    if (!health.ok || removal !== "not_found") throw new Error(`health=${health.status} removal=${removal}`)
+    return `request health=${health.status}, removing an unknown live plugin → ${removal}`
+  })
   await check("projects: create from a folder and read back by id", async () => {
     const project = await server.projects.create({ source: { kind: "folder", path: workspace.directory } })
     const read = await server.queryClient.fetchQuery(server.queries.projects.byId(project.id))
@@ -180,6 +186,17 @@ async function turnChecks(probe: Probe, placement: Placement) {
     const hit = page.rows.find((item) => item.ref.sessionId === ref.sessionId)
     if (!hit) throw new Error(`${page.rows.length} row(s), none is ${ref.sessionId}`)
     return `entries=${snapshot.transcript.entries.length} list row "${hit.title}" placement=${hit.ref.placementId}`
+  })
+  await check("subagents: a delegated child is listed and readable", async () => {
+    await stack.acp.write("delegate", { steps: [{ kind: "subagent", name: "researcher", task: "Find it", steps: [{ kind: "text", text: "Found it" }] }, { kind: "text", text: "Done" }] })
+    const from = log.mark()
+    await server.sessions.prompt(ref, { clientRequestId: crypto.randomUUID(), text: `Delegate. ${acpScriptToken("delegate")}`, attachments: [] })
+    await log.next("subagentUpdated", from, (event): event is ServerEvent => event.type === "subagentUpdated" && event.ref.sessionId === ref.sessionId)
+    await log.next("idle", from, isStatus(ref.sessionId, ["idle"]))
+    const child = (await server.sessions.subagents(ref)).find((subagent) => subagent.childSessionId)
+    if (!child?.childSessionId) throw new Error("no subagent names a child session")
+    const snapshot = await server.sessions.snapshot({ ...ref, sessionId: child.childSessionId as typeof ref.sessionId })
+    return `${child.subagentKey} status=${child.status} child entries=${snapshot.transcript.entries.length}`
   })
   await check("stop: a held turn is reported working, then cancelled", async () => {
     await stack.acp.write("held", { steps: [{ kind: "hold", name: "held" }, { kind: "text", text: "too late" }] })

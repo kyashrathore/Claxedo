@@ -7,6 +7,7 @@ import { isRetryable, toAppError } from "./errors"
 import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
+import { createLivePluginsApi } from "./live-plugins"
 import type { ProjectId } from "./ids"
 import type { Server, ServerQueries } from "./api"
 import { createProjectsApi } from "./projects"
@@ -80,8 +81,10 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     projects: createProjectsApi(transport, queryClient, workspaces.refresh),
     placements: { byId: workspaces.byId, list: workspaces.list, createWorktree: createWorktreeCreator(transport, workspaces) },
     terminals: createTerminalsApi(transport, workspaces),
-    git: createGitApi(transport, workspaces),
+    git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),
+    livePlugins: createLivePluginsApi(transport),
+    request: transport.request,
   }
 }
 

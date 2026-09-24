@@ -8,4 +8,5 @@ export const dictionary = {
   "usage.window.session": "Sitzung",
   "usage.window.weekly": "Wöchentlich",
   "usage.window.weeklyOpus": "Wöchentlich · Opus",
+  "usage.quota.checking": "Deine Agenten werden geprüft…",
 }

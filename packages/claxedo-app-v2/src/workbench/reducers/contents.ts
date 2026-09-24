@@ -22,3 +22,13 @@ export function remove(state: WorkbenchState, contentId: string): WorkbenchState
     layoutSnapshots,
   }
 }
+
+export function reorder(state: WorkbenchState, contentId: string, index: number): WorkbenchState {
+  const from = state.contentIds.indexOf(contentId)
+  if (from < 0) return state
+  const to = Math.max(0, Math.min(Math.trunc(index), state.contentIds.length - 1))
+  if (from === to) return state
+  const contentIds = state.contentIds.filter((id) => id !== contentId)
+  contentIds.splice(to, 0, contentId)
+  return { ...state, contentIds }
+}

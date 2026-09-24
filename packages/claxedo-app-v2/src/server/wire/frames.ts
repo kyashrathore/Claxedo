@@ -4,6 +4,7 @@ import { placementId as asPlacementId, projectId, requestId } from "../ids"
 import type { FileDiff, SessionRef, Todo } from "../types"
 import { provisionStatus } from "./cloud"
 import { goalFromWire } from "./goal"
+import { subagentFromWire } from "./subagents"
 import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } from "./requests"
 import { sessionRefFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFromTurnError, sessionStatusFromWire } from "./status"
@@ -129,6 +130,10 @@ function lifecycleEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined 
     }
     case "goal.cleared":
       return { type: "goalChanged", ref, goal: undefined }
+    case "subagent.updated": {
+      const subagent = subagentFromWire(properties.update)
+      return subagent ? { type: "subagentUpdated", ref, subagent } : undefined
+    }
     case "todo.updated": {
       const todos = todosOf(properties.todos)
       return todos ? { type: "todosChanged", ref, todos } : undefined
@@ -196,7 +201,7 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
   }
 }
 
-const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff)$|todo\.updated$|goal\.(updated|cleared)$|permission\.|question\.)/
+const SESSION_FRAME = /^(message\.|session\.(status|idle|error|updated|deleted|diff)$|todo\.updated$|goal\.(updated|cleared)$|subagent\.updated$|permission\.|question\.)/
 
 export function serverEventFromFrame(frame: Frame, address: Address): ServerEvent | undefined {
   if (!SESSION_FRAME.test(frame.type)) return controlEvent(frame, address)

@@ -31,9 +31,6 @@ export type Keys =
   | "access.org.role.admin"
   | "access.org.role.member"
   | "access.org.you"
-  | "access.org.members"
-  | "access.org.members.unavailable"
-  | "access.org.members.empty"
   | "access.org.accounts"
   | "access.org.accounts.hint"
   | "access.org.restricted"
@@ -72,9 +69,6 @@ export const dictionary = {
     "access.org.role.admin": "Admin",
     "access.org.role.member": "Member",
     "access.org.you": "You",
-    "access.org.members": "Members",
-    "access.org.members.unavailable": "This server does not list members yet. Membership is managed where you signed in.",
-    "access.org.members.empty": "No members yet.",
     "access.org.accounts": "Organization accounts",
     "access.org.accounts.hint": "Provider accounts every member's agents may run on are managed under Accounts by an owner or admin.",
     "access.org.restricted": "Only owners and admins can manage the organization.",

@@ -10,6 +10,7 @@ import { serverBinding } from "./server"
 import type { BindingScope, HostServices } from "./services"
 import { presentationBindings } from "./ui"
 
+export { createClaims } from "./claims"
 export { createOverlayTracker } from "./overlays"
 export type { HostServices } from "./services"
 

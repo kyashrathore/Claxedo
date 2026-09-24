@@ -1,6 +1,6 @@
 import { canonicalToolName, type AgentToolPart } from "@claxedo/agent-runtime-contract"
 import type { IconProps } from "@opencode-ai/ui/icon"
-import type { UiI18n } from "@opencode-ai/ui/context/i18n"
+import type { TranscriptI18n } from "./i18n"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import { genericToolIcon, toolActionPhrase } from "./basic-tool"
 import { clampLabel } from "./message-part-text"
@@ -51,7 +51,7 @@ export function workGroupIcon(parts: AgentToolPart[]): IconProps["name"] {
 }
 
 /** How a row names one call: the action its name reads as, or the name itself. */
-function toolLabel(part: AgentToolPart, i18n: UiI18n) {
+function toolLabel(part: AgentToolPart, i18n: TranscriptI18n) {
   return toolActionPhrase(part.tool, i18n) ?? canonicalToolName(part.tool)
 }
 
@@ -60,7 +60,7 @@ function toolLabel(part: AgentToolPart, i18n: UiI18n) {
  * names it; a run of one tool is counted by that tool; a mixed run has no shared name
  * to count by, so it says how many calls it hides.
  */
-function otherSegment(parts: AgentToolPart[], pending: boolean, i18n: UiI18n): string | undefined {
+function otherSegment(parts: AgentToolPart[], pending: boolean, i18n: TranscriptI18n): string | undefined {
   const first = parts[0]
   if (!first) return undefined
   if (parts.length === 1) {
@@ -82,7 +82,7 @@ function otherSegment(parts: AgentToolPart[], pending: boolean, i18n: UiI18n): s
 
 // Segmented summary: present-continuous while running, past tense when settled;
 // leading segment sentence-case, followers lowercase, joined with " · ".
-function workGroupSegments(counts: WorkGroupCounts, pending: boolean, i18n: UiI18n): string[] {
+function workGroupSegments(counts: WorkGroupCounts, pending: boolean, i18n: TranscriptI18n): string[] {
   const segs: string[] = []
   if (counts.edited > 0)
     segs.push(pending ? "editing files" : `edited ${counts.edited} ${counts.edited === 1 ? "file" : "files"}`)
@@ -96,7 +96,7 @@ function workGroupSegments(counts: WorkGroupCounts, pending: boolean, i18n: UiI1
   return segs
 }
 
-export function workGroupTitle(counts: WorkGroupCounts, pending: boolean, i18n: UiI18n): string {
+export function workGroupTitle(counts: WorkGroupCounts, pending: boolean, i18n: TranscriptI18n): string {
   const segs = workGroupSegments(counts, pending, i18n)
   if (segs.length === 0) return pending ? "Working" : "Worked"
   return segs.map((seg, i) => (i === 0 ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg)).join(" · ")
@@ -107,7 +107,7 @@ export function workGroupTitle(counts: WorkGroupCounts, pending: boolean, i18n: 
  * that member's live summary instead of the settled aggregate — so a long run of tool
  * calls stays ONE row that keeps updating, rather than appending a row per call.
  */
-export function workGroupActiveLabel(parts: AgentToolPart[], i18n: UiI18n, busy = false): string | undefined {
+export function workGroupActiveLabel(parts: AgentToolPart[], i18n: TranscriptI18n, busy = false): string | undefined {
   const active = parts.find((part) => part.state.status === "pending" || part.state.status === "running")
     ?? (busy ? parts.at(-1) : undefined)
   // `busy` belongs to the trailing group of the active turn. A completed member

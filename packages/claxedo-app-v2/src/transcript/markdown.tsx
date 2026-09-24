@@ -1,5 +1,5 @@
 import { OpenCodeTheme, useMarked, transcriptMarkdownExtensions } from "@opencode-ai/ui/context/marked"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { useData } from "./data"
@@ -885,7 +885,7 @@ export function Markdown(
 ) {
   const [local, others] = splitProps(props, ["text", "cacheKey", "streaming", "richAfterMs", "class", "classList"])
   const marked = useMarked()
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   // A host without a dialog layer cannot offer the full-view preview; image
   // tiles then render identically but clicks do nothing.
   const dialog = (() => {
@@ -1045,8 +1045,8 @@ export function Markdown(
 
     const commitStarted = rendererClock()
     const labels = {
-      copy: i18n.t("ui.message.copy"),
-      copied: i18n.t("ui.message.copied"),
+      copy: i18n.t("transcript.message.copy"),
+      copied: i18n.t("transcript.message.copied"),
     }
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
@@ -1066,8 +1066,8 @@ export function Markdown(
       .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
     if (!copyCleanup)
       copyCleanup = setupCodeCopy(container, () => ({
-        copy: i18n.t("ui.message.copy"),
-        copied: i18n.t("ui.message.copied"),
+        copy: i18n.t("transcript.message.copy"),
+        copied: i18n.t("transcript.message.copied"),
       }))
     if (!linkCleanup) linkCleanup = setupLinkOpen(container, openImage)
     traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)

@@ -27,11 +27,14 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
   return <ShellRoutingContext.Provider value={routing}>{props.children}</ShellRoutingContext.Provider>
 }
 
-export function ShellRouter(props: { readonly children: JSX.Element }): JSX.Element {
+export type ShellRouterComponent = (props: { readonly children?: JSX.Element }) => JSX.Element
+
+export function ShellRouter(props: { readonly router?: ShellRouterComponent; readonly children: JSX.Element }): JSX.Element {
+  const Base = props.router ?? Router
   return (
-    <Router>
+    <Base>
       <Route path="*rest" component={() => <RoutingProvider>{props.children}</RoutingProvider>} />
-    </Router>
+    </Base>
   )
 }
 

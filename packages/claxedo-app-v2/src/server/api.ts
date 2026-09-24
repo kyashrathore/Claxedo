@@ -52,6 +52,7 @@ import type {
   SessionRow,
   SessionSnapshot,
   SessionStatusRead,
+  Subagent,
   TranscriptPage,
 } from "./types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
@@ -72,6 +73,7 @@ export type SessionsApi = {
   readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
   readonly controlGoal: (ref: SessionRef, action: GoalAction) => Promise<SessionGoal | undefined>
+  readonly subagents: (ref: SessionRef) => Promise<readonly Subagent[]>
 }
 
 export type ProjectsApi = {
@@ -109,6 +111,10 @@ export type CloudApi = {
   readonly start: (id: PlacementId) => Promise<void>
   readonly stop: (id: PlacementId) => Promise<void>
   readonly remove: (id: PlacementId) => Promise<void>
+}
+
+export type LivePluginsApi = {
+  readonly remove: (pluginId: string) => Promise<void>
 }
 
 export type ServerQueries = {
@@ -158,5 +164,7 @@ export type Server = {
   readonly terminals: TerminalsApi
   readonly git: GitApi
   readonly cloud: CloudApi
+  readonly livePlugins: LivePluginsApi
   readonly queries: ServerQueries
+  readonly request: (path: string, init?: RequestInit) => Promise<Response>
 }

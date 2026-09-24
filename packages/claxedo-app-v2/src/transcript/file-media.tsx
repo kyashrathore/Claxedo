@@ -1,7 +1,7 @@
 import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
 import { createEffect, createMemo, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 import {
   dataUrlFromMediaValue,
   hasMediaValue,
@@ -30,7 +30,7 @@ function mediaValue(cfg: FileMediaOptions, mode: "image" | "audio") {
 }
 
 export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX.Element }) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const [remote, setRemote] = createStore<{
     key?: string
     loading?: boolean
@@ -181,7 +181,7 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
   )
 
   const kindLabel = (value: "image" | "audio") =>
-    i18n.t(value === "image" ? "ui.fileMedia.kind.image" : "ui.fileMedia.kind.audio")
+    i18n.t(value === "image" ? "transcript.fileMedia.kind.image" : "transcript.fileMedia.kind.audio")
 
   return (
     <Switch>
@@ -197,27 +197,27 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
             if (deleted()) {
               return (
                 <div class="flex min-h-40 items-center justify-center px-6 py-4 text-center text-text-weak">
-                  {i18n.t("ui.fileMedia.state.removed", { kind: label })}
+                  {i18n.t("transcript.fileMedia.state.removed", { kind: label })}
                 </div>
               )
             }
             if (status() === "loading") {
               return (
                 <div class="flex min-h-40 items-center justify-center px-6 py-4 text-center text-text-weak">
-                  {i18n.t("ui.fileMedia.state.loading", { kind: label })}
+                  {i18n.t("transcript.fileMedia.state.loading", { kind: label })}
                 </div>
               )
             }
             if (status() === "error") {
               return (
                 <div class="flex min-h-40 items-center justify-center px-6 py-4 text-center text-text-weak">
-                  {i18n.t("ui.fileMedia.state.error", { kind: label })}
+                  {i18n.t("transcript.fileMedia.state.error", { kind: label })}
                 </div>
               )
             }
             return (
               <div class="flex min-h-40 items-center justify-center px-6 py-4 text-center text-text-weak">
-                {i18n.t("ui.fileMedia.state.unavailable", { kind: label })}
+                {i18n.t("transcript.fileMedia.state.unavailable", { kind: label })}
               </div>
             )
           })()}
@@ -274,13 +274,13 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
       <Match when={isBinary()}>
         <div class="flex min-h-56 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
           <div class="text-14-semibold text-text-strong">
-            {cfg()?.path?.split("/").pop() ?? i18n.t("ui.fileMedia.binary.title")}
+            {cfg()?.path?.split("/").pop() ?? i18n.t("transcript.fileMedia.binary.title")}
           </div>
           <div class="text-14-regular text-text-weak">
             {(() => {
               const path = cfg()?.path
-              if (!path) return i18n.t("ui.fileMedia.binary.description.default")
-              return i18n.t("ui.fileMedia.binary.description.path", { path })
+              if (!path) return i18n.t("transcript.fileMedia.binary.description.default")
+              return i18n.t("transcript.fileMedia.binary.description.path", { path })
             })()}
           </div>
         </div>

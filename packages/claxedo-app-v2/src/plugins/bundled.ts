@@ -1,5 +1,5 @@
 import { readPluginManifest, type PluginDefinition } from "@claxedo/plugin-api"
-import codexTheme, { dictionary as codexThemeDictionary } from "@claxedo/plugin-codex-theme"
+import codexTheme from "@claxedo/plugin-codex-theme"
 import codexThemePackage from "@claxedo/plugin-codex-theme/package.json"
 import compactTabs, { dictionary as compactTabsDictionary } from "@claxedo/plugin-compact-tabs"
 import compactTabsPackage from "@claxedo/plugin-compact-tabs/package.json"
@@ -10,7 +10,7 @@ import tasksPackage from "@claxedo/plugin-tasks/package.json"
 import type { Translations } from "@/i18n"
 import type { PluginBuild } from "./model"
 
-function bundled(packageJson: unknown, definition: PluginDefinition, dictionary: Translations): PluginBuild {
+function bundled(packageJson: unknown, definition: PluginDefinition, dictionary?: Translations): PluginBuild {
   return { manifest: readPluginManifest(packageJson), origin: { kind: "bundled" }, definition, dictionary }
 }
 
@@ -19,6 +19,6 @@ export function bundledPlugins(): readonly PluginBuild[] {
     bundled(tasksPackage, tasks, tasksDictionary),
     bundled(pagesPackage, pages, pagesDictionary),
     bundled(compactTabsPackage, compactTabs, compactTabsDictionary),
-    bundled(codexThemePackage, codexTheme, codexThemeDictionary),
+    bundled(codexThemePackage, codexTheme),
   ]
 }

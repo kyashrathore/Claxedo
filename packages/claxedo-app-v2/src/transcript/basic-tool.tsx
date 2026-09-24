@@ -16,7 +16,7 @@ import {
 } from "solid-js"
 import { animate, type AnimationPlaybackControls } from "motion"
 import { canonicalToolName } from "@claxedo/agent-runtime-contract"
-import { useI18n, type UiI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n, type TranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
@@ -116,11 +116,11 @@ export function shellExitCode(metadata: Record<string, unknown> | undefined): nu
 
 /** A non-zero exit beside the command, so "Ran" alone never reads as "succeeded". */
 export function ToolExitCode(props: { code: number | undefined }) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const failed = () => (props.code !== undefined && props.code !== 0 ? props.code : undefined)
   return (
     <Show when={failed()}>
-      {(code) => <span data-slot="basic-tool-tool-exit">{i18n.t("ui.tool.shell.exit", { code: code() })}</span>}
+      {(code) => <span data-slot="basic-tool-tool-exit">{i18n.t("transcript.tool.shell.exit", { code: code() })}</span>}
     </Show>
   )
 }
@@ -531,17 +531,17 @@ export function genericToolIcon(tool: string, input?: Record<string, unknown>): 
  * `sendmessage`), so no splitter can recover the words. Every other name is split
  * mechanically; this table exists only where that recovery is impossible.
  */
-const ACTION_KEYS: Record<string, string> = {
-  sendmessage: "ui.basicTool.action.sendMessage",
-  toolsearch: "ui.basicTool.action.searchTools",
-  listagents: "ui.basicTool.action.listAgents",
-  enterplanmode: "ui.basicTool.action.enterPlanMode",
-  exitplanmode: "ui.basicTool.action.proposePlan",
+const ACTION_KEYS: Record<string, TranscriptTextKey> = {
+  sendmessage: "transcript.basicTool.action.sendMessage",
+  toolsearch: "transcript.basicTool.action.searchTools",
+  listagents: "transcript.basicTool.action.listAgents",
+  enterplanmode: "transcript.basicTool.action.enterPlanMode",
+  exitplanmode: "transcript.basicTool.action.proposePlan",
 }
 
 /** Input keys that are themselves the preposition joining the action to its object. */
-const PREPOSITION_TITLE_KEYS: Record<string, string> = {
-  to: "ui.basicTool.title.to",
+const PREPOSITION_TITLE_KEYS: Record<string, TranscriptTextKey> = {
+  to: "transcript.basicTool.title.to",
 }
 
 function mcpName(tool: string) {
@@ -584,7 +584,7 @@ function serverLabel(server: string) {
  * A single word says nothing the raw name did not, so it becomes a title only for an MCP
  * name, which arrives with a server to carry the missing context.
  */
-function actionPhrase(name: string, hasContext: boolean, i18n: UiI18n) {
+function actionPhrase(name: string, hasContext: boolean, i18n: TranscriptI18n) {
   const key = ACTION_KEYS[name.toLowerCase()]
   if (key) return i18n.t(key)
   const parts = words(name)
@@ -596,7 +596,7 @@ function actionPhrase(name: string, hasContext: boolean, i18n: UiI18n) {
  * The action a tool name reads as, or nothing when the name yields none — a caller with
  * its own fallback needs to know which it got, where `humanizeTool` has already chosen.
  */
-export function toolActionPhrase(tool: string, i18n: UiI18n): string | undefined {
+export function toolActionPhrase(tool: string, i18n: TranscriptI18n): string | undefined {
   const mcp = mcpName(tool)
   return actionPhrase(mcp?.name ?? tool, mcp !== undefined, i18n)
 }
@@ -615,14 +615,14 @@ export type GenericToolTitle = {
 export function humanizeTool(
   tool: string,
   input: Record<string, unknown> | undefined,
-  i18n: UiI18n,
+  i18n: TranscriptI18n,
 ): GenericToolTitle {
   const object = labelEntry(input)
   const mcp = mcpName(tool)
   const action = toolActionPhrase(tool, i18n)
   if (!action) {
     return {
-      title: i18n.t("ui.basicTool.called", { tool }).replaceAll("`", ""),
+      title: i18n.t("transcript.basicTool.called", { tool }).replaceAll("`", ""),
       subtitle: object ? collapsePayload(object.value) : undefined,
     }
   }
@@ -644,7 +644,7 @@ export function GenericTool(props: {
   revealed?: boolean
   onRevealedChange?: (revealed: boolean) => void
 }) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const title = createMemo(() => humanizeTool(props.tool, props.input, i18n))
   const output = () => (typeof props.output === "string" ? props.output.trim() : "")
 

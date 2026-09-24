@@ -1,5 +1,5 @@
 import { Portal } from "solid-js/web"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 import { Icon } from "@opencode-ai/ui/icon"
 
 export function FileSearchBar(props: {
@@ -14,7 +14,7 @@ export function FileSearchBar(props: {
   onPrev: () => void
   onNext: () => void
 }) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
 
   return (
     <Portal>
@@ -29,7 +29,7 @@ export function FileSearchBar(props: {
         <Icon name="magnifying-glass" size="small" class="text-text-weak shrink-0" />
         <input
           ref={props.setInput}
-          placeholder={i18n.t("ui.fileSearch.placeholder")}
+          placeholder={i18n.t("transcript.fileSearch.placeholder")}
           value={props.query()}
           class="w-40 bg-transparent outline-none text-14-regular text-text-strong placeholder:text-text-weak"
           onInput={(e) => props.onInput(e.currentTarget.value)}
@@ -43,7 +43,7 @@ export function FileSearchBar(props: {
             type="button"
             class="size-6 grid place-items-center rounded text-text-weak hover:bg-surface-base-hover hover:text-text-strong disabled:opacity-40 disabled:pointer-events-none"
             disabled={props.count() === 0}
-            aria-label={i18n.t("ui.fileSearch.previousMatch")}
+            aria-label={i18n.t("transcript.fileSearch.previousMatch")}
             onClick={props.onPrev}
           >
             <Icon name="chevron-down" size="small" class="rotate-180" />
@@ -52,7 +52,7 @@ export function FileSearchBar(props: {
             type="button"
             class="size-6 grid place-items-center rounded text-text-weak hover:bg-surface-base-hover hover:text-text-strong disabled:opacity-40 disabled:pointer-events-none"
             disabled={props.count() === 0}
-            aria-label={i18n.t("ui.fileSearch.nextMatch")}
+            aria-label={i18n.t("transcript.fileSearch.nextMatch")}
             onClick={props.onNext}
           >
             <Icon name="chevron-down" size="small" />
@@ -61,7 +61,7 @@ export function FileSearchBar(props: {
         <button
           type="button"
           class="size-6 grid place-items-center rounded text-text-weak hover:bg-surface-base-hover hover:text-text-strong"
-          aria-label={i18n.t("ui.fileSearch.close")}
+          aria-label={i18n.t("transcript.fileSearch.close")}
           onClick={props.onClose}
         >
           <Icon name="close-small" size="small" />

@@ -1,7 +1,7 @@
 import { createMemo, For, Show } from "solid-js"
 import type { AgentQuestionAnswer, AgentQuestionInfo } from "@claxedo/agent-runtime-contract"
 import { Icon } from "@opencode-ai/ui/icon"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 
 export type QuestionAnswerMark = {
   text: string
@@ -30,7 +30,7 @@ export function questionAnswerRows(
 }
 
 export function QuestionCard(props: { questions: AgentQuestionInfo[]; answers: AgentQuestionAnswer[] }) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const rows = createMemo(() => questionAnswerRows(props.questions, props.answers))
   const answered = createMemo(() => rows().filter((row) => row.answers.length > 0).length)
 
@@ -38,10 +38,10 @@ export function QuestionCard(props: { questions: AgentQuestionInfo[]; answers: A
     <div data-component="question-card" class="ui-question-card">
       <div data-slot="question-card-header">
         <Icon name="bubble-5" size="small" />
-        <span data-slot="question-card-title">{i18n.t("ui.tool.questions")}</span>
+        <span data-slot="question-card-title">{i18n.t("transcript.tool.questions")}</span>
         <Show when={answered() > 0}>
           <span data-slot="question-card-count">
-            {i18n.t("ui.question.subtitle.answered", { count: answered() })}
+            {i18n.t("transcript.question.subtitle.answered", { count: answered() })}
           </span>
         </Show>
       </div>
@@ -54,7 +54,7 @@ export function QuestionCard(props: { questions: AgentQuestionInfo[]; answers: A
                 when={row.answers.length > 0}
                 fallback={
                   <span data-slot="answer-text" class="ui-answer-text" data-kind="none">
-                    {i18n.t("ui.question.answer.none")}
+                    {i18n.t("transcript.question.answer.none")}
                   </span>
                 }
               >

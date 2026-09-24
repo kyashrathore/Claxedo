@@ -21,6 +21,10 @@ Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:termina
 
 The domains whose state is kept per placement (terminal, files, review, browser) mount their providers here with no props, under the commands provider inside the workbench; each reads the placement from `useShellRoute().placementId` and opens panes through `useWorkbench()`. The composer's draft store sits above the workbench and the panel, inside the principal's scope, so another principal starts with no drafts.
 
+## Composition (`src/app.tsx`)
+
+`AuthProvider` → registries → `I18nProvider` → `ThemeProvider` → `ShellRouter` → the server scope → `AppShell`. The server scope (`ServerProvider`, `AccessProvider`, `SessionStoresProvider`, `DialogProvider`) is keyed by the signed-in user: signed in, `createServer` gets a bearer token source from `useAuth().token`; signed out, expired or signing in, no auth. Only a change of user rebuilds it, so a token refresh does not. `App` takes an optional `router` (for example `MemoryRouter` for a `file://` renderer); the default is the history router.
+
 ## First run (`first-run.tsx`)
 
 On the home route, when the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen. Loading and failed lists never redirect.

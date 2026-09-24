@@ -1,5 +1,5 @@
 import { createSignal, onCleanup, onMount, Show, type JSX } from "solid-js"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 
 /** Whether the box holds more than its cap shows; a revealed box keeps its control so it can close again. */
 export function outputOverflows(box: { scrollHeight: number; clientHeight: number }) {
@@ -21,7 +21,7 @@ export function ScrollableOutput(props: {
   revealed?: boolean
   onRevealedChange?: (revealed: boolean) => void
 }) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const [localRevealed, setLocalRevealed] = createSignal(false)
   const revealed = () => props.revealed ?? localRevealed()
   const setRevealed = (value: boolean) => {
@@ -58,7 +58,7 @@ export function ScrollableOutput(props: {
         data-revealed={revealed() ? "true" : undefined}
         tabIndex={0}
         role="region"
-        aria-label={props.label ?? i18n.t("ui.scrollView.ariaLabel")}
+        aria-label={props.label ?? i18n.t("transcript.scrollView.ariaLabel")}
       >
         <div ref={content} data-slot="scrollable-output-content">
           {props.children}
@@ -130,7 +130,7 @@ export function ScrollableOutput(props: {
             requestAnimationFrame(pin)
           }}
         >
-          {revealed() ? i18n.t("ui.scrollableOutput.showLess") : i18n.t("ui.scrollableOutput.showAll")}
+          {revealed() ? i18n.t("transcript.scrollableOutput.showLess") : i18n.t("transcript.scrollableOutput.showAll")}
         </button>
       </Show>
     </>

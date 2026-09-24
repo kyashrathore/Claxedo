@@ -21,6 +21,7 @@
     "paths": {
       "#terminal-backend": ["./src/terminal/backend/xterm.ts"],
                   "@/*": ["./src/*"],
+      "@claxedo/app-v2/ui": ["./src/ui/index.ts"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
       "@claxedo/agent-event-runtime/client-presentation": ["../agent-event-runtime/src/projections/client-presentation/index.ts"]
