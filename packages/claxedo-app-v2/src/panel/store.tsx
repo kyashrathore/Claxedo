@@ -28,6 +28,7 @@ export type Panel = {
   readonly activeTab: Accessor<ReviewWorkspaceTab>
   readonly navigator: Accessor<WorkspacePanelNavigator | null>
   readonly fullWidth: Accessor<boolean>
+  readonly maximized: Accessor<boolean>
   readonly width: Accessor<number>
   readonly available: Accessor<number>
   readonly inset: Accessor<number>
@@ -89,6 +90,7 @@ export function PanelProvider(props: ParentProps): JSX.Element {
     placementId,
     sessionId,
     open: layout.panelShown,
+    maximized: () => layout.panelShown() && size.fullWidth(),
     inset: () =>
       workbenchInset({
         open: layout.panelShown(),

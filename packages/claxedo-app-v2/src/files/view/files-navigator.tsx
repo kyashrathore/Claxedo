@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, onCleanup, Show, type JSX } fro
 import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator } from "@/i18n"
-import { useServer, type PlacementId } from "@/server"
+import type { PlacementId } from "@/server"
 import { ClaxedoIcon as Icon, DelayedLoading } from "@/ui"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
@@ -11,7 +11,6 @@ import { useFiles } from "../store"
 import { createTreeSource } from "../tree-source"
 import { FileTree } from "./file-tree"
 
-const PREFETCH_DELAY_MS = 120
 const VISIBLE_LIMIT = 24
 
 export type FilesNavigatorProps = {
@@ -19,25 +18,6 @@ export type FilesNavigatorProps = {
   readonly active: boolean
   readonly activePath?: string
   readonly onOpenFile: (path: string) => void
-}
-
-function createHoverPrefetch(placementId: () => PlacementId, active: () => boolean) {
-  const api = useFilesApi()
-  const server = useServer()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const cancel = () => clearTimeout(timer)
-  onCleanup(cancel)
-  return {
-    start: (path: string) => {
-      cancel()
-      if (!active()) return
-      timer = setTimeout(
-        () => void server.queryClient.prefetchQuery(api.content(placementId(), path)),
-        PREFETCH_DELAY_MS,
-      )
-    },
-    cancel,
-  }
 }
 
 function revealActivePath(input: {
@@ -113,10 +93,6 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
     () => props.placementId,
     () => props.active,
   )
-  const prefetch = createHoverPrefetch(
-    () => props.placementId,
-    () => props.active,
-  )
   const query = createMemo(() => files.search().trim())
   const search = useQuery(() => ({ ...api.search(props.placementId, query()), enabled: query().length > 0 }))
   const status = useQuery(() => ({ ...api.changes(props.placementId), enabled: props.active }))
@@ -157,8 +133,6 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
             kinds={kinds()}
             active={props.activePath}
             visibleLimit={VISIBLE_LIMIT}
-            onFilePointerEnter={(node) => prefetch.start(node.path)}
-            onFilePointerLeave={() => prefetch.cancel()}
             onFileClick={(node) => props.onOpenFile(node.path)}
           />
         </div>

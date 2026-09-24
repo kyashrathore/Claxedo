@@ -12,6 +12,8 @@ export type {
   PaneKind,
   PaneProps,
   PaneRoute,
+  PanelView,
+  PanelViewProps,
   Registry,
   RouteEntry,
   SettingsSection,
