@@ -9,6 +9,7 @@ Owns: the settings sections the shell's settings page shows. The shell owns the 
 | Usage | account | quota windows and usage through Claxedo | `src/usage/` |
 | Organization | account | the org and your role | `src/access/` |
 | Connections | account | GitHub and MCP connections | the server |
+| Machines | account | remote access (locked with today's reason until this build can publish a machine), the account's enrolled machines with their connection state, and the two steps to add one with copyable commands | `server.queries.machines.list` (`enrolled` machines only; an unenrolled local daemon has none, as today) |
 | Language | app | the display language | the i18n provider (`useI18n`) |
 | Appearance | app | grouped: Colors (color scheme, theme, contrast), Fonts (UI, code), Transcript (reasoning summaries, shell and edit parts expanded, read live by the timeline), Workspace panel (files navigator side), Terminal (font, screen reader); every v1 General row lives here or in Language (Owner 00:55: no General) | the kit (`useTheme`) and `preferences.tsx` (`appearance`): the UI and code fonts are written to `--font-family-sans`/`--font-family-mono` on `<html>` only while one is chosen, so a theme's own font tokens apply otherwise; the terminal takes the terminal font (else the code font) and screen reader mode when it opens |
 | System notifications | app | per alert (agent finished, permission required, error) a system notification on or off; turning one on asks the browser once | `preferences.tsx` (`alerts.notify`), read by `@/notifications` |

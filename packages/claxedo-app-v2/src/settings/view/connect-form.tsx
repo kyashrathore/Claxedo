@@ -1,6 +1,7 @@
 import { createSignal, For, onCleanup, Show } from "solid-js"
-import { Select, TextInput } from "@/ui"
-import { Button } from "@opencode-ai/ui/button"
+import { Select } from "@opencode-ai/ui/select"
+import { TextField } from "@opencode-ai/ui/text-field"
+import { Button } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { useServer, type ConnectionScope, type Integration, type IntegrationConnectInput } from "@/server"
 import { connectError, connectMachine, createConnectForm, grantError } from "../connections"
@@ -66,18 +67,19 @@ export function ConnectForm(props: {
   return (
     <form class="settings-fields" aria-label={`${t("settings.common.connect")} ${props.integration.name}`} onSubmit={(event) => { event.preventDefault(); void submit("key", false) }}>
       <Show when={props.personalScopeEnabled}>
-        <Select aria-label="Scope" options={[...SCOPES]} current={form.scope} value={(scope) => scope} label={scopeLabel} onSelect={(scope) => scope && setForm("scope", scope)} />
+        <Select aria-label="Scope" options={[...SCOPES]} current={form.scope} value={(scope) => scope} label={scopeLabel} onSelect={(scope) => scope && setForm("scope", scope)} variant="secondary" size="small" triggerVariant="settings" />
       </Show>
       <Show when={keyMethod()}>
         <For each={props.integration.prompts}>
           {(prompt) => (
-            <TextInput
+            <TextField
               type={prompt.secret ? "password" : "text"}
               autocomplete="off"
-              aria-label={prompt.label}
+              label={prompt.label}
+              hideLabel
               placeholder={prompt.placeholder ?? prompt.label}
               value={prompt.secret ? form.secret : (form.fields[prompt.id] ?? "")}
-              onInput={(event) => (prompt.secret ? setForm("secret", event.currentTarget.value) : setForm("fields", prompt.id, event.currentTarget.value))}
+              onChange={(value) => (prompt.secret ? setForm("secret", value) : setForm("fields", prompt.id, value))}
             />
           )}
         </For>

@@ -1,6 +1,6 @@
 import type { AgentPresentationMessage } from "@claxedo/agent-runtime-contract"
 import { unreachable } from "@/lib/machine"
-import type { AppError, FileDiff, ServerEvent, Todo, TranscriptPart } from "@/server"
+import type { AppError, FileDiff, ServerEvent, TranscriptPart } from "@/server"
 import type { OlderState } from "@/session"
 import type { OptimisticUserMessage } from "@/transcript"
 
@@ -12,7 +12,6 @@ export type TranscriptData = {
   messages: SessionMessage[]
   parts: Record<string, TranscriptPart[]>
   fragmentParts: ReadonlySet<string>
-  todos: Todo[]
   diff: FileDiff[]
 }
 
@@ -45,7 +44,7 @@ export type OlderEvent =
 
 export const NO_FRAGMENTS: ReadonlySet<string> = new Set()
 
-export const emptyTranscript = (): TranscriptData => ({ messages: [], parts: {}, fragmentParts: NO_FRAGMENTS, todos: [], diff: [] })
+export const emptyTranscript = (): TranscriptData => ({ messages: [], parts: {}, fragmentParts: NO_FRAGMENTS, diff: [] })
 
 export const initialPhase: SessionPhase = { kind: "loading", held: [] }
 

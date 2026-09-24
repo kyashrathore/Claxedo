@@ -239,6 +239,9 @@ Updated 21:40, after the owner switched accounts and the lanes resumed.
 
 ## Owner questions still open
 
+- **Teams inside an org:** v1's Settings → Orgs & Teams (org create and switch, teams, members) uses the hosted org-team API. On a local build it shows only "Bearer token is required". v2 keeps its Organization section and adds v1's sign-in and error states. Team management waits on this decision; the plan recommends dropping teams.
+- **Machines remote access:** enable, pause and revoke, the device QR code, and machine rename or revoke need v1's `machineRemoteAccess` platform port. That's the desktop Host Connector, or an HTTP binding on hosted. Not ported; v1's local build binds none either.
+
 - **`/welcome`:** the owner asked "why remove /welcome?" (02:30). The v1 inventory row PROJ-001 says v1 has no `/welcome` route and draws the first-project canvas at `/`. projects-app's 7c245ba6e1 did that and is reverted until the owner rules. Keeping `/welcome` is fine if the owner prefers it.
 - **Browser Back after a rail click:** v2 returns to the previous session, while v1 stays on the current one. Keep v2's or match v1?
 - **The daemon restart on 2598** that picks up the two runtime fixes (Stop settles questions; no-Goal harnesses). It ends open terminals and running turns.
@@ -266,6 +269,24 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - **Editing files with Pierre.** The owner asked for it, and no server write route exists yet.
 - **Flows not yet written:** 17–25, 28, 32, 34–36. The signed flows need the self-hosted Node signed fixture.
 - **Stopped lanes with WIP:** live plugins, hosted projects on D1, the checks lane.
+
+## Plan deviations taken during the night
+
+- **Tasks is an app domain (`src/tasks`), not the `plugins/tasks` plugin.** Moving it into the plugin needs three host changes:
+  - a `tab` flag (and icon) on plugin pages;
+  - `sessions.open` taking a `workspaceId`;
+  - the rail's `/tasks` row claimed by the plugin.
+  That's about 2–3 hours of rework with no user benefit now.
+- **Over budget, awaiting a scope review, not squeezed:**
+  - Marketplace: 2,384 lines against 1,800.
+  - Tasks: 3,514 lines plus 1,343 of v1 CSS, against a plugin budget of 2,500.
+- **Hidden session, draft and page panes unmount**; terminals stay mounted (fd195fe7be). Measured: +8.5 ms per return to a visited session, ~12 MiB less JS heap with 8 sessions open.
+
+## Performance findings to apply at the swap
+
+- **The kit's `ScrollView` (`packages/ui/src/components/scroll-view.tsx:225`, `updateThumb`)** reads `scrollTop`, `scrollHeight` and `clientHeight` every frame while scrolling. That forces the layout the virtualizer just dirtied: about 0.8 ms per wheel event, 49 ms of 350 ms busy while wheel-scrolling an 8 MiB session.
+  - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
+  - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
 
 ## Server gaps found by the parity work
 

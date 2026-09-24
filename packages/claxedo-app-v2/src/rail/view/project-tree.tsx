@@ -60,7 +60,7 @@ export function ProjectTree(): JSX.Element {
   return (
     <div class="flex-1 flex flex-col py-1.5 gap-0.5">
       <Show when={sections().length > 0} fallback={<div class="flex px-4 py-8 text-compact text-text-weak">{t("rail.noMatches")}</div>}>
-        <div data-slot="rail-section-label" class="px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker">
+        <div class="rail-section-label px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker">
           {t("rail.projects")}
         </div>
         <For each={sections().map((section) => section.key)}>

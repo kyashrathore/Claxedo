@@ -41,6 +41,30 @@ Rules in those sheets that code cannot explain:
   - The dock collapses by container query on the space it owns. The harness/model chip keeps its label, because it is the only control naming what will answer.
   - The collapsed composer is driven by an attribute, not `:focus-within`. Its menus are portaled, and focus entering one would fold the card under it.
 
+- `styles/ui-overrides.css`, today's app's override sheet:
+  - **Semantic surfaces are theme-agnostic.** A role a theme does not override inherits the generic token (`SEMANTIC_THEME_ROLE_FALLBACKS` in `packages/ui/src/theme/resolve.ts`), so one selector serves every theme and Codex only supplies values.
+  - **Floating surfaces rebind the page palette to the overlay palette** for their subtree. `[data-surface="overlay"]` comes from DropdownMenu; `.overlay-palette` is the opt-in for pickers built outside the menu primitives. It is inert in a theme with no overlay overrides. Only hand-authored shells get their paint forced, because a forced rule on `[data-surface="overlay"]` would take the paint from every DropdownMenu.
+  - **The composer dock** binds only the ring colour its mask paints with.
+  - **The icon interaction grammar** (`data-icon-interaction`) is theme-agnostic:
+    - passive glyphs stay quiet on row hover;
+    - row actions brighten without a second pill;
+    - standalone controls get a hover surface;
+    - a pressed binary control shows by glyph and foreground.
+  - **Filled primary icon buttons keep their inverse foreground.** Without that rule the composer's send arrow paints the colour of its circle in every theme, and no component test catches a cascade conflict.
+  - **Every searchable picker's field** gets one inset fill. The List paints its search with the shell surface, which is a grey slab on a light menu. The merged harness/model picker's field doubles its class to clear index.css's (0,3,0) rule.
+  - **The Codex layer covers only what a colour token cannot express:** typography, SVG geometry and elevation.
+    - Elevation is Codex's own: a half-pixel stroke from the foreground at 12% plus two light black washes, the same in dark mode.
+    - Shadows live here because theme `overrides` are validated as colours.
+    - The composer is borderless at 20 px radius with a 90% blurred fill.
+    - The user bubble is foreground/5 at 16 px radius.
+    - Navigation rows are 30 px at 10 px radius.
+    - Its shell selectors stay scoped to Codex and keyed by `data-testid`, because moving them onto `data-surface` would repaint the other 37 themes.
+  - **The sidebar's edge falloff is an inset shadow.** The sidebar clips its overflow and the workbench paints over anything outside it.
+  - **Positioners opt out of overlay chrome** with a doubled class. An example is the tooltip that only places the session card.
+  - **Codex tooltips are not inverted:** they use the overlay family, as the shipped app does.
+  - **The composer and timeline widths** are restored to 800/1000 px, because 500/700 is too narrow for split panes.
+  - **The timeline skeleton's bars** use the muted text role so they read on every page background, and are staggered into a wave.
+
 ## Composition (`src/app.tsx`)
 
 `AuthProvider` → registries → `I18nProvider` → `ThemeProvider` → `ShellRouter` → the server scope → `AppShell`. The server scope (`ServerProvider`, `SessionStoresProvider`, projects' `ProjectListProvider`, `DialogProvider`) is keyed by the signed-in user: signed in, `createServer` gets a bearer token source from `useAuth().token`; signed out, expired or signing in, no auth. Only a change of user rebuilds it, so a token refresh does not. `App` takes an optional `router` (for example `MemoryRouter` for a `file://` renderer; the default is the history router) and an optional `serverUrl` (the desktop's embedded server, known only at runtime; without it `createServer` uses the build's `VITE_CLAXEDO_SERVER_URL` or the page origin).
@@ -49,7 +73,7 @@ Rules in those sheets that code cannot explain:
 
 `/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
 
-## Registries (`registries.ts`, `registry.ts`)
+## Registries (`registries.ts`; the first-party entries in `src/registry.ts`)
 
 One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
 

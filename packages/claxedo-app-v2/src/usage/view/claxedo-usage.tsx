@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
 import type { UsageSummary } from "@/server"
-import { Button } from "@opencode-ai/ui/button"
+import { Button } from "@/ui"
 import { dictionary } from "../i18n"
 import { totalTokens, type BreakdownRow, type UsageGroup, type UsageMetric } from "../model"
 
@@ -74,6 +74,30 @@ function BreakdownTable(props: { readonly rows: readonly BreakdownRow[]; readonl
   )
 }
 
+function DailyBars(props: { readonly summary: UsageSummary; readonly metric: UsageMetric }): JSX.Element {
+  const t = useTranslator(dictionary)
+  const format = useFormats()
+  const days = () => {
+    const current = props.summary.claxedo
+    if (props.metric === "cost") return (current.cost.daily ?? []).map((day) => ({ date: day.date, value: day.estimatedUsd, label: format.cost(day.estimatedUsd) }))
+    return current.daily.map((day) => ({ date: day.date, value: totalTokens(day), label: format.count(totalTokens(day)) }))
+  }
+  const peak = () => Math.max(0, ...days().map((day) => day.value))
+  return (
+    <Show when={peak() > 0}>
+      <figure class="usage-daily" aria-label={t("usage.daily")}>
+        <For each={days()}>
+          {(day) => (
+            <div class="usage-daily-day" title={t("usage.daily.day", { date: day.date, value: day.label })}>
+              <i style={{ height: `${Math.max(2, (day.value / peak()) * 100)}%` }} />
+            </div>
+          )}
+        </For>
+      </figure>
+    </Show>
+  )
+}
+
 export function ClaxedoUsage(props: {
   readonly summary: UsageSummary
   readonly group: UsageGroup
@@ -87,6 +111,7 @@ export function ClaxedoUsage(props: {
     <section class="usage-claxedo" aria-label={t("usage.view.claxedo")}>
       <Show when={unavailable()}>{(message) => <p class="usage-note" data-tone="danger" role="alert">{message()}</p>}</Show>
       <Totals summary={props.summary} />
+      <DailyBars summary={props.summary} metric={props.metric} />
       <Show when={rows().length > 0} fallback={<p class="usage-note">{t("usage.breakdown.empty")}</p>}>
         <BreakdownTable rows={rows()} group={props.group} metric={props.metric} />
       </Show>
@@ -104,6 +129,7 @@ export function ClaxedoUsage(props: {
           )}
         </Show>
       </div>
+      <p class="usage-note">{t("usage.unknownCategories")}</p>
     </section>
   )
 }

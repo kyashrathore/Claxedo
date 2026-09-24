@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { dictionary } from "../i18n"
 import { GHOST_ICON_BUTTON } from "./chrome"

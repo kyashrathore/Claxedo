@@ -1,9 +1,6 @@
 import { Show, type JSX } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon, SemanticIcon } from "@/ui"
+import { ClaxedoIcon as Icon, SemanticIcon, Button, DropdownMenu, Spinner } from "@/ui"
 import { dictionary } from "../i18n"
 
 export type CommitVariant = "commit" | "commit-push" | "amend"

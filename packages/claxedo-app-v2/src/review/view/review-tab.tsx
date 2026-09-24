@@ -1,10 +1,9 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator, type DomainTranslate } from "@/i18n"
 import { useServer, type DiffSummary, type GitRefs, type PlacementId } from "@/server"
 import { ReviewCodeView, type ReviewCodeViewRevealTarget } from "@/transcript"
-import { ClaxedoLogo as Mark, DelayedLoading, ScrollThumb } from "@/ui"
+import { ClaxedoLogo as Mark, DelayedLoading, ScrollThumb, Spinner } from "@/ui"
 import { useReviewApi } from "../api"
 import { useReviewComments } from "../comments"
 import { createDiffContent } from "../diff-content"
@@ -128,6 +127,14 @@ function ReviewEmpty(props: { readonly placementId: PlacementId; readonly select
   )
 }
 
+function createPaintAccounting(files: () => readonly string[]) {
+  const loaded = createMemo(() => files())
+  const identity = createMemo(() => JSON.stringify([...loaded()].sort()))
+  const [hunks, setHunks] = createSignal(0)
+  createEffect(on(identity, () => setHunks(0), { defer: true }))
+  return { loaded, identity, hunks, painted: () => setHunks((count) => count + 1) }
+}
+
 function ReviewDiffList(props: {
   readonly placementId: PlacementId
   readonly summaries: readonly DiffSummary[]
@@ -147,16 +154,21 @@ function ReviewDiffList(props: {
   const codeViewComments = createCodeViewComments({ comments, diffs: content.diffs })
   const [frame, setFrame] = createSignal<HTMLDivElement>()
   const [scroller, setScroller] = createSignal<HTMLDivElement>()
+  const paint = createPaintAccounting(() => content.diffs().map((diff) => diff.file))
   return (
     <div
       ref={setFrame}
       class="relative h-full min-h-0"
       data-review-diff-style={review.style()}
       data-review-open-diff-count={review.open().length}
+      data-review-loaded-diff-count={paint.loaded().length}
+      data-review-loaded-diff-identity={paint.identity()}
+      data-review-rendered-hunks={paint.hunks()}
     >
       <ReviewCodeView
         class="claxedo-workspace-review h-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         scrollRef={setScroller}
+        onDiffRendered={paint.painted}
         diffs={content.diffs()}
         diffStyle={review.style()}
         open={review.open()}

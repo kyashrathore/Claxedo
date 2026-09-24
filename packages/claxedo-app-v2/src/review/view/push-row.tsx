@@ -1,9 +1,7 @@
 import { Show, type JSX } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator } from "@/i18n"
 import type { GitStatus } from "@/server"
-import { SemanticIcon } from "@/ui"
+import { SemanticIcon, Button, Spinner } from "@/ui"
 import { dictionary } from "../i18n"
 
 function ActionButton(props: {

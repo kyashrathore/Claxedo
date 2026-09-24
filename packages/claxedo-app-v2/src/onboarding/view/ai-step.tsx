@@ -1,4 +1,4 @@
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { Spinner } from "@/ui"
 import { createEffect, createSignal, For, Show } from "solid-js"
 import { AgentHarnessAccounts, createHarnessProviders, harnesses, HarnessProvidersSection, useAccounts, type HarnessProviders } from "@/accounts"
 import { harnessDisplayLabel } from "@/lib/harness-catalog"

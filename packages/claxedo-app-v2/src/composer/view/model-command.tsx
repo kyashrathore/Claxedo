@@ -1,5 +1,4 @@
-import { Button } from "@opencode-ai/ui/button"
-import { Dialog } from "@opencode-ai/ui/dialog"
+import { Button, Dialog } from "@/ui"
 import type { useDialog } from "@/ui"
 import type { ModelKey } from "../harness/model-key"
 import { ModelList, type PickerItem } from "./model-list"

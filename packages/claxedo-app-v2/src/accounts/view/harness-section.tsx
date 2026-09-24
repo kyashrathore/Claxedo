@@ -1,4 +1,4 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { ProviderIcon } from "@/ui"
 import { createMemo, createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
 import { useModelVisibility } from "@/composer"
 import type { HarnessSelection } from "@/lib/harness-selection"

@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs"
 import type { Page } from "@playwright/test"
 import { expect, sessionRoute, test, UI } from "../harness"
 
@@ -148,4 +149,19 @@ test("13 terminal: a terminal closed in the rail or dead after a restart leaves 
       await expect(compactTabs(app).filter({ hasText: /Terminal/ })).toHaveCount(0)
     })
   }
+})
+
+test("13 terminal: a workspace whose folder is gone reads no terminal list", async ({ stack, app }) => {
+  test.skip(stack.app === "v1", "the owner's 404 cleanup: v2 reads no terminal list for an unreachable placement")
+  const live = await stack.daemon.makeWorkspace("live", "Live")
+  const gone = await stack.daemon.makeWorkspace("gone", "Gone")
+  rmSync(gone.directory, { recursive: true, force: true })
+  const reads: string[] = []
+  app.on("request", (request) => {
+    if (request.url().includes("/api/wr/pty")) reads.push(decodeURIComponent(request.url()))
+  })
+  await app.goto(`${stack.url}${sessionRoute(live.id)}`)
+  await expect(app.getByRole("navigation", { name: UI.rail })).toBeVisible()
+  await expect.poll(() => reads.some((url) => url.includes(live.directory))).toBe(true)
+  expect(reads.filter((url) => url.includes(gone.directory))).toEqual([])
 })

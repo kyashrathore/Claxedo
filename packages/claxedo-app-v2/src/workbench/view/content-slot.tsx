@@ -53,6 +53,7 @@ export function ContentSlot(props: {
     },
   }
   const opened = createMemo(() => wb.content(props.contentId))
+  const mounted = () => visible() || opened()?.kind.keepMounted === true
 
   return (
     <div
@@ -69,7 +70,7 @@ export function ContentSlot(props: {
     >
       <PaneContextProvider value={pane}>
         <FailureBoundary title={t("workbench.failed")} retryLabel={t("workbench.retry")}>
-          <Show when={opened()}>
+          <Show when={mounted() ? opened() : undefined}>
             {(pane) => <Dynamic component={pane().kind.view} state={pane().state as never} paneId={paneId() ?? ""} active={focused()} />}
           </Show>
         </FailureBoundary>

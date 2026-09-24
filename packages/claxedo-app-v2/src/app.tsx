@@ -10,10 +10,8 @@ import { SessionStoresProvider } from "@/session"
 import { AttentionAlerts } from "@/notifications"
 import { PreferencesProvider, usePreferences } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
-import { firstParty } from "@/shell/registry"
-import { DialogProvider } from "@/ui"
-import { syncIconLibraryWithTheme } from "@opencode-ai/ui/icon"
-import { ThemeProvider } from "@opencode-ai/ui/theme"
+import { firstParty } from "./registry"
+import { DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 

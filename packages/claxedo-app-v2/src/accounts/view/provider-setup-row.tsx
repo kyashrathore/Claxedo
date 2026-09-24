@@ -1,7 +1,6 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { createSignal, Show } from "solid-js"
 import { connectContextFor } from "@/lib/harness-catalog"
-import { useDialog, Button } from "@/ui"
+import { useDialog, Button, ProviderIcon } from "@/ui"
 import { useAccountsText } from "../i18n"
 import { DialogProviderConnect } from "./connect-dialog"
 

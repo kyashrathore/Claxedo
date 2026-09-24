@@ -2,6 +2,12 @@
 
 v2's own components and tokens. Surfaces ported from today's app render with today's kit (`@opencode-ai/ui`), and today's global CSS (`src/shell/styles`) styles the kit's selectors for the whole page, so every `data-component`, `data-slot` and class name here carries the `v2-` prefix (`[data-component="v2-select"]`, `.v2-icon-button`): an unprefixed name would take the kit's rules, and a kit dialog would take these. Names stay inside this folder.
 
+## One door to today's kit
+
+Owner ruling: v1's look is the kit. `@opencode-ai/ui` and `@opencode-ai/session-ui` may be imported only inside `src/ui`; everything else imports them from `@/ui`, which re-exports what the app uses. v1's token names are allowed, since they are the look. The only kit stylesheet imports outside `src/ui` are the three `@import`s at the top of `shell/styles/index.css` and the three v2 sheets `src/styles.ts` loads, listed exactly in `scripts/checks/v2-only.ts`.
+
+No `data-component` hooks outside what the kit's CSS reads: `scripts/checks/claxedo-names.ts` allows exactly `icon` and `icon-button` inside `src/ui` (the ClaxedoIcon and ClaxedoIconButton controls take the kit's icon and icon-button styles through them). v2's own components style themselves by class.
+
 ## Owned concepts
 
 - **Tokens.** `tokens/colors.css` holds the primitive ramps (`--v2-grey-*`, `--v2-blue-*`, `--v2-alpha-*`, …). `tokens/theme.css` holds the semantic tokens (`--v2-background-*`, `--v2-text-*`, `--v2-icon-*`, `--v2-border-*`, `--v2-overlay-*`, `--v2-state-*`, `--v2-elevation-*`) for the light set (`:root`, `[data-color-scheme="light"]`) and the dark set (`[data-color-scheme="dark"]`). `tokens/type.css` holds fonts, the type scale, radii and the few shadows components compose from.
@@ -19,7 +25,7 @@ These are today's app's own controls, moved here unchanged, and every surface po
   - Harness logos (LobeHub, MIT; OpenCode's own geometry) are scaled from 24 units to about 14 and centred: dense filled marks at full size read heavier than the thin glyphs beside them. They fill with `currentColor`. The copy mark's 11-unit box is scaled up around the grid centre to match its 14-unit neighbours.
   - The custom glyph table is a `Record`, not a `Partial`: a missing `codex-custom-*` entry would fall through to a sprite id that does not exist and render an invisible icon with no error.
   - `bare` selects the compact size scale (14/16/18/20 px as attributes) and drops the `data-component`/`data-size` grammar; the default scale (16/20/24/24 px) is sized by the kit's icon.css in `@layer components`. The `ui-icon` class twins the data attribute because the stylesheets match classes, which the browser buckets more cheaply than the shared `data-slot` attribute.
-  - The sprite lives in `document.body` and is rebuilt when the module hot-reloads, so an edited glyph never keeps a stale path.
+  - The sprite lives in `document.body` and records its markup length, so a hot reload that changes the glyphs rebuilds it.
 - **`ClaxedoIconButton`**: starts at full strength (an icon button that says nothing about its state is always on screen), which also lets a filled `primary` button keep its inverse foreground.
 - **`ClaxedoLogo`**: the pixel C on a 32 px grid, shifted +32 px to centre it optically against its open side; tiles are 33 px so neighbours merge into a solid letter at any size.
 - **Portal slots** (`controls/portal-slot.ts`): one mutable mount point each, claimed by a persistent strip through `ref` and filled elsewhere through `<Portal mount={slot()}>`; a new element replaces the previous one. The review toolbar and review controls render in place when their slot is empty.
@@ -52,3 +58,13 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `TextInput` | input props, `leadingIcon?`, `showCopyButton?`, `showClearButton?`, `copyLabel?`, `clearLabel?`, `onCopyClick?`, `onClearClick?`, `numeric?`, `invalid?`, `appearance?: base \| large` |
 | `Toast`, `showToast`, `toaster` (the kit's, from `@opencode-ai/ui/toast`, so toasts look as they do today) | `showToast(options \| string)`: `title?`, `description?`, `icon?: kit icon name`, `variant?: default \| success \| error \| loading`, `duration?`, `persistent?`, `actions?: { label, onClick }[]`; mount one `Toast.Region` |
 | `Tooltip` (the kit's, from `@opencode-ai/ui/tooltip`, so tooltips look as they do today) | Kobalte tooltip props, `value: JSX.Element`, `class?`, `contentClass?`, `contentStyle?`, `inactive?`, `forceOpen?` |
+
+## At the swap
+
+Things to change once the kit components v2 uses move into the app. `packages/ui` stays untouched until then, because today's app renders it.
+
+- **ScrollView thumb:** the kit's `ScrollView` (`packages/ui/src/components/scroll-view.tsx`, `updateThumb`) already coalesces to one update per animation frame. Each frame it still reads `scrollTop`, `scrollHeight` and `clientHeight` on the viewport and `clientHeight` on the track. Those reads force the layout the timeline's virtualizer has just dirtied. The bench measured about 0.8 ms of forced layout per wheel event: 48.9 ms of 350 ms busy over 60 wheel events on an 8 MiB session. The fix:
+  - cache `scrollHeight`, `clientHeight` and the track height from the ResizeObserver entries the component already registers (the viewport, its content and the thumb mount);
+  - in the frame, read only `scrollTop`;
+  - measure with the bench's `scrollprof.ts`.
+

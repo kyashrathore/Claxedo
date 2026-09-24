@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js"
-import { Select, Switch, TextInput } from "@/ui"
-import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
+import { Select } from "@opencode-ai/ui/select"
+import { TextField } from "@opencode-ai/ui/text-field"
+import { Switch, useTheme, type ColorScheme } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { dictionary, type Keys } from "../i18n"
 import { CODE_FONT_PLACEHOLDER, codeFontFamily, TERMINAL_FONT_PLACEHOLDER, terminalFontFamily, UI_FONT_PLACEHOLDER, uiFontFamily } from "../fonts"
@@ -56,18 +57,22 @@ function FontRows(props: {
     <For each={props.rows}>
       {(row) => (
         <SettingsRow title={t(row.title)} description={t(row.description)}>
-          <TextInput
-            data-action={row.action}
-            aria-label={t(row.title)}
-            value={props.appearance[row.key]}
-            placeholder={row.placeholder}
-            spellcheck={false}
-            autocorrect="off"
-            autocomplete="off"
-            autocapitalize="off"
-            style={{ "font-family": row.family(props.appearance[row.key]) }}
-            onInput={(event) => props.onChange(row.key, event.currentTarget.value)}
-          />
+          <div class="settings-font-field">
+            <TextField
+              data-action={row.action}
+              label={t(row.title)}
+              hideLabel
+              value={props.appearance[row.key]}
+              placeholder={row.placeholder}
+              spellcheck={false}
+              autocorrect="off"
+              autocomplete="off"
+              autocapitalize="off"
+              class="text-12-regular"
+              style={{ "font-family": row.family(props.appearance[row.key]) }}
+              onChange={(value) => props.onChange(row.key, value)}
+            />
+          </div>
         </SettingsRow>
       )}
     </For>
@@ -93,10 +98,20 @@ export function AppearanceSection() {
               value={(scheme) => scheme}
               label={(scheme) => t(SCHEME_KEY[scheme])}
               onSelect={(scheme) => scheme && theme.setColorScheme(scheme)}
+              variant="secondary" size="small" triggerVariant="settings"
+              triggerStyle={{ "min-width": "220px" }}
             />
           </SettingsRow>
           <SettingsRow title={t("settings.appearance.theme")} description={t("settings.appearance.theme.description")}>
-            <Select data-action="settings-theme" options={theme.ids()} current={theme.themeId()} value={(id) => id} label={(id) => theme.name(id)} onSelect={(id) => id && theme.setTheme(id)} />
+            <Select
+              data-action="settings-theme"
+              options={theme.ids()}
+              current={theme.themeId()}
+              value={(id) => id}
+              label={(id) => theme.name(id)}
+              onSelect={(id) => id && theme.setTheme(id)}
+              variant="secondary" size="small" triggerVariant="settings"
+            />
           </SettingsRow>
           <Show when={theme.themeId() === "codex"}>
             <ContrastRow scheme="light" />
@@ -124,6 +139,8 @@ export function AppearanceSection() {
               value={(side) => side}
               label={(side) => t(SIDE_KEY[side])}
               onSelect={(side) => side && preferences.setAppearance("navigatorSide", side)}
+              variant="secondary" size="small" triggerVariant="settings"
+              triggerStyle={{ "min-width": "220px" }}
             />
           </SettingsRow>
         </SettingsList>

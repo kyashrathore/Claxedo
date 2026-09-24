@@ -1,5 +1,4 @@
-import { sampledChecksum } from "@opencode-ai/ui/utils/encode"
-import { readableText } from "@opencode-ai/ui/utils/text"
+import { sampledChecksum, readableText } from "@/ui"
 import {
   areFilesEqual,
   areOptionsEqual,

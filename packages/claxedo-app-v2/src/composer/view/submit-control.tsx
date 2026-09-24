@@ -1,7 +1,5 @@
 import { type Accessor, type JSX, Show, createEffect, createSignal, onCleanup } from "solid-js"
-import { ClaxedoIconButton as IconButton } from "@/ui"
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { ClaxedoIconButton as IconButton, Spinner, Tooltip } from "@/ui"
 import { SessionStatusStage, type SessionStatusStage as SessionStatusStageValue } from "./session-status-stage"
 import type { SubmitBlock } from "../submit-block-reason"
 

@@ -1,6 +1,5 @@
 import { useTranslator, type DomainTranslate } from "@/i18n"
-import { showToast } from "@/ui"
-import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
+import { showToast, useTheme, type ColorScheme } from "@/ui"
 import { shellDictionary, type ShellKey } from "../i18n"
 import type { CommandOption } from "../palette/registrations"
 

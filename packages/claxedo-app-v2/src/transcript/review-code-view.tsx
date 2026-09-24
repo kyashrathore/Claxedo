@@ -511,7 +511,6 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
       <div
         data-slot="accordion-item" class="ui-accordion-item"
         data-review-header-file={header.file}
-        data-review-file={header.file}
         data-expanded={expanded(header.file) ? "" : undefined}
         data-selected={props.focusedFile === header.file ? "" : undefined}
       >

@@ -1,6 +1,5 @@
 import { For, Show, type Accessor, type JSX } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
-import { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
+import { Icon, MenuV2 } from "@/ui"
 import { COMPOSER_MENU_CLASS } from "./menu-metrics"
 
 /** The agent pair that the "Plan mode" toggle stands in for. When a workspace

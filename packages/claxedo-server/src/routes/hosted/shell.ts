@@ -254,6 +254,7 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
       // other way would put somebody else's workspace on this one.
       backing: asString(row?.backing) === "local-worktree" ? "local-worktree" : "cloud-vm",
       workspace_name: workspaceName,
+      reachable: true,
       directory,
       ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
       // Carried so the client can derive an owner/repo label of its own (the
@@ -718,7 +719,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
         events: { hostAggregate: false },
-        deployment: { issuesSessions: issuesSessions(options.authConfig) },
+        deployment: { issuesSessions: issuesSessions(options.authConfig), documents: false },
       })
     })
     .get("/project", async (c) => {
