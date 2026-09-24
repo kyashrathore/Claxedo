@@ -22,24 +22,32 @@ Every component works at 390 px with a coarse pointer: `touch.css` gives compact
 | `AppIcon` | `id: AppIconName`, img props |
 | `Avatar` | `fallback: string`, `src?`, `background?`, `foreground?`, `size?: small \| normal \| large`, `kind?: user \| org` |
 | `Button` | Kobalte button props, `size?: small \| normal \| large`, `variant?: neutral \| danger \| warning \| outline \| contrast \| ghost \| ghost-muted \| loading`, `icon?: IconName` |
+| `Card` (`.Title`, `.Description`, `.Actions`) | `variant?: normal \| error \| warning \| success \| info`, `accent?` (paints the rail), div props; `Title` adds `variant?`, `icon?: IconName \| false \| null` |
 | `Checkbox` | Kobalte checkbox props, `label: JSX.Element`, `description?`, `hideLabel?` |
+| `Collapsible` (`.Trigger`, `.Content`, `.Arrow`) | Kobalte collapsible props, `variant?: normal \| ghost`, `class?` |
 | `Dialog`, `DialogHeader`, `DialogTitle`, `DialogTitleGroup`, `DialogBody`, `DialogFooter` | `Dialog`: `size?: normal \| large \| x-large`, `variant?: default \| settings`, `fit?`, `class?`, `containerClass?`; `DialogHeader`: `closeLabel?`, `hideClose?`; `DialogTitleGroup`: `title?`, `description` |
 | `DialogProvider`, `useDialog()` | `useDialog()` returns `{ active, show(element, onClose?), push(element, onClose?), close() }` |
 | `DiffChanges` | `changes: { additions, deletions } \| { additions, deletions }[]`, `class?` |
 | `Divider` | div props |
+| `DockShell`, `DockShellForm`, `DockTray` | div (or form) props; `DockTray` adds `attach?: none \| top` |
 | `Field` (`.Label`, `.Prefix`, `.Suffix`, `.Control`) | `invalid?`; `Label` adds `tooltip?: string` |
 | `FileIcon` | `node: { path, type: file \| directory }`, `expanded?`, `mono?`, svg props; `chooseFileIcon(node, expanded?)` gives the sprite name |
 | `Icon` | `name: IconName`, `size?: small(14) \| normal(16) \| medium(18) \| large(20)`, svg props; `iconNames`, `isIconName(value)` |
 | `IconButton` | Kobalte button props, `icon: IconName`, `iconSize?: IconSize`, `size?: small \| normal \| large`, `variant?: neutral \| contrast \| ghost \| ghost-muted`, `state?` |
+| `ImagePreview` | `src`, `alt?`, `closeLabel?`; shown through `useDialog().show` |
 | `InlineInput` | input props, `prefix: JSX.Element`, `labelWidth?`, `showCopyButton?`, `copyLabel?`, `onCopyClick?`, `numeric?`, `invalid?`, `appearance?: base \| large` |
 | `Keybind` | `keys: string[]`, `variant?: neutral \| ghost`, div props |
 | `LineComment`, `LineCommentEditor`, `LineCommentOverflowIcon` | `LineComment`: `comment`, `selection`, `actions?`; `LineCommentEditor`: `value`, `onInput`, `onCancel`, `onSubmit`, `selection`, `heading?`, `placeholder?`, `rows?`, `cancelLabel?`, `submitLabel?`, `autofocus?`, `mention?: { items(query) }` |
+| `List<T>` | `useFilteredList` props plus `children(item)`, `search?: boolean \| { placeholder?, autofocus?, hideIcon?, clearLabel?, class?, action? }`, `filter?`, `onFilter?`, `onKeyEvent?`, `onMove?`, `activeIcon?`, `itemWrapper?`, `divider?`, `add?: { render, class? }`, `groupHeader?`, `emptyMessage?`, `loadingMessage?`, `ref?(ListRef)` |
 | `Loader` | svg props (`width`, `height` default 16) |
 | `Menu` (`.Trigger`, `.Portal`, `.Content`, `.Item`, `.CheckboxItem`, `.RadioGroup`, `.RadioItem`, `.Group`, `.GroupLabel`, `.Separator`, `.Sub`, `.SubTrigger`, `.SubContent`, `.Context`) | Kobalte dropdown-menu props; items add `shortcut?`, `badge?`; `Menu.Context` is the context-menu root with `.Trigger`, `.Portal`, `.Content` |
+| `Popover` | Kobalte popover props, `trigger?`, `triggerAs?`, `triggerProps?`, `title?`, `description?`, `closeLabel?`, `portal?` (default true), `class?`, `style?`; closes on Escape, outside pointer and outside focus, adopting layers it opened |
 | `ProgressCircle` | `percentage: number`, `size?` (14), `strokeWidth?` (1.5) |
 | `ProjectAvatar` | `fallback: string`, `src?`, `variant?: ProjectAvatarStyle` (`PROJECT_AVATAR_VARIANTS` or `outline`), `unread?` |
 | `ProviderIcon` | `id: string` (unknown ids draw `synthetic`), svg props; `providerIconNames` |
 | `RadioGroup`, `RadioItem` | Kobalte radio-group props, `label?`, `description?`, `hideLabel?`; item: `value`, `label`, `description?`, `hideLabel?` |
+| `ResizeHandle` | `direction: horizontal \| vertical`, `edge?: start \| end`, `size`, `min`, `max`, `onResize(size)`, `onCollapse?`, `onCollapseChange?(collapsed)`, `collapseThreshold?`; pointer events, so it drags by touch |
+| `ScrollView` | div props, `viewportRef?`, `label?`, `thumbVisibility?: hover \| scroll`, `thumbContainer?`, `thumbHoverTarget?`; `scrollKey`, `canScrollKey`, `scrollKeyOwner`, `isScrollKeyTarget` are the keyboard rules |
 | `SegmentedControl`, `SegmentedControlItem` | `value?`, `defaultValue?`, `onChange?(value \| null)`, `allowDeselect?`, `disabled?`; item: `value`, `children` |
 | `Select<T>` | `options: T[]`, `current?: T`, `value?(item)`, `label?(item)`, `groupBy?(item)`, `onSelect?(item \| null)`, `onHighlight?(item)`, `placeholder?`, `appearance?: base \| large \| inline`, `invalid?`, `numeric?`, `children?(item)`, `valueClass?`, Kobalte placement props |
 | `SplitButton`, `SplitButtonAction`, `SplitButtonMenuTrigger` | div props; the two parts are button props |
@@ -53,7 +61,5 @@ Every component works at 390 px with a coarse pointer: `touch.css` gives compact
 | `ThemeProvider`, `useTheme()` | `useTheme()` returns `{ colorScheme(), mode(), themeId(), themes(), setColorScheme(scheme), setTheme(id), registerTheme(record), unregisterTheme(id) }` |
 | `Toast` (`.Region`, `.Icon`, `.Content`, `.Title`, `.Description`, `.Actions`, `.CloseButton`), `showToast`, `toaster` | `showToast(options \| string)`: `title?`, `description?`, `icon?`, `duration?`, `persistent?`, `actions?: { label, variant?, onClick }[]`; mount one `Toast.Region` |
 | `Tooltip` | Kobalte tooltip props, `value: JSX.Element`, `class?`, `contentClass?`, `contentStyle?`, `inactive?`, `forceOpen?` |
-| `Wordmark` | `class?` |
+| `Wordmark` | `class?`; the Claxedo pixel wordmark |
 | `useFilteredList<T>(props)` | `items`, `key`, `filterKeys?`, `current?`, `groupBy?`, `sortBy?`, `sortGroupsBy?`, `skipFilter?`, `onSelect?`, `noInitialSelection?` → `{ grouped, filter, flat, reset, refetch, clear, onKeyDown, onInput, active, setActive }` |
-
-Pending, restyled from the v1 twins: `List`, `ScrollView`, `Popover`, `Card`, `Collapsible`, `DockShell`/`DockTray`, `ResizeHandle`, `ImagePreview`.
