@@ -9,6 +9,7 @@ node_modules/
 # Playwright output
 e2e/report/
 e2e/results/
+e2e/flows/30-transcript-corpus.spec.ts-snapshots/
 
 # Local env files
 .env.local

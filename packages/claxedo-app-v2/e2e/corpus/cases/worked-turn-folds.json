@@ -1,0 +1,65 @@
+{
+  "id": "worked-turn-folds",
+  "title": "A settled turn with work folds under its Worked header",
+  "source": {
+    "kind": "inventory",
+    "ids": [
+      "SESS-025",
+      "SESS-038",
+      "SESS-039",
+      "SESS-040"
+    ]
+  },
+  "partKinds": [
+    "reasoning",
+    "tool:read",
+    "tool:execute",
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Check the project.",
+        "steps": [
+          {
+            "kind": "reasoning",
+            "text": "Looking around the project"
+          },
+          {
+            "kind": "tool",
+            "tool": "read",
+            "title": "Read README.md",
+            "locations": [
+              {
+                "path": "{{workspace}}/README.md"
+              }
+            ],
+            "text": "corpus\n"
+          },
+          {
+            "kind": "tool",
+            "tool": "execute",
+            "title": "git status",
+            "input": {
+              "command": "git status"
+            },
+            "text": "nothing to commit"
+          },
+          {
+            "kind": "text",
+            "text": "All checked here."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "All checked here.",
+  "interactions": [
+    {
+      "kind": "toggleFold",
+      "turn": 0
+    }
+  ],
+  "invariant": "The turn opens folded under 'Worked for \u2026' and unfolds into its work groups."
+}
