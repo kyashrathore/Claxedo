@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "Domyślnie pokazuj rozwinięte elementy narzędzia shell na osi czasu",
   "settings.general.editToolPartsExpanded": "Rozwijaj elementy narzędzia edit",
   "settings.general.editToolPartsExpanded.description": "Domyślnie pokazuj rozwinięte elementy narzędzi edit, write i patch na osi czasu",
+  "settings.appearance.uiFont": "Czcionka interfejsu",
+  "settings.appearance.uiFont.description": "Dostosuj czcionkę używaną w całym interfejsie",
+  "settings.appearance.codeFont": "Czcionka kodu",
+  "settings.appearance.codeFont.description": "Dostosuj czcionkę używaną w blokach kodu",
+  "settings.appearance.screenReader": "Tryb czytnika ekranu",
+  "settings.appearance.screenReader.description": "Udostępnij dostępny bufor czytnika ekranu w nowych terminalach",
 }

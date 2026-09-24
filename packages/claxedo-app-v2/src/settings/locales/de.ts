@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "Shell-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
   "settings.general.editToolPartsExpanded": "Edit-Tool-Abschnitte ausklappen",
   "settings.general.editToolPartsExpanded.description": "Edit-, Write- und Patch-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
+  "settings.appearance.uiFont": "UI-Schriftart",
+  "settings.appearance.uiFont.description": "Die im gesamten Interface verwendete Schriftart anpassen",
+  "settings.appearance.codeFont": "Code-Schriftart",
+  "settings.appearance.codeFont.description": "Die in Codeblöcken verwendete Schriftart anpassen",
+  "settings.appearance.screenReader": "Bildschirmleser-Modus",
+  "settings.appearance.screenReader.description": "Stellen Sie einen barrierefreien Bildschirmleser-Puffer in neuen Terminals bereit",
 }

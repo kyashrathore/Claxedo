@@ -217,17 +217,6 @@
   background: var(--v2-state-fg-danger);
 }
 
-@media (max-width: 640px) {
-  .settings-row:has(> .settings-row-control[data-width="wide"]) {
-    flex-wrap: wrap;
-  }
-
-  .settings-row-control[data-width="wide"] {
-    max-width: 100%;
-    width: 100%;
-  }
-}
-
 .settings-contrast {
   display: flex;
   align-items: center;

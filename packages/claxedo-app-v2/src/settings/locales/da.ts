@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "Vis shell-værktøjsdele udvidet som standard i tidslinjen",
   "settings.general.editToolPartsExpanded": "Udvid edit-værktøjsdele",
   "settings.general.editToolPartsExpanded.description": "Vis edit-, write- og patch-værktøjsdele udvidet som standard i tidslinjen",
+  "settings.appearance.uiFont": "UI-skrifttype",
+  "settings.appearance.uiFont.description": "Tilpas skrifttypen, der bruges i hele brugerfladen",
+  "settings.appearance.codeFont": "Kode-skrifttype",
+  "settings.appearance.codeFont.description": "Tilpas skrifttypen, der bruges i kodeblokke",
+  "settings.appearance.screenReader": "Skærmlæsertilstand",
+  "settings.appearance.screenReader.description": "Vis en tilgængelig skærmlæserbuffer i nye terminaler",
 }

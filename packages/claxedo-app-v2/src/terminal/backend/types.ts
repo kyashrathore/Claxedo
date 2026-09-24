@@ -17,6 +17,7 @@ export type FileLinkClick = (path: string, line?: number, col?: number, lineEnd?
 export type TerminalBackendOptions = {
   readonly theme: TerminalColors
   readonly fontFamily: string
+  readonly screenReaderMode: boolean
   readonly renderers: RendererBudget
   readonly image?: "path" | "paste"
   readonly onSplitVertical?: () => void

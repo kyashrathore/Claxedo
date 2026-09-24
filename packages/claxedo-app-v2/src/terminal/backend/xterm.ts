@@ -38,6 +38,7 @@ export const createBackend: CreateBackend = async (container, options) => {
   const instance = createTerminalInstance(container, {
     theme: options.theme,
     fontFamily: options.fontFamily,
+    screenReaderMode: options.screenReaderMode,
     renderers: options.renderers,
     onFileLinkClick: options.onFileLinkClick,
     onUrlClick: (event, url) => options.onUrlClick?.(event, url),

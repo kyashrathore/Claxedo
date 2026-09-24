@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "Prikaži dijelove shell alata podrazumijevano proširene na vremenskoj traci",
   "settings.general.editToolPartsExpanded": "Proširi dijelove alata za uređivanje",
   "settings.general.editToolPartsExpanded.description": "Prikaži dijelove alata za uređivanje, pisanje i patch podrazumijevano proširene na vremenskoj traci",
+  "settings.appearance.uiFont": "UI font",
+  "settings.appearance.uiFont.description": "Prilagodi font koji se koristi u cijelom interfejsu",
+  "settings.appearance.codeFont": "Font za kod",
+  "settings.appearance.codeFont.description": "Prilagodi font koji se koristi u blokovima koda",
+  "settings.appearance.screenReader": "Način čitača ekrana",
+  "settings.appearance.screenReader.description": "Omogući pristupačan međuspremnik čitača ekrana u novim terminalima",
 }

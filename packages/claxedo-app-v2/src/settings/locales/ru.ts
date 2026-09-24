@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "Показывать элементы инструмента shell в ленте развернутыми по умолчанию",
   "settings.general.editToolPartsExpanded": "Разворачивать элементы инструмента edit",
   "settings.general.editToolPartsExpanded.description": "Показывать элементы инструментов edit, write и patch в ленте развернутыми по умолчанию",
+  "settings.appearance.uiFont": "Шрифт интерфейса",
+  "settings.appearance.uiFont.description": "Настройте шрифт, используемый во всем интерфейсе",
+  "settings.appearance.codeFont": "Шрифт кода",
+  "settings.appearance.codeFont.description": "Настройте шрифт, используемый в блоках кода",
+  "settings.appearance.screenReader": "Режим экранного диктора",
+  "settings.appearance.screenReader.description": "Предоставьте доступный буфер экранного диктора в новых терминалах",
 }
