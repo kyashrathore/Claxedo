@@ -1,6 +1,6 @@
 import { Button } from "@opencode-ai/ui/button"
 import { createSignal, onCleanup, Show, type JSX } from "solid-js"
-import { useServer, type CodeHostFailure, type CodeHostGrant, type CodeHostIntegration } from "@/server"
+import { useServer, type Integration, type IntegrationFailure, type IntegrationGrant } from "@/server"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import type { CreateFormLook } from "./project-create-repository"
 
@@ -12,21 +12,22 @@ const FAILURE_KEYS = {
   expired: "projects.connect.failure.expired",
   denied: "projects.connect.failure.denied",
   gone: "projects.connect.failure.gone",
+  timeout: "projects.connect.failure.timeout",
   failed: "projects.connect.failure.failed",
-} as const satisfies Record<CodeHostFailure, string>
+} as const satisfies Record<IntegrationFailure, string>
 
-function createConnect(integration: () => CodeHostIntegration) {
+function createConnect(integration: () => Integration) {
   const server = useServer()
   const [secret, setSecret] = createSignal("")
   const [busy, setBusy] = createSignal(false)
-  const [failure, setFailure] = createSignal<CodeHostFailure>()
-  const [grant, setGrant] = createSignal<CodeHostGrant>()
+  const [failure, setFailure] = createSignal<IntegrationFailure>()
+  const [grant, setGrant] = createSignal<IntegrationGrant>()
   let alive = true
   onCleanup(() => {
     alive = false
   })
-  const awaitApproval = async (pending: CodeHostGrant) => {
-    const outcome = await server.codeHosts.awaitGrant(pending, () => alive && grant()?.attemptId === pending.attemptId)
+  const awaitApproval = async (pending: IntegrationGrant) => {
+    const outcome = await server.integrations.awaitGrant(pending, () => alive && grant()?.attemptId === pending.attemptId)
     if (outcome.kind === "abandoned") return
     setGrant(undefined)
     setBusy(false)
@@ -35,7 +36,7 @@ function createConnect(integration: () => CodeHostIntegration) {
   const connect = async (method: "oauth" | "key") => {
     setBusy(true)
     setFailure(undefined)
-    const outcome = await server.codeHosts.connect(integration().id, method === "oauth" ? { method } : { method, secret: secret() })
+    const outcome = await server.integrations.connect(integration().id, method === "oauth" ? { method } : { method, secret: secret() })
     if (outcome.kind === "authorize") {
       setGrant(outcome.grant)
       return void awaitApproval(outcome.grant)
@@ -49,7 +50,7 @@ function createConnect(integration: () => CodeHostIntegration) {
 
 type Connect = ReturnType<typeof createConnect>
 
-function TokenForm(props: { look: CreateFormLook; integration: CodeHostIntegration; state: Connect }): JSX.Element {
+function TokenForm(props: { look: CreateFormLook; integration: Integration; state: Connect }): JSX.Element {
   const t = useProjectsText()
   const prompt = () => props.integration.prompts.find((item) => item.secret) ?? props.integration.prompts[0]
   const text = () => (props.look.comfortable ? "text-13-regular" : "text-12-regular")
@@ -82,7 +83,7 @@ function TokenForm(props: { look: CreateFormLook; integration: CodeHostIntegrati
   )
 }
 
-function GrantWaiting(props: { look: CreateFormLook; grant: CodeHostGrant }): JSX.Element {
+function GrantWaiting(props: { look: CreateFormLook; grant: IntegrationGrant }): JSX.Element {
   const t = useProjectsText()
   return (
     <div class={`flex flex-col gap-1 ${props.look.comfortable ? "text-13-regular" : "text-12-regular"} text-text-base`}>
@@ -105,11 +106,11 @@ function GrantWaiting(props: { look: CreateFormLook; grant: CodeHostGrant }): JS
   )
 }
 
-function failureText(t: ProjectsText, reason: CodeHostFailure): string {
+function failureText(t: ProjectsText, reason: IntegrationFailure): string {
   return t(FAILURE_KEYS[reason])
 }
 
-export function ConnectCodeHost(props: { look: CreateFormLook; integration: CodeHostIntegration }): JSX.Element {
+export function ConnectCodeHost(props: { look: CreateFormLook; integration: Integration }): JSX.Element {
   const t = useProjectsText()
   const state = createConnect(() => props.integration)
   const usesOAuth = () => props.integration.methods.includes("oauth")

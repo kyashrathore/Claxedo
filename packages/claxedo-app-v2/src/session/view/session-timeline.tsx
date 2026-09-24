@@ -4,7 +4,7 @@ import { sessionId } from "@/server"
 import type { SessionView } from "@/session"
 import { sessionPath } from "@/shell"
 import { DataProvider, type TranscriptUserMessage } from "@/transcript"
-import { MessageTimeline, type TimelineHost } from "./timeline"
+import { MessageTimeline, type SessionErrorClass, type TimelineHost } from "./timeline"
 import type { TimelineScroll } from "./timeline-scroll"
 import { TranscriptKitProviders } from "./transcript-kit"
 import { subagentViews } from "./subagent-views"
@@ -23,6 +23,7 @@ export function SessionTimeline(props: {
   readonly active: boolean
   readonly scroll: TimelineScroll
   readonly onNavigateParent: () => void
+  readonly onRecover: (kind: SessionErrorClass, userMessageId: string) => unknown
 }) {
   const phone = usePhone()
   const users = createMemo(() => userMessages(props.view))
@@ -57,6 +58,7 @@ export function SessionTimeline(props: {
             hideTitle={() => true}
             parentId={props.view.row()?.parentSessionId}
             onNavigateParent={props.onNavigateParent}
+            onFirstTurnRecovery={props.onRecover}
             queued={props.view.queue}
           />
         </Show>

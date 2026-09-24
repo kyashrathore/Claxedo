@@ -60,6 +60,7 @@ export const dictionary = {
   "projects.connect.failure.expired": "That sign-in expired before it was approved. Start it again.",
   "projects.connect.failure.denied": "That sign-in wasn't approved. Try again.",
   "projects.connect.failure.gone": "That sign-in attempt is no longer available. Start it again.",
+  "projects.connect.failure.timeout": "That code expired before it was approved. Start again to get a new one.",
   "projects.connect.failure.failed": "Couldn't connect that account. Try again.",
   "projects.create.creating": "Creating…",
   "projects.settings.description": "Every project on this server. Select one to see its settings.",

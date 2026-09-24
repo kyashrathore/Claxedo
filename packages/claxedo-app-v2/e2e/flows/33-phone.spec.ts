@@ -1,5 +1,6 @@
 import type { Page } from "@playwright/test"
 import {
+  acpScriptToken,
   expect,
   expectWithinV1Baseline,
   SCRIPTED_ACP_HARNESS,
@@ -15,7 +16,9 @@ type Arranged = { readonly workspace: Workspace; readonly first: SessionRow; rea
 
 async function arrange(stack: Stack, api: ClaxedoApi): Promise<Arranged> {
   const workspace = await stack.daemon.makeWorkspace("phone", "Phone")
+  await stack.acp.write("first", { steps: [{ kind: "text", text: "The first session's reply" }] })
   const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  await api.prompt(workspace.directory, first.id, `Open the first session. ${acpScriptToken("first")}`)
   const second = await api.createSession(workspace.directory, { title: "Second", harness: SCRIPTED_ACP_HARNESS })
   return { workspace, first, second }
 }
@@ -35,7 +38,13 @@ async function drawer(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arrang
   const nav = app.getByRole("navigation", { name: UI.rail })
   await nav.getByRole("button", { name: "First" }).tap()
   await expect(app).toHaveURL(new RegExp(`/s/${arranged.first.id}$`))
-  await expect(app.getByRole("heading", { level: 1, name: "First" })).toBeVisible()
+  if (stack.app === "v2") {
+    await test.step("v2 approved: no session title bar (DECISIONS Owner, 17:15)", async () => {
+      await expect(app.getByText("The first session's reply")).toBeVisible()
+    })
+  } else {
+    await expect(app.getByRole("heading", { level: 1, name: "First" })).toBeVisible()
+  }
   await expect(open).toBeVisible()
   await expectNoHorizontalScroll(app)
   await expectWithinV1Baseline(app, "session-page")
