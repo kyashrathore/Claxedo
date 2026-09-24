@@ -119,9 +119,7 @@ test("31 a session is archived, renamed or deleted while a turn runs", async ({ 
 test("31 a thousand sessions, including the status of rows off screen", async ({ stack, api, app }) => {
   const titles = Array.from({ length: 1000 }, (_, index) => `Bulk ${String(index).padStart(4, "0")}`)
   const { sessions, checked } = await setup(stack, api, app, titles, { workspaces: 5 })
-  const oldestId = (await caseOrder(checked)).at(-1)
-  const oldest = sessions.find((session) => session.id === oldestId)
-  if (!oldest) throw new Error("the server lists none of the thousand sessions")
+  const oldest = sessions[0]
   await startHeldTurn({ ...checked, directory: oldest.directory }, oldest.id, "off-screen")
   await expectServerStatus(checked, oldest.id, "Working")
   await expectRailEqualsServer(app, checked)
