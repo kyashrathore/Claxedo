@@ -18,6 +18,7 @@ import type {
   GitPushResult,
   GitRefs,
   GitStatus,
+  GoalAction,
   Placement,
   Project,
   ProjectSource,
@@ -26,6 +27,7 @@ import type {
   QueuedPromptAction,
   QueuedPromptControl,
   SessionCreateInput,
+  SessionGoal,
   SessionPage,
   SessionRef,
   SessionRow,
@@ -61,6 +63,7 @@ export type SessionsApi = {
   readonly newMessageId: () => string
   readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
+  readonly controlGoal: (ref: SessionRef, action: GoalAction) => Promise<SessionGoal | undefined>
 }
 
 export type ProjectsApi = {

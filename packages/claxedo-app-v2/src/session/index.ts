@@ -4,9 +4,11 @@ import type {
   AgentRequestReply,
   AppError,
   FileDiff,
+  GoalAction,
   PromptInput,
   RequestId,
   SessionCreateInput,
+  SessionGoal,
   SessionRef,
   SessionRow,
   SessionStatus,
@@ -80,6 +82,9 @@ export type SessionView = {
   readonly requestState: (requestId: RequestId) => RequestState
   readonly todos: Accessor<readonly Todo[]>
   readonly diff: Accessor<readonly FileDiff[]>
+  readonly goal: Accessor<SessionGoal | undefined>
+  readonly goalActions: Accessor<readonly GoalAction[]>
+  readonly controlGoal: (action: GoalAction) => Promise<void>
   readonly hasOlder: Accessor<boolean>
   readonly olderState: Accessor<OlderState>
   readonly loadOlder: () => Promise<void>
