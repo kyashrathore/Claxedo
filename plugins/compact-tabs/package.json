@@ -1,0 +1,36 @@
+{
+  "name": "@claxedo/plugin-compact-tabs",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "A keyboard switcher over the workbench's open tabs, as a Claxedo app plugin",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./src/app.tsx",
+      "development": "./src/app.tsx",
+      "default": "./src/app.tsx"
+    },
+    "./package.json": "./package.json"
+  },
+  "claxedo": {
+    "id": "compact-tabs",
+    "name": "Compact tabs",
+    "version": "0.1.0",
+    "app": "./src/app.tsx",
+    "requires": [],
+    "server": {
+      "routes": [],
+      "operations": []
+    }
+  },
+  "dependencies": {
+    "@claxedo/plugin-api": "workspace:*"
+  },
+  "peerDependencies": {
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "solid-js": "1.9.12"
+  }
+}
