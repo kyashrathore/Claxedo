@@ -7,8 +7,8 @@ import { preferenceKey } from "@/lib/persisted"
 import { PluginHostProvider } from "@/plugins"
 import { useServer, type Capabilities } from "@/server"
 import { Toast } from "@/ui"
-import { createWorkbenchStore, WorkbenchProvider, useWorkbench } from "@/workbench"
-import { FirstRunRedirect } from "../first-run"
+import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
+import { HomeRedirect } from "../home-redirect"
 import { dictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
@@ -60,7 +60,7 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
           <CommandsProvider>
             <PlacementProviders>
               <PluginHostProvider scope={props.scope}>
-                <FirstRunRedirect />
+                <HomeRedirect />
                 <RouteSync />
                 <ShellCommands />
                   <ConnectionBanner />
@@ -77,13 +77,10 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
 }
 
 function ShellBody(props: { readonly route: ShellRoute; readonly mainSidebar: JSX.Element }): JSX.Element {
-  const workbench = useWorkbench()
-  const phoneHome = () => props.route.kind === "home" && workbench.selectors.focusedContent() === null
   return (
     <ShellFrame
       sidebar={{ mode: sidebarModeOf(props.route), main: props.mainSidebar, settings: <SettingsSidebar /> }}
       center={centerOf(props.route)}
-      phoneHome={phoneHome()}
     />
   )
 }

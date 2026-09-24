@@ -186,7 +186,6 @@
         "@claxedo/agent-runtime-contract": "workspace:*",
         "@claxedo/helpers": "workspace:*",
         "@claxedo/plugin-api": "workspace:*",
-        "@claxedo/plugin-compact-tabs": "workspace:*",
         "@claxedo/plugin-pages": "workspace:*",
         "@claxedo/plugin-tasks": "workspace:*",
         "@claxedo/service-contract": "workspace:*",
@@ -958,19 +957,6 @@
         "typescript": "5.8.2",
       },
     },
-    "plugins/compact-tabs": {
-      "name": "@claxedo/plugin-compact-tabs",
-      "version": "0.1.0",
-      "dependencies": {
-        "@claxedo/plugin-api": "workspace:*",
-      },
-      "devDependencies": {
-        "solid-js": "1.9.12",
-      },
-      "peerDependencies": {
-        "solid-js": "1.9.12",
-      },
-    },
     "plugins/pages": {
       "name": "@claxedo/plugin-pages",
       "version": "0.1.0",
@@ -1437,8 +1423,6 @@
     "@claxedo/plugin-api": ["@claxedo/plugin-api@workspace:packages/claxedo-plugin-api"],
 
     "@claxedo/plugin-build": ["@claxedo/plugin-build@workspace:packages/claxedo-plugin-build"],
-
-    "@claxedo/plugin-compact-tabs": ["@claxedo/plugin-compact-tabs@workspace:plugins/compact-tabs"],
 
     "@claxedo/plugin-pages": ["@claxedo/plugin-pages@workspace:plugins/pages"],
 

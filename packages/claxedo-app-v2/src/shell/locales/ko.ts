@@ -19,7 +19,6 @@ export const dictionary = {
   "shell.key.insert": "Insert",
   "shell.key.esc": "ESC",
   "shell.settings": "설정",
-  "shell.close": "닫기",
   "shell.loading": "로딩 중",
   "shell.scheme.system": "시스템",
   "shell.scheme.light": "라이트",
