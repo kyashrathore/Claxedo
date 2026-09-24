@@ -146,7 +146,7 @@ export function createComposerController(input: ControllerInput) {
     const cursor = start + parts.reduce((length, part) => length + ("content" in part ? part.content.length : 0), 0) + 1
     input.store.setPrompt(input.key(), rebuilt, cursor)
     closePopover()
-    requestAnimationFrame(() => focusEditor(cursor))
+    requestAnimationFrame(() => focusEditor())
   }
 
   const selectAt = (item: AtItem) => {
