@@ -8,6 +8,10 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@claxedo/agent-event-runtime#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "src/harnesses/codex/protocol/**"]
+    },
     // ONE generic `test` task, on purpose. This file used to carry only
     // package-scoped `<pkg>#test` entries, and turbo runs NOTHING for a task
     // name it has no entry for, so `bun turbo test` silently skipped every
