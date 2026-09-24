@@ -50,7 +50,7 @@ export function OrganizationSection() {
   }
 
   return (
-    <div class="org-section" data-component="settings-organization">
+    <div class="org-section">
       <p class="org-intro">{t("access.org.description")}</p>
       <Show when={user()} fallback={<SignedOut />}>
         {(who) => (
