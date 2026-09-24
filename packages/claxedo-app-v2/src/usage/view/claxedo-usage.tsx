@@ -82,9 +82,9 @@ function DailyBars(props: { readonly summary: UsageSummary; readonly metric: Usa
     if (props.metric === "cost") return (current.cost.daily ?? []).map((day) => ({ date: day.date, value: day.estimatedUsd, label: format.cost(day.estimatedUsd) }))
     return current.daily.map((day) => ({ date: day.date, value: totalTokens(day), label: format.count(totalTokens(day)) }))
   }
-  const peak = () => Math.max(1, ...days().map((day) => day.value))
+  const peak = () => Math.max(0, ...days().map((day) => day.value))
   return (
-    <Show when={days().length > 0}>
+    <Show when={peak() > 0}>
       <figure class="usage-daily" aria-label={t("usage.daily")}>
         <For each={days()}>
           {(day) => (
