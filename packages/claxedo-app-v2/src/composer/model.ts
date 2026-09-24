@@ -1,6 +1,7 @@
 import type { AppError, ModelChoice } from "@/server"
 import type { Transition } from "@/lib/machine"
 import { unreachable } from "@/lib/machine"
+import { uuid } from "@/lib/uuid"
 
 export type FileSelection = {
   readonly startLine: number
@@ -36,7 +37,7 @@ export type ImagePart = {
 export type PromptPart = TextPart | FilePart | AgentPart | ImagePart
 export type Prompt = PromptPart[]
 
-export type ContextItem = {
+export type FileContextItem = {
   type: "file"
   key: string
   path: string
@@ -46,6 +47,15 @@ export type ContextItem = {
   commentOrigin?: "review" | "file"
   preview?: string
 }
+
+export type TextContextItem = {
+  type: "text"
+  key: string
+  label: string
+  text: string
+}
+
+export type ContextItem = FileContextItem | TextContextItem
 
 export type EditorMode = "normal" | "shell"
 
@@ -80,7 +90,7 @@ export const emptyPrompt = (): Prompt => [{ type: "text", content: "", start: 0,
 
 export const emptyDraft = (): Draft => ({ prompt: emptyPrompt(), cursor: undefined, context: [], goalArmed: false })
 
-export const randomId = () => crypto.randomUUID()
+export const randomId = () => uuid()
 
 function clonePart(part: PromptPart): PromptPart {
   if (part.type === "text" || part.type === "agent") return { ...part }
@@ -102,7 +112,7 @@ export function promptImages(prompt: readonly PromptPart[]): ImagePart[] {
 
 export function promptFilled(draft: Pick<Draft, "prompt" | "context">) {
   if (promptImages(draft.prompt).length > 0) return true
-  if (draft.context.some((item) => !!item.comment?.trim())) return true
+  if (draft.context.some((item) => item.type === "text" || !!item.comment?.trim())) return true
   return promptText(draft.prompt).trim().length > 0
 }
 
@@ -138,11 +148,13 @@ export const sendTransition: Transition<SendState, SendEvent> = (state, event) =
 export type AttachmentState =
   | { kind: "reading"; id: string; filename: string }
   | { kind: "ready"; id: string; part: ImagePart }
-  | { kind: "failed"; id: string; filename: string; error: AppError }
+  | { kind: "failed"; id: string; filename: string; error: AppError; refusal?: AttachmentRefusal }
+
+export type AttachmentRefusal = { harness: string; mime: string }
 
 export type AttachmentEvent =
   | { type: "read"; part: ImagePart }
-  | { type: "failed"; error: AppError }
+  | { type: "failed"; error: AppError; refusal?: AttachmentRefusal }
 
 export const attachmentTransition: Transition<AttachmentState, AttachmentEvent> = (state, event) => {
   if (state.kind !== "reading") return state
@@ -150,7 +162,7 @@ export const attachmentTransition: Transition<AttachmentState, AttachmentEvent> 
     case "read":
       return { kind: "ready", id: state.id, part: event.part }
     case "failed":
-      return { kind: "failed", id: state.id, filename: state.filename, error: event.error }
+      return { kind: "failed", id: state.id, filename: state.filename, error: event.error, refusal: event.refusal }
     default:
       return unreachable(event)
   }

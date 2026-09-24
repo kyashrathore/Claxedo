@@ -1,3 +1,5 @@
+export type { AttachmentRefusal }
+
 export const acceptedImageTypes = ["image/png", "image/jpeg", "image/gif", "image/webp"]
 
 export const acceptedFileTypes = [
@@ -88,10 +90,7 @@ export type AttachmentTarget = {
   workspace: boolean
 }
 
-export type AttachmentRefusal = {
-  harness: string
-  mime: string
-}
+import type { AttachmentRefusal } from "../model"
 
 const isImage = (mime: string) => IMAGE_MIMES.has(mime)
 

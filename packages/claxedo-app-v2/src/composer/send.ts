@@ -31,7 +31,7 @@ function commentLabel(path: string, selection?: { startLine: number; endLine: nu
 
 export function historyComments(draft: Draft): HistoryComment[] {
   return draft.context.flatMap((item) => {
-    if (!item.comment?.trim()) return []
+    if (item.type !== "file" || !item.comment?.trim()) return []
     const start = item.selection?.startLine ?? 0
     const end = item.selection?.endLine ?? start
     return [
@@ -57,9 +57,10 @@ export async function buildPromptInput(input: {
   const images = await flattenMarkedImages(promptImages(input.draft.prompt))
   const text = promptText(input.draft.prompt).trim()
   const files = input.draft.prompt.flatMap((part): PromptAttachment[] => (part.type === "file" ? [{ kind: "file", path: part.path }] : []))
-  const comments = input.draft.context.flatMap((item): PromptAttachment[] =>
-    item.comment?.trim() ? [{ kind: "text", text: item.comment, label: commentLabel(item.path, item.selection) }] : [],
-  )
+  const comments = input.draft.context.flatMap((item): PromptAttachment[] => {
+    if (item.type === "text") return [{ kind: "text", text: item.text, label: item.label }]
+    return item.comment?.trim() ? [{ kind: "text", text: item.comment, label: commentLabel(item.path, item.selection) }] : []
+  })
   return {
     clientRequestId: randomId(),
     text: input.mode === "shell" ? `!${text}` : text,
@@ -84,10 +85,10 @@ export function createComposerSend(input: {
   const state = machine<SendState, SendEvent>({ kind: "editing" }, sendTransition)
   const sending = createMemo(() => state.state().kind === "sending")
 
-  const arm = () => {
-    input.store.setGoalArmed(input.key(), true)
-    input.store.reset(input.key())
-    input.store.setGoalArmed(input.key(), true)
+  const armGoal = () => {
+    const key = input.key()
+    input.store.setPrompt(key, promptImages(input.store.draft(key).prompt), 0)
+    input.store.setGoalArmed(key, true)
     requestAnimationFrame(input.focusEditor)
   }
 
@@ -96,7 +97,7 @@ export function createComposerSend(input: {
     const draft = input.store.draft(key)
     if (sending() || !promptFilled(draft)) return
     const goal = goalIntent(promptText(draft.prompt), draft.goalArmed, input.goalMode())
-    if (goal.kind === "arm") return arm()
+    if (goal.kind === "arm") return armGoal()
     const clientRequestId = randomId()
     state.send({ type: "sendStarted", clientRequestId })
     try {
@@ -116,6 +117,8 @@ export function createComposerSend(input: {
     state: state.state,
     sending,
     send,
+    armGoal,
+    disarmGoal: () => input.store.setGoalArmed(input.key(), false),
     edited: () => state.send({ type: "edited" }),
     stop: async () => {
       const view = input.view()

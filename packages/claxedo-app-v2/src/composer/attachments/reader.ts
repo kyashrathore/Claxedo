@@ -1,7 +1,7 @@
 import { createEffect, type Accessor } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { machine } from "@/lib/machine"
-import type { AttachmentEvent, AttachmentState, ImagePart, PromptPart } from "../model"
+import type { AttachmentEvent, AttachmentState, ImagePart } from "../model"
 import { attachmentTransition, randomId } from "../model"
 import { appError } from "../errors"
 import { getCursorPosition } from "../editor/dom"
@@ -20,7 +20,6 @@ type ReaderInput = {
   target: () => AttachmentTarget
   setDraggingType: (type: DraggingType) => void
   focusEditor: () => void
-  addPart: (part: PromptPart) => boolean
   readClipboardImage?: () => Promise<File | null>
 }
 
@@ -45,6 +44,7 @@ export function createAttachmentReader(input: ReaderInput) {
       return {
         type: "failed",
         error: appError({ class: "invalid", code: "attachment.refused", message: `${refusal.harness} cannot take ${refusal.mime}` }),
+        refusal,
       }
     }
     try {
@@ -113,9 +113,8 @@ export function createAttachmentReader(input: ReaderInput) {
 
   const insertText = (text: string) => {
     const put = () => {
-      if (input.addPart({ type: "text", content: text, start: 0, end: 0 })) return
       input.focusEditor()
-      input.addPart({ type: "text", content: text, start: 0, end: 0 })
+      input.store.addPart(input.key(), { type: "text", content: text, start: 0, end: 0 })
     }
     if (pasteMode(text) === "manual") return put()
     const inserted = typeof document.execCommand === "function" && document.execCommand("insertText", false, text)
@@ -144,7 +143,7 @@ export function createAttachmentReader(input: ReaderInput) {
     if (plainText?.startsWith("file:")) {
       const path = plainText.slice("file:".length)
       input.focusEditor()
-      input.addPart({ type: "file", path, content: `@${path}`, start: 0, end: 0 })
+      input.store.addPart(input.key(), { type: "file", path, content: `@${path}`, start: 0, end: 0 })
       return
     }
     const dropped = event.dataTransfer?.files

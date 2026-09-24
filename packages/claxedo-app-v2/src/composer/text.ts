@@ -1,4 +1,4 @@
-import { createText } from "./language"
-import { composerEnglishDictionaries } from "./i18n"
+import { useTranslator } from "@/i18n"
+import { composerEnglishDictionaries, type ComposerTextKey } from "./i18n"
 
-export const useComposerText = createText(composerEnglishDictionaries)
+export const useComposerText = () => useTranslator<ComposerTextKey>(composerEnglishDictionaries)

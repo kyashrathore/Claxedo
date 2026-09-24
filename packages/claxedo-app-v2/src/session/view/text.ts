@@ -1,4 +1,4 @@
-import { createText } from "@/composer"
-import { sessionScreenEnglishDictionaries } from "./i18n"
+import { useTranslator } from "@/i18n"
+import { sessionScreenEnglishDictionaries, type SessionScreenTextKey } from "./i18n"
 
-export const useSessionScreenText = createText(sessionScreenEnglishDictionaries)
+export const useSessionScreenText = () => useTranslator<SessionScreenTextKey>(sessionScreenEnglishDictionaries)
