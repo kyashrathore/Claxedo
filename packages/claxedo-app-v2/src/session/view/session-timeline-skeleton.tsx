@@ -1,7 +1,6 @@
 import { Index } from "solid-js"
-
-import { useLanguage } from "@/platform/i18n/provider"
 import { DelayedLoading } from "@/ui/controls/delayed-loading"
+import { useSessionScreenText } from "./text"
 
 /**
  * Loading placeholder for the message timeline.
@@ -9,7 +8,7 @@ import { DelayedLoading } from "@/ui/controls/delayed-loading"
  * It borrows the timeline's own geometry rather than inventing a shape: the
  * same centred column and breakpoints as `TimelineRowFrame`, the same
  * `px-4 md:px-5` row padding, the same 24px assistant offset, and the same
- * bubble chrome the legacy user message paints (message-part.css `:1497`).
+ * bubble chrome the user message paints.
  * It also anchors to the bottom the way a restored conversation does, so the
  * real messages land where the placeholder sat instead of the whole view
  * jumping the moment they arrive.
@@ -48,7 +47,7 @@ export function sessionTranscriptLoadingEpisode(sessionId: string | undefined) {
 }
 
 export function SessionTimelineSkeleton(props: { centered?: boolean; sessionId?: string }) {
-  const language = useLanguage()
+  const t = useSessionScreenText()
   const centered = () => props.centered !== false
 
   return (
@@ -56,11 +55,6 @@ export function SessionTimelineSkeleton(props: { centered?: boolean; sessionId?:
       role="status"
       aria-busy="true"
       data-testid="session-messages-loading"
-      // The Environment card reserves a right gutter on the timeline's scroll
-      // viewport and on the composer dock (session-environment-card.css). This
-      // placeholder stands in for the whole timeline — scroll viewport included —
-      // so it has to claim the same gutter itself, or it centres on the full pane
-      // while every other column centres on the squeezed one.
       data-session-timeline-loading
       class="flex h-full w-full flex-col justify-end overflow-hidden pb-2"
       style={{
@@ -70,7 +64,7 @@ export function SessionTimelineSkeleton(props: { centered?: boolean; sessionId?:
         "-webkit-mask-image": "linear-gradient(to bottom, transparent 0%, #000 34%)",
       }}
     >
-      <span class="sr-only">{language.t("session.messages.loading")}</span>
+      <span class="sr-only">{t("sessionScreen.loading")}</span>
       <DelayedLoading episode={sessionTranscriptLoadingEpisode(props.sessionId)}>
         <div
           aria-hidden="true"
