@@ -1,4 +1,5 @@
-import { Select, useTheme, type ColorScheme } from "@/ui"
+import { Select } from "@/ui"
+import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { useI18n, useTranslator, type Locale } from "@/i18n"
 import { dictionary } from "../i18n"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
@@ -16,7 +17,6 @@ export function AppearanceSection() {
   const i18n = useI18n()
   const theme = useTheme()
   const localeLabel = (code: Locale) => i18n.locales.find((entry) => entry.code === code)?.label ?? code
-  const themeName = (id: string) => theme.themes().find((entry) => entry.id === id)?.name ?? id
 
   return (
     <div class="settings-body" data-component="settings-appearance">
@@ -29,7 +29,7 @@ export function AppearanceSection() {
             <Select options={[...SCHEMES]} current={theme.colorScheme()} value={(scheme) => scheme} label={(scheme) => t(SCHEME_KEY[scheme])} onSelect={(scheme) => scheme && theme.setColorScheme(scheme)} />
           </SettingsRow>
           <SettingsRow title={t("settings.appearance.theme")} description={t("settings.appearance.theme.description")}>
-            <Select options={theme.themes().map((entry) => entry.id)} current={theme.themeId()} value={(id) => id} label={themeName} onSelect={(id) => id && theme.setTheme(id)} />
+            <Select options={theme.ids()} current={theme.themeId()} value={(id) => id} label={(id) => theme.name(id)} onSelect={(id) => id && theme.setTheme(id)} />
           </SettingsRow>
         </SettingsList>
       </SettingsGroup>

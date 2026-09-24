@@ -11,23 +11,10 @@
 
 html,
 :host {
-  line-height: var(--line-height-20);
   -webkit-text-size-adjust: 100%;
   tab-size: 4;
-  font-family: var(--font-family-sans);
-  font-size: var(--font-size-compact);
   -webkit-tap-highlight-color: transparent;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: geometricPrecision;
-  color: var(--v2-text-text-base);
-  background-color: var(--v2-background-bg-base);
   interpolate-size: allow-keywords;
-}
-
-body {
-  color: var(--v2-text-text-base);
-  background-color: var(--v2-background-bg-base);
 }
 
 hr {
