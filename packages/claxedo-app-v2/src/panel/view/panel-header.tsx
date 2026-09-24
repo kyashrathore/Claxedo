@@ -21,17 +21,19 @@ function PanelChrome(): JSX.Element {
   const label = () => (panel.fullWidth() ? t("panel.restore") : t("panel.maximize"))
   return (
     <div class="flex shrink-0 items-center gap-0.5 pl-1">
-      <button
-        type="button"
-        data-icon-interaction="binary"
-        class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
-        aria-label={label()}
-        title={label()}
-        aria-pressed={panel.fullWidth()}
-        onClick={() => panel.toggleFullWidth()}
-      >
-        <Icon name={panel.fullWidth() ? "collapse" : "expand"} size="small" />
-      </button>
+      <Show when={!panel.phone()}>
+        <button
+          type="button"
+          data-icon-interaction="binary"
+          class="flex size-6 items-center justify-center rounded-sm text-icon-weak-base transition-colors duration-100 hover:bg-surface-base-hover hover:text-icon-base"
+          aria-label={label()}
+          title={label()}
+          aria-pressed={panel.fullWidth()}
+          onClick={() => panel.toggleFullWidth()}
+        >
+          <Icon name={panel.fullWidth() ? "collapse" : "expand"} size="small" />
+        </button>
+      </Show>
       <PanelToggleButton />
     </div>
   )
@@ -41,7 +43,7 @@ function Tools(): JSX.Element {
   const panel = usePanel()
   return (
     <WorkspaceToolButtons
-      available={panel.placementId() !== undefined}
+      available={panel.placementId() !== undefined && !panel.phone()}
       filesActive={panel.navigator() === "files"}
       changesActive={panel.navigator() === "changes"}
       showChanges

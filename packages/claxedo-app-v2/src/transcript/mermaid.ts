@@ -12,13 +12,6 @@ let counter = 0
 
 const SRGB = /^color\(srgb ([\d.e-]+) ([\d.e-]+) ([\d.e-]+)(?: \/ ([\d.e-]+))?\)$/
 
-/**
- * A custom property reads back as its unresolved expression, and the theme's
- * surface tokens are `color-mix(...)` over `calc(...)`, which mermaid's color
- * parser rejects, failing every diagram. An element's computed color resolves
- * the expression, but Chrome serializes a mixed color as `color(srgb …)`,
- * which mermaid rejects too, so that form is rewritten as `rgba(…)`.
- */
 function resolveColor(name: string, fallback: string): string {
   const probe = document.createElement("span")
   probe.style.display = "none"

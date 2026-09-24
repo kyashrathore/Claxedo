@@ -28,7 +28,6 @@ export function localSessionPath(session: SessionId): string {
   return `/s/${encodeURIComponent(session)}`
 }
 
-/** A session in a folder or worktree on this machine is linked by its id alone; any other through its workspace. */
 export function sessionLinkPath(
   ref: Pick<SessionRef, "placementId" | "sessionId">,
   placement: Placement | undefined,

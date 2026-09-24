@@ -45,7 +45,6 @@ function ChildNotice(props: { readonly t: SessionScreenText; readonly readOnly: 
 type SessionSurfaceProps = {
   readonly sessionRef: SessionRef
   readonly active: boolean
-  /** A surface that embeds another session to read it, such as a subagent's panel tab: no composer, no keys. */
   readonly readOnly?: boolean
 }
 

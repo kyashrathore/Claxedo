@@ -56,7 +56,7 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
 
 function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
-  const selected = () => panel.navigator() !== null
+  const selected = () => panel.navigator() !== null && !panel.phone()
   const [visited, setVisited] = createSignal(selected())
   createEffect(() => {
     if (selected()) setVisited(true)
