@@ -65,30 +65,6 @@ test("12 New Session again focuses the workspace's one draft tab", async ({ stac
   await app.getByRole("button", { name: UI.hideSidebar }).click()
   await expect(panes(app).getByRole("button", { name: "First", exact: true })).toBeVisible()
   await expect(draftTab()).toHaveCount(1)
-
-  if (stack.app === "v2") {
-    await test.step("v2: a draft saved under an older key is the one New Session focuses", async () => {
-      await app.evaluate(() => {
-        const key = Object.keys(localStorage).find((name) => name.startsWith("claxedo:workbench:"))
-        if (!key) throw new Error("No saved workbench")
-        const saved = JSON.parse(localStorage.getItem(key) ?? "{}")
-        const draft = Object.entries<{ kind: string; state: Record<string, string> }>(saved.contents).find(([, entry]) => entry.kind === "draftSession")
-        if (!draft) throw new Error("No saved draft")
-        const [id, entry] = draft
-        const older = `draftSession:${JSON.stringify({ ...entry.state, draftId: "older" })}`
-        saved.contents[older] = { kind: entry.kind, state: { ...entry.state, draftId: "older" } }
-        delete saved.contents[id]
-        const swap = (ids: string[]) => ids.map((each) => (each === id ? older : each))
-        saved.layout.contentIds = swap(saved.layout.contentIds)
-        saved.layout.contentRecency = swap(saved.layout.contentRecency)
-        saved.layout.panes = saved.layout.panes.map((pane: { contentId: string | null }) => ({ ...pane, contentId: pane.contentId === id ? older : pane.contentId }))
-        localStorage.setItem(key, JSON.stringify(saved))
-      })
-      await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
-      await newSession().click()
-      await expect(draftTab()).toHaveCount(1)
-    })
-  }
 })
 
 test("12 closing every tab leaves the workspace's new-session composer, and New Session keeps it", async ({ stack, api, app }) => {

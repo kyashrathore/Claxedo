@@ -69,6 +69,16 @@ export class ClaxedoApi {
     return this.call<Record<string, unknown>>("GET", "/api/claxedo/health")
   }
 
+  async defaultModel(directory: string, nativeHarness: string): Promise<ModelChoice> {
+    const body = await this.call<{ options: { id: string; currentValue?: string }[] }>("GET", "/api/claxedo/agent-config/harness/options", {
+      directory,
+      query: { nativeHarness },
+    })
+    const modelId = body.options.find((option) => option.id === "model")?.currentValue
+    if (!modelId) throw new Error(`${nativeHarness} offers no default model`)
+    return { providerId: nativeHarness, modelId }
+  }
+
   providerCatalog(nativeHarness: string) {
     return this.call<ProviderCatalog>("GET", "/api/claxedo/agent-config/providers", { query: { nativeHarness } })
   }

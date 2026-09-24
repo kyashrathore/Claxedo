@@ -128,3 +128,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - v1 shows the native scrollbar in Review and none in the Files tree (`scrollbar-width: none`), and its terminal thumb is barely visible under the Codex tokens.
 - **v2:** the kit's thin overlay thumb in Review and the Files tree, and a visible terminal thumb on its own token.
 - Lane: tools-3.
+
+## Orchestrator, 23:55: revert is not ported (SESS-061..063)
+- v1 gates Revert message, the diff summary's Undo and the rolled-back dock on a harness declaring `revert`/`unrevert`.
+- No harness in workspace-runtime or agent-sdk-runtime declares either (opencode sets both false), so v1 never renders them.
+- **v2 does not port them.** The moved timeline's dead half (UserActions.revert, the Revert button, Undo) is a deletion candidate. It goes, or comes back, together with a harness that declares revert.

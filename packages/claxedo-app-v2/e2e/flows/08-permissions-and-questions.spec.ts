@@ -65,3 +65,32 @@ test("08 the permission chip shows the mode the harness reports and delivers a p
   expect((await saved).ok()).toBe(true)
   await expect(chip).toHaveText("Plan")
 })
+
+test("08 Stop settles a pending question: the dock goes away and nothing is left to dismiss", async ({ stack, api, app, isMobile }) => {
+  test.skip(isMobile, "flow 8's question cases run at desktop width")
+  const availability = await installedCli("claude")
+  test.skip(!availability.available, availability.available ? "" : availability.reason)
+  const workspace = await stack.daemon.makeWorkspace("question-stop")
+  const model = await api.defaultModel(workspace.directory, "claude")
+  const session = await api.createSession(workspace.directory, { title: "Question stop", harness: { id: "claude", access: "native" }, model })
+  stack.scripted.scriptTool({
+    name: "AskUserQuestion",
+    whenPromptIncludes: "ASKME",
+    input: {
+      questions: [
+        { question: "Which color should the button be?", header: "Color", multiSelect: false, options: [{ label: "Red", description: "Warm" }, { label: "Blue", description: "Cool" }] },
+      ],
+    },
+  })
+  const pending = async () => (await api.questions(workspace.directory)).filter((row) => row.sessionID === session.id).length
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, "ASKME pick a color")
+  await expect(app.getByText("Which color should the button be?").first()).toBeVisible({ timeout: 30_000 })
+  await expect.poll(pending).toBe(1)
+
+  await app.getByRole("button", { name: UI.stop, exact: true }).click()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await expect(app.getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(0)
+  await expect.poll(pending).toBe(0)
+})
