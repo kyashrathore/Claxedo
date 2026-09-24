@@ -1,6 +1,6 @@
 import type { Translations } from "@/i18n"
 
-export type Keys =
+export type AccessKey =
   | "access.share.open"
   | "access.share.title"
   | "access.share.intro"
@@ -40,7 +40,7 @@ export type Keys =
   | "access.org.signIn"
   | "access.org.signInFailed"
 
-export const dictionary = {
+export const accessDictionary = {
   en: {
     "access.share.open": "Share",
     "access.share.title": "Share this session",
@@ -241,4 +241,4 @@ export const dictionary = {
     "access.org.signIn": "登入",
     "access.org.signInFailed": "無法登入",
   },
-} satisfies Translations<Keys>
+} satisfies Translations<AccessKey>
