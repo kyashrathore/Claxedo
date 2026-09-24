@@ -16,6 +16,28 @@ function attachmentText(t: ComposerSetup["t"], state: Extract<AttachmentState, {
   }
 }
 
+function StopNotice(props: { composer: ComposerSetup }) {
+  const t = () => props.composer.t
+  const failed = () => {
+    const state = props.composer.send.stopState()
+    return state.kind === "failed" ? state : undefined
+  }
+  return (
+    <Show when={failed()}>
+      {(state) => (
+        <div role="alert" data-slot="composer-notice" data-tone="critical" data-error-class={state().error.class}>
+          <span data-slot="composer-notice-dot" aria-hidden="true" />
+          <div data-slot="composer-notice-text">
+            <span data-slot="composer-notice-title">{t()(`composer.error.${state().error.class}`)}</span>
+            <span data-slot="composer-notice-detail">{state().error.message}</span>
+          </div>
+          <IconButton icon="close-small" size="small" variant="ghost" aria-label={t()("composer.action.dismiss")} onClick={() => props.composer.send.dismissStop()} />
+        </div>
+      )}
+    </Show>
+  )
+}
+
 export function ComposerNotice(props: { composer: ComposerSetup }) {
   const composer = () => props.composer
   const t = () => composer().t
@@ -25,6 +47,7 @@ export function ComposerNotice(props: { composer: ComposerSetup }) {
   }
   return (
     <>
+      <StopNotice composer={composer()} />
       <Show when={rejected()}>
         {(state) => (
           <div role="alert" data-slot="composer-notice" data-tone="critical" data-error-class={state().error.class}>

@@ -1,0 +1,68 @@
+import type { AgentRequest, SessionId } from "@/server"
+import type { SessionRowView, SessionStatusView } from "@/session"
+import {
+  compareOrder,
+  entryActivityAt,
+  insideWindow,
+  orderKey,
+  type ConfirmedEntry,
+  type ListState,
+  type OrderKey,
+  type PendingEntry,
+} from "./model"
+
+type Shown = { readonly entry: ConfirmedEntry | PendingEntry; readonly key: OrderKey }
+
+type CachedView = {
+  readonly entry: ConfirmedEntry | PendingEntry
+  readonly status: SessionStatusView
+  readonly waitingOnUser: boolean
+  readonly view: SessionRowView
+}
+
+export type RowViewCache = { current: ReadonlyMap<SessionId, CachedView> }
+
+export const UNKNOWN_STATUS: SessionStatusView = { kind: "unknown" }
+
+export const createRowViewCache = (): RowViewCache => ({ current: new Map() })
+
+function shownEntries(state: ListState): Shown[] {
+  const shown: Shown[] = []
+  for (const entry of state.entries.values()) {
+    if (entry.kind === "tombstone") continue
+    if (entry.row.archivedAt !== undefined || entry.row.parentSessionId !== undefined) continue
+    const key = orderKey(entry.row, entryActivityAt(entry))
+    if (entry.kind === "confirmed" && !insideWindow(key, state.windowTail)) continue
+    shown.push({ entry, key })
+  }
+  return shown.sort((a, b) => compareOrder(a.key, b.key))
+}
+
+function cachedView(
+  hit: CachedView | undefined,
+  entry: ConfirmedEntry | PendingEntry,
+  status: SessionStatusView,
+  waitingOnUser: boolean,
+): CachedView {
+  if (hit && hit.entry === entry && hit.status === status && hit.waitingOnUser === waitingOnUser) return hit
+  const view: SessionRowView = { ...entry.row, status, waitingOnUser, pending: entry.kind === "pending" }
+  return { entry, status, waitingOnUser, view }
+}
+
+export function visibleRows(
+  state: ListState,
+  openRequests: ReadonlyMap<SessionId, readonly AgentRequest[]>,
+  cache: RowViewCache,
+): readonly SessionRowView[] {
+  const next = new Map<SessionId, CachedView>()
+  const views = shownEntries(state).map(({ entry }) => {
+    const id = entry.row.ref.sessionId
+    const status = state.statuses.get(id)?.status ?? UNKNOWN_STATUS
+    const waitingOnUser = (openRequests.get(id)?.length ?? 0) > 0
+    const cached = cachedView(cache.current.get(id), entry, status, waitingOnUser)
+    next.set(id, cached)
+    return cached.view
+  })
+  cache.current = next
+  return views
+}

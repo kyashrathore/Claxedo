@@ -15,6 +15,10 @@ Owns: the split-pane layout of the center region, the contents shown in its pane
 
 The store also hosts the drag controller (`drag/pointer-drag.ts`) so every drag source and drop zone shares one pointer stream and one ghost, without module-level state.
 
+## Opening panes
+
+`useWorkbench()` gives `openPane(kind, state)` and `replacePane(paneId, kind, state)` for a domain that holds a `PaneKind`, and `openByKind(kindId, json, { paneId? })` for one that opens another domain's pane by its kind id and encoded state (files opening a file from the Changes tab, a terminal link opening a file). `openByKind` decodes through the registered kind and throws when the kind is not registered or rejects the state. `panes()`, `activePane()` and `closePane(paneId)` read and close.
+
 ## Routes
 
 A pane kind that can be addressed by URL implements `fromRoute` and `toRoute` on `PaneKind` (`src/shell/types.ts`). The shell calls `openRoute(paneRoute)` when the URL names a session or terminal, and `routeOf(contentId)` when the focused pane changes, to mirror it into the URL.

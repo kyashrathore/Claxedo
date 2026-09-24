@@ -2,11 +2,11 @@ import { Match, Show, Switch, type Component } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { CloudWorkspacesSection } from "@/cloud"
 import { projectId, type Project } from "@/server"
-import type { PageProps } from "@/shell/types"
+import type { PageProps } from "@/shell"
 import { Button, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { sourceLabel } from "../model"
-import { placementDraftPath } from "../routes"
+import { usePlacementOpener } from "../open"
 import { useProject } from "../store"
 import { PlacementList } from "./placement-list"
 import { RemoveProjectDialog } from "./remove-project-dialog"
@@ -42,6 +42,7 @@ export const ProjectPage: Component<PageProps> = (props) => {
   const id = () => projectId(props.params.projectId ?? "")
   const project = useProject(id)
   const navigate = useNavigate()
+  const opener = usePlacementOpener()
   const dialog = useDialog()
   const current = () => {
     const state = project()
@@ -78,7 +79,7 @@ export const ProjectPage: Component<PageProps> = (props) => {
               <ProjectHeader project={item()} onRename={() => rename(item())} onRemove={() => remove(item())} />
               <PlacementList projectId={id} />
               <Show when={item().source?.kind !== "folder"}>
-                <CloudWorkspacesSection projectId={id} onOpen={(placement) => navigate(placementDraftPath(placement))} />
+                <CloudWorkspacesSection projectId={id} onOpen={opener.openPlacement} />
               </Show>
             </>
           )}

@@ -1,7 +1,7 @@
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
 import type { CloudWorkspaceStatus } from "./cloud-types"
 import type { Terminal, TerminalAgentStatus } from "./terminal-types"
-import type { AgentRequest, FileDiff, SessionRef, SessionRow, SessionStatus, Todo, TranscriptMessage, TranscriptPart } from "./types"
+import type { AgentRequest, FileDiff, SessionGoal, SessionRef, SessionRow, SessionStatus, Todo, TranscriptMessage, TranscriptPart } from "./types"
 
 export type ServerEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
@@ -23,6 +23,7 @@ export type ServerEvent =
   | { readonly type: "requestClosed"; readonly ref: SessionRef; readonly requestId: RequestId }
   | { readonly type: "todosChanged"; readonly ref: SessionRef; readonly todos: readonly Todo[] }
   | { readonly type: "diffChanged"; readonly ref: SessionRef; readonly diff: readonly FileDiff[] }
+  | { readonly type: "goalChanged"; readonly ref: SessionRef; readonly goal: SessionGoal | undefined }
   | { readonly type: "filesChanged"; readonly placementId: PlacementId }
   | { readonly type: "projectChanged"; readonly projectId: ProjectId }
   | { readonly type: "pluginsChanged" }

@@ -2,6 +2,7 @@ import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { ServerError, isNotFound } from "./errors"
 import { sessionId, type RequestId } from "./ids"
 import type { SessionsApi } from "./index"
+import { controlGoal, readGoalState } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { createStatusesRead, readRequests } from "./session-statuses"
 import { stopTurn } from "./session-stop"
@@ -74,11 +75,12 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
 
   const snapshot = async (ref: SessionRef): Promise<SessionSnapshot> => {
     const where = await route(ref)
-    const [row, page, requests, todos] = await Promise.all([
+    const [row, page, requests, todos, goal] = await Promise.all([
       transport.runtimeJson<AgentPresentationSession>(where, sessionPath(ref)),
       transport.runtimeJson<MessagePage>(where, withQuery(sessionPath(ref, "/message"), { view: "latest-surface" })),
       readRequests(transport, where, ref.sessionId),
       transport.runtimeJson<SessionSnapshot["todos"]>(where, sessionPath(ref, "/todo")),
+      readGoalState(transport, where, ref),
     ])
     return {
       row: sessionRowFromSession(row, ref),
@@ -87,6 +89,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
       requests: requests.map((item) => item.request),
       todos,
       diff: row.summary?.diffs ?? [],
+      goal,
     }
   }
 
@@ -147,5 +150,6 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     statuses: createStatusesRead(transport, workspaces, status),
     newMessageId,
     ...createSessionQueue(transport, workspaces),
+    controlGoal: async (ref, action) => controlGoal(transport, await route(ref), ref, action),
   }
 }

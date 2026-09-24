@@ -1,17 +1,20 @@
 import { createMemo, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
-import { useCloudPlacer } from "@/cloud"
-import { machine, unreachable, type Machine } from "@/lib/machine"
-import type { PlacementId, ProjectId } from "@/server"
+import { useCloudPlacer, type CloudPlacer } from "@/cloud"
+import { machine, unreachable, type Machine as StateMachine } from "@/lib/machine"
+import type { Machine, PlacementId, ProjectId, ProjectSource } from "@/server"
 import { appErrorOf, useProjectsServer, type ProjectsServer } from "./api"
 import {
   addProjectInitial,
   addProjectTransition,
+  recordedProjectId,
   type AddProjectEvent,
   type AddProjectState,
   type PlacementChoice,
   type ProjectDraft,
 } from "./model"
+import { chosenPlacement, placementOptions, type PlacementOption } from "./placement-options"
+import { useMachines } from "./store"
 
 export type ProjectCreated = {
   readonly projectId: ProjectId
@@ -19,18 +22,25 @@ export type ProjectCreated = {
   readonly harnessId?: string
 }
 
-export type CloudPlacer = {
-  readonly create: (input: { readonly projectId: ProjectId }) => Promise<{ readonly id: PlacementId }>
-}
-
 export type AddProjectFlow = {
-  readonly state: Machine<AddProjectState, AddProjectEvent>["state"]
+  readonly state: Accessor<AddProjectState>
   readonly draft: Store<ProjectDraft>
   readonly setDraft: SetStoreFunction<ProjectDraft>
+  readonly placementOptions: Accessor<readonly PlacementOption[]>
+  readonly placement: Accessor<PlacementChoice | undefined>
   readonly canAdvance: Accessor<boolean>
   readonly next: () => Promise<void>
   readonly skipAgent: () => void
   readonly back: () => void
+}
+
+type Creation = {
+  readonly server: ProjectsServer
+  readonly cloud: CloudPlacer
+  readonly flow: StateMachine<AddProjectState, AddProjectEvent>
+  readonly draft: Store<ProjectDraft>
+  readonly placement: Accessor<PlacementChoice | undefined>
+  readonly onCreated: (created: ProjectCreated) => void
 }
 
 async function placeOnMachine(server: ProjectsServer, projectId: ProjectId, machineId: string): Promise<PlacementId | undefined> {
@@ -38,18 +48,37 @@ async function placeOnMachine(server: ProjectsServer, projectId: ProjectId, mach
   return placements.find((placement) => placement.machineId === machineId)?.id
 }
 
-async function place(
-  server: ProjectsServer,
-  cloud: CloudPlacer,
-  projectId: ProjectId,
-  placement: PlacementChoice | undefined,
-): Promise<PlacementId | undefined> {
+async function place(creation: Creation, projectId: ProjectId): Promise<PlacementId | undefined> {
+  const placement = creation.placement()
   if (!placement) return undefined
-  if (placement.kind === "cloud") return (await cloud.create({ projectId })).id
-  return placeOnMachine(server, projectId, placement.machineId)
+  if (placement.kind === "cloud") return (await creation.cloud.create({ projectId })).id
+  return placeOnMachine(creation.server, projectId, placement.machineId)
 }
 
-function advanceable(state: AddProjectState, draft: ProjectDraft): boolean {
+async function recordProject(creation: Creation, source: ProjectSource): Promise<ProjectId> {
+  const name = creation.draft.name.trim()
+  const project = await creation.server.projects.create({ ...(name ? { name } : {}), source })
+  creation.flow.send({ type: "projectRecorded", projectId: project.id })
+  return project.id
+}
+
+async function createProject(creation: Creation): Promise<void> {
+  const source = creation.draft.source
+  if (!source) return
+  const existing = recordedProjectId(creation.flow.state())
+  creation.flow.send({ type: "createRequested" })
+  try {
+    const projectId = existing ?? (await recordProject(creation, source))
+    const placementId = await place(creation, projectId)
+    creation.flow.send({ type: "projectCreated", projectId, ...(placementId ? { placementId } : {}) })
+    const harnessId = creation.draft.harnessId
+    creation.onCreated({ projectId, ...(placementId ? { placementId } : {}), ...(harnessId ? { harnessId } : {}) })
+  } catch (cause) {
+    creation.flow.send({ type: "createFailed", error: appErrorOf(cause) })
+  }
+}
+
+function advanceable(state: AddProjectState, draft: ProjectDraft, placement: PlacementChoice | undefined): boolean {
   switch (state.kind) {
     case "choosingSource":
       return draft.source !== undefined
@@ -57,7 +86,7 @@ function advanceable(state: AddProjectState, draft: ProjectDraft): boolean {
       return draft.harnessId !== undefined
     case "choosingPlacement":
     case "failed":
-      return draft.placement !== undefined
+      return placement !== undefined
     case "creating":
     case "created":
       return false
@@ -69,43 +98,28 @@ function advanceable(state: AddProjectState, draft: ProjectDraft): boolean {
 export function createAddProjectFlow(input: {
   readonly server: ProjectsServer
   readonly cloud: CloudPlacer
+  readonly machines: Accessor<readonly Machine[]>
   readonly onCreated: (created: ProjectCreated) => void
 }): AddProjectFlow {
   const flow = machine(addProjectInitial, addProjectTransition)
   const [draft, setDraft] = createStore<ProjectDraft>({ name: "" })
-  const canAdvance = createMemo(() => advanceable(flow.state(), draft))
-
-  const create = async () => {
-    const source = draft.source
-    if (!source) return
-    flow.send({ type: "createRequested" })
-    try {
-      const name = draft.name.trim()
-      const project = await input.server.projects.create({ ...(name ? { name } : {}), source })
-      const placementId = await place(input.server, input.cloud, project.id, draft.placement)
-      flow.send({ type: "projectCreated", projectId: project.id, ...(placementId ? { placementId } : {}) })
-      input.onCreated({
-        projectId: project.id,
-        ...(placementId ? { placementId } : {}),
-        ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
-      })
-    } catch (cause) {
-      flow.send({ type: "createFailed", error: appErrorOf(cause) })
-    }
-  }
-
+  const options = createMemo(() => placementOptions(input.server.capabilities(), input.machines(), draft.source?.kind === "folder"))
+  const placement = createMemo(() => chosenPlacement(options(), draft.placement))
+  const canAdvance = createMemo(() => advanceable(flow.state(), draft, placement()))
+  const creation: Creation = { server: input.server, cloud: input.cloud, flow, draft, placement, onCreated: input.onCreated }
   const next = async () => {
     if (!canAdvance()) return
     const state = flow.state()
     if (state.kind === "choosingSource") flow.send({ type: "sourceChosen" })
     else if (state.kind === "choosingAgent") flow.send({ type: "agentChosen" })
-    else await create()
+    else await createProject(creation)
   }
-
   return {
     state: flow.state,
     draft,
     setDraft,
+    placementOptions: options,
+    placement,
     canAdvance,
     next,
     skipAgent: () => {
@@ -117,5 +131,14 @@ export function createAddProjectFlow(input: {
 }
 
 export function useAddProjectFlow(onCreated: (created: ProjectCreated) => void): AddProjectFlow {
-  return createAddProjectFlow({ server: useProjectsServer(), cloud: useCloudPlacer(), onCreated })
+  const machines = useMachines()
+  return createAddProjectFlow({
+    server: useProjectsServer(),
+    cloud: useCloudPlacer(),
+    machines: () => {
+      const state = machines()
+      return state.kind === "ready" ? state.data : []
+    },
+    onCreated,
+  })
 }

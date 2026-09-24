@@ -7,6 +7,7 @@ import type {
   AgentQuestionAnswer,
   AgentSnapshotFileDiff,
   AgentTodo,
+  RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
 import type { SolidQueryOptions } from "@tanstack/solid-query"
 import type { MachineId, OrgId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
@@ -109,6 +110,15 @@ export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextC
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }
 
+export type SessionGoal = RuntimeGoalSnapshot
+
+export type GoalAction = "pause" | "resume" | "remove"
+
+export type SessionGoalState = {
+  readonly goal: SessionGoal | undefined
+  readonly actions: readonly GoalAction[]
+}
+
 export type SessionSnapshot = {
   readonly row: SessionRow
   readonly status: SessionStatus
@@ -116,6 +126,7 @@ export type SessionSnapshot = {
   readonly requests: readonly AgentRequest[]
   readonly todos: readonly Todo[]
   readonly diff: readonly FileDiff[]
+  readonly goal: SessionGoalState
 }
 
 export type ModelChoice = { readonly providerId: string; readonly modelId: string; readonly variant?: string }

@@ -15,7 +15,11 @@ Owns: the app frame and nothing a feature knows about. Three regions and one pag
 
 ## Routes (`routes.ts`)
 
-Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the session or terminal the URL names in the workbench and mirrors the focused pane back into the URL with `replace`.
+Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the session or terminal the URL names in the workbench and mirrors the focused pane back into the URL with `replace`, so the URL is the one home of the current placement: `useShellRoute().placementId()`.
+
+## Placement providers (`placement-providers.tsx`)
+
+The domains whose state is kept per placement (files, review, browser) get their providers here, inside the workbench, fed `useShellRoute().placementId` and `useWorkbench().openByKind`. Their commands are added to the `commands` registry while the shell is mounted.
 
 ## Registries (`registries.ts`, `registry.ts`)
 
@@ -31,7 +35,7 @@ Below 768 px the sidebar is a drawer and the workspace panel a sheet (both Kobal
 
 ## Placeholders
 
-`placeholders/` holds stand-ins for exports other lanes have not landed: the server, the session stores and the session pane kind. Each is deleted when the real export lands.
+`placeholders/` holds stand-ins for exports other lanes have not landed: the server and the session pane kind. Each is deleted when the real export lands.
 
 ## Flows
 

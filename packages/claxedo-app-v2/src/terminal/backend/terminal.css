@@ -26,11 +26,11 @@
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
   width: 4px !important;
   left: 1px !important;
-  border-radius: var(--radius-3) !important;
-  background: var(--border-weak-base) !important;
+  border-radius: var(--radius-pill) !important;
+  background: var(--v2-border-border-base) !important;
 }
 
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider:hover,
 .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider.xterm-active {
-  background: var(--border-strong-base) !important;
+  background: var(--v2-border-border-strong) !important;
 }

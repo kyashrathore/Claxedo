@@ -1,3 +1,4 @@
+import { useErrorCopy } from "@/composer"
 import { For, Show, createSignal } from "solid-js"
 import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle, Icon, useDialog } from "@/ui"
 import type { SessionScreenTextKey } from "../i18n"
@@ -25,6 +26,7 @@ function goalMetrics(goal: GoalSnapshot, t: ReturnType<typeof useSessionScreenTe
 
 function GoalRemoveDialog(props: { action: DockAction<GoalAction>; remove: () => Promise<void> }) {
   const t = useSessionScreenText()
+  const errorCopy = useErrorCopy()
   const dialog = useDialog()
   const removing = () => props.action.runningAction() === "remove"
   return (
@@ -34,7 +36,7 @@ function GoalRemoveDialog(props: { action: DockAction<GoalAction>; remove: () =>
       </DialogHeader>
       <DialogBody>
         <p>{t("sessionScreen.goal.deleteConfirm")}</p>
-        <Show when={props.action.error()}>{(error) => <p role="alert" data-slot="goal-dock-error">{error().message}</p>}</Show>
+        <Show when={props.action.error()}>{(error) => <p role="alert" data-slot="goal-dock-error" data-error-class={error().class} title={error().message}>{errorCopy(error())}</p>}</Show>
       </DialogBody>
       <DialogFooter>
         <Button variant="ghost" size="large" disabled={removing()} onClick={() => dialog.close()}>
@@ -88,6 +90,7 @@ function GoalControls(props: { goal: GoalSnapshot; actions: GoalActions; action:
 
 export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
   const t = useSessionScreenText()
+  const errorCopy = useErrorCopy()
   const action = createDockAction<GoalAction>()
   const [expanded, setExpanded] = createSignal(false)
   return (
@@ -114,7 +117,7 @@ export function GoalDock(props: { goal: GoalSnapshot; actions: GoalActions }) {
                 <For each={goalMetrics(props.goal, t)}>{(metric) => <span>{metric}</span>}</For>
               </div>
             </Show>
-            <Show when={action.error()}>{(error) => <p role="alert" data-slot="goal-dock-error">{error().message}</p>}</Show>
+            <Show when={action.error()}>{(error) => <p role="alert" data-slot="goal-dock-error" data-error-class={error().class} title={error().message}>{errorCopy(error())}</p>}</Show>
           </div>
           <GoalControls goal={props.goal} actions={props.actions} action={action} />
         </div>

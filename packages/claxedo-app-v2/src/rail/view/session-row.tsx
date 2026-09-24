@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router"
-import { Show, type JSX } from "solid-js"
+import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
@@ -29,9 +29,6 @@ export function SessionRow(props: {
       >
         <span class="rail-row-status" data-status={status()} role="img" aria-label={t(`rail.status.${status()}`)} />
         <span class="rail-row-title">{props.row.title}</span>
-        <Show when={props.row.archivedAt !== undefined}>
-          <span class="rail-row-badge">{t("rail.archived")}</span>
-        </Show>
       </A>
       <SessionMenu row={props.row} actions={props.actions} />
     </li>
