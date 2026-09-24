@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { codeExtensions, isLocaleFile, listFiles, parseArgs, under } from "./lib/files"
+import { codeExtensions, isTranslationFile, listFiles, parseArgs, under } from "./lib/files"
 import { compilerOptions, createProgram, isImportSpecifierNode, startLine, ts } from "./lib/parse"
 import { finish, type Violation } from "./lib/report"
 import { textOf, walk } from "./lib/tree"
@@ -28,7 +28,7 @@ function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
   const events = new Set(readFileSync(join(import.meta.dir, "data/server-event-names.txt"), "utf8").split("\n").filter(Boolean))
   const files = listFiles(root, ["src", "plugins"], codeExtensions).filter(
-    (file) => !under(root, file, "src/server/wire") && !isLocaleFile(root, file),
+    (file) => !under(root, file, "src/server/wire") && !isTranslationFile(root, file),
   )
   const program = createProgram(files, compilerOptions())
   const checker = program.getTypeChecker()

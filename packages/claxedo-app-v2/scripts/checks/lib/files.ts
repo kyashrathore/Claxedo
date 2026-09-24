@@ -1,8 +1,8 @@
-import { existsSync, readdirSync } from "node:fs"
-import { basename, dirname, join, relative, resolve, sep } from "node:path"
+import { existsSync, readdirSync, realpathSync } from "node:fs"
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
-export const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
+export const packageRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."))
 export const repoRoot = resolve(packageRoot, "../..")
 
 export type Scope = "src" | "e2e" | "plugins" | "scripts"
@@ -18,17 +18,21 @@ export function parseArgs(argv: readonly string[]): Args {
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === "--root") {
-      root = resolve(argv[index + 1] ?? ".")
+      root = realpathSync(resolve(argv[index + 1] ?? "."))
       index += 1
     } else if (argument !== undefined) rest.push(argument)
   }
   return { root, rest }
 }
 
+export function pluginsDirectory(root: string): string {
+  return root === packageRoot ? join(repoRoot, "plugins") : join(root, "plugins")
+}
+
 export function listFiles(root: string, scopes: readonly Scope[], extensions: readonly string[]): string[] {
   const out: string[] = []
   for (const scope of scopes) {
-    const base = join(root, scope)
+    const base = scope === "plugins" ? pluginsDirectory(root) : join(root, scope)
     if (existsSync(base)) walkDirectory(base, scope, root, extensions, out)
   }
   return out.sort()
@@ -46,12 +50,17 @@ function walkDirectory(dir: string, scope: Scope, root: string, extensions: read
 function skipsDirectory(full: string, scope: Scope, root: string): boolean {
   const name = basename(full)
   if (name === "node_modules" || name === "dist" || name === ".git") return true
-  const path = rel(root, full)
-  if (path === `${scope}/legacy` || path === "scripts/checks/fixtures") return true
+  if (rel(root, full) === `${scope}/legacy`) return true
   return scope === "e2e" && (name === "report" || name === "test-results")
 }
 
 export function rel(root: string, file: string): string {
+  const inPlugins = relative(pluginsDirectory(root), file)
+  const path = inPlugins.startsWith("..") || isAbsolute(inPlugins) ? relative(root, file) : join("plugins", inPlugins)
+  return path.split(sep).join("/")
+}
+
+export function shown(root: string, file: string): string {
   return relative(root, file).split(sep).join("/")
 }
 
@@ -60,8 +69,12 @@ export function under(root: string, file: string, folder: string): boolean {
   return path === folder || path.startsWith(`${folder}/`)
 }
 
-export function isLocaleFile(root: string, file: string): boolean {
-  return under(root, file, "src/i18n") && /^[a-z]{2,3}(-[A-Za-z]{2,4})?\.ts$/.test(basename(file))
+export function isTranslationFile(root: string, file: string): boolean {
+  const parts = rel(root, file).split("/")
+  if (parts[0] !== "src" && parts[0] !== "plugins") return false
+  if (parts[0] === "src" && parts[1] === "i18n") return false
+  const inside = parts.slice(2)
+  return inside.at(-1) === "i18n.ts" || inside.slice(0, -1).some((part) => part === "locales" || part === "i18n")
 }
 
 export function topFolder(root: string, file: string, scope: Scope): string | undefined {

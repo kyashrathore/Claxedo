@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs"
-import { dirname } from "node:path"
-import { codeExtensions, isLocaleFile, listFiles, parseArgs, rel, topFolder } from "./lib/files"
+import { dirname, join } from "node:path"
+import { codeExtensions, isTranslationFile, listFiles, parseArgs, pluginsDirectory, rel, topFolder } from "./lib/files"
 import { lineCount } from "./lib/parse"
+import { finish, type Violation } from "./lib/report"
 
 type Part = { readonly name: string; readonly budget: number; readonly folders: readonly string[]; readonly except?: readonly string[] }
 type Row = { readonly name: string; readonly lines: number; readonly budget: number | undefined; readonly at: string }
@@ -32,7 +33,7 @@ const pluginBudgets: Readonly<Record<string, number>> = { tasks: 2500, pages: 30
 
 function main(): never {
   const { root } = parseArgs(process.argv.slice(2))
-  const appFiles = listFiles(root, ["src"], codeExtensions).filter((file) => !isLocaleFile(root, file))
+  const appFiles = listFiles(root, ["src"], codeExtensions).filter((file) => !isTranslationFile(root, file))
   const counted = new Map(parts.map((part) => [part.name, 0]))
   const unmapped = new Set<string>()
   let total = 0
@@ -43,13 +44,11 @@ function main(): never {
     if (part) counted.set(part.name, (counted.get(part.name) ?? 0) + lines)
     else unmapped.add(dirname(rel(root, file)))
   }
-  const rows = parts.map((part) => ({ name: part.name, lines: counted.get(part.name) ?? 0, budget: part.budget, at: part.folders[0] ?? "src" }))
-  const over = [...printTable([...rows, { name: "Total", lines: total, budget: totalBudget, at: "src" }]), ...printTable(pluginLines(root))]
-  for (const row of over) console.log(`${row.at}:1: ${row.name} has ${row.lines} lines; the budget is ${row.budget}`)
-  for (const folder of [...unmapped].sort()) console.log(`${folder}:1: not in the budget table; add the part it belongs to`)
-  const failures = over.length + unmapped.size
-  console.error(`budget: ${failures} ${failures === 1 ? "violation" : "violations"} in ${appFiles.length} files`)
-  process.exit(failures === 0 ? 0 : 1)
+  const rows = parts.map((part) => ({ name: part.name, lines: counted.get(part.name) ?? 0, budget: part.budget, at: join(root, part.folders[0] ?? "src") }))
+  const over = [...printTable([...rows, { name: "Total", lines: total, budget: totalBudget, at: join(root, "src") }]), ...printTable(pluginLines(root))]
+  const violations: Violation[] = over.map((row) => ({ file: row.at, line: 1, message: `${row.name} has ${row.lines} lines; the budget is ${row.budget}` }))
+  for (const folder of unmapped) violations.push({ file: join(root, folder), line: 1, message: "not in the budget table; add the part it belongs to" })
+  finish("budget", root, violations, appFiles.length)
 }
 
 function partOf(path: string): Part | undefined {
@@ -72,14 +71,15 @@ function matches(path: string, folder: string): boolean {
 function pluginLines(root: string): Row[] {
   const byPlugin = new Map<string, number>()
   let total = 0
-  for (const file of listFiles(root, ["plugins"], codeExtensions)) {
+  for (const file of listFiles(root, ["plugins"], codeExtensions).filter((file) => !isTranslationFile(root, file))) {
     const plugin = topFolder(root, file, "plugins") ?? "(root)"
     const lines = lineCount(readFileSync(file, "utf8"))
     byPlugin.set(plugin, (byPlugin.get(plugin) ?? 0) + lines)
     total += lines
   }
-  const rows = [...byPlugin].sort().map(([plugin, lines]) => ({ name: `plugins/${plugin}`, lines, budget: pluginBudgets[plugin], at: `plugins/${plugin}` }))
-  return rows.length === 0 ? [] : [...rows, { name: "First-party plugins total", lines: total, budget: pluginsBudget, at: "plugins" }]
+  const plugins = pluginsDirectory(root)
+  const rows = [...byPlugin].sort().map(([plugin, lines]) => ({ name: `plugins/${plugin}`, lines, budget: pluginBudgets[plugin], at: join(plugins, plugin) }))
+  return rows.length === 0 ? [] : [...rows, { name: "First-party plugins total", lines: total, budget: pluginsBudget, at: plugins }]
 }
 
 function printTable(rows: readonly Row[]): Row[] {

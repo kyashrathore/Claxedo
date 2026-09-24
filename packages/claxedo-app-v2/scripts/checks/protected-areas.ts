@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process"
-import { isAbsolute, relative, sep } from "node:path"
+import { isAbsolute, join, relative, sep } from "node:path"
 import { packageRoot } from "./lib/files"
+import { finish, type Violation } from "./lib/report"
 
 const protectedAreas = [
   { flow: 30, name: "the transcript corpus", folders: ["src/transcript", "src/session/view/timeline"] },
@@ -13,6 +14,16 @@ type Options = { readonly base?: string; readonly ran?: ReadonlySet<number>; rea
 function main(): never {
   const options = parseOptions(process.argv.slice(2))
   const changed = (options.paths.length > 0 ? options.paths : changedPaths(options.base)).map(packagePath)
+  const required = requiredFlows(changed)
+  if (!options.ran) {
+    const flows = [...required.keys()].sort((a, b) => a - b)
+    console.error(flows.length > 0 ? `protected areas changed: flows ${flows.join(" and ")} must run` : "no protected area changed")
+    process.exit(0)
+  }
+  finish("protected-areas", packageRoot, skipped(required, options.ran), changed.length)
+}
+
+function requiredFlows(changed: readonly string[]): Map<number, string[]> {
   const required = new Map<number, string[]>()
   for (const path of changed) {
     for (const area of protectedAreas) {
@@ -20,26 +31,19 @@ function main(): never {
       required.set(area.flow, [...(required.get(area.flow) ?? []), path])
     }
   }
-  if (!options.ran) {
-    for (const flow of [...required.keys()].sort((a, b) => a - b)) console.log(String(flow))
-    process.exit(0)
-  }
-  const failures = report(required, options.ran)
-  console.error(`required-flows: ${failures} ${failures === 1 ? "violation" : "violations"} in ${changed.length} changed files`)
-  process.exit(failures === 0 ? 0 : 1)
+  return required
 }
 
-function report(required: ReadonlyMap<number, readonly string[]>, ran: ReadonlySet<number>): number {
-  let failures = 0
+function skipped(required: ReadonlyMap<number, readonly string[]>, ran: ReadonlySet<number>): Violation[] {
+  const violations: Violation[] = []
   for (const [flow, paths] of required) {
     if (ran.has(flow)) continue
     const area = protectedAreas.find((candidate) => candidate.flow === flow)
     for (const path of paths) {
-      console.log(`${path}:1: flow ${flow} (${area?.name ?? ""}) must run for a change here`)
-      failures += 1
+      violations.push({ file: join(packageRoot, path), line: 1, message: `flow ${flow} (${area?.name ?? ""}) must run for a change here` })
     }
   }
-  return failures
+  return violations
 }
 
 function parseOptions(argv: readonly string[]): Options {
