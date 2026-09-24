@@ -55,7 +55,8 @@ function connectionTransition(state: ConnectionState, event: ConnectionEvent): C
     case "dropped": {
       const attempt = state.kind === "reconnecting" ? state.attempt + 1 : 1
       if (attempt > event.maxAttempts) return { kind: "offline", reason: event.reason }
-      return { kind: "reconnecting", attempt }
+      const afterLive = state.kind === "connected" || (state.kind === "reconnecting" && state.afterLive)
+      return { kind: "reconnecting", attempt, afterLive }
     }
     default:
       return unreachable(event)
