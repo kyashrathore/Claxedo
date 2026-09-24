@@ -1,8 +1,8 @@
 import { type DiffLineAnnotation, type SelectedLineRange } from "@pierre/diffs"
-import { createEffect, createMemo, createSignal, onCleanup, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, getOwner, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { render as renderSolid } from "solid-js/web"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 import { createHoverCommentUtility } from "./diff/comment-hover"
 import { cloneSelectedLineRange, formatSelectedLineLabel, lineInSelectedRange } from "./diff/selection-bridge"
 import {
@@ -125,6 +125,7 @@ export function createLineCommentAnnotationRenderer<T, C, D>(props: {
     setMeta: (meta: LineCommentAnnotationMeta<T>) => void
   }
 
+  const owner = getOwner()
   const nodes = new Map<string, AnnotationNode>()
 
   const mount = (meta: LineCommentAnnotationMeta<T>): AnnotationNode | undefined => {
@@ -151,7 +152,7 @@ export function createLineCommentAnnotationRenderer<T, C, D>(props: {
         return props.renderDraft(next.range)
       })
       return props.draftElement(view)
-    }, host)
+    }, host, undefined, { owner })
 
     const node = { host, dispose, setMeta: setCurrent }
     nodes.set(meta.key, node)
@@ -369,7 +370,7 @@ export function createLineCommentController<T extends LineCommentShape>(
 export function createLineCommentController<T extends LineCommentShape>(
   props: LineCommentControllerProps<T> | LineCommentControllerWithSideProps<T>,
 ) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const note = createLineCommentState<string>(props.state)
 
   const annotations =

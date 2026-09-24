@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import type { AgentToolPart } from "@claxedo/agent-runtime-contract"
-import { useI18n, type UiI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n, type TranscriptI18n, type TranscriptTextKey } from "./i18n"
 import { AgentGlyph } from "./agent-glyph"
 import { useData, type SubagentView } from "./data"
 import { clampLabel } from "./message-part-text"
@@ -131,18 +131,18 @@ function scrollToCanonicalSpawn(chip: ChipModel) {
   return true
 }
 
-const STATUS_KEYS: Record<SubagentView["status"], string> = {
-  pending: "ui.subagent.status.working",
-  running: "ui.subagent.status.working",
-  paused: "ui.subagent.status.paused",
-  interrupted: "ui.subagent.status.interrupted",
-  completed: "ui.subagent.status.done",
-  failed: "ui.subagent.status.failed",
-  killed: "ui.subagent.status.killed",
-  unknown: "ui.subagent.status.unknown",
+const STATUS_KEYS: Record<SubagentView["status"], TranscriptTextKey> = {
+  pending: "transcript.subagent.status.working",
+  running: "transcript.subagent.status.working",
+  paused: "transcript.subagent.status.paused",
+  interrupted: "transcript.subagent.status.interrupted",
+  completed: "transcript.subagent.status.done",
+  failed: "transcript.subagent.status.failed",
+  killed: "transcript.subagent.status.killed",
+  unknown: "transcript.subagent.status.unknown",
 }
 
-function statusLabel(status: ChipModel["status"], i18n: UiI18n) {
+function statusLabel(status: ChipModel["status"], i18n: TranscriptI18n) {
   return i18n.t(STATUS_KEYS[status])
 }
 
@@ -179,7 +179,7 @@ export function SubagentChipRow(props: {
   spawnInput?: Record<string, unknown>
 }) {
   const data = useData()
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const chips = createMemo(() => {
     const details = new Map<string, string>()
     if (props.subagents) {
