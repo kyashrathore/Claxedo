@@ -1,9 +1,12 @@
+import { useTranslator, type DomainTranslate, type Translations } from "@/i18n"
+
 const en = {
   "cloud.new": "New workspace",
   "cloud.remove.title": "Delete workspace",
   "cloud.remove.confirm": "Delete workspace \"{{name}}\"?",
   "cloud.remove.button": "Delete workspace",
   "cloud.cancel": "Cancel",
+  "cloud.deleting": "Deleting…",
   "cloud.loading": "Loading",
   "cloud.title": "Cloud workspaces",
   "cloud.empty": "No cloud workspaces yet.",
@@ -29,7 +32,7 @@ const en = {
 
 export type CloudKey = keyof typeof en
 
-export const cloudStrings: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+export const dictionary = {
   en,
   zh: {
     "cloud.new": "新建工作区",
@@ -159,10 +162,8 @@ export const cloudStrings: Readonly<Record<string, Readonly<Record<string, strin
     "cloud.cancel": "İptal",
     "cloud.loading": "Yükleniyor",
   },
-}
+} satisfies Translations<CloudKey>
 
-export function cloudText(key: CloudKey, vars?: Readonly<Record<string, string | number>>): string {
-  const text = en[key]
-  if (!vars) return text
-  return text.replace(/\{\{(\w+)\}\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match))
-}
+export type CloudText = DomainTranslate<CloudKey>
+
+export const useCloudText = (): CloudText => useTranslator(dictionary)

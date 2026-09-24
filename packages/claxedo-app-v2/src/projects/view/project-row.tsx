@@ -1,41 +1,37 @@
-import { createSignal, Show, type Component } from "solid-js"
+import type { Component } from "solid-js"
 import type { Project } from "@/server"
-import { projectsText } from "../i18n"
+import { Icon, IconButton, Menu } from "@/ui"
+import { useProjectsText } from "../i18n"
 
 export const ProjectRow: Component<{
   project: Project
   active: boolean
-  onOpen: (project: Project) => void
-  onRename: (project: Project) => void
-  onRemove: (project: Project) => void
+  onOpen: () => void
+  onRename: () => void
+  onRemove: () => void
 }> = (props) => {
-  const [menu, setMenu] = createSignal(false)
+  const t = useProjectsText()
   return (
-    <li class="flex flex-col" data-project-id={props.project.id}>
-      <div class="projects-row" aria-current={props.active ? "page" : undefined}>
-        <button type="button" class="min-h-11 min-w-0 flex-1 truncate text-left text-sm" onClick={() => props.onOpen(props.project)}>
-          {props.project.name}
-        </button>
-        <button
-          type="button"
-          class="min-h-11 min-w-11 shrink-0 rounded-md text-sm"
-          aria-label={projectsText("projects.actions")}
-          aria-expanded={menu()}
-          onClick={() => setMenu(!menu())}
-        >
-          ⋯
-        </button>
-      </div>
-      <Show when={menu()}>
-        <div class="flex flex-wrap gap-1 px-2 pb-2" role="group" aria-label={projectsText("projects.actions")}>
-          <button type="button" class="min-h-11 rounded-md px-2 text-sm" onClick={() => props.onRename(props.project)}>
-            {projectsText("projects.rename")}
-          </button>
-          <button type="button" class="min-h-11 rounded-md px-2 text-sm" onClick={() => props.onRemove(props.project)}>
-            {projectsText("projects.remove")}
-          </button>
-        </div>
-      </Show>
+    <li class="projects-row" data-project-id={props.project.id} aria-current={props.active ? "page" : undefined}>
+      <button type="button" class="projects-row-open" onClick={() => props.onOpen()}>
+        <Icon name="folder" />
+        <span class="truncate">{props.project.name}</span>
+      </button>
+      <Menu placement="bottom-end">
+        <Menu.Trigger
+          as={IconButton}
+          icon="three-dots"
+          variant="ghost"
+          size="small"
+          aria-label={t("projects.actionsFor", { name: props.project.name })}
+        />
+        <Menu.Portal>
+          <Menu.Content>
+            <Menu.Item onSelect={() => props.onRename()}>{t("projects.rename")}</Menu.Item>
+            <Menu.Item onSelect={() => props.onRemove()}>{t("projects.remove")}</Menu.Item>
+          </Menu.Content>
+        </Menu.Portal>
+      </Menu>
     </li>
   )
 }

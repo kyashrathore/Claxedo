@@ -1,108 +1,98 @@
 import { createSignal, Show, type Component } from "solid-js"
 import type { ProjectSource } from "@/server"
+import { Button, Field, SegmentedControl, SegmentedControlItem, TextInput } from "@/ui"
 import { useProjectsServer } from "../api"
 import type { AddProjectFlow } from "../add-project"
-import { projectsText } from "../i18n"
+import { useProjectsText } from "../i18n"
 import { draftProjectName } from "../model"
-import { buttonAttrs } from "./button-attrs"
 import { RepositoryPicker } from "./repository-picker"
 
 type Mode = "repository" | "folder"
 
-function initialMode(source: ProjectSource | undefined): Mode {
-  return source?.kind === "folder" ? "folder" : "repository"
+function folderSource(path: string): ProjectSource | undefined {
+  const trimmed = path.trim()
+  return trimmed ? { kind: "folder", path: trimmed } : undefined
+}
+
+const FolderField: Component<{
+  path: string
+  onPath: (path: string) => void
+  pickFolder?: () => Promise<string | undefined>
+}> = (props) => {
+  const t = useProjectsText()
+  const browse = async () => {
+    const picked = await props.pickFolder?.()
+    if (picked) props.onPath(picked)
+  }
+  return (
+    <Field>
+      <Field.Label>{t("projects.add.folder")}</Field.Label>
+      <div class="flex gap-2">
+        <Field.Control class="min-w-0 flex-1">
+          <TextInput
+            class="font-mono"
+            value={props.path}
+            placeholder={t("projects.add.folder.placeholder")}
+            spellcheck={false}
+            onInput={(event) => props.onPath(event.currentTarget.value)}
+          />
+        </Field.Control>
+        <Show when={props.pickFolder}>
+          <Button variant="outline" onClick={() => void browse()}>
+            {t("projects.add.folder.browse")}
+          </Button>
+        </Show>
+      </div>
+      <span class="projects-hint">{t("projects.add.folder.hint")}</span>
+    </Field>
+  )
 }
 
 export const SourceStep: Component<{ flow: AddProjectFlow; pickFolder?: () => Promise<string | undefined> }> = (props) => {
+  const t = useProjectsText()
   const server = useProjectsServer()
   const draft = props.flow.draft
   const offersFolder = () => server.capabilities()?.thisMachine !== undefined
-  const [mode, setMode] = createSignal<Mode>(initialMode(draft.source))
+  const [mode, setMode] = createSignal<Mode>(draft.source?.kind === "folder" ? "folder" : "repository")
   const [folder, setFolder] = createSignal(draft.source?.kind === "folder" ? draft.source.path : "")
-  const [url, setUrl] = createSignal(draft.source?.kind === "repository" ? draft.source.url : "")
-  const [pasting, setPasting] = createSignal(draft.source?.kind === "repository")
-  const [connected, setConnected] = createSignal(false)
+  const [repository, setRepository] = createSignal<ProjectSource | undefined>(draft.source?.kind === "folder" ? undefined : draft.source)
 
   const setSource = (source: ProjectSource | undefined) => props.flow.setDraft("source", source)
   const useFolder = (path: string) => {
     setFolder(path)
-    setSource(path.trim() ? { kind: "folder", path: path.trim() } : undefined)
+    setSource(folderSource(path))
   }
-  const useUrl = (value: string) => {
-    setUrl(value)
-    setSource(value.trim() ? { kind: "repository", url: value.trim() } : undefined)
+  const useRepository = (source: ProjectSource | undefined) => {
+    setRepository(source)
+    setSource(source)
   }
-  const switchMode = (next: Mode) => {
+  const switchMode = (next: string | null) => {
+    if (next !== "folder" && next !== "repository") return
     setMode(next)
-    if (next === "folder") useFolder(folder())
-    else if (pasting() || !connected()) useUrl(url())
-    else setSource(draft.source?.kind === "connectedRepository" ? draft.source : undefined)
-  }
-  const browse = async () => {
-    const picked = await props.pickFolder?.()
-    if (picked) useFolder(picked)
+    setSource(next === "folder" ? folderSource(folder()) : repository())
   }
   const placeholder = () => (draft.source ? draftProjectName(draft.source) : "")
 
   return (
     <div class="flex flex-col gap-4" data-slot="source-step">
-      <label class="flex flex-col gap-1">
-        <span class="projects-label">{projectsText("projects.add.name")}</span>
-        <input
-          type="text"
-          class="projects-field"
-          value={draft.name}
-          placeholder={placeholder()}
-          aria-label={projectsText("projects.add.name")}
-          onInput={(event) => props.flow.setDraft("name", event.currentTarget.value)}
-        />
-        <span class="projects-hint">{projectsText("projects.add.name.hint")}</span>
-      </label>
+      <Field>
+        <Field.Label>{t("projects.add.name")}</Field.Label>
+        <Field.Control>
+          <TextInput value={draft.name} placeholder={placeholder()} onInput={(event) => props.flow.setDraft("name", event.currentTarget.value)} />
+        </Field.Control>
+        <span class="projects-hint">{t("projects.add.name.hint")}</span>
+      </Field>
       <Show when={offersFolder()}>
-        <div class="projects-segment self-start" role="group" aria-label={projectsText("projects.source")}>
-          <button type="button" aria-pressed={mode() === "repository"} onClick={() => switchMode("repository")}>
-            {projectsText("projects.add.source.repository")}
-          </button>
-          <button type="button" aria-pressed={mode() === "folder"} onClick={() => switchMode("folder")}>
-            {projectsText("projects.add.source.folder")}
-          </button>
-        </div>
+        <SegmentedControl class="self-start" value={mode()} onChange={switchMode} aria-label={t("projects.source")}>
+          <SegmentedControlItem value="repository">{t("projects.add.source.repository")}</SegmentedControlItem>
+          <SegmentedControlItem value="folder">{t("projects.add.source.folder")}</SegmentedControlItem>
+        </SegmentedControl>
       </Show>
       <Show when={mode() === "folder"}>
-        <div class="flex flex-col gap-1">
-          <span class="projects-label">{projectsText("projects.add.folder")}</span>
-          <div class="flex gap-2">
-            <input
-              type="text"
-              class="projects-field font-mono"
-              value={folder()}
-              placeholder={projectsText("projects.add.folder.placeholder")}
-              aria-label={projectsText("projects.add.folder")}
-              spellcheck={false}
-              onInput={(event) => useFolder(event.currentTarget.value)}
-            />
-            <Show when={props.pickFolder}>
-              <button type="button" {...buttonAttrs("outline")} onClick={() => void browse()}>
-                {projectsText("projects.add.folder.browse")}
-              </button>
-            </Show>
-          </div>
-          <span class="projects-hint">{projectsText("projects.add.folder.hint")}</span>
-        </div>
+        <FolderField path={folder()} onPath={useFolder} {...(props.pickFolder ? { pickFolder: props.pickFolder } : {})} />
       </Show>
       <Show when={mode() === "repository"}>
-        <RepositoryPicker
-          flow={props.flow}
-          pasting={pasting()}
-          onPasting={(next) => {
-            setPasting(next)
-            if (next) useUrl(url())
-            else setSource(draft.source?.kind === "connectedRepository" ? draft.source : undefined)
-          }}
-          onConnected={setConnected}
-          url={url()}
-          onUrl={useUrl}
-        />
+        <RepositoryPicker source={repository()} onSource={useRepository} />
       </Show>
     </div>
   )

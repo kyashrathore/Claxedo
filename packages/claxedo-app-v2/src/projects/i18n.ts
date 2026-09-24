@@ -1,5 +1,9 @@
+import { useTranslator, type DomainTranslate, type Translations } from "@/i18n"
+
 const en = {
   "projects.cancel": "Cancel",
+  "projects.close": "Close",
+  "projects.actionsFor": "Actions for {{name}}",
   "projects.save": "Save",
   "projects.saving": "Saving...",
   "projects.rename": "Rename",
@@ -27,9 +31,6 @@ const en = {
   "projects.source": "Source",
   "projects.source.none": "No source recorded",
   "projects.add.title": "New project",
-  "projects.add.step.source": "Project",
-  "projects.add.step.agent": "AI",
-  "projects.add.step.placement": "Where it runs",
   "projects.add.name": "Name",
   "projects.add.name.hint": "Leave empty to name it after the source.",
   "projects.add.source.repository": "Repository",
@@ -76,7 +77,7 @@ const en = {
 
 export type ProjectsKey = keyof typeof en
 
-export const projectsStrings: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+export const dictionary = {
   en,
   zh: {
     "projects.cancel": "取消",
@@ -222,10 +223,8 @@ export const projectsStrings: Readonly<Record<string, Readonly<Record<string, st
     "projects.open": "Proje aç",
     "projects.rename.name": "Ad",
   },
-}
+} satisfies Translations<ProjectsKey>
 
-export function projectsText(key: ProjectsKey, vars?: Readonly<Record<string, string | number>>): string {
-  const text = en[key]
-  if (!vars) return text
-  return text.replace(/\{\{(\w+)\}\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match))
-}
+export type ProjectsText = DomainTranslate<ProjectsKey>
+
+export const useProjectsText = (): ProjectsText => useTranslator(dictionary)

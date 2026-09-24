@@ -1,0 +1,193 @@
+import { batch, createMemo, type Accessor } from "solid-js"
+import { persistedSignal } from "@/lib/persisted"
+import { isRecord } from "@/lib/record"
+import type { AnyPaneKind, Json, PaneKind, PaneRoute } from "@/shell"
+import { constructWorkbenchState } from "./construct"
+import { createDragController, type DragController } from "./drag/pointer-drag"
+import { createPaneApi, type PaneApi } from "./pane-api"
+import { reducers } from "./reducers/index"
+import { selectors } from "./selectors"
+import type { Edge, MovePaneTarget, Pane, PaneRect, Snapshot, SplitPath, WorkbenchState } from "./types"
+import { validate } from "./validate"
+
+export type PaneContent = { readonly kind: string; readonly state: Json }
+
+export type WorkbenchRecord = {
+  readonly layout: WorkbenchState
+  readonly contents: Readonly<Record<string, PaneContent>>
+}
+
+export type OpenedPane = { readonly contentId: string; readonly kind: AnyPaneKind; readonly state: unknown }
+
+export type WorkbenchApi = {
+  contents: {
+    add: (contentId: string) => void
+    open: (contentId: string, focus?: boolean) => void
+    remove: (contentId: string) => void
+  }
+  assignContent: (paneId: string, contentId: string | null) => void
+  split: {
+    split: (targetPaneId: string, edge: Edge, contentId: string) => void
+    close: (paneId: string, opts?: { destroyContent: boolean }) => void
+    move: (contentId: string, fromPaneId: string, toPaneId: MovePaneTarget) => void
+    focus: (paneId: string) => void
+    resize: (path: SplitPath, ratio: number) => void
+  }
+  navigation: { show: (contentId: string) => void }
+  selectors: {
+    aliveContents: () => readonly string[]
+    recentContents: () => readonly string[]
+    contentPane: (contentId: string) => string | null
+    visiblePanes: () => readonly Pane[]
+    paneRect: (paneId: string) => PaneRect | undefined
+    focusedContent: () => string | null
+    mruHiddenContent: () => string | null
+    snapshotFor: (contentId: string) => Snapshot | undefined
+  }
+}
+
+export type WorkbenchStore = WorkbenchApi &
+  PaneApi & {
+  readonly layout: Accessor<WorkbenchState>
+  readonly content: (contentId: string) => OpenedPane | undefined
+  readonly open: <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
+  readonly openRoute: (route: PaneRoute) => string | undefined
+  readonly routeOf: (contentId: string) => PaneRoute | undefined
+  readonly closeContent: (contentId: string) => void
+  readonly drag: DragController
+}
+
+function closeContentReducer(state: WorkbenchState, contentId: string): WorkbenchState {
+  const paneId = selectors.contentPane(state, contentId)
+  const closed = paneId ? reducers.split.close(state, paneId, { destroyContent: true }) : reducers.contents.remove(state, contentId)
+  const next = closed.contentRecency[0]
+  return closed.panes.length === 0 && next ? reducers.navigation.show(closed, next) : closed
+}
+
+function contentKey(kind: string, state: Json): string {
+  return `${kind}:${JSON.stringify(state)}`
+}
+
+function readContents(value: unknown): Record<string, PaneContent> {
+  const contents: Record<string, PaneContent> = {}
+  if (!isRecord(value)) return contents
+  for (const [id, entry] of Object.entries(value)) {
+    if (!isRecord(entry) || typeof entry.kind !== "string" || entry.state === undefined) continue
+    contents[id] = { kind: entry.kind, state: entry.state as Json }
+  }
+  return contents
+}
+
+function pruned(contents: Readonly<Record<string, PaneContent>>, contentIds: readonly string[]): Record<string, PaneContent> {
+  const kept: Record<string, PaneContent> = {}
+  for (const id of contentIds) if (contents[id]) kept[id] = contents[id]
+  return kept
+}
+
+function readRecord(value: unknown): WorkbenchRecord | undefined {
+  if (!isRecord(value)) return undefined
+  const contents = readContents(value.contents)
+  let layout = validate(value.layout)
+  for (const id of layout.contentIds) if (!contents[id]) layout = reducers.contents.remove(layout, id)
+  return { layout, contents: pruned(contents, layout.contentIds) }
+}
+
+function createApply(record: Accessor<WorkbenchRecord>, setRecord: (update: (current: WorkbenchRecord) => WorkbenchRecord) => void) {
+  let scratch: WorkbenchState | undefined
+  let clearQueued = false
+  return (mutation: (layout: WorkbenchState) => WorkbenchState) => {
+    const current = scratch ?? record().layout
+    const next = mutation(current)
+    if (next === current) return
+    scratch = next
+    if (!clearQueued) {
+      clearQueued = true
+      queueMicrotask(() => {
+        scratch = undefined
+        clearQueued = false
+      })
+    }
+    setRecord((r) => ({ layout: next, contents: pruned(r.contents, next.contentIds) }))
+  }
+}
+
+export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPaneKind[]>): WorkbenchStore {
+  const [record, setRecord] = persistedSignal<WorkbenchRecord>(
+    key,
+    { layout: constructWorkbenchState.empty(), contents: {} },
+    readRecord,
+  )
+  const layout = () => record().layout
+  const apply = createApply(record, setRecord)
+  const focusedContent = createMemo(() => selectors.focusedContent(layout()))
+  const decoded = new Map<string, { json: Json; state: unknown }>()
+
+  const content = (contentId: string): OpenedPane | undefined => {
+    const entry = record().contents[contentId]
+    if (!entry) return undefined
+    const kind = kinds().find((candidate) => candidate.kind === entry.kind)
+    if (!kind) return undefined
+    const cached = decoded.get(contentId)
+    if (cached && cached.json === entry.state) return { contentId, kind, state: cached.state }
+    const state = kind.decode(entry.state)
+    decoded.set(contentId, { json: entry.state, state })
+    return { contentId, kind, state }
+  }
+
+  const open = <State,>(kind: PaneKind<State>, state: State, focus = true): string => {
+    const encoded = kind.encode(state)
+    const id = contentKey(kind.kind, encoded)
+    batch(() => {
+      setRecord((r) => (r.contents[id] ? r : { ...r, contents: { ...r.contents, [id]: { kind: kind.kind, state: encoded } } }))
+      apply((s) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id)))
+    })
+    return id
+  }
+
+  const closeContent = (contentId: string) => apply((s) => closeContentReducer(s, contentId))
+
+  return {
+    ...createPaneApi({ layout, content, open, apply, closeContent }),
+    layout,
+    content,
+    open,
+    openRoute: (route) => {
+      for (const kind of kinds()) {
+        const state = kind.fromRoute?.(route)
+        if (state !== undefined) return open(kind as PaneKind<unknown>, state)
+      }
+      return undefined
+    },
+    routeOf: (contentId) => {
+      const opened = content(contentId)
+      return opened?.kind.toRoute?.(opened.state as never)
+    },
+    closeContent,
+    drag: createDragController(),
+    contents: {
+      add: (id) => apply((s) => reducers.contents.add(s, id)),
+      open: (id, focus = true) =>
+        apply((s) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id))),
+      remove: (id) => apply((s) => reducers.contents.remove(s, id)),
+    },
+    assignContent: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
+    split: {
+      split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
+      close: (paneId, opts) => apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
+      move: (contentId, fromPaneId, toPaneId) => apply((s) => reducers.split.move(s, contentId, fromPaneId, toPaneId)),
+      focus: (paneId) => apply((s) => reducers.split.focus(s, paneId)),
+      resize: (path, ratio) => apply((s) => reducers.split.resize(s, path, ratio)),
+    },
+    navigation: { show: (contentId) => apply((s) => reducers.navigation.show(s, contentId)) },
+    selectors: {
+      aliveContents: () => selectors.aliveContents(layout()),
+      recentContents: () => selectors.recentContents(layout()),
+      contentPane: (id) => selectors.contentPane(layout(), id),
+      visiblePanes: () => selectors.visiblePanes(layout()),
+      paneRect: (id) => selectors.paneRect(layout(), id),
+      focusedContent,
+      mruHiddenContent: () => selectors.mruHiddenContent(layout()),
+      snapshotFor: (id) => selectors.snapshotFor(layout(), id),
+    },
+  }
+}

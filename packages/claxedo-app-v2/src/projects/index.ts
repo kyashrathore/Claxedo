@@ -1,14 +1,15 @@
 import type { PageEntry } from "@/shell/types"
-import { projectsText } from "./i18n"
+import { useProjectsText } from "./i18n"
 import { addProjectPath, projectPathPattern } from "./routes"
 import { AddProjectPage } from "./view/add-project-page"
 import { ProjectPage } from "./view/project-page"
 
 export type { AddProjectFlow, CloudPlacer, ProjectCreated } from "./add-project"
-export { createAddProjectFlow } from "./add-project"
+export { createAddProjectFlow, useAddProjectFlow } from "./add-project"
 export type { CodeHostConnection, CodeHostRepository, ProjectsServer } from "./api"
-export { useProjectsServer } from "./api"
-export { projectsStrings, projectsText } from "./i18n"
+export { appErrorOf, useProjectsServer } from "./api"
+export type { ProjectsKey, ProjectsText } from "./i18n"
+export { dictionary as projectsDictionary, useProjectsText } from "./i18n"
 export type { AddProjectEvent, AddProjectState, AddProjectStep, PlacementChoice, ProjectDraft } from "./model"
 export { addProjectStep, addProjectSteps, addProjectTransition, draftProjectName, sourceLabel } from "./model"
 export { addProjectPath, placementDraftPath, projectPath, projectPathPattern } from "./routes"
@@ -22,7 +23,7 @@ export { ProjectsSidebarSection } from "./view/project-list"
 export const projectPage: PageEntry = {
   id: "project",
   path: projectPathPattern,
-  title: () => projectsText("projects.title"),
+  title: () => useProjectsText()("projects.title"),
   icon: "folder",
   sidebar: "main",
   view: ProjectPage,
@@ -31,7 +32,7 @@ export const projectPage: PageEntry = {
 export const addProjectPage: PageEntry = {
   id: "add-project",
   path: addProjectPath,
-  title: () => projectsText("projects.add.title"),
+  title: () => useProjectsText()("projects.add.title"),
   icon: "plus",
   sidebar: "main",
   view: AddProjectPage,

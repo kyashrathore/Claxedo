@@ -20,21 +20,23 @@ export const AddProjectSteps: Component<{
   const reached = createMemo<number>((previous) => Math.max(previous, index()), 0)
 
   return (
-    <div class="flex min-h-0 flex-col" data-testid="add-project" data-step={step()}>
-      <div class="min-h-0 flex-1 overflow-y-auto" ref={props.panelsRef}>
-        <div hidden={step() !== "source"} data-step-panel="source">
-          <SourceStep flow={props.flow} {...(props.pickFolder ? { pickFolder: props.pickFolder } : {})} />
+    <div class="flex min-h-0 flex-1 flex-col" data-testid="add-project" data-step={step()}>
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <div ref={props.panelsRef} data-slot="add-project-panels">
+          <div hidden={step() !== "source"} data-step-panel="source">
+            <SourceStep flow={props.flow} {...(props.pickFolder ? { pickFolder: props.pickFolder } : {})} />
+          </div>
+          <Show when={reached() >= 1}>
+            <div hidden={step() !== "agent"} data-step-panel="agent">
+              <AgentStep flow={props.flow} />
+            </div>
+          </Show>
+          <Show when={reached() >= 2}>
+            <div hidden={step() !== "placement"} data-step-panel="placement">
+              <PlacementStep flow={props.flow} />
+            </div>
+          </Show>
         </div>
-        <Show when={reached() >= 1}>
-          <div hidden={step() !== "agent"} data-step-panel="agent">
-            <AgentStep flow={props.flow} />
-          </div>
-        </Show>
-        <Show when={reached() >= 2}>
-          <div hidden={step() !== "placement"} data-step-panel="placement">
-            <PlacementStep flow={props.flow} />
-          </div>
-        </Show>
       </div>
       <FlowFooter flow={props.flow} />
     </div>
