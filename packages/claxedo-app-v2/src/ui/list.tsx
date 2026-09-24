@@ -1,18 +1,13 @@
-import { createEffect, For, on, Show, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
-import { useFilteredList, type FilteredListProps } from "./filtered-list"
-import { type IconName } from "./icon"
-import { ListEmpty, ListGroupHeader, ListItem } from "./list-items"
-import { findListItem, scrollListItemIntoView } from "./list-scroll"
+import { Show, type JSX } from "solid-js"
+import type { FilteredGroup, FilteredListProps } from "./filtered-list"
+import type { IconName } from "./icon"
+import { ListGroups, type ListAddProps } from "./list-groups"
+import { ListEmpty, ListItem } from "./list-items"
 import { ListSearch, type ListSearchProps } from "./list-search"
+import { createListState } from "./list-state"
 import "./list.css"
 
-export type { ListSearchProps }
-
-export interface ListAddProps {
-  class?: string
-  render: () => JSX.Element
-}
+export type { ListAddProps, ListSearchProps }
 
 export interface ListProps<T> extends FilteredListProps<T> {
   class?: string
@@ -28,7 +23,7 @@ export interface ListProps<T> extends FilteredListProps<T> {
   itemWrapper?: (item: T, node: JSX.Element) => JSX.Element
   divider?: boolean
   add?: ListAddProps
-  groupHeader?: (group: { category: string; items: T[] }) => JSX.Element
+  groupHeader?: (group: FilteredGroup<T>) => JSX.Element
   ref?: (ref: ListRef) => void
 }
 
@@ -40,49 +35,12 @@ export interface ListRef {
 
 export function List<T>(props: ListProps<T>) {
   let input: HTMLInputElement | undefined
-  const [store, setStore] = createStore({ mouseActive: false, scroll: undefined as HTMLDivElement | undefined, filter: "" })
-  const list = useFilteredList<T>(props)
+  const state = createListState(props)
+  const { list, store } = state
   const search = () => (typeof props.search === "object" ? props.search : {})
-  const showAdd = () => !!props.add
-
-  const applyFilter = (value: string, refetch = false) => {
-    const previous = list.filter()
-    setStore("filter", value)
-    list.onInput(value)
-    props.onFilter?.(value)
-    if (!refetch) return
-    if (previous === value) return void list.refetch()
-    queueMicrotask(() => list.refetch())
-  }
-
-  const reveal = (key: string | null, block: "center" | "nearest") => {
-    const scroll = store.scroll
-    if (!scroll || !key) return
-    const element = findListItem(scroll, key)
-    if (element) scrollListItemIntoView(scroll, element, block)
-  }
-
-  createEffect(() => {
-    if (props.filter === undefined || props.filter === store.filter) return
-    setStore("filter", props.filter)
-    list.onInput(props.filter)
-  })
-  createEffect(on(list.filter, () => store.scroll?.scrollTo(0, 0), { defer: true }))
-  createEffect(() => {
-    if (!props.current) return
-    const key = props.key(props.current)
-    requestAnimationFrame(() => reveal(key, "center"))
-  })
-  createEffect(() => {
-    const all = list.flat()
-    if (store.mouseActive || all.length === 0) return
-    if (list.active() === props.key(all[0])) return store.scroll?.scrollTo(0, 0)
-    reveal(list.active(), "center")
-  })
-  createEffect(() => props.onMove?.(list.flat().find((item) => props.key(item) === list.active())))
 
   const handleKey = (event: KeyboardEvent) => {
-    setStore("mouseActive", false)
+    state.setMouseActive(false)
     if (event.key === "Escape") return
     const all = list.flat()
     const selected = all.find((item) => props.key(item) === list.active())
@@ -97,17 +55,7 @@ export function List<T>(props: ListProps<T>) {
     if (!props.search || emacs || event.key === "ArrowDown" || event.key === "ArrowUp") list.onKeyDown(event)
   }
 
-  props.ref?.({
-    onKeyDown: handleKey,
-    setScrollRef: (element) => setStore("scroll", element),
-    setFilter: (value) => applyFilter(value, true),
-  })
-
-  const renderAdd = () => (
-    <div data-slot="list-item-add" classList={{ "ui-list-item-add": true, [props.add?.class ?? ""]: !!props.add?.class }}>
-      {props.add?.render()}
-    </div>
-  )
+  props.ref?.({ onKeyDown: handleKey, setScrollRef: state.setScroll, setFilter: (value) => state.applyFilter(value, true) })
 
   const renderItem = (item: T, index: number, last: boolean) => {
     const node = (
@@ -120,7 +68,7 @@ export function List<T>(props: ListProps<T>) {
         onSelect={() => props.onSelect?.(item, index)}
         onKeyDown={handleKey}
         onHover={() => {
-          setStore("mouseActive", true)
+          state.setMouseActive(true)
           list.setActive(props.key(item))
         }}
         onLeave={() => store.mouseActive && list.setActive(null)}
@@ -138,43 +86,21 @@ export function List<T>(props: ListProps<T>) {
           search={search()}
           value={store.filter}
           onInput={(value) => {
-            applyFilter(value)
+            state.applyFilter(value)
             if (!value) queueMicrotask(() => input?.focus())
           }}
           onKeyDown={handleKey}
           inputRef={(element) => (input = element)}
         />
       </Show>
-      <div ref={(element) => setStore("scroll", element)} data-slot="list-scroll" class="ui-list-scroll">
+      <div ref={state.setScroll} data-slot="list-scroll" class="ui-list-scroll">
         <Show
-          when={list.flat().length > 0 || showAdd()}
+          when={list.flat().length > 0 || !!props.add}
           fallback={
             <ListEmpty loading={list.grouped.loading} filter={list.filter()} emptyMessage={props.emptyMessage} loadingMessage={props.loadingMessage} />
           }
         >
-          <For each={list.grouped.latest}>
-            {(group, groupIndex) => {
-              const lastGroup = () => groupIndex() === list.grouped.latest.length - 1
-              return (
-                <div data-slot="list-group">
-                  <Show when={group.category}>
-                    <ListGroupHeader scroll={() => store.scroll}>{props.groupHeader?.(group) ?? group.category}</ListGroupHeader>
-                  </Show>
-                  <div data-slot="list-items">
-                    <For each={group.items}>
-                      {(item, index) => renderItem(item, index(), index() === group.items.length - 1 && !(showAdd() && lastGroup()))}
-                    </For>
-                    <Show when={showAdd() && lastGroup()}>{renderAdd()}</Show>
-                  </div>
-                </div>
-              )
-            }}
-          </For>
-          <Show when={list.grouped.latest.length === 0 && showAdd()}>
-            <div data-slot="list-group">
-              <div data-slot="list-items">{renderAdd()}</div>
-            </div>
-          </Show>
+          <ListGroups groups={list.grouped.latest} scroll={() => store.scroll} add={props.add} groupHeader={props.groupHeader} renderItem={renderItem} />
         </Show>
       </div>
     </div>
