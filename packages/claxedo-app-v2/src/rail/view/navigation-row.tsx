@@ -50,6 +50,7 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
         type="button"
         aria-label={props.label}
         aria-current={props.active ? "page" : undefined}
+        data-slot="navigation-row-activate"
         class="ui-navigation-row-activate absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
         onClick={() => props.onActivate()}
       />
