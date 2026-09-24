@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "shell.palette.placeholder": "搜索文件、命令和会话",
   "shell.palette.empty": "未找到结果",
   "shell.palette.suggested": "建议",

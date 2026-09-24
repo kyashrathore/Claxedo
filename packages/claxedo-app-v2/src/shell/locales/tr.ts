@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "shell.palette.placeholder": "Dosya, komut ve oturum ara",
   "shell.palette.empty": "Sonuç bulunamadı",
   "shell.palette.suggested": "Önerilen",

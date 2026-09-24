@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "shell.palette.placeholder": "Pretraži datoteke, komande i sesije",
   "shell.palette.empty": "Nema rezultata",
   "shell.palette.suggested": "Predloženo",

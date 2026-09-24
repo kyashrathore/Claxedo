@@ -2,7 +2,7 @@ import { createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { SessionRowView } from "@/session"
 import { createHoverEngagement } from "../hover-engagement"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import { navigationStatus, sessionAge, type SessionMarker } from "../model"
 import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
@@ -22,7 +22,7 @@ export type SessionRowProps = SessionRowMenuActions & {
 const MARKER_ICON = { cloud: "cloud", machine: "server", worktree: "worktree" } as const
 
 function MarkerIcon(props: { readonly marker: SessionMarker; readonly projectLabel: string }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const label = () => {
     const { kind, name, path } = props.marker
     if (kind === "cloud") return `${t("rail.marker.cloud")} · ${name}`
@@ -38,7 +38,7 @@ function MarkerIcon(props: { readonly marker: SessionMarker; readonly projectLab
 }
 
 function ArchiveButton(props: { readonly row: SessionRowView; readonly engaged: boolean; readonly onArchive: (row: SessionRowView) => Promise<void> }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const [archiving, setArchiving] = createSignal(false)
   return (
     <Show when={props.engaged || archiving()}>

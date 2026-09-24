@@ -5,7 +5,7 @@ import { failureMessage } from "@/lib/failure"
 import type { SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
 import { showToast, ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 
 export type SessionRowMenuActions = {
   readonly onRename: (row: SessionRowView) => void
@@ -25,7 +25,7 @@ function MenuItem(props: { readonly icon: ClaxedoIconProps["name"]; readonly lab
 }
 
 export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x: number; y: number }; readonly row: SessionRowView; readonly onDismiss: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const select = (action: (row: SessionRowView) => unknown) => () => {
     props.onDismiss()
     void action(props.row)

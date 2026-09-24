@@ -3,7 +3,7 @@ import { useTranslator } from "@/i18n"
 import { useCommands } from "@/shell"
 import { useDragSource, useWorkbench } from "@/workbench"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import { useSwitcherItems, type SwitcherItem } from "../switcher-items"
 import { SwitcherCard, SwitcherPrefixMark } from "./switcher-card"
 import { ClaxedoIcon as Icon } from "@/ui"
@@ -69,7 +69,7 @@ function draggable(item: SwitcherItem): boolean {
 }
 
 function SwitcherTab(props: { readonly item: SwitcherItem; readonly active: boolean; readonly hint: string | undefined; readonly onElement: (element: HTMLElement) => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const workbench = useWorkbench()
   const select = () => workbench.navigation.show(props.item.contentId)
   const close = (event: Event) => {
@@ -154,7 +154,7 @@ function SwitcherTab(props: { readonly item: SwitcherItem; readonly active: bool
 }
 
 export function CompactSwitcher(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const workbench = useWorkbench()
   const commands = useCommands()
   const hint = (index: number) => {

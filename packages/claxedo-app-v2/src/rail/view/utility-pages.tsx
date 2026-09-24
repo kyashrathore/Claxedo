@@ -2,7 +2,7 @@ import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { MarketplacePage } from "@/marketplace"
 import type { PageEntry } from "@/shell"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 
 export const TASKS_PATH = "/tasks"
 export const MARKETPLACE_PATH = "/marketplace"
@@ -10,7 +10,7 @@ export const MARKETPLACE_PATH = "/marketplace"
 type TitleKey = "rail.tasks" | "rail.marketplace"
 
 function titled(key: TitleKey): () => string {
-  return () => useTranslator(dictionary)(key)
+  return () => useTranslator(railDictionary)(key)
 }
 
 function PageTitle(props: { readonly title: () => string }): JSX.Element {

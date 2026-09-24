@@ -4,7 +4,7 @@ import type { PlacementId, TerminalAgentStatus } from "@/server"
 import { useTerminals, type TerminalItem } from "@/terminal"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createHoverEngagement } from "../hover-engagement"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import type { NavigationStatus } from "../model"
 import { NavigationRow, NavigationRowGlyph, NavigationStatusMark } from "./navigation-row"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 } from "@/ui"
@@ -19,7 +19,7 @@ const AGENT_STATUS: Readonly<Record<TerminalAgentStatus, NavigationStatus>> = {
 const TITLE_SUFFIX = { working: "rail.terminal.working", permission: "rail.terminal.needsInput", error: "rail.terminal.failed" } as const
 
 export function TerminalRow(props: { readonly row: TerminalItem; readonly active: boolean; readonly prepareDrag?: () => string | undefined }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const terminals = useTerminals()
   const engagement = createHoverEngagement()
   const status = () => (props.row.agentStatus ? AGENT_STATUS[props.row.agentStatus] : "idle")

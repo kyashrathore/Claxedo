@@ -4,7 +4,7 @@ import { failureMessage } from "@/lib/failure"
 import { Dialog, showToast, useDialog } from "@/ui"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Button } from "@opencode-ai/ui/button"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 
 function useSubmit(run: () => Promise<void>, failureTitle: () => string) {
   const dialog = useDialog()
@@ -25,7 +25,7 @@ function useSubmit(run: () => Promise<void>, failureTitle: () => string) {
 }
 
 export function RenameSessionDialog(props: { readonly title: string; readonly onSubmit: (title: string) => Promise<void> }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const [title, setTitle] = createSignal(props.title)
   const form = useSubmit(() => props.onSubmit(title().trim()), () => t("rail.renameFailed"))
   return (
@@ -46,7 +46,7 @@ export function RenameSessionDialog(props: { readonly title: string; readonly on
 }
 
 export function DeleteSessionDialog(props: { readonly title: string; readonly onConfirm: () => Promise<void> }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const form = useSubmit(props.onConfirm, () => t("rail.deleteFailed"))
   return (
     <Dialog title={t("rail.deleteTitle")} fit>

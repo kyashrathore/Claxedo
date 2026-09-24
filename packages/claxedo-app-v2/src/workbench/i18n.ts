@@ -1,6 +1,6 @@
 import type { Translations } from "@/i18n"
 
-export const dictionary = {
+export const workbenchDictionary = {
   en: {
     "workbench.closePane": "Close Pane",
     "workbench.resize": "Resize panes",
