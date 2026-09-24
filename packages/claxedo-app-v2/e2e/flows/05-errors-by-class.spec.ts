@@ -1,4 +1,4 @@
-import { expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI } from "../harness"
 
 const PI = { id: "pi", access: "native" } as const
 
@@ -42,4 +42,24 @@ test("05 errors by class: a send the server cannot receive shows the network cla
   await stack.daemon.restart()
   const messages = await api.messages(workspace.directory, session.id)
   expect(messages.filter((message) => message.info.role === "user")).toHaveLength(0)
+})
+
+test("05 a failed first turn offers its recovery, and Resend sends the prompt again", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("resend")
+  await stack.acp.write("resend", { steps: [{ kind: "error", message: "Scripted first-turn failure" }] })
+  const session = await api.createSession(workspace.directory, { title: "Resend", harness: SCRIPTED_ACP_HARNESS })
+  const prompt = `Run the first turn. ${acpScriptToken("resend")}`
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, prompt)
+
+  const resend = app.getByRole("button", { name: "Resend last prompt" })
+  await expect(resend).toBeVisible()
+  await stack.acp.write("resend", { steps: [{ kind: "text", text: "The resent turn ran" }] })
+  await resend.click()
+  await expect(app.getByText("The resent turn ran")).toBeVisible()
+  const sent = async () =>
+    (await api.messages(workspace.directory, session.id))
+      .filter((message) => message.info.role === "user")
+      .flatMap((message) => message.parts.filter((part) => part.type === "text").map((part) => part.text))
+  await expect.poll(sent).toEqual([prompt, prompt])
 })
