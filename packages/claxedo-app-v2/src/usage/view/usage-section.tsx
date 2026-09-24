@@ -30,7 +30,7 @@ function Choices<Value extends string>(props: { readonly label: string; readonly
   const t = useTranslator(dictionary)
   const pick = (value: string | null) => props.choices.find((choice) => choice.value === value)?.value
   return (
-    <SegmentedControl aria-label={props.label} value={props.value} onChange={(value) => { const next = pick(value); if (next) props.onChange(next) }}>
+    <SegmentedControl class="segmented-control--fit" aria-label={props.label} value={props.value} onChange={(value) => { const next = pick(value); if (next) props.onChange(next) }}>
       <For each={props.choices}>{(choice) => <SegmentedControlItem value={choice.value}>{t(choice.label)}</SegmentedControlItem>}</For>
     </SegmentedControl>
   )
