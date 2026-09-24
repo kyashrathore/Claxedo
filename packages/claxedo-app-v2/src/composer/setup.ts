@@ -32,8 +32,8 @@ export type ComposerProps = {
   readonly createSession?: (submission: Submission) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
   readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void }
-  /** The pane that takes dropped files for this composer; the composer itself when absent. */
   readonly dropZone?: () => HTMLElement | undefined
+  readonly collapsible?: boolean
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 

@@ -78,6 +78,7 @@ export function WorkspaceArea(props: ParentProps): JSX.Element {
     <div class="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <div
         data-testid="workbench-column"
+        data-floating-host={panel.maximized() ? "" : undefined}
         class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden transition-[margin-right] duration-[120ms] ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-right]"
         style={{ "margin-right": `${panel.inset()}px` }}
       >

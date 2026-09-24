@@ -1,7 +1,10 @@
 import type { JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useTranslator } from "@/i18n"
+import { failureMessage } from "@/lib/failure"
 import type { SessionRowView } from "@/session"
+import { sessionPath } from "@/shell"
+import { showToast } from "@/ui"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 import { dictionary } from "../i18n"
 
@@ -14,9 +17,9 @@ export type SessionRowMenuActions = {
 const ITEM_CLASS =
   "flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base enabled:hover:bg-surface-base-active disabled:opacity-50 disabled:cursor-default"
 
-function MenuItem(props: { readonly icon: ClaxedoIconProps["name"]; readonly label: string; readonly onSelect: () => void }): JSX.Element {
+function MenuItem(props: { readonly icon: ClaxedoIconProps["name"]; readonly label: string; readonly disabled?: boolean; readonly onSelect: () => void }): JSX.Element {
   return (
-    <button type="button" role="menuitem" class={ITEM_CLASS} onClick={() => props.onSelect()}>
+    <button type="button" role="menuitem" class={ITEM_CLASS} disabled={props.disabled} onClick={() => props.onSelect()}>
       <Icon name={props.icon} size="small" /> {props.label}
     </button>
   )
@@ -27,6 +30,13 @@ export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x
   const select = (action: (row: SessionRowView) => unknown) => () => {
     props.onDismiss()
     void action(props.row)
+  }
+  const copySessionLink = () => {
+    props.onDismiss()
+    const link = new URL(sessionPath(props.row.ref), window.location.origin).toString()
+    navigator.clipboard.writeText(link).catch((error: unknown) => {
+      showToast({ title: t("rail.copyFailed"), description: failureMessage(error) })
+    })
   }
   return (
     <Portal>
@@ -49,6 +59,8 @@ export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x
         style={{ left: `${props.at.x}px`, top: `${props.at.y}px` }}
         onKeyDown={(event) => event.key === "Escape" && props.onDismiss()}
       >
+        <MenuItem icon="copy" label={t("rail.copySessionLink")} onSelect={copySessionLink} />
+        <MenuItem icon="copy" label={t("rail.copyDeepLink")} disabled onSelect={props.onDismiss} />
         <MenuItem icon="pencil-line" label={t("rail.rename")} onSelect={select(props.onRename)} />
         <MenuItem icon="archive" label={t("rail.archive")} onSelect={select(props.onArchive)} />
         <MenuItem icon="trash" label={t("rail.delete")} onSelect={select(props.onDelete)} />

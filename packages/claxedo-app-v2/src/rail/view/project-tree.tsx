@@ -1,26 +1,16 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
+import { createMemo, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { useClock } from "@/lib/clock"
 import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
-import { draftPath, sessionPath, useShellRoute } from "@/shell"
+import { draftPath, localSessionPath, sessionPath, useShellRoute } from "@/shell"
 import { useTerminals } from "@/terminal"
 import { dictionary } from "../i18n"
 import { rowsByProject, siblingAfterArchive } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
-
-function createNow(changes: () => unknown) {
-  const [now, setNow] = createSignal(Date.now())
-  const refresh = () => setNow(Date.now())
-  createEffect(on(changes, refresh, { defer: true }))
-  onMount(() => {
-    window.addEventListener("focus", refresh)
-    onCleanup(() => window.removeEventListener("focus", refresh))
-  })
-  return now
-}
 
 export function ProjectTree(): JSX.Element {
   const t = useTranslator(dictionary)
@@ -46,14 +36,20 @@ export function ProjectTree(): JSX.Element {
     const route = routing.route()
     return route.kind === "terminal" ? route.terminalId : undefined
   }
-  const now = createNow(() => stores.list.rows())
+  const now = useClock()
+  const onThisMachine = (row: SessionRowView) => {
+    const placement = server.placements.byId(row.ref.placementId)
+    const machine = server.capabilities()?.thisMachine?.id
+    return !!placement && !!machine && placement.kind !== "cloud" && placement.machineId === machine
+  }
+  const openSession = (row: SessionRowView) => routing.navigate(onThisMachine(row) ? localSessionPath(row.ref.sessionId) : sessionPath(row.ref))
   const select = (section: ProjectSection) => {
     if (section.placementId) routing.navigate(draftPath(section.placementId))
   }
   const archive = async (section: ProjectSection, row: SessionRowView) => {
     if (activeSessionId() === row.ref.sessionId) {
       const next = siblingAfterArchive(rowsOf(section), row)
-      if (next) routing.navigate(sessionPath(next.ref))
+      if (next) openSession(next)
       else select(section)
     }
     await actions.onArchive(row)
@@ -80,7 +76,7 @@ export function ProjectTree(): JSX.Element {
                     list={stores.list}
                     onSelect={select}
                     onNewTerminal={(section) => section.placementId && terminals.startNew(section.placementId)}
-                    onActivate={(row) => routing.navigate(sessionPath(row.ref))}
+                    onActivate={openSession}
                     onRename={actions.onRename}
                     onArchive={(row) => archive(current(), row)}
                     onDelete={actions.onDelete}
