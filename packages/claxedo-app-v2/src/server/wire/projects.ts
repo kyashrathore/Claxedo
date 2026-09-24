@@ -1,6 +1,6 @@
 import { ServerError } from "../errors"
 import { projectId } from "../ids"
-import type { Project, ProjectSource } from "../types"
+import type { Project, ProjectCommands, ProjectIcon, ProjectSource } from "../types"
 
 type WireProject = {
   readonly id: string
@@ -8,13 +8,16 @@ type WireProject = {
   readonly env?: Record<string, string>
   readonly directory?: string | null
   readonly repoUrl?: string | null
+  readonly icon?: { readonly override?: unknown; readonly color?: unknown }
+  readonly commands?: { readonly start?: unknown }
+  readonly available: boolean
   readonly created_at: number
   readonly updated_at: number
 }
 
 function isWireProject(value: unknown): value is WireProject {
   const row = value as Partial<WireProject> | null
-  return !!row && typeof row.id === "string" && typeof row.name === "string"
+  return !!row && typeof row.id === "string" && typeof row.name === "string" && typeof row.available === "boolean"
     && typeof row.created_at === "number" && typeof row.updated_at === "number"
 }
 
@@ -24,12 +27,28 @@ function sourceOf(project: WireProject): ProjectSource | undefined {
   return undefined
 }
 
+function iconOf(project: WireProject): ProjectIcon | undefined {
+  const override = typeof project.icon?.override === "string" ? project.icon.override : undefined
+  const color = typeof project.icon?.color === "string" ? project.icon.color : undefined
+  return override || color ? { ...(override ? { override } : {}), ...(color ? { color } : {}) } : undefined
+}
+
+function commandsOf(project: WireProject): ProjectCommands | undefined {
+  return typeof project.commands?.start === "string" ? { start: project.commands.start } : undefined
+}
+
 function projectFromWire(project: WireProject): Project {
   const source = sourceOf(project)
+  const icon = iconOf(project)
+  const commands = commandsOf(project)
   return {
     id: projectId(project.id),
     name: project.name,
     ...(source ? { source } : {}),
+    ...(project.directory ? { directory: project.directory } : {}),
+    ...(icon ? { icon } : {}),
+    ...(commands ? { commands } : {}),
+    available: project.available,
     env: project.env ?? {},
     createdAt: project.created_at,
     updatedAt: project.updated_at,

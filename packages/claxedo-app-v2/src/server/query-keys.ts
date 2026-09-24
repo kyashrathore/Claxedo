@@ -17,7 +17,6 @@ export const queryKeys = {
   documents: (server: string) => ["server", server, "documents", "availability"] as const,
   cloud: (server: string) => ["server", server, "cloud"] as const,
   folderPaths: (server: string) => ["server", server, "folders", "paths"] as const,
-  engineProjects: (server: string) => ["server", server, "bootstrap", "projects"] as const,
   folderChildren: (server: string, directory: string) => ["server", server, "folders", "children", directory] as const,
   harnessOptions: (server: string, placementId: PlacementId, harness: string) => ["server", server, "harness", placementId, harness] as const,
   harnessLogins: (server: string) => ["server", server, "harnessLogins"] as const,

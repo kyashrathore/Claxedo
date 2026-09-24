@@ -1,26 +1,26 @@
 import { A, useNavigate } from "@solidjs/router"
 import { Avatar } from "@opencode-ai/ui/avatar"
-import { createMemo, Match, Show, Switch, type JSX } from "solid-js"
+import { Match, Show, Switch, type JSX } from "solid-js"
 import { CloudWorkspacesSection } from "@/cloud"
-import type { EngineProject, Project, ProjectId } from "@/server"
+import type { Project, ProjectId } from "@/server"
 import { SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settings"
 import { Button, Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { usePlacementOpener } from "../open"
-import { getAvatarColors, projectDetail, projectLabel } from "../project-display"
+import { sourceLabel } from "../model"
+import { getAvatarColors } from "../project-avatar"
 import { projectSettingsPath } from "../routes"
-import { useEngineProjects, useProject } from "../store"
+import { useProject } from "../store"
 import { DialogEditProject } from "./edit-project-dialog"
 import { PlacementList } from "./placement-list"
 import { RemoveProjectDialog } from "./remove-project-dialog"
 
-function ProjectFields(props: { readonly project: EngineProject; readonly record: Project | undefined }): JSX.Element {
+function ProjectFields(props: { readonly project: Project }): JSX.Element {
   const t = useProjectsText()
   const dialog = useDialog()
-  const label = () => projectLabel(props.project)
   const image = () => props.project.icon?.override
   const color = () => props.project.icon?.color || "pink"
-  const variables = () => Object.keys(props.record?.env ?? {}).join(", ")
+  const variables = () => Object.keys(props.project.env).join(", ")
   return (
     <SettingsGroup
       title={t("projects.settings.group")}
@@ -31,9 +31,9 @@ function ProjectFields(props: { readonly project: EngineProject; readonly record
       }
     >
       <SettingsList>
-        <SettingsRow title={t("projects.edit.name")} description={label()} />
+        <SettingsRow title={t("projects.edit.name")} description={props.project.name} />
         <SettingsRow title={t("projects.edit.icon")}>
-          <Show when={image()} fallback={<Avatar fallback={label()} {...getAvatarColors(color())} class="size-8" />}>
+          <Show when={image()} fallback={<Avatar fallback={props.project.name} {...getAvatarColors(color())} class="size-8" />}>
             {(src) => <img src={src()} alt={t("projects.edit.icon.alt")} class="size-8 rounded object-cover" />}
           </Show>
         </SettingsRow>
@@ -41,22 +41,20 @@ function ProjectFields(props: { readonly project: EngineProject; readonly record
           <SettingsRow title={t("projects.edit.color")} description={color()} />
         </Show>
         <SettingsRow title={t("projects.edit.startup")} description={props.project.commands?.start || t("projects.settings.none")} />
-        <Show when={props.record}>
-          <SettingsRow title={t("projects.edit.environment")} description={variables() || t("projects.settings.none")} />
-        </Show>
+        <SettingsRow title={t("projects.edit.environment")} description={variables() || t("projects.settings.none")} />
       </SettingsList>
     </SettingsGroup>
   )
 }
 
-function ProjectPlacements(props: { readonly id: ProjectId; readonly record: Project | undefined }): JSX.Element {
+function ProjectPlacements(props: { readonly project: Project }): JSX.Element {
   const t = useProjectsText()
   const open = usePlacementOpener()
   return (
     <SettingsGroup title={t("projects.placements")}>
-      <PlacementList projectId={() => props.id} />
-      <Show when={props.record?.source?.kind !== "folder"}>
-        <CloudWorkspacesSection projectId={() => props.id} onOpen={open} />
+      <PlacementList projectId={() => props.project.id} />
+      <Show when={props.project.source?.kind !== "folder"}>
+        <CloudWorkspacesSection projectId={() => props.project.id} onOpen={open} />
       </Show>
     </SettingsGroup>
   )
@@ -78,29 +76,24 @@ function ProjectRemoval(props: { readonly id: ProjectId; readonly name: string }
   )
 }
 
-function ProjectHeader(props: { readonly project: EngineProject }): JSX.Element {
+function ProjectHeader(props: { readonly project: Project }): JSX.Element {
   return (
     <header class="projects-settings-row-text">
-      <h2 class="projects-settings-name">{projectLabel(props.project)}</h2>
-      <span class="projects-settings-row-detail">{projectDetail(props.project)}</span>
+      <h2 class="projects-settings-name">{props.project.name}</h2>
+      <span class="projects-settings-row-detail">{sourceLabel(props.project.source)}</span>
     </header>
   )
 }
 
 export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element {
   const t = useProjectsText()
-  const projects = useEngineProjects()
   const view = useProject(() => props.id)
-  const project = createMemo(() => {
-    const state = projects()
-    return state.kind === "ready" ? state.data.find((item) => item.id === props.id) : undefined
-  })
-  const record = () => {
+  const project = () => {
     const state = view()
     return state.kind === "ready" ? state.project : undefined
   }
   const failed = () => {
-    const state = projects()
+    const state = view()
     return state.kind === "failed" ? state.error : undefined
   }
   return (
@@ -110,7 +103,7 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
         <span>{t("projects.settings.all")}</span>
       </A>
       <Switch fallback={<SettingsNote tone="danger">{t("projects.missing")}</SettingsNote>}>
-        <Match when={projects().kind === "loading"}>
+        <Match when={view().kind === "loading"}>
           <p class="projects-hint projects-placeholder m-0">{t("projects.loading")}</p>
         </Match>
         <Match when={failed()}>
@@ -124,11 +117,9 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
           {(row) => (
             <>
               <ProjectHeader project={row()} />
-              <ProjectFields project={row()} record={record()} />
-              <ProjectPlacements id={props.id} record={record()} />
-              <Show when={record()}>
-                <ProjectRemoval id={props.id} name={projectLabel(row())} />
-              </Show>
+              <ProjectFields project={row()} />
+              <ProjectPlacements project={row()} />
+              <ProjectRemoval id={props.id} name={row().name} />
             </>
           )}
         </Match>

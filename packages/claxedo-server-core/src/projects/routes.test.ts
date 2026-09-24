@@ -5,7 +5,7 @@ import { ProjectRoutes, type ProjectRouteOptions } from "./routes"
 import { ProjectStoreError, type ProjectCreateInput, type ProjectRecord, type ProjectStore } from "./store"
 
 function record(id: string, name: string): ProjectRecord {
-  return { id, name, env: {}, directory: null, repoUrl: null, created_at: 1, updated_at: 1 }
+  return { id, name, env: {}, directory: null, repoUrl: null, available: true, created_at: 1, updated_at: 1 }
 }
 
 /** A store that keeps records in memory and remembers what it was asked. */

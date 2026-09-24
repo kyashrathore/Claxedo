@@ -28,7 +28,7 @@ export function ProjectTree(): JSX.Element {
   const stores = useSessionStores()
   const routing = useShellRoute()
   const actions = createSessionActions()
-  const sections = createMemo(() => projects.list().map((project) => projectSection(project, server.placements.list())))
+  const sections = createMemo(() => projects.list().map((entry) => projectSection(entry.project, server.placements.list())))
   const sectionByKey = createMemo(() => new Map(sections().map((section) => [section.key, section])))
   const grouped = createMemo(() => rowsByProject(stores.list.rows()))
   const rowsOf = (section: ProjectSection) => (section.projectId ? grouped().get(section.projectId) : undefined) ?? []

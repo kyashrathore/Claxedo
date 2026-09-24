@@ -1,12 +1,11 @@
 # Projects
 
-Owns: the project record as the app sees it, its placements, the add-project flow, Settings → Projects (v1's Edit dialog and remove), v1's project list data for the rail, and the routes that name a project or a placement by id.
+Owns: the project as the app sees it, its placements, the add-project flow, Settings → Projects (v1's Edit dialog and remove), v1's project list data for the rail, and the routes that name a project or a placement by id.
 
 ## Concepts
 
-- **Project**: a server record with an id (`Project` from `@/server`) holding its source and environment; removing a project removes this record and its placements.
-- **Engine project** (`EngineProject`): the same id in the engine's catalog (`GET /project`), carrying the name, icon, colour and startup command v1 shows and edits. The record's own name is set when the project is created and is never shown; a rename changes the catalog's name only, as in v1.
-- **Rail list** (`createProjectList`, `ProjectListProvider`): v1's sidebar data, the catalog's projects with this browser's order, expanded flags, closed projects and colours (`project-state.ts`, persisted per server as v1 did).
+- **Project** (`Project` from `@/server`): one entry of `/api/claxedo/projects`, the only project source. The route lists every project v1 lists, with v1's name, icon, colour and startup command, its environment, its source, its checkout `directory` (display only) and `available`, false when none of its placements can be reached. Removing a project removes it and its placements everywhere.
+- **Rail list** (`createProjectList`, `ProjectListProvider`): v1's sidebar data, the route's projects in this browser's order with their expanded flags and colours, persisted per server as v1 did (`project-state.ts`, keyed by project id). New projects join at the end, most recently updated first. A project without a colour gets a free one (`project-colors.ts`), saved through the route.
 - **Placement**: where a project runs, a folder, a worktree or a cloud workspace (`Placement`). A placement has its own id; a session belongs to one placement. A folder path is display data, never a key, a route parameter or an identity. Only `src/server/` turns a placement into a directory.
 - **Source**: what the project is made from, a repository URL, a repository from a connected code host, or a folder on a machine. A folder is offered only when the server reports `thisMachine`.
 - **Draft** (`ProjectDraft`): the answers the add flow collects (name, source, harness, and the reader's explicit placement pick) before anything is created.
@@ -20,11 +19,10 @@ Owns: the project record as the app sees it, its placements, the add-project flo
 | --- | --- | --- |
 | `useProjects()` | `queries.projects.list()` | `Loaded<readonly Project[]>`: loading, ready(data), failed(error) |
 | `useProject(id)` | `queries.projects.byId(id)` | `ProjectView`: loading, ready(project), missing, failed(error) |
-| `useEngineProjects()` | `queries.engineProjects.list()` | `Loaded<readonly EngineProject[]>` |
 | `useProjectPlacements(projectId)` | `queries.placements.byProject(projectId)` | `Loaded<readonly Placement[]>` |
 | `useMachines()` | `queries.machines.list()` | `Loaded<readonly Machine[]>` |
 
-`useProjectCommands()` gives `remove`, which calls `server.projects`. The Edit dialog saves the environment through `server.projects.update` and the name, icon and startup command through `server.engineProjects.update`. The adapter refreshes the catalog after each of these; this domain never writes the query cache.
+`useProjectCommands()` gives `remove`, which calls `server.projects`. The Edit dialog saves the name, icon, colour, startup command and environment in one `server.projects.update`; an empty name drops a name set by hand, as v1 did for the folder's own name. The adapter updates the project queries from each answer; this domain never writes the query cache.
 
 The repository picker reads `queries.codeHost.connections()` and `queries.codeHost.repositories(connectionId)`. Failures become `AppError`s through the adapter's `toAppError`.
 
@@ -38,7 +36,7 @@ Once the record exists, `choosingPlacement`, `creating` and `failed` carry its `
 
 ## Routes
 
-- `/settings/projects`: Settings → Projects (`projectsSettingsSection`), every project in the catalog; `?project=<id>` shows that project's settings.
+- `/settings/projects`: Settings → Projects (`projectsSettingsSection`), every project; `?project=<id>` shows that project's settings.
 - `/projects/new`: the add-project page (`addProjectPage`).
 - Opening an existing placement (`usePlacementOpener`) opens a draft session pane for it and goes home, as the rail's New session does; the server session starts with the draft's first send.
 - A created project (`useCreatedProjectOpener`) starts its first session in the new placement with the harness chosen in the AI step, and goes to `/w/:placementId/s/:sessionId`. The onboarding screen renders outside the workbench, and the session is what carries that harness. A created project with no placement opens its settings; a failed session create is shown as a toast.
@@ -51,7 +49,7 @@ v1's folder dialog, on desktop and web alike (`view/select-directory.tsx`, moved
 
 ## Views
 
-Settings → Projects lists the catalog's projects (avatar, name, folder or id). A project's settings show its name, icon, colour, startup script and environment, with v1's Edit dialog (`DialogEditProject`, also exported for the rail's project menu) to change them; where it runs (its placements and the cloud workspaces section); and Remove, which asks first. Dialogs open through the kit's `useDialog()`, so the shell must mount `DialogProvider`.
+Settings → Projects lists the projects (avatar, name, and the folder or repository they come from). A project's settings show its name, icon, colour, startup script and environment, with v1's Edit dialog (`DialogEditProject`, also exported for the rail's project menu) to change them; where it runs (its placements and the cloud workspaces section); and Remove, which asks first. Dialogs open through the kit's `useDialog()`, so the shell must mount `DialogProvider`.
 
 ## Phone
 
@@ -59,6 +57,6 @@ Every control is a kit component or a 44 px row; pages are one column with no ho
 
 ## Flows
 
-- Flow 2: local add of a folder and a clone, an edit in Settings → Projects read back from the catalog, remove, a deep link by id.
+- Flow 2: local add of a folder and a clone, an edit in Settings → Projects read back by id, remove, a deep link by id.
 - Flow 32: hosted-first add on signed web, the id read back, a deep link by id.
 - Flow 1 uses the same steps inside `@/onboarding`.
