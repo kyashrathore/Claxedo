@@ -130,7 +130,3 @@ export function isAppError(value: unknown): value is AppError {
   const row = value as { class?: unknown; message?: unknown; retryable?: unknown }
   return typeof row.class === "string" && ERROR_CLASSES.has(row.class) && typeof row.message === "string" && typeof row.retryable === "boolean"
 }
-
-export function isNotFound(error: unknown): boolean {
-  return error instanceof ServerError && error.class === "not_found"
-}
