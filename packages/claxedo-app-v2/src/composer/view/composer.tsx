@@ -18,6 +18,8 @@ import type { AtOption } from "./slash-popover"
 import { createPromptToolbarMotion } from "./toolbar-motion"
 import { createComposerToasts, ReadingNotices } from "./notice"
 import { SessionHealthPeek } from "./health-peek"
+import { commentFocus } from "./comment-routing"
+import { usePanel } from "@/panel"
 
 function atOption(item: AtItem): AtOption {
   if (item.kind === "file") return { type: "file", path: item.path, display: item.path }
@@ -47,6 +49,8 @@ export function Composer(props: ComposerProps) {
   const motion = createPromptToolbarMotion({ shellMode: () => mode() === "shell", pending: composer.harnessPending })
   const [placeholderIndex] = createSignal(Math.floor(Math.random() * PROMPT_EXAMPLES.length))
   const at = createAtOptions(composer.suggestions.atItems)
+  const panel = usePanel()
+  const [activeComment, setActiveComment] = createSignal<string>()
   createComposerToasts(composer)
   let slashPopover: HTMLDivElement | undefined
 
@@ -154,8 +158,13 @@ export function Composer(props: ComposerProps) {
       onSlashSelect={controller.selectSlash}
       commandKeybind={(id) => commands.keybind(id) || undefined}
       contextItems={contextItems()}
-      contextActive={() => false}
-      openComment={() => undefined}
+      contextActive={(item) => !!item.commentId && item.commentId === activeComment()}
+      openComment={(item) => {
+        const focus = commentFocus(item)
+        if (!focus) return
+        setActiveComment(item.commentId)
+        panel.show(focus)
+      }}
       removeContextItem={(item) => composer.store.removeContext(composer.key(), item.key)}
       imageAttachments={composer.images()}
       imageMarks={numberImageMarks(composer.images())}
