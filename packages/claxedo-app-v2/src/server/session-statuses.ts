@@ -24,7 +24,8 @@ export function createStatusesRead(transport: Transport, workspaces: Workspaces,
   const placementReports = async (placement: Placement): Promise<SessionStatusReport[]> => {
     const where = await workspaces.route(placement.id)
     const [statuses, requests] = await Promise.all([status.readPlacement(where), readRequests(transport, where)])
-    const ids = new Set([...statuses.keys(), ...requests.map((item) => item.sessionId)])
+    const reported = [...statuses].filter(([, status]) => status.kind !== "idle").map(([id]) => id)
+    const ids = new Set([...reported, ...requests.map((item) => item.sessionId)])
     return [...ids].map((id) => ({
       ref: { projectId: placement.projectId, placementId: placement.id, sessionId: sessionId(id) },
       status: statuses.get(id) ?? { kind: "idle" },

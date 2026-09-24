@@ -1,0 +1,41 @@
+{
+  "name": "@claxedo/plugin-tasks",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Tasks and presets over the Claxedo server's Tasks API, as a Claxedo app plugin",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./src/app.tsx",
+      "development": "./src/app.tsx",
+      "default": "./src/app.tsx"
+    },
+    "./package.json": "./package.json"
+  },
+  "claxedo": {
+    "id": "tasks",
+    "name": "Tasks",
+    "version": "0.1.0",
+    "app": "./src/app.tsx",
+    "requires": [
+      "tasks"
+    ],
+    "server": {
+      "routes": [
+        "/api/claxedo/tasks"
+      ],
+      "operations": []
+    }
+  },
+  "dependencies": {
+    "@claxedo/plugin-api": "workspace:*",
+    "@claxedo/tasks": "workspace:*"
+  },
+  "peerDependencies": {
+    "solid-js": "1.9.12"
+  },
+  "devDependencies": {
+    "solid-js": "1.9.12"
+  }
+}

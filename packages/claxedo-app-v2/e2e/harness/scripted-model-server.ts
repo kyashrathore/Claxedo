@@ -1,7 +1,4 @@
 import { createServer, type Server, type ServerResponse } from "node:http"
-import fs from "node:fs/promises"
-import path from "node:path"
-import { piModelsJson, piSettingsJson } from "./scripted-cli"
 import { respondChat, respondMessages, respondResponses, writeErrorReply, type ScriptedReply, type StreamPacing } from "./scripted-model-replies"
 import {
   asRecord,
@@ -40,7 +37,6 @@ export type ScriptedModelServer = {
   url: string
   v1Url: string
   port: number
-  piEnv: { PI_CODING_AGENT_DIR: string; OPENAI_API_KEY: string }
   requests: ScriptedModelRequest[]
   counts(): Record<ScriptedDialect, number>
   resetCounts(): void
@@ -138,13 +134,7 @@ function closeAll(server: Server) {
   })
 }
 
-async function writePiAgentDir(dir: string, v1Url: string) {
-  await fs.mkdir(dir, { recursive: true })
-  await fs.writeFile(path.join(dir, "models.json"), piModelsJson(v1Url))
-  await fs.writeFile(path.join(dir, "settings.json"), piSettingsJson())
-}
-
-export async function startScriptedModelServer(input: { port: number; piAgentDir: string }): Promise<ScriptedModelServer> {
+export async function startScriptedModelServer(input: { port: number }): Promise<ScriptedModelServer> {
   const requests: ScriptedModelRequest[] = []
   const state: ServerState = { counts: freshCounts(), sequence: 0, goalEvaluations: 0, replyDelayMs: 0 }
   const server = createServer(async (incoming, outgoing) => {
@@ -170,13 +160,10 @@ export async function startScriptedModelServer(input: { port: number; piAgentDir
   })
   await listen(server, input.port)
   const url = `http://127.0.0.1:${input.port}`
-  const v1Url = `${url}/v1`
-  await writePiAgentDir(input.piAgentDir, v1Url)
   return {
     url,
-    v1Url,
+    v1Url: `${url}/v1`,
     port: input.port,
-    piEnv: { PI_CODING_AGENT_DIR: input.piAgentDir, OPENAI_API_KEY: "test-key" },
     requests,
     counts: () => ({ ...state.counts }),
     resetCounts: () => {

@@ -42,7 +42,7 @@ export const ProjectPage: Component<PageProps> = (props) => {
   const id = () => projectId(props.params.projectId ?? "")
   const project = useProject(id)
   const navigate = useNavigate()
-  const opener = usePlacementOpener()
+  const open = usePlacementOpener()
   const dialog = useDialog()
   const current = () => {
     const state = project()
@@ -79,7 +79,7 @@ export const ProjectPage: Component<PageProps> = (props) => {
               <ProjectHeader project={item()} onRename={() => rename(item())} onRemove={() => remove(item())} />
               <PlacementList projectId={id} />
               <Show when={item().source?.kind !== "folder"}>
-                <CloudWorkspacesSection projectId={id} onOpen={opener.openPlacement} />
+                <CloudWorkspacesSection projectId={id} onOpen={open} />
               </Show>
             </>
           )}

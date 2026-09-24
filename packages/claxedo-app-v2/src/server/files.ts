@@ -8,7 +8,7 @@ import type { Workspaces } from "./workspaces"
 
 const FILE_PATH = "/api/wr/file"
 const SEARCH_PATH = "/api/wr/find/file"
-export const SEARCH_LIMIT = 50
+const SEARCH_LIMIT = 50
 
 function fileNode(value: unknown): FileNode | undefined {
   const row = value as { name?: unknown; path?: unknown; type?: unknown; ignored?: unknown } | null

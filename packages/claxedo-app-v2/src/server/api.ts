@@ -40,6 +40,7 @@ import type {
   Placement,
   Project,
   ProjectSource,
+  PromptDelivery,
   PromptInput,
   QueuedPrompt,
   QueuedPromptAction,
@@ -60,7 +61,7 @@ export type SessionsApi = {
   readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
-  readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<void>
+  readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
   readonly stop: (ref: SessionRef) => Promise<void>
   readonly reply: (ref: SessionRef, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
   readonly rename: (ref: SessionRef, title: string) => Promise<void>

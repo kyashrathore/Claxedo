@@ -1,15 +1,6 @@
 import type { Locator, Page } from "@playwright/test"
 import { expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
 
-async function createProject(url: string, name: string, directory: string): Promise<void> {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
-
 function openPanes(app: Page): Locator {
   return app.getByRole("tablist", { name: "Open panes" })
 }
@@ -41,7 +32,7 @@ test.skip(({ isMobile }) => isMobile, "flow 12 runs at desktop width; flow 33 co
 
 test("12 workbench and shell: tabs, split, drag, the palette, and settings in the one page tab", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("bench")
-  await createProject(stack.url, "Bench", workspace.directory)
+  await api.createProject("Bench", workspace.directory)
   const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
   const second = await api.createSession(workspace.directory, { title: "Second", harness: SCRIPTED_ACP_HARNESS })
   const titles = await Promise.all([first, second].map(async (session) => (await api.session(workspace.directory, session.id)).title))
