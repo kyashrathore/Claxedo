@@ -20,10 +20,12 @@ export default defineConfig({
   projects: [
     {
       name: "web",
+      grepInvert: /@desktop/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
       name: "phone",
+      grepInvert: /@desktop/,
       use: {
         ...devices["iPhone 13"],
         browserName: "chromium",
@@ -31,6 +33,10 @@ export default defineConfig({
         hasTouch: true,
         isMobile: true,
       },
+    },
+    {
+      name: "desktop",
+      grep: /@desktop/,
     },
   ],
 })

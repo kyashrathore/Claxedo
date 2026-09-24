@@ -1,3 +1,5 @@
+import { directTransport, type HttpTransport } from "./transport"
+
 export class ApiError extends Error {
   constructor(readonly method: string, readonly route: string, readonly status: number, readonly body: string) {
     super(`${method} ${route} answered ${status}: ${body}`)
@@ -35,20 +37,23 @@ export function assistantText(messages: MessageRow[]) {
 }
 
 export class ClaxedoApi {
-  constructor(readonly url: string) {}
+  constructor(
+    readonly url: string,
+    private readonly transport: HttpTransport = directTransport,
+  ) {}
 
   private async call<T>(method: string, route: string, options: CallOptions = {}): Promise<T> {
     const target = new URL(route, this.url)
     if (options.directory) target.searchParams.set("directory", options.directory)
     for (const [key, value] of Object.entries(options.query ?? {})) target.searchParams.set(key, value)
-    const response = await fetch(target, {
+    const reply = await this.transport({
       method,
+      url: target.toString(),
       headers: options.body === undefined ? {} : { "content-type": "application/json" },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
-    const text = await response.text()
-    if (!response.ok) throw new ApiError(method, target.pathname, response.status, text)
-    return (text ? JSON.parse(text) : undefined) as T
+    if (reply.status < 200 || reply.status >= 300) throw new ApiError(method, target.pathname, reply.status, reply.body)
+    return (reply.body ? JSON.parse(reply.body) : undefined) as T
   }
 
   health() {
