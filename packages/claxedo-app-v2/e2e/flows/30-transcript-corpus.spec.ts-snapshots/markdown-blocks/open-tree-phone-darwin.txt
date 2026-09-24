@@ -1,0 +1,71 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Show every block. acp-script:markdown-blocks-0 Build · <time>
+- button "Copy message"
+row 1:
+- button "Worked for 0s"
+row 2:
+- paragraph: "Here are the blocks:"
+- heading "Heading 1" [level=1]
+- heading "Heading 2" [level=2]
+- heading "Heading 3" [level=3]
+- heading "Heading 4" [level=4]
+- heading "Heading 5" [level=5]
+- heading "Heading 6" [level=6]
+- paragraph:
+  - text: Plain paragraph with
+  - strong: bold
+  - text: ","
+  - emphasis: italic
+  - text: ","
+  - deletion: strike
+  - text: and
+  - code: inline code
+  - text: . A
+  - link "link":
+    - /url: https://example.com
+  - text: and
+  - link "https://example.org":
+    - /url: https://example.org
+  - text: .
+- list:
+  - listitem: Item one
+  - listitem:
+    - text: Item two
+    - list:
+      - listitem: Nested item
+  - listitem:
+    - checkbox [disabled]
+    - text: Task open
+  - listitem:
+    - checkbox [checked] [disabled]
+    - text: Task done
+- list:
+  - listitem: First
+  - listitem: Second
+- blockquote:
+  - paragraph: A quote
+  - blockquote:
+    - paragraph: A nested quote
+- code: "const value = 1 export function add(a: number, b: number) { return a + b }"
+- button "Copy"
+- table:
+  - rowgroup:
+    - row "Name Value":
+      - columnheader "Name"
+      - columnheader "Value"
+  - rowgroup:
+    - row "alpha 1":
+      - cell "alpha"
+      - cell "1"
+    - row "beta 2":
+      - cell "beta"
+      - cell "2"
+- button "Open table full screen"
+- button "Copy"
+- separator
+- paragraph: Done with the blocks.
+- button "Copy response"
+- text: Build · 0s
