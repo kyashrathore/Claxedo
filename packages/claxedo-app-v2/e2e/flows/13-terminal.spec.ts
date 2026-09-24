@@ -51,6 +51,8 @@ async function ptyReplay(app: Page, directory: string, terminalId: string, marke
   )
 }
 
+test.skip(({ isMobile }) => isMobile, "flow 13 runs at desktop width")
+
 test("13 terminal: run a command, its output replays from the server, reload reattaches", async ({
   stack,
   api,
