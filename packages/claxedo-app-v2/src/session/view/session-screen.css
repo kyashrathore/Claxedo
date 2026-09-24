@@ -7,7 +7,7 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--v2-background-bg-stronger, var(--v2-background-bg-base));
+  background: var(--background-base);
 }
 
 [data-slot="session-screen-body"] {

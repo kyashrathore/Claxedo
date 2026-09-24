@@ -54,6 +54,7 @@ export function SessionTimeline(props: {
             currentMessage={current()}
             anchor={(id) => `message-${id}`}
             title={() => props.view.row()?.title}
+            hideTitle={() => true}
             parentId={props.view.row()?.parentSessionId}
             onNavigateParent={props.onNavigateParent}
             queued={props.view.queue}
