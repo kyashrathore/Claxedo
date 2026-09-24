@@ -1,4 +1,5 @@
 import { createSignal, Show, type Component } from "solid-js"
+import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type Project } from "@/server"
 import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle, Field, TextInput, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
@@ -9,23 +10,19 @@ export const RenameProjectDialog: Component<{ project: Project }> = (props) => {
   const dialog = useDialog()
   const commands = useProjectCommands()
   const [name, setName] = createSignal(props.project.name)
-  const [saving, setSaving] = createSignal(false)
-  const [failure, setFailure] = createSignal<string>()
+  const save = createFlow<"saving", Project>()
+  const saving = () => save.state().kind === "running"
+  const failure = () => {
+    const state = save.state()
+    return state.kind === "failed" ? state.error.message : undefined
+  }
 
   const submit = async (event: SubmitEvent) => {
     event.preventDefault()
     const next = name().trim()
     if (!next || saving()) return
-    setSaving(true)
-    setFailure(undefined)
-    try {
-      await commands.rename(props.project.id, next)
-      dialog.close()
-    } catch (cause) {
-      setFailure(toAppError(cause).message)
-    } finally {
-      setSaving(false)
-    }
+    await runFlow(save, "saving", () => commands.rename(props.project.id, next), toAppError)
+    if (save.state().kind === "done") dialog.close()
   }
 
   return (

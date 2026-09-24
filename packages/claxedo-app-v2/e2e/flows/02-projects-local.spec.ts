@@ -72,15 +72,6 @@ async function serverProject(url: string, id: string): Promise<{ status: number;
   return { status: 200, project: ((await response.json()) as { project: ProjectRecord }).project }
 }
 
-async function createServerProject(url: string, name: string, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
-
 async function finishAddOnThisMachine(app: Page) {
   await app.getByRole("button", { name: "Next", exact: true }).click()
   await app.getByRole("button", { name: "Skip for now" }).click()
@@ -128,7 +119,7 @@ async function removeOnProjectPage(app: Page, name: string) {
 
 test("02 projects, local: add a folder and a clone, rename, remove, each read back by id", async ({ stack, api, page: app }) => {
   const root = path.join(stack.dataDir, "folders")
-  await createServerProject(stack.url, "Existing", await gitFolder(root, "existing"))
+  await api.createProject("Existing", await gitFolder(root, "existing"))
   const alphaFolder = await gitFolder(root, "alpha")
   const remote = await gitRemote(root, "beta")
   try {
