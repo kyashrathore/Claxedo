@@ -144,7 +144,9 @@
 }
 
 .shell-topbar-title {
+  margin: 0;
   overflow: hidden;
+  font-size: inherit;
   font-weight: var(--font-weight-medium, 500);
   text-overflow: ellipsis;
   white-space: nowrap;
