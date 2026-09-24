@@ -89,8 +89,16 @@ async function finishAddOnThisMachine(app: Page) {
   await expect(app).toHaveURL(SESSION_URL)
 }
 
+async function projectsList(app: Page) {
+  const list = app.getByRole("region", { name: "Projects" })
+  const menu = app.getByRole("button", { name: "Open menu" })
+  await expect(list.or(menu).first()).toBeVisible()
+  if (await menu.isVisible()) await menu.click()
+  return list
+}
+
 async function addFolderProject(app: Page, name: string, folder: string) {
-  await app.getByRole("button", { name: "New project" }).click()
+  await (await projectsList(app)).getByRole("button", { name: "New project" }).click()
   await app.getByRole("textbox", { name: "Name", exact: true }).fill(name)
   await app.getByRole("button", { name: "Folder on this machine" }).click()
   await app.getByRole("textbox", { name: "Folder", exact: true }).fill(folder)
@@ -98,13 +106,9 @@ async function addFolderProject(app: Page, name: string, folder: string) {
 }
 
 async function cloneProject(app: Page, url: string) {
-  await app.getByRole("button", { name: "New project" }).click()
+  await (await projectsList(app)).getByRole("button", { name: "New project" }).click()
   await app.getByRole("textbox", { name: "Repository URL" }).fill(url)
   await finishAddOnThisMachine(app)
-}
-
-function projectsSection(app: Page) {
-  return app.getByRole("region", { name: "Projects" })
 }
 
 async function renameOnProjectPage(app: Page, from: string, to: string) {
@@ -119,7 +123,7 @@ async function renameOnProjectPage(app: Page, from: string, to: string) {
 async function removeOnProjectPage(app: Page, name: string) {
   await app.getByRole("button", { name: "Remove", exact: true }).click()
   await app.getByRole("dialog", { name: "Remove project" }).getByRole("button", { name: "Remove", exact: true }).click()
-  await expect(projectsSection(app).getByRole("button", { name })).toHaveCount(0)
+  await expect((await projectsList(app)).getByRole("button", { name, exact: true })).toHaveCount(0)
 }
 
 test("02 projects, local: add a folder and a clone, rename, remove, each read back by id", async ({ stack, app }) => {
@@ -129,9 +133,9 @@ test("02 projects, local: add a folder and a clone, rename, remove, each read ba
   const remote = await gitRemote(root, "beta")
   try {
     await app.goto(`${stack.url}/`)
-    await expect(projectsSection(app).getByRole("button", { name: "Existing" })).toBeVisible()
-
     await addFolderProject(app, "Alpha", alphaFolder)
+    await app.goto(`${stack.url}/`)
+    await expect((await projectsList(app)).getByRole("button", { name: "Existing", exact: true })).toBeVisible()
     const alpha = (await serverProjects(stack.url)).find((project) => project.directory === alphaFolder)
     expect(alpha?.name).toBe("Alpha")
     const alphaId = alpha?.id ?? ""
@@ -147,7 +151,7 @@ test("02 projects, local: add a folder and a clone, rename, remove, each read ba
     expect(await fs.readFile(path.join(beta?.directory ?? "", "README.md"), "utf8")).toBe("beta-source\n")
 
     await app.goto(`${stack.url}/`)
-    await projectsSection(app).getByRole("button", { name: "Alpha renamed" }).click()
+    await (await projectsList(app)).getByRole("button", { name: "Alpha renamed", exact: true }).click()
     await expect(app).toHaveURL(new RegExp(`/p/${encodeURIComponent(alphaId)}$`))
     await removeOnProjectPage(app, "Alpha renamed")
     expect((await serverProject(stack.url, alphaId)).status).toBe(404)

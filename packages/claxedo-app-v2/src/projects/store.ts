@@ -1,7 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import type { AppError, Machine, Placement, Project, ProjectId } from "@/server"
-import { useProjectsServer } from "./api"
+import { useServer, type AppError, type Machine, type Placement, type Project, type ProjectId } from "@/server"
 
 export type Loaded<T> =
   | { readonly kind: "loading" }
@@ -23,13 +22,13 @@ function loaded<T>(query: QueryLike<T>): Loaded<T> {
 }
 
 export function useProjects(): Accessor<Loaded<readonly Project[]>> {
-  const server = useProjectsServer()
+  const server = useServer()
   const query = useQuery(() => server.queries.projects.list())
   return createMemo(() => loaded(query))
 }
 
 export function useProject(id: Accessor<ProjectId>): Accessor<ProjectView> {
-  const server = useProjectsServer()
+  const server = useServer()
   const query = useQuery(() => server.queries.projects.byId(id()))
   return createMemo((): ProjectView => {
     const state = loaded(query)
@@ -40,19 +39,19 @@ export function useProject(id: Accessor<ProjectId>): Accessor<ProjectView> {
 }
 
 export function useProjectPlacements(projectId: Accessor<ProjectId>): Accessor<Loaded<readonly Placement[]>> {
-  const server = useProjectsServer()
+  const server = useServer()
   const query = useQuery(() => server.queries.placements.byProject(projectId()))
   return createMemo(() => loaded(query))
 }
 
 export function useMachines(): Accessor<Loaded<readonly Machine[]>> {
-  const server = useProjectsServer()
+  const server = useServer()
   const query = useQuery(() => server.queries.machines.list())
   return createMemo(() => loaded(query))
 }
 
 export function useProjectCommands() {
-  const server = useProjectsServer()
+  const server = useServer()
   return {
     rename: (id: ProjectId, name: string) => server.projects.update(id, { name }),
     remove: (id: ProjectId) => server.projects.remove(id),
