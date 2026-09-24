@@ -131,7 +131,6 @@ export type ReviewCodeViewProps<LAnnotation = undefined> = {
   onScrollEvent?: JSX.EventHandler<HTMLDivElement, Event>
   /** Fired after CodeView commits a render pass with visible content. */
   onDiffRendered?: () => void
-  onRenderedRows?: (count: number) => void
   /** Current rendered files first, followed by nearby content prefetch targets. */
   onDiffContentRequired?: (files: string[]) => void
   /** Files whose body is supplied by the caller, without parsing a text diff. */
@@ -230,8 +229,6 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
     }
     return host
   }
-
-  createEffect(() => props.onRenderedRows?.(new Set([...headerFiles(), ...customFiles()]).size))
 
   const reconcileItems = createReviewCodeViewItems<LAnnotation>()
   const items = createMemo(() => reconcileItems({
@@ -514,7 +511,6 @@ export function ReviewCodeView<LAnnotation = undefined>(props: ReviewCodeViewPro
       <div
         data-slot="accordion-item" class="ui-accordion-item"
         data-review-header-file={header.file}
-        data-review-file={header.file}
         data-expanded={expanded(header.file) ? "" : undefined}
         data-selected={props.focusedFile === header.file ? "" : undefined}
       >

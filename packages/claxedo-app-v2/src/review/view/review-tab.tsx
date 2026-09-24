@@ -132,9 +132,8 @@ function createPaintAccounting(files: () => readonly string[]) {
   const loaded = createMemo(() => files())
   const identity = createMemo(() => JSON.stringify([...loaded()].sort()))
   const [hunks, setHunks] = createSignal(0)
-  const [rows, setRows] = createSignal(0)
   createEffect(on(identity, () => setHunks(0), { defer: true }))
-  return { loaded, identity, hunks, rows, setRows, painted: () => setHunks((count) => count + 1) }
+  return { loaded, identity, hunks, painted: () => setHunks((count) => count + 1) }
 }
 
 function ReviewDiffList(props: {
@@ -166,14 +165,11 @@ function ReviewDiffList(props: {
       data-review-loaded-diff-count={paint.loaded().length}
       data-review-loaded-diff-identity={paint.identity()}
       data-review-rendered-hunks={paint.hunks()}
-      data-review-rendered-files={paint.rows()}
-      data-review-total-files={props.summaries.length}
     >
       <ReviewCodeView
         class="claxedo-workspace-review h-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         scrollRef={setScroller}
         onDiffRendered={paint.painted}
-        onRenderedRows={paint.setRows}
         diffs={content.diffs()}
         diffStyle={review.style()}
         open={review.open()}
