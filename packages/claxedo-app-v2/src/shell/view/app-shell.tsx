@@ -1,11 +1,13 @@
 import { createMemo, Show, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { ComposerStoreProvider } from "@/composer"
 import { useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import { preferenceKey } from "@/lib/persisted"
 import { useServer, type Capabilities } from "@/server"
 import { Toast } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider, useWorkbench } from "@/workbench"
+import { FirstRunRedirect } from "../first-run"
 import { dictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
@@ -52,32 +54,32 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
   const routing = useShellRoute()
   const workbench = createWorkbenchStore(preferenceKey("workbench", props.scope), registries.paneKinds.list)
   return (
-    <WorkbenchProvider store={workbench}>
-      <PlacementProviders>
+    <ComposerStoreProvider>
+      <WorkbenchProvider store={workbench}>
         <ShellLayoutProvider scope={props.scope}>
           <CommandsProvider>
-            <RouteSync />
-            <ShellCommands />
-            <ThemeBridge />
-            <ConnectionBanner />
-            <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
-            <CommandPalette />
-            <Overlays />
+            <PlacementProviders>
+              <FirstRunRedirect />
+              <RouteSync />
+              <ShellCommands />
+              <ThemeBridge />
+              <ConnectionBanner />
+              <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
+              <CommandPalette />
+              <Overlays />
+            </PlacementProviders>
           </CommandsProvider>
         </ShellLayoutProvider>
-      </PlacementProviders>
-    </WorkbenchProvider>
+      </WorkbenchProvider>
+    </ComposerStoreProvider>
   )
 }
 
 function ShellBody(props: { readonly route: ShellRoute; readonly mainSidebar: JSX.Element }): JSX.Element {
   const registries = useShellRegistries()
+  const routing = useShellRoute()
   const workbench = useWorkbench()
-  const panelScope = createMemo(() => {
-    const focused = workbench.selectors.focusedContent()
-    const route = focused ? workbench.routeOf(focused) : undefined
-    return route?.kind === "session" ? route.projectId : "default"
-  })
+  const panelScope = () => routing.placementId() ?? "default"
   const phoneHome = () => props.route.kind === "home" && workbench.selectors.focusedContent() === null
   return (
     <ShellFrame

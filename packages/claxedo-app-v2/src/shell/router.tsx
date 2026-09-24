@@ -2,7 +2,7 @@ import { Route, Router, useLocation, useNavigate } from "@solidjs/router"
 import { createContext, createMemo, useContext, type Accessor, type JSX } from "solid-js"
 import type { PlacementId } from "@/server"
 import { useShellRegistries } from "./registries"
-import { parseRoute, routePlacementId, type ShellRoute } from "./routes"
+import { parseRoute, placementOf, type ShellRoute } from "./routes"
 
 export type ShellRouting = {
   readonly route: Accessor<ShellRoute>
@@ -20,7 +20,7 @@ function RoutingProvider(props: { readonly children: JSX.Element }): JSX.Element
   const route = createMemo(() => parseRoute(location.pathname, registries.pages.list(), registries.routes.list()))
   const routing: ShellRouting = {
     route,
-    placementId: createMemo(() => routePlacementId(route())),
+    placementId: createMemo(() => placementOf(route())),
     pathname: () => location.pathname,
     navigate: (path, options) => navigate(path, { replace: options?.replace ?? false }),
   }
