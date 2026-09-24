@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js"
 import type { AgentPermission, AgentPermissionReply } from "@claxedo/agent-runtime-contract"
 import type { AgentRequestReply } from "@/server"
+import type { RequestState } from "@/session"
 import { DockPrompt } from "@/transcript"
 import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -8,7 +9,7 @@ import { isRecord } from "@/lib/record"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"
 import { createDockAction } from "./dock-action"
-import { createRequestReply } from "./request-reply"
+import { replyError } from "./model"
 
 const TOOL_KEYS: Readonly<Record<string, SessionScreenTextKey>> = {
   read: "sessionScreen.permission.tool.read",
@@ -149,14 +150,14 @@ function PermissionFooter(props: {
 
 export function PermissionDock(props: {
   request: AgentPermission
-  onReply: (reply: AgentRequestReply) => Promise<void>
+  replyState: RequestState
+  onReply: (reply: AgentRequestReply) => void
   onStop?: () => Promise<void>
 }) {
   const t = useSessionScreenText()
-  const reply = createRequestReply(props.onReply)
   const stop = createDockAction<"stop">()
   const facts = () => permissionFacts(props.request)
-  const busy = () => reply.answering() || stop.running()
+  const busy = () => props.replyState.kind === "answering" || stop.running()
   const hint = () => {
     const key = TOOL_KEYS[props.request.permission]
     return key ? t(key) : ""
@@ -181,11 +182,13 @@ export function PermissionDock(props: {
           request={props.request}
           busy={busy()}
           onStop={props.onStop ? runStop : undefined}
-          onDecide={(value) => void reply.reply({ kind: "permission", reply: value })}
+          onDecide={(value) => {
+            if (!busy()) props.onReply({ kind: "permission", reply: value })
+          }}
         />
       }
     >
-      <Show when={reply.error() ?? stop.error()}>
+      <Show when={replyError(props.replyState) ?? stop.error()}>
         {(error) => <div role="alert" data-slot="permission-error" data-error-class={error().class}>{error().message}</div>}
       </Show>
       <Show when={hint()}>
