@@ -2,6 +2,7 @@ import { createContext, createEffect, useContext, type JSX } from "solid-js"
 import type { Store } from "solid-js/store"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import { isRecord } from "@/lib/record"
+import { codeFontFamily, uiFontFamily } from "./fonts"
 
 export type ContrastScheme = "light" | "dark"
 
@@ -13,11 +14,23 @@ export type TranscriptPreferences = {
   readonly editToolPartsExpanded: boolean
 }
 
+export type NavigatorSide = "left" | "right"
+
+export type AppearancePreferences = {
+  readonly navigatorSide: NavigatorSide
+  readonly uiFont: string
+  readonly codeFont: string
+  readonly terminalFont: string
+  readonly terminalScreenReader: boolean
+}
+
 export type Preferences = {
   readonly contrast: Store<ContrastLevels>
   readonly setContrast: (scheme: ContrastScheme, level: number) => void
   readonly transcript: Store<TranscriptPreferences>
   readonly setTranscript: <K extends keyof TranscriptPreferences>(key: K, value: TranscriptPreferences[K]) => void
+  readonly appearance: Store<AppearancePreferences>
+  readonly setAppearance: <K extends keyof AppearancePreferences>(key: K, value: AppearancePreferences[K]) => void
 }
 
 export const TRANSCRIPT_DEFAULTS: TranscriptPreferences = {
@@ -51,11 +64,40 @@ function readTranscript(value: unknown): TranscriptPreferences | undefined {
   }
 }
 
+export const APPEARANCE_DEFAULTS: AppearancePreferences = {
+  navigatorSide: "right",
+  uiFont: "",
+  codeFont: "",
+  terminalFont: "",
+  terminalScreenReader: false,
+}
+
+function readAppearance(value: unknown): AppearancePreferences | undefined {
+  if (!isRecord(value)) return undefined
+  const text = (key: "uiFont" | "codeFont" | "terminalFont") => (typeof value[key] === "string" ? value[key] : APPEARANCE_DEFAULTS[key])
+  return {
+    navigatorSide: value.navigatorSide === "left" ? "left" : "right",
+    uiFont: text("uiFont"),
+    codeFont: text("codeFont"),
+    terminalFont: text("terminalFont"),
+    terminalScreenReader: value.terminalScreenReader === true,
+  }
+}
+
+function writeFont(token: string, font: string, family: (font: string) => string): void {
+  const root = document.documentElement.style
+  if (font.trim()) root.setProperty(token, family(font))
+  else root.removeProperty(token)
+}
+
 const PreferencesContext = createContext<Preferences>()
 
 export function PreferencesProvider(props: { readonly children: JSX.Element }): JSX.Element {
   const [contrast, setContrast] = persistedStore(preferenceKey("appearance", "contrast"), CONTRAST_DEFAULTS, readContrast)
   const [transcript, setTranscript] = persistedStore(preferenceKey("general", "transcript"), TRANSCRIPT_DEFAULTS, readTranscript)
+  const [appearance, setAppearance] = persistedStore(preferenceKey("appearance", "fonts"), APPEARANCE_DEFAULTS, readAppearance)
+  createEffect(() => writeFont("--font-family-sans", appearance.uiFont, uiFontFamily))
+  createEffect(() => writeFont("--font-family-mono", appearance.codeFont, codeFontFamily))
   createEffect(() => {
     const style = document.documentElement.style
     style.setProperty("--claxedo-contrast-light", String(contrast.light))
@@ -66,6 +108,8 @@ export function PreferencesProvider(props: { readonly children: JSX.Element }): 
     setContrast: (scheme, level) => setContrast(scheme === "light" ? { light: contrastLevel(level) } : { dark: contrastLevel(level) }),
     transcript,
     setTranscript: (key, value) => setTranscript({ [key]: value }),
+    appearance,
+    setAppearance: (key, value) => setAppearance({ [key]: value }),
   }
   return <PreferencesContext.Provider value={preferences}>{props.children}</PreferencesContext.Provider>
 }

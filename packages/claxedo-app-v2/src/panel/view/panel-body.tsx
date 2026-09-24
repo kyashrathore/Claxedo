@@ -6,6 +6,7 @@ import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
 import { ReviewTab, SourceControlView } from "@/review"
 import type { PlacementId } from "@/server"
+import { usePreferences } from "@/settings"
 import { useShellRegistries, type PanelView } from "@/shell"
 import { Markdown } from "@/transcript"
 import { filePathFromTab } from "../focus"
@@ -56,6 +57,8 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
 
 function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
+  const preferences = usePreferences()
+  const left = () => preferences.appearance.navigatorSide === "left"
   const selected = () => panel.navigator() !== null && !panel.phone()
   const [visited, setVisited] = createSignal(selected())
   createEffect(() => {
@@ -69,8 +72,14 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
         data-navigator-kind={panel.navigator() ?? "files"}
         data-open={selected() ? "true" : "false"}
         aria-hidden={selected() ? undefined : "true"}
-        class="claxedo-workspace-navigator-overlay order-last h-full shrink-0 overflow-hidden border-l border-border-weak-base bg-background-base motion-reduce:transition-none"
-        classList={{ "pointer-events-none": !selected(), "border-transparent": !selected() }}
+        data-navigator-side={left() ? "left" : "right"}
+        class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden border-border-weak-base bg-background-base motion-reduce:transition-none"
+        classList={{
+          "order-first border-r": left(),
+          "order-last border-l": !left(),
+          "pointer-events-none": !selected(),
+          "border-transparent": !selected(),
+        }}
         style={{
           width: selected() ? "min(280px, 45%)" : "0px",
           transition: NAVIGATOR_TRANSITION,

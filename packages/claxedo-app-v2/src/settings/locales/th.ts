@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "แสดงส่วนเครื่องมือ shell แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
   "settings.general.editToolPartsExpanded": "ขยายส่วนเครื่องมือ edit",
   "settings.general.editToolPartsExpanded.description": "แสดงส่วนเครื่องมือ edit, write และ patch แบบขยายตามค่าเริ่มต้นในไทม์ไลน์",
+  "settings.appearance.uiFont": "ฟอนต์ UI",
+  "settings.appearance.uiFont.description": "ปรับแต่งฟอนต์ที่ใช้ทั่วทั้งอินเทอร์เฟซ",
+  "settings.appearance.codeFont": "ฟอนต์โค้ด",
+  "settings.appearance.codeFont.description": "ปรับแต่งฟอนต์ที่ใช้ในบล็อกโค้ด",
+  "settings.appearance.screenReader": "โหมดโปรแกรมอ่านหน้าจอ",
+  "settings.appearance.screenReader.description": "เปิดใช้งานบัฟเฟอร์โปรแกรมอ่านหน้าจอที่เข้าถึงได้ในเทอร์มินัลใหม่",
 }

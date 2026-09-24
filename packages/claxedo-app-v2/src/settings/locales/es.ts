@@ -26,4 +26,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "Mostrar las partes de la herramienta shell expandidas por defecto en la línea de tiempo",
   "settings.general.editToolPartsExpanded": "Expandir partes de la herramienta de edición",
   "settings.general.editToolPartsExpanded.description": "Mostrar las partes de las herramientas de edición, escritura y parcheado expandidas por defecto en la línea de tiempo",
+  "settings.appearance.uiFont": "Fuente de la interfaz",
+  "settings.appearance.uiFont.description": "Personaliza la fuente usada en toda la interfaz",
+  "settings.appearance.codeFont": "Fuente de código",
+  "settings.appearance.codeFont.description": "Personaliza la fuente usada en bloques de código",
+  "settings.appearance.screenReader": "Modo de lector de pantalla",
+  "settings.appearance.screenReader.description": "Expón un búfer accesible de lector de pantalla en las terminales nuevas",
 }

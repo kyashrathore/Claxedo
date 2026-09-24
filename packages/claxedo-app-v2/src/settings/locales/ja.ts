@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "タイムラインで shell ツールパーツをデフォルトで展開して表示します",
   "settings.general.editToolPartsExpanded": "edit ツールパーツを展開",
   "settings.general.editToolPartsExpanded.description": "タイムラインで edit、write、patch ツールパーツをデフォルトで展開して表示します",
+  "settings.appearance.uiFont": "UIフォント",
+  "settings.appearance.uiFont.description": "インターフェース全体で使用するフォントをカスタマイズします",
+  "settings.appearance.codeFont": "コードフォント",
+  "settings.appearance.codeFont.description": "コードブロックで使用するフォントをカスタマイズします",
+  "settings.appearance.screenReader": "スクリーンリーダーモード",
+  "settings.appearance.screenReader.description": "新しいターミナルでアクセシブルなスクリーンリーダー用バッファを公開します",
 }

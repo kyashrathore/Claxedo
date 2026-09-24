@@ -18,7 +18,8 @@ const section = (id: string, key: Keys, group: SettingsSection["group"], order: 
   view,
 })
 
-export type { ContrastLevels, ContrastScheme, Preferences, TranscriptPreferences } from "./preferences"
+export type { AppearancePreferences, ContrastLevels, ContrastScheme, NavigatorSide, Preferences, TranscriptPreferences } from "./preferences"
+export { terminalFontFamily } from "./fonts"
 export { CONTRAST_DEFAULTS, PreferencesProvider, TRANSCRIPT_DEFAULTS, usePreferences } from "./preferences"
 export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote, SettingsRow } from "./view/section"
 

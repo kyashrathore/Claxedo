@@ -27,4 +27,10 @@ export const dictionary = {
   "settings.general.shellToolPartsExpanded.description": "Zaman çizelgesinde kabuk araç bileşenlerini varsayılan olarak genişletilmiş göster",
   "settings.general.editToolPartsExpanded": "Düzenleme araç bileşenlerini genişlet",
   "settings.general.editToolPartsExpanded.description": "Zaman çizelgesinde düzenleme, yazma ve yama araç bileşenlerini varsayılan olarak genişletilmiş göster",
+  "settings.appearance.uiFont": "Arayüz Yazı Tipi",
+  "settings.appearance.uiFont.description": "Arayüz genelinde kullanılan yazı tipini özelleştirin",
+  "settings.appearance.codeFont": "Kod Yazı Tipi",
+  "settings.appearance.codeFont.description": "Kod bloklarında kullanılan yazı tipini özelleştirin",
+  "settings.appearance.screenReader": "Ekran okuyucu modu",
+  "settings.appearance.screenReader.description": "Yeni terminallerde erişilebilir bir ekran okuyucu arabelleği sunun",
 }

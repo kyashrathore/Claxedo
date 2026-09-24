@@ -146,6 +146,21 @@ test("15 settings: Expand shell tool parts opens a turn's shell output in the tr
   await expect(app.getByText("shell-output-clean")).toBeVisible()
 })
 
+test("15 settings: a code font applies at once, and the files navigator side is kept", async ({ stack, app, isMobile }) => {
+  const workspace = await stack.daemon.makeWorkspace("appearance-settings")
+  const draft = `${stack.url}${sessionRoute(workspace.id)}`
+  await app.goto(draft)
+  await openSettings(stack, app, isMobile)
+  await app.locator('[data-action="settings-code-font"]').first().fill("Courier New")
+  await expect.poll(() => app.evaluate(() => document.documentElement.style.getPropertyValue("--font-family-mono"))).toContain('"Courier New"')
+  await app.locator('[data-action="settings-navigator-side"]').first().click()
+  await app.getByRole("option", { name: "Left", exact: true }).click()
+  await app.goto(draft)
+  await openSettings(stack, app, isMobile)
+  await expect(app.locator('[data-action="settings-navigator-side"]').first()).toContainText("Left")
+  await expect(app.locator('[data-action="settings-code-font"]').first()).toHaveValue("Courier New")
+})
+
 test("15 settings: Models lists each agent's accounts and this computer's logins", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("models", "Models")
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
