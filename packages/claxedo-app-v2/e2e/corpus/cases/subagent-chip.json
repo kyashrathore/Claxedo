@@ -1,0 +1,42 @@
+{
+  "id": "subagent-chip",
+  "title": "A turn that spawns a subagent",
+  "source": {
+    "kind": "inventory",
+    "ids": [
+      "SESS-080"
+    ]
+  },
+  "partKinds": [
+    "agent",
+    "text"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Delegate it.",
+        "steps": [
+          {
+            "kind": "subagent",
+            "name": "helper",
+            "task": "Look up the name",
+            "steps": [
+              {
+                "kind": "text",
+                "text": "The helper looked it up."
+              }
+            ]
+          },
+          {
+            "kind": "text",
+            "text": "The helper finished."
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "The helper finished.",
+  "interactions": [],
+  "invariant": "The subagent chip renders as today."
+}

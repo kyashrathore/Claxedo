@@ -29,6 +29,7 @@ function loadState(phase: SessionPhase): SessionLoadState {
     case "loading":
       return LOADING
     case "ready":
+    case "completing":
     case "rereading":
       return READY
     case "missing":

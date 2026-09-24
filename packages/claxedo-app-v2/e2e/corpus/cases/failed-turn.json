@@ -1,0 +1,36 @@
+{
+  "id": "failed-turn",
+  "title": "A turn that fails shows its error row",
+  "source": {
+    "kind": "inventory",
+    "ids": [
+      "SESS-090",
+      "SESS-091"
+    ]
+  },
+  "partKinds": [
+    "text",
+    "error"
+  ],
+  "replay": {
+    "agent": "acp",
+    "turns": [
+      {
+        "prompt": "Try the task.",
+        "steps": [
+          {
+            "kind": "text",
+            "text": "Starting the task."
+          },
+          {
+            "kind": "error",
+            "message": "Scripted turn failure"
+          }
+        ]
+      }
+    ]
+  },
+  "ready": "Starting the task.",
+  "interactions": [],
+  "invariant": "The failed turn keeps its text and shows the failure as today."
+}
