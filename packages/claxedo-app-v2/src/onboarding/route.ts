@@ -1,5 +1,6 @@
 import type { Component } from "solid-js"
 import type { PageProps } from "@/shell/types"
+import { OnboardingPage } from "./view/onboarding-page"
 
 export type RouteEntry = {
   readonly id: string
@@ -8,3 +9,5 @@ export type RouteEntry = {
 }
 
 export const onboardingPath = "/welcome"
+
+export const onboardingRoute: RouteEntry = { id: "onboarding", path: onboardingPath, view: OnboardingPage }

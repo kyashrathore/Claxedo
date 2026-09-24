@@ -1,8 +1,5 @@
-import type { QueryKey, UndefinedInitialDataOptions } from "@tanstack/solid-query"
-import { useServer, type AppError, type PlacementId, type ProjectId, type Server, type ServerEvent } from "@/server"
-import type { CloudWorkspace, CloudWorkspaceStatus } from "./model"
-
-type Query<T> = ReturnType<UndefinedInitialDataOptions<T, AppError, T, QueryKey>>
+import { useServer, type FetchQuery, type PlacementId, type ProjectId, type Server } from "@/server"
+import type { CloudWorkspace } from "./model"
 
 export type CloudCreateInput = {
   readonly projectId: ProjectId
@@ -18,17 +15,12 @@ export type CloudApi = {
 }
 
 export type CloudQueries = {
-  readonly list: () => Query<readonly CloudWorkspace[]>
+  readonly list: () => FetchQuery<readonly CloudWorkspace[]>
 }
-
-export type CloudServerEvent =
-  | ServerEvent
-  | { readonly type: "cloudWorkspaceChanged"; readonly workspaceId: PlacementId; readonly status: CloudWorkspaceStatus }
 
 export type CloudServer = Server & {
   readonly cloud: CloudApi
   readonly queries: { readonly cloud: CloudQueries }
-  readonly subscribe: (handler: (event: CloudServerEvent) => void) => () => void
 }
 
 export function useCloudServer(): CloudServer {

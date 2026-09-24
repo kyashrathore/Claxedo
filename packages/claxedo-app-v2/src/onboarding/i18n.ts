@@ -1,3 +1,5 @@
+import { useTranslator, type DomainTranslate, type Translations } from "@/i18n"
+
 const en = {
   "onboarding.steps": "Setup steps",
   "onboarding.step.project": "Project",
@@ -15,12 +17,10 @@ const en = {
 
 export type OnboardingKey = keyof typeof en
 
-export const onboardingStrings: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+export const dictionary = {
   en,
-}
+} satisfies Translations<OnboardingKey>
 
-export function onboardingText(key: OnboardingKey, vars?: Readonly<Record<string, string | number>>): string {
-  const text = en[key]
-  if (!vars) return text
-  return text.replace(/\{\{(\w+)\}\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match))
-}
+export type OnboardingText = DomainTranslate<OnboardingKey>
+
+export const useOnboardingText = (): OnboardingText => useTranslator(dictionary)

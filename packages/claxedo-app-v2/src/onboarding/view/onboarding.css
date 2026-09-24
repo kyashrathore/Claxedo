@@ -1,0 +1,117 @@
+.onboarding {
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  padding: 24px 16px;
+  background: var(--v2-background-bg-base);
+  color: var(--v2-text-text-base);
+}
+
+.onboarding-content {
+  display: flex;
+  width: 100%;
+  max-width: 35rem;
+  max-height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  margin: auto;
+}
+
+.onboarding-steps {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-muted);
+}
+
+.onboarding-steps li[aria-current="step"] {
+  color: var(--v2-text-text-base);
+}
+
+.onboarding-step-index {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: var(--font-size-x-small);
+}
+
+.onboarding-steps li[data-done="true"] .onboarding-step-index {
+  background: currentColor;
+}
+
+.onboarding-steps li[data-done="true"] .onboarding-step-index::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--v2-background-bg-base);
+}
+
+.onboarding-headline {
+  flex-shrink: 0;
+  margin: 0 0 8px;
+  font-size: var(--font-size-x-large);
+  font-weight: var(--font-weight-semibold);
+}
+
+.onboarding-lede {
+  flex-shrink: 0;
+  margin: 0 0 20px;
+  color: var(--v2-text-text-muted);
+}
+
+.onboarding-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 12px;
+  padding: 20px;
+  background: var(--v2-background-bg-layer-01);
+}
+
+.onboarding-reveal {
+  animation: onboarding-reveal 320ms cubic-bezier(0.2, 0, 0, 1) both;
+  animation-delay: var(--onboarding-delay, 0ms);
+}
+
+@keyframes onboarding-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-reveal {
+    animation: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .onboarding {
+    padding: 40px 24px;
+  }
+}

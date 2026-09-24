@@ -1,8 +1,9 @@
 import { createMemo, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
+import { useCloudPlacer } from "@/cloud"
 import { machine, unreachable, type Machine } from "@/lib/machine"
 import type { PlacementId, ProjectId } from "@/server"
-import { appErrorOf, type ProjectsServer } from "./api"
+import { appErrorOf, useProjectsServer, type ProjectsServer } from "./api"
 import {
   addProjectInitial,
   addProjectTransition,
@@ -113,4 +114,8 @@ export function createAddProjectFlow(input: {
     },
     back: () => flow.send({ type: "back" }),
   }
+}
+
+export function useAddProjectFlow(onCreated: (created: ProjectCreated) => void): AddProjectFlow {
+  return createAddProjectFlow({ server: useProjectsServer(), cloud: useCloudPlacer(), onCreated })
 }
