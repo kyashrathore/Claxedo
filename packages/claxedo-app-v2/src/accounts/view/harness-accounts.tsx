@@ -14,7 +14,7 @@ function ScanningNote() {
   const t = useAccountsText()
   return (
     <SettingsEmpty>
-      <span class="flex items-center justify-center gap-2" data-component="agents-scanning">
+      <span class="flex items-center justify-center gap-2">
         <Spinner class="size-4" />
         <span>{t("settings.providers.agents.scanning")}</span>
       </span>
@@ -40,7 +40,7 @@ export function MachineScanStatus(props: { readonly accounts: Accounts }) {
   const label = useScannedLabel(props.accounts)
   return (
     <p class="flex items-center gap-1.5 text-12-regular text-text-weak">
-      <span data-component="agents-scanned-at">{label()}</span>
+      <span>{label()}</span>
       <Show when={!props.accounts.scanning()}>
         <span aria-hidden="true">·</span>
         <button type="button" class="border-none bg-transparent p-0 text-12-regular text-text-interactive-base" data-action="settings-providers-rescan" onClick={() => void props.accounts.rescan()}>

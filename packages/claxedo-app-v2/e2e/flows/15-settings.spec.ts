@@ -180,7 +180,7 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
   } else {
     await expect(claudeMachineLogin).toBeChecked()
   }
-  const section = app.locator('[data-component^="models-section-"]').filter({ has: app.getByRole("heading", { level: 2, name: "Cursor", exact: true }) })
+  const section = harnessSection(app, "Cursor")
   const cursor = app.getByRole("radiogroup", { name: "Cursor" })
   const machineLogin = cursor.getByRole("radio", { name: /^This computer's login/ })
   await expect(machineLogin).toBeChecked()
@@ -193,7 +193,7 @@ test("15 settings: Models lists each agent's accounts and this computer's logins
     await dialog.getByRole("button", { name: "Continue" }).click()
     await expect(dialog).toHaveCount(0)
   }
-  const row = (label: string) => cursor.locator('[data-component="agent-account"]').filter({ hasText: label })
+  const row = (label: string) => cursor.locator('[data-slot="radio-list-item"]').filter({ hasText: label })
   const first = cursor.getByRole("radio", { name: /^Flow fifteen A/ })
   const second = cursor.getByRole("radio", { name: /^Flow fifteen B/ })
   await addKey("Flow fifteen A")
@@ -274,6 +274,10 @@ test("15 settings: a background session's finished turn plays the alert sound an
   })
 })
 
+function harnessSection(app: Page, name: string) {
+  return app.locator("section").filter({ has: app.getByRole("heading", { level: 2, name, exact: true }) }).last()
+}
+
 async function claudeModels(app: Page) {
   const trigger = app.getByRole("button", { name: /^Select harness and model/ })
   await expect(trigger).toBeEnabled()
@@ -302,7 +306,7 @@ async function openClaudeModelsTab(stack: Stack, app: Page, isMobile: boolean) {
     await openSettings(stack, app, isMobile)
     await openSection(stack, app, isMobile, MODELS)
   }
-  const claude = app.locator('[data-component="models-section-claude"]')
+  const claude = harnessSection(app, "Claude Code")
   await claude.getByRole("tab", { name: "Models" }).click()
   return claude
 }

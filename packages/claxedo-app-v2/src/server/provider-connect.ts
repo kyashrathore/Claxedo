@@ -5,6 +5,7 @@ import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"
+import { customProviderBody } from "./wire/custom-provider"
 import type { FetchQuery } from "./types"
 
 const AUTH_PATH = "/api/claxedo/agent-config/providers/auth"
@@ -20,7 +21,7 @@ export type ProviderAuthorization = { readonly url: string; readonly method: "au
 export type ProviderKeyInput = { readonly providerId: string; readonly label: string; readonly secret: string }
 
 export type CustomProviderConfig = {
-  readonly providerID: string
+  readonly providerId: string
   readonly name: string
   readonly baseURL: string
   readonly env: readonly string[]
@@ -97,8 +98,8 @@ export function createProviderConnectApi(transport: Transport, queryClient: Quer
     },
     saveCustomProvider: async (draft) => {
       const config = draft.config
-      if (draft.key) await transport.json<unknown>(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerID, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
-      await transport.json<unknown>(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", config))
+      if (draft.key) await transport.json<unknown>(CREDENTIALS_PATH, jsonInit("PUT", { provider_id: config.providerId, kind: "api_key", source: "managed", label: config.name, secret: draft.key }))
+      await transport.json<unknown>(withQuery(CUSTOM_PATH, { nativeHarness: "opencode" }), jsonInit("PUT", customProviderBody(config)))
       await changed()
     },
     disconnect: async (harness, providerId) => {

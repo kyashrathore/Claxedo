@@ -36,13 +36,13 @@ function AccountLabel(props: { readonly account: AccountWords }) {
       <span class="text-13-regular text-text-strong">{props.account.label}</span>
       <Show when={props.account.note}>
         {(note) => (
-          <LabelHint value={note()} component="agent-account-note">
+          <LabelHint value={note()}>
             <ClaxedoIcon name="help" size="small" class="icon-weak-base" role="img" aria-hidden="false" aria-label={note()} />
           </LabelHint>
         )}
       </Show>
       <Show when={props.account.alert}>
-        {(alert) => <ClaxedoIcon name="circle-alert" size="small" class="icon-warning-base" role="img" aria-hidden="false" aria-label={alert()} data-component="agent-account-alert" />}
+        {(alert) => <ClaxedoIcon name="circle-alert" size="small" class="icon-warning-base" role="img" aria-hidden="false" aria-label={alert()} />}
       </Show>
       <Show when={props.account.reach}>{(reach) => <Reach reach={reach()} />}</Show>
     </span>
@@ -62,7 +62,6 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
       value={account().key}
       disabled={account().disabled}
       invalid={account().refused}
-      data-component="agent-account"
       data-account={account().key}
       data-selected={props.selected ? "true" : "false"}
       title={account().identity}
@@ -74,7 +73,6 @@ function AccountItem(props: { readonly account: AccountWords; readonly row: Harn
           {(at) => (
             <CheckedAge
               at={at()}
-              component="agent-account-checked"
               t={t}
               locale={i18n.intlTag()}
               class="pointer-events-none absolute right-0 whitespace-nowrap text-13-regular text-text-weak transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
@@ -104,7 +102,7 @@ function HarnessHeader(props: { readonly harness: Harness; readonly connecting: 
         <ProviderIcon id={harnessIcon(props.harness.id)} class="size-5 shrink-0 icon-strong-base" />
         <span class="text-14-medium text-text-strong">{props.harness.label}</span>
       </div>
-      <div class="flex shrink-0 items-center gap-2" data-component="provider-actions">
+      <div class="flex shrink-0 items-center gap-2">
         <Show when={props.connecting} fallback={<Button size="large" variant="ghost" data-action="agent-add-account" onClick={() => props.onAdd()}>{t("settings.providers.agents.addAccount")}</Button>}>
           <span class="text-12-regular text-text-interactive-base">{t("settings.providers.connect.open")}</span>
         </Show>
@@ -128,11 +126,11 @@ export function AgentHarnessRow(props: HarnessRowProps) {
   }
   onMount(() => props.onAddAccountRef?.(() => openConnect()))
   return (
-    <div class="border-b border-border-weak-base last:border-none" data-component="agent-harness-row" data-provider={harnessIcon(props.harness.id)}>
+    <div class="border-b border-border-weak-base last:border-none" data-provider={harnessIcon(props.harness.id)}>
       <Show when={!props.headerless}>
         <HarnessHeader harness={props.harness} connecting={connecting()} onAdd={() => openConnect()} />
       </Show>
-      <div class="mb-3 flex flex-col" classList={{ "ml-8": !props.headerless }} data-component="agent-accounts">
+      <div class="mb-3 flex flex-col" classList={{ "ml-8": !props.headerless }}>
         <Show when={rows().length > 0}>
           <RadioList
             name={`agent-account-${props.harness.id}`}

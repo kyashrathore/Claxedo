@@ -12,23 +12,23 @@ export type ModelRow = { row: string; id: string; name: string; err: ModelErr }
 export type HeaderRow = { row: string; key: string; value: string; err: HeaderErr }
 
 export type FormState = {
-  providerID: string
+  providerId: string
   name: string
   baseURL: string
   apiKey: string
   models: ModelRow[]
   headers: HeaderRow[]
-  err: { providerID?: string; name?: string; baseURL?: string }
+  err: { providerId?: string; name?: string; baseURL?: string }
 }
 
 function fieldErrors(form: FormState, t: AccountsText, existing: ReadonlySet<string>) {
-  const providerID = form.providerID.trim()
+  const providerId = form.providerId.trim()
   const baseURL = form.baseURL.trim()
-  const idError = !providerID ? t("provider.custom.error.providerID.required") : !PROVIDER_ID.test(providerID) ? t("provider.custom.error.providerID.format") : undefined
-  const existsError = idError || !existing.has(providerID) ? undefined : t("provider.custom.error.providerID.exists")
+  const idError = !providerId ? t("provider.custom.error.providerID.required") : !PROVIDER_ID.test(providerId) ? t("provider.custom.error.providerID.format") : undefined
+  const existsError = idError || !existing.has(providerId) ? undefined : t("provider.custom.error.providerID.exists")
   const urlError = !baseURL ? t("provider.custom.error.baseURL.required") : !/^https?:\/\//.test(baseURL) ? t("provider.custom.error.baseURL.format") : undefined
   const nameError = form.name.trim() ? undefined : t("provider.custom.error.name.required")
-  return { providerID: idError ?? existsError, name: nameError, baseURL: urlError }
+  return { providerId: idError ?? existsError, name: nameError, baseURL: urlError }
 }
 
 function modelErrors(rows: readonly ModelRow[], t: AccountsText): ModelErr[] {
@@ -61,7 +61,7 @@ function draftOf(form: FormState): CustomProviderDraft {
   return {
     ...(key === undefined ? {} : { key }),
     config: {
-      providerID: form.providerID.trim(),
+      providerId: form.providerId.trim(),
       name: form.name.trim(),
       baseURL: form.baseURL.trim(),
       env: env ? [env] : [],

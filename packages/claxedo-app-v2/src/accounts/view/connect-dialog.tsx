@@ -11,7 +11,7 @@ function ConnectCard(props: ConnectFormInput & { readonly onClose: () => void })
     props.credentialId ? t("settings.providers.connect.reconnectTitle", { provider: subject() }) : t(CONTEXT_COPY.title[props.context.kind], connectVars(props.context))
   const subtitle = () => (props.credentialId ? t("settings.providers.connect.reconnectSubtitle") : t("settings.providers.connect.subtitle", { provider: subject() }))
   return (
-    <div class="flex min-h-0 flex-col" data-component="provider-connect-card" data-credential={props.credentialId}>
+    <div class="flex min-h-0 flex-col" data-credential={props.credentialId}>
       <div class="flex shrink-0 items-start justify-between gap-3 border-b border-border-weak-base py-3 pl-4 pr-3">
         <div class="flex flex-col gap-0.5">
           <span class="text-14-medium text-text-strong">{title()}</span>

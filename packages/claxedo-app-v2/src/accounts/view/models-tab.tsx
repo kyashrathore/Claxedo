@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
-import { useModelVisibility } from "@/composer"
+import { useModelVisibility, type ModelRef } from "@/composer"
 import { SettingsEmpty, SettingsList } from "@/settings"
 import { Switch, Tag, ProviderIcon } from "@/ui"
 import { catalogNeedsSearch, catalogProviders, MODELS_PREVIEW_COUNT, usesInlineSearch, visibleModels } from "../catalog-rules"
@@ -7,7 +7,7 @@ import { useAccountsText } from "../i18n"
 import type { ModelItem, ModelSource, SourceGroup } from "../model-sources"
 import { SearchField } from "./search-field"
 
-export const modelKeyOf = (item: ModelItem) => ({ providerID: item.provider.id, modelID: item.id })
+export const modelKeyOf = (item: ModelItem): ModelRef => ({ providerId: item.provider.id, modelId: item.id })
 
 export function groupContext(group: SourceGroup, item: ModelItem) {
   return { defaults: group.defaults, group: group.groupKey, ...(item.connected === undefined ? {} : { connected: item.connected }) }
@@ -28,7 +28,7 @@ function ProviderModelList(props: { readonly entry: SourceGroup }) {
   const [query, setQuery] = createSignal("")
   const items = createMemo(() => visibleModels(props.entry.items, query(), false))
   return (
-    <div class="flex flex-col gap-2" data-component="models-group-models">
+    <div class="flex flex-col gap-2">
       <Show when={usesInlineSearch(props.entry.items.length, false)}>
         <SearchField value={query()} onChange={setQuery} placeholder={t("settings.models.providerSearch.placeholder", { provider: props.entry.providerName })} action="settings-models-model-search" />
         <Show when={!query().trim()}>
@@ -41,7 +41,7 @@ function ProviderModelList(props: { readonly entry: SourceGroup }) {
       <SettingsList>
         <For each={items()}>
           {(item) => (
-            <div class="flex flex-wrap items-center justify-between gap-4 py-3 border-b border-border-weak-base last:border-none" data-component="models-browse-row">
+            <div class="flex flex-wrap items-center justify-between gap-4 py-3 border-b border-border-weak-base last:border-none">
               <span class="text-14-regular text-text-strong truncate">{item.name}</span>
               <Switch checked={visibility.visible(modelKeyOf(item), groupContext(props.entry, item))} onChange={(checked) => visibility.setVisibility(modelKeyOf(item), checked)} hideLabel>
                 {item.name}
@@ -61,8 +61,8 @@ function GroupRow(props: { readonly entry: SourceGroup }) {
   const enabled = createMemo(() => props.entry.items.filter((item) => visibility.visible(modelKeyOf(item), groupContext(props.entry, item))).length)
   const open = () => override() ?? enabled() > 0
   return (
-    <div class="flex flex-col" data-component="models-group" data-provider={props.entry.providerId} data-group={props.entry.groupKey}>
-      <div class="flex w-full items-center gap-2 rounded-md bg-surface-base px-2.5 py-1.5" data-component="models-group-row">
+    <div class="flex flex-col" data-provider={props.entry.providerId} data-group={props.entry.groupKey}>
+      <div class="flex w-full items-center gap-2 rounded-md bg-surface-base px-2.5 py-1.5">
         <button type="button" class="flex min-w-0 flex-1 items-center gap-2 border-none bg-transparent text-left" data-action="settings-models-group-expand" aria-expanded={open()} onClick={() => setOverride(!open())}>
           <ProviderIcon id={props.entry.providerId} class="size-4 shrink-0 icon-strong-base" />
           <span class="min-w-0 flex-1 truncate text-compact text-text-base">{props.entry.providerName}</span>
@@ -98,7 +98,7 @@ function SourceNote(props: { readonly source: ModelSource; readonly harness: str
     <Show when={text()}>
       {(note) => (
         <SettingsEmpty>
-          <span data-component={`models-source-note-${props.harness}`}>{note()}</span>
+          <span>{note()}</span>
         </SettingsEmpty>
       )}
     </Show>
@@ -123,7 +123,7 @@ export function ModelsTab(props: { readonly source: ModelSource; readonly harnes
         fallback={
           <Show when={!noted() && !sole()}>
             <SettingsEmpty>
-              <span data-component="models-enabled-empty">{providerQuery().trim() ? t("settings.models.add.noProviders", { query: providerQuery().trim() }) : t("settings.models.enabled.empty")}</span>
+              <span>{providerQuery().trim() ? t("settings.models.add.noProviders", { query: providerQuery().trim() }) : t("settings.models.enabled.empty")}</span>
             </SettingsEmpty>
           </Show>
         }

@@ -23,7 +23,7 @@ export function ProviderSetupRow(props: { readonly id: string; readonly name: st
             <Show when={props.note}>{(note) => <span class="text-12-regular text-text-weak">{note()}</span>}</Show>
           </div>
         </button>
-        <div class="flex shrink-0 items-center gap-2" data-component="provider-actions">
+        <div class="flex shrink-0 items-center gap-2">
           <Show when={connecting()} fallback={<Button size="large" variant="ghost" onClick={() => openConnect()}>{t("common.connect")}</Button>}>
             <span class="text-12-regular text-text-interactive-base">{t("settings.providers.connect.open")}</span>
           </Show>
