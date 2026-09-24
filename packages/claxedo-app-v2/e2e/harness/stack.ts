@@ -7,7 +7,7 @@ import { appChoice, appDistDir, type AppChoice } from "./app"
 import { startDaemon, type Daemon } from "./daemon"
 import { startEgressGuard, type EgressGuard } from "./egress-guard"
 import { serveGitRemote, type GitRemote } from "./git-remote"
-import { claimPort, fixedDaemonPort, portIsLeased, releasePort, reservePort } from "./ports"
+import { claimPort, fixedDaemonPort, portFreed, portIsLeased, releasePort, reservePort } from "./ports"
 import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
 import { openEventStream, type EventStream, type EventStreamOptions } from "./stream"
 
@@ -53,6 +53,7 @@ export async function startStack(input: StackInput): Promise<Stack> {
   const cleanup = async () => {
     releasePort(guardPort)
     releasePort(modelPort)
+    await portFreed(daemonPort, 10_000)
     releasePort(daemonPort)
     if (!keepData) await fs.rm(dataDir, { recursive: true, force: true })
   }

@@ -28,7 +28,7 @@ export type Desktop = {
   scripted: ScriptedModelServer
   egress: EgressGuard
   acp: { scriptDir: string; write(name: string, script: AcpScript): Promise<void>; release(name: string): Promise<void> }
-  makeWorkspace(name: string): Promise<Workspace>
+  makeWorkspace(name: string, projectName?: string): Promise<Workspace>
   log(): string
   close(): Promise<void>
 }
@@ -138,7 +138,7 @@ function desktopHandle(world: DesktopWorld, parts: DesktopParts): Desktop {
       write: (name, script) => writeAcpScript(world.acpScriptDir, name, script),
       release: (name) => releaseAcpHold(world.acpScriptDir, name),
     },
-    makeWorkspace: (name) => makeWorkspace(parts.transport, url, path.join(world.dataDir, "workspaces"), name),
+    makeWorkspace: (name, projectName) => makeWorkspace(parts.transport, url, path.join(world.dataDir, "workspaces"), name, projectName),
     log: parts.log,
     close: parts.close,
   }
