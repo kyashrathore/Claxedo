@@ -2,11 +2,11 @@ import { createMemo, Show, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { ComposerStoreProvider } from "@/composer"
 import { useTranslator } from "@/i18n"
-import { useElapsed } from "@/lib/delay"
 import { preferenceKey } from "@/lib/persisted"
 import { PluginHostProvider } from "@/plugins"
 import { useServer, type Capabilities } from "@/server"
 import { Toast } from "@/ui"
+import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
 import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
 import { HomeRedirect } from "../home-redirect"
 import { dictionary } from "../i18n"
@@ -39,12 +39,14 @@ function centerOf(route: ShellRoute): CenterContent {
 
 function ShellLoading(): JSX.Element {
   const t = useTranslator(dictionary)
-  const elapsed = useElapsed()
   return (
-    <div class="shell-loading" data-testid="shell-loading">
-      <Show when={elapsed()}>
-        <span role="status">{t("shell.loading")}</span>
-      </Show>
+    <div
+      role="status"
+      aria-label={t("shell.loading")}
+      data-testid="shell-loading"
+      class="fixed inset-0 z-[9999] h-dvh w-screen flex flex-col items-center justify-center bg-background-base"
+    >
+      <ClaxedoSplash class="w-16 h-20 opacity-50" />
     </div>
   )
 }

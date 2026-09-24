@@ -39,14 +39,6 @@
   min-height: 0;
 }
 
-.shell-loading {
-  display: grid;
-  flex: 1;
-  place-items: center;
-  height: 100%;
-  color: var(--v2-text-text-muted, #8a8686);
-}
-
 .shell-page {
   flex: 1;
   min-height: 0;
