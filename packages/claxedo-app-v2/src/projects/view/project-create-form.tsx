@@ -1,11 +1,10 @@
-import { Button } from "@opencode-ai/ui/button"
 import { createMemo, createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { codeHostIntegrations, toAppError, useServer, type Project, type ProjectSource } from "@/server"
 import { useProjectsText } from "../i18n"
 import { ConnectCodeHost } from "./project-create-connect"
 import { AccountSelect, createFormLook, RepositoryList, UrlField, type CreateFormLook } from "./project-create-repository"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Button } from "@/ui"
 
 type Submit =
   | { onSubmit: (source: ProjectSource, name: string | undefined) => void | Promise<void>; submitLabel?: string; onCreated?: undefined }

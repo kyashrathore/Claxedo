@@ -1,11 +1,11 @@
 import { createSignal, Show, type Component } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type PlacementId } from "@/server"
-import { Button } from "@opencode-ai/ui/button"
 import { useCloudText } from "../i18n"
 import { canStart, canStop, failureOf, isBusy } from "../model"
 import type { CloudWorkspaceRow, CloudWorkspaces } from "../store"
 import { cloudStatusText } from "./cloud-status"
+import { Button } from "@/ui"
 
 export const CloudWorkspaceItem: Component<{
   row: CloudWorkspaceRow

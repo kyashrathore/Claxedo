@@ -1,7 +1,5 @@
-import { Button } from "@opencode-ai/ui/button"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Show, type JSX } from "solid-js"
-import { ClaxedoIconButton } from "@/ui"
+import { ClaxedoIconButton, Button, Tooltip } from "@/ui"
 import type { AccountWords } from "../account-words"
 import { useAccountsText } from "../i18n"
 import type { AccountReach } from "../model"
