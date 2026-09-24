@@ -42,6 +42,10 @@ Once the record exists, `choosingPlacement`, `creating` and `failed` carry its `
 
 `PageEntry.title()` calls `useProjectsText()` and must run under the shell's `I18nProvider`.
 
+## Choosing a folder
+
+"Choose folder" never asks for a typed path as its main input. `useFolderPicker()` opens the desktop's native folder dialog through the preload bridge (`window.api.openDirectoryPicker`, read in `desktop-folder.ts`); in a browser it opens the in-app folder browser (`view/folder-browser.tsx`), which lists the server machine's folders from its home through `queries.folders.list(path?)`. A typed path is a field inside that browser; the adapter expands `~` and refuses a relative path with the server's copy. Until the adapter exports `queries.folders`, `store.ts` types it with a cast.
+
 ## Views
 
 `ProjectsSidebarSection` lists projects for the rail with a per-row menu (rename, remove). `ProjectPage` shows the record, its local placements and the cloud workspaces section. Dialogs open through the kit's `useDialog()`, so the shell must mount `DialogProvider`.
