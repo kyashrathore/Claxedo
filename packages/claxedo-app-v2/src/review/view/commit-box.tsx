@@ -1,11 +1,11 @@
 import { createMemo, For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
-import type { FileChange, GitStatus, PlacementId } from "@/server"
+import { toAppError, type FileChange, type GitStatus, type PlacementId } from "@/server"
 import { Button, Checkbox, Collapsible, Textarea } from "@/ui"
 import { useReviewApi } from "../api"
 import { dictionary } from "../i18n"
-import { createFlow, runFlow } from "../model"
+import { createFlow, runFlow } from "@/lib/flow"
 import { useReview } from "../store"
 import { FlowNotice } from "./flow-notice"
 
@@ -60,20 +60,25 @@ export function CommitBox(props: { readonly placementId: PlacementId }): JSX.Ele
   const canCommit = () =>
     review.message().trim().length > 0 && selected().length > 0 && commit.state().kind !== "running"
   const runCommit = () =>
-    runFlow(commit, "staging", async (step) => {
-      const staged = new Set((status.data?.staged ?? []).map((change) => change.path))
-      const unstage = changes()
-        .map((change) => change.path)
-        .filter((path) => review.excluded(path) && staged.has(path))
-      if (unstage.length > 0) await api.unstage(props.placementId, unstage)
-      await api.stage(props.placementId, selected())
-      step("committing")
-      const result = await api.commit(props.placementId, { message: review.message().trim() })
-      review.setMessage("")
-      return result
-    })
+    runFlow(
+      commit,
+      "staging",
+      async (step) => {
+        const staged = new Set((status.data?.staged ?? []).map((change) => change.path))
+        const unstage = changes()
+          .map((change) => change.path)
+          .filter((path) => review.excluded(path) && staged.has(path))
+        if (unstage.length > 0) await api.unstage(props.placementId, unstage)
+        await api.stage(props.placementId, selected())
+        step("committing")
+        const result = await api.commit(props.placementId, { message: review.message().trim() })
+        review.setMessage("")
+        return result
+      },
+      toAppError,
+    )
   const runPush = () =>
-    runFlow(push, "pushing", () => api.push(props.placementId, { setUpstream: !status.data?.upstream }))
+    runFlow(push, "pushing", () => api.push(props.placementId, { setUpstream: !status.data?.upstream }), toAppError)
   const commitLabel = () => {
     const state = commit.state()
     if (state.kind !== "running") return t("review.commit")

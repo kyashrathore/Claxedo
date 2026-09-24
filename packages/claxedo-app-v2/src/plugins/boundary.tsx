@@ -1,12 +1,9 @@
 import { ErrorBoundary, type Component, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { Button } from "@/ui"
+import { failureReason } from "./failure"
 import { usePluginsText } from "./i18n"
-
-export function failureReason(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return typeof error === "string" ? error : JSON.stringify(error)
-}
+import "./view/plugins.css"
 
 export function PluginBoundary(props: { readonly pluginName: string; readonly children: JSX.Element }): JSX.Element {
   return (

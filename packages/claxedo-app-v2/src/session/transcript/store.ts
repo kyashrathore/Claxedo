@@ -64,6 +64,7 @@ function sessionView(context: TranscriptContext): SessionView {
     requestState: deps.requests.stateOf,
     todos: () => data.todos,
     diff: () => data.diff,
+    subagents: context.subagents.list,
     goal: goal.goal,
     goalActions: goal.actions,
     controlGoal: goal.control,
@@ -81,12 +82,14 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
   const context = createTranscriptContext(server, ref, deps)
   void readSnapshot(context)
   void context.queue.reread()
+  void context.subagents.read()
   return {
     ...sessionView(context),
     apply: (event) => applyServerEvent(context, event),
     gap: () => {
       void readSnapshot(context)
       void context.queue.reread()
+      void context.subagents.read()
     },
     dispose: context.deltas.drop,
   }

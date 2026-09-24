@@ -19,7 +19,9 @@ test("09 subagents: a subagent the agent creates opens in its own pane and leads
 
   const children = (await api.sessions(workspace.directory)).filter((row) => row.parentID === session.id)
   expect(children).toHaveLength(1)
-  await app.getByRole("link", { name: /researcher|Find the project name/ }).first().click()
+  const chip = app.getByRole("region", { name: "Background subagents" }).getByRole("link").filter({ hasText: "Find the project name" })
+  await expect(chip).toBeVisible()
+  await chip.click()
   await expect(app).toHaveURL(new RegExp(`/s/${children[0]!.id}$`))
   await expect(app.getByText("The researcher found the project name")).toBeVisible()
   await expect(app.getByText("Subagent sessions cannot be prompted.")).toBeVisible()

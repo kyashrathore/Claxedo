@@ -7,6 +7,8 @@ import { DataProvider, type TranscriptUserMessage } from "@/transcript"
 import { MessageTimeline, type TimelineHost } from "./timeline"
 import type { TimelineScroll } from "./timeline-scroll"
 import { TranscriptKitProviders } from "./transcript-kit"
+import { subagentViews } from "./subagent-views"
+import { useSessionScreenText } from "./text"
 
 const EMPTY_DATA = { session: [], session_status: {}, session_diff: {}, message: {}, part: {} }
 
@@ -25,6 +27,12 @@ export function SessionTimeline(props: {
   const phone = usePhone()
   const users = createMemo(() => userMessages(props.view))
   const current = () => users().find((message) => message.id === props.scroll.selected())
+  const t = useSessionScreenText()
+  const labels = { subagent: t("sessionScreen.subagent.label"), task: t("sessionScreen.subagent.task") }
+  const resolveSubagents = (parentSessionId: string, toolCallId?: string, hostableCallIds?: ReadonlySet<string>) =>
+    parentSessionId === props.view.ref.sessionId
+      ? subagentViews({ entries: props.view.subagents(), parentSessionId, labels, toolCallId, hostableCallIds })
+      : []
   return (
     <TranscriptKitProviders>
       <DataProvider
@@ -32,6 +40,7 @@ export function SessionTimeline(props: {
         directory={props.host.placementPath}
         onNavigateToSession={props.host.navigation.toSession}
         onSessionHref={(id) => sessionPath({ placementId: props.view.ref.placementId, sessionId: sessionId(id) })}
+        resolveSubagents={resolveSubagents}
       >
         <Show when={props.view.conversation()}>
           <MessageTimeline

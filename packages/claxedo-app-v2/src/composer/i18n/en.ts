@@ -30,7 +30,7 @@ export type ComposerTextKey =
   | "composer.picker.model"
   | "composer.picker.effort"
   | "composer.picker.permissionMode"
-  | "composer.picker.none"
+  | "composer.picker.default"
   | "composer.picker.unavailable"
   | "composer.attachment.remove"
   | "composer.attachment.reading"
@@ -86,7 +86,7 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.picker.model": "Model",
   "composer.picker.effort": "Effort",
   "composer.picker.permissionMode": "Permission mode",
-  "composer.picker.none": "None",
+  "composer.picker.default": "Default",
   "composer.picker.unavailable": "Not installed",
   "composer.attachment.remove": "Remove attachment",
   "composer.attachment.reading": "Reading {{filename}}…",

@@ -1,24 +1,26 @@
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
-import type { Placement, PlacementId, ProjectId } from "@/server"
+import { createFlow, runFlow } from "@/lib/flow"
+import { toAppError, type Placement, type PlacementId, type ProjectId } from "@/server"
 import { Button, Collapsible, TextInput } from "@/ui"
 import { useReviewApi } from "../api"
 import { dictionary } from "../i18n"
-import { createFlow, runFlow } from "../model"
 import { FailureText } from "./flow-notice"
 
 export function Worktrees(props: { readonly placementId: PlacementId }): JSX.Element {
   const api = useReviewApi()
-  const projectId = () => api.placement(props.placementId)?.projectId
-  return <Show when={projectId()}>{(id) => <ProjectWorktrees placementId={props.placementId} projectId={id()} />}</Show>
+  const projectId = () => {
+    const placement = api.placement(props.placementId)
+    return placement?.kind === "cloud" ? undefined : placement?.projectId
+  }
+  return <Show when={projectId()}>{(id) => <ProjectWorktrees projectId={id()} />}</Show>
 }
 
-function ProjectWorktrees(props: { readonly placementId: PlacementId; readonly projectId: ProjectId }): JSX.Element {
+function ProjectWorktrees(props: { readonly projectId: ProjectId }): JSX.Element {
   const t = useTranslator(dictionary)
   const api = useReviewApi()
   const placements = useQuery(() => api.placementsOf(props.projectId))
-  const bases = useQuery(() => api.bases(props.placementId))
   const worktrees = createMemo(() => (placements.data ?? []).filter((placement) => placement.kind === "worktree"))
   return (
     <Collapsible variant="ghost" class="shrink-0 border-t border-border-muted px-3 py-1">
@@ -36,7 +38,7 @@ function ProjectWorktrees(props: { readonly placementId: PlacementId; readonly p
               <For each={worktrees()}>{(placement) => <WorktreeRow placement={placement} />}</For>
             </ul>
           </Show>
-          <WorktreeForm projectId={props.projectId} defaultBase={bases.data?.defaultRef ?? ""} />
+          <WorktreeForm projectId={props.projectId} />
         </section>
       </Collapsible.Content>
     </Collapsible>
@@ -57,22 +59,22 @@ function WorktreeRow(props: { readonly placement: Placement }): JSX.Element {
   )
 }
 
-function WorktreeForm(props: { readonly projectId: ProjectId; readonly defaultBase: string }): JSX.Element {
+function WorktreeForm(props: { readonly projectId: ProjectId }): JSX.Element {
   const t = useTranslator(dictionary)
   const api = useReviewApi()
   const flow = createFlow<"creating", Placement>()
   const [name, setName] = createSignal("")
-  const [base, setBase] = createSignal("")
-  const baseRef = () => base() || props.defaultBase
   const create = () =>
-    runFlow(flow, "creating", async () => {
-      const created = await api.createWorktree(props.projectId, {
-        name: name().trim() || undefined,
-        baseRef: baseRef() || undefined,
-      })
-      setName("")
-      return created
-    })
+    runFlow(
+      flow,
+      "creating",
+      async () => {
+        const created = await api.createWorktree(props.projectId, { name: name().trim() || undefined })
+        setName("")
+        return created
+      },
+      toAppError,
+    )
   const createdLabel = () => {
     const state = flow.state()
     return state.kind === "done" ? state.result.label : undefined
@@ -90,22 +92,12 @@ function WorktreeForm(props: { readonly projectId: ProjectId; readonly defaultBa
         if (flow.state().kind !== "running") void create()
       }}
     >
-      <div class="flex flex-wrap gap-2">
-        <TextInput
-          class="min-w-0 flex-1"
-          value={name()}
-          placeholder={t("review.worktrees.name")}
-          aria-label={t("review.worktrees.name")}
-          onInput={(event) => setName(event.currentTarget.value)}
-        />
-        <TextInput
-          class="min-w-0 flex-1 font-mono"
-          value={baseRef()}
-          placeholder={t("review.worktrees.base")}
-          aria-label={t("review.worktrees.base")}
-          onInput={(event) => setBase(event.currentTarget.value)}
-        />
-      </div>
+      <TextInput
+        value={name()}
+        placeholder={t("review.worktrees.name")}
+        aria-label={t("review.worktrees.name")}
+        onInput={(event) => setName(event.currentTarget.value)}
+      />
       <Button
         type="submit"
         size="normal"

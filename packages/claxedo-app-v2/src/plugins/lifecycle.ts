@@ -1,7 +1,7 @@
 import { createEffect, createRoot, createSignal, on, type Accessor } from "solid-js"
 import type { Activation } from "./activation"
-import { failureReason } from "./boundary"
-import { buildIdOf, failedBuild, pluginMachine, type PluginBuild, type PluginState } from "./model"
+import { failureReason } from "./failure"
+import { buildIdOf, failedBuildId, pluginMachine, type PluginBuild, type PluginState } from "./model"
 
 export type Activate = (build: PluginBuild, onCrash: (reason: string) => void) => Promise<Activation>
 
@@ -55,7 +55,7 @@ export function createPluginLifecycle(initial: PluginBuild, wanted: (build: Plug
           return
         }
         const id = buildIdOf(next)
-        if (running?.build === id || failedBuild(machine.state()) === id) return
+        if (running?.build === id || failedBuildId(machine.state()) === id) return
         void start(next)
       }),
     )

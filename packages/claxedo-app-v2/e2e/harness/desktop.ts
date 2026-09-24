@@ -1,0 +1,173 @@
+import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { releaseAcpHold, writeAcpScript, type AcpScript } from "./acp/script"
+import { ClaxedoApi } from "./api"
+import { appChoice, type AppChoice } from "./app"
+import { DESKTOP_DIR, DESKTOP_MAIN } from "./desktop-build"
+import { startEgressGuard, type EgressGuard } from "./egress-guard"
+import { isolatedEnv } from "./isolated-env"
+import { writeScriptedModelCatalog } from "./model-catalog"
+import { releasePort, reservePort } from "./ports"
+import { startScriptedModelServer, type ScriptedModelServer } from "./scripted-model-server"
+import { prepareScriptedServer } from "./scripted-world"
+import { safeLabel } from "./stack"
+import { pageTransport, type HttpTransport } from "./transport"
+import { makeWorkspace, type Workspace } from "./workspaces"
+
+const SHELL_DOCUMENT = /index\.local\.html$/
+
+export type Desktop = {
+  app: AppChoice
+  electron: ElectronApplication
+  window: Page
+  url: string
+  api: ClaxedoApi
+  dataDir: string
+  scripted: ScriptedModelServer
+  egress: EgressGuard
+  acp: { scriptDir: string; write(name: string, script: AcpScript): Promise<void>; release(name: string): Promise<void> }
+  makeWorkspace(name: string): Promise<Workspace>
+  log(): string
+  close(): Promise<void>
+}
+
+type DesktopWorld = {
+  dataDir: string
+  serverPort: number
+  egress: EgressGuard
+  scripted: ScriptedModelServer
+  acpScriptDir: string
+  close(): Promise<void>
+}
+
+async function startWorld(label: string): Promise<DesktopWorld> {
+  const dataDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-e2e-desktop-${safeLabel(label)}-`)))
+  const ports = [await reservePort(), await reservePort(), await reservePort()]
+  const release = async () => {
+    for (const port of ports) releasePort(port)
+    if (process.env.CLAXEDO_E2E_KEEP_DATA !== "1") await fs.rm(dataDir, { recursive: true, force: true })
+  }
+  const egress = await startEgressGuard(ports[0])
+  let scripted: ScriptedModelServer
+  try {
+    scripted = await startScriptedModelServer({ port: ports[1] })
+  } catch (error) {
+    await egress.close()
+    await release()
+    throw error
+  }
+  const acpScriptDir = path.join(dataDir, "acp-scripts")
+  await fs.mkdir(acpScriptDir, { recursive: true })
+  const close = async () => {
+    await scripted.close()
+    await egress.close()
+    await release()
+  }
+  return { dataDir, serverPort: ports[2], egress, scripted, acpScriptDir, close }
+}
+
+async function desktopEnv(world: DesktopWorld) {
+  const zdotdir = path.join(world.dataDir, "zdotdir")
+  await fs.mkdir(zdotdir, { recursive: true })
+  const entries = {
+    ...(await isolatedEnv(world.dataDir, world.egress.url)),
+    CLAXEDO_OPENCODE_CATALOG_CACHE: await writeScriptedModelCatalog(world.dataDir),
+    CLAXEDO_DESKTOP_USER_DATA_DIR: path.join(world.dataDir, "user-data"),
+    CLAXEDO_DATA_DIR: path.join(world.dataDir, "server-data"),
+    CLAXEDO_SERVER_PORT: String(world.serverPort),
+    ZDOTDIR: zdotdir,
+  }
+  return Object.fromEntries(Object.entries(entries).filter((entry): entry is [string, string] => entry[1] !== undefined))
+}
+
+async function launchElectron(world: DesktopWorld) {
+  return electron.launch({
+    args: [DESKTOP_MAIN, `--user-data-dir=${path.join(world.dataDir, "chromium")}`],
+    cwd: DESKTOP_DIR,
+    env: await desktopEnv(world),
+    timeout: 60_000,
+  })
+}
+
+async function shellWindow(app: ElectronApplication): Promise<Page> {
+  for (;;) {
+    const shell = app.windows().find((page) => SHELL_DOCUMENT.test(page.url()))
+    if (shell) return shell
+    const next = await Promise.race([
+      app.waitForEvent("window", { timeout: 60_000 }),
+      ...app.windows().map((page) => page.waitForURL(SHELL_DOCUMENT, { timeout: 60_000 }).then(() => page)),
+    ])
+    if (SHELL_DOCUMENT.test(next.url())) return next
+  }
+}
+
+type PreloadBridge = { awaitInitialization(onStep: () => void): Promise<unknown> }
+
+async function serverPublished(window: Page) {
+  await window.evaluate(async () => {
+    const bridge = (globalThis as { api?: PreloadBridge }).api
+    if (!bridge) throw new Error("the desktop window has no preload bridge")
+    await bridge.awaitInitialization(() => undefined)
+  })
+}
+
+function captureOutput(app: ElectronApplication) {
+  const output: string[] = []
+  app.process().stdout?.on("data", (chunk: Buffer) => output.push(chunk.toString()))
+  app.process().stderr?.on("data", (chunk: Buffer) => output.push(chunk.toString()))
+  return () => output.join("")
+}
+
+type DesktopParts = { app: ElectronApplication; window: Page; transport: HttpTransport; log: () => string; close: () => Promise<void> }
+
+function desktopHandle(world: DesktopWorld, parts: DesktopParts): Desktop {
+  const url = `http://127.0.0.1:${world.serverPort}`
+  return {
+    app: appChoice(),
+    electron: parts.app,
+    window: parts.window,
+    url,
+    api: new ClaxedoApi(url, parts.transport),
+    dataDir: world.dataDir,
+    scripted: world.scripted,
+    egress: world.egress,
+    acp: {
+      scriptDir: world.acpScriptDir,
+      write: (name, script) => writeAcpScript(world.acpScriptDir, name, script),
+      release: (name) => releaseAcpHold(world.acpScriptDir, name),
+    },
+    makeWorkspace: (name) => makeWorkspace(parts.transport, url, path.join(world.dataDir, "workspaces"), name),
+    log: parts.log,
+    close: parts.close,
+  }
+}
+
+export async function launchDesktop(input: { label: string; red: boolean }): Promise<Desktop> {
+  const world = await startWorld(input.label)
+  let app: ElectronApplication
+  try {
+    app = await launchElectron(world)
+  } catch (error) {
+    await world.close()
+    throw error
+  }
+  const log = captureOutput(app)
+  const close = async () => {
+    await app.close()
+    await world.close()
+  }
+  const url = `http://127.0.0.1:${world.serverPort}`
+  try {
+    const window = await shellWindow(app)
+    await serverPublished(window)
+    const transport = pageTransport(window)
+    await prepareScriptedServer(transport, url, { scripted: world.scripted, acpScriptDir: world.acpScriptDir, red: input.red })
+    await window.reload()
+    return desktopHandle(world, { app, window, transport, log, close })
+  } catch (error) {
+    await close()
+    throw new Error(`the desktop did not start:\n${log().split("\n").slice(-40).join("\n")}`, { cause: error })
+  }
+}

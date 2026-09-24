@@ -35,6 +35,7 @@ import type {
   FeatureAvailability,
   FetchQuery,
   GoalAction,
+  HarnessLogin,
   HarnessOptions,
   Machine,
   Placement,
@@ -137,7 +138,10 @@ export type ServerQueries = {
     readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
-  readonly harnesses: { readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions> }
+  readonly harnesses: {
+    readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
+    readonly logins: () => FetchQuery<readonly HarnessLogin[]>
+  }
   readonly files: {
     readonly tree: (placementId: PlacementId, path: string) => FetchQuery<readonly FileNode[]>
     readonly content: (placementId: PlacementId, path: string) => FetchQuery<FileContent>

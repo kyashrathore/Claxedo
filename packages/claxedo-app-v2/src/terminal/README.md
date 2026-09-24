@@ -19,6 +19,7 @@ Owns: terminal panes, the one attach path to a runtime PTY, terminal links, the 
 
 ## Invariants
 
+- Closing a terminal tab ends its PTY: the provider listens to the workbench's `onClosed` for the `terminal` kind and removes the terminal on the server. Replacing a gone terminal's pane fires the same hook, and the server's `not_found` answer for it is the expected end state. A failure to end it is logged and shown.
 - `TerminalProvider` mounts once inside the scoped shell, under the commands provider, because it reads the route, the workbench and the command registry. It owns the stores, at most 8 placements, and never evicts a placement a mounted pane retains.
 - The placement a new terminal opens in is the one the URL names.
 - Status copy comes from the failure reason, never from an error's message.
