@@ -55,12 +55,13 @@ test("12 workbench and shell: a rail row dragged to the edge splits, compact tab
 test("12 New Session again focuses the workspace's one draft tab", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
   const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
-  const draftTab = () => panes(app).getByRole("button", { name: /^New [Ss]ession$/ })
+  const draftTab = () => panes(app).getByRole("button", { name: UI.newSession, exact: true })
+  const newSession = () => app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).and(app.locator(":not([data-testid=switcher-title-button])"))
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
-  await app.getByRole("button", { name: "New Session", exact: true }).click()
+  await newSession().click()
   await app.getByRole("navigation", { name: UI.rail }).getByRole("button", { name: "First", exact: true }).click()
-  await app.getByRole("button", { name: "New Session", exact: true }).click()
+  await newSession().click()
   await app.getByRole("button", { name: UI.hideSidebar }).click()
   await expect(panes(app).getByRole("button", { name: "First", exact: true })).toBeVisible()
   await expect(draftTab()).toHaveCount(1)
@@ -84,7 +85,7 @@ test("12 New Session again focuses the workspace's one draft tab", async ({ stac
         localStorage.setItem(key, JSON.stringify(saved))
       })
       await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
-      await app.getByRole("button", { name: "New Session", exact: true }).click()
+      await newSession().click()
       await expect(draftTab()).toHaveCount(1)
     })
   }
