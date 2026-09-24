@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { Account } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
+import type { FolderQueries, FoldersApi } from "./folders"
 import type {
   DiffFile,
   DiffScope,
@@ -138,6 +139,7 @@ export type ServerQueries = {
     readonly repositories: (connectionId: string) => FetchQuery<readonly CodeHostRepository[]>
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
+  readonly folders: FolderQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -168,6 +170,7 @@ export type Server = {
   readonly terminals: TerminalsApi
   readonly git: GitApi
   readonly cloud: CloudApi
+  readonly folders: FoldersApi
   readonly livePlugins: LivePluginsApi
   readonly queries: ServerQueries
   readonly request: (path: string, init?: RequestInit) => Promise<Response>

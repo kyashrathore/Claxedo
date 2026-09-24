@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
+import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryable, toAppError } from "./errors"
 import { createEventIntake } from "./event-intake"
@@ -83,6 +84,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),
+    folders: createFoldersApi(transport),
     livePlugins: createLivePluginsApi(transport),
     request: transport.request,
   }
