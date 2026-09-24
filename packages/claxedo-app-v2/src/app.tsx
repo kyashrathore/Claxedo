@@ -3,7 +3,7 @@ import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
 import { ProjectListProvider } from "@/projects"
-import { MainSidebar } from "@/rail"
+import { CompactSwitcher, MainSidebar } from "@/rail"
 import { createServer, ServerProvider, type AuthSource } from "@/server"
 import { SessionStoresProvider } from "@/session"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
@@ -59,7 +59,7 @@ export function App(props: AppProps): JSX.Element {
           <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
             <ShellRouter router={props.router}>
               <SignedServer serverUrl={props.serverUrl}>
-                <AppShell mainSidebar={<MainSidebar />} />
+                <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
               </SignedServer>
             </ShellRouter>
           </ThemeProvider>

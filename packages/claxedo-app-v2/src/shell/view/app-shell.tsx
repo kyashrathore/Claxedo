@@ -25,7 +25,7 @@ import { RouteSync } from "./route-sync"
 import { SettingsSidebar } from "./settings-sidebar"
 import { ShellCommands } from "./shell-commands"
 
-export type AppShellProps = { readonly mainSidebar: JSX.Element }
+export type AppShellProps = { readonly mainSidebar: JSX.Element; readonly compactTabs: JSX.Element }
 
 export function principalScope(capabilities: Capabilities | undefined): string | undefined {
   if (!capabilities) return undefined
@@ -49,7 +49,7 @@ function ShellLoading(): JSX.Element {
   )
 }
 
-function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.Element }): JSX.Element {
+function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Element {
   const registries = useShellRegistries()
   const routing = useShellRoute()
   const workbench = createWorkbenchStore(preferenceKey("workbench", props.scope), registries.paneKinds.list)
@@ -64,7 +64,7 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
                 <RouteSync />
                 <ShellCommands />
                   <ConnectionBanner />
-                <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
+                <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />
                 <CommandPalette />
                 <Overlays />
               </PluginHostProvider>
@@ -76,11 +76,12 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
   )
 }
 
-function ShellBody(props: { readonly route: ShellRoute; readonly mainSidebar: JSX.Element }): JSX.Element {
+function ShellBody(props: AppShellProps & { readonly route: ShellRoute }): JSX.Element {
   return (
     <ShellFrame
       sidebar={{ mode: sidebarModeOf(props.route), main: props.mainSidebar, settings: <SettingsSidebar /> }}
       center={centerOf(props.route)}
+      compactTabs={props.compactTabs}
     />
   )
 }
@@ -95,7 +96,7 @@ export function AppShell(props: AppShellProps): JSX.Element {
   })
   return (
     <>
-      <Show when={screen()} fallback={<Show when={scope()} fallback={<ShellLoading />}>{(s) => <ScopedShell scope={s()} mainSidebar={props.mainSidebar} />}</Show>}>
+      <Show when={screen()} fallback={<Show when={scope()} fallback={<ShellLoading />}>{(s) => <ScopedShell scope={s()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />}</Show>}>
         {(route) => <Dynamic component={route().screen.view} params={route().params} />}
       </Show>
       <Toast.Region />
