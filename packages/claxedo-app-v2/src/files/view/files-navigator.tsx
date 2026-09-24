@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useTranslator } from "@/i18n"
 import type { PlacementId } from "@/server"
-import { ClaxedoIcon as Icon, DelayedLoading } from "@/ui"
+import { ClaxedoIcon as Icon, DelayedLoading, ScrollView } from "@/ui"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { buildKinds } from "../model"
@@ -113,7 +113,7 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   return (
     <div data-testid="workspace-files-navigator" data-mode="files" class="flex size-full min-h-0 flex-col">
       <SearchRow />
-      <div class="min-h-0 flex-1 overflow-auto" ref={setScroller}>
+      <ScrollView class="min-h-0 flex-1" viewportRef={setScroller}>
         <Show when={searchPending()}>
           <div class="flex h-24 items-center justify-center">
             <DelayedLoading>
@@ -137,7 +137,7 @@ export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
             onFileClick={(node) => props.onOpenFile(node.path)}
           />
         </div>
-      </div>
+      </ScrollView>
     </div>
   )
 }

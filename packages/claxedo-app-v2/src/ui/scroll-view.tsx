@@ -2,6 +2,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createEffect, createMemo, mergeProps, onCleanup, onMount, Show, splitProps, type Accessor, type ComponentProps, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 import { isScrollKeyTarget, scrollByKey, scrollKey, scrollKeyOwner } from "./scroll-view-keys"
+import { ScrollThumbElement } from "./scroll-thumb"
 import { createScrollThumb, type ScrollViewThumbVisibility } from "./scroll-view-thumb"
 import "./scroll-view.css"
 
@@ -76,15 +77,7 @@ export function ScrollView(props: ScrollViewProps) {
     scrollByKey(viewport, key)
   }
 
-  const renderThumb = () => (
-    <div
-      class="v2-scroll-view-thumb"
-      data-visible={thumb.visible(local.thumbVisibility)}
-      data-dragging={thumb.state.dragging}
-      style={{ height: `${thumb.state.height}px`, transform: `translateY(${thumb.state.top}px)` }}
-      onPointerDown={(event) => thumb.drag(event.currentTarget, event)}
-    />
-  )
+  const renderThumb = () => <ScrollThumbElement thumb={thumb} visibility={local.thumbVisibility} />
 
   return (
     <div

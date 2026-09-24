@@ -73,6 +73,7 @@ export { ProviderIcon, providerIconNames, providerIconSprite, type ProviderIconP
 export { RadioGroup, RadioItem, type RadioGroupProps, type RadioItemProps } from "./radio"
 export { ResizeHandle, type ResizeHandleProps } from "./resize-handle"
 export { ScrollView, type ScrollViewProps } from "./scroll-view"
+export { ScrollThumb, type ScrollThumbProps } from "./scroll-thumb"
 export { canScrollKey, isScrollKeyTarget, scrollKey, scrollKeyOwner, type ScrollKeyAction } from "./scroll-view-keys"
 export { type ScrollViewThumbVisibility } from "./scroll-view-thumb"
 export {
