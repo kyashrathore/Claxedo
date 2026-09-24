@@ -169,6 +169,15 @@ The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi
 
 An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` sends the account's bearer token straight to the daemon, reserves each session before creating it and stamps every prompt with a message id, which a signed server requires.
 
+### Signed stack: next steps
+
+Flows 21, 22, 23 and 36 are on hold (owner, 19:08). What the signed stack lacks for them, and the options, with the recommendation C, then A:
+
+- v1 shows its "Share session" control only for a signed session it reaches as central, through the relay (`session-header.tsx:78-90`). On this stack v1 reaches the owner's folder workspaces as local, so the control never mounts, and a second account's reads are refused with 403 `relay_actor_unverified`.
+- **A: the relay in the harness.** Start `@claxedo/workspace-relay` on a lane port, set `CLAXEDO_WORKSPACE_RELAY_URL`, the resolver token and the keys, and enroll the box as a host, so its workspaces are central. All harness code; the browser still signs in through `/login`. Largest: it re-derives part of `packages/claxedo-server/src/signed-browser-relay-fixture.mjs`.
+- **B: an embedded-issuer mode in that fixture.** It already runs a relay, a host tunnel and a registered host, but signs browsers in only through the test bypass v2 does not have. Less code, but it edits a server test fixture v1's signed-web specs share.
+- **C: flow 21 first.** The desktop signs in to this stack through its own sign-in (system browser, loopback callback), which the embedded issuer serves; no relay. The desktop needs `CLAXEDO_CORE_ORIGIN` set to the stack's HTTPS origin and `NODE_EXTRA_CA_CERTS` for its certificate. Risk: the isolated desktop still reaches this Mac's login keychain (`safeStorage.isEncryptionAvailable()` is true), so a sign-in would write its key there.
+
 ### `desktop` (the Electron app)
 
 Specs tagged `@desktop` (`test("…", { tag: "@desktop" }, async ({ desktop }) => …)`) run only in the `desktop` project; `web` and `phone` skip them. The `desktop` fixture builds `packages/claxedo-desktop` for the chosen app when its sources or the app's are newer than the last build (`bun run prebuild`, then `electron-vite build`, with `CLAXEDO_DESKTOP_RENDERER=v2` for v2; about a minute, recorded as a "desktop build" annotation), then launches `out/main/index.js` through Playwright's Electron driver. The app runs isolated like a stack: `HOME`, `XDG_*`, its user data and its server data in the spec's data directory, an empty `ZDOTDIR`, the egress guard, and its own scripted model server and ACP scripts. Its embedded server listens on a port from the run's range and is prepared exactly like the daemon.
