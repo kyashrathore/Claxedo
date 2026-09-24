@@ -11,7 +11,7 @@ Owns: the split-pane layout of the center region, the contents shown in its pane
 
 ## One owner
 
-`createWorkbenchStore(key, kinds)` in `store.ts` is the only writer. It keeps one persisted record, `{ layout, contents }`, under the user-scoped key the shell passes, validates it on read (`validate.ts`), and drops any content whose record is missing. Every change goes through the pure reducers in `reducers/` and `apply`, which short-circuits identity-equal results and lets chained calls in one task see each other's writes.
+`createWorkbenchStore(key, kinds)` in `store.ts` is the only writer; `layout-api.ts` holds its layout operations and selectors. It keeps one persisted record, `{ layout, contents }`, under the user-scoped key the shell passes, validates it on read (`validate.ts`), and drops any content whose record is missing. Every change goes through the pure reducers in `reducers/` and `apply`, which short-circuits identity-equal results and lets chained calls in one task see each other's writes.
 
 The store also hosts the drag controller (`drag/pointer-drag.ts`) so every drag source and drop zone shares one pointer stream and one ghost, without module-level state.
 
