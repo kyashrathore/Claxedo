@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "settings.section.machines": "Machines",
   "settings.section.appearance": "Appearance",
   "settings.section.keybindings": "Keyboard shortcuts",

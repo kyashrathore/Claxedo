@@ -3,11 +3,11 @@ import { useTranslator } from "@/i18n"
 import { playSound, requestSystemNotifications, SOUNDS, type AlertKind, type SoundChoice } from "@/notifications"
 import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@/ui"
-import { dictionary, type Keys } from "../i18n"
+import { settingsDictionary, type SettingsKey } from "../i18n"
 import { usePreferences } from "../preferences"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
 
-type AlertRow = { readonly kind: AlertKind; readonly title: Keys; readonly notify: Keys; readonly sound: Keys }
+type AlertRow = { readonly kind: AlertKind; readonly title: SettingsKey; readonly notify: SettingsKey; readonly sound: SettingsKey }
 
 const ALERT_ROWS: readonly AlertRow[] = [
   { kind: "agent", title: "settings.alerts.agent", notify: "settings.notifications.agent.description", sound: "settings.sounds.agent.description" },
@@ -23,7 +23,7 @@ const ALERT_ROWS: readonly AlertRow[] = [
 const SOUND_CHOICES: readonly SoundChoice[] = ["none", ...SOUNDS.map((sound) => sound.id)]
 
 export function NotificationsSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const preferences = usePreferences()
   const change = (kind: AlertKind, checked: boolean) => {
     preferences.setAlertNotify(kind, checked)
@@ -51,7 +51,7 @@ export function NotificationsSection() {
 }
 
 export function SoundsSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const preferences = usePreferences()
   const label = (choice: SoundChoice) => (choice === "none" ? t("settings.sounds.none") : t("settings.sounds.alert01"))
   return (

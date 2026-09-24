@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "settings.section.keybindings": "ショートカット",
   "settings.section.appearance": "外観",
   "settings.common.cancel": "キャンセル",

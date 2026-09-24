@@ -3,7 +3,7 @@ import { Select } from "@opencode-ai/ui/select"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Switch, useTheme, type ColorScheme } from "@/ui"
 import { useTranslator } from "@/i18n"
-import { dictionary, type Keys } from "../i18n"
+import { settingsDictionary, type SettingsKey } from "../i18n"
 import { CODE_FONT_PLACEHOLDER, codeFontFamily, TERMINAL_FONT_PLACEHOLDER, terminalFontFamily, UI_FONT_PLACEHOLDER, uiFontFamily } from "../fonts"
 import { usePreferences, type AppearancePreferences, type NavigatorSide } from "../preferences"
 import { ContrastRow } from "./contrast"
@@ -23,12 +23,12 @@ const SIDES: readonly NavigatorSide[] = ["left", "right"]
 const SIDE_KEY = {
   left: "settings.appearance.navigatorSide.left",
   right: "settings.appearance.navigatorSide.right",
-} as const satisfies Record<NavigatorSide, Keys>
+} as const satisfies Record<NavigatorSide, SettingsKey>
 
 type FontRow = {
   readonly key: "uiFont" | "codeFont" | "terminalFont"
-  readonly title: Keys
-  readonly description: Keys
+  readonly title: SettingsKey
+  readonly description: SettingsKey
   readonly placeholder: string
   readonly family: (font: string) => string
   readonly action: string
@@ -52,7 +52,7 @@ function FontRows(props: {
   readonly appearance: AppearancePreferences
   readonly onChange: (key: FontRow["key"], value: string) => void
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   return (
     <For each={props.rows}>
       {(row) => (
@@ -80,7 +80,7 @@ function FontRows(props: {
 }
 
 export function AppearanceSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const theme = useTheme()
   const preferences = usePreferences()
   const setFont = (key: FontRow["key"], value: string) => preferences.setAppearance(key, value)

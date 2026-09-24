@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import { useServer, type Machine } from "@/server"
 import { Button, ClaxedoIconButton } from "@/ui"
-import { dictionary, type Keys } from "../i18n"
+import { settingsDictionary, type SettingsKey } from "../i18n"
 import { SettingsGroup, SettingsIntro, SettingsList, SettingsRow } from "./section"
 
 const INVITE_COMMAND = "claxedo host invite --name build-box --root ~/code"
@@ -39,7 +39,7 @@ function Step(props: { readonly number: string; readonly title: string; readonly
 }
 
 function AddMachine(props: { readonly empty: boolean }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const [open, setOpen] = createSignal(false)
   return (
     <div class="settings-add-machine">
@@ -66,13 +66,13 @@ function AddMachine(props: { readonly empty: boolean }) {
   )
 }
 
-function machineStatus(machine: Machine): Keys {
+function machineStatus(machine: Machine): SettingsKey {
   if (machine.isThisMachine) return machine.online ? "settings.machines.connectedHere" : "settings.machines.offlineHere"
   return machine.online ? "settings.machines.connected" : "settings.machines.offline"
 }
 
 export function MachinesSection() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const server = useServer()
   const query = useQuery(() => server.queries.machines.list())
   const machines = createMemo(() => (query.data ?? []).filter((machine) => machine.enrolled))
