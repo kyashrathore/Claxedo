@@ -1,0 +1,14 @@
+scrollTop: 0
+background subagents:
+(none)
+row 0:
+- text: Write the notes. acp-script:edit-plan-image-0 Build · <time>
+- button "Copy message"
+row 1:
+- button "Worked for 0s"
+row 2:
+- img "image.png"
+row 3:
+- paragraph: Wrote the notes.
+- button "Copy response"
+- text: Build · 0s
