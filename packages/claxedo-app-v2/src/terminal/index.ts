@@ -1,3 +1,6 @@
 export { TerminalProvider } from "./provider"
 export { terminalPaneKind } from "./pane"
+export { terminalCreatorPaneKind } from "./creator-pane"
+export { useTerminals, type TerminalItem, type TerminalList } from "./public"
 export type { TerminalPaneState } from "./model"
+export type { TerminalLaunch } from "./store"

@@ -8,10 +8,9 @@ import { dictionary } from "./i18n"
 import type { TerminalPaneState } from "./model"
 import { terminalPaneKind } from "./pane"
 
-export function useEndTerminalOnClose(terminals: Terminals): void {
-  const workbench = useWorkbench()
+export function useEndTerminal(terminals: Terminals): (state: TerminalPaneState) => Promise<void> {
   const t = useTranslator(dictionary)
-  const end = (state: TerminalPaneState) =>
+  return (state) =>
     terminals
       .store(state.placementId)
       .close(state.terminalId)
@@ -21,5 +20,10 @@ export function useEndTerminalOnClose(terminals: Terminals): void {
         console.error("Terminal could not be ended", { terminalId: state.terminalId, error })
         showToast({ title: t("terminal.closeFailed") })
       })
+}
+
+export function useEndTerminalOnClose(terminals: Terminals): void {
+  const workbench = useWorkbench()
+  const end = useEndTerminal(terminals)
   onCleanup(workbench.onClosed(terminalPaneKind, (state) => void end(state)))
 }

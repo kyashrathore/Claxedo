@@ -30,6 +30,7 @@ export function TerminalProvider(props: ParentProps): JSX.Element {
     store: cache.storeFor,
     retain: cache.retain,
     defaultTitle: () => t("terminal.title"),
+    newTitle: () => t("terminal.creator.tab"),
     open: (state, paneId) => {
       if (paneId) workbench.replacePane(paneId, terminalPaneKind, state)
       else workbench.openPane(terminalPaneKind, state)
