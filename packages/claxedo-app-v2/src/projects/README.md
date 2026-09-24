@@ -26,15 +26,17 @@ Owns: the project record as the app sees it, its placements, the add-project flo
 
 ## State machines
 
-**Add project** (`model.ts`): `choosingSource → choosingAgent → choosingPlacement → creating → created(projectId, placementId?)`, with `failed(error)` from `creating`. Events: `sourceChosen`, `agentChosen`, `back`, `createRequested`, `projectCreated`, `createFailed`, `retryRequested`. `back` from `failed` returns to `choosingAgent`; `retryRequested` returns to `choosingPlacement`.
+**Add project** (`model.ts`): `choosingSource → choosingAgent → choosingPlacement → creating → created(projectId, placementId?)`, with `failed(error)` from `creating`. Events: `sourceChosen`, `agentChosen`, `back`, `createRequested`, `projectRecorded`, `projectCreated`, `createFailed`.
 
 The flow is hosted first: name and source, then the AI, then where it runs. On every deployment the record is created first through the projects route, then its placement: a cloud workspace through `@/cloud`, or the placement the server registered for the chosen machine. The panels of visited steps stay mounted and hidden, so Back keeps what the user entered.
+
+Once the record exists, `choosingPlacement`, `creating` and `failed` carry its `projectId`. Retrying places that project again and never posts a second record, and Back stops at the placement step (`canGoBack`), because the name and source now belong to a server record.
 
 ## Routes
 
 - `/p/:projectId`: the project page (`projectPage`).
 - `/projects/new`: the add-project page (`addProjectPage`).
-- `placementDraftPath(placementId, harnessId?)`: `/w/:placementId/s/new`, where a created project opens.
+- Opening a placement (`usePlacementOpener`) creates a session in it, with the chosen harness after an add, and goes to `/w/:placementId/s/:sessionId`, as the rail's New session does. A created project with no placement opens its project page. A failed session create is shown as a toast.
 
 `PageEntry.title()` calls `useProjectsText()` and must run under the shell's `I18nProvider`.
 
