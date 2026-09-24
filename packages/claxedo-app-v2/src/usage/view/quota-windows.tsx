@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
 import { formatRelativeTime } from "@/lib/relative-time"
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { ProviderIcon } from "@/ui"
 import { dictionary, type UsageKey } from "../i18n"
 import { usedPercent, type QuotaAccount, type QuotaWindow } from "../model"
 import "./usage.css"

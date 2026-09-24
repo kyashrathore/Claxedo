@@ -1,10 +1,6 @@
-import {
-  transcriptLinkPrefixes,
-  transcriptLinkRunSource,
-  transcriptLinkUriAllowed,
-} from "@opencode-ai/ui/context/marked"
+import { transcriptLinkPrefixes, transcriptLinkRunSource, transcriptLinkUriAllowed } from "@/ui"
 
-export { transcriptLinkUriPattern } from "@opencode-ai/ui/context/marked"
+export { transcriptLinkUriPattern } from "@/ui"
 
 const prefixAlternation = transcriptLinkPrefixes.map((prefix) => prefix.replace(/[./]/g, "\\$&")).join("|")
 

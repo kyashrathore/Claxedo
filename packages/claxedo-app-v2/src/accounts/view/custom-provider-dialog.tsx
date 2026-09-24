@@ -1,9 +1,7 @@
-import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { TextField } from "@opencode-ai/ui/text-field"
 import { batch, createSignal, For } from "solid-js"
 import { createStore, produce, type SetStoreFunction } from "solid-js/store"
 import { toAppError, useServer } from "@/server"
-import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog } from "@/ui"
+import { ClaxedoIconButton as IconButton, showToast, useDialog, Button, Dialog, ProviderIcon, TextField } from "@/ui"
 import { headerRow, modelRow, validateCustomProvider, type FormState } from "../custom-provider"
 import { useAccountsText, type AccountsKey } from "../i18n"
 

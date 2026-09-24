@@ -1,7 +1,5 @@
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { TextField } from "@opencode-ai/ui/text-field"
 import { For, Match, Show, Switch, type JSX } from "solid-js"
-import { ClaxedoIcon as Icon, Button } from "@/ui"
+import { ClaxedoIcon as Icon, Button, Spinner, TextField } from "@/ui"
 import { CONTEXT_COPY, createProviderConnect, type ProviderConnect, type ConnectFormInput } from "../connect-form"
 import { useAccountsText } from "../i18n"
 import { ConnectCommand } from "./connect-command"

@@ -1,6 +1,5 @@
-import { TextField } from "@opencode-ai/ui/text-field"
 import { Show } from "solid-js"
-import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton } from "@/ui"
+import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, TextField } from "@/ui"
 
 export function SearchField(props: { readonly value: string; readonly onChange: (value: string) => void; readonly placeholder: string; readonly action: string }) {
   return (

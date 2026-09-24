@@ -1,6 +1,6 @@
 import type { Accessor } from "solid-js"
 import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
-import type { PairedTranscriptTypography } from "@opencode-ai/ui/theme/transcript-typography"
+import { type PairedTranscriptTypography } from "@/ui"
 import type { SessionStatus } from "@/server"
 import type { TranscriptConversation } from "@/transcript"
 

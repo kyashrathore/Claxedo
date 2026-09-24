@@ -1,6 +1,6 @@
 import { createEffect, createSignal, Match, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
+import { MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"

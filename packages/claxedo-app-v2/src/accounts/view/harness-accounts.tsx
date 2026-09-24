@@ -1,4 +1,4 @@
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { Spinner } from "@/ui"
 import { Show } from "solid-js"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useI18n } from "@/i18n"

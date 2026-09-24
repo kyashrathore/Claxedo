@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
-import { TextField } from "@opencode-ai/ui/text-field"
+import { TextField } from "@/ui"
 import { useOnboardingText, type OnboardingText } from "../i18n"
 import type { ExecutionChoice } from "../steps"
 import { SandboxProviderKey } from "./sandbox-provider-key"

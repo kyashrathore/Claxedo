@@ -1,7 +1,6 @@
 import { For, onCleanup, onMount, Show } from "solid-js"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { ProjectCreateForm } from "@/projects"
-import { animateHeightChanges } from "@/ui"
+import { animateHeightChanges, ScrollView } from "@/ui"
 import { useOnboardingText } from "../i18n"
 import { onboardingSteps } from "../steps"
 import { createOnboardingWizard, draftName, type OnboardingWizard as Wizard } from "../wizard"
