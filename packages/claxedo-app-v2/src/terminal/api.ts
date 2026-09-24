@@ -1,8 +1,4 @@
-import { useServer, type Server, type TerminalsApi } from "@/server"
-
-export function useTerminalsApi(): TerminalsApi {
-  return useServer().terminals
-}
+import type { Server, TerminalsApi } from "@/server"
 
 export function terminalsApi(server: Server): TerminalsApi {
   return server.terminals

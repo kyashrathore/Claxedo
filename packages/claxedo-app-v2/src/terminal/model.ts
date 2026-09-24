@@ -1,18 +1,27 @@
-import type { AppError, Terminal, TerminalAgentStatus, TerminalStreamClose } from "@/server"
+import type { AppError, PlacementId, Terminal, TerminalAgentStatus, TerminalId, TerminalStreamClose } from "@/server"
 import { unreachable } from "@/lib/machine"
 
 export type TerminalRow = Terminal & { readonly agentStatus?: TerminalAgentStatus }
+
+export type TerminalPaneState = {
+  readonly placementId: PlacementId
+  readonly terminalId: TerminalId
+}
+
+export type TerminalFailure = "closed" | "overload" | "restore" | "start"
 
 export type TerminalConnection =
   | { readonly kind: "connecting" }
   | { readonly kind: "attached" }
   | { readonly kind: "detached"; readonly attempt: number; readonly error: AppError }
+  | { readonly kind: "failed"; readonly failure: TerminalFailure; readonly error: AppError }
   | { readonly kind: "gone" }
   | { readonly kind: "exited"; readonly code?: number }
 
 export type TerminalConnectionEvent =
   | { readonly type: "opened" }
   | { readonly type: "closed"; readonly error: AppError }
+  | { readonly type: "failed"; readonly failure: TerminalFailure; readonly error: AppError }
   | { readonly type: "retry" }
   | { readonly type: "gone" }
   | { readonly type: "exited"; readonly code?: number }
@@ -25,8 +34,10 @@ export function transitionConnection(state: TerminalConnection, event: TerminalC
       const attempt = state.kind === "detached" ? state.attempt + 1 : 1
       return { kind: "detached", attempt, error: event.error }
     }
+    case "failed":
+      return { kind: "failed", failure: event.failure, error: event.error }
     case "retry":
-      return state.kind === "detached" || state.kind === "gone" ? { kind: "connecting" } : state
+      return state.kind === "detached" || state.kind === "failed" || state.kind === "gone" ? { kind: "connecting" } : state
     case "gone":
       return { kind: "gone" }
     case "exited":
@@ -71,6 +82,12 @@ export function asAppError(cause: unknown, message: string): AppError {
   return { class: "internal", message, retryable: false, cause }
 }
 
-export function closeError(close: TerminalStreamClose, message: string): AppError {
-  return { class: "network", message, retryable: close.code !== 1008, code: String(close.code), cause: close }
+export function closeError(close: TerminalStreamClose): AppError {
+  return {
+    class: "network",
+    message: `Terminal stream closed with ${close.code}: ${close.reason}`,
+    retryable: close.code !== 1008,
+    code: String(close.code),
+    cause: close,
+  }
 }

@@ -1,22 +1,35 @@
-import { Match, Show, Switch } from "solid-js"
-import type { TerminalConnection } from "../model"
+import { Match, Show, Switch, type JSX } from "solid-js"
+import { useTranslator } from "@/i18n"
+import { Button, Loader } from "@/ui"
+import { dictionary, type TerminalKey } from "../i18n"
+import type { TerminalConnection, TerminalFailure } from "../model"
 import { MAX_RECONNECT_ATTEMPTS } from "../reconnect"
-import { t } from "../i18n"
 
-const BUTTON = "h-11 min-w-11 rounded-md border border-border-weak-base px-4 text-sm text-text-base hover:bg-surface-base-hover"
+const FAILURE_TEXT: Record<TerminalFailure, TerminalKey> = {
+  closed: "terminal.connectionLost.description",
+  overload: "terminal.overload",
+  restore: "terminal.restoreFailed",
+  start: "terminal.startFailed",
+}
 
-function Notice(props: { title: string; description?: string; action?: () => void; actionLabel?: string; testId: string }) {
+function Notice(props: {
+  readonly title: string
+  readonly description?: string
+  readonly action?: () => void
+  readonly actionLabel?: string
+  readonly testId: string
+}): JSX.Element {
   return (
     <div role="status" data-testid={props.testId} class="flex h-full items-center justify-center px-4 text-center">
-      <div class="max-w-sm space-y-3">
-        <div class="text-sm font-medium text-text-strong">{props.title}</div>
+      <div class="flex max-w-sm flex-col items-center gap-3">
+        <div class="text-base font-medium text-text-base">{props.title}</div>
         <Show when={props.description}>
-          <div class="text-xs text-text-weak break-words">{props.description}</div>
+          <div class="text-sm break-words text-text-muted">{props.description}</div>
         </Show>
         <Show when={props.action}>
-          <button type="button" class={BUTTON} onClick={() => props.action?.()}>
+          <Button variant="outline" size="large" onClick={() => props.action?.()}>
             {props.actionLabel}
-          </button>
+          </Button>
         </Show>
       </div>
     </div>
@@ -24,24 +37,20 @@ function Notice(props: { title: string; description?: string; action?: () => voi
 }
 
 export function TerminalStatus(props: {
-  connection: TerminalConnection
-  missing: boolean
-  onRetry: () => void
-  onRecreate: () => void
-}) {
+  readonly connection: TerminalConnection
+  readonly missing: boolean
+  readonly onRetry: () => void
+  readonly onRecreate: () => void
+}): JSX.Element {
+  const t = useTranslator(dictionary)
   return (
     <Switch>
       <Match when={props.missing}>
         <Notice title={t("terminal.missing")} testId="terminal-missing" />
       </Match>
       <Match when={props.connection.kind === "connecting"}>
-        <div
-          role="status"
-          aria-label={t("terminal.connecting")}
-          data-testid="terminal-connecting"
-          class="terminal-delayed flex h-full items-center justify-center"
-        >
-          <div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />
+        <div role="status" aria-label={t("terminal.connecting")} data-testid="terminal-connecting" class="terminal-delayed flex h-full items-center justify-center text-icon-muted">
+          <Loader width={24} height={24} />
         </div>
       </Match>
       <Match when={props.connection.kind === "detached" && props.connection}>
@@ -49,11 +58,18 @@ export function TerminalStatus(props: {
           <Notice
             testId="terminal-detached"
             title={t("terminal.connectionLost.title")}
-            description={
-              detached().attempt < MAX_RECONNECT_ATTEMPTS
-                ? t("terminal.reconnecting", { attempt: detached().attempt, max: MAX_RECONNECT_ATTEMPTS })
-                : detached().error.message
-            }
+            description={t("terminal.reconnecting", { attempt: detached().attempt, max: MAX_RECONNECT_ATTEMPTS })}
+            action={props.onRetry}
+            actionLabel={t("terminal.retry")}
+          />
+        )}
+      </Match>
+      <Match when={props.connection.kind === "failed" && props.connection}>
+        {(failed) => (
+          <Notice
+            testId="terminal-failed"
+            title={failed().failure === "closed" ? t("terminal.connectionLost.title") : t("terminal.failed.title")}
+            description={t(FAILURE_TEXT[failed().failure])}
             action={props.onRetry}
             actionLabel={t("terminal.retry")}
           />
