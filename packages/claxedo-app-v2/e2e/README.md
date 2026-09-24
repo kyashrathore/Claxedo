@@ -154,7 +154,7 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 The same daemon, signed through the self-hosted server's embedded Better Auth issuer, which both apps sign in to with an email and a password. The issuer serves the browser's sign-in descriptor only on an HTTPS public origin, so the stack puts an HTTPS front on a port from the run's range: a self-signed certificate made with `openssl`, forwarding requests and websockets to the daemon. The config sets `ignoreHTTPSErrors`. The app is built for that origin into `dist-e2e-signed/` once per worker.
 
-The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi by default, the scripted ACP connection) runs the way a machine is used before anyone signs in. Then it restarts signed, signs up the owner, and restarts again with the owner as the deployment operator (`CLAXEDO_OPERATOR_SUBJECTS`), the only account that may record a folder project on a signed box.
+The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi by default, the scripted ACP connection) runs the way a machine is used before anyone signs in. Then it restarts signed, signs up the owner, and restarts again with the owner as the deployment operator (`CLAXEDO_OPERATOR_SUBJECTS`), the only account that may record a folder project on a signed box. A signed box also signs its session stream leases, so the stack generates an Ed25519 pair for `CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM` and `…_PUBLIC_KEY_PEM`; without it `/api/wr/events` answers 503.
 
 | Member | Meaning |
 | --- | --- |

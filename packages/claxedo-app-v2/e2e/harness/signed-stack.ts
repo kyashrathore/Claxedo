@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto"
+import { generateKeyPairSync, randomBytes, randomUUID } from "node:crypto"
 import path from "node:path"
 import { expect, type Page } from "@playwright/test"
 import { ClaxedoApi } from "./api"
@@ -46,6 +46,14 @@ async function signUp(stack: Stack, frontUrl: string, name: string): Promise<Acc
   return { name, email, password, subject: user.id, api: new ClaxedoApi(stack.url, transport, { reserveSessions: true }), transport }
 }
 
+function runtimeKeys() {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519")
+  return {
+    privatePem: privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    publicPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+  }
+}
+
 async function signIn(page: Page, frontUrl: string, account: Account) {
   await page.goto(`${frontUrl}/login`)
   await page.getByRole("textbox", { name: "Email" }).fill(account.email)
@@ -59,7 +67,13 @@ export async function startSignedStack(input: SignedStackInput): Promise<SignedS
   let front: TlsFront | undefined
   try {
     front = await startTlsFront({ port: input.frontPort, daemonUrl: stack.url, certDir: stack.dataDir })
-    const signed: SignedDaemon = { publicOrigin: front.url, secret: randomBytes(32).toString("hex"), distDir: input.distDir, operators: [] }
+    const signed: SignedDaemon = {
+      publicOrigin: front.url,
+      secret: randomBytes(32).toString("hex"),
+      distDir: input.distDir,
+      operators: [],
+      runtimeKeys: runtimeKeys(),
+    }
     await stack.daemon.restart({ signed })
     const owner = await signUp(stack, front.url, "Ada Owner")
     await stack.daemon.restart({ signed: { ...signed, operators: [owner.subject] } })
