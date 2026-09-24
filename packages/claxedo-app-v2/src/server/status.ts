@@ -56,7 +56,9 @@ export function createStatusOwner(transport: Transport): StatusOwner {
     return statuses
   }
   const read = async (route: RuntimeRoute, sessionId: string, row: AgentSession) => {
-    const status = settled((await live(route)).get(sessionId), row)
+    const known = latest.get(sessionId)
+    const read = settled((await live(route)).get(sessionId), row)
+    const status = read.kind === "failed" && known?.kind === "failed" ? known : read
     latest.set(sessionId, status)
     return status
   }
