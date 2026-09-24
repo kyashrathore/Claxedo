@@ -108,3 +108,8 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - **v2:** the dock shows only while a turn runs and the list is unfinished, so a finished list goes away.
 - **Collapsed state:** kept per session in sessionStorage (`claxedo:session:<id>:todo-collapsed`). It survives a reload and nothing longer ("no long cache").
 - Flow 03 branches on this entry: v2 expects no todo dock after the turn.
+
+## Owner, 22:05: no session-edge strip
+- v1's "Open changes / Open files" strip on the session's right edge (TOOL-003, SHELL-605) goes. The owner: "alone doesn't make any sense".
+- Changes and Files open from the workspace panel toggle and its tabs.
+- Flow 14 branches on this entry.
