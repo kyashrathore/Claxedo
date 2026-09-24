@@ -1,6 +1,12 @@
 import type { AppError, SessionId, SessionRef, SessionRow, SessionStatus, SessionStatusRead } from "@/server"
 
-export type PendingSend = { readonly clientRequestId: string; readonly at: number }
+export type PendingSend = {
+  readonly clientRequestId: string
+  readonly at: number
+  readonly humanTurnBefore: number | undefined
+}
+
+export type OrderKey = { readonly activity: number; readonly createdAt: number; readonly sessionId: string }
 
 export type ConfirmedEntry = {
   readonly kind: "confirmed"
@@ -38,7 +44,7 @@ export type ListData = {
   readonly statuses: ReadonlyMap<SessionId, StatusEntry>
   readonly unreported: UnreportedStatus | undefined
   readonly open: ReadonlySet<SessionId>
-  readonly windowTail: number
+  readonly windowTail: OrderKey
   readonly nextCursor: string | undefined
 }
 
@@ -82,22 +88,40 @@ export type ListEvent =
   | { readonly type: "sendStarted"; readonly sessionId: SessionId; readonly clientRequestId: string; readonly at: number }
   | { readonly type: "sendFailed"; readonly sessionId: SessionId; readonly clientRequestId: string }
 
+export const WINDOW_EMPTY: OrderKey = { activity: Number.POSITIVE_INFINITY, createdAt: Number.POSITIVE_INFINITY, sessionId: "" }
+
+export const WINDOW_ALL: OrderKey = { activity: Number.NEGATIVE_INFINITY, createdAt: Number.NEGATIVE_INFINITY, sessionId: "" }
+
 export const initialListState: ListState = {
   kind: "subscribing",
   entries: new Map(),
   statuses: new Map(),
   unreported: undefined,
   open: new Set(),
-  windowTail: Number.POSITIVE_INFINITY,
+  windowTail: WINDOW_EMPTY,
   nextCursor: undefined,
 }
 
-export const rowActivityAt = (row: SessionRow): number => row.lastHumanTurnAt ?? row.createdAt
+const rowActivityAt = (row: SessionRow): number => row.lastHumanTurnAt ?? 0
 
 export function entryActivityAt(entry: ConfirmedEntry | PendingEntry): number {
   if (entry.kind === "confirmed" && entry.pendingSend) return Math.max(rowActivityAt(entry.row), entry.pendingSend.at)
   return rowActivityAt(entry.row)
 }
+
+export const orderKey = (row: SessionRow, activity: number = rowActivityAt(row)): OrderKey => ({
+  activity,
+  createdAt: row.createdAt,
+  sessionId: row.ref.sessionId,
+})
+
+export function compareOrder(a: OrderKey, b: OrderKey): number {
+  if (a.activity !== b.activity) return b.activity - a.activity
+  if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt
+  return b.sessionId.localeCompare(a.sessionId)
+}
+
+export const insideWindow = (key: OrderKey, tail: OrderKey): boolean => compareOrder(key, tail) <= 0
 
 export function newerRow(current: SessionRow, incoming: SessionRow): SessionRow | undefined {
   if (incoming.updatedAt < current.updatedAt) return undefined

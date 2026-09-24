@@ -1,10 +1,14 @@
 import type { SessionId, SessionRef, SessionRow } from "@/server"
 import {
+  WINDOW_ALL,
+  compareOrder,
+  insideWindow,
   newerRow,
-  rowActivityAt,
+  orderKey,
   type FetchedWindow,
   type ListData,
   type ListEntry,
+  type OrderKey,
   type PendingSend,
   type StatusEntry,
 } from "./model"
@@ -20,8 +24,9 @@ function setEntry<S extends ListData>(data: S, id: SessionId, entry: ListEntry):
 }
 
 function keptSend(send: PendingSend | undefined, row: SessionRow): PendingSend | undefined {
-  if (!send) return undefined
-  return row.lastHumanTurnAt !== undefined && row.lastHumanTurnAt >= send.at ? undefined : send
+  if (!send || row.lastHumanTurnAt === undefined) return send
+  const confirmed = send.humanTurnBefore === undefined || row.lastHumanTurnAt > send.humanTurnBefore
+  return confirmed ? undefined : send
 }
 
 export function mergeRow<S extends ListData>(data: S, row: SessionRow): S {
@@ -36,7 +41,7 @@ export function mergeRow<S extends ListData>(data: S, row: SessionRow): S {
 
 export function upsertRow<S extends ListData>(data: S, row: SessionRow): S {
   const id = row.ref.sessionId
-  const outsideWindow = rowActivityAt(row) < data.windowTail
+  const outsideWindow = !insideWindow(orderKey(row), data.windowTail)
   if (!data.entries.has(id) && !data.open.has(id) && outsideWindow) return data
   return mergeRow(data, row)
 }
@@ -59,14 +64,17 @@ function pruneTombstones<S extends ListData>(data: S, before: number): S {
   return entries ? withEntries(data, entries) : data
 }
 
-function windowTailOf(window: FetchedWindow, fallback: number): number {
-  if (window.nextCursor === undefined) return Number.NEGATIVE_INFINITY
-  if (window.rows.length === 0) return fallback
-  return window.rows.reduce((tail, row) => Math.min(tail, rowActivityAt(row)), Number.POSITIVE_INFINITY)
+const laterKey = (a: OrderKey, b: OrderKey): OrderKey => (compareOrder(a, b) >= 0 ? a : b)
+
+function windowTailOf(window: FetchedWindow, fallback: OrderKey): OrderKey {
+  if (window.nextCursor === undefined) return WINDOW_ALL
+  let tail: OrderKey | undefined
+  for (const row of window.rows) tail = tail ? laterKey(tail, orderKey(row)) : orderKey(row)
+  return tail ?? fallback
 }
 
 export function extendWindow<S extends ListData>(data: S, window: FetchedWindow): S {
-  const windowTail = Math.min(data.windowTail, windowTailOf(window, data.windowTail))
+  const windowTail = laterKey(data.windowTail, windowTailOf(window, data.windowTail))
   let next: S = { ...data, windowTail, nextCursor: window.nextCursor }
   for (const row of window.rows) next = mergeRow(next, row)
   return pruneTombstones(next, window.sentAt)
@@ -77,7 +85,7 @@ function dropMissingFromWindow<S extends ListData>(data: S, fetched: ReadonlySet
   const statuses = new Map<SessionId, StatusEntry>(data.statuses)
   for (const [id, entry] of data.entries) {
     if (entry.kind !== "confirmed" || fetched.has(id) || data.open.has(id)) continue
-    if (rowActivityAt(entry.row) < data.windowTail) continue
+    if (!insideWindow(orderKey(entry.row), data.windowTail)) continue
     entries.delete(id)
     statuses.delete(id)
   }
@@ -87,7 +95,7 @@ function dropMissingFromWindow<S extends ListData>(data: S, fetched: ReadonlySet
 export function replaceWindow<S extends ListData>(data: S, window: FetchedWindow): S {
   const fetched = new Set(window.rows.map((row) => row.ref.sessionId))
   const dropped = dropMissingFromWindow(data, fetched)
-  let next: S = { ...dropped, windowTail: windowTailOf(window, Number.NEGATIVE_INFINITY), nextCursor: window.nextCursor }
+  let next: S = { ...dropped, windowTail: windowTailOf(window, WINDOW_ALL), nextCursor: window.nextCursor }
   for (const row of window.rows) next = mergeRow(next, row)
   return pruneTombstones(next, window.sentAt)
 }
@@ -116,7 +124,7 @@ export function confirmCreate<S extends ListData>(data: S, clientRequestId: stri
 export function startSend<S extends ListData>(data: S, sessionId: SessionId, clientRequestId: string, at: number): S {
   const entry = data.entries.get(sessionId)
   if (entry?.kind !== "confirmed") return data
-  return setEntry(data, sessionId, { ...entry, pendingSend: { clientRequestId, at } })
+  return setEntry(data, sessionId, { ...entry, pendingSend: { clientRequestId, at, humanTurnBefore: entry.row.lastHumanTurnAt } })
 }
 
 export function failSend<S extends ListData>(data: S, sessionId: SessionId, clientRequestId: string): S {
@@ -137,7 +145,7 @@ export function closeSession<S extends ListData>(data: S, sessionId: SessionId):
   const open = new Set(data.open)
   open.delete(sessionId)
   const entry = data.entries.get(sessionId)
-  const keep = entry?.kind !== "confirmed" || rowActivityAt(entry.row) >= data.windowTail
+  const keep = entry?.kind !== "confirmed" || insideWindow(orderKey(entry.row), data.windowTail)
   if (keep) return { ...data, open }
   const entries = new Map(data.entries)
   entries.delete(sessionId)
