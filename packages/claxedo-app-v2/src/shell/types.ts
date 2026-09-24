@@ -20,6 +20,7 @@ export type PageEntry = {
 export type PaneProps<State> = { readonly state: State; readonly paneId: string; readonly active: boolean }
 
 export type PaneRoute =
+  | { readonly kind: "draft"; readonly projectId: ProjectId; readonly placementId: PlacementId }
   | {
       readonly kind: "session"
       readonly projectId: ProjectId
