@@ -5,7 +5,8 @@ import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useServer } from "@/server"
-import { Icon, useDialog } from "@/ui"
+import { useDialog } from "@/ui"
+import { ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
 import { cleanInput, displayPath, toRow, uniqueRows } from "../folder-paths"
 import { createFolderSearch } from "../folder-search"
 import { useProjectsText } from "../i18n"
@@ -58,7 +59,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
           class="inline-flex size-7 items-center justify-center rounded-md border-0 bg-transparent p-0 leading-none text-icon-weak-base transition-[background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-strong-base focus-visible:bg-surface-base-hover focus-visible:text-icon-strong-base focus-visible:outline-none"
           onClick={() => dialog.close()}
         >
-          <Icon name="close-small" size="small" />
+          <ClaxedoIconV2 name="close-small" size="small" />
         </button>
       }
     >
