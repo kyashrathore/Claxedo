@@ -7,7 +7,9 @@ import type {
   AgentQuestionAnswer,
   AgentSnapshotFileDiff,
   AgentTodo,
+  RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
+import type { SolidQueryOptions } from "@tanstack/solid-query"
 import type { MachineId, OrgId, PlacementId, ProjectId, RequestId, SessionId, UserId } from "./ids"
 
 export type ErrorClass = "auth" | "rate_limit" | "network" | "not_found" | "conflict" | "invalid" | "internal"
@@ -61,11 +63,20 @@ export type Project = {
   readonly updatedAt: number
 }
 
+export type RetryAction = {
+  readonly reason: string
+  readonly provider: string
+  readonly title: string
+  readonly message: string
+  readonly label: string
+  readonly link?: string
+}
+
 export type SessionStatus =
   | { readonly kind: "idle" }
   | { readonly kind: "working" }
-  | { readonly kind: "retrying"; readonly attempt: number; readonly message: string; readonly nextAt: number }
-  | { readonly kind: "recovering"; readonly message: string }
+  | { readonly kind: "retrying"; readonly attempt: number; readonly message: string; readonly nextAt: number; readonly action?: RetryAction }
+  | { readonly kind: "recovering"; readonly reason: "processRestart" | "uncertainExecution"; readonly message: string }
   | { readonly kind: "failed"; readonly error: AppError }
 
 export type SessionRow = {
@@ -90,7 +101,7 @@ export type AgentRequest =
 export type AgentRequestReply =
   | { readonly kind: "permission"; readonly reply: AgentPermissionReply }
   | { readonly kind: "question"; readonly answers: readonly AgentQuestionAnswer[] }
-  | { readonly kind: "dismiss" }
+  | { readonly kind: "dismiss"; readonly request?: "permission" | "question" }
 
 export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
@@ -99,6 +110,15 @@ export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextC
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }
 
+export type SessionGoal = RuntimeGoalSnapshot
+
+export type GoalAction = "pause" | "resume" | "remove"
+
+export type SessionGoalState = {
+  readonly goal: SessionGoal | undefined
+  readonly actions: readonly GoalAction[]
+}
+
 export type SessionSnapshot = {
   readonly row: SessionRow
   readonly status: SessionStatus
@@ -106,6 +126,7 @@ export type SessionSnapshot = {
   readonly requests: readonly AgentRequest[]
   readonly todos: readonly Todo[]
   readonly diff: readonly FileDiff[]
+  readonly goal: SessionGoalState
 }
 
 export type ModelChoice = { readonly providerId: string; readonly modelId: string; readonly variant?: string }
@@ -117,6 +138,7 @@ export type PromptAttachment =
 
 export type PromptInput = {
   readonly clientRequestId: string
+  readonly messageId?: string
   readonly text: string
   readonly attachments: readonly PromptAttachment[]
   readonly agent?: string
@@ -131,6 +153,46 @@ export type SessionCreateInput = {
   readonly harness?: string
   readonly model?: ModelChoice
   readonly title?: string
+}
+
+export type SessionStatusReport = {
+  readonly ref: SessionRef
+  readonly status: SessionStatus
+  readonly requests: readonly AgentRequest[]
+}
+
+export type SessionStatusReadFailure = { readonly placementId: PlacementId; readonly error: AppError }
+
+export type SessionStatusRead = {
+  readonly reports: readonly SessionStatusReport[]
+  readonly unreported: SessionStatus
+  readonly failures: readonly SessionStatusReadFailure[]
+}
+
+export type QueuedPromptPart = { readonly type: string; readonly text?: string; readonly filename?: string }
+
+export type QueuedPromptSteering = {
+  readonly mode: "start" | "steer"
+  readonly operationId: string
+  readonly state: "dispatching" | "accepted" | "unknown" | "rejected"
+  readonly message?: string
+}
+
+export type QueuedPrompt = {
+  readonly seq: number
+  readonly messageId?: string
+  readonly queuedAt: number
+  readonly parts: readonly QueuedPromptPart[]
+  readonly held: boolean
+  readonly steering?: QueuedPromptSteering
+}
+
+export type QueuedPromptAction = "cancel" | "steer" | "hold" | "release"
+
+export type QueuedPromptControl = {
+  readonly ok: boolean
+  readonly status?: "pending" | "unknown"
+  readonly message?: string
 }
 
 export type OrgRole = "owner" | "admin" | "member"
@@ -150,10 +212,24 @@ export type HarnessInfo = {
   readonly id: string
   readonly name: string
   readonly available: boolean
+  readonly unavailableReason?: string
   readonly models: readonly ModelChoice[]
   readonly efforts: readonly string[]
   readonly permissionModes: readonly string[]
   readonly goalMode: "native" | "evaluated" | "none"
+}
+
+export type HarnessModel = {
+  readonly model: ModelChoice
+  readonly name: string
+  readonly connected: boolean
+  readonly efforts: readonly string[]
+}
+
+export type HarnessOptions = {
+  readonly models: readonly HarnessModel[]
+  readonly current?: ModelChoice
+  readonly efforts: readonly string[]
 }
 
 export type Capabilities = {
@@ -173,3 +249,9 @@ export type Capabilities = {
     readonly livePlugins: boolean
   }
 }
+
+export type FeatureAvailability =
+  | { readonly kind: "available" }
+  | { readonly kind: "unavailable"; readonly reason: string }
+
+export type FetchQuery<T> = SolidQueryOptions<T, AppError, T, readonly unknown[]> & { readonly initialData?: undefined }

@@ -1,31 +1,20 @@
-import type { PluginManifest } from "@claxedo/plugin-api"
+export type PluginServerCalls = {
+  readonly fetch: (path: string, init?: RequestInit) => Promise<Response>
+  readonly operation: (name: string, input: unknown) => Promise<unknown>
+  readonly removeLive: (pluginId: string) => Promise<void>
+}
 
-export type {
-  PluginApi,
-  PluginManifest,
-  PluginModule,
-  PluginRequirement,
-  ServerRequest,
-  WorkbenchTab,
-  WorkbenchTabStatus,
-} from "@claxedo/plugin-api"
+export class AdapterGapError extends Error {
+  constructor(readonly member: string) {
+    super(`The server adapter does not provide ${member} yet`)
+    this.name = "AdapterGapError"
+  }
+}
 
-export type PluginOrigin = { readonly kind: "bundled" } | { readonly kind: "live"; readonly bundleUrl: string; readonly hash: string }
-
-export type PluginFailure = { readonly version: string; readonly reason: string }
-
-export type PluginState =
-  | { readonly kind: "off" }
-  | { readonly kind: "loading"; readonly version: string }
-  | { readonly kind: "on"; readonly version: string; readonly lastFailure?: PluginFailure }
-  | { readonly kind: "swapping"; readonly version: string; readonly to: string }
-  | { readonly kind: "failed"; readonly reason: string; readonly version: string }
-
-export type PluginSummary = {
-  readonly manifest: PluginManifest
-  readonly origin: PluginOrigin
-  readonly enabled: boolean
-  readonly requirementsMet: boolean
-  readonly confirmed: boolean
-  readonly state: PluginState
+export function pluginServerCalls(): PluginServerCalls {
+  return {
+    fetch: () => Promise.reject(new AdapterGapError("plugins.fetch")),
+    operation: () => Promise.reject(new AdapterGapError("plugins.operation")),
+    removeLive: () => Promise.reject(new AdapterGapError("plugins.removeLive")),
+  }
 }

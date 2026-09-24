@@ -3,26 +3,30 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "Tasks and presets over today's Tasks API, as a Claxedo app plugin",
+  "description": "Tasks and presets over the Claxedo server's Tasks API, as a Claxedo app plugin",
   "license": "MIT",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "development": "./src/index.ts",
-      "import": "./src/index.ts",
-      "default": "./src/index.ts"
-    }
+      "types": "./src/app.tsx",
+      "development": "./src/app.tsx",
+      "default": "./src/app.tsx"
+    },
+    "./package.json": "./package.json"
   },
   "claxedo": {
     "id": "tasks",
     "name": "Tasks",
-    "app": "./src/index.ts",
-    "requires": ["tasks"],
-    "routes": ["/api/claxedo/tasks"],
-    "operations": []
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "version": "0.1.0",
+    "app": "./src/app.tsx",
+    "requires": [
+      "tasks"
+    ],
+    "server": {
+      "routes": [
+        "/api/claxedo/tasks"
+      ],
+      "operations": []
+    }
   },
   "dependencies": {
     "@claxedo/plugin-api": "workspace:*",
@@ -32,8 +36,6 @@
     "solid-js": "1.9.12"
   },
   "devDependencies": {
-    "@tsconfig/node-lts": "22.0.4",
-    "solid-js": "1.9.12",
-    "typescript": "catalog:"
+    "solid-js": "1.9.12"
   }
 }

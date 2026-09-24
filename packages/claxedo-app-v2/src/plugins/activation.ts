@@ -1,42 +1,45 @@
 import { catchError, createRoot } from "solid-js"
-import type { PluginApi, PluginModule } from "@claxedo/plugin-api"
+import type { PluginApi } from "@claxedo/plugin-api"
 import { failureReason } from "./boundary"
+import { buildIdOf, type PluginBuild } from "./model"
 import { createRegistrationSink, type RegistrationSink } from "./registrations"
 
-export type Activation = { readonly version: string; readonly dispose: () => void }
+export type Activation = { readonly build: string; readonly dispose: () => void }
+
+export type ActivationScope = { readonly sink: RegistrationSink; readonly signal: AbortSignal }
 
 export type ActivationInput = {
-  readonly module: PluginModule
-  readonly buildApi: (sink: RegistrationSink) => PluginApi
-  readonly onLateFailure: (reason: string) => void
+  readonly build: PluginBuild
+  readonly buildApi: (build: PluginBuild, scope: ActivationScope) => PluginApi
+  readonly onCrash: (reason: string) => void
 }
 
 export function activatePlugin(input: ActivationInput): Promise<Activation> {
-  const sink = createRegistrationSink()
+  const sink = createRegistrationSink(input.build.manifest.id)
+  const abort = new AbortController()
   return new Promise((resolve, reject) => {
-    createRoot((dispose) => {
+    createRoot((disposeRoot) => {
       let settled = false
-      const teardown = () => {
+      const dispose = () => {
+        abort.abort()
         sink.disposeAll()
-        dispose()
+        disposeRoot()
       }
       const fail = (error: unknown) => {
-        if (settled) {
-          input.onLateFailure(failureReason(error))
-          return
-        }
+        if (settled) return input.onCrash(failureReason(error))
         settled = true
-        teardown()
+        dispose()
         reject(error)
       }
-      const succeed = () => {
+      const succeed = (cleanup: unknown) => {
         if (settled) return
         settled = true
-        resolve({ version: input.module.manifest.version, dispose: teardown })
+        if (typeof cleanup === "function") sink.track(() => cleanup())
+        resolve({ build: buildIdOf(input.build), dispose })
       }
       catchError(() => {
-        const api = input.buildApi(sink)
-        Promise.resolve(input.module.activate(api)).then(succeed, fail)
+        const api = input.buildApi(input.build, { sink, signal: abort.signal })
+        Promise.resolve(input.build.definition.activate(api)).then(succeed, fail)
       }, fail)
     })
   })

@@ -1,16 +1,14 @@
 {
   "extends": "@tsconfig/node-lts/tsconfig.json",
   "compilerOptions": {
+    "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
     "customConditions": ["development"],
-    "target": "ES2022",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": [],
     "jsx": "preserve",
     "jsxImportSource": "solid-js",
-    "noEmit": true,
-    "skipLibCheck": true
+    "lib": ["ESNext", "DOM"],
+    "types": ["bun"]
   },
   "include": ["src"]
 }

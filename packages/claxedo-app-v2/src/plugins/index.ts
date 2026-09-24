@@ -1,5 +1,4 @@
-export type { PluginFailure, PluginOrigin, PluginState, PluginSummary } from "./api"
-export { PluginBoundary, PluginOff } from "./boundary"
 export type { PluginHost } from "./host"
-export { PluginHostProvider, usePluginHost } from "./host-provider"
-export { pluginIdOfEntry } from "@claxedo/plugin-api"
+export type { PluginBuild, PluginOrigin, PluginState, PluginSummary } from "./model"
+export { PluginHostProvider, usePluginHost } from "./provider"
+export { pluginsSettingsSection } from "./view/settings-section"

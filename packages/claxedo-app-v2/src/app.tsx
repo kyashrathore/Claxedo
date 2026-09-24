@@ -1,3 +1,30 @@
-export function App() {
-  return <main data-testid="app-v2-root">Claxedo</main>
+import type { JSX } from "solid-js"
+import { I18nProvider } from "@/i18n"
+import { MainSidebar } from "@/rail"
+import { createServer, ServerProvider } from "@/server"
+import { SessionStoresProvider } from "@/session"
+import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter } from "@/shell"
+import { firstParty } from "@/shell/registry"
+import { DialogProvider, ThemeProvider } from "@/ui"
+
+export function App(): JSX.Element {
+  const server = createServer({ auth: { kind: "none" } })
+  const registries = createShellRegistries(firstParty)
+  return (
+    <ServerProvider server={server}>
+      <SessionStoresProvider>
+        <ShellRegistriesContext.Provider value={registries}>
+          <I18nProvider>
+            <ThemeProvider>
+              <DialogProvider>
+                <ShellRouter>
+                  <AppShell mainSidebar={<MainSidebar />} />
+                </ShellRouter>
+              </DialogProvider>
+            </ThemeProvider>
+          </I18nProvider>
+        </ShellRegistriesContext.Provider>
+      </SessionStoresProvider>
+    </ServerProvider>
+  )
 }

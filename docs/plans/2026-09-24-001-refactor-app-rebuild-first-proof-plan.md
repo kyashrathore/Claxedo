@@ -345,7 +345,7 @@ Those reviews assumed new server contracts and a rebuilt timeline. Where today's
 | Terminal link detection, including multi-line and fallback matchers | 1.5k → ~1.0k | `src/terminal/links/` | Ours; one provider set, fewer duplicated parsers |
 | Command palette | 0.6k | `src/shell/palette/` | Kept |
 | Auth routes: login, device approval, OAuth consent, CLI login | ~0.7k | `src/auth/` | Security boundaries; not squeezed |
-| v2 kit components from `packages/ui/src/v2` | ~1.3k used, ~2.8k available | `src/ui/` | The one kit |
+| v2 kit components, taken from upstream's latest UI library (`anomalyco/opencode` dev, `packages/ui/src/v2` and `theme/v2`), not our older vendored copy | ~1.3k used, ~2.8k available | `src/ui/` | The one kit |
 | Locales, 18 languages | not counted | `src/i18n/` | Keys for deleted features are removed |
 
 ### Moves to first-party plugins
@@ -705,13 +705,12 @@ A plugin is a package with a small manifest and an app entry: `activate(api)` re
 | `overlays.register`: a keyboard-invoked overlay | Compact tabs |
 | `commands.register`, with keybindings | all |
 | `mentions.register`: items in the composer's `@` menu | Tasks, Pages |
-| `workbench`: list tabs with status, activate, close, move; open a pane of a registered kind | Compact tabs, Pages |
+| `workbench`: list tabs with status, activate, close, move | Compact tabs |
 | `themes.register`, `icons.registerSkin` | Codex theme |
 | `sessions`: create with a prompt and attachments, status, open | Tasks |
 | `projects`: list, and the current project's id | Tasks, Pages |
 | `server`: authenticated calls through the adapter, limited to what the manifest names. That is route prefixes on the Claxedo server (Tasks: `/api/claxedo/tasks`) and control-plane operations (Pages: `documents.*`, which the adapter sends to the control plane when signed and to the daemon's `/documents` routes when not, as today). | Tasks, Pages |
-| `context`, `ui` (toast, confirm, the kit components), `i18n.t` | all |
-| `preferences.persisted`: a per-user, per-plugin persisted value; `navigate` | Tasks, Pages |
+| `context`, `ui` (toast, confirm), `i18n.t` | all |
 
 Every contribution renders inside the plugin's error boundary, so a failing plugin can't take down the app, and it gets the shell's phone behavior.
 
@@ -812,7 +811,7 @@ Inside the app, only Claxedo names. The server keeps its names in this slice, an
 | Debt | Today | In v2 |
 | --- | --- | --- |
 | Kit package names `@opencode-ai/ui`, `@opencode-ai/session-ui`, and the `@opencode-ai/app-shared` alias | 610 imports in 249 files | The app's own `src/ui/` and `src/transcript/`; the alias is deleted |
-| OpenCode id casing: `sessionID`, `messageID`, `partID`, `providerID`, `modelID`, `callID`, `projectID` | ~2,300 uses | `sessionId` and the rest everywhere in the app; converted at the adapter. In the transcript, by the type-checked codemod. |
+| OpenCode id casing: `sessionID`, `messageID`, `partID`, `providerID`, `modelID`, `callID`, `projectID` | ~2,300 uses | App-defined names use `sessionId` and the rest. The runtime contract package's own fields (`sessionID`, `parentID`, …) stay: the transcript and the session store use its message and part types as they are, because converting every part would be a second copy per delta. Renaming them is a server-contract change for the server rebuild. |
 | OpenCode event names: `message.part.updated`, `message.updated`, `session.status`, `session.idle`, `session.updated`, `permission.asked`, `question.asked` | 115 uses in 44 files | Claxedo events inside the app (`itemUpdated`, `turnStarted`, `turnFinished`, `requestOpened`, …); mapped at the adapter |
 | OpenCode routes (`prompt_async`, `/experimental/session`, `/session/:id/message`) and `?directory=` routing | 82 uses in 40 files | Only in the adapter; the app uses project ids and `SessionRef` |
 | Projects kept in browser storage by folder path (`projects.local[].worktree`) | the app's project list | Project records by id from the server |
@@ -1009,12 +1008,12 @@ Each phase ends green on the e2e flows that exist so far, on the five e2e criter
 ### P0 — Set up v2, baselines, harness and checks
 
 - [ ] **P0.1 The copy.**
-  - `packages/claxedo-app` is copied to `packages/claxedo-app-v2`, without `perf-harness/`, unit tests or Storybook files.
-  - Its package is renamed `@claxedo/app-v2`, with its own dev port.
+  - `packages/claxedo-app` is copied to `packages/claxedo-app-v2`, without `perf-harness/`, unit tests, Storybook files or the app's scanners.
+  - The copied source moves to `src/legacy/`, excluded from the build. The new app grows from a new entry, `src/main.tsx`. Each lane `git mv`s what it keeps out of `src/legacy/`, and `src/legacy/` is deleted before the swap. The baseline flows run against today's app, `packages/claxedo-app`.
+  - Its package is renamed `@claxedo/app-v2`, with its own dev port (4445).
   - The desktop gets `dev:v2` and `package:mac:v2` targets, and CI gets a v2 job.
   - `AGENTS.md` (Appendix A) replaces the copied package-root one, and `CLAUDE.md` (`@AGENTS.md`) is added. The other 7 copied `AGENTS.md` files are removed.
-  - v2 runs exactly like today's app.
-  - `Progress:`
+  - `Progress:` done in `0158b533ec` (base) and `f49df7872a` (the shared contracts).
 - [ ] **P0.2 Benchmark driver out of the app.** The driver lives in the benchmark repo with the two hook maps. Baseline runs of today's packaged app are recorded (3 runs, gate host). `Progress:`
 - [ ] **P0.3 e2e harness** in `claxedo-app-v2/e2e`: scripted ACP agent, scripted model server wired to the real Claude and Codex CLIs, `wrangler dev` Worker and relay, local sandbox driver, desktop launcher, the `phone` project, `--app=v1|v2`. The harness start time and one warm flow are measured against the "fast" targets. `Progress:`
 - [ ] **P0.4 v1 measured.** v1's coverage map (all 58 specs), durations, and flake rate over its last 20 CI runs are recorded. v2 must beat all of them. `Progress:`
@@ -1124,6 +1123,8 @@ Each phase ends green on the e2e flows that exist so far, on the five e2e criter
 
 The aim is P0–P5 in one 6-hour push with parallel agents, then your test and the swap.
 
+**As run (2026-09-24, from 03:25):** the integration branch is `feat/app-v2` in `~/test/opencode-app-v2`. Each lane has its own worktree, `~/test/opencode-app-v2-lanes/<lane>`, on branch `v2/<lane>`. There are 15 lanes: harness, bench, checks, kit, transcript, server-projects, live-plugins, adapter, session-data, session-screen, shell, tools, projects-app, settings-access and plugins. Strings live per domain (`src/<domain>/i18n.ts`), merged by the shell's i18n provider, so lanes never share a locale file.
+
 **How it stays parallel:**
 - **A dedicated worktree.** `~/test/opencode-app-v2` on `feat/app-v2` off `dev`, with its own install, because other sessions sweep the main worktree's index with `git add -A`.
 - **Contracts first.** In the first 45 minutes the orchestrator makes the copy (P0.1) and freezes the types every lane builds against:
@@ -1139,7 +1140,7 @@ The aim is P0–P5 in one 6-hour push with parallel agents, then your test and t
 | --- | --- | --- |
 | **Harness** | `e2e/**`, apart from the corpus | P0.3–P0.5, P0.7, P0.9; flows as the other lanes land |
 | **Bench** | the benchmark repo's `drivers/claxedo/` | P0.2; one packaged benchmark run at the end |
-| **Checks** | `script/` checks and the v2 budget baseline | P0.6 |
+| **Checks** | `packages/claxedo-app-v2/scripts/checks/` and the v2 budget baseline | P0.6 |
 | **Transcript** | `src/transcript/**`, `src/session/view/timeline/**`, `e2e/corpus/**` | P0.8; the transcript move; flow 30 |
 | **Adapter** | `src/server/**` | P0.10; the adapter and status |
 | **Server** | the projects route in server-core, its D1 migration and its three mounts | the projects route; the old-path deletions at the swap |

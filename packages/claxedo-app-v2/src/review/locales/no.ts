@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "Endringer",
+  "review.scope.staged": "Klargjorte endringer",
+  "review.scope.branch": "Grenendringer",
+  "review.empty": "Ingen endringer",
+  "review.loading": "Laster endringer",
+  "review.change.added": "Lagt til",
+  "review.change.deleted": "Slettet",
+  "review.largeDiff.title": "Diff er for stor til å gjengi",
+  "review.largeDiff.meta": "Grense: {{limit}} endrede linjer. Nåværende: {{current}} endrede linjer.",
+  "review.largeDiff.renderAnyway": "Gjengi likevel",
+  "review.style.unified": "Samlet",
+  "review.style.split": "Delt",
+  "review.commit.message": "Melding (⌘⏎ for å committe)",
+  "review.commit": "Commit",
+  "review.push": "Push",
+  "review.publish": "Publiser gren",
+  "review.upToDate": "Oppdatert",
+  "review.error.git_empty_message": "Skriv inn en commit-melding.",
+  "review.error.git_nothing_staged": "Ingenting er klargjort.",
+  "review.error.git_conflict": "Løs først den pågående sammenslåingen.",
+  "review.error.git_push_rejected": "Push avvist: {{message}}",
+  "review.error.git_timeout": "Git fikk tidsavbrudd: {{message}}",
+}

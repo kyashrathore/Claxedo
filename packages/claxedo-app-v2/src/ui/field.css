@@ -1,0 +1,97 @@
+@layer components {
+  [data-component="field"] {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  [data-component="field"] [data-slot="field-label"] {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    align-self: stretch;
+    gap: 4px;
+    min-height: 16px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+    font-size: var(--font-size-compact);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-ui);
+    color: var(--v2-text-text-base);
+    font-variation-settings: "slnt" 0;
+    cursor: default;
+    user-select: none;
+  }
+
+  [data-component="field"] [data-slot="field-label-text"] {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  [data-component="field"] [data-slot="field-label"] .ui-tooltip-trigger {
+    display: inline-flex;
+    flex: none;
+    width: 16px;
+    height: 16px;
+  }
+
+  [data-component="field"] .ui-field-label-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--v2-icon-icon-muted);
+    cursor: pointer;
+    outline: none;
+  }
+
+  [data-component="field"] .ui-field-label-info:is(:hover, [data-state="hover"]) {
+    color: var(--v2-text-text-base);
+  }
+
+  [data-component="field"] .ui-field-label-info:focus {
+    outline: none;
+  }
+
+  [data-component="field"] .ui-field-label-info:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: 1px;
+    border-radius: var(--radius-xs);
+  }
+
+  [data-component="field"] [data-slot="field-prefix"],
+  [data-component="field"] [data-slot="field-suffix"] {
+    align-self: stretch;
+    width: 100%;
+    min-height: 11px;
+    font-style: normal;
+    font-weight: var(--font-weight-body);
+    font-size: var(--font-size-x-small);
+    line-height: var(--line-height-none);
+    letter-spacing: var(--letter-spacing-micro-wide);
+    color: var(--v2-text-text-muted);
+    font-variation-settings: "slnt" 0;
+    user-select: none;
+  }
+
+  [data-component="field"] [data-slot="field-control"] {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    min-width: 0;
+  }
+
+}

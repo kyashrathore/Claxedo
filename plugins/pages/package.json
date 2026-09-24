@@ -3,26 +3,30 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "Pages: the documents index, editor, history and mentions over today's documents API, as a Claxedo app plugin",
+  "description": "Pages over the documents API, as a Claxedo app plugin",
   "license": "MIT",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "development": "./src/index.ts",
-      "import": "./src/index.ts",
-      "default": "./src/index.ts"
-    }
+      "types": "./src/app.tsx",
+      "development": "./src/app.tsx",
+      "default": "./src/app.tsx"
+    },
+    "./package.json": "./package.json"
   },
   "claxedo": {
     "id": "pages",
     "name": "Pages",
-    "app": "./src/index.ts",
-    "requires": ["documents"],
-    "routes": ["/documents"],
-    "operations": ["documents."]
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "version": "0.1.0",
+    "app": "./src/app.tsx",
+    "requires": [
+      "documents"
+    ],
+    "server": {
+      "routes": [],
+      "operations": [
+        "documents.*"
+      ]
+    }
   },
   "dependencies": {
     "@claxedo/plugin-api": "workspace:*"
@@ -31,8 +35,6 @@
     "solid-js": "1.9.12"
   },
   "devDependencies": {
-    "@tsconfig/node-lts": "22.0.4",
-    "solid-js": "1.9.12",
-    "typescript": "catalog:"
+    "solid-js": "1.9.12"
   }
 }

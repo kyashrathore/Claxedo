@@ -3,26 +3,26 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "A keyboard switcher over the open workbench tabs, as a Claxedo app plugin",
+  "description": "A keyboard switcher over the workbench's open tabs, as a Claxedo app plugin",
   "license": "MIT",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "development": "./src/index.ts",
-      "import": "./src/index.ts",
-      "default": "./src/index.ts"
-    }
+      "types": "./src/app.tsx",
+      "development": "./src/app.tsx",
+      "default": "./src/app.tsx"
+    },
+    "./package.json": "./package.json"
   },
   "claxedo": {
     "id": "compact-tabs",
     "name": "Compact tabs",
-    "app": "./src/index.ts",
+    "version": "0.1.0",
+    "app": "./src/app.tsx",
     "requires": [],
-    "routes": [],
-    "operations": []
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "server": {
+      "routes": [],
+      "operations": []
+    }
   },
   "dependencies": {
     "@claxedo/plugin-api": "workspace:*"
@@ -31,8 +31,6 @@
     "solid-js": "1.9.12"
   },
   "devDependencies": {
-    "@tsconfig/node-lts": "22.0.4",
-    "solid-js": "1.9.12",
-    "typescript": "catalog:"
+    "solid-js": "1.9.12"
   }
 }

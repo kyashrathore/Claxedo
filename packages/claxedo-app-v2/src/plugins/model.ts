@@ -1,24 +1,61 @@
+import type { PluginCapability, PluginDefinition, PluginManifest } from "@claxedo/plugin-api"
+import type { Translations } from "@/i18n"
 import { machine, unreachable, type Machine } from "@/lib/machine"
-import type { PluginState } from "./api"
+
+export type PluginOrigin = { readonly kind: "bundled" } | { readonly kind: "live"; readonly hash: string }
+
+export type PluginBuild = {
+  readonly manifest: PluginManifest
+  readonly origin: PluginOrigin
+  readonly definition: PluginDefinition
+  readonly dictionary?: Translations
+}
+
+export type PluginFailure = { readonly build: string; readonly reason: string }
+
+export type PluginState =
+  | { readonly kind: "off" }
+  | { readonly kind: "loading"; readonly build: string }
+  | { readonly kind: "on"; readonly build: string; readonly lastFailure?: PluginFailure }
+  | { readonly kind: "swapping"; readonly build: string; readonly to: string }
+  | { readonly kind: "failed"; readonly failure: PluginFailure }
 
 export type PluginEvent =
-  | { readonly type: "switchOn"; readonly version: string }
+  | { readonly type: "switchedOn"; readonly build: string }
   | { readonly type: "activated" }
   | { readonly type: "activationFailed"; readonly reason: string }
-  | { readonly type: "swap"; readonly to: string }
-  | { readonly type: "switchOff" }
+  | { readonly type: "swapStarted"; readonly to: string }
+  | { readonly type: "crashed"; readonly reason: string }
+  | { readonly type: "switchedOff" }
+
+export type PluginSummary = {
+  readonly id: string
+  readonly name: string
+  readonly version: string
+  readonly origin: PluginOrigin
+  readonly switchedOn: boolean
+  readonly missing: readonly PluginCapability[]
+  readonly confirmed: boolean
+  readonly state: PluginState
+}
+
+export function buildIdOf(build: PluginBuild): string {
+  return build.origin.kind === "live" ? build.origin.hash : build.manifest.version
+}
 
 export function transition(state: PluginState, event: PluginEvent): PluginState {
   switch (event.type) {
-    case "switchOn":
-      return state.kind === "off" || state.kind === "failed" ? { kind: "loading", version: event.version } : state
+    case "switchedOn":
+      return state.kind === "on" || state.kind === "swapping" ? state : { kind: "loading", build: event.build }
     case "activated":
       return activated(state)
     case "activationFailed":
       return activationFailed(state, event.reason)
-    case "swap":
-      return state.kind === "on" ? { kind: "swapping", version: state.version, to: event.to } : state
-    case "switchOff":
+    case "swapStarted":
+      return state.kind === "on" || state.kind === "swapping" ? { kind: "swapping", build: state.build, to: event.to } : state
+    case "crashed":
+      return crashed(state, event.reason)
+    case "switchedOff":
       return { kind: "off" }
     default:
       return unreachable(event)
@@ -28,9 +65,9 @@ export function transition(state: PluginState, event: PluginEvent): PluginState 
 function activated(state: PluginState): PluginState {
   switch (state.kind) {
     case "loading":
-      return { kind: "on", version: state.version }
+      return { kind: "on", build: state.build }
     case "swapping":
-      return { kind: "on", version: state.to }
+      return { kind: "on", build: state.to }
     case "off":
     case "on":
     case "failed":
@@ -43,11 +80,25 @@ function activated(state: PluginState): PluginState {
 function activationFailed(state: PluginState, reason: string): PluginState {
   switch (state.kind) {
     case "loading":
-      return { kind: "failed", reason, version: state.version }
+      return { kind: "failed", failure: { build: state.build, reason } }
     case "swapping":
-      return { kind: "on", version: state.version, lastFailure: { version: state.to, reason } }
+      return { kind: "on", build: state.build, lastFailure: { build: state.to, reason } }
     case "off":
     case "on":
+    case "failed":
+      return state
+    default:
+      return unreachable(state)
+  }
+}
+
+function crashed(state: PluginState, reason: string): PluginState {
+  switch (state.kind) {
+    case "on":
+    case "swapping":
+      return { kind: "failed", failure: { build: state.build, reason } }
+    case "off":
+    case "loading":
     case "failed":
       return state
     default:
@@ -59,16 +110,11 @@ export function pluginMachine(): Machine<PluginState, PluginEvent> {
   return machine<PluginState, PluginEvent>({ kind: "off" }, transition)
 }
 
-export function runningVersion(state: PluginState): string | undefined {
-  switch (state.kind) {
-    case "on":
-    case "swapping":
-      return state.version
-    case "off":
-    case "loading":
-    case "failed":
-      return undefined
-    default:
-      return unreachable(state)
-  }
+export function failedBuild(state: PluginState): string | undefined {
+  return state.kind === "failed" ? state.failure.build : undefined
+}
+
+export function failureOf(state: PluginState): PluginFailure | undefined {
+  if (state.kind === "failed") return state.failure
+  return state.kind === "on" ? state.lastFailure : undefined
 }

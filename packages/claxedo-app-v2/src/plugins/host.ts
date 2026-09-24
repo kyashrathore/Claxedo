@@ -1,181 +1,92 @@
-import { createEffect, createMemo, createRoot, createSignal, on, type Accessor } from "solid-js"
-import { requirementsMet, type PluginApi, type PluginModule, type PluginRequirement } from "@claxedo/plugin-api"
-import { activatePlugin, type Activation } from "./activation"
-import type { PluginOrigin, PluginState, PluginSummary } from "./api"
-import { failureReason } from "./boundary"
-import { pluginMachine } from "./model"
+import { createMemo, createSignal, type Accessor } from "solid-js"
+import type { PluginCapability } from "@claxedo/plugin-api"
+import type { Capabilities } from "@/server"
+import { createPluginLifecycle, type Activate, type PluginLifecycle } from "./lifecycle"
+import type { PluginBuild, PluginSummary } from "./model"
 import type { PluginPreferences } from "./preferences"
-import type { RegistrationSink } from "./registrations"
 
 export type PluginHostDeps = {
   readonly preferences: PluginPreferences
-  readonly features: Accessor<Readonly<Record<PluginRequirement, boolean>>>
-  readonly buildApi: (module: PluginModule, sink: RegistrationSink) => PluginApi
-  readonly removeLive: (id: string) => Promise<void>
+  readonly features: Accessor<Capabilities["features"] | undefined>
+  readonly activate: Activate
+  readonly removeLive: (pluginId: string) => Promise<void>
 }
 
 export type PluginHost = {
   readonly plugins: Accessor<readonly PluginSummary[]>
-  readonly plugin: (id: string) => PluginSummary | undefined
-  readonly add: (module: PluginModule, origin: PluginOrigin) => void
-  readonly replace: (module: PluginModule, origin: PluginOrigin) => void
-  readonly drop: (id: string) => void
-  readonly remove: (id: string) => Promise<void>
-  readonly switchOn: (id: string) => void
-  readonly switchOff: (id: string) => void
+  readonly put: (build: PluginBuild) => void
+  readonly drop: (pluginId: string) => void
+  readonly switchOn: (pluginId: string) => void
+  readonly switchOff: (pluginId: string) => void
+  readonly confirm: (pluginId: string) => void
+  readonly remove: (pluginId: string) => Promise<void>
   readonly safeMode: Accessor<boolean>
   readonly leaveSafeMode: () => void
-}
-
-type Entry = {
-  readonly id: string
-  readonly module: Accessor<PluginModule>
-  readonly setModule: (module: PluginModule) => void
-  readonly origin: Accessor<PluginOrigin>
-  readonly setOrigin: (origin: PluginOrigin) => void
-  readonly state: Accessor<PluginState>
   readonly dispose: () => void
 }
 
 export function createPluginHost(deps: PluginHostDeps): PluginHost {
-  const [entries, setEntries] = createSignal<readonly Entry[]>([])
   const { preferences } = deps
+  const [lifecycles, setLifecycles] = createSignal<readonly PluginLifecycle[]>([])
 
-  const wanted = (entry: Entry) => {
-    const live = entry.origin().kind === "live"
-    if (live && (preferences.safeMode() || !preferences.confirmed(entry.id))) return false
-    return preferences.enabled(entry.id) && requirementsMet(entry.module().manifest, deps.features())
+  const missing = (build: PluginBuild): readonly PluginCapability[] =>
+    build.manifest.requires.filter((capability) => deps.features()?.[capability] !== true)
+
+  const confirmed = (build: PluginBuild) => build.origin.kind === "bundled" || preferences.confirmed(build.manifest.id)
+
+  const wanted = (build: PluginBuild) => {
+    const id = build.manifest.id
+    if (!preferences.switchedOn(id) || missing(build).length > 0) return false
+    return build.origin.kind === "bundled" || (!preferences.safeMode() && confirmed(build))
   }
 
   const summaries = createMemo<readonly PluginSummary[]>(() =>
-    entries().map((entry) => ({
-      manifest: entry.module().manifest,
-      origin: entry.origin(),
-      enabled: preferences.enabled(entry.id),
-      requirementsMet: requirementsMet(entry.module().manifest, deps.features()),
-      confirmed: entry.origin().kind === "bundled" || preferences.confirmed(entry.id),
-      state: entry.state(),
-    })),
+    lifecycles().map((lifecycle) => {
+      const build = lifecycle.build()
+      return {
+        id: lifecycle.id,
+        name: build.manifest.name,
+        version: build.manifest.version,
+        origin: build.origin,
+        switchedOn: preferences.switchedOn(lifecycle.id),
+        missing: missing(build),
+        confirmed: confirmed(build),
+        state: lifecycle.state(),
+      }
+    }),
   )
 
-  const add = (module: PluginModule, origin: PluginOrigin) => {
-    if (entries().some((entry) => entry.id === module.manifest.id)) throw new Error(`Plugin ${module.manifest.id} is already registered`)
-    const entry = createEntry(module, origin, (current) => wanted(current), deps.buildApi)
-    setEntries((current) => [...current, entry])
-  }
+  const find = (pluginId: string) => lifecycles().find((lifecycle) => lifecycle.id === pluginId)
 
-  const drop = (id: string) => {
-    const entry = entries().find((current) => current.id === id)
-    if (!entry) return
-    entry.dispose()
-    setEntries((current) => current.filter((candidate) => candidate !== entry))
+  const drop = (pluginId: string) => {
+    const lifecycle = find(pluginId)
+    if (!lifecycle) return
+    lifecycle.dispose()
+    setLifecycles((current) => current.filter((candidate) => candidate !== lifecycle))
   }
 
   return {
     plugins: summaries,
-    plugin: (id) => summaries().find((summary) => summary.manifest.id === id),
-    add,
-    replace: (module, origin) => {
-      const entry = entries().find((current) => current.id === module.manifest.id)
-      if (!entry) return add(module, origin)
-      entry.setOrigin(origin)
-      entry.setModule(module)
+    put: (build) => {
+      const existing = find(build.manifest.id)
+      if (existing) return existing.setBuild(build)
+      const lifecycle = createPluginLifecycle(build, wanted, deps.activate)
+      setLifecycles((current) => [...current, lifecycle])
     },
     drop,
-    remove: async (id) => {
-      const entry = entries().find((current) => current.id === id)
-      if (!entry || entry.origin().kind !== "live") return
-      await deps.removeLive(id)
-      drop(id)
-      preferences.forget(id)
+    remove: async (pluginId) => {
+      await deps.removeLive(pluginId)
+      drop(pluginId)
+      preferences.forget(pluginId)
     },
-    switchOn: (id) => preferences.setEnabled(id, true),
-    switchOff: (id) => preferences.setEnabled(id, false),
+    switchOn: (pluginId) => preferences.setSwitchedOn(pluginId, true),
+    switchOff: (pluginId) => preferences.setSwitchedOn(pluginId, false),
+    confirm: preferences.confirm,
     safeMode: preferences.safeMode,
     leaveSafeMode: preferences.leaveSafeMode,
+    dispose: () => {
+      for (const lifecycle of lifecycles()) lifecycle.dispose()
+      setLifecycles([])
+    },
   }
-}
-
-function createEntry(
-  initial: PluginModule,
-  initialOrigin: PluginOrigin,
-  wanted: (entry: Entry) => boolean,
-  buildApi: PluginHostDeps["buildApi"],
-): Entry {
-  return createRoot((dispose) => {
-    const [module, setModule] = createSignal(initial)
-    const [origin, setOrigin] = createSignal(initialOrigin)
-    const machine = pluginMachine()
-    const entry: Entry = {
-      id: initial.manifest.id,
-      module,
-      setModule,
-      origin,
-      setOrigin,
-      state: machine.state,
-      dispose: () => {
-        running?.dispose()
-        running = undefined
-        dispose()
-      },
-    }
-    let running: Activation | undefined
-    let generation = 0
-
-    const stop = () => {
-      generation++
-      running?.dispose()
-      running = undefined
-      machine.send({ type: "switchOff" })
-    }
-
-    const start = async (next: PluginModule) => {
-      const attempt = ++generation
-      const swapping = running !== undefined
-      machine.send(swapping ? { type: "swap", to: next.manifest.version } : { type: "switchOn", version: next.manifest.version })
-      try {
-        const activation = await activatePlugin({
-          module: next,
-          buildApi: (sink) => buildApi(next, sink),
-          onLateFailure: (reason) => {
-            if (attempt !== generation) return
-            stop()
-            machine.send({ type: "switchOn", version: next.manifest.version })
-            machine.send({ type: "activationFailed", reason })
-          },
-        })
-        if (attempt !== generation) {
-          activation.dispose()
-          return
-        }
-        running?.dispose()
-        running = activation
-        machine.send({ type: "activated" })
-      } catch (error) {
-        if (attempt !== generation) return
-        machine.send({ type: "activationFailed", reason: failureReason(error) })
-      }
-    }
-
-    createEffect(
-      on(
-        () => [wanted(entry), module()] as const,
-        ([isWanted, next]) => {
-          if (!isWanted) {
-            if (running || machine.state().kind !== "off") stop()
-            return
-          }
-          if (running?.version === next.manifest.version) return
-          if (failedVersion(machine.state()) === next.manifest.version) return
-          void start(next)
-        },
-      ),
-    )
-
-    return entry
-  })
-}
-
-function failedVersion(state: PluginState): string | undefined {
-  return state.kind === "failed" ? state.version : undefined
 }

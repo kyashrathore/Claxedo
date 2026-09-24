@@ -1,0 +1,60 @@
+import { ServerError } from "../errors"
+import { projectId } from "../ids"
+import type { Project, ProjectSource } from "../types"
+
+type WireProject = {
+  readonly id: string
+  readonly name: string
+  readonly env?: Record<string, string>
+  readonly directory?: string | null
+  readonly repoUrl?: string | null
+  readonly created_at: number
+  readonly updated_at: number
+}
+
+function isWireProject(value: unknown): value is WireProject {
+  const row = value as Partial<WireProject> | null
+  return !!row && typeof row.id === "string" && typeof row.name === "string"
+    && typeof row.created_at === "number" && typeof row.updated_at === "number"
+}
+
+function sourceOf(project: WireProject): ProjectSource | undefined {
+  if (project.repoUrl) return { kind: "repository", url: project.repoUrl }
+  if (project.directory) return { kind: "folder", path: project.directory }
+  return undefined
+}
+
+function projectFromWire(project: WireProject): Project {
+  const source = sourceOf(project)
+  return {
+    id: projectId(project.id),
+    name: project.name,
+    ...(source ? { source } : {}),
+    env: project.env ?? {},
+    createdAt: project.created_at,
+    updatedAt: project.updated_at,
+  }
+}
+
+export function projectSourceBody(source: ProjectSource) {
+  switch (source.kind) {
+    case "folder":
+      return { kind: "directory", directory: source.path }
+    case "repository":
+      return { kind: "repository", repoUrl: source.url }
+    case "connectedRepository":
+      return { kind: "repository", connectionId: source.connectionId, repo: { fullName: source.fullName } }
+  }
+}
+
+export function projectsFromWire(body: unknown): readonly Project[] {
+  const rows = body && typeof body === "object" ? (body as { projects?: unknown }).projects : undefined
+  if (!Array.isArray(rows)) throw new ServerError({ class: "internal", message: "The projects route answered without projects" })
+  return rows.filter(isWireProject).map(projectFromWire)
+}
+
+export function oneProjectFromWire(body: unknown): Project {
+  const project = body && typeof body === "object" ? (body as { project?: unknown }).project : undefined
+  if (!isWireProject(project)) throw new ServerError({ class: "internal", message: "The projects route answered without a project" })
+  return projectFromWire(project)
+}

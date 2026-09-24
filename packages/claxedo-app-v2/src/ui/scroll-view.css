@@ -1,0 +1,58 @@
+@layer components {
+  .scroll-view {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .scroll-view-viewport {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+    outline: none;
+  }
+
+  .scroll-view-viewport::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scroll-view-thumb {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 100;
+    width: 12px;
+    opacity: 0;
+    transition: opacity 200ms ease;
+    cursor: default;
+    user-select: none;
+    touch-action: none;
+    pointer-events: auto;
+  }
+
+  .scroll-view-thumb::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 4px;
+    transform: translateX(-50%);
+    border-radius: var(--radius-pill);
+    background-color: var(--v2-border-border-strong);
+    transition: background-color 150ms ease;
+  }
+
+  .scroll-view-thumb:hover::after,
+  .scroll-view-thumb[data-dragging="true"]::after {
+    background-color: var(--v2-icon-icon-muted);
+  }
+
+  .scroll-view-thumb[data-visible="true"] {
+    opacity: 1;
+  }
+}
