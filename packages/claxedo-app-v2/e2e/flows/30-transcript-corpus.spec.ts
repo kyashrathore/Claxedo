@@ -2,7 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 import type { Locator, Page } from "@playwright/test"
 import type { CaseInteraction, CaseTurn, CorpusCase } from "../corpus/case"
-import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, type ClaxedoApi, type MessageRow, type Stack } from "../harness"
 
 const CASES_DIR = path.join(import.meta.dirname, "..", "corpus", "cases")
 const TURN_TIMEOUT = 30_000
@@ -70,7 +70,7 @@ async function arrange(stack: Stack, api: ClaxedoApi, corpusCase: CorpusCase) {
 }
 
 function sessionUrl(stack: Stack, workspaceId: string, sessionId: string): string {
-  const route = stack.app === "v1" ? `/w/${workspaceId}/session/${sessionId}` : `/w/${workspaceId}/s/${sessionId}`
+  const route = sessionRoute(workspaceId, sessionId)
   return `${stack.url}${route}`
 }
 
