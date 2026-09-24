@@ -19,6 +19,7 @@ import {
   upsertPart,
 } from "./conversation"
 import { createDeltaBuffer } from "./deltas"
+import { createSessionGoal } from "./goal"
 import { isPendingMessage, isPresentationMessage, searchById } from "./merge"
 import {
   OLDER_IDLE,
@@ -71,6 +72,7 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
   const [olderCursor, setOlderCursor] = createSignal<string>()
   const deltas = createDeltaBuffer((messageId, partId, field, text) => appendDelta(setData, data, messageId, partId, field, text))
   const queue = createQueue(server, ref, (items) => dropQueuedStubs(setData, data, items))
+  const goal = createSessionGoal(server, ref)
   const state = createMemo(() => loadState(phase.state()))
   const lastUserId = createMemo(() => lastUserMessageId(data.messages))
 
@@ -94,6 +96,8 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
         return setData("todos", [...event.todos])
       case "diffChanged":
         return setData("diff", [...event.diff])
+      case "goalChanged":
+        return goal.changed(event.goal)
       default:
         return unreachable(event)
     }
@@ -120,6 +124,7 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
     if (!hasOlderLoaded) setOlderCursor(snapshot.transcript.olderCursor)
     setData("todos", [...snapshot.todos])
     setData("diff", [...snapshot.diff])
+    goal.read(snapshot.goal)
     for (const event of held) applyNow(event)
     phase.send({ type: "readLanded" })
   }
@@ -196,6 +201,9 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
     requestState: deps.requests.stateOf,
     todos: () => data.todos,
     diff: () => data.diff,
+    goal: goal.goal,
+    goalActions: goal.actions,
+    controlGoal: goal.control,
     hasOlder: () => olderCursor() !== undefined,
     olderState: older.state,
     loadOlder,

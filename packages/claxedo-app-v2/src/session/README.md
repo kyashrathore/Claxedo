@@ -19,7 +19,7 @@ Order is flat: `lastHumanTurnAt` (or `createdAt`) descending, then `createdAt`, 
 | --- | --- |
 | Session rows, tombstones, pending entries, the fetch window and status per session | `list/` (`model.ts`, `rows.ts`, `statuses.ts`, `transition.ts`, `visible-rows.ts`, `store.ts`) |
 | Agent requests (permissions and questions) and their reply machine | `requests/` |
-| One session's transcript, todos, diff, older pages, the optimistic user message and the queue | `transcript/` |
+| One session's transcript, todos, diff, goal, older pages, the optimistic user message and the queue | `transcript/` |
 | The LRU of open sessions, the one stream dispatch and the provider | `store/` |
 
 Fetched data never enters these stores and pushed data never enters the query cache. Deltas are coalesced per animation frame (`transcript/deltas.ts`) and appended in place on the part's field; a message or part upsert replaces only that message's parts array or the messages array, so unchanged messages and part arrays keep their identity for the timeline's row memos.
@@ -40,6 +40,7 @@ Fetched data never enters these stores and pushed data never enters the query ca
 - `send` mints the user message id from the adapter, inserts the optimistic stub under that id (sorted last), stamps the list, and sends the prompt with `messageId`; the runtime echoes the user message under the same id, which replaces the stub. A failed send removes the stub and the stamp and rejects with the `AppError`.
 - `turnSettlePending(userMessageId)` is true while a snapshot read is in flight and that id is the last user message.
 - `queue` reads the runtime's held prompts through the adapter, re-read on: own send accepted, `statusChanged`, a user `messageUpserted`, and a stream gap. No timer. A queued record whose `messageId` matches an optimistic stub replaces the stub, so the prompt shows as queued and editable. `beginEdit` holds the record and sets `editing`; the composer owner loads its text (`queuedMessageText`) into the composer and calls `cancelEdit` to release it.
+- `goal` comes from the snapshot's goal read and `goalChanged` events, which are held during a read like the transcript's. A goal fact older than the one held is dropped: a different goal is ordered by `createdAt`, the same goal by `updatedAt`. A removal records the removed goal's `createdAt`, so a late update of that goal can't bring it back. `goalActions` are the actions the session's harness supports; `controlGoal` applies the server's answer.
 - `status` and `row` are read from the list store, `requests` from the requests store: one home per fact.
 
 ## Flows

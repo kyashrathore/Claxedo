@@ -18,7 +18,7 @@ export type TranscriptData = {
 
 export type TranscriptEvent = Extract<
   ServerEvent,
-  { type: "messageUpserted" | "messageRemoved" | "partUpserted" | "partRemoved" | "todosChanged" | "diffChanged" }
+  { type: "messageUpserted" | "messageRemoved" | "partUpserted" | "partRemoved" | "todosChanged" | "diffChanged" | "goalChanged" }
 >
 
 export type SessionPhase =
@@ -88,4 +88,5 @@ export const isTranscriptEvent = (event: ServerEvent): event is TranscriptEvent 
   event.type === "partUpserted" ||
   event.type === "partRemoved" ||
   event.type === "todosChanged" ||
-  event.type === "diffChanged"
+  event.type === "diffChanged" ||
+  event.type === "goalChanged"
