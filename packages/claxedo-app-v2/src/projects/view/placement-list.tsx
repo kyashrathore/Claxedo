@@ -37,8 +37,7 @@ export const PlacementList: Component<{ projectId: Accessor<ProjectId> }> = (pro
   }
 
   return (
-    <section class="flex flex-col gap-2" aria-label={t("projects.placements")} data-testid="placements">
-      <h3 class="m-0 text-sm font-medium">{t("projects.placements")}</h3>
+    <div class="flex flex-col gap-2" data-testid="placements">
       <Switch>
         <Match when={placements().kind === "loading"}>
           <p class="projects-hint projects-placeholder m-0">{t("projects.loading")}</p>
@@ -68,6 +67,6 @@ export const PlacementList: Component<{ projectId: Accessor<ProjectId> }> = (pro
           </ul>
         </Match>
       </Switch>
-    </section>
+    </div>
   )
 }

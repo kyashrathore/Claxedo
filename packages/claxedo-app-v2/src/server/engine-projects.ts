@@ -1,4 +1,5 @@
-import { isRecord, onlyStrings, readString } from "@/lib/record"
+import type { QueryClient } from "@tanstack/solid-query"
+import { isRecord, onlyStrings, readString } from "../lib/record"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, type Transport } from "./transport"
@@ -90,12 +91,13 @@ export function engineProjectQueries(transport: Transport): EngineProjectsQuerie
   }
 }
 
-export function createEngineProjectsApi(transport: Transport): EngineProjectsApi {
+export function createEngineProjectsApi(transport: Transport, queryClient: QueryClient): EngineProjectsApi {
   return {
     update: async (input) => {
       const path = `/project/${encodeURIComponent(input.id)}?${new URLSearchParams({ directory: input.worktree }).toString()}`
       const body = defined({ name: input.name, icon: input.icon, commands: input.commands })
       await transport.json<unknown>(path, jsonInit("PATCH", body))
+      await queryClient.invalidateQueries({ queryKey: queryKeys.bootstrap(transport.serverUrl) })
     },
   }
 }
