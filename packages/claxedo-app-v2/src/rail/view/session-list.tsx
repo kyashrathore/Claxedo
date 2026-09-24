@@ -4,9 +4,10 @@ import { useElapsed } from "@/lib/delay"
 import type { SessionId } from "@/server"
 import type { SessionListState, SessionRowView } from "@/session"
 import { useSessionStores, useShellRoute } from "@/shell"
-import { Button, Icon, Switch, TextInput } from "@/ui"
+import { Button, Icon, IconButton, Switch, TextInput } from "@/ui"
 import { dictionary } from "../i18n"
 import { visibleRows } from "../model"
+import { createSessionActions, type SessionActions } from "./session-actions"
 import { SessionRows } from "./session-rows"
 
 function ListLoading(): JSX.Element {
@@ -26,6 +27,7 @@ function ListBody(props: {
   readonly rows: readonly SessionRowView[]
   readonly total: number
   readonly activeSessionId: SessionId | undefined
+  readonly actions: SessionActions
 }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
@@ -44,7 +46,7 @@ function ListBody(props: {
         <p class="rail-note">{props.total === 0 ? t("rail.empty") : t("rail.noMatches")}</p>
       </Match>
       <Match when={props.rows.length > 0}>
-        <SessionRows rows={props.rows} activeSessionId={props.activeSessionId} />
+        <SessionRows rows={props.rows} activeSessionId={props.activeSessionId} actions={props.actions} />
       </Match>
     </Cases>
   )
@@ -54,6 +56,7 @@ export function SessionList(): JSX.Element {
   const t = useTranslator(dictionary)
   const stores = useSessionStores()
   const routing = useShellRoute()
+  const actions = createSessionActions()
   const [query, setQuery] = createSignal("")
   const [showArchived, setShowArchived] = createSignal(false)
   const rows = createMemo(() => visibleRows(stores.list.rows(), query(), showArchived()))
@@ -61,12 +64,23 @@ export function SessionList(): JSX.Element {
     const route = routing.route()
     return route.kind === "session" ? route.sessionId : undefined
   })
+  const placementId = createMemo(() => {
+    const route = routing.route()
+    return route.kind === "session" || route.kind === "terminal" ? route.placementId : undefined
+  })
   const loadMore = () => stores.list.loadMore().catch((error: unknown) => console.error("Loading more sessions failed", error))
   return (
     <section class="rail-sessions" aria-labelledby="rail-sessions-title">
-      <h2 id="rail-sessions-title" class="rail-title">
-        {t("rail.sessions")}
-      </h2>
+      <div class="rail-header">
+        <h2 id="rail-sessions-title" class="rail-title">
+          {t("rail.sessions")}
+        </h2>
+        <Show when={placementId()}>
+          {(placement) => (
+            <IconButton icon="new-session" variant="ghost" size="small" aria-label={t("rail.newSession")} data-testid="new-session" onClick={() => actions.create(placement())} />
+          )}
+        </Show>
+      </div>
       <div class="rail-search">
         <TextInput
           type="search"
@@ -85,7 +99,7 @@ export function SessionList(): JSX.Element {
           {t("rail.showArchived")}
         </Switch>
       </div>
-      <ListBody state={stores.list.state()} rows={rows()} total={stores.list.rows().length} activeSessionId={activeSessionId()} />
+      <ListBody state={stores.list.state()} rows={rows()} total={stores.list.rows().length} activeSessionId={activeSessionId()} actions={actions} />
       <Show when={stores.list.hasMore()}>
         <Button variant="ghost" size="small" class="rail-load-more" onClick={() => void loadMore()}>
           {t("rail.loadMore")}
