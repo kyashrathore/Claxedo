@@ -30,7 +30,7 @@ export function NotificationsSection() {
     if (checked) void requestSystemNotifications()
   }
   return (
-    <div class="settings-body" data-component="settings-notifications">
+    <div class="settings-body">
       <SettingsGroup>
         <SettingsList>
           <For each={ALERT_ROWS}>
@@ -55,7 +55,7 @@ export function SoundsSection() {
   const preferences = usePreferences()
   const label = (choice: SoundChoice) => (choice === "none" ? t("settings.sounds.none") : t("settings.sounds.alert01"))
   return (
-    <div class="settings-body" data-component="settings-sounds">
+    <div class="settings-body">
       <SettingsGroup>
         <SettingsList>
           <For each={ALERT_ROWS}>

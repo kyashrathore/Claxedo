@@ -49,9 +49,9 @@ function AddMachine(props: { readonly empty: boolean }) {
         </Button>
       </Show>
       <Show when={props.empty || open()}>
-        <div class="settings-instructions" data-slot="add-connect-host">
+        <div class="settings-instructions">
           <Show when={props.empty}>
-            <p class="settings-row-description" data-component="machines-empty">{t("settings.machines.empty")}</p>
+            <p class="settings-row-description">{t("settings.machines.empty")}</p>
           </Show>
           <ol class="settings-steps">
             <Step number="1" title={t("settings.machines.step.here")} description={t("settings.machines.step.here.description")} />
@@ -77,7 +77,7 @@ export function MachinesSection() {
   const query = useQuery(() => server.queries.machines.list())
   const machines = createMemo(() => (query.data ?? []).filter((machine) => machine.enrolled))
   return (
-    <div class="settings-body" data-component="settings-machines">
+    <div class="settings-body">
       <SettingsIntro description={t("settings.machines.description")} />
       <SettingsGroup title={t("settings.machines.remoteAccess")}>
         <SettingsList variant="outline">

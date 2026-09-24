@@ -8,7 +8,7 @@ export function LanguageSection() {
   const i18n = useI18n()
   const localeLabel = (code: Locale) => i18n.locales.find((entry) => entry.code === code)?.label ?? code
   return (
-    <div class="settings-body" data-component="settings-language">
+    <div class="settings-body">
       <SettingsGroup>
         <SettingsList>
           <SettingsRow title={t("settings.appearance.language")} description={t("settings.appearance.language.description")}>

@@ -45,7 +45,7 @@ export function ConnectionsSection() {
   }
 
   return (
-    <div class="settings-body" data-component="settings-connections">
+    <div class="settings-body">
       <SettingsIntro description={t("settings.connections.description")} />
       <AgentConnections rows={agents.data} error={agents.error} loading={agents.isPending} onRemove={(row) => void act(row.connectionId, () => removeAgentConnection(row.connectionId).then(() => queryClient.invalidateQueries({ queryKey: ["settings", "agent-connections"] })), `${row.label} removed`)} busy={busy()} />
       <SettingsGroup title={t("settings.connections.integrations")}>

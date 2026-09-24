@@ -87,7 +87,7 @@ export function AppearanceSection() {
   const fontRows = (keys: readonly FontRow["key"][]) => FONT_ROWS.filter((row) => keys.includes(row.key))
 
   return (
-    <div class="settings-body" data-component="settings-appearance">
+    <div class="settings-body">
       <SettingsGroup title={t("settings.appearance.group.colors")}>
         <SettingsList>
           <SettingsRow title={t("settings.appearance.colorScheme")} description={t("settings.appearance.colorScheme.description")}>

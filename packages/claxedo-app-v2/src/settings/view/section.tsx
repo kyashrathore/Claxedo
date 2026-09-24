@@ -3,7 +3,7 @@ import "./settings.css"
 
 export function SettingsIntro(props: { readonly description?: string; readonly action?: JSX.Element }) {
   return (
-    <div class="settings-intro" data-component="settings-intro">
+    <div class="settings-intro">
       <Show when={props.description}>{(text) => <p class="settings-description">{text()}</p>}</Show>
       <Show when={props.action}>{(action) => <div class="settings-intro-action">{action()}</div>}</Show>
     </div>
@@ -64,7 +64,7 @@ export function SettingsRow(props: {
 
 export function SettingsEmpty(props: { readonly children: JSX.Element }) {
   return (
-    <div class="settings-empty" data-component="settings-empty">
+    <div class="settings-empty">
       {props.children}
     </div>
   )
