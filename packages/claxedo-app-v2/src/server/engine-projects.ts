@@ -1,4 +1,4 @@
-import { isRecord, onlyStrings, readString } from "@/lib/record"
+import { isRecord, onlyStrings, readString } from "../lib/record"
 import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import { jsonInit, type Transport } from "./transport"
