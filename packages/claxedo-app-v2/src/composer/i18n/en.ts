@@ -81,6 +81,12 @@ export type ComposerTextKey =
   | "prompt.toast.promptSendFailed.title"
   | "common.requestFailed"
   | "prompt.toast.goalStopFailed.title"
+  | "prompt.imageMarks.title"
+  | "prompt.imageMarks.hint"
+  | "prompt.imageMarks.delete"
+  | "prompt.imageMarks.mark"
+  | "common.cancel"
+  | "common.save"
 
 export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.action.cancel": "Cancel",
@@ -165,4 +171,10 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
   "common.requestFailed": "Request failed",
   "prompt.toast.goalStopFailed.title": "Could not stop Goal",
+  "prompt.imageMarks.title": "Mark up image",
+  "prompt.imageMarks.hint": "Drag to box an area or click to drop a pin, then comment on it.",
+  "prompt.imageMarks.delete": "Delete mark",
+  "prompt.imageMarks.mark": "mark {{number}}",
+  "common.cancel": "Cancel",
+  "common.save": "Save",
 }

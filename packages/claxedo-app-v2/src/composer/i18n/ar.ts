@@ -78,4 +78,10 @@ export const ar: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "فشل إرسال الموجه",
   "common.requestFailed": "فشل الطلب",
   "prompt.toast.goalStopFailed.title": "تعذّر إيقاف الهدف",
+  "prompt.imageMarks.title": "تعليم الصورة",
+  "prompt.imageMarks.hint": "اسحب لتحديد منطقة أو انقر لوضع دبوس، ثم أضف تعليقًا.",
+  "prompt.imageMarks.delete": "حذف العلامة",
+  "prompt.imageMarks.mark": "العلامة {{number}}",
+  "common.cancel": "إلغاء",
+  "common.save": "حفظ",
 }

@@ -78,4 +78,10 @@ export const zht: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "傳送提示失敗",
   "common.requestFailed": "要求失敗",
   "prompt.toast.goalStopFailed.title": "無法停止目標",
+  "prompt.imageMarks.title": "標記圖片",
+  "prompt.imageMarks.hint": "拖曳框選區域或點擊放置圖釘，然後加入留言。",
+  "prompt.imageMarks.delete": "刪除標記",
+  "prompt.imageMarks.mark": "標記 {{number}}",
+  "common.cancel": "取消",
+  "common.save": "儲存",
 }

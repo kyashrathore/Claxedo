@@ -77,4 +77,10 @@ export const es: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "Fallo al enviar prompt",
   "common.requestFailed": "Solicitud fallida",
   "prompt.toast.goalStopFailed.title": "No se pudo detener el objetivo",
+  "prompt.imageMarks.title": "Marcar imagen",
+  "prompt.imageMarks.hint": "Arrastra para enmarcar un área o haz clic para colocar un pin y luego comenta.",
+  "prompt.imageMarks.delete": "Eliminar marca",
+  "prompt.imageMarks.mark": "marca {{number}}",
+  "common.cancel": "Cancelar",
+  "common.save": "Guardar",
 }

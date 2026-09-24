@@ -78,4 +78,10 @@ export const de: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "Eingabe konnte nicht gesendet werden",
   "common.requestFailed": "Anfrage fehlgeschlagen",
   "prompt.toast.goalStopFailed.title": "Ziel konnte nicht gestoppt werden",
+  "prompt.imageMarks.title": "Bild markieren",
+  "prompt.imageMarks.hint": "Ziehen, um einen Bereich einzurahmen, oder klicken, um eine Nadel zu setzen, dann kommentieren.",
+  "prompt.imageMarks.delete": "Markierung löschen",
+  "prompt.imageMarks.mark": "Markierung {{number}}",
+  "common.cancel": "Abbrechen",
+  "common.save": "Speichern",
 }

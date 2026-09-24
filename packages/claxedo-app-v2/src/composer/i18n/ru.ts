@@ -80,4 +80,10 @@ export const ru: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "Не удалось отправить запрос",
   "common.requestFailed": "Запрос не выполнен",
   "prompt.toast.goalStopFailed.title": "Не удалось остановить цель",
+  "prompt.imageMarks.title": "Отметить на изображении",
+  "prompt.imageMarks.hint": "Потяните, чтобы выделить область, или щёлкните, чтобы поставить метку, затем добавьте комментарий.",
+  "prompt.imageMarks.delete": "Удалить метку",
+  "prompt.imageMarks.mark": "метка {{number}}",
+  "common.cancel": "Отмена",
+  "common.save": "Сохранить",
 }

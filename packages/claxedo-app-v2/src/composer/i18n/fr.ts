@@ -74,4 +74,10 @@ export const fr: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "Échec de l'envoi du message",
   "common.requestFailed": "La demande a échoué",
   "prompt.toast.goalStopFailed.title": "Impossible d'arrêter l'objectif",
+  "prompt.imageMarks.title": "Annoter l'image",
+  "prompt.imageMarks.hint": "Faites glisser pour encadrer une zone ou cliquez pour placer une épingle, puis commentez.",
+  "prompt.imageMarks.delete": "Supprimer le repère",
+  "prompt.imageMarks.mark": "repère {{number}}",
+  "common.cancel": "Annuler",
+  "common.save": "Enregistrer",
 }

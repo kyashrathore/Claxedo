@@ -80,4 +80,10 @@ export const tr: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "Komut gönderilemedi",
   "common.requestFailed": "İstek başarısız",
   "prompt.toast.goalStopFailed.title": "Hedef durdurulamadı",
+  "prompt.imageMarks.title": "Görseli işaretle",
+  "prompt.imageMarks.hint": "Bir alanı çerçevelemek için sürükleyin veya iğne bırakmak için tıklayın, ardından yorum yazın.",
+  "prompt.imageMarks.delete": "İşareti sil",
+  "prompt.imageMarks.mark": "işaret {{number}}",
+  "common.cancel": "İptal",
+  "common.save": "Kaydet",
 }

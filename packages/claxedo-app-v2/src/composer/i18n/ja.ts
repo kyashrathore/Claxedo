@@ -80,4 +80,10 @@ export const ja: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "プロンプトの送信に失敗しました",
   "common.requestFailed": "リクエスト失敗",
   "prompt.toast.goalStopFailed.title": "ゴールを停止できませんでした",
+  "prompt.imageMarks.title": "画像にマークを付ける",
+  "prompt.imageMarks.hint": "ドラッグで範囲を囲むか、クリックでピンを置いてからコメントを入力します。",
+  "prompt.imageMarks.delete": "マークを削除",
+  "prompt.imageMarks.mark": "マーク {{number}}",
+  "common.cancel": "キャンセル",
+  "common.save": "保存",
 }

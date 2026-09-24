@@ -81,4 +81,10 @@ export const th: Partial<Record<ComposerTextKey, string>> = {
   "prompt.toast.promptSendFailed.title": "ไม่สามารถส่งพร้อมท์",
   "common.requestFailed": "คำขอล้มเหลว",
   "prompt.toast.goalStopFailed.title": "ไม่สามารถหยุดเป้าหมายได้",
+  "prompt.imageMarks.title": "ทำเครื่องหมายบนรูปภาพ",
+  "prompt.imageMarks.hint": "ลากเพื่อตีกรอบพื้นที่หรือคลิกเพื่อปักหมุด แล้วเพิ่มความคิดเห็น",
+  "prompt.imageMarks.delete": "ลบเครื่องหมาย",
+  "prompt.imageMarks.mark": "เครื่องหมาย {{number}}",
+  "common.cancel": "ยกเลิก",
+  "common.save": "บันทึก",
 }
