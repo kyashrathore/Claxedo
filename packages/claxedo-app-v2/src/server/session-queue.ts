@@ -1,5 +1,5 @@
 import { ServerError } from "./errors"
-import { sessionPath } from "./session-context"
+import { sessionEndpoint } from "./session-context"
 import { jsonInit, type Transport } from "./transport"
 import type { PromptInput, QueuedPrompt, QueuedPromptAction, QueuedPromptControl, SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
@@ -7,7 +7,7 @@ import { promptBody } from "./wire/prompt"
 import { queuedPromptControlFromWire, queuedPromptFromWire } from "./wire/queue"
 
 function queuePath(ref: SessionRef, suffix = "") {
-  return sessionPath(ref, `/queue${suffix}`)
+  return sessionEndpoint(ref, `/queue${suffix}`)
 }
 
 export function createSessionQueue(transport: Transport, workspaces: Workspaces) {

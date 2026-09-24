@@ -1,9 +1,9 @@
 import { createMemo, For, Match, Show, Switch, type Accessor, type JSX } from "solid-js"
 import type { SessionRowView } from "@/session"
 import type { RailRow, SessionMarker } from "../model"
-import { SessionRow } from "./session-row"
+import { RailSessionRow } from "./session-row"
 import type { SessionRowMenuActions } from "./session-row-menu"
-import { TerminalRow } from "./terminal-row"
+import { RailTerminalRow } from "./terminal-row"
 
 export type ProjectRowsProps = SessionRowMenuActions & {
   readonly rows: readonly RailRow[]
@@ -20,11 +20,11 @@ function Row(props: ProjectRowsProps & { readonly row: RailRow }): JSX.Element {
   return (
     <Switch>
       <Match when={props.row.kind === "terminal" ? props.row.terminal : undefined}>
-        {(terminal) => <TerminalRow row={terminal()} active={props.activeTerminalId === terminal().terminalId} prepareDrag={() => props.prepareDrag(props.row)} />}
+        {(terminal) => <RailTerminalRow row={terminal()} active={props.activeTerminalId === terminal().terminalId} prepareDrag={() => props.prepareDrag(props.row)} />}
       </Match>
       <Match when={props.row.kind === "session" ? props.row.session : undefined}>
         {(session) => (
-          <SessionRow
+          <RailSessionRow
             row={session()}
             marker={props.markerOf(session())}
             projectLabel={props.projectLabel}

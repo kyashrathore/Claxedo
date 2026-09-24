@@ -11,7 +11,8 @@ import { createModeTracker } from "./modes"
 import { installInputModeReclaimer } from "./input-mode-reclaimer"
 import { createParserGate, gatedWrite } from "./parser-gate"
 import { createCheckpointRestorer } from "./checkpoint"
-import type { CreateBackend, Disposer, TerminalBackend, TerminalBackendOptions, TerminalSize } from "./types"
+import type { Disposer } from "@/shell"
+import type { CreateBackend, TerminalBackend, TerminalBackendOptions, TerminalSize } from "./types"
 
 type Listeners = {
   data: Set<(data: string) => void>
