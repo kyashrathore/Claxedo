@@ -30,7 +30,7 @@ export function OrganizationSection() {
               <div class="org-row">
                 <span class="org-name">{who().name}</span>
                 <span class="org-you">{t("access.org.you")}</span>
-                <Tag variant="accent">{t(ROLE_KEY[access.orgRole() ?? "member"])}</Tag>
+                <Tag>{t(ROLE_KEY[access.orgRole() ?? "member"])}</Tag>
               </div>
             </div>
             <Show when={access.can("org.manage")} fallback={<p class="org-note">{t("access.org.restricted")}</p>}>
