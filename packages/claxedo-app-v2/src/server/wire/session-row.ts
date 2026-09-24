@@ -48,12 +48,14 @@ export function sessionRowFromSession(info: AgentSession, ref: SessionRef): Sess
   const created = info.time?.created ?? 0
   const updated = info.time?.updated ?? created
   const archived = info.time?.archived
+  const lastHumanTurnAt = number((info.time as { lastHumanTurn?: unknown } | undefined)?.lastHumanTurn)
   const parent = text(info.parentID)
   return {
     ref,
     title: text(info.title) ?? ref.sessionId,
     createdAt: created,
     updatedAt: updated,
+    ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archived ? { archivedAt: archived } : {}),
     ...(parent ? { parentSessionId: sessionId(parent) as SessionId } : {}),
   }

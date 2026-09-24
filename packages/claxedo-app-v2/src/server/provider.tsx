@@ -1,21 +1,23 @@
+import { QueryClientProvider } from "@tanstack/solid-query"
 import { onCleanup, type ParentProps } from "solid-js"
 import { ServerContext } from "./context"
-import type { Server } from "./index"
 import type { ServerHandle } from "./server"
 
-export function ServerProvider(props: ParentProps<{ readonly server: Server }>) {
-  const handle = props.server as Partial<ServerHandle>
-  if (typeof window !== "undefined" && handle.retryConnection) {
-    const retry = () => handle.retryConnection?.()
-    const visible = () => {
-      if (document.visibilityState === "visible") retry()
-    }
-    window.addEventListener("online", retry)
-    document.addEventListener("visibilitychange", visible)
-    onCleanup(() => {
-      window.removeEventListener("online", retry)
-      document.removeEventListener("visibilitychange", visible)
-    })
+export function ServerProvider(props: ParentProps<{ readonly server: ServerHandle }>) {
+  const server = props.server
+  const visible = () => {
+    if (document.visibilityState === "visible") server.retryConnection()
   }
-  return <ServerContext.Provider value={props.server}>{props.children}</ServerContext.Provider>
+  window.addEventListener("online", server.retryConnection)
+  document.addEventListener("visibilitychange", visible)
+  onCleanup(() => {
+    window.removeEventListener("online", server.retryConnection)
+    document.removeEventListener("visibilitychange", visible)
+    server.dispose()
+  })
+  return (
+    <ServerContext.Provider value={server}>
+      <QueryClientProvider client={server.queryClient}>{props.children}</QueryClientProvider>
+    </ServerContext.Provider>
+  )
 }

@@ -1,8 +1,8 @@
-import { queryOptions } from "@tanstack/solid-query"
+import { fetchQuery } from "./fetch-query"
 import { machineId } from "./ids"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
-import type { Machine } from "./types"
+import type { FetchQuery, Machine } from "./types"
 import type { Workspaces } from "./workspaces"
 
 export const MACHINE_ONLINE_WINDOW_MS = 120_000
@@ -32,9 +32,6 @@ export async function listMachines(transport: Transport, workspaces: Workspaces)
 
 export function machineQueries(transport: Transport, workspaces: Workspaces) {
   return {
-    list: () => queryOptions({
-      queryKey: queryKeys.machines(transport.serverUrl),
-      queryFn: () => listMachines(transport, workspaces),
-    }),
+    list: () => fetchQuery<readonly Machine[]>(queryKeys.machines(transport.serverUrl), () => listMachines(transport, workspaces)),
   }
 }

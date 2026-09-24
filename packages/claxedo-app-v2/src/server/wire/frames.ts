@@ -1,10 +1,12 @@
 import { isAgentContentPart, isAgentMessageInfo, type AgentSession } from "@claxedo/agent-runtime-contract"
 import type { ServerEvent } from "../events"
-import { projectId, requestId } from "../ids"
+import { placementId as asPlacementId, projectId, requestId } from "../ids"
 import type { FileDiff, SessionRef, Todo } from "../types"
+import { provisionStatus } from "./cloud"
 import { isPermissionWire, isQuestionWire, permissionRequest, questionRequest } from "./requests"
 import { sessionRefFor, sessionRowFromSession, type Address } from "./session-row"
 import { sessionStatusFailed, sessionStatusFromWire } from "./status"
+import { terminalEvent } from "./terminals"
 
 export type Frame = {
   readonly directory?: string
@@ -49,8 +51,8 @@ function sessionIdOf(frame: Frame): string | undefined {
   return text(properties.sessionID) ?? text(info?.sessionID) ?? text(info?.id) ?? text(part?.sessionID)
 }
 
-export function frameNeedsAddress(frame: Frame) {
-  return frame.directory !== undefined && frame.directory !== "global"
+export function placementDirectory(frame: Frame): string | undefined {
+  return frame.directory !== undefined && frame.directory !== "global" ? frame.directory : undefined
 }
 
 function refOf(frame: Frame, address: Address): SessionRef | undefined {
@@ -148,7 +150,6 @@ function requestEvent(frame: Frame, ref: SessionRef): ServerEvent | undefined {
 }
 
 function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
-  const raw = frame.raw
   const placementId = placementOf(frame, address)
   const scoped = placementId ? { placementId } : {}
   switch (frame.type) {
@@ -168,40 +169,23 @@ function controlEvent(frame: Frame, address: Address): ServerEvent | undefined {
       return { type: "documentsChanged", ...scoped }
     case "usage.quota.changed":
       return { type: "usageChanged" }
-    case "provision":
+    case "plugins.changed":
+      return { type: "pluginsChanged" }
+    case "provision": {
+      const workspaceId = text(frame.raw.workspaceId)
+      return workspaceId ? { type: "cloudWorkspaceChanged", workspaceId: placementId ?? asPlacementId(workspaceId), status: provisionStatus(frame.raw) } : undefined
+    }
     case "worktree.ready":
     case "worktree.failed":
       return { type: "placementsChanged" }
     case "pty.created":
     case "pty.updated":
     case "pty.exited":
-    case "pty.deleted": {
-      const info = isRecord(raw.info) ? raw.info : undefined
-      const terminalId = text(raw.id) ?? text(info?.id)
-      if (!terminalId) return undefined
-      const change = frame.type === "pty.created" ? "created" : frame.type === "pty.updated" ? "updated" : frame.type === "pty.exited" ? "exited" : "removed"
-      return { type: "terminalChanged", ...scoped, terminalId, change }
-    }
+    case "pty.deleted":
     case "agent.lifecycle":
-      return agentActivity(frame, placementId)
+      return placementId ? terminalEvent(frame.type, frame.raw, placementId) : undefined
     default:
       return undefined
-  }
-}
-
-function agentActivity(frame: Frame, placementId: ReturnType<typeof placementOf>): ServerEvent | undefined {
-  const raw = frame.raw
-  const eventType = raw.eventType
-  const activity = eventType === "Busy" ? "busy" : eventType === "Idle" ? "idle" : eventType === "UserActionRequired" ? "waitingOnUser" : eventType === "Error" ? "failed" : undefined
-  if (!activity) return undefined
-  const terminalId = text(raw.terminalId) ?? text(raw.tabId)
-  const sessionId = text(raw.sessionId)
-  return {
-    type: "agentActivity",
-    ...(placementId ? { placementId } : {}),
-    ...(terminalId ? { terminalId } : {}),
-    ...(sessionId ? { sessionId } : {}),
-    activity,
   }
 }
 

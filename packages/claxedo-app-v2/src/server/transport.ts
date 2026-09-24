@@ -1,10 +1,10 @@
-import { isLoopbackUrl, normalizeServerUrl, type AuthSource, type ServerConfig } from "./config"
-import { ServerError, responseError, toAppError } from "./errors"
-import { createRelay, type Relay } from "./relay"
+import { isLoopbackUrl, resolveServerUrl, type AuthSource, type ServerConfig } from "./config"
+import { responseError, responseErrorCode, toAppError } from "./errors"
+import { createRelay } from "./relay"
 
 export type RuntimeRoute = {
   readonly directory: string
-  readonly workspaceId?: string
+  readonly workspaceId: string
   readonly remote: boolean
 }
 
@@ -13,8 +13,15 @@ export type Transport = {
   readonly loopback: boolean
   readonly request: (path: string, init?: RequestInit) => Promise<Response>
   readonly runtime: (route: RuntimeRoute, path: string, init?: RequestInit) => Promise<Response>
+  readonly runtimeSocket: (route: RuntimeRoute, path: string) => Promise<WebSocket>
   readonly json: <T>(path: string, init?: RequestInit) => Promise<T>
   readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
+}
+
+export function socketUrl(serverUrl: string, path: string) {
+  const url = new URL(path, `${serverUrl}/`)
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+  return url
 }
 
 async function authorization(auth: AuthSource, fresh: boolean): Promise<string | undefined> {
@@ -39,10 +46,7 @@ async function authorizedInit(config: ServerConfig, init: RequestInit | undefine
 }
 
 async function rejectedBearer(response: Response) {
-  if (response.status !== 401) return false
-  const body: unknown = await response.clone().json().catch(() => undefined)
-  const error = body && typeof body === "object" ? (body as { error?: { code?: unknown } }).error : undefined
-  return error?.code === "invalid_bearer_token"
+  return response.status === 401 && (await responseErrorCode(response)) === "invalid_bearer_token"
 }
 
 export function withQuery(path: string, query: Readonly<Record<string, string | number | boolean | undefined>>) {
@@ -61,9 +65,8 @@ function withoutRouteQuery(path: string) {
 }
 
 export function createTransport(config: ServerConfig): Transport {
-  const serverUrl = normalizeServerUrl(config.serverUrl)
+  const serverUrl = resolveServerUrl(config)
   const loopback = isLoopbackUrl(serverUrl)
-  let relay: Relay | undefined
 
   const send = async (url: string, init?: RequestInit): Promise<Response> => {
     let response: Response
@@ -81,16 +84,20 @@ export function createTransport(config: ServerConfig): Transport {
   }
 
   const request = (path: string, init?: RequestInit) => send(`${serverUrl}${path}`, init)
+  const relay = createRelay(request)
 
   const runtime = (route: RuntimeRoute, path: string, init?: RequestInit) => {
     if (!route.remote) return request(withQuery(path, { directory: route.directory }), init)
-    if (!route.workspaceId) {
-      return Promise.reject(new ServerError({ class: "invalid", message: "A remote placement needs a workspace id" }))
-    }
     const proxied = withoutRouteQuery(path)
     if (loopback) return request(`/workspaces/${encodeURIComponent(route.workspaceId)}${proxied}`, init)
-    relay ??= createRelay({ request, serverUrl })
     return relay.fetch(route.workspaceId, proxied, init)
+  }
+
+  const runtimeSocket = async (route: RuntimeRoute, path: string): Promise<WebSocket> => {
+    if (!route.remote) return new WebSocket(socketUrl(serverUrl, withQuery(path, { directory: route.directory })))
+    const proxied = withoutRouteQuery(path)
+    if (loopback) return new WebSocket(socketUrl(serverUrl, `/workspaces/${encodeURIComponent(route.workspaceId)}${proxied}`))
+    return relay.webSocket(route.workspaceId, proxied)
   }
 
   const read = async <T>(response: Response, label: string): Promise<T> => {
@@ -104,6 +111,7 @@ export function createTransport(config: ServerConfig): Transport {
     loopback,
     request,
     runtime,
+    runtimeSocket,
     json: async (path, init) => read(await request(path, init), `${init?.method ?? "GET"} ${path}`),
     runtimeJson: async (route, path, init) => read(await runtime(route, path, init), `${init?.method ?? "GET"} ${path}`),
   }

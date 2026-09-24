@@ -2,7 +2,6 @@ import type { ServerConfig } from "./config"
 import type { ConnectionState } from "./events"
 import { openStream, type Stream } from "./stream"
 import type { Transport } from "./transport"
-import type { Workspaces } from "./workspaces"
 import type { BootstrapDeclaration } from "./wire/placements"
 
 export const WORKSPACE_EVENTS_PATH = "/api/wr/events"
@@ -67,7 +66,6 @@ function aggregate(states: readonly ConnectionState[]): ConnectionState {
 export function createEventStreams(input: {
   readonly config: ServerConfig
   readonly transport: Transport
-  readonly workspaces: Workspaces
   readonly onFrame: (frame: unknown) => void
   readonly onGap: () => void
   readonly onState: (state: ConnectionState) => void

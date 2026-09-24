@@ -27,9 +27,9 @@ function attachmentPart(attachment: PromptAttachment): WirePart {
   }
 }
 
-export function promptBody(input: PromptInput) {
+export function promptBody(input: PromptInput, messageId: string) {
   return {
-    messageID: input.clientRequestId,
+    messageID: messageId,
     agent: input.agent ?? DEFAULT_AGENT,
     ...(input.model ? { model: { providerID: input.model.providerId, modelID: input.model.modelId } } : {}),
     ...(input.model?.variant !== undefined ? { variant: input.model.variant } : {}),

@@ -81,6 +81,23 @@ export async function responseError(response: Response, label = "Request"): Prom
   })
 }
 
+export async function responseErrorCode(response: Response): Promise<string | undefined> {
+  return readErrorBody(await response.clone().text()).code
+}
+
+export function turnError(value: unknown): ServerError {
+  const error = value && typeof value === "object" ? (value as { name?: unknown; data?: unknown }) : {}
+  const data = error.data && typeof error.data === "object" ? (error.data as { message?: unknown; status?: unknown }) : {}
+  const name = typeof error.name === "string" ? error.name : undefined
+  const status = typeof data.status === "number" ? data.status : undefined
+  return new ServerError({
+    class: status === undefined ? "internal" : errorClassForStatus(status),
+    message: typeof data.message === "string" ? data.message : name ?? "The turn failed",
+    ...(status !== undefined ? { status } : {}),
+    ...(name !== undefined ? { code: name } : {}),
+  })
+}
+
 function isAbort(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError"
 }
@@ -95,6 +112,15 @@ export function toAppError(error: unknown): ServerError {
 
 export function isRetryable(error: unknown): boolean {
   return error instanceof ServerError ? error.retryable : false
+}
+
+const ERROR_CLASSES: ReadonlySet<string> = new Set<ErrorClass>(["auth", "rate_limit", "network", "not_found", "conflict", "invalid", "internal"])
+
+export function isAppError(value: unknown): value is AppError {
+  if (value instanceof ServerError) return true
+  if (!value || typeof value !== "object") return false
+  const row = value as { class?: unknown; message?: unknown; retryable?: unknown }
+  return typeof row.class === "string" && ERROR_CLASSES.has(row.class) && typeof row.message === "string" && typeof row.retryable === "boolean"
 }
 
 export function isNotFound(error: unknown): boolean {

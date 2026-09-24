@@ -1,16 +1,7 @@
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type {
-  AgentRequest,
-  FileDiff,
-  SessionRef,
-  SessionRow,
-  SessionStatus,
-  Terminal,
-  TerminalAgentStatus,
-  Todo,
-  TranscriptMessage,
-  TranscriptPart,
-} from "./types"
+import type { CloudWorkspaceStatus } from "./cloud-types"
+import type { Terminal, TerminalAgentStatus } from "./terminal-types"
+import type { AgentRequest, FileDiff, SessionRef, SessionRow, SessionStatus, Todo, TranscriptMessage, TranscriptPart } from "./types"
 
 export type ServerEvent =
   | { readonly type: "sessionUpserted"; readonly row: SessionRow }
@@ -36,24 +27,11 @@ export type ServerEvent =
   | { readonly type: "projectChanged"; readonly projectId: ProjectId }
   | { readonly type: "pluginsChanged" }
   | { readonly type: "streamGap"; readonly placementId?: PlacementId }
-<<<<<<< HEAD
   | { readonly type: "sessionsChanged"; readonly placementId?: PlacementId }
   | { readonly type: "placementsChanged" }
   | { readonly type: "documentsChanged"; readonly placementId?: PlacementId }
   | { readonly type: "usageChanged" }
-  | {
-      readonly type: "terminalChanged"
-      readonly placementId?: PlacementId
-      readonly terminalId: string
-      readonly change: "created" | "updated" | "exited" | "removed"
-    }
-  | {
-      readonly type: "agentActivity"
-      readonly placementId?: PlacementId
-      readonly terminalId?: string
-      readonly sessionId?: string
-      readonly activity: "busy" | "idle" | "waitingOnUser" | "failed"
-=======
+  | { readonly type: "cloudWorkspaceChanged"; readonly workspaceId: PlacementId; readonly status: CloudWorkspaceStatus }
   | { readonly type: "terminalCreated"; readonly terminal: Terminal }
   | { readonly type: "terminalUpdated"; readonly terminal: Terminal }
   | { readonly type: "terminalExited"; readonly placementId: PlacementId; readonly terminalId: TerminalId; readonly code?: number }
@@ -63,7 +41,6 @@ export type ServerEvent =
       readonly placementId: PlacementId
       readonly terminalId: TerminalId
       readonly status: TerminalAgentStatus
->>>>>>> feat/app-v2
     }
 
 export type ConnectionState =

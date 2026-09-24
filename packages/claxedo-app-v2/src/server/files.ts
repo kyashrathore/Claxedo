@@ -1,59 +1,35 @@
-import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
-import { queryOptions } from "@tanstack/solid-query"
+import { fetchQuery } from "./fetch-query"
 import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { withQuery, type Transport } from "./transport"
+import type { FileContent, FileNode } from "./git-types"
+import type { FetchQuery } from "./types"
 import type { Workspaces } from "./workspaces"
 
-export type FileNode = {
-  readonly name: string
-  readonly path: string
-  readonly absolute: string
-  readonly type: "file" | "directory"
-  readonly ignored: boolean
-}
-
-export type FileContent = AgentFileContent
-
-export type FileStatus = {
-  readonly path: string
-  readonly added: number
-  readonly removed: number
-  readonly status: "added" | "deleted" | "modified"
-}
-
 const FILE_PATH = "/api/wr/file"
+const SEARCH_PATH = "/api/wr/find/file"
+export const SEARCH_LIMIT = 50
 
-function isFileNode(value: unknown): value is FileNode {
-  const row = value as Partial<FileNode> | null
-  return !!row && typeof row.name === "string" && typeof row.path === "string" && (row.type === "file" || row.type === "directory")
-}
-
-function isFileStatus(value: unknown): value is FileStatus {
-  const row = value as Partial<FileStatus> | null
-  return !!row && typeof row.path === "string" && typeof row.added === "number" && typeof row.removed === "number"
+function fileNode(value: unknown): FileNode | undefined {
+  const row = value as { name?: unknown; path?: unknown; type?: unknown; ignored?: unknown } | null
+  if (!row || typeof row.name !== "string" || typeof row.path !== "string") return undefined
+  if (row.type !== "file" && row.type !== "directory") return undefined
+  return { name: row.name, path: row.path, kind: row.type, ignored: row.ignored === true }
 }
 
 export function fileQueries(transport: Transport, workspaces: Workspaces) {
   const server = transport.serverUrl
-  return {
-    tree: (placementId: PlacementId, path: string) => queryOptions({
-      queryKey: queryKeys.fileTree(server, placementId, path),
-      queryFn: async () => {
-        const rows = await transport.runtimeJson<unknown[]>(workspaces.routeFor(placementId), withQuery(FILE_PATH, { path }))
-        return rows.filter(isFileNode)
-      },
-    }),
-    content: (placementId: PlacementId, path: string) => queryOptions({
-      queryKey: queryKeys.fileContent(server, placementId, path),
-      queryFn: () => transport.runtimeJson<FileContent>(workspaces.routeFor(placementId), withQuery(`${FILE_PATH}/content`, { path })),
-    }),
-    status: (placementId: PlacementId) => queryOptions({
-      queryKey: queryKeys.fileStatus(server, placementId),
-      queryFn: async () => {
-        const rows = await transport.runtimeJson<unknown[]>(workspaces.routeFor(placementId), `${FILE_PATH}/status`)
-        return rows.filter(isFileStatus)
-      },
-    }),
-  }
+  const tree = (placementId: PlacementId, path: string): FetchQuery<readonly FileNode[]> => fetchQuery(queryKeys.fileTree(server, placementId, path), async () => {
+      const rows = await transport.runtimeJson<unknown[]>(await workspaces.route(placementId), withQuery(FILE_PATH, { path }))
+      return rows.flatMap((row) => {
+        const node = fileNode(row)
+        return node ? [node] : []
+      })
+    })
+  const content = (placementId: PlacementId, path: string): FetchQuery<FileContent> => fetchQuery(queryKeys.fileContent(server, placementId, path), async () => transport.runtimeJson<FileContent>(await workspaces.route(placementId), withQuery(`${FILE_PATH}/content`, { path })))
+  const search = (placementId: PlacementId, query: string): FetchQuery<readonly string[]> => fetchQuery(queryKeys.fileSearch(server, placementId, query), async () => {
+      const rows = await transport.runtimeJson<unknown[]>(await workspaces.route(placementId), withQuery(SEARCH_PATH, { query, limit: SEARCH_LIMIT }))
+      return rows.filter((row): row is string => typeof row === "string")
+    })
+  return { tree, content, search }
 }

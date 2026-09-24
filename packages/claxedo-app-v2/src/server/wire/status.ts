@@ -1,9 +1,16 @@
 import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
-import { ServerError } from "../errors"
-import type { ErrorClass, SessionStatus } from "../types"
+import { turnError } from "../errors"
+import type { RetryAction, SessionStatus } from "../types"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
+function retryAction(value: unknown): RetryAction | undefined {
+  if (!isRecord(value)) return undefined
+  const { reason, provider, title, message, label, link } = value
+  if (typeof reason !== "string" || typeof provider !== "string" || typeof title !== "string" || typeof message !== "string" || typeof label !== "string") return undefined
+  return { reason, provider, title, message, label, ...(typeof link === "string" ? { link } : {}) }
 }
 
 export function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | undefined {
@@ -15,7 +22,8 @@ export function runtimeStatusFromWire(value: unknown): AgentRuntimeStatus | unde
     case "retry": {
       const { attempt, message, next } = value
       if (typeof attempt !== "number" || typeof message !== "string" || typeof next !== "number") return undefined
-      return { type: "retry", attempt, message, next }
+      const action = retryAction(value.action)
+      return { type: "retry", attempt, message, next, ...(action ? { action } : {}) }
     }
     case "recovering":
       return (value.kind === "process_restart" || value.kind === "uncertain_execution") && typeof value.message === "string"
@@ -33,9 +41,9 @@ export function sessionStatusFromRuntime(status: AgentRuntimeStatus): SessionSta
     case "busy":
       return { kind: "working" }
     case "retry":
-      return { kind: "retrying", attempt: status.attempt, message: status.message, nextAt: status.next }
+      return { kind: "retrying", attempt: status.attempt, message: status.message, nextAt: status.next, ...(status.action ? { action: status.action } : {}) }
     case "recovering":
-      return { kind: "recovering", message: status.message }
+      return { kind: "recovering", reason: status.kind === "process_restart" ? "processRestart" : "uncertainExecution", message: status.message }
   }
 }
 
@@ -44,26 +52,6 @@ export function sessionStatusFromWire(value: unknown): SessionStatus | undefined
   return status ? sessionStatusFromRuntime(status) : undefined
 }
 
-function errorClassForName(name: string | undefined, status: number | undefined): ErrorClass {
-  if (status === 401 || status === 403 || /auth/i.test(name ?? "")) return "auth"
-  if (status === 429 || /rate.?limit|quota/i.test(name ?? "")) return "rate_limit"
-  if (/network|fetch|econn|timeout/i.test(name ?? "")) return "network"
-  return "internal"
-}
-
 export function sessionStatusFailed(value: unknown): SessionStatus {
-  const error = isRecord(value) ? value : undefined
-  const data = isRecord(error?.data) ? error.data : undefined
-  const name = typeof error?.name === "string" ? error.name : undefined
-  const status = typeof data?.status === "number" ? data.status : undefined
-  const message = typeof data?.message === "string" ? data.message : name ?? "The turn failed"
-  return {
-    kind: "failed",
-    error: new ServerError({
-      class: errorClassForName(name, status),
-      message,
-      ...(status !== undefined ? { status } : {}),
-      ...(name !== undefined ? { code: name } : {}),
-    }),
-  }
+  return { kind: "failed", error: turnError(value) }
 }

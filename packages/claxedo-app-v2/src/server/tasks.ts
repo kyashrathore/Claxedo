@@ -1,25 +1,13 @@
-import { queryOptions } from "@tanstack/solid-query"
+import { probeAvailability } from "./availability"
+import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
 import type { Transport } from "./transport"
+import type { FeatureAvailability } from "./types"
 
-export const TASKS_PATH = "/api/claxedo/tasks"
-
-export type FeatureAvailability =
-  | { readonly kind: "available" }
-  | { readonly kind: "unavailable"; readonly reason: string }
-
-export async function probeAvailability(transport: Transport, path: string): Promise<FeatureAvailability> {
-  const response = await transport.request(path)
-  if (response.ok) return { kind: "available" }
-  const reason = (await response.text().catch(() => "")).trim() || `${path} answered ${response.status}`
-  return { kind: "unavailable", reason }
-}
+export const TASKS_PRESETS_PATH = "/api/claxedo/tasks/presets"
 
 export function taskQueries(transport: Transport) {
   return {
-    availability: () => queryOptions({
-      queryKey: queryKeys.tasks(transport.serverUrl),
-      queryFn: () => probeAvailability(transport, `${TASKS_PATH}/presets`),
-    }),
+    availability: () => fetchQuery<FeatureAvailability>(queryKeys.tasks(transport.serverUrl), () => probeAvailability(transport, TASKS_PRESETS_PATH)),
   }
 }

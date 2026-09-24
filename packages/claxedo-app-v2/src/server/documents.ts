@@ -1,15 +1,13 @@
-import { queryOptions } from "@tanstack/solid-query"
+import { probeAvailability } from "./availability"
+import { fetchQuery } from "./fetch-query"
 import { queryKeys } from "./query-keys"
-import { probeAvailability } from "./tasks"
 import type { Transport } from "./transport"
+import type { FeatureAvailability } from "./types"
 
 export const DOCUMENTS_PATH = "/documents"
 
 export function documentQueries(transport: Transport) {
   return {
-    availability: () => queryOptions({
-      queryKey: queryKeys.documents(transport.serverUrl),
-      queryFn: () => probeAvailability(transport, DOCUMENTS_PATH),
-    }),
+    availability: () => fetchQuery<FeatureAvailability>(queryKeys.documents(transport.serverUrl), () => probeAvailability(transport, DOCUMENTS_PATH)),
   }
 }

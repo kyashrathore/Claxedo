@@ -6,43 +6,44 @@ import type { SessionRef, SessionStatus } from "./types"
 import { sessionStatusFromWire } from "./wire/status"
 
 export type StatusOwner = {
-  readonly read: (route: RuntimeRoute, sessionId: string, row?: AgentSession) => Promise<SessionStatus>
+  readonly read: (route: RuntimeRoute, sessionId: string, row: AgentSession) => Promise<SessionStatus>
+  readonly readPlacement: (route: RuntimeRoute) => Promise<ReadonlyMap<string, SessionStatus>>
   readonly apply: (event: ServerEvent) => ServerEvent | undefined
   readonly forget: (ref: SessionRef) => void
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value)
+const STATUS_PATH = "/session/status"
+
+function statusFromLastTurn(row: AgentSession): SessionStatus {
+  const outcome = row.lastTurn
+  if (outcome?.status !== "failed") return { kind: "idle" }
+  return { kind: "failed", error: new ServerError({ class: "internal", message: outcome.error }) }
 }
 
-export function statusFromLastTurn(row: AgentSession | undefined): SessionStatus {
-  const outcome = row?.lastTurn
-  if (outcome?.status === "failed") {
-    return { kind: "failed", error: new ServerError({ class: "internal", message: outcome.error }) }
+function statusesOf(body: unknown): Map<string, SessionStatus> {
+  const statuses = new Map<string, SessionStatus>()
+  if (!body || typeof body !== "object") return statuses
+  for (const [id, value] of Object.entries(body)) {
+    const status = sessionStatusFromWire(value)
+    if (status) statuses.set(id, status)
   }
-  return { kind: "idle" }
-}
-
-export function statusFromSnapshot(map: unknown, sessionId: string, row: AgentSession | undefined): SessionStatus {
-  const entry = isRecord(map) ? map[sessionId] : undefined
-  const live = sessionStatusFromWire(entry)
-  if (live && live.kind !== "idle") return live
-  return statusFromLastTurn(row)
+  return statuses
 }
 
 export function createStatusOwner(transport: Transport): StatusOwner {
   const latest = new Map<string, SessionStatus>()
+  const readPlacement = async (route: RuntimeRoute) => statusesOf(await transport.runtimeJson<unknown>(route, STATUS_PATH))
   return {
     read: async (route, sessionId, row) => {
-      const map = await transport.runtimeJson<unknown>(route, "/session/status")
-      const status = statusFromSnapshot(map, sessionId, row)
+      const live = (await readPlacement(route)).get(sessionId)
+      const status = live && live.kind !== "idle" ? live : statusFromLastTurn(row)
       latest.set(sessionId, status)
       return status
     },
+    readPlacement,
     apply: (event) => {
       if (event.type !== "statusChanged") return event
-      const current = latest.get(event.ref.sessionId)
-      if (event.status.kind === "idle" && current?.kind === "failed") return undefined
+      if (event.status.kind === "idle" && latest.get(event.ref.sessionId)?.kind === "failed") return undefined
       latest.set(event.ref.sessionId, event.status)
       return event
     },

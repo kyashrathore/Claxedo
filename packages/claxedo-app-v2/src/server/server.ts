@@ -1,19 +1,23 @@
 import { QueryClient } from "@tanstack/solid-query"
-import { batch, createSignal } from "solid-js"
+import { createSignal } from "solid-js"
 import { createCapabilities } from "./capabilities"
+import { createCloudApi } from "./cloud"
 import type { ServerConfig } from "./config"
-import { isRetryable } from "./errors"
-import type { ConnectionState, ServerEvent } from "./events"
+import { isRetryable, toAppError } from "./errors"
+import { createEventIntake } from "./event-intake"
+import type { ConnectionState } from "./events"
+import { createGitApi } from "./git"
+import type { ProjectId } from "./ids"
 import type { Server } from "./index"
 import { createProjectsApi } from "./projects"
-import { createQueries, invalidateFor } from "./queries"
+import { createQueries } from "./queries"
 import { createSessionsApi } from "./sessions"
 import { createStatusOwner } from "./status"
 import { createEventStreams } from "./streams"
+import { createTerminalsApi } from "./terminals"
 import { createTransport } from "./transport"
 import { createWorkspaces } from "./workspaces"
-import { createCoalescer } from "./wire/coalesce"
-import { frameNeedsAddress, frameOf, serverEventFromFrame, type Frame } from "./wire/frames"
+import { createWorktreeCreator } from "./worktrees"
 
 export const QUERY_GC_TIME_MS = 10 * 60_000
 export const QUERY_RETRY_LIMIT = 2
@@ -43,76 +47,56 @@ export type ServerHandle = Server & {
 export function createServer(config: ServerConfig): ServerHandle {
   const queryClient = createQueryClient()
   const transport = createTransport(config)
-  const workspaces = createWorkspaces({ transport, queryClient })
+  const workspaces = createWorkspaces(transport, queryClient)
   const status = createStatusOwner(transport)
-  const listeners = new Set<(event: ServerEvent) => void>()
+  const intake = createEventIntake({ serverUrl: transport.serverUrl, queryClient, workspaces, status })
   const [connection, setConnection] = createSignal<ConnectionState>({ kind: "connecting" })
+  const streams = createEventStreams({ config, transport, onFrame: intake.frame, onGap: intake.gap, onState: setConnection })
+  const capabilities = createCapabilities(transport, workspaces)
+  const queries = createQueries(transport, workspaces)
+  const project = (id: ProjectId) => queryClient.fetchQuery(queries.projects.byId(id))
 
-  const publish = (events: readonly ServerEvent[]) => {
-    batch(() => {
-      for (const event of events) {
-        const admitted = status.apply(event)
-        if (!admitted) continue
-        invalidateFor(queryClient, transport.serverUrl, admitted)
-        for (const listener of listeners) listener(admitted)
-      }
-    })
+  let opened = false
+  const start = async () => {
+    try {
+      const catalog = await workspaces.load()
+      if (!opened) streams.open(catalog.declaration)
+      opened = true
+      await capabilities.load()
+    } catch (error) {
+      const failure = toAppError(error)
+      if (!opened) setConnection({ kind: "offline", reason: failure.message })
+      else console.error("The server's capabilities could not be read", failure)
+    }
   }
-  const coalescer = createCoalescer(publish)
-
-  let queue: Promise<void> = Promise.resolve()
-  const handleFrame = (frame: Frame) => {
-    let event = serverEventFromFrame(frame, workspaces.address)
-    if (event || !frameNeedsAddress(frame)) return event ? coalescer.push(event) : undefined
-    return workspaces.learn(frame.directory as string).then(() => {
-      event = serverEventFromFrame(frame, workspaces.address)
-      if (event) coalescer.push(event)
-    })
-  }
-  const onFrame = (raw: unknown) => {
-    const frame = frameOf(raw)
-    if (!frame) return
-    queue = queue.then(() => handleFrame(frame))
-  }
-
-  const streams = createEventStreams({
-    config,
-    transport,
-    workspaces,
-    onFrame,
-    onGap: () => coalescer.push({ type: "streamGap" }),
-    onState: setConnection,
-  })
-
-  const capabilities = createCapabilities({ transport, workspaces, queryClient })
-  const projects = createProjectsApi({ transport, queryClient, onChanged: () => workspaces.refresh() })
-  const sessions = createSessionsApi({ transport, workspaces, status })
-  const ready = workspaces.load().then((catalog) => {
-    streams.open(catalog.declaration)
-    capabilities.load()
-  })
+  const ready = start()
 
   return {
     config,
     connection,
     capabilities: capabilities.value,
     queryClient,
-    subscribe: (listener) => {
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
+    subscribe: intake.subscribe,
+    sessions: createSessionsApi(transport, workspaces, status),
+    projects: createProjectsApi(transport, queryClient, workspaces.refresh),
+    placements: { byId: workspaces.byId, list: workspaces.list, createWorktree: createWorktreeCreator(transport, workspaces) },
+    terminals: createTerminalsApi(transport, workspaces),
+    git: createGitApi(transport, workspaces),
+    cloud: createCloudApi(transport, workspaces, project),
+    queries,
+    retryConnection: () => {
+      if (!opened) {
+        setConnection({ kind: "connecting" })
+        void start()
+        return
       }
+      streams.retry()
     },
-    sessions,
-    projects,
-    placements: { byId: workspaces.byId, list: workspaces.list },
-    queries: createQueries(transport, workspaces),
-    retryConnection: streams.retry,
     ready,
     dispose: () => {
       streams.close()
-      coalescer.flush()
-      listeners.clear()
+      intake.dispose()
+      workspaces.dispose()
       queryClient.clear()
     },
   }
