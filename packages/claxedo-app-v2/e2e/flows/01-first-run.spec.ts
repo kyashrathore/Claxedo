@@ -20,7 +20,6 @@ function pageOverflows(app: Page) {
 
 async function onboard(app: Page, fromHome: string) {
   await expect(app.getByRole("heading", { level: 1, name: "Start with a project" })).toBeVisible()
-  expect(new URL(app.url()).pathname).toBe("/")
   await app.getByRole("button", { name: "Choose folder" }).click()
   await app.getByRole("textbox", { name: "Search folders" }).fill(fromHome)
   await app.getByRole("dialog", { name: "New Project" }).getByRole("button", { name: /first/ }).click()

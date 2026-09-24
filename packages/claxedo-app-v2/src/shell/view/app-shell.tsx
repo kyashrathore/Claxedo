@@ -2,8 +2,6 @@ import { createMemo, Show, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { ComposerStoreProvider } from "@/composer"
 import { useTranslator } from "@/i18n"
-import { FirstProjectCanvas, onboardingNeeded } from "@/onboarding"
-import { useProjects } from "@/projects"
 import { preferenceKey } from "@/lib/persisted"
 import { PluginHostProvider } from "@/plugins"
 import { useServer, type Capabilities } from "@/server"
@@ -56,8 +54,6 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
   const registries = useShellRegistries()
   const routing = useShellRoute()
   const workbench = createWorkbenchStore(preferenceKey("workbench", props.scope), registries.paneKinds.list)
-  const projects = useProjects()
-  const firstRun = () => routing.route().kind === "home" && onboardingNeeded(projects())
   return (
     <ComposerStoreProvider>
       <WorkbenchProvider store={workbench}>
@@ -69,9 +65,7 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
                 <RouteSync />
                 <ShellCommands />
                 <OpenFileCommand />
-                <Show when={firstRun()} fallback={<ShellBody route={routing.route()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />}>
-                  <FirstProjectCanvas />
-                </Show>
+                <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />
                 <Overlays />
               </PluginHostProvider>
             </PlacementProviders>
