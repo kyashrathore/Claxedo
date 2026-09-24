@@ -1,0 +1,47 @@
+{
+  "name": "@claxedo/plugin-api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "The Claxedo plugin contract: the package.json manifest, the PluginApi a plugin activates against, and definePlugin",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/claxedo-plugin-api"
+  },
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./manifest": {
+      "types": "./src/manifest.ts",
+      "development": "./src/manifest.ts",
+      "default": "./src/manifest.ts"
+    },
+    "./runtime": {
+      "types": "./src/runtime.ts",
+      "development": "./src/runtime.ts",
+      "default": "./src/runtime.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "solid-js": "^1.9.12"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "catalog:",
+    "solid-js": "catalog:",
+    "typescript": "catalog:"
+  }
+}

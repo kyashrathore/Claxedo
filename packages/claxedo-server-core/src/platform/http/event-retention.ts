@@ -19,6 +19,7 @@ export function isRetainedControlPlaneEvent(event: ControlPlaneEvent): boolean {
     case "document.changed":
     case "session.share.changed":
     case "session.inventory.changed":
+    case "plugins.changed":
       return true
     case "usage.quota.changed":
       // Rung several times per dashboard open; retained, it would push the

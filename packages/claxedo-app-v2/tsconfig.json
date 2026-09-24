@@ -19,6 +19,7 @@
     "noEmit": true,
     "isolatedModules": true,
     "paths": {
+      "#terminal-backend": ["./src/terminal/backend/xterm.ts"],
                   "@/*": ["./src/*"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],

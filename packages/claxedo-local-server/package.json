@@ -72,6 +72,8 @@
     "@claxedo/host-serving": "workspace:*",
     "@claxedo/mcp": "workspace:*",
     "@claxedo/opencode-server-adapter": "workspace:*",
+    "@claxedo/plugin-api": "workspace:*",
+    "@claxedo/plugin-build": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
     "@claxedo/server-core": "workspace:*",
     "@claxedo/tasks": "workspace:*",
