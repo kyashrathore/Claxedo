@@ -17,6 +17,7 @@ export type ProjectBlockProps = SessionRowMenuActions & {
   readonly now: Accessor<number>
   readonly list: SessionList
   readonly onSelect: (section: ProjectSection) => void
+  readonly onNewTerminal: (section: ProjectSection) => void
   readonly onActivate: (row: SessionRowView) => void
 }
 
@@ -121,6 +122,7 @@ export function ProjectBlock(props: ProjectBlockProps): JSX.Element {
           props.onSelect(props.section)
         }}
         onNewSession={() => props.onSelect(props.section)}
+        onNewTerminal={() => props.onNewTerminal(props.section)}
       />
       <Show when={open()}>
         <ProjectSessions {...props} paging={paging} />

@@ -4,6 +4,7 @@ import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
 import { draftPath, sessionPath, useShellRoute } from "@/shell"
+import { useTerminals } from "@/terminal"
 import { dictionary } from "../i18n"
 import { rowsByProject, siblingAfterArchive } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
@@ -28,6 +29,7 @@ export function ProjectTree(): JSX.Element {
   const stores = useSessionStores()
   const routing = useShellRoute()
   const actions = createSessionActions()
+  const terminals = useTerminals()
   const sections = createMemo(() => projects.list().map((entry) => projectSection(entry.project, server.placements.list())))
   const sectionByKey = createMemo(() => new Map(sections().map((section) => [section.key, section])))
   const grouped = createMemo(() => rowsByProject(stores.list.rows()))
@@ -72,6 +74,7 @@ export function ProjectTree(): JSX.Element {
                     now={now}
                     list={stores.list}
                     onSelect={select}
+                    onNewTerminal={(section) => section.placementId && terminals.startNew(section.placementId)}
                     onActivate={(row) => routing.navigate(sessionPath(row.ref))}
                     onRename={actions.onRename}
                     onArchive={(row) => archive(current(), row)}
