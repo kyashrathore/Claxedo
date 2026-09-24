@@ -1,10 +1,10 @@
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
-import { responseError } from "./errors"
+import { responseError, toAppError } from "./errors"
 import { sessionPath, type SessionContext } from "./session-context"
 import { readGoalState } from "./session-goal"
 import { readRequests } from "./session-statuses"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { SessionListInput, SessionPage, SessionRef, SessionRow, SessionSnapshot, TranscriptPage } from "./types"
+import type { SessionListInput, SessionPage, SessionRef, SessionRequestsRead, SessionRow, SessionSnapshot, TranscriptPage } from "./types"
 import { sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
@@ -43,13 +43,22 @@ async function readPage(context: SessionContext, where: RuntimeRoute, path: stri
   return transcriptPageFromWire(await response.json(), response.headers.get(OLDER_CURSOR_HEADER))
 }
 
+async function readSessionRequests(context: SessionContext, where: RuntimeRoute, ref: SessionRef): Promise<SessionRequestsRead> {
+  try {
+    const items = await readRequests(context.transport, where, ref.sessionId)
+    return { kind: "read", requests: items.map((item) => item.request) }
+  } catch (error) {
+    return { kind: "failed", error: toAppError(error) }
+  }
+}
+
 export async function readSnapshot(context: SessionContext, ref: SessionRef): Promise<SessionSnapshot> {
   const { transport } = context
   const where = await context.workspaces.route(ref)
   const [row, transcript, requests, todos, goal] = await Promise.all([
     transport.runtimeJson<AgentPresentationSession>(where, sessionPath(ref)),
     readPage(context, where, withQuery(sessionPath(ref, "/message"), { view: "latest-surface" })),
-    readRequests(transport, where, ref.sessionId),
+    readSessionRequests(context, where, ref),
     transport.runtimeJson<SessionSnapshot["todos"]>(where, sessionPath(ref, "/todo")),
     readGoalState(transport, where, ref),
   ])
@@ -57,7 +66,7 @@ export async function readSnapshot(context: SessionContext, ref: SessionRef): Pr
     row: sessionRowFromSession(row, ref),
     status: await context.status.read(where, ref.sessionId, row),
     transcript,
-    requests: requests.map((item) => item.request),
+    requests,
     todos,
     diff: row.summary?.diffs ?? [],
     goal,

@@ -85,4 +85,5 @@ export const ru: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.previous.description": "Перейти к предыдущему сообщению пользователя",
   "command.message.next": "Следующее сообщение",
   "command.message.next.description": "Перейти к следующему сообщению пользователя",
+  "sessionScreen.requests.loadFailed": "Не удалось загрузить ожидающие разрешения или вопросы. Повторите попытку, чтобы продолжить.",
 }

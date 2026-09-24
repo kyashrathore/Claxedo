@@ -85,4 +85,5 @@ export const zh: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.previous.description": "跳转到上一条用户消息",
   "command.message.next": "下一条消息",
   "command.message.next.description": "跳转到下一条用户消息",
+  "sessionScreen.requests.loadFailed": "无法加载待处理的权限请求或问题。请重试以继续。",
 }
