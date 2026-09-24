@@ -1,6 +1,6 @@
 import type { SessionRowView } from "@/session"
 
-export type RailStatus = "pending" | "idle" | "working" | "waiting" | "retrying" | "recovering" | "failed"
+export type RailStatus = "pending" | "unknown" | "idle" | "working" | "waiting" | "retrying" | "recovering" | "failed"
 
 export function railStatus(row: SessionRowView): RailStatus {
   if (row.pending) return "pending"
@@ -13,6 +13,6 @@ export function matchesSearch(row: SessionRowView, query: string): boolean {
   return needle.length === 0 || row.title.toLocaleLowerCase().includes(needle)
 }
 
-export function visibleRows(rows: readonly SessionRowView[], query: string, showArchived: boolean): readonly SessionRowView[] {
-  return rows.filter((row) => (showArchived || row.archivedAt === undefined) && matchesSearch(row, query))
+export function searchRows(rows: readonly SessionRowView[], query: string): readonly SessionRowView[] {
+  return rows.filter((row) => matchesSearch(row, query))
 }

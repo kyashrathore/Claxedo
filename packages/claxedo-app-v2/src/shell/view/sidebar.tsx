@@ -13,12 +13,15 @@ export type SidebarProps = {
 }
 
 export function SidebarContent(props: SidebarProps): JSX.Element {
+  const t = useTranslator(dictionary)
   return (
-    <Region name="sidebar">
-      <Show when={props.mode === "settings"} fallback={props.main}>
-        {props.settings}
-      </Show>
-    </Region>
+    <nav class="shell-sidebar-content" aria-label={t("shell.navigation")} data-mode={props.mode} data-testid="sidebar">
+      <Region name="sidebar">
+        <Show when={props.mode === "settings"} fallback={props.main}>
+          {props.settings}
+        </Show>
+      </Region>
+    </nav>
   )
 }
 
@@ -27,9 +30,9 @@ export function Sidebar(props: SidebarProps): JSX.Element {
   const layout = useShellLayout()
   return (
     <Show when={layout.sidebarShown()}>
-      <nav class="shell-sidebar" aria-label={t("shell.navigation")} data-mode={props.mode} data-testid="sidebar" style={{ width: `${layout.sidebarWidth()}px` }}>
+      <div class="shell-sidebar" style={{ width: `${layout.sidebarWidth()}px` }}>
         <SidebarContent mode={props.mode} main={props.main} settings={props.settings} />
-      </nav>
+      </div>
       <ResizeHandle
         label={t("shell.sidebarResize")}
         edge="right"

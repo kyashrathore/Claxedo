@@ -2,11 +2,11 @@ import { createMemo, createSignal, Match, Show, Switch as Cases, type JSX } from
 import { useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import type { SessionId } from "@/server"
-import type { SessionListState, SessionRowView } from "@/session"
-import { useSessionStores, useShellRoute } from "@/shell"
-import { Button, Icon, IconButton, Switch, TextInput } from "@/ui"
+import { useSessionStores, type SessionListState, type SessionRowView } from "@/session"
+import { useShellRoute } from "@/shell"
+import { Button, Icon, IconButton, TextInput } from "@/ui"
 import { dictionary } from "../i18n"
-import { visibleRows } from "../model"
+import { searchRows } from "../model"
 import { createSessionActions, type SessionActions } from "./session-actions"
 import { SessionRows } from "./session-rows"
 
@@ -58,8 +58,7 @@ export function SessionList(): JSX.Element {
   const routing = useShellRoute()
   const actions = createSessionActions()
   const [query, setQuery] = createSignal("")
-  const [showArchived, setShowArchived] = createSignal(false)
-  const rows = createMemo(() => visibleRows(stores.list.rows(), query(), showArchived()))
+  const rows = createMemo(() => searchRows(stores.list.rows(), query()))
   const activeSessionId = createMemo(() => {
     const route = routing.route()
     return route.kind === "session" ? route.sessionId : undefined
@@ -93,11 +92,6 @@ export function SessionList(): JSX.Element {
           clearLabel={t("rail.clearSearch")}
           onClearClick={() => setQuery("")}
         />
-      </div>
-      <div class="rail-filters">
-        <Switch checked={showArchived()} onChange={setShowArchived}>
-          {t("rail.showArchived")}
-        </Switch>
       </div>
       <ListBody state={stores.list.state()} rows={rows()} total={stores.list.rows().length} activeSessionId={activeSessionId()} actions={actions} />
       <Show when={stores.list.hasMore()}>
