@@ -74,7 +74,12 @@ function TreeLevel(props: {
       </Match>
       <Match when={failed()}>
         {(error) => (
-          <FailureNotice title={t("files.loadFailed")} message={error().message} retryLabel={t("files.retry")} onRetry={() => void query.refetch()} />
+          <FailureNotice
+            title={t("files.loadFailed")}
+            message={error().message}
+            retryLabel={t("files.retry")}
+            onRetry={() => void query.refetch()}
+          />
         )}
       </Match>
       <Match when={view().kind === "ready"}>

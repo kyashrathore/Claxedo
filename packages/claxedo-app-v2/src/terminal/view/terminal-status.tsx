@@ -49,7 +49,12 @@ export function TerminalStatus(props: {
         <Notice title={t("terminal.missing")} testId="terminal-missing" />
       </Match>
       <Match when={props.connection.kind === "connecting"}>
-        <div role="status" aria-label={t("terminal.connecting")} data-testid="terminal-connecting" class="terminal-delayed flex h-full items-center justify-center text-icon-muted">
+        <div
+          role="status"
+          aria-label={t("terminal.connecting")}
+          data-testid="terminal-connecting"
+          class="terminal-delayed flex h-full items-center justify-center text-icon-muted"
+        >
           <Loader width={24} height={24} />
         </div>
       </Match>
@@ -89,7 +94,9 @@ export function TerminalStatus(props: {
           <Notice
             testId="terminal-exited"
             title={t("terminal.exited.title")}
-            description={exited().code === undefined ? undefined : t("terminal.exited.code", { code: exited().code ?? 0 })}
+            description={
+              exited().code === undefined ? undefined : t("terminal.exited.code", { code: exited().code ?? 0 })
+            }
             action={props.onRecreate}
             actionLabel={t("terminal.recreate")}
           />

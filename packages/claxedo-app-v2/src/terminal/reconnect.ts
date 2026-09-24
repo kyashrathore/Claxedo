@@ -3,9 +3,7 @@ import type { TerminalPresence } from "@/server"
 export const MAX_RECONNECT_ATTEMPTS = 6
 
 export type ReconnectDecision =
-  | { readonly kind: "reconnect"; readonly delayMs: number }
-  | { readonly kind: "gone" }
-  | { readonly kind: "giveUp" }
+  { readonly kind: "reconnect"; readonly delayMs: number } | { readonly kind: "gone" } | { readonly kind: "giveUp" }
 
 export function reconnectDelay(attempt: number): number {
   return Math.min(1000 * 2 ** Math.max(0, attempt - 1), 16000)

@@ -26,7 +26,10 @@ export function sizeSane(size: TerminalSize, rect: Rect): boolean {
 
 export function sigwinchToggle(size: TerminalSize): readonly TerminalSize[] {
   const cols = Math.max(2, size.cols)
-  return [{ cols: Math.max(2, cols - 1), rows: size.rows }, { cols, rows: size.rows }]
+  return [
+    { cols: Math.max(2, cols - 1), rows: size.rows },
+    { cols, rows: size.rows },
+  ]
 }
 
 export function isLikelyTui(input: { command?: string; title?: string }): boolean {
@@ -113,7 +116,10 @@ export function createResizePublisher(input: {
       if (settle !== undefined) window.clearTimeout(settle)
       settle = undefined
       const [first, second] = sigwinchToggle({ cols: backend.cols, rows: backend.rows })
-      input.publish(first).then(() => input.publish(second)).catch(input.onPublishFailed)
+      input
+        .publish(first)
+        .then(() => input.publish(second))
+        .catch(input.onPublishFailed)
     },
     dispose: () => {
       disposeResize()

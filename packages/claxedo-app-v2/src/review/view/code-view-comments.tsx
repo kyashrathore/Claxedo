@@ -16,8 +16,13 @@ import {
 } from "@/transcript"
 import type { ReviewComment, ReviewComments } from "../comments"
 import { dictionary } from "../i18n"
-import { createReviewAnnotations, selectionSide, type FileRange, type ReviewAnnotationMeta } from "./code-view-annotations"
-import { CommentMenu } from "./comment-menu"
+import {
+  createReviewAnnotations,
+  selectionSide,
+  type FileRange,
+  type ReviewAnnotationMeta,
+} from "./code-view-annotations"
+import { CommentMenu, type CommentMenuLabels } from "./comment-menu"
 
 type CommentUi = {
   selection: FileRange | null
@@ -39,7 +44,7 @@ export type CodeViewCommentsInput = {
 type OwnerInput = CodeViewCommentsInput & {
   readonly byFile: Accessor<ReadonlyMap<string, readonly ReviewComment[]>>
   readonly state: LineCommentStateProps<string>
-  readonly labels: { readonly submit: string; readonly save: string }
+  readonly labels: { readonly gutter: string; readonly save: string; readonly menu: CommentMenuLabels }
 }
 
 function previewFor(diffs: readonly DiffSource[], file: string, range: SelectedLineRange): string | undefined {
@@ -49,7 +54,12 @@ function previewFor(diffs: readonly DiffSource[], file: string, range: SelectedL
   return contents.length === 0 ? undefined : previewSelectedLines(contents, range)
 }
 
-function fileState(file: string, ui: CommentUi, setUi: SetStoreFunction<CommentUi>, editor: LineCommentEditorState<string>): LineCommentStateProps<string> {
+function fileState(
+  file: string,
+  ui: CommentUi,
+  setUi: SetStoreFunction<CommentUi>,
+  editor: LineCommentEditorState<string>,
+): LineCommentStateProps<string> {
   return {
     opened: () => (ui.opened?.file === file ? ui.opened.id : null),
     setOpened: (id) => setUi("opened", id ? { file, id } : null),
@@ -66,16 +76,20 @@ function fileOwner(file: string, input: OwnerInput): CommentOwner {
   const withPreview = (selection: SelectedLineRange) => previewFor(input.diffs(), file, selection)
   const controller = createLineCommentController<ReviewComment>({
     comments,
-    label: input.labels.submit,
+    label: input.labels.gutter,
     draftKey: () => file,
     getSide: selectionSide,
     clearSelectionOnSelectionEndNull: false,
     state: input.state,
-    onSubmit: ({ comment, selection }) => input.comments.add({ file, selection, comment, preview: withPreview(selection) }),
-    onUpdate: ({ id, comment, selection }) => input.comments.update(id, { file, selection, comment, preview: withPreview(selection) }),
+    onSubmit: ({ comment, selection }) =>
+      input.comments.add({ file, selection, comment, preview: withPreview(selection) }),
+    onUpdate: ({ id, comment, selection }) =>
+      input.comments.update(id, { file, selection, comment, preview: withPreview(selection) }),
     onDelete: (comment) => input.comments.remove(comment.id),
     editSubmitLabel: input.labels.save,
-    renderCommentActions: (_comment, controls) => <CommentMenu onEdit={controls.edit} onDelete={controls.remove} />,
+    renderCommentActions: (_comment, controls) => (
+      <CommentMenu labels={input.labels.menu} onEdit={controls.edit} onDelete={controls.remove} />
+    ),
   })
   const { renderAnnotation, renderGutterUtility, onLineSelected, onLineSelectionEnd } = controller
   return { renderAnnotation, renderGutterUtility, onLineSelected, onLineSelectionEnd }
@@ -118,7 +132,11 @@ export function createCodeViewComments(input: CodeViewCommentsInput): CodeViewCo
     return created
   }
   const registry = createOwnerRegistry(getOwner(), (file) => {
-    const labels = { submit: t("review.comment.submit"), save: t("review.comment.save") }
+    const labels = {
+      gutter: t("review.comment.gutter"),
+      save: t("review.comment.save"),
+      menu: { more: t("review.comment.more"), edit: t("review.comment.edit"), remove: t("review.comment.remove") },
+    }
     return fileOwner(file, { ...input, byFile, labels, state: fileState(file, ui, setUi, editorFor(file)) })
   })
   return {

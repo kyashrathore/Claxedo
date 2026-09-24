@@ -26,8 +26,18 @@ function screenshotPart(pick: PickedElement): ImagePart | undefined {
   if (!dataUrl?.startsWith("data:image/")) return undefined
   const mimeEnd = dataUrl.indexOf(";", 5)
   const mime = mimeEnd > 5 ? dataUrl.slice(5, mimeEnd) : "image/png"
-  const selector = (pick.selector || "page").replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "page"
-  return { type: "image", id: pick.id, filename: `browser-${selector}-${pick.id}.${mime.split("/")[1] ?? "png"}`, mime, dataUrl }
+  const selector =
+    (pick.selector || "page")
+      .replace(/[^\w-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || "page"
+  return {
+    type: "image",
+    id: pick.id,
+    filename: `browser-${selector}-${pick.id}.${mime.split("/")[1] ?? "png"}`,
+    mime,
+    dataUrl,
+  }
 }
 
 export function usePickDelivery(): PickDelivery {
@@ -38,7 +48,13 @@ export function usePickDelivery(): PickDelivery {
     const ref = session()
     if (!ref) return false
     const key = sessionComposerKey(ref)
-    if (pick.selector) composer.addContext(key, { type: "text", key: `browser:${pick.id}`, label: pickLabel(t, pick), text: pickText(pick) })
+    if (pick.selector)
+      composer.addContext(key, {
+        type: "text",
+        key: `browser:${pick.id}`,
+        label: pickLabel(t, pick),
+        text: pickText(pick),
+      })
     const image = screenshotPart(pick)
     if (image) composer.addPart(key, image)
     return true

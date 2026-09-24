@@ -13,7 +13,8 @@ export function useReviewApi() {
   return {
     status: (placementId: PlacementId) => server.queries.git.status(placementId),
     diff: (placementId: PlacementId, scope: DiffScope) => server.queries.git.diff(placementId, scope),
-    diffFile: (placementId: PlacementId, scope: DiffScope, file: string) => server.queries.git.diffFile(placementId, scope, file),
+    diffFile: (placementId: PlacementId, scope: DiffScope, file: string) =>
+      server.queries.git.diffFile(placementId, scope, file),
     refs: (placementId: PlacementId) => server.queries.git.refs(placementId),
     bases: (placementId: PlacementId) => server.queries.git.bases(placementId),
     placementsOf: (projectId: ProjectId) => server.queries.placements.byProject(projectId),
@@ -22,6 +23,7 @@ export function useReviewApi() {
     unstage: (placementId: PlacementId, paths: readonly string[]) => server.git.unstage(placementId, paths),
     commit: (placementId: PlacementId, input: GitCommitInput) => server.git.commit(placementId, input),
     push: (placementId: PlacementId, input: GitPushInput) => server.git.push(placementId, input),
-    createWorktree: (projectId: ProjectId, input: WorktreeCreateInput) => server.placements.createWorktree(projectId, input),
+    createWorktree: (projectId: ProjectId, input: WorktreeCreateInput) =>
+      server.placements.createWorktree(projectId, input),
   }
 }

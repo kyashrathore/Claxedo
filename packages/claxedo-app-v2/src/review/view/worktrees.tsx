@@ -28,7 +28,10 @@ function ProjectWorktrees(props: { readonly placementId: PlacementId; readonly p
       </Collapsible.Trigger>
       <Collapsible.Content>
         <section aria-label={t("review.worktrees")} data-testid="review-worktrees" class="flex flex-col gap-2 pb-2">
-          <Show when={worktrees().length > 0} fallback={<span class="text-sm text-text-faint">{t("review.worktrees.empty")}</span>}>
+          <Show
+            when={worktrees().length > 0}
+            fallback={<span class="text-sm text-text-faint">{t("review.worktrees.empty")}</span>}
+          >
             <ul class="flex flex-col gap-0.5">
               <For each={worktrees()}>{(placement) => <WorktreeRow placement={placement} />}</For>
             </ul>
@@ -42,9 +45,14 @@ function ProjectWorktrees(props: { readonly placementId: PlacementId; readonly p
 
 function WorktreeRow(props: { readonly placement: Placement }): JSX.Element {
   return (
-    <li data-placement-id={props.placement.id} class="flex min-h-7 flex-wrap items-center gap-x-2 text-sm pointer-coarse:min-h-11">
+    <li
+      data-placement-id={props.placement.id}
+      class="flex min-h-7 flex-wrap items-center gap-x-2 text-sm pointer-coarse:min-h-11"
+    >
       <span class="text-text-base">{props.placement.label}</span>
-      <Show when={props.placement.branch}>{(branch) => <span class="font-mono text-xs text-text-muted">{branch()}</span>}</Show>
+      <Show when={props.placement.branch}>
+        {(branch) => <span class="font-mono text-xs text-text-muted">{branch()}</span>}
+      </Show>
     </li>
   )
 }
@@ -58,7 +66,10 @@ function WorktreeForm(props: { readonly projectId: ProjectId; readonly defaultBa
   const baseRef = () => base() || props.defaultBase
   const create = () =>
     runFlow(flow, "creating", async () => {
-      const created = await api.createWorktree(props.projectId, { name: name().trim() || undefined, baseRef: baseRef() || undefined })
+      const created = await api.createWorktree(props.projectId, {
+        name: name().trim() || undefined,
+        baseRef: baseRef() || undefined,
+      })
       setName("")
       return created
     })
@@ -80,10 +91,28 @@ function WorktreeForm(props: { readonly projectId: ProjectId; readonly defaultBa
       }}
     >
       <div class="flex flex-wrap gap-2">
-        <TextInput class="min-w-0 flex-1" value={name()} placeholder={t("review.worktrees.name")} aria-label={t("review.worktrees.name")} onInput={(event) => setName(event.currentTarget.value)} />
-        <TextInput class="min-w-0 flex-1 font-mono" value={baseRef()} placeholder={t("review.worktrees.base")} aria-label={t("review.worktrees.base")} onInput={(event) => setBase(event.currentTarget.value)} />
+        <TextInput
+          class="min-w-0 flex-1"
+          value={name()}
+          placeholder={t("review.worktrees.name")}
+          aria-label={t("review.worktrees.name")}
+          onInput={(event) => setName(event.currentTarget.value)}
+        />
+        <TextInput
+          class="min-w-0 flex-1 font-mono"
+          value={baseRef()}
+          placeholder={t("review.worktrees.base")}
+          aria-label={t("review.worktrees.base")}
+          onInput={(event) => setBase(event.currentTarget.value)}
+        />
       </div>
-      <Button type="submit" size="normal" variant="outline" class="self-start" disabled={flow.state().kind === "running"}>
+      <Button
+        type="submit"
+        size="normal"
+        variant="outline"
+        class="self-start"
+        disabled={flow.state().kind === "running"}
+      >
         {flow.state().kind === "running" ? t("review.worktrees.creating") : t("review.worktrees.create")}
       </Button>
       <div role="status" class="text-xs text-text-muted">

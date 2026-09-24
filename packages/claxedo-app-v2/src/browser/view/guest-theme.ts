@@ -32,7 +32,10 @@ export function sendThemeTokens(element: BrowserWebview): void {
 
 export function watchTheme(element: BrowserWebview): () => void {
   const observer = new MutationObserver(() => sendThemeTokens(element))
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-scheme", "class", "style"] })
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-color-scheme", "class", "style"],
+  })
   const media = window.matchMedia("(prefers-color-scheme: dark)")
   const onChange = () => sendThemeTokens(element)
   media.addEventListener("change", onChange)

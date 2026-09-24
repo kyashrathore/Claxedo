@@ -21,7 +21,11 @@ export function PageHost(props: { readonly tab: BrowserTab; readonly deliver: Pi
   )
 }
 
-function DesktopPage(props: { readonly tab: BrowserTab; readonly bridge: BrowserBridge; readonly deliver: PickDelivery }): JSX.Element {
+function DesktopPage(props: {
+  readonly tab: BrowserTab
+  readonly bridge: BrowserBridge
+  readonly deliver: PickDelivery
+}): JSX.Element {
   let detach: (() => void) | undefined
 
   const attach = (element: BrowserWebview) => {
@@ -39,13 +43,21 @@ function DesktopPage(props: { readonly tab: BrowserTab; readonly bridge: Browser
     props.tab.attachWebview(undefined)
     props.bridge.unregister(props.tab.paneId).then(
       (result) => {
-        if (!result.ok) console.warn("Browser page could not be unregistered", { paneId: props.tab.paneId, error: result.error })
+        if (!result.ok)
+          console.warn("Browser page could not be unregistered", { paneId: props.tab.paneId, error: result.error })
       },
       (error: unknown) => console.warn("Browser page could not be unregistered", { paneId: props.tab.paneId, error }),
     )
   })
 
-  return <webview ref={attach} src="about:blank" partition={AGENT_BROWSER_PARTITION} class="absolute inset-0 h-full w-full" />
+  return (
+    <webview
+      ref={attach}
+      src="about:blank"
+      partition={AGENT_BROWSER_PARTITION}
+      class="absolute inset-0 h-full w-full"
+    />
+  )
 }
 
 function WebPreview(props: { readonly tab: BrowserTab }): JSX.Element {

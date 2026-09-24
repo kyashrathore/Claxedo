@@ -16,7 +16,14 @@ function hexColor(value: string): string | undefined {
 }
 
 function withAlpha(hex: string, alpha: number): string {
-  const digits = hex.length === 4 ? hex.slice(1).split("").map((digit) => digit + digit).join("") : hex.slice(1, 7)
+  const digits =
+    hex.length === 4
+      ? hex
+          .slice(1)
+          .split("")
+          .map((digit) => digit + digit)
+          .join("")
+      : hex.slice(1, 7)
   const [r, g, b] = [0, 2, 4].map((offset) => Number.parseInt(digits.slice(offset, offset + 2), 16))
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
@@ -36,7 +43,12 @@ export function terminalColors(): TerminalColors {
   const seeds = SEEDS[mode]
   const background = hexColor(cssVariable("--v2-background-bg-base")) ?? seeds.background
   const foreground = hexColor(cssVariable("--v2-text-text-base")) ?? seeds.foreground
-  return { background, foreground, cursor: foreground, selectionBackground: withAlpha(foreground, SELECTION_ALPHA[mode]) }
+  return {
+    background,
+    foreground,
+    cursor: foreground,
+    selectionBackground: withAlpha(foreground, SELECTION_ALPHA[mode]),
+  }
 }
 
 export function monoFontFamily(): string {
@@ -45,7 +57,10 @@ export function monoFontFamily(): string {
 
 export function observeTheme(onChange: () => void): () => void {
   const observer = new MutationObserver(onChange)
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-color-scheme", "data-theme", "class", "style"] })
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-color-scheme", "data-theme", "class", "style"],
+  })
   const media = window.matchMedia("(prefers-color-scheme: dark)")
   media.addEventListener("change", onChange)
   return () => {

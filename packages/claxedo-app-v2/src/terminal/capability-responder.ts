@@ -5,10 +5,7 @@ function rgbChannels(rgba: number): string {
   return [24, 16, 8].map((shift) => (((rgba >>> shift) & 255) * 257).toString(16).padStart(4, "0")).join("/")
 }
 
-export function capabilityResponses(
-  data: string,
-  colors: () => { foreground: number; background: number },
-): string[] {
+export function capabilityResponses(data: string, colors: () => { foreground: number; background: number }): string[] {
   if (!data.includes("\x1b]") && !data.includes("\x1b[")) return []
   const responses: string[] = []
   const foreground = OSC_10_QUERY.test(data)
