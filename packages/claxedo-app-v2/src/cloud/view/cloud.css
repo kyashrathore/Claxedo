@@ -1,0 +1,53 @@
+.cloud-row {
+  display: flex;
+  min-height: 44px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.cloud-status {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-muted);
+  background: var(--v2-background-bg-layer-02);
+}
+
+.cloud-status[data-kind="ready"] {
+  color: var(--v2-state-fg-success);
+  background: var(--v2-state-bg-success);
+}
+
+.cloud-status[data-kind="failed"] {
+  color: var(--v2-state-fg-danger);
+  background: var(--v2-state-bg-danger);
+}
+
+.cloud-hint {
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-muted);
+}
+
+.cloud-alert {
+  font-size: var(--font-size-small);
+  color: var(--v2-state-fg-danger);
+  overflow-wrap: anywhere;
+}
+
+.cloud-placeholder {
+  opacity: 0;
+  animation: cloud-appear 0s linear 150ms forwards;
+}
+
+@keyframes cloud-appear {
+  to {
+    opacity: 1;
+  }
+}

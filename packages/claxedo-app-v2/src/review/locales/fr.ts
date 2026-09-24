@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "Modifications",
+  "review.scope.staged": "Modifications indexées",
+  "review.scope.branch": "Modifications de la branche",
+  "review.empty": "Aucune modification",
+  "review.loading": "Chargement des modifications",
+  "review.change.added": "Ajouté",
+  "review.change.deleted": "Supprimé",
+  "review.largeDiff.title": "Diff trop volumineux pour être affiché",
+  "review.largeDiff.meta": "Limite : {{limit}} lignes modifiées. Actuel : {{current}} lignes modifiées.",
+  "review.largeDiff.renderAnyway": "Afficher quand même",
+  "review.style.unified": "Unifié",
+  "review.style.split": "Divisé",
+  "review.commit.message": "Message (⌘⏎ pour valider)",
+  "review.commit": "Valider",
+  "review.push": "Pousser",
+  "review.publish": "Publier la branche",
+  "review.upToDate": "À jour",
+  "review.error.git_empty_message": "Saisissez un message de commit.",
+  "review.error.git_nothing_staged": "Rien n'est indexé.",
+  "review.error.git_conflict": "Résolvez d'abord la fusion en cours.",
+  "review.error.git_push_rejected": "Push refusé : {{message}}",
+  "review.error.git_timeout": "Délai Git dépassé : {{message}}",
+}

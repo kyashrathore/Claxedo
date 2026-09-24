@@ -4,7 +4,7 @@ import { listProjects, resolveWorkspace, updateProjectMetadata } from "@claxedo/
 import { ControlPlaneAuthError, controlPlaneAuthContext, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import type { ControlPlaneRouteAuthOptions } from "../platform/http/control-plane-route-auth"
-import { projectAccess } from "../platform/auth/project-access"
+import { projectAccess } from "@claxedo/server-core/projects/access"
 import { workspaceInput } from "./request-context"
 
 type ProjectRouteOptions = ControlPlaneRouteAuthOptions & { services?: ControlPlaneServicesContract }

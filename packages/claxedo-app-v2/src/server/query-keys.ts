@@ -1,0 +1,33 @@
+import type { PlacementId, ProjectId } from "./ids"
+import type { DiffScope } from "./git-types"
+
+export const queryKeys = {
+  bootstrap: (server: string) => ["server", server, "bootstrap"] as const,
+  projects: (server: string) => ["server", server, "projects"] as const,
+  project: (server: string, id: ProjectId) => ["server", server, "projects", id] as const,
+  placements: (server: string) => ["server", server, "placements"] as const,
+  placementsOf: (server: string, projectId: ProjectId) => ["server", server, "placements", projectId] as const,
+  machines: (server: string) => ["server", server, "machines"] as const,
+  accounts: (server: string) => ["server", server, "accounts"] as const,
+  usage: (server: string, request: unknown) => ["server", server, "usage", request] as const,
+  usageAll: (server: string) => ["server", server, "usage"] as const,
+  marketplace: (server: string, projectId: ProjectId | undefined) => ["server", server, "marketplace", projectId ?? ""] as const,
+  marketplaceAll: (server: string) => ["server", server, "marketplace"] as const,
+  tasks: (server: string) => ["server", server, "tasks", "availability"] as const,
+  documents: (server: string) => ["server", server, "documents", "availability"] as const,
+  cloud: (server: string) => ["server", server, "cloud"] as const,
+  harnessOptions: (server: string, placementId: PlacementId, harness: string) => ["server", server, "harness", placementId, harness] as const,
+  codeHostConnections: (server: string) => ["server", server, "codeHost", "connections"] as const,
+  codeHostRepositories: (server: string, connectionId: string) => ["server", server, "codeHost", "repositories", connectionId] as const,
+  fileTree: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "tree", path] as const,
+  fileContent: (server: string, placementId: PlacementId, path: string) => ["server", server, "files", placementId, "content", path] as const,
+  fileSearch: (server: string, placementId: PlacementId, query: string) => ["server", server, "files", placementId, "search", query] as const,
+  filesOf: (server: string, placementId: PlacementId) => ["server", server, "files", placementId] as const,
+  gitStatus: (server: string, placementId: PlacementId) => ["server", server, "git", placementId, "status"] as const,
+  gitLog: (server: string, placementId: PlacementId, limit: number) => ["server", server, "git", placementId, "log", limit] as const,
+  gitRefs: (server: string, placementId: PlacementId) => ["server", server, "git", placementId, "refs"] as const,
+  gitBases: (server: string, placementId: PlacementId) => ["server", server, "git", placementId, "bases"] as const,
+  gitDiff: (server: string, placementId: PlacementId, scope: DiffScope) => ["server", server, "git", placementId, "diff", scope] as const,
+  gitDiffFile: (server: string, placementId: PlacementId, scope: DiffScope, file: string) => ["server", server, "git", placementId, "diff", scope, file] as const,
+  gitOf: (server: string, placementId: PlacementId) => ["server", server, "git", placementId] as const,
+} as const

@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "更改",
+  "review.scope.staged": "已暂存的更改",
+  "review.scope.branch": "分支变更",
+  "review.empty": "没有更改",
+  "review.loading": "正在加载更改",
+  "review.change.added": "已添加",
+  "review.change.deleted": "已删除",
+  "review.largeDiff.title": "差异过大，无法渲染",
+  "review.largeDiff.meta": "限制：{{limit}} 行变更。当前：{{current}} 行变更。",
+  "review.largeDiff.renderAnyway": "仍然渲染",
+  "review.style.unified": "统一",
+  "review.style.split": "拆分",
+  "review.commit.message": "提交信息（⌘⏎ 提交）",
+  "review.commit": "提交",
+  "review.push": "推送",
+  "review.publish": "发布分支",
+  "review.upToDate": "已是最新",
+  "review.error.git_empty_message": "请输入提交信息。",
+  "review.error.git_nothing_staged": "没有已暂存的内容。",
+  "review.error.git_conflict": "请先解决正在进行的合并。",
+  "review.error.git_push_rejected": "推送被拒绝：{{message}}",
+  "review.error.git_timeout": "Git 超时：{{message}}",
+}

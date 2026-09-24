@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "変更",
+  "review.scope.staged": "ステージ済みの変更",
+  "review.scope.branch": "ブランチの変更",
+  "review.empty": "変更はありません",
+  "review.loading": "変更を読み込み中",
+  "review.change.added": "追加",
+  "review.change.deleted": "削除",
+  "review.largeDiff.title": "差分が大きすぎて表示できません",
+  "review.largeDiff.meta": "上限: {{limit}} 変更行。現在: {{current}} 変更行。",
+  "review.largeDiff.renderAnyway": "それでも表示する",
+  "review.style.unified": "統合差分",
+  "review.style.split": "分割差分",
+  "review.commit.message": "メッセージ（⌘⏎ でコミット）",
+  "review.commit": "コミット",
+  "review.push": "プッシュ",
+  "review.publish": "ブランチを公開",
+  "review.upToDate": "最新の状態",
+  "review.error.git_empty_message": "コミットメッセージを入力してください。",
+  "review.error.git_nothing_staged": "ステージされた変更がありません。",
+  "review.error.git_conflict": "先に進行中のマージを解決してください。",
+  "review.error.git_push_rejected": "プッシュが拒否されました: {{message}}",
+  "review.error.git_timeout": "Git がタイムアウトしました: {{message}}",
+}

@@ -2,7 +2,8 @@ import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type UserCo
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync } from "node:fs"
+import { dirname } from "node:path"
 import { resolveBrowserAuthBuildSelection } from "./vite.browser-auth"
 
 /**
@@ -98,6 +99,36 @@ function devTls(): { key: Buffer; cert: Buffer } | undefined {
   }
 }
 
+function claxedoWorkspaceSource(): Plugin {
+  const roots = [
+    fileURLToPath(new URL("./node_modules/", import.meta.url)),
+    fileURLToPath(new URL("../../node_modules/", import.meta.url)),
+  ]
+  const manifestFor = (name: string) => {
+    for (const root of roots) {
+      const path = `${root}${name}/package.json`
+      if (existsSync(path)) return path
+    }
+    return undefined
+  }
+  return {
+    name: "claxedo-workspace-source",
+    enforce: "pre",
+    resolveId(source) {
+      const match = /^(@claxedo\/[^/]+)(\/.+)?$/.exec(source)
+      if (!match) return null
+      const manifestPath = manifestFor(match[1])
+      if (!manifestPath) return null
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { exports?: Record<string, unknown> }
+      const entry = manifest.exports?.[match[2] ? `.${match[2]}` : "."]
+      if (!entry || typeof entry !== "object") return null
+      const development = (entry as Record<string, unknown>).development
+      if (typeof development !== "string") return null
+      return normalizePath(realpathSync(`${dirname(manifestPath)}/${development}`))
+    },
+  }
+}
+
 /**
  * Cloud-specific Vite configuration for Claxedo.
  */
@@ -115,7 +146,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
-    plugins: [solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
+    plugins: [claxedoWorkspaceSource(), solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
     publicDir: "public",
     server: {
       host: "0.0.0.0",
@@ -218,8 +249,12 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
           replacement: `${shikiThemesDist}index.mjs`,
         },
         {
+          find: "@claxedo/app-v2/ui",
+          replacement: normalizePath(fileURLToPath(new URL("./src/ui/index.ts", import.meta.url))),
+        },
+        {
           find: "lru_map",
-          replacement: normalizePath(fileURLToPath(new URL("./src/legacy/lib/lru-map.ts", import.meta.url))),
+          replacement: normalizePath(fileURLToPath(new URL("./src/transcript/diff/lru-map.ts", import.meta.url))),
         },
         // General @/ alias (lowest priority) — resolves to claxedo's own src
         // (upstream packages/app fully vendored; divorce plan 006)

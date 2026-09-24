@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "변경 사항",
+  "review.scope.staged": "스테이징된 변경 사항",
+  "review.scope.branch": "브랜치 변경 사항",
+  "review.empty": "변경 사항 없음",
+  "review.loading": "변경 사항 불러오는 중",
+  "review.change.added": "추가됨",
+  "review.change.deleted": "삭제됨",
+  "review.largeDiff.title": "차이가 너무 커서 렌더링할 수 없습니다",
+  "review.largeDiff.meta": "제한: {{limit}} 변경 줄. 현재: {{current}} 변경 줄.",
+  "review.largeDiff.renderAnyway": "그래도 렌더링",
+  "review.style.unified": "통합 보기",
+  "review.style.split": "분할 보기",
+  "review.commit.message": "메시지 (⌘⏎ 로 커밋)",
+  "review.commit": "커밋",
+  "review.push": "푸시",
+  "review.publish": "브랜치 게시",
+  "review.upToDate": "최신 상태",
+  "review.error.git_empty_message": "커밋 메시지를 입력하세요.",
+  "review.error.git_nothing_staged": "스테이징된 항목이 없습니다.",
+  "review.error.git_conflict": "먼저 진행 중인 병합을 해결하세요.",
+  "review.error.git_push_rejected": "푸시가 거부되었습니다: {{message}}",
+  "review.error.git_timeout": "Git 시간 초과: {{message}}",
+}

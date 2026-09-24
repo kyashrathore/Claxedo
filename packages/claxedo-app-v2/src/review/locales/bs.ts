@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "Izmjene",
+  "review.scope.staged": "Pripremljene izmjene",
+  "review.scope.branch": "Promjene na grani",
+  "review.empty": "Nema izmjena",
+  "review.loading": "Učitavanje izmjena",
+  "review.change.added": "Dodano",
+  "review.change.deleted": "Obrisano",
+  "review.largeDiff.title": "Diff je prevelik za prikaz",
+  "review.largeDiff.meta": "Limit: {{limit}} izmijenjenih linija. Trenutno: {{current}} izmijenjenih linija.",
+  "review.largeDiff.renderAnyway": "Prikaži svejedno",
+  "review.style.unified": "Ujedinjeno",
+  "review.style.split": "Podijeljeno",
+  "review.commit.message": "Poruka (⌘⏎ za commit)",
+  "review.commit": "Commit",
+  "review.push": "Push",
+  "review.publish": "Objavi granu",
+  "review.upToDate": "Ažurno",
+  "review.error.git_empty_message": "Unesite commit poruku.",
+  "review.error.git_nothing_staged": "Ništa nije pripremljeno.",
+  "review.error.git_conflict": "Prvo riješite spajanje u toku.",
+  "review.error.git_push_rejected": "Push odbijen: {{message}}",
+  "review.error.git_timeout": "Git je istekao: {{message}}",
+}

@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "Değişiklikler",
+  "review.scope.staged": "Hazırlanan değişiklikler",
+  "review.scope.branch": "Dal değişiklikleri",
+  "review.empty": "Değişiklik yok",
+  "review.loading": "Değişiklikler yükleniyor",
+  "review.change.added": "Eklendi",
+  "review.change.deleted": "Silindi",
+  "review.largeDiff.title": "Fark gösterimi için çok büyük",
+  "review.largeDiff.meta": "Limit: {{limit}} değişen satır. Mevcut: {{current}} değişen satır.",
+  "review.largeDiff.renderAnyway": "Yine de göster",
+  "review.style.unified": "Birleşik",
+  "review.style.split": "Bölünmüş",
+  "review.commit.message": "Mesaj (göndermek için ⌘⏎)",
+  "review.commit": "Commit",
+  "review.push": "Push",
+  "review.publish": "Dalı yayınla",
+  "review.upToDate": "Güncel",
+  "review.error.git_empty_message": "Bir commit mesajı girin.",
+  "review.error.git_nothing_staged": "Hazırlanmış bir şey yok.",
+  "review.error.git_conflict": "Önce devam eden birleştirmeyi çözün.",
+  "review.error.git_push_rejected": "Push reddedildi: {{message}}",
+  "review.error.git_timeout": "Git zaman aşımına uğradı: {{message}}",
+}
