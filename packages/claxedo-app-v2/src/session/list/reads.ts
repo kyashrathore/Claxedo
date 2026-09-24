@@ -1,8 +1,17 @@
-import { createSignal, type Accessor, type Setter } from "solid-js"
-import type { Machine } from "@/lib/machine"
+import { machine, type Machine } from "@/lib/machine"
 import type { Server, SessionRow, SessionStatusRead } from "@/server"
 import { toAppError, type RequestsInternal } from "../requests"
-import type { FetchedWindow, ListEvent, ListState, RereadMode } from "./model"
+import { unreadPlacementsOf } from "./statuses"
+import {
+  NO_FOLLOW_UP,
+  followUpTransition,
+  type FetchedWindow,
+  type FollowUp,
+  type FollowUpEvent,
+  type ListEvent,
+  type ListState,
+  type RereadMode,
+} from "./model"
 
 const PAGE_SIZE = 50
 
@@ -17,14 +26,16 @@ type ReadContext = {
   readonly server: Server
   readonly requests: RequestsInternal
   readonly list: Machine<ListState, ListEvent>
-  readonly followUp: Accessor<RereadMode | undefined>
-  readonly setFollowUp: Setter<RereadMode | undefined>
+  readonly followUp: Machine<FollowUp, FollowUpEvent>
 }
 
 function readRequests(requests: RequestsInternal, fetched: readonly SessionRow[], read: SessionStatusRead, sentAt: number): void {
   const reported = new Set(read.reports.map((report) => report.ref.sessionId))
+  const unreadPlacements = unreadPlacementsOf(read)
   requests.applyReads(read.reports, sentAt)
-  for (const row of fetched) if (!reported.has(row.ref.sessionId)) requests.read(row.ref, [], sentAt)
+  for (const row of fetched) {
+    if (!reported.has(row.ref.sessionId) && !unreadPlacements.has(row.ref.placementId)) requests.read(row.ref, [], sentAt)
+  }
 }
 
 async function readWindow(context: ReadContext, cursor: string | undefined, withStatuses: boolean): Promise<FetchedWindow> {
@@ -42,10 +53,10 @@ function isReading(state: ListState): boolean {
 }
 
 function afterRead(context: ReadContext): void {
-  const mode = context.followUp()
-  if (!mode) return
-  context.setFollowUp(undefined)
-  void reread(context, mode)
+  const waiting = context.followUp.state()
+  if (waiting.kind === "none") return
+  context.followUp.send({ type: "taken" })
+  void reread(context, waiting.mode)
 }
 
 async function fetchFirst(context: ReadContext): Promise<void> {
@@ -87,12 +98,11 @@ async function reread(context: ReadContext, mode: RereadMode): Promise<void> {
 
 function requestReread(context: ReadContext, mode: RereadMode): void {
   if (!isReading(context.list.state())) return void reread(context, mode)
-  context.setFollowUp((pending) => (pending === "replace" ? pending : mode))
+  context.followUp.send({ type: "requested", mode })
 }
 
 export function createListReads(server: Server, requests: RequestsInternal, list: Machine<ListState, ListEvent>): ListReads {
-  const [followUp, setFollowUp] = createSignal<RereadMode>()
-  const context: ReadContext = { server, requests, list, followUp, setFollowUp }
+  const context: ReadContext = { server, requests, list, followUp: machine(NO_FOLLOW_UP, followUpTransition) }
   return {
     fetchFirst: () => fetchFirst(context),
     loadMore: () => loadMore(context),

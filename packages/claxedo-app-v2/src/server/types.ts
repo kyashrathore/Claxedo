@@ -6,6 +6,7 @@ import type {
   AgentQuestion,
   AgentQuestionAnswer,
   AgentSnapshotFileDiff,
+  AgentSubagentUpdate,
   AgentTodo,
   RuntimeGoalSnapshot,
 } from "@claxedo/agent-runtime-contract"
@@ -105,6 +106,7 @@ export type AgentRequestReply =
 
 export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
+export type Subagent = AgentSubagentUpdate
 
 export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
 
@@ -136,6 +138,10 @@ export type PromptAttachment =
   | { readonly kind: "image"; readonly dataUrl: string; readonly name?: string; readonly mime: string }
   | { readonly kind: "text"; readonly text: string; readonly label?: string }
 
+export type PromptDeliveryRequest = "queue" | "steer"
+
+export type PromptDelivery = "start" | PromptDeliveryRequest
+
 export type PromptInput = {
   readonly clientRequestId: string
   readonly messageId?: string
@@ -146,6 +152,7 @@ export type PromptInput = {
   readonly effort?: string
   readonly permissionMode?: string
   readonly goal?: { readonly objective: string }
+  readonly delivery?: PromptDeliveryRequest
 }
 
 export type SessionCreateInput = {

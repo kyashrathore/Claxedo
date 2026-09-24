@@ -18,7 +18,7 @@ export type Transport = {
   readonly runtimeJson: <T>(route: RuntimeRoute, path: string, init?: RequestInit) => Promise<T>
 }
 
-export function socketUrl(serverUrl: string, path: string) {
+function socketUrl(serverUrl: string, path: string) {
   const url = new URL(path, `${serverUrl}/`)
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
   return url

@@ -9,15 +9,6 @@ type ListItem = {
   readonly parentSessionId?: string | null
 }
 
-async function createProject(url: string, name: string, directory: string): Promise<void> {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
-
 async function serverList(url: string): Promise<ListItem[]> {
   const target = new URL("/api/claxedo/session-list", url)
   for (const [key, value] of Object.entries({ scope: "workspace", sort: "human_turn_desc", limit: "50" })) target.searchParams.set(key, value)
@@ -94,7 +85,7 @@ async function renameAndSearch(api: ClaxedoApi, app: Page, directory: string, se
 
 test("10 session list: flat order, live status, rename, search, archive and delete, read back from the server", async ({ stack, api, app }) => {
   const workspace = await stack.daemon.makeWorkspace("list")
-  await createProject(stack.url, "List", workspace.directory)
+  await api.createProject("List", workspace.directory)
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const alpha = await create("Alpha")
   const bravo = await create("Bravo")

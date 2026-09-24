@@ -54,6 +54,7 @@ export type WorkbenchStore = WorkbenchApi &
   readonly openRoute: (route: PaneRoute) => string | undefined
   readonly routeOf: (contentId: string) => PaneRoute | undefined
   readonly closeContent: (contentId: string) => void
+  readonly move: (tabId: string, index: number) => void
   readonly onClosed: <State>(kind: PaneKind<State>, listener: (state: State) => void) => () => void
   readonly drag: DragController
 }
@@ -193,6 +194,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
       return opened?.kind.toRoute?.(opened.state as never)
     },
     closeContent,
+    move: (tabId, index) => apply((s) => reducers.contents.reorder(s, tabId, index)),
     onClosed: closed.add,
     drag: createDragController(),
     contents: {

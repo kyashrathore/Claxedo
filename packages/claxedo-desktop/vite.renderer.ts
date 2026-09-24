@@ -47,7 +47,7 @@ function rendererDocumentRoutes(): Plugin {
  * get no response headers, so this tag is the only CSP carrier in the packaged
  * window; in dev the same tag carries the looser policy Vite's client/HMR need.
  */
-function rendererDocumentCsp(mode: string): Plugin {
+export function rendererDocumentCsp(mode: string): Plugin {
   const content = mode === "development" ? DEV_RENDERER_CSP : PACKAGED_RENDERER_CSP
   return {
     name: "desktop-renderer-document-csp",

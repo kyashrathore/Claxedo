@@ -1,24 +1,21 @@
-import type { Page, Route } from "@playwright/test"
-import {
-  acpScriptToken,
-  appChoice,
-  expect,
-  SCRIPTED_ACP_HARNESS,
-  test,
-  type AcpStep,
-  type ClaxedoApi,
-  type Stack,
-  type Workspace,
-} from "../harness"
+import type { Page } from "@playwright/test"
+import { appChoice, expect, type ClaxedoApi, type Stack } from "../harness"
 
 type RailRow = { readonly sessionId: string; readonly title: string; readonly status: string }
 type ListItem = { readonly sessionId: string; readonly title: string }
-type Checked = { readonly stack: Stack; readonly api: ClaxedoApi; readonly directory: string }
 type Bounds = { readonly through?: string; readonly timeout?: number }
+type CaseRail = { readonly rows: RailRow[]; readonly ids: ReadonlySet<string> }
 
-const LIST_ROUTE = /\/api\/claxedo\/session-list/
-export const STREAM_PATH = "/api/wr/events"
+export type Checked = {
+  readonly stack: Stack
+  readonly api: ClaxedoApi
+  readonly directory: string
+  readonly directories: readonly string[]
+  readonly known: Set<string>
+}
+
 export const PAGE_SIZE = 50
+const SERVER_PAGE = 100
 const STATUS_COMPARED = appChoice() === "v2"
 
 export function railLinks(app: Page) {
@@ -54,7 +51,7 @@ async function scrollVirtualRows(list: Element): Promise<RailRow[]> {
       if (!seen.has(sessionId)) seen.set(sessionId, { sessionId, title: link.textContent?.trim() ?? "", status })
     }
     const before = scroller.scrollTop
-    scroller.scrollTop = before + scroller.clientHeight / 2
+    scroller.scrollTop = before + scroller.clientHeight
     if (scroller.scrollTop === before) break
     await painted()
   }
@@ -75,20 +72,38 @@ export async function loadEveryPage(app: Page) {
   }
 }
 
-export async function serverItems(stack: Stack): Promise<ListItem[]> {
+async function listPage(stack: Stack, cursor: string | undefined): Promise<{ items: ListItem[]; nextCursor?: string }> {
+  const url = new URL("/api/claxedo/session-list", stack.url)
+  url.searchParams.set("scope", "workspace")
+  url.searchParams.set("sort", "human_turn_desc")
+  url.searchParams.set("limit", String(SERVER_PAGE))
+  if (cursor) url.searchParams.set("cursor", cursor)
+  const body = (await (await fetch(url)).json()) as { items?: ListItem[]; nextCursor?: string }
+  return { items: body.items ?? [], nextCursor: body.nextCursor }
+}
+
+async function serverWindow(stack: Stack, through: string | undefined): Promise<ListItem[]> {
   const items: ListItem[] = []
   let cursor: string | undefined
   do {
-    const url = new URL("/api/claxedo/session-list", stack.url)
-    url.searchParams.set("scope", "workspace")
-    url.searchParams.set("sort", "human_turn_desc")
-    url.searchParams.set("limit", String(PAGE_SIZE))
-    if (cursor) url.searchParams.set("cursor", cursor)
-    const body = (await (await fetch(url)).json()) as { items?: ListItem[]; nextCursor?: string }
-    items.push(...(body.items ?? []))
-    cursor = body.nextCursor
+    const page = await listPage(stack, cursor)
+    items.push(...page.items)
+    cursor = page.nextCursor
+    const end = through === undefined ? PAGE_SIZE : items.findIndex((item) => item.sessionId === through) + 1
+    if (end > 0 && end <= items.length) return items.slice(0, end)
   } while (cursor)
   return items
+}
+
+export async function caseOrder(checked: Checked): Promise<string[]> {
+  const items: ListItem[] = []
+  let cursor: string | undefined
+  do {
+    const page = await listPage(checked.stack, cursor)
+    items.push(...page.items)
+    cursor = page.nextCursor
+  } while (cursor)
+  return items.filter((item) => checked.known.has(item.sessionId)).map((item) => item.sessionId)
 }
 
 function statusLabel(wire: string | undefined, waiting: boolean, lastTurnFailed: boolean): string {
@@ -100,131 +115,50 @@ function statusLabel(wire: string | undefined, waiting: boolean, lastTurnFailed:
   return lastTurnFailed ? "Failed" : "Idle"
 }
 
-async function serverRail({ stack, api, directory }: Checked, bounds: Bounds = {}): Promise<RailRow[]> {
-  const [items, statuses, permissions, questions, sessions] = await Promise.all([
-    serverItems(stack),
+async function workspaceFacts(api: ClaxedoApi, directory: string) {
+  const [statuses, permissions, questions, sessions] = await Promise.all([
     api.status(directory),
     api.permissions(directory),
     api.questions(directory),
     api.sessions(directory),
   ])
-  const waiting = new Set([...permissions, ...questions].map((request) => request.sessionID))
-  const failed = new Set(sessions.filter((row) => (row.lastTurn as { status?: string } | undefined)?.status === "failed").map((row) => row.id))
-  const end = bounds.through ? items.findIndex((item) => item.sessionId === bounds.through) + 1 : PAGE_SIZE
-  return items.slice(0, end || items.length).map((item) => ({
-    sessionId: item.sessionId,
-    title: item.title,
-    status: statusLabel(statuses[item.sessionId]?.type, waiting.has(item.sessionId), failed.has(item.sessionId)),
-  }))
+  return { statuses, requests: [...permissions, ...questions], sessions }
 }
 
-export async function expectRailEqualsServer(app: Page, checked: Checked, bounds: Bounds = {}) {
+async function caseFacts(checked: Checked) {
+  const facts = await Promise.all(checked.directories.map((directory) => workspaceFacts(checked.api, directory)))
+  const statuses = Object.assign({}, ...facts.map((fact) => fact.statuses)) as Record<string, { type: string }>
+  const sessions = facts.flatMap((fact) => fact.sessions)
+  const waiting = new Set(facts.flatMap((fact) => fact.requests).map((request) => request.sessionID))
+  const failed = new Set(sessions.filter((row) => (row.lastTurn as { status?: string } | undefined)?.status === "failed").map((row) => row.id))
+  return {
+    ids: new Set([...checked.known, ...sessions.map((row) => row.id)]),
+    statusOf: (sessionId: string) => statusLabel(statuses[sessionId]?.type, waiting.has(sessionId), failed.has(sessionId)),
+  }
+}
+
+async function serverRail(checked: Checked, bounds: Bounds = {}): Promise<CaseRail> {
+  const [items, facts] = await Promise.all([serverWindow(checked.stack, bounds.through), caseFacts(checked)])
+  const rows = items
+    .filter((item) => facts.ids.has(item.sessionId))
+    .map((item) => ({ sessionId: item.sessionId, title: item.title, status: facts.statusOf(item.sessionId) }))
+  return { rows, ids: facts.ids }
+}
+
+export async function expectRailEqualsServer(app: Page, checked: Checked, bounds: Bounds = {}): Promise<readonly RailRow[]> {
+  let matched: readonly RailRow[] = []
   const compare = async () => {
     const [visible, server] = await Promise.all([railRows(app), serverRail(checked, bounds)])
-    return JSON.stringify(visible) === JSON.stringify(server) ? "equal" : JSON.stringify({ visible, server }, null, 1)
+    const mine = visible.filter((row) => server.ids.has(row.sessionId))
+    matched = mine
+    return JSON.stringify(mine) === JSON.stringify(server.rows) ? "equal" : JSON.stringify({ visible: mine, server: server.rows }, null, 1)
   }
   const message = "the rail's rows equal the server's list and statuses, row by row"
   await expect.poll(compare, { message, timeout: bounds.timeout }).toBe("equal")
+  return matched
 }
 
 export async function expectServerStatus(checked: Checked, sessionId: string, label: string) {
-  const status = async () => (await serverRail(checked, { through: sessionId })).find((row) => row.sessionId === sessionId)?.status
+  const status = async () => (await caseFacts(checked)).statusOf(sessionId)
   await expect.poll(status, { message: `the server reports ${label}` }).toBe(STATUS_COMPARED ? label : "")
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => {
-    resolve = done
-  })
-  return { promise, resolve }
-}
-
-export async function holdListRead(app: Page, matches: (url: URL) => boolean = () => true) {
-  const computed = deferred<void>()
-  const released = deferred<void>()
-  const delivered = deferred<PromiseSettledResult<void>>()
-  let captured = false
-  const handler = async (route: Route) => {
-    if (captured || !matches(new URL(route.request().url()))) return await route.fallback()
-    captured = true
-    const response = await route.fetch()
-    computed.resolve()
-    await released.promise
-    const [outcome] = await Promise.allSettled([route.fulfill({ response })])
-    delivered.resolve(outcome)
-  }
-  await app.route(LIST_ROUTE, handler)
-  return {
-    computed: computed.promise,
-    release: async () => {
-      released.resolve()
-      const outcome = await delivered.promise
-      if (outcome.status === "rejected") test.info().annotations.push({ type: "abandoned list read", description: String(outcome.reason) })
-      expect(outcome.status, "the app received the held list read").toBe("fulfilled")
-    },
-  }
-}
-
-export async function reopenHoldingListRead(app: Page, stack: Stack) {
-  await app.goto("about:blank")
-  const read = await holdListRead(app)
-  await app.goto(`${stack.url}/`)
-  await read.computed
-  return read
-}
-
-export async function watchBrowserStream(app: Page) {
-  const cdp = await app.context().newCDPSession(app)
-  const streams = new Set<string>()
-  let text = ""
-  const decode = (base64: string) => Buffer.from(base64, "base64").toString("utf8")
-  cdp.on("Network.responseReceived", (event) => {
-    if (!event.response.url.includes(STREAM_PATH)) return
-    streams.add(event.requestId)
-    void cdp.send("Network.streamResourceContent", { requestId: event.requestId }).then((result) => {
-      text += decode(result.bufferedData)
-    })
-  })
-  cdp.on("Network.dataReceived", (event) => {
-    if (streams.has(event.requestId) && event.data) text += decode(event.data)
-  })
-  await cdp.send("Network.enable")
-  const received = async (marker: string) => {
-    await expect.poll(() => text.includes(marker), { message: `the app's own stream carried "${marker}"` }).toBe(true)
-  }
-  return { received }
-}
-
-export async function patchSession(checked: Checked, id: string, body: Record<string, unknown>) {
-  const url = new URL(`/session/${encodeURIComponent(id)}`, checked.stack.url)
-  url.searchParams.set("directory", checked.directory)
-  const response = await fetch(url, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  expect(response.ok, `PATCH /session/${id} answered ${response.status}`).toBe(true)
-}
-
-export async function startHeldTurn(checked: Checked, sessionId: string, hold: string, steps: AcpStep[] = []) {
-  await checked.stack.acp.write(hold, { steps: [{ kind: "hold", name: hold }, ...steps, { kind: "text", text: `${hold} finished` }] })
-  await checked.api.promptAsync(checked.directory, sessionId, `Run ${acpScriptToken(hold)}`)
-}
-
-async function createProject(stack: Stack, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", stack.url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "Races", source: { kind: "directory", directory } }),
-  })
-  expect(response.status, "the project was created").toBe(201)
-}
-
-export async function setup(stack: Stack, api: ClaxedoApi, app: Page, titles: readonly string[]) {
-  const workspace: Workspace = await stack.daemon.makeWorkspace("races")
-  await createProject(stack, workspace.directory)
-  const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
-  const sessions = [await create(titles[0])]
-  for (let start = 1; start < titles.length; start += 20) {
-    sessions.push(...(await Promise.all(titles.slice(start, start + 20).map(create))))
-  }
-  await app.goto(`${stack.url}/`)
-  return { sessions, checked: { stack, api, directory: workspace.directory } }
 }

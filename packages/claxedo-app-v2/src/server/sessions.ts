@@ -3,20 +3,21 @@ import type { SessionsApi } from "./api"
 import { ServerError, isNotFound } from "./errors"
 import { sessionId, type RequestId } from "./ids"
 import { sessionPath, type SessionContext } from "./session-context"
-import { controlGoal } from "./session-goal"
+import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { listSessions, readOlder, readSnapshot } from "./session-reads"
 import { createStatusesRead } from "./session-statuses"
 import { stopTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
 import { jsonInit, withQuery, type Transport } from "./transport"
-import type { AgentRequestReply, SessionCreateInput, SessionRef, SessionRow } from "./types"
+import type { AgentRequestReply, PromptDelivery, PromptInput, SessionCreateInput, SessionRef, SessionRow } from "./types"
 import type { Workspaces } from "./workspaces"
 import { createMessageIds } from "./wire/ascending-id"
 import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
-import { promptBody } from "./wire/prompt"
+import { promptBody, promptDeliveryFromWire } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
 import { sessionRowFromSession } from "./wire/session-row"
+import { subagentsFromWire } from "./wire/subagents"
 
 function createBody(input: SessionCreateInput) {
   return {
@@ -56,6 +57,16 @@ async function replyToRequest(context: SessionContext, ref: SessionRef, id: Requ
   }
 }
 
+async function sendPrompt(context: SessionContext, ref: SessionRef, input: PromptInput, messageId: string): Promise<PromptDelivery> {
+  const where = await context.workspaces.route(ref)
+  if (input.goal) {
+    await startGoal(context.transport, where, ref, input.goal.objective)
+    return "start"
+  }
+  const answer = await context.transport.runtimeJson<unknown>(where, sessionPath(ref, "/prompt_async"), jsonInit("POST", promptBody(input, messageId)))
+  return promptDeliveryFromWire(answer)
+}
+
 async function patchSession(context: SessionContext, ref: SessionRef, patch: Record<string, unknown>) {
   await context.transport.runtimeJson<unknown>(await context.workspaces.route(ref), sessionPath(ref), jsonInit("PATCH", patch))
 }
@@ -68,10 +79,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     snapshot: (ref) => readSnapshot(context, ref),
     older: (ref, cursor) => readOlder(context, ref, cursor),
     create: (input) => createSession(context, input),
-    prompt: async (ref, input) => {
-      const body = promptBody(input, input.messageId ?? newMessageId())
-      await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionPath(ref, "/prompt_async"), jsonInit("POST", body))
-    },
+    prompt: (ref, input) => sendPrompt(context, ref, input, input.messageId ?? newMessageId()),
     stop: async (ref) => stopTurn(transport, await workspaces.route(ref), ref),
     reply: (ref, id, answer) => replyToRequest(context, ref, id, answer),
     rename: (ref, title) => patchSession(context, ref, { title }),
@@ -84,5 +92,6 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     newMessageId,
     ...createSessionQueue(transport, workspaces),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),
+    subagents: async (ref) => subagentsFromWire(await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionPath(ref, "/subagents"))),
   }
 }

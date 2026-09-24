@@ -4,6 +4,7 @@ import { ComposerStoreProvider } from "@/composer"
 import { useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import { preferenceKey } from "@/lib/persisted"
+import { PluginHostProvider } from "@/plugins"
 import { useServer, type Capabilities } from "@/server"
 import { Toast } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider, useWorkbench } from "@/workbench"
@@ -59,14 +60,16 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
         <ShellLayoutProvider scope={props.scope}>
           <CommandsProvider>
             <PlacementProviders>
-              <FirstRunRedirect />
-              <RouteSync />
-              <ShellCommands />
-              <ThemeBridge />
-              <ConnectionBanner />
-              <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
-              <CommandPalette />
-              <Overlays />
+              <PluginHostProvider scope={props.scope}>
+                <FirstRunRedirect />
+                <RouteSync />
+                <ShellCommands />
+                <ThemeBridge />
+                <ConnectionBanner />
+                <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} />
+                <CommandPalette />
+                <Overlays />
+              </PluginHostProvider>
             </PlacementProviders>
           </CommandsProvider>
         </ShellLayoutProvider>

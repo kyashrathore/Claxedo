@@ -9,7 +9,7 @@ function text(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined
 }
 
-export function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown): CloudWorkspaceStatus {
+function cloudStatusFromWire(status: unknown, step?: unknown, message?: unknown): CloudWorkspaceStatus {
   switch (status) {
     case "provisioning":
     case "acquiring_sandbox":

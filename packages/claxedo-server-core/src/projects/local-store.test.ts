@@ -131,6 +131,24 @@ describe("local project routes", () => {
     expect(missing.status).toBe(400)
   })
 
+  test("reads a folder written with ~ from the server's home, and refuses a relative path", async () => {
+    const directory = await gitRepository("tilde-")
+    const previousHome = process.env.HOME
+    process.env.HOME = path.dirname(directory)
+    try {
+      const res = await app.request("http://localhost/", json({ name: "Tilde Project", source: { kind: "directory", directory: `~/${path.basename(directory)}` } }))
+      expect(res.status).toBe(201)
+      const { project } = await res.json() as { project: { directory: string } }
+      expect(project.directory).toBe(directory)
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME
+      else process.env.HOME = previousHome
+    }
+    const relative = await app.request("http://localhost/", json({ name: "Relative", source: { kind: "directory", directory: "code/app" } }))
+    expect(relative.status).toBe(400)
+    expect(((await relative.json()) as { error: { code: string } }).error.code).toBe("project_directory_relative")
+  })
+
   test("names are unique per server, case-insensitively", async () => {
     const directory = await gitRepository("unique-")
     expect((await app.request("http://localhost/", json({ name: "Unique", source: { kind: "directory", directory } }))).status).toBe(201)

@@ -77,7 +77,6 @@ const en = {
   "review.worktrees.empty": "No worktrees yet",
   "review.worktrees.new": "New worktree",
   "review.worktrees.name": "Name",
-  "review.worktrees.base": "Base ref",
   "review.worktrees.create": "Create worktree",
   "review.worktrees.creating": "Creating…",
   "review.worktrees.created": "Created {{label}}",

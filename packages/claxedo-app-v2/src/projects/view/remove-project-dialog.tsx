@@ -1,4 +1,5 @@
-import { createSignal, Show, type Component } from "solid-js"
+import { Show, type Component } from "solid-js"
+import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type AppError, type Project } from "@/server"
 import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitleGroup, useDialog } from "@/ui"
 import { useProjectsText, type ProjectsText } from "../i18n"
@@ -12,22 +13,19 @@ export const RemoveProjectDialog: Component<{ project: Project; onRemoved: () =>
   const t = useProjectsText()
   const dialog = useDialog()
   const commands = useProjectCommands()
-  const [removing, setRemoving] = createSignal(false)
-  const [failure, setFailure] = createSignal<string>()
+  const removal = createFlow<"removing", void>()
+  const removing = () => removal.state().kind === "running"
+  const failure = () => {
+    const state = removal.state()
+    return state.kind === "failed" ? removalMessage(t, state.error) : undefined
+  }
 
   const remove = async () => {
     if (removing()) return
-    setRemoving(true)
-    setFailure(undefined)
-    try {
-      await commands.remove(props.project.id)
-      dialog.close()
-      props.onRemoved()
-    } catch (cause) {
-      setFailure(removalMessage(t, toAppError(cause)))
-    } finally {
-      setRemoving(false)
-    }
+    await runFlow(removal, "removing", () => commands.remove(props.project.id), toAppError)
+    if (removal.state().kind !== "done") return
+    dialog.close()
+    props.onRemoved()
   }
 
   return (

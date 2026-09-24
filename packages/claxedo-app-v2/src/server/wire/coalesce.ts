@@ -19,7 +19,7 @@ function partCarriesText(part: unknown) {
   return !!part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string"
 }
 
-export function coalesceEvents(events: readonly ServerEvent[]): ServerEvent[] {
+function coalesceEvents(events: readonly ServerEvent[]): ServerEvent[] {
   const out: (ServerEvent | undefined)[] = []
   const deltaAt = new Map<string, number>()
   const deltasOfPart = new Map<string, number[]>()

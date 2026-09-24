@@ -72,15 +72,6 @@ async function serverProject(url: string, id: string): Promise<{ status: number;
   return { status: 200, project: ((await response.json()) as { project: ProjectRecord }).project }
 }
 
-async function createServerProject(url: string, name: string, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
-
 async function finishAddOnThisMachine(app: Page) {
   await app.getByRole("button", { name: "Next", exact: true }).click()
   await app.getByRole("button", { name: "Skip for now" }).click()
@@ -126,9 +117,9 @@ async function removeOnProjectPage(app: Page, name: string) {
   await expect((await projectsList(app)).getByRole("button", { name, exact: true })).toHaveCount(0)
 }
 
-test("02 projects, local: add a folder and a clone, rename, remove, each read back by id", async ({ stack, page: app }) => {
+test("02 projects, local: add a folder and a clone, rename, remove, each read back by id", async ({ stack, api, page: app }) => {
   const root = path.join(stack.dataDir, "folders")
-  await createServerProject(stack.url, "Existing", await gitFolder(root, "existing"))
+  await api.createProject("Existing", await gitFolder(root, "existing"))
   const alphaFolder = await gitFolder(root, "alpha")
   const remote = await gitRemote(root, "beta")
   try {
@@ -143,6 +134,9 @@ test("02 projects, local: add a folder and a clone, rename, remove, each read ba
     await app.goto(`${stack.url}/p/${encodeURIComponent(alphaId)}`)
     await renameOnProjectPage(app, "Alpha", "Alpha renamed")
     expect((await serverProject(stack.url, alphaId)).project?.name).toBe("Alpha renamed")
+    await app.getByRole("button", { name: "Open", exact: true }).click()
+    await expect(app.getByRole("region", { name: "New session" })).toBeVisible()
+    expect(await api.sessions(alphaFolder)).toHaveLength(1)
 
     await app.goto(`${stack.url}/`)
     await cloneProject(app, remote.url)

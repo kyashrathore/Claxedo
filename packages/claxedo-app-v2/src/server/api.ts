@@ -40,6 +40,7 @@ import type {
   Placement,
   Project,
   ProjectSource,
+  PromptDelivery,
   PromptInput,
   QueuedPrompt,
   QueuedPromptAction,
@@ -51,6 +52,7 @@ import type {
   SessionRow,
   SessionSnapshot,
   SessionStatusRead,
+  Subagent,
   TranscriptPage,
 } from "./types"
 import type { UsageRequest, UsageSummary } from "./usage-types"
@@ -60,7 +62,7 @@ export type SessionsApi = {
   readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly create: (input: SessionCreateInput) => Promise<SessionRow>
-  readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<void>
+  readonly prompt: (ref: SessionRef, input: PromptInput) => Promise<PromptDelivery>
   readonly stop: (ref: SessionRef) => Promise<void>
   readonly reply: (ref: SessionRef, requestId: RequestId, reply: AgentRequestReply) => Promise<void>
   readonly rename: (ref: SessionRef, title: string) => Promise<void>
@@ -71,6 +73,7 @@ export type SessionsApi = {
   readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
   readonly controlGoal: (ref: SessionRef, action: GoalAction) => Promise<SessionGoal | undefined>
+  readonly subagents: (ref: SessionRef) => Promise<readonly Subagent[]>
 }
 
 export type ProjectsApi = {
@@ -108,6 +111,10 @@ export type CloudApi = {
   readonly start: (id: PlacementId) => Promise<void>
   readonly stop: (id: PlacementId) => Promise<void>
   readonly remove: (id: PlacementId) => Promise<void>
+}
+
+export type LivePluginsApi = {
+  readonly remove: (pluginId: string) => Promise<void>
 }
 
 export type ServerQueries = {
@@ -157,5 +164,7 @@ export type Server = {
   readonly terminals: TerminalsApi
   readonly git: GitApi
   readonly cloud: CloudApi
+  readonly livePlugins: LivePluginsApi
   readonly queries: ServerQueries
+  readonly request: (path: string, init?: RequestInit) => Promise<Response>
 }

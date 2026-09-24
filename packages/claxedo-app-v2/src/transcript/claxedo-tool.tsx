@@ -1,6 +1,6 @@
 import { createMemo, For, Show } from "solid-js"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useTranscriptI18n } from "./i18n"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { useData } from "./data"
 import { BasicTool } from "./basic-tool"
@@ -53,7 +53,7 @@ function CardLink(props: { link: ClaxedoLink; slot: string; class?: string }) {
 }
 
 function StatusPill(props: { status: string }) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   return (
     <span data-slot="claxedo-tool-status" data-status={props.status}>
       <Show when={STATUS_ICONS[props.status]}>{(name) => <Icon name={name()} size="small" />}</Show>
@@ -68,7 +68,7 @@ function StatusPill(props: { status: string }) {
  * body holds what the row cannot: a task list, the facts of a start, prose.
  */
 export function ClaxedoTool(props: ToolProps) {
-  const i18n = useI18n()
+  const i18n = useTranscriptI18n()
   const data = useData()
   const name = createMemo(() => claxedoToolName(props.tool, props.input) ?? props.tool)
   const sessionTitle = (id: string) => data.store.session.find((session) => session.id === id)?.title
@@ -150,7 +150,7 @@ export function ClaxedoTool(props: ToolProps) {
             </Show>
             <Show when={view().text}>
               {(text) => (
-                <div data-component="tool-output" data-scrollable tabIndex={0} role="region" aria-label={i18n.t("ui.scrollView.ariaLabel")}>
+                <div data-component="tool-output" data-scrollable tabIndex={0} role="region" aria-label={i18n.t("transcript.scrollView.ariaLabel")}>
                   <pre data-slot="claxedo-tool-text">{text()}</pre>
                 </div>
               )}

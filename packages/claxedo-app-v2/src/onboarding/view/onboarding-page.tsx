@@ -1,6 +1,6 @@
 import { createMemo, For, onCleanup, onMount, Show, type Component } from "solid-js"
 import { unreachable } from "@/lib/machine"
-import { AddProjectSteps, draftProjectName, useAddProjectFlow, usePlacementOpener } from "@/projects"
+import { AddProjectSteps, draftProjectName, useAddProjectFlow, useCreatedProjectOpener } from "@/projects"
 import { useServer } from "@/server"
 import type { PageProps } from "@/shell"
 import { useOnboardingText, type OnboardingText } from "../i18n"
@@ -50,7 +50,7 @@ function lede(t: OnboardingText, step: OnboardingStep, onMachine: boolean): stri
 export const OnboardingPage: Component<PageProps> = () => {
   const t = useOnboardingText()
   const server = useServer()
-  const flow = useAddProjectFlow(usePlacementOpener().openCreated)
+  const flow = useAddProjectFlow(useCreatedProjectOpener())
   const state = createMemo(() => onboardingState(flow.state()))
   const step = () => onboardingCurrentStep(state())
   const index = () => onboardingStepIndex(state())

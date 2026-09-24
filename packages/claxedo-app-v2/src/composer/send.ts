@@ -72,6 +72,7 @@ export async function buildPromptInput(input: {
   mode: EditorMode
   selection: Selection
   goal: GoalIntent
+  delivery: PromptInput["delivery"]
 }): Promise<PromptInput> {
   const images = await flattenMarkedImages(promptImages(input.draft.prompt))
   const text = promptText(input.draft.prompt).trim()
@@ -88,6 +89,7 @@ export async function buildPromptInput(input: {
     effort: input.selection.effort,
     permissionMode: input.selection.permissionMode,
     goal: input.goal.kind === "submit" ? { objective: input.goal.objective } : undefined,
+    delivery: input.delivery,
   }
 }
 
@@ -96,6 +98,7 @@ type SendInput = {
   store: ComposerStore
   mode: Accessor<EditorMode>
   selection: Accessor<Selection>
+  working: Accessor<boolean>
   goalMode: Accessor<HarnessInfo["goalMode"] | undefined>
   view: Accessor<SessionView | undefined>
   createSession?: () => Promise<SessionView>
@@ -130,7 +133,8 @@ function createArmGoal(input: SendInput) {
 
 async function deliver(input: SendInput, draft: Draft, goal: GoalIntent, clientRequestId: string): Promise<SessionView> {
   const key = input.key()
-  const prompt = await buildPromptInput({ draft, mode: input.mode(), selection: input.selection(), goal })
+  const delivery = input.working() ? "queue" : undefined
+  const prompt = await buildPromptInput({ draft, mode: input.mode(), selection: input.selection(), goal, delivery })
   const view = input.view() ?? (await required(input.createSession)())
   await view.send({ ...prompt, clientRequestId })
   input.store.addHistory(key, input.mode(), draft.prompt, historyComments(draft))

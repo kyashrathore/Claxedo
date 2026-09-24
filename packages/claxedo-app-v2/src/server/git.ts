@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/solid-query"
 import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
 import type { GitApi } from "./api"
@@ -11,7 +12,7 @@ import type { Workspaces } from "./workspaces"
 const GIT_PATH = "/api/wr/git"
 const DIFF_PATH = "/api/wr/diff"
 
-export function diffQuery(scope: DiffScope): Record<string, string> {
+function diffQuery(scope: DiffScope): Record<string, string> {
   switch (scope.kind) {
     case "uncommitted":
     case "staged":
@@ -94,9 +95,12 @@ export function gitQueries(transport: Transport, workspaces: Workspaces) {
   return { status, log, refs: refsQuery, bases, diff, diffFile: diffFileQuery }
 }
 
-export function createGitApi(transport: Transport, workspaces: Workspaces): GitApi {
-  const post = async <T>(placementId: PlacementId, path: string, body: unknown) =>
-    transport.runtimeJson<T>(await workspaces.route(placementId), `${GIT_PATH}${path}`, jsonInit("POST", body))
+export function createGitApi(transport: Transport, workspaces: Workspaces, queryClient: QueryClient): GitApi {
+  const post = async <T>(placementId: PlacementId, path: string, body: unknown) => {
+    const answer = await transport.runtimeJson<T>(await workspaces.route(placementId), `${GIT_PATH}${path}`, jsonInit("POST", body))
+    await queryClient.invalidateQueries({ queryKey: queryKeys.gitOf(transport.serverUrl, placementId) })
+    return answer
+  }
   return {
     stage: async (placementId, paths) => {
       await post<unknown>(placementId, "/stage", { paths })
