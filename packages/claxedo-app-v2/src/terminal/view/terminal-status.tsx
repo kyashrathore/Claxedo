@@ -38,16 +38,12 @@ function Notice(props: {
 
 export function TerminalStatus(props: {
   readonly connection: TerminalConnection
-  readonly missing: boolean
   readonly onRetry: () => void
   readonly onRecreate: () => void
 }): JSX.Element {
   const t = useTranslator(dictionary)
   return (
     <Switch>
-      <Match when={props.missing}>
-        <Notice title={t("terminal.missing")} testId="terminal-missing" />
-      </Match>
       <Match when={props.connection.kind === "connecting"}>
         <div
           role="status"

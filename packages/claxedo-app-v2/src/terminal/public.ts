@@ -1,10 +1,9 @@
 import type { PlacementId, TerminalAgentStatus, TerminalId } from "@/server"
 import { useWorkbench } from "@/workbench"
 import { useEndTerminal } from "./close"
+import { terminalContents } from "./contents"
 import { useTerminalRuntime } from "./context"
 import { terminalCreatorPaneKind } from "./creator-pane"
-import type { TerminalPaneState } from "./model"
-import { terminalPaneKind } from "./pane"
 import type { TerminalLaunch } from "./store"
 
 export type TerminalItem = {
@@ -23,23 +22,12 @@ export type TerminalList = {
   readonly startNew: (placementId: PlacementId) => void
 }
 
-function isTerminalPaneState(value: unknown): value is TerminalPaneState {
-  return typeof value === "object" && value !== null && "terminalId" in value && "placementId" in value
-}
-
 export function useTerminals(): TerminalList {
   const runtime = useTerminalRuntime()
   const workbench = useWorkbench()
   const end = useEndTerminal(runtime)
   const contentOf = (terminalId: TerminalId) =>
-    workbench.selectors.aliveContents().find((contentId) => {
-      const opened = workbench.content(contentId)
-      return (
-        opened?.kind.kind === terminalPaneKind.kind &&
-        isTerminalPaneState(opened.state) &&
-        opened.state.terminalId === terminalId
-      )
-    })
+    terminalContents(workbench).find((content) => content.state.terminalId === terminalId)?.contentId
   return {
     items: (placementId) =>
       runtime
