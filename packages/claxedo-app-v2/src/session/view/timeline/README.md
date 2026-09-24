@@ -69,3 +69,7 @@ Flow 30 (`e2e/flows/30-transcript-corpus.spec.ts`) replays every corpus case thr
 ## Pending v2 twins
 
 Kept on `@opencode-ai/ui` until the kit lists a twin and the corpus shows no difference: `button`, `card`, `spinner`, `scroll-view`, `dropdown-menu`, `dialog`, `context/dialog`, `inline-input`, `tooltip`, `accordion`, `sticky-accordion-header`, `text-reveal`, `text-shimmer`, `diff-changes`, `file-icon`, `context/file`, `toast`, `theme/transcript-typography`, `utils/binary`, `utils/path`, and `@kobalte/core/tooltip`.
+
+## Diagram colors
+
+Mermaid takes its theme colors from the app's CSS variables. The contrast theme's surface tokens are `color-mix(...)` expressions, which mermaid's color parser rejects, and an element's computed color serializes a mixed color as `color(srgb …)`, which it rejects too. `mermaidThemeVariables` resolves each token through an element's computed color and rewrites that form as `rgba(…)`; without it every diagram falls back to its code block.

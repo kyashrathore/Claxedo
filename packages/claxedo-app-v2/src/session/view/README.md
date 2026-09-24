@@ -38,4 +38,8 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 
 ## Flows
 
+## Subagent panel tab
+
+A subagent opens as a workspace-panel tab (`subagent-panel.tsx`), registered in the shell's `panelViews`: the child's session read-only, with its docks and the "cannot be prompted" notice but no composer or keys. The tab's parent is the session holding the pane, so a subagent opened from inside the tab stays visible. On open, focus moves to the child's heading; the heading only exists once the child's first messages render, so the panel retries each frame for 30 frames and a newer open cancels an older wait.
+
 Flows 3 (send a turn), 4 (stop, queue, reload mid-turn), 5 (errors by class), 6 (composer), 7 (goal mode), 8 (permissions and questions), 9 (subagents), 11 (long transcript); 3, 6 and 8 run in the phone project too.
