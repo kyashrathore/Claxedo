@@ -1,7 +1,8 @@
 export { Button, type ButtonProps } from "@opencode-ai/ui/button"
 export { ClaxedoIcon, ClaxedoIconV2, type ClaxedoIconName, type ClaxedoIconProps } from "./controls/claxedo-icon"
 export { ClaxedoIconButton, type ClaxedoIconButtonProps } from "./controls/claxedo-icon-button"
-export { ClaxedoLogo } from "./controls/claxedo-logo"
+export { appIconNames } from "./icons/catalog"
+export { ClaxedoLogo, ClaxedoSplash } from "./controls/claxedo-logo"
 export { animateHeightChanges } from "./controls/animate-height"
 export { DelayedLoading } from "./controls/delayed-loading"
 export {

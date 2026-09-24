@@ -107,3 +107,4 @@ export type SessionStores = {
 }
 
 export { createSessionStores, SessionStoresProvider, useSessionStores } from "./store"
+export { draftSessionPaneKind, sessionPaneKind, subagentPanelView } from "./view"
