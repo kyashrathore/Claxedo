@@ -14,18 +14,20 @@ import {
 } from "@/server"
 import { terminalsApi } from "./api"
 import { transitionLoad, type TerminalLoad, type TerminalLoadEvent, type TerminalRow } from "./model"
-import { nextTerminalNumber } from "./titles"
+import { launcherTitle, nextTerminalNumber } from "./titles"
 
 export type TerminalStore = {
   readonly placementId: PlacementId
   readonly load: Accessor<TerminalLoad>
   readonly rows: () => readonly TerminalRow[]
   readonly row: (terminalId: TerminalId) => TerminalRow | undefined
-  readonly create: () => Promise<Terminal>
+  readonly create: (launch?: TerminalLaunch) => Promise<Terminal>
   readonly recreate: (terminalId: TerminalId) => Promise<Terminal>
   readonly close: (terminalId: TerminalId) => Promise<void>
   readonly loadAgentStatus: (terminalId: TerminalId) => Promise<void>
 }
+
+export type TerminalLaunch = { readonly command?: string; readonly title?: string }
 
 export type TerminalStoreInput = {
   readonly server: Server
@@ -123,8 +125,10 @@ export function createTerminalStore(input: TerminalStoreInput): TerminalStore {
     load: load.state,
     rows: rows.all,
     row: rows.find,
-    create: async () => {
-      const terminal = await api.create({ placementId, title: numberedTitle(), createRequestId: uuid() })
+    create: async (launch) => {
+      const title = launch?.title ? launcherTitle(launch.title, rows.all()) : numberedTitle()
+      const command = launch?.command ? { command: launch.command } : {}
+      const terminal = await api.create({ placementId, title, createRequestId: uuid(), ...command })
       rows.upsert(terminal)
       return terminal
     },

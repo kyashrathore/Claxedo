@@ -6,7 +6,7 @@ import { toAppError, useServer } from "@/server"
 import type { PaneProps } from "@/shell"
 import { showToast } from "@/ui"
 import type { TerminalBackend } from "../backend/types"
-import { useTerminals } from "../context"
+import { useTerminalRuntime } from "../context"
 import { dictionary } from "../i18n"
 import {
   transitionConnection,
@@ -21,7 +21,7 @@ import { TerminalStatus } from "./terminal-status"
 
 export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const server = useServer()
-  const terminals = useTerminals()
+  const terminals = useTerminalRuntime()
   const t = useTranslator(dictionary)
   const { placementId, terminalId } = props.state
   const store = terminals.store(placementId)
@@ -72,6 +72,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
       data-testid="terminal-pane"
       data-terminal-id={terminalId}
       data-terminal-connection={connection.state().kind}
+      data-terminal-connected={connection.state().kind === "attached" ? "true" : "false"}
       class="flex h-full w-full min-h-0 flex-col bg-background-base"
       onFocusIn={() => setFocused(true)}
       onFocusOut={() => setFocused(false)}

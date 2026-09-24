@@ -5,7 +5,7 @@ Owns: terminal panes, the one attach path to a runtime PTY, terminal links, the 
 ## Owned concepts
 
 - **Terminal row** (`model.ts`): a server `Terminal` plus its `agentStatus`. The list per placement lives in one store (`store.ts`), filled by `server.terminals.list` and kept current only by the stream's `terminalCreated`, `terminalUpdated`, `terminalExited`, `terminalRemoved` and `terminalAgentStatusChanged` events. Nothing else holds rows.
-- **Terminal pane** (`pane.ts`): the `terminal` pane kind. Its state is `{ placementId, terminalId }`, and its route is `/w/:placementId/t/:terminalId`, so a reload or a deep link reopens the same PTY.
+- **Terminal pane** (`pane.ts`): the `terminal` pane kind. Its state is `{ placementId, terminalId }`, and its route is `/w/:placementId/terminal/:terminalId`, so a reload or a deep link reopens the same PTY.
 - **Attach** (`attach.ts`): the only way a pane reaches a PTY. It attaches with the last output cursor it wrote. The runtime answers with a `cursor` frame, which may carry a screen checkpoint, then replays the output after that cursor. The runtime's replay is the only replay; the app keeps no second copy of terminal output. Output goes through the write queue (`write-queue.ts`), which disconnects a stream whose pending output passes 128 MiB rather than freeze the window. Input passes through `input-reply-filter.ts`, so xterm's answers to capability queries are not echoed back as typing.
 - **Resize** (`resize.ts`): sizes are published after the host settles, never for a host smaller than 48 × 32 px, and agent TUIs (`isLikelyTui`) get a SIGWINCH toggle after a desync, so the TUI redraws at the real size.
 - **Links** (`links/`): file paths (with `:line:col` suffixes), URLs, links wrapped across lines, and the fallback formats compilers print. A file link opens the `file` pane at the line, relative to the terminal's working directory; a path outside it is not opened.
@@ -23,6 +23,12 @@ Owns: terminal panes, the one attach path to a runtime PTY, terminal links, the 
 - `TerminalProvider` mounts once inside the scoped shell, under the commands provider, because it reads the route, the workbench and the command registry. It owns the stores, at most 8 placements, and never evicts a placement a mounted pane retains.
 - The placement a new terminal opens in is the one the URL names.
 - Status copy comes from the failure reason, never from an error's message.
+
+## Creating terminals
+
+The terminal creator (`creator-pane.ts`, `view/terminal-creator.tsx`) is v1's "Start a terminal" card in a workbench pane titled "New Terminal": a tile for the login shell and one per agent CLI (`agents.ts`, `launchers.ts`: Claude, Codex, Cursor, Gemini) that `server.terminals.agents` reports installed on the placement's machine, or every tile when that probe fails. A tile creates the terminal with its command, titled "<name> N", and replaces the creator with it.
+
+`useTerminals()` (`public.ts`) is the domain's public API: `items(placementId)` (id, title, agent status), `retain(placementId)` while a list is on screen, `createTerminal(placementId, launch?)`, `open`, `close` (closes its pane, which ends the shell, or ends it directly) and `startNew(placementId)`, which opens the creator.
 
 ## Commands
 
