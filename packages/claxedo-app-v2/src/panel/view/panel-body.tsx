@@ -3,7 +3,7 @@ import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { BrowserTabView } from "@/browser"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
-import { ChangesTab } from "@/review"
+import { ReviewTab, SourceControlView } from "@/review"
 import type { PlacementId } from "@/server"
 import { Markdown } from "@/transcript"
 import { filePathFromTab } from "../focus"
@@ -17,9 +17,42 @@ function activeFilePath(panel: Panel): string | undefined {
   return tab.kind === "file" ? filePathFromTab(tab.tabId) : undefined
 }
 
-function NavigatorColumn(): JSX.Element {
+function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
-  const selected = () => panel.navigator() === "files"
+  const view = () => panel.navigator()
+  const [filesVisited, setFilesVisited] = createSignal(view() === "files")
+  const [changesVisited, setChangesVisited] = createSignal(view() === "changes")
+  createEffect(() => {
+    if (view() === "files") setFilesVisited(true)
+    if (view() === "changes") setChangesVisited(true)
+  })
+  return (
+    <>
+      <Show when={filesVisited()}>
+        <div class="absolute inset-0" classList={{ hidden: view() !== "files" }}>
+          <FilesNavigator
+            activePath={activeFilePath(panel)}
+            onOpenFile={(path) => panel.show({ kind: "file", path })}
+          />
+        </div>
+      </Show>
+      <Show when={changesVisited()}>
+        <div class="absolute inset-0" classList={{ hidden: view() !== "changes" }}>
+          <SourceControlView
+            placementId={props.placementId}
+            active={view() === "changes"}
+            activePath={panel.reviewFocus()?.path}
+            onFileClick={(path) => panel.show({ kind: "review", path })}
+          />
+        </div>
+      </Show>
+    </>
+  )
+}
+
+function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Element {
+  const panel = usePanel()
+  const selected = () => panel.navigator() !== null
   const [visited, setVisited] = createSignal(selected())
   createEffect(() => {
     if (selected()) setVisited(true)
@@ -29,7 +62,7 @@ function NavigatorColumn(): JSX.Element {
       <div
         data-testid="workspace-navigator-overlay"
         data-navigator="files"
-        data-navigator-kind="files"
+        data-navigator-kind={panel.navigator() ?? "files"}
         data-open={selected() ? "true" : "false"}
         aria-hidden={selected() ? undefined : "true"}
         class="claxedo-workspace-navigator-overlay order-last h-full shrink-0 overflow-hidden border-l border-border-weak-base bg-background-base motion-reduce:transition-none"
@@ -41,12 +74,7 @@ function NavigatorColumn(): JSX.Element {
         }}
       >
         <div class="relative h-full w-[min(280px,45cqw)] min-w-[220px]">
-          <div class="absolute inset-0">
-            <FilesNavigator
-              activePath={activeFilePath(panel)}
-              onOpenFile={(path) => panel.show({ kind: "file", path })}
-            />
-          </div>
+          <NavigatorViews placementId={props.placementId} />
         </div>
       </div>
     </Show>
@@ -72,7 +100,11 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
     <Switch>
       <Match when={tab().kind === "review"}>
         <div data-testid="workspace-review-body" class="absolute inset-0 flex h-full flex-col overflow-hidden">
-          <ChangesTab />
+          <ReviewTab
+            placementId={props.placementId}
+            focus={panel.reviewFocus()}
+            onOpenFile={(path) => panel.show({ kind: "file", path })}
+          />
         </div>
       </Match>
       <Match when={activeFilePath(panel)} keyed>
@@ -131,7 +163,7 @@ export function PanelBody(): JSX.Element {
                 class="relative flex size-full min-w-0 overflow-hidden"
                 data-workspace-panel-session-id={panel.sessionId()}
               >
-                <NavigatorColumn />
+                <NavigatorColumn placementId={placementId} />
                 <div class="h-full min-w-0 flex-1">
                   <div class="relative flex size-full min-h-0 overflow-hidden bg-background-base h-full">
                     <div id="review-panel" class="relative flex-1 min-w-0 flex flex-col h-full">

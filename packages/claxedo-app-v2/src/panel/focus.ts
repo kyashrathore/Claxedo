@@ -6,6 +6,7 @@ import {
   openPlanWorkspaceTab,
   openSubagentWorkspaceTab,
 } from "./workspace-tabs"
+import type { ReviewFocus } from "@/review"
 import type { WorkingSet } from "./working-sets"
 
 export type PanelFocus =
@@ -34,8 +35,6 @@ export type FileReveal = {
   readonly col?: number
   readonly version: number
 }
-
-export type ReviewFocus = { readonly path: string; readonly version: number }
 
 export type FocusEffects = {
   readonly reveal: (reveal: FileReveal) => void

@@ -118,6 +118,35 @@ export const SCREENS: readonly Screen[] = [
     },
   },
   {
+    id: "review-diff",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByRole("button", { name: "Toggle diff for README.md" }).click()
+    },
+  },
+  {
+    id: "review-compare-menu",
+    phase: "seeded",
+    sizes: ["1280"],
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByTestId("review-compare-trigger").click()
+    },
+  },
+  {
+    id: "review-changes",
+    phase: "seeded",
+    path: sessionPath,
+    steps: async (context) => {
+      await openPanel(context)
+      await context.page.getByRole("button", { name: "Open Changes" }).click()
+    },
+  },
+  {
     id: "panel-maximized",
     phase: "seeded",
     sizes: ["1280"],

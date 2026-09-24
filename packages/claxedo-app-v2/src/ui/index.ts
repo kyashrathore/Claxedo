@@ -4,8 +4,9 @@ export { Avatar, type AvatarProps } from "./avatar"
 export { Button, type ButtonProps } from "./button"
 export { Card, type CardProps, type CardTitleProps, type CardVariant } from "./card"
 export { Checkbox, type CheckboxProps } from "./checkbox"
-export { ClaxedoIcon, type ClaxedoIconName, type ClaxedoIconProps } from "./controls/claxedo-icon"
+export { ClaxedoIcon, ClaxedoIconV2, type ClaxedoIconName, type ClaxedoIconProps } from "./controls/claxedo-icon"
 export { ClaxedoIconButton, type ClaxedoIconButtonProps } from "./controls/claxedo-icon-button"
+export { ClaxedoLogo } from "./controls/claxedo-logo"
 export { DelayedLoading } from "./controls/delayed-loading"
 export {
   browserToolbarSlot,
