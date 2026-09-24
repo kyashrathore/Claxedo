@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Show, type JSX } from "solid-js"
-import { Button, ProviderIcon, RadioGroup } from "@/ui"
+import { ProviderIcon, RadioGroup } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { useTranslator } from "@/i18n"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { harnessAccounts, harnesses, harnessRunnable, machineLoginOf, selectedAccountKey, type AccountsSnapshot, type Harness } from "../accounts"
@@ -40,9 +41,12 @@ export function AccountsSection() {
         action={
           <span class="settings-inline">
             <span class="settings-row-description">{scanLabel()}</span>
-            <Button size="small" variant="ghost" disabled={accounts.scanning()} onClick={() => accounts.rescan()}>
-              {t("settings.accounts.rescan")}
-            </Button>
+            <Show when={!accounts.scanning()}>
+              <span aria-hidden="true">·</span>
+              <button type="button" class="border-none bg-transparent p-0 text-12-regular text-text-interactive-base" onClick={() => accounts.rescan()}>
+                {t("settings.accounts.rescan")}
+              </button>
+            </Show>
           </span>
         }
       />
@@ -92,7 +96,7 @@ function HarnessCard(props: { readonly harness: Harness; readonly snapshot: Acco
     <SettingsGroup
       title={props.harness.label}
       action={
-        <Button size="small" variant="ghost" data-action="agent-add-account" aria-expanded={adding()} onClick={() => setAdding(!adding())}>
+        <Button size="large" variant="ghost" data-action="agent-add-account" aria-expanded={adding()} onClick={() => setAdding(!adding())}>
           {t("settings.accounts.addKey")}
         </Button>
       }

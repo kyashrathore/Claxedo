@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js"
-import { Button, Icon, IconButton, RadioItem, Tooltip } from "@/ui"
+import { Icon, IconButton, RadioItem, Tooltip } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { useTranslator } from "@/i18n"
 import { formatCompactAge } from "@/lib/relative-time"
 import { dictionary } from "../i18n"
@@ -39,7 +40,7 @@ export function AccountRow(props: {
       <div class="settings-account-actions">
         <Show when={confirming()} fallback={<RowActions account={props.account} busy={busy} onCheck={props.onCheck} onConfirm={() => setConfirming(true)} />}>
           <span class="settings-row-description">{t("settings.accounts.removeAccountConfirm")}</span>
-          <Button size="small" variant="danger" disabled={props.activity !== undefined} onClick={() => props.onRemove()}>
+          <Button size="small" variant="primary" disabled={props.activity !== undefined} onClick={() => props.onRemove()}>
             {busy("removing") ? t("settings.accounts.removingAccount") : t("settings.accounts.removeAccount")}
           </Button>
           <Button size="small" variant="ghost" disabled={props.activity !== undefined} onClick={() => setConfirming(false)}>

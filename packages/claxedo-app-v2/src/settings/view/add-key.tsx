@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js"
-import { Button, TextInput } from "@/ui"
+import { TextInput } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { useTranslator } from "@/i18n"
 import type { Harness } from "../accounts"
 import { dictionary } from "../i18n"
@@ -35,7 +36,7 @@ export function AddKeyForm(props: {
       <TextInput type="password" autocomplete="off" aria-label={t("settings.accounts.keySecret")} placeholder={t("settings.accounts.keySecret")} value={secret()} onInput={(event) => setSecret(event.currentTarget.value)} />
       <Show when={failure()}>{(message) => <p class="settings-note" data-tone="danger" role="alert">{message()}</p>}</Show>
       <div class="settings-inline">
-        <Button type="submit" size="small" variant="contrast" disabled={props.busy || !secret().trim()}>{t("settings.accounts.keySave")}</Button>
+        <Button type="submit" size="small" variant="primary" disabled={props.busy || !secret().trim()}>{t("settings.accounts.keySave")}</Button>
         <Button type="button" size="small" variant="ghost" onClick={() => props.onCancel()}>{t("settings.common.cancel")}</Button>
       </div>
     </form>
