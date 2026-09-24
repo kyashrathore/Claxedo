@@ -193,6 +193,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   return (
     <section
       data-component="session-screen"
+      data-testid="session-page-root"
       data-session-id={props.sessionRef.sessionId}
       data-session-presentation={floating() ? "floating" : undefined}
       aria-label={view().row()?.title ?? t("sessionScreen.untitled")}
