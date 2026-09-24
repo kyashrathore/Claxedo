@@ -107,6 +107,21 @@ function projectsSection(app: Page) {
   return app.getByRole("region", { name: "Projects" })
 }
 
+async function renameOnProjectPage(app: Page, from: string, to: string) {
+  await expect(app.getByRole("heading", { level: 1, name: from })).toBeVisible()
+  await app.getByRole("button", { name: "Rename", exact: true }).click()
+  const dialog = app.getByRole("dialog", { name: "Rename project" })
+  await dialog.getByRole("textbox", { name: "Name", exact: true }).fill(to)
+  await dialog.getByRole("button", { name: "Save" }).click()
+  await expect(app.getByRole("heading", { level: 1, name: to })).toBeVisible()
+}
+
+async function removeOnProjectPage(app: Page, name: string) {
+  await app.getByRole("button", { name: "Remove", exact: true }).click()
+  await app.getByRole("dialog", { name: "Remove project" }).getByRole("button", { name: "Remove", exact: true }).click()
+  await expect(projectsSection(app).getByRole("button", { name })).toHaveCount(0)
+}
+
 test("02 projects, local: add a folder and a clone, rename, remove, each read back by id", async ({ stack, app }) => {
   const root = path.join(stack.dataDir, "folders")
   await createServerProject(stack.url, "Existing", await gitFolder(root, "existing"))
@@ -122,12 +137,7 @@ test("02 projects, local: add a folder and a clone, rename, remove, each read ba
     const alphaId = alpha?.id ?? ""
 
     await app.goto(`${stack.url}/p/${encodeURIComponent(alphaId)}`)
-    await expect(app.getByRole("heading", { level: 1, name: "Alpha" })).toBeVisible()
-    await app.getByRole("button", { name: "Rename", exact: true }).click()
-    const renameDialog = app.getByRole("dialog", { name: "Rename project" })
-    await renameDialog.getByRole("textbox", { name: "Name", exact: true }).fill("Alpha renamed")
-    await renameDialog.getByRole("button", { name: "Save" }).click()
-    await expect(app.getByRole("heading", { level: 1, name: "Alpha renamed" })).toBeVisible()
+    await renameOnProjectPage(app, "Alpha", "Alpha renamed")
     expect((await serverProject(stack.url, alphaId)).project?.name).toBe("Alpha renamed")
 
     await app.goto(`${stack.url}/`)
@@ -139,9 +149,7 @@ test("02 projects, local: add a folder and a clone, rename, remove, each read ba
     await app.goto(`${stack.url}/`)
     await projectsSection(app).getByRole("button", { name: "Alpha renamed" }).click()
     await expect(app).toHaveURL(new RegExp(`/p/${encodeURIComponent(alphaId)}$`))
-    await app.getByRole("button", { name: "Remove", exact: true }).click()
-    await app.getByRole("dialog", { name: "Remove project" }).getByRole("button", { name: "Remove", exact: true }).click()
-    await expect(projectsSection(app).getByRole("button", { name: "Alpha renamed" })).toHaveCount(0)
+    await removeOnProjectPage(app, "Alpha renamed")
     expect((await serverProject(stack.url, alphaId)).status).toBe(404)
     expect(await fs.readFile(path.join(alphaFolder, "README.md"), "utf8")).toBe("alpha\n")
   } finally {
