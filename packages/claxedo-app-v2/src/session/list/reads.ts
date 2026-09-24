@@ -1,6 +1,7 @@
 import { machine, type Machine } from "@/lib/machine"
 import type { Server, SessionRow, SessionStatusRead } from "@/server"
 import { toAppError, type RequestsInternal } from "../requests"
+import { unreadPlacementsOf } from "./statuses"
 import {
   NO_FOLLOW_UP,
   followUpTransition,
@@ -30,8 +31,11 @@ type ReadContext = {
 
 function readRequests(requests: RequestsInternal, fetched: readonly SessionRow[], read: SessionStatusRead, sentAt: number): void {
   const reported = new Set(read.reports.map((report) => report.ref.sessionId))
+  const unreadPlacements = unreadPlacementsOf(read)
   requests.applyReads(read.reports, sentAt)
-  for (const row of fetched) if (!reported.has(row.ref.sessionId)) requests.read(row.ref, [], sentAt)
+  for (const row of fetched) {
+    if (!reported.has(row.ref.sessionId) && !unreadPlacements.has(row.ref.placementId)) requests.read(row.ref, [], sentAt)
+  }
 }
 
 async function readWindow(context: ReadContext, cursor: string | undefined, withStatuses: boolean): Promise<FetchedWindow> {

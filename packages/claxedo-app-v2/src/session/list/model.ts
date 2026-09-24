@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { AppError, SessionId, SessionRef, SessionRow, SessionStatus, SessionStatusRead } from "@/server"
+import type { AppError, PlacementId, SessionId, SessionRef, SessionRow, SessionStatus, SessionStatusRead } from "@/server"
 
 export type PendingSend = {
   readonly clientRequestId: string
@@ -31,7 +31,11 @@ export type StatusEntry = {
   readonly source: "event" | "read"
 }
 
-export type UnreportedStatus = { readonly status: SessionStatus; readonly sentAt: number }
+export type UnreportedStatus = {
+  readonly status: SessionStatus
+  readonly sentAt: number
+  readonly unreadPlacements: ReadonlySet<PlacementId>
+}
 
 export type FetchedWindow = {
   readonly rows: readonly SessionRow[]
