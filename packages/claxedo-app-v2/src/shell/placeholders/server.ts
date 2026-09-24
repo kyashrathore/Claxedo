@@ -70,6 +70,7 @@ export function createPlaceholderServer(): ProjectsServer & CloudServer {
       newMessageId: uuid,
       queue: async () => [],
       controlQueued: rejected,
+      controlGoal: rejected,
     },
     projects: { create: rejected, update: rejected, remove: rejected },
     placements: { byId: () => undefined, createWorktree: rejected },
