@@ -1,7 +1,7 @@
 import type { AgentSession } from "@claxedo/agent-runtime-contract"
 import { ServerError } from "./errors"
 import type { ServerEvent } from "./events"
-import { sessionPath } from "./session-context"
+import { sessionEndpoint } from "./session-context"
 import { withQuery, type RuntimeRoute, type Transport } from "./transport"
 import type { SessionRef, SessionStatus } from "./types"
 import { sessionStatusFromWire } from "./wire/status"
@@ -65,7 +65,7 @@ export function createStatusOwner(transport: Transport): StatusOwner {
   return {
     read,
     readPlacement,
-    settle: async (route, ref) => read(route, ref.sessionId, await transport.runtimeJson<AgentSession>(route, sessionPath(ref))),
+    settle: async (route, ref) => read(route, ref.sessionId, await transport.runtimeJson<AgentSession>(route, sessionEndpoint(ref))),
     apply: (event) => {
       if (event.type !== "statusChanged") return { kind: "admitted", event }
       if (event.status.kind === "idle" && latest.get(event.ref.sessionId)?.kind === "failed") return { kind: "held", ref: event.ref }

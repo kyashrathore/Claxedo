@@ -18,6 +18,8 @@ export type TerminalMountInput = {
   readonly renderers: RendererBudget
   readonly openFile: (target: WorkspaceFileFocusTarget) => void
   readonly onBackend: (backend: TerminalBackend) => void
+  readonly terminalFont: () => string | undefined
+  readonly screenReaderMode: () => boolean
 }
 
 export type TerminalMount = {
@@ -28,10 +30,15 @@ export type TerminalMount = {
 
 type Attached = { readonly attachment: Attachment; readonly stopTheme: () => void }
 
+function fontFamily(input: TerminalMountInput): string {
+  return input.terminalFont() ?? monoFontFamily()
+}
+
 function backendOptions(input: TerminalMountInput, likelyAgent: boolean): TerminalBackendOptions {
   return {
     theme: terminalColors(),
-    fontFamily: monoFontFamily(),
+    fontFamily: fontFamily(input),
+    screenReaderMode: input.screenReaderMode(),
     renderers: input.renderers,
     image: likelyAgent ? "paste" : "path",
     onUrlClick: (_event, url) => window.open(url, "_blank", "noopener,noreferrer"),
@@ -44,7 +51,10 @@ function backendOptions(input: TerminalMountInput, likelyAgent: boolean): Termin
 
 function attachBackend(input: TerminalMountInput, backend: TerminalBackend, likelyTui: boolean): Attached {
   input.onBackend(backend)
-  const stopTheme = observeTheme(() => backend.setTheme(terminalColors()))
+  const stopTheme = observeTheme(() => {
+    backend.setTheme(terminalColors())
+    backend.setFontFamily(fontFamily(input))
+  })
   const attachment = attachTerminal({
     server: input.server,
     placementId: input.placementId,

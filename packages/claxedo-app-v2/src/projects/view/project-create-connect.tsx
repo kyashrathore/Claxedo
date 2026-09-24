@@ -1,8 +1,8 @@
-import { Button } from "@opencode-ai/ui/button"
 import { createSignal, onCleanup, Show, type JSX } from "solid-js"
 import { useServer, type Integration, type IntegrationFailure, type IntegrationGrant } from "@/server"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import type { CreateFormLook } from "./project-create-repository"
+import { Button } from "@/ui"
 
 const FAILURE_KEYS = {
   exists: "projects.connect.failure.exists",
@@ -73,7 +73,7 @@ function TokenForm(props: { look: CreateFormLook; integration: Integration; stat
         </Button>
         <Show when={prompt()?.createUrl}>
           {(href) => (
-            <a href={href()} target="_blank" rel="noreferrer" class={`${text()} text-text-weak underline underline-offset-2 hover:text-text-strong`} data-slot="project-create-token-link">
+            <a href={href()} target="_blank" rel="noreferrer" class={`${text()} text-text-weak underline underline-offset-2 hover:text-text-strong`}>
               {t("projects.connect.createToken", { host: props.integration.name })}
             </a>
           )}
@@ -91,7 +91,7 @@ function GrantWaiting(props: { look: CreateFormLook; grant: IntegrationGrant }):
         {(code) => (
           <span>
             {t("projects.connect.enter.before")}
-            <span class="font-mono text-text-strong" data-slot="project-create-user-code">
+            <span class="font-mono text-text-strong">
               {code()}
             </span>
             {t("projects.connect.enter.after")}
@@ -115,7 +115,7 @@ export function ConnectCodeHost(props: { look: CreateFormLook; integration: Inte
   const state = createConnect(() => props.integration)
   const usesOAuth = () => props.integration.methods.includes("oauth")
   return (
-    <div class="flex flex-col gap-2" data-slot="project-create-connect">
+    <div class="flex flex-col gap-2">
       <span class={`${props.look.comfortable ? "text-13-regular" : "text-12-regular"} text-text-weak`}>{t("projects.connect.intro", { host: props.integration.name })}</span>
       <Show
         when={state.grant()}

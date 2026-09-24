@@ -4,7 +4,7 @@ import { useTranslator } from "@/i18n"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
 import { useDialog } from "@/ui"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useShellRegistries } from "../registries"
 import { eventSignature, formatKeybind, formatKeybindParts, isEditableTarget, keybindSignature, parseKeybind, type KeyLabel } from "./keybinding"
 import { OPEN_FILE_COMMAND } from "./palette-entries"
@@ -23,9 +23,9 @@ import {
   type CommandSource,
 } from "./registrations"
 
-export const PALETTE_ID = "shell.palette"
+export const PALETTE_ID = "command.palette"
 const DEFAULT_PALETTE_KEYBIND = "mod+shift+p"
-const EDITABLE_KEYBIND_IDS = new Set(["terminal.toggle", "terminal.new", "file.attach"])
+const EDITABLE_KEYBIND_IDS: readonly string[] = ["terminal.toggle", "terminal.new", "file.attach"]
 
 export type Commands = {
   readonly register: {
@@ -36,6 +36,7 @@ export type Commands = {
   readonly keybind: (id: string) => string
   readonly keybindParts: (id: string) => string[]
   readonly setKeybind: (id: string, config: string | undefined) => void
+  readonly overridden: () => boolean
   readonly options: () => CommandOption[]
   readonly slashOptions: () => CommandOption[]
   readonly has: (id: string) => boolean
@@ -56,7 +57,7 @@ function readOverrides(value: unknown): Overrides | undefined {
 }
 
 export function CommandsProvider(props: { readonly children: JSX.Element }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const registries = useShellRegistries()
   const [store, setStore] = createStore({ registrations: [] as CommandRegistration[], suspendCount: 0 })
   const [overrides, setOverrides] = persistedStore<Overrides>(preferenceKey("keybinds"), {}, readOverrides)
@@ -103,7 +104,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
     const option = keymap().get(signature)
     const modified = event.ctrlKey || event.metaKey || event.altKey
     const editable = isEditableTarget(event.target)
-    if (editable && !isPalette && !EDITABLE_KEYBIND_IDS.has(actionId(option?.id ?? "")) && !modified && event.key !== "Tab") return
+    if (editable && !isPalette && !EDITABLE_KEYBIND_IDS.includes(actionId(option?.id ?? "")) && !modified && event.key !== "Tab") return
     if (isPalette) {
       event.preventDefault()
       run(OPEN_FILE_COMMAND, "palette")
@@ -148,6 +149,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
     },
     options,
     slashOptions,
+    overridden: () => Object.keys(overrides).length > 0,
     has: (id) => registered().ids.has(id),
     showPalette: () => run(OPEN_FILE_COMMAND, "palette"),
     keybinds: (enabled) => setStore("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1))),

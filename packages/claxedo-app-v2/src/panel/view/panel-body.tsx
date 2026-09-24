@@ -1,11 +1,12 @@
 import { createEffect, createSignal, Match, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { MarkedProvider } from "@opencode-ai/ui/context/marked"
+import { MarkedProvider } from "@/ui"
 import { BrowserTabView } from "@/browser"
 import { FileTab, FilesNavigator } from "@/files"
 import { useTranslator } from "@/i18n"
 import { ReviewTab, SourceControlView } from "@/review"
 import type { PlacementId } from "@/server"
+import { usePreferences } from "@/settings"
 import { useShellRegistries, type PanelView } from "@/shell"
 import { Markdown } from "@/transcript"
 import { filePathFromTab } from "../focus"
@@ -56,7 +57,9 @@ function NavigatorViews(props: { readonly placementId: PlacementId }): JSX.Eleme
 
 function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Element {
   const panel = usePanel()
-  const selected = () => panel.navigator() !== null
+  const preferences = usePreferences()
+  const left = () => preferences.appearance.navigatorSide === "left"
+  const selected = () => panel.navigator() !== null && !panel.phone()
   const [visited, setVisited] = createSignal(selected())
   createEffect(() => {
     if (selected()) setVisited(true)
@@ -69,8 +72,14 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
         data-navigator-kind={panel.navigator() ?? "files"}
         data-open={selected() ? "true" : "false"}
         aria-hidden={selected() ? undefined : "true"}
-        class="claxedo-workspace-navigator-overlay order-last h-full shrink-0 overflow-hidden border-l border-border-weak-base bg-background-base motion-reduce:transition-none"
-        classList={{ "pointer-events-none": !selected(), "border-transparent": !selected() }}
+        data-navigator-side={left() ? "left" : "right"}
+        class="claxedo-workspace-navigator-overlay h-full shrink-0 overflow-hidden border-border-weak-base bg-background-base motion-reduce:transition-none"
+        classList={{
+          "order-first border-r": left(),
+          "order-last border-l": !left(),
+          "pointer-events-none": !selected(),
+          "border-transparent": !selected(),
+        }}
         style={{
           width: selected() ? "min(280px, 45%)" : "0px",
           transition: NAVIGATOR_TRANSITION,
@@ -135,7 +144,7 @@ function ActiveTab(props: { readonly placementId: PlacementId }): JSX.Element {
   return (
     <Switch>
       <Match when={tab().kind === "review"}>
-        <div data-testid="workspace-review-body" class="absolute inset-0 flex h-full flex-col overflow-hidden">
+        <div data-testid="review-pane-root" class="absolute inset-0 flex h-full flex-col overflow-hidden">
           <ReviewTab
             placementId={props.placementId}
             focus={panel.reviewFocus()}

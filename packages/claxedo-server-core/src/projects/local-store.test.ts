@@ -310,10 +310,13 @@ describe("local project routes", () => {
     const cloud = await ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/sky.git", status: "stopped" })
     const id = cloud?.project_id ?? ""
     const availability = async () => (((await (await app.request(`http://localhost/${id}`)).json()) as { project: { available: boolean } }).project.available)
+    const reachable = async () => (await listProjects()).find((project) => project.id === id)?.workspaces[cloud?.id ?? ""]?.reachable
     expect(await availability()).toBe(false)
+    expect(await reachable()).toBe(false)
     configureWorkspaceStore({ sandboxLease: (workspaceId) => (workspaceId === cloud?.id ? { status: "ready" } : undefined) })
     try {
       expect(await availability()).toBe(true)
+      expect(await reachable()).toBe(true)
     } finally {
       configureWorkspaceStore()
     }

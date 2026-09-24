@@ -1,5 +1,5 @@
 import { Index } from "solid-js"
-import { DelayedLoading } from "@/ui/controls/delayed-loading"
+import { DelayedLoading } from "@/ui"
 import { useSessionScreenText } from "./text"
 
 /**

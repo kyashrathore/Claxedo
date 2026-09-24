@@ -1,9 +1,8 @@
-import { Avatar } from "@opencode-ai/ui/avatar"
 import { For, Show } from "solid-js"
 import { useProjectsText } from "../i18n"
 import { getAvatarColors } from "../project-avatar"
 import { AVATAR_COLOR_KEYS } from "../project-colors"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Avatar } from "@/ui"
 
 export type IconFieldState = { iconUrl: string; iconHover: boolean; dragOver: boolean; color: string; label: string }
 

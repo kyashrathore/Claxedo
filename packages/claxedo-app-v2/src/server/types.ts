@@ -36,6 +36,7 @@ export type Machine = {
   readonly ownerId?: UserId
   readonly online: boolean
   readonly isThisMachine: boolean
+  readonly enrolled: boolean
 }
 
 export type PlacementKind = "folder" | "worktree" | "cloud"
@@ -48,6 +49,7 @@ export type Placement = {
   readonly path?: string
   readonly branch?: string
   readonly machineId?: MachineId
+  readonly reachable: boolean
 }
 
 export type ProjectSource =
@@ -123,6 +125,8 @@ export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
 
+export type SessionListInput = { readonly placementId: PlacementId; readonly cursor?: string; readonly limit: number }
+
 export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }
@@ -134,16 +138,21 @@ export type GoalAction = "pause" | "resume" | "remove" | "stop"
 export type SessionGoalState = {
   readonly goal: SessionGoal | undefined
   readonly actions: readonly GoalAction[]
+  readonly available: boolean
 }
 
-export type SessionSnapshot = {
+export type SessionSurface = {
   readonly row: SessionRow
-  readonly status: SessionStatus
   readonly transcript: TranscriptPage
-  readonly requests: readonly AgentRequest[]
-  readonly todos: readonly Todo[]
   readonly diff: readonly FileDiff[]
-  readonly goal: SessionGoalState
+}
+
+export type SessionReads = {
+  readonly surface: Promise<SessionSurface>
+  readonly status: Promise<SessionStatus>
+  readonly requests: Promise<readonly AgentRequest[]>
+  readonly todos: Promise<readonly Todo[]>
+  readonly goal: Promise<SessionGoalState>
 }
 
 export type ModelChoice = { readonly providerId: string; readonly modelId: string; readonly variant?: string }

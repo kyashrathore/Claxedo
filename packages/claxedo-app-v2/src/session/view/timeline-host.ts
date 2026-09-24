@@ -2,7 +2,8 @@ import { createMemo, type Accessor } from "solid-js"
 import type { Panel } from "@/panel"
 import { sessionId as toSessionId, type Server, type SessionRef, type SessionStatus } from "@/server"
 import type { SessionRowView, SessionStatusView, SessionStores, SessionView } from "@/session"
-import { homePath, sessionPath, type ShellRouting } from "@/shell"
+import { usePreferences, type Preferences } from "@/settings"
+import { sessionPath, type ShellRouting } from "@/shell"
 import type { WorkbenchStore } from "@/workbench"
 import { useTranscriptTypography, type TimelineFocus, type TimelineHost, type TimelineSessionRow, type TimelineSettings } from "./timeline"
 import type { SessionScreenText } from "./text"
@@ -18,12 +19,13 @@ export type TimelineHostInput = {
   readonly panel: Pick<Panel, "show" | "sessionId">
 }
 
-const settings: TimelineSettings = {
-  showReasoningSummaries: () => false,
-  shellToolPartsExpanded: () => false,
-  editToolPartsExpanded: () => false,
-  timelineShowTurnTokens: () => false,
-  showSessionProgressBar: () => true,
+function timelineSettings(preferences: Preferences): TimelineSettings {
+  return {
+    showReasoningSummaries: () => preferences.transcript.showReasoningSummaries,
+    shellToolPartsExpanded: () => preferences.transcript.shellToolPartsExpanded,
+    editToolPartsExpanded: () => preferences.transcript.editToolPartsExpanded,
+    timelineShowTurnTokens: () => false,
+  }
 }
 
 function timelineRows(rows: readonly SessionRowView[]): readonly TimelineSessionRow[] {
@@ -64,6 +66,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
   const { view, server } = input
   const sessions = createMemo(() => timelineRows(input.stores.list.rows()))
   const transcriptTypography = useTranscriptTypography()
+  const settings = timelineSettings(usePreferences())
   return {
     sessionKey: () => view.ref.sessionId,
     sessionId: () => view.ref.sessionId,
@@ -82,14 +85,8 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     openFocus: (focus) => openFocus(input, focus),
     openSessionInPane: (id) => void input.workbench.openRoute({ kind: "session", ...refFor(view, id) }),
     findFiles: (query) => findFiles(input, query),
-    sessionActions: {
-      rename: (id, title) => server.sessions.rename(refFor(view, id), title),
-      archive: (id) => server.sessions.archive(refFor(view, id), true),
-      remove: (id) => server.sessions.remove(refFor(view, id)),
-    },
     navigation: {
       toSession: (id) => input.routing.navigate(sessionPath(refFor(view, id))),
-      toRoot: () => input.routing.navigate(homePath),
     },
   }
 }

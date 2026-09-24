@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "projects.cancel": "İptal",
   "projects.save": "Kaydet",
   "projects.saving": "Kaydediliyor...",
@@ -19,4 +19,16 @@ export const dictionary = {
   "projects.edit.startup.description": "Yeni bir çalışma alanı (worktree) oluşturduktan sonra çalışır.",
   "projects.edit.startup.placeholder": "örneğin bun install",
   "projects.edit.action": "Düzenle",
+  "projects.close": "Kapat",
+  "projects.chip.project": "Proje",
+  "projects.chip.self": "Bu bilgisayar",
+  "projects.chip.workspace": "Çalışma Alanı",
+  "projects.create.continue": "Gönder",
+  "projects.connect.connecting": "Bağlanıyor…",
+  "projects.settings.group": "Ayarlar",
+  "projects.placement.open": "Aç",
+  "projects.add.name": "Ad",
+  "projects.edit.environment": "Ortam",
+  "projects.environment.value.placeholder": "değer",
+  "projects.title": "Projeler",
 }

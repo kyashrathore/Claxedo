@@ -1,7 +1,6 @@
 import { canonicalToolName, type AgentToolPart } from "@claxedo/agent-runtime-contract"
-import type { IconProps } from "@opencode-ai/ui/icon"
+import { type IconProps, getFilename } from "@/ui"
 import type { TranscriptI18n } from "./i18n"
-import { getFilename } from "@opencode-ai/ui/utils/path"
 import { genericToolIcon, toolActionPhrase } from "./basic-tool"
 import { clampLabel } from "./message-part-text"
 import { EDIT_TOOL_NAMES, WEB_TOOL_NAMES } from "./part-groups"

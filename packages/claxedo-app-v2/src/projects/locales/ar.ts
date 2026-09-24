@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "projects.cancel": "إلغاء",
   "projects.save": "حفظ",
   "projects.saving": "جارٍ الحفظ...",
@@ -19,4 +19,16 @@ export const dictionary = {
   "projects.edit.startup.description": "يتم تشغيله بعد إنشاء مساحة عمل جديدة (شجرة عمل).",
   "projects.edit.startup.placeholder": "مثال: bun install",
   "projects.edit.action": "تحرير",
+  "projects.close": "إغلاق",
+  "projects.chip.project": "مشروع",
+  "projects.chip.self": "هذا الكمبيوتر",
+  "projects.chip.workspace": "مساحة عمل",
+  "projects.create.continue": "إرسال",
+  "projects.connect.connecting": "جارٍ التوصيل…",
+  "projects.settings.group": "إعدادات",
+  "projects.placement.open": "فتح",
+  "projects.add.name": "الاسم",
+  "projects.edit.environment": "البيئة",
+  "projects.environment.value.placeholder": "قيمة",
+  "projects.title": "المشاريع",
 }

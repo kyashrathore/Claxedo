@@ -133,3 +133,43 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - v1 gates Revert message, the diff summary's Undo and the rolled-back dock on a harness declaring `revert`/`unrevert`.
 - No harness in workspace-runtime or agent-sdk-runtime declares either (opencode sets both false), so v1 never renders them.
 - **v2 does not port them.** The moved timeline's dead half (UserActions.revert, the Revert button, Undo) is a deletion candidate. It goes, or comes back, together with a harness that declares revert.
+
+## Orchestrator, 00:35: request-read failures (SESS-071)
+- v1 designed a "Could not load pending permissions or questions" card with Retry. It can't be reached: its SDK list returns `{data: undefined}` instead of throwing, so v1 shows no card and re-reads /permission, /question and /session/status in a hot loop (3,828 requests each in 14 s).
+- **v2 shows v1's card.** The request read fails on its own, the transcript stays visible, Retry re-reads, and there is no loop. Flow 08's case branches on this entry.
+
+## Owner, 00:50: settings content
+- **No "Terminals" section in v2.**
+- **Settings content sections are free to be redesigned for the best UX** ("I don't think we had best UI in v1, just take your liberty"). Every v1 settings feature and its behavior stays: options, effects and persistence. The look inside the settings content is v2's own design, within v2's settings shell (16:45).
+- Settings flows assert behavior; a step about v1's markup branches on this entry. Lane transcript-3 owns src/settings.
+
+## Owner, 00:55: no catch-all General
+- Language, Appearance, Sounds and Notifications are separate top-level settings sections, not one "General".
+- Everything else v1's General held goes to the section it belongs to.
+
+## Orchestrator, 02:10: Marketplace (EXT rows)
+- v1's Agent Plugins directory is ported into the shared page tab (0c36c01579).
+- Signed-only parts are not ported, since v2 has no signed plugin rail yet: the project picker, organization defaults, the enterprise install option, MCP Connect/Disconnect.
+- Unsigned v1 showed a Connect button and a "Connect now" second install step that did nothing. v2 drops both, and the built-in's empty "…" menu.
+- The domain is 2,384 lines against an 1,800 budget; the scope review is recorded in the handoff.
+
+## Orchestrator, 02:25: the Models tab switches reach the picker by group too
+- In v1 the composer picker reads only per-model switches, so a group's "Disable all" changes Settings but not the picker.
+- **v2:** the picker honors the group state too. It's a one-line fix to a v1 inconsistency.
+
+## Owner, 02:40: keep /welcome, keep Back
+- **`/welcome` stays** as the first-project route. PROJ-001, v1's canvas at `/`, is not taken; projects-app's 7c245ba6e1 is reverted (d19c7962fc).
+- **Back stays as v2 has it:** browser Back after a rail click returns to the previous session. The settings Back stays too.
+
+## Orchestrator, 03:05: no time-based "Still working…" hints (COMP-040)
+- v1 shows "Still working…" at 20 s, "taking a while" at 45 s and "unresponsive" at 5 min of a turn. Those are client timers guessing at status.
+- **v2 does not port them.** It shows the harness's real state instead: the health peek's "The agent stopped responding", and `session.status`. That follows the session rule "status is never guessed".
+
+## Owner, 02:15 + bench 02:50: no DOM keep-alive for hidden session panes
+- The owner's rule: if keeping hidden panes mounted doesn't buy much, remove it to prevent memory bloat.
+- **Measured on packaged v2:** unmounting hidden panes costs +8.5 ms per return to a visited session (16 → 24.5 ms median) and saves ~12 MiB of JS heap and ~680 DOM nodes with 8 small sessions open, more on heavy sessions.
+- **Decision:** hidden session, draft and page panes unmount; the data store and timeline snapshots stay. Terminals stay mounted (xterm state).
+
+## Orchestrator, 04:20: a preset never rewrites the composer's draft default
+- In v1, opening an existing Tasks preset rewrites the composer's saved draft default to that preset's harness: a side effect of reusing the composer's picker scope.
+- **v2:** the preset picker reads the draft default to seed a new slot and never writes it back.

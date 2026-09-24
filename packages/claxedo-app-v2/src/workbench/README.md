@@ -4,14 +4,14 @@ Owns: the split-pane layout of the center region, the contents shown in its pane
 
 ## Concepts
 
-- **Content**: one open thing, identified by `contentId = <kind>:<encoded state>`, so the same session opened twice is one content. Opening matches a saved content by its re-encoded state too, so a content saved under an older encoding (a draft once carried a `draftId`) is the one that gets focused, not a second tab. Its `PaneKind` (from the shell's `paneKinds` registry) draws it, titles it, and encodes and decodes its state.
+- **Content**: one open thing, identified by `contentId = <kind>:<encoded state>`, so the same session opened twice is one content. Opening matches a saved content by its re-encoded state too, so a content saved under an older encoding (a draft once carried a `draftId`) is the one that gets focused, not a second tab. A `singleton` kind has one content, `contentId = <kind>`: opening it again replaces that content's state and focuses it. Its `PaneKind` (from the shell's `paneKinds` registry) draws it, titles it, and encodes and decodes its state.
 - **Pane**: a leaf of the split tree that holds one content or nothing.
 - **Layout** (`WorkbenchState`, kept from the old app): panes, the split tree, the alive content ids, their recency, the focused pane, and per-content layout snapshots that `navigation.show` restores when a content that was part of a split is shown again.
-- **Retention**: hidden contents stay mounted, up to `MAX_MOUNTED_CONTENTS` (8), chosen by recency. A hidden slot is `content-visibility: hidden` and `inert`, so it costs no layout and is invisible to the accessibility tree.
+- **Retention**: up to `MAX_MOUNTED_CONTENTS` (8) slots stay in the DOM, chosen by recency. A hidden slot is `content-visibility: hidden` and `inert`, and its view is unmounted: keeping a visited session mounted saved 8.5 ms per return and cost about 1.5 MiB of heap and 85 nodes per session, so the view remounts from its stores and snapshots. A kind that keeps its state in the DOM sets `keepMounted` (the terminal, whose xterm scrollback and attach live there), and its view stays mounted while hidden.
 
 ## One owner
 
-`createWorkbenchStore(key, kinds)` in `store.ts` is the only writer. It keeps one persisted record, `{ layout, contents }`, under the user-scoped key the shell passes, validates it on read (`validate.ts`), and drops any content whose record is missing. Every change goes through the pure reducers in `reducers/` and `apply`, which short-circuits identity-equal results and lets chained calls in one task see each other's writes.
+`createWorkbenchStore(key, kinds)` in `store.ts` is the only writer; `layout-api.ts` holds its layout operations and selectors. It keeps one persisted record, `{ layout, contents }`, under the user-scoped key the shell passes, validates it on read (`validate.ts`), and drops any content whose record is missing. Every change goes through the pure reducers in `reducers/` and `apply`, which short-circuits identity-equal results and lets chained calls in one task see each other's writes.
 
 The store also hosts the drag controller (`drag/pointer-drag.ts`) so every drag source and drop zone shares one pointer stream and one ghost, without module-level state.
 

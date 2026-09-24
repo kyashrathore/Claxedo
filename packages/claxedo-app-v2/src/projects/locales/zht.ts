@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "projects.cancel": "取消",
   "projects.save": "儲存",
   "projects.saving": "儲存中...",
@@ -19,4 +19,15 @@ export const dictionary = {
   "projects.edit.startup.description": "在建立新的工作區 (worktree) 後執行。",
   "projects.edit.startup.placeholder": "例如 bun install",
   "projects.edit.action": "編輯",
+  "projects.close": "關閉",
+  "projects.chip.project": "專案",
+  "projects.chip.self": "這台電腦",
+  "projects.chip.workspace": "工作區",
+  "projects.create.continue": "提交",
+  "projects.connect.connecting": "連接中…",
+  "projects.settings.group": "設定",
+  "projects.placement.open": "開啟",
+  "projects.add.name": "名稱",
+  "projects.edit.environment": "環境",
+  "projects.title": "專案",
 }

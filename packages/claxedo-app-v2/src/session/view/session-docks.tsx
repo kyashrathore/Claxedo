@@ -1,6 +1,6 @@
-import { createMemo, Match, Show, Switch, untrack } from "solid-js"
+import { createMemo, createSignal, Match, Show, Switch, untrack } from "solid-js"
 import { persistedSignal, preferenceKey, tabStorage } from "@/lib/persisted"
-import type { AgentRequest, AgentRequestReply, GoalAction } from "@/server"
+import type { AgentRequest, AgentRequestReply, AppError, GoalAction } from "@/server"
 import type { SessionView } from "@/session"
 import { PermissionDock } from "./docks/permission-dock"
 import { QuestionDock } from "./docks/question-dock"
@@ -29,6 +29,29 @@ function RequestDock(props: { readonly view: SessionView; readonly request: Agen
   )
 }
 
+function RequestReadError(props: { readonly view: SessionView; readonly error: AppError }) {
+  const t = useSessionScreenText()
+  const [retrying, setRetrying] = createSignal(false)
+  const retry = async () => {
+    if (retrying()) return
+    setRetrying(true)
+    try {
+      await props.view.reload()
+    } finally {
+      setRetrying(false)
+    }
+  }
+  return (
+    <div role="alert" class="rounded-lg border border-border-weak-base bg-background-base p-3 text-text-base">
+      <div>{t("sessionScreen.requests.loadFailed")}</div>
+      <pre class="whitespace-pre-wrap break-all text-12-regular">{props.error.message}</pre>
+      <button type="button" disabled={retrying()} onClick={() => void retry()}>
+        {t("sessionScreen.action.retry")}
+      </button>
+    </div>
+  )
+}
+
 function goalActions(view: SessionView): GoalActions {
   return Object.fromEntries(view.goalActions().map((action: GoalAction) => [action, () => view.controlGoal(action)]))
 }
@@ -37,6 +60,7 @@ export function SessionDocks(props: { readonly view: SessionView }) {
   const request = createMemo(() => props.view.requests()[0])
   return (
     <div data-slot="session-docks">
+      <Show when={props.view.requestsError()}>{(error) => <RequestReadError view={props.view} error={error()} />}</Show>
       <Show when={request()} keyed>
         {(current) => <RequestDock view={props.view} request={current} />}
       </Show>

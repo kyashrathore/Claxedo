@@ -85,4 +85,7 @@ export const no: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.previous.description": "Gå til forrige brukermelding",
   "command.message.next": "Neste melding",
   "command.message.next.description": "Gå til neste brukermelding",
+  "sessionScreen.requests.loadFailed": "Kunne ikke laste ventende tillatelser eller spørsmål. Prøv igjen for å fortsette.",
+  "command.session.new": "Ny sesjon",
+  "command.category.session": "Sesjon",
 }

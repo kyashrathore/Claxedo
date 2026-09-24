@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, on, Show, untrack, type Accesso
 import { useTranslator } from "@/i18n"
 import type { SessionList, SessionRowView } from "@/session"
 import type { TerminalItem } from "@/terminal"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import { railRows, SESSION_GROUP_PAGE_SIZE, type RailRow, type SessionMarker } from "../model"
 import type { ProjectSection } from "../project-sections"
 import { ProjectHeader } from "./project-header"
@@ -30,7 +30,8 @@ function createProjectPaging(props: ProjectBlockProps) {
   const [visible, setVisible] = createSignal(SESSION_GROUP_PAGE_SIZE)
   const loaded = () => props.list.state().kind === "live" || props.list.state().kind === "rereading"
   const shown = createMemo(() => props.rows.slice(0, visible()))
-  const more = () => props.rows.length > visible() || (props.list.hasMore() && props.rows.length >= visible())
+  const hasMore = () => props.list.hasMore(props.section.placementIds)
+  const more = () => props.rows.length > visible() || hasMore()
   return {
     shown,
     more,
@@ -43,13 +44,13 @@ function createProjectPaging(props: ProjectBlockProps) {
     loadMore: () => {
       const next = visible() + SESSION_GROUP_PAGE_SIZE
       setVisible(next)
-      if (props.rows.length < next && props.list.hasMore()) void props.list.loadMore()
+      if (props.rows.length < next && hasMore()) void props.list.loadMore(props.section.placementIds)
     },
   }
 }
 
 function LoadMore(props: { readonly loading: boolean; readonly onLoad: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   return (
     <button
       data-testid="rail-sidebar-session-load-more"
@@ -70,7 +71,7 @@ function LoadMore(props: { readonly loading: boolean; readonly onLoad: () => voi
 function ProjectSessions(
   props: ProjectBlockProps & { readonly paging: ReturnType<typeof createProjectPaging>; readonly terminals: readonly TerminalItem[] },
 ): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   return (
     <div class="flex flex-col gap-0.5 pb-1">
       <ProjectRows

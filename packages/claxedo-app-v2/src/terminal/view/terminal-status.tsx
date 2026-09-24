@@ -1,6 +1,6 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Button, Loader } from "@/ui"
+import { Button, Spinner } from "@/ui"
 import { dictionary, type TerminalKey } from "../i18n"
 import type { TerminalConnection, TerminalFailure } from "../model"
 import { MAX_RECONNECT_ATTEMPTS } from "../reconnect"
@@ -27,7 +27,7 @@ function Notice(props: {
           <div class="text-sm break-words text-text-muted">{props.description}</div>
         </Show>
         <Show when={props.action}>
-          <Button variant="outline" size="large" onClick={() => props.action?.()}>
+          <Button variant="secondary" size="large" onClick={() => props.action?.()}>
             {props.actionLabel}
           </Button>
         </Show>
@@ -50,7 +50,7 @@ export function TerminalStatus(props: {
           data-testid="terminal-connecting"
           class="terminal-delayed flex h-full items-center justify-center text-icon-muted"
         >
-          <Loader width={24} height={24} />
+          <Spinner class="size-6" />
         </div>
       </Match>
       <Match when={props.connection.kind === "detached" && props.connection}>

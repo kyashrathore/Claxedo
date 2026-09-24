@@ -15,7 +15,7 @@ Owns: the app frame and nothing a feature knows about. Three regions and their h
 
 ## Routes (`routes.ts`)
 
-Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placement's new-session draft), `/w/:placementId/session/:sessionId`, `/s/:sessionId` (a session on this machine, as today's rail links it; the router resolves its placement through the resolver RouteSync registers from the session list, and until then the route is `localSession`), `/w/:placementId/terminal/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the draft, session or terminal the URL names in the workbench (through the pane kinds' `fromRoute`) and mirrors the focused pane back into the URL with `replace` (through `toRoute`), unless the URL already names that session, so the URL is the one home of the current placement: `useShellRoute().placementId()`.
+Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placement's new-session draft), `/w/:placementId/session/:sessionId`, `/s/:sessionId` (a session on this machine, as today's rail links it; the router resolves its placement through the resolver RouteSync registers from the session list, and until then the route is `localSession`), `/w/:placementId/terminal/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the draft, session or terminal the URL names in the workbench (through the pane kinds' `fromRoute`) and mirrors the focused pane back into the URL with `replace` (through `toRoute`), unless the URL already names that session, so the URL is the one home of the current placement: `useShellRoute().placementId()`. With nothing focused on a placement's route it opens that placement's draft. A page registered with `tab: true` (the rail's Tasks and Marketplace) opens in today's one shared page tab instead of the center: the singleton `pageTab` pane kind (`view/page-tab.tsx`) keeps the page's path, so opening another tab page reuses it, the compact tabs show it as a global tab, and the header over it is the page header without the panel toggle. Closing it as the last tab goes home.
 
 ## Placement providers (`placement-providers.tsx`)
 
@@ -25,6 +25,46 @@ The workspace panel and the domains whose state is kept per placement (terminal,
 
 The app wears today's app's look: `main.tsx` loads `styles/index.css` (the kit's Tailwind and session styles, plus the app's own layers) and `styles/ui-overrides.css` (the Codex overrides: SF Pro Text, zero letter-spacing, overlay geometry, hidden scrollbars), then the kit's menu, select and tooltip sheets, in that order. `ThemeProvider` from `@opencode-ai/ui/theme` runs the kit's theme set with Codex as the default and keeps the icon library in step with the theme. The root stays at the browser's 16px; the older `src/ui` sheet no longer sets the root's size, font or colors.
 
+Rules in those sheets that code cannot explain:
+
+- `styles/app-shell.css`:
+  - The `--bp-*` properties are the layout thresholds on Tailwind's `sm`/`md`/`lg`/`xl`/`2xl` scale plus three document-editor widths, for `calc()` and inline styles. `@media` cannot read a custom property, so media rules keep the literal pixels (767 is the complement of `md`).
+  - The modal stack is named, not guessed. Every layer is portaled to `<body>`, so only these numbers decide what paints over what. A dialog's layer wrapper sits in the same elevated context, so a dialog opened from another opens above it, and a select's portaled list clears the dialog layer.
+  - Below `md` on a coarse pointer controls get a 40 px floor. `data-claxedo-compact-touch` exempts an element or a dense region such as the rail, whose full-width rows are the tap targets.
+  - The palette gets an 8 px gutter and a 14 px radius, concentric with its rows. The palette and the page-scale dialogs dim their backdrop because the shared 0.2 alpha is invisible on dark chrome. The overlay is a sibling of the dialog layer, so the backdrop is selected from `<body>`, and it moves at the dialog's own 150 ms in and 100 ms out.
+  - The main column is a positioned layer above the panel. The floating session stack's `z-index` is otherwise trapped in its pane's `contain: strict` context.
+- `styles/index.css`:
+  - The terminal font is `font-display: swap`. It is 1 MB, and text never waits on it.
+  - The composer's dropdown normalisation is unlayered and uses a doubled class. The menu, select and list sheets ship unlayered rules, which beat any `@layer components` rule, and Vite's injection order is not guaranteed.
+  - One surface, elevation and row spec covers the composer's `+` menu, selects and popover lists, so neighbouring menus keep one rhythm. Their width clamp is viewport-relative because they float above the pane.
+  - The slider's thumb offset is a literal. The slider reads it back through `getComputedStyle`, which returns a custom property's text unresolved.
+  - The dock collapses by container query on the space it owns. The harness/model chip keeps its label, because it is the only control naming what will answer.
+  - The collapsed composer is driven by an attribute, not `:focus-within`. Its menus are portaled, and focus entering one would fold the card under it.
+
+- `styles/ui-overrides.css`, today's app's override sheet:
+  - **Semantic surfaces are theme-agnostic.** A role a theme does not override inherits the generic token (`SEMANTIC_THEME_ROLE_FALLBACKS` in `packages/ui/src/theme/resolve.ts`), so one selector serves every theme and Codex only supplies values.
+  - **Floating surfaces rebind the page palette to the overlay palette** for their subtree. `[data-surface="overlay"]` comes from DropdownMenu; `.overlay-palette` is the opt-in for pickers built outside the menu primitives. It is inert in a theme with no overlay overrides. Only hand-authored shells get their paint forced, because a forced rule on `[data-surface="overlay"]` would take the paint from every DropdownMenu.
+  - **The composer dock** binds only the ring colour its mask paints with.
+  - **The icon interaction grammar** (`data-icon-interaction`) is theme-agnostic:
+    - passive glyphs stay quiet on row hover;
+    - row actions brighten without a second pill;
+    - standalone controls get a hover surface;
+    - a pressed binary control shows by glyph and foreground.
+  - **Filled primary icon buttons keep their inverse foreground.** Without that rule the composer's send arrow paints the colour of its circle in every theme, and no component test catches a cascade conflict.
+  - **Every searchable picker's field** gets one inset fill. The List paints its search with the shell surface, which is a grey slab on a light menu. The merged harness/model picker's field doubles its class to clear index.css's (0,3,0) rule.
+  - **The Codex layer covers only what a colour token cannot express:** typography, SVG geometry and elevation.
+    - Elevation is Codex's own: a half-pixel stroke from the foreground at 12% plus two light black washes, the same in dark mode.
+    - Shadows live here because theme `overrides` are validated as colours.
+    - The composer is borderless at 20 px radius with a 90% blurred fill.
+    - The user bubble is foreground/5 at 16 px radius.
+    - Navigation rows are 30 px at 10 px radius.
+    - Its shell selectors stay scoped to Codex and keyed by `data-testid`, because moving them onto `data-surface` would repaint the other 37 themes.
+  - **The sidebar's edge falloff is an inset shadow.** The sidebar clips its overflow and the workbench paints over anything outside it.
+  - **Positioners opt out of overlay chrome** with a doubled class. An example is the tooltip that only places the session card.
+  - **Codex tooltips are not inverted:** they use the overlay family, as the shipped app does.
+  - **The composer and timeline widths** are restored to 800/1000 px, because 500/700 is too narrow for split panes.
+  - **The timeline skeleton's bars** use the muted text role so they read on every page background, and are staggered into a wave.
+
 ## Composition (`src/app.tsx`)
 
 `AuthProvider` → registries → `I18nProvider` → `ThemeProvider` → `ShellRouter` → the server scope → `AppShell`. The server scope (`ServerProvider`, `SessionStoresProvider`, projects' `ProjectListProvider`, `DialogProvider`) is keyed by the signed-in user: signed in, `createServer` gets a bearer token source from `useAuth().token`; signed out, expired or signing in, no auth. Only a change of user rebuilds it, so a token refresh does not. `App` takes an optional `router` (for example `MemoryRouter` for a `file://` renderer; the default is the history router) and an optional `serverUrl` (the desktop's embedded server, known only at runtime; without it `createServer` uses the build's `VITE_CLAXEDO_SERVER_URL` or the page origin).
@@ -33,7 +73,7 @@ The app wears today's app's look: `main.tsx` loads `styles/index.css` (the kit's
 
 `/` is never a screen of its own, as in today's app. When the projects list has loaded and is empty (`onboardingNeeded`), the shell replaces the URL with the onboarding screen; loading and failed lists never redirect. Otherwise it replaces `/` with the draft of the active workspace: the placement of the restored focused pane, else the folder placement of the first project `useProjectList()` lists.
 
-## Registries (`registries.ts`, `registry.ts`)
+## Registries (`registries.ts`; the first-party entries in `src/registry.ts`)
 
 One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews` (the workspace panel's "context" and "subagent" tab views, registered by the domains that own them so `src/panel` never imports them), `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
 

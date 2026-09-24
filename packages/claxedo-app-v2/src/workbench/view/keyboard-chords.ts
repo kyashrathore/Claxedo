@@ -13,55 +13,58 @@ const directions: readonly [keyof KeyMap, FocusDirection][] = [
   ["focusDown", "down"],
 ]
 
-export function useWorkbenchChords(input: {
+type ChordInput = {
   wb: WorkbenchStore
   keyMap?: Partial<KeyMap>
   surfaceKeys: SurfaceKeys
   onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
-}) {
+}
+
+function closeFocused(input: ChordInput, keyMap: KeyMap, event: KeyboardEvent): void {
+  const state = input.wb.layout()
+  if (eventTargetIsEditable(event.target) && keyMap.closePane !== "mod+w") return
+  event.preventDefault()
+  const paneId = state.focusedPaneId
+  if (!paneId) return
+  const contentId = state.panes.find((pane) => pane.id === paneId)?.contentId ?? null
+  if (input.onCloseFocusedPane) input.onCloseFocusedPane(paneId, contentId)
+  else input.wb.split.close(paneId, { destroyContent: false })
+}
+
+function splitFocused(wb: WorkbenchStore, event: KeyboardEvent, edge: "right" | "bottom"): void {
+  event.preventDefault()
+  const focused = wb.layout().focusedPaneId
+  if (!focused) return
+  const hidden = wb.selectors.mruHiddenContent()
+  if (hidden) wb.split.split(focused, edge, hidden)
+}
+
+function focusInDirection(wb: WorkbenchStore, keyMap: KeyMap, event: KeyboardEvent): void {
+  for (const [key, direction] of directions) {
+    if (!matchKey(event, keyMap[key])) continue
+    event.preventDefault()
+    const target = paneInDirection(wb.layout(), direction)
+    if (target) wb.split.focus(target)
+    return
+  }
+}
+
+function handleChord(input: ChordInput, keyMap: KeyMap, event: KeyboardEvent): void {
+  if (matchKey(event, keyMap.closePane)) return closeFocused(input, keyMap, event)
+  if (eventTargetIsEditable(event.target)) return
+  if (matchKey(event, keyMap.splitRight)) return splitFocused(input.wb, event, "right")
+  if (matchKey(event, keyMap.splitDown)) return splitFocused(input.wb, event, "bottom")
+  focusInDirection(input.wb, keyMap, event)
+}
+
+export function useWorkbenchChords(input: ChordInput) {
   const keyMap = createMemo(() => resolveKeyMap(input.keyMap))
-
-  const closeFocused = (event: KeyboardEvent) => {
-    const state = input.wb.layout()
-    if (eventTargetIsEditable(event.target) && keyMap().closePane !== "mod+w") return
-    event.preventDefault()
-    const paneId = state.focusedPaneId
-    if (!paneId) return
-    const contentId = state.panes.find((pane) => pane.id === paneId)?.contentId ?? null
-    if (input.onCloseFocusedPane) input.onCloseFocusedPane(paneId, contentId)
-    else input.wb.split.close(paneId, { destroyContent: false })
-  }
-
-  const splitFocused = (event: KeyboardEvent, edge: "right" | "bottom") => {
-    event.preventDefault()
-    const state = input.wb.layout()
-    if (!state.focusedPaneId) return
-    const hidden = input.wb.selectors.mruHiddenContent()
-    if (hidden) input.wb.split.split(state.focusedPaneId, edge, hidden)
-  }
-
-  const handleChord = (event: KeyboardEvent) => {
-    const km = keyMap()
-    if (matchKey(event, km.closePane)) return closeFocused(event)
-    if (eventTargetIsEditable(event.target)) return
-    if (matchKey(event, km.splitRight)) return splitFocused(event, "right")
-    if (matchKey(event, km.splitDown)) return splitFocused(event, "bottom")
-    for (const [key, direction] of directions) {
-      if (!matchKey(event, km[key])) continue
-      event.preventDefault()
-      const target = paneInDirection(input.wb.layout(), direction)
-      if (target) input.wb.split.focus(target)
-      return
-    }
-  }
-
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented) return
     if (event.key === "Escape" && input.wb.drag.active()) return input.wb.drag.cancel()
-    handleChord(event)
+    handleChord(input, keyMap(), event)
     if (!event.defaultPrevented) input.surfaceKeys.forward(event)
   }
-
   onMount(() => {
     window.addEventListener("keydown", onKeyDown)
     onCleanup(() => window.removeEventListener("keydown", onKeyDown))

@@ -1,6 +1,5 @@
 import { type Accessor, type JSX, Show } from "solid-js"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 import type { HarnessScopeInput, HarnessSelectionController } from "../harness/controller"
 import type { PermissionModeGroups } from "../permission/permission-mode"
 import type { PermissionModeOption } from "../permission/modes"

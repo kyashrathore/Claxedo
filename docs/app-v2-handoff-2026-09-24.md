@@ -239,6 +239,13 @@ Updated 21:40, after the owner switched accounts and the lanes resumed.
 
 ## Owner questions still open
 
+- **Teams inside an org:** v1's Settings → Orgs & Teams (org create and switch, teams, members) uses the hosted org-team API. On a local build it shows only "Bearer token is required". v2 keeps its Organization section and adds v1's sign-in and error states. Team management waits on this decision; the plan recommends dropping teams.
+- **Machines remote access:** enable, pause and revoke, the device QR code, and machine rename or revoke need v1's `machineRemoteAccess` platform port. That's the desktop Host Connector, or an HTTP binding on hosted. Not ported; v1's local build binds none either.
+
+- **`/welcome`:** the owner asked "why remove /welcome?" (02:30). The v1 inventory row PROJ-001 says v1 has no `/welcome` route and draws the first-project canvas at `/`. projects-app's 7c245ba6e1 did that and is reverted until the owner rules. Keeping `/welcome` is fine if the owner prefers it.
+- **Browser Back after a rail click:** v2 returns to the previous session, while v1 stays on the current one. Keep v2's or match v1?
+- **The daemon restart on 2598** that picks up the two runtime fixes (Stop settles questions; no-Goal harnesses). It ends open terminals and running turns.
+
 - **Closing a terminal ends its PTY.** In v1 the shell kept running (DECISIONS 18:25). Confirm the fix.
 - **The contrast formula.** Keep the one derived from the Codex bundle, or replace it with our own curve.
 - **The todo dock when everything is done.** The owner's expectation differs from v1's `todoState`; record the approval.
@@ -262,6 +269,48 @@ At 19:08 the owner said: finish in-progress work; start no new work.
 - **Editing files with Pierre.** The owner asked for it, and no server write route exists yet.
 - **Flows not yet written:** 17–25, 28, 32, 34–36. The signed flows need the self-hosted Node signed fixture.
 - **Stopped lanes with WIP:** live plugins, hosted projects on D1, the checks lane.
+
+## Plan deviations taken during the night
+
+- **Tasks is an app domain (`src/tasks`), not the `plugins/tasks` plugin.** Moving it into the plugin needs three host changes:
+  - a `tab` flag (and icon) on plugin pages;
+  - `sessions.open` taking a `workspaceId`;
+  - the rail's `/tasks` row claimed by the plugin.
+  That's about 2–3 hours of rework with no user benefit now.
+- **Over budget, awaiting a scope review, not squeezed:**
+  - Marketplace: 2,384 lines against 1,800.
+  - Tasks: 3,514 lines plus 1,343 of v1 CSS, against a plugin budget of 2,500.
+- **Hidden session, draft and page panes unmount**; terminals stay mounted (fd195fe7be). Measured: +8.5 ms per return to a visited session, ~12 MiB less JS heap with 8 sessions open.
+
+## Performance findings to apply at the swap
+
+- **The kit's `ScrollView` (`packages/ui/src/components/scroll-view.tsx:225`, `updateThumb`)** reads `scrollTop`, `scrollHeight` and `clientHeight` every frame while scrolling. That forces the layout the virtualizer just dirtied: about 0.8 ms per wheel event, 49 ms of 350 ms busy while wheel-scrolling an 8 MiB session.
+  - The fix: cache the heights from ResizeObserver entries and read only `scrollTop` per frame.
+  - It can't land before the swap, because `packages/ui` is shared with today's app. Apply it when the used kit components move into the app.
+
+## Server gaps found by the parity work
+
+- **Harness health is pull-only.** v1's composer health peek ("The agent stopped responding / Check again") polls `/api/wr/health` every 20 s during a turn, because no event carries `degraded` or `harness_process_lost`. Publish a health change when a driver records a process error, for example a `harness.health` event, and the peek's timer can go.
+- **The provider catalog route always answers with the whole catalog.** `GET /api/claxedo/agent-config/providers?nativeHarness=opencode` (`claxedo-local-server/src/agent-config/routes/provider-routes.ts`) returns models.dev's full list, 2,325,904 bytes and 1.6 s cold on the owner's machine, and ignores the `provider` parameter both apps send for one provider's detail, so a detail read costs the same as the index. v2 now reads the catalog once per harness through one cached query (`server.queries.providerCatalogs`), and skips the detail read whenever the index already holds a provider's models, as it always does here. The remaining 1.6 s first read needs the server: honor `provider` to return that provider alone, and add a summary form (connected providers with their models, the rest with ids and names) for the pickers.
+- **Session config carries no model display name.** An existing session's config names its model by id only, so v2's closed picker labels it from a per-browser display-name cache (`composer/harness/model-names.ts`) rather than read the whole provider catalog at mount. With the name in the session config the cache can go.
+- **A new draft's harness options cold-start a process.** `GET /api/claxedo/agent-config/harness/options?nativeHarness=pi` starts `pi --no-session` on every read: 2.4–9.9 s under load, while Send shows "Loading models…". v1 behaves identically. Fix it server-side: cache the options per harness, or keep one warm process.
+- **Fixed in the runtime today (take effect after a daemon restart or rebuild):**
+  - a stopped turn publishes the questions and permissions it settles (2b7f71a178);
+  - a harness without Goals reports them as not implemented, so its sessions open (09caeef9dd).
+
+## Deletion candidates
+
+**The dead revert path.** No harness declares `revert`, v2 passes no `actions` to MessageTimeline, and v1 never renders these (DECISIONS 23:55). Delete the whole list together, or bring it back together with a harness that declares revert. Line numbers are as of 27781bb17e.
+- `src/transcript/message-part.tsx`:
+  - 205-211: `UserActions.revert` and `fork`. `openAttachment` in the same type is live and stays.
+  - 1213-1224: the `revert()` handler.
+  - 1329-1344: the "Revert message" button.
+- `src/session/view/timeline/message-timeline.tsx`: 1185, 1289-1296 (`undoTurn`), 1303.
+- `src/session/view/timeline/message-timeline-turn-rows.tsx`: 87, 99-105 and 119-133 (the "Undo" button).
+- `src/session/view/timeline/message-timeline-props.ts:9` and `timeline-user-message.tsx:10,16`: the `actions` prop.
+- The i18n keys `ui.message.revertMessage` and `transcript.message.revertMessage`. Check dynamic key readers first.
+
+**`src/legacy`,** 153k lines: v1's copy, the porting source. Delete it when nothing is left to port.
 
 ## Next steps, in order
 

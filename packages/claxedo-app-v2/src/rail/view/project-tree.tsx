@@ -5,17 +5,16 @@ import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
 import { draftPath, sessionLinkPath, useShellRoute } from "@/shell"
-import { sessionPaneKind } from "@/session/view"
 import { terminalPaneKind, useTerminals } from "@/terminal"
 import { useWorkbench } from "@/workbench"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import { rowsByProject, sessionMarker, siblingAfterArchive, type RailRow } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
 
 export function ProjectTree(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const projects = useProjectList()
   const server = useServer()
   const stores = useSessionStores()
@@ -42,7 +41,7 @@ export function ProjectTree(): JSX.Element {
   const workbench = useWorkbench()
   const prepareDrag = (row: RailRow) =>
     row.kind === "session"
-      ? workbench.open(sessionPaneKind, row.session.ref, false)
+      ? workbench.openRoute({ kind: "session", ...row.session.ref }, false)
       : workbench.open(terminalPaneKind, { placementId: row.terminal.placementId, terminalId: row.terminal.terminalId }, false)
   const markerOf = (row: SessionRowView) => sessionMarker(server.placements.byId(row.ref.placementId), server.capabilities()?.thisMachine?.id)
   const openSession = (row: SessionRowView) =>
@@ -61,7 +60,7 @@ export function ProjectTree(): JSX.Element {
   return (
     <div class="flex-1 flex flex-col py-1.5 gap-0.5">
       <Show when={sections().length > 0} fallback={<div class="flex px-4 py-8 text-compact text-text-weak">{t("rail.noMatches")}</div>}>
-        <div data-slot="rail-section-label" class="px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker">
+        <div class="rail-section-label px-4 pt-1 pb-1 text-xs font-medium uppercase tracking-normal text-text-weaker">
           {t("rail.projects")}
         </div>
         <For each={sections().map((section) => section.key)}>

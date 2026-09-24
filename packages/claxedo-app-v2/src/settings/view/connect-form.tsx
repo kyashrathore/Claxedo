@@ -1,9 +1,9 @@
 import { createSignal, For, onCleanup, Show } from "solid-js"
-import { Button, Select, TextInput } from "@/ui"
+import { Button, Select, TextField } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { useServer, type ConnectionScope, type Integration, type IntegrationConnectInput } from "@/server"
 import { connectError, connectMachine, createConnectForm, grantError } from "../connections"
-import { dictionary } from "../i18n"
+import { settingsDictionary } from "../i18n"
 
 const SCOPES: readonly ConnectionScope[] = ["team", "personal"]
 
@@ -14,7 +14,7 @@ export function ConnectForm(props: {
   readonly onConnected: () => void
   readonly onCancel: () => void
 }) {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const server = useServer()
   const state = connectMachine()
   const [form, setForm] = createConnectForm(props.initialScope ?? "team")
@@ -65,18 +65,19 @@ export function ConnectForm(props: {
   return (
     <form class="settings-fields" aria-label={`${t("settings.common.connect")} ${props.integration.name}`} onSubmit={(event) => { event.preventDefault(); void submit("key", false) }}>
       <Show when={props.personalScopeEnabled}>
-        <Select aria-label="Scope" options={[...SCOPES]} current={form.scope} value={(scope) => scope} label={scopeLabel} onSelect={(scope) => scope && setForm("scope", scope)} />
+        <Select aria-label="Scope" options={[...SCOPES]} current={form.scope} value={(scope) => scope} label={scopeLabel} onSelect={(scope) => scope && setForm("scope", scope)} variant="secondary" size="small" triggerVariant="settings" />
       </Show>
       <Show when={keyMethod()}>
         <For each={props.integration.prompts}>
           {(prompt) => (
-            <TextInput
+            <TextField
               type={prompt.secret ? "password" : "text"}
               autocomplete="off"
-              aria-label={prompt.label}
+              label={prompt.label}
+              hideLabel
               placeholder={prompt.placeholder ?? prompt.label}
               value={prompt.secret ? form.secret : (form.fields[prompt.id] ?? "")}
-              onInput={(event) => (prompt.secret ? setForm("secret", event.currentTarget.value) : setForm("fields", prompt.id, event.currentTarget.value))}
+              onChange={(value) => (prompt.secret ? setForm("secret", value) : setForm("fields", prompt.id, value))}
             />
           )}
         </For>
@@ -85,7 +86,7 @@ export function ConnectForm(props: {
       <Show when={state.state().kind === "confirmReplace"}>
         <div class="settings-inline" role="alertdialog" aria-label={t("settings.connections.replace")}>
           <span class="settings-row-description">{t("settings.connections.replace")}</span>
-          <Button size="small" variant="contrast" onClick={confirmReplace}>{t("settings.connections.replaceConfirm")}</Button>
+          <Button size="small" variant="primary" onClick={confirmReplace}>{t("settings.connections.replaceConfirm")}</Button>
           <Button size="small" variant="ghost" onClick={() => state.send({ type: "cancel" })}>{t("settings.common.cancel")}</Button>
         </div>
       </Show>
@@ -100,10 +101,10 @@ export function ConnectForm(props: {
       </Show>
       <div class="settings-inline">
         <Show when={keyMethod()}>
-          <Button type="submit" size="small" variant="contrast" disabled={busy()}>{t("settings.common.connect")}</Button>
+          <Button type="submit" size="small" variant="primary" disabled={busy()}>{t("settings.common.connect")}</Button>
         </Show>
         <Show when={oauthMethod()}>
-          <Button type="button" size="small" variant={keyMethod() ? "neutral" : "contrast"} disabled={busy()} onClick={() => void submit("oauth", false)}>
+          <Button type="button" size="small" variant={keyMethod() ? "secondary" : "primary"} disabled={busy()} onClick={() => void submit("oauth", false)}>
             {t("settings.connections.oauth")}
           </Button>
         </Show>

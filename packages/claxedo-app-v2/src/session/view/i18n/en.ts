@@ -9,6 +9,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.draft.title"
   | "sessionScreen.action.retry"
   | "sessionScreen.failed"
+  | "sessionScreen.requests.loadFailed"
   | "sessionScreen.action.dismiss"
   | "sessionScreen.action.back"
   | "sessionScreen.action.next"
@@ -47,6 +48,7 @@ export type SessionScreenTextKey =
   | "sessionScreen.todo.progress"
   | "sessionScreen.todo.collapse"
   | "sessionScreen.todo.expand"
+  | "sessionScreen.connection.reconnecting"
   | "sessionScreen.goal.title"
   | "sessionScreen.goal.status.active"
   | "sessionScreen.goal.status.paused"
@@ -68,6 +70,8 @@ export type SessionScreenTextKey =
   | "command.message.previous.description"
   | "command.message.next"
   | "command.message.next.description"
+  | "command.session.new"
+  | "command.category.session"
 
 export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.loading": "Loading messages...",
@@ -77,6 +81,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.draft.title": "New Session",
   "sessionScreen.action.retry": "Retry",
   "sessionScreen.failed": "Could not load this session.",
+  "sessionScreen.requests.loadFailed": "Could not load pending permissions or questions. Retry to continue.",
   "sessionScreen.action.dismiss": "Dismiss",
   "sessionScreen.action.back": "Back",
   "sessionScreen.action.next": "Next",
@@ -115,6 +120,7 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.todo.progress": "{{done}} of {{total}} todos completed",
   "sessionScreen.todo.collapse": "Collapse",
   "sessionScreen.todo.expand": "Expand",
+  "sessionScreen.connection.reconnecting": "Reconnecting…",
   "sessionScreen.goal.title": "Goal",
   "sessionScreen.goal.status.active": "Active",
   "sessionScreen.goal.status.paused": "Paused",
@@ -174,4 +180,6 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "command.message.previous.description": "Go to the previous user message",
   "command.message.next": "Next message",
   "command.message.next.description": "Go to the next user message",
+  "command.session.new": "New session",
+  "command.category.session": "Session",
 }

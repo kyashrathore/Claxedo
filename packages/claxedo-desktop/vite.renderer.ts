@@ -97,7 +97,7 @@ export function createElectronRenderer(mode: string): UserConfig {
       rendererDocumentCsp(mode),
       solidPlugin(),
       tailwindcss(),
-      desktopRendererBoundaryManifestPlugin(desktopDir),
+      desktopRendererBoundaryManifestPlugin(desktopDir, "v1"),
     ],
     publicDir: normalize(path.join(claxedoAppDir, "public")),
     root: rendererRoot,

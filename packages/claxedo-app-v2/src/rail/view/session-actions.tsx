@@ -3,12 +3,12 @@ import { failureMessage } from "@/lib/failure"
 import { useServer } from "@/server"
 import type { SessionRowView } from "@/session"
 import { showToast, useDialog } from "@/ui"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import type { SessionRowMenuActions } from "./session-row-menu"
 import { DeleteSessionDialog, RenameSessionDialog } from "./session-dialogs"
 
 export function createSessionActions(): SessionRowMenuActions {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const server = useServer()
   const dialog = useDialog()
   const report = (title: string) => (error: unknown): void => {

@@ -1,24 +1,27 @@
 <!doctype html>
-<html lang="en" style="background-color: var(--v2-background-bg-base, #161616)">
+<html lang="en" style="background-color: var(--background-base, #101010)">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content" />
     <title>Claxedo</title>
     <link rel="icon" type="image/png" href="./favicon-96x96-v3.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="./favicon-v3.svg" />
     <meta name="theme-color" content="#F8F7F7" />
     <meta name="theme-color" content="#131010" media="(prefers-color-scheme: dark)" />
-    <style>
+    <style id="claxedo-initial-paint">
       html,
       body,
       #root {
         min-height: 100%;
+        background-color: var(--background-base, #101010);
+        color: var(--text-base, #a0a0a0);
+      }
+
+      body {
         margin: 0;
-        background-color: var(--v2-background-bg-base, #161616);
-        color: var(--v2-text-text-base, #aeaeae);
       }
     </style>
-    <script id="claxedo-theme-preload-script" src="./claxedo-theme-preload.js" vite-ignore></script>
+    <script id="oc-theme-preload-script" src="./oc-theme-preload.js" vite-ignore></script>
   </head>
   <body class="antialiased overscroll-none text-12-regular overflow-hidden">
     <noscript>You need to enable JavaScript to run this app.</noscript>

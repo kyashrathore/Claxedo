@@ -1,9 +1,7 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js"
 import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 import { useTranscriptI18n } from "./i18n"
-import { Card } from "@opencode-ai/ui/card"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { Spinner } from "@opencode-ai/ui/spinner"
+import { Card, Tooltip, Spinner } from "@/ui"
 
 export function SessionRetry(props: { status: AgentRuntimeStatus; show?: boolean }) {
   const i18n = useTranscriptI18n()

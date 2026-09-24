@@ -40,23 +40,9 @@
 }
 
 .shell-page {
-  flex: 1;
+  height: 100%;
   min-height: 0;
   overflow: auto;
-}
-
-.shell-connection {
-  flex: none;
-  padding: 4px 12px;
-  font-size: var(--font-size-small, 12px);
-  color: var(--v2-state-fg-warning, #e0a531);
-  text-align: center;
-  background: var(--v2-state-bg-warning, rgb(224 165 49 / 12%));
-}
-
-.shell-connection[data-kind="offline"] {
-  color: var(--v2-state-fg-danger, #e5484d);
-  background: var(--v2-state-bg-danger, rgb(229 72 77 / 12%));
 }
 
 .shell-overlay {

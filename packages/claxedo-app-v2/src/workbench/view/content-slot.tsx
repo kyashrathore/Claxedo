@@ -2,7 +2,7 @@ import { createMemo, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useTranslator } from "@/i18n"
 import { FailureBoundary } from "@/lib/failure"
-import { dictionary } from "../i18n"
+import { workbenchDictionary } from "../i18n"
 import type { createSurfaceKeyRouter, SurfaceKeySlot } from "../keyboard"
 import { PaneContextProvider, type PaneContext } from "../pane-context"
 import { useWorkbench } from "../provider"
@@ -17,7 +17,7 @@ export function ContentSlot(props: {
   surfaceKeys: ReturnType<typeof createSurfaceKeyRouter>
 }): JSX.Element {
   const wb = useWorkbench()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(workbenchDictionary)
   const paneId = createMemo(() => props.paneOf(props.contentId))
   const visible = createMemo(() => props.displayed(props.contentId))
   const focused = createMemo(() => {
@@ -53,6 +53,7 @@ export function ContentSlot(props: {
     },
   }
   const opened = createMemo(() => wb.content(props.contentId))
+  const mounted = () => visible() || opened()?.kind.keepMounted === true
 
   return (
     <div
@@ -69,7 +70,7 @@ export function ContentSlot(props: {
     >
       <PaneContextProvider value={pane}>
         <FailureBoundary title={t("workbench.failed")} retryLabel={t("workbench.retry")}>
-          <Show when={opened()}>
+          <Show when={mounted() ? opened() : undefined}>
             {(pane) => <Dynamic component={pane().kind.view} state={pane().state as never} paneId={paneId() ?? ""} active={focused()} />}
           </Show>
         </FailureBoundary>

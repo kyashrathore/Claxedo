@@ -1,6 +1,6 @@
 import type { Accessor } from "solid-js"
 import type { AgentTurnOutcome } from "@claxedo/agent-runtime-contract"
-import type { PairedTranscriptTypography } from "@opencode-ai/ui/theme/transcript-typography"
+import { type PairedTranscriptTypography } from "@/ui"
 import type { SessionStatus } from "@/server"
 import type { TranscriptConversation } from "@/transcript"
 
@@ -61,7 +61,6 @@ export type TimelineSettings = {
   readonly shellToolPartsExpanded: Accessor<boolean>
   readonly editToolPartsExpanded: Accessor<boolean>
   readonly timelineShowTurnTokens: Accessor<boolean>
-  readonly showSessionProgressBar: Accessor<boolean>
 }
 
 export type TimelinePlatform = {
@@ -83,15 +82,8 @@ export type TimelineFocus =
     }
   | { readonly kind: "subagent"; readonly sessionId: string; readonly label?: string; readonly description?: string }
 
-export type TimelineSessionActions = {
-  readonly rename: (sessionId: string, title: string) => Promise<void>
-  readonly archive: (sessionId: string) => Promise<void>
-  readonly remove: (sessionId: string) => Promise<void>
-}
-
 export type TimelineNavigation = {
   readonly toSession: (sessionId: string) => void
-  readonly toRoot: () => void
 }
 
 export type TimelineHost = {
@@ -112,7 +104,6 @@ export type TimelineHost = {
   readonly openFocus: (focus: TimelineFocus) => void
   readonly openSessionInPane: (sessionId: string, label?: string) => void
   readonly findFiles: (query: string, signal: AbortSignal) => Promise<readonly string[]>
-  readonly sessionActions: TimelineSessionActions
   readonly navigation: TimelineNavigation
 }
 

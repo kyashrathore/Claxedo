@@ -1,5 +1,5 @@
 import { Show, type JSX } from "solid-js"
-import { Icon, type IconProps } from "@opencode-ai/ui/icon"
+import { Icon, type IconProps } from "@/ui"
 
 export interface ActivityRowProps {
   /** Category icon (muted); hidden when nested inside a group. */

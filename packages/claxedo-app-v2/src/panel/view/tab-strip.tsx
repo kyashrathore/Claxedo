@@ -1,9 +1,8 @@
 import { For, Show, type JSX } from "solid-js"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { useActiveSession } from "@/files"
 import { useTranslator } from "@/i18n"
 import { useShellRegistries } from "@/shell"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, DropdownMenu } from "@/ui"
 import { filePathFromTab } from "../focus"
 import { dictionary } from "../i18n"
 import { usePanel } from "../store"
@@ -86,7 +85,9 @@ export function PanelTabStrip(): JSX.Element {
           )}
         </For>
         <div data-testid="workspace-tab-actions" class="flex h-full shrink-0 items-center bg-background-base px-1">
-          <AddTabMenu />
+          <Show when={!panel.phone()}>
+            <AddTabMenu />
+          </Show>
         </div>
       </div>
     </div>

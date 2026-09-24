@@ -4,9 +4,8 @@ import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import type { SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
-import { showToast } from "@/ui"
-import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
-import { dictionary } from "../i18n"
+import { showToast, ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui"
+import { railDictionary } from "../i18n"
 
 export type SessionRowMenuActions = {
   readonly onRename: (row: SessionRowView) => void
@@ -26,7 +25,7 @@ function MenuItem(props: { readonly icon: ClaxedoIconProps["name"]; readonly lab
 }
 
 export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x: number; y: number }; readonly row: SessionRowView; readonly onDismiss: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const select = (action: (row: SessionRowView) => unknown) => () => {
     props.onDismiss()
     void action(props.row)
@@ -41,7 +40,6 @@ export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x
   return (
     <Portal>
       <div
-        data-slot="session-navigation-menu-dismiss"
         class="fixed inset-0 z-[90]"
         onClick={() => props.onDismiss()}
         onContextMenu={(event) => {
@@ -54,7 +52,6 @@ export function SessionRowMenu(props: SessionRowMenuActions & { readonly at: { x
         aria-label={t("rail.sessionMenu", { title: props.row.title })}
         data-surface="overlay"
         data-overlay-shell="prominent"
-        data-slot="session-navigation-menu"
         class="fixed z-[91] min-w-40 bg-background-stronger p-1"
         style={{ left: `${props.at.x}px`, top: `${props.at.y}px` }}
         onKeyDown={(event) => event.key === "Escape" && props.onDismiss()}

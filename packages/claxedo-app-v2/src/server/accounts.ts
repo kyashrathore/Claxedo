@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
-import type { Account, AccountCheck, AccountKeyInput, EffectiveAccounts, MachineLogin } from "./account-types"
+import type { Account, AccountCheck, EffectiveAccounts, MachineLogin } from "./account-types"
 import type { AccountsApi } from "./api"
 import { responseError, ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
@@ -75,13 +75,10 @@ export function createAccountsApi(transport: Transport, queryClient: QueryClient
       ])
       return logins
     },
-    addKey: async (input: AccountKeyInput) => {
-      const body = { provider_id: input.providerId, kind: "api_key", source: "local_only", scope: "local", label: input.label, secret: input.secret }
-      const saved = await transport.json<{ credential?: { id?: unknown } }>(CREDENTIALS_PATH, jsonInit("PUT", body))
-      const id = saved.credential?.id
-      if (typeof id !== "string") throw invalid("key save")
-      await changed()
-      return id
+    rescan: async () => {
+      const logins = await readMachineLogins(transport, { fresh: true })
+      queryClient.setQueryData<readonly MachineLogin[]>(queryKeys.machineLogins(server), logins)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accounts(server), predicate: (query) => query.queryKey[3] !== "machine-logins" })
     },
   }
 }

@@ -7,7 +7,7 @@ import type {
   AgentRuntimeStatus,
   AgentSnapshotFileDiff,
 } from "@claxedo/agent-runtime-contract"
-import { createSimpleContext } from "@opencode-ai/ui/context"
+import { createSimpleContext } from "@/ui"
 import type { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
 export type NormalizedProviderListResponse = {

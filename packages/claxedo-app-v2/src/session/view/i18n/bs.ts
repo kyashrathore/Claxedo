@@ -85,4 +85,7 @@ export const bs: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.previous.description": "Idi na prethodnu korisničku poruku",
   "command.message.next": "Sljedeća poruka",
   "command.message.next.description": "Idi na sljedeću korisničku poruku",
+  "sessionScreen.requests.loadFailed": "Nije moguće učitati dozvole ili pitanja na čekanju. Pokušajte ponovo da nastavite.",
+  "command.session.new": "Nova sesija",
+  "command.category.session": "Sesija",
 }

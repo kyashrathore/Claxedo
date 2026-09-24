@@ -1,7 +1,5 @@
 import { For, Show, createSignal } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon, Button, Dialog } from "@/ui"
 import { useDialog } from "@/ui"
 import type { SessionScreenTextKey } from "../i18n"
 import { useSessionScreenText } from "../text"

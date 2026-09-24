@@ -18,6 +18,7 @@ function decodeTerminalPaneState(value: Json): TerminalPaneState | undefined {
 
 export const terminalPaneKind: PaneKind<TerminalPaneState> = {
   kind: "terminal",
+  keepMounted: true,
   title: (state) => {
     const terminals = useTerminalRuntime()
     return terminals.store(state.placementId).row(state.terminalId)?.title ?? terminals.defaultTitle()

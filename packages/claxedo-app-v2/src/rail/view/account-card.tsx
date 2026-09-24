@@ -4,12 +4,8 @@ import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
 import { useServer } from "@/server"
 import { settingsPath, useShellRoute } from "@/shell"
-import { showToast } from "@/ui"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { Avatar } from "@opencode-ai/ui/avatar"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { dictionary } from "../i18n"
+import { showToast, ClaxedoIcon as Icon, Avatar, DropdownMenu, Spinner } from "@/ui"
+import { railDictionary } from "../i18n"
 
 const HELP_URL = "https://github.com/kyashrathore/Claxedo"
 export const USAGE_SECTION = "usage"
@@ -24,7 +20,7 @@ type AccountView = {
 }
 
 function useAccountView() {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const auth = useAuth()
   const server = useServer()
   return createMemo((): AccountView => {
@@ -68,7 +64,7 @@ function IdentityMark(props: { readonly view: AccountView; readonly size: "trigg
 }
 
 export function AccountCard(props: { readonly anchor: () => HTMLElement | undefined }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const auth = useAuth()
   const routing = useShellRoute()
   const view = useAccountView()
@@ -93,7 +89,7 @@ export function AccountCard(props: { readonly anchor: () => HTMLElement | undefi
         data-testid="rail-account-trigger"
       >
         <IdentityMark view={view()} size="trigger" />
-        <span data-slot="rail-account-label" class="min-w-0 flex-1 truncate text-13-medium">
+        <span class="min-w-0 flex-1 truncate text-13-medium">
           {view().label}
         </span>
         <Icon name="chevron-down" size="small" class="shrink-0 rotate-180 text-icon-weak-base opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[expanded]:opacity-100" />

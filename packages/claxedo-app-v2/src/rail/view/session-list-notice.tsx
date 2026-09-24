@@ -1,5 +1,5 @@
 import { Show, type JSX } from "solid-js"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon } from "@/ui"
 
 export type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 

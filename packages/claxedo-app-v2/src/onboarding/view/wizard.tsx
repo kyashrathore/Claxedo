@@ -1,7 +1,6 @@
 import { For, onCleanup, onMount, Show } from "solid-js"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { ProjectCreateForm } from "@/projects"
-import { animateHeightChanges } from "@/ui"
+import { animateHeightChanges, ScrollView } from "@/ui"
 import { useOnboardingText } from "../i18n"
 import { onboardingSteps } from "../steps"
 import { createOnboardingWizard, draftName, type OnboardingWizard as Wizard } from "../wizard"
@@ -36,7 +35,7 @@ function WizardLede(props: { readonly wizard: Wizard; readonly localExecution: b
     <p class="first-project-lede first-project-reveal" style={{ "--first-project-delay": "40ms" }}>
       <Show when={projectName()}>
         {(name) => (
-          <span class="first-project-project" data-slot="onboarding-project-name">
+          <span class="first-project-project">
             {name()}
             <span aria-hidden="true"> · </span>
           </span>
@@ -87,8 +86,8 @@ export function OnboardingWizard(props: { readonly localExecution: boolean; read
       <h1 class="first-project-headline first-project-reveal">{t(wizard.current().headline)}</h1>
       <WizardLede wizard={wizard} localExecution={props.localExecution} />
       <div class="first-project-card first-project-reveal" style={{ "--first-project-delay": "80ms" }} ref={card}>
-        <ScrollView class="first-project-card-body" data-slot="onboarding-card-body">
-          <div data-slot="onboarding-card-steps" ref={steps}>
+        <ScrollView class="first-project-card-body">
+          <div ref={steps}>
             <StepPanels wizard={wizard} localExecution={props.localExecution} pickFolder={props.pickFolder} />
           </div>
         </ScrollView>

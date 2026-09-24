@@ -1,10 +1,9 @@
 import { A, useNavigate } from "@solidjs/router"
-import { Avatar } from "@opencode-ai/ui/avatar"
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { CloudWorkspacesSection } from "@/cloud"
 import type { Project, ProjectId } from "@/server"
 import { SettingsGroup, SettingsList, SettingsNote, SettingsRow } from "@/settings"
-import { Button, Icon, useDialog } from "@/ui"
+import { ClaxedoIcon as Icon, useDialog, Button, Avatar } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { usePlacementOpener } from "../open"
 import { sourceLabel } from "../project-source"
@@ -25,7 +24,7 @@ function ProjectFields(props: { readonly project: Project }): JSX.Element {
     <SettingsGroup
       title={t("projects.settings.group")}
       action={
-        <Button variant="outline" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
+        <Button variant="secondary" size="small" onClick={() => dialog.show(() => <DialogEditProject project={props.project} />)}>
           {t("projects.edit.action")}
         </Button>
       }
@@ -68,7 +67,7 @@ function ProjectRemoval(props: { readonly id: ProjectId; readonly name: string }
   return (
     <SettingsList>
       <SettingsRow title={t("projects.remove.title")} description={t("projects.settings.remove.description")}>
-        <Button variant="danger" onClick={remove}>
+        <Button variant="secondary" size="small" onClick={remove}>
           {t("projects.remove")}
         </Button>
       </SettingsRow>
@@ -97,7 +96,7 @@ export function ProjectSettings(props: { readonly id: ProjectId }): JSX.Element 
     return state.kind === "failed" ? state.error : undefined
   }
   return (
-    <div class="settings-body" data-component="settings-project" data-project-id={props.id}>
+    <div class="settings-body" data-project-id={props.id}>
       <A href={projectSettingsPath()} class="projects-settings-back">
         <Icon name="arrow-left" />
         <span>{t("projects.settings.all")}</span>

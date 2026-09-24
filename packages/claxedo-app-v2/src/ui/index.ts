@@ -1,12 +1,8 @@
-export { Accordion, type AccordionProps, type AccordionItemProps, type AccordionTriggerProps, type AccordionContentProps } from "./accordion"
-export { AppIcon, appIconNames, type AppIconName, type AppIconProps } from "./app-icon"
-export { Avatar, type AvatarProps } from "./avatar"
-export { Button, type ButtonProps } from "./button"
-export { Card, type CardProps, type CardTitleProps, type CardVariant } from "./card"
-export { Checkbox, type CheckboxProps } from "./checkbox"
+export { Button, type ButtonProps } from "@opencode-ai/ui/button"
 export { ClaxedoIcon, ClaxedoIconV2, type ClaxedoIconName, type ClaxedoIconProps } from "./controls/claxedo-icon"
 export { ClaxedoIconButton, type ClaxedoIconButtonProps } from "./controls/claxedo-icon-button"
-export { ClaxedoLogo } from "./controls/claxedo-logo"
+export { appIconNames } from "./icons/catalog"
+export { ClaxedoLogo, ClaxedoSplash } from "./controls/claxedo-logo"
 export { animateHeightChanges } from "./controls/animate-height"
 export { DelayedLoading } from "./controls/delayed-loading"
 export {
@@ -19,61 +15,11 @@ export {
   setReviewControlsSlot,
   setReviewToolbarSlot,
 } from "./controls/portal-slot"
-export { Collapsible, type CollapsibleProps } from "./collapsible"
-export {
-  Dialog,
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTitleGroup,
-  type DialogProps,
-  type DialogHeaderProps,
-  type DialogTitleGroupProps,
-} from "./dialog"
-export { DialogProvider, useDialog } from "./dialog-host"
-export { DiffChanges } from "./diff-changes"
-export { Divider, type DividerProps } from "./divider"
-export { DockShell, DockShellForm, DockTray, type DockTrayProps } from "./dock-surface"
+export { Dialog, type DialogProps } from "@opencode-ai/ui/dialog"
+export { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
+export { requestConfirm, type ConfirmOptions } from "./confirm"
 export { Field, type FieldProps, type FieldLabelProps } from "./field"
-export { FileIcon, chooseFileIcon, fileIconSprite, type FileIconProps, type FileNode } from "./file-icon"
-export { useFilteredList, type FilteredListProps, type FilteredGroup } from "./filtered-list"
-export { Icon, iconNames, isIconName, type IconName, type IconProps, type IconSize } from "./icon"
-export { IconButton, type IconButtonProps } from "./icon-button"
-export { ImagePreview, type ImagePreviewProps } from "./image-preview"
-export { InlineInput, type InlineInputProps } from "./inline-input"
-export { Keybind, type KeybindProps } from "./keybind"
-export {
-  LineComment,
-  LineCommentEditor,
-  LineCommentOverflowIcon,
-  type LineCommentProps,
-  type LineCommentEditorProps,
-  type LineCommentEditorMention,
-} from "./line-comment"
-export { List, type ListAddProps, type ListProps, type ListRef, type ListSearchProps } from "./list"
-export { Loader } from "./loader"
-export {
-  Menu,
-  type MenuItemProps,
-  type MenuCheckboxItemProps,
-  type MenuRadioItemProps,
-  type MenuSubTriggerProps,
-} from "./menu"
-export { Popover, type PopoverProps } from "./popover"
-export { ProgressCircle, type ProgressCircleProps } from "./progress-circle"
-export {
-  ProjectAvatar,
-  PROJECT_AVATAR_VARIANTS,
-  type ProjectAvatarProps,
-  type ProjectAvatarStyle,
-  type ProjectAvatarVariant,
-} from "./project-avatar"
-export { ProviderIcon, providerIconNames, providerIconSprite, type ProviderIconProps } from "./provider-icon"
-export { RadioGroup, RadioItem, type RadioGroupProps, type RadioItemProps } from "./radio"
-export { ResizeHandle, type ResizeHandleProps } from "./resize-handle"
-export { ScrollView, type ScrollViewProps } from "./scroll-view"
-export { canScrollKey, isScrollKeyTarget, scrollKey, scrollKeyOwner, type ScrollKeyAction } from "./scroll-view-keys"
+export { ScrollThumb, type ScrollThumbProps } from "./scroll-thumb"
 export { type ScrollViewThumbVisibility } from "./scroll-view-thumb"
 export {
   SegmentedControl,
@@ -81,16 +27,58 @@ export {
   type SegmentedControlProps,
   type SegmentedControlItemProps,
 } from "./segmented-control"
-export { Select, type SelectProps } from "./select"
+export { Select, type SelectProps } from "@opencode-ai/ui/select"
 export { SemanticIcon, type SemanticIconConcept } from "./semantic-icon"
-export { SplitButton, SplitButtonAction, SplitButtonMenuTrigger } from "./split-button"
-export { Switch, type SwitchProps } from "./switch"
-export { TabStateIndicator } from "./tab-state-indicator"
-export { Tabs, type TabsProps, type TabsListProps, type TabsTriggerProps, type TabsCloseButtonProps, type TabsContentProps } from "./tabs"
-export { Tag, type TagProps } from "./tag"
-export { TextInput, type TextInputProps } from "./text-input"
-export { TextShimmer } from "./text-shimmer"
-export { Textarea, type TextareaProps } from "./textarea"
+export { Switch, type SwitchProps } from "@opencode-ai/ui/switch"
+export { Tag, type TagProps } from "@opencode-ai/ui/tag"
 export { Toast, showToast, toaster, type ToastAction, type ToastOptions, type ToastRegionProps, type ToastVariant } from "@opencode-ai/ui/toast"
 export { Tooltip, type TooltipProps } from "@opencode-ai/ui/tooltip"
-export { Wordmark } from "./wordmark"
+export { Avatar } from "@opencode-ai/ui/avatar"
+export { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+export { FileIcon } from "@opencode-ai/ui/file-icon"
+export { Keybind } from "@opencode-ai/ui/keybind"
+export { List } from "@opencode-ai/ui/list"
+export { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
+export { Spinner } from "@opencode-ai/ui/spinner"
+export { TextField } from "@opencode-ai/ui/text-field"
+export { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
+export { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
+export { LineCommentEditor } from "@opencode-ai/session-ui/line-comment"
+export { Accordion } from "@opencode-ai/ui/accordion"
+export { AnimatedNumber } from "@opencode-ai/ui/animated-number"
+export { Card, CardDescription } from "@opencode-ai/ui/card"
+export { Checkbox } from "@opencode-ai/ui/checkbox"
+export { Collapsible } from "@opencode-ai/ui/collapsible"
+export { createSimpleContext } from "@opencode-ai/ui/context"
+export { FileComponentProvider, useFileComponent } from "@opencode-ai/ui/context/file"
+export { MarkedProvider, transcriptLinkPrefixes, transcriptLinkRunSource, transcriptLinkUriAllowed, transcriptLinkUriPattern, transcriptMarkdownExtensions, useMarked } from "@opencode-ai/ui/context/marked"
+export { DiffChanges } from "@opencode-ai/ui/diff-changes"
+export { DockShell, DockShellForm, DockTray } from "@opencode-ai/ui/dock-surface"
+export { useFilteredList } from "@opencode-ai/ui/hooks"
+export { Icon, syncIconLibraryWithTheme, type IconProps } from "@opencode-ai/ui/icon"
+export { IconButton } from "@opencode-ai/ui/icon-button"
+export { ImagePreview } from "@opencode-ai/ui/image-preview"
+export { type ListRef } from "@opencode-ai/ui/list"
+export { useSpring } from "@opencode-ai/ui/motion-spring"
+export { Popover } from "@opencode-ai/ui/popover"
+export { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+export { RadioList, RadioListItem } from "@opencode-ai/ui/radio-list"
+export { ResizeHandle } from "@opencode-ai/ui/resize-handle"
+export { ScrollView } from "@opencode-ai/ui/scroll-view"
+export { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
+export { TextReveal } from "@opencode-ai/ui/text-reveal"
+export { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+export { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
+export { ThemeProvider } from "@opencode-ai/ui/theme"
+export { useThemeOptional } from "@opencode-ai/ui/theme/context"
+export { DEFAULT_TRANSCRIPT_TYPOGRAPHY, composeTranscriptTypography, resolveTranscriptTypography, transcriptTypographyStyle, type PairedTranscriptTypography } from "@opencode-ai/ui/theme/transcript-typography"
+export { Binary } from "@opencode-ai/ui/utils/binary"
+export { checksum, sampledChecksum } from "@opencode-ai/ui/utils/encode"
+export { getFilenameTruncated } from "@opencode-ai/ui/utils/path"
+export { reportUiError } from "@opencode-ai/ui/utils/report-error"
+export { readableText } from "@opencode-ai/ui/utils/text"
+export { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
+export { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
+export { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
+export { MenuV2 } from "@opencode-ai/ui/v2/menu-v2"
+export { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"

@@ -1,9 +1,9 @@
 import { For, Show } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
 import { SandboxDriverLogo } from "@/cloud"
 import type { SandboxProviderOption, SandboxProviderVerification } from "@/server"
 import { useOnboardingText, type OnboardingText } from "../i18n"
 import { canSaveSandboxKey, createSandboxKey, type SandboxKey } from "../sandbox-key"
+import { Button } from "@/ui"
 
 function verdictText(t: OnboardingText, provider: SandboxProviderOption, verdict: SandboxProviderVerification): string {
   if (verdict.state === "working") return t("onboarding.sandbox.working", { provider: provider.label })
@@ -71,7 +71,7 @@ function KeyForm(props: { readonly sandbox: SandboxKey; readonly provider: Sandb
         </Button>
         <Show when={sandbox().verdict()}>
           {(verdict) => (
-            <span class="text-12-regular text-text-weak" data-slot="onboarding-sandbox-verdict" data-state={verdict().state}>
+            <span class="text-12-regular text-text-weak" data-state={verdict().state}>
               {verdictText(t, props.provider, verdict())}
             </span>
           )}
@@ -90,7 +90,7 @@ export function SandboxProviderKey(props: { readonly onReady: (ready: boolean) =
   const t = useOnboardingText()
   const sandbox = createSandboxKey((ready) => props.onReady(ready))
   return (
-    <div class="flex flex-col gap-3" data-slot="onboarding-sandbox-key">
+    <div class="flex flex-col gap-3">
       <Show when={sandbox.loading()}>
         <span class="text-12-regular text-text-weak">{t("onboarding.sandbox.loading")}</span>
       </Show>

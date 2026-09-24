@@ -1,15 +1,14 @@
 import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { settingsPath, useShellRoute } from "@/shell"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import { AccountCard, USAGE_SECTION } from "./account-card"
 import { GlobalNavigation } from "./global-navigation"
 import { ProjectTree } from "./project-tree"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
 function UsageButton(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const routing = useShellRoute()
   return (
     <Tooltip value={t("rail.account.usage")}>

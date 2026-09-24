@@ -1,7 +1,7 @@
 import { Show } from "solid-js"
-import { Button } from "@opencode-ai/ui/button"
 import { useOnboardingText, type OnboardingText } from "../i18n"
 import type { OnboardingWizard } from "../wizard"
+import { Button } from "@/ui"
 
 function reason(t: OnboardingText, wizard: OnboardingWizard, localExecution: boolean): string | undefined {
   const failure = wizard.failure()
@@ -23,10 +23,9 @@ export function WizardFooter(props: { readonly wizard: OnboardingWizard; readonl
   const wizard = () => props.wizard
   const nextDisabled = () => (wizard().step() === "ai" ? !wizard().aiReady() : !wizard().executionReady())
   return (
-    <div class="mt-5 flex shrink-0 flex-wrap items-center gap-3 border-t border-border-weak-base pt-4" data-slot="onboarding-card-footer">
+    <div class="mt-5 flex shrink-0 flex-wrap items-center gap-3 border-t border-border-weak-base pt-4">
       <p
         class={`min-w-0 flex-1 text-12-regular ${wizard().failure() ? "text-icon-warning-base" : "text-text-weak"}`}
-        data-slot="onboarding-reason"
         role={wizard().failure() ? "alert" : undefined}
       >
         {reason(t, wizard(), props.localExecution) ?? ""}

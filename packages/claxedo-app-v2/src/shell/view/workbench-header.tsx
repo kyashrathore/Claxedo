@@ -1,18 +1,17 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { PanelToggle } from "@/panel"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { ScopeButtons } from "./scope-buttons"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
 export function TitlebarDragRegion(props: { readonly class?: string }): JSX.Element {
   return <div data-window-drag-region data-testid="titlebar-drag-region" aria-hidden="true" class={`self-stretch ${props.class ?? ""}`} />
 }
 
 export function ShowSidebarButton(props: { readonly peek: boolean }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   return (
     <Tooltip value={t("shell.showSidebar")}>
@@ -70,14 +69,14 @@ export function WorkbenchHeader(props: { readonly global: boolean; readonly tabs
 }
 
 export function SettingsHeader(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   return (
-    <div class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base pr-1" data-component="settings-header">
+    <div class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base pr-1">
       <div class="flex min-w-0 flex-1 items-center gap-1 px-1">
         <Show when={!layout.sidebarPinned()}>
           <ShowSidebarButton peek={false} />
-          <span class="flex min-w-0 items-center gap-1.5 rounded-md bg-surface-base px-2.5 py-1 text-compact text-text-strong" data-component="settings-header-tab">
+          <span class="flex min-w-0 items-center gap-1.5 rounded-md bg-surface-base px-2.5 py-1 text-compact text-text-strong">
             <Icon name="sliders" size="small" />
             <span class="truncate">{t("shell.settings")}</span>
           </span>

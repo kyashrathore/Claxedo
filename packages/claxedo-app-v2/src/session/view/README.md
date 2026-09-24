@@ -15,7 +15,7 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 | The `TimelineHost` the moved timeline reads | `timeline-host.ts` |
 | Following the end of a streaming turn, the jump button state, message selection from the nav rail, paging older history | `auto-scroll.ts`, `timeline-scroll.ts`, `history-paging.ts`, `scroll-anchor.ts` |
 | Which dock shows: the first open request (permission or question), the goal, the todo list. The todo list shows only while a turn runs and the list is unfinished, so a finished list goes away (the owner's rule; today's app keeps it). Its collapsed state is kept per session in sessionStorage: it survives a reload and nothing longer | `session-docks.tsx`, `docks/` |
-| Floating over a maximized workspace panel, as today: while `usePanel().maximized()` holds, the focused session pane goes transparent and keeps a bottom card: "N previous messages" peeks the transcript open (collapsed by default, opened by a send or a turn from elsewhere), and the composer folds to one row while idle and blank. The column carries `data-floating-host`, so the app shell's rules lift it above the panel and hide every other pane | `session-screen.tsx`, `floating-peek.ts`, `session-floating.css` |
+| Floating over a maximized workspace panel, as today: while `usePanel().maximized()` holds, the focused session pane goes transparent and keeps a bottom card: "N previous messages" (shown once the session has a message) peeks the transcript open (collapsed by default, opened by a send or a turn from elsewhere), and the composer folds to one row while idle and blank. The column carries `data-floating-host`, so the app shell's rules lift it above the panel and hide every other pane | `session-screen.tsx`, `floating-peek.ts`, `session-floating.css` |
 | Editing a queued prompt: the held record's text is loaded into the composer; sending it cancels the held record | `queue-edit.ts` |
 | The old-kit contexts the moved renderers still read (`DialogProvider`, `MarkedProvider`, `FileComponentProvider`) | `TranscriptKitProviders` from `@/transcript`, until the transcript swaps them for v2 twins |
 
@@ -37,5 +37,9 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 - The moved timeline still renders the old kit's ScrollView; `transcript-kit.css` carries that view's layout, scoped to the session screen, until the transcript swaps it for the v2 twin.
 
 ## Flows
+
+## Subagent panel tab
+
+A subagent opens as a workspace-panel tab (`subagent-panel.tsx`), registered in the shell's `panelViews`: the child's session read-only, with its docks and the "cannot be prompted" notice but no composer or keys. The tab's parent is the session holding the pane, so a subagent opened from inside the tab stays visible. On open, focus moves to the child's heading; the heading only exists once the child's first messages render, so the panel retries each frame for 30 frames and a newer open cancels an older wait.
 
 Flows 3 (send a turn), 4 (stop, queue, reload mid-turn), 5 (errors by class), 6 (composer), 7 (goal mode), 8 (permissions and questions), 9 (subagents), 11 (long transcript); 3, 6 and 8 run in the phone project too.

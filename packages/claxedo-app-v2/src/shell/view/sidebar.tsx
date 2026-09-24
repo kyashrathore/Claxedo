@@ -1,13 +1,11 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { trackRailPeek } from "./rail-peek"
 import { Region } from "./region"
 import { SidebarGrip } from "./sidebar-grip"
+import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, Tooltip } from "@/ui"
 
 export type SidebarProps = {
   readonly mode: "main" | "settings"
@@ -16,7 +14,7 @@ export type SidebarProps = {
 }
 
 function SidebarHeader(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   const label = () => (layout.sidebarPinned() ? t("shell.hideSidebar") : t("shell.pinSidebar"))
   return (
@@ -43,7 +41,7 @@ function SidebarHeader(): JSX.Element {
 export function SidebarContent(
   props: SidebarProps & { readonly width?: number; readonly open?: boolean; readonly onMouseLeave?: () => void; readonly ref?: (element: HTMLElement) => void },
 ): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   const open = () => props.open !== false
   return (
@@ -73,7 +71,7 @@ export function SidebarContent(
 }
 
 function PhoneOpener(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   const open = () => layout.phone() && layout.sidebarShown()
   return (

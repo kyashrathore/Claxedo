@@ -3,8 +3,11 @@ import { createSignal } from "solid-js"
 import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
+import { createAgentConnectionsApi } from "./agent-connections"
 import { createIntegrationsApi } from "./integrations"
 import { createSandboxProvidersApi } from "./sandbox-providers"
+import { createProviderConnectApi } from "./provider-connect"
+import { createProviderCatalogsApi } from "./provider-catalogs"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryable, toAppError } from "./errors"
@@ -12,6 +15,7 @@ import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
 import { createMarketplaceApi } from "./marketplace"
+import { createTasksApi } from "./tasks"
 import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
 import type { ProjectId } from "./ids"
@@ -85,15 +89,27 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
   return {
     sessions: createSessionsApi(transport, workspaces, status),
     projects: createProjectsApi(transport, queryClient, workspaces.refresh),
-    placements: { byId: workspaces.byId, list: workspaces.list, createWorktree: createWorktreeCreator(transport, workspaces) },
+    placements: {
+      byId: workspaces.byId,
+      list: workspaces.list,
+      load: async () => {
+        await workspaces.load()
+        return workspaces.list()
+      },
+      createWorktree: createWorktreeCreator(transport, workspaces),
+    },
     terminals: createTerminalsApi(transport, workspaces),
     git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
+    tasks: createTasksApi(transport),
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),
+    agentConnections: createAgentConnectionsApi(transport, queryClient),
     sandboxProviders: createSandboxProvidersApi(transport, queryClient),
+    providerConnect: createProviderConnectApi(transport, queryClient),
+    providerCatalogs: createProviderCatalogsApi(transport, queryClient),
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,

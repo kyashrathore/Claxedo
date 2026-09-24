@@ -62,13 +62,16 @@ function sessionView(context: TranscriptContext): SessionView {
     conversation: (): TranscriptConversation | undefined => (phase.state().kind === "loading" ? undefined : data),
     turnSettlePending: (userMessageId) => isReading(phase.state()) && lastUserId() === userMessageId,
     queue,
+    replaceQueued: (seq, input) => context.queue.replace(seq, input),
     requests: () => deps.requests.openFor(ref.sessionId),
+    requestsError: () => deps.requests.readErrorFor(ref.sessionId),
     requestState: deps.requests.stateOf,
-    todos: () => data.todos,
+    todos: context.todos.list,
     diff: () => data.diff,
     subagents: context.subagents.list,
     goal: goal.goal,
     goalActions: goal.actions,
+    goalAvailable: goal.available,
     controlGoal: goal.control,
     hasOlder: () => context.olderCursor() !== undefined,
     olderState: older.state,
@@ -84,7 +87,6 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
   const context = createTranscriptContext(server, ref, deps)
   void readSnapshot(context)
   void context.queue.reread()
-  void context.subagents.read()
   return {
     ...sessionView(context),
     apply: (event) => {
@@ -94,7 +96,7 @@ export function createSessionTranscript(server: Server, ref: SessionRef, deps: T
     gap: () => {
       void readSnapshot(context)
       void context.queue.reread()
-      void context.subagents.read()
+      context.subagents.reread()
     },
     dispose: context.deltas.drop,
   }

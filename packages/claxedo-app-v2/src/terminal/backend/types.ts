@@ -1,7 +1,6 @@
 import type { TerminalCheckpoint } from "@claxedo/workspace-runtime/client"
+import type { Disposer } from "@/shell"
 import type { RendererBudget } from "./renderer-budget"
-
-export type Disposer = () => void
 
 export type TerminalColors = {
   readonly background: string
@@ -17,6 +16,7 @@ export type FileLinkClick = (path: string, line?: number, col?: number, lineEnd?
 export type TerminalBackendOptions = {
   readonly theme: TerminalColors
   readonly fontFamily: string
+  readonly screenReaderMode: boolean
   readonly renderers: RendererBudget
   readonly image?: "path" | "paste"
   readonly onSplitVertical?: () => void

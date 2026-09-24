@@ -64,7 +64,6 @@ export interface Confirmation {
   description?: string
   confirmLabel?: string
   cancelLabel?: string
-  destructive?: boolean
 }
 
 export interface UiApi {

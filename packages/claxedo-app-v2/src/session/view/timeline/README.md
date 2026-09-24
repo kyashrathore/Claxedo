@@ -1,6 +1,6 @@
 # Message timeline
 
-The session transcript's list: the rows built from one session's messages and parts, their virtualization, the prepend anchor that keeps older turns from shifting the reader, the scroll memory and mount cache that make a session switch land where the reader left it, the turn fold, the message-navigation rail, the queued-prompt bubbles, the sticky session title with rename, archive and delete, and the opening of files, links, plans and subagents from the transcript.
+The session transcript's list: the rows built from one session's messages and parts, their virtualization, the prepend anchor that keeps older turns from shifting the reader, the scroll memory and mount cache that make a session switch land where the reader left it, the turn fold, the message-navigation rail, the queued-prompt bubbles, and the opening of files, links, plans and subagents from the transcript.
 
 It is today's timeline, **moved, not rebuilt**. Its logic does not change in this rebuild: only import paths, Claxedo names, a v2 twin where the corpus (flow 30, `e2e/corpus/`) shows no visible difference, and the seam below. A logic change is its own slice, proven by the corpus and signed off by the owner.
 
@@ -25,9 +25,7 @@ Today's component reached into the app through context hooks: the SDK client, th
 | `useClaxedoState().workspacePanel.open(...)` with `workspaceDir`, `targetPaneId`, `navigator: null` | `openFocus(focus)`: the host opens each focus as a workspace-panel tab; a `subagent` tab belongs to the session holding the pane |
 | `layout.showContent(layout.openSession(...))` at phone width | `openSessionInPane(sessionId, label?)` |
 | `sdk.client.find.files({ query, dirs: "false" })` | `findFiles(query, signal)`: exact-path candidates; resolves to `[]` on a failed lookup, never rejects |
-| `sdk.client.session.update` / `.delete`, then `updateDirectorySession` / `removeDirectorySessionTree` | `sessionActions.rename`, `.archive`, `.remove`: the store reconciles from the server's events; a rejection's `message` (or `data.message`) is shown in a toast |
-| `useNavigate()` with `sessionRoute` / `workspaceSessionRoute` | `navigation.toSession(id)`, `navigation.toRoot()` |
-| `useMutation` for the title | a pending signal around `sessionActions.rename` |
+| `useNavigate()` with `sessionRoute` / `workspaceSessionRoute` | `navigation.toSession(id)` |
 
 Still read from context: `useData()` (`@/transcript`, the `DataProvider` the renderers also need: `store.agent` for the progress-bar tint and `resolveSubagents` for background subagents), `useDialog()` and `showToast` from the kit.
 
@@ -46,7 +44,7 @@ Today's props keep their names, except `parentID` → `parentId`, and `status`, 
 | `SessionStatus.kind` | Today's runtime status | Timeline meaning |
 | --- | --- | --- |
 | `idle` | `idle` | turn over; diff summaries show |
-| `working` | `busy` | active turn: Thinking row, progress bar, jump-button dot wave |
+| `working` | `busy` | active turn: Thinking row, jump-button dot wave |
 | `retrying` | `retry` | Retry row with the card's countdown; `attempt`, `message`, `nextAt` (`action` is requested on the contract) |
 | `recovering` | `recovering` | the recovery card; `reason: "uncertainExecution"` keeps the turn active (requested on the contract, read structurally until it lands) |
 | `failed` | — | treated as `idle`; the failed turn's error row comes from the assistant message's `error` |
@@ -71,3 +69,7 @@ Flow 30 (`e2e/flows/30-transcript-corpus.spec.ts`) replays every corpus case thr
 ## Pending v2 twins
 
 Kept on `@opencode-ai/ui` until the kit lists a twin and the corpus shows no difference: `button`, `card`, `spinner`, `scroll-view`, `dropdown-menu`, `dialog`, `context/dialog`, `inline-input`, `tooltip`, `accordion`, `sticky-accordion-header`, `text-reveal`, `text-shimmer`, `diff-changes`, `file-icon`, `context/file`, `toast`, `theme/transcript-typography`, `utils/binary`, `utils/path`, and `@kobalte/core/tooltip`.
+
+## Diagram colors
+
+Mermaid takes its theme colors from the app's CSS variables. The contrast theme's surface tokens are `color-mix(...)` expressions, which mermaid's color parser rejects, and an element's computed color serializes a mixed color as `color(srgb …)`, which it rejects too. `mermaidThemeVariables` resolves each token through an element's computed color and rewrites that form as `rgba(…)`; without it every diagram falls back to its code block.

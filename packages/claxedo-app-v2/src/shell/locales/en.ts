@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "shell.palette.placeholder": "Search files, commands, and sessions",
   "shell.palette.empty": "No results found",
   "shell.palette.suggested": "Suggested",
@@ -68,9 +68,6 @@ export const dictionary = {
   "shell.home": "Home",
   "shell.notFound": "There is nothing at {{path}}",
   "shell.placementMissing": "This workspace is not available",
-  "shell.connecting": "Connecting",
-  "shell.reconnecting": "Reconnecting (attempt {{attempt}})",
-  "shell.offline": "Offline: {{reason}}",
   "shell.command.scheme": "Set color scheme: {{scheme}}",
   "shell.command.schemeCycle": "Cycle color scheme",
   "shell.command.themeCycle": "Cycle theme",

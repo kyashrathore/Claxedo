@@ -1,6 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 import type { ImagePart as ImageAttachmentPart } from "../model"
 import { ImageMarkLayer } from "../marks/layer"
 import type { Size } from "../marks/marks"

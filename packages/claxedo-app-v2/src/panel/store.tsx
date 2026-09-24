@@ -90,7 +90,7 @@ export function PanelProvider(props: ParentProps): JSX.Element {
     placementId,
     sessionId,
     open: layout.panelShown,
-    maximized: () => layout.panelShown() && size.fullWidth(),
+    maximized: () => layout.panelShown() && (size.phone() || size.fullWidth()),
     inset: () =>
       workbenchInset({
         open: layout.panelShown(),
@@ -98,7 +98,10 @@ export function PanelProvider(props: ParentProps): JSX.Element {
         fullWidth: size.fullWidth(),
         width: size.width(),
       }),
-    toggle: () => layout.send({ type: "togglePanel" }),
+    toggle: () => {
+      if (!layout.panelShown()) tabs.defaultNavigator()
+      layout.send({ type: "togglePanel" })
+    },
     close,
     show: (focus) => {
       if (focus) tabs.focus(focus)

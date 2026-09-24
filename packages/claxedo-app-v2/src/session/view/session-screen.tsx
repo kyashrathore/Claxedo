@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js"
-import { Composer, promptText, sessionComposerKey, useComposerStore } from "@/composer"
+import { Composer, promptText, sessionComposerKey, useComposerStore, type ComposerRecovery } from "@/composer"
 import { usePhone } from "@/lib/viewport"
 import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
@@ -18,6 +18,8 @@ import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
+import { SessionConnectionLine } from "./connection-line"
+import { registerSessionCommands } from "./session-commands"
 import { recoverTurn } from "./turn-recovery-actions"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
@@ -44,7 +46,6 @@ function ChildNotice(props: { readonly t: SessionScreenText; readonly readOnly: 
 type SessionSurfaceProps = {
   readonly sessionRef: SessionRef
   readonly active: boolean
-  /** A surface that embeds another session to read it, such as a subagent's panel tab: no composer, no keys. */
   readonly readOnly?: boolean
 }
 
@@ -103,14 +104,16 @@ function SessionBody(props: {
     prompt: { cursor: () => draft().cursor, length: () => promptText(draft().prompt).length },
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
-  createMessageLinks({ view: () => props.view, users, scroll, active: driving, commands: useCommands(), t })
-  let retry: ((text: string) => void) | undefined
+  const commands = useCommands()
+  createMessageLinks({ view: () => props.view, users, scroll, active: driving, commands, t })
+  registerSessionCommands({ commands, placementId: () => props.view.ref.placementId, active: driving, navigate: (path) => routing.navigate(path), t })
+  let recovery: ComposerRecovery | undefined
   const recover = (kind: Parameters<typeof recoverTurn>[2], userMessageId: string) =>
     recoverTurn(props.view, {
       startNewSession: () => routing.navigate(draftPath(props.view.ref.placementId)),
       openProviders: () => routing.navigate(settingsPath("models")),
-      chooseModel: () => body?.querySelector<HTMLElement>('[data-action="prompt-harness-model"]')?.click(),
-      resend: (text) => retry?.(text),
+      switchModelAndResend: async (text) => recovery?.switchModelAndResend(text),
+      resend: (text) => recovery?.resend(text),
     }, kind, userMessageId)
   document.addEventListener("keydown", handleKeyDown)
   onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
@@ -118,7 +121,7 @@ function SessionBody(props: {
   return (
     <div ref={body} data-slot="session-screen-body" classList={{ "session-floating-overlay": props.floating }}>
       <div data-slot="session-screen-transcript" classList={{ "session-floating-tab": props.floating }}>
-        <Show when={props.floating}>
+        <Show when={props.floating && users().length > 0}>
           <div class="session-floating-peek">
             <PreviousMessagesRow
               count={users().length}
@@ -134,7 +137,7 @@ function SessionBody(props: {
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} onRecover={recover} />
+          <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onRecover={recover} />
         </div>
       </div>
       <div
@@ -150,6 +153,9 @@ function SessionBody(props: {
               <TodoDockSlot view={props.view} dock={todo} />
             </Show>
             <div class="relative z-10" style={{ "margin-top": `${-lift()}px` }}>
+              <Show when={!props.readOnly}>
+                <SessionConnectionLine />
+              </Show>
               <Show when={!parentId() && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
                 <Composer
                   composerKey={sessionComposerKey(props.view.ref)}
@@ -164,7 +170,8 @@ function SessionBody(props: {
                   queuedEdit={queueEdit.edit}
                   dropZone={() => body}
                   collapsible={props.floating}
-                  registerRetry={(next) => (retry = next)}
+                  registerRecovery={(next) => (recovery = next)}
+                  active={() => props.active}
                 />
               </Show>
             </div>
@@ -189,10 +196,14 @@ export function SessionSurface(props: SessionSurfaceProps) {
   return (
     <section
       data-component="session-screen"
+      data-testid="session-page-root"
       data-session-id={props.sessionRef.sessionId}
       data-session-presentation={floating() ? "floating" : undefined}
       aria-label={view().row()?.title ?? t("sessionScreen.untitled")}
     >
+      <Show when={!props.readOnly && !view().row()?.parentSessionId}>
+        <h1 class="sr-only">{view().row()?.title || t("sessionScreen.untitled")}</h1>
+      </Show>
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
         <Switch fallback={<SessionBody view={view()} active={props.active} readOnly={props.readOnly === true} floating={floating()} />}>
           <Match when={view().state().kind === "missing"}>

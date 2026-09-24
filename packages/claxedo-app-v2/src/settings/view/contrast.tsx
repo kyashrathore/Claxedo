@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { dictionary } from "../i18n"
+import { settingsDictionary } from "../i18n"
 import { usePreferences, type ContrastScheme } from "../preferences"
 import { SettingsRow } from "./section"
 
@@ -10,7 +10,7 @@ const TITLE_KEY = {
 } as const satisfies Record<ContrastScheme, string>
 
 export function ContrastRow(props: { readonly scheme: ContrastScheme }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(settingsDictionary)
   const preferences = usePreferences()
   const title = () => t(TITLE_KEY[props.scheme])
   return (

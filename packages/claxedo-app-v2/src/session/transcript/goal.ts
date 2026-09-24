@@ -7,6 +7,7 @@ export type GoalFacts = { readonly goal: SessionGoal | undefined; readonly remov
 export type SessionGoalStore = {
   readonly goal: Accessor<SessionGoal | undefined>
   readonly actions: Accessor<readonly GoalAction[]>
+  readonly available: Accessor<boolean | undefined>
   readonly read: (state: SessionGoalState) => void
   readonly changed: (goal: SessionGoal | undefined) => void
   readonly control: (action: GoalAction) => Promise<void>
@@ -34,13 +35,16 @@ export function goalChanged(facts: GoalFacts, incoming: SessionGoal | undefined)
 export function createSessionGoal(server: Server, ref: SessionRef): SessionGoalStore {
   const [facts, setFacts] = createSignal<GoalFacts>(NO_GOAL)
   const [actions, setActions] = createSignal<readonly GoalAction[]>(NO_ACTIONS)
+  const [available, setAvailable] = createSignal<boolean>()
   const changed = (incoming: SessionGoal | undefined) => setFacts((current) => goalChanged(current, incoming))
   return {
     goal: () => facts().goal,
     actions,
+    available,
     read: (state) => {
       changed(state.goal)
       setActions(state.actions)
+      setAvailable(state.available)
     },
     changed,
     control: async (action) => {

@@ -85,4 +85,7 @@ export const es: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.previous.description": "Ir al mensaje de usuario anterior",
   "command.message.next": "Siguiente mensaje",
   "command.message.next.description": "Ir al siguiente mensaje de usuario",
+  "sessionScreen.requests.loadFailed": "No se pudieron cargar los permisos ni las preguntas pendientes. Reinténtalo para continuar.",
+  "command.session.new": "Nueva sesión",
+  "command.category.session": "Sesión",
 }

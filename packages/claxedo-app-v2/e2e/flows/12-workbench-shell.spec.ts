@@ -86,3 +86,24 @@ test("12 closing every tab leaves the workspace's new-session composer, and New 
   await expect(composer).toBeVisible()
   await expect(app).toHaveURL(new RegExp(`/w/${workspace.id}(/session)?$`))
 })
+
+test("12 Tasks and Marketplace share one page tab that shows the last one opened", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("bench", "Bench")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  const pageTabs = () => panes(app).getByRole("button", { name: /^(Tasks|Marketplace)$/ })
+
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
+  await app.getByTestId("sidebar-tasks-entry").click()
+  await expect(app).toHaveURL(/\/tasks$/)
+  await app.getByTestId("sidebar-marketplace-entry").click()
+  await expect(app).toHaveURL(/\/marketplace$/)
+  await app.getByTestId("sidebar-tasks-entry").click()
+  await app.getByRole("button", { name: UI.hideSidebar }).click()
+  await expect(pageTabs()).toHaveCount(1)
+  await expect(pageTabs()).toHaveAccessibleName("Tasks")
+
+  await panes(app).getByRole("button", { name: "First", exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(`/${first.id}$`))
+  await pageTabs().click()
+  await expect(app).toHaveURL(/\/tasks$/)
+})

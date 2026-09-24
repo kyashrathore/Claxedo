@@ -7,12 +7,11 @@ import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
 import { createServer, ServerProvider, type AuthSource } from "@/server"
 import { SessionStoresProvider } from "@/session"
-import { PreferencesProvider } from "@/settings"
+import { AttentionAlerts } from "@/notifications"
+import { PreferencesProvider, usePreferences } from "@/settings"
 import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, type ShellRouterComponent } from "@/shell"
-import { firstParty } from "@/shell/registry"
-import { DialogProvider } from "@/ui"
-import { syncIconLibraryWithTheme } from "@opencode-ai/ui/icon"
-import { ThemeProvider } from "@opencode-ai/ui/theme"
+import { firstParty } from "./registry"
+import { DialogProvider, syncIconLibraryWithTheme, ThemeProvider } from "@/ui"
 
 export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 
@@ -36,6 +35,11 @@ function ServerScope(props: ParentProps<{ readonly auth: AuthSource; readonly se
       </SessionStoresProvider>
     </ServerProvider>
   )
+}
+
+function Alerts(): JSX.Element {
+  const preferences = usePreferences()
+  return <AttentionAlerts preferences={preferences.alerts} />
 }
 
 function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.Element {
@@ -64,6 +68,7 @@ export function App(props: AppProps): JSX.Element {
                 <ShellRouter router={props.router}>
                   <SignedServer serverUrl={props.serverUrl}>
                     <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                    <Alerts />
                   </SignedServer>
                 </ShellRouter>
               </ClockProvider>
