@@ -7,7 +7,7 @@
 - project surfaces.
 
 It is **not** at the plan's "Ready for you" (P6):
-- the owner's latest bugs are open (lanes were fixing them at the stop);
+- some of the owner's bugs are still open (see [Owner-reported bugs](#owner-reported-bugs));
 - the owner deferred several v1 surfaces at 19:08: settings sections, onboarding, Marketplace and Tasks;
 - 10 of the app's 17 checks fail;
 - app plus kit is over the line budget;
@@ -42,7 +42,7 @@ The owner's words: better, performant, easy code, less LOC. Each part gives the 
 
 **Kept from v2 (owner, 16:45):**
 - the @-mention popover that shows files;
-- the "Settings" row in the rail;
+- ~~the "Settings" row in the rail~~: removed by the owner at 21:10. A Usage button now sits beside the account card;
 - v2's settings sidebar and content layout. Every v1 settings feature still has to exist in that style.
 
 **Merged.** Lanes verified these against v1 with side-by-side screenshots; the orchestrator checked the boot and the rail live on 4480.
@@ -87,7 +87,7 @@ The owner's words: better, performant, easy code, less LOC. Each part gives the 
   - an opened session reads its latest turn in full;
   - flow 30's corpus is identical to v1 on desktop, 8 of 8.
 
-What remains is under [Owner-reported bugs](#owner-reported-bugs-at-the-stop) and [Deferred](#deferred-by-the-owner).
+What remains is under [Owner-reported bugs](#owner-reported-bugs) and [Deferred](#deferred-by-the-owner).
 
 ### 2. Performant
 
