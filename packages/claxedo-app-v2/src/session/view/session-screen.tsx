@@ -68,7 +68,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
               composerKey={sessionComposerKey(props.view.ref)}
               placementId={props.view.ref.placementId}
               view={props.view}
-              lockedHarness={props.view.row()?.harness}
+              sessionHarness={props.view.row()?.harness}
               attachmentWorkspace={true}
               afterAccepted={queueEdit.accepted}
             />
