@@ -2,10 +2,12 @@ import { machine, unreachable, type Machine } from "@/lib/machine"
 
 export type SideRegion = "open" | "collapsed"
 
+export type SidebarRegion = SideRegion | "peeking"
+
 export type PhoneOverlay = "open" | "closed"
 
 export type ShellLayoutState =
-  | { readonly kind: "wide"; readonly sidebar: SideRegion; readonly panel: SideRegion }
+  | { readonly kind: "wide"; readonly sidebar: SidebarRegion; readonly panel: SideRegion }
   | { readonly kind: "phone"; readonly drawer: PhoneOverlay; readonly sheet: PhoneOverlay }
 
 export type ShellLayoutEvent =
@@ -13,6 +15,8 @@ export type ShellLayoutEvent =
   | { readonly type: "toggleSidebar" }
   | { readonly type: "showSidebar" }
   | { readonly type: "hideSidebar" }
+  | { readonly type: "peekSidebar" }
+  | { readonly type: "unpeekSidebar" }
   | { readonly type: "togglePanel" }
   | { readonly type: "showPanel" }
   | { readonly type: "hidePanel" }
@@ -20,7 +24,7 @@ export type ShellLayoutEvent =
 
 export type WideRegions = { readonly sidebar: SideRegion; readonly panel: SideRegion }
 
-const flipRegion = (region: SideRegion): SideRegion => (region === "open" ? "collapsed" : "open")
+const flipRegion = (region: SidebarRegion): SideRegion => (region === "open" ? "collapsed" : "open")
 
 const flipOverlay = (overlay: PhoneOverlay): PhoneOverlay => (overlay === "open" ? "closed" : "open")
 
@@ -34,6 +38,10 @@ function wideTransition(state: Extract<ShellLayoutState, { kind: "wide" }>, even
       return { ...state, sidebar: "open" }
     case "hideSidebar":
       return { ...state, sidebar: "collapsed" }
+    case "peekSidebar":
+      return state.sidebar === "collapsed" ? { ...state, sidebar: "peeking" } : state
+    case "unpeekSidebar":
+      return state.sidebar === "peeking" ? { ...state, sidebar: "collapsed" } : state
     case "togglePanel":
       return { ...state, panel: flipRegion(state.panel) }
     case "showPanel":
@@ -57,6 +65,9 @@ function phoneTransition(state: Extract<ShellLayoutState, { kind: "phone" }>, ev
       return { kind: "phone", drawer: "open", sheet: "closed" }
     case "hideSidebar":
       return { ...state, drawer: "closed" }
+    case "peekSidebar":
+    case "unpeekSidebar":
+      return state
     case "togglePanel":
       return { kind: "phone", drawer: "closed", sheet: flipOverlay(state.sheet) }
     case "showPanel":
@@ -87,7 +98,15 @@ export function createShellLayout(phone: boolean, wide: WideRegions): Machine<Sh
 }
 
 export function sidebarShown(state: ShellLayoutState): boolean {
-  return state.kind === "wide" ? state.sidebar === "open" : state.drawer === "open"
+  return state.kind === "wide" ? state.sidebar !== "collapsed" : state.drawer === "open"
+}
+
+export function sidebarPinned(state: ShellLayoutState): boolean {
+  return state.kind === "phone" || state.sidebar === "open"
+}
+
+export function persistedSidebar(region: SidebarRegion): SideRegion {
+  return region === "open" ? "open" : "collapsed"
 }
 
 export function panelShown(state: ShellLayoutState): boolean {
