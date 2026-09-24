@@ -13,7 +13,7 @@ Owns: the first run. Today's app's first-project canvas and its three-step wizar
 `createOnboardingWizard` (`wizard.ts`) holds the current step, the visited steps, the draft (`{source, name?}`), each step's readiness, the step 3 choice and the finish state. Nothing is written before Finish except a sandbox provider key saved in step 3.
 
 - Step 1 is `ProjectCreateForm` from `@/projects` with `submitLabel` Continue; its submit stores the draft and moves to step 2.
-- Step 2 lists the account cards per harness and reports whether one login can run a turn. Machine logins are read only when this step first opens, because that read starts the harness CLIs.
+- Step 2 is `AgentHarnessAccounts` from `@/accounts` for each harness, the same cards Settings → Models shows, and reports whether one login can run a turn. Machine logins are read only when this step first opens, because that read starts the harness CLIs.
 - Step 3 offers Just this machine (desktop, preselected), A cloud sandbox (a desktop saves a provider key through `server.sandboxProviders`) and Another machine (the two CLI commands).
 - Finish on a desktop creates the project (`createOrOpenFolderProject`: a folder that already is a project opens that project) and opens the draft of its folder placement at `/w/<placement>/session`. On a hosted plane it creates the project and its first cloud workspace, then opens that workspace's draft. A failure is shown in the footer's reason line.
 

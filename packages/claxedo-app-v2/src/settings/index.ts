@@ -3,7 +3,6 @@ import { useTranslator } from "@/i18n"
 import { organizationSettingsSection } from "@/access"
 import { usageSettingsSection } from "@/usage"
 import { dictionary, type Keys } from "./i18n"
-import { AccountsSection } from "./view/accounts"
 import { AppearanceSection } from "./view/appearance"
 import { ConnectionsSection } from "./view/connections"
 import { KeybindingsSection } from "./view/keybindings"
@@ -20,11 +19,9 @@ const section = (id: string, key: Keys, group: SettingsSection["group"], order: 
 
 export type { ContrastLevels, ContrastScheme, Preferences } from "./preferences"
 export { CONTRAST_DEFAULTS, PreferencesProvider, usePreferences } from "./preferences"
-export { HarnessAccountCards } from "./view/accounts"
 export { SettingsEmpty, SettingsGroup, SettingsIntro, SettingsList, SettingsNote, SettingsRow } from "./view/section"
 
 export const settingsSections: readonly SettingsSection[] = [
-  section("accounts", "settings.section.accounts", "account", 10, AccountsSection),
   usageSettingsSection,
   organizationSettingsSection,
   section("connections", "settings.section.connections", "account", 40, ConnectionsSection),

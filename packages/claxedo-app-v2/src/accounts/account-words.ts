@@ -1,6 +1,5 @@
-import type { DomainTranslate } from "@/i18n"
 import type { QuotaWindow } from "@/usage"
-import type { Keys } from "../i18n"
+import type { AccountsKey, AccountsText } from "./i18n"
 import {
   accountIdentity,
   accountLabel,
@@ -16,7 +15,7 @@ import {
   type Harness,
   type HarnessAccount,
   type LiveCheck,
-} from "../accounts"
+} from "./model"
 import type { AccountVerdict, MachineLogin } from "@/server"
 
 export type AccountWords = {
@@ -28,28 +27,29 @@ export type AccountWords = {
   readonly alert?: string
   readonly checkedAt?: number
   readonly refused: boolean
+  readonly identity?: string
   readonly reach?: AccountReach
   readonly machine: boolean
   readonly disabled: boolean
 }
 
-type Words = { readonly t: DomainTranslate<Keys>; readonly windowName: (window: QuotaWindow) => string }
+type Words = { readonly t: AccountsText; readonly windowName: (window: QuotaWindow) => string }
 
 const VERDICT_KEY = {
-  ok: "settings.accounts.verdict.ok",
-  auth_failed: "settings.accounts.verdict.authFailed",
-  no_billing: "settings.accounts.verdict.noBilling",
-  rate_capped: "settings.accounts.verdict.rateCapped",
-  expired: "settings.accounts.verdict.expired",
-  unknown: "settings.accounts.verdict.unknown",
-} as const satisfies Record<AccountVerdict, Keys>
+  ok: "settings.providers.live.ok",
+  auth_failed: "settings.providers.live.authFailed",
+  no_billing: "settings.providers.live.noBilling",
+  rate_capped: "settings.providers.live.rateCapped",
+  expired: "settings.providers.live.expired",
+  unknown: "settings.providers.live.unknown",
+} as const satisfies Record<AccountVerdict, AccountsKey>
 
-const MACHINE_REACH: Readonly<Record<string, readonly string[]>> = {
-  cursor: ["Works with Cursor ACP", "the Cursor SDK needs an API key"],
+const MACHINE_REACH: Readonly<Record<string, readonly AccountsKey[]>> = {
+  cursor: ["settings.providers.agents.machineCursorAcp", "settings.providers.agents.machineCursorSdkKey"],
 }
 
 function windowWords(words: Words, windows: readonly QuotaWindow[] | undefined) {
-  return (windows ?? []).map((window) => words.t("settings.accounts.window", { name: words.windowName(window), used: Math.round(window.usedPercent) }))
+  return (windows ?? []).map((window) => words.t("settings.providers.live.window", { name: words.windowName(window), used: Math.round(window.usedPercent) }))
 }
 
 function verdictWords(t: Words["t"], live: LiveCheck | undefined) {
@@ -75,6 +75,7 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
     ...(alert === undefined ? {} : { alert }),
     ...(check === undefined ? {} : { checkedAt: check.at }),
     refused,
+    ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),
     ...(reach === undefined ? {} : { reach }),
     machine: false,
     disabled: false,
@@ -83,12 +84,12 @@ export function storedAccountWords(words: Words, row: HarnessAccount, live: Live
 
 function machineDetail(words: Words, login: MachineLogin, harness: Harness) {
   const { t } = words
-  if (login.state === "absent") return t("settings.accounts.machineNotInstalled")
-  if (login.state === "signed_out") return t("settings.accounts.machineSignedOut", { command: harness.signIn })
-  if (login.state === "unknown") return login.detail ?? t("settings.accounts.machineUnknown")
+  if (login.state === "absent") return t("settings.providers.agents.machineNotInstalled")
+  if (login.state === "signed_out") return t("settings.providers.agents.machineSignedOut", { command: harness.signIn })
+  if (login.state === "unknown") return login.detail ?? t("settings.providers.agents.machineUnknown")
   const windows = windowWords(words, login.usage)
   if (windows.length > 0) return windows.join(" · ")
-  const identity = [login.plan ? t("settings.accounts.machinePlan", { plan: login.plan }) : undefined, login.org].filter((word): word is string => word !== undefined)
+  const identity = [login.plan ? t("settings.providers.agents.machinePlan", { plan: login.plan }) : undefined, login.org].filter((word): word is string => word !== undefined)
   return identity.length > 0 ? identity.join(" · ") : undefined
 }
 
@@ -97,14 +98,14 @@ export function machineLoginWords(words: Words, login: MachineLogin, harness: Ha
   const detail = machineDetail(words, login, harness)
   const stranded = login.state !== "absent" && strandedBinding(login, harness, snapshot.effective)
   const note = [
-    ...(partialMachineLogin(login) ? (MACHINE_REACH[login.harness] ?? []) : []),
-    ...(stranded ? [t("settings.accounts.machineStrands", { name: harness.label })] : []),
+    ...(partialMachineLogin(login) ? (MACHINE_REACH[login.harness] ?? []).map((key) => t(key)) : []),
+    ...(stranded ? [t("settings.providers.agents.machineStrands", { name: harness.label })] : []),
   ].join(" · ")
   const reach = accountReach(undefined)
   return {
     key: MACHINE_LOGIN_KEY,
     ids: [],
-    label: login.state === "signed_in" && login.email ? login.email : t("settings.accounts.machineLogin"),
+    label: login.state === "signed_in" && login.email ? login.email : t("settings.providers.agents.machineLogin"),
     ...(detail === undefined ? {} : { detail }),
     ...(login.state === "unknown" && detail !== undefined ? { alert: detail } : {}),
     ...(login.usageAt === undefined ? {} : { checkedAt: login.usageAt }),
