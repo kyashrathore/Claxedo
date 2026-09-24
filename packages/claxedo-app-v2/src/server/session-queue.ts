@@ -1,0 +1,24 @@
+import { jsonInit, type Transport } from "./transport"
+import type { QueuedPrompt, QueuedPromptAction, QueuedPromptControl, SessionRef } from "./types"
+import type { Workspaces } from "./workspaces"
+import { queuedPromptControlFromWire, queuedPromptFromWire } from "./wire/queue"
+
+function queuePath(ref: SessionRef, suffix = "") {
+  return `/session/${encodeURIComponent(ref.sessionId)}/queue${suffix}`
+}
+
+export function createSessionQueue(transport: Transport, workspaces: Workspaces) {
+  return {
+    queue: async (ref: SessionRef): Promise<readonly QueuedPrompt[]> => {
+      const rows = await transport.runtimeJson<unknown[]>(await workspaces.route(ref), queuePath(ref))
+      return rows.flatMap((row) => {
+        const prompt = queuedPromptFromWire(row)
+        return prompt ? [prompt] : []
+      })
+    },
+    controlQueued: async (ref: SessionRef, seq: number, action: QueuedPromptAction): Promise<QueuedPromptControl> => {
+      const body = await transport.runtimeJson<unknown>(await workspaces.route(ref), queuePath(ref, `/${seq}/${action}`), jsonInit("POST", {}))
+      return queuedPromptControlFromWire(body)
+    },
+  }
+}
