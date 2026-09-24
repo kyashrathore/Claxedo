@@ -34,7 +34,7 @@ export function principalScope(capabilities: Capabilities | undefined): string |
 }
 
 function centerOf(route: ShellRoute): CenterContent {
-  return route.kind === "page" ? { kind: "page", page: route.page, params: route.params } : { kind: "panes" }
+  return route.kind === "page" && !route.page.tab ? { kind: "page", page: route.page, params: route.params } : { kind: "panes" }
 }
 
 function ShellLoading(): JSX.Element {

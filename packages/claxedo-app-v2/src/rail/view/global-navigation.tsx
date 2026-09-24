@@ -3,9 +3,8 @@ import { useTranslator } from "@/i18n"
 import { byOrder, fillPattern, RegistryIcon, useShellRegistries, useShellRoute, type PageEntry, type SidebarItem } from "@/shell"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { dictionary } from "../i18n"
+import { MARKETPLACE_PATH, TASKS_PATH } from "./utility-pages"
 
-export const TASKS_PATH = "/tasks"
-export const MARKETPLACE_PATH = "/marketplace"
 
 const ROW_CLASS =
   "w-full flex items-center gap-2 h-7 px-2.5 rounded-md text-compact leading-4 font-medium transition-[background-color,color] duration-100 active:scale-[0.98]"

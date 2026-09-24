@@ -24,7 +24,7 @@ export type {
 export type { FirstPartyEntries } from "./registries"
 export { byOrder, createRegistry, createShellRegistries, ShellRegistriesContext, useShellRegistries } from "./registries"
 export type { RouteParams, ShellRoute } from "./routes"
-export { draftPath, fillPattern, homePath, localSessionPath, matchPattern, sessionLinkPath, parseRoute, placementOf, sessionPath, settingsPath, sidebarModeOf, terminalPath } from "./routes"
+export { draftPath, fillPattern, homePath, localSessionPath, matchPattern, sessionLinkPath, parseRoute, panePlacementOf, placementOf, sessionPath, settingsPath, sidebarModeOf, terminalPath } from "./routes"
 export type { ShellRouterComponent, ShellRouting } from "./router"
 export { ShellRouter, useShellRoute } from "./router"
 export type { ShellLayoutEvent, ShellLayoutState, SideRegion, SidebarRegion, PhoneOverlay, WideRegions } from "./model"
