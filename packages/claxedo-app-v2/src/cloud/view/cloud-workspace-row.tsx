@@ -1,5 +1,6 @@
 import { createSignal, Show, type Component } from "solid-js"
-import type { PlacementId } from "@/server"
+import { createFlow, runFlow } from "@/lib/flow"
+import { toAppError, type PlacementId } from "@/server"
 import { Button } from "@/ui"
 import { useCloudText } from "../i18n"
 import { canStart, canStop, failureOf, isBusy } from "../model"
@@ -13,12 +14,11 @@ export const CloudWorkspaceItem: Component<{
 }> = (props) => {
   const t = useCloudText()
   const [confirming, setConfirming] = createSignal(false)
-  const [deleting, setDeleting] = createSignal(false)
+  const removal = createFlow<"deleting", void>()
+  const deleting = () => removal.state().kind === "running"
 
   const remove = async () => {
-    setDeleting(true)
-    await props.cloud.remove(props.row.id)
-    setDeleting(false)
+    await runFlow(removal, "deleting", () => props.cloud.remove(props.row.id), toAppError)
     setConfirming(false)
   }
 
