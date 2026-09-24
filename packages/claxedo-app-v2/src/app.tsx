@@ -2,6 +2,7 @@ import { browserAuthAdapter } from "#browser-auth-adapter"
 import { createMemo, Show, type JSX, type ParentProps } from "solid-js"
 import { AuthProvider, useAuth, type Auth, type AuthState } from "@/auth"
 import { I18nProvider } from "@/i18n"
+import { ClockProvider } from "@/lib/clock"
 import { ProjectListProvider } from "@/projects"
 import { CompactSwitcher, MainSidebar } from "@/rail"
 import { createServer, ServerProvider, type AuthSource } from "@/server"
@@ -59,11 +60,13 @@ export function App(props: AppProps): JSX.Element {
         <I18nProvider>
           <ThemeProvider defaultTheme="codex" onThemeApplied={syncIconLibraryWithTheme}>
             <PreferencesProvider>
-              <ShellRouter router={props.router}>
-                <SignedServer serverUrl={props.serverUrl}>
-                  <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
-                </SignedServer>
-              </ShellRouter>
+              <ClockProvider>
+                <ShellRouter router={props.router}>
+                  <SignedServer serverUrl={props.serverUrl}>
+                    <AppShell mainSidebar={<MainSidebar />} compactTabs={<CompactSwitcher />} />
+                  </SignedServer>
+                </ShellRouter>
+              </ClockProvider>
             </PreferencesProvider>
           </ThemeProvider>
         </I18nProvider>

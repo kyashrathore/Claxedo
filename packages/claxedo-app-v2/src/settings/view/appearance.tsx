@@ -1,3 +1,4 @@
+import { Show } from "solid-js"
 import { Select } from "@/ui"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { useI18n, useTranslator, type Locale } from "@/i18n"
@@ -32,8 +33,10 @@ export function AppearanceSection() {
           <SettingsRow title={t("settings.appearance.theme")} description={t("settings.appearance.theme.description")}>
             <Select options={theme.ids()} current={theme.themeId()} value={(id) => id} label={(id) => theme.name(id)} onSelect={(id) => id && theme.setTheme(id)} />
           </SettingsRow>
-          <ContrastRow scheme="light" />
-          <ContrastRow scheme="dark" />
+          <Show when={theme.themeId() === "codex"}>
+            <ContrastRow scheme="light" />
+            <ContrastRow scheme="dark" />
+          </Show>
         </SettingsList>
       </SettingsGroup>
     </div>

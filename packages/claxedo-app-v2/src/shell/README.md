@@ -15,7 +15,7 @@ Owns: the app frame and nothing a feature knows about. Three regions and their h
 
 ## Routes (`routes.ts`)
 
-Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placement's new-session draft), `/w/:placementId/session/:sessionId`, `/w/:placementId/terminal/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the draft, session or terminal the URL names in the workbench (through the pane kinds' `fromRoute`) and mirrors the focused pane back into the URL with `replace` (through `toRoute`), so the URL is the one home of the current placement: `useShellRoute().placementId()`.
+Today's app's shapes, id-only: `/` (home), `/w/:placementId/session` (the placement's new-session draft), `/w/:placementId/session/:sessionId`, `/s/:sessionId` (a session on this machine, as today's rail links it; the router resolves its placement through the resolver RouteSync registers from the session list, and until then the route is `localSession`), `/w/:placementId/terminal/:terminalId`, `/settings/:section?`, each page's own `path`, and the `routes` registry for full-screen screens outside the shell (auth, onboarding) which match first. `RouteSync` opens the draft, session or terminal the URL names in the workbench (through the pane kinds' `fromRoute`) and mirrors the focused pane back into the URL with `replace` (through `toRoute`), unless the URL already names that session, so the URL is the one home of the current placement: `useShellRoute().placementId()`.
 
 ## Placement providers (`placement-providers.tsx`)
 

@@ -13,14 +13,13 @@ import "./session-screen.css"
 export type DraftSessionState = {
   readonly projectId: ProjectId
   readonly placementId: PlacementId
-  readonly draftId: string
 }
 
 export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const t = useSessionScreenText()
   const stores = useSessionStores()
   const workbench = useWorkbench()
-  const key = () => draftComposerKey(props.state.placementId, props.state.draftId)
+  const key = () => draftComposerKey(props.state.placementId)
   const notice = createComposerNoticeChannel()
   let pane: HTMLDivElement | undefined
   const createSession = async (submission: Submission): Promise<SessionView> => {
@@ -42,7 +41,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                   <NewSessionContextRow
                     projectId={props.state.projectId}
                     placementId={props.state.placementId}
-                    onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, { ...target, draftId: props.state.draftId })}
+                    onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, target)}
                   />
                 </div>
                 <div class="relative z-10 -mt-2">

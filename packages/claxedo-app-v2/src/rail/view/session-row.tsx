@@ -1,4 +1,4 @@
-import { createSignal, For, Show, type Accessor, type JSX } from "solid-js"
+import { createSignal, Show, type Accessor, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import type { SessionRowView } from "@/session"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -9,15 +9,11 @@ import { NavigationRow, NavigationRowStatusGutter } from "./navigation-row"
 import { SessionRowMenu, type SessionRowMenuActions } from "./session-row-menu"
 import "../session-navigation.css"
 
-export type SessionNavigationProps = SessionRowMenuActions & {
-  readonly rows: readonly SessionRowView[]
-  readonly activeSessionId: string | undefined
+export type SessionRowProps = SessionRowMenuActions & {
+  readonly row: SessionRowView
+  readonly active: boolean
   readonly now: Accessor<number>
   readonly onActivate: (row: SessionRowView) => void
-}
-
-export function SessionNavigation(props: SessionNavigationProps): JSX.Element {
-  return <For each={props.rows}>{(row) => <SessionNavigationItem {...props} row={row} />}</For>
 }
 
 function ArchiveButton(props: { readonly row: SessionRowView; readonly engaged: boolean; readonly onArchive: (row: SessionRowView) => Promise<void> }): JSX.Element {
@@ -48,7 +44,7 @@ function ArchiveButton(props: { readonly row: SessionRowView; readonly engaged: 
   )
 }
 
-function SessionNavigationItem(props: SessionNavigationProps & { readonly row: SessionRowView }): JSX.Element {
+export function SessionRow(props: SessionRowProps): JSX.Element {
   const [menu, setMenu] = createSignal<{ x: number; y: number }>()
   const engagement = createHoverEngagement()
   const status = () => navigationStatus(props.row)
@@ -61,7 +57,7 @@ function SessionNavigationItem(props: SessionNavigationProps & { readonly row: S
       data={{ "data-testid": "rail-sidebar-session-row", "data-slot": "session-navigation-row", "data-session-id": props.row.ref.sessionId }}
       classList={{ "pl-9": true }}
       label={props.row.title}
-      active={props.activeSessionId === props.row.ref.sessionId}
+      active={props.active}
       onActivate={() => props.onActivate(props.row)}
       onContextMenu={openMenu}
       engagement={engagement}

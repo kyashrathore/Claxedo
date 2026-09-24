@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import type { Page } from "@playwright/test"
-import { expect, gitFolder, sessionRoute, test, UI, type Stack } from "../harness"
+import { expect, gitFolder, sendPrompt, sessionRoute, test, UI, type Stack } from "../harness"
 
 type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null }
 
@@ -137,4 +137,30 @@ test("02 projects, local: create a folder and a clone from the Project chip, edi
 
   await removeProject(stack, app, alphaId, "Alpha renamed")
   expect(await fs.readFile(path.join(alphaFolder, "README.md"), "utf8")).toBe("alpha\n")
+})
+
+async function chooseScriptedHarness(app: Page) {
+  await app.getByRole("button", { name: /^Select harness and model/ }).click()
+  const picker = app.getByRole("dialog", { name: "Select harness, model and effort" })
+  if (!(await picker.getByText(/Scripted ACP/).first().isVisible())) await picker.getByRole("button", { name: /^Harness/ }).click()
+  await picker.getByText(/Scripted ACP/).first().click()
+  await app.keyboard.press("Escape")
+}
+
+test("02 a new local worktree picked in the Workspace chip is made on the first send", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("worktree")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  await expect(app.getByRole("button", { name: "Session destination" })).toContainText("This computer")
+  const chip = app.getByRole("button", { name: "Workspace", exact: true })
+  await expect(chip).toContainText("main")
+  await expect(app.getByRole("button", { name: "Base branch" })).toContainText("main")
+  await chip.click()
+  await app.getByRole("button", { name: "New local worktree" }).click()
+  await expect(chip).toContainText("New local worktree")
+  await chooseScriptedHarness(app)
+  await sendPrompt(app, "Start in a new worktree")
+  await expect(app).toHaveURL(/\/w\/[^/]+\/session\/[^/?]+$/)
+  expect(app.url()).not.toContain(`/w/${workspace.id}/`)
+  expect(await api.sessions(workspace.directory)).toHaveLength(0)
 })

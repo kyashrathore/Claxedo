@@ -8,6 +8,7 @@ export type ShellRoute =
   | { readonly kind: "home" }
   | { readonly kind: "draft"; readonly placementId: PlacementId }
   | { readonly kind: "session"; readonly placementId: PlacementId; readonly sessionId: SessionId }
+  | { readonly kind: "localSession"; readonly sessionId: SessionId }
   | { readonly kind: "terminal"; readonly placementId: PlacementId; readonly terminalId: TerminalId }
   | { readonly kind: "page"; readonly page: PageEntry; readonly params: RouteParams }
   | { readonly kind: "screen"; readonly screen: RouteEntry; readonly params: RouteParams }
@@ -21,6 +22,10 @@ export function draftPath(placement: PlacementId): string {
 
 export function sessionPath(ref: Pick<SessionRef, "placementId" | "sessionId">): string {
   return `${draftPath(ref.placementId)}/${encodeURIComponent(ref.sessionId)}`
+}
+
+export function localSessionPath(session: SessionId): string {
+  return `/s/${encodeURIComponent(session)}`
 }
 
 export function terminalPath(placement: PlacementId, terminal: TerminalId): string {
@@ -81,6 +86,8 @@ export function parseRoute(
     if (params) return { kind: "screen", screen, params }
   }
   if (pathname === "/" || pathname === "") return { kind: "home" }
+  const local = matchPattern("/s/:sessionId", pathname)
+  if (local) return { kind: "localSession", sessionId: sessionId(local.sessionId) }
   const draft = matchPattern("/w/:placementId/session", pathname)
   if (draft) return { kind: "draft", placementId: placementId(draft.placementId) }
   const session = matchPattern("/w/:placementId/session/:sessionId", pathname)
