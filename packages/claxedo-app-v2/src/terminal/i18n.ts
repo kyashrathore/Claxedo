@@ -1,3 +1,5 @@
+import type { Translations } from "@/i18n"
+
 const en = {
   "terminal.title": "Terminal",
   "terminal.title.numbered": "Terminal {{number}}",
@@ -15,8 +17,10 @@ const en = {
   "terminal.missing": "This terminal no longer exists",
   "terminal.overload": "The terminal produced too much output too quickly and was disconnected to keep the app responsive.",
   "terminal.restoreFailed": "The terminal's screen could not be restored.",
-  "terminal.resizeFailed": "The terminal size could not be sent to the shell.",
   "terminal.loadFailed": "The terminals could not be loaded.",
+  "terminal.startFailed": "The terminal could not start in this window.",
+  "terminal.createFailed": "The terminal could not be created.",
+  "terminal.failed.title": "The terminal stopped",
   "terminal.agent.working": "Agent working",
   "terminal.agent.idle": "Agent idle",
   "terminal.agent.waitingOnUser": "Agent waiting on you",
@@ -31,20 +35,21 @@ const en = {
   "terminal.key.right": "Right arrow",
   "terminal.command.new": "New terminal",
   "terminal.pane": "Terminal pane",
-} as const
+}
 
-export type TerminalStringKey = keyof typeof en
 
-type Translated = Partial<Record<TerminalStringKey, string>>
+export type TerminalKey = keyof typeof en
 
-const lost = (title: string, description: string): Translated => ({
+type Localized = Partial<Record<TerminalKey, string>>
+
+const lost = (title: string, description: string): Localized => ({
   "terminal.connectionLost.title": title,
   "terminal.connectionLost.description": description,
 })
 
-const named = (title: string): Translated => ({ "terminal.title": title, "terminal.title.numbered": `${title} {{number}}` })
+const named = (title: string): Localized => ({ "terminal.title": title, "terminal.title.numbered": `${title} {{number}}` })
 
-export const terminalStrings: Record<string, Translated> & { readonly en: typeof en } = {
+export const dictionary = {
   en,
   ar: { ...named("محطة طرفية"), ...lost("فقد الاتصال", "انقطع اتصال المحطة الطرفية. يمكن أن يحدث هذا عند إعادة تشغيل الخادم.") },
   bs: lost("Veza prekinuta", "Veza s terminalom je prekinuta. Ovo se može desiti kada se server restartuje."),
@@ -56,23 +61,15 @@ export const terminalStrings: Record<string, Translated> & { readonly en: typeof
   ko: { ...named("터미널"), ...lost("연결 끊김", "터미널 연결이 중단되었습니다. 서버가 재시작하면 이런 일이 발생할 수 있습니다.") },
   no: lost("Tilkobling mistet", "Terminalforbindelsen ble avbrutt. Dette kan skje når serveren starter på nytt."),
   pl: lost("Utracono połączenie", "Połączenie z terminalem zostało przerwane. Może się to zdarzyć przy restarcie serwera."),
-  "pt-BR": lost("Conexão Perdida", "A conexão do terminal foi interrompida. Isso pode acontecer quando o servidor reinicia."),
+  br: lost("Conexão Perdida", "A conexão do terminal foi interrompida. Isso pode acontecer quando o servidor reinicia."),
   ru: { ...named("Терминал"), ...lost("Соединение потеряно", "Соединение с терминалом прервано. Это может произойти при перезапуске сервера.") },
   th: { ...named("เทอร์มินัล"), ...lost("การเชื่อมต่อขาดหาย", "การเชื่อมต่อเทอร์มินัลถูกขัดจังหวะ อาจเกิดขึ้นเมื่อเซิร์ฟเวอร์รีสตาร์ท") },
   tr: lost("Bağlantı Kesildi", "Terminal bağlantısı kesildi. Bu durum sunucu yeniden başladığında oluşabilir."),
   zh: { ...named("终端"), ...lost("连接已丢失", "终端连接已中断。这可能发生在服务器重启时。") },
   zht: { ...named("終端機"), ...lost("連線中斷", "終端機連線已中斷。這可能會在伺服器重新啟動時發生。") },
-}
+} satisfies Translations<TerminalKey>
 
-export const defaultTitleTemplates: readonly string[] = Object.values(terminalStrings)
-  .map((strings) => strings["terminal.title.numbered"])
-  .filter((template): template is string => typeof template === "string")
-
-export function t(key: TerminalStringKey, params?: Record<string, string | number>): string {
-  const template: string = en[key]
-  if (!params) return template
-  return template.replace(/\{\{(\w+)\}\}/g, (match, name: string) => {
-    const value = params[name]
-    return value === undefined ? match : String(value)
-  })
-}
+export const defaultTitleTemplates: readonly string[] = Object.values(dictionary).flatMap((strings: Localized) => {
+  const template = strings["terminal.title.numbered"]
+  return template === undefined ? [] : [template]
+})

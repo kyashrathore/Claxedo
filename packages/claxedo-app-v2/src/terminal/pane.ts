@@ -1,35 +1,32 @@
-import { useContext } from "solid-js"
-import { placementId, terminalId, type PlacementId, type TerminalId } from "@/server"
-import type { Json, PaneKind } from "@/shell/types"
-import { TerminalContext } from "./store"
+import { placementId, terminalId } from "@/server"
+import type { Json, PaneKind } from "@/shell"
+import { useTerminals } from "./context"
+import type { TerminalPaneState } from "./model"
 import { TerminalPane } from "./view/terminal-pane"
-import { t } from "./i18n"
 
-export type TerminalPaneState = {
-  readonly placementId: PlacementId
-  readonly terminalId: TerminalId
-}
-
-export const TERMINAL_PANE_KIND = "terminal"
-
-export function terminalPaneState(state: TerminalPaneState): Json {
-  return { placementId: state.placementId, terminalId: state.terminalId }
+function isJsonObject(value: Json): value is { readonly [key: string]: Json } {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function decodeTerminalPaneState(value: Json): TerminalPaneState | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  const record = value as { readonly [key: string]: Json }
-  const placement = record.placementId
-  const terminal = record.terminalId
+  if (!isJsonObject(value)) return undefined
+  const placement = value.placementId
+  const terminal = value.terminalId
   if (typeof placement !== "string" || typeof terminal !== "string" || !placement || !terminal) return undefined
   return { placementId: placementId(placement), terminalId: terminalId(terminal) }
 }
 
 export const terminalPaneKind: PaneKind<TerminalPaneState> = {
-  kind: TERMINAL_PANE_KIND,
-  title: (state) => useContext(TerminalContext)?.store(state.placementId).row(state.terminalId)?.title ?? t("terminal.title"),
+  kind: "terminal",
+  title: (state) => {
+    const terminals = useTerminals()
+    return terminals.store(state.placementId).row(state.terminalId)?.title ?? terminals.defaultTitle()
+  },
   icon: "terminal",
   view: TerminalPane,
-  encode: terminalPaneState,
+  encode: (state) => ({ placementId: state.placementId, terminalId: state.terminalId }),
   decode: decodeTerminalPaneState,
+  fromRoute: (route) =>
+    route.kind === "terminal" ? { placementId: route.placementId, terminalId: route.terminalId } : undefined,
+  toRoute: (state) => ({ kind: "terminal", placementId: state.placementId, terminalId: state.terminalId }),
 }
