@@ -10,7 +10,6 @@
     .v2-field-label-info,
     [data-slot="v2-popover-close-button"],
     [data-slot="v2-image-preview-close"],
-    [data-slot="v2-line-comment-overflow"],
     .v2-scroll-view-thumb {
       position: relative;
     }
@@ -25,7 +24,6 @@
     .v2-field-label-info::before,
     [data-slot="v2-popover-close-button"]::before,
     [data-slot="v2-image-preview-close"]::before,
-    [data-slot="v2-line-comment-overflow"]::before,
     .v2-scroll-view-thumb::before {
       content: "";
       position: absolute;

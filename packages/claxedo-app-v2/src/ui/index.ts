@@ -33,14 +33,6 @@ export { IconButton, type IconButtonProps } from "./icon-button"
 export { ImagePreview, type ImagePreviewProps } from "./image-preview"
 export { InlineInput, type InlineInputProps } from "./inline-input"
 export { Keybind, type KeybindProps } from "./keybind"
-export {
-  LineComment,
-  LineCommentEditor,
-  LineCommentOverflowIcon,
-  type LineCommentProps,
-  type LineCommentEditorProps,
-  type LineCommentEditorMention,
-} from "./line-comment"
 export { List, type ListAddProps, type ListProps, type ListRef, type ListSearchProps } from "./list"
 export { Loader } from "./loader"
 export {
