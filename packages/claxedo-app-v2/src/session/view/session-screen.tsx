@@ -5,7 +5,7 @@ import { FailureBoundary, FailureNotice } from "@/lib/failure"
 import { sessionId, useServer, type SessionRef } from "@/server"
 import { usePanel } from "@/panel"
 import { useSessionStores, type SessionView } from "@/session"
-import { sessionPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
+import { draftPath, sessionPath, settingsPath, useCommands, useShellRoute, type PaneProps } from "@/shell"
 import { useDialog } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { createQueueEdit } from "./queue-edit"
@@ -18,6 +18,7 @@ import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
+import { recoverTurn } from "./turn-recovery-actions"
 import { EnvironmentRail, type EnvironmentNavigator } from "./environment-rail"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
@@ -89,6 +90,14 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
   createMessageLinks({ view: () => props.view, users, scroll, active: () => props.active, commands: useCommands(), t })
+  let retry: ((text: string) => void) | undefined
+  const recover = (kind: Parameters<typeof recoverTurn>[2], userMessageId: string) =>
+    recoverTurn(props.view, {
+      startNewSession: () => routing.navigate(draftPath(props.view.ref.placementId)),
+      openProviders: () => routing.navigate(settingsPath("models")),
+      chooseModel: () => body?.querySelector<HTMLElement>('[data-action="prompt-harness-model"]')?.click(),
+      resend: (text) => retry?.(text),
+    }, kind, userMessageId)
   document.addEventListener("keydown", handleKeyDown)
   onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
   const setDock = createDockFollow(scroll)
@@ -111,7 +120,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
           data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
           classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
         >
-          <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} />
+          <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} onRecover={recover} />
         </div>
       </div>
       <div
@@ -141,6 +150,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
                   queuedEdit={queueEdit.edit}
                   dropZone={() => body}
                   collapsible={props.floating}
+                  registerRetry={(next) => (retry = next)}
                 />
               </Show>
             </div>
