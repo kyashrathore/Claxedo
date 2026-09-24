@@ -1,7 +1,7 @@
 import { For, Show, type JSX } from "solid-js"
 import { useI18n, useTranslator } from "@/i18n"
 import type { UsageSummary } from "@/server"
-import { Button } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { dictionary } from "../i18n"
 import { totalTokens, type BreakdownRow, type UsageGroup, type UsageMetric } from "../model"
 

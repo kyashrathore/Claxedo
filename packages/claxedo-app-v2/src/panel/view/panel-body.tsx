@@ -59,7 +59,7 @@ function NavigatorColumn(props: { readonly placementId: PlacementId }): JSX.Elem
   const panel = usePanel()
   const preferences = usePreferences()
   const left = () => preferences.appearance.navigatorSide === "left"
-  const selected = () => panel.navigator() !== null
+  const selected = () => panel.navigator() !== null && !panel.phone()
   const [visited, setVisited] = createSignal(selected())
   createEffect(() => {
     if (selected()) setVisited(true)

@@ -2,7 +2,8 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { ConfigEnv, UserConfig } from "vite"
 import appV2Config from "../claxedo-app-v2/vite.cloud.config"
-import { rendererDocumentCsp } from "./vite.renderer"
+import { desktopRendererBoundaryManifestPlugin } from "./scripts/product-boundary-manifests"
+import { desktopDir, rendererDocumentCsp } from "./vite.renderer"
 
 const normalize = (value: string) => value.replaceAll("\\", "/")
 
@@ -37,7 +38,11 @@ export function createElectronRendererV2(env: ConfigEnv): UserConfig {
     root: rendererRoot,
     base: "./",
     publicDir: normalize(path.join(appV2Dir, "public")),
-    plugins: [...(app.plugins ?? []), rendererDocumentCsp(env.mode)],
+    plugins: [
+      ...(app.plugins ?? []),
+      rendererDocumentCsp(env.mode),
+      desktopRendererBoundaryManifestPlugin(desktopDir, "v2"),
+    ],
     server: {
       host: "127.0.0.1",
       proxy: {

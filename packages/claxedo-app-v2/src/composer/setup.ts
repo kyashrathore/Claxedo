@@ -36,6 +36,7 @@ export type ComposerProps = {
   readonly dropZone?: () => HTMLElement | undefined
   readonly collapsible?: boolean
   readonly registerRecovery?: (recovery: ComposerRecovery) => void
+  readonly active?: () => boolean
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 

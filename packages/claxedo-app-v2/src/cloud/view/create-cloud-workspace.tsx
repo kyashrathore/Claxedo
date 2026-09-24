@@ -1,7 +1,7 @@
 import { createSignal, Show, type Component } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type CloudWorkspace } from "@/server"
-import { Button, TextInput } from "@/ui"
+import { TextInput, Button } from "@/ui"
 import { useCloudText } from "../i18n"
 import type { CloudWorkspaces } from "../store"
 
@@ -44,7 +44,7 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
           spellcheck={false}
           onInput={(event) => setBranch(event.currentTarget.value)}
         />
-        <Button type="submit" variant="contrast" disabled={creating()}>
+        <Button type="submit" variant="primary" disabled={creating()}>
           {creating() ? t("cloud.creating") : t("cloud.new")}
         </Button>
       </div>

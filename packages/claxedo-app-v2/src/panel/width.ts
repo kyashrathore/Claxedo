@@ -3,7 +3,7 @@ export const PANEL_MOTION_MS = 120
 export const PANEL_CLOSE_GRACE_MS = PANEL_MOTION_MS + 20
 export const PANEL_MOTION = `transform ${PANEL_MOTION_MS}ms cubic-bezier(0.2, 0, 0, 1)`
 export const PANEL_RESIZE_KEY_STEP = 24
-export const PANEL_PHONE_MAX_WIDTH = 639
+export const PANEL_PHONE_MAX_WIDTH = 767
 
 const MIN_READABLE_CONTENT_WIDTH = 300
 

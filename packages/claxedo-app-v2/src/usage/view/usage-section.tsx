@@ -2,7 +2,8 @@ import { createSignal, For, Match, Show, Switch, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { useElapsed } from "@/lib/delay"
 import type { UsageSummary } from "@/server"
-import { Button, SegmentedControl, SegmentedControlItem } from "@/ui"
+import { SegmentedControl, SegmentedControlItem } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { useUsageSummary } from "../api"
 import { dictionary, type UsageKey } from "../i18n"
 import type { UsageDays, UsageGroup, UsageMetric, UsageOptions, UsageView } from "../model"
@@ -83,7 +84,7 @@ export function UsageSection(): JSX.Element {
         <Match when={usage.load().kind === "failed"}>
           <div class="usage-failure" role="alert">
             <p>{t("usage.failed")}</p>
-            <Button size="small" onClick={() => usage.refresh()}>{t("usage.retry")}</Button>
+            <Button size="small" variant="secondary" onClick={() => usage.refresh()}>{t("usage.retry")}</Button>
           </div>
         </Match>
         <Match when={ready()}>

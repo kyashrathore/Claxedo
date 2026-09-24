@@ -29,6 +29,7 @@ const en = {
   "onboarding.failed.noPlacement": "The project was created but its folder cannot be opened here: {{project}}",
   "onboarding.ai.logins": "Logins on this machine",
   "onboarding.ai.scanning": "Scanning this machine for logins…",
+  "onboarding.ai.catalog": "Or connect a provider for",
   "onboarding.execution.label": "Where work runs",
   "onboarding.execution.local.title": "Just this machine",
   "onboarding.execution.local.detail": "Sessions run on this computer, in the project's folder.",

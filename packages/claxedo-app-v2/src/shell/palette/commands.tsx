@@ -37,7 +37,6 @@ export type Commands = {
   readonly keybindParts: (id: string) => string[]
   readonly setKeybind: (id: string, config: string | undefined) => void
   readonly overridden: () => boolean
-  readonly resetKeybinds: () => void
   readonly options: () => CommandOption[]
   readonly slashOptions: () => CommandOption[]
   readonly has: (id: string) => boolean
@@ -148,10 +147,9 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
       else next[id] = config
       setOverrides(reconcile(next))
     },
-    overridden: () => Object.keys(overrides).length > 0,
-    resetKeybinds: () => setOverrides(reconcile({})),
     options,
     slashOptions,
+    overridden: () => Object.keys(overrides).length > 0,
     has: (id) => registered().ids.has(id),
     showPalette: () => run(OPEN_FILE_COMMAND, "palette"),
     keybinds: (enabled) => setStore("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1))),

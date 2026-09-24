@@ -90,7 +90,7 @@ export function PanelProvider(props: ParentProps): JSX.Element {
     placementId,
     sessionId,
     open: layout.panelShown,
-    maximized: () => layout.panelShown() && size.fullWidth(),
+    maximized: () => layout.panelShown() && (size.phone() || size.fullWidth()),
     inset: () =>
       workbenchInset({
         open: layout.panelShown(),

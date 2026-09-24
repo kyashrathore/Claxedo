@@ -11,7 +11,7 @@ export function FirstProjectCanvas(_props: PageProps) {
   const dialog = useDialog()
   const capabilities = () => server.capabilities()
   return (
-    <div class="first-project" data-testid="first-project-canvas">
+    <main class="first-project" data-testid="first-project-canvas">
       <div class="first-project-field" aria-hidden="true" />
       <div class="first-project-glow" aria-hidden="true" />
       <div class="first-project-vignette" aria-hidden="true" />
@@ -20,6 +20,6 @@ export function FirstProjectCanvas(_props: PageProps) {
           {(known) => <OnboardingWizard localExecution={known().thisMachine !== undefined} pickFolder={pickProjectFolderWith(dialog)} />}
         </Show>
       </div>
-    </div>
+    </main>
   )
 }
