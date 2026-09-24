@@ -133,3 +133,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - v1 gates Revert message, the diff summary's Undo and the rolled-back dock on a harness declaring `revert`/`unrevert`.
 - No harness in workspace-runtime or agent-sdk-runtime declares either (opencode sets both false), so v1 never renders them.
 - **v2 does not port them.** The moved timeline's dead half (UserActions.revert, the Revert button, Undo) is a deletion candidate. It goes, or comes back, together with a harness that declares revert.
+
+## Orchestrator, 00:35: request-read failures (SESS-071)
+- v1 designed a "Could not load pending permissions or questions" card with Retry. It can't be reached: its SDK list returns `{data: undefined}` instead of throwing, so v1 shows no card and re-reads /permission, /question and /session/status in a hot loop (3,828 requests each in 14 s).
+- **v2 shows v1's card.** The request read fails on its own, the transcript stays visible, Retry re-reads, and there is no loop. Flow 08's case branches on this entry.
