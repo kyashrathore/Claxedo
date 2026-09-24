@@ -1,12 +1,13 @@
 import { createMemo, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
-import { useCloudPlacer } from "@/cloud"
+import { useCloudPlacer, type CloudPlacer } from "@/cloud"
 import { machine, unreachable, type Machine } from "@/lib/machine"
-import type { PlacementId, ProjectId } from "@/server"
+import type { PlacementId, ProjectId, ProjectSource } from "@/server"
 import { appErrorOf, useProjectsServer, type ProjectsServer } from "./api"
 import {
   addProjectInitial,
   addProjectTransition,
+  recordedProjectId,
   type AddProjectEvent,
   type AddProjectState,
   type PlacementChoice,
@@ -17,10 +18,6 @@ export type ProjectCreated = {
   readonly projectId: ProjectId
   readonly placementId?: PlacementId
   readonly harnessId?: string
-}
-
-export type CloudPlacer = {
-  readonly create: (input: { readonly projectId: ProjectId }) => Promise<{ readonly id: PlacementId }>
 }
 
 export type AddProjectFlow = {
@@ -75,17 +72,24 @@ export function createAddProjectFlow(input: {
   const [draft, setDraft] = createStore<ProjectDraft>({ name: "" })
   const canAdvance = createMemo(() => advanceable(flow.state(), draft))
 
+  const record = async (source: ProjectSource): Promise<ProjectId> => {
+    const name = draft.name.trim()
+    const project = await input.server.projects.create({ ...(name ? { name } : {}), source })
+    flow.send({ type: "projectRecorded", projectId: project.id })
+    return project.id
+  }
+
   const create = async () => {
     const source = draft.source
     if (!source) return
+    const existing = recordedProjectId(flow.state())
     flow.send({ type: "createRequested" })
     try {
-      const name = draft.name.trim()
-      const project = await input.server.projects.create({ ...(name ? { name } : {}), source })
-      const placementId = await place(input.server, input.cloud, project.id, draft.placement)
-      flow.send({ type: "projectCreated", projectId: project.id, ...(placementId ? { placementId } : {}) })
+      const projectId = existing ?? (await record(source))
+      const placementId = await place(input.server, input.cloud, projectId, draft.placement)
+      flow.send({ type: "projectCreated", projectId, ...(placementId ? { placementId } : {}) })
       input.onCreated({
-        projectId: project.id,
+        projectId,
         ...(placementId ? { placementId } : {}),
         ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
       })

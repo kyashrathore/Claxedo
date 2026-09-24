@@ -9,7 +9,7 @@ Owns: the first run. A full-screen route (`/welcome`) the shell shows when the s
 
 ## State
 
-The wizard has one state per step plus done: `project`, `agent`, `placement`, `done(projectId)`. It is derived (`onboardingState`) from the add-project machine in `@/projects`, which owns the steps, the draft and creation; this domain adds no second machine over the same flow. Where a created project opens is `createdDestination` from `@/projects`.
+The wizard has one state per step plus done: `project`, `agent`, `placement`, `done(projectId)`. It is derived (`onboardingState`) from the add-project machine in `@/projects`, which owns the steps, the draft and creation; this domain adds no second machine over the same flow. A created project opens through `usePlacementOpener` from `@/projects`.
 
 ## Rules the view keeps
 

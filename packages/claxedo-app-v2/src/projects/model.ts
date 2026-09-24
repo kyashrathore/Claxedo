@@ -15,19 +15,19 @@ export type ProjectDraft = {
 export type AddProjectState =
   | { readonly kind: "choosingSource" }
   | { readonly kind: "choosingAgent" }
-  | { readonly kind: "choosingPlacement" }
-  | { readonly kind: "creating" }
+  | { readonly kind: "choosingPlacement"; readonly projectId?: ProjectId }
+  | { readonly kind: "creating"; readonly projectId?: ProjectId }
   | { readonly kind: "created"; readonly projectId: ProjectId; readonly placementId?: PlacementId }
-  | { readonly kind: "failed"; readonly error: AppError }
+  | { readonly kind: "failed"; readonly error: AppError; readonly projectId?: ProjectId }
 
 export type AddProjectEvent =
   | { readonly type: "sourceChosen" }
   | { readonly type: "agentChosen" }
   | { readonly type: "back" }
   | { readonly type: "createRequested" }
+  | { readonly type: "projectRecorded"; readonly projectId: ProjectId }
   | { readonly type: "projectCreated"; readonly projectId: ProjectId; readonly placementId?: PlacementId }
   | { readonly type: "createFailed"; readonly error: AppError }
-  | { readonly type: "retryRequested" }
 
 export type AddProjectStep = "source" | "agent" | "placement"
 
@@ -35,13 +35,18 @@ export const addProjectSteps: readonly AddProjectStep[] = ["source", "agent", "p
 
 export const addProjectInitial: AddProjectState = { kind: "choosingSource" }
 
+function recorded(projectId: ProjectId | undefined): { readonly projectId?: ProjectId } {
+  return projectId ? { projectId } : {}
+}
+
 function stepBack(state: AddProjectState): AddProjectState {
   switch (state.kind) {
     case "choosingAgent":
       return { kind: "choosingSource" }
     case "choosingPlacement":
+      return state.projectId ? state : { kind: "choosingAgent" }
     case "failed":
-      return { kind: "choosingAgent" }
+      return state.projectId ? { kind: "choosingPlacement", projectId: state.projectId } : { kind: "choosingAgent" }
     case "choosingSource":
     case "creating":
     case "created":
@@ -49,6 +54,14 @@ function stepBack(state: AddProjectState): AddProjectState {
     default:
       return unreachable(state)
   }
+}
+
+export function canGoBack(state: AddProjectState): boolean {
+  return stepBack(state) !== state
+}
+
+export function recordedProjectId(state: AddProjectState): ProjectId | undefined {
+  return state.kind === "choosingPlacement" || state.kind === "creating" || state.kind === "failed" ? state.projectId : undefined
 }
 
 export function addProjectTransition(state: AddProjectState, event: AddProjectEvent): AddProjectState {
@@ -60,15 +73,15 @@ export function addProjectTransition(state: AddProjectState, event: AddProjectEv
     case "back":
       return stepBack(state)
     case "createRequested":
-      return state.kind === "choosingPlacement" || state.kind === "failed" ? { kind: "creating" } : state
+      return state.kind === "choosingPlacement" || state.kind === "failed" ? { kind: "creating", ...recorded(state.projectId) } : state
+    case "projectRecorded":
+      return state.kind === "creating" ? { kind: "creating", projectId: event.projectId } : state
     case "projectCreated":
       return state.kind === "creating"
         ? { kind: "created", projectId: event.projectId, ...(event.placementId ? { placementId: event.placementId } : {}) }
         : state
     case "createFailed":
-      return state.kind === "creating" ? { kind: "failed", error: event.error } : state
-    case "retryRequested":
-      return state.kind === "failed" ? { kind: "choosingPlacement" } : state
+      return state.kind === "creating" ? { kind: "failed", error: event.error, ...recorded(state.projectId) } : state
     default:
       return unreachable(event)
   }
