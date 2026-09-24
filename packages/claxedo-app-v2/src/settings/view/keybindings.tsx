@@ -1,18 +1,18 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { useCommands, type Commands } from "@/shell"
-import { Button, showToast, TextInput } from "@/ui"
+import { PALETTE_ID, useCommands, type Commands } from "@/shell"
+import { showToast, TextInput } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { useTranslator } from "@/i18n"
 import { dictionary } from "../i18n"
 import { clearsKeybinding, filterRows, groupRows, keybindingFromEvent, type KeybindingRow } from "../keybindings"
 import { SettingsGroup, SettingsList } from "./section"
 
-const PALETTE_COMMAND_ID = "shell.palette"
 
 function keybindingRows(commands: Commands, labels: { readonly palette: string; readonly general: string }): KeybindingRow[] {
   const options = commands.options().filter((option) => commands.has(option.id))
   return [
-    { id: PALETTE_COMMAND_ID, title: labels.palette, category: labels.general, keybind: commands.keybind(PALETTE_COMMAND_ID) },
+    { id: PALETTE_ID, title: labels.palette, category: labels.general, keybind: commands.keybind(PALETTE_ID) },
     ...options.map((option) => ({ id: option.id, title: option.title, category: option.category ?? labels.general, keybind: commands.keybind(option.id) })),
   ]
 }
@@ -59,7 +59,7 @@ export function KeybindingsSection() {
     <div class="settings-body" data-component="settings-keybindings">
       <div class="settings-toolbar">
         <TextInput aria-label={t("settings.keybindings.search")} placeholder={t("settings.keybindings.search")} value={query()} showClearButton={query() !== ""} onClearClick={() => setQuery("")} onInput={(event) => setQuery(event.currentTarget.value)} />
-        <Button size="small" onClick={resetAll}>{t("settings.keybindings.reset")}</Button>
+        <Button size="small" variant="secondary" onClick={resetAll} disabled={!commands.overridden()}>{t("settings.keybindings.reset")}</Button>
       </div>
       <For each={groups()}>
         {([category, list]) => (
