@@ -126,7 +126,7 @@ async function removeOnProjectPage(app: Page, name: string) {
   await expect((await projectsList(app)).getByRole("button", { name, exact: true })).toHaveCount(0)
 }
 
-test("02 projects, local: add a folder and a clone, rename, remove, each read back by id", async ({ stack, app }) => {
+test("02 projects, local: add a folder and a clone, rename, remove, each read back by id", async ({ stack, page: app }) => {
   const root = path.join(stack.dataDir, "folders")
   await createServerProject(stack.url, "Existing", await gitFolder(root, "existing"))
   const alphaFolder = await gitFolder(root, "alpha")
