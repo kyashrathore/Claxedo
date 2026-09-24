@@ -1,7 +1,7 @@
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createEffect, onCleanup, Show, type JSX } from "solid-js"
 import { createScrollThumb, type ScrollViewThumbVisibility } from "./scroll-view-thumb"
-import "./scroll-view.css"
+import "./scroll-thumb.css"
 
 type ScrollThumbState = ReturnType<typeof createScrollThumb>
 
