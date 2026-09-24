@@ -82,7 +82,7 @@ export const SourceStep: Component<{ flow: AddProjectFlow; pickFolder?: () => Pr
         <span class="projects-hint">{t("projects.add.name.hint")}</span>
       </Field>
       <Show when={offersFolder()}>
-        <SegmentedControl class="self-start" value={mode()} onChange={switchMode} aria-label={t("projects.source")}>
+        <SegmentedControl class="self-start segmented-control--fit" value={mode()} onChange={switchMode} aria-label={t("projects.source")}>
           <SegmentedControlItem value="repository">{t("projects.add.source.repository")}</SegmentedControlItem>
           <SegmentedControlItem value="folder">{t("projects.add.source.folder")}</SegmentedControlItem>
         </SegmentedControl>
