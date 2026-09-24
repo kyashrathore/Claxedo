@@ -1,6 +1,6 @@
 import { ServerError, responseErrorCode } from "./errors"
 import type { PlacementId, TerminalId } from "./ids"
-import type { TerminalsApi } from "./index"
+import type { TerminalsApi } from "./api"
 import type { TerminalAttachInput, TerminalStream } from "./terminal-types"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { Workspaces } from "./workspaces"

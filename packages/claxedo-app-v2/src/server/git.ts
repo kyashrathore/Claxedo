@@ -1,6 +1,6 @@
 import { ServerError } from "./errors"
 import { fetchQuery } from "./fetch-query"
-import type { GitApi } from "./index"
+import type { GitApi } from "./api"
 import type { PlacementId } from "./ids"
 import { queryKeys } from "./query-keys"
 import { jsonInit, withQuery, type Transport } from "./transport"

@@ -1,47 +1,33 @@
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
-import { ServerError, isNotFound } from "./errors"
+import { ServerError, isNotFound, responseError } from "./errors"
 import { sessionId, type RequestId } from "./ids"
-import type { SessionsApi } from "./index"
+import type { SessionsApi } from "./api"
 import { controlGoal, readGoalState } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { createStatusesRead, readRequests } from "./session-statuses"
 import { stopTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
-import { jsonInit, withQuery, type Transport } from "./transport"
-import type { AgentRequestReply, SessionCreateInput, SessionPage, SessionRef, SessionRow, SessionSnapshot, TranscriptEntry, TranscriptPage } from "./types"
+import { jsonInit, withQuery, type RuntimeRoute, type Transport } from "./transport"
+import type { AgentRequestReply, SessionCreateInput, SessionPage, SessionRef, SessionRow, SessionSnapshot, TranscriptPage } from "./types"
 import type { Workspaces } from "./workspaces"
 import { createMessageIds } from "./wire/ascending-id"
+import { harnessIdentity, harnessSelectionQuery } from "./wire/harness-selection"
 import { promptBody } from "./wire/prompt"
 import { permissionReplyBody } from "./wire/requests"
 import { sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
+import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
-const NATIVE_HARNESSES: ReadonlySet<string> = new Set(["claude", "codex", "cursor", "pi", "opencode"])
 const OLDER_PAGE_SIZE = 50
-
-type MessagePage = { readonly messages?: unknown; readonly nextCursor?: unknown }
-
-function isEntry(value: unknown): value is TranscriptEntry {
-  const row = value as { info?: unknown; parts?: unknown } | null
-  return !!row && !!row.info && typeof row.info === "object" && Array.isArray(row.parts)
-}
-
-function transcriptPage(body: MessagePage): TranscriptPage {
-  const rows = Array.isArray(body.messages) ? body.messages : []
-  return { entries: rows.filter(isEntry), ...(typeof body.nextCursor === "string" ? { olderCursor: body.nextCursor } : {}) }
-}
+const ALL_WORKSPACES_SCOPE = "workspace"
 
 function sessionPath(ref: SessionRef, suffix = "") {
   return `/session/${encodeURIComponent(ref.sessionId)}${suffix}`
 }
 
-function harnessQuery(harness: string | undefined) {
-  if (!harness) return {}
-  return NATIVE_HARNESSES.has(harness) ? { nativeHarness: harness } : { connectionId: harness }
-}
-
 function createBody(input: SessionCreateInput) {
   return {
     ...(input.title ? { title: input.title } : {}),
+    ...(input.harness ? { harness: harnessIdentity(input.harness) } : {}),
     ...(input.model ? { model: { providerID: input.model.providerId, id: input.model.modelId, ...(input.model.variant ? { variant: input.model.variant } : {}) } } : {}),
   }
 }
@@ -67,17 +53,23 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
 
   const list = async (options: { readonly cursor?: string; readonly limit: number }): Promise<SessionPage> => {
     await workspaces.load()
-    const query = { scope: "global", sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
+    const query = { scope: ALL_WORKSPACES_SCOPE, sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
     const body = await transport.json<{ items?: unknown; nextCursor?: unknown }>(withQuery(listPath, query))
     const rows = await rowsOf(Array.isArray(body.items) ? body.items : [])
     return { rows, ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}) }
   }
 
+  const readPage = async (where: RuntimeRoute, path: string): Promise<TranscriptPage> => {
+    const response = await transport.runtime(where, path)
+    if (!response.ok) throw await responseError(response, "Transcript page")
+    return transcriptPageFromWire(await response.json(), response.headers.get(OLDER_CURSOR_HEADER))
+  }
+
   const snapshot = async (ref: SessionRef): Promise<SessionSnapshot> => {
     const where = await route(ref)
-    const [row, page, requests, todos, goal] = await Promise.all([
+    const [row, transcript, requests, todos, goal] = await Promise.all([
       transport.runtimeJson<AgentPresentationSession>(where, sessionPath(ref)),
-      transport.runtimeJson<MessagePage>(where, withQuery(sessionPath(ref, "/message"), { view: "latest-surface" })),
+      readPage(where, withQuery(sessionPath(ref, "/message"), { view: "latest-surface" })),
       readRequests(transport, where, ref.sessionId),
       transport.runtimeJson<SessionSnapshot["todos"]>(where, sessionPath(ref, "/todo")),
       readGoalState(transport, where, ref),
@@ -85,7 +77,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     return {
       row: sessionRowFromSession(row, ref),
       status: await status.read(where, ref.sessionId, row),
-      transcript: transcriptPage(page),
+      transcript,
       requests: requests.map((item) => item.request),
       todos,
       diff: row.summary?.diffs ?? [],
@@ -94,15 +86,15 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   }
 
   const older = async (ref: SessionRef, cursor: string): Promise<TranscriptPage> => {
-    const path = withQuery(sessionPath(ref, "/message"), { limit: OLDER_PAGE_SIZE, before: cursor })
-    return transcriptPage(await transport.runtimeJson<MessagePage>(await route(ref), path))
+    return readPage(await route(ref), withQuery(sessionPath(ref, "/message"), { limit: OLDER_PAGE_SIZE, before: cursor }))
   }
 
   const create = async (input: SessionCreateInput): Promise<SessionRow> => {
     const where = await workspaces.route(input.placementId)
     const placement = workspaces.byId(input.placementId)
     if (!placement) throw new ServerError({ class: "not_found", message: `Placement ${input.placementId} is not in the catalog` })
-    const created = await transport.runtimeJson<AgentPresentationSession>(where, withQuery("/session", harnessQuery(input.harness)), jsonInit("POST", createBody(input)))
+    const path = withQuery("/session", input.harness ? harnessSelectionQuery(input.harness) : {})
+    const created = await transport.runtimeJson<AgentPresentationSession>(where, path, jsonInit("POST", createBody(input)))
     return sessionRowFromSession(created, { projectId: placement.projectId, placementId: input.placementId, sessionId: sessionId(created.id) })
   }
 
