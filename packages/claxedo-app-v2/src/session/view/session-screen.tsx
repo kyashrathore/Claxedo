@@ -18,8 +18,10 @@ import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
-import { turnActive } from "./timeline"
+import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
+import { PreviousMessagesRow, turnActive } from "./timeline"
 import "./session-screen.css"
+import "./session-floating.css"
 
 function ChildNotice(props: { readonly t: SessionScreenText; readonly onBack: () => void }) {
   return (
@@ -36,7 +38,7 @@ function ChildNotice(props: { readonly t: SessionScreenText; readonly onBack: ()
   )
 }
 
-function SessionBody(props: { readonly view: SessionView; readonly paneId: string; readonly active: boolean }) {
+function SessionBody(props: { readonly view: SessionView; readonly paneId: string; readonly active: boolean; readonly floating: boolean }) {
   const t = useSessionScreenText()
   const server = useServer()
   const stores = useSessionStores()
@@ -59,7 +61,21 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
   }
   const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
   const todo = createTodoDock(() => props.view)
-  const lift = () => (todo.open() ? 36 : 0)
+  const lift = () => (todo.open() && !props.floating ? 36 : 0)
+  const users = createMemo(() => userMessages(props.view))
+  const [peekToggles, setPeekToggles] = createSignal(0)
+  const [sends, setSends] = createSignal(0)
+  const peek = createMemo<FloatingPeekState>((previous) =>
+    floatingPeekStep(previous, {
+      floating: props.floating,
+      toggles: peekToggles(),
+      sends: sends(),
+      sessionId: props.view.ref.sessionId,
+      loaded: !!props.view.conversation(),
+      turns: users().length,
+    }),
+  )
+  const transcriptCollapsed = () => props.floating && !peek().peeked
   const composers = useComposerStore()
   let body: HTMLDivElement | undefined
   const draft = () => composers.draft(sessionComposerKey(props.view.ref))
@@ -71,19 +87,37 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
     prompt: { cursor: () => draft().cursor, length: () => promptText(draft().prompt).length },
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
-  createMessageLinks({ view: () => props.view, users: createMemo(() => userMessages(props.view)), scroll, active: () => props.active, commands: useCommands(), t })
+  createMessageLinks({ view: () => props.view, users, scroll, active: () => props.active, commands: useCommands(), t })
   document.addEventListener("keydown", handleKeyDown)
   onCleanup(() => document.removeEventListener("keydown", handleKeyDown))
   const setDock = createDockFollow(scroll)
   return (
-    <div ref={body} data-slot="session-screen-body">
-      <div data-slot="session-screen-timeline">
-        <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} />
+    <div ref={body} data-slot="session-screen-body" classList={{ "session-floating-overlay": props.floating }}>
+      <div data-slot="session-screen-transcript" classList={{ "session-floating-tab": props.floating }}>
+        <Show when={props.floating}>
+          <div class="session-floating-peek">
+            <PreviousMessagesRow
+              count={users().length}
+              expanded={peek().peeked}
+              testId="session-transcript-peek"
+              onReveal={() => setPeekToggles((count) => count + 1)}
+              t={host.t}
+            />
+          </div>
+        </Show>
+        <div
+          data-slot="session-screen-timeline"
+          data-session-transcript-collapsed={transcriptCollapsed() ? "true" : undefined}
+          classList={{ "session-floating-timeline": props.floating, "session-floating-timeline-collapsed": transcriptCollapsed() }}
+        >
+          <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} />
+        </div>
       </div>
       <div
         ref={setDock}
         data-component="session-prompt-dock"
         class="ui-session-prompt-dock w-full flex flex-col justify-center items-center pointer-events-none shrink-0 pb-3"
+        classList={{ "session-floating-dock": props.floating }}
       >
         <div data-slot="session-screen-dock" class="w-full px-3 pointer-events-auto md:max-w-192 md:mx-auto 2xl:max-w-[880px]">
           <SessionDocks view={props.view} />
@@ -99,9 +133,13 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
                   view={props.view}
                   sessionHarness={props.view.row()?.harness}
                   attachmentWorkspace={true}
-                  afterAccepted={queueEdit.accepted}
+                  afterAccepted={() => {
+                    setSends((count) => count + 1)
+                    queueEdit.accepted()
+                  }}
                   queuedEdit={queueEdit.edit}
-                dropZone={() => body}
+                  dropZone={() => body}
+                  collapsible={props.floating}
                 />
               </Show>
             </div>
@@ -116,15 +154,22 @@ export function SessionScreen(props: PaneProps<SessionRef>) {
   const t = useSessionScreenText()
   const phone = usePhone()
   const stores = useSessionStores()
+  const panel = usePanel()
+  const floating = () => panel.maximized() && props.active
   const view = createMemo(() => stores.open(props.state))
   const failure = () => {
     const state = view().state()
     return state.kind === "failed" ? state : undefined
   }
   return (
-    <section data-component="session-screen" data-session-id={props.state.sessionId} aria-label={view().row()?.title ?? t("sessionScreen.untitled")}>
+    <section
+      data-component="session-screen"
+      data-session-id={props.state.sessionId}
+      data-session-presentation={floating() ? "floating" : undefined}
+      aria-label={view().row()?.title ?? t("sessionScreen.untitled")}
+    >
       <FailureBoundary title={t("sessionScreen.failed")} retryLabel={t("sessionScreen.action.retry")}>
-        <Switch fallback={<SessionBody view={view()} paneId={props.paneId} active={props.active} />}>
+        <Switch fallback={<SessionBody view={view()} paneId={props.paneId} active={props.active} floating={floating()} />}>
           <Match when={view().state().kind === "missing"}>
             <div class="flex h-full items-center justify-center px-4 text-text-weak">
               <div data-testid="session-unavailable" data-session-id={props.state.sessionId}>
