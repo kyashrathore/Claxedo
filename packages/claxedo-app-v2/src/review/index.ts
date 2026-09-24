@@ -1,2 +1,2 @@
 export { ReviewProvider } from "./store"
-export { changesPanelTab } from "./panel-tab"
+export { ChangesTab } from "./view/changes-tab"

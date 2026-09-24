@@ -41,7 +41,7 @@ export const TextShimmer = (props: {
   return (
     <Dynamic
       component={props.as ?? "span"}
-      data-component="text-shimmer"
+      data-component="v2-text-shimmer"
       data-active={active() ? "true" : "false"}
       class={props.class}
       aria-label={text()}
@@ -50,11 +50,11 @@ export const TextShimmer = (props: {
         "--_index": `${offset()}`,
       }}
     >
-      <span data-slot="text-shimmer-char">
-        <span data-slot="text-shimmer-base" class="ui-text-shimmer-base" aria-hidden="true">
+      <span data-slot="v2-text-shimmer-char">
+        <span data-slot="v2-text-shimmer-base" class="v2-text-shimmer-base" aria-hidden="true">
           {text()}
         </span>
-        <span data-slot="text-shimmer-shimmer" class="ui-text-shimmer-shimmer" data-run={run() ? "true" : "false"} aria-hidden="true">
+        <span data-slot="v2-text-shimmer-shimmer" class="v2-text-shimmer-shimmer" data-run={run() ? "true" : "false"} aria-hidden="true">
           {text()}
         </span>
       </span>

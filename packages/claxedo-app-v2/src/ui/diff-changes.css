@@ -1,12 +1,12 @@
 @layer components {
-  .ui-diff-changes {
+  .v2-diff-changes {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
     align-items: center;
 
-    .ui-diff-changes-additions,
-    .ui-diff-changes-deletions {
+    .v2-diff-changes-additions,
+    .v2-diff-changes-deletions {
       font-size: var(--font-size-x-small);
       font-style: normal;
       font-weight: var(--font-weight-body);
@@ -15,11 +15,11 @@
       text-align: right;
     }
 
-    .ui-diff-changes-additions {
+    .v2-diff-changes-additions {
       color: var(--v2-state-fg-success);
     }
 
-    .ui-diff-changes-deletions {
+    .v2-diff-changes-deletions {
       color: var(--v2-state-fg-danger);
     }
   }

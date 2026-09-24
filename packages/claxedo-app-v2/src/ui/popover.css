@@ -1,13 +1,13 @@
 @layer components {
-  [data-slot="popover-trigger"] {
+  [data-slot="v2-popover-trigger"] {
     display: inline-flex;
   }
 
-  [data-popper-positioner]:has(.ui-popover) {
+  [data-popper-positioner]:has(.v2-popover) {
     z-index: 60;
   }
 
-  .ui-popover {
+  .v2-popover {
     z-index: 60;
     min-width: 200px;
     max-width: min(320px, calc(100vw - 32px));
@@ -20,19 +20,19 @@
     transform-origin: var(--kb-popover-content-transform-origin);
   }
 
-  .ui-popover:focus-within {
+  .v2-popover:focus-within {
     outline: none;
   }
 
-  .ui-popover[data-expanded] {
+  .v2-popover[data-expanded] {
     animation: popover-open 0.15s ease-out;
   }
 
-  .ui-popover[data-closed] {
+  .v2-popover[data-closed] {
     animation: popover-close 0.15s ease-out;
   }
 
-  .ui-popover [data-slot="popover-header"] {
+  .v2-popover [data-slot="v2-popover-header"] {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -40,7 +40,7 @@
     padding: 12px 12px 0;
   }
 
-  .ui-popover [data-slot="popover-title"] {
+  .v2-popover [data-slot="v2-popover-title"] {
     flex: 1;
     margin: 0;
     color: var(--v2-text-text-base);
@@ -50,11 +50,11 @@
     letter-spacing: var(--letter-spacing-ui);
   }
 
-  .ui-popover [data-slot="popover-close-button"] {
+  .v2-popover [data-slot="v2-popover-close-button"] {
     flex-shrink: 0;
   }
 
-  .ui-popover [data-slot="popover-description"] {
+  .v2-popover [data-slot="v2-popover-description"] {
     margin: 0;
     padding: 0 12px;
     color: var(--v2-text-text-muted);
@@ -64,7 +64,7 @@
     letter-spacing: var(--letter-spacing-ui);
   }
 
-  .ui-popover .ui-popover-body {
+  .v2-popover .v2-popover-body {
     padding: 12px;
   }
 

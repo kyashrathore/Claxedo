@@ -1,12 +1,4 @@
-import type { AppError, FileContent, FileNode, GitStatus, PlacementId } from "@/server"
-
-export type FileFocusTarget = {
-  readonly path: string
-  readonly line?: number
-  readonly col?: number
-}
-
-export type FilePaneState = FileFocusTarget & { readonly placementId: PlacementId }
+import type { AppError, FileNode, GitStatus } from "@/server"
 
 export type FetchView<T> =
   | { readonly kind: "loading" }
@@ -23,18 +15,6 @@ export function fetchView<T>(query: FetchResult<T>): FetchView<T> {
   if (query.status === "success" && query.data !== undefined) return { kind: "ready", data: query.data }
   if (query.status === "error" && query.error) return { kind: "failed", error: query.error }
   return { kind: "loading" }
-}
-
-export type FileView =
-  | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly content: FileContent }
-  | { readonly kind: "missing" }
-  | { readonly kind: "failed"; readonly error: AppError }
-
-export function fileView(view: FetchView<FileContent>): FileView {
-  if (view.kind === "ready") return { kind: "ready", content: view.data }
-  if (view.kind === "failed" && view.error.class === "not_found") return { kind: "missing" }
-  return view
 }
 
 export type ChangeMark = "added" | "deleted" | "modified"

@@ -1,5 +1,5 @@
 @layer components {
-  .ui-file-icon {
+  .v2-file-icon {
     display: block;
     flex-shrink: 0;
     width: 16px;

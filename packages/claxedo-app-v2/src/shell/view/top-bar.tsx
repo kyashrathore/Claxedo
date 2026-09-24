@@ -1,5 +1,6 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { PanelToggle } from "@/panel"
 import { IconButton } from "@/ui"
 import { dictionary } from "../i18n"
 import { useShellLayout } from "../layout"
@@ -21,14 +22,7 @@ export function TopBar(props: { readonly center: JSX.Element; readonly showPanel
       </Show>
       <div class="shell-topbar-center">{props.center}</div>
       <Show when={props.showPanelToggle}>
-        <IconButton
-          icon="sidebar-right"
-          variant="ghost"
-          aria-label={t("shell.panelToggle")}
-          aria-expanded={layout.panelShown()}
-          data-testid="workspace-panel-toggle"
-          onClick={() => layout.send({ type: "togglePanel" })}
-        />
+        <PanelToggle />
       </Show>
     </div>
   )

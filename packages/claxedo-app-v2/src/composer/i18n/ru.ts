@@ -25,7 +25,6 @@ export const ru: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "Закрыть",
   "composer.action.cancel": "Отмена",
   "composer.action.save": "Сохранить",
-  "composer.picker.agent": "Агент",
   "composer.attachment.remove": "Удалить вложение",
   "composer.attachment.refused.title": "{{harness}} не может использовать это вложение",
   "composer.attachment.refused.description": "У {{harness}} нет входа промпта для {{mime}}, а у этой сессии нет папки рабочего пространства, где мог бы остаться файл.",
@@ -39,4 +38,9 @@ export const ru: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "Убрать метку",
   "composer.key.esc": "ESC",
   "composer.error.title": "Не удалось отправить запрос",
+  "dialog.model.search.placeholder": "Поиск моделей",
+  "dialog.model.empty": "Модели не найдены",
+  "command.provider.connect": "Подключить провайдера",
+  "model.tag.free": "Бесплатно",
+  "model.tag.latest": "Последняя",
 }

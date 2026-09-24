@@ -51,13 +51,13 @@ async function v2Panes(app: Page): Promise<void> {
   await app.getByRole("button", { name: "Switch pane" }).tap()
   await expect(app.getByRole("menuitem")).toHaveCount(2)
   await app.keyboard.press("Escape")
-  await app.getByRole("button", { name: "Toggle workspace panel" }).tap()
-  const sheet = app.getByRole("dialog", { name: "Workspace panel" })
-  await expect(sheet.getByRole("tab", { name: "Files" })).toBeVisible()
+  await app.getByRole("button", { name: "Open workspace panel" }).tap()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await expect(panel.getByRole("button", { name: "Review", exact: true })).toHaveAttribute("aria-current", "true")
   await expectNoHorizontalScroll(app)
-  await expectNoAxeViolations(app, "sheet")
-  await sheet.getByRole("button", { name: "Close" }).tap()
-  await expect(sheet).toHaveCount(0)
+  await expectNoAxeViolations(app, "panel")
+  await panel.getByRole("button", { name: "Close workspace panel" }).tap()
+  await expect(panel).toHaveCount(0)
 }
 
 async function v1Drawer(stack: Stack, api: ClaxedoApi, app: Page, arranged: Arranged): Promise<void> {

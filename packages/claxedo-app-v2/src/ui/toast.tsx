@@ -11,8 +11,8 @@ export interface ToastRegionProps extends ComponentProps<typeof Kobalte.Region> 
 function ToastRegion(props: ToastRegionProps) {
   return (
     <Portal>
-      <Kobalte.Region data-component="toast-region" {...props}>
-        <Kobalte.List data-slot="toast-list" />
+      <Kobalte.Region data-component="v2-toast-region" {...props}>
+        <Kobalte.List data-slot="v2-toast-list" />
       </Kobalte.Region>
     </Portal>
   )
@@ -27,9 +27,9 @@ export interface ToastRootComponentProps extends ToastRootProps {
 function ToastRoot(props: ToastRootComponentProps) {
   return (
     <Kobalte
-      data-component="toast"
+      data-component="v2-toast"
       classList={{
-        "ui-toast": true,
+        "v2-toast": true,
         ...props.classList,
         [props.class ?? ""]: !!props.class,
       }}
@@ -39,28 +39,28 @@ function ToastRoot(props: ToastRootComponentProps) {
 }
 
 function ToastIcon(props: ComponentProps<"div">) {
-  return <div data-slot="toast-icon" {...props} />
+  return <div data-slot="v2-toast-icon" {...props} />
 }
 
 function ToastContent(props: ComponentProps<"div">) {
-  return <div data-slot="toast-content" {...props} />
+  return <div data-slot="v2-toast-content" {...props} />
 }
 
 function ToastTitle(props: ToastTitleProps & ComponentProps<"div">) {
-  return <Kobalte.Title data-slot="toast-title" {...props} />
+  return <Kobalte.Title data-slot="v2-toast-title" {...props} />
 }
 
 function ToastDescription(props: ToastDescriptionProps & ComponentProps<"div">) {
-  return <Kobalte.Description data-slot="toast-description" {...props} />
+  return <Kobalte.Description data-slot="v2-toast-description" {...props} />
 }
 
 function ToastActions(props: ComponentProps<"div">) {
-  return <div data-slot="toast-actions" {...props} />
+  return <div data-slot="v2-toast-actions" {...props} />
 }
 
 function ToastCloseButton(props: ToastCloseButtonProps & ComponentProps<"button">) {
   return (
-    <Kobalte.CloseButton data-slot="toast-close-button" aria-label="Dismiss" {...props}>
+    <Kobalte.CloseButton data-slot="v2-toast-close-button" aria-label="Dismiss" {...props}>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path d="M4.25 11.75L11.75 4.25" stroke="currentColor" />
         <path d="M11.75 11.75L4.25 4.25" stroke="currentColor" />
@@ -102,7 +102,7 @@ export function showToast(options: ToastOptions | string) {
     const resolvedIcon = children(() => opts.icon)
     return (
       <Toast toastId={props.toastId} duration={opts.duration} persistent={opts.persistent}>
-        <div data-slot="toast-header">
+        <div data-slot="v2-toast-header">
           <Show when={resolvedIcon()}>
             <Toast.Icon>{resolvedIcon()}</Toast.Icon>
           </Show>

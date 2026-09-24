@@ -25,7 +25,7 @@ export function ProgressCircle(props: ProgressCircleProps) {
       height={size()}
       viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
       fill="none"
-      data-component="progress-circle"
+      data-component="v2-progress-circle"
       classList={{
         ...split.classList,
         [split.class ?? ""]: !!split.class,
@@ -35,14 +35,14 @@ export function ProgressCircle(props: ProgressCircleProps) {
         cx={center}
         cy={center}
         r={radius()}
-        data-slot="progress-circle-background"
+        data-slot="v2-progress-circle-background"
         stroke-width={strokeWidth()}
       />
       <circle
         cx={center}
         cy={center}
         r={radius()}
-        data-slot="progress-circle-progress"
+        data-slot="v2-progress-circle-progress"
         stroke-width={strokeWidth()}
         stroke-dasharray={circumference().toString()}
         stroke-dashoffset={offset()}

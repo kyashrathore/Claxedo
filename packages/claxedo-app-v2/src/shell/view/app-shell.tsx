@@ -77,16 +77,12 @@ function ScopedShell(props: { readonly scope: string; readonly mainSidebar: JSX.
 }
 
 function ShellBody(props: { readonly route: ShellRoute; readonly mainSidebar: JSX.Element }): JSX.Element {
-  const registries = useShellRegistries()
-  const routing = useShellRoute()
   const workbench = useWorkbench()
-  const panelScope = () => routing.placementId() ?? "default"
   const phoneHome = () => props.route.kind === "home" && workbench.selectors.focusedContent() === null
   return (
     <ShellFrame
       sidebar={{ mode: sidebarModeOf(props.route), main: props.mainSidebar, settings: <SettingsSidebar /> }}
       center={centerOf(props.route)}
-      panel={{ tabs: registries.panelTabs.list(), scope: panelScope() }}
       phoneHome={phoneHome()}
     />
   )

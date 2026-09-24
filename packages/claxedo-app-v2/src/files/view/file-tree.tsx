@@ -3,11 +3,9 @@ import { useQuery } from "@tanstack/solid-query"
 import { useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import type { FileNode, PlacementId } from "@/server"
-import { useWorkbench } from "@/workbench"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { changeMarks, fetchView, sortNodes, treeKeyAction, type ChangeMark } from "../model"
-import { filePaneKind } from "../pane"
 import { useFiles } from "../store"
 import { FileTreeRow } from "./file-tree-row"
 import { PlaceholderRows } from "./placeholder"
@@ -30,14 +28,25 @@ function handleTreeKeys(event: KeyboardEvent & { currentTarget: HTMLDivElement }
   else items[action.index]?.focus()
 }
 
-export function FileTree(props: { readonly placementId: PlacementId; readonly activePath?: string }): JSX.Element {
+export function FileTree(props: {
+  readonly placementId: PlacementId
+  readonly activePath?: string
+  readonly onOpenFile: (path: string) => void
+}): JSX.Element {
   const t = useTranslator(dictionary)
   const api = useFilesApi()
   const status = useQuery(() => api.changes(props.placementId))
   const marks = createMemo(() => changeMarks(status.data))
   return (
     <div role="tree" aria-label={t("files.tree")} class="flex flex-col gap-0.5 p-1" onKeyDown={handleTreeKeys}>
-      <TreeLevel placementId={props.placementId} dir="" level={0} marks={marks()} activePath={props.activePath} />
+      <TreeLevel
+        placementId={props.placementId}
+        dir=""
+        level={0}
+        marks={marks()}
+        activePath={props.activePath}
+        onOpenFile={props.onOpenFile}
+      />
     </div>
   )
 }
@@ -48,11 +57,11 @@ function TreeLevel(props: {
   readonly level: number
   readonly marks: Marks
   readonly activePath?: string
+  readonly onOpenFile: (path: string) => void
 }): JSX.Element {
   const t = useTranslator(dictionary)
   const api = useFilesApi()
   const files = useFiles()
-  const workbench = useWorkbench()
   const query = useQuery(() => api.tree(props.placementId, props.dir))
   const view = createMemo(() => fetchView(query))
   const failed = createMemo(() => {
@@ -65,7 +74,7 @@ function TreeLevel(props: {
   })
   const activate = (node: FileNode) => {
     if (node.kind === "directory") files.setExpanded(node.path, !files.expanded(node.path))
-    else workbench.openPane(filePaneKind, { placementId: props.placementId, path: node.path })
+    else props.onOpenFile(node.path)
   }
   return (
     <Switch>
@@ -102,6 +111,7 @@ function TreeLevel(props: {
                     level={props.level + 1}
                     marks={props.marks}
                     activePath={props.activePath}
+                    onOpenFile={props.onOpenFile}
                   />
                 </Show>
               </>

@@ -12,7 +12,7 @@ export type Terminals = {
   readonly retain: (placementId: PlacementId) => () => void
   readonly defaultTitle: () => string
   readonly open: (state: TerminalPaneState, paneId?: string) => void
-  readonly openFile: (placementId: PlacementId, target: WorkspaceFileFocusTarget) => void
+  readonly openFile: (target: WorkspaceFileFocusTarget) => void
 }
 
 export const TerminalsContext = createContext<Terminals>()

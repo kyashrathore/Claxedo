@@ -1,5 +1,5 @@
 @layer components {
-  .ui-card {
+  .v2-card {
     --card-pad-y: 10px;
     --card-pad-r: 12px;
     --card-pad-l: 10px;
@@ -23,15 +23,15 @@
     letter-spacing: var(--letter-spacing-ui);
   }
 
-  .ui-card:has([data-slot="card-title"]) {
+  .v2-card:has([data-slot="v2-card-title"]) {
     gap: 8px;
   }
 
-  .ui-card:has([data-slot="card-title-icon"]) {
+  .v2-card:has([data-slot="v2-card-title-icon"]) {
     --card-indent: calc(var(--card-icon) + var(--card-gap));
   }
 
-  .ui-card[data-accent]::before {
+  .v2-card[data-accent]::before {
     content: "";
     position: absolute;
     left: 0;
@@ -42,7 +42,7 @@
     background-color: var(--card-accent);
   }
 
-  .ui-card [data-slot="card-title"] {
+  .v2-card [data-slot="v2-card-title"] {
     display: flex;
     align-items: center;
     gap: var(--card-gap);
@@ -50,11 +50,11 @@
     font-weight: var(--font-weight-medium);
   }
 
-  .ui-card [data-slot="card-title"] .ui-icon {
+  .v2-card [data-slot="v2-card-title"] .v2-icon {
     color: var(--card-accent);
   }
 
-  .ui-card [data-slot="card-title-icon"] {
+  .v2-card [data-slot="v2-card-title-icon"] {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -63,17 +63,17 @@
     height: var(--card-icon);
   }
 
-  .ui-card [data-slot="card-title-icon"][data-placeholder] .ui-icon {
+  .v2-card [data-slot="v2-card-title-icon"][data-placeholder] .v2-icon {
     color: var(--v2-text-text-faint);
   }
 
-  .ui-card [data-slot="card-description"] {
+  .v2-card [data-slot="v2-card-description"] {
     color: var(--v2-text-text-muted);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
 
-  .ui-card [data-slot="card-actions"] {
+  .v2-card [data-slot="v2-card-actions"] {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;

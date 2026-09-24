@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, test, type ClaxedoApi, type Stack } from "../harness"
+import { acpScriptToken, assistantText, expect, SCRIPTED_ACP_HARNESS, sendPrompt, sessionRoute, test, UI, type ClaxedoApi, type Stack } from "../harness"
 
 async function openHeldSession(stack: Stack, api: ClaxedoApi, app: Page, name: string) {
   const workspace = await stack.daemon.makeWorkspace(name)
@@ -7,12 +7,10 @@ async function openHeldSession(stack: Stack, api: ClaxedoApi, app: Page, name: s
     steps: [{ kind: "text", text: "Started the long task" }, { kind: "hold", name: "held" }, { kind: "text", text: "Finished the long task" }],
   })
   const session = await api.createSession(workspace.directory, { title: "Held turn", harness: SCRIPTED_ACP_HARNESS })
-  await app.goto(`${stack.url}/w/${workspace.id}/s/${session.id}`)
-  const prompt = app.getByRole("textbox", { name: "Prompt" })
-  await prompt.fill(`Start the long task. ${acpScriptToken("held")}`)
-  await prompt.press("Enter")
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, session.id)}`)
+  await sendPrompt(app, `Start the long task. ${acpScriptToken("held")}`)
   await expect(app.getByText("Started the long task")).toBeVisible()
-  return { workspace, session, prompt }
+  return { workspace, session }
 }
 
 test.skip(({ isMobile }) => isMobile, "flow 4 runs at desktop width")
@@ -25,17 +23,16 @@ function userTexts(messages: Awaited<ReturnType<ClaxedoApi["messages"]>>) {
 
 test("04 stop: the running turn ends and the composer can send again", async ({ stack, api, app }) => {
   const { workspace, session } = await openHeldSession(stack, api, app, "stop")
-  await app.getByRole("button", { name: "Stop", exact: true }).click()
-  await expect(app.getByRole("button", { name: "Send", exact: true })).toBeVisible()
+  await app.getByRole("button", { name: UI.stop, exact: true }).click()
+  await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
   await expect(app.getByText("Finished the long task")).toHaveCount(0)
   await expect.poll(async () => (await api.status(workspace.directory))[session.id]?.type ?? "idle").toBe("idle")
 })
 
 test("04 queued messages: a prompt sent during a turn waits, then runs after it", async ({ stack, api, app }) => {
-  const { workspace, session, prompt } = await openHeldSession(stack, api, app, "queue")
+  const { workspace, session } = await openHeldSession(stack, api, app, "queue")
   await stack.acp.write("next", { steps: [{ kind: "text", text: "The queued prompt ran" }] })
-  await prompt.fill(`Then this. ${acpScriptToken("next")}`)
-  await prompt.press("Enter")
+  await sendPrompt(app, `Then this. ${acpScriptToken("next")}`)
   await expect(app.getByText("Queued", { exact: true })).toBeVisible()
   await stack.acp.release("held")
   await expect(app.getByText("Finished the long task")).toBeVisible()

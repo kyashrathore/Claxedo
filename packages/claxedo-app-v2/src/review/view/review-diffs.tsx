@@ -1,6 +1,6 @@
 import { createMemo, Match, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { CodeEngine, fetchView, PlaceholderRows } from "@/files"
+import { fetchView, PlaceholderRows } from "@/files"
 import { useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import type { DiffSummary, PlacementId } from "@/server"
@@ -59,7 +59,6 @@ function DiffDocument(props: {
   readonly placementId: PlacementId
   readonly summaries: readonly DiffSummary[]
 }): JSX.Element {
-  const t = useTranslator(dictionary)
   const review = useReview()
   const comments = useReviewComments()
   const content = createDiffContent({
@@ -71,23 +70,19 @@ function DiffDocument(props: {
   const codeViewComments = createCodeViewComments({ comments, diffs: content.diffs })
   const summaryOf = (file: string) => props.summaries.find((summary) => summary.file === file)
   return (
-    <CodeEngine label={t("review.loading")}>
-      {() => (
-        <ReviewCodeView
-          class="min-h-0 flex-1"
-          diffs={content.diffs()}
-          diffStyle={review.style()}
-          open={review.open()}
-          onToggleOpen={review.toggleOpen}
-          renderHeader={(file) => <Show when={summaryOf(file)}>{(summary) => <FileHeader diff={summary()} />}</Show>}
-          onDiffContentRequired={content.request}
-          customFiles={content.custom()}
-          renderCustomBody={(file) => <DiffBody body={content.body(file)} onForce={() => review.force(file)} />}
-          comments={comments.enabled() ? codeViewComments : undefined}
-          selectedLines={comments.enabled() ? codeViewComments.selectedLines() : null}
-        />
-      )}
-    </CodeEngine>
+    <ReviewCodeView
+      class="min-h-0 flex-1"
+      diffs={content.diffs()}
+      diffStyle={review.style()}
+      open={review.open()}
+      onToggleOpen={review.toggleOpen}
+      renderHeader={(file) => <Show when={summaryOf(file)}>{(summary) => <FileHeader diff={summary()} />}</Show>}
+      onDiffContentRequired={content.request}
+      customFiles={content.custom()}
+      renderCustomBody={(file) => <DiffBody body={content.body(file)} onForce={() => review.force(file)} />}
+      comments={comments.enabled() ? codeViewComments : undefined}
+      selectedLines={comments.enabled() ? codeViewComments.selectedLines() : null}
+    />
   )
 }
 

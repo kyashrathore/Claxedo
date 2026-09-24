@@ -37,6 +37,7 @@ export type BrowserTab = {
   readonly registered: Accessor<boolean>
   readonly markRegistered: () => void
   readonly navigate: (url: string) => Promise<void>
+  readonly navigateOnce: (url: string, version: number) => void
   readonly setPicking: (on: boolean) => void
   readonly act: (action: BrowserAction) => Promise<void>
 }
@@ -151,6 +152,18 @@ async function navigatePage(page: PageContext, registered: boolean, url: string)
   }
 }
 
+function createPageNavigation(page: PageContext, registered: Accessor<boolean>) {
+  let navigated: number | undefined
+  return {
+    navigate: (url: string) => navigatePage(page, registered(), url),
+    navigateOnce: (url: string, version: number) => {
+      if (navigated === version) return
+      navigated = version
+      void navigatePage(page, registered(), url)
+    },
+  }
+}
+
 function sendPickerMode(page: PageContext, element: BrowserWebview | undefined, on: boolean): void {
   if (!element?.send) {
     page.notify({ key: page.bridge ? "browser.notice.pageNotReady" : "browser.notice.desktopOnly" })
@@ -209,7 +222,7 @@ export function createBrowserTab(placementId: PlacementId, bridge: BrowserBridge
     },
     registered,
     markRegistered: () => setRegistered(true),
-    navigate: (url) => navigatePage(page, registered(), url),
+    ...createPageNavigation(page, registered),
     setPicking: (on) => sendPickerMode(page, webview(), on),
     act: (action) => guardedAction(host, action),
   }

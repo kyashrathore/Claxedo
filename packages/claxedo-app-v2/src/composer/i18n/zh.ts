@@ -25,7 +25,6 @@ export const zh: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "忽略",
   "composer.action.cancel": "取消",
   "composer.action.save": "保存",
-  "composer.picker.agent": "智能体",
   "composer.attachment.remove": "移除附件",
   "composer.attachment.refused.title": "{{harness}} 无法使用此附件",
   "composer.attachment.refused.description": "{{harness}} 没有接收 {{mime}} 的提示输入，而此会话也没有可保存该文件的工作区文件夹。",
@@ -39,4 +38,9 @@ export const zh: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "移除标记",
   "composer.key.esc": "ESC",
   "composer.error.title": "发送提示失败",
+  "dialog.model.search.placeholder": "搜索模型",
+  "dialog.model.empty": "未找到模型",
+  "command.provider.connect": "连接提供商",
+  "model.tag.free": "免费",
+  "model.tag.latest": "最新",
 }

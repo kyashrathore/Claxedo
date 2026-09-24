@@ -75,11 +75,12 @@ export type HistoryComment = {
 export type HistoryEntry = { prompt: Prompt; comments: HistoryComment[] }
 export type History = Record<EditorMode, HistoryEntry[]>
 
-export type Selection = {
-  harness?: string
-  model?: ModelChoice
-  effort?: string
-  permissionMode?: string
+/** What a send carries about who answers it: the harness, its model and effort, and the fast tier. */
+export type Submission = {
+  readonly harness?: string
+  readonly model?: ModelChoice
+  readonly effort?: string
+  readonly serviceTier?: string
 }
 
 export const emptyPrompt = (): Prompt => [{ type: "text", content: "", start: 0, end: 0 }]

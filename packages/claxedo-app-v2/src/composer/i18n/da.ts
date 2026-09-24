@@ -25,7 +25,6 @@ export const da: Partial<Record<ComposerTextKey, string>> = {
   "composer.action.dismiss": "Afvis",
   "composer.action.cancel": "Annuller",
   "composer.action.save": "Gem",
-  "composer.picker.agent": "Agent",
   "composer.attachment.remove": "Fjern vedhæftning",
   "composer.attachment.refused.title": "{{harness}} kan ikke bruge denne vedhæftning",
   "composer.attachment.refused.description": "{{harness}} har ingen prompt-input til {{mime}}, og denne session har ingen arbejdsområdemappe at gemme filen i.",
@@ -39,4 +38,9 @@ export const da: Partial<Record<ComposerTextKey, string>> = {
   "composer.marks.remove": "Fjern markering",
   "composer.key.esc": "ESC",
   "composer.error.title": "Kunne ikke sende forespørgsel",
+  "dialog.model.search.placeholder": "Søg modeller",
+  "dialog.model.empty": "Ingen modeller fundet",
+  "command.provider.connect": "Tilslut udbyder",
+  "model.tag.free": "Gratis",
+  "model.tag.latest": "Nyeste",
 }

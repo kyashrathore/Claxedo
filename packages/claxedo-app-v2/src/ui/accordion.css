@@ -1,5 +1,5 @@
 @layer components {
-  [data-component="accordion"] {
+  [data-component="v2-accordion"] {
     --accordion-fg: var(--v2-text-text-base);
     --accordion-icon: var(--v2-icon-icon-base);
     --accordion-border: var(--v2-border-border-strong);
@@ -23,7 +23,7 @@
     text-rendering: geometricPrecision;
   }
 
-  .ui-accordion-item {
+  .v2-accordion-item {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -33,16 +33,16 @@
     box-shadow: inset 0 -0.5px 0 var(--accordion-border);
   }
 
-  .ui-accordion-item:last-child {
+  .v2-accordion-item:last-child {
     box-shadow: none;
   }
 
-  [data-slot="accordion-header"] {
+  [data-slot="v2-accordion-header"] {
     display: flex;
     margin: 0;
   }
 
-  .ui-accordion-trigger {
+  .v2-accordion-trigger {
     box-sizing: border-box;
     display: flex;
     flex-direction: row;
@@ -67,7 +67,7 @@
     text-align: left;
   }
 
-  [data-component="accordion-trigger"] [data-slot="accordion-trigger-content"] {
+  [data-component="v2-accordion-trigger"] [data-slot="v2-accordion-trigger-content"] {
     display: flex;
     flex: 1 1 auto;
     flex-direction: row;
@@ -77,7 +77,7 @@
     height: 30px;
   }
 
-  [data-component="accordion-trigger"] .ui-accordion-chevron {
+  [data-component="v2-accordion-trigger"] .v2-accordion-chevron {
     flex: none;
     width: 14px;
     height: 14px;
@@ -85,35 +85,35 @@
     transition: transform 150ms ease;
   }
 
-  [data-component="accordion-trigger"][data-expanded] .ui-accordion-chevron {
+  [data-component="v2-accordion-trigger"][data-expanded] .v2-accordion-chevron {
     transform: rotate(180deg);
   }
 
-  [data-component="accordion-item"][data-expanded] .ui-accordion-trigger {
+  [data-component="v2-accordion-item"][data-expanded] .v2-accordion-trigger {
     box-shadow: inset 0 -0.5px 0 var(--accordion-border);
   }
 
-  .ui-accordion-trigger[data-disabled] {
+  .v2-accordion-trigger[data-disabled] {
     pointer-events: none;
     opacity: 0.5;
   }
 
-  .ui-accordion-content {
+  .v2-accordion-content {
     overflow: hidden;
     font-size: var(--font-size-compact);
     line-height: var(--line-height-prose-tight);
     color: var(--accordion-fg);
   }
 
-  .ui-accordion-content[data-expanded] {
+  .v2-accordion-content[data-expanded] {
     animation: accordion-down 180ms ease-out;
   }
 
-  .ui-accordion-content[data-closed] {
+  .v2-accordion-content[data-closed] {
     animation: accordion-up 180ms ease-out;
   }
 
-  [data-component="accordion-content"] [data-slot="accordion-content-inner"] {
+  [data-component="v2-accordion-content"] [data-slot="v2-accordion-content-inner"] {
     display: flex;
     flex-direction: row;
     align-items: flex-start;

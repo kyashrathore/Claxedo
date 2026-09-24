@@ -1,14 +1,14 @@
 @layer components {
-  [data-component="progress-circle"] {
+  [data-component="v2-progress-circle"] {
     display: block;
     transform: rotate(-90deg);
   }
 
-  [data-component="progress-circle"] [data-slot="progress-circle-background"] {
+  [data-component="v2-progress-circle"] [data-slot="v2-progress-circle-background"] {
     stroke: var(--v2-background-bg-layer-04);
   }
 
-  [data-component="progress-circle"] [data-slot="progress-circle-progress"] {
+  [data-component="v2-progress-circle"] [data-slot="v2-progress-circle-progress"] {
     stroke: var(--v2-icon-icon-base);
     transition: stroke-dashoffset 0.35s cubic-bezier(0.65, 0, 0.35, 1);
   }

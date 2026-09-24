@@ -1,10 +1,10 @@
 import { createMemo, type Accessor } from "solid-js"
-import { filePaneKind } from "@/files"
+import type { Panel } from "@/panel"
 import { sessionId as toSessionId, type Server, type SessionRef, type SessionStatus } from "@/server"
 import type { SessionRowView, SessionStatusView, SessionStores, SessionView } from "@/session"
 import { homePath, sessionPath, type ShellRouting } from "@/shell"
 import type { WorkbenchStore } from "@/workbench"
-import type { TimelineFocus, TimelineHost, TimelineSessionRow, TimelineSettings } from "./timeline"
+import { useTranscriptTypography, type TimelineFocus, type TimelineHost, type TimelineSessionRow, type TimelineSettings } from "./timeline"
 import type { SessionScreenText } from "./text"
 
 export type TimelineHostInput = {
@@ -15,7 +15,7 @@ export type TimelineHostInput = {
   readonly workbench: WorkbenchStore
   readonly routing: ShellRouting
   readonly t: SessionScreenText
-  readonly openPlan: (focus: Extract<TimelineFocus, { kind: "plan" }>) => void
+  readonly panel: Pick<Panel, "show">
 }
 
 const settings: TimelineSettings = {
@@ -48,17 +48,11 @@ function refFor(view: SessionView, id: string): SessionRef {
 }
 
 function openFocus(input: TimelineHostInput, focus: TimelineFocus): void {
-  const ref = input.view.ref
-  if (focus.kind === "file") {
-    input.workbench.open(filePaneKind, { placementId: ref.placementId, path: focus.path, line: focus.line, col: focus.col })
-    return
-  }
   if (focus.kind === "subagent") {
     input.workbench.openRoute({ kind: "session", ...refFor(input.view, focus.sessionId) })
     return
   }
-  if (focus.kind === "browser") return openLink(focus.url)
-  input.openPlan(focus)
+  input.panel.show(focus)
 }
 
 async function findFiles(input: TimelineHostInput, query: string): Promise<readonly string[]> {
@@ -73,6 +67,7 @@ async function findFiles(input: TimelineHostInput, query: string): Promise<reado
 export function createTimelineHost(input: TimelineHostInput): TimelineHost {
   const { view, server } = input
   const sessions = createMemo(() => timelineRows(input.stores.list.rows()))
+  const transcriptTypography = useTranscriptTypography()
   return {
     sessionKey: () => view.ref.sessionId,
     sessionId: () => view.ref.sessionId,
@@ -85,7 +80,7 @@ export function createTimelineHost(input: TimelineHostInput): TimelineHost {
     status: () => shownStatus(view.status()),
     turnSettlePending: view.turnSettlePending,
     settings,
-    transcriptTypography: () => ({ pairing: "default" }),
+    transcriptTypography,
     t: (key, params) => input.t(`sessionScreen.timeline.${key}`, params),
     platform: { openLink },
     openFocus: (focus) => openFocus(input, focus),
