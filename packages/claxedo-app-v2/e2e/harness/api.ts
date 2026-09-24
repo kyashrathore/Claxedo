@@ -7,6 +7,8 @@ export class ApiError extends Error {
 
 export type SessionHarness = { id: string; access: "native" | "connection" }
 export type HarnessSelection = { kind: "native"; harnessId: string } | { kind: "connection"; connectionId: string }
+export type ModelChoice = { providerId: string; modelId: string }
+export type ProviderCatalog = { connected: string[]; [key: string]: unknown }
 
 export type SessionRow = {
   id: string
@@ -53,6 +55,10 @@ export class ClaxedoApi {
     return this.call<Record<string, unknown>>("GET", "/api/claxedo/health")
   }
 
+  providerCatalog(nativeHarness: string) {
+    return this.call<ProviderCatalog>("GET", "/api/claxedo/agent-config/providers", { query: { nativeHarness } })
+  }
+
   resolveWorkspace(directory: string) {
     return this.call<{ workspaceId: string }>("POST", "/api/workspace/resolve", { directory })
   }
@@ -61,7 +67,10 @@ export class ClaxedoApi {
     return this.call<unknown>("POST", "/api/claxedo/agent-config/harness", { directory, body: { harness: selection } })
   }
 
-  createSession(directory: string, input: { harness: SessionHarness; title?: string; parentId?: string; permissionMode?: string }) {
+  createSession(
+    directory: string,
+    input: { harness: SessionHarness; title?: string; parentId?: string; permissionMode?: string; model?: ModelChoice },
+  ) {
     const query: Record<string, string> = input.harness.access === "native"
       ? { nativeHarness: input.harness.id }
       : { connectionId: input.harness.id }
@@ -73,6 +82,7 @@ export class ClaxedoApi {
         harness: input.harness,
         ...(input.parentId ? { parentID: input.parentId } : {}),
         ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
+        ...(input.model ? { model: { providerID: input.model.providerId, id: input.model.modelId } } : {}),
       },
     })
   }
@@ -89,10 +99,14 @@ export class ClaxedoApi {
     return this.call<unknown>("DELETE", `/session/${encodeURIComponent(id)}`, { directory })
   }
 
-  prompt(directory: string, id: string, text: string, options: { messageId?: string } = {}) {
+  prompt(directory: string, id: string, text: string, options: { messageId?: string; model?: ModelChoice } = {}) {
     return this.call<unknown>("POST", `/session/${encodeURIComponent(id)}/message`, {
       directory,
-      body: { parts: [{ type: "text", text }], ...(options.messageId ? { messageID: options.messageId } : {}) },
+      body: {
+        parts: [{ type: "text", text }],
+        ...(options.messageId ? { messageID: options.messageId } : {}),
+        ...(options.model ? { model: { providerID: options.model.providerId, modelID: options.model.modelId } } : {}),
+      },
     })
   }
 

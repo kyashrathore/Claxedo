@@ -31,8 +31,11 @@ export function portIsLeased(port: number) {
   return leased.has(port)
 }
 
-export function claimPort(port: number) {
+export async function claimPort(port: number) {
   if (port < PORT_RANGE.first || port > PORT_RANGE.last) throw new Error(`Port ${port} is outside ${PORT_RANGE.first}-${PORT_RANGE.last}`)
+  if (!(await portIsFree(port))) {
+    throw new Error(`Port ${port} is held by another process; the app is built for it. Give this run its own CLAXEDO_E2E_PORT_RANGE.`)
+  }
   leased.add(port)
   return port
 }

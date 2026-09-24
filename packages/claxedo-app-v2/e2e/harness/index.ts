@@ -6,6 +6,8 @@ export {
   type HarnessSelection,
   type MessagePart,
   type MessageRow,
+  type ModelChoice,
+  type ProviderCatalog,
   type PermissionRow,
   type QuestionRow,
   type SessionHarness,
@@ -16,6 +18,8 @@ export { redRun, startStack, type Stack, type StackInput } from "./stack"
 export { type Daemon, type Workspace } from "./daemon"
 export { SCRIPTED_ACP_CONNECTION_ID, SCRIPTED_ACP_HARNESS } from "./acp/connection"
 export { acpScriptToken, type AcpScript, type AcpStep, type AcpToolStep } from "./acp/script"
-export { installedCli, type CliAvailability, type CliName } from "./scripted-cli"
+export { installedCli, type CliAvailability, type CliName } from "./installed-cli"
+export { REFUSED_BACKGROUND_TARGETS, unexpectedEgress, type EgressAttempt, type EgressGuard } from "./egress-guard"
+export { SCRIPTED_PROVIDER_IDS, type ScriptedProviderId } from "./scripted-providers"
 export { type ScriptedModelRequest, type ScriptedModelServer, type ScriptedToolCall } from "./scripted-model-server"
 export { appChoice, type AppChoice } from "./app"
