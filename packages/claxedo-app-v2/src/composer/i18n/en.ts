@@ -90,6 +90,21 @@ export type ComposerTextKey =
   | "composer.recovery.chooseModel"
   | "composer.recovery.noModels"
 
+  | "model.provider.anthropic"
+  | "model.provider.openai"
+  | "model.provider.google"
+  | "model.provider.xai"
+  | "model.provider.meta"
+  | "model.input.text"
+  | "model.input.image"
+  | "model.input.audio"
+  | "model.input.video"
+  | "model.input.pdf"
+  | "model.tooltip.reasoning.allowed"
+  | "model.tooltip.reasoning.none"
+  | "model.tooltip.context"
+  | "model.tooltip.allows"
+
 export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.action.cancel": "Cancel",
   "composer.action.save": "Save",
@@ -181,4 +196,19 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "common.save": "Save",
   "composer.recovery.chooseModel": "Choose a model to resend",
   "composer.recovery.noModels": "No other models are available. Configure another model in Settings → Providers.",
+
+  "model.provider.anthropic": "Anthropic",
+  "model.provider.openai": "OpenAI",
+  "model.provider.google": "Google",
+  "model.provider.xai": "xAI",
+  "model.provider.meta": "Meta",
+  "model.input.text": "text",
+  "model.input.image": "image",
+  "model.input.audio": "audio",
+  "model.input.video": "video",
+  "model.input.pdf": "pdf",
+  "model.tooltip.reasoning.allowed": "Allows reasoning",
+  "model.tooltip.reasoning.none": "No reasoning",
+  "model.tooltip.context": "Context limit {{limit}}",
+  "model.tooltip.allows": "Allows: {{inputs}}",
 }

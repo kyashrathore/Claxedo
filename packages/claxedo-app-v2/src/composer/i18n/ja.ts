@@ -86,4 +86,12 @@ export const ja: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "マーク {{number}}",
   "common.cancel": "キャンセル",
   "common.save": "保存",
+  "model.input.text": "テキスト",
+  "model.input.image": "画像",
+  "model.input.audio": "音声",
+  "model.input.video": "動画",
+  "model.tooltip.reasoning.allowed": "推論を許可",
+  "model.tooltip.reasoning.none": "推論なし",
+  "model.tooltip.context": "コンテキスト上限 {{limit}}",
+  "model.tooltip.allows": "対応: {{inputs}}",
 }

@@ -86,4 +86,12 @@ export const ru: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "метка {{number}}",
   "common.cancel": "Отмена",
   "common.save": "Сохранить",
+  "model.input.text": "текст",
+  "model.input.image": "изображение",
+  "model.input.audio": "аудио",
+  "model.input.video": "видео",
+  "model.tooltip.reasoning.allowed": "Разрешает рассуждение",
+  "model.tooltip.reasoning.none": "Без рассуждения",
+  "model.tooltip.context": "Лимит контекста {{limit}}",
+  "model.tooltip.allows": "Разрешено: {{inputs}}",
 }

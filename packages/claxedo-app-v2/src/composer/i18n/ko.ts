@@ -86,4 +86,12 @@ export const ko: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "표시 {{number}}",
   "common.cancel": "취소",
   "common.save": "저장",
+  "model.input.text": "텍스트",
+  "model.input.image": "이미지",
+  "model.input.audio": "오디오",
+  "model.input.video": "비디오",
+  "model.tooltip.reasoning.allowed": "추론 허용",
+  "model.tooltip.reasoning.none": "추론 없음",
+  "model.tooltip.context": "컨텍스트 제한 {{limit}}",
+  "model.tooltip.allows": "지원: {{inputs}}",
 }

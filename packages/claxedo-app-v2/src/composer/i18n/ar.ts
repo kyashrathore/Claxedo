@@ -84,4 +84,12 @@ export const ar: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "العلامة {{number}}",
   "common.cancel": "إلغاء",
   "common.save": "حفظ",
+  "model.input.text": "نص",
+  "model.input.image": "صورة",
+  "model.input.audio": "صوت",
+  "model.input.video": "فيديو",
+  "model.tooltip.reasoning.allowed": "يسمح بالاستنتاج",
+  "model.tooltip.reasoning.none": "بدون استنتاج",
+  "model.tooltip.context": "حد السياق {{limit}}",
+  "model.tooltip.allows": "يسمح: {{inputs}}",
 }

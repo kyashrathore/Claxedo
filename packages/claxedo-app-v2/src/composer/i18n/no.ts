@@ -81,4 +81,11 @@ export const no: Partial<Record<ComposerTextKey, string>> = {
   "prompt.imageMarks.mark": "merke {{number}}",
   "common.cancel": "Avbryt",
   "common.save": "Lagre",
+  "model.input.text": "tekst",
+  "model.input.image": "bilde",
+  "model.input.audio": "lyd",
+  "model.tooltip.reasoning.allowed": "Tillater resonnering",
+  "model.tooltip.reasoning.none": "Ingen resonnering",
+  "model.tooltip.context": "Kontekstgrense {{limit}}",
+  "model.tooltip.allows": "Tillater: {{inputs}}",
 }
