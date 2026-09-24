@@ -1,6 +1,7 @@
 import { Match, Show, Switch, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Button, Loader } from "@/ui"
+import { Loader } from "@/ui"
+import { Button } from "@opencode-ai/ui/button"
 import { dictionary, type TerminalKey } from "../i18n"
 import type { TerminalConnection, TerminalFailure } from "../model"
 import { MAX_RECONNECT_ATTEMPTS } from "../reconnect"
@@ -27,7 +28,7 @@ function Notice(props: {
           <div class="text-sm break-words text-text-muted">{props.description}</div>
         </Show>
         <Show when={props.action}>
-          <Button variant="outline" size="large" onClick={() => props.action?.()}>
+          <Button variant="secondary" size="large" onClick={() => props.action?.()}>
             {props.actionLabel}
           </Button>
         </Show>
