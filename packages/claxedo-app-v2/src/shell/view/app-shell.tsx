@@ -18,7 +18,6 @@ import { useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
 import { sidebarModeOf, type ShellRoute } from "../routes"
 import "../shell.css"
-import { ConnectionBanner } from "./connection-banner"
 import { ShellFrame, type CenterContent } from "./frame"
 import { Overlays } from "./overlays"
 import { RouteSync } from "./route-sync"
@@ -66,7 +65,6 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
                 <RouteSync />
                 <ShellCommands />
                 <OpenFileCommand />
-                  <ConnectionBanner />
                 <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />
                 <Overlays />
               </PluginHostProvider>
