@@ -30,6 +30,7 @@ Fetched data never enters these stores and pushed data never enters the query ca
 | --- | --- | --- |
 | Session list | `subscribing`, `fetching(held)`, `live(more: idle / loading(held) / failed)`, `rereading(held)`, `failed(error)`; each entry `confirmed`, `pending` or `tombstone` | `list/model.ts`, `list/transition.ts` |
 | Session read | `loading(held)`, `ready`, `rereading(held)`, `missing`, `failed(error)`; shown as `SessionLoadState` (`rereading` shows as `ready`) | `transcript/model.ts` |
+| Follow-up read | `none`, `waiting(replace / refresh)`; a waiting `replace` is not downgraded | `list/model.ts`, `list/reads.ts` |
 | Older page | `idle`, `loading`, `failed(error)` | `transcript/model.ts` |
 | Request | `open`, `answering`, `answered`, `expired`, `failed(error)` | `requests/model.ts` |
 

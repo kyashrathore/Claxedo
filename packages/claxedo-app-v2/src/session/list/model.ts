@@ -1,3 +1,4 @@
+import { unreachable } from "@/lib/machine"
 import type { AppError, SessionId, SessionRef, SessionRow, SessionStatus, SessionStatusRead } from "@/server"
 
 export type PendingSend = {
@@ -68,6 +69,23 @@ export type ListState = ListData &
   )
 
 export type RereadMode = "replace" | "refresh"
+
+export type FollowUp = { readonly kind: "none" } | { readonly kind: "waiting"; readonly mode: RereadMode }
+
+export type FollowUpEvent = { readonly type: "requested"; readonly mode: RereadMode } | { readonly type: "taken" }
+
+export const NO_FOLLOW_UP: FollowUp = { kind: "none" }
+
+export function followUpTransition(state: FollowUp, event: FollowUpEvent): FollowUp {
+  switch (event.type) {
+    case "requested":
+      return state.kind === "waiting" && state.mode === "replace" ? state : { kind: "waiting", mode: event.mode }
+    case "taken":
+      return NO_FOLLOW_UP
+    default:
+      return unreachable(event)
+  }
+}
 
 export type ListEvent =
   | ServerListEvent
