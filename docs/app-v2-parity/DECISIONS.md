@@ -156,3 +156,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Orchestrator, 02:25: the Models tab switches reach the picker by group too
 - In v1 the composer picker reads only per-model switches, so a group's "Disable all" changes Settings but not the picker.
 - **v2:** the picker honors the group state too. It's a one-line fix to a v1 inconsistency.
+
+## Owner, 02:40: keep /welcome, keep Back
+- **`/welcome` stays** as the first-project route. PROJ-001, v1's canvas at `/`, is not taken; projects-app's 7c245ba6e1 is reverted (d19c7962fc).
+- **Back stays as v2 has it:** browser Back after a rail click returns to the previous session. The settings Back stays too.
