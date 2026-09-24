@@ -2,6 +2,7 @@ import { Show, type Component } from "solid-js"
 import { Button } from "@/ui"
 import type { AddProjectFlow } from "../add-project"
 import { useProjectsText } from "../i18n"
+import { canGoBack } from "../model"
 
 export const FlowFooter: Component<{ flow: AddProjectFlow }> = (props) => {
   const t = useProjectsText()
@@ -29,7 +30,7 @@ export const FlowFooter: Component<{ flow: AddProjectFlow }> = (props) => {
         <Show when={failure()}>{(error) => `${t("projects.add.failed")}: ${error().message}`}</Show>
       </p>
       <div class="flex shrink-0 items-center gap-2">
-        <Show when={state().kind !== "choosingSource"}>
+        <Show when={canGoBack(state()) || creating()}>
           <Button variant="ghost" size="large" onClick={() => props.flow.back()} disabled={creating()}>
             {t("projects.add.back")}
           </Button>

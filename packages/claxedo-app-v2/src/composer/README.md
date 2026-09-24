@@ -22,7 +22,7 @@ The prompt editor and everything that turns a draft into one `PromptInput` for `
 - The draft is the only copy of what the user typed; the contenteditable is rendered from it and parsed back into it on input.
 - `!` at the start of an empty prompt enters shell mode; the text is sent as a prompt beginning with `!` because today's contract has no shell route.
 - `/goal` arms goal mode; `/goal <objective>` and an armed send carry `goal: { objective }`. Only a harness whose `goalMode` is not `none` offers it.
-- Slash entries come from the shell's command registry plus `/goal`; `@` entries come from the placement's file search (`server.queries.files.search`) and the shell's mention sources. Both registries are read through `useShellRegistries()`; until the shell lands it is the placeholder in `shell-registries-placeholder.ts`, which the shell's export replaces.
+- Slash entries come from the shell's command registry plus `/goal`; `@` entries come from the placement's file search (`server.queries.files.search`) and the shell's mention sources. Both registries are read through the shell's `useShellRegistries()`.
 - No comments, no polling, no second copy of server data: the composer reads session status and requests through `SessionView` only.
 
 ## Flows

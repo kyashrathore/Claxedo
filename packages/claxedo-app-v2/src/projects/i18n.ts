@@ -28,6 +28,7 @@ const en = {
   "projects.placement.worktree": "Worktree",
   "projects.placement.cloud": "Cloud workspace",
   "projects.placement.open": "Open",
+  "projects.placement.openFailed": "The session could not be started",
   "projects.source": "Source",
   "projects.source.none": "No source recorded",
   "projects.add.title": "New project",

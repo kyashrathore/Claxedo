@@ -141,6 +141,23 @@ export const sendTransition: Transition<SendState, SendEvent> = (state, event) =
   }
 }
 
+export type StopState = { kind: "idle" } | { kind: "stopping" } | { kind: "failed"; error: AppError }
+
+export type StopEvent = { type: "stopStarted" } | { type: "stopFinished" } | { type: "stopFailed"; error: AppError }
+
+export const stopTransition: Transition<StopState, StopEvent> = (state, event) => {
+  switch (event.type) {
+    case "stopStarted":
+      return { kind: "stopping" }
+    case "stopFinished":
+      return { kind: "idle" }
+    case "stopFailed":
+      return { kind: "failed", error: event.error }
+    default:
+      return unreachable(event)
+  }
+}
+
 export type AttachmentState =
   | { kind: "reading"; id: string; filename: string }
   | { kind: "ready"; id: string; part: ImagePart }

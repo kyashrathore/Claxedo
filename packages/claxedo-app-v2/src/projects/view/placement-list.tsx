@@ -1,10 +1,9 @@
 import { For, Match, Switch, type Accessor, type Component } from "solid-js"
-import { useNavigate } from "@solidjs/router"
 import { unreachable } from "@/lib/machine"
 import type { Placement, ProjectId } from "@/server"
 import { Button } from "@/ui"
 import { useProjectsText, type ProjectsText } from "../i18n"
-import { placementDraftPath } from "../routes"
+import { usePlacementOpener } from "../open"
 import { useProjectPlacements } from "../store"
 
 export function placementKindLabel(t: ProjectsText, placement: Placement): string {
@@ -27,7 +26,7 @@ function placementDetail(t: ProjectsText, placement: Placement): string {
 export const PlacementList: Component<{ projectId: Accessor<ProjectId> }> = (props) => {
   const t = useProjectsText()
   const placements = useProjectPlacements(props.projectId)
-  const navigate = useNavigate()
+  const opener = usePlacementOpener()
   const local = () => {
     const state = placements()
     return state.kind === "ready" ? state.data.filter((placement) => placement.kind !== "cloud") : []
@@ -60,7 +59,7 @@ export const PlacementList: Component<{ projectId: Accessor<ProjectId> }> = (pro
                     <span class="truncate text-sm">{placement.label}</span>
                     <span class="projects-hint truncate">{placementDetail(t, placement)}</span>
                   </div>
-                  <Button variant="outline" onClick={() => navigate(placementDraftPath(placement.id))}>
+                  <Button variant="outline" onClick={() => opener.openPlacement(placement.id)}>
                     {t("projects.placement.open")}
                   </Button>
                 </li>

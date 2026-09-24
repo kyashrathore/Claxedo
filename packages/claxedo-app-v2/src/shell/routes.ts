@@ -90,6 +90,10 @@ export function parseRoute(
   return { kind: "unknown", path: pathname }
 }
 
+export function placementOf(route: ShellRoute): PlacementId | undefined {
+  return route.kind === "session" || route.kind === "terminal" ? route.placementId : undefined
+}
+
 export function sidebarModeOf(route: ShellRoute): "main" | "settings" {
   return route.kind === "page" ? route.page.sidebar : "main"
 }

@@ -1,6 +1,11 @@
 import net from "node:net"
 
-export const PORT_RANGE = { first: 46100, last: 46199 } as const
+function portRange() {
+  const match = /^(\d+)-(\d+)$/.exec(process.env.CLAXEDO_E2E_PORT_RANGE ?? "")
+  return match ? { first: Number(match[1]), last: Number(match[2]) } : { first: 46100, last: 46199 }
+}
+
+export const PORT_RANGE = portRange()
 
 const leased = new Set<number>()
 
