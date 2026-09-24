@@ -26,7 +26,7 @@ export function appDistDir(app: AppChoice) {
   return path.join(appPackageDir(app), DIST_DIR)
 }
 
-function newestMtime(entry: string): number {
+export function newestMtime(entry: string): number {
   if (!fs.existsSync(entry)) return 0
   const stat = fs.statSync(entry)
   if (!stat.isDirectory()) return stat.mtimeMs
@@ -38,7 +38,7 @@ function newestMtime(entry: string): number {
   return newest
 }
 
-function sourceMtime(app: AppChoice) {
+export function sourceMtime(app: AppChoice) {
   const pkg = appPackageDir(app)
   return Math.max(...SOURCE_ENTRIES.map((entry) => newestMtime(path.join(pkg, entry))))
 }
@@ -50,14 +50,14 @@ function buildIsCurrent(app: AppChoice, mtime: number, serverUrl: string) {
   return typeof recorded.sourceMtime === "number" && recorded.sourceMtime >= mtime && recorded.serverUrl === serverUrl
 }
 
-async function run(label: string, command: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv }) {
+export async function run(label: string, command: string, args: string[], options: { cwd: string; env?: NodeJS.ProcessEnv }) {
   const child = spawn(command, args, { cwd: options.cwd, env: options.env ?? process.env, stdio: ["ignore", "pipe", "pipe"] })
   const owned = captureOutput(child)
   const code = await exited(child)
   return { code, tail: () => owned.log().split("\n").slice(-60).join("\n") }
 }
 
-async function ensureWorkspacePackagesBuilt() {
+export async function ensureWorkspacePackagesBuilt() {
   if (fs.existsSync(path.join(REPO_ROOT, "packages/claxedo-helpers/dist"))) return
   const result = await run("bun run build:packages", "bun", ["run", "build:packages", "--", "--continue"], { cwd: REPO_ROOT })
   if (result.code !== 0) console.warn(`[harness] build:packages exited with ${result.code}; the app build decides whether that matters\n${result.tail()}`)

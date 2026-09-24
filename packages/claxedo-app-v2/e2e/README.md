@@ -8,6 +8,7 @@ The suite runs the real app against the real daemon and runtime. The only fakes 
 bun run e2e -- --app=v2                      # every flow, v2, both projects (web + phone)
 bun run e2e -- --app=v1                      # the same flows against today's app (baseline flows only)
 bun run e2e -- --app=v2 --project=phone      # 390×844, touch
+bun run e2e -- --app=v2 --project=desktop    # the Electron app, specs tagged @desktop
 bun run e2e -- --app=v2 e2e/flows/00-harness-smoke.spec.ts
 CLAXEDO_E2E_RED=1 bun run e2e -- --app=v2    # red run: the ACP agent fails every turn, model keys stay on the vendors' hosts
 ```
@@ -130,6 +131,21 @@ Opens the stream the app reads (`/api/wr/events`) and records every frame. `fram
 
 `expectNoAxeViolations(page, screen)` runs axe on the page and expects nothing; v2 flows use it. `expectWithinV1Baseline(page, surface)` expects no rule outside today's app's `packages/claxedo-app/e2e/playwright/a11y-baseline.json` for that surface (`home`, `session-page`, `settings-surface`, `command-palette`, `prompt-input-focused`); v1 paths use it, and only on those surfaces. Both first wait (`settled`) until no animation that ends within 5 s is running, so a fade-in is not measured half-drawn.
 
+### `desktop` (the Electron app)
+
+Specs tagged `@desktop` (`test("…", { tag: "@desktop" }, async ({ desktop }) => …)`) run only in the `desktop` project; `web` and `phone` skip them. The `desktop` fixture builds `packages/claxedo-desktop` for the chosen app when its sources or the app's are newer than the last build (`bun run prebuild`, then `electron-vite build`, with `CLAXEDO_DESKTOP_RENDERER=v2` for v2; about a minute, recorded as a "desktop build" annotation), then launches `out/main/index.js` through Playwright's Electron driver. The app runs isolated like a stack: `HOME`, `XDG_*`, its user data and its server data in the spec's data directory, an empty `ZDOTDIR`, the egress guard, and its own scripted model server and ACP scripts. Its embedded server listens on a port from the run's range and is prepared exactly like the daemon.
+
+The embedded server admits only its application: Electron main stamps a capability on its own renderer's requests, and nothing else can send it. So `desktop.api` and `desktop.makeWorkspace` send through the app's window, with the app's own privileges. The fixture waits for main to publish the server (`awaitInitialization`), which is when that capability is armed.
+
+| Member | Meaning |
+| --- | --- |
+| `window` | The shell window (`index.local.html`) |
+| `electron` | Playwright's `ElectronApplication`, for the main process and other windows |
+| `api` | `ClaxedoApi` for the embedded server, sent through `window` |
+| `url`, `dataDir`, `scripted`, `egress`, `acp`, `makeWorkspace(name)`, `log()` | As on `stack` |
+
+`bun run dev:v2` in `packages/claxedo-desktop` runs the desktop in development with the v2 renderer. Packaging v2 (`package:mac:v2`) waits on a v2 build without the auth vendor client, which the desktop's unsigned boundary check requires.
+
 ### Real CLIs
 
 `installedCli("claude" | "codex")` returns `{ available: true, path, version }` or `{ available: false, reason }`. Override the binary with `CLAXEDO_E2E_CLAUDE_BIN` / `CLAXEDO_E2E_CODEX_BIN`. Native sessions use `harness: { id: "claude", access: "native" }` or `{ id: "codex", access: "native" }`.
@@ -151,6 +167,11 @@ e2e/
     scripted-providers.ts  routes anthropic and openai to the scripted model server
     model-catalog.ts     the OpenCode catalog snapshot
     launch-gate-child.ts builds the runtime's launch gate child
+    desktop-build.ts     builds packages/claxedo-desktop for the chosen app when stale
+    desktop.ts           launches the Electron app isolated, with its scripted world
+    scripted-world.ts    prepares a server: scripted providers, Pi by default, the scripted ACP agent
+    workspaces.ts        a fresh repository registered with a server
+    transport.ts         HTTP straight to a server, or through a page
     git.ts               git with a test identity; one-commit repositories
     git-remote.ts        a bare repository served over dumb HTTP
     api.ts               ClaxedoApi

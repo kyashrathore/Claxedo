@@ -30,7 +30,7 @@ export type Stack = {
 
 export type StackInput = { label: string; red?: boolean }
 
-function safeLabel(label: string) {
+export function safeLabel(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "spec"
 }
 
