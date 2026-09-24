@@ -446,8 +446,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     // Every cancellation path (including native Goal Stop) owns the same
     // pending interactions; cleanup must not depend on the HTTP abort entry.
     const cancelInteractions = () => {
-      this.interactions.resolvePermissions(id, "deny")
-      this.interactions.rejectQuestions(id)
+      const settled = [...this.interactions.resolvePermissions(id, "deny"), ...this.interactions.rejectQuestions(id)]
+      for (const payload of settled) this.options.eventHub?.publishGlobal({ directory, payload })
     }
     abort.signal.addEventListener("abort", cancelInteractions, { once: true })
 

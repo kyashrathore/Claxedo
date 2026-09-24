@@ -191,30 +191,33 @@ export class SdkRuntimeInteractions {
     return pending
   }
 
-  rejectQuestions(sessionId: string) {
-    for (const [id, pending] of Array.from(this.questions)) {
-      if (pending.sessionId === sessionId) this.rejectPendingQuestion(id)
-    }
+  rejectQuestions(sessionId: string): CompatEvent[] {
+    return Array.from(this.questions)
+      .filter(([, pending]) => pending.sessionId === sessionId)
+      .flatMap(([id]) => this.rejectPendingQuestion(id)?.events ?? [])
   }
 
   private rejectPendingQuestion(questionId: string): AgentInteractionResult | void {
     return this.questionOwner.settle(questionId, undefined, (question) => question.reject())
   }
 
-  resolvePermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny") {
+  resolvePermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny"): CompatEvent[] {
     // Snapshot: the loop deletes from the same map it walks.
     const entries = Array.from(this.permissions)
+    const events: CompatEvent[] = []
     for (const [id, item] of entries) {
       if (sessionId && item.sessionId !== sessionId) continue
-      this.store.appendEvent({
+      const committed = this.store.appendEvent({
         sessionId: item.sessionId,
         agentSessionId: item.agentSessionId,
         payload: permissionReplied(item.sessionId, id, "reject"),
         source: { dir: "out", method: "permission.abort", frame: { decision } },
       })
+      events.push(committed.payload)
       this.permissions.delete(id)
       item.resolve(decision)
     }
+    return events
   }
 
   rejectAllQuestions() {
