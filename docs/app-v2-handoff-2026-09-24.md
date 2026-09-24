@@ -239,6 +239,10 @@ Updated 21:40, after the owner switched accounts and the lanes resumed.
 
 ## Owner questions still open
 
+- **`/welcome`:** the owner asked "why remove /welcome?" (02:30). The v1 inventory row PROJ-001 says v1 has no `/welcome` route and draws the first-project canvas at `/`. projects-app's 7c245ba6e1 did that and is reverted until the owner rules. Keeping `/welcome` is fine if the owner prefers it.
+- **Browser Back after a rail click:** v2 returns to the previous session, while v1 stays on the current one. Keep v2's or match v1?
+- **The daemon restart on 2598** that picks up the two runtime fixes (Stop settles questions; no-Goal harnesses). It ends open terminals and running turns.
+
 - **Closing a terminal ends its PTY.** In v1 the shell kept running (DECISIONS 18:25). Confirm the fix.
 - **The contrast formula.** Keep the one derived from the Codex bundle, or replace it with our own curve.
 - **The todo dock when everything is done.** The owner's expectation differs from v1's `todoState`; record the approval.

@@ -24,7 +24,17 @@ import type {
   WorktreeCreateInput,
 } from "./git-types"
 import type { PlacementId, ProjectId, RequestId, TerminalId } from "./ids"
-import type { MarketplaceCatalog, PluginActivationInput, PluginChange, PluginSourceInput, PluginSourceRecord } from "./marketplace-types"
+import type {
+  MachineInstalled,
+  MarketplaceCatalog,
+  PluginActivationInput,
+  PluginChange,
+  PluginOrganizationDefaultInput,
+  PluginSkillDocument,
+  PluginSkillRequest,
+  PluginSourceInput,
+  PluginSourceRecord,
+} from "./marketplace-types"
 import type {
   Terminal,
   TerminalAgentStatus,
@@ -82,6 +92,7 @@ export type SessionsApi = {
   readonly newMessageId: () => string
   readonly queue: (ref: SessionRef) => Promise<readonly QueuedPrompt[]>
   readonly controlQueued: (ref: SessionRef, seq: number, action: QueuedPromptAction) => Promise<QueuedPromptControl>
+  readonly replaceQueued: (ref: SessionRef, seq: number, input: PromptInput, messageId: string) => Promise<boolean>
   readonly controlGoal: (ref: SessionRef, action: GoalAction) => Promise<SessionGoal | undefined>
   readonly subagents: (ref: SessionRef) => Promise<readonly Subagent[]>
 }
@@ -134,8 +145,10 @@ export type AccountsApi = {
 }
 
 export type MarketplaceApi = {
+  readonly refresh: (projectId?: ProjectId) => Promise<MarketplaceCatalog>
   readonly setActivation: (input: PluginActivationInput) => Promise<PluginChange>
-  readonly update: (pluginInstanceId: string, revision: number) => Promise<PluginChange>
+  readonly setOrganizationDefault: (input: PluginOrganizationDefaultInput) => Promise<PluginChange>
+  readonly update: (pluginInstanceId: string, revision: number, authority?: "user") => Promise<PluginChange>
   readonly addSource: (input: PluginSourceInput) => Promise<PluginSourceRecord>
   readonly removeSource: (id: string) => Promise<void>
 }
@@ -163,6 +176,8 @@ export type ServerQueries = {
   readonly marketplace: {
     readonly catalog: (projectId?: ProjectId) => FetchQuery<MarketplaceCatalog>
     readonly sources: () => FetchQuery<readonly PluginSourceRecord[]>
+    readonly skill: (request: PluginSkillRequest) => FetchQuery<PluginSkillDocument>
+    readonly machineInstalled: () => FetchQuery<MachineInstalled>
   }
   readonly tasks: { readonly availability: () => FetchQuery<FeatureAvailability> }
   readonly documents: { readonly availability: () => FetchQuery<FeatureAvailability> }

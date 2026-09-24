@@ -25,7 +25,7 @@ function DesktopStartupStatus() {
     onCleanup(() => clearTimeout(timer))
   })
   return (
-    <main style={{ display: "grid", "place-items": "center", height: "100vh", color: "var(--v2-text-text-base, #aeaeae)" }}>
+    <main style={{ display: "grid", "place-items": "center", height: "100vh", color: "var(--text-base, #a0a0a0)" }}>
       <Show when={failure()} fallback={<p role="status">{STATUS[step().phase]}</p>}>
         {(message) => <p role="alert">Claxedo could not start: {message()}</p>}
       </Show>

@@ -3,7 +3,7 @@ import { Show, createEffect, createMemo, createResource, createSignal, untrack, 
 import { useNavigate } from "@solidjs/router"
 import { useServer } from "@/server"
 import { settingsPath } from "@/shell"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon } from "@/ui"
 import type { PickerState } from "./model-list"
 import { HarnessModelPicker } from "./harness-model-picker"
 import { publishComposerNotice, type ComposerNotice } from "./composer-notice"
@@ -17,6 +17,7 @@ import {
   createModelSelectionController,
   modelKeyFromPickerSelection,
 } from "../harness/model-selection"
+import { useModelVisibility } from "../harness/model-visibility"
 import { createProviderCatalog, hydrateConnectedProviderDetails } from "../harness/provider-catalog"
 import {
   NATIVE_HARNESS_IDS,
@@ -150,6 +151,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // Keyed per harness id, so switching between catalog harnesses re-reads the
   // right catalog; an empty id disables the query while no catalog harness is
   // selected, so a Claude or connection draft never fetches a catalog.
+  const visibility = useModelVisibility()
   const catalogProviders = createProviderCatalog({ api: server.harnessConfig, harness: () => catalogHarnessId(harness()) ?? "" })
   const catalogRows = createMemo(() => {
     const connected = new Set(catalogProviders.connected().map((provider) => provider.id))
@@ -268,9 +270,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const rows = createMemo<Item[]>(() => {
     const currentHarness = harness()
     if (!currentHarness) return []
-    if (isCatalogHarness(currentHarness)) return catalogRows().rows
+    const defaults = catalogProviders.default()
+    if (isCatalogHarness(currentHarness)) return catalogRows().rows.filter((item) => visibility.visible({ providerID: item.provider.id, modelID: item.id }, { defaults }))
+    const selectedId = selection().selectedModel
     return selection().models.flatMap((item) => {
       const provider = harnessModelPickerProvider(currentHarness, item)
+      if (item.id !== selectedId && !visibility.visible({ providerID: provider.id, modelID: item.id }, { defaults })) return []
       return [{
         id: item.id,
         name: item.name,

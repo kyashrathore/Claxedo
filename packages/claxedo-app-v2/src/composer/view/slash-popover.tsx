@@ -1,7 +1,7 @@
 import { Component, For, Match, Show, Switch } from "solid-js"
 import type { ComposerTextKey } from "../i18n"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIcon as Icon } from "@/ui"
 import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 
 export type AtOption =

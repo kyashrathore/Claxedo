@@ -86,4 +86,5 @@ export const fr: Partial<Record<SessionScreenTextKey, string>> = {
   "command.message.next": "Message suivant",
   "command.message.next.description": "Aller au message utilisateur suivant",
   "sessionScreen.requests.loadFailed": "Impossible de charger les autorisations ou les questions en attente. Réessayez pour continuer.",
+  "command.session.new": "Nouvelle session",
 }

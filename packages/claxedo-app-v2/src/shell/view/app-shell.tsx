@@ -5,11 +5,10 @@ import { useTranslator } from "@/i18n"
 import { preferenceKey } from "@/lib/persisted"
 import { PluginHostProvider } from "@/plugins"
 import { useServer, type Capabilities } from "@/server"
-import { Toast } from "@/ui"
-import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
+import { Toast, ClaxedoSplash } from "@/ui"
 import { createWorkbenchStore, WorkbenchProvider } from "@/workbench"
 import { HomeRedirect } from "../home-redirect"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
 import { OpenFileCommand } from "../palette/open-file-command"
@@ -37,7 +36,7 @@ function centerOf(route: ShellRoute): CenterContent {
 }
 
 function ShellLoading(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   return (
     <div
       role="status"
@@ -77,9 +76,11 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
 }
 
 function ShellBody(props: AppShellProps & { readonly route: ShellRoute }): JSX.Element {
+  const main = props.mainSidebar
+  const settings = <SettingsSidebar />
   return (
     <ShellFrame
-      sidebar={{ mode: sidebarModeOf(props.route), main: props.mainSidebar, settings: <SettingsSidebar /> }}
+      sidebar={{ mode: sidebarModeOf(props.route), main, settings }}
       center={centerOf(props.route)}
       compactTabs={props.compactTabs}
     />

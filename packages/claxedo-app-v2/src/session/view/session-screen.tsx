@@ -19,6 +19,7 @@ import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
 import { SessionConnectionLine } from "./connection-line"
+import { registerSessionCommands } from "./session-commands"
 import { recoverTurn } from "./turn-recovery-actions"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
@@ -103,7 +104,9 @@ function SessionBody(props: {
     prompt: { cursor: () => draft().cursor, length: () => promptText(draft().prompt).length },
     markScrollGesture: () => scroll.props.onMarkScrollGesture(),
   })
-  createMessageLinks({ view: () => props.view, users, scroll, active: driving, commands: useCommands(), t })
+  const commands = useCommands()
+  createMessageLinks({ view: () => props.view, users, scroll, active: driving, commands, t })
+  registerSessionCommands({ commands, placementId: () => props.view.ref.placementId, active: driving, navigate: (path) => routing.navigate(path), t })
   let recovery: ComposerRecovery | undefined
   const recover = (kind: Parameters<typeof recoverTurn>[2], userMessageId: string) =>
     recoverTurn(props.view, {
@@ -193,6 +196,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   return (
     <section
       data-component="session-screen"
+      data-testid="session-page-root"
       data-session-id={props.sessionRef.sessionId}
       data-session-presentation={floating() ? "floating" : undefined}
       aria-label={view().row()?.title ?? t("sessionScreen.untitled")}

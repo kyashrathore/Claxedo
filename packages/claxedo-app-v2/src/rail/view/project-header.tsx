@@ -1,10 +1,10 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createHoverEngagement } from "../hover-engagement"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import type { ProjectSection } from "../project-sections"
+import { ClaxedoIcon as Icon } from "@/ui"
 
 export type ProjectHeaderProps = {
   readonly section: ProjectSection
@@ -24,7 +24,7 @@ function activateFromKeyboard(event: KeyboardEvent, action: () => void) {
 }
 
 function Disclosure(props: { readonly open: boolean; readonly active: boolean; readonly onToggle: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   return (
     <span
       data-icon-interaction="binary"
@@ -49,7 +49,7 @@ function Disclosure(props: { readonly open: boolean; readonly active: boolean; r
 const ACTION_CLASS = "flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors"
 
 function HeaderActions(props: { readonly label: string; readonly engaged: boolean; readonly onNewSession: () => void; readonly onNewTerminal: () => void }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   return (
     <div
       data-icon-interaction="row-actions"

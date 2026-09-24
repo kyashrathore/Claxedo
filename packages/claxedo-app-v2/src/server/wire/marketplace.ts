@@ -22,7 +22,8 @@ export function pluginSourceFromWire(value: unknown): PluginSourceRecord | undef
   if (!row || !kind) return undefined
   const { id, label, repository, ref, canRemove } = row
   if (typeof id !== "string" || typeof label !== "string" || typeof repository !== "string" || typeof ref !== "string" || typeof canRemove !== "boolean") return undefined
-  return { id, kind, label, repository, ref, canRemove }
+  const authority = row.authority === "user" || row.authority === "organization" ? row.authority : undefined
+  return { id, kind, label, repository, ref, ...(authority ? { authority } : {}), canRemove }
 }
 
 export function pluginSourcesFromWire(value: unknown): readonly PluginSourceRecord[] | undefined {

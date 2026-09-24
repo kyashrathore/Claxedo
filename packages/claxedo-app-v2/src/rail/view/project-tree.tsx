@@ -5,17 +5,16 @@ import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
 import { draftPath, sessionLinkPath, useShellRoute } from "@/shell"
-import { sessionPaneKind } from "@/session/view"
 import { terminalPaneKind, useTerminals } from "@/terminal"
 import { useWorkbench } from "@/workbench"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 import { rowsByProject, sessionMarker, siblingAfterArchive, type RailRow } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
 
 export function ProjectTree(): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const projects = useProjectList()
   const server = useServer()
   const stores = useSessionStores()
@@ -42,7 +41,7 @@ export function ProjectTree(): JSX.Element {
   const workbench = useWorkbench()
   const prepareDrag = (row: RailRow) =>
     row.kind === "session"
-      ? workbench.open(sessionPaneKind, row.session.ref, false)
+      ? workbench.openRoute({ kind: "session", ...row.session.ref }, false)
       : workbench.open(terminalPaneKind, { placementId: row.terminal.placementId, terminalId: row.terminal.terminalId }, false)
   const markerOf = (row: SessionRowView) => sessionMarker(server.placements.byId(row.ref.placementId), server.capabilities()?.thisMachine?.id)
   const openSession = (row: SessionRowView) =>

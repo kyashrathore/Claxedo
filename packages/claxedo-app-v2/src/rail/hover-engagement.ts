@@ -12,10 +12,11 @@ export type HoverEngagement = {
   }
 }
 
-export function createHoverEngagement(input?: { readonly releaseDelayMs?: number }): HoverEngagement {
-  const releaseDelayMs = input?.releaseDelayMs ?? 0
+type Reason = "hovered" | "focused" | "held"
+
+function createEngagedState(releaseDelayMs: number) {
   const [engaged, setEngaged] = createSignal(false)
-  const reasons = { hovered: false, focused: false, held: false }
+  const reasons: Record<Reason, boolean> = { hovered: false, focused: false, held: false }
   let pending: ReturnType<typeof setTimeout> | undefined
   const wanted = () => reasons.hovered || reasons.focused || reasons.held
   const cancel = () => {
@@ -35,25 +36,34 @@ export function createHoverEngagement(input?: { readonly releaseDelayMs?: number
       setEngaged(wanted())
     }, releaseDelayMs)
   }
-  const set = (reason: keyof typeof reasons, value: boolean) => {
+  onCleanup(cancel)
+  const set = (reason: Reason, value: boolean) => {
     reasons[reason] = value
     settle()
   }
-  onCleanup(cancel)
+  return { engaged, set }
+}
+
+function engagementHandlers(set: (reason: Reason, value: boolean) => void): HoverEngagement["handlers"] {
   return {
-    engaged,
-    hold: () => set("held", true),
-    release: () => set("held", false),
-    handlers: {
-      onPointerEnter: () => set("hovered", true),
-      onPointerLeave: () => set("hovered", false),
-      onFocusIn: () => set("focused", true),
-      onFocusOut: (event) => {
-        const next = event.relatedTarget
-        const host = event.currentTarget
-        if (next instanceof Node && host instanceof Node && host.contains(next)) return
-        set("focused", false)
-      },
+    onPointerEnter: () => set("hovered", true),
+    onPointerLeave: () => set("hovered", false),
+    onFocusIn: () => set("focused", true),
+    onFocusOut: (event) => {
+      const next = event.relatedTarget
+      const host = event.currentTarget
+      if (next instanceof Node && host instanceof Node && host.contains(next)) return
+      set("focused", false)
     },
+  }
+}
+
+export function createHoverEngagement(input?: { readonly releaseDelayMs?: number }): HoverEngagement {
+  const state = createEngagedState(input?.releaseDelayMs ?? 0)
+  return {
+    engaged: state.engaged,
+    hold: () => state.set("held", true),
+    release: () => state.set("held", false),
+    handlers: engagementHandlers(state.set),
   }
 }

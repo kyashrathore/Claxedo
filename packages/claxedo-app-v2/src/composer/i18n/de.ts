@@ -93,4 +93,8 @@ export const de: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "Kein Reasoning",
   "model.tooltip.context": "Kontextlimit {{limit}}",
   "model.tooltip.allows": "Erlaubt: {{inputs}}",
+  "dialog.model.select.title": "Modell auswählen",
+  "command.model.choose": "Modell wählen",
+  "command.model.choose.description": "Ein anderes Modell auswählen",
+  "command.category.model": "Modell",
 }

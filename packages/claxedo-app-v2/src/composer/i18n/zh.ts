@@ -92,4 +92,8 @@ export const zh: Partial<Record<ComposerTextKey, string>> = {
   "model.tooltip.reasoning.none": "不支持推理",
   "model.tooltip.context": "上下文上限 {{limit}}",
   "model.tooltip.allows": "支持：{{inputs}}",
+  "dialog.model.select.title": "选择模型",
+  "command.model.choose": "选择模型",
+  "command.model.choose.description": "选择不同的模型",
+  "command.category.model": "模型",
 }

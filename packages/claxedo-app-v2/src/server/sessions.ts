@@ -2,7 +2,7 @@ import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import type { SessionsApi } from "./api"
 import { ServerError } from "./errors"
 import { sessionId, type RequestId } from "./ids"
-import { sessionPath, type SessionContext } from "./session-context"
+import { sessionEndpoint, type SessionContext } from "./session-context"
 import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
@@ -42,7 +42,7 @@ async function replyToRequest(context: SessionContext, ref: SessionRef, id: Requ
   const { transport } = context
   const where = await context.workspaces.route(ref)
   const questionPath = (action: "reply" | "reject") => withQuery(`/question/${encodeURIComponent(id)}/${action}`, { sessionId: ref.sessionId })
-  const permissionPath = sessionPath(ref, `/permissions/${encodeURIComponent(id)}`)
+  const permissionPath = sessionEndpoint(ref, `/permissions/${encodeURIComponent(id)}`)
   if (answer.kind === "permission") {
     await transport.runtimeJson<unknown>(where, permissionPath, jsonInit("POST", permissionReplyBody(answer.reply)))
     return
@@ -60,12 +60,12 @@ async function sendPrompt(context: SessionContext, ref: SessionRef, input: Promp
     await startGoal(context.transport, where, ref, input.goal.objective)
     return "start"
   }
-  const answer = await context.transport.runtimeJson<unknown>(where, sessionPath(ref, "/prompt_async"), jsonInit("POST", promptBody(input, messageId)))
+  const answer = await context.transport.runtimeJson<unknown>(where, sessionEndpoint(ref, "/prompt_async"), jsonInit("POST", promptBody(input, messageId)))
   return promptDeliveryFromWire(answer)
 }
 
 async function patchSession(context: SessionContext, ref: SessionRef, patch: Record<string, unknown>) {
-  await context.transport.runtimeJson<unknown>(await context.workspaces.route(ref), sessionPath(ref), jsonInit("PATCH", patch))
+  await context.transport.runtimeJson<unknown>(await context.workspaces.route(ref), sessionEndpoint(ref), jsonInit("PATCH", patch))
 }
 
 export function createSessionsApi(transport: Transport, workspaces: Workspaces, status: StatusOwner): SessionsApi {
@@ -84,13 +84,13 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
     rename: (ref, title) => patchSession(context, ref, { title }),
     archive: (ref, archived) => patchSession(context, ref, { time: { archived: archived ? Date.now() : 0 } }),
     remove: async (ref) => {
-      await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionPath(ref), { method: "DELETE" })
+      await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionEndpoint(ref), { method: "DELETE" })
       status.forget(ref)
     },
     statuses: createStatusesRead(transport, workspaces, status),
     newMessageId,
     ...createSessionQueue(transport, workspaces),
     controlGoal: async (ref, action) => controlGoal(transport, await workspaces.route(ref), ref, action),
-    subagents: async (ref) => subagentsFromWire(await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionPath(ref, "/subagents"))),
+    subagents: async (ref) => subagentsFromWire(await transport.runtimeJson<unknown>(await workspaces.route(ref), sessionEndpoint(ref, "/subagents"))),
   }
 }

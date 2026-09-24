@@ -1,7 +1,7 @@
 import { decodeHarnessConnectionsCatalog, type HarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import { responseError } from "./errors"
 import type { PlacementId } from "./ids"
-import { sessionPath } from "./session-context"
+import { sessionEndpoint } from "./session-context"
 import { jsonInit, withQuery, type Transport } from "./transport"
 import type { SessionRef } from "./types"
 import type { Workspaces } from "./workspaces"
@@ -61,9 +61,9 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
         sessionId: request.sessionId,
         model: request.model,
       })),
-    sessionConfig: async (ref) => transport.runtime(await workspaces.route(ref), sessionPath(ref, "/config")),
+    sessionConfig: async (ref) => transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/config")),
     updateSessionConfig: async (ref, patch) =>
-      transport.runtime(await workspaces.route(ref), sessionPath(ref, "/config"), jsonInit("PATCH", {
+      transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/config"), jsonInit("PATCH", {
         ...(patch.harness ? { harness: harnessIdentity(patch.harness) } : {}),
         ...(patch.model ? { model: patch.model } : {}),
         ...(patch.variant !== undefined ? { variant: patch.variant } : {}),
@@ -75,14 +75,14 @@ export function createHarnessConfigApi(transport: Transport, workspaces: Workspa
     },
     permissionModes: async (input) => {
       const path = input.ref
-        ? sessionPath(input.ref, "/permission-mode")
+        ? sessionEndpoint(input.ref, "/permission-mode")
         : withQuery("/permission/modes", input.harness ? harnessSelectionQuery(input.harness) : {})
       const response = await transport.runtime(await workspaces.route(input.ref ?? input.placementId), path)
       if (!response.ok) throw await responseError(response, "Permission modes")
       return permissionModeStateFromWire(await response.json())
     },
     setPermissionMode: async (ref, modeId) => {
-      const response = await transport.runtime(await workspaces.route(ref), sessionPath(ref, "/permission-mode"), jsonInit("PUT", { modeId }))
+      const response = await transport.runtime(await workspaces.route(ref), sessionEndpoint(ref, "/permission-mode"), jsonInit("PUT", { modeId }))
       if (!response.ok) throw await responseError(response, "Permission mode")
       return permissionModeStateFromWire(await response.json())
     },

@@ -1,9 +1,10 @@
 import { createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
-import { Dialog, showToast, TextInput, useDialog } from "@/ui"
+import { Dialog, showToast, useDialog } from "@/ui"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { Button } from "@opencode-ai/ui/button"
-import { dictionary } from "../i18n"
+import { railDictionary } from "../i18n"
 
 function useSubmit(run: () => Promise<void>, failureTitle: () => string) {
   const dialog = useDialog()
@@ -24,13 +25,13 @@ function useSubmit(run: () => Promise<void>, failureTitle: () => string) {
 }
 
 export function RenameSessionDialog(props: { readonly title: string; readonly onSubmit: (title: string) => Promise<void> }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const [title, setTitle] = createSignal(props.title)
   const form = useSubmit(() => props.onSubmit(title().trim()), () => t("rail.renameFailed"))
   return (
     <Dialog title={t("rail.rename")} fit>
       <form class="flex min-w-[340px] flex-col gap-4" onSubmit={(event) => void form.submit(event)}>
-        <TextInput aria-label={t("rail.renameLabel")} value={title()} onInput={(event) => setTitle(event.currentTarget.value)} autofocus />
+        <TextField label={t("rail.renameLabel")} hideLabel value={title()} onChange={setTitle} autofocus />
         <div class="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
             {t("rail.cancel")}
@@ -45,7 +46,7 @@ export function RenameSessionDialog(props: { readonly title: string; readonly on
 }
 
 export function DeleteSessionDialog(props: { readonly title: string; readonly onConfirm: () => Promise<void> }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(railDictionary)
   const form = useSubmit(props.onConfirm, () => t("rail.deleteFailed"))
   return (
     <Dialog title={t("rail.deleteTitle")} fit>

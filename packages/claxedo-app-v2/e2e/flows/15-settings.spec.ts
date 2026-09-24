@@ -273,3 +273,48 @@ test("15 settings: a background session's finished turn plays the alert sound an
     expect(await plays()).toBe(0)
   })
 })
+
+async function claudeModels(app: Page) {
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+  const picker = app.getByRole("dialog", { name: "Select harness, model and effort" })
+  await expect(async () => {
+    if (!(await picker.isVisible())) await app.getByRole("button", { name: /^Select harness and model/ }).click()
+    const harness = picker.getByRole("button", { name: /^Harness/ })
+    if (!((await harness.textContent({ timeout: 2000 })) ?? "").includes("Claude Code")) {
+      if (!(await picker.getByText(/^Claude Code/).first().isVisible())) await harness.click()
+      await picker.getByText(/^Claude Code/).first().click()
+    }
+    const models = picker.getByRole("button", { name: /^Model/ })
+    if ((await models.getAttribute("aria-expanded", { timeout: 2000 })) !== "true") await models.click()
+    await expect(picker.getByText("Sonnet", { exact: true }).first()).toBeVisible({ timeout: 2000 })
+  }).toPass()
+  return picker
+}
+
+test("15 settings: a model switched off in Models leaves the composer's picker", async ({ stack, app, isMobile }) => {
+  const workspace = await stack.daemon.makeWorkspace("picker", "Picker")
+  const draft = `${stack.url}${sessionRoute(workspace.id)}`
+  await app.goto(draft)
+  await openSettings(stack, app, isMobile)
+  await openSection(stack, app, isMobile, MODELS)
+  const claude = app.locator('[data-component="models-section-claude"]')
+  await claude.getByRole("tab", { name: "Models" }).click()
+  const haiku = claude.getByRole("switch", { name: "Haiku" })
+  await expect(haiku).toBeChecked()
+  await haiku.click({ force: true })
+  await expect(haiku).not.toBeChecked()
+
+  await app.goto(draft)
+  let picker = await claudeModels(app)
+  await expect(picker.getByText("Haiku", { exact: true })).toHaveCount(0)
+  await app.keyboard.press("Escape")
+
+  await openSettings(stack, app, isMobile)
+  await openSection(stack, app, isMobile, MODELS)
+  await claude.getByRole("tab", { name: "Models" }).click()
+  await haiku.click({ force: true })
+  await expect(haiku).toBeChecked()
+  await app.goto(draft)
+  picker = await claudeModels(app)
+  await expect(picker.getByText("Haiku", { exact: true }).first()).toBeVisible()
+})

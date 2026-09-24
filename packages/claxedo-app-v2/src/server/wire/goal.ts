@@ -27,7 +27,7 @@ export function goalStateFromWire(body: unknown): SessionGoalState {
   const capabilities = isRecord(row.capabilities) ? row.capabilities : {}
   const offered = capabilities.available === true && Array.isArray(capabilities.actions) ? capabilities.actions : []
   const actions = offered.flatMap((action) => (typeof action === "string" && GOAL_ACTIONS[action] ? [GOAL_ACTIONS[action]] : []))
-  return { goal: goalFromWire(row.goal), actions }
+  return { goal: goalFromWire(row.goal), actions, available: capabilities.available === true && capabilities.implemented === true }
 }
 
 export function goalMutationFromWire(body: unknown): SessionGoal | undefined {

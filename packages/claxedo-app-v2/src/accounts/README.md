@@ -14,6 +14,10 @@ Owns: the logins each agent harness runs on, and today's app's surfaces for them
 
 `createHarnessProviders(harness)` wraps the composer's `createProviderCatalog` over `server.harnessConfig.providers`: the providers the harness offers, the connected ones first, and each connected provider's detail loaded once so its source tag (Config, Environment, API key, Custom) can show. A catalog of more than 24 providers lists the connected and the popular ones until a search names others. Connect opens the same dialog in the engine's words ("Connect {vendor} for {engine}"); Disconnect, offered for API-key and custom providers, deletes the stored credential and the harness's auth entry (`server.providerConnect.disconnect`). OpenCode also takes a custom OpenAI-compatible provider (`DialogCustomProvider`, `server.providerConnect.saveCustomProvider`).
 
+## Models tab
+
+Each harness section on Settings → Models has an Accounts and a Models tab, the open one remembered per harness while the page is open, and a "{count} models" figure for the models switched on. The Models tab reads the harness's models for the settings placement (the first available project's folder placement): a catalog harness from its provider catalog (every provider's detail loaded once), any other from `server.queries.harnesses.options`. Models are grouped by provider (Pi by vendor); a harness that is its own only provider lists its models without a group row. Switches and Enable all / Disable all write the composer's model visibility (`useModelVisibility` from `@/composer`), which the composer's picker reads. With no project the page says "No workspaces yet" under the scan line. Enabled ACP connections get a section whose Accounts tab says they run on the connection they were set up with.
+
 ## Connect
 
 "Add an account" and "Reconnect" open `DialogProviderConnect`. `createProviderConnect` (`connect-form.ts`) lists the provider's methods from `server.queries.providerConnect.authMethods(harness)`, joined by type to the vendor copy in `connect-methods.ts` (with a pasted-key fallback when the server lists none), and then:

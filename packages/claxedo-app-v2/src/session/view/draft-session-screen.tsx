@@ -2,12 +2,13 @@ import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoti
 import { NewSessionContextRow, resolveDraftPlacement } from "@/projects"
 import type { PlacementId, ProjectId } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
-import type { PaneProps } from "@/shell"
-import { ClaxedoLogo } from "@/ui/controls/claxedo-logo"
+import { useCommands, useShellRoute, type PaneProps } from "@/shell"
+import { ClaxedoLogo } from "@/ui"
 import { useWorkbench } from "@/workbench"
 import { draftSessionPaneKind } from "./draft-pane"
 import { sessionPaneKind } from "./session-pane"
 import { useSessionScreenText } from "./text"
+import { registerSessionCommands } from "./session-commands"
 import "./session-screen.css"
 
 export type DraftSessionState = {
@@ -19,6 +20,8 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const t = useSessionScreenText()
   const stores = useSessionStores()
   const workbench = useWorkbench()
+  const routing = useShellRoute()
+  registerSessionCommands({ commands: useCommands(), placementId: () => props.state.placementId, active: () => props.active, navigate: (path) => routing.navigate(path), t })
   const key = () => draftComposerKey(props.state.placementId)
   const notice = createComposerNoticeChannel()
   let pane: HTMLDivElement | undefined

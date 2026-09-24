@@ -2,14 +2,13 @@ import { createSignal, Match, onCleanup, Show, Switch, type JSX } from "solid-js
 import { useTranslator } from "@/i18n"
 import { useClock } from "@/lib/clock"
 import type { PlacementId } from "@/server"
-import { useDialog } from "@/ui"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { useDialog, ClaxedoIcon as Icon } from "@/ui"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Keybind } from "@opencode-ai/ui/keybind"
 import { List } from "@opencode-ai/ui/list"
 import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
-import { dictionary } from "../i18n"
+import { shellDictionary } from "../i18n"
 import { useShellRoute } from "../router"
 import { sessionPath } from "../routes"
 import { relativeAge, uniqueEntries, type PaletteEntry } from "./palette-entries"
@@ -37,7 +36,7 @@ function FileRow(props: { readonly path: string }): JSX.Element {
 }
 
 function SessionRow(props: { readonly item: PaletteEntry }): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const now = useClock()
   const age = () => (props.item.updated ? relativeAge(props.item.updated, now()) : undefined)
   return (
@@ -93,7 +92,7 @@ function createEntries(props: DialogSelectFileProps, setGrouped: (grouped: boole
 }
 
 export function DialogSelectFile(props: DialogSelectFileProps): JSX.Element {
-  const t = useTranslator(dictionary)
+  const t = useTranslator(shellDictionary)
   const dialog = useDialog()
   const routing = useShellRoute()
   const [grouped, setGrouped] = createSignal(false)

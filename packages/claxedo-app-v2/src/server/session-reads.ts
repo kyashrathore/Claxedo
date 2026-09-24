@@ -1,6 +1,6 @@
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 import { responseError, toAppError } from "./errors"
-import { sessionPath, type SessionContext } from "./session-context"
+import { sessionEndpoint, type SessionContext } from "./session-context"
 import { readGoalState } from "./session-goal"
 import { readRequests } from "./session-statuses"
 import { withQuery, type RuntimeRoute } from "./transport"
@@ -56,10 +56,10 @@ export async function readSnapshot(context: SessionContext, ref: SessionRef): Pr
   const { transport } = context
   const where = await context.workspaces.route(ref)
   const [row, transcript, requests, todos, goal] = await Promise.all([
-    transport.runtimeJson<AgentPresentationSession>(where, sessionPath(ref)),
-    readPage(context, where, withQuery(sessionPath(ref, "/message"), { view: "latest-surface" })),
+    transport.runtimeJson<AgentPresentationSession>(where, sessionEndpoint(ref)),
+    readPage(context, where, withQuery(sessionEndpoint(ref, "/message"), { view: "latest-surface" })),
     readSessionRequests(context, where, ref),
-    transport.runtimeJson<SessionSnapshot["todos"]>(where, sessionPath(ref, "/todo")),
+    transport.runtimeJson<SessionSnapshot["todos"]>(where, sessionEndpoint(ref, "/todo")),
     readGoalState(transport, where, ref),
   ])
   return {
@@ -75,5 +75,5 @@ export async function readSnapshot(context: SessionContext, ref: SessionRef): Pr
 
 export async function readOlder(context: SessionContext, ref: SessionRef, cursor: string): Promise<TranscriptPage> {
   const where = await context.workspaces.route(ref)
-  return readPage(context, where, withQuery(sessionPath(ref, "/message"), { limit: OLDER_PAGE_SIZE, before: cursor }))
+  return readPage(context, where, withQuery(sessionEndpoint(ref, "/message"), { limit: OLDER_PAGE_SIZE, before: cursor }))
 }

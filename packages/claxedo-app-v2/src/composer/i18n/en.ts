@@ -106,6 +106,10 @@ export type ComposerTextKey =
   | "model.tooltip.reasoning.none"
   | "model.tooltip.context"
   | "model.tooltip.allows"
+  | "dialog.model.select.title"
+  | "command.model.choose"
+  | "command.model.choose.description"
+  | "command.category.model"
 
 export const composerEnglish: Record<ComposerTextKey, string> = {
   "composer.action.cancel": "Cancel",
@@ -215,4 +219,8 @@ export const composerEnglish: Record<ComposerTextKey, string> = {
   "model.tooltip.allows": "Allows: {{inputs}}",
   "composer.health.stopped": "The agent stopped responding",
   "composer.health.checkAgain": "Check again",
+  "dialog.model.select.title": "Select model",
+  "command.model.choose": "Choose model",
+  "command.model.choose.description": "Select a different model",
+  "command.category.model": "Model",
 }

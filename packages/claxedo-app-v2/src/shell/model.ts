@@ -81,7 +81,7 @@ function phoneTransition(state: Extract<ShellLayoutState, { kind: "phone" }>, ev
   }
 }
 
-export function transition(state: ShellLayoutState, event: ShellLayoutEvent): ShellLayoutState {
+export function transitionShellLayout(state: ShellLayoutState, event: ShellLayoutEvent): ShellLayoutState {
   switch (state.kind) {
     case "wide":
       return wideTransition(state, event)
@@ -94,7 +94,7 @@ export function transition(state: ShellLayoutState, event: ShellLayoutEvent): Sh
 
 export function createShellLayout(phone: boolean, wide: WideRegions): Machine<ShellLayoutState, ShellLayoutEvent> {
   const initial: ShellLayoutState = phone ? { kind: "phone", drawer: "closed", sheet: "closed" } : { kind: "wide", ...wide }
-  return machine(initial, transition)
+  return machine(initial, transitionShellLayout)
 }
 
 export function sidebarShown(state: ShellLayoutState): boolean {

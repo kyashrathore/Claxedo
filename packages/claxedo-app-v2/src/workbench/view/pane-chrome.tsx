@@ -1,15 +1,15 @@
 import { onCleanup, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDragSource } from "../drag/drag-source"
-import { dictionary } from "../i18n"
+import { workbenchDictionary } from "../i18n"
 import { useWorkbench } from "../provider"
 import type { Pane } from "../types"
 import { createContentTitle } from "./content-title"
+import { ClaxedoIcon as Icon } from "@/ui"
 
 export function PaneChrome(props: { pane: Pane; style: JSX.CSSProperties; closable: boolean }): JSX.Element {
   const wb = useWorkbench()
-  const t = useTranslator(dictionary)
+  const t = useTranslator(workbenchDictionary)
   const contentTitle = createContentTitle(wb, () => props.pane.contentId)
   const title = () => contentTitle() ?? ""
 

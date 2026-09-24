@@ -1,4 +1,4 @@
-export const dictionary = {
+export default {
   "rail.cancel": "キャンセル",
   "rail.rename": "名前変更",
   "rail.archive": "アーカイブ",

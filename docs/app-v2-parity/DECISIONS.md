@@ -146,3 +146,26 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Owner, 00:55: no catch-all General
 - Language, Appearance, Sounds and Notifications are separate top-level settings sections, not one "General".
 - Everything else v1's General held goes to the section it belongs to.
+
+## Orchestrator, 02:10: Marketplace (EXT rows)
+- v1's Agent Plugins directory is ported into the shared page tab (0c36c01579).
+- Signed-only parts are not ported, since v2 has no signed plugin rail yet: the project picker, organization defaults, the enterprise install option, MCP Connect/Disconnect.
+- Unsigned v1 showed a Connect button and a "Connect now" second install step that did nothing. v2 drops both, and the built-in's empty "…" menu.
+- The domain is 2,384 lines against an 1,800 budget; the scope review is recorded in the handoff.
+
+## Orchestrator, 02:25: the Models tab switches reach the picker by group too
+- In v1 the composer picker reads only per-model switches, so a group's "Disable all" changes Settings but not the picker.
+- **v2:** the picker honors the group state too. It's a one-line fix to a v1 inconsistency.
+
+## Owner, 02:40: keep /welcome, keep Back
+- **`/welcome` stays** as the first-project route. PROJ-001, v1's canvas at `/`, is not taken; projects-app's 7c245ba6e1 is reverted (d19c7962fc).
+- **Back stays as v2 has it:** browser Back after a rail click returns to the previous session. The settings Back stays too.
+
+## Orchestrator, 03:05: no time-based "Still working…" hints (COMP-040)
+- v1 shows "Still working…" at 20 s, "taking a while" at 45 s and "unresponsive" at 5 min of a turn. Those are client timers guessing at status.
+- **v2 does not port them.** It shows the harness's real state instead: the health peek's "The agent stopped responding", and `session.status`. That follows the session rule "status is never guessed".
+
+## Owner, 02:15 + bench 02:50: no DOM keep-alive for hidden session panes
+- The owner's rule: if keeping hidden panes mounted doesn't buy much, remove it to prevent memory bloat.
+- **Measured on packaged v2:** unmounting hidden panes costs +8.5 ms per return to a visited session (16 → 24.5 ms median) and saves ~12 MiB of JS heap and ~680 DOM nodes with 8 small sessions open, more on heavy sessions.
+- **Decision:** hidden session, draft and page panes unmount; the data store and timeline snapshots stay. Terminals stay mounted (xterm state).
