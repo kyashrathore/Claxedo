@@ -1,8 +1,8 @@
-@layer components {
+@layer touch {
   @media (pointer: coarse) {
     .ui-button,
     .ui-icon-button,
-    .ui-tabs-trigger-wrapper,
+    .ui-tabs-close-button,
     .ui-segmented-control-item,
     .ui-select[data-appearance="inline"],
     .ui-text-input-icon-button,
@@ -19,7 +19,7 @@
 
     .ui-button::before,
     .ui-icon-button::before,
-    .ui-tabs-trigger-wrapper::before,
+    .ui-tabs-close-button::before,
     .ui-segmented-control-item::before,
     .ui-select[data-appearance="inline"]::before,
     .ui-text-input-icon-button::before,
@@ -48,7 +48,19 @@
     .ui-text-input,
     .ui-inline-input,
     .ui-select:not([data-appearance="inline"]),
+    .ui-tabs-trigger-wrapper,
     [data-slot="file-tree-row"] {
+      min-height: var(--touch-target);
+    }
+
+    .ui-inline-input [data-slot="inline-input-value"],
+    .ui-inline-input-input,
+    .ui-tabs-trigger {
+      height: 100%;
+    }
+
+    [data-component="tabs"][data-orientation="horizontal"] .ui-tabs-list {
+      height: auto;
       min-height: var(--touch-target);
     }
 
@@ -58,12 +70,9 @@
       height: var(--touch-target);
     }
 
-    [data-component="split-button-action"] {
-      width: var(--touch-target);
-    }
-
+    [data-component="split-button-action"],
     [data-component="split-button-menu-trigger"] {
-      width: 32px;
+      width: var(--touch-target);
     }
 
     .ui-resize-handle {
