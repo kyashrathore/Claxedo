@@ -61,14 +61,16 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
       <div data-slot="session-screen-dock">
         <SessionDocks view={props.view} />
         <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
-          <Composer
-            composerKey={sessionComposerKey(props.view.ref)}
-            placementId={props.view.ref.placementId}
-            view={props.view}
-            lockedHarness={props.view.row()?.harness}
-            attachmentWorkspace={true}
-            afterAccepted={queueEdit.accepted}
-          />
+          <Show when={props.view.requests().length === 0}>
+            <Composer
+              composerKey={sessionComposerKey(props.view.ref)}
+              placementId={props.view.ref.placementId}
+              view={props.view}
+              lockedHarness={props.view.row()?.harness}
+              attachmentWorkspace={true}
+              afterAccepted={queueEdit.accepted}
+            />
+          </Show>
         </Show>
       </div>
     </div>
