@@ -2,19 +2,19 @@ import { QueryClientProvider } from "@tanstack/solid-query"
 import type { JSX } from "solid-js"
 import { I18nProvider } from "@/i18n"
 import { MainSidebar } from "@/rail"
-import { ServerContext } from "@/server"
-import { AppShell, createShellRegistries, SessionStoresProvider, ShellRegistriesContext, ShellRouter } from "@/shell"
-import { createPlaceholderServer } from "@/shell/placeholders/server"
+import { createServer, ServerContext } from "@/server"
+import { SessionStoresProvider } from "@/session"
+import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter } from "@/shell"
 import { firstParty } from "@/shell/registry"
 import { DialogProvider, ThemeProvider } from "@/ui"
 
 export function App(): JSX.Element {
-  const server = createPlaceholderServer()
+  const server = createServer({ auth: { kind: "none" } })
   const registries = createShellRegistries(firstParty)
   return (
     <ServerContext.Provider value={server}>
       <QueryClientProvider client={server.queryClient}>
-        <SessionStoresProvider server={server}>
+        <SessionStoresProvider>
           <ShellRegistriesContext.Provider value={registries}>
             <I18nProvider>
               <ThemeProvider>

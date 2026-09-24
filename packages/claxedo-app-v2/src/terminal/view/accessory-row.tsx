@@ -1,10 +1,10 @@
-import { For, Show, createSignal } from "solid-js"
-import { createMediaQuery } from "@solid-primitives/media"
-import { NARROW_VIEWPORT_PX } from "../backend/options"
+import { For, Show, createSignal, type JSX } from "solid-js"
+import { useTranslator } from "@/i18n"
+import { useCoarsePointer, usePhone } from "@/lib/viewport"
+import { dictionary, type TerminalKey } from "../i18n"
 import { resolveAccessoryKey, type AccessoryKey } from "./accessory-keys"
-import { t, type TerminalStringKey } from "../i18n"
 
-const KEYS: readonly { id: AccessoryKey; label: string; name: TerminalStringKey }[] = [
+const KEYS: readonly { readonly id: AccessoryKey; readonly label: string; readonly name: TerminalKey }[] = [
   { id: "esc", label: "Esc", name: "terminal.key.escape" },
   { id: "tab", label: "Tab", name: "terminal.key.tab" },
   { id: "ctrl", label: "Ctrl", name: "terminal.key.control" },
@@ -14,11 +14,12 @@ const KEYS: readonly { id: AccessoryKey; label: string; name: TerminalStringKey 
   { id: "right", label: "→", name: "terminal.key.right" },
 ]
 
-export function AccessoryRow(props: { onKey: (data: string) => void; active: () => boolean }) {
+export function AccessoryRow(props: { readonly onKey: (data: string) => void; readonly active: () => boolean }): JSX.Element {
+  const t = useTranslator(dictionary)
   const [ctrlArmed, setCtrlArmed] = createSignal(false)
-  const coarse = createMediaQuery("(pointer: coarse)")
-  const narrow = createMediaQuery(`(max-width: ${NARROW_VIEWPORT_PX - 1}px)`)
-  const visible = () => (coarse() || narrow()) && props.active()
+  const coarse = useCoarsePointer()
+  const phone = usePhone()
+  const visible = () => (coarse() || phone()) && props.active()
 
   const press = (key: AccessoryKey) => {
     const action = resolveAccessoryKey(key, ctrlArmed())
@@ -35,8 +36,8 @@ export function AccessoryRow(props: { onKey: (data: string) => void; active: () 
       <div
         role="toolbar"
         aria-label={t("terminal.keys")}
-        data-component="terminal-accessory-row"
-        class="flex shrink-0 items-stretch gap-1 border-t border-border-weak-base bg-surface-base px-1.5 py-1"
+        data-testid="terminal-keys"
+        class="flex shrink-0 items-stretch gap-1 border-t border-border-muted bg-background-layer-01 px-1.5 py-1"
         style={{ "padding-bottom": "max(0.25rem, env(safe-area-inset-bottom))" }}
       >
         <For each={KEYS}>
@@ -49,8 +50,8 @@ export function AccessoryRow(props: { onKey: (data: string) => void; active: () 
               onPointerDown={(event) => event.preventDefault()}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => press(key.id)}
-              class="flex h-11 min-w-11 flex-1 items-center justify-center rounded-md border border-border-weak-base font-mono text-sm text-text-base active:bg-surface-base-hover"
-              classList={{ "bg-surface-base-active text-text-strong": key.id === "ctrl" && ctrlArmed() }}
+              class="flex h-11 min-w-11 flex-1 items-center justify-center rounded-md border border-border-muted font-mono text-base text-text-base active:bg-overlay-pressed"
+              classList={{ "bg-overlay-pressed": key.id === "ctrl" && ctrlArmed() }}
             >
               {key.label}
             </button>

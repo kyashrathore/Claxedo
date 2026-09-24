@@ -1,12 +1,14 @@
+import type { TimelineTextKey } from "../timeline"
+
 export type SessionScreenTextKey =
+  | `sessionScreen.timeline.${TimelineTextKey}`
   | "sessionScreen.loading"
+  | "sessionScreen.untitled"
+  | "sessionScreen.plan.title"
+  | "sessionScreen.draft.title"
+  | "sessionScreen.action.retry"
   | "sessionScreen.missing"
   | "sessionScreen.failed"
-  | "sessionScreen.status.idle"
-  | "sessionScreen.status.working"
-  | "sessionScreen.status.retrying"
-  | "sessionScreen.status.recovering"
-  | "sessionScreen.status.failed"
   | "sessionScreen.action.dismiss"
   | "sessionScreen.action.back"
   | "sessionScreen.action.next"
@@ -14,7 +16,6 @@ export type SessionScreenTextKey =
   | "sessionScreen.action.stop"
   | "sessionScreen.action.cancel"
   | "sessionScreen.action.loading"
-  | "sessionScreen.action.requestFailed"
   | "sessionScreen.question.progress"
   | "sessionScreen.question.expand"
   | "sessionScreen.question.collapse"
@@ -63,27 +64,15 @@ export type SessionScreenTextKey =
   | "sessionScreen.goal.metric.timeUsed"
   | "sessionScreen.child.promptDisabled"
   | "sessionScreen.child.backToParent"
-  | "sessionScreen.queued.queued"
-  | "sessionScreen.queued.editing"
-  | "sessionScreen.queued.edit"
-  | "sessionScreen.queued.sendNow"
-  | "sessionScreen.queued.remove"
-  | "sessionScreen.queued.cancelEdit"
-  | "sessionScreen.queued.updateFailed"
-  | "sessionScreen.queued.dispatching"
-  | "sessionScreen.queued.accepted"
-  | "sessionScreen.queued.unknown"
-  | "sessionScreen.queued.attachment"
 
 export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.loading": "Loading messages...",
+  "sessionScreen.untitled": "Session",
+  "sessionScreen.plan.title": "Plan",
+  "sessionScreen.draft.title": "New session",
+  "sessionScreen.action.retry": "Retry",
   "sessionScreen.missing": "This session no longer exists.",
   "sessionScreen.failed": "Could not load this session.",
-  "sessionScreen.status.idle": "Idle",
-  "sessionScreen.status.working": "Working…",
-  "sessionScreen.status.retrying": "Retrying, attempt {{attempt}}",
-  "sessionScreen.status.recovering": "Recovering…",
-  "sessionScreen.status.failed": "Failed",
   "sessionScreen.action.dismiss": "Dismiss",
   "sessionScreen.action.back": "Back",
   "sessionScreen.action.next": "Next",
@@ -91,7 +80,6 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.action.stop": "Stop",
   "sessionScreen.action.cancel": "Cancel",
   "sessionScreen.action.loading": "Loading",
-  "sessionScreen.action.requestFailed": "Request failed",
   "sessionScreen.question.progress": "{{current}} of {{total}} questions",
   "sessionScreen.question.expand": "Expand question",
   "sessionScreen.question.collapse": "Collapse question",
@@ -140,15 +128,42 @@ export const sessionScreenEnglish: Record<SessionScreenTextKey, string> = {
   "sessionScreen.goal.metric.timeUsed": "{{seconds}}s",
   "sessionScreen.child.promptDisabled": "Subagent sessions cannot be prompted.",
   "sessionScreen.child.backToParent": "Back to main session.",
-  "sessionScreen.queued.queued": "Queued",
-  "sessionScreen.queued.editing": "Editing",
-  "sessionScreen.queued.edit": "Edit",
-  "sessionScreen.queued.sendNow": "Send now",
-  "sessionScreen.queued.remove": "Remove",
-  "sessionScreen.queued.cancelEdit": "Cancel edit",
-  "sessionScreen.queued.updateFailed": "Could not update queued message",
-  "sessionScreen.queued.dispatching": "Awaiting harness acceptance",
-  "sessionScreen.queued.accepted": "Accepted · transcript position unconfirmed",
-  "sessionScreen.queued.unknown": "Delivery unknown · awaiting reconciliation",
-  "sessionScreen.queued.attachment": "attachment",
+  "sessionScreen.timeline.command.session.new": "New session",
+  "sessionScreen.timeline.common.archive": "Archive",
+  "sessionScreen.timeline.common.cancel": "Cancel",
+  "sessionScreen.timeline.common.delete": "Delete",
+  "sessionScreen.timeline.common.moreOptions": "More options",
+  "sessionScreen.timeline.common.rename": "Rename",
+  "sessionScreen.timeline.common.requestFailed": "Request failed",
+  "sessionScreen.timeline.session.delete.button": "Delete session",
+  "sessionScreen.timeline.session.delete.confirm": "Delete session \"{{name}}\"?",
+  "sessionScreen.timeline.session.delete.failed.title": "Failed to delete session",
+  "sessionScreen.timeline.session.delete.title": "Delete session",
+  "sessionScreen.timeline.session.timeline.collapseTranscript": "Collapse transcript",
+  "sessionScreen.timeline.session.timeline.previousMessages.one": "{{count}} previous message",
+  "sessionScreen.timeline.session.timeline.previousMessages.other": "{{count}} previous messages",
+  "sessionScreen.timeline.session.timeline.scrollToBottom": "Scroll to latest message",
+  "sessionScreen.timeline.ui.common.file.one": "file",
+  "sessionScreen.timeline.ui.common.file.other": "files",
+  "sessionScreen.timeline.ui.message.attachment.alt": "attachment",
+  "sessionScreen.timeline.ui.message.interrupted": "Interrupted",
+  "sessionScreen.timeline.ui.message.interruptedDuration": "You stopped after {{duration}}",
+  "sessionScreen.timeline.ui.message.queued": "Queued",
+  "sessionScreen.timeline.ui.message.queued.accepted": "Accepted · transcript position unconfirmed",
+  "sessionScreen.timeline.ui.message.queued.cancelEdit": "Cancel edit",
+  "sessionScreen.timeline.ui.message.queued.dispatching": "Awaiting harness acceptance",
+  "sessionScreen.timeline.ui.message.queued.edit": "Edit",
+  "sessionScreen.timeline.ui.message.queued.editing": "Editing",
+  "sessionScreen.timeline.ui.message.queued.loadFailed": "Could not load queued messages.",
+  "sessionScreen.timeline.ui.message.queued.remove": "Remove",
+  "sessionScreen.timeline.ui.message.queued.retry": "Retry",
+  "sessionScreen.timeline.ui.message.queued.sendNow": "Send now",
+  "sessionScreen.timeline.ui.message.queued.unknown": "Delivery unknown · awaiting reconciliation",
+  "sessionScreen.timeline.ui.message.revertMessage": "Revert message",
+  "sessionScreen.timeline.ui.messagePart.compaction": "Session compacted",
+  "sessionScreen.timeline.ui.sessionTurn.diffs.more": "+{{count}} more files",
+  "sessionScreen.timeline.ui.sessionTurn.diffs.showAll": "Show all",
+  "sessionScreen.timeline.ui.sessionTurn.diffs.showLess": "Show less",
+  "sessionScreen.timeline.ui.sessionTurn.diffs.changed": "changed",
+  "sessionScreen.timeline.ui.sessionTurn.status.thinking": "Thinking",
 }

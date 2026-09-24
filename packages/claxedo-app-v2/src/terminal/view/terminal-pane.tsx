@@ -1,23 +1,33 @@
 import "./terminal-pane.css"
-import { Show, createMemo, createSignal, onCleanup, onMount } from "solid-js"
-import { useServer } from "@/server"
+import { Show, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
+import { useTranslator } from "@/i18n"
 import { machine } from "@/lib/machine"
-import type { PaneProps } from "@/shell/types"
+import { useServer } from "@/server"
+import type { PaneProps } from "@/shell"
+import { showToast } from "@/ui"
 import type { TerminalBackend } from "../backend/types"
-import { transitionConnection, type TerminalConnection, type TerminalConnectionEvent } from "../model"
-import { TERMINAL_PANE_KIND, terminalPaneState, type TerminalPaneState } from "../pane"
-import { useTerminalContext } from "../store"
+import { useTerminals } from "../context"
+import { dictionary } from "../i18n"
+import {
+  asAppError,
+  transitionConnection,
+  type TerminalConnection,
+  type TerminalConnectionEvent,
+  type TerminalPaneState,
+} from "../model"
+import { AccessoryRow } from "./accessory-row"
+import { AgentBadge } from "./agent-badge"
 import { mountTerminal, type TerminalMount } from "./terminal-mount"
 import { TerminalStatus } from "./terminal-status"
-import { AgentBadge } from "./agent-badge"
-import { AccessoryRow } from "./accessory-row"
-import { t } from "../i18n"
 
-export function TerminalPane(props: PaneProps<TerminalPaneState>) {
+export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const server = useServer()
-  const context = useTerminalContext()
-  const store = context.store(props.state.placementId)
-  const row = createMemo(() => store.row(props.state.terminalId))
+  const terminals = useTerminals()
+  const t = useTranslator(dictionary)
+  const { placementId, terminalId } = props.state
+  const store = terminals.store(placementId)
+  onCleanup(terminals.retain(placementId))
+  const row = createMemo(() => store.row(terminalId))
   const connection = machine<TerminalConnection, TerminalConnectionEvent>({ kind: "connecting" }, transitionConnection)
   const [backend, setBackend] = createSignal<TerminalBackend>()
   const [focused, setFocused] = createSignal(false)
@@ -27,27 +37,30 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>) {
   let mount: TerminalMount | undefined
 
   onMount(() => {
-    void store.loadAgentStatus(props.state.terminalId)
+    store.loadAgentStatus(terminalId).catch((error: unknown) => {
+      console.error("Terminal agent status failed to load", { terminalId, error })
+    })
     mount = mountTerminal({
       host,
       server,
-      placementId: props.state.placementId,
-      terminalId: props.state.terminalId,
+      placementId,
+      terminalId,
       row,
       connection,
-      renderers: context.renderers,
-      openPane: context.openPane,
+      renderers: terminals.renderers,
+      openFile: (target) => terminals.openFile(placementId, target),
       onBackend: setBackend,
     })
   })
   onCleanup(() => mount?.dispose())
 
-  const recreate = async () => {
-    const terminal = await store.recreate(props.state.terminalId)
-    context.openPane(
-      TERMINAL_PANE_KIND,
-      terminalPaneState({ placementId: props.state.placementId, terminalId: terminal.id }),
-      { paneId: props.paneId },
+  const recreate = () => {
+    store.recreate(terminalId).then(
+      (terminal) => terminals.open({ placementId, terminalId: terminal.id }, props.paneId),
+      (error: unknown) => {
+        console.error("Terminal could not be recreated", { terminalId, error: asAppError(error, "Terminal recreate failed") })
+        showToast({ title: t("terminal.createFailed") })
+      },
     )
   }
 
@@ -55,32 +68,31 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>) {
     <section
       aria-label={t("terminal.pane")}
       data-testid="terminal-pane"
-      data-terminal-id={props.state.terminalId}
+      data-terminal-id={terminalId}
       data-terminal-connection={connection.state().kind}
       class="flex h-full w-full min-h-0 flex-col bg-background-base"
       onFocusIn={() => setFocused(true)}
       onFocusOut={() => setFocused(false)}
     >
-      <header class="flex h-7 shrink-0 items-center gap-2 border-b border-border-weak-base px-2 text-12-regular text-text-weak">
-        <span class="min-w-0 flex-1 truncate">{row()?.title ?? t("terminal.title")}</span>
-        <AgentBadge status={row()?.agentStatus} />
-      </header>
       <div class="relative min-h-0 flex-1">
         <div
           ref={host}
           data-testid="terminal-host"
           tabIndex={-1}
-          class="h-full w-full overflow-hidden select-text font-mono"
+          class="h-full w-full overflow-hidden select-text font-terminal"
           classList={{ invisible: overlay() }}
           onPointerDown={() => backend()?.focus()}
         />
+        <div class="pointer-events-none absolute top-1.5 right-3">
+          <AgentBadge status={row()?.agentStatus} />
+        </div>
         <Show when={overlay()}>
           <div class="absolute inset-0 bg-background-base">
-            <TerminalStatus connection={connection.state()} missing={missing()} onRetry={() => mount?.retry()} onRecreate={() => void recreate()} />
+            <TerminalStatus connection={connection.state()} missing={missing()} onRetry={() => mount?.retry()} onRecreate={recreate} />
           </div>
         </Show>
       </div>
-      <AccessoryRow active={focused} onKey={(data) => backend()?.write("", () => {})} />
+      <AccessoryRow active={focused} onKey={(data) => mount?.send(data)} />
     </section>
   )
 }

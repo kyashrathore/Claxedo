@@ -147,7 +147,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
   const closeContent = (contentId: string) => apply((s) => closeContentReducer(s, contentId))
 
   return {
-    ...createPaneApi({ layout, content, open, apply, closeContent }),
+    ...createPaneApi({ kinds, layout, content, open, apply, closeContent }),
     layout,
     content,
     open,

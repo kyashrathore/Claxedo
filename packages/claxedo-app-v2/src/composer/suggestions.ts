@@ -3,8 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import fuzzysort from "fuzzysort"
 import type { PlacementId } from "@/server"
 import { useServer } from "@/server"
-import type { CommandEntry, MentionEntry } from "@/shell/types"
-import type { ComposerRegistries } from "./shell-registries-placeholder"
+import type { CommandEntry, MentionEntry, ShellRegistries } from "@/shell"
 
 export type AtItem =
   | { kind: "file"; id: string; path: string; directory: boolean }
@@ -19,7 +18,7 @@ export type SuggestionQuery = { kind: "closed" } | { kind: "at"; query: string }
 const AT_LIMIT = 10
 
 export function createSuggestions(input: {
-  registries: ComposerRegistries
+  registries: Pick<ShellRegistries, "commands" | "mentions">
   placementId: Accessor<PlacementId | undefined>
   query: Accessor<SuggestionQuery>
   goalAvailable: Accessor<boolean>

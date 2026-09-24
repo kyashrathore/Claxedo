@@ -1,6 +1,7 @@
 export { FilesProvider, useFiles, type Files, type FilesProviderProps, type PaneOpener } from "./store"
 export { filePaneKind, FILE_PANE_KIND } from "./pane"
 export { filesPanelTab } from "./panel-tab"
+export { useActivePlacement, useActiveSession } from "./location"
 export { resolveFileFocus, basename, parentPath } from "./path"
 export { isMediaPath } from "./preview"
 export { fetchView, type FetchView, type FetchResult, type FilePaneState, type FileFocusTarget } from "./model"
