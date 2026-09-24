@@ -1,6 +1,5 @@
 import http from "node:http"
-import type { Locator, Page } from "@playwright/test"
-import { expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
+import { acpScriptToken, expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
 
 const PAGE_PORTS = { first: 47250, last: 47299 }
 
@@ -39,22 +38,7 @@ async function servePages(): Promise<PageServer> {
   }
 }
 
-async function openBrowserTab(app: Page): Promise<Locator> {
-  await app.getByRole("button", { name: "Open workspace panel" }).click()
-  const panel = app.getByRole("complementary", { name: "Workspace panel" })
-  await panel.getByRole("button", { name: "Add workspace tab" }).click()
-  await app.getByRole("menuitem", { name: "Browser" }).click()
-  await expect(panel.getByRole("button", { name: "Browser", exact: true })).toHaveAttribute("aria-current", "true")
-  return panel
-}
-
-async function goTo(browser: Locator, url: string) {
-  const address = browser.getByRole("textbox", { name: "Address" })
-  await address.fill(url)
-  await address.press("Enter")
-}
-
-test("27 browser tab: preview a local page in the sandboxed preview, navigate from the address bar", async ({
+test("27 browser tab: a local link in a reply opens the Browser tab with the page in the sandboxed preview", async ({
   stack,
   api,
   app,
@@ -62,18 +46,22 @@ test("27 browser tab: preview a local page in the sandboxed preview, navigate fr
   const pages = await servePages()
   try {
     const workspace = await stack.daemon.makeWorkspace("browser", "Browser")
+    const reply = `Open [the first page](${pages.url}/first.html) or [the second page](${pages.url}/second.html).`
+    await stack.acp.write("links", { steps: [{ kind: "text", text: reply }] })
     const session = await api.createSession(workspace.directory, { title: "Browser", harness: SCRIPTED_ACP_HARNESS })
+    await api.prompt(workspace.directory, session.id, `Where are the pages? ${acpScriptToken("links")}`)
     await app.goto(`${stack.url}/w/${encodeURIComponent(workspace.id)}/s/${encodeURIComponent(session.id)}`)
 
-    const browser = await openBrowserTab(app)
-    await expect(browser.getByText("No page open")).toBeVisible()
-    const preview = browser.getByTitle("Page preview").contentFrame()
-
-    await goTo(browser, `${pages.url}/first.html`)
+    await app.getByRole("link", { name: "the first page" }).click()
+    const panel = app.getByRole("complementary", { name: "Workspace panel" })
+    await expect(panel.getByRole("button", { name: "Browser", exact: true })).toHaveAttribute("aria-current", "true")
+    const preview = panel.getByTitle("External source preview").contentFrame()
     await expect(preview.getByRole("heading", { name: "First preview page" })).toBeVisible()
-    await goTo(browser, `${pages.url}/second.html`)
+    await expect(panel.getByTestId("browser-pane-address-bar")).toHaveValue(`${pages.url}/first.html`)
+    await expect(panel.getByTestId("browser-pane-address-bar")).toHaveAttribute("readonly", "")
+
+    await app.getByRole("link", { name: "the second page" }).click()
     await expect(preview.getByRole("heading", { name: "Second preview page" })).toBeVisible()
-    await expect(browser.getByRole("textbox", { name: "Address" })).toHaveValue(`${pages.url}/second.html`)
     expect(pages.requested).toEqual(["/first.html", "/second.html"])
   } finally {
     await pages.close()

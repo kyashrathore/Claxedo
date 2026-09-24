@@ -74,4 +74,5 @@ export type BrowserHistory = { readonly canGoBack: boolean; readonly canGoForwar
 
 export type BrowserAction = "back" | "forward" | "reload" | "hardReload" | "devTools" | "clearCookies"
 
-export type BrowserNotice = { readonly key: BrowserKey } | { readonly text: string }
+export type BrowserNotice =
+  { readonly key: BrowserKey; readonly params?: Readonly<Record<string, string>> } | { readonly text: string }

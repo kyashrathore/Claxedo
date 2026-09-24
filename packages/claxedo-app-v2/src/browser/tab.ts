@@ -3,6 +3,7 @@ import type { PlacementId } from "@/server"
 import { unreachable } from "@/lib/machine"
 import type { BrowserBridge, BrowserResult, BrowserWebview } from "./bridge"
 import { GUEST_PICKER_MODE_CHANNEL } from "./guest"
+import type { BrowserKey } from "./i18n"
 import {
   createBrowserTabMachine,
   type BrowserAction,
@@ -99,19 +100,33 @@ type ActionHost = {
   readonly refreshHistory: () => Promise<void>
 }
 
+const FAILURE_KEY: Partial<Readonly<Record<BrowserAction, BrowserKey>>> = {
+  hardReload: "browser.toast.hardReloadFailed",
+  devTools: "browser.toast.devToolsFailed",
+  clearCookies: "browser.toast.cookiesFailed",
+}
+
+function failureNotice(action: BrowserAction, error: string | undefined): BrowserNotice | undefined {
+  const key = FAILURE_KEY[action]
+  if (key) return { key, params: { error: error ?? "" } }
+  if (navigational(action)) return undefined
+  return error ? { text: error } : { key: "browser.toast.actionFailed" }
+}
+
 async function runAction(host: ActionHost, action: BrowserAction) {
   const call = host.bridge && actionCall(host.bridge, host.paneId, action)
   if (!call) {
-    host.notify({ key: "browser.notice.desktopOnly" })
+    host.notify({ key: "browser.web.hint" })
     return
   }
   const result = await call()
   if (!result.ok) {
     if (navigational(action)) host.send({ type: "failed", reason: result.error ?? action })
-    else host.notify(result.error ? { text: result.error } : { key: "browser.notice.actionFailed" })
+    const notice = failureNotice(action, result.error)
+    if (notice) host.notify(notice)
     return
   }
-  if (action === "clearCookies") host.notify({ key: "browser.notice.cookiesCleared" })
+  if (action === "clearCookies") host.notify({ key: "browser.toast.cookiesCleared" })
   if (navigational(action)) await host.refreshHistory()
 }
 
@@ -126,7 +141,7 @@ function createNavigation(bridge: BrowserBridge | undefined, paneId: string, not
       else notify({ text: result.error })
     } catch (error) {
       console.error("Browser history could not be read", { paneId, error })
-      notify({ key: "browser.notice.actionFailed" })
+      notify({ key: "browser.toast.actionFailed" })
     }
   }
   return { history, refreshHistory }
@@ -166,14 +181,14 @@ function createPageNavigation(page: PageContext, registered: Accessor<boolean>) 
 
 function sendPickerMode(page: PageContext, element: BrowserWebview | undefined, on: boolean): void {
   if (!element?.send) {
-    page.notify({ key: page.bridge ? "browser.notice.pageNotReady" : "browser.notice.desktopOnly" })
+    page.notify({ key: page.bridge ? "browser.toast.pageNotReady" : "browser.web.hint" })
     return
   }
   try {
     element.send(GUEST_PICKER_MODE_CHANNEL, on ? "comment" : "off")
   } catch (error) {
     console.error("Browser picker mode could not reach the page", { paneId: page.paneId, error })
-    page.notify({ key: "browser.notice.pageNotReady" })
+    page.notify({ key: "browser.toast.pageNotReady" })
     return
   }
   page.send({ type: on ? "startPicking" : "stopPicking" })
@@ -183,7 +198,7 @@ function sendPickerMode(page: PageContext, element: BrowserWebview | undefined, 
 function guardedAction(host: ActionHost, action: BrowserAction): Promise<void> {
   return runAction(host, action).catch((error: unknown) => {
     console.error("Browser action failed", { paneId: host.paneId, action, error })
-    host.notify({ key: "browser.notice.actionFailed" })
+    host.notify({ key: "browser.toast.actionFailed" })
   })
 }
 
