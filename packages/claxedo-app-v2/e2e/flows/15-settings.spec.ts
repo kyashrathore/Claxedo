@@ -123,7 +123,15 @@ test("15 settings: accounts per agent and this computer's logins", async ({ stac
   test.skip(stack.app === "v1", "the v1 path of this baseline flow is not written yet")
   await app.goto(`${stack.url}/settings/accounts`)
   await expect(app.getByRole("heading", { level: 1, name: "Accounts" })).toBeVisible()
-  await expect(app.getByRole("radiogroup", { name: "Claude Code" }).getByRole("radio", { name: "This computer's login" })).toBeChecked()
+  const claude = app.getByRole("radiogroup", { name: "Claude Code" })
+  const claudeMachineLogin = claude.getByRole("radio", { name: /^This computer's login/ })
+  const storedClaudeKey = (await credentials(stack.url)).some((row) => row.provider_id === "anthropic" && row.is_active)
+  if (storedClaudeKey) {
+    await expect(claudeMachineLogin).not.toBeChecked()
+    await expect(claude.getByRole("radio", { checked: true })).toHaveCount(1)
+  } else {
+    await expect(claudeMachineLogin).toBeChecked()
+  }
   const card = app.getByRole("group", { name: "Cursor" })
   const cursor = app.getByRole("radiogroup", { name: "Cursor" })
   const machineLogin = cursor.getByRole("radio", { name: /^This computer's login/ })
