@@ -13,7 +13,7 @@ import { seedStack, type SeedData } from "./seed"
 import { settledShot } from "./settle"
 
 const PARITY_DIR = import.meta.dirname
-const OUT_DIR = path.join(PARITY_DIR, "out")
+const OUT_DIR = path.join(PARITY_DIR, "report")
 const APPS: readonly AppChoice[] = ["v1", "v2"]
 const STEP_TIMEOUT_MS = 5_000
 
@@ -37,7 +37,7 @@ async function startOrigins(daemonUrl: string, closers: (() => Promise<void>)[])
   for (const app of APPS) {
     const port = await reservePort()
     closers.push(async () => releasePort(port))
-    const build = await ensureAppBuilt(app, { serverUrl: `http://127.0.0.1:${port}`, outDir: path.join(PARITY_DIR, ".builds", app) })
+    const build = await ensureAppBuilt(app, { serverUrl: `http://127.0.0.1:${port}`, outDir: path.join(PARITY_DIR, "dist", app) })
     console.log(`[parity] ${app} ${build.built ? `built in ${build.ms} ms` : "build is current"}`)
     const origin = await startAppOrigin({ port, distDir: build.distDir, daemonUrl })
     closers.push(() => origin.close())
