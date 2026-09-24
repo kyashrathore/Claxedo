@@ -231,4 +231,4 @@ export function createBetterAuthBrowserAdapter(
   return adapter
 }
 
-export const browserAuthAdapter = createBetterAuthBrowserAdapter()
+export const createBrowserAuthAdapter = () => createBetterAuthBrowserAdapter()

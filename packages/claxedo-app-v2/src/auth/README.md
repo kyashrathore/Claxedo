@@ -4,7 +4,7 @@ Owns: the browser sign-in session with the identity provider (Better Auth), the 
 
 ## Concepts
 
-- `BrowserAuthAdapter` (`browser-auth.ts`): the provider-neutral contract. `better-auth-adapter.ts` is the one implementation, selected at build time by `vite.browser-auth.ts` (`VITE_CLAXEDO_AUTH_ADAPTER=better-auth`) and imported as `#browser-auth-adapter`.
+- `BrowserAuthAdapter` (`browser-auth.ts`): the provider-neutral contract. `better-auth-adapter.ts` is the one implementation, selected at build time by `vite.browser-auth.ts` (`VITE_CLAXEDO_AUTH_ADAPTER=better-auth`) and imported as `#browser-auth-adapter`, which exports the factory `createBrowserAuthAdapter`; an adapter holds signals, so each owner creates its own instead of sharing a module instance.
 - `BrowserAuthDescriptor`: the live deployment's declaration, read from `GET /api/claxedo/auth/descriptor` and checked field by field against this build; a mismatch leaves the app signed out with the reason, never a startup failure.
 - `AuthUser`: the sanitized identity (id, name, email, image). No token ever reaches a component; `Auth.token()` exists for the CLI exchange only.
 - Origins (`origins.ts`): `apiOrigin()` is `VITE_CLAXEDO_SERVER_URL` or the page origin; `appOrigin()` is the page origin; `serverIssuesSessions()` is `VITE_CLAXEDO_ISSUES_SESSIONS !== "0"`.
@@ -15,7 +15,7 @@ Owns: the browser sign-in session with the identity provider (Better Auth), the 
 
 ## Routes
 
-`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval), `/oauth/consent` (MCP scope consent), `/cli-login` (CLI token handoff, loopback callback only). The shell registers them outside the app shell.
+`authRoutes` (`routes.ts`): `/login`, `/device` (device grant approval), `/oauth/consent` (MCP scope consent), `/cli-login` (CLI token handoff, loopback callback only), as the shell's `RouteEntry`s, drawn full screen outside the app shell. Each is an `AuthScreen` (`view/auth-screen.tsx`): it creates an adapter, starts it against this deployment's origins, then provides `Auth` to its page, so the routes need nothing mounted above them.
 
 ## Invariants
 
