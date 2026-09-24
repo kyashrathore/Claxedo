@@ -9,7 +9,7 @@ export const sameModel = (a: ModelChoice | undefined, b: ModelChoice | undefined
 export function selectionFor(harness: HarnessInfo | undefined, current: Selection): Selection {
   if (!harness) return current
   const model = current.model && harness.models.some((choice) => sameModel(choice, current.model)) ? current.model : harness.models[0]
-  const effort = current.effort && harness.efforts.includes(current.effort) ? current.effort : harness.efforts[0]
+  const effort = current.effort && harness.efforts.includes(current.effort) ? current.effort : undefined
   const permissionMode =
     current.permissionMode && harness.permissionModes.includes(current.permissionMode)
       ? current.permissionMode
