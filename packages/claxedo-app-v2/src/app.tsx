@@ -9,7 +9,7 @@ import { AppShell, createShellRegistries, ShellRegistriesContext, ShellRouter, t
 import { firstParty } from "@/shell/registry"
 import { DialogProvider, ThemeProvider } from "@/ui"
 
-export type AppProps = { readonly router?: ShellRouterComponent }
+export type AppProps = { readonly router?: ShellRouterComponent; readonly serverUrl?: string }
 
 function principalOf(state: AuthState): string | undefined {
   return state.kind === "signedIn" ? state.user.id : undefined
@@ -20,8 +20,8 @@ function authSource(auth: Auth, principal: string | undefined): AuthSource {
   return { kind: "bearer", token: async (options) => (await auth.token({ skipCache: options?.fresh })) ?? undefined }
 }
 
-function ServerScope(props: ParentProps<{ readonly auth: AuthSource }>): JSX.Element {
-  const server = createServer({ auth: props.auth })
+function ServerScope(props: ParentProps<{ readonly auth: AuthSource; readonly serverUrl?: string }>): JSX.Element {
+  const server = createServer({ serverUrl: props.serverUrl, auth: props.auth })
   return (
     <ServerProvider server={server}>
       <SessionStoresProvider>
@@ -31,12 +31,16 @@ function ServerScope(props: ParentProps<{ readonly auth: AuthSource }>): JSX.Ele
   )
 }
 
-function SignedServer(props: ParentProps): JSX.Element {
+function SignedServer(props: ParentProps<{ readonly serverUrl?: string }>): JSX.Element {
   const auth = useAuth()
   const principal = createMemo(() => principalOf(auth.state()))
   return (
     <Show when={{ principal: principal() }} keyed>
-      {(scope) => <ServerScope auth={authSource(auth, scope.principal)}>{props.children}</ServerScope>}
+      {(scope) => (
+        <ServerScope auth={authSource(auth, scope.principal)} serverUrl={props.serverUrl}>
+          {props.children}
+        </ServerScope>
+      )}
     </Show>
   )
 }
@@ -49,7 +53,7 @@ export function App(props: AppProps): JSX.Element {
         <I18nProvider>
           <ThemeProvider>
             <ShellRouter router={props.router}>
-              <SignedServer>
+              <SignedServer serverUrl={props.serverUrl}>
                 <AppShell mainSidebar={<MainSidebar />} />
               </SignedServer>
             </ShellRouter>

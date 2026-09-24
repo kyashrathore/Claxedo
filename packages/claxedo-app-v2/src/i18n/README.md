@@ -44,7 +44,7 @@ The manifest is `locales.ts`: seventeen codes (`en`, `zh`, `zht`, `ko`, `de`, `e
 
 ## Error copy
 
-`useErrorCopy()` returns `(error: AppError) => { title, message, retry }`: the one table from an error class (`auth`, `rate_limit`, `network`, `not_found`, `conflict`, `invalid`, `internal`) to what the user reads, in all seventeen locales (`errors/<locale>.ts`). A domain may put copy for its own error codes in front of it (review does for git codes), but the class copy lives only here.
+`useErrorCopy()` returns `(error: AppError) => { title, message, retry }`: the one table from an error class (`auth`, `rate_limit`, `network`, `not_found`, `conflict`, `invalid`, `internal`) to what the user reads, in all seventeen locales (`errors/<locale>.ts`). A domain may add copy for its own error codes (such as review's git codes) and fall back to this table for every other failure; the class copy lives only here.
 
 ## Flows
 
