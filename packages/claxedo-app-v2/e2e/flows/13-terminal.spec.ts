@@ -81,4 +81,10 @@ test("13 terminal: run a command, its output replays from the server, reload rea
   await expect(terminalPane(app, terminalId)).toHaveCount(0)
   await expect(app.getByRole("button", { name: /^Close terminal: / })).toHaveCount(0)
   await expect(app.getByRole("button", { name: UI.sendIdle })).toBeVisible()
+  if (stack.app === "v2") {
+    await test.step("v2 approved: closing a terminal ends its PTY (DECISIONS 18:25)", async () => {
+      await expect(app).not.toHaveURL(TERMINAL_URL)
+      await expect.poll(() => serverTerminalIds(stack.url, workspace.directory)).not.toContain(terminalId)
+    })
+  }
 })
