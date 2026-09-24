@@ -98,7 +98,10 @@ export function PanelProvider(props: ParentProps): JSX.Element {
         fullWidth: size.fullWidth(),
         width: size.width(),
       }),
-    toggle: () => layout.send({ type: "togglePanel" }),
+    toggle: () => {
+      if (!layout.panelShown()) tabs.defaultNavigator()
+      layout.send({ type: "togglePanel" })
+    },
     close,
     show: (focus) => {
       if (focus) tabs.focus(focus)

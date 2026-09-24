@@ -19,6 +19,7 @@ export type PanelTabs = {
   readonly activate: (tabId: string) => void
   readonly closeTab: (tabId: string) => void
   readonly toggleNavigator: (navigator: WorkspacePanelNavigator) => void
+  readonly defaultNavigator: () => void
   readonly focus: (focus: PanelFocus) => void
   readonly fileReveal: Accessor<FileReveal | undefined>
   readonly reviewFocus: Accessor<ReviewFocus | undefined>
@@ -50,7 +51,7 @@ export function createPanelTabs(
   const workingSet = createWorkingSetStore(placementId)
   const [navigator, setNavigator] = persistedSignal<WorkspacePanelNavigator | null>(
     preferenceKey("panel", "navigator"),
-    "files",
+    null,
     readNavigator,
   )
   const [fileReveal, setFileReveal] = createSignal<FileReveal>()
@@ -71,6 +72,7 @@ export function createPanelTabs(
         return { tabs: next.tabs, activeTabId: next.activeTabId }
       }),
     toggleNavigator: (next) => setNavigator((current) => (current === next ? null : next)),
+    defaultNavigator: () => setNavigator((current) => current ?? "files"),
     focus: (focus) => workingSet.update((set) => applyFocus(set, focus, effects)),
     fileReveal,
     reviewFocus,
