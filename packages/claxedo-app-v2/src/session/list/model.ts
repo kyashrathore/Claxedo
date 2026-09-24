@@ -67,6 +67,8 @@ export type ListState = ListData &
     | { readonly kind: "failed"; readonly error: AppError }
   )
 
+export type RereadMode = "replace" | "refresh"
+
 export type ListEvent =
   | ServerListEvent
   | { readonly type: "fetchStarted" }
@@ -76,7 +78,7 @@ export type ListEvent =
   | { readonly type: "moreFetched"; readonly window: FetchedWindow }
   | { readonly type: "moreFailed"; readonly error: AppError }
   | { readonly type: "rereadStarted" }
-  | { readonly type: "rereadFetched"; readonly window: FetchedWindow }
+  | { readonly type: "rereadFetched"; readonly window: FetchedWindow; readonly mode: RereadMode }
   | { readonly type: "rereadFailed"; readonly error: AppError }
   | { readonly type: "rowRead"; readonly row: SessionRow }
   | { readonly type: "statusRead"; readonly ref: SessionRef; readonly status: SessionStatus; readonly sentAt: number }

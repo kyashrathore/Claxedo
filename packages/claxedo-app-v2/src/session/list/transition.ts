@@ -1,5 +1,5 @@
 import { unreachable } from "@/lib/machine"
-import type { FetchedWindow, ListData, ListEvent, ListState, MorePhase, ServerListEvent } from "./model"
+import type { FetchedWindow, ListData, ListEvent, ListState, MorePhase, RereadMode, ServerListEvent } from "./model"
 import {
   closeSession,
   confirmCreate,
@@ -7,6 +7,7 @@ import {
   failCreate,
   failSend,
   openSession,
+  refreshWindow,
   replaceWindow,
   startCreate,
   startSend,
@@ -53,8 +54,14 @@ function serverEvent(state: ListState, event: ServerListEvent): ListState {
   return withData(state, applyServerEvent(state, event))
 }
 
-function live(base: ListData, window: FetchedWindow, held: readonly ServerListEvent[], mode: "extend" | "replace"): ListState {
-  const windowed = mode === "extend" ? extendWindow(base, window) : replaceWindow(base, window)
+const WINDOWING: Record<"extend" | RereadMode, (data: ListData, window: FetchedWindow) => ListData> = {
+  extend: extendWindow,
+  replace: replaceWindow,
+  refresh: refreshWindow,
+}
+
+function live(base: ListData, window: FetchedWindow, held: readonly ServerListEvent[], mode: "extend" | RereadMode): ListState {
+  const windowed = WINDOWING[mode](base, window)
   const withStatuses = window.statuses
     ? statusesRead(windowed, window.statuses, window.sentAt, window.rows)
     : fillUnreported(windowed, window.rows)
@@ -81,7 +88,7 @@ function fetchEvent(state: ListState, event: ListEvent): ListState | undefined {
     case "rereadStarted":
       return state.kind === "live" || state.kind === "failed" ? { ...data(state), kind: "rereading", held: [] } : state
     case "rereadFetched":
-      return state.kind === "rereading" ? live(data(state), event.window, state.held, "replace") : state
+      return state.kind === "rereading" ? live(data(state), event.window, state.held, event.mode) : state
     case "rereadFailed":
       return state.kind === "rereading" ? { ...data(state), kind: "failed", error: event.error } : state
     default:
