@@ -1,7 +1,8 @@
 import { createSignal, Show, type Component } from "solid-js"
 import { createFlow, runFlow } from "@/lib/flow"
 import { toAppError, type CloudWorkspace } from "@/server"
-import { TextInput, Button } from "@/ui"
+import { Button } from "@/ui"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { useCloudText } from "../i18n"
 import type { CloudWorkspaces } from "../store"
 
@@ -29,20 +30,22 @@ export const CreateCloudWorkspace: Component<{ cloud: CloudWorkspaces }> = (prop
   return (
     <form class="flex flex-col gap-2" onSubmit={(event) => void submit(event)} data-testid="create-cloud-workspace">
       <div class="flex flex-wrap gap-2">
-        <TextInput
+        <TextField
           class="min-w-0 flex-1"
           value={name()}
           placeholder={t("cloud.create.name")}
-          aria-label={t("cloud.create.name")}
-          onInput={(event) => setName(event.currentTarget.value)}
+          label={t("cloud.create.name")}
+          hideLabel
+          onChange={setName}
         />
-        <TextInput
+        <TextField
           class="min-w-0 flex-1"
           value={branch()}
           placeholder={t("cloud.create.branch")}
-          aria-label={t("cloud.create.branch")}
+          label={t("cloud.create.branch")}
+          hideLabel
           spellcheck={false}
-          onInput={(event) => setBranch(event.currentTarget.value)}
+          onChange={setBranch}
         />
         <Button type="submit" variant="primary" disabled={creating()}>
           {creating() ? t("cloud.creating") : t("cloud.new")}

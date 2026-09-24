@@ -1,7 +1,8 @@
 import { createSignal, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { failureMessage } from "@/lib/failure"
-import { Dialog, showToast, TextInput, useDialog } from "@/ui"
+import { Dialog, showToast, useDialog } from "@/ui"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { Button } from "@opencode-ai/ui/button"
 import { dictionary } from "../i18n"
 
@@ -30,7 +31,7 @@ export function RenameSessionDialog(props: { readonly title: string; readonly on
   return (
     <Dialog title={t("rail.rename")} fit>
       <form class="flex min-w-[340px] flex-col gap-4" onSubmit={(event) => void form.submit(event)}>
-        <TextInput aria-label={t("rail.renameLabel")} value={title()} onInput={(event) => setTitle(event.currentTarget.value)} autofocus />
+        <TextField label={t("rail.renameLabel")} hideLabel value={title()} onChange={setTitle} autofocus />
         <div class="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="large" onClick={form.cancel}>
             {t("rail.cancel")}
