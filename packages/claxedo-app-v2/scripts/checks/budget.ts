@@ -1,0 +1,98 @@
+import { readFileSync } from "node:fs"
+import { dirname } from "node:path"
+import { codeExtensions, isLocaleFile, listFiles, parseArgs, rel, topFolder } from "./lib/files"
+import { lineCount } from "./lib/parse"
+
+type Part = { readonly name: string; readonly budget: number; readonly folders: readonly string[]; readonly except?: readonly string[] }
+type Row = { readonly name: string; readonly lines: number; readonly budget: number | undefined; readonly at: string }
+
+const parts: readonly Part[] = [
+  { name: "Server adapter", budget: 4000, folders: ["src/server"] },
+  { name: "Session client, including the session list store", budget: 9500, folders: ["src/session"], except: ["src/session/view"] },
+  { name: "Session screen incl. the kept timeline and docks", budget: 14300, folders: ["src/session/view"] },
+  { name: "Composer", budget: 5500, folders: ["src/composer"] },
+  { name: "Rail and workbench", budget: 8300, folders: ["src/rail", "src/workbench"] },
+  { name: "Browser tabs", budget: 1100, folders: ["src/browser"] },
+  { name: "Shell and platform", budget: 6500, folders: ["src/shell", "src/auth", "src/i18n", "src/lib", "src/*"], except: ["src/lib/machine.ts"] },
+  { name: "Terminal", budget: 4300, folders: ["src/terminal"] },
+  { name: "Settings", budget: 5200, folders: ["src/settings", "src/machines"] },
+  { name: "Access", budget: 1000, folders: ["src/access"] },
+  { name: "Review, git, files", budget: 4300, folders: ["src/review", "src/files", "src/git"] },
+  { name: "Projects and cloud", budget: 3000, folders: ["src/projects", "src/cloud"] },
+  { name: "Onboarding and usage", budget: 1800, folders: ["src/onboarding", "src/usage"] },
+  { name: "Plugin host", budget: 1700, folders: ["src/plugins"] },
+  { name: "Marketplace", budget: 1800, folders: ["src/marketplace"] },
+  { name: "Moved in from the session feature (lands in rail and review)", budget: 600, folders: [] },
+  { name: "State-machine helper", budget: 100, folders: ["src/lib/machine.ts"] },
+  { name: "UI kit (src/ui) and kept transcript renderers (src/transcript)", budget: 20000, folders: ["src/ui", "src/transcript"] },
+]
+const totalBudget = 94000
+const pluginsBudget = 7000
+const pluginBudgets: Readonly<Record<string, number>> = { tasks: 2500, pages: 3000, "compact-tabs": 600, "codex-theme": 600 }
+
+function main(): never {
+  const { root } = parseArgs(process.argv.slice(2))
+  const appFiles = listFiles(root, ["src"], codeExtensions).filter((file) => !isLocaleFile(root, file))
+  const counted = new Map(parts.map((part) => [part.name, 0]))
+  const unmapped = new Set<string>()
+  let total = 0
+  for (const file of appFiles) {
+    const lines = lineCount(readFileSync(file, "utf8"))
+    total += lines
+    const part = partOf(rel(root, file))
+    if (part) counted.set(part.name, (counted.get(part.name) ?? 0) + lines)
+    else unmapped.add(dirname(rel(root, file)))
+  }
+  const rows = parts.map((part) => ({ name: part.name, lines: counted.get(part.name) ?? 0, budget: part.budget, at: part.folders[0] ?? "src" }))
+  const over = [...printTable([...rows, { name: "Total", lines: total, budget: totalBudget, at: "src" }]), ...printTable(pluginLines(root))]
+  for (const row of over) console.log(`${row.at}:1: ${row.name} has ${row.lines} lines; the budget is ${row.budget}`)
+  for (const folder of [...unmapped].sort()) console.log(`${folder}:1: not in the budget table; add the part it belongs to`)
+  const failures = over.length + unmapped.size
+  console.error(`budget: ${failures} ${failures === 1 ? "violation" : "violations"} in ${appFiles.length} files`)
+  process.exit(failures === 0 ? 0 : 1)
+}
+
+function partOf(path: string): Part | undefined {
+  let best: { part: Part; length: number } | undefined
+  for (const part of parts) {
+    if (part.except?.some((folder) => matches(path, folder))) continue
+    for (const folder of part.folders) {
+      if (!matches(path, folder)) continue
+      if (!best || folder.length > best.length) best = { part, length: folder.length }
+    }
+  }
+  return best?.part
+}
+
+function matches(path: string, folder: string): boolean {
+  if (folder === "src/*") return dirname(path) === "src"
+  return path === folder || path.startsWith(`${folder}/`)
+}
+
+function pluginLines(root: string): Row[] {
+  const byPlugin = new Map<string, number>()
+  let total = 0
+  for (const file of listFiles(root, ["plugins"], codeExtensions)) {
+    const plugin = topFolder(root, file, "plugins") ?? "(root)"
+    const lines = lineCount(readFileSync(file, "utf8"))
+    byPlugin.set(plugin, (byPlugin.get(plugin) ?? 0) + lines)
+    total += lines
+  }
+  const rows = [...byPlugin].sort().map(([plugin, lines]) => ({ name: `plugins/${plugin}`, lines, budget: pluginBudgets[plugin], at: `plugins/${plugin}` }))
+  return rows.length === 0 ? [] : [...rows, { name: "First-party plugins total", lines: total, budget: pluginsBudget, at: "plugins" }]
+}
+
+function printTable(rows: readonly Row[]): Row[] {
+  const over: Row[] = []
+  const width = Math.max(...rows.map((row) => row.name.length), 4)
+  for (const row of rows) {
+    const budget = row.budget === undefined ? "—" : String(row.budget)
+    const excess = row.budget !== undefined && row.lines > row.budget ? row.lines - row.budget : 0
+    if (excess > 0) over.push(row)
+    const status = excess > 0 ? `OVER by ${excess}` : "ok"
+    console.error(`${row.name.padEnd(width)}  ${String(row.lines).padStart(6)}  ${budget.padStart(6)}  ${status}`)
+  }
+  return over
+}
+
+main()
