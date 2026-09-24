@@ -52,7 +52,7 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `RadioGroup`, `RadioItem` | Kobalte radio-group props, `label?`, `description?`, `hideLabel?`; item: `value`, `label`, `description?`, `hideLabel?` |
 | `ResizeHandle` | `direction: horizontal \| vertical`, `edge?: start \| end`, `size`, `min`, `max`, `onResize(size)`, `onCollapse?`, `onCollapseChange?(collapsed)`, `collapseThreshold?`; pointer events, so it drags by touch |
 | `ScrollView` | div props, `viewportRef?`, `label?`, `thumbVisibility?: hover \| scroll`, `thumbContainer?`, `thumbHoverTarget?`; `scrollKey`, `canScrollKey`, `scrollKeyOwner`, `isScrollKeyTarget` are the keyboard rules |
-| `SegmentedControl`, `SegmentedControlItem` | `value?`, `defaultValue?`, `onChange?(value \| null)`, `allowDeselect?`, `disabled?`; item: `value`, `children` |
+| `SegmentedControl`, `SegmentedControlItem` | `value?`, `defaultValue?`, `onChange?(value \| null)`, `allowDeselect?`, `disabled?`; item: `value`, `children`. Width is 232 px with equal segments; the class `segmented-control--full-width` fills the container, and `segmented-control--fit` sizes each segment to its label |
 | `Select<T>` | `options: T[]`, `current?: T`, `value?(item)`, `label?(item)`, `groupBy?(item)`, `onSelect?(item \| null)`, `onHighlight?(item)`, `placeholder?`, `appearance?: base \| large \| inline`, `invalid?`, `numeric?`, `children?(item)`, `valueClass?`, Kobalte placement props |
 | `SplitButton`, `SplitButtonAction`, `SplitButtonMenuTrigger` | div props; the two parts are button props |
 | `Switch` | Kobalte switch props, `children` as label, `hideLabel?` |
