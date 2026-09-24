@@ -6,8 +6,8 @@ Owns: the app frame and nothing a feature knows about. Three regions and one pag
 
 - **Sidebar** (left): `main` mode shows what `AppShell` receives as `mainSidebar` (the rail); `settings` mode shows `SettingsSidebar`, the sections from the `settingsSections` registry grouped by `account`, `workspace`, `app`. The URL decides the mode: a page whose entry says `sidebar: "settings"` switches it.
 - **Center**: the workbench of split panes (`src/workbench/`), or the one **page tab** when the URL names a `PageEntry` (Settings, Marketplace, Tasks, Pages, projects, plugin pages). The page tab cannot split or drag; opening another page reuses it; its state is the URL.
-- **Workspace panel** (right): the `panelTabs` registry, filtered by each tab's `when()`, with the active tab and width kept per scope: the current placement (`placementOf(route)`), or `default` when the URL names none. A focused pane with no route, such as a file, leaves the URL and so the scope on the last placement.
-- **Top bar**: the sidebar and panel toggles, the workbench tab strip on a wide screen, the pane switcher on a phone, the page header for a page.
+- **Workspace panel** (right): `src/panel/`. The frame wraps the workbench column in its `WorkspaceArea`; the layout below decides whether it is shown.
+- **Top bar**: the sidebar toggle, the workbench tab strip on a wide screen, the pane switcher on a phone, the page header for a page, and the panel's `PanelToggle` while the panel is closed.
 
 ## State machines
 
@@ -19,7 +19,7 @@ Id-only: `/` (home), `/w/:placementId/s/:sessionId`, `/w/:placementId/t/:termina
 
 ## Placement providers (`placement-providers.tsx`)
 
-The domains whose state is kept per placement (terminal, files, review, browser) mount their providers here with no props, under the commands provider inside the workbench; each reads the placement from `useShellRoute().placementId` and opens panes through `useWorkbench()`. The composer's draft store sits above the workbench and the panel, inside the principal's scope, so another principal starts with no drafts.
+The workspace panel and the domains whose state is kept per placement (terminal, files, review, browser) mount their providers here with no props, under the commands provider inside the workbench; each reads the placement from `useShellRoute().placementId` and opens panes through `useWorkbench()`. The composer's draft store sits above the workbench and the panel, inside the principal's scope, so another principal starts with no drafts.
 
 ## Look (`styles/`)
 
@@ -35,7 +35,7 @@ On the home route, when the projects list has loaded and is empty (`onboardingNe
 
 ## Registries (`registries.ts`, `registry.ts`)
 
-One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelTabs`, `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
+One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `settingsSections`, `sidebarItems`, `overlays`, `commands`, `mentions`, `themes`, `iconSkins`, `routes`. `registry.ts` holds the static first-party arrays that import each domain's exports; plugins `add()` entries while they are on and dispose them when off.
 
 ## Command palette (`palette/`)
 
@@ -43,7 +43,7 @@ Kept from the old app: registrations with owners, keybinding parsing and display
 
 ## Phone
 
-Below 768 px the sidebar is a drawer and the workspace panel a sheet (both Kobalte dialogs), the top bar shows the pane switcher, and the home route shows the sidebar content full screen. The frame never scrolls horizontally.
+Below 768 px the sidebar is a drawer (a Kobalte dialog), the top bar shows the pane switcher, and the home route shows the sidebar content full screen. The frame never scrolls horizontally.
 
 ## Flows
 

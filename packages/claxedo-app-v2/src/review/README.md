@@ -1,6 +1,6 @@
 # Review
 
-Owns: the Changes panel tab. It shows the diff of a placement for a scope, turns line comments into context for the agent, and runs commit, push and worktree creation.
+Owns: the workspace panel's Review tab. It shows the diff of a placement for a scope, turns line comments into context for the agent, and runs commit, push and worktree creation.
 
 ## Owned concepts
 
@@ -20,7 +20,7 @@ Owns: the Changes panel tab. It shows the diff of a placement for a scope, turns
 ## Invariants
 
 - Diffs, status, refs and bases are the adapter's query data, refreshed only by its `filesChanged` invalidation. Nothing here copies them.
-- `ReviewProvider` holds the per-placement view state (scope, open files, exclusions, forced files, the commit message). It mounts inside the scoped shell, so that state survives switching panel tabs.
+- `ReviewProvider` holds the per-placement view state (scope, open files, exclusions, forced files, the commit message). It mounts inside the scoped shell, so that state survives switching the panel's tabs.
 - A comment's range is stored without its diff side until the composer's file context item carries one, so a comment on a deleted line is drawn on the additions side.
 
 ## Commands

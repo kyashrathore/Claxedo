@@ -61,61 +61,6 @@
   overflow: auto;
 }
 
-.shell-panel {
-  position: relative;
-  display: flex;
-  flex: none;
-  flex-direction: column;
-  min-width: 0;
-  overflow: hidden;
-  background: var(--v2-background-bg-layer-01, #171414);
-  border-left: 1px solid var(--v2-border-border-base, #2a2626);
-}
-
-.shell-panel-content {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.shell-panel-tabs {
-  display: flex;
-  flex: none;
-  gap: 2px;
-  padding: 6px 8px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--v2-border-border-base, #2a2626);
-}
-
-.shell-panel-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 10px;
-  color: var(--v2-text-text-muted, #8a8686);
-  white-space: nowrap;
-  background: transparent;
-  border-radius: 6px;
-}
-
-.shell-panel-tab:hover {
-  background: var(--v2-overlay-simple-overlay-hover, rgb(255 255 255 / 6%));
-}
-
-.shell-panel-tab[aria-selected="true"] {
-  color: var(--v2-text-text-base, #e8e4e4);
-  background: var(--v2-background-bg-layer-03, #221e1e);
-}
-
-.shell-panel-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
-.shell-panel-empty,
 .shell-loading {
   display: grid;
   flex: 1;

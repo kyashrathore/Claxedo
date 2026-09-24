@@ -4,20 +4,23 @@ import { useTranslator } from "@/i18n"
 import { FailureNotice } from "@/lib/failure"
 import type { PlacementId } from "@/server"
 import { TextInput } from "@/ui"
-import { useWorkbench } from "@/workbench"
 import { useFilesApi } from "../api"
 import { dictionary } from "../i18n"
 import { fetchView } from "../model"
-import { filePaneKind } from "../pane"
 import { useFiles } from "../store"
 import { FileTree } from "./file-tree"
 import { PlaceholderRows } from "./placeholder"
 
-export function FilesTab(): JSX.Element {
+export type FilesNavigatorProps = {
+  readonly activePath?: string
+  readonly onOpenFile: (path: string) => void
+}
+
+export function FilesNavigator(props: FilesNavigatorProps): JSX.Element {
   const t = useTranslator(dictionary)
   const files = useFiles()
   return (
-    <div data-testid="files-tab" class="flex size-full min-h-0 flex-col bg-background-base">
+    <div data-testid="workspace-files-navigator" class="flex size-full min-h-0 flex-col bg-background-base">
       <Show
         when={files.placementId()}
         keyed
@@ -41,8 +44,13 @@ export function FilesTab(): JSX.Element {
               />
             </div>
             <div class="min-h-0 flex-1 overflow-auto">
-              <Show when={files.search().trim()} fallback={<FileTree placementId={placementId} />}>
-                {(query) => <SearchResults placementId={placementId} query={query()} />}
+              <Show
+                when={files.search().trim()}
+                fallback={
+                  <FileTree placementId={placementId} activePath={props.activePath} onOpenFile={props.onOpenFile} />
+                }
+              >
+                {(query) => <SearchResults placementId={placementId} query={query()} onOpenFile={props.onOpenFile} />}
               </Show>
             </div>
           </>
@@ -52,10 +60,13 @@ export function FilesTab(): JSX.Element {
   )
 }
 
-function SearchResults(props: { readonly placementId: PlacementId; readonly query: string }): JSX.Element {
+function SearchResults(props: {
+  readonly placementId: PlacementId
+  readonly query: string
+  readonly onOpenFile: (path: string) => void
+}): JSX.Element {
   const t = useTranslator(dictionary)
   const api = useFilesApi()
-  const workbench = useWorkbench()
   const results = useQuery(() => api.search(props.placementId, props.query))
   const view = createMemo(() => fetchView(results))
   const failed = createMemo(() => {
@@ -94,7 +105,7 @@ function SearchResults(props: { readonly placementId: PlacementId; readonly quer
                     <button
                       type="button"
                       class="flex h-7 w-full min-w-0 items-center rounded-md px-2 text-left text-sm text-text-base hover:bg-overlay-hover pointer-coarse:min-h-11"
-                      onClick={() => workbench.openPane(filePaneKind, { placementId: props.placementId, path })}
+                      onClick={() => props.onOpenFile(path)}
                     >
                       <span class="min-w-0 truncate">{path}</span>
                     </button>

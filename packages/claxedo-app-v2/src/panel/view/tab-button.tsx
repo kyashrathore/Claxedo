@@ -1,29 +1,20 @@
 import type { JSX } from "solid-js"
-import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
-import type { ReviewWorkspaceTab } from "@/features/review/ui/review-workspace-tabs"
-import { AgentGlyph } from "@/ui/session-kit"
+import { AgentGlyph } from "@/transcript"
+import { ClaxedoIcon as Icon, ClaxedoIconButton as IconButton, type ClaxedoIconName } from "@/ui"
+import type { ReviewWorkspaceTab } from "../workspace-tabs"
 
 export type ReviewWorkspaceTabButtonProps = {
   tab: ReviewWorkspaceTab
   selected: boolean
   label: string
   icon: ClaxedoIconName
-  /** Optical size for this tab kind's glyph, inside a shared 16px slot. */
   iconPx: number
   closeLabel: string
   onActivate: () => void
   onClose: () => void
-  /** Middle-click close. The Review tab is permanent, so it declines. */
   closable: boolean
 }
 
-/**
- * The dismiss affordance. No radius override in `class`: `IconButton` already
- * draws `--radius-sm`, the same corner every other icon button in the app uses.
- * This carried `rounded-full`, which made the one dismiss affordance on the tab
- * a circle.
- */
 function TabCloseButton(props: { label: string; visible: boolean; onClose: () => void }): JSX.Element {
   return (
     <IconButton
@@ -69,8 +60,6 @@ export function ReviewWorkspaceTabButton(props: ReviewWorkspaceTabButtonProps): 
         }}
       >
         {props.tab.kind === "subagent" ? (
-          // The mark the transcript already gave this agent, seeded the same
-          // way, so the tab and the chip that opened it read as one thing.
           <span class="flex size-4 shrink-0 items-center justify-center">
             <AgentGlyph seed={props.tab.sessionId} size={props.iconPx} />
           </span>
@@ -78,12 +67,6 @@ export function ReviewWorkspaceTabButton(props: ReviewWorkspaceTabButtonProps): 
           <Icon
             name={props.icon}
             size="small"
-            /* The tab glyph is optically sized per tab kind (13/14/15px) inside
-               a 16px slot, so the label sits at the same x whatever the tab is;
-               the icon is the box, so the slot is the svg plus a margin.
-               Padding would express the same geometry but Blink rasterises an
-               outermost <svg> with an inset viewport worse than a margin does,
-               which leaves the viewport, its origin, and its raster untouched. */
             style={{ width: `${props.iconPx}px`, height: `${props.iconPx}px`, margin: `${(16 - props.iconPx) / 2}px` }}
             classList={{ "text-icon-base": props.selected, "text-icon-weak-base": !props.selected }}
           />
@@ -91,11 +74,6 @@ export function ReviewWorkspaceTabButton(props: ReviewWorkspaceTabButtonProps): 
         <span class="truncate">{props.label}</span>
       </button>
       <div class="absolute right-1 flex h-full items-center">
-        {/* `flex` is load-bearing, not cosmetic. As a block, this wrapper laid
-            out the inline-flex button on a text baseline, so it measured 22px
-            around a 20px button — 2px of descender space below. `items-center`
-            centred the 22px box, leaving the X one pixel above the label and
-            the tab's own glyph. */}
         <div class="flex" data-testid="workspace-tab-close" data-workspace-tab-id={props.tab.id}>
           <TabCloseButton label={props.closeLabel} visible={props.selected} onClose={props.onClose} />
         </div>

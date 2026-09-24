@@ -1,7 +1,6 @@
 import type { Translations } from "@/i18n"
 
 const en = {
-  "files.tab": "Files",
   "files.search": "Search files",
   "files.clearSearch": "Clear search",
   "files.searching": "Searching files",
@@ -12,11 +11,13 @@ const en = {
   "files.retry": "Retry",
   "files.loadFailed": "The files could not be loaded",
   "files.searchFailed": "The search failed",
-  "files.readFailed": "The file could not be read",
   "files.engineFailed": "The code viewer could not load",
   "files.noPlacement": "Open a project to browse its files",
-  "files.missing": "This file does not exist in the workspace",
-  "files.binary": "Binary file, no preview",
+  "files.tab.loading": "Loading...",
+  "files.tab.empty": "No content",
+  "files.tab.binary": "Binary file — no inline preview available.",
+  "files.tab.copyPath": "Copy relative path",
+  "files.tab.copiedPath": "Copied relative path",
   "files.mark.added": "Added",
   "files.mark.deleted": "Deleted",
   "files.mark.modified": "Modified",
@@ -25,7 +26,6 @@ const en = {
 export type FilesKey = keyof typeof en
 
 const zh: Partial<Record<FilesKey, string>> = {
-  "files.tab": "文件",
   "files.search": "搜索文件",
   "files.mark.added": "已添加",
   "files.mark.deleted": "已删除",
@@ -33,7 +33,6 @@ const zh: Partial<Record<FilesKey, string>> = {
 }
 
 const zht: Partial<Record<FilesKey, string>> = {
-  "files.tab": "檔案",
   "files.search": "搜尋檔案",
   "files.mark.added": "已新增",
   "files.mark.deleted": "已刪除",
@@ -41,7 +40,6 @@ const zht: Partial<Record<FilesKey, string>> = {
 }
 
 const ko: Partial<Record<FilesKey, string>> = {
-  "files.tab": "파일",
   "files.search": "파일 검색",
   "files.mark.added": "추가됨",
   "files.mark.deleted": "삭제됨",
@@ -49,7 +47,6 @@ const ko: Partial<Record<FilesKey, string>> = {
 }
 
 const de: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Dateien",
   "files.search": "Dateien suchen",
   "files.mark.added": "Hinzugefügt",
   "files.mark.deleted": "Gelöscht",
@@ -57,7 +54,6 @@ const de: Partial<Record<FilesKey, string>> = {
 }
 
 const es: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Archivos",
   "files.search": "Buscar archivos",
   "files.mark.added": "Añadido",
   "files.mark.deleted": "Eliminado",
@@ -65,7 +61,6 @@ const es: Partial<Record<FilesKey, string>> = {
 }
 
 const fr: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Fichiers",
   "files.search": "Rechercher des fichiers",
   "files.mark.added": "Ajouté",
   "files.mark.deleted": "Supprimé",
@@ -73,7 +68,6 @@ const fr: Partial<Record<FilesKey, string>> = {
 }
 
 const da: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Filer",
   "files.search": "Søg efter filer",
   "files.mark.added": "Tilføjet",
   "files.mark.deleted": "Slettet",
@@ -81,7 +75,6 @@ const da: Partial<Record<FilesKey, string>> = {
 }
 
 const ja: Partial<Record<FilesKey, string>> = {
-  "files.tab": "ファイル",
   "files.search": "ファイルを検索",
   "files.mark.added": "追加",
   "files.mark.deleted": "削除",
@@ -89,7 +82,6 @@ const ja: Partial<Record<FilesKey, string>> = {
 }
 
 const pl: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Pliki",
   "files.search": "Szukaj plików",
   "files.mark.added": "Dodany",
   "files.mark.deleted": "Usunięty",
@@ -97,7 +89,6 @@ const pl: Partial<Record<FilesKey, string>> = {
 }
 
 const ru: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Файлы",
   "files.search": "Поиск файлов",
   "files.mark.added": "Добавлен",
   "files.mark.deleted": "Удалён",
@@ -105,7 +96,6 @@ const ru: Partial<Record<FilesKey, string>> = {
 }
 
 const bs: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Datoteke",
   "files.search": "Pretraži datoteke",
   "files.mark.added": "Dodano",
   "files.mark.deleted": "Obrisano",
@@ -113,7 +103,6 @@ const bs: Partial<Record<FilesKey, string>> = {
 }
 
 const ar: Partial<Record<FilesKey, string>> = {
-  "files.tab": "الملفات",
   "files.search": "بحث عن الملفات",
   "files.mark.added": "مُضاف",
   "files.mark.deleted": "محذوف",
@@ -121,7 +110,6 @@ const ar: Partial<Record<FilesKey, string>> = {
 }
 
 const no: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Filer",
   "files.search": "Søk etter filer",
   "files.mark.added": "Lagt til",
   "files.mark.deleted": "Slettet",
@@ -129,7 +117,6 @@ const no: Partial<Record<FilesKey, string>> = {
 }
 
 const br: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Arquivos",
   "files.search": "Buscar arquivos",
   "files.mark.added": "Adicionado",
   "files.mark.deleted": "Excluído",
@@ -137,7 +124,6 @@ const br: Partial<Record<FilesKey, string>> = {
 }
 
 const th: Partial<Record<FilesKey, string>> = {
-  "files.tab": "ไฟล์",
   "files.search": "ค้นหาไฟล์",
   "files.mark.added": "เพิ่มแล้ว",
   "files.mark.deleted": "ลบแล้ว",
@@ -145,7 +131,6 @@ const th: Partial<Record<FilesKey, string>> = {
 }
 
 const tr: Partial<Record<FilesKey, string>> = {
-  "files.tab": "Dosyalar",
   "files.search": "Dosya ara",
   "files.mark.added": "Eklendi",
   "files.mark.deleted": "Silindi",

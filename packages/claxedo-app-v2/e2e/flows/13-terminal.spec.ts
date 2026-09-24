@@ -3,15 +3,6 @@ import { expect, SCRIPTED_ACP_HARNESS, test } from "../harness"
 
 const TERMINAL_URL = /\/w\/[^/]+\/t\/[^/?]+$/
 
-async function createServerProject(url: string, name: string, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
-
 async function serverTerminalIds(serverUrl: string, directory: string): Promise<readonly string[]> {
   const url = new URL("/api/wr/pty", serverUrl)
   url.searchParams.set("directory", directory)
@@ -67,8 +58,7 @@ test("13 terminal: run a command, its output replays from the server, reload rea
   api,
   app,
 }) => {
-  const workspace = await stack.daemon.makeWorkspace("terminal")
-  await createServerProject(stack.url, "Terminal", workspace.directory)
+  const workspace = await stack.daemon.makeWorkspace("terminal", "Terminal")
   const session = await api.createSession(workspace.directory, { title: "Terminal", harness: SCRIPTED_ACP_HARNESS })
 
   await app.goto(`${stack.url}/w/${encodeURIComponent(workspace.id)}/s/${encodeURIComponent(session.id)}`)
