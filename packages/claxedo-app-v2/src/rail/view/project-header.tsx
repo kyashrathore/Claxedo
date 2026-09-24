@@ -1,10 +1,9 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
 import type { ProjectSection } from "../project-sections"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
 export type ProjectHeaderProps = {
   readonly section: ProjectSection

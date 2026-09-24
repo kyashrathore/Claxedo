@@ -2,11 +2,10 @@ import { createEffect, createMemo, For, onCleanup, onMount, Show, type Accessor,
 import { useTranslator } from "@/i18n"
 import { useCommands } from "@/shell"
 import { useDragSource, useWorkbench } from "@/workbench"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { railDictionary } from "../i18n"
 import { useSwitcherItems, type SwitcherItem } from "../switcher-items"
 import { SwitcherCard, SwitcherPrefixMark } from "./switcher-card"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
 const ACTIVE_SCROLL_DELAY_MS = 120
 const COMMAND_HINT_HOLD_MS = 500

@@ -2,12 +2,11 @@ import { createEffect, createMemo, on, onCleanup, Show, type Accessor, type JSX 
 import { useTranslator } from "@/i18n"
 import type { PlacementId, TerminalAgentStatus } from "@/server"
 import { useTerminals, type TerminalItem } from "@/terminal"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createHoverEngagement } from "../hover-engagement"
 import { railDictionary } from "../i18n"
 import type { NavigationStatus } from "../model"
 import { NavigationRow, NavigationRowGlyph, NavigationStatusMark } from "./navigation-row"
-import { ClaxedoIcon as Icon, ClaxedoIconV2 } from "@/ui"
+import { ClaxedoIcon as Icon, ClaxedoIconV2, Tooltip } from "@/ui"
 
 const AGENT_STATUS: Readonly<Record<TerminalAgentStatus, NavigationStatus>> = {
   working: "working",

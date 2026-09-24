@@ -1,11 +1,10 @@
 import { Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
 import { PanelToggle } from "@/panel"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { shellDictionary } from "../i18n"
 import { useShellLayout } from "../layout"
 import { ScopeButtons } from "./scope-buttons"
-import { ClaxedoIcon as Icon } from "@/ui"
+import { ClaxedoIcon as Icon, Tooltip } from "@/ui"
 
 export function TitlebarDragRegion(props: { readonly class?: string }): JSX.Element {
   return <div data-window-drag-region data-testid="titlebar-drag-region" aria-hidden="true" class={`self-stretch ${props.class ?? ""}`} />
