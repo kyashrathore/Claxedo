@@ -42,6 +42,10 @@ function socket() {
       readyState: 1,
       send: (data: unknown) => {
         if (typeof data === "string") sent.push(data)
+        else if (data instanceof Uint8Array && data[0] === 0) {
+          const frame = JSON.parse(new TextDecoder().decode(data.subarray(1))) as { checkpoint?: { screen?: string } }
+          if (frame.checkpoint?.screen) sent.push(frame.checkpoint.screen)
+        }
       },
       close: () => {},
     } as unknown as WSContext,
