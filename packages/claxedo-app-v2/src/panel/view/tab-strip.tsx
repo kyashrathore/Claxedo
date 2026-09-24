@@ -86,7 +86,9 @@ export function PanelTabStrip(): JSX.Element {
           )}
         </For>
         <div data-testid="workspace-tab-actions" class="flex h-full shrink-0 items-center bg-background-base px-1">
-          <AddTabMenu />
+          <Show when={!panel.phone()}>
+            <AddTabMenu />
+          </Show>
         </div>
       </div>
     </div>
