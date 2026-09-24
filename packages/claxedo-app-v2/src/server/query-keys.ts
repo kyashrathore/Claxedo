@@ -20,6 +20,7 @@ export const queryKeys = {
     ["server", server, "plugin-skill", request.pluginInstanceId, request.skill, request.projectId ?? ""] as const,
   marketplaceMachine: (server: string) => ["server", server, "plugin-machine-installed"] as const,
   tasks: (server: string) => ["server", server, "tasks", "availability"] as const,
+  tasksAll: (server: string) => ["server", server, "tasks"] as const,
   documents: (server: string) => ["server", server, "documents", "availability"] as const,
   cloud: (server: string) => ["server", server, "cloud"] as const,
   folderPaths: (server: string) => ["server", server, "folders", "paths"] as const,

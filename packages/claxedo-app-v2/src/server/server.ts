@@ -13,6 +13,7 @@ import { createEventIntake } from "./event-intake"
 import type { ConnectionState } from "./events"
 import { createGitApi } from "./git"
 import { createMarketplaceApi } from "./marketplace"
+import { createTasksApi } from "./tasks"
 import { createHarnessConfigApi } from "./harness-config"
 import { createLivePluginsApi } from "./live-plugins"
 import type { ProjectId } from "./ids"
@@ -100,6 +101,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     cloud: createCloudApi(transport, workspaces, project),
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
+    tasks: createTasksApi(transport),
     folders: createFoldersApi(transport),
     integrations: createIntegrationsApi(transport, queryClient),
     sandboxProviders: createSandboxProvidersApi(transport, queryClient),
