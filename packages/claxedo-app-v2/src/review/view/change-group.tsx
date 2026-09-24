@@ -1,17 +1,23 @@
 import { For, Show, type JSX } from "solid-js"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
-import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { SemanticIcon } from "@/ui/semantic-icon"
-import { useLanguage } from "@/platform/i18n/provider"
-import type { GitStatusEntry } from "@/platform/runtime/workspace-git-client"
+import { basename, parentPath } from "@/files"
+import { useTranslator } from "@/i18n"
+import type { ChangeStatus } from "@/server"
+import { ClaxedoIcon as Icon, SemanticIcon } from "@/ui"
+import type { GitAction } from "../git-actions"
+import { dictionary, type ReviewKey } from "../i18n"
 
 export type ChangeGroupId = "staged" | "changes"
 
-export type ChangeEntry = Pick<GitStatusEntry, "path" | "status" | "additions" | "deletions">
+export type ChangeEntry = {
+  readonly path: string
+  readonly status: ChangeStatus
+  readonly additions: number
+  readonly deletions: number
+}
 
-const STATUS_LETTER: Record<GitStatusEntry["status"], string> = {
+const STATUS_LETTER: Readonly<Record<ChangeStatus, string>> = {
   added: "A",
   modified: "M",
   deleted: "D",
@@ -20,16 +26,16 @@ const STATUS_LETTER: Record<GitStatusEntry["status"], string> = {
   conflicted: "C",
 }
 
-const STATUS_LABEL_KEY = {
-  added: "navigator.sourceControl.status.added",
-  modified: "navigator.sourceControl.status.modified",
-  deleted: "navigator.sourceControl.status.deleted",
-  renamed: "navigator.sourceControl.status.renamed",
-  untracked: "navigator.sourceControl.status.untracked",
-  conflicted: "navigator.sourceControl.status.conflicted",
-} as const satisfies Record<GitStatusEntry["status"], string>
+const STATUS_LABEL: Readonly<Record<ChangeStatus, ReviewKey>> = {
+  added: "review.status.added",
+  modified: "review.status.modified",
+  deleted: "review.status.deleted",
+  renamed: "review.status.renamed",
+  untracked: "review.status.untracked",
+  conflicted: "review.status.conflicted",
+}
 
-function statusColor(status: GitStatusEntry["status"]) {
+function statusColor(status: ChangeStatus): string {
   if (status === "added" || status === "untracked") return "color: var(--icon-diff-add-base)"
   if (status === "deleted") return "color: var(--icon-diff-delete-base)"
   if (status === "conflicted") return "color: var(--icon-critical-base)"
@@ -37,16 +43,15 @@ function statusColor(status: GitStatusEntry["status"]) {
 }
 
 export function SourceControlSectionHeader(props: {
-  testId: string
-  label: string
-  title?: string
-  count?: number
-  collapsed: boolean
-  /** The group the pane's review currently shows. */
-  active?: boolean
-  onToggle: () => void
-  children?: JSX.Element
-}) {
+  readonly testId: string
+  readonly label: string
+  readonly title?: string
+  readonly count?: number
+  readonly collapsed: boolean
+  readonly active?: boolean
+  readonly onToggle: () => void
+  readonly children?: JSX.Element
+}): JSX.Element {
   return (
     <div
       data-testid={props.testId}
@@ -68,7 +73,9 @@ export function SourceControlSectionHeader(props: {
           class="claxedo-source-control-chevron shrink-0 text-icon-weak-base"
           classList={{ "-rotate-90": props.collapsed }}
         />
-        <span class="truncate" title={props.title}>{props.label}</span>
+        <span class="truncate" title={props.title}>
+          {props.label}
+        </span>
         <Show when={props.count !== undefined}>
           <span class="text-text-weaker/80">({props.count})</span>
         </Show>
@@ -79,13 +86,14 @@ export function SourceControlSectionHeader(props: {
 }
 
 export function ChangeRow(props: {
-  entry: ChangeEntry
-  group: string
-  active: boolean
-  onOpen: () => void
-  action?: JSX.Element
-}) {
-  const language = useLanguage()
+  readonly entry: ChangeEntry
+  readonly group: string
+  readonly active: boolean
+  readonly onOpen: () => void
+  readonly action?: JSX.Element
+}): JSX.Element {
+  const t = useTranslator(dictionary)
+  const label = () => t(STATUS_LABEL[props.entry.status])
   return (
     <div
       role="listitem"
@@ -97,76 +105,95 @@ export function ChangeRow(props: {
       class="claxedo-source-control-row group flex h-7 min-w-0 items-center gap-1 rounded-md pr-1 pl-1.5 text-12-medium text-text-weak hover:bg-surface-base-hover"
       classList={{ "bg-surface-base-active": props.active }}
     >
-      <button type="button" data-slot="open" class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left" onClick={() => props.onOpen()}>
+      <button
+        type="button"
+        data-slot="open"
+        class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
+        onClick={() => props.onOpen()}
+      >
         <span
           class="w-3.5 shrink-0 text-center text-12-medium"
           style={statusColor(props.entry.status)}
-          aria-label={language.t(STATUS_LABEL_KEY[props.entry.status])}
-          title={language.t(STATUS_LABEL_KEY[props.entry.status])}
+          aria-label={label()}
+          title={label()}
         >
           {STATUS_LETTER[props.entry.status]}
         </span>
         <span class="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span class="min-w-0 truncate text-text-base">{getFilename(props.entry.path)}</span>
-          <Show when={getDirectory(props.entry.path).replace(/\/$/, "")}>
+          <span class="min-w-0 truncate text-text-base">{basename(props.entry.path)}</span>
+          <Show when={parentPath(props.entry.path)}>
             {(directory) => <span class="min-w-0 truncate text-11-regular text-text-weak/70">{directory()}</span>}
           </Show>
         </span>
-        <DiffChanges class="shrink-0 text-11-regular" changes={{ additions: props.entry.additions, deletions: props.entry.deletions }} />
+        <DiffChanges
+          class="shrink-0 text-11-regular"
+          changes={{ additions: props.entry.additions, deletions: props.entry.deletions }}
+        />
       </button>
       {props.action}
     </div>
   )
 }
 
-export function ChangeGroup(props: {
-  id: ChangeGroupId
-  entries: readonly GitStatusEntry[]
-  collapsed: boolean
-  active: boolean
-  onToggle: () => void
-  activePath?: string
-  pending?: string
-  onAction: (paths: string[]) => void
-  onOpen: (entry: GitStatusEntry) => void
-}) {
-  const language = useLanguage()
-  const action = (): "stage" | "unstage" => (props.id === "staged" ? "unstage" : "stage")
-  const actionLabel = () =>
-    action() === "stage" ? language.t("navigator.sourceControl.stage") : language.t("navigator.sourceControl.unstage")
-  const actionAllLabel = () =>
-    action() === "stage"
-      ? language.t("navigator.sourceControl.stageAll")
-      : language.t("navigator.sourceControl.unstageAll")
-  const actionPending = () => props.pending === action()
+function GroupAction(props: {
+  readonly action: "stage" | "unstage"
+  readonly label: string
+  readonly title: string
+  readonly dataAction: string
+  readonly pending?: boolean
+  readonly onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      data-action={props.dataAction}
+      aria-label={props.label}
+      title={props.title}
+      class="claxedo-source-control-action flex size-5 shrink-0 items-center justify-center rounded text-icon-weak-base hover:bg-surface-base-active hover:text-icon-base"
+      onClick={() => props.onClick()}
+    >
+      <Show when={props.pending} fallback={<SemanticIcon concept={props.action} size="small" />}>
+        <Spinner class="size-3" />
+      </Show>
+    </button>
+  )
+}
 
+export function ChangeGroup(props: {
+  readonly id: ChangeGroupId
+  readonly entries: readonly ChangeEntry[]
+  readonly collapsed: boolean
+  readonly active: boolean
+  readonly onToggle: () => void
+  readonly activePath?: string
+  readonly pending?: GitAction
+  readonly onAction: (paths: string[]) => void
+  readonly onOpen: (entry: ChangeEntry) => void
+}): JSX.Element {
+  const t = useTranslator(dictionary)
+  const action = (): "stage" | "unstage" => (props.id === "staged" ? "unstage" : "stage")
+  const actionLabel = () => (action() === "stage" ? t("review.sourceControl.stage") : t("review.sourceControl.unstage"))
+  const actionAllLabel = () =>
+    action() === "stage" ? t("review.sourceControl.stageAll") : t("review.sourceControl.unstageAll")
   return (
     <section data-testid={`source-control-section-${props.id}`} class="flex shrink-0 flex-col">
       <SourceControlSectionHeader
         testId={`source-control-group-${props.id}`}
-        label={
-          props.id === "staged"
-            ? language.t("navigator.sourceControl.group.staged")
-            : language.t("navigator.sourceControl.group.changes")
-        }
+        label={props.id === "staged" ? t("review.sourceControl.group.staged") : t("review.sourceControl.group.changes")}
         count={props.entries.length}
         collapsed={props.collapsed}
         active={props.active}
         onToggle={props.onToggle}
       >
         <Show when={props.entries.length > 0}>
-          <button
-            type="button"
-            data-action={`${action()}-all`}
-            aria-label={actionAllLabel()}
+          <GroupAction
+            action={action()}
+            label={actionAllLabel()}
             title={actionAllLabel()}
-            class="claxedo-source-control-action flex size-5 shrink-0 items-center justify-center rounded text-icon-weak-base hover:bg-surface-base-active hover:text-icon-base"
+            dataAction={`${action()}-all`}
+            pending={props.pending === action()}
             onClick={() => props.onAction(props.entries.map((entry) => entry.path))}
-          >
-            <Show when={actionPending()} fallback={<SemanticIcon concept={action()} size="small" />}>
-              <Spinner class="size-3" />
-            </Show>
-          </button>
+          />
         </Show>
       </SourceControlSectionHeader>
       <Show when={!props.collapsed}>
@@ -179,16 +206,13 @@ export function ChangeGroup(props: {
                 active={props.activePath === entry.path}
                 onOpen={() => props.onOpen(entry)}
                 action={
-                  <button
-                    type="button"
-                    data-action={action()}
-                    aria-label={`${actionLabel()} ${entry.path}`}
+                  <GroupAction
+                    action={action()}
+                    label={`${actionLabel()} ${entry.path}`}
                     title={actionLabel()}
-                    class="claxedo-source-control-action flex size-5 shrink-0 items-center justify-center rounded text-icon-weak-base hover:bg-surface-base-active hover:text-icon-base"
+                    dataAction={action()}
                     onClick={() => props.onAction([entry.path])}
-                  >
-                    <SemanticIcon concept={action()} size="small" />
-                  </button>
+                  />
                 }
               />
             )}
