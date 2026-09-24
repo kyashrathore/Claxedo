@@ -1,6 +1,6 @@
 # Rail
 
-Owns: the main sidebar's content (`MainSidebar`), ported from today's app's rail: the global rows (Tasks, Marketplace, then any plugin's `sidebarItems`), the Projects tree with each project's sessions nested under it, and v2's Settings row in the footer; and the workbench header's compact tabs (`CompactSwitcher`). The shell draws the rail's frame around it (`src/shell/view/sidebar.tsx`: the `rail-sidebar` nav, its header strip with Hide/Pin Sidebar, the resize grip).
+Owns: the main sidebar's content (`MainSidebar`), ported from today's app's rail: the global rows (Tasks, Marketplace, then any plugin's `sidebarItems`), the Projects tree with each project's sessions nested under it, v2's Settings row in the footer with today's account card below it (`AccountCard`); and the workbench header's compact tabs (`CompactSwitcher`). The shell draws the rail's frame around it (`src/shell/view/sidebar.tsx`: the `rail-sidebar` nav, its header strip with Hide/Pin Sidebar, the resize grip).
 
 ## Concepts
 
@@ -12,6 +12,7 @@ Owns: the main sidebar's content (`MainSidebar`), ported from today's app's rail
 - **Age**: `createdAt` as a compact age ("<1m", "2h", "3d"), refreshed whenever the list changes and when the window regains focus.
 - **Engagement** (`hover-engagement.ts`): a row's archive button and a project header's actions mount only while the pointer or keyboard is on them, so the accessibility tree holds one "New Session" button and one archive button at a time.
 - **Compact tabs** (`CompactSwitcher`, `switcher-items.ts`): today's strip in the workbench header while the sidebar is unpinned. One tab per alive workbench content in insertion order (sessions, drafts, terminals, plugin panes; files are panel tabs), titled by its pane kind, with the project's outline avatar (or the ring spinner while working, a corner dot when it needs you), a hover card (title, project · workspace, status), a close button and middle-click close. A click shows that content at once; the active tab scrolls into view. Holding ⌘ for 500 ms shows each tab's `claxedo.surface.N` keybind when such a command is registered.
+- **Account card** (`account-card.tsx`): today's card and menu over `useAuth()`. Signed in, it shows the avatar and name; while signing in, a spinner and "Signing in…"; otherwise "Sign in" when the server issues sessions (`capabilities.signedIn`) and the browser can sign in, else today's local "Not signed in" with the monitor mark. The menu holds Usage (Settings → Usage), Settings, Help, then Cancel sign in, Sign in or Log out; a failed sign-in or sign-out toasts. Today's organization switch is not ported: the adapter has no route for the user's organizations.
 - **Row actions**: hover archive (no confirm; archiving the open session moves to its next sibling, else to the project's draft), and a context menu (right-click or double-click) with Rename, Archive and Delete. Their outcome reaches the row through the session list store's events.
 
 ## Flows

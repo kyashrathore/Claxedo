@@ -5,6 +5,7 @@ import { settingsPath } from "@/shell"
 import { Icon } from "@/ui"
 import { dictionary } from "../i18n"
 import "../rail.css"
+import { AccountCard } from "./account-card"
 import { GlobalNavigation } from "./global-navigation"
 import { ProjectTree } from "./project-tree"
 
@@ -24,6 +25,11 @@ export function MainSidebar(): JSX.Element {
           <Icon name="settings" />
           <span>{t("rail.settings")}</span>
         </A>
+      </div>
+      <div class="px-2.5 py-2">
+        <div class="border-t border-border-weak-base/15 pt-2">
+          <AccountCard />
+        </div>
       </div>
     </>
   )
