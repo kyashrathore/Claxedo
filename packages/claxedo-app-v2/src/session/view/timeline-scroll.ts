@@ -103,6 +103,8 @@ function timelineScrollProps(parts: ScrollParts): TimelineScrollProps {
   }
 }
 
+export type TimelineScroll = ReturnType<typeof createTimelineScroll>
+
 export function createTimelineScroll(input: { readonly view: () => SessionView; readonly active: () => boolean; readonly working: () => boolean }) {
   let scroller: HTMLDivElement | undefined
   const handles: ScrollHandles = { scrollToEnd: () => {}, scrollToMessage: () => false, anchor: { capture: () => {}, restore: () => {} } }
@@ -124,5 +126,13 @@ export function createTimelineScroll(input: { readonly view: () => SessionView; 
   }
   const setScroller = (el: HTMLDivElement | undefined) => (scroller = el)
   const parts = { scroll, auto, gesture, paging, schedule, handles, selected, select, resume, scroller: () => scroller, setScroller }
-  return { props: timelineScrollProps(parts), selected, resume }
+  return {
+    props: timelineScrollProps(parts),
+    selected,
+    resume,
+    scroller: () => scroller,
+    userScrolled: auto.userScrolled,
+    scrollToEnd: () => handles.scrollToEnd(),
+    schedule,
+  }
 }

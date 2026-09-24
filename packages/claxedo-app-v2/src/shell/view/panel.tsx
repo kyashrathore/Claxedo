@@ -66,7 +66,6 @@ export function Panel(props: PanelProps): JSX.Element {
   }
   return (
     <Show when={layout.panelShown()}>
-      <ResizeHandle label={t("shell.panelResize")} edge="left" width={width} min={PANEL_MIN_WIDTH} max={PANEL_MAX_WIDTH} onResize={(next) => layout.setPanelWidth(props.scope, next)} />
       <aside
         class="shell-panel"
         aria-label={t("shell.panel")}
@@ -75,6 +74,7 @@ export function Panel(props: PanelProps): JSX.Element {
         data-workspace-panel-session-id={sessionId()}
         style={{ width: `${width()}px` }}
       >
+        <ResizeHandle label={t("shell.panelResize")} edge="left" width={width} min={PANEL_MIN_WIDTH} max={PANEL_MAX_WIDTH} onResize={(next) => layout.setPanelWidth(props.scope, next)} />
         <PanelContent tabs={props.tabs} scope={props.scope} />
       </aside>
     </Show>

@@ -92,62 +92,64 @@ export function harnessIcon(harness: HarnessInfo) {
   return isIconName(harness.id) ? <Icon name={harness.id} size="small" /> : undefined
 }
 
-export function buildPickers(input: {
+type PickerText = (key: "composer.picker.agent" | "composer.picker.model" | "composer.picker.effort" | "composer.picker.permissionMode" | "composer.picker.unavailable") => string
+
+type PickerInput = {
   harnesses: readonly HarnessInfo[]
   harness: HarnessInfo | undefined
   locked: boolean
   selection: Selection
-  t: (key: "composer.picker.agent" | "composer.picker.model" | "composer.picker.effort" | "composer.picker.permissionMode" | "composer.picker.unavailable") => string
+  t: PickerText
   onSelect: (patch: Selection) => void
-}): Picker[] {
+}
+
+function agentPicker(input: PickerInput, harness: HarnessInfo): Picker {
+  return {
+    id: "agent",
+    title: input.t("composer.picker.agent"),
+    locked: input.locked,
+    current: harness.id,
+    options: input.harnesses.map((entry) => ({
+      id: entry.id,
+      label: entry.name,
+      icon: harnessIcon(entry),
+      disabled: !entry.available,
+      badge: entry.available ? undefined : input.t("composer.picker.unavailable"),
+    })),
+    onSelect: (id) => input.onSelect({ harness: id, model: undefined, effort: undefined, permissionMode: undefined }),
+  }
+}
+
+function modelPicker(input: PickerInput, harness: HarnessInfo): Picker {
+  return {
+    id: "model",
+    title: input.t("composer.picker.model"),
+    current: input.selection.model ? modelChoiceId(input.selection.model) : undefined,
+    options: harness.models.map((choice) => ({
+      id: modelChoiceId(choice),
+      label: choice.variant ? `${choice.modelId} (${choice.variant})` : choice.modelId,
+      icon: <ProviderIcon id={choice.providerId} class="shrink-0" />,
+    })),
+    onSelect: (id) => input.onSelect({ model: harness.models.find((choice) => modelChoiceId(choice) === id) }),
+  }
+}
+
+function listPicker(input: PickerInput, id: "effort" | "permissionMode", values: readonly string[]): Picker[] {
+  if (values.length === 0) return []
+  const title = input.t(id === "effort" ? "composer.picker.effort" : "composer.picker.permissionMode")
+  const options = values.map((value) => ({ id: value, label: value }))
+  return [{ id, title, current: input.selection[id], options, onSelect: (value) => input.onSelect({ [id]: value }) }]
+}
+
+export function buildPickers(input: PickerInput): Picker[] {
   const harness = input.harness
-  const models = harness?.models ?? []
-  const pickers: Picker[] = [
-    {
-      id: "agent",
-      title: input.t("composer.picker.agent"),
-      locked: input.locked,
-      current: harness?.id,
-      options: input.harnesses.map((entry) => ({
-        id: entry.id,
-        label: entry.name,
-        icon: harnessIcon(entry),
-        disabled: !entry.available,
-        badge: entry.available ? undefined : input.t("composer.picker.unavailable"),
-      })),
-      onSelect: (id) => input.onSelect({ harness: id, model: undefined, effort: undefined, permissionMode: undefined }),
-    },
-    {
-      id: "model",
-      title: input.t("composer.picker.model"),
-      current: input.selection.model ? modelChoiceId(input.selection.model) : undefined,
-      options: models.map((choice) => ({
-        id: modelChoiceId(choice),
-        label: choice.variant ? `${choice.modelId} (${choice.variant})` : choice.modelId,
-        icon: <ProviderIcon id={choice.providerId} class="shrink-0" />,
-      })),
-      onSelect: (id) => input.onSelect({ model: models.find((choice) => modelChoiceId(choice) === id) }),
-    },
+  if (!harness) return []
+  return [
+    agentPicker(input, harness),
+    ...(harness.models.length > 0 ? [modelPicker(input, harness)] : []),
+    ...listPicker(input, "effort", harness.efforts),
+    ...listPicker(input, "permissionMode", harness.permissionModes),
   ]
-  if (harness && harness.efforts.length > 0) {
-    pickers.push({
-      id: "effort",
-      title: input.t("composer.picker.effort"),
-      current: input.selection.effort,
-      options: harness.efforts.map((effort) => ({ id: effort, label: effort })),
-      onSelect: (effort) => input.onSelect({ effort }),
-    })
-  }
-  if (harness && harness.permissionModes.length > 0) {
-    pickers.push({
-      id: "permissionMode",
-      title: input.t("composer.picker.permissionMode"),
-      current: input.selection.permissionMode,
-      options: harness.permissionModes.map((mode) => ({ id: mode, label: mode })),
-      onSelect: (permissionMode) => input.onSelect({ permissionMode }),
-    })
-  }
-  return pickers
 }
 
 export function Pickers(props: { pickers: Picker[]; phoneTitle: string }) {

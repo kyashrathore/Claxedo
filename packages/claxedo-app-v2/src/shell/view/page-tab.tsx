@@ -15,10 +15,12 @@ export function PageHeader(props: { readonly page: PageEntry }): JSX.Element {
   const t = useTranslator(dictionary)
   const routing = useShellRoute()
   return (
-    <div class="shell-page-header" role="tablist" aria-label={t("shell.page")} data-testid="page-tab">
-      <div role="tab" aria-selected="true" class="shell-page-tab">
-        <RegistryIcon name={props.page.icon} />
-        <span class="shell-page-title">{props.page.title()}</span>
+    <div class="shell-page-header" data-testid="page-tab">
+      <div class="shell-page-tabs" role="tablist" aria-label={t("shell.page")}>
+        <div role="tab" aria-selected="true" class="shell-page-tab">
+          <RegistryIcon name={props.page.icon} />
+          <span class="shell-page-title">{props.page.title()}</span>
+        </div>
       </div>
       <IconButton icon="close" variant="ghost" size="small" aria-label={t("shell.closePage")} data-testid="page-close" onClick={() => routing.navigate(homePath)} />
     </div>

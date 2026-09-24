@@ -12,13 +12,13 @@ import { createAttachmentReader, type DraggingType } from "./attachments/reader"
 import { createComposerController, createComposerRefs } from "./controller"
 import { createComposerSend } from "./send"
 import { createSuggestions, type SlashItem, type SuggestionQuery } from "./suggestions"
-import { pickHarness, selectionChanged, selectionFor } from "./selection"
+import { pickHarness, selectionChanged, selectionFor, sessionHarness } from "./selection"
 
 export type ComposerProps = {
   readonly composerKey: ComposerKey
   readonly placementId?: PlacementId
   readonly view?: SessionView
-  readonly lockedHarness?: string
+  readonly sessionHarness?: string
   readonly attachmentWorkspace: boolean
   readonly readOnly?: boolean
   readonly createSession?: () => Promise<SessionView>
@@ -39,7 +39,10 @@ export function createComposer(props: ComposerProps) {
   const refs = createComposerRefs()
   const harnesses = createMemo(() => server.capabilities()?.harnesses ?? [])
   const selection = () => store.selection(key())
-  const harness = createMemo(() => pickHarness(harnesses(), props.lockedHarness, selection().harness))
+  const harness = createMemo(() =>
+    props.view ? sessionHarness(harnesses(), props.sessionHarness) : pickHarness(harnesses(), selection().harness),
+  )
+  const sendSelection = () => (harness() ? selection() : {})
 
   createEffect(() => {
     const next = selectionFor(harness(), selection())
@@ -67,6 +70,7 @@ export function createComposer(props: ComposerProps) {
     key,
     store,
     mode: () => controller.state.mode,
+    selection: sendSelection,
     goalMode: () => harness()?.goalMode,
     view: () => props.view,
     createSession: props.createSession,

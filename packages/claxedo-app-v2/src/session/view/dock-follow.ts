@@ -1,4 +1,8 @@
-export function createPromptDockResizeHandler(input: {
+import { createSignal, onCleanup } from "solid-js"
+import { createResizeObserver } from "@solid-primitives/resize-observer"
+import type { TimelineScroll } from "./timeline-scroll"
+
+function createDockResizeHandler(input: {
   scroller: () => HTMLDivElement | undefined
   userScrolled: () => boolean
   scrollToEnd: () => void
@@ -40,4 +44,17 @@ export function createPromptDockResizeHandler(input: {
       frame = undefined
     },
   }
+}
+
+export function createDockFollow(scroll: TimelineScroll) {
+  const [dock, setDock] = createSignal<HTMLElement>()
+  const handler = createDockResizeHandler({
+    scroller: scroll.scroller,
+    userScrolled: scroll.userScrolled,
+    scrollToEnd: scroll.scrollToEnd,
+    scheduleScrollState: scroll.schedule,
+  })
+  createResizeObserver(dock, ({ height }) => handler.resize(height))
+  onCleanup(handler.dispose)
+  return setDock
 }

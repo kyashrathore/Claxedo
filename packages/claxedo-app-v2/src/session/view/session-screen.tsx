@@ -13,6 +13,9 @@ import { SessionDocks } from "./session-docks"
 import { SessionTimeline } from "./session-timeline"
 import { useSessionScreenText, type SessionScreenText } from "./text"
 import { createTimelineHost } from "./timeline-host"
+import { createTimelineScroll } from "./timeline-scroll"
+import { createDockFollow } from "./dock-follow"
+import { turnActive } from "./timeline"
 import "./session-screen.css"
 
 function Loading(props: { readonly t: SessionScreenText }) {
@@ -55,12 +58,18 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
     if (parent) routing.navigate(sessionPath({ placementId: props.view.ref.placementId, sessionId: parent }))
   }
   const queueEdit = createQueueEdit(props.view)
+  const working = () => {
+    const status = props.view.status()
+    return status.kind !== "unknown" && turnActive(status)
+  }
+  const scroll = createTimelineScroll({ view: () => props.view, active: () => props.active, working })
+  const setDock = createDockFollow(scroll)
   return (
     <div data-slot="session-screen-body">
       <div data-slot="session-screen-timeline">
-        <SessionTimeline view={props.view} host={host} active={props.active} onNavigateParent={toParent} />
+        <SessionTimeline view={props.view} host={host} active={props.active} scroll={scroll} onNavigateParent={toParent} />
       </div>
-      <div data-slot="session-screen-dock">
+      <div ref={setDock} data-slot="session-screen-dock">
         <SessionDocks view={props.view} />
         <Show when={!parentId()} fallback={<ChildNotice t={t} onBack={toParent} />}>
           <Show when={props.view.requests().length === 0}>
@@ -68,7 +77,7 @@ function SessionBody(props: { readonly view: SessionView; readonly paneId: strin
               composerKey={sessionComposerKey(props.view.ref)}
               placementId={props.view.ref.placementId}
               view={props.view}
-              lockedHarness={props.view.row()?.harness}
+              sessionHarness={props.view.row()?.harness}
               attachmentWorkspace={true}
               afterAccepted={queueEdit.accepted}
             />
