@@ -5,7 +5,6 @@ export type EgressAttempt = { method: string; target: string }
 
 export const REFUSED_BACKGROUND_TARGETS: Record<string, string> = {
   "models.opencode.ai:443": "the embedded OpenCode engine refreshes its model snapshot at start and every 5 minutes; its bundled snapshot answers",
-  "api2.cursor.sh:443": "the app's machine-logins read checks Cursor's login with Cursor's API; the stack holds no Cursor login",
   "chatgpt.com:443": "Codex 0.156 app-server start; the stack holds no ChatGPT login for it to carry",
   "github.com:443": "Codex 0.156 app-server start",
   "api.github.com:443": "Codex 0.156 app-server start",
