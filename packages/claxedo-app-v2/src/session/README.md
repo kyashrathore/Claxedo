@@ -20,6 +20,7 @@ Order is flat and is the server's `human_turn_desc`: `lastHumanTurnAt` descendin
 | Session rows, tombstones, pending entries, the fetch window and status per session | `list/` (`model.ts`, `rows.ts`, `statuses.ts`, `transition.ts`, `visible-rows.ts`, `reads.ts` for the first read, `loadMore` and re-reads, `store.ts`) |
 | Agent requests (permissions and questions) and their reply machine | `requests/` |
 | One session's transcript, todos, diff, goal, older pages, the optimistic user message and the queue | `transcript/` (`context.ts` holds one session's state; `events.ts`, `snapshot.ts`, `older.ts`, `send.ts`, `queue.ts` and `goal.ts` change it; `store.ts` composes the view) |
+| The subagents a session delegated to: read on open and on a stream gap, then `subagentUpdated` events, merged by `subagentKey` with a revision per field (a terminal status never reverts; the child session and provider are set once; tool-call edges are only added) | `transcript/subagents.ts`, `transcript/subagent-merge.ts` |
 | The LRU of open sessions, the one stream dispatch and the provider | `store/` |
 
 Fetched data never enters these stores and pushed data never enters the query cache. Deltas are coalesced per animation frame (`transcript/deltas.ts`) and appended in place on the part's field; a message or part upsert replaces only that message's parts array or the messages array, so unchanged messages and part arrays keep their identity for the timeline's row memos.

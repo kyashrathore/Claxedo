@@ -35,6 +35,7 @@ export function applyTranscriptEvent(context: TranscriptContext, event: Transcri
 export function applyServerEvent(context: TranscriptContext, event: ServerEvent): void {
   if (event.type === "partDelta") return context.deltas.add(event.messageId, event.partId, event.field, event.delta)
   if (event.type === "statusChanged") return void context.queue.reread()
+  if (event.type === "subagentUpdated") return context.subagents.apply(event.subagent)
   if (!isTranscriptEvent(event)) return
   if (isReading(context.phase.state())) return context.phase.send({ type: "held", event })
   applyTranscriptEvent(context, event)
