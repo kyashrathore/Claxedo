@@ -68,7 +68,7 @@ import type {
   SessionPage,
   SessionRef,
   SessionRow,
-  SessionSnapshot,
+  SessionReads,
   SessionStatusRead,
   Subagent,
   TranscriptPage,
@@ -77,7 +77,7 @@ import type { UsageRequest, UsageSummary } from "./usage-types"
 
 export type SessionsApi = {
   readonly list: (input: SessionListInput) => Promise<SessionPage>
-  readonly snapshot: (ref: SessionRef) => Promise<SessionSnapshot>
+  readonly read: (ref: SessionRef) => SessionReads
   readonly older: (ref: SessionRef, cursor: string) => Promise<TranscriptPage>
   readonly latestTurn: (ref: SessionRef) => Promise<TranscriptPage>
   readonly turn: (ref: SessionRef, turnId: string) => Promise<TranscriptPage>

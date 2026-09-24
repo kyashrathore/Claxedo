@@ -7,7 +7,7 @@ import { controlGoal, startGoal } from "./session-goal"
 import { createSessionQueue } from "./session-queue"
 import { readLatestTurn } from "./latest-turn"
 import { readTurn } from "./turn"
-import { listSessions, readOlder, readSnapshot } from "./session-reads"
+import { listSessions, readOlder, readSession } from "./session-reads"
 import { createStatusesRead } from "./session-statuses"
 import { stopTurn } from "./session-stop"
 import type { StatusOwner } from "./status"
@@ -73,7 +73,7 @@ export function createSessionsApi(transport: Transport, workspaces: Workspaces, 
   const newMessageId = createMessageIds()
   return {
     list: (options) => listSessions(context, options),
-    snapshot: (ref) => readSnapshot(context, ref),
+    read: (ref) => readSession(context, ref),
     older: (ref, cursor) => readOlder(context, ref, cursor),
     latestTurn: (ref) => readLatestTurn(context, ref),
     turn: (ref, turnId) => readTurn(context, ref, turnId),

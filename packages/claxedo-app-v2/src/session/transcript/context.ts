@@ -21,6 +21,7 @@ import {
 } from "./model"
 import { createQueue, type QueueInternal } from "./queue"
 import { createSessionSubagents, type SessionSubagentsStore } from "./subagents"
+import { createSessionTodos, type SessionTodosStore } from "./todos"
 
 export type TranscriptDeps = {
   readonly list: SessionListInternal
@@ -40,6 +41,7 @@ export type TranscriptContext = {
   readonly deltas: DeltaBuffer
   readonly queue: QueueInternal
   readonly goal: SessionGoalStore
+  readonly todos: SessionTodosStore
   readonly subagents: SessionSubagentsStore
   readonly snapshotRead: { current: Promise<void> | undefined }
   readonly olderRead: { current: Promise<void> | undefined }
@@ -61,6 +63,7 @@ export function createTranscriptContext(server: Server, ref: SessionRef, deps: T
     deltas: createDeltaBuffer((messageId, partId, field, text) => appendDelta(setData, data, messageId, partId, field, text)),
     queue: createQueue(server, ref, (items) => dropQueuedStubs(setData, data, items)),
     goal: createSessionGoal(server, ref),
+    todos: createSessionTodos(),
     subagents: createSessionSubagents(server, ref),
     snapshotRead: { current: undefined },
     olderRead: { current: undefined },
