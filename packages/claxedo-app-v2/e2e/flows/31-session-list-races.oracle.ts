@@ -62,6 +62,19 @@ async function scrollVirtualRows(list: Element): Promise<RailRow[]> {
   return [...seen.values()]
 }
 
+async function listHeight(app: Page): Promise<number> {
+  return await app.getByRole("region", { name: "Sessions" }).getByRole("list").evaluate((list) => list.scrollHeight)
+}
+
+export async function loadEveryPage(app: Page) {
+  const more = app.getByRole("button", { name: "Load more" })
+  while (await more.isVisible()) {
+    const before = await listHeight(app)
+    await more.click()
+    await expect.poll(() => listHeight(app), { message: "a page of rows landed" }).toBeGreaterThan(before)
+  }
+}
+
 export async function serverItems(stack: Stack): Promise<ListItem[]> {
   const items: ListItem[] = []
   let cursor: string | undefined
@@ -115,7 +128,7 @@ export async function expectRailEqualsServer(app: Page, checked: Checked, bounds
 }
 
 export async function expectServerStatus(checked: Checked, sessionId: string, label: string) {
-  const status = async () => (await serverRail(checked)).find((row) => row.sessionId === sessionId)?.status
+  const status = async () => (await serverRail(checked, { through: sessionId })).find((row) => row.sessionId === sessionId)?.status
   await expect.poll(status, { message: `the server reports ${label}` }).toBe(STATUS_COMPARED ? label : "")
 }
 
