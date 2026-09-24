@@ -206,19 +206,27 @@ cd packages/claxedo-server && PI_EXECUTABLE=$PWD/../agent-sdk-runtime/.artifacts
 - **Flows run their own stacks** on lane port ranges: `CLAXEDO_E2E_PORT_RANGE=<a>-<b> bun run e2e -- --app=v1|v2`.
 - **Restart the daemon after any server change.** "/welcome while projects exist" was an old daemon that didn't send `available`, so the app's guard dropped every project.
 
-## Owner-reported bugs at the stop
+## Owner-reported bugs
 
-| The owner's report | Lane | State at writing |
+Updated 21:40, after the owner switched accounts and the lanes resumed.
+
+| The owner's report | Lane | State |
 | --- | --- | --- |
-| "subagents are going to top for no reason, instead of staying where its turn was" | transcript | `ambientSubagents()` (`timeline/message-timeline.tsx:1866`) claims chips that belong to a turn, so v2's attribution to the spawning tool part fails. Lane is diagnosing. |
-| "subagents are not rendering in workspace side panel as a tab, remove all logic that do it in same page" | transcript | Next: register the `subagent` panel view, open it with `usePanel().show`, delete the same-page paths; flow 09. |
-| "skipping/stop button clicking on question dock, make it stuck" | session-screen | Queued. |
-| "isnt todo dock when all todos are done suppose to go away? also coming in as expanded on reload" | session-screen | Queued. v1's `todoState` returns "open" when everything is done, so going away is the owner's call; record it in DECISIONS. The collapsed state is kept per session in sessionStorage, which survives a reload and nothing longer ("no long cache"). |
-| "terminal only appears in tab not in left sidebar" | shell | Queued. One derived rail row list, `session \| terminal`, from one owner (DECISIONS 19:00 #6). |
-| Account card back; Usage opens Settings → Usage; sign in/out there (20:00) | shell | Queued after terminals. |
-| The landing says "Nothing is open"; `/w/<ws>/session` opens nothing | session-screen | `draftSessionPaneKind` (`src/session/view/draft-pane.ts`) has no route. First on its list. |
-| Missing-folder projects sort first and aren't dimmed | projects-app | v1 order with Claxedo first; `available: false` when the folder is gone, then restart the daemon. |
-| The composer should float over a maximized panel (19:00 #5) | deferred | `usePanel().maximized()` exists; mount v1's `session-floating-dock` placement while it's true. |
+| The landing says "Nothing is open" | session-screen | **Fixed** (b729548e87). `/w/<ws>/session` opens the workspace's one draft, and the landing skips unavailable projects. Verified in a fresh browser on 4480. |
+| Missing projects sort first and aren't dimmed | projects-app | **Fixed** (96ce7ab098, cb45ca5ae6). v1's order is by project id. A project is available while a folder exists or a cloud sandbox is ready. The daemon was restarted and verified. |
+| "terminal only appears in tab not in left sidebar" | shell | **Fixed** (6c6df50e56). One `session \| terminal` row list in `rail/model.ts`. Flow 13 passes on v1 and v2. |
+| Account card; Usage opens Settings → Usage; sign in and out | shell | **Done** (b763917e60). The org switch waits for org routes in the adapter and something in v2 that consumes the choice. |
+| "no need of separate setting icon, keep usage icon beside accounts menu" (21:10) | shell | **Done** (142bb781ba). |
+| "skipping/stop button clicking on question dock, make it stuck" | session-screen | **Partly fixed** (4bf6411e77): a failed reply no longer freezes the dock. Still being checked: the dock must disappear when the harness closes the question after Stop. |
+| Todo dock goes away when done; stays collapsed across a reload | session-screen | **Fixed** (54fc8c7c27). This deviates from v1 and is recorded in DECISIONS. |
+| Contrast sliders show only for Codex | main | **Fixed** (94b91105c8). Verified headless. |
+| "subagents are going to top for no reason" | transcript | In progress. `ambientSubagents()` claims chips that belong to a turn. |
+| Subagents open as a workspace-panel tab; same-page logic removed | transcript | In progress, after the attribution fix. Flow 09. |
+| Closing a terminal from the rail leaves it in the compact tabs | shell | In progress. The fix is one owner for the terminal list. |
+| Clicking a file in the Files navigator freezes for seconds; toggling the navigator back freezes the app | tools (resumed for this only) | In progress. Traced with long-task timings, and fixed at the cause. |
+| The composer floats over a maximized panel | session-screen | Queued. |
+
+**Found by the flows with no owner running:** v2's `/login` shows only "Continue", with no email form (00-signed-smoke). The auth screens belong to the stopped settings-access lane.
 
 ## Owner questions still open
 
