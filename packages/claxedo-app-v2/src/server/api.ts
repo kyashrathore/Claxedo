@@ -3,7 +3,6 @@ import type { QueryClient } from "@tanstack/solid-query"
 import type { Account } from "./account-types"
 import type { CloudCreateInput, CloudWorkspace, CodeHostConnection, CodeHostRepository } from "./cloud-types"
 import type { ConnectionState, ServerEvent } from "./events"
-import type { EngineProjectsApi, EngineProjectsQueries } from "./engine-projects"
 import type { FolderQueries, FoldersApi } from "./folders"
 import type { HarnessConfigApi } from "./harness-config"
 import type {
@@ -44,6 +43,7 @@ import type {
   Placement,
   Project,
   ProjectSource,
+  ProjectUpdate,
   PromptDelivery,
   PromptInput,
   QueuedPrompt,
@@ -82,7 +82,7 @@ export type SessionsApi = {
 
 export type ProjectsApi = {
   readonly create: (input: { readonly name?: string; readonly source: ProjectSource }) => Promise<Project>
-  readonly update: (id: ProjectId, input: { readonly name?: string; readonly env?: Record<string, string> }) => Promise<Project>
+  readonly update: (id: ProjectId, input: ProjectUpdate) => Promise<Project>
   readonly remove: (id: ProjectId) => Promise<void>
 }
 
@@ -142,7 +142,6 @@ export type ServerQueries = {
   }
   readonly cloud: { readonly list: () => FetchQuery<readonly CloudWorkspace[]> }
   readonly folders: FolderQueries
-  readonly engineProjects: EngineProjectsQueries
   readonly harnesses: {
     readonly options: (placementId: PlacementId, harness: string) => FetchQuery<HarnessOptions>
     readonly logins: () => FetchQuery<readonly HarnessLogin[]>
@@ -174,7 +173,6 @@ export type Server = {
   readonly git: GitApi
   readonly cloud: CloudApi
   readonly folders: FoldersApi
-  readonly engineProjects: EngineProjectsApi
   readonly livePlugins: LivePluginsApi
   readonly harnessConfig: HarnessConfigApi
   readonly queries: ServerQueries

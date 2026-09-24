@@ -7,18 +7,10 @@ const SESSION_URL = /\/w\/[^/]+\/s\/[^/?]+$/
 
 type ProjectRecord = { id: string; name: string; directory?: string | null; repoUrl?: string | null }
 
-type CatalogProject = { id: string; name?: string }
-
 async function serverProjects(url: string): Promise<ProjectRecord[]> {
   const response = await fetch(new URL("/api/claxedo/projects", url))
   expect(response.status).toBe(200)
   return ((await response.json()) as { projects: ProjectRecord[] }).projects
-}
-
-async function catalogName(url: string, id: string): Promise<string | undefined> {
-  const response = await fetch(new URL("/project", url))
-  expect(response.status).toBe(200)
-  return ((await response.json()) as CatalogProject[]).find((project) => project.id === id)?.name
 }
 
 async function serverProject(url: string, id: string): Promise<{ status: number; project?: ProjectRecord }> {
@@ -58,7 +50,7 @@ async function cloneProject(app: Page, url: string, repoUrl: string) {
 }
 
 function projectLink(app: Page, name: string) {
-  return app.getByRole("region", { name: "Projects" }).getByRole("link", { name: new RegExp(`^${name} /`) })
+  return app.getByRole("region", { name: "Projects" }).getByRole("link", { name, exact: true })
 }
 
 async function editName(app: Page, from: string, to: string) {
@@ -95,7 +87,7 @@ test("02 projects, local: add a folder and a clone, edit, remove, each read back
   await projectLink(app, "Alpha").click()
   await expect(app).toHaveURL(`${stack.url}/settings/projects?project=${encodeURIComponent(alphaId)}`)
   await editName(app, "Alpha", "Alpha renamed")
-  expect(await catalogName(stack.url, alphaId)).toBe("Alpha renamed")
+  expect((await serverProject(stack.url, alphaId)).project?.name).toBe("Alpha renamed")
   await app.getByRole("button", { name: "Open", exact: true }).click()
   await expect(app.getByRole("region", { name: "New session" })).toBeVisible()
   expect(await api.sessions(alpha?.directory ?? "")).toHaveLength(1)
@@ -111,6 +103,5 @@ test("02 projects, local: add a folder and a clone, edit, remove, each read back
   await expect(app.getByRole("heading", { level: 2, name: "Alpha renamed" })).toBeVisible()
   await removeProject(app, "Alpha renamed")
   expect((await serverProject(stack.url, alphaId)).status).toBe(404)
-  expect(await catalogName(stack.url, alphaId)).toBeUndefined()
   expect(await fs.readFile(path.join(alphaFolder, "README.md"), "utf8")).toBe("alpha\n")
 })

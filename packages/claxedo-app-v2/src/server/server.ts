@@ -2,7 +2,6 @@ import { QueryClient } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
-import { createEngineProjectsApi } from "./engine-projects"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryable, toAppError } from "./errors"
@@ -87,7 +86,6 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),
     folders: createFoldersApi(transport),
-    engineProjects: createEngineProjectsApi(transport, queryClient),
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,

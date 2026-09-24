@@ -1,24 +1,31 @@
 import { A, useSearchParams } from "@solidjs/router"
 import { ProjectAvatar } from "@opencode-ai/ui/v2/project-avatar-v2"
-import { For, Match, Show, Switch, type JSX } from "solid-js"
-import { projectId, type EngineProject } from "@/server"
+import { createUniqueId, For, Match, Show, Switch, type JSX } from "solid-js"
+import { projectId, type Project } from "@/server"
 import { SettingsEmpty, SettingsIntro, SettingsList, SettingsNote } from "@/settings"
 import type { SettingsSection } from "@/shell"
 import { Icon } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { projectAvatarSource, projectDetail, projectLabel } from "../project-display"
+import { sourceLabel } from "../model"
 import { projectSettingsPath } from "../routes"
-import { useEngineProjects } from "../store"
+import { useProjects } from "../store"
 import { ProjectSettings } from "./project-settings"
 import "./projects.css"
 
-function ProjectLink(props: { readonly project: EngineProject }): JSX.Element {
+function ProjectLink(props: { readonly project: Project }): JSX.Element {
+  const detailId = createUniqueId()
   return (
-    <A href={projectSettingsPath(projectId(props.project.id))} class="projects-settings-row" data-project-id={props.project.id}>
-      <ProjectAvatar aria-hidden="true" fallback={projectLabel(props.project)} src={projectAvatarSource(props.project.icon)} variant="outline" />
+    <A
+      href={projectSettingsPath(props.project.id)}
+      class="projects-settings-row"
+      aria-label={props.project.name}
+      aria-describedby={detailId}
+      data-project-id={props.project.id}
+    >
+      <ProjectAvatar aria-hidden="true" fallback={props.project.name} src={props.project.icon?.override} variant="outline" />
       <span class="projects-settings-row-text">
-        <span class="projects-settings-row-name">{projectLabel(props.project)}</span>
-        <span class="projects-settings-row-detail">{projectDetail(props.project)}</span>
+        <span class="projects-settings-row-name">{props.project.name}</span>
+        <span id={detailId} class="projects-settings-row-detail">{sourceLabel(props.project.source)}</span>
       </span>
       <Icon name="chevron-right" />
     </A>
@@ -27,7 +34,7 @@ function ProjectLink(props: { readonly project: EngineProject }): JSX.Element {
 
 function ProjectsList(): JSX.Element {
   const t = useProjectsText()
-  const projects = useEngineProjects()
+  const projects = useProjects()
   const failed = () => {
     const state = projects()
     return state.kind === "failed" ? state.error : undefined

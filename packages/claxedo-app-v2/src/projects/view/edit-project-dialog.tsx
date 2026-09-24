@@ -2,12 +2,11 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { getFilename } from "@opencode-ai/ui/utils/path"
-import { createEffect, createMemo, Show } from "solid-js"
+import { createMemo, Show } from "solid-js"
 import { createStore } from "solid-js/store"
-import { projectId, toAppError, useServer, type EngineProject } from "@/server"
+import { toAppError, useServer, type Project } from "@/server"
 import { useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
-import { useProject } from "../store"
 import { EnvironmentEditor, environmentRecord, environmentRows, environmentRowsProblem } from "./environment-editor"
 import { ProjectColorField, ProjectIconField } from "./edit-project-icon"
 
@@ -21,50 +20,30 @@ function readImage(file: File, onLoad: (url: string) => void) {
   reader.readAsDataURL(file)
 }
 
-export type EditableProject = Pick<EngineProject, "id" | "worktree" | "name" | "icon" | "commands">
-
-function useEditProjectStore(project: EditableProject) {
-  const folderName = createMemo(() => getFilename(project.worktree))
+function useEditProjectStore(project: Project) {
+  const folderName = createMemo(() => getFilename(project.directory ?? ""))
   const defaultName = createMemo(() => project.name || folderName())
   const [store, setStore] = createStore({
     name: defaultName(),
     color: project.icon?.color || "pink",
     iconUrl: project.icon?.override || "",
     startup: project.commands?.start ?? "",
-    environment: environmentRows(undefined),
-    environmentLoaded: false,
+    environment: environmentRows(project.env),
     environmentError: "",
     saveError: "",
     saving: false,
     dragOver: false,
     iconHover: false,
   })
-  const record = useProject(() => projectId(project.id))
-  createEffect(() => {
-    const state = record()
-    if (state.kind !== "ready" || store.environmentLoaded) return
-    setStore({ environment: environmentRows(state.project.env), environmentLoaded: true })
-  })
   return { store, setStore, folderName, defaultName }
 }
 
-export function DialogEditProject(props: { project: EditableProject }) {
+export function DialogEditProject(props: { project: Project }) {
   const dialog = useDialog()
   const server = useServer()
   const t = useProjectsText()
   const { store, setStore, folderName, defaultName } = useEditProjectStore(props.project)
   const setIcon = (url: string) => setStore({ iconUrl: url, iconHover: false })
-
-  async function saveEnvironment() {
-    if (!store.environmentLoaded) return true
-    try {
-      await server.projects.update(projectId(props.project.id), { env: environmentRecord(store.environment) })
-      return true
-    } catch (cause) {
-      setStore({ saving: false, environmentError: toAppError(cause).message })
-      return false
-    }
-  }
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault()
@@ -72,17 +51,16 @@ export function DialogEditProject(props: { project: EditableProject }) {
     setStore({ saving: true, saveError: "" })
     const name = store.name.trim() === folderName() ? "" : store.name.trim()
     const start = store.startup.trim()
-    if (!(await saveEnvironment())) return
     try {
-      await server.engineProjects.update({
-        id: props.project.id,
-        worktree: props.project.worktree,
+      await server.projects.update(props.project.id, {
         name,
+        env: environmentRecord(store.environment),
         icon: { color: store.color, override: store.iconUrl },
         commands: { start },
       })
     } catch (cause) {
-      setStore({ saving: false, saveError: toAppError(cause).message })
+      const error = toAppError(cause)
+      setStore(error.code === "project_env_invalid" ? { saving: false, environmentError: error.message } : { saving: false, saveError: error.message })
       return
     }
     setStore("saving", false)
@@ -127,22 +105,20 @@ export function DialogEditProject(props: { project: EditableProject }) {
             spellcheck={false}
             class="max-h-40 w-full font-mono text-xs no-scrollbar"
           />
-          <Show when={store.environmentLoaded}>
-            <div class="flex flex-col gap-2">
-              <div class="flex flex-col gap-0.5">
-                <span class="text-13-medium text-text-strong">{t("projects.edit.environment")}</span>
-                <span class="text-12-regular text-text-weak">
-                  {t("projects.edit.environment.before")}
-                  <code>.env</code>
-                  {t("projects.edit.environment.after")}
-                </span>
-              </div>
-              <EnvironmentEditor rows={store.environment} onChange={(rows) => setStore("environment", rows)} />
-              <Show when={store.environmentError}>
-                <p class="text-12-regular text-icon-warning-base" role="alert">{store.environmentError}</p>
-              </Show>
+          <div class="flex flex-col gap-2">
+            <div class="flex flex-col gap-0.5">
+              <span class="text-13-medium text-text-strong">{t("projects.edit.environment")}</span>
+              <span class="text-12-regular text-text-weak">
+                {t("projects.edit.environment.before")}
+                <code>.env</code>
+                {t("projects.edit.environment.after")}
+              </span>
             </div>
-          </Show>
+            <EnvironmentEditor rows={store.environment} onChange={(rows) => setStore("environment", rows)} />
+            <Show when={store.environmentError}>
+              <p class="text-12-regular text-icon-warning-base" role="alert">{store.environmentError}</p>
+            </Show>
+          </div>
         </div>
         <Show when={store.saveError}>
           <p class="text-12-regular text-icon-warning-base" role="alert">{store.saveError}</p>
