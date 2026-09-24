@@ -146,3 +146,9 @@ A **Settings → Projects** section lists the projects and holds their managemen
 ## Owner, 00:55: no catch-all General
 - Language, Appearance, Sounds and Notifications are separate top-level settings sections, not one "General".
 - Everything else v1's General held goes to the section it belongs to.
+
+## Orchestrator, 02:10: Marketplace (EXT rows)
+- v1's Agent Plugins directory is ported into the shared page tab (0c36c01579).
+- Signed-only parts are not ported, since v2 has no signed plugin rail yet: the project picker, organization defaults, the enterprise install option, MCP Connect/Disconnect.
+- Unsigned v1 showed a Connect button and a "Connect now" second install step that did nothing. v2 drops both, and the built-in's empty "…" menu.
+- The domain is 2,384 lines against an 1,800 budget; the scope review is recorded in the handoff.
