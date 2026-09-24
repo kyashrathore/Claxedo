@@ -78,6 +78,7 @@ export function SessionList(): JSX.Element {
       </div>
       <div class="rail-search">
         <TextInput
+          class="rail-search-input"
           type="search"
           aria-label={t("rail.search")}
           placeholder={t("rail.search")}
