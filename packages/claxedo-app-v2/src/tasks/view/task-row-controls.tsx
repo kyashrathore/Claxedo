@@ -118,6 +118,24 @@ function ContinueItem(props: {
   )
 }
 
+function PresetSettingsItem(props: {
+  readonly task: StartTask
+  readonly offer: TaskStartOffer
+  readonly testIdPrefix: string
+  readonly label: string
+}): JSX.Element {
+  return (
+    <DropdownMenu.Item
+      class="tsk-menu-item"
+      data-testid={`${props.testIdPrefix}-preset-settings-${props.task.id}`}
+      onSelect={() => props.offer.onOpenPresetSettings()}
+    >
+      <Icon name="settings-gear" size="small" />
+      <span class="tsk-menu-label">{props.label}</span>
+    </DropdownMenu.Item>
+  )
+}
+
 function StartMenu(props: {
   readonly task: StartTask
   readonly offer: TaskStartOffer
@@ -150,11 +168,14 @@ function StartMenu(props: {
         fallback={
           <Show when={props.offer.presetsFailure === undefined}>
             <p class="tsk-menu-note">{none()}</p>
+            <PresetSettingsItem {...props} label={t("tasks.start.createPreset")} />
           </Show>
         }
       >
         <PresetItems {...props} />
         <LoadMore more={props.offer.morePresets} testId={`${props.testIdPrefix}-presets-load-more-${props.task.id}`} />
+        <DropdownMenu.Separator />
+        <PresetSettingsItem {...props} label={t("tasks.start.managePresets")} />
       </Show>
     </DropdownMenu.Content>
   )

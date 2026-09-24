@@ -85,6 +85,15 @@ function followEveryPage(list: PagedList<unknown>) {
   })
 }
 
+export function useTasksCapabilities() {
+  const api = useTasksApi()
+  return useQuery(() => ({
+    queryKey: api.keys.capabilities,
+    staleTime: 5 * 60_000,
+    queryFn: () => api.client.capabilities(),
+  }))
+}
+
 export function usePresetList(includeArchived: Accessor<boolean>): PagedList<Preset> {
   const api = useTasksApi()
   const list = pagedList<Preset>(() => ({

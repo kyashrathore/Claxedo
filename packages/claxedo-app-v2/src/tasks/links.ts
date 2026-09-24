@@ -2,7 +2,7 @@ import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { SessionReference } from "@claxedo/tasks"
 import { placementId, sessionId, useServer } from "@/server"
-import { localSessionPath, sessionPath, useShellRoute } from "@/shell"
+import { localSessionPath, sessionPath, settingsPath, useShellRoute } from "@/shell"
 
 export type TaskProject = { readonly id: string; readonly label: string }
 
@@ -38,4 +38,11 @@ export function useOpenTaskSession() {
 export function useOpenTasksPage() {
   const route = useShellRoute()
   return (taskId?: string) => route.navigate(taskId ? `/tasks/${encodeURIComponent(taskId)}` : "/tasks")
+}
+
+export const PRESETS_SECTION_ID = "tasks-presets"
+
+export function useOpenPresetSettings() {
+  const route = useShellRoute()
+  return () => route.navigate(settingsPath(PRESETS_SECTION_ID))
 }
