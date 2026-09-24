@@ -14,6 +14,7 @@ export { useMachines, useProject, useProjectCommands, useProjectPlacements, useP
 export { AddProjectSteps } from "./view/add-project-steps"
 export { placementKindLabel, PlacementList } from "./view/placement-list"
 export { DialogEditProject } from "./view/edit-project-dialog"
-export { NewSessionContextRow, type DraftTarget } from "./view/new-session-context-row"
+export { resolveDraftPlacement, type DraftTarget } from "./draft-context"
+export { NewSessionContextRow } from "./view/new-session-context-row"
 export { ProjectCreateForm, type ProjectCreateFormProps } from "./view/project-create-form"
 export { projectsSettingsSection } from "./view/projects-settings"
