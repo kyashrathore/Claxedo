@@ -106,24 +106,33 @@ test("15 settings: color scheme, a rebound shortcut and its reset, every section
   await expect(palette).toBeVisible()
 })
 
-test("15 settings: accounts per agent and this computer's logins", async ({ stack, app }) => {
-  test.skip(stack.app === "v1", "the v1 path of this baseline flow is not written yet")
-  await app.goto(`${stack.url}/settings/accounts`)
-  await expect(app.getByRole("heading", { level: 1, name: "Accounts" })).toBeVisible()
-  await expect(app.getByRole("radiogroup", { name: "Claude Code" }).getByRole("radio", { name: "This computer's login" })).toBeChecked()
-  const card = app.getByRole("group", { name: "Cursor" })
+test("15 settings: Models lists each agent's accounts and this computer's logins", async ({ stack, app, isMobile }) => {
+  const workspace = await stack.daemon.makeWorkspace("models", "Models")
+  if (stack.app === "v1") {
+    await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
+    await openSettings(app, isMobile)
+    await openSection(app, isMobile, "Models", "Models")
+  } else {
+    await test.step("v2 approved: a cold /settings/<section> link stays on that section (DECISIONS 3)", async () => {
+      await app.goto(`${stack.url}/settings/models`)
+      await expect(app.getByRole("heading", { level: 1, name: "Models" })).toBeVisible()
+    })
+  }
+  await expect(app.getByRole("radiogroup", { name: "Claude Code" }).getByRole("radio", { name: /^This computer's login/ })).toBeVisible()
+  const section = app.locator('[data-component^="models-section-"]').filter({ has: app.getByRole("heading", { level: 2, name: "Cursor", exact: true }) })
   const cursor = app.getByRole("radiogroup", { name: "Cursor" })
   const machineLogin = cursor.getByRole("radio", { name: /^This computer's login/ })
   await expect(machineLogin).toBeChecked()
 
   const addKey = async (label: string) => {
-    await card.getByRole("button", { name: "Add an API key" }).click()
-    const form = card.getByRole("form", { name: "Add an API key" })
-    await form.getByRole("textbox", { name: "Name" }).fill(label)
-    await form.getByLabel("API key").fill(`cursor-key-${label.replaceAll(" ", "-")}`)
-    await form.getByRole("button", { name: "Save key" }).click()
-    await expect(form).toHaveCount(0)
+    await section.getByRole("button", { name: "Add an account" }).click()
+    const dialog = app.getByRole("dialog").filter({ hasText: "Connect Cursor" })
+    await dialog.getByRole("textbox", { name: "Cursor API key" }).fill(`cursor-key-${label.replaceAll(" ", "-")}`)
+    await dialog.getByRole("textbox", { name: "Label" }).fill(label)
+    await dialog.getByRole("button", { name: "Continue" }).click()
+    await expect(dialog).toHaveCount(0)
   }
+  const row = (label: string) => cursor.locator('[data-component="agent-account"]').filter({ hasText: label })
   const first = cursor.getByRole("radio", { name: /^Flow fifteen A/ })
   const second = cursor.getByRole("radio", { name: /^Flow fifteen B/ })
   await addKey("Flow fifteen A")
@@ -140,8 +149,8 @@ test("15 settings: accounts per agent and this computer's logins", async ({ stac
   expect((await credentialNamed(stack.url, "Flow fifteen A"))?.is_active).toBe(false)
 
   for (const label of ["Flow fifteen B", "Flow fifteen A"]) {
-    await cursor.getByRole("button", { name: `Remove ${label}` }).click()
-    await cursor.getByRole("button", { name: "Remove", exact: true }).click()
+    await row(label).getByRole("button", { name: "Remove", exact: true }).click()
+    await row(label).getByRole("button", { name: "Remove", exact: true }).click()
     await expect(cursor.getByRole("radio", { name: new RegExp(`^${label}`) })).toHaveCount(0)
     await expect.poll(async () => credentialNamed(stack.url, label)).toBeUndefined()
   }

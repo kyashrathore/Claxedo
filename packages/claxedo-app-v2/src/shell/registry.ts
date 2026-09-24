@@ -1,6 +1,7 @@
 import { authRoutes } from "@/auth"
 import { onboardingRoute } from "@/onboarding"
 import { pluginsSettingsSection } from "@/plugins"
+import { modelsSettingsSection } from "@/accounts"
 import { projectsSettingsSection } from "@/projects"
 import { settingsSections } from "@/settings"
 import { draftSessionPaneKind, sessionPaneKind } from "@/session/view"
@@ -12,7 +13,7 @@ export const firstParty: FirstPartyEntries = {
   pages: [settingsPage],
   paneKinds: [sessionPaneKind, draftSessionPaneKind, terminalPaneKind, terminalCreatorPaneKind],
   panelViews: [],
-  settingsSections: [...settingsSections, projectsSettingsSection, pluginsSettingsSection],
+  settingsSections: [...settingsSections, modelsSettingsSection, projectsSettingsSection, pluginsSettingsSection],
   sidebarItems: [],
   overlays: [],
   commands: [],
