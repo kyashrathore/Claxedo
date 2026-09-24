@@ -18,6 +18,7 @@ import { createTimelineScroll } from "./timeline-scroll"
 import { createDockFollow } from "./dock-follow"
 import { SessionTimelineSkeleton } from "./session-timeline-skeleton"
 import { createSessionScreenKeydownHandler } from "./session-screen-keydown"
+import { SessionConnectionLine } from "./connection-line"
 import { recoverTurn } from "./turn-recovery-actions"
 import { floatingPeekStep, type FloatingPeekState } from "./floating-peek"
 import { PreviousMessagesRow, turnActive } from "./timeline"
@@ -150,6 +151,9 @@ function SessionBody(props: {
               <TodoDockSlot view={props.view} dock={todo} />
             </Show>
             <div class="relative z-10" style={{ "margin-top": `${-lift()}px` }}>
+              <Show when={!props.readOnly}>
+                <SessionConnectionLine />
+              </Show>
               <Show when={!parentId() && !props.readOnly} fallback={<ChildNotice t={t} readOnly={props.readOnly} onBack={toParent} />}>
                 <Composer
                   composerKey={sessionComposerKey(props.view.ref)}
