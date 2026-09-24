@@ -1,7 +1,8 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { PALETTE_ID, useCommands, type Commands } from "@/shell"
-import { showToast, TextInput, Button } from "@/ui"
+import { TextField } from "@opencode-ai/ui/text-field"
+import { showToast, Button } from "@/ui"
 import { useTranslator } from "@/i18n"
 import { dictionary } from "../i18n"
 import { clearsKeybinding, filterRows, groupRows, keybindingFromEvent, type KeybindingRow } from "../keybindings"
@@ -57,7 +58,7 @@ export function KeybindingsSection() {
   return (
     <div class="settings-body" data-component="settings-keybindings">
       <div class="settings-toolbar">
-        <TextInput aria-label={t("settings.keybindings.search")} placeholder={t("settings.keybindings.search")} value={query()} showClearButton={query() !== ""} onClearClick={() => setQuery("")} onInput={(event) => setQuery(event.currentTarget.value)} />
+        <TextField label={t("settings.keybindings.search")} hideLabel placeholder={t("settings.keybindings.search")} value={query()} onChange={setQuery} />
         <Button size="small" variant="secondary" onClick={resetAll} disabled={!commands.overridden()}>{t("settings.keybindings.reset")}</Button>
       </div>
       <For each={groups()}>

@@ -264,7 +264,7 @@ test("15 settings: a background session's finished turn plays the alert sound an
   await stack.acp.release("alert")
   await expect.poll(notes).toEqual(["Response ready: Background turn"])
   if (stack.app !== "v2") return
-  await test.step("v2 differs, ruling requested: the alert sound plays for any session not on screen, not only one open in another pane", async () => {
+  await test.step("v2 approved: the alert plays for any session not on screen (DECISIONS Orchestrator 03:20)", async () => {
     await expect.poll(plays).toBe(1)
   })
   await test.step("v2 approved: Sounds is its own section and a sound can be None (DECISIONS Owner, 00:55 and 00:50)", async () => {
