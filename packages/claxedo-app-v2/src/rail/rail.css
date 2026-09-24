@@ -150,3 +150,57 @@
 .rail-load-more {
   margin: 4px 8px 8px;
 }
+
+.rail-projects {
+  flex: none;
+  max-height: 40%;
+  padding: 0 8px;
+  overflow: auto;
+}
+
+.rail-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 8px;
+}
+
+.rail-row-menu {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--v2-icon-icon-muted, #8a8686);
+  background: transparent;
+  border-radius: 6px;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.rail-row-menu:hover,
+.rail-row-menu:focus-visible,
+.rail-row-menu[data-expanded],
+.rail-row-slot:hover .rail-row-menu,
+.rail-row-slot:focus-within .rail-row-menu {
+  opacity: 1;
+}
+
+.rail-row-menu:hover {
+  background: var(--v2-overlay-simple-overlay-hover, rgb(255 255 255 / 8%));
+}
+
+@media (pointer: coarse) {
+  .rail-row-menu {
+    width: 44px;
+    height: 44px;
+    opacity: 1;
+  }
+
+  .rail-row {
+    padding-right: 48px;
+  }
+}

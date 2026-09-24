@@ -2,6 +2,7 @@ export type { Edge, KeyMap, MovePaneTarget, Pane, PaneRect, Snapshot, SplitNode,
 export { NEW_PANE } from "./types"
 export type { OpenedPane, PaneContent, WorkbenchApi, WorkbenchRecord, WorkbenchStore } from "./store"
 export { createWorkbenchStore } from "./store"
+export type { PaneApi, PaneView } from "./pane-api"
 export { WorkbenchProvider, useWorkbench } from "./provider"
 export type { PaneContext } from "./pane-context"
 export { usePaneContext } from "./pane-context"

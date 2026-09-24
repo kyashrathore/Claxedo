@@ -4,6 +4,7 @@ import { isRecord } from "@/lib/record"
 import type { AnyPaneKind, Json, PaneKind, PaneRoute } from "@/shell"
 import { constructWorkbenchState } from "./construct"
 import { createDragController, type DragController } from "./drag/pointer-drag"
+import { createPaneApi, type PaneApi } from "./pane-api"
 import { reducers } from "./reducers/index"
 import { selectors } from "./selectors"
 import type { Edge, MovePaneTarget, Pane, PaneRect, Snapshot, SplitPath, WorkbenchState } from "./types"
@@ -24,7 +25,7 @@ export type WorkbenchApi = {
     open: (contentId: string, focus?: boolean) => void
     remove: (contentId: string) => void
   }
-  panes: { assign: (paneId: string, contentId: string | null) => void }
+  assignContent: (paneId: string, contentId: string | null) => void
   split: {
     split: (targetPaneId: string, edge: Edge, contentId: string) => void
     close: (paneId: string, opts?: { destroyContent: boolean }) => void
@@ -45,7 +46,8 @@ export type WorkbenchApi = {
   }
 }
 
-export type WorkbenchStore = WorkbenchApi & {
+export type WorkbenchStore = WorkbenchApi &
+  PaneApi & {
   readonly layout: Accessor<WorkbenchState>
   readonly content: (contentId: string) => OpenedPane | undefined
   readonly open: <State>(kind: PaneKind<State>, state: State, focus?: boolean) => string
@@ -142,7 +144,10 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
     return id
   }
 
+  const closeContent = (contentId: string) => apply((s) => closeContentReducer(s, contentId))
+
   return {
+    ...createPaneApi({ layout, content, open, apply, closeContent }),
     layout,
     content,
     open,
@@ -157,7 +162,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
       const opened = content(contentId)
       return opened?.kind.toRoute?.(opened.state as never)
     },
-    closeContent: (contentId) => apply((s) => closeContentReducer(s, contentId)),
+    closeContent,
     drag: createDragController(),
     contents: {
       add: (id) => apply((s) => reducers.contents.add(s, id)),
@@ -165,7 +170,7 @@ export function createWorkbenchStore(key: string, kinds: Accessor<readonly AnyPa
         apply((s) => (focus ? reducers.navigation.show(reducers.contents.add(s, id), id) : reducers.contents.add(s, id))),
       remove: (id) => apply((s) => reducers.contents.remove(s, id)),
     },
-    panes: { assign: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)) },
+    assignContent: (paneId, contentId) => apply((s) => reducers.panes.assign(s, paneId, contentId)),
     split: {
       split: (targetPaneId, edge, contentId) => apply((s) => reducers.split.split(s, targetPaneId, edge, contentId)),
       close: (paneId, opts) => apply((s) => reducers.split.close(s, paneId, opts ?? { destroyContent: false })),
