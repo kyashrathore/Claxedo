@@ -1,4 +1,4 @@
-const SEEK_ATTEMPTS = 6
+const SEEK_ATTEMPTS = 30
 
 function rowInView(root: HTMLElement, messageId: string): boolean {
   const row = root.querySelector(`[id="message-${CSS.escape(messageId)}"]`)
@@ -12,7 +12,8 @@ export function createMessageSeek(input: { readonly scroller: () => HTMLElement 
   let run = 0
   const step = (messageId: string, current: number, left: number) => {
     const root = input.scroller()
-    if (current !== run || left === 0 || !root || rowInView(root, messageId)) return
+    if (current !== run || left === 0 || !root) return
+    if (left < SEEK_ATTEMPTS && rowInView(root, messageId)) return
     input.scrollTo(messageId)
     requestAnimationFrame(() => requestAnimationFrame(() => step(messageId, current, left - 1)))
   }
