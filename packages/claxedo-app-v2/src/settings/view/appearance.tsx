@@ -2,6 +2,7 @@ import { Select } from "@/ui"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { useI18n, useTranslator, type Locale } from "@/i18n"
 import { dictionary } from "../i18n"
+import { ContrastRow } from "./contrast"
 import { SettingsGroup, SettingsList, SettingsRow } from "./section"
 
 const SCHEMES: readonly ColorScheme[] = ["system", "light", "dark"]
@@ -31,6 +32,8 @@ export function AppearanceSection() {
           <SettingsRow title={t("settings.appearance.theme")} description={t("settings.appearance.theme.description")}>
             <Select options={theme.ids()} current={theme.themeId()} value={(id) => id} label={(id) => theme.name(id)} onSelect={(id) => id && theme.setTheme(id)} />
           </SettingsRow>
+          <ContrastRow scheme="light" />
+          <ContrastRow scheme="dark" />
         </SettingsList>
       </SettingsGroup>
     </div>

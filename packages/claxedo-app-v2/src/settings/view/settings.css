@@ -223,3 +223,23 @@
     width: 100%;
   }
 }
+
+.settings-contrast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 220px;
+  max-width: 100%;
+}
+
+.settings-contrast input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--text-interactive-base, currentColor);
+}
+
+.settings-contrast-value {
+  min-width: 3ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
