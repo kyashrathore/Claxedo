@@ -80,7 +80,7 @@ export async function serverItems(stack: Stack): Promise<ListItem[]> {
   let cursor: string | undefined
   do {
     const url = new URL("/api/claxedo/session-list", stack.url)
-    url.searchParams.set("scope", "project")
+    url.searchParams.set("scope", "workspace")
     url.searchParams.set("sort", "human_turn_desc")
     url.searchParams.set("limit", String(PAGE_SIZE))
     if (cursor) url.searchParams.set("cursor", cursor)
@@ -208,8 +208,18 @@ export async function startHeldTurn(checked: Checked, sessionId: string, hold: s
   await checked.api.promptAsync(checked.directory, sessionId, `Run ${acpScriptToken(hold)}`)
 }
 
+async function createProject(stack: Stack, directory: string) {
+  const response = await fetch(new URL("/api/claxedo/projects", stack.url), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Races", source: { kind: "directory", directory } }),
+  })
+  expect(response.status, "the project was created").toBe(201)
+}
+
 export async function setup(stack: Stack, api: ClaxedoApi, app: Page, titles: readonly string[]) {
   const workspace: Workspace = await stack.daemon.makeWorkspace("races")
+  await createProject(stack, workspace.directory)
   const create = (title: string) => api.createSession(workspace.directory, { title, harness: SCRIPTED_ACP_HARNESS })
   const sessions = [await create(titles[0])]
   for (let start = 1; start < titles.length; start += 20) {
