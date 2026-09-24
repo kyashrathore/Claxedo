@@ -293,8 +293,15 @@ async function claudeModels(app: Page) {
 }
 
 async function openClaudeModelsTab(stack: Stack, app: Page, isMobile: boolean) {
-  await openSettings(stack, app, isMobile)
-  await openSection(stack, app, isMobile, MODELS)
+  if (stack.app === "v2") {
+    await test.step("v2 approved: a cold /settings/<section> link stays on that section (DECISIONS 3)", async () => {
+      await app.goto(`${stack.url}/settings/models`)
+      await expect(app.getByRole("heading", { level: 1, name: "Models" })).toBeVisible()
+    })
+  } else {
+    await openSettings(stack, app, isMobile)
+    await openSection(stack, app, isMobile, MODELS)
+  }
   const claude = app.locator('[data-component="models-section-claude"]')
   await claude.getByRole("tab", { name: "Models" }).click()
   return claude

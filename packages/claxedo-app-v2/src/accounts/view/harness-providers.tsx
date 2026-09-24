@@ -14,7 +14,7 @@ import { SearchField } from "./search-field"
 
 export function createHarnessProviders(harness: () => string) {
   const server = useServer()
-  const catalog = createProviderCatalog({ api: server.harnessConfig, harness })
+  const catalog = createProviderCatalog({ server, harness })
   const detailed = new Set<string>()
   createEffect(() => {
     const unsourced = catalog.connected().filter((provider) => provider.source === undefined && !detailed.has(provider.id))
