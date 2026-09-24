@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { MarketplacePage } from "@/marketplace"
 import type { PageEntry } from "@/shell"
 import { dictionary } from "../i18n"
 
@@ -40,5 +41,5 @@ export const marketplacePage: PageEntry = {
   icon: "marketplace",
   sidebar: "main",
   tab: true,
-  view: () => <PageTitle title={marketplaceTitle} />,
+  view: MarketplacePage,
 }

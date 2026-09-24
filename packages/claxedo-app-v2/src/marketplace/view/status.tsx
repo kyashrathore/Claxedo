@@ -1,14 +1,10 @@
-import type { PluginStatus } from "./view"
+import type { JSX } from "solid-js"
+import { useTranslator } from "@/i18n"
+import { dictionary } from "../i18n"
+import type { PluginStatus } from "../model"
 
-/**
- * The trailing status line a card and the detail pane agree on.
- *
- * A dot plus muted text, the same shape Settings › Connections uses for a
- * connection's health. A normal state stays muted on purpose: "installed" is
- * the expected outcome and must not compete with the plugin's name; only the
- * states that want the user's hand take a colour.
- */
-export function PluginStatusLine(props: { status: PluginStatus; wrap?: boolean }) {
+export function PluginStatusLine(props: { readonly status: PluginStatus; readonly wrap?: boolean }): JSX.Element {
+  const t = useTranslator(dictionary)
   return (
     <span
       data-component="agent-plugin-status"
@@ -35,7 +31,7 @@ export function PluginStatusLine(props: { status: PluginStatus; wrap?: boolean }
           "text-text-interactive-base": props.status.tone === "accent",
         }}
       >
-        {props.status.label}
+        {t(props.status.key, props.status.params)}
       </span>
     </span>
   )

@@ -16,6 +16,7 @@ export {
 } from "./controls/portal-slot"
 export { Dialog, type DialogProps } from "@opencode-ai/ui/dialog"
 export { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
+export { requestConfirm, type ConfirmOptions } from "./confirm"
 export { Field, type FieldProps, type FieldLabelProps } from "./field"
 export { ScrollThumb, type ScrollThumbProps } from "./scroll-thumb"
 export { type ScrollViewThumbVisibility } from "./scroll-view-thumb"

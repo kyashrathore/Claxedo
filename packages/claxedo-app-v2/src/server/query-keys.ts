@@ -16,6 +16,9 @@ export const queryKeys = {
   marketplace: (server: string, projectId: ProjectId | undefined) => ["server", server, "marketplace", projectId ?? ""] as const,
   marketplaceAll: (server: string) => ["server", server, "marketplace"] as const,
   marketplaceSources: (server: string) => ["server", server, "plugin-sources"] as const,
+  marketplaceSkill: (server: string, request: { readonly pluginInstanceId: string; readonly skill: string; readonly projectId?: string }) =>
+    ["server", server, "plugin-skill", request.pluginInstanceId, request.skill, request.projectId ?? ""] as const,
+  marketplaceMachine: (server: string) => ["server", server, "plugin-machine-installed"] as const,
   tasks: (server: string) => ["server", server, "tasks", "availability"] as const,
   documents: (server: string) => ["server", server, "documents", "availability"] as const,
   cloud: (server: string) => ["server", server, "cloud"] as const,
