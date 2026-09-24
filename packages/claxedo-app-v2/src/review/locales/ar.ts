@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "التغييرات",
+  "review.scope.staged": "التغييرات المُجهّزة",
+  "review.scope.branch": "تغييرات الفرع",
+  "review.empty": "لا توجد تغييرات",
+  "review.loading": "جارٍ تحميل التغييرات",
+  "review.change.added": "مُضاف",
+  "review.change.deleted": "محذوف",
+  "review.largeDiff.title": "Diff كبير جدا لعرضه",
+  "review.largeDiff.meta": "الحد: {{limit}} سطرًا متغيرًا. الحالي: {{current}} سطرًا متغيرًا.",
+  "review.largeDiff.renderAnyway": "اعرض على أي حال",
+  "review.style.unified": "موحد",
+  "review.style.split": "منقسم",
+  "review.commit.message": "الرسالة (⌘⏎ للإيداع)",
+  "review.commit": "إيداع",
+  "review.push": "دفع",
+  "review.publish": "نشر الفرع",
+  "review.upToDate": "محدّث",
+  "review.error.git_empty_message": "أدخل رسالة الإيداع.",
+  "review.error.git_nothing_staged": "لا يوجد شيء مُجهّز.",
+  "review.error.git_conflict": "حلّ الدمج الجاري أولًا.",
+  "review.error.git_push_rejected": "رُفض الدفع: {{message}}",
+  "review.error.git_timeout": "انتهت مهلة Git: {{message}}",
+}

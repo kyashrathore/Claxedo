@@ -1,62 +1,24 @@
 import { Select as Kobalte } from "@kobalte/core/select"
-import { Show, createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { createMemo, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { SelectChevron } from "./select-glyphs"
+import { createSelectHighlight, type SelectHighlight } from "./select-highlight"
+import { SelectItem, SelectSection } from "./select-items"
+import { groupSelectOptions, selectItemText, type SelectGroup } from "./select-options"
 import "./menu.css"
 import "./select.css"
 
-const selectItemText = (item: unknown) => (typeof item === "string" ? item : "")
-
-function groupOptions<T>(options: T[], groupBy?: (x: T) => string): { category: string; options: T[] }[] {
-  if (!groupBy) {
-    return [{ category: "", options }]
-  }
-  const map = new Map<string, T[]>()
-  for (const opt of options) {
-    const key = groupBy(opt)
-    const arr = map.get(key)
-    if (arr) arr.push(opt)
-    else map.set(key, [opt])
-  }
-  return [...map.entries()].map(([category, opts]) => ({ category, options: opts }))
-}
-
-const ChevronDown = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path
-      d="M11 9.5L8 6.5L5 9.5"
-      stroke="currentColor"
-      stroke-width="1"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-  </svg>
-)
-
-const CheckSmall = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <path
-      d="M3.53564 8.17857L6.39279 11.75L12.4642 4.25"
-      stroke="currentColor"
-      stroke-width="1"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-  </svg>
-)
-
 export type SelectProps<T> = Omit<
-  ComponentProps<typeof Kobalte<T, { category: string; options: T[] }>>,
+  ComponentProps<typeof Kobalte<T, SelectGroup<T>>>,
   "value" | "onSelect" | "children" | "options" | "itemComponent" | "sectionComponent" | "defaultValue" | "multiple"
 > & {
   placeholder?: string
   options: T[]
-
   current?: T
-  value?: (x: T) => string
-  label?: (x: T) => string
-  groupBy?: (x: T) => string
+  value?: (item: T) => string
+  label?: (item: T) => string
+  groupBy?: (item: T) => string
   onSelect?: (value: T | null) => void
-  onHighlight?: (value: T | undefined) => void | (() => void)
-
+  onHighlight?: SelectHighlight<T>
   appearance?: "base" | "large" | "inline"
   invalid?: boolean
   numeric?: boolean
@@ -90,43 +52,20 @@ export function Select<T>(props: SelectProps<T>) {
     "slide",
     "fitViewport",
   ])
-
   const inline = () => (local.appearance ?? "base") === "inline"
-
-  const state: { key?: string; cleanup?: void | (() => void) } = {}
-
-  const stop = () => {
-    state.cleanup?.()
-    state.cleanup = undefined
-    state.key = undefined
-  }
-
   const keyFor = (item: T) => (local.value ? local.value(item) : selectItemText(item))
   const labelFor = (item: T) => (local.label ? local.label(item) : selectItemText(item))
-
-  const move = (item: T | undefined) => {
-    if (!local.onHighlight) return
-    if (!item) {
-      stop()
-      return
-    }
-    const key = keyFor(item)
-    if (state.key === key) return
-    state.cleanup?.()
-    state.cleanup = local.onHighlight(item)
-    state.key = key
-  }
-
-  onCleanup(stop)
-
-  const grouped = createMemo(() => groupOptions(local.options, local.groupBy))
+  const itemLabel = (item: T) => (local.children ? local.children(item) : labelFor(item))
+  const highlight = createSelectHighlight(keyFor, () => local.onHighlight)
+  const grouped = createMemo(() => groupSelectOptions(local.options, local.groupBy))
 
   return (
-    <Kobalte<T, { category: string; options: T[] }>
+    <Kobalte<T, SelectGroup<T>>
       {...others}
       multiple={false}
       disabled={local.disabled}
       data-component="select-root"
+      classList={{ "ui-select-root": true }}
       placement={local.placement ?? (inline() ? "bottom-end" : "bottom-start")}
       gutter={local.gutter ?? 4}
       sameWidth={local.sameWidth ?? !inline()}
@@ -139,40 +78,16 @@ export function Select<T>(props: SelectProps<T>) {
       optionTextValue={labelFor}
       optionGroupChildren="options"
       placeholder={local.placeholder}
-      sectionComponent={(sectionProps) => (
-        <Kobalte.Section>
-          <Show when={sectionProps.section.rawValue.category}>
-            <div data-slot="menu-group-label">{sectionProps.section.rawValue.category}</div>
-          </Show>
-        </Kobalte.Section>
-      )}
-      itemComponent={(itemProps) => (
-        <Kobalte.Item
-          {...itemProps}
-          data-component="menu-item"
-          onPointerEnter={() => move(itemProps.item.rawValue)}
-          onPointerMove={() => move(itemProps.item.rawValue)}
-          onFocus={() => move(itemProps.item.rawValue)}
-        >
-          <Kobalte.ItemLabel data-slot="menu-item-content" as="span">
-            {local.children
-              ? local.children(itemProps.item.rawValue)
-              : labelFor(itemProps.item.rawValue)}
-          </Kobalte.ItemLabel>
-          <Kobalte.ItemIndicator data-slot="menu-item-indicator" forceMount>
-            <CheckSmall />
-          </Kobalte.ItemIndicator>
-        </Kobalte.Item>
-      )}
+      sectionComponent={(sectionProps) => <SelectSection section={sectionProps.section} />}
+      itemComponent={(itemProps) => <SelectItem item={itemProps.item} label={itemLabel} onMove={highlight.move} />}
       onChange={(next) => {
-
         local.onSelect?.(next ?? null)
-        stop()
+        highlight.stop()
       }}
       onOpenChange={(open) => {
         local.onOpenChange?.(open)
-        if (!open) stop()
-      }} classList={{ "ui-select-root": true }}
+        if (!open) highlight.stop()
+      }}
     >
       <Kobalte.Trigger
         as="div"
@@ -182,22 +97,18 @@ export function Select<T>(props: SelectProps<T>) {
         data-numeric={local.numeric ? "" : undefined}
         disabled={local.disabled}
         data-disabled={local.disabled ? "" : undefined}
-        classList={{ "ui-select": true,
-          ...local.classList,
-          [local.class ?? ""]: !!local.class,
-        }}
+        classList={{ "ui-select": true, ...local.classList, [local.class ?? ""]: !!local.class }}
       >
         <div data-slot="select-value">
           <Kobalte.Value<T> data-slot="select-value-text" class={local.valueClass} classList={{ "ui-select-value-text": true }}>
-            {(st) => {
-              const selected = st.selectedOption()
-              if (selected == null) return ""
-              return labelFor(selected)
+            {(state) => {
+              const selected = state.selectedOption()
+              return selected == null ? "" : labelFor(selected)
             }}
           </Kobalte.Value>
         </div>
         <span data-slot="select-chevron" class="ui-select-chevron" aria-hidden="true">
-          <ChevronDown />
+          <SelectChevron />
         </span>
       </Kobalte.Trigger>
       <Kobalte.Portal>

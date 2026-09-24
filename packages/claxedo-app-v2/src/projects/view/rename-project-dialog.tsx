@@ -1,0 +1,63 @@
+import { createSignal, Show, type Component } from "solid-js"
+import { toAppError, type Project } from "@/server"
+import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle, Field, TextInput, useDialog } from "@/ui"
+import { useProjectsText } from "../i18n"
+import { useProjectCommands } from "../store"
+
+export const RenameProjectDialog: Component<{ project: Project }> = (props) => {
+  const t = useProjectsText()
+  const dialog = useDialog()
+  const commands = useProjectCommands()
+  const [name, setName] = createSignal(props.project.name)
+  const [saving, setSaving] = createSignal(false)
+  const [failure, setFailure] = createSignal<string>()
+
+  const submit = async (event: SubmitEvent) => {
+    event.preventDefault()
+    const next = name().trim()
+    if (!next || saving()) return
+    setSaving(true)
+    setFailure(undefined)
+    try {
+      await commands.rename(props.project.id, next)
+      dialog.close()
+    } catch (cause) {
+      setFailure(toAppError(cause).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog>
+      <DialogHeader closeLabel={t("projects.close")}>
+        <DialogTitle>{t("projects.rename.title")}</DialogTitle>
+      </DialogHeader>
+      <form onSubmit={(event) => void submit(event)} data-testid="rename-project">
+        <DialogBody class="flex flex-col gap-3">
+          <Field>
+            <Field.Label>{t("projects.rename.name")}</Field.Label>
+            <Field.Control>
+              <TextInput value={name()} autofocus onInput={(event) => setName(event.currentTarget.value)} />
+            </Field.Control>
+          </Field>
+          <Show when={failure()}>
+            {(message) => (
+              <p class="projects-alert m-0" role="alert">
+                {message()}
+              </p>
+            )}
+          </Show>
+        </DialogBody>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => dialog.close()}>
+            {t("projects.cancel")}
+          </Button>
+          <Button type="submit" variant="contrast" disabled={saving() || !name().trim()}>
+            {saving() ? t("projects.saving") : t("projects.save")}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
+  )
+}

@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "Ændringer",
+  "review.scope.staged": "Klargjorte ændringer",
+  "review.scope.branch": "Grenændringer",
+  "review.empty": "Ingen ændringer",
+  "review.loading": "Indlæser ændringer",
+  "review.change.added": "Tilføjet",
+  "review.change.deleted": "Slettet",
+  "review.largeDiff.title": "Diff er for stor til at blive vist",
+  "review.largeDiff.meta": "Grænse: {{limit}} ændrede linjer. Nuværende: {{current}} ændrede linjer.",
+  "review.largeDiff.renderAnyway": "Vis alligevel",
+  "review.style.unified": "Samlet",
+  "review.style.split": "Opdelt",
+  "review.commit.message": "Besked (⌘⏎ for at committe)",
+  "review.commit": "Commit",
+  "review.push": "Push",
+  "review.publish": "Udgiv branch",
+  "review.upToDate": "Opdateret",
+  "review.error.git_empty_message": "Skriv en commit-besked.",
+  "review.error.git_nothing_staged": "Intet er klargjort.",
+  "review.error.git_conflict": "Løs først den igangværende fletning.",
+  "review.error.git_push_rejected": "Push afvist: {{message}}",
+  "review.error.git_timeout": "Git fik timeout: {{message}}",
+}

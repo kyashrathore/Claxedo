@@ -1,0 +1,26 @@
+import type { ReviewKey } from "../i18n"
+
+export const dict: Partial<Record<ReviewKey, string>> = {
+  "review.tab": "Cambios",
+  "review.scope.staged": "Cambios preparados",
+  "review.scope.branch": "Cambios de la rama",
+  "review.empty": "Sin cambios",
+  "review.loading": "Cargando cambios",
+  "review.change.added": "Añadido",
+  "review.change.deleted": "Eliminado",
+  "review.largeDiff.title": "Diff demasiado grande para renderizar",
+  "review.largeDiff.meta": "Límite: {{limit}} líneas modificadas. Actual: {{current}} líneas modificadas.",
+  "review.largeDiff.renderAnyway": "Renderizar de todos modos",
+  "review.style.unified": "Unificado",
+  "review.style.split": "Dividido",
+  "review.commit.message": "Mensaje (⌘⏎ para confirmar)",
+  "review.commit": "Confirmar",
+  "review.push": "Enviar",
+  "review.publish": "Publicar rama",
+  "review.upToDate": "Actualizado",
+  "review.error.git_empty_message": "Escribe un mensaje de commit.",
+  "review.error.git_nothing_staged": "No hay nada preparado.",
+  "review.error.git_conflict": "Resuelve primero la fusión en curso.",
+  "review.error.git_push_rejected": "Envío rechazado: {{message}}",
+  "review.error.git_timeout": "Git agotó el tiempo de espera: {{message}}",
+}

@@ -1,5 +1,5 @@
 import { type ComponentProps, splitProps } from "solid-js"
-import "./badge.css"
+import "./tag.css"
 
 export interface TagProps extends ComponentProps<"span"> {
   variant?: "neutral" | "accent"
