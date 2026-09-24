@@ -87,7 +87,7 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     git: createGitApi(transport, workspaces, queryClient),
     cloud: createCloudApi(transport, workspaces, project),
     folders: createFoldersApi(transport),
-    engineProjects: createEngineProjectsApi(transport),
+    engineProjects: createEngineProjectsApi(transport, queryClient),
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,
