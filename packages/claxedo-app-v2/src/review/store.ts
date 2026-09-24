@@ -58,7 +58,8 @@ export function ReviewProvider(props: ParentProps): JSX.Element {
     style,
     setStyle: (next) => setStyle(next),
     excluded: (path) => current().excluded[path] === true,
-    setExcluded: (path, excluded) => write((previous) => ({ ...previous, excluded: { ...previous.excluded, [path]: excluded } })),
+    setExcluded: (path, excluded) =>
+      write((previous) => ({ ...previous, excluded: { ...previous.excluded, [path]: excluded } })),
     forced: (file) => current().forced.includes(file),
     force: (file) => write((previous) => ({ ...previous, forced: [...previous.forced, file] })),
     message: () => current().message,

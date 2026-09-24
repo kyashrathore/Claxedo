@@ -3,6 +3,7 @@ import { filePaneKind, filesPanelTab } from "@/files"
 import { onboardingRoute } from "@/onboarding"
 import { addProjectPage, projectPage } from "@/projects"
 import { changesPanelTab } from "@/review"
+import { settingsSections } from "@/settings"
 import { draftSessionPaneKind, sessionPaneKind } from "@/session/view"
 import { terminalPaneKind } from "@/terminal"
 import type { FirstPartyEntries } from "./registries"
@@ -12,7 +13,7 @@ export const firstParty: FirstPartyEntries = {
   pages: [settingsPage, projectPage, addProjectPage],
   paneKinds: [sessionPaneKind, draftSessionPaneKind, filePaneKind, terminalPaneKind],
   panelTabs: [filesPanelTab, changesPanelTab, browserPanelTab],
-  settingsSections: [],
+  settingsSections: [...settingsSections],
   sidebarItems: [],
   overlays: [],
   commands: [],

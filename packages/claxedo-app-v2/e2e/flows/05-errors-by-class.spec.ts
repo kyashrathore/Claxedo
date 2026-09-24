@@ -20,6 +20,7 @@ for (const failure of MODEL_FAILURES) {
     await prompt.press("Enter")
 
     await expect(app.getByText(failure.copy).first()).toBeVisible()
+    expect(stack.scripted.requests.some((request) => JSON.stringify(request).includes(failure.marker))).toBe(true)
     await expect(app.getByRole("button", { name: "Send", exact: true })).toBeVisible()
     await expect
       .poll(async () => {

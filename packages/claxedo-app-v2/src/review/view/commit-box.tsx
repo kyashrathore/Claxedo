@@ -51,14 +51,20 @@ export function CommitBox(props: { readonly placementId: PlacementId }): JSX.Ele
   const review = useReview()
   const status = useQuery(() => api.status(props.placementId))
   const changes = createMemo(() => changedFiles(status.data))
-  const selected = () => changes().filter((change) => !review.excluded(change.path)).map((change) => change.path)
+  const selected = () =>
+    changes()
+      .filter((change) => !review.excluded(change.path))
+      .map((change) => change.path)
   const commit = createFlow<"staging" | "committing", { readonly hash: string }>()
   const push = createFlow<"pushing", { readonly remote: string; readonly branch: string }>()
-  const canCommit = () => review.message().trim().length > 0 && selected().length > 0 && commit.state().kind !== "running"
+  const canCommit = () =>
+    review.message().trim().length > 0 && selected().length > 0 && commit.state().kind !== "running"
   const runCommit = () =>
     runFlow(commit, "staging", async (step) => {
       const staged = new Set((status.data?.staged ?? []).map((change) => change.path))
-      const unstage = changes().map((change) => change.path).filter((path) => review.excluded(path) && staged.has(path))
+      const unstage = changes()
+        .map((change) => change.path)
+        .filter((path) => review.excluded(path) && staged.has(path))
       if (unstage.length > 0) await api.unstage(props.placementId, unstage)
       await api.stage(props.placementId, selected())
       step("committing")
@@ -66,7 +72,8 @@ export function CommitBox(props: { readonly placementId: PlacementId }): JSX.Ele
       review.setMessage("")
       return result
     })
-  const runPush = () => runFlow(push, "pushing", () => api.push(props.placementId, { setUpstream: !status.data?.upstream }))
+  const runPush = () =>
+    runFlow(push, "pushing", () => api.push(props.placementId, { setUpstream: !status.data?.upstream }))
   const commitLabel = () => {
     const state = commit.state()
     if (state.kind !== "running") return t("review.commit")
@@ -78,7 +85,11 @@ export function CommitBox(props: { readonly placementId: PlacementId }): JSX.Ele
     return status.data.ahead > 0 ? `${t("review.push")} ${status.data.ahead}` : t("review.push")
   }
   return (
-    <section aria-label={t("review.commit")} data-testid="review-commit" class="flex shrink-0 flex-col gap-2 border-t border-border-muted px-3 py-2">
+    <section
+      aria-label={t("review.commit")}
+      data-testid="review-commit"
+      class="flex shrink-0 flex-col gap-2 border-t border-border-muted px-3 py-2"
+    >
       <Show when={changes().length > 0}>
         <FileChecklist changes={changes()} />
       </Show>
@@ -86,7 +97,7 @@ export function CommitBox(props: { readonly placementId: PlacementId }): JSX.Ele
         rows={2}
         value={review.message()}
         placeholder={t("review.commit.message")}
-        aria-label={t("review.commit.message")}
+        aria-label={t("review.commit.messageLabel")}
         onInput={(event) => review.setMessage(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canCommit()) void runCommit()
@@ -96,7 +107,12 @@ export function CommitBox(props: { readonly placementId: PlacementId }): JSX.Ele
         <Button size="normal" disabled={!canCommit()} onClick={() => void runCommit()}>
           {commitLabel()}
         </Button>
-        <Button size="normal" variant="outline" disabled={push.state().kind === "running"} onClick={() => void runPush()}>
+        <Button
+          size="normal"
+          variant="outline"
+          disabled={push.state().kind === "running"}
+          onClick={() => void runPush()}
+        >
           {pushLabel()}
         </Button>
       </div>

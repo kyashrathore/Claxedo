@@ -13,7 +13,7 @@ Owns: the main sidebar's composition (`MainSidebar`): the page rows from the she
 ## Not owned
 
 - Projects and placements belong to `src/projects/` (`useProjects()`); the rail renders what that domain exports.
-- Creating a session goes through `useSessionStores().list.create`, which shows the pending row until the server confirms it. Rename, archive and delete call `useServer().sessions`; their outcome reaches the row through the session list store's events, never by a local patch.
+- New session opens a draft pane (`draftSessionPaneKind` from `src/session/view/`) for the current placement; no session exists on the server until the draft's first send, which creates it through `useSessionStores().list.create` and shows the pending row until the server confirms it. Rename, archive and delete call `useServer().sessions`; their outcome reaches the row through the session list store's events, never by a local patch.
 
 ## Flows
 

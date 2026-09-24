@@ -34,7 +34,8 @@ export function FilesProvider(props: ParentProps): JSX.Element {
   const files: Files = {
     placementId,
     expanded: (dir) => current().expanded[dir] === true,
-    setExpanded: (dir, expanded) => write((previous) => ({ ...previous, expanded: { ...previous.expanded, [dir]: expanded } })),
+    setExpanded: (dir, expanded) =>
+      write((previous) => ({ ...previous, expanded: { ...previous.expanded, [dir]: expanded } })),
     search: () => current().search,
     setSearch: (search) => write((previous) => ({ ...previous, search })),
   }

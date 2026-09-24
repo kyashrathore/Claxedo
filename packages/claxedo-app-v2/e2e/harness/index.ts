@@ -23,3 +23,4 @@ export { REFUSED_BACKGROUND_TARGETS, unexpectedEgress, type EgressAttempt, type 
 export { SCRIPTED_PROVIDER_IDS, type ScriptedProviderId } from "./scripted-providers"
 export { type ScriptedModelRequest, type ScriptedModelServer, type ScriptedToolCall } from "./scripted-model-server"
 export { appChoice, type AppChoice } from "./app"
+export { expectNoAxeViolations, expectWithinV1Baseline, settled, type V1Surface } from "./a11y"

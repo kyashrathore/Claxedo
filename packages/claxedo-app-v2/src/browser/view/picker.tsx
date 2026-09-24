@@ -20,7 +20,9 @@ export function PickerShield(props: { readonly tab: BrowserTab }): JSX.Element {
     <Show when={picking()}>
       <div class="pointer-events-none absolute inset-0 cursor-crosshair" aria-hidden="true" />
       <div role="status" class="pointer-events-none absolute inset-x-0 top-0 flex justify-center p-2">
-        <span class="rounded-md border border-border-muted bg-background-layer-01 px-2 py-1 text-sm text-text-base">{t("browser.picking.hint")}</span>
+        <span class="rounded-md border border-border-muted bg-background-layer-01 px-2 py-1 text-sm text-text-base">
+          {t("browser.picking.hint")}
+        </span>
       </div>
     </Show>
   )

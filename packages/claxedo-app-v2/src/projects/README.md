@@ -7,7 +7,8 @@ Owns: the project record as the app sees it, its placements, the add-project flo
 - **Project**: a server record with an id (`Project` from `@/server`). The list comes from the server through `server.queries.projects.list()`; nothing is read from browser storage.
 - **Placement**: where a project runs, a folder, a worktree or a cloud workspace (`Placement`). A placement has its own id; a session belongs to one placement. A folder path is display data, never a key, a route parameter or an identity. Only `src/server/` turns a placement into a directory.
 - **Source**: what the project is made from, a repository URL, a repository from a connected code host, or a folder on a machine. A folder is offered only when the server reports `thisMachine`.
-- **Draft** (`ProjectDraft`): the answers the add flow collects (name, source, harness, placement choice) before anything is created.
+- **Draft** (`ProjectDraft`): the answers the add flow collects (name, source, harness, and the reader's explicit placement pick) before anything is created.
+- **Placement options** (`placement-options.ts`): the machines and the cloud a new project could run on, derived from `capabilities()`, `queries.machines.list()` and the source. The flow's `placement()` is the explicit pick while it is still selectable, otherwise the first selectable option; nothing writes that default back into the draft.
 
 ## Data
 
@@ -36,7 +37,8 @@ Once the record exists, `choosingPlacement`, `creating` and `failed` carry its `
 
 - `/p/:projectId`: the project page (`projectPage`).
 - `/projects/new`: the add-project page (`addProjectPage`).
-- Opening a placement (`usePlacementOpener`) creates a session in it, with the chosen harness after an add, and goes to `/w/:placementId/s/:sessionId`, as the rail's New session does. A created project with no placement opens its project page. A failed session create is shown as a toast.
+- Opening an existing placement (`usePlacementOpener`) opens a draft session pane for it and goes home, as the rail's New session does; the server session starts with the draft's first send.
+- A created project (`useCreatedProjectOpener`) starts its first session in the new placement with the harness chosen in the AI step, and goes to `/w/:placementId/s/:sessionId`. The onboarding screen renders outside the workbench, and the session is what carries that harness. A created project with no placement opens its project page; a failed session create is shown as a toast.
 
 `PageEntry.title()` calls `useProjectsText()` and must run under the shell's `I18nProvider`.
 

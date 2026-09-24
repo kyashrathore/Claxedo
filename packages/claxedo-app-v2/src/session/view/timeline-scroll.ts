@@ -5,6 +5,7 @@ import type { TranscriptUserMessage } from "@/transcript"
 import { createScrollGestureWindow, type MessageTimelineProps } from "./timeline"
 import { createAutoScroll, type AutoScroll } from "./auto-scroll"
 import { createHistoryPaging, type HistoryAnchor } from "./history-paging"
+import { createMessageSeek } from "./message-seek"
 import { computeScrollState, type ScrollState } from "./scroll-anchor"
 
 export type TimelineScrollProps = Pick<
@@ -63,6 +64,7 @@ type ScrollParts = {
   readonly selected: () => string | undefined
   readonly select: (messageId: string | undefined) => void
   readonly resume: () => void
+  readonly seek: (messageId: string) => void
   readonly scroller: () => HTMLDivElement | undefined
   readonly setScroller: (el: HTMLDivElement | undefined) => void
 }
@@ -98,7 +100,7 @@ function timelineScrollProps(parts: ScrollParts): TimelineScrollProps {
     onMessageSelect: (message: TranscriptUserMessage) => {
       auto.pause()
       parts.select(message.id)
-      handles.scrollToMessage(message.id, "smooth")
+      parts.seek(message.id)
     },
   }
 }
@@ -118,14 +120,18 @@ export function createTimelineScroll(input: { readonly view: () => SessionView; 
     handles.scrollToEnd()
     if (scroller) schedule(scroller)
   }
+  const seeker = createMessageSeek({ scroller: () => scroller, scrollTo: (id) => handles.scrollToMessage(id, "auto") })
   const resume = () => {
+    seeker.cancel()
     select(undefined)
     auto.resume()
     settle()
-    requestAnimationFrame(settle)
+    requestAnimationFrame(() => {
+      if (!selected()) settle()
+    })
   }
   const setScroller = (el: HTMLDivElement | undefined) => (scroller = el)
-  const parts = { scroll, auto, gesture, paging, schedule, handles, selected, select, resume, scroller: () => scroller, setScroller }
+  const parts = { scroll, auto, gesture, paging, schedule, handles, selected, select, resume, seek: seeker.seek, scroller: () => scroller, setScroller }
   return {
     props: timelineScrollProps(parts),
     selected,

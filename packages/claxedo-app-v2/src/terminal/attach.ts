@@ -1,7 +1,16 @@
-import type { AppError, PlacementId, Server, TerminalFrame, TerminalId, TerminalStream, TerminalStreamClose } from "@/server"
+import {
+  toAppError,
+  type AppError,
+  type PlacementId,
+  type Server,
+  type TerminalFrame,
+  type TerminalId,
+  type TerminalStream,
+  type TerminalStreamClose,
+} from "@/server"
 import type { Machine } from "@/lib/machine"
 import type { TerminalBackend } from "./backend/types"
-import { asAppError, closeError, type TerminalConnection, type TerminalConnectionEvent } from "./model"
+import { closeError, type TerminalConnection, type TerminalConnectionEvent } from "./model"
 import { createWriteQueue, type WriteQueue } from "./write-queue"
 import { capabilityResponses } from "./capability-responder"
 import { stripTerminalReplies } from "./input-reply-filter"
@@ -63,7 +72,11 @@ function restoreFrame(state: AttachState, frame: Extract<TerminalFrame, { kind: 
     (error: unknown) => {
       if (state.disposed) return
       state.stream?.close()
-      emit(state, { type: "failed", failure: "restore", error: asAppError(error, "Terminal checkpoint restore failed") })
+      emit(state, {
+        type: "failed",
+        failure: "restore",
+        error: toAppError(error),
+      })
     },
   )
 }
@@ -77,7 +90,8 @@ function receiveFrame(state: AttachState, frame: TerminalFrame): void {
   }
   state.cursor += frame.data.length
   if (state.replayReady) {
-    for (const response of capabilityResponses(frame.data, () => state.input.backend.getDefaultColors())) state.stream?.send(response)
+    for (const response of capabilityResponses(frame.data, () => state.input.backend.getDefaultColors()))
+      state.stream?.send(response)
   }
   state.queue.push(frame.data)
 }
@@ -100,7 +114,7 @@ function recover(state: AttachState, close: TerminalStreamClose): void {
   const error = closeError(close)
   emit(state, { type: "closed", error })
   decideAfterClose(state, error).catch((cause: unknown) => {
-    if (!state.disposed) emit(state, { type: "failed", failure: "closed", error: asAppError(cause, "Terminal presence check failed") })
+    if (!state.disposed) emit(state, { type: "failed", failure: "closed", error: toAppError(cause) })
   })
 }
 
@@ -136,14 +150,17 @@ async function connectStream(state: AttachState): Promise<void> {
     if (state.disposed) return stream.close()
     state.stream = stream
   } catch (error) {
-    if (!state.disposed) recover(state, { code: ABNORMAL_CLOSE, reason: asAppError(error, "Terminal attach failed").message })
+    if (!state.disposed) recover(state, { code: ABNORMAL_CLOSE, reason: toAppError(error).message })
   }
 }
 
 function createAttachState(input: AttachInput): AttachState {
   const state: AttachState = {
     input,
-    queue: createWriteQueue({ write: (chunk, done) => input.backend.write(chunk, done), onOverload: () => overload(state) }),
+    queue: createWriteQueue({
+      write: (chunk, done) => input.backend.write(chunk, done),
+      onOverload: () => overload(state),
+    }),
     resize: createResizePublisher({
       backend: input.backend,
       host: input.host,

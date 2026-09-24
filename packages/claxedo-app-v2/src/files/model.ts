@@ -74,9 +74,7 @@ export function sortNodes(nodes: readonly FileNode[]): readonly FileNode[] {
 }
 
 export type TreeKeyAction =
-  | { readonly kind: "focus"; readonly index: number }
-  | { readonly kind: "toggle" }
-  | { readonly kind: "none" }
+  { readonly kind: "focus"; readonly index: number } | { readonly kind: "toggle" } | { readonly kind: "none" }
 
 export function treeKeyAction(input: {
   readonly key: string
