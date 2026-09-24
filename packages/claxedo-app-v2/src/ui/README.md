@@ -52,3 +52,13 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `TextInput` | input props, `leadingIcon?`, `showCopyButton?`, `showClearButton?`, `copyLabel?`, `clearLabel?`, `onCopyClick?`, `onClearClick?`, `numeric?`, `invalid?`, `appearance?: base \| large` |
 | `Toast`, `showToast`, `toaster` (the kit's, from `@opencode-ai/ui/toast`, so toasts look as they do today) | `showToast(options \| string)`: `title?`, `description?`, `icon?: kit icon name`, `variant?: default \| success \| error \| loading`, `duration?`, `persistent?`, `actions?: { label, onClick }[]`; mount one `Toast.Region` |
 | `Tooltip` (the kit's, from `@opencode-ai/ui/tooltip`, so tooltips look as they do today) | Kobalte tooltip props, `value: JSX.Element`, `class?`, `contentClass?`, `contentStyle?`, `inactive?`, `forceOpen?` |
+
+## At the swap
+
+Things to change once the kit components v2 uses move into the app. `packages/ui` stays untouched until then, because today's app renders it.
+
+- **ScrollView thumb:** the kit's `ScrollView` (`packages/ui/src/components/scroll-view.tsx`, `updateThumb`) already coalesces to one update per animation frame. Each frame it still reads `scrollTop`, `scrollHeight` and `clientHeight` on the viewport and `clientHeight` on the track. Those reads force the layout the timeline's virtualizer has just dirtied. The bench measured about 0.8 ms of forced layout per wheel event: 48.9 ms of 350 ms busy over 60 wheel events on an 8 MiB session. The fix:
+  - cache `scrollHeight`, `clientHeight` and the track height from the ResizeObserver entries the component already registers (the viewport, its content and the thumb mount);
+  - in the frame, read only `scrollTop`;
+  - measure with the bench's `scrollprof.ts`.
+
