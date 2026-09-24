@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js"
+import { createSignal, type Accessor, type Setter } from "solid-js"
 import type { ImageMark } from "../model"
 import type { Size } from "./marks"
 
@@ -31,54 +31,66 @@ export function commentBoxPosition(mark: ImageMark, natural: Size | undefined, s
 
 type Editing = { index: number; isNew: boolean }
 
+type DraftState = {
+  readonly marks: Accessor<ImageMark[]>
+  readonly setMarks: Setter<ImageMark[]>
+  readonly editing: Accessor<Editing | undefined>
+  readonly setEditing: Setter<Editing | undefined>
+  readonly comment: Accessor<string>
+  readonly setComment: Setter<string>
+}
+
+function settle(state: DraftState): void {
+  const current = state.editing()
+  if (!current) return
+  const text = state.comment().trim()
+  if (text) state.setMarks((list) => list.map((mark, index) => (index === current.index ? { ...mark, comment: text } : mark)))
+  else if (current.isNew || !state.marks()[current.index]?.comment) state.setMarks((list) => list.filter((_, index) => index !== current.index))
+  state.setEditing(undefined)
+}
+
+function remove(state: DraftState, target: number): void {
+  state.setMarks((list) => list.filter((_, index) => index !== target))
+  state.setEditing(undefined)
+}
+
+function open(state: DraftState, index: number): void {
+  if (state.editing()?.index === index) return
+  settle(state)
+  const mark = state.marks()[index]
+  if (!mark) return
+  state.setComment(mark.comment)
+  state.setEditing({ index, isNew: false })
+}
+
+function cancel(state: DraftState): void {
+  const current = state.editing()
+  if (!current) return
+  if (current.isNew) remove(state, current.index)
+  else state.setEditing(undefined)
+}
+
 export function createMarkDraft(initial: readonly ImageMark[], focusIndex: number | undefined) {
   const [marks, setMarks] = createSignal(initial.map((mark) => ({ ...mark })))
   const focused = focusIndex === undefined ? undefined : marks()[focusIndex]
-  const [editing, setEditing] = createSignal<Editing | undefined>(
-    focused && focusIndex !== undefined ? { index: focusIndex, isNew: false } : undefined,
-  )
+  const [editing, setEditing] = createSignal<Editing | undefined>(focused && focusIndex !== undefined ? { index: focusIndex, isNew: false } : undefined)
   const [comment, setComment] = createSignal(focused?.comment ?? "")
-
-  const settle = () => {
-    const current = editing()
-    if (!current) return
-    const text = comment().trim()
-    if (text) setMarks((list) => list.map((mark, index) => (index === current.index ? { ...mark, comment: text } : mark)))
-    else if (current.isNew || !marks()[current.index]?.comment) setMarks((list) => list.filter((_, index) => index !== current.index))
-    setEditing(undefined)
-  }
-
-  const remove = (target: number) => {
-    setMarks((list) => list.filter((_, index) => index !== target))
-    setEditing(undefined)
-  }
-
+  const state: DraftState = { marks, setMarks, editing, setEditing, comment, setComment }
   return {
     marks,
     editing,
     comment,
     setComment,
-    settle,
-    remove,
-    add(mark: ImageMark) {
-      const index = marks().length
+    settle: () => settle(state),
+    remove: (index: number) => remove(state, index),
+    add: (mark: ImageMark) => {
       setMarks((list) => [...list, mark])
       setComment("")
-      setEditing({ index, isNew: true })
+      setEditing({ index: marks().length - 1, isNew: true })
     },
-    open(index: number) {
-      if (editing()?.index === index) return
-      settle()
-      const mark = marks()[index]
-      if (!mark) return
-      setComment(mark.comment)
-      setEditing({ index, isNew: false })
-    },
-    cancel() {
-      const current = editing()
-      if (!current) return
-      if (current.isNew) remove(current.index)
-      else setEditing(undefined)
-    },
+    open: (index: number) => open(state, index),
+    cancel: () => cancel(state),
   }
 }
+
+export type MarkDraft = ReturnType<typeof createMarkDraft>
