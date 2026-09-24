@@ -1,17 +1,9 @@
-// Security-boundary helpers for the CLI sign-in handoff, extracted from
-// `cli-login.tsx` so the localhost-only callback restriction, the token
-// exchange, and the form construction can be tested directly.
-import { getClaxedoServerUrl } from "@/platform/api/api"
 import { asRecord, readField } from "@/lib/record"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { asFiniteNumber } from "@claxedo/helpers/guards"
+import type { AuthUser } from "./display-user"
+import { apiOrigin } from "./origins"
 
-/**
- * Return a normalized callback URL only when it is an `http:` loopback
- * address (127.0.0.1 / localhost / [::1]); otherwise `undefined`. This is the
- * gate that prevents the CLI token from being POSTed anywhere but the local
- * CLI listener.
- */
 export function localCallback(input: string | null): string | undefined {
   if (!input) return undefined
   try {
@@ -24,14 +16,8 @@ export function localCallback(input: string | null): string | undefined {
   }
 }
 
-export function userIdentity(input: unknown): string {
-  if (!input || typeof input !== "object") return "browser-session"
-  const user = input as {
-    id?: string
-    fullName?: string | null
-    primaryEmailAddress?: { emailAddress?: string | null } | null
-  }
-  return user.primaryEmailAddress?.emailAddress ?? user.fullName ?? user.id ?? "browser-session"
+export function userIdentity(user: AuthUser | null): string {
+  return user?.email ?? user?.fullName ?? user?.id ?? "browser-session"
 }
 
 export type CliTokenResult = {
@@ -41,13 +27,8 @@ export type CliTokenResult = {
   expiresIn?: number
 }
 
-/**
- * Exchange a browser session token for a CLI token via the Claxedo server.
- * Surfaces the server-provided error message on non-2xx responses, and
- * tolerates both snake_case and camelCase field spellings.
- */
 export async function cliToken(browserToken: string): Promise<CliTokenResult> {
-  const response = await fetch(`${getClaxedoServerUrl()}/api/auth/cli/exchange`, {
+  const response = await fetch(`${apiOrigin()}/api/auth/cli/exchange`, {
     method: "POST",
     headers: {
       accept: "application/json",
@@ -70,11 +51,6 @@ export async function cliToken(browserToken: string): Promise<CliTokenResult> {
   }
 }
 
-/**
- * Build the hidden field set posted back to the CLI callback. Optional fields
- * are only included when present; `expires_in` is stringified. Split out from
- * DOM submission so the field shape is independently assertable.
- */
 export function cliCallbackFields(input: {
   state: string
   accessToken: string

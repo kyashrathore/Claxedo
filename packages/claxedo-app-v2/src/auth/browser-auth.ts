@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import type { AuthDisplayUser } from "./auth-display"
+import type { AuthUser } from "./display-user"
 import { asRecord } from "@/lib/record"
 
 export const BROWSER_AUTH_ADAPTERS = ["better-auth"] as const
@@ -46,27 +46,16 @@ export type BrowserAuthSignUpOptions =
 export type BrowserAuthState = {
   descriptor: Accessor<BrowserAuthDescriptor | null>
   methods: Accessor<readonly BrowserAuthMethod[]>
-  session: Accessor<unknown>
-  user: Accessor<AuthDisplayUser | null>
+  user: Accessor<AuthUser | null>
   loading: Accessor<boolean>
-  isSignedIn: Accessor<boolean>
+  unavailable: Accessor<string | null>
   signIn: (options?: BrowserAuthSignInOptions) => Promise<void>
   signOut: () => Promise<void>
   signUp: (options?: BrowserAuthSignUpOptions) => Promise<void>
   getToken: (options?: { skipCache?: boolean }) => Promise<string | null>
   refreshSession: () => Promise<void>
-  organization: Accessor<{ id?: string } | null | undefined>
 }
 
-/**
- * The deployment an adapter is being started against.
- *
- * `issuesSessions` is the server's own declaration, passed down rather than
- * re-derived from `apiOrigin`: the composition root reads it once and hands it
- * to both this adapter and `CloudAuthGate`, so the gate and the adapter cannot
- * disagree about which deployment this is. The URL could not answer it anyway
- * — a signed node runs its issuer on localhost.
- */
 export type BrowserAuthDeployment = {
   apiOrigin: string
   appOrigin: string
@@ -76,22 +65,6 @@ export type BrowserAuthDeployment = {
 export type BrowserAuthAdapter = {
   readonly adapter: BrowserAuthAdapterId
   readonly transport: "cookie" | "bearer"
-  readonly implementationMarker: string
-  /**
-   * Start signing in, reporting the outcome through `useAuth()`'s signals
-   * rather than through this promise.
-   *
-   * It RESOLVES in every case, including every case in which nobody can be
-   * signed in (`browserAuthUnavailable`, a failed descriptor, a provider SDK
-   * that would not load). The composition root starts it before `render()` and
-   * does not await it, so a rejection here would have nowhere to go but a
-   * startup-failure panel — which is how a plain-http origin once replaced the
-   * entire shell, `/login` included, with an error box.
-   *
-   * `loading` is true only while this call is in flight. An adapter nobody
-   * initialized is therefore `anonymous` on its first read, never a session
-   * that waits forever for a resolution that is not coming.
-   */
   initialize(input: BrowserAuthDeployment): Promise<void>
   useAuth(): BrowserAuthState
   getToken(options?: { skipCache?: boolean }): Promise<string | null>
@@ -116,29 +89,6 @@ export function assertBrowserAuthDescriptorBinding(expected: BrowserAuthDescript
   }
 }
 
-/**
- * Why this deployment has no browser sign-in flow at all, or null when it has
- * one. Two answers, both of them normal deployments rather than failures:
- *
- *  - A server that declares it issues no sessions: a desktop daemon, or an
- *    unsigned self-hosted node on a LAN address. It has no accounts, so there
- *    is nothing to ask it — no descriptor request, no provider SDK.
- *  - Any non-HTTPS origin: a self-host on `http://host.lan:3001`, the dev
- *    server, an e2e preview. `loadBrowserAuthDescriptor` below is HTTPS-only,
- *    so the flow cannot start.
- *
- * A REASON and not an exception, because an adapter has to keep working after
- * it: the shell still renders, `useAuthSession().status()` is `anonymous`
- * immediately, and a sign-in attempt refuses with this sentence.
- *
- * Deliberately NOT a startup failure. A build that cannot sign anyone in is
- * still a usable app, and painting an error panel instead of the shell means
- * the sign-in surfaces the user came for never render at all.
- *
- * Consulted AFTER an adapter's own test-auth bypass: the e2e harness injects a
- * principal directly and never reaches a deployment, so "this deployment has
- * no sign-in flow" has nothing to say about it.
- */
 export function browserAuthUnavailable(deployment: BrowserAuthDeployment): string | null {
   if (!deployment.issuesSessions) {
     return "Sign-in is unavailable: this Claxedo server issues no sessions, so it has no accounts."
@@ -149,13 +99,6 @@ export function browserAuthUnavailable(deployment: BrowserAuthDeployment): strin
   return null
 }
 
-/**
- * The same reason, for a startup that got as far as asking the deployment and
- * did not get a usable answer (the descriptor request failed, the live
- * descriptor does not match this build, the provider SDK would not load).
- * Same outcome as above and for the same reason: anonymous, with something to
- * say when the user tries to sign in.
- */
 export function browserAuthUnavailableReason(error: unknown): string {
   const detail = error instanceof Error && error.message ? error.message : String(error)
   return `Sign-in is unavailable: ${detail}`
@@ -222,77 +165,85 @@ function browserAuthMethods(value: unknown): BrowserAuthMethod[] | undefined {
   return methods
 }
 
+function descriptorMatches(
+  descriptor: Record<string, unknown>,
+  browser: Record<string, unknown>,
+  input: { selectedAdapter: BrowserAuthAdapterId; apiOrigin: string; appOrigin: string },
+) {
+  const methods = browserAuthMethods(descriptor.methods)
+  const trustedOrigins = stringArray(browser.trustedOrigins)
+  const scopes = stringArray(browser.scopes)
+  return (
+    descriptor.adapter === input.selectedAdapter &&
+    present(descriptor.deploymentId) &&
+    present(descriptor.configurationVersion) &&
+    typeof descriptor.expiresAt === "number" &&
+    Number.isFinite(descriptor.expiresAt) &&
+    descriptor.expiresAt > Date.now() &&
+    present(descriptor.issuer) &&
+    exactUrl(descriptor.issuer) &&
+    !!methods?.length &&
+    browser.transport === "cookie" &&
+    browser.credentialPolicy === "reject-cookie-and-authorization" &&
+    !!trustedOrigins?.includes(input.appOrigin) &&
+    trustedOrigins.every(exactOrigin) &&
+    present(browser.clientId) &&
+    present(browser.resource) &&
+    exactUrl(browser.resource) &&
+    new URL(browser.resource).origin === input.apiOrigin &&
+    !!scopes?.length
+  )
+}
+
+function cookieMatches(issuer: string, apiOrigin: string, cookie: Record<string, unknown> | undefined) {
+  return (
+    issuer === `${apiOrigin}/api/auth` &&
+    !!cookie &&
+    present(cookie.name) &&
+    cookie.path === "/" &&
+    cookie.secure === true &&
+    cookie.httpOnly === true &&
+    cookie.hostOnly === true &&
+    (cookie.sameSite === "lax" || cookie.sameSite === "strict")
+  )
+}
+
 function parseDescriptor(
   value: unknown,
   input: { selectedAdapter: BrowserAuthAdapterId; apiOrigin: string; appOrigin: string },
 ): BrowserAuthDescriptor {
-  const descriptor = asRecord(value)
-  const browser = asRecord(descriptor?.browser)
-  const cookie = asRecord(browser?.cookie)
-  const methods = browserAuthMethods(descriptor?.methods)
-  const trustedOrigins = stringArray(browser?.trustedOrigins)
-  const scopes = stringArray(browser?.scopes)
-  const expectedTransport = "cookie"
-  const expectedPolicy = "reject-cookie-and-authorization"
-
-  if (
-    descriptor?.adapter !== input.selectedAdapter ||
-    !present(descriptor.deploymentId) ||
-    !present(descriptor.configurationVersion) ||
-    typeof descriptor.expiresAt !== "number" ||
-    !Number.isFinite(descriptor.expiresAt) ||
-    descriptor.expiresAt <= Date.now() ||
-    !present(descriptor.issuer) ||
-    !exactUrl(descriptor.issuer) ||
-    !methods?.length ||
-    browser?.transport !== expectedTransport ||
-    browser.credentialPolicy !== expectedPolicy ||
-    !trustedOrigins?.includes(input.appOrigin) ||
-    trustedOrigins.some((origin) => !exactOrigin(origin)) ||
-    !present(browser.clientId) ||
-    !present(browser.resource) ||
-    !exactUrl(browser.resource) ||
-    new URL(browser.resource).origin !== input.apiOrigin ||
-    !scopes?.length
-  ) {
+  const descriptor = asRecord(value) ?? {}
+  const browser = asRecord(descriptor.browser) ?? {}
+  const cookie = asRecord(browser.cookie)
+  if (!descriptorMatches(descriptor, browser, input)) {
     throw new BrowserAuthConfigurationError(
       `live auth descriptor does not match the ${input.selectedAdapter} browser build`,
     )
   }
-
-  if (
-    descriptor.issuer !== `${input.apiOrigin}/api/auth` ||
-    !cookie ||
-    !present(cookie.name) ||
-    cookie.path !== "/" ||
-    cookie.secure !== true ||
-    cookie.httpOnly !== true ||
-    cookie.hostOnly !== true ||
-    (cookie.sameSite !== "lax" && cookie.sameSite !== "strict")
-  ) {
+  if (!cookieMatches(descriptor.issuer as string, input.apiOrigin, cookie)) {
     throw new BrowserAuthConfigurationError("live Better Auth descriptor has an invalid cookie contract")
   }
   return {
     adapter: input.selectedAdapter,
-    deploymentId: descriptor.deploymentId,
-    configurationVersion: descriptor.configurationVersion,
-    expiresAt: descriptor.expiresAt,
-    issuer: descriptor.issuer,
-    methods,
+    deploymentId: descriptor.deploymentId as string,
+    configurationVersion: descriptor.configurationVersion as string,
+    expiresAt: descriptor.expiresAt as number,
+    issuer: descriptor.issuer as string,
+    methods: browserAuthMethods(descriptor.methods) ?? [],
     browser: {
-      trustedOrigins,
-      clientId: browser.clientId,
-      resource: browser.resource,
-      scopes,
+      trustedOrigins: stringArray(browser.trustedOrigins) ?? [],
+      clientId: browser.clientId as string,
+      resource: browser.resource as string,
+      scopes: stringArray(browser.scopes) ?? [],
       transport: "cookie",
       credentialPolicy: "reject-cookie-and-authorization",
       cookie: {
-        name: cookie.name,
+        name: cookie!.name as string,
         path: "/",
         secure: true,
         httpOnly: true,
         hostOnly: true,
-        sameSite: cookie.sameSite,
+        sameSite: cookie!.sameSite as "lax" | "strict",
       },
     },
   }

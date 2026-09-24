@@ -1,16 +1,14 @@
-import { isProjectionCacheKey } from "@/platform/persistence/keys"
-
-const LAST_USER_ID_KEY = "claxedo.auth.lastUserId"
+const LAST_USER_ID_KEY = "claxedo:auth:lastUserId"
+const PREFERENCE_PREFIX = "claxedo:"
 
 export function clearPersistedAuthState() {
   for (const key of Object.keys(localStorage)) {
-    if (key === LAST_USER_ID_KEY) continue
-    if (!key.startsWith("claxedo.") && !isProjectionCacheKey(key)) continue
+    if (key === LAST_USER_ID_KEY || !key.startsWith(PREFERENCE_PREFIX)) continue
     localStorage.removeItem(key)
   }
 }
 
-export function recordBrowserAuthIdentity(userId: string | null | undefined) {
+export function recordAuthIdentity(userId: string | null | undefined) {
   if (!userId) return
   let previous: string | null = null
   try {
