@@ -89,3 +89,15 @@ test("12 New Session again focuses the workspace's one draft tab", async ({ stac
     })
   }
 })
+test("12 closing every tab, the draft last, then New Session opens the draft composer", async ({ stack, api, app }) => {
+  const workspace = await stack.daemon.makeWorkspace("closeall", "Bench")
+  const first = await api.createSession(workspace.directory, { title: "First", harness: SCRIPTED_ACP_HARNESS })
+  await app.goto(`${stack.url}${sessionRoute(workspace.id, first.id)}`)
+  await app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).click()
+  await expect(app).toHaveURL(new RegExp(`${sessionRoute(workspace.id)}$`))
+  await app.getByRole("button", { name: UI.hideSidebar }).click()
+  await panes(app).getByRole("button", { name: "Close First" }).click()
+  await panes(app).getByRole("button", { name: "Close New Session" }).click()
+  await app.getByRole("main").getByRole("button", { name: UI.newSession, exact: true }).click()
+  await expect(app.getByRole("textbox", { name: UI.composer })).toBeVisible()
+})
