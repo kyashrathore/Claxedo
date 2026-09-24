@@ -123,6 +123,8 @@ export type Todo = AgentTodo
 export type FileDiff = AgentSnapshotFileDiff
 export type Subagent = AgentSubagentUpdate
 
+export type SessionListInput = { readonly placementId: PlacementId; readonly cursor?: string; readonly limit: number }
+
 export type SessionPage = { readonly rows: readonly SessionRow[]; readonly nextCursor?: string }
 
 export type TranscriptPage = { readonly entries: readonly TranscriptEntry[]; readonly olderCursor?: string }

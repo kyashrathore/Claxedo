@@ -4,12 +4,12 @@ import { sessionPath, type SessionContext } from "./session-context"
 import { readGoalState } from "./session-goal"
 import { readRequests } from "./session-statuses"
 import { withQuery, type RuntimeRoute } from "./transport"
-import type { SessionPage, SessionRef, SessionRow, SessionSnapshot, TranscriptPage } from "./types"
+import type { SessionListInput, SessionPage, SessionRef, SessionRow, SessionSnapshot, TranscriptPage } from "./types"
 import { sessionRowFromListItem, sessionRowFromSession } from "./wire/session-row"
 import { OLDER_CURSOR_HEADER, transcriptPageFromWire } from "./wire/transcript"
 
 const OLDER_PAGE_SIZE = 50
-const ALL_WORKSPACES_SCOPE = "workspace"
+const WORKSPACE_SCOPE = "workspace"
 
 async function rowsOf(context: SessionContext, items: readonly unknown[]): Promise<SessionRow[]> {
   const { address } = context.workspaces
@@ -26,11 +26,12 @@ async function rowsOf(context: SessionContext, items: readonly unknown[]): Promi
   return rows
 }
 
-export async function listSessions(context: SessionContext, options: { readonly cursor?: string; readonly limit: number }): Promise<SessionPage> {
+export async function listSessions(context: SessionContext, options: SessionListInput): Promise<SessionPage> {
   const { transport } = context
-  await context.workspaces.load()
+  const where = await context.workspaces.route(options.placementId)
   const listPath = transport.loopback ? "/api/claxedo/session-list" : "/api/control/session-list"
-  const query = { scope: ALL_WORKSPACES_SCOPE, sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
+  const target = transport.loopback && !where.remote ? { directory: where.directory } : { workspaceId: where.workspaceId }
+  const query = { scope: WORKSPACE_SCOPE, ...target, sort: "human_turn_desc", limit: options.limit, cursor: options.cursor }
   const body = await transport.json<{ items?: unknown; nextCursor?: unknown }>(withQuery(listPath, query))
   const rows = await rowsOf(context, Array.isArray(body.items) ? body.items : [])
   return { rows, ...(typeof body.nextCursor === "string" ? { nextCursor: body.nextCursor } : {}) }

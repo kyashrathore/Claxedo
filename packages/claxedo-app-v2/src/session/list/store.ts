@@ -15,7 +15,7 @@ import {
 } from "@/server"
 import type { LoadMoreState, SessionList, SessionListState, SessionStatusView } from "@/session"
 import { toAppError, type RequestsInternal } from "../requests"
-import { initialListState, type ListEvent, type ListState } from "./model"
+import { hasMorePages, initialListState, type ListEvent, type ListState } from "./model"
 import { createListReads, type ListReads } from "./reads"
 import { transition } from "./transition"
 import { createRowViewCache, UNKNOWN_STATUS, visibleRows } from "./visible-rows"
@@ -110,7 +110,7 @@ export function createSessionList(server: Server, requests: RequestsInternal): S
   return {
     state: createMemo(() => publicState(state())),
     rows: createMemo(() => visibleRows(state(), requests.openBySession(), cache)),
-    hasMore: () => state().nextCursor !== undefined,
+    hasMore: (placementIds) => hasMorePages(state(), placementIds),
     moreState: createMemo(() => moreState(state())),
     loadMore: reads.loadMore,
     reload: () => reads.reread("replace"),

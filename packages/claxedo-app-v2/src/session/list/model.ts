@@ -37,20 +37,26 @@ export type UnreportedStatus = {
   readonly unreadPlacements: ReadonlySet<PlacementId>
 }
 
-export type FetchedWindow = {
+export type FetchedPage = {
+  readonly placementId: PlacementId
   readonly rows: readonly SessionRow[]
   readonly nextCursor: string | undefined
+}
+
+export type FetchedWindow = {
+  readonly pages: readonly FetchedPage[]
   readonly sentAt: number
   readonly statuses: SessionStatusRead | undefined
 }
+
+export type PlacementWindow = { readonly tail: OrderKey; readonly nextCursor: string | undefined }
 
 export type ListData = {
   readonly entries: ReadonlyMap<SessionId, ListEntry>
   readonly statuses: ReadonlyMap<SessionId, StatusEntry>
   readonly unreported: UnreportedStatus | undefined
   readonly open: ReadonlySet<SessionId>
-  readonly windowTail: OrderKey
-  readonly nextCursor: string | undefined
+  readonly windows: ReadonlyMap<PlacementId, PlacementWindow>
 }
 
 export type ServerListEvent =
@@ -96,7 +102,7 @@ export type ListEvent =
   | { readonly type: "fetchStarted" }
   | { readonly type: "fetched"; readonly window: FetchedWindow }
   | { readonly type: "fetchFailed"; readonly error: AppError }
-  | { readonly type: "moreStarted" }
+  | { readonly type: "moreStarted"; readonly placementIds: readonly PlacementId[] }
   | { readonly type: "moreFetched"; readonly window: FetchedWindow }
   | { readonly type: "moreFailed"; readonly error: AppError }
   | { readonly type: "rereadStarted" }
@@ -122,8 +128,7 @@ export const initialListState: ListState = {
   statuses: new Map(),
   unreported: undefined,
   open: new Set(),
-  windowTail: WINDOW_EMPTY,
-  nextCursor: undefined,
+  windows: new Map(),
 }
 
 const rowActivityAt = (row: SessionRow): number => row.lastHumanTurnAt ?? 0
@@ -146,6 +151,16 @@ export function compareOrder(a: OrderKey, b: OrderKey): number {
 }
 
 export const insideWindow = (key: OrderKey, tail: OrderKey): boolean => compareOrder(key, tail) <= 0
+
+export const windowTail = (data: ListData, placementId: PlacementId): OrderKey => data.windows.get(placementId)?.tail ?? WINDOW_EMPTY
+
+export const insidePlacementWindow = (data: ListData, row: SessionRow, key: OrderKey = orderKey(row)): boolean =>
+  insideWindow(key, windowTail(data, row.ref.placementId))
+
+export const windowRows = (window: FetchedWindow): readonly SessionRow[] => window.pages.flatMap((page) => page.rows)
+
+export const hasMorePages = (data: ListData, placementIds: readonly PlacementId[]): boolean =>
+  placementIds.some((id) => data.windows.get(id)?.nextCursor !== undefined)
 
 function laterHumanTurn(current: SessionRow, incoming: SessionRow): number | undefined {
   if (current.lastHumanTurnAt === undefined) return incoming.lastHumanTurnAt

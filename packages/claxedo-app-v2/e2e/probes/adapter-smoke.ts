@@ -184,7 +184,7 @@ async function turnChecks(probe: Probe, placement: Placement) {
   await check("snapshot and list after the turn", async () => {
     const snapshot = await server.sessions.snapshot(ref)
     if (!JSON.stringify(snapshot.transcript.entries).includes("ADAPTER_OK")) throw new Error("the latest-surface page lacks the reply")
-    const page = await server.sessions.list({ limit: 20 })
+    const page = await server.sessions.list({ placementId: ref.placementId, limit: 20 })
     const hit = page.rows.find((item) => item.ref.sessionId === ref.sessionId)
     if (!hit) throw new Error(`${page.rows.length} row(s), none is ${ref.sessionId}`)
     return `entries=${snapshot.transcript.entries.length} list row "${hit.title}" placement=${hit.ref.placementId}`
@@ -265,7 +265,7 @@ async function cleanupChecks(probe: Probe, ref: Parameters<ServerHandle["session
     const from = log.mark()
     await server.sessions.remove(ref)
     await log.next("sessionRemoved", from, (event): event is ServerEvent => event.type === "sessionRemoved" && event.ref.sessionId === ref.sessionId)
-    const page = await server.sessions.list({ limit: 20 })
+    const page = await server.sessions.list({ placementId: ref.placementId, limit: 20 })
     if (page.rows.some((item) => item.ref.sessionId === ref.sessionId)) throw new Error("the list still holds the removed session")
     return "removed, and gone from the list"
   })

@@ -3,7 +3,7 @@ import type { SessionRowView, SessionStatusView } from "@/session"
 import {
   compareOrder,
   entryActivityAt,
-  insideWindow,
+  insidePlacementWindow,
   orderKey,
   type ConfirmedEntry,
   type ListState,
@@ -32,7 +32,7 @@ function shownEntries(state: ListState): Shown[] {
     if (entry.kind === "tombstone") continue
     if (entry.row.archivedAt !== undefined || entry.row.parentSessionId !== undefined) continue
     const key = orderKey(entry.row, entryActivityAt(entry))
-    if (entry.kind === "confirmed" && !insideWindow(key, state.windowTail)) continue
+    if (entry.kind === "confirmed" && !insidePlacementWindow(state, entry.row, key)) continue
     shown.push({ entry, key })
   }
   return shown.sort((a, b) => compareOrder(a.key, b.key))
