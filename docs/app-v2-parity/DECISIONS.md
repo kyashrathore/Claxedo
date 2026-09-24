@@ -152,3 +152,7 @@ A **Settings → Projects** section lists the projects and holds their managemen
 - Signed-only parts are not ported, since v2 has no signed plugin rail yet: the project picker, organization defaults, the enterprise install option, MCP Connect/Disconnect.
 - Unsigned v1 showed a Connect button and a "Connect now" second install step that did nothing. v2 drops both, and the built-in's empty "…" menu.
 - The domain is 2,384 lines against an 1,800 budget; the scope review is recorded in the handoff.
+
+## Orchestrator, 02:25: the Models tab switches reach the picker by group too
+- In v1 the composer picker reads only per-model switches, so a group's "Disable all" changes Settings but not the picker.
+- **v2:** the picker honors the group state too. It's a one-line fix to a v1 inconsistency.
