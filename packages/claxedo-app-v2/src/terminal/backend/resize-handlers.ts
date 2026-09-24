@@ -4,6 +4,7 @@ import { objectProperty } from "./reflect"
 import { createResizeCoordinator, type ResizeCoordinator } from "./resize-coordinator"
 import { cancelParserIdleWork, runWhenParserIdle, type ParserGate } from "./parser-gate"
 import type { RendererHandle } from "./renderer-webgl"
+import { TERMINAL_FIT_EVENT } from "@/lib/terminal-fit"
 
 export type ResizeHandlers = {
   readonly coordinator: ResizeCoordinator
@@ -100,6 +101,7 @@ export function setupResizeHandlers(input: {
     if (!document.hidden) coordinator.request()
   }
   window.addEventListener("resize", handleWindowResize)
+  window.addEventListener(TERMINAL_FIT_EVENT, handleWindowResize)
   window.addEventListener("focus", handleVisible)
   document.addEventListener("visibilitychange", handleVisible)
   const mountFrame = requestAnimationFrame(() => coordinator.request())
@@ -114,6 +116,7 @@ export function setupResizeHandlers(input: {
       cancelParserIdleWork(parserGate)
       cancelAnimationFrame(mountFrame)
       window.removeEventListener("resize", handleWindowResize)
+      window.removeEventListener(TERMINAL_FIT_EVENT, handleWindowResize)
       window.removeEventListener("focus", handleVisible)
       document.removeEventListener("visibilitychange", handleVisible)
       observer.disconnect()

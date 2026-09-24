@@ -47,7 +47,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
       row,
       connection,
       renderers: terminals.renderers,
-      openFile: (target) => terminals.openFile(placementId, target),
+      openFile: terminals.openFile,
       onBackend: setBackend,
     })
   })

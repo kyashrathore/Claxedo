@@ -1,16 +1,7 @@
 import { createContext, createEffect, on, useContext, type Accessor, type JSX } from "solid-js"
 import { usePhone } from "@/lib/viewport"
 import { createShellLayout, panelShown, sidebarShown, type ShellLayoutEvent, type ShellLayoutState } from "./model"
-import {
-  clampWidth,
-  createShellPreferences,
-  defaultPanel,
-  PANEL_MAX_WIDTH,
-  PANEL_MIN_WIDTH,
-  SIDEBAR_MAX_WIDTH,
-  SIDEBAR_MIN_WIDTH,
-  type PanelPreference,
-} from "./store"
+import { clampWidth, createShellPreferences, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from "./store"
 
 export type ShellLayout = {
   readonly state: Accessor<ShellLayoutState>
@@ -20,9 +11,6 @@ export type ShellLayout = {
   readonly panelShown: Accessor<boolean>
   readonly sidebarWidth: Accessor<number>
   readonly setSidebarWidth: (width: number) => void
-  readonly panel: (scope: string) => PanelPreference
-  readonly setPanelWidth: (scope: string, width: number) => void
-  readonly setPanelTab: (scope: string, tab: string) => void
 }
 
 const ShellLayoutContext = createContext<ShellLayout>()
@@ -51,10 +39,6 @@ export function ShellLayoutProvider(props: { readonly scope: string; readonly ch
     panelShown: () => panelShown(machine.state()),
     sidebarWidth: () => prefs.sidebarWidth,
     setSidebarWidth: (width) => setPrefs("sidebarWidth", clampWidth(width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH)),
-    panel: (scope) => prefs.panels[scope] ?? defaultPanel,
-    setPanelWidth: (scope, width) =>
-      setPrefs("panels", scope, (current) => ({ ...(current ?? defaultPanel), width: clampWidth(width, PANEL_MIN_WIDTH, PANEL_MAX_WIDTH) })),
-    setPanelTab: (scope, tab) => setPrefs("panels", scope, (current) => ({ ...(current ?? defaultPanel), tab })),
   }
   return <ShellLayoutContext.Provider value={layout}>{props.children}</ShellLayoutContext.Provider>
 }

@@ -50,15 +50,6 @@ export type AnyPaneKind = {
   readonly toRoute?: (state: never) => PaneRoute | undefined
 }
 
-export type PanelTab = {
-  readonly id: string
-  readonly title: () => string
-  readonly icon: string
-  readonly order?: number
-  readonly when?: () => boolean
-  readonly view: Component
-}
-
 export type SettingsSection = {
   readonly id: string
   readonly title: () => string
@@ -127,7 +118,6 @@ export type Registry<Entry> = {
 export type ShellRegistries = {
   readonly pages: Registry<PageEntry>
   readonly paneKinds: Registry<AnyPaneKind>
-  readonly panelTabs: Registry<PanelTab>
   readonly settingsSections: Registry<SettingsSection>
   readonly sidebarItems: Registry<SidebarItem>
   readonly overlays: Registry<OverlayEntry>

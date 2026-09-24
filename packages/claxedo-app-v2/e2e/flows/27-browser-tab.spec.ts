@@ -39,21 +39,13 @@ async function servePages(): Promise<PageServer> {
   }
 }
 
-async function createServerProject(url: string, name: string, directory: string) {
-  const response = await fetch(new URL("/api/claxedo/projects", url), {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, source: { kind: "directory", directory } }),
-  })
-  expect(response.status).toBe(201)
-}
-
 async function openBrowserTab(app: Page): Promise<Locator> {
-  const toggle = app.getByRole("button", { name: "Toggle workspace panel" })
-  await expect(toggle).toBeVisible()
-  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click()
-  await app.getByRole("tablist", { name: "Workspace panel tabs" }).getByRole("tab", { name: "Browser" }).click()
-  return app.getByRole("tabpanel", { name: "Browser" })
+  await app.getByRole("button", { name: "Open workspace panel" }).click()
+  const panel = app.getByRole("complementary", { name: "Workspace panel" })
+  await panel.getByRole("button", { name: "Add workspace tab" }).click()
+  await app.getByRole("menuitem", { name: "Browser" }).click()
+  await expect(panel.getByRole("button", { name: "Browser", exact: true })).toHaveAttribute("aria-current", "true")
+  return panel
 }
 
 async function goTo(browser: Locator, url: string) {
@@ -69,8 +61,7 @@ test("27 browser tab: preview a local page in the sandboxed preview, navigate fr
 }) => {
   const pages = await servePages()
   try {
-    const workspace = await stack.daemon.makeWorkspace("browser")
-    await createServerProject(stack.url, "Browser", workspace.directory)
+    const workspace = await stack.daemon.makeWorkspace("browser", "Browser")
     const session = await api.createSession(workspace.directory, { title: "Browser", harness: SCRIPTED_ACP_HARNESS })
     await app.goto(`${stack.url}/w/${encodeURIComponent(workspace.id)}/s/${encodeURIComponent(session.id)}`)
 

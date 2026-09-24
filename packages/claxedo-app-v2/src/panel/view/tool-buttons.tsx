@@ -1,13 +1,12 @@
 import { Show } from "solid-js"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { SemanticIcon, type SemanticIconConcept } from "@/ui/semantic-icon"
-import type { WorkspacePanelNavigator } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import { SemanticIcon, type SemanticIconConcept } from "@/ui"
+import type { WorkspacePanelNavigator } from "../workspace-tabs"
 
 type WorkspacePanelButtonProps = {
   concept: SemanticIconConcept
   label: string
   active: boolean
-  attention?: boolean
   onClick: () => void
 }
 
@@ -22,9 +21,6 @@ function WorkspacePanelButton(props: WorkspacePanelButtonProps) {
         aria-pressed={props.active ? "true" : "false"}
         onClick={props.onClick}
       >
-        <Show when={props.attention}>
-          <span class="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-surface-critical-strong" />
-        </Show>
         <SemanticIcon concept={props.concept} size="small" />
       </button>
     </Tooltip>
@@ -35,16 +31,11 @@ export function WorkspaceToolButtons(props: {
   available: boolean
   filesActive: boolean
   changesActive?: boolean
-  processesActive?: boolean
-  processesAttention?: boolean
   showChanges?: boolean
-  showProcesses?: boolean
   onToggle: (navigator: WorkspacePanelNavigator) => void
 }) {
   return (
     <Show when={props.available}>
-      {/* One-of-N navigator group: tight internal gap so the trio reads as a
-          single unit, matching the browser toolbar clusters. */}
       <div class="flex items-center gap-0.5">
         <WorkspacePanelButton
           concept="files"
@@ -58,15 +49,6 @@ export function WorkspaceToolButtons(props: {
             label="Changes"
             active={props.changesActive === true}
             onClick={() => props.onToggle("changes")}
-          />
-        </Show>
-        <Show when={props.showProcesses}>
-          <WorkspacePanelButton
-            concept="processes"
-            label="Processes"
-            active={props.processesActive === true}
-            attention={props.processesAttention}
-            onClick={() => props.onToggle("processes")}
           />
         </Show>
       </div>
