@@ -5,10 +5,17 @@ import type { SessionRowView } from "@/session"
 import { sessionPath } from "@/shell"
 import { dictionary } from "../i18n"
 import { railStatus } from "../model"
+import type { SessionActions } from "./session-actions"
+import { SessionMenu } from "./session-menu"
 
 export const SESSION_ROW_HEIGHT = 36
 
-export function SessionRow(props: { readonly row: SessionRowView; readonly active: boolean; readonly top: number }): JSX.Element {
+export function SessionRow(props: {
+  readonly row: SessionRowView
+  readonly active: boolean
+  readonly top: number
+  readonly actions: SessionActions
+}): JSX.Element {
   const t = useTranslator(dictionary)
   const status = () => railStatus(props.row)
   return (
@@ -26,6 +33,7 @@ export function SessionRow(props: { readonly row: SessionRowView; readonly activ
           <span class="rail-row-badge">{t("rail.archived")}</span>
         </Show>
       </A>
+      <SessionMenu row={props.row} actions={props.actions} />
     </li>
   )
 }

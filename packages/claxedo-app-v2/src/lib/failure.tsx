@@ -1,9 +1,11 @@
 import { ErrorBoundary, type JSX } from "solid-js"
+import { isRecord } from "./record"
 import "./failure.css"
 
 export function failureMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   if (typeof error === "string") return error
+  if (isRecord(error) && typeof error.message === "string") return error.message
   return String(error)
 }
 

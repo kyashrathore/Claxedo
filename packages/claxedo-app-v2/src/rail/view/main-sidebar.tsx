@@ -1,6 +1,7 @@
 import { A } from "@solidjs/router"
 import type { JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { ProjectsSidebarSection } from "@/projects"
 import { settingsPath } from "@/shell"
 import { Icon } from "@/ui"
 import { dictionary } from "../i18n"
@@ -13,6 +14,9 @@ export function MainSidebar(): JSX.Element {
   return (
     <div class="rail" data-testid="main-sidebar">
       <SidebarItems />
+      <div class="rail-projects">
+        <ProjectsSidebarSection />
+      </div>
       <SessionList />
       <div class="rail-footer">
         <A href={settingsPath()} class="rail-item" data-testid="rail-settings">
