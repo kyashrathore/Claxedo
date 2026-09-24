@@ -1,11 +1,13 @@
-import { createContext, createMemo, createSignal, onCleanup, onMount, useContext, type JSX } from "solid-js"
+import { createContext, createMemo, onCleanup, onMount, useContext, type JSX } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { useTranslator } from "@/i18n"
 import { isRecord } from "@/lib/record"
 import { persistedStore, preferenceKey } from "@/lib/persisted"
+import { useDialog } from "@/ui"
 import { dictionary } from "../i18n"
 import { useShellRegistries } from "../registries"
 import { eventSignature, formatKeybind, formatKeybindParts, isEditableTarget, keybindSignature, parseKeybind, type KeyLabel } from "./keybinding"
+import { OPEN_FILE_COMMAND } from "./palette-entries"
 import {
   actionId,
   commandOwnerActive,
@@ -37,9 +39,7 @@ export type Commands = {
   readonly options: () => CommandOption[]
   readonly slashOptions: () => CommandOption[]
   readonly has: (id: string) => boolean
-  readonly paletteOpen: () => boolean
   readonly showPalette: () => void
-  readonly hidePalette: () => void
   readonly keybinds: (enabled: boolean) => void
   readonly suspended: () => boolean
 }
@@ -60,7 +60,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
   const registries = useShellRegistries()
   const [store, setStore] = createStore({ registrations: [] as CommandRegistration[], suspendCount: 0 })
   const [overrides, setOverrides] = persistedStore<Overrides>(preferenceKey("keybinds"), {}, readOverrides)
-  const [paletteOpen, setPaletteOpen] = createSignal(false)
+  const dialog = useDialog()
   const reported = new Set<string>()
   const keyLabel = (key: KeyLabel) => t(`shell.key.${key}`)
 
@@ -97,7 +97,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
   const run = (id: string, source?: CommandSource) => optionIndex().get(id)?.onSelect?.(source)
 
   const onKeyDown = (event: KeyboardEvent) => {
-    if (suspended() || paletteOpen()) return
+    if (suspended() || dialog.active) return
     const signature = eventSignature(event)
     const isPalette = paletteSignatures().has(signature)
     const option = keymap().get(signature)
@@ -106,7 +106,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
     if (editable && !isPalette && !EDITABLE_KEYBIND_IDS.has(actionId(option?.id ?? "")) && !modified && event.key !== "Tab") return
     if (isPalette) {
       event.preventDefault()
-      setPaletteOpen(true)
+      run(OPEN_FILE_COMMAND, "palette")
       return
     }
     if (!option) return
@@ -149,9 +149,7 @@ export function CommandsProvider(props: { readonly children: JSX.Element }): JSX
     options,
     slashOptions,
     has: (id) => registered().ids.has(id),
-    paletteOpen,
-    showPalette: () => setPaletteOpen(true),
-    hidePalette: () => setPaletteOpen(false),
+    showPalette: () => run(OPEN_FILE_COMMAND, "palette"),
     keybinds: (enabled) => setStore("suspendCount", (count) => Math.max(0, count + (enabled ? -1 : 1))),
     suspended,
   }

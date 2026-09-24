@@ -39,7 +39,7 @@ One `Registry<Entry>` per region and concept: `pages`, `paneKinds`, `panelViews`
 
 ## Command palette (`palette/`)
 
-Kept from the old app: registrations with owners, keybinding parsing and display, user overrides persisted under `claxedo:keybinds`, fuzzy search grouped by category. The `commands` registry feeds it beside component registrations.
+Kept from the old app: registrations with owners, keybinding parsing and display, user overrides persisted under `claxedo:keybinds`. The `commands` registry feeds it beside component registrations. No keybinding fires while a dialog is open. The palette is today's `DialogSelectFile` (`select-file.tsx`), the one implementation for both modes: the palette keybinding (mod+shift+P) runs `file.open` with the source `palette`, which opens it in `all` mode (empty: the common commands, then recent files; typed: every command, the current project's sessions and file search, grouped); mod+P opens it in `files` mode (recent and root files, then file search). Its caller passes the placement and `onOpenFile`; the shell's `OpenFileCommand` opens the file as a workspace panel tab, and the panel's "+" → File passes its own.
 
 ## Phone
 

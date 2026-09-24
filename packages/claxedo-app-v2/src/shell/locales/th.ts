@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "คำสั่งค้นหา",
   "shell.palette.placeholder": "ค้นหาไฟล์ คำสั่ง และเซสชัน",
   "shell.palette.empty": "ไม่พบผลลัพธ์",
   "shell.palette.suggested": "แนะนำ",

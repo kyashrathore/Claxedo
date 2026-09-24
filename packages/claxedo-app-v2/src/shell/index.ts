@@ -31,6 +31,7 @@ export type { ShellLayoutEvent, ShellLayoutState, SideRegion, SidebarRegion, Pho
 export type { ShellLayout } from "./layout"
 export { useShellLayout } from "./layout"
 export type { Commands } from "./palette/commands"
+export { DialogSelectFile, type DialogSelectFileProps } from "./palette/select-file"
 export { useCommands } from "./palette/commands"
 export type { CommandOption, CommandSource } from "./palette/registrations"
 export type { AppShellProps } from "./view/app-shell"

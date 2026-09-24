@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "لوحة الأوامر",
   "shell.palette.placeholder": "البحث في الملفات والأوامر والجلسات",
   "shell.palette.empty": "لا توجد نتائج",
   "shell.palette.suggested": "مقترح",
