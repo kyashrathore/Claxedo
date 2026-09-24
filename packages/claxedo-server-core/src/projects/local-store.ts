@@ -7,6 +7,7 @@ import type { RepoAddressResolver } from "@claxedo/sandbox-contract"
 import { dataDir } from "../platform/runtime/lib/paths"
 import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import {
+  cloudWorkspaceReady,
   deleteProjectRecord,
   deleteWorkspace,
   ensureWorkspace,
@@ -132,7 +133,9 @@ type StoredProject = NonNullable<Awaited<ReturnType<typeof getProjectRecord>>>
  * own project routes serve, plus any record not placed yet. Its name, icon
  * and startup command are the catalog's (the root workspace's `project_*`
  * fields, which those routes also write); the record adds the environment,
- * and its name only lets creation refuse a taken one.
+ * and its name only lets creation refuse a taken one. It is available while
+ * one of its placements can be reached now: a folder that exists, or a cloud
+ * workspace whose sandbox is ready.
  */
 async function projectView(id: string, catalog: CatalogProject | undefined, record: StoredProject | undefined): Promise<ProjectRecord | undefined> {
   const known = record ?? (catalog && { name: catalog.name, created_at: catalog.time.created, updated_at: catalog.time.updated })
@@ -146,7 +149,7 @@ async function projectView(id: string, catalog: CatalogProject | undefined, reco
     repoUrl: workspace?.repo_url ?? null,
     ...(catalog?.icon ? { icon: catalog.icon } : {}),
     ...(catalog?.commands ? { commands: catalog.commands } : {}),
-    available: Object.values(catalog?.workspaces ?? {}).some((placement) => placement.available),
+    available: Object.values(catalog?.workspaces ?? {}).some((placement) => placement.available && (placement.kind !== "cloud" || cloudWorkspaceReady(placement.id))),
     created_at: known.created_at,
     updated_at: Math.max(known.updated_at, catalog?.time.updated ?? 0),
   }

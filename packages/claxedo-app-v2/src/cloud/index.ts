@@ -6,3 +6,4 @@ export type { CloudList, CloudPlacer, CloudWorkspaceRow, CloudWorkspaces } from 
 export { useCloudPlacer, useCloudWorkspaces } from "./store"
 export { cloudStatusText } from "./view/cloud-status"
 export { CloudWorkspaces as CloudWorkspacesSection } from "./view/cloud-workspaces"
+export { SandboxDriverLogo } from "./view/sandbox-driver-logo"

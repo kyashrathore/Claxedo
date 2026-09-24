@@ -3,15 +3,14 @@ import { projectId, useServer, type Placement, type PlacementId, type Project, t
 import { ClaxedoIcon as Icon, useDialog } from "@/ui"
 import { useProjectsText } from "../i18n"
 import { pickProjectFolderWith } from "../pick-project-folder"
+import { primaryPlacement } from "../open"
 import { useProjectList } from "../project-list"
+import { inCatalogOrder } from "../project-order"
 import { useProjects } from "../store"
+import { createDraftContext, registerDraftContext, type DraftTarget } from "../draft-context"
+import { useBranchChip, useEnvironmentChip, useWorkspaceChip } from "./context-chips"
 import { SessionContextRow, type ContextChip, type ContextChipAvatar } from "./context-row"
 import { ProjectCreateForm } from "./project-create-form"
-
-function primaryPlacement(placements: readonly Placement[], project: ProjectId): Placement | undefined {
-  const own = placements.filter((placement) => placement.projectId === project)
-  return own.find((placement) => placement.kind === "folder") ?? own[0]
-}
 
 function projectDetail(project: Project, placements: readonly Placement[]): string {
   const hosted = placements.some((placement) => placement.projectId === project.id && placement.kind === "cloud")
@@ -26,11 +25,9 @@ function useProjectChoices() {
   const projects = useProjects()
   return createMemo(() => {
     const state = projects()
-    return state.kind === "ready" ? [...state.data].sort((a, b) => b.updatedAt - a.updatedAt) : []
+    return state.kind === "ready" ? inCatalogOrder(state.data) : []
   })
 }
-
-export type DraftTarget = { readonly projectId: ProjectId; readonly placementId: PlacementId }
 
 type CreatePanelInput = { close: () => void; back: () => void; hold: (active: boolean) => void }
 
@@ -88,6 +85,14 @@ export function NewSessionContextRow(props: DraftTarget & { readonly onOpen: (ta
       render: (input) => <CreateProjectPanel {...input} pickFolder={pickFolder} onCreated={(project) => openProject(project.id)} />,
     },
   })
-  const chips = createMemo((): ContextChip[] => [projectChip()])
+  const context = createDraftContext(() => ({ projectId: props.projectId, placementId: props.placementId }))
+  registerDraftContext(() => props.placementId, context)
+  const environmentChip = useEnvironmentChip(context)
+  const workspaceChip = useWorkspaceChip(context)
+  const branchChip = useBranchChip(context)
+  const chips = createMemo((): ContextChip[] => {
+    const environment = environmentChip()
+    return [projectChip(), ...(environment ? [environment] : []), workspaceChip(), branchChip()]
+  })
   return <SessionContextRow chips={chips()} />
 }

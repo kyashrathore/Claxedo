@@ -1,14 +1,19 @@
 import type { Page } from "@playwright/test"
-import { expect, sessionRoute, test, UI } from "../harness"
+import { expect, sessionRoute, test, UI, type Stack } from "../harness"
 
-const SECTIONS = [
-  ["General", "General"],
-  ["Shortcuts", "Keyboard shortcuts"],
-  ["Terminals", "Terminals"],
-  ["Machines", "Machines"],
-  ["Orgs & Teams", "Orgs & Teams"],
-  ["Models", "Models"],
-] as const
+type Section = { readonly v1Row: string; readonly heading: string; readonly v2Link: string }
+
+const GENERAL: Section = { v1Row: "General", heading: "General", v2Link: "Appearance" }
+const SHORTCUTS: Section = { v1Row: "Shortcuts", heading: "Keyboard shortcuts", v2Link: "Keyboard shortcuts" }
+const SECTIONS: readonly Section[] = [
+  GENERAL,
+  SHORTCUTS,
+  { v1Row: "Orgs & Teams", heading: "Orgs & Teams", v2Link: "Organization" },
+  { v1Row: "Models", heading: "Models", v2Link: "Accounts" },
+  { v1Row: "Terminals", heading: "Terminals", v2Link: "Terminals" },
+  { v1Row: "Machines", heading: "Machines", v2Link: "Machines" },
+]
+const V2_SETTINGS = "v2 approved: v2's settings sidebar and layout (DECISIONS Owner, 16:45)"
 
 function picker(app: Page, label: string) {
   return app.getByRole("group", { name: label }).getByRole("button")
@@ -35,24 +40,32 @@ async function revealRail(app: Page, isMobile: boolean) {
   if (isMobile) await app.getByRole("button", { name: UI.openRail }).click()
 }
 
-async function openSettings(app: Page, isMobile: boolean) {
+async function openSection(stack: Stack, app: Page, isMobile: boolean, section: Section) {
+  await revealRail(app, isMobile)
+  if (stack.app === "v2") {
+    await test.step(V2_SETTINGS, async () => {
+      await app.getByRole("link", { name: section.v2Link, exact: true }).click()
+      await expect(app.getByRole("heading", { level: 1, name: section.v2Link })).toBeVisible()
+    })
+    return
+  }
+  await app.getByRole("button", { name: section.v1Row, exact: true }).click()
+  await expect(app.getByRole("heading", { level: 1, name: section.heading })).toBeVisible()
+}
+
+async function openSettings(stack: Stack, app: Page, isMobile: boolean) {
   await revealRail(app, isMobile)
   await app.getByRole("button", { name: UI.signedOutAccount }).click()
   await app.getByRole("menuitem", { name: "Settings" }).click()
-  await expect(app.getByRole("heading", { level: 1, name: "General" })).toBeVisible()
-}
-
-async function openSection(app: Page, isMobile: boolean, row: string, heading: string) {
-  await revealRail(app, isMobile)
-  await app.getByRole("button", { name: row, exact: true }).click()
-  await expect(app.getByRole("heading", { level: 1, name: heading })).toBeVisible()
+  if (stack.app === "v2") await openSection(stack, app, isMobile, GENERAL)
+  else await expect(app.getByRole("heading", { level: 1, name: "General" })).toBeVisible()
 }
 
 test("15 settings: color scheme, a rebound shortcut and its reset, every section", async ({ stack, app, isMobile }) => {
   const workspace = await stack.daemon.makeWorkspace("settings", "Settings")
   const draft = `${stack.url}${sessionRoute(workspace.id)}`
   await app.goto(draft)
-  await openSettings(app, isMobile)
+  await openSettings(stack, app, isMobile)
   const html = app.locator("html")
   await expect(html).toHaveAttribute("data-theme", "codex")
   await expect(picker(app, "Theme")).toHaveText("Codex")
@@ -60,12 +73,12 @@ test("15 settings: color scheme, a rebound shortcut and its reset, every section
   await expect(html).toHaveAttribute("data-color-scheme", "dark")
   await app.goto(draft)
   await expect(html).toHaveAttribute("data-color-scheme", "dark")
-  await openSettings(app, isMobile)
+  await openSettings(stack, app, isMobile)
   await expect(picker(app, "Color scheme")).toHaveText("Dark")
   await choose(app, "Color scheme", "Light")
   await expect(html).toHaveAttribute("data-color-scheme", "light")
 
-  await openSection(app, isMobile, "Shortcuts", "Keyboard shortcuts")
+  await openSection(stack, app, isMobile, SHORTCUTS)
   const reset = app.getByRole("button", { name: "Reset to defaults" })
   const binding = app.locator('[data-keybind-id="command.palette"]')
   const original = (await binding.textContent()) ?? ""
@@ -87,16 +100,16 @@ test("15 settings: color scheme, a rebound shortcut and its reset, every section
   await expect(palette).toBeVisible()
   await app.keyboard.press("Escape")
   await expect(palette).toHaveCount(0)
-  await openSettings(app, isMobile)
-  await openSection(app, isMobile, "Shortcuts", "Keyboard shortcuts")
+  await openSettings(stack, app, isMobile)
+  await openSection(stack, app, isMobile, SHORTCUTS)
   await expect(binding).toHaveText(rebound)
   await reset.click()
   await expect(app.getByText("Shortcuts reset")).toBeVisible()
   await expect(binding).toHaveText(original)
   await expect(reset).toBeDisabled()
 
-  for (const [row, heading] of SECTIONS) {
-    await openSection(app, isMobile, row, heading)
+  for (const section of SECTIONS) {
+    await openSection(stack, app, isMobile, section)
     expect(await app.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   }
 

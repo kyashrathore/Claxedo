@@ -1,5 +1,6 @@
-import { createEffect, on, untrack, type JSX } from "solid-js"
+import { createEffect, on, onCleanup, untrack, type JSX } from "solid-js"
 import { useServer, type ProjectId } from "@/server"
+import { useSessionStores } from "@/session"
 import { useWorkbench } from "@/workbench"
 import { useShellLayout } from "../layout"
 import { useShellRoute } from "../router"
@@ -13,6 +14,10 @@ function panePath(route: PaneRoute): string {
 
 function showsPanes(route: ShellRoute): boolean {
   return route.kind === "draft" || route.kind === "session" || route.kind === "terminal"
+}
+
+function namesPane(route: ShellRoute, pane: PaneRoute): boolean {
+  return route.kind === "session" && pane.kind === "session" && route.sessionId === pane.sessionId
 }
 
 function paneRouteOf(route: ShellRoute, projectOf: (route: Extract<ShellRoute, { placementId: unknown }>) => ProjectId | undefined): PaneRoute | undefined {
@@ -30,6 +35,8 @@ export function RouteSync(): JSX.Element {
   const server = useServer()
   const workbench = useWorkbench()
   const layout = useShellLayout()
+  const stores = useSessionStores()
+  onCleanup(routing.resolveSessions((id) => stores.list.rows().find((row) => row.ref.sessionId === id)?.ref.placementId))
 
   createEffect(on(routing.route, () => layout.send({ type: "navigated" }), { defer: true }))
   createEffect(on(workbench.selectors.focusedContent, () => layout.send({ type: "navigated" }), { defer: true }))
@@ -45,7 +52,8 @@ export function RouteSync(): JSX.Element {
     const paneRoute = workbench.routeOf(focused)
     if (!paneRoute) return
     const path = panePath(paneRoute)
-    if (!showsPanes(untrack(routing.route)) || path === untrack(routing.pathname)) return
+    const route = untrack(routing.route)
+    if (!showsPanes(route) || namesPane(route, paneRoute) || path === untrack(routing.pathname)) return
     routing.navigate(path, { replace: true })
   })
 

@@ -3,6 +3,8 @@ import { createSignal } from "solid-js"
 import { createAccountsApi } from "./accounts"
 import { createCapabilities, type CapabilitiesOwner } from "./capabilities"
 import { createCloudApi } from "./cloud"
+import { createIntegrationsApi } from "./integrations"
+import { createSandboxProvidersApi } from "./sandbox-providers"
 import { createFoldersApi } from "./folders"
 import type { ServerConfig } from "./config"
 import { isRetryable, toAppError } from "./errors"
@@ -90,6 +92,8 @@ function serverApis(transport: Transport, workspaces: Workspaces, status: Status
     accounts: createAccountsApi(transport, queryClient),
     marketplace: createMarketplaceApi(transport, queryClient),
     folders: createFoldersApi(transport),
+    integrations: createIntegrationsApi(transport, queryClient),
+    sandboxProviders: createSandboxProvidersApi(transport, queryClient),
     livePlugins: createLivePluginsApi(transport),
     harnessConfig: createHarnessConfigApi(transport, workspaces),
     request: transport.request,

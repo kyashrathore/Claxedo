@@ -1,5 +1,5 @@
 import { Composer, ComposerNoticeProvider, ComposerNoticeRow, createComposerNoticeChannel, draftComposerKey, type Submission } from "@/composer"
-import { NewSessionContextRow } from "@/projects"
+import { NewSessionContextRow, resolveDraftPlacement } from "@/projects"
 import type { PlacementId, ProjectId } from "@/server"
 import { useSessionStores, type SessionView } from "@/session"
 import type { PaneProps } from "@/shell"
@@ -13,18 +13,17 @@ import "./session-screen.css"
 export type DraftSessionState = {
   readonly projectId: ProjectId
   readonly placementId: PlacementId
-  readonly draftId: string
 }
 
 export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
   const t = useSessionScreenText()
   const stores = useSessionStores()
   const workbench = useWorkbench()
-  const key = () => draftComposerKey(props.state.placementId, props.state.draftId)
+  const key = () => draftComposerKey(props.state.placementId)
   const notice = createComposerNoticeChannel()
   let pane: HTMLDivElement | undefined
   const createSession = async (submission: Submission): Promise<SessionView> => {
-    const ref = await stores.list.create({ placementId: props.state.placementId, harness: submission.harness, model: submission.model })
+    const ref = await stores.list.create({ placementId: await resolveDraftPlacement(props.state), harness: submission.harness, model: submission.model })
     return stores.open(ref)
   }
   return (
@@ -42,7 +41,7 @@ export function DraftSessionScreen(props: PaneProps<DraftSessionState>) {
                   <NewSessionContextRow
                     projectId={props.state.projectId}
                     placementId={props.state.placementId}
-                    onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, { ...target, draftId: props.state.draftId })}
+                    onOpen={(target) => workbench.replacePane(props.paneId, draftSessionPaneKind, target)}
                   />
                 </div>
                 <div class="relative z-10 -mt-2">

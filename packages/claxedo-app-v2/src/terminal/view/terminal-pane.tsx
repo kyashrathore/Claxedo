@@ -30,8 +30,7 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
   const connection = machine<TerminalConnection, TerminalConnectionEvent>({ kind: "connecting" }, transitionConnection)
   const [backend, setBackend] = createSignal<TerminalBackend>()
   const [focused, setFocused] = createSignal(false)
-  const missing = () => store.load().kind === "ready" && row() === undefined
-  const overlay = () => missing() || connection.state().kind !== "attached"
+  const overlay = () => connection.state().kind !== "attached"
   let host!: HTMLDivElement
   let mount: TerminalMount | undefined
 
@@ -93,7 +92,6 @@ export function TerminalPane(props: PaneProps<TerminalPaneState>): JSX.Element {
           <div class="absolute inset-0 bg-background-base">
             <TerminalStatus
               connection={connection.state()}
-              missing={missing()}
               onRetry={() => mount?.retry()}
               onRecreate={recreate}
             />

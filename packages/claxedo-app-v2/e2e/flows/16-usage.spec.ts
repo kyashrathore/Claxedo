@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test"
-import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI } from "../harness"
+import { expect, SCRIPTED_ACP_HARNESS, sessionRoute, test, UI, type Stack } from "../harness"
 
 type QuotaRead = { readonly harness: string; readonly label?: string; readonly windows: readonly unknown[]; readonly usageError?: string }
 
@@ -16,11 +16,15 @@ async function usage(url: string, view: "quota" | "claxedo"): Promise<UsageRead>
   return (await response.json()) as UsageRead
 }
 
-async function openUsage(app: Page, isMobile: boolean) {
+async function openUsage(stack: Stack, app: Page, isMobile: boolean) {
   if (isMobile) await app.getByRole("button", { name: UI.openRail }).click()
   await app.getByRole("button", { name: UI.signedOutAccount }).click()
   await app.getByRole("menuitem", { name: "Usage" }).click()
-  return app.getByRole("dialog", { name: "Usage" })
+  if (stack.app !== "v2") return app.getByRole("dialog", { name: "Usage" })
+  return await test.step("v2 approved: Usage opens Settings → Usage (DECISIONS Owner, 20:00)", async () => {
+    await expect(app).toHaveURL(/\/settings\/usage$/)
+    return app.getByRole("region", { name: "Usage" })
+  })
 }
 
 test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, app, isMobile }) => {
@@ -32,7 +36,7 @@ test("16 usage: quota windows and the turns Claxedo ran", async ({ stack, api, a
   const accounts = (await usage(stack.url, "quota")).quota.snapshot?.accounts ?? []
 
   await app.goto(`${stack.url}${sessionRoute(workspace.id)}`)
-  const dialog = await openUsage(app, isMobile)
+  const dialog = await openUsage(stack, app, isMobile)
   const views = dialog.getByRole("group", { name: "Usage views" })
   await expect(views.getByRole("button", { name: "Usage limits" })).toHaveAttribute("aria-pressed", "true")
   const limits = dialog.getByRole("region", { name: "Quota windows" })

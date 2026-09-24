@@ -1,4 +1,5 @@
-import { Match, Show, Switch, type JSX } from "solid-js"
+import { Match, onCleanup, Show, Switch, type JSX } from "solid-js"
+import { useDragSource, useWorkbench } from "@/workbench"
 import type { HoverEngagement } from "../hover-engagement"
 import type { NavigationStatus } from "../model"
 
@@ -6,6 +7,7 @@ const ROW_SHELL_CLASS =
   "relative flex items-center gap-2 min-h-7 py-0.5 pr-2.5 mx-1 text-left outline-none rounded-md hover:bg-surface-base-hover/40"
 
 export type NavigationRowProps = {
+  readonly class?: string
   readonly data?: Readonly<Record<string, string | undefined>>
   readonly classList?: Readonly<Record<string, boolean | undefined>>
   readonly label: string
@@ -13,15 +15,29 @@ export type NavigationRowProps = {
   readonly onActivate: () => void
   readonly onContextMenu?: (event: MouseEvent) => void
   readonly engagement: HoverEngagement
+  readonly prepareDrag?: () => string | undefined
   readonly children: JSX.Element
 }
 
 export function NavigationRow(props: NavigationRowProps): JSX.Element {
+  const workbench = useWorkbench()
+  const drag = (element: HTMLElement) => {
+    const prepare = props.prepareDrag
+    if (!prepare) return
+    const dispose = useDragSource(workbench.drag, element, {
+      contentId: prepare,
+      sourceKind: "navigation-row",
+      label: () => props.label,
+      onDropMissed: () => props.onActivate(),
+    })
+    onCleanup(dispose)
+  }
   return (
     <div
+      ref={drag}
       {...props.data}
       data-active={props.active ? "true" : "false"}
-      class={ROW_SHELL_CLASS}
+      class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
       classList={props.classList}
       onPointerEnter={props.engagement.handlers.onPointerEnter}
       onPointerLeave={props.engagement.handlers.onPointerLeave}

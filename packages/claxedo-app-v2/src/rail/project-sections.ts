@@ -4,6 +4,7 @@ export type ProjectSection = {
   readonly key: string
   readonly projectId: ProjectId
   readonly placementId: PlacementId | undefined
+  readonly placementIds: readonly PlacementId[]
   readonly label: string
   readonly caption: string
   readonly dimmed: boolean
@@ -24,11 +25,13 @@ function primaryPlacement(placements: readonly Placement[]): Placement | undefin
 }
 
 export function projectSection(project: Project, placements: readonly Placement[]): ProjectSection {
-  const primary = primaryPlacement(placements.filter((placement) => placement.projectId === project.id))
+  const owned = placements.filter((placement) => placement.projectId === project.id)
+  const primary = primaryPlacement(owned)
   return {
     key: project.id,
     projectId: project.id,
     placementId: primary?.id,
+    placementIds: owned.map((placement) => placement.id),
     label: project.name,
     caption: caption(project),
     dimmed: !primary || !project.available,

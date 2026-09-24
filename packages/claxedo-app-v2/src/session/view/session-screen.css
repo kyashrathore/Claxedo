@@ -33,3 +33,10 @@
 [data-slot="session-docks"]:empty {
   display: none;
 }
+
+[data-slot="session-screen-transcript"] {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}

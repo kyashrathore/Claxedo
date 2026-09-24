@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
-import { ensureWorkspace, listProjects, listWorkspaces, updateProjectMetadata } from "../workspace/store/index"
+import { configureWorkspaceStore, ensureWorkspace, listProjects, listWorkspaces, updateProjectMetadata } from "../workspace/store/index"
 import { localProjectStore, projectsDirectory, type LocalProjectStoreDeps } from "./local-store"
 import { githubCloneAuthorization, type RepositoryAccessResult, type RepositorySourceDeps } from "./repository-source"
 import { ProjectRoutes, type ProjectRouteOptions } from "./routes"
@@ -304,6 +304,19 @@ describe("local project routes", () => {
     await fs.rm(directory, { recursive: true, force: true })
     const listed = await (await app.request("http://localhost/")).json() as { projects: Array<{ id: string }> }
     expect(listed.projects.find((item) => item.id === project.id)).toMatchObject({ name: "Vanished", available: false })
+  })
+
+  test("a project that runs only in a cloud workspace is available only while its sandbox is ready", async () => {
+    const cloud = await ensureWorkspace({ kind: "cloud", driver: "daytona", directory: "/workspace", repo_url: "https://github.com/acme/sky.git", status: "stopped" })
+    const id = cloud?.project_id ?? ""
+    const availability = async () => (((await (await app.request(`http://localhost/${id}`)).json()) as { project: { available: boolean } }).project.available)
+    expect(await availability()).toBe(false)
+    configureWorkspaceStore({ sandboxLease: (workspaceId) => (workspaceId === cloud?.id ? { status: "ready" } : undefined) })
+    try {
+      expect(await availability()).toBe(true)
+    } finally {
+      configureWorkspaceStore()
+    }
   })
 
   test("the name is the catalog's: a rename there reads back here, one here reaches it, and an empty one restores the default", async () => {

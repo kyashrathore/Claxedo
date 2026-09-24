@@ -61,7 +61,7 @@ Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is
 | `TextInput` | input props, `leadingIcon?`, `showCopyButton?`, `showClearButton?`, `copyLabel?`, `clearLabel?`, `onCopyClick?`, `onClearClick?`, `numeric?`, `invalid?`, `appearance?: base \| large` |
 | `TextShimmer` | `text: string`, `class?`, `as?`, `active?`, `offset?` |
 | `Textarea` | textarea props, `invalid?` |
-| `Toast` (`.Region`, `.Icon`, `.Content`, `.Title`, `.Description`, `.Actions`, `.CloseButton`), `showToast`, `toaster` | `showToast(options \| string)`: `title?`, `description?`, `icon?`, `duration?`, `persistent?`, `actions?: { label, variant?, onClick }[]`; mount one `Toast.Region` |
+| `Toast`, `showToast`, `toaster` (the kit's, from `@opencode-ai/ui/toast`, so toasts look as they do today) | `showToast(options \| string)`: `title?`, `description?`, `icon?: kit icon name`, `variant?: default \| success \| error \| loading`, `duration?`, `persistent?`, `actions?: { label, onClick }[]`; mount one `Toast.Region` |
 | `Tooltip` | Kobalte tooltip props, `value: JSX.Element`, `class?`, `contentClass?`, `contentStyle?`, `inactive?`, `forceOpen?` |
 | `Wordmark` | `class?`; the Claxedo pixel wordmark |
 | `useFilteredList<T>(props)` | `items`, `key`, `filterKeys?`, `current?`, `groupBy?`, `sortBy?`, `sortGroupsBy?`, `skipFilter?`, `onSelect?`, `noInitialSelection?` → `{ grouped, filter, flat, reset, refetch, clear, onKeyDown, onInput, active, setActive }` |

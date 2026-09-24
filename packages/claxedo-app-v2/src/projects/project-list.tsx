@@ -2,6 +2,7 @@ import { createContext, createEffect, createMemo, createSignal, on, useContext, 
 import { useQuery } from "@tanstack/solid-query"
 import { useServer, type Project, type ProjectId, type Server } from "@/server"
 import { pickAvailableColor, planProjectColorAssignment } from "./project-colors"
+import { inCatalogOrder } from "./project-order"
 import { createProjectState, type ProjectState } from "./project-state"
 
 export type RailProject = { readonly project: Project; readonly expanded: boolean }
@@ -46,7 +47,7 @@ export function createProjectList(server: Server) {
   createEffect(
     on(projects, (list) => {
       if (query.data === undefined) return
-      state.sync([...list].sort((a, b) => b.updatedAt - a.updatedAt).map((project) => project.id))
+      state.sync(inCatalogOrder(list).map((project) => project.id))
     }),
   )
   watchColors(server, state, projects)

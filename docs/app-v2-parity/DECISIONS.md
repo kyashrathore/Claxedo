@@ -97,3 +97,19 @@ A **Settings → Projects** section lists the projects and holds their managemen
   - No "View options": the rail filters stay removed.
 - **The "Settings" row the owner liked stays above the card.** The orchestrator's reading; the owner can say to remove it.
 - **Lane shell-4 owns it,** using `@/auth`'s `useAuth()` for the signed-in state and sign in/out.
+
+## Owner, 21:10: the rail foot
+- No separate "Settings" row in the rail; it goes. Settings stays in the account menu and on ⌘,. This replaces the orchestrator's 20:00 reading that kept the row.
+- A **Usage icon button** sits on the right of the account card, beside it, and opens Settings → Usage.
+- Lane shell-4.
+
+## Owner, 20:28: the todo dock (a deviation from v1)
+- v1 keeps a finished todo list open (`todoState` returns "open" when every todo is done). The owner expects it to go away.
+- **v2:** the dock shows only while a turn runs and the list is unfinished, so a finished list goes away.
+- **Collapsed state:** kept per session in sessionStorage (`claxedo:session:<id>:todo-collapsed`). It survives a reload and nothing longer ("no long cache").
+- Flow 03 branches on this entry: v2 expects no todo dock after the turn.
+
+## Owner, 22:05: no session-edge strip
+- v1's "Open changes / Open files" strip on the session's right edge (TOOL-003, SHELL-605) goes. The owner: "alone doesn't make any sense".
+- Changes and Files open from the workspace panel toggle and its tabs.
+- Flow 14 branches on this entry.

@@ -1,11 +1,11 @@
 # Projects
 
-Owns: the project as the app sees it, its placements, the add-project flow, Settings → Projects (v1's Edit dialog and remove), v1's project list data for the rail, and the routes that name a project or a placement by id.
+Owns: the project as the app sees it, its placements, the create-project form (the composer's Project chip and the first run's step 1), Settings → Projects (v1's Edit dialog and remove), v1's project list data for the rail, and the routes that name a project or a placement by id.
 
 ## Concepts
 
 - **Project** (`Project` from `@/server`): one entry of `/api/claxedo/projects`, the only project source. The route lists every project v1 lists, with v1's name, icon, colour and startup command, its environment, its source, its checkout `directory` (display only) and `available`, false when none of its placements can be reached. Removing a project removes it and its placements everywhere.
-- **Rail list** (`createProjectList`, `ProjectListProvider`): v1's sidebar data, the route's projects in this browser's order with their expanded flags and colours, persisted per server as v1 did (`project-state.ts`, keyed by project id). New projects join at the end, most recently updated first. A project without a colour gets a free one (`project-colors.ts`), saved through the route.
+- **Rail list** (`createProjectList`, `ProjectListProvider`): v1's sidebar data, the route's projects in this browser's order with their expanded flags and colours, persisted per server as v1 did (`project-state.ts`, keyed by project id). New projects join at the end in v1's catalog order, by project id (`project-order.ts`), which is also a fresh browser's whole order. A project without a colour gets a free one (`project-colors.ts`), saved through the route.
 - **Placement**: where a project runs, a folder, a worktree or a cloud workspace (`Placement`). A placement has its own id; a session belongs to one placement. A folder path is display data, never a key, a route parameter or an identity. Only `src/server/` turns a placement into a directory.
 - **Source**: what the project is made from, a repository URL, a repository from a connected code host, or a folder on a machine. A folder is offered only when the server reports `thisMachine`.
 - **Draft** (`ProjectDraft`): the answers the add flow collects (name, source, harness, and the reader's explicit placement pick) before anything is created.
@@ -26,19 +26,11 @@ Owns: the project as the app sees it, its placements, the add-project flow, Sett
 
 The repository picker reads `queries.codeHost.connections()` and `queries.codeHost.repositories(connectionId)`. Failures become `AppError`s through the adapter's `toAppError`.
 
-## State machines
-
-**Add project** (`model.ts`): `choosingSource → choosingAgent → choosingPlacement → creating → created(projectId, placementId?)`, with `failed(error)` from `creating`. Events: `sourceChosen`, `agentChosen`, `back`, `createRequested`, `projectRecorded`, `projectCreated`, `createFailed`.
-
-The flow is hosted first: name and source, then the AI, then where it runs. On every deployment the record is created first through the projects route, then its placement: a cloud workspace through `@/cloud`, or the placement the server registered for the chosen machine. The panels of visited steps stay mounted and hidden, so Back keeps what the user entered.
-
-Once the record exists, `choosingPlacement`, `creating` and `failed` carry its `projectId`. Retrying places that project again and never posts a second record, and Back stops at the placement step (`canGoBack`), because the name and source now belong to a server record.
-
 ## Routes
 
 - `/settings/projects`: Settings → Projects (`projectsSettingsSection`), every project; `?project=<id>` shows that project's settings.
 - Opening an existing placement (`usePlacementOpener`) opens a draft session pane for it and goes home, as the rail's New session does; the server session starts with the draft's first send.
-- A created project (`useCreatedProjectOpener`) starts its first session in the new placement with the harness chosen in the AI step, and goes to `/w/:placementId/s/:sessionId`. The onboarding screen renders outside the workbench, and the session is what carries that harness. A created project with no placement opens its settings; a failed session create is shown as a toast.
+- `primaryPlacement(placements, projectId)` is the placement a project opens in: its folder, else its first placement. The chip and the first run open a new project's draft there.
 
 `PageEntry.title()` calls `useProjectsText()` and must run under the shell's `I18nProvider`.
 
@@ -48,7 +40,9 @@ v1's folder dialog, on desktop and web alike (`view/select-directory.tsx`, moved
 
 ## Views
 
-The new-session composer carries v1's context row (`NewSessionContextRow`, built on v1's `SessionContextRow` and its chip pickers). Its Project chip lists the projects, most recently updated first, with search; picking one asks the draft's host (`onOpen`) to switch the draft to that project's primary placement. Its footer "Create project…" opens v1's create form (`ProjectCreateForm`): a folder through v1's folder dialog, or a repository by URL or from a connected account, plus the approved optional Name and Account fields. A created project opens the same way.
+The new-session composer carries v1's context row (`NewSessionContextRow`, built on v1's `SessionContextRow` and its chip pickers). Its Project chip lists the projects in v1's catalog order, by project id, with search; picking one asks the draft's host (`onOpen`) to switch the draft to that project's primary placement. Its footer "Create project…" opens v1's create form (`ProjectCreateForm`): a folder through v1's folder dialog, or a repository by URL or from a connected account, plus the approved optional Name and Account fields. When the server offers a code host that isn't connected, the form shows v1's connect block (`project-create-connect.tsx`): a token, or an OAuth device grant whose approval the adapter waits for, since a grant has no callback (`server.integrations.awaitGrant`, bounded to the code's 15 minutes). A created project opens the same way.
+
+The Environment, Workspace and Branch chips drive the draft's target (`createDraftContext`, owned by the row, one per draft placement). Environment offers "This computer" when the server runs projects on its own filesystem and "Cloud environment" when cloud workspaces are enabled. Workspace lists "main" (the project's folder) and its worktrees on this machine, or its cloud workspaces; its footer picks "New local worktree" or "New cloud sandbox", made when the draft's first message is sent: the draft screen awaits `resolveDraftPlacement(draft)` before creating the session, and gets the draft's own placement when nothing else was picked. Picking a branch other than the current one also picks the new workspace, as in v1. A new cloud sandbox starts from that branch; a new local worktree starts from the current HEAD, because the server's worktree route takes no base.
 
 Context row invariants, kept from v1:
 - The chips are rebuilt whenever any input moves, so the row keys pickers by position (`Index`); keying by reference would remount an open picker and close it.
@@ -67,4 +61,4 @@ Every control is a kit component or a 44 px row; pages are one column with no ho
 
 - Flow 2: local add of a folder and a clone, an edit in Settings → Projects read back by id, remove, a deep link by id.
 - Flow 32: hosted-first add on signed web, the id read back, a deep link by id.
-- Flow 1 uses the same steps inside `@/onboarding`.
+- Flow 1 uses `ProjectCreateForm` as step 1 of `@/onboarding`.

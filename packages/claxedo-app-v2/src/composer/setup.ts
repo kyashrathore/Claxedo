@@ -32,8 +32,9 @@ export type ComposerProps = {
   readonly createSession?: (submission: Submission) => Promise<SessionView>
   readonly afterAccepted?: (view: SessionView) => void
   readonly queuedEdit?: { readonly active: () => boolean; readonly cancel: () => void }
-  /** The pane that takes dropped files for this composer; the composer itself when absent. */
   readonly dropZone?: () => HTMLElement | undefined
+  readonly collapsible?: boolean
+  readonly registerRetry?: (retry: (text: string) => void) => void
   readonly openImageMarks?: (image: ImagePart, focusIndex?: number) => void
 }
 
@@ -199,6 +200,10 @@ export function createComposer(props: ComposerProps) {
   const reader = createReaderFor({ props, store, key, refs, selection, setDragging, late })
   const controller = createControllerFor({ key, store, refs, working, suggestions, send, commands })
   late.controller = controller
+  props.registerRetry?.((text) => {
+    store.setPrompt(key(), [{ type: "text", content: text, start: 0, end: text.length }], text.length)
+    void send.send()
+  })
   registerPromptModeCommands({
     register: (scope, options) => commands.register(scope, options),
     mode: () => controller.state.mode,

@@ -396,6 +396,14 @@ function cloudAvailable(ws: Workspace) {
   return true
 }
 
+export function cloudWorkspaceReady(workspaceId: string): boolean {
+  try {
+    return sandboxLeaseReader?.(workspaceId)?.status === "ready"
+  } catch {
+    return false
+  }
+}
+
 export async function listWorkspaces() {
   await boot()
   return [...byId.values()].sort((a, b) => b.updated_at - a.updated_at)

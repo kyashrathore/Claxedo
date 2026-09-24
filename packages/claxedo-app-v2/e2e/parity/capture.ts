@@ -9,7 +9,7 @@ import { compareShots } from "./compare"
 import { startAppOrigin, type AppOrigin } from "./origin"
 import { writeReport, type ShotResult } from "./report"
 import { SCREENS, SIZES, type Screen, type ScreenContext, type Size } from "./screens"
-import { seedStack, type SeedData } from "./seed"
+import { prepareFreshStack, seedStack, type SeedData } from "./seed"
 import { settledShot } from "./settle"
 
 const PARITY_DIR = import.meta.dirname
@@ -101,6 +101,7 @@ async function captureAll(stack: Stack, origins: Origins, chosen: Selection): Pr
     for (const phase of ["fresh", "seeded"] as const) {
       const screens = chosenScreens(phase, chosen)
       if (screens.length === 0) continue
+      if (phase === "fresh") await prepareFreshStack(stack)
       if (phase === "seeded") seed = await seedStack(stack)
       for (const screen of screens) {
         for (const size of chosen.sizes.filter((size) => !screen.sizes || screen.sizes.includes(size.name))) {

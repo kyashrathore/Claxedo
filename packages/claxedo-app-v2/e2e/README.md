@@ -13,7 +13,7 @@ bun run e2e -- --app=v2 e2e/flows/00-harness-smoke.spec.ts
 CLAXEDO_E2E_RED=1 bun run e2e -- --app=v2    # red run: the ACP agent fails every turn, model keys stay on the vendors' hosts
 ```
 
-`--app` picks which package the daemon serves: `v1` is `packages/claxedo-app`, `v2` is this package. Global setup builds `packages/agent-sdk-runtime`'s launch gate child when it is missing (and `@claxedo/helpers` first, which that bundle needs), reserves the daemon port for the run (the first free port in `CLAXEDO_E2E_PORT_RANGE`, default 46100–46199, or `CLAXEDO_E2E_DAEMON_PORT`), then builds the chosen app into its `dist-e2e/` with `VITE_CLAXEDO_SERVER_URL` set to that daemon, the way a deployed bundle knows its server. The build is reused until a source file is newer than the stamp or the port changes (v2 builds in about 1.5 s; v1 in about 14 s, after `bun run build:packages` on a fresh checkout). Everything after `--app` goes to `playwright test`, so `--project`, `--grep`, `--headed`, `--debug` and file paths all work.
+`--app` picks which package the daemon serves: `v1` is `packages/claxedo-app`, `v2` is this package. Global setup builds the workspace dists it and the daemon import when they are missing (`@claxedo/helpers`, `@claxedo/agent-runtime-contract`, whose dist the pinned-Pi step imports, and `packages/agent-sdk-runtime`'s launch gate child), reserves the daemon port for the run (the first free port in `CLAXEDO_E2E_PORT_RANGE`, default 46100–46199, or `CLAXEDO_E2E_DAEMON_PORT`), then builds the chosen app into its `dist-e2e/` with `VITE_CLAXEDO_SERVER_URL` set to that daemon, the way a deployed bundle knows its server. The build is reused until a source file is newer than the stamp or the port changes (v2 builds in about 1.5 s; v1 in about 14 s, after `bun run build:packages` on a fresh checkout). Everything after `--app` goes to `playwright test`, so `--project`, `--grep`, `--headed`, `--debug` and file paths all work.
 
 The runner pins `--workers=1` (the machine is shared). Run one suite at a time per worktree: every run builds the app into the same `dist-e2e/` for its own daemon port. Give every concurrent run on the machine its own `CLAXEDO_E2E_PORT_RANGE`: the app is built for the daemon port, so a run whose daemon port is held by another process fails at start instead of talking to someone else's server. Each spec gets its own daemon on the run's daemon port, its own data directory, scripted model server and ACP script directory, and every process is stopped when the spec ends; a second stack in the same spec takes the next free port. `CLAXEDO_E2E_KEEP_DATA=1` keeps the data directory for diagnosis. When a spec fails, the daemon log is attached to the Playwright report (`e2e/report/`).
 
@@ -37,9 +37,11 @@ CLAXEDO_E2E_PORT_RANGE=46100-46149 bun run e2e:parity                        # e
 CLAXEDO_E2E_PORT_RANGE=46100-46149 bun run e2e:parity -- --screens=session,palette --sizes=1280
 ```
 
-One isolated stack serves both apps with the same data. Each app is built for its own port (into `e2e/parity/dist/<app>`) and served same-origin, with every API, stream and socket request forwarded to the one daemon. Screens marked `fresh` are captured first, on the empty stack. Then the seed runs: a project "Parity" with a committed `src/app.ts` and an uncommitted README change, a session with a finished scripted turn (reasoning, read/search/shell tool cards, a diff, a todo, a reply with a code block), and a second session. The seeded screens follow.
+One isolated stack serves both apps with the same data. Each app is built for its own port (into `e2e/parity/dist/<app>`) and served same-origin, with every API, stream and socket request forwarded to the one daemon. Screens marked `fresh` are captured first, on the empty stack, with one git folder at `~/folders/onboarding` for the onboarding steps to pick (nothing records a project from it). Then the seed runs: a project "Parity" with a committed `src/app.ts` and an uncommitted README change, a session with a finished scripted turn (reasoning, read/search/shell tool cards, a diff, a todo, a reply with a code block), and a second session. The seeded screens follow.
 
 Every capture gets a fresh browser context at 1280×800, or 390×844 with touch: light scheme, reduced motion, `en-US`, UTC, device scale 1. It is taken once two frames 250 ms apart are identical. The output lands in `e2e/parity/report/`: `<screen>-<size>-v1.png`, `-v2.png`, `-side.png` (v1, v2, and the differing pixels in red), `results.json`, and `index.html`, most different first. A pixel counts as different when a channel differs by more than 24. The percentage understates a moved layout on a white page, so read the side-by-side.
+
+The screens: onboarding's three steps (`welcome-project`, `onboarding-ai`, `onboarding-where`), `home`, `session`, the rail hidden (`sidebar-off`) and the phone `drawer`, the `palette`, the composer's `at-popover`, `slash-popover`, `add-menu` and `model-picker`, the workspace panel and Review (`panel`, `panel-file`, `panel-markdown`, `panel-add-menu`, `panel-browser`, `panel-maximized`, `review-diff`, `review-compare-menu`, `review-changes`), and every Settings section.
 
 Add a screen in `e2e/parity/screens.ts`: its id (use the inventory's screen name), `fresh` or `seeded`, its sizes, its path per app, and its steps. Steps use v1's accessible names on both apps. A step that fails on v2 is reported in red: v2 lacks v1's control, which is a parity finding, not a tool bug.
 
@@ -167,6 +169,15 @@ The stack starts unsigned, so the machine-wide setup (the scripted providers, Pi
 
 An `Account` is `{ name, email, password, subject, api, transport }`. Its `api` sends the account's bearer token straight to the daemon, reserves each session before creating it and stamps every prompt with a message id, which a signed server requires.
 
+### Signed stack: next steps
+
+Flows 21, 22, 23 and 36 are on hold (owner, 19:08). What the signed stack lacks for them, and the options, with the recommendation C, then A:
+
+- v1 shows its "Share session" control only for a signed session it reaches as central, through the relay (`session-header.tsx:78-90`). On this stack v1 reaches the owner's folder workspaces as local, so the control never mounts, and a second account's reads are refused with 403 `relay_actor_unverified`.
+- **A: the relay in the harness.** Start `@claxedo/workspace-relay` on a lane port, set `CLAXEDO_WORKSPACE_RELAY_URL`, the resolver token and the keys, and enroll the box as a host, so its workspaces are central. All harness code; the browser still signs in through `/login`. Largest: it re-derives part of `packages/claxedo-server/src/signed-browser-relay-fixture.mjs`.
+- **B: an embedded-issuer mode in that fixture.** It already runs a relay, a host tunnel and a registered host, but signs browsers in only through the test bypass v2 does not have. Less code, but it edits a server test fixture v1's signed-web specs share.
+- **C: flow 21 first.** The desktop signs in to this stack through its own sign-in (system browser, loopback callback), which the embedded issuer serves; no relay. The desktop needs `CLAXEDO_CORE_ORIGIN` set to the stack's HTTPS origin and `NODE_EXTRA_CA_CERTS` for its certificate. Risk: the isolated desktop still reaches this Mac's login keychain (`safeStorage.isEncryptionAvailable()` is true), so a sign-in would write its key there.
+
 ### `desktop` (the Electron app)
 
 Specs tagged `@desktop` (`test("…", { tag: "@desktop" }, async ({ desktop }) => …)`) run only in the `desktop` project; `web` and `phone` skip them. The `desktop` fixture builds `packages/claxedo-desktop` for the chosen app when its sources or the app's are newer than the last build (`bun run prebuild`, then `electron-vite build`, with `CLAXEDO_DESKTOP_RENDERER=v2` for v2; about a minute, recorded as a "desktop build" annotation), then launches `out/main/index.js` through Playwright's Electron driver. The app runs isolated like a stack: `HOME`, `XDG_*`, its user data and its server data in the spec's data directory, an empty `ZDOTDIR`, the egress guard, and its own scripted model server and ACP scripts. Its embedded server listens on a port from the run's range and is prepared exactly like the daemon.
@@ -203,6 +214,7 @@ e2e/
     scripted-providers.ts  routes anthropic and openai to the scripted model server
     model-catalog.ts     the OpenCode catalog snapshot
     launch-gate-child.ts builds the runtime's launch gate child
+    workspace-dists.ts   builds a workspace package's dist when it is missing
     desktop-build.ts     builds packages/claxedo-desktop for the chosen app when stale
     desktop.ts           launches the Electron app isolated, with its scripted world
     scripted-world.ts    prepares a server: scripted providers, Pi by default, the scripted ACP agent

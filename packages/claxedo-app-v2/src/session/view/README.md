@@ -4,8 +4,8 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 
 ## Exports (`index.ts`)
 
-- `sessionPaneKind`: pane kind `session`, state `SessionRef`, routed at `/w/:placementId/s/:sessionId`.
-- `draftSessionPaneKind`: pane kind `draftSession`, state `{ projectId, placementId, draftId }`, no route. Its composer creates the session on the first send (`SessionList.create`, with the harness and model chosen in the draft), sends, and then replaces its own pane with a `session` pane (`useWorkbench().replacePane`).
+- `sessionPaneKind`: pane kind `session`, state `SessionRef`, routed at `/w/:placementId/session/:sessionId`.
+- `draftSessionPaneKind`: pane kind `draftSession`, state `{ projectId, placementId }`, routed at `/w/:placementId/session`. A workspace has one draft, as in today's app: New Session, the landing and a reload all show the same draft with its unsent text (the composer keys it `draft:<placementId>`). Its composer creates the session on the first send (`SessionList.create`, with the harness and model chosen in the draft), sends, and then replaces its own pane with a `session` pane (`useWorkbench().replacePane`).
 
 ## Owned concepts
 
@@ -14,13 +14,14 @@ The pane that shows one session: the moved timeline (`timeline/`, owned by the t
 | The screen's load states: loading (placeholder after 150 ms), missing, failed with retry, ready | `session-screen.tsx`, from `SessionView.state` |
 | The `TimelineHost` the moved timeline reads | `timeline-host.ts` |
 | Following the end of a streaming turn, the jump button state, message selection from the nav rail, paging older history | `auto-scroll.ts`, `timeline-scroll.ts`, `history-paging.ts`, `scroll-anchor.ts` |
-| Which dock shows: the first open request (permission or question), the goal, the todo list | `session-docks.tsx`, `docks/` |
+| Which dock shows: the first open request (permission or question), the goal, the todo list. The todo list shows only while a turn runs and the list is unfinished, so a finished list goes away (the owner's rule; today's app keeps it). Its collapsed state is kept per session in sessionStorage: it survives a reload and nothing longer | `session-docks.tsx`, `docks/` |
+| Floating over a maximized workspace panel, as today: while `usePanel().maximized()` holds, the focused session pane goes transparent and keeps a bottom card: "N previous messages" peeks the transcript open (collapsed by default, opened by a send or a turn from elsewhere), and the composer folds to one row while idle and blank. The column carries `data-floating-host`, so the app shell's rules lift it above the panel and hide every other pane | `session-screen.tsx`, `floating-peek.ts`, `session-floating.css` |
 | Editing a queued prompt: the held record's text is loaded into the composer; sending it cancels the held record | `queue-edit.ts` |
 | The old-kit contexts the moved renderers still read (`DialogProvider`, `MarkedProvider`, `FileComponentProvider`) | `TranscriptKitProviders` from `@/transcript`, until the transcript swaps them for v2 twins |
 
 ## State machines
 
-- **Request reply** (`docks/model.ts`): `open → answering → open | failed(error)`; the store's request machine (`open`, `answering`, `answered`, `expired`) is the server's side.
+- **Request reply**: the session store owns it, and the permission and question docks only read it (`SessionView.requestState`): `open → answering → answered | failed(error)`, and a failed reply can be sent again. A failed reply therefore re-enables its dock and shows the error, instead of leaving every button disabled.
 - **Dock action** (`docks/model.ts`): `idle → running(action) → idle | failed(action, error)`, for stop and the goal's pause, resume and remove.
 - The screen's load state is the store's `SessionLoadState`; the send machine is the composer's.
 
