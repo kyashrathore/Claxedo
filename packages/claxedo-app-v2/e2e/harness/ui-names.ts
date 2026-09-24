@@ -8,6 +8,8 @@ export const UI = {
   hideSidebar: "Hide Sidebar",
   openRail: "Open navigation sidebar",
   openPanel: "Open workspace panel",
+  signedOutAccount: "Not signed in",
+  palette: "Search files, commands, and sessions",
   workedFor: /^Worked for/,
   explored: /^Explored/,
 } as const
