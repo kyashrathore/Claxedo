@@ -15,6 +15,7 @@ function usageQuery(input: UsageRequest) {
     after: input.after,
     model_after: input.modelAfter,
     limit: input.limit,
+    refresh_nonce: input.refreshNonce,
     ...filters,
   }
 }
