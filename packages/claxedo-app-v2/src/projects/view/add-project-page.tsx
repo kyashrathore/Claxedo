@@ -1,6 +1,6 @@
 import type { Component } from "solid-js"
 import { useNavigate } from "@solidjs/router"
-import type { PageProps } from "@/shell/types"
+import type { PageProps } from "@/shell"
 import { useAddProjectFlow, type ProjectCreated } from "../add-project"
 import { useProjectsText } from "../i18n"
 import { placementDraftPath, projectPath } from "../routes"

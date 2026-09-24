@@ -4,8 +4,8 @@ Owns: the first run. A full-screen route (`/welcome`) the shell shows when the s
 
 ## Concepts
 
-- **Route entry**: `onboardingRoute` (`id`, `path`, `view`) for the shell's `routes` registry; `RouteEntry` is typed here until the shell exports the registry type.
-- **Needed?**: `onboardingNeeded(projects)` is true when the project list is ready and empty. The shell decides when to route there.
+- **Route entry**: `onboardingRoute`, the shell `RouteEntry` for `/welcome`, listed in the shell's `routes` registry.
+- **Needed?**: `onboardingNeeded(projects)` is true when the project list is ready and empty. The shell's home route sends the reader to `onboardingPath` when it is.
 
 ## State
 
