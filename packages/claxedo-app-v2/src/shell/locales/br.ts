@@ -1,5 +1,4 @@
 export const dictionary = {
-  "shell.palette.title": "Paleta de comandos",
   "shell.palette.placeholder": "Buscar arquivos, comandos e sessões",
   "shell.palette.empty": "Nenhum resultado encontrado",
   "shell.palette.suggested": "Sugerido",

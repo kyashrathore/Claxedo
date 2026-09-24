@@ -67,7 +67,7 @@ function DialogLayer(props: {
   return (
     <Kobalte modal open={!props.closing()} onOpenChange={(open) => !open && props.close()}>
       <Kobalte.Portal>
-        <Kobalte.Overlay class="v2-dialog-overlay" style={{ "z-index": zIndex() }} onClick={() => props.close()} />
+        <Kobalte.Overlay data-component="dialog-overlay" class="ui-dialog-overlay" style={{ "z-index": zIndex() }} onClick={() => props.close()} />
         <div data-dialog-layer={props.layer()} class="v2-dialog-layer" style={{ "z-index": zIndex() }}>
           <ErrorBoundary fallback={(error: unknown) => <DialogFailure error={error} onClose={() => props.close()} />}>
             <Suspense fallback={null}>

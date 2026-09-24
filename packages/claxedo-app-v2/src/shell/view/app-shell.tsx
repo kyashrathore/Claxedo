@@ -12,7 +12,7 @@ import { HomeRedirect } from "../home-redirect"
 import { dictionary } from "../i18n"
 import { ShellLayoutProvider } from "../layout"
 import { CommandsProvider } from "../palette/commands"
-import { CommandPalette } from "../palette/palette"
+import { OpenFileCommand } from "../palette/open-file-command"
 import { PlacementProviders } from "../placement-providers"
 import { useShellRegistries } from "../registries"
 import { useShellRoute } from "../router"
@@ -63,9 +63,9 @@ function ScopedShell(props: AppShellProps & { readonly scope: string }): JSX.Ele
                 <HomeRedirect />
                 <RouteSync />
                 <ShellCommands />
+                <OpenFileCommand />
                   <ConnectionBanner />
                 <ShellBody route={routing.route()} mainSidebar={props.mainSidebar} compactTabs={props.compactTabs} />
-                <CommandPalette />
                 <Overlays />
               </PluginHostProvider>
             </PlacementProviders>
