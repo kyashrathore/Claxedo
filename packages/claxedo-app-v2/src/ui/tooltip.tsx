@@ -1,7 +1,6 @@
 import { Tooltip as KobalteTooltip } from "@kobalte/core/tooltip"
-import { createEffect, Match, onCleanup, splitProps, Switch, type JSX } from "solid-js"
-import type { ComponentProps } from "solid-js"
-import { createStore } from "solid-js/store"
+import { Match, splitProps, Switch, type ComponentProps, type JSX } from "solid-js"
+import { createTooltipGuard } from "./tooltip-guard"
 import "./tooltip.css"
 
 export interface TooltipProps extends ComponentProps<typeof KobalteTooltip> {
@@ -14,12 +13,7 @@ export interface TooltipProps extends ComponentProps<typeof KobalteTooltip> {
 }
 
 export function Tooltip(props: TooltipProps) {
-  let ref: HTMLDivElement | undefined
-  const [state, setState] = createStore({
-    open: false,
-    block: false,
-    expand: false,
-  })
+  let trigger: HTMLDivElement | undefined
   const [local, others] = splitProps(props, [
     "children",
     "class",
@@ -30,57 +24,7 @@ export function Tooltip(props: TooltipProps) {
     "ignoreSafeArea",
     "value",
   ])
-
-  const close = () => setState("open", false)
-
-  const inside = () => {
-    const active = document.activeElement
-    if (!ref || !active) return false
-    return ref.contains(active)
-  }
-
-  const drop = (expand = state.expand) => {
-    if (expand) return
-    if (ref?.matches(":hover")) return
-    if (inside()) return
-    setState("block", false)
-  }
-
-  const sync = () => {
-    const expand = !!ref?.querySelector('[aria-expanded="true"], [data-expanded]')
-    setState("expand", expand)
-    if (expand) {
-      setState("block", true)
-      close()
-      return
-    }
-    drop(expand)
-  }
-
-  const arm = () => {
-    setState("block", true)
-    close()
-  }
-
-  const leave = () => {
-    if (!inside()) close()
-    drop()
-  }
-
-  createEffect(() => {
-    if (!ref) return
-    sync()
-    const obs = new MutationObserver(sync)
-    obs.observe(ref, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ["aria-expanded", "data-expanded"],
-    })
-    onCleanup(() => obs.disconnect())
-  })
-
-  let justClickedTrigger = false
+  const guard = createTooltipGuard(() => trigger)
 
   return (
     <Switch>
@@ -93,49 +37,42 @@ export function Tooltip(props: TooltipProps) {
           {...others}
           closeDelay={0}
           ignoreSafeArea={local.ignoreSafeArea ?? true}
-          open={local.forceOpen || state.open}
+          open={local.forceOpen || guard.open()}
           onOpenChange={(open) => {
-            if (local.forceOpen) return
-            if (state.block && open) return
-            if (justClickedTrigger) {
-              justClickedTrigger = false
-              return
-            }
-            setState("open", open)
+            if (!local.forceOpen) guard.change(open)
           }}
         >
           <KobalteTooltip.Trigger
-            ref={ref}
+            ref={trigger}
             as="div"
             data-component="tooltip-trigger"
             class={local.class}
-            onPointerDownCapture={arm}
+            classList={{ "ui-tooltip-trigger": true }}
+            onPointerDownCapture={guard.arm}
             onKeyDownCapture={(event: KeyboardEvent) => {
-              if (event.key !== "Enter" && event.key !== " ") return
-              arm()
+              if (event.key === "Enter" || event.key === " ") guard.arm()
             }}
-            onPointerLeave={leave}
-            onFocusOut={() => requestAnimationFrame(() => drop())} classList={{ "ui-tooltip-trigger": true }}
+            onPointerLeave={guard.leave}
+            onFocusOut={() => requestAnimationFrame(guard.release)}
           >
             {local.children}
           </KobalteTooltip.Trigger>
           <KobalteTooltip.Portal>
             <KobalteTooltip.Content
-              ref={(el) => {
-                const theme = ref?.closest("[data-theme]")?.getAttribute("data-theme")
-                if (theme) el.setAttribute("data-theme", theme)
+              ref={(element) => {
+                const theme = trigger?.closest("[data-theme]")?.getAttribute("data-theme")
+                if (theme) element.setAttribute("data-theme", theme)
               }}
               data-component="tooltip"
               data-placement={props.placement}
               data-force-open={local.forceOpen}
               class={local.contentClass}
+              classList={{ "ui-tooltip": true }}
               style={local.contentStyle}
-              onPointerDownOutside={(e) => {
-                if (ref === e.target || (e.target instanceof Node && ref?.contains(e.target))) {
-                  justClickedTrigger = true
-                }
-                e.preventDefault()
-              }} classList={{ "ui-tooltip": true }}
+              onPointerDownOutside={(event) => {
+                guard.pointerDownOutside(event.target)
+                event.preventDefault()
+              }}
             >
               {local.value}
             </KobalteTooltip.Content>

@@ -14,6 +14,10 @@ The one kit of the Claxedo app: v2 components and v2 tokens, nothing from `packa
 
 Every component works at 390 px with a coarse pointer: `touch.css` gives compact controls a 44 px hit area and rows a 44 px minimum height, and reveals every affordance that a mouse would only show on hover.
 
+## Origin
+
+Upstream's v2 library (anomalyco/opencode `packages/ui/src/v2` at 1d6c3c0e29) is the source of `Accordion`, `Avatar`, `Button`, `Checkbox`, `Dialog`, `DiffChanges`, `Divider`, `Field`, the file-tree styles, `Icon`, `IconButton`, `InlineInput`, `Keybind`, `LineComment` and `LineCommentEditor`, `Loader`, `Menu`, `ProgressCircle`, `ProjectAvatar`, `RadioGroup`, `SegmentedControl`, `Select`, `SplitButton`, `Switch`, `TabStateIndicator`, `Tabs`, `Tag` (upstream's `Badge`), `TextInput`, `TextShimmer`, `Textarea`, `Toast`, `Tooltip`, `Wordmark`, the tokens and the base styles. Upstream has no twin for the rest, so it is Claxedo's own, restyled onto the v2 tokens: `AppIcon`, `Card`, `Collapsible`, `DialogProvider` with `useDialog`, `DockShell` and `DockTray`, `FileIcon`, `ImagePreview`, `List` with `useFilteredList`, `Popover`, `ProviderIcon`, `ResizeHandle`, `ScrollView`, and the color-scheme and theme runtime in `theme/`. Upstream has no prompt-input frame in this library; the composer builds its own from `Textarea` and `DockShell`.
+
 ## Components
 
 | Component | Props (one line) |
