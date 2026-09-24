@@ -1,7 +1,6 @@
 import { createSignal, Show, type Component } from "solid-js"
-import type { AppError, Project } from "@/server"
+import { toAppError, type AppError, type Project } from "@/server"
 import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitleGroup, useDialog } from "@/ui"
-import { appErrorOf } from "../api"
 import { useProjectsText, type ProjectsText } from "../i18n"
 import { useProjectCommands } from "../store"
 
@@ -25,7 +24,7 @@ export const RemoveProjectDialog: Component<{ project: Project; onRemoved: () =>
       dialog.close()
       props.onRemoved()
     } catch (cause) {
-      setFailure(removalMessage(t, appErrorOf(cause)))
+      setFailure(removalMessage(t, toAppError(cause)))
     } finally {
       setRemoving(false)
     }

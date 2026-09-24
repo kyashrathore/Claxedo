@@ -1,6 +1,5 @@
 import { For, Match, Show, Switch, type Accessor, type Component } from "solid-js"
-import type { PlacementId, ProjectId } from "@/server"
-import { useCloudServer } from "../api"
+import { useServer, type PlacementId, type ProjectId } from "@/server"
 import { useCloudText } from "../i18n"
 import { useCloudWorkspaces } from "../store"
 import { CloudWorkspaceItem } from "./cloud-workspace-row"
@@ -9,7 +8,7 @@ import "./cloud.css"
 
 export const CloudWorkspaces: Component<{ projectId: Accessor<ProjectId>; onOpen?: (id: PlacementId) => void }> = (props) => {
   const t = useCloudText()
-  const server = useCloudServer()
+  const server = useServer()
   const offered = () => server.capabilities()?.features.cloud === true
   const cloud = useCloudWorkspaces(props.projectId, offered)
   const failed = () => {

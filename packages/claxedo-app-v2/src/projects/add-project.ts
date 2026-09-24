@@ -2,8 +2,7 @@ import { createMemo, type Accessor } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { useCloudPlacer, type CloudPlacer } from "@/cloud"
 import { machine, unreachable, type Machine as StateMachine } from "@/lib/machine"
-import type { Machine, PlacementId, ProjectId, ProjectSource } from "@/server"
-import { appErrorOf, useProjectsServer, type ProjectsServer } from "./api"
+import { toAppError, useServer, type Machine, type PlacementId, type ProjectId, type ProjectSource, type Server } from "@/server"
 import {
   addProjectInitial,
   addProjectTransition,
@@ -35,7 +34,7 @@ export type AddProjectFlow = {
 }
 
 type Creation = {
-  readonly server: ProjectsServer
+  readonly server: Server
   readonly cloud: CloudPlacer
   readonly flow: StateMachine<AddProjectState, AddProjectEvent>
   readonly draft: Store<ProjectDraft>
@@ -43,7 +42,7 @@ type Creation = {
   readonly onCreated: (created: ProjectCreated) => void
 }
 
-async function placeOnMachine(server: ProjectsServer, projectId: ProjectId, machineId: string): Promise<PlacementId | undefined> {
+async function placeOnMachine(server: Server, projectId: ProjectId, machineId: string): Promise<PlacementId | undefined> {
   const placements = await server.queryClient.fetchQuery({ ...server.queries.placements.byProject(projectId), staleTime: 0 })
   return placements.find((placement) => placement.machineId === machineId)?.id
 }
@@ -74,7 +73,7 @@ async function createProject(creation: Creation): Promise<void> {
     const harnessId = creation.draft.harnessId
     creation.onCreated({ projectId, ...(placementId ? { placementId } : {}), ...(harnessId ? { harnessId } : {}) })
   } catch (cause) {
-    creation.flow.send({ type: "createFailed", error: appErrorOf(cause) })
+    creation.flow.send({ type: "createFailed", error: toAppError(cause) })
   }
 }
 
@@ -96,7 +95,7 @@ function advanceable(state: AddProjectState, draft: ProjectDraft, placement: Pla
 }
 
 export function createAddProjectFlow(input: {
-  readonly server: ProjectsServer
+  readonly server: Server
   readonly cloud: CloudPlacer
   readonly machines: Accessor<readonly Machine[]>
   readonly onCreated: (created: ProjectCreated) => void
@@ -133,7 +132,7 @@ export function createAddProjectFlow(input: {
 export function useAddProjectFlow(onCreated: (created: ProjectCreated) => void): AddProjectFlow {
   const machines = useMachines()
   return createAddProjectFlow({
-    server: useProjectsServer(),
+    server: useServer(),
     cloud: useCloudPlacer(),
     machines: () => {
       const state = machines()

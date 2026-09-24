@@ -1,7 +1,6 @@
 import { createSignal, Show, type Component } from "solid-js"
-import type { ProjectSource } from "@/server"
+import { useServer, type ProjectSource } from "@/server"
 import { Button, Field, SegmentedControl, SegmentedControlItem, TextInput } from "@/ui"
-import { useProjectsServer } from "../api"
 import type { AddProjectFlow } from "../add-project"
 import { useProjectsText } from "../i18n"
 import { draftProjectName } from "../model"
@@ -50,7 +49,7 @@ const FolderField: Component<{
 
 export const SourceStep: Component<{ flow: AddProjectFlow; pickFolder?: () => Promise<string | undefined> }> = (props) => {
   const t = useProjectsText()
-  const server = useProjectsServer()
+  const server = useServer()
   const draft = props.flow.draft
   const offersFolder = () => server.capabilities()?.thisMachine !== undefined
   const [mode, setMode] = createSignal<Mode>(draft.source?.kind === "folder" ? "folder" : "repository")
