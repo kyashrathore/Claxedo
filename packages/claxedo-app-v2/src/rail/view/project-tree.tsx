@@ -1,5 +1,6 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js"
+import { createMemo, For, Show, type JSX } from "solid-js"
 import { useTranslator } from "@/i18n"
+import { useClock } from "@/lib/clock"
 import { useProjectList } from "@/projects"
 import { useServer } from "@/server"
 import { useSessionStores, type SessionRowView } from "@/session"
@@ -10,17 +11,6 @@ import { rowsByProject, siblingAfterArchive } from "../model"
 import { projectSection, type ProjectSection } from "../project-sections"
 import { ProjectBlock } from "./project-block"
 import { createSessionActions } from "./session-actions"
-
-function createNow(changes: () => unknown) {
-  const [now, setNow] = createSignal(Date.now())
-  const refresh = () => setNow(Date.now())
-  createEffect(on(changes, refresh, { defer: true }))
-  onMount(() => {
-    window.addEventListener("focus", refresh)
-    onCleanup(() => window.removeEventListener("focus", refresh))
-  })
-  return now
-}
 
 export function ProjectTree(): JSX.Element {
   const t = useTranslator(dictionary)
@@ -46,7 +36,7 @@ export function ProjectTree(): JSX.Element {
     const route = routing.route()
     return route.kind === "terminal" ? route.terminalId : undefined
   }
-  const now = createNow(() => stores.list.rows())
+  const now = useClock()
   const select = (section: ProjectSection) => {
     if (section.placementId) routing.navigate(draftPath(section.placementId))
   }
