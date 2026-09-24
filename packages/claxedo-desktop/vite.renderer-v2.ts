@@ -38,6 +38,7 @@ export function createElectronRendererV2(env: ConfigEnv): UserConfig {
     resolve: { ...app.resolve, alias: appV2Aliases(app) },
     build: {
       ...app.build,
+      outDir: undefined,
       rollupOptions: {
         ...app.build?.rollupOptions,
         output: withoutManualChunks(app.build?.rollupOptions?.output),
