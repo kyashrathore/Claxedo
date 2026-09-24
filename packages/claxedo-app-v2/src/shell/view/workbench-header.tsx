@@ -73,11 +73,11 @@ export function SettingsHeader(): JSX.Element {
   const t = useTranslator(shellDictionary)
   const layout = useShellLayout()
   return (
-    <div class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base pr-1" data-component="settings-header">
+    <div class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weaker-base pr-1">
       <div class="flex min-w-0 flex-1 items-center gap-1 px-1">
         <Show when={!layout.sidebarPinned()}>
           <ShowSidebarButton peek={false} />
-          <span class="flex min-w-0 items-center gap-1.5 rounded-md bg-surface-base px-2.5 py-1 text-compact text-text-strong" data-component="settings-header-tab">
+          <span class="flex min-w-0 items-center gap-1.5 rounded-md bg-surface-base px-2.5 py-1 text-compact text-text-strong">
             <Icon name="sliders" size="small" />
             <span class="truncate">{t("shell.settings")}</span>
           </span>

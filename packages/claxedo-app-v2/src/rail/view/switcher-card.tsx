@@ -46,7 +46,7 @@ function MetadataRow(props: { readonly icon: ClaxedoIconProps["name"]; readonly 
   return (
     <Show when={props.value?.trim()}>
       {(text) => (
-        <div data-slot="switcher-metadata-row" class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
+        <div class="grid min-h-[20px] grid-cols-[16px_64px_minmax(0,1fr)] items-center gap-x-2.5">
           <span class="flex items-center justify-center text-icon-weak-base">
             <Icon name={props.icon} size="small" />
           </span>
@@ -70,7 +70,7 @@ export function SwitcherCard(props: { readonly item: SwitcherItem }): JSX.Elemen
   const t = useTranslator(railDictionary)
   const project = () => orGlobal(props.item.projectLabel, t("rail.global"))
   return (
-    <div data-slot="switcher-metadata-card" class="w-[320px] bg-[var(--overlay-surface)] p-3">
+    <div class="switcher-metadata-card w-[320px] bg-[var(--overlay-surface)] p-3">
       <div class="mb-2.5 flex items-center gap-2.5">
         <ProjectAvatar fallback={project()} variant="outline" class="size-8 shrink-0" />
         <div class="min-w-0 flex-1">

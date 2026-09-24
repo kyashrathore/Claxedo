@@ -90,7 +90,6 @@ function SwitcherTab(props: { readonly item: SwitcherItem; readonly active: bool
   return (
     <div data-testid="compact-switcher-tab" data-content-id={props.item.contentId} data-claxedo-compact-touch class="group relative h-7 min-w-[118px] max-w-[220px] shrink-0" ref={props.onElement}>
       <div
-        data-slot="workbench-tab"
         data-selected={props.active ? "true" : undefined}
         class="flex h-7 w-full min-w-0 max-w-[220px] shrink-0 items-stretch gap-0 rounded-md border border-transparent py-0 pl-1.5 pr-7 text-left text-sm leading-none transition-[background-color,color] duration-100"
         classList={{

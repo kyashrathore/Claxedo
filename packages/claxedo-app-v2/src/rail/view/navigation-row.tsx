@@ -48,7 +48,6 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
     >
       <button
         type="button"
-        data-slot="navigation-row-activate"
         aria-label={props.label}
         aria-current={props.active ? "page" : undefined}
         class="ui-navigation-row-activate absolute inset-0 rounded-md outline-none touch-pan-y focus-visible:ring-2 focus-visible:ring-border-interactive-base"
@@ -62,7 +61,6 @@ export function NavigationRow(props: NavigationRowProps): JSX.Element {
 export function NavigationRowGlyph(props: { readonly children: JSX.Element }): JSX.Element {
   return (
     <span
-      data-slot="navigation-row-glyph"
       class="absolute left-4 top-1/2 -translate-y-1/2 z-[1] pointer-events-none flex size-4 items-center justify-center"
     >
       {props.children}

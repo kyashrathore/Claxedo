@@ -28,7 +28,7 @@ function row(app: Page, title: string): Locator {
 }
 
 function rowTitles(app: Page) {
-  return rows(app).locator("[data-slot=session-navigation-title]")
+  return rows(app).locator(".ui-session-navigation-title")
 }
 
 async function sessionAction(stack: Stack, app: Page, workspace: Workspace, session: SessionRow, action: string): Promise<void> {
